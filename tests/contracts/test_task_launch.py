@@ -319,7 +319,7 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertFalse(receipt.exists())  # The process was mocked, so no capability was manufactured.
 
     def _wiring(self, preflight_error=None, *, fixture_receipt=False, preflight_only=False, report=None, expected_exit=0,
-                backend="metal-m1-pro"):
+                backend="metal-m1-pro", baseline_only=False, baseline_error=None, extra_args=()):
         # Authority doubles are never persisted as qualification receipts or Evidence.
         executor = SimpleNamespace(document={"host_environment":{"python":{"invocation_path":"/unit-test/python"},
                                                                  "packages":{"triton":"3.6.0"}}})
@@ -332,6 +332,9 @@ class TaskLaunchTests(unittest.TestCase):
             filesystem_custody_verified=True, semantic_replay_passed=True,
             run_audits=(SimpleNamespace(protocol_adherence="adhered", endpoint_observation="no_qualified_candidate"),))
         args = self.args() + (["--preflight-only"] if preflight_only else [])
+        args.extend(extra_args)
+        if baseline_only:
+            args.append('--baseline-only')
         if backend != "metal-m1-pro":
             args[args.index('--backend')+1] = backend
             args[args.index('--task')+1] = 'silu'
@@ -340,18 +343,25 @@ class TaskLaunchTests(unittest.TestCase):
         with patch.object(launch_task.shutil, "which", return_value="/usr/bin/true"), \
              patch.object(launch_task, "_admit_stack", return_value=(Mock(),executor,Mock(),{"fixture":"compiler"})) as admit, \
              patch.object(launch_task, "_prepare_baseline", return_value=self.directory/"baseline.json") as baseline, \
+             patch.object(launch_task, "load_baseline_bundle", return_value=Mock()), \
+             patch.object(launch_task, "validate_pair_candidates", side_effect=baseline_error) as validate_baseline, \
              patch.object(launch_task, "_qualify", return_value=(self.directory/"receipt.json",self.directory/"anchor.json")) as qualify, \
              patch.object(launch_task.ProviderQualificationReceipt, "load", return_value=receipt), \
              patch.object(launch_task, "TaskLab", return_value=lab), \
              patch.object(launch_task, 'admit_cohort_payload') as payload, \
              patch.object(launch_task, "execute_matched_from_config", return_value=SimpleNamespace(evidence_root="unit-test-campaign")) as execute, \
              contextlib.redirect_stdout(io.StringIO()) as stdout:
-            if preflight_error or fixture_receipt:
+            if preflight_error or fixture_receipt or baseline_error:
                 with self.assertRaises(ValueError): launch_task.main(args)
                 execute.assert_not_called()
             else:
                 self.assertEqual(launch_task.main(args), expected_exit)
-                if preflight_only:
+                if baseline_only:
+                    qualify.assert_not_called()
+                    lab.preflight.assert_not_called()
+                    execute.assert_not_called()
+                    self.assertIn(str(self.directory/'baseline.json'), stdout.getvalue())
+                elif preflight_only:
                     execute.assert_not_called()
                     lab.audit.assert_not_called()
                 else:
@@ -360,7 +370,12 @@ class TaskLaunchTests(unittest.TestCase):
                     self.assertIn("unit-test-campaign", stdout.getvalue())
             admit.assert_called_once()
             baseline.assert_called_once()
-            qualify.assert_called_once()
+            validate_baseline.assert_called_once()
+            if baseline_error:
+                qualify.assert_not_called()
+                lab.preflight.assert_not_called()
+            elif not baseline_only:
+                qualify.assert_called_once()
             if backend == 'metal-m1-pro':
                 payload.assert_called_once()
             else:
@@ -372,10 +387,26 @@ class TaskLaunchTests(unittest.TestCase):
         study = json.loads((self.workspace/'study.json').read_text())
         runtime = json.loads((self.workspace/'runtime.json').read_text())
         self.assertEqual(study['evaluation_protocol']['paired_timing']['kind'], PAIRED_KIND)
+        self.assertEqual(study['evaluation_protocol']['paired_timing']['maximum_cv'], 0.15)
+        self.assertEqual(study['evaluation_protocol']['paired_timing']['required_pair_wins'], 9)
         self.assertEqual(study['execution']['gpu']['mode'], 'exclusive')
         self.assertEqual(runtime['toolchain']['triton_version'], '3.6.0')
         self.assertNotIn('output_root', runtime['toolchain'])
         self.assertNotIn('open_cake_ir.evaluation.local_broker', runtime['broker']['command'])
+
+    def test_baseline_only_builds_without_provider_qualification_or_campaign(self):
+        self._wiring(baseline_only=True, backend='triton-b300')
+
+    def test_baseline_abi_failure_precedes_provider_qualification(self):
+        self._wiring(baseline_error=ValueError('baseline ABI differs'), backend='triton-b300')
+
+    def test_explicit_timing_values_are_frozen_in_the_study(self):
+        self._wiring(preflight_only=True, backend='triton-b300',
+            extra_args=('--maximum-cv','0.12','--required-pair-wins','8'))
+        document=json.loads((self.workspace/'study.json').read_text())
+        assay=paired_protocol(document['evaluation_protocol'])
+        self.assertEqual((assay.maximum_cv,assay.required_pair_wins,assay.materiality_ratio), (0.12,8,1.05))
+        StudyContract.load(self.workspace/'study.json')
 
     def test_launcher_wires_existing_preflight_and_composer_with_persistent_actor_root(self):
         lab, _ = self._wiring()

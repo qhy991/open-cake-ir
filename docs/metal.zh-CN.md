@@ -99,7 +99,9 @@ PYTHONPATH=src python3 -m unittest \
 ## 批量运行任务，同时避免重复公共故障
 
 `tools/launch_task_matrix.py` 是上述单任务入口外面的一层顺序驱动，不另建 Workload、
-Study、验收路径或结果权威。第一个任务完成真实两轮 provider qualification 后，后续任务在
+Study、验收路径或结果权威。任何 provider 调用前，先通过 `launch_task.py --baseline-only`
+完成全部所选基线的构建、封存和 Workload ABI 检查；任一失败会停止矩阵。实际任务复用这些
+已封存基线。第一个任务完成真实两轮 provider qualification 后，后续任务在
 模型、effort、可执行文件和候选数量不变时复用这份精确 receipt。若第一个任务在形成
 qualification 之前失败，矩阵会停止，因为继续只会为同一个公共环境问题制造多份失败记录；
 形成 qualification 后，单个 campaign fault 会保留，后续任务继续。
@@ -116,3 +118,11 @@ python3 tools/launch_task_matrix.py \
 不写 `--task` 时按入口注册顺序运行全部任务；重复该参数可选择一个有序子集。外部根目录
 保存逐任务 stdout/stderr、追加式 `task-results.jsonl` 和派生 `terminal.json`。矩阵非零退出
 表示至少一个任务留下 fault，不会删除或覆盖已成功的兄弟任务。
+
+不显式覆盖时，两个入口均为每任务 3,000,000 provider tokens、最多 32 轮、8 小时墙钟
+时限（其中主动生成时限 4 小时）。这些是额度上限，token 按轮结束结算。CUDA 新实验在
+Study 中记录 CV 上限 0.15、十个配对至少胜出九个；Metal 保留原 IQR 协议和六胜默认值。
+`--maximum-cv`、`--required-pair-wins` 可覆盖这两个既有 Study 字段。至少 1.05 收益、
+完整正确性和独立确认要求保留。新参数只进入新 Study，不重判旧结果。CUDA 这些值是实验
+配置而非通用计时校准，正式 campaign 前应使用同一产物 A/A 和 GPU 内慢化对照验证。
+省略 shape 参数会使用各任务家族默认值，避免所有任务沿用排障用小形状。

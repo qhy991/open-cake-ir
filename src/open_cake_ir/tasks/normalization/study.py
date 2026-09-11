@@ -24,13 +24,18 @@ def canonical(document) -> bytes:
     return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
 
 
-def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sample: int | None = None) -> dict:
+def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sample: int | None = None,
+                      maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6) -> dict:
     if type(searches_per_turn) is not int or searches_per_turn <= 0:
         raise ValueError("searches per Turn must be a positive integer")
     backend = backend_for_target(workload.target)
     if backend is None:
         raise ValueError("evaluation policy requires a supported exact target")
     metal = BACKENDS[backend]["route"] == "metal"
+    if maximum_cv is None:
+        maximum_cv = 0.05 if metal else 0.15
+    if required_pair_wins is None:
+        required_pair_wins = 6 if metal else 9
     if not metal and dispatches_per_sample is not None:
         raise ValueError("dispatches_per_sample is a Metal command-buffer control")
     dispatches = 64 if dispatches_per_sample is None else dispatches_per_sample
@@ -50,7 +55,7 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
             "pair_order": [["candidate", "baseline"], ["baseline", "candidate"]] * 5,
             "samples_per_cohort": 25,
             "route_calls_per_cohort": _ROUTE_CALLS_PER_COHORT if metal else 6 + 11 + 25,
-            "maximum_cv": 0.05, "materiality_ratio": 1.05, "required_pair_wins": 6,
+            "maximum_cv": maximum_cv, "materiality_ratio": 1.05, "required_pair_wins": required_pair_wins,
         },
     }
     if metal:
@@ -78,7 +83,8 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                    harness: str, model: str, effort: str, turns: int = 4,
                    token_budget: int = 150000, maximum_candidates: int = 3,
                    searches_per_turn: int = 2, wall_seconds: int = 14400,
-                   dispatches_per_sample: int | None = None) -> dict:
+                   dispatches_per_sample: int | None = None,
+                   maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6) -> dict:
     """Bind mathematical inputs and treatment while leaving runtime facts unresolved.
 
     The policy is operator-agnostic: every task validates through its own
@@ -130,7 +136,8 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                          "resume_invariants": ["authority", "cwd", "sandbox", "provider", "scaffold", "arm_environment", "task_package"],
                          "workspace_seed": "task_agents_only"},
         "evaluation_protocol": evaluation_policy(workload, searches_per_turn=searches_per_turn,
-                                                 dispatches_per_sample=dispatches_per_sample),
+                                                 dispatches_per_sample=dispatches_per_sample,
+                                                 maximum_cv=maximum_cv, required_pair_wins=required_pair_wins),
         "execution": {"target": workload.target, "executor_revision": dict(CURRENT_RELEASE_BINDING),
                       "broker_execution_sha256": dict(CAMPAIGN_BINDING), "fixed_baseline": dict(CAMPAIGN_BINDING),
                       "gpu": {"name": device_name(workload.target), "count": 1,

@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.lab.bindings import external_file, resolve_executor, CURRENT_RELEASE_BINDING
+from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, resolve_executor, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.build import TritonToolchainBuilder
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
@@ -36,7 +36,7 @@ from open_cake_ir.tasks.contraction.workload import TASKS as _CONTRACTION_TASKS
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import create_task, load_workload
-from open_cake_ir.evaluation.paired import candidate_identity
+from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates
 
 # The launcher offers whatever the activation family registers, so a migrated AKA
 # parent becomes launchable by being added to that one table.
@@ -312,20 +312,26 @@ def main(argv=None) -> int:
     parser.add_argument("--depth", type=int,
                         help="contracted K extent; only a contraction task declares one")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
-    parser.add_argument("--turns", type=int, default=4)
-    parser.add_argument("--token-budget", type=int, default=150000)
+    parser.add_argument("--turns", type=int, default=32)
+    parser.add_argument("--token-budget", type=int, default=3000000)
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
+    parser.add_argument("--maximum-cv", type=float,
+                        help="cohort CV bound recorded in the Study (default: CUDA 0.15, Metal 0.05)")
+    parser.add_argument("--required-pair-wins", type=int,
+                        help="required wins among ten timing pairs (default: CUDA 9, Metal 6)")
     parser.add_argument("--dispatches-per-sample", type=int,
                         help="Metal only: dispatches per timed command buffer (default: 64)")
     parser.add_argument("--gpu-run", type=Path, help="existing CUDA broker client (default: gpu-run on PATH)")
     parser.add_argument("--broker-socket", type=Path, help="CUDA broker socket; omit to use the client's default")
-    parser.add_argument("--wall-seconds", type=int, default=14400)
+    parser.add_argument("--wall-seconds", type=int, default=28800)
     parser.add_argument("--provider-executable", type=Path)
     parser.add_argument("--provider-revision")
     parser.add_argument("--qualification", type=Path)
     parser.add_argument("--qualification-anchor", type=Path)
     parser.add_argument("--fixed-baseline-bundle", type=Path)
+    parser.add_argument("--baseline-only", action="store_true",
+                        help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Campaign preflight")
     args = parser.parse_args(argv)
     if (args.qualification is None) != (args.qualification_anchor is None):
@@ -350,7 +356,8 @@ def main(argv=None) -> int:
     study = study_template(ROOT, workload, workload_path, source_path, harness=args.harness,
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
-        dispatches_per_sample=args.dispatches_per_sample)
+        dispatches_per_sample=args.dispatches_per_sample,
+        maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins)
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
@@ -360,6 +367,11 @@ def main(argv=None) -> int:
                      if args.fixed_baseline_bundle else _prepare_baseline(
                          ROOT, workspace, compiler, executor, host, workload, study, source,
                          compiler_reference, route))
+    baseline = load_baseline_bundle(ROOT, baseline_path)
+    validate_pair_candidates(baseline, baseline, workload, args.case)
+    if args.baseline_only:
+        print(baseline_path)
+        return 0
     receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path)
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":
