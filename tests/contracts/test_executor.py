@@ -335,7 +335,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                     # the residual gap named in F-2026-09-10-012, and it is the shape that
                     # actually happened between an Apple and a B300 checkout.
                     other_command = ["bash", str(other_root / "tools/release_executor_cycle.sh"),
-                                     "--host-environment", str(host_path)]
+                                     "--host-environment", str(host_path), "--target", "sm_100a"]
                     other = subprocess.run(other_command, cwd=root.parent, env=environment,
                                            capture_output=True, text=True, timeout=30)
                     self.assertEqual(other.returncode, 0, other.stdout + other.stderr)
