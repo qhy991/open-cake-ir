@@ -34,6 +34,16 @@
       "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/ncu-sudo-probe",
       "artifacts": ["result.json", "ordinary.stdout", "ordinary.stderr", "sudo.stdout", "sudo.stderr", "run.py"],
       "note": "An independent broker-owned B300 control observed ERR_NVGPUCTRPERM from ordinary NCU (exit 1, no metric) and successful counter collection through noninteractive sudo (exit 0, metric observed); both executions produced the correct result. The observed driver restricts profiling to administrators. This control establishes counter access, not the complete Lab attribution receipt."
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-ncu-repair-20260911-TnHhDw8k/independent-root-lifecycle-mlninueo",
+      "artifacts": ["source-review-abbc2c76.json", "publication-adapter-review-93b84d2.json"],
+      "note": "Independent source and publication review accepted the exact implementation and Executor binding. Harmless real privileged CPU children exercised normal exit, timeout and cancellation cleanup, and the real root writer created evidence as the caller and restored identities on failure. This review is distinct from the GPU replay."
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-ncu-attribution-replay-20260911-6QAfGwDx",
+      "artifacts": ["successor-result.json"],
+      "note": "Both retained candidates were replayed through CommandBrokerSubmitter on publication commit 93b84d239dd399a7c1f7d3df3c4ca30ec2ffa530 and Executor v108. SiLU job gpuq-6d686266431f and per_channel_moments job gpuq-2d310ade0303 each passed fresh primary correctness, produced all 11 NCU metrics and a complete canonical attribution receipt, and completed without evaluator error. No provider call was made; historical five-case search was not requalified, and performance_qualified remains false."
     }
   ],
   "observation": "Executor v107 invokes NCU directly even on a nonroot Linux process whose NVIDIA driver restricts profiling counters. Counter access therefore fails after compilation and search correctness have succeeded. Wrapping the ordinary process supervisor in sudo would introduce a separate cleanup defect: an unprivileged process-group kill cannot be assumed to terminate privileged descendants. Profiling also creates evidence that must retain the admitted caller's ownership for the broker's existing custody checks.",
@@ -41,5 +51,5 @@
   "decision": "accepted",
   "implemented_in": "open-cake-ir-b200-v108+e248f79602b04bec71530f92fa37b5fe97c414c7f7633ebd7f5ab9306beafaf5",
   "verification_plan": "Independently exercise normal exit, timeout, cancellation and acquisition races with harmless privileged CPU children, then publish the exact reviewed Executor successor through its canonical cycle. Replay the retained SiLU and per_channel_moments candidates through CommandBrokerSubmitter in a new evidence root, requiring fresh primary-case correctness and a complete NCU attribution receipt. Historical five-case search checks stay historical; this replay adds neither five-case attribution nor performance qualification.",
-  "verified_by": null
+  "verified_by": "/mnt/b300-shared/home/qinhaiyan/oc-ncu-attribution-replay-20260911-6QAfGwDx/successor-result.json"
 }
