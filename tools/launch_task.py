@@ -120,7 +120,8 @@ def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal")
     if compiler.state != "released" or not gate.passed:
         raise ValueError("task launch requires a released Compiler and passing full Corpus Gate")
     try:
-        executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "task.execution", template=True)
+        executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "task.execution",
+                                    template=True, target=target)
     except ValueError as error:
         raise ValueError(f"task launch requires a released Metal Executor matching this source; {error}") from error
     is_metal_host = executor.document["host_environment"].get("kind") == "metal"

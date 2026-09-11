@@ -409,7 +409,8 @@ class PairedExecutionTests(unittest.TestCase):
             'canonical_sha256': sha256(encoded(descriptor)).hexdigest()}
         inventory = project / 'inventory/EXECUTOR_REVISIONS.json'
         inventory.parent.mkdir()
-        inventory.write_bytes(encoded({'current': executor_ref}))
+        inventory.write_bytes(encoded({'schema_version': 2,
+            'current_by_target': {'sm_103a': executor_ref}}))
         draft = DraftCompilerFixture()
         schedule = bind_baseline(json.loads((project / study.document['arms']['open_cake']['schedule_skeleton']['path']).read_bytes()),
                                  workload, 'primary')
@@ -483,7 +484,8 @@ class PairedExecutionTests(unittest.TestCase):
             toolchain.return_value.canonical_sha256 = 'b'*64
             stack.enter_context(patch('open_cake_ir.lab.runtime_config.broker_execution_sha256', return_value='c'*64))
             lock = Lab(project).preflight(template, execution_bindings_path=bp)
-            resolver.assert_called_once_with(project, {'binding': 'current_release'}, 'study.execution', template=True)
+            resolver.assert_called_once_with(project, {'binding': 'current_release'},
+                'study.execution', template=True, target='sm_103a')
             self.assertEqual(lock.document['execution']['executor_revision'], executor_ref)
             bound_executor = toolchain.return_value.check_executor.call_args.args[0]
             self.assertIsInstance(bound_executor, ExecutorRevision)
@@ -493,7 +495,8 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(bound_executor.document['sources'][0]['path'], source.name)
             # The resolver still rejects exact references in an original template.
             with self.assertRaisesRegex(ValueError, 'Study template Executor binding differs'):
-                resolve_executor(project, executor_ref, 'study.execution', template=True)
+                resolve_executor(project, executor_ref, 'study.execution', template=True,
+                                 target='sm_103a')
 
             self.assertEqual(lock.document['study']['canonical_sha256'], study.canonical_sha256)
             self.assertEqual(template.read_bytes(), before)

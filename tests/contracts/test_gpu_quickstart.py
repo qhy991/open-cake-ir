@@ -25,7 +25,7 @@ def _resolve_executor(executor_id: str) -> dict:
         (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
     )
     for candidate in [
-        inventory["current"],
+        *inventory["current_by_target"].values(),
         *inventory.get("superseded", []),
         *inventory["archives"],
     ]:

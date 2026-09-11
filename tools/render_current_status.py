@@ -22,20 +22,31 @@ def _load(relative_path: str) -> dict:
 def render() -> str:
     compiler = _load("compiler/revision.lock.json")
     executors = _load("inventory/EXECUTOR_REVISIONS.json")
-    current_executor = executors.get("current")
-    if not isinstance(current_executor, dict):
-        raise ValueError("inventory/EXECUTOR_REVISIONS.json has no current executor")
-
-    executor_path = current_executor.get("path")
-    if not isinstance(executor_path, str):
-        raise ValueError("current executor path is missing")
-    executor = _load(executor_path)
-
-    executor_id = current_executor.get("executor_id")
-    if executor.get("executor_id") != executor_id:
-        raise ValueError("current executor index and descriptor disagree")
-    if len(executor.get("sources", [])) != current_executor.get("source_count"):
-        raise ValueError("current executor source count disagrees with its descriptor")
+    current_by_target = executors.get("current_by_target")
+    if executors.get("schema_version") != 2 or not isinstance(current_by_target, dict):
+        raise ValueError("inventory/EXECUTOR_REVISIONS.json has no exact-target current index")
+    executor_lines: list[str] = []
+    for target, current_executor in sorted(current_by_target.items()):
+        if not isinstance(current_executor, dict):
+            raise ValueError(f"current executor for {target} differs")
+        executor_path = current_executor.get("path")
+        if not isinstance(executor_path, str):
+            raise ValueError(f"current executor path for {target} is missing")
+        executor = _load(executor_path)
+        executor_id = current_executor.get("executor_id")
+        if executor.get("executor_id") != executor_id:
+            raise ValueError(f"current executor index and descriptor disagree for {target}")
+        if len(executor.get("sources", [])) != current_executor.get("source_count"):
+            raise ValueError(f"current executor source count disagrees for {target}")
+        executor_lines.extend([
+            f"### `{target}`",
+            "",
+            f"- 版本： `{executor_id}`",
+            f"- 状态： `{executor['state']}`",
+            f"- 绑定源码： `{len(executor.get('sources', []))}` 个文件",
+            f"- 描述文件： [`{executor_path}`](../../{executor_path})",
+            "",
+        ])
 
     gate = compiler.get("corpus_gate", {})
     targets = ", ".join(sorted(compiler.get("target_definitions", {}))) or "none"
@@ -61,13 +72,10 @@ def render() -> str:
             f"- 已发布校准： `{calibration_text}`",
             "- 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)",
             "",
-            "## Executor",
+            "## Executor（按精确目标）",
             "",
-            f"- 版本： `{executor_id}`",
-            f"- 状态： `{executor['state']}`",
-            f"- 绑定源码： `{len(executor.get('sources', []))}` 个文件",
+            *executor_lines,
             "- 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)",
-            f"- 描述文件： [`{executor_path}`](../../{executor_path})",
             "",
             "## 这些数字说明什么",
             "",

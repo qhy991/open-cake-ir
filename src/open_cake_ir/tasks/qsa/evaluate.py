@@ -124,7 +124,8 @@ def _stage_result(
 
 
 def _executor(root: Path, compiler_reference: Mapping[str, object]) -> ExecutorRevision:
-    executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "QSA evaluation", template=True)
+    executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "QSA evaluation",
+                                template=True, target="sm_100a")
     task = json.loads(_required_environment_path("KERNELINFRA_TASK").read_text())
     stage_id = os.environ.get("KERNELINFRA_STAGE_ID")
     stages = [stage for stage in task["stages"] if stage["id"] == stage_id]
