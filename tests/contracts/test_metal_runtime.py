@@ -50,7 +50,8 @@ class MetalRuntimeContracts(unittest.TestCase):
 
     def test_exact_targets_refuse_other_device_names_before_writing(self):
         for target, device in (("apple_gpu_family7", "Apple M1 Pro"),
-                               ("apple_gpu_family8", "Apple M2")):
+                               ("apple_gpu_family8", "Apple M2"),
+                               ("apple_gpu_family9", "Apple M4")):
             document = json.loads(self.assessment.schedule_bytes)
             document["target"] = target
             assessment = replace(self.assessment, target=target, schedule_bytes=json.dumps(document).encode())
@@ -58,9 +59,10 @@ class MetalRuntimeContracts(unittest.TestCase):
                 **self.lowering.toolchain_requirements, "target": target})
             directory = self.directory / target
             directory.mkdir()
+            wrong = next(name for name in ("Apple M1 Pro", "Apple M2", "Apple M4")
+                         if name != device)
             for names in ([], ["Apple M1"], ["Apple M1 Max"], ["Apple M2 Pro"],
-                          ["Apple M2" if target == "apple_gpu_family7" else "Apple M1 Pro"],
-                          ["Apple M1 Pro", "Apple M2"]):
+                          [wrong], ["Apple M1 Pro", "Apple M2", "Apple M4"]):
                 with self.subTest(target=target, names=names), self.assertRaises(ValueError):
                     adapter.manifest(assessment, lowering, self.inputs, directory, device_names=names)
                 self.assertEqual(list(directory.iterdir()), [])
@@ -140,7 +142,7 @@ class MetalRuntimeContracts(unittest.TestCase):
                 check_correctness.compare(payload, expected, tolerance)
 
     def test_varied_shapes_and_distributions_use_canonical_frontend(self):
-        for target in ("apple_gpu_family7", "apple_gpu_family8"):
+        for target in ("apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"):
             for operator in ("elementwise", "row_sum", "row_max", "rmsnorm"):
                 for rows, columns in check_correctness.SHAPES:
                     with self.subTest(target=target, operator=operator, shape=(rows, columns)):

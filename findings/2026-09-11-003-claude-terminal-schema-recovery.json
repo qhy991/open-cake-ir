@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-11-003",
+  "kind": "protocol",
+  "title": "A schema-rejected StructuredOutput invocation can be corrected before the exact terminal completes",
+  "date": "2026-09-11",
+  "backend": "metal-m4",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v101+295b7e4580b3531055f2167e57303ce527deb7d281a6da1806eeac8847c9b059",
+  "compiler_revision_id": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
+  "tasks": [
+    "softplus_gradient"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan-mini/.local/share/open-cake-ir/runs/m4-kimi-k3-all29-v74-v101/softplus_gradient",
+      "note": "The live kimi-k3 turn first invoked StructuredOutput without the required kind field. Claude Code returned an explicit schema-error tool result. The provider then reused the completed native id with the exact four-field terminal object, received a successful tool result, and emitted the same exact final structured_output. The Lab nevertheless faulted on the first invocation before reading its error result and later recovery."
+    }
+  ],
+  "observation": "The parser validated terminal-tool arguments at invocation time and declared any terminal-tool error fatal. That loses the CLI's own closed-schema recovery lifecycle. The stream is unambiguous when the malformed invocation receives an error result, a later invocation receives success with the exact expected object, and the final terminal repeats that object. Accepting an error without a later exact success would weaken completion and remains invalid.",
+  "proposed_change": "Defer StructuredOutput argument validation until its tool result. Record schema-rejected invocations as error_recovered only when a later exact StructuredOutput invocation completes successfully and the final structured_output remains identical. Continue refusing malformed successful invocations, unpaired results, overlapping ids, an unrecovered terminal error, or any final-terminal mismatch.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v102+35f512866fff891c7bd862de75226fddad60aa17f4bdfe9b8e03664f49806e9f",
+  "verification_plan": "Replay the retained softplus_gradient stream, exercise recovered and unrecovered terminal sequences in the contract suite, publish an Executor successor, then rerun softplus_gradient in a fresh workspace.",
+  "verified_by": null
+}

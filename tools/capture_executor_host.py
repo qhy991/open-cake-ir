@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cupti-distribution")
     parser.add_argument("--flashinfer-distribution")
     parser.add_argument("--ncu", type=Path)
-    parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8"))
+    parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"))
     parser.add_argument("--swiftc", type=Path)
     parser.add_argument("--archive-executable", type=Path)
     parser.add_argument("--observer-executable", type=Path)

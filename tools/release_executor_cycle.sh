@@ -2,6 +2,7 @@
 # Release the Executor Revision that matches the current runtime sources.
 #
 #   release_executor_cycle.sh [--host-environment /verified/host-environment.json]
+#                             [--target exact_target]
 #
 # An Executor Revision binds every Lab, Evaluation, and Evidence source byte, so any edit
 # to that closure invalidates the released descriptor. This settles and releases the id;
@@ -29,6 +30,10 @@ parser = argparse.ArgumentParser(description="Release a new Executor successor (
 parser.add_argument(
     "--host-environment", type=pathlib.Path,
     help="host-environment JSON already verified against the executor host",
+)
+parser.add_argument(
+    "--target",
+    help="exact target owned by this release; inferred and checked for Metal",
 )
 arguments = parser.parse_args()
 
@@ -100,10 +105,19 @@ ExecutorRevision._validate_host_document(host)
 if host.get("kind") == "metal":
     from open_cake_ir.lab.executor import admit_host_environment
     admit_host_environment(host)
+    target = host["host"]["target"]
+    if arguments.target is not None and arguments.target != target:
+        raise ValueError("release target differs from the captured Metal host")
+else:
+    target = arguments.target
+    if not isinstance(target, str) or not target:
+        raise ValueError("non-Metal Executor release requires --target")
 inventory_path = pathlib.Path("inventory/EXECUTOR_REVISIONS.json")
 if inventory_path.exists():
     inventory = json.loads(inventory_path.read_text())
-    current = inventory.get("current")
+    if inventory.get("schema_version") != 2 or not isinstance(inventory.get("current_by_target"), dict):
+        raise ValueError("Executor inventory schema differs")
+    current = inventory["current_by_target"].get(target)
     if isinstance(current, dict) and isinstance(current.get("path"), str):
         try:
             admitted = ExecutorRevision.load_reference(pathlib.Path.cwd(), {
@@ -128,6 +142,7 @@ temporary.joinpath("proposal.json").write_text(json.dumps({
     "host_environment": host,
 }))
 temporary.joinpath("keep").write_text(keep)
+temporary.joinpath("target").write_text(target)
 PY
 
 if [ -f "$EXECUTOR_RELEASE_TMP/unchanged" ]; then
@@ -164,10 +179,11 @@ PY
 )
 
 echo "--- update Executor inventory ---"
-"$OPEN_CAKE_PYTHON" - "$KEEP" <<'PY'
+"$OPEN_CAKE_PYTHON" - "$KEEP" "$(cat "$EXECUTOR_RELEASE_TMP/target")" <<'PY'
 import hashlib, json, pathlib, sys
 
 keep = sys.argv[1]
+target = sys.argv[2]
 path = pathlib.Path(f"runtime/executors/{keep}.json")
 raw = path.read_bytes()
 document = json.loads(raw)
@@ -189,8 +205,10 @@ print(f"    {keep} -> {record['canonical_sha256'][:16]}  {record['source_count']
 
 inventory_path = pathlib.Path("inventory/EXECUTOR_REVISIONS.json")
 inventory = json.loads(inventory_path.read_text())
-previous = inventory.get("current")
-inventory["current"] = record
+if inventory.get("schema_version") != 2 or not isinstance(inventory.get("current_by_target"), dict):
+    raise ValueError("Executor inventory schema differs")
+previous = inventory["current_by_target"].get(target)
+inventory["current_by_target"][target] = record
 if (
     isinstance(previous, dict)
     and previous.get("path") != record["path"]

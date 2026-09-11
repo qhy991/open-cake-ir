@@ -36,7 +36,7 @@ CONTRACT = {
 def source(rows: int, columns: int, formula: str = "canonical", *, target: str = "apple_gpu_family8") -> str:
     if formula not in FORMULAS or type(rows) is not int or type(columns) is not int or rows <= 0 or columns <= 0:
         raise ValueError("unsupported RMSNorm formula or shape")
-    if target not in {"apple_gpu_family7", "apple_gpu_family8"}:
+    if target not in {"apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"}:
         raise ValueError("unsupported exact Metal target")
     text = (ROOT / "examples/python/metal_rmsnorm.py").read_text().replace("apple_gpu_family8", target)
     text = text.replace("(128, 1024)", f"({rows}, {columns})").replace("(1024,)", f"({columns},)")

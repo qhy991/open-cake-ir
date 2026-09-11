@@ -290,6 +290,27 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
         self.assertIn("#pragma METAL fp contract(off)", lowering.source)
         self.assertEqual(set(lowering.source_map), {operation["id"] for operation in document["operations"]})
 
+    def test_apple_family9_m4_target_lowers_without_device_fallback(self):
+        document = json.loads((ROOT / "compiler/targets/apple_gpu_family9.json").read_text())
+        draft = json.loads((ROOT / "compiler/revision.json").read_text())
+        draft["target_definitions"]["apple_gpu_family9"] = {
+            "path": "compiler/targets/apple_gpu_family9.json",
+            "canonical_sha256": hashlib.sha256(_canonical_json_bytes(document)).hexdigest(),
+        }
+        with tempfile.TemporaryDirectory(prefix="cake-metal-m4-") as temporary:
+            proposal = Path(temporary) / "draft.json"
+            proposal.write_text(json.dumps(draft))
+            compiler = Compiler.load(ROOT, proposal)
+            schedule = make_document()
+            schedule["target"] = "apple_gpu_family9"
+            assessment = compiler.assess(schedule)
+            self.assertTrue(assessment.lowering_eligible, assessment.findings)
+            lowering = compiler.lower(assessment)
+        self.assertEqual(document["architecture"], "apple9")
+        self.assertEqual(document["device_names"], ["Apple M4"])
+        self.assertEqual(lowering.target, "apple_gpu_family9")
+        self.assertEqual(lowering.toolchain_requirements["target"], "apple_gpu_family9")
+
     def test_odd_elementwise_shapes_and_distributions_execute(self):
         for rows, width in ((1, 1), (3, 37), (2, 65)):
             with self.subTest(shape=(rows, width)):

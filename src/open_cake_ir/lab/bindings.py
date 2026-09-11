@@ -94,8 +94,29 @@ def load_baseline_bundle(project_root, bundle_path):
     return candidate
 
 
+def current_executor_reference(root: Path, target: str) -> dict[str, object]:
+    """Return the one current Executor owned by an exact hardware target."""
+    if not isinstance(target, str) or not target:
+        raise ValueError("current Executor resolution requires an exact target")
+    inventory = json.loads((root / "inventory/EXECUTOR_REVISIONS.json").read_text())
+    if not isinstance(inventory, Mapping) or inventory.get("schema_version") != 2:
+        raise ValueError("Executor inventory schema differs")
+    currents = inventory.get("current_by_target")
+    if not isinstance(currents, Mapping):
+        raise ValueError("Executor inventory current_by_target must be an object")
+    current = currents.get(target)
+    if not isinstance(current, Mapping):
+        raise ValueError(f"no current Executor is published for exact target {target!r}")
+    fields = ("executor_id", "path", "canonical_sha256")
+    try:
+        return {field: current[field] for field in fields}
+    except KeyError as error:
+        raise ValueError(f"current Executor for exact target {target!r} differs") from error
+
+
 def resolve_executor(
-    root: Path, value: object, context: str, *, template: bool
+    root: Path, value: object, context: str, *, template: bool,
+    target: str | None = None,
 ) -> ExecutorRevision:
     """Select the Study's current or frozen reference and return its verified object."""
     if not isinstance(value, Mapping):
@@ -103,13 +124,7 @@ def resolve_executor(
     if template:
         if value != CURRENT_RELEASE_BINDING:
             raise ValueError("Study template Executor binding differs")
-        inventory = json.loads((root / "inventory/EXECUTOR_REVISIONS.json").read_text())
-        if not isinstance(inventory, Mapping):
-            raise ValueError("Executor inventory must be an object")
-        current = inventory.get("current")
-        if not isinstance(current, Mapping):
-            raise ValueError("current Executor must be an object")
-        exact = {field: current[field] for field in ("executor_id", "path", "canonical_sha256")}
+        exact = current_executor_reference(root, target)
     else:
         if value == CURRENT_RELEASE_BINDING:
             raise ValueError("frozen Study cannot follow the current Executor")
@@ -180,7 +195,7 @@ def resolve_execution_bindings(
             provider['code_mode_host'] = code_mode_host
     # current_release resolves once, with the existing Executor resolver's closure checks.
     executor = resolve_executor(Path(project_root), execution['executor_revision'],
-        'study.execution', template=True)
+        'study.execution', template=True, target=execution['target'])
     executor_reference = dict(executor.reference)
     if backend == "metal":
         from .metal_build import MetalArchiveHost

@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "cae4422144a30b3b583b113c7c7dcfcedef03e7302abb5f474414818964b2951"
+  },
+  "reviewer": {
+    "kind": "human",
+    "name": "qhy991"
+  },
+  "approval_basis": "Repository owner authorization for F-2026-09-10-001, given explicitly after being shown the exact change and this Gate digest. The change is three functional lines in src/open_cake_ir/compiler/backends/metal.py: _share_slots returns zero when a Schedule has neither a REDUCE nor a scalar publish, and the emitter omits the threadgroup declaration when there are no slots. Those two constructs are the only readers of `share`, so a purely elementwise multi-SIMD-group kernel was declaring storage it never touched; Metal eliminated the unused allocation, the sealed pipeline observed zero bytes, and the truthful declared-equals-observed check then faulted a correct candidate. It recurred on silu at 32 groups and swiglu at 8. The declaration was made truthful rather than the check made looser: metal_build.py:68-71 is unchanged, and the neighbouring threads/tgmem rule moved from an XOR to an implication so one SIMD group still cannot declare threadgroup storage while more than one may truthfully declare none. Full canonical Corpus Gate 124/124 over 174 sources with no expectation regenerated, and refresh_corpus_expectations.py reports the pinned lowerings already match, so no existing emitted source moved -- expected, because the corpus holds no multi-group kernel that crosses no group boundary. This records owner authorization only: no independent reviewer session inspected the change, and the author session prepared the release it is approving.",
+  "review_record": "Owner reviewed the diff and Gate in the authoring session and stated approval there. No separate reviewer session, model or transcript exists for this decision."
+}

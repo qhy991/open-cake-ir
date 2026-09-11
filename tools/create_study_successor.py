@@ -83,8 +83,9 @@ def main() -> int:
     if (skeletons[0] is None) != (skeletons[1] is None):
         raise ValueError("both Authoring Environment skeletons must be replaced together")
 
-    executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "Study successor", template=True)
     execution = _object(document.get("execution"), "Study.execution")
+    executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "Study successor",
+                                template=True, target=execution.get("target"))
     if (
         document.get("kind") != "portfolio"
         and execution.get("broker_execution_sha256") != "c" * 64

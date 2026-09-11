@@ -57,7 +57,8 @@ def _git_commit() -> str:
 
 
 def _current_executor() -> ExecutorRevision:
-    return resolve_executor(ROOT, CURRENT_RELEASE_BINDING, "QSA launch", template=True)
+    return resolve_executor(ROOT, CURRENT_RELEASE_BINDING, "QSA launch",
+                            template=True, target="sm_100a")
 
 
 def _preflight_authorities() -> tuple[ExecutorRevision, ProgramContract, dict[str, object]]:

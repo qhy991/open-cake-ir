@@ -1,13 +1,14 @@
 # Apple Metal tasks through TaskLab
 
-The Compiler supports exact `Apple M1 Pro` / `apple_gpu_family7` and `Apple M2` /
-`apple_gpu_family8` targets. The task launcher admits both, as `--backend metal-m1-pro`
-and `--backend metal-m2`. One backend selects exactly one target and one admitted device
+The Compiler supports exact `Apple M1 Pro` / `apple_gpu_family7`, `Apple M2` /
+`apple_gpu_family8`, and `Apple M4` / `apple_gpu_family9` targets. The task launcher admits
+them as `--backend metal-m1-pro`, `--backend metal-m2`, and `--backend metal-m4`. One backend
+selects exactly one target and one admitted device
 name; a Workload frozen for one device never validates against the other. The launcher
 checks the exact device, OS, toolchain and released Executor, and refuses a released
-Executor bound to the other Apple GPU; there is no device fallback or borrowed Apple
-performance calibration. Running on M2 therefore requires a released Metal Executor
-captured on that M2 host, not the M1 Pro one.
+Executor bound to another Apple GPU; there is no device fallback or borrowed Apple
+performance calibration. Running on M2 or M4 therefore requires a released Metal Executor
+captured on that exact host, not one captured on a different Apple GPU.
 
 The built-in tasks are `rmsnorm`, `layernorm` (affine, centered population variance),
 and `residual_rmsnorm` (FP32-rounded residual addition before normalization). Their
@@ -29,7 +30,7 @@ From the checkout, using the Executor's Python executable:
 
 ```sh
 python3 tools/launch_task.py \
-  --task rmsnorm --backend metal-m2 \
+  --task rmsnorm --backend metal-m4 \
   --harness codex --model "<exact-model-id>" --effort high \
   --workspace "$HOME/.local/share/open-cake-ir/runs/metal-rmsnorm-example" \
   --rows 128 --columns 1024 --turns 4 --token-budget 150000
@@ -114,3 +115,27 @@ PYTHONPATH=src python3 -m unittest \
 Generated-body checks use a C++ CPU adapter when available; qualification tests use
 explicit executable fixtures. Actual Campaign qualification and performance still
 require reviewed releases and device execution.
+
+## Run a task matrix without repeating common setup failures
+
+`tools/launch_task_matrix.py` is a thin sequential driver over the launcher above. It
+does not create another Workload, Study, acceptance path or result authority. The first
+task obtains the live two-turn provider qualification; every later task reuses that exact
+receipt while model, effort, executable and candidate-count treatment stay fixed. If the
+first task fails before a qualification exists, the matrix stops because repeating it
+would manufacture copies of one common setup failure. Once qualified, an individual
+campaign fault is retained and later tasks continue.
+
+```sh
+python3 tools/launch_task_matrix.py \
+  --backend metal-m4 --harness claude-code --model "<exact-model-id>" --effort high \
+  --provider-executable /absolute/path/to/claude \
+  --workspace-root "$HOME/.local/share/open-cake-ir/runs/m4-matrix" \
+  --rows 128 --columns 1024 --depth 256 \
+  --turns 4 --token-budget 150000
+```
+
+Omit repeated `--task` flags to use the launcher's complete registered order, or repeat
+the flag for an ordered subset. The external root gets immutable per-task stdout/stderr,
+append-only `task-results.jsonl`, and a derived `terminal.json`. A nonzero matrix exit
+means at least one retained task fault; it does not erase successful siblings.

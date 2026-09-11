@@ -10,6 +10,8 @@ BACKENDS = {
                      "provenance_token": "M1_Pro"},
     "metal-m2": {"target": "apple_gpu_family8", "device_name": "Apple M2",
                  "provenance_token": "M2"},
+    "metal-m4": {"target": "apple_gpu_family9", "device_name": "Apple M4",
+                 "provenance_token": "M4"},
 }
 
 

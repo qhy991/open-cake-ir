@@ -230,6 +230,6 @@
   ],
   "schedule_id": "metal-target-unsupported",
   "schema_version": 1,
-  "target": "apple_gpu_family9",
+  "target": "apple_gpu_family10",
   "tile_loops": []
 }

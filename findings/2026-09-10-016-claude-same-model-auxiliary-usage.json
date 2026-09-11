@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-10-016",
+  "kind": "protocol",
+  "title": "Claude modelUsage may conservatively exceed top-level usage when the requested model also serves internal activity",
+  "date": "2026-09-10",
+  "backend": "metal-m4",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v99+265ff10d04cd052d328327066ab1cc5d9c5ac2ed365bfaaa23caad9bf6b472b3",
+  "compiler_revision_id": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
+  "tasks": [
+    "rmsnorm"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan-mini/.local/share/open-cake-ir/runs/m4-kimi-k3-pilot3-rmsnorm-v74-v99",
+      "note": "Provider qualification reached kimi-k3 through Claude Code 2.1.241, wrote the required candidate and exact structured terminal, then faulted only because modelUsage[kimi-k3] exceeded the top-level usage counters. The terminal charged 24,188 input, 3,848 output and 16,384 cache-read tokens; modelUsage conservatively reported 26,819 input, 3,889 output and 17,024 cache-read tokens. Stderr separately retained an unrecognized-model session-title request."
+    }
+  ],
+  "observation": "The Lab assumed the requested model's aggregate modelUsage row must equal the top-level main-turn usage in every field. Claude Code can use that same requested model for internal activity, so the aggregate row can legitimately be larger even though both authorities name the exact model. Rejecting the larger row prevents qualification after a successful candidate-writing turn. Accepting an aggregate row that is smaller would instead lose usage and weaken budget enforcement.",
+  "proposed_change": "Treat top-level usage as a per-field lower bound on the exact main-model modelUsage row and continue charging the complete, larger modelUsage aggregate. Keep malformed, missing, negative, zero-only and per-field-understated rows as hard refusals. Add a regression specimen for both the conservative excess and the under-reporting counterexample; do not infer usage from intermediate message events or title-request stderr.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v100+66260acb4f9646e950a37ca859e3abb9ae2891ded456f170a6221b70865fe7f0",
+  "verification_plan": "Replay the retained terminal through the corrected parser, run the Claude provider contract suite, then repeat live two-turn kimi-k3 qualification in a fresh workspace. A successful qualification must retain the larger modelUsage total and exact kimi-k3 identity before any campaign starts.",
+  "verified_by": "/Users/haiyan-mini/.local/share/open-cake-ir/runs/m4-kimi-k3-pilot4-rmsnorm-v74-v100/provider-qualification.json"
+}

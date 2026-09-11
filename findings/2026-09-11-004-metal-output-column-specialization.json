@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-11-004",
+  "kind": "behavior",
+  "title": "Output-column specialization reduces Metal contraction private state and confirms a 23.6x GEMM-SiLU speedup on M1 Pro",
+  "date": "2026-09-11",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v98+dd038d93dc83c53042888d1d3777b8fba23968a7d756c79a6ce8eadbec72edba",
+  "compiler_revision_id": "open-cake-ir-sm100a-v73+a8c73c76247602c721f5390ad9a5058614ce321b1d298e81f4c8e262526997d9",
+  "tasks": [
+    "gemm_silu"
+  ],
+  "evidence": [
+    {
+      "workspace": "open-cake-ir-experiments:m1pro-family7/gemm-silu-glm53-high-20260910n32",
+      "note": "Candidate 450d8350 changes one row program materializing B[K,N] and N outputs into row-by-column programs loading B[:,col] and producing one scalar. Confirmatory event 37 reports candidate median 0.079588216 ms, baseline 1.878596029 ms, speedup 23.6039469, ten candidate pair wins, zero baseline wins, measurement quality passed and correctness passed with maximum absolute error 4.196e-05."
+    },
+    {
+      "workspace": "F-2026-09-10-010 ordinary GEMM campaigns",
+      "note": "The same output-column decomposition was independently useful for ordinary GEMM, with 6x to 7x median gaps across three candidates; those measurements failed stability because of device contention, while the GEMM-SiLU confirmation above supplies the first stable second use."
+    }
+  ],
+  "observation": "The baseline assigns one program to each output row, loads the full K-by-N second operand into private values and reduces K for all N outputs. The candidate adds the independent output-column program axis, loads one K-vector B[:,col], reduces to one scalar, applies the scalar bias and SiLU epilogue and stores out[row,col]. This trades more programs and strided column access for a factor-N reduction in per-program private contraction state. It transfers from ordinary GEMM to GEMM-SiLU and is not operator-name recognition: the structural invariant is an independent output axis with a pointwise epilogue. Attention decode is an explicit anti-case because softmax and the second contraction couple N. The result is exact to one M1 Pro shape and does not establish M4 benefit, a portfolio, or framework performance.",
+  "proposed_change": "Extract a deterministic Compiler pass that returns a complete column-specialized Schedule or a reason for not applying, preserving the original. Match a row-programmed rank-2 contraction whose output N axis is independent through a scalar/pointwise epilogue; make target, access and semantic preconditions explicit. Refuse state/alias effects, cross-N reductions, attention/softmax coupling and unsupported column access. The pass exposes a candidate and never claims speedup; Lab selection chooses between original and transformed schedules. Retain the existing before/after programs as the mechanism evidence rather than copying them into a second recipe ledger.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Compiler proposal requires positive GEMM and GEMM-SiLU cases, valid-but-ineligible attention decode and state/alias cases, numerical counterexamples for epilogue reassociation, full Corpus Gate and independent release review. Capability verification then runs matched M1 Pro and M4 campaigns at representative and held-out shapes, reporting baseline movement separately from candidate-minus-baseline and retaining negative transfer."
+}

@@ -18,7 +18,11 @@ ROOT = Path(__file__).resolve().parents[2]
 _INVENTORY = json.loads(
     (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
 )
-CURRENT_EXECUTOR = ROOT / _INVENTORY["current"]["path"]
+CURRENT_RECORD = next(iter(_INVENTORY["current_by_target"].values()), None)
+if CURRENT_RECORD is None:
+    # During an inventory-schema tick the successor is minted before this suite runs.
+    raise RuntimeError("Executor contract tests require one exact-target current release")
+CURRENT_EXECUTOR = ROOT / CURRENT_RECORD["path"]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab import ExecutorRevision  # noqa: E402
@@ -77,7 +81,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
 
     def test_released_executor_covers_the_complete_runtime_source_closure(self) -> None:
         executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
-        self.assertEqual(executor.executor_id, _INVENTORY["current"]["executor_id"])
+        self.assertEqual(executor.executor_id, CURRENT_RECORD["executor_id"])
         self.assertEqual(
             CURRENT_EXECUTOR.stat().st_mode & 0o444,
             0o444,
@@ -160,15 +164,16 @@ class ExecutorRevisionContractTests(unittest.TestCase):
         inventory = json.loads(
             (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
         )
-        current = inventory["current"]
-        current_executor = ExecutorRevision.load(ROOT, ROOT / current["path"])
-        self.assertEqual(current_executor.executor_id, current["executor_id"])
-        self.assertEqual(current_executor.canonical_sha256, current["canonical_sha256"])
-        self.assertEqual(len(current_executor.document["sources"]), current["source_count"])
-        self.assertEqual(
-            sha256((ROOT / current["path"]).read_bytes()).hexdigest(),
-            current["descriptor_raw_sha256"],
-        )
+        for target, current in inventory["current_by_target"].items():
+            with self.subTest(target=target):
+                current_executor = ExecutorRevision.load(ROOT, ROOT / current["path"])
+                self.assertEqual(current_executor.executor_id, current["executor_id"])
+                self.assertEqual(current_executor.canonical_sha256, current["canonical_sha256"])
+                self.assertEqual(len(current_executor.document["sources"]), current["source_count"])
+                self.assertEqual(
+                    sha256((ROOT / current["path"]).read_bytes()).hexdigest(),
+                    current["descriptor_raw_sha256"],
+                )
         for archived in inventory["archives"]:
             archive_root = ROOT / archived["archive_root"]
             executor = ExecutorRevision.load(
@@ -259,11 +264,12 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             inventory_path = root / "inventory/EXECUTOR_REVISIONS.json"
             inventory_path.parent.mkdir()
             previous = next(
-                entry for entry in (_INVENTORY["current"], *_INVENTORY["superseded"])
+                entry for entry in (*_INVENTORY["current_by_target"].values(), *_INVENTORY["superseded"])
                 if entry["executor_id"] == "open-cake-ir-b200-v42"
             )
             inventory_path.write_text(json.dumps({
-                "current": previous, "archives": [], "superseded": [],
+                "schema_version": 2, "current_by_target": {"sm_100a": previous},
+                "archives": [], "superseded": [],
             }))
             host = document["host_environment"]
             host_path = root / "synthetic-host.json"
@@ -291,7 +297,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
             environment["OPEN_CAKE_LEDGER_ISOLATED"] = "release fixture has no ledger remote"
             command = [
                 "bash", str(root / "tools/release_executor_cycle.sh"),
-                "--host-environment", str(host_path),
+                "--host-environment", str(host_path), "--target", "sm_100a",
             ]
             # Two actual worktrees begin with the same released ordinal history.
             subprocess.run(["git", "init", "-q", str(root)], check=True)
@@ -311,7 +317,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                     check=False, timeout=30,
                 )
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-                identity = json.loads(inventory_path.read_text())["current"]["executor_id"]
+                identity = json.loads(inventory_path.read_text())["current_by_target"]["sm_100a"]["executor_id"]
                 self.assertRegex(identity, rf"^open-cake-ir-b200-v{version}\+[0-9a-f]{{64}}$")
                 released = runtime / f"{identity}.json"
                 executor = ExecutorRevision.load(root, released)
@@ -333,7 +339,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                     other = subprocess.run(other_command, cwd=root.parent, env=environment,
                                            capture_output=True, text=True, timeout=30)
                     self.assertEqual(other.returncode, 0, other.stdout + other.stderr)
-                    other_id = json.loads((other_root / "inventory/EXECUTOR_REVISIONS.json").read_text())["current"]["executor_id"]
+                    other_id = json.loads((other_root / "inventory/EXECUTOR_REVISIONS.json").read_text())["current_by_target"]["sm_100a"]["executor_id"]
                     self.assertRegex(other_id, r"^open-cake-ir-b200-v47\+[0-9a-f]{64}$")
                     self.assertNotEqual(other_id, identity)
                     # What the guard does close: this checkout cannot mint again while it
@@ -371,7 +377,7 @@ class ExecutorRevisionContractTests(unittest.TestCase):
                 {selected_python.resolve()},
             )
             inventory = json.loads(inventory_path.read_text())
-            self.assertEqual(inventory["current"]["executor_id"], identity)
+            self.assertEqual(inventory["current_by_target"]["sm_100a"]["executor_id"], identity)
             self.assertEqual(
                 {entry["executor_id"].partition("+")[0] for entry in inventory["superseded"]},
                 {"open-cake-ir-b200-v42", "open-cake-ir-b200-v47"},
@@ -414,9 +420,11 @@ class ExecutorReferenceTests(unittest.TestCase):
         executor = ExecutorRevision.load_reference(self.root, self.reference, "fixture")
         inventory = self.root / "inventory/EXECUTOR_REVISIONS.json"
         inventory.parent.mkdir()
-        inventory.write_text(json.dumps({"current": self.reference}))
+        inventory.write_text(json.dumps({"schema_version": 2,
+                                         "current_by_target": {"fixture-target": self.reference}}))
         with patch.object(ExecutorRevision, "load", return_value=executor) as loader:
-            current = resolve_executor(self.root, {"binding": "current_release"}, "study.execution", template=True)
+            current = resolve_executor(self.root, {"binding": "current_release"}, "study.execution",
+                                       template=True, target="fixture-target")
             self.assertIs(current, executor)
             loader.assert_called_once_with(self.root, self.path)
         with patch.object(ExecutorRevision, "load", return_value=executor) as loader:

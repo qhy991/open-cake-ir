@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-10-013",
+  "id": "F-2026-09-10-017",
   "kind": "protocol",
   "title": "The native Claude event contract is pinned to one CLI build, so a newer CLI or a thinking-heavy provider is refused for describing the same Turn differently",
   "date": "2026-09-10",

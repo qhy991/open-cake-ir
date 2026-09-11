@@ -294,7 +294,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual(set(turn.tool_activity[0].document), {"item_id", "item_type", "status", "server", "tool"})
         self.assertEqual([dict(activity.document) for activity in parsed.tool_activity], [dict(activity.document) for activity in turn.tool_activity])
         for mutate in (
-            lambda rows: rows[-1]["modelUsage"]["exact-requested-model"].update(inputTokens=5),
+            lambda rows: rows[-1]["modelUsage"]["exact-requested-model"].update(inputTokens=3),
             lambda rows: rows[-1]["modelUsage"].pop("exact-requested-model"),
             lambda rows: rows[-1]["modelUsage"]["claude-haiku-4-5-20251001"].update(outputTokens=True),
             lambda rows: rows[3]["message"].update(model="claude-haiku-4-5-20251001"),
@@ -302,6 +302,21 @@ class ClaudeProviderContracts(unittest.TestCase):
             changed = copy.deepcopy(events); mutate(changed)
             with self.assertRaises(ValueError):
                 self.normalize(self.raw(changed))
+
+    def test_same_model_auxiliary_usage_is_charged_but_may_not_understate_terminal_usage(self):
+        events = self.events()
+        main = events[-1]["modelUsage"]["exact-requested-model"]
+        main["inputTokens"] += 2
+        main["cacheReadInputTokens"] += 1
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        self.assertEqual(parsed.provider_tokens, 208)
+        activity, = [item for item in parsed.tool_activity if item.model == "exact-requested-model"]
+        self.assertEqual(activity.provider_tokens, 208)
+
+        understated = self.events()
+        understated[-1]["modelUsage"]["exact-requested-model"]["outputTokens"] -= 1
+        with self.assertRaisesRegex(ValueError, "understates terminal usage"):
+            self.normalize(self.raw(understated))
 
     def test_native_structured_terminal_is_full_typed_object_not_prose_or_fence_extraction(self):
         events = self.events()
@@ -343,6 +358,25 @@ class ClaudeProviderContracts(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "tool completion"):
                 parse_claude_turn_events(self.raw(changed), expected_terminal_message=TERMINAL)
 
+    def test_completed_tool_id_may_be_reused_but_overlapping_reuse_is_ambiguous(self):
+        events = self.events()
+        reused = {"type": "assistant", "session_id": SESSION, "parent_tool_use_id": None,
+            "message": {"model": "exact-requested-model", "content": [{"type": "tool_use",
+                "id": "toolu_write", "name": "Read", "input": {"file_path": str(self.workspace / "TASK.md")}}]}}
+        completed = {"type": "user", "session_id": SESSION, "parent_tool_use_id": None,
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_write",
+                "content": "read completed"}]}}
+        events[3:3] = [reused, completed]
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        activity = [item for item in parsed.tool_activity if item.item_id == "toolu_write"]
+        self.assertEqual([(item.tool, item.status) for item in activity],
+                         [("Write", "completed"), ("Read", "completed")])
+
+        overlapping = self.events()
+        overlapping.insert(2, reused)
+        with self.assertRaisesRegex(ValueError, "tool invocation"):
+            parse_claude_turn_events(self.raw(overlapping), expected_terminal_message=TERMINAL)
+
     def test_a_relative_write_path_is_judged_where_the_cli_resolves_it(self):
         """F-2026-09-10-007: the envelope check is containment, not spelling.
 
@@ -377,9 +411,10 @@ class ClaudeProviderContracts(unittest.TestCase):
         """F-2026-09-10-008: compaction rewrites the context the author was working in.
 
         The launch pins the window at the largest value this CLI admits -- it has no off
-        switch -- so this should be unreachable. If it fires anyway the Turn ran on a
-        context the Lab cannot reconstruct, and it is reported as that rather than as an
-        unclassified event or, worse, silently accepted.
+        switch -- though for a model the CLI does not recognize that window is clamped
+        to the CLI's assumed model context, so it is not unreachable (F-2026-09-10-013).
+        When it fires the Turn ran on a context the Lab cannot reconstruct, and it is
+        reported as that rather than as an unclassified event or, worse, silently accepted.
         """
         for subtype in ("compact_boundary", "compacting"):
             events = self.events()
@@ -387,6 +422,58 @@ class ClaudeProviderContracts(unittest.TestCase):
                             "uuid": OTHER_SESSION}]
             with self.subTest(subtype=subtype), self.assertRaisesRegex(ValueError, "compacted"):
                 parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        # F-2026-09-10-013: this CLI also announces compaction as a bare status --
+        # `status: "compacting"` when it starts, `status: null` with `compact_result`
+        # when it lands (gemm and pairwise_sqdist turn 2 on Executor v98) -- and the
+        # subtype rule alone left those to the unclassified-event refusal. Both are
+        # refused by the same name, and an unrelated status still fails closed.
+        for status_fields in ({"status": "compacting"},
+                              {"status": None, "compact_result": "success"}):
+            events = self.events()
+            events[1:1] = [{"type": "system", "subtype": "status", **status_fields,
+                            "session_id": SESSION, "uuid": OTHER_SESSION}]
+            with self.subTest(status_fields=status_fields), self.assertRaisesRegex(ValueError, "compacted"):
+                parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        events = self.events()
+        events[1:1] = [{"type": "system", "subtype": "status", "status": "idle",
+                        "session_id": SESSION, "uuid": OTHER_SESSION}]
+        with self.assertRaisesRegex(ValueError, "outside the declared native contract"):
+            parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+
+    def test_a_tool_progress_heartbeat_is_admitted_and_any_other_shape_fails_closed(self):
+        """F-2026-09-11-015: the CLI emits a heartbeat while one tool call runs long.
+
+        Observed as two `tool_progress` events (30 s, then 60 s) around a Read of a
+        multi-megabyte single-line JSON evidence object, on gemm turn 2 under Executor
+        v99. A heartbeat rewrites nothing and carries no author-visible content, so it
+        is admitted under exactly the observed shape instead of refused: the refusal
+        killed the turn as an unclassified event before the compaction notices that
+        followed, hiding the named diagnosis three lines later. `parent_tool_use_id`
+        here names the owning tool call, not a subagent, and the heartbeat records no
+        activity of its own -- the stream retains it.
+        """
+        heartbeat = {"type": "tool_progress", "tool_use_id": "call_x-heartbeat-0",
+                     "tool_name": "Read", "parent_tool_use_id": "call_x",
+                     "elapsed_time_seconds": 30, "heartbeat": True,
+                     "session_id": SESSION, "uuid": OTHER_SESSION}
+        events = self.events(); events.insert(2, heartbeat)
+        raw = self.raw(events)
+        parsed = parse_claude_turn_events(raw, expected_terminal_message=TERMINAL)
+        self.assertEqual(parsed.provider_tokens, 205)
+        self.assertNotIn("tool_progress", {activity.item_type for activity in parsed.tool_activity})
+        self.normalize(raw)
+        for mutation in (lambda row: row.update(heartbeat=False),
+                         lambda row: row.update(heartbeat=None),
+                         lambda row: row.update(elapsed_time_seconds=True),
+                         lambda row: row.update(elapsed_time_seconds=-1),
+                         lambda row: row.update(elapsed_time_seconds=30.0),
+                         lambda row: row.update(tool_name=""),
+                         lambda row: row.update(tool_use_id=""),
+                         lambda row: row.pop("parent_tool_use_id"),
+                         lambda row: row.update(unobserved=1)):
+            changed = copy.deepcopy(events); mutation(changed[2])
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "heartbeat"):
+                self.normalize(self.raw(changed))
 
     def test_a_cli_synthetic_continuation_is_recorded_and_an_unmarked_one_is_not(self):
         """The CLI writes its own user turn when a response had no visible output.
@@ -452,9 +539,33 @@ class ClaudeProviderContracts(unittest.TestCase):
         wrong = copy.deepcopy(events); wrong[-3]["message"]["content"][0]["input"]["turn"] = 9
         with self.assertRaisesRegex(ValueError, "schema terminal tool"): self.normalize(self.raw(wrong))
         wrong = copy.deepcopy(events); wrong[-2]["message"]["content"][0]["is_error"] = True
-        with self.assertRaisesRegex(ValueError, "tool completion"): self.normalize(self.raw(wrong))
+        with self.assertRaisesRegex(ValueError, "terminal tool did not recover"): self.normalize(self.raw(wrong))
         wrong = copy.deepcopy(events); wrong.pop(-2)
         with self.assertRaisesRegex(ValueError, "lifecycle"): self.normalize(self.raw(wrong))
+
+    def test_schema_rejected_terminal_tool_must_recover_with_an_exact_success(self):
+        events = self.events()
+        failed = {"type": "assistant", "session_id": SESSION, "message": {
+            "model": "exact-requested-model", "content": [{"type": "tool_use",
+                "id": "terminal-tool", "name": "StructuredOutput",
+                "input": {"arm": "open_cake", "turn": 1, "candidate_written": True}}]}}
+        failed_result = {"type": "user", "session_id": SESSION, "message": {"content": [{
+            "type": "tool_result", "tool_use_id": "terminal-tool", "is_error": True,
+            "content": "Output does not match required schema"}]}}
+        succeeded = copy.deepcopy(failed)
+        succeeded["message"]["content"][0]["input"] = json.loads(TERMINAL)
+        succeeded_result = copy.deepcopy(failed_result)
+        succeeded_result["message"]["content"][0].update(
+            is_error=False, content="Structured output provided successfully")
+        events[-1:-1] = [failed, failed_result, succeeded, succeeded_result]
+        parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+        activity = [item for item in parsed.tool_activity if item.item_id == "terminal-tool"]
+        self.assertEqual([item.status for item in activity], ["error_recovered", "completed"])
+
+        unrecovered = copy.deepcopy(events)
+        del unrecovered[-3:-1]
+        with self.assertRaisesRegex(ValueError, "terminal tool did not recover"):
+            self.normalize(self.raw(unrecovered))
 
     def test_schema_is_bound_and_identical_on_initial_and_resume(self):
         builder = self.builder()

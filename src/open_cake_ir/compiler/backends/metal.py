@@ -139,9 +139,11 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
           and (target.target_id, target.architecture, target.device_names) in {
               ("apple_gpu_family7", "apple7", ("Apple M1 Pro",)),
               ("apple_gpu_family8", "apple8", ("Apple M2",)),
+              ("apple_gpu_family9", "apple9", ("Apple M4",)),
           },
           "METAL_TARGET_UNSUPPORTED", "target",
-          "Metal requires the exact Apple M1 Pro / apple_gpu_family7 or Apple M2 / apple_gpu_family8 target")
+          "Metal requires the exact Apple M1 Pro / apple_gpu_family7, Apple M2 / "
+          "apple_gpu_family8 or Apple M4 / apple_gpu_family9 target")
     check(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", schedule.lowering.entry_point)
           and "CAKE_KERNEL_END" not in schedule.lowering.entry_point
           and "__SCHEDULE_SHA256__" not in schedule.lowering.entry_point

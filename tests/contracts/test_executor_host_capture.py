@@ -250,7 +250,8 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
 
     def test_canonical_host_rejection_produces_no_capture(self) -> None:
         inventory = json.loads((ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text())
-        host = json.loads((ROOT / inventory["current"]["path"]).read_text())["host_environment"]
+        current = next(iter(inventory["current_by_target"].values()))
+        host = json.loads((ROOT / current["path"]).read_text())["host_environment"]
         host["python"]["invocation_path"] = sys.executable
         host["python"]["version"] = "not-the-running-python-version"
         with tempfile.TemporaryDirectory() as directory:

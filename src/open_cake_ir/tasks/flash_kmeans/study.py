@@ -188,6 +188,7 @@ class PortfolioStudyMixin:
             execution.get("executor_revision"),
             "study.execution",
             template=study.state == "template",
+            target=execution.get("target"),
         )
         executor_reference = dict(executor.reference)
         if _object(execution.get("gpu"), "study.execution.gpu") != {

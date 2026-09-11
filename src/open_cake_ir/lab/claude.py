@@ -38,7 +38,11 @@ CLAUDE_EVENT_CONTRACT = "claude_stream_candidate_v3"
 CLAUDE_TERMINAL_TOOL = "StructuredOutput"
 CLAUDE_AUTHORING_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")
 # The largest auto-compact window this CLI admits. It has no value that turns compaction
-# off, so the boundary is pushed past any Turn context a campaign is expected to reach.
+# off, so the boundary is pinned at the maximum. For a model the CLI does not recognize
+# (it logs claude-code:unrecognized_model) the CLI clamps even this window to its assumed
+# model context -- glm-5.3 reported contextWindow 200000 and compacted at 187,855 tokens
+# (F-2026-09-10-013) -- so a session crossing that ceiling is refused below, not
+# prevented here.
 CLAUDE_AUTOCOMPACT_WINDOW = "1M"
 CLAUDE_USAGE_FIELDS = (
     "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
@@ -73,6 +77,23 @@ _QUOTA_SERVED = ("allowed", "allowed_warning")
 _CONTEXT_MUTATIONS = ("compact_boundary", "compacting")
 
 
+def _is_context_mutation(event: Mapping) -> bool:
+    """A compaction notice, by subtype or by the bare status shapes the CLI emits.
+
+    This CLI also announces compaction as subtype "status" -- `status: "compacting"`
+    when it starts, `status: null` with `compact_result` when it lands -- which the
+    subtype rule alone leaves to the unclassified-event refusal (F-2026-09-10-013,
+    gemm and pairwise_sqdist turn 2 on Executor v98). Both shapes are the same
+    context rewrite. Any other status still fails closed below.
+    """
+    if event.get("type") != "system":
+        return False
+    if event.get("subtype") in _CONTEXT_MUTATIONS:
+        return True
+    return event.get("subtype") == "status" and (
+        event.get("status") == "compacting" or "compact_result" in event)
+
+
 def _metadata(event: Mapping) -> bool:
     """Admit the explicit native metadata shapes, not arbitrary system events."""
     kind = event.get("type")
@@ -100,12 +121,13 @@ def _metadata(event: Mapping) -> bool:
                     and not isinstance(info["overageDisabledReason"], str)
                 or info.get("isUsingOverage") is True and info.get("overageStatus") != "allowed"):
             raise ValueError("Claude quota is rejected or metadata differs")
-    elif kind == "system" and event.get("subtype") in _CONTEXT_MUTATIONS:
-        # Identified by subtype alone and refused. The declared window above should keep
-        # this unreachable; if it fires anyway the Turn ran on a context the Lab cannot
-        # reconstruct, so it is reported as exactly that instead of as an unclassified
-        # event. No field schema is asserted here because none has been observed -- a
-        # guessed one would be a new campaign-fatal path of the kind this finding is about.
+    elif kind == "system" and _is_context_mutation(event):
+        # Identified by subtype or by the observed status shapes above and refused. The
+        # declared window should keep this unreachable; if it fires anyway the Turn ran
+        # on a context the Lab cannot reconstruct, so it is reported as exactly that
+        # instead of as an unclassified event. No field schema is asserted here because
+        # none has been observed -- a guessed one would be a new campaign-fatal path of
+        # the kind this finding is about.
         raise ValueError(
             "Claude compacted the Turn context mid-run, so what the author saw is not "
             "reconstructible and the Turn is not comparable")
@@ -134,6 +156,23 @@ def _metadata(event: Mapping) -> bool:
                 or type(event["estimated_tokens"]) is not int or type(event["estimated_tokens_delta"]) is not int
                 or not 0 <= event["estimated_tokens_delta"] <= event["estimated_tokens"]):
             raise ValueError("Claude thinking-token metadata differs")
+    elif kind == "tool_progress":
+        # A heartbeat the CLI emits while one tool call runs long (observed at 30 s and
+        # 60 s into a Read of a multi-megabyte single-line JSON object, F-2026-09-11-015).
+        # It rewrites nothing and carries no author-visible content, so unlike a
+        # compaction notice it is admitted rather than refused. `parent_tool_use_id`
+        # here names the *owning* tool call -- `call_...-heartbeat-N` under `tool_use_id`
+        # -- which is not the subagent meaning the assistant/user check refuses. Only
+        # the observed shape passes; `heartbeat: false` or any added field fails closed.
+        if (set(event) != {"type", "tool_use_id", "tool_name", "parent_tool_use_id",
+                           "elapsed_time_seconds", "heartbeat", "session_id", "uuid"}
+                or event.get("heartbeat") is not True
+                or type(event.get("elapsed_time_seconds")) is not int
+                or event["elapsed_time_seconds"] < 0
+                or not isinstance(event.get("tool_use_id"), str) or not event["tool_use_id"]
+                or not isinstance(event.get("parent_tool_use_id"), str) or not event["parent_tool_use_id"]
+                or not isinstance(event.get("tool_name"), str) or not event["tool_name"]):
+            raise ValueError("Claude tool-progress heartbeat differs")
     else:
         return False
     if not isinstance(event.get("uuid"), str) or _THREAD_ID.fullmatch(event["uuid"]) is None:
@@ -142,10 +181,13 @@ def _metadata(event: Mapping) -> bool:
 
 
 def claude_model_usage(terminal: Mapping, main_model: str, *, allow_zero: bool = False) -> tuple[int, tuple[ProviderAuxiliaryActivity, ...]]:
-    """Charge each native modelUsage row once; top-level usage is a main-row check.
+    """Charge each native modelUsage row once; top-level usage is a lower-bound check.
 
     Estimated thinking, output-token details, cache partitions, iterations and costs
-    are never additive counters. This projection alone does not admit a Turn.
+    are never additive counters. Claude may use the requested model for internal work
+    such as session titles, so its aggregate modelUsage row may exceed the main Turn's
+    top-level usage. It may never understate that Turn. This projection alone does not
+    admit a Turn.
     """
     usage = terminal.get("usage")
     if not isinstance(usage, Mapping) or any(type(usage.get(key)) is not int or usage[key] < 0 for key in CLAUDE_USAGE_FIELDS):
@@ -177,8 +219,8 @@ def claude_model_usage(terminal: Mapping, main_model: str, *, allow_zero: bool =
                 or "costUSD" in row and (type(row["costUSD"]) not in (int, float) or not math.isfinite(row["costUSD"]) or row["costUSD"] < 0)
                 or any(key in row and (not isinstance(row[key], str) or not row[key]) for key in ("canonicalModel", "provider"))):
             raise ValueError("Claude modelUsage reports unsupported activity or malformed metadata")
-        if model == main_model and any(row[other] != usage[key] for key, other in mapping.items()):
-            raise ValueError("Claude main modelUsage differs from terminal usage")
+        if model == main_model and any(row[other] < usage[key] for key, other in mapping.items()):
+            raise ValueError("Claude main modelUsage understates terminal usage")
         tokens = sum(row[key] for key in mapping.values())
         total += tokens
         activities.append(ProviderAuxiliaryActivity(f"modelUsage[{model}]", "model_usage", "reported", model=model, provider_tokens=tokens))
@@ -267,11 +309,12 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     if not _terminal(result) or _canonical_json_bytes(result) != _canonical_json_bytes(expected):
         raise ValueError("Claude native structured terminal message differs")
 
-    tools: dict[str, dict] = {}
-    completed: set[str] = set()
+    active_tools: dict[str, dict] = {}
     writes: list[tuple[str, str]] = []
     models: list[str] = []
     activity: list[ProviderAuxiliaryActivity] = []
+    terminal_tool_failed = False
+    terminal_tool_completed = False
     # Where each invocation's auxiliary record sits, so a later errored result can restate
     # that one entry rather than adding a second record for the same item.
     errors: dict[str, int] = {}
@@ -303,15 +346,12 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
             kind = block.get("type")
             if event["type"] == "assistant" and kind == "tool_use":
                 identity, name, arguments = block.get("id"), block.get("name"), block.get("input")
-                if (not isinstance(identity, str) or not identity or identity in tools or
+                if (not isinstance(identity, str) or not identity or identity in active_tools or
                         name not in (*CLAUDE_AUTHORING_TOOLS, CLAUDE_TERMINAL_TOOL) or not isinstance(arguments, Mapping)):
                     raise ValueError("Claude tool invocation differs")
-                tools[identity] = dict(block)
+                active_tools[identity] = dict(block)
                 errors[identity] = len(activity)
                 activity.append(ProviderAuxiliaryActivity(identity, "tool_use", "completed", tool=name))
-                if name == CLAUDE_TERMINAL_TOOL:
-                    if not _terminal(arguments) or _canonical_json_bytes(arguments) != _canonical_json_bytes(expected):
-                        raise ValueError("Claude schema terminal tool differs")
                 if name in {"Write", "Edit"}:
                     path = arguments.get("file_path")
                     if not isinstance(path, str) or not path:
@@ -329,23 +369,32 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
             elif event["type"] == "user" and kind == "tool_result":
                 identity = block.get("tool_use_id")
                 errored = block.get("is_error", False)
-                # Pairing is still zero-tolerance: an unregistered id, a repeated
-                # completion or a non-boolean flag is a structural mismatch and fatal.
+                # Pairing is still zero-tolerance: an id without one active invocation,
+                # an overlapping reuse, a repeated completion or a non-boolean flag is a
+                # structural mismatch and fatal. A completed native id may be reused by a
+                # later request; stream order keeps those lifecycles unambiguous.
                 # A tool that reported an error is not. The provider sees that result and
                 # keeps working inside the same turn, and the lifecycle checks below still
                 # require every invocation to complete and the candidate to be written, so
                 # a turn that did not recover cannot pass. Refusing here instead spent two
                 # campaigns and roughly 7M provider tokens on probes the author survived.
-                if (not isinstance(identity, str) or identity not in tools
-                        or identity in completed or not isinstance(errored, bool)
-                        # The terminal tool is not an authoring probe: it is how the Turn
-                        # declares its own completion, so an error there stays fatal.
-                        or errored and tools[identity].get("name") == CLAUDE_TERMINAL_TOOL):
+                if (not isinstance(identity, str) or identity not in active_tools
+                        or not isinstance(errored, bool)):
                     raise ValueError("Claude tool completion differs")
-                completed.add(identity)
+                invocation = active_tools[identity]
+                if invocation.get("name") == CLAUDE_TERMINAL_TOOL:
+                    if errored:
+                        terminal_tool_failed = True
+                    elif (not _terminal(invocation.get("input"))
+                            or _canonical_json_bytes(invocation["input"]) != _canonical_json_bytes(expected)):
+                        raise ValueError("Claude schema terminal tool differs")
+                    else:
+                        terminal_tool_completed = True
+                del active_tools[identity]
                 if errored:
                     activity[errors[identity]] = replace(
                         activity[errors[identity]], status="error_recovered")
+                del errors[identity]
             elif event["type"] == "assistant" and kind in ("text", "thinking", "redacted_thinking"):
                 continue
             elif event["type"] == "user" and kind == "text" and event.get("isSynthetic") is True:
@@ -360,8 +409,10 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                     event["uuid"], "synthetic_continuation", "observed"))
             else:
                 raise ValueError("Claude content is outside the declared event contract")
-    if set(tools) != completed or not writes or len({path for path, _ in writes}) != 1:
+    if active_tools or not writes or len({path for path, _ in writes}) != 1:
         raise ValueError("Claude candidate write lifecycle is incomplete")
+    if terminal_tool_failed and not terminal_tool_completed:
+        raise ValueError("Claude schema terminal tool did not recover")
     if len(models) != 1 or models[0] != initial.get("model"):
         raise ValueError("Claude main conversation model identity differs")
     tokens, model_activity = claude_model_usage(terminal, models[0])
@@ -438,7 +489,10 @@ class ClaudeInvocationBuilder:
         # changes what the author saw and breaks comparability between arms. This CLI has
         # no off switch -- `--autocompact` takes only `auto` or a 100k..1M window -- so the
         # boundary is pinned at the maximum it accepts and a compaction that still happens
-        # is refused below rather than absorbed.
+        # is refused below rather than absorbed. F-2026-09-10-013: for a model the CLI
+        # does not recognize, that window is clamped to the CLI's assumed model context
+        # (glm-5.3: 200k), so a long session can still compact -- the refusal is the
+        # load-bearing rule, not this pin.
         arguments = (str(self.executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
                      "--autocompact", CLAUDE_AUTOCOMPACT_WINDOW,
                      "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",

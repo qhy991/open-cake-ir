@@ -120,7 +120,8 @@ def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal")
     if compiler.state != "released" or not gate.passed:
         raise ValueError("task launch requires a released Compiler and passing full Corpus Gate")
     try:
-        executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "task.execution", template=True)
+        executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "task.execution",
+                                    template=True, target=target)
     except ValueError as error:
         raise ValueError(f"task launch requires a released Metal Executor matching this source; {error}") from error
     is_metal_host = executor.document["host_environment"].get("kind") == "metal"
@@ -230,6 +231,19 @@ def _qualify(root, workspace, args, executable, source_path):
 
 
 
+def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[int, int]:
+    """Resolve absent shape flags; the contraction family carries its own defaults.
+
+    The elementwise tile this launcher otherwise uses (128 x 1024) hands every
+    contraction task a starter that materializes a second operand the Metal backend's
+    lane-owned storage bound must refuse (F-2026-09-10-014). The contraction contract's
+    own extents keep that operand inside the bound; explicit flags still win.
+    """
+    if task in CONTRACTION_TASKS:
+        return 1024 if rows is None else rows, 64 if columns is None else columns
+    return 128 if rows is None else rows, 1024 if columns is None else columns
+
+
 def _campaign_exit_code(report) -> int:
     """CLI success describes an intact protocol outcome, including negative results."""
     valid = (report.campaign_complete and report.archive_integrity_passed
@@ -250,8 +264,8 @@ def main(argv=None) -> int:
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
     parser.add_argument("--workspace", type=Path, required=True)
-    parser.add_argument("--rows", type=int, default=128)
-    parser.add_argument("--columns", type=int, default=1024)
+    parser.add_argument("--rows", type=int)
+    parser.add_argument("--columns", type=int)
     parser.add_argument("--depth", type=int,
                         help="contracted K extent; only a contraction task declares one")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
@@ -272,7 +286,8 @@ def main(argv=None) -> int:
     if (args.qualification is None) != (args.qualification_anchor is None):
         parser.error("--qualification and --qualification-anchor must be supplied together")
     workspace = _new_workspace(args.workspace)
-    document, source = create_task(args.task, backend=args.backend, rows=args.rows, columns=args.columns,
+    rows, columns = _default_shape(args.task, args.rows, args.columns)
+    document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
                                    depth=args.depth, case_id=args.case)
     executable = _provider_executable(args.harness, args.provider_executable)
     workspace.mkdir(mode=0o750, parents=True)

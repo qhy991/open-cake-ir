@@ -40,7 +40,7 @@ def manifest(assessment: Assessment, lowering: Lowering, inputs: Mapping[str, by
                  f"lowering {field} differs from the assessment")
     schedule = Schedule.from_dict(json.loads(assessment.schedule_bytes))
     _require(schedule.target == lowering.target and
-             schedule.target in {"apple_gpu_family7", "apple_gpu_family8"} and
+             schedule.target in {"apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"} and
              schedule.lowering.backend.value == "metal", "exact Metal target required")
     _require(lowering.generated, "Metal requires generated source")
     result = _project(schedule, lowering.source, dict(lowering.toolchain_requirements), inputs,
@@ -68,6 +68,7 @@ def _project(schedule: Schedule, source: str, tc: dict, inputs: Mapping[str, byt
     _require((schedule.target, tuple(device_names)) in {
         ("apple_gpu_family7", ("Apple M1 Pro",)),
         ("apple_gpu_family8", ("Apple M2",)),
+        ("apple_gpu_family9", ("Apple M4",)),
     }, "exact Metal target/device names differ")
     expected = {"target": schedule.target, "source_language": "metal",
                 "compiler": "MTLDevice.makeLibrary", "language_standard": "metal2.3",
