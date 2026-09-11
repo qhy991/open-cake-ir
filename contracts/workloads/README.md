@@ -35,3 +35,34 @@ examples explicit mathematical, ABI, input-domain and correctness authority. The
 standard-library CPU oracles and source-only Compiler baseline preparation are described
 in [TILE_WORKLOADS](../../docs/en/TILE_WORKLOADS.md). These are independent standalone
 definitions; GPU equivalence, timing and framework acceptance remain R2 pending.
+
+## AKA v3 standalone imports
+
+The three `aka-*-triton-b200-v1.json` contracts are a deliberately small, diverse
+source-complete import from AKA's `cuda_kernel_mechanism_qualified_v3` index:
+
+- residual LayerNorm with four public outputs;
+- GEMM with `N_K` RHS storage and an optional-bias source narrowed to a required bias;
+- runtime-indexed FP32 row gather, including boundary and repeated-index cases;
+- one-dimensional histogram aggregation, with hot-bin, endpoint and out-of-range cases;
+- NWC MaxPool1d, including negative-only windows so padding cannot masquerade as zero;
+- out-of-place Momentum SGD, including both Nesterov branches and both public state outputs.
+
+Their exact original B200 records are semantic provenance only. Each contract has a new
+fixed-shape ABI, deterministic CPU oracle, and explicit public exclusions; none imports
+AKA candidate code, old timing, or a current Open-Cake GPU qualification. Future Lab work
+must compile and externally validate them on the declared B200 target before it reports
+correctness, sanitizer, timing, profiler, or performance evidence.
+
+## DeepSeek-V4-Pro routing slices
+
+[`deepseek-v4-csa-indexer-topk-fp32-triton-b200-v1.json`](deepseek-v4-csa-indexer-topk-fp32-triton-b200-v1.json)
+binds the V4-Pro CSA indexer steady-state selection: 2,048 compressed-KV candidates to
+the model's 1,024 selected positions.  It is not the full CSA attention path, which also
+owns KV compression, cache mutation, local-window indices and sparse attention.
+
+[`deepseek-v4-moe-gate-fp32-triton-b200-v1.json`](deepseek-v4-moe-gate-fp32-triton-b200-v1.json)
+binds the score-routed V4-Pro MoE gate: `sqrtsoftplus`, selection-only bias, six of 384
+routed experts, normalized weights and the `2.5` route scale.  It deliberately excludes
+the first three hash-routed layers, expert dispatch, local FP4 expert MLPs, cross-rank
+all-reduce and the shared expert. Those edges belong in a future MoE Program Contract.
