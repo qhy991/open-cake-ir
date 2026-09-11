@@ -264,7 +264,7 @@ class PairedExecutionTests(unittest.TestCase):
         authority = SimpleNamespace(request_root=self.output, candidate=self.candidate,
             executor=SimpleNamespace(admit_profiler=lambda: {'path':'/not-invoked/ncu'}))
         with patch.object(worker,'observe_exclusive_cuda',return_value=admission), \
-             patch.object(worker,'run_supervised',side_effect=RuntimeError('stop before NCU')) as run:
+             patch('open_cake_ir.lab.ncu_process.run_ncu',side_effect=RuntimeError('stop before NCU')) as run:
             with self.assertRaisesRegex(RuntimeError,'stop before NCU'):
                 worker._profile_candidate(authority,self.output/'request.json',{})
         command = run.call_args.args[0]

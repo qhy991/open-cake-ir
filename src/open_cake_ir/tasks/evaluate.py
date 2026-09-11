@@ -62,9 +62,12 @@ def _input_path(root: Path, value: object, context: str) -> Path:
     return path
 
 
+_PROFILE_OUTPUT_OWNER: tuple[int, int] | None = None
+
+
 def _write_new(path: Path, value: object) -> None:
-    with path.open("xb") as stream:
-        stream.write(_canonical_json_bytes(value))
+    from open_cake_ir.lab.ncu_process import write_new
+    write_new(path, _canonical_json_bytes(value), _PROFILE_OUTPUT_OWNER)
 
 
 def _base_result(job_id: str) -> dict[str, object]:
@@ -735,12 +738,14 @@ def _profile_candidate(
             "gpu_uuid": admission.gpu_uuid,
             "broker_job_id": admission.broker_job_id,
             "mode": admission.mode,
+            "output_owner": {"uid": os.geteuid(), "gid": os.getegid()},
         },
     )
     child_result_path = authority.request_root / "profile-child-result.json"
     from open_cake_ir.evaluation.source_bootstrap import module_command
     command = [
         str(profiler["path"]),
+        "--forward-signals",
         "--csv",
         "--metrics",
         ",".join(NCU_ATTRIBUTION_METRICS),
@@ -766,7 +771,8 @@ def _profile_candidate(
         str(child_result_path),
     ]
     try:
-        completed = run_supervised(
+        from open_cake_ir.lab.ncu_process import run_ncu
+        completed = run_ncu(
             command,
             cwd=ROOT,
             environment=sanitized_environment(),
@@ -831,6 +837,7 @@ def _profile_candidate(
 
 
 def main() -> int:
+    global _PROFILE_OUTPUT_OWNER
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -862,8 +869,18 @@ def main() -> int:
                 "gpu_uuid",
                 "broker_job_id",
                 "mode",
+                "output_owner",
             } or admission_document.get("schema_version") != 1:
                 raise ValueError("profile admission fields differ")
+            owner = admission_document["output_owner"]
+            if (not isinstance(owner, dict) or set(owner) != {"uid", "gid"}
+                    or any(type(v) is not int or v < 0 for v in owner.values())):
+                raise ValueError("profile output owner fields differ")
+            expected_uid = int(os.environ.get("SUDO_UID", os.geteuid()))
+            expected_gid = int(os.environ.get("SUDO_GID", os.getegid()))
+            if (owner["uid"], owner["gid"]) != (expected_uid, expected_gid):
+                raise ValueError("profile output owner differs from launching caller")
+            _PROFILE_OUTPUT_OWNER = (owner["uid"], owner["gid"])
             capability = admission_document["compute_capability"]
             if not isinstance(capability, list) or len(capability) != 2:
                 raise ValueError("profile admission capability differs")
