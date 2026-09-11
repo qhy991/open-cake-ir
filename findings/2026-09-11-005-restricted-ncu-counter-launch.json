@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-11-005",
+  "kind": "protocol",
+  "title": "Restricted NVIDIA counters require a bounded privileged NCU launch with caller-owned evidence",
+  "date": "2026-09-11",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "executor_revision": "open-cake-ir-b200-v107+750f6c2f32eecfc40394ccf44eb60f1f5b64876385e64b49a3c429ac783cbe3c",
+  "compiler_revision_id": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
+  "tasks": [
+    "silu",
+    "per_channel_moments"
+  ],
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e107-20260911-kpdg5yd3/matrix/silu/campaign-evidence",
+      "run_id": "open_cake-1",
+      "event_sequences": [4, 9, 10],
+      "note": "The sealed candidate reached attribution, but the admitted evaluator returned no final receipt and the run ended with broker_fault. The event's retained attempt_1_stdout directly reports ERR_NVGPUCTRPERM and attempt_1_stderr reports NCU exited 1. The original candidate, request, output objects and failed run remain unchanged."
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e107-20260911-kpdg5yd3/matrix/per_channel_moments/campaign-evidence",
+      "run_id": "open_cake-1",
+      "event_sequences": [3, 8],
+      "note": "The second retained candidate's attribution event also directly contains ERR_NVGPUCTRPERM in attempt_1_stdout and NCU exited 1 in attempt_1_stderr. It is retained for successor replay."
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/ncu-attribution-acceptance",
+      "artifacts": ["original-permission-failures.json"],
+      "note": "Independent read-only inspection records the exact original stdout/stderr object paths for both failure events and their observed permission errors. It makes no CSV-format claim."
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/ncu-sudo-probe",
+      "artifacts": ["result.json", "ordinary.stdout", "ordinary.stderr", "sudo.stdout", "sudo.stderr", "run.py"],
+      "note": "An independent broker-owned B300 control observed ERR_NVGPUCTRPERM from ordinary NCU (exit 1, no metric) and successful counter collection through noninteractive sudo (exit 0, metric observed); both executions produced the correct result. The observed driver restricts profiling to administrators. This control establishes counter access, not the complete Lab attribution receipt."
+    }
+  ],
+  "observation": "Executor v107 invokes NCU directly even on a nonroot Linux process whose NVIDIA driver restricts profiling counters. Counter access therefore fails after compilation and search correctness have succeeded. Wrapping the ordinary process supervisor in sudo would introduce a separate cleanup defect: an unprivileged process-group kill cannot be assumed to terminate privileged descendants. Profiling also creates evidence that must retain the admitted caller's ownership for the broker's existing custody checks.",
+  "proposed_change": "Keep the existing profiler and source-bootstrap owners. Select noninteractive sudo only for positively observed restricted-driver state, retain the direct path otherwise, forward only the required broker/runtime environment, and bound privileged execution with its own timeout and cancellation relay. Add NCU signal forwarding and create profile outputs under the admitted caller identity without post-hoc custody repair. Initial implementation is commit 5cc44d354a866df7253a73de989e97bc503d826f; review corrections and focused contract coverage continue through abbc2c76e5f6bb547bc0d1ac637c41900f334dbd. Compiler, provider, primary timing, metric CSV options and attribution case coverage are unchanged.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v108+e248f79602b04bec71530f92fa37b5fe97c414c7f7633ebd7f5ab9306beafaf5",
+  "verification_plan": "Independently exercise normal exit, timeout, cancellation and acquisition races with harmless privileged CPU children, then publish the exact reviewed Executor successor through its canonical cycle. Replay the retained SiLU and per_channel_moments candidates through CommandBrokerSubmitter in a new evidence root, requiring fresh primary-case correctness and a complete NCU attribution receipt. Historical five-case search checks stay historical; this replay adds neither five-case attribution nor performance qualification.",
+  "verified_by": null
+}
