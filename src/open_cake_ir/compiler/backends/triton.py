@@ -108,6 +108,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.REDUCE: "_emit_reduce",
+    OperationKind.REDUCE_ARGMIN: "_emit_argmin",
     OperationKind.SCAN: "_emit_scan",
     OperationKind.TOP_K: "_emit_top_k",
     OperationKind.INDEX_EXPAND: "_emit_index_expand",
@@ -309,6 +310,22 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "the Triton backend supports at most one reduce_argmin operation",
     )
     for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.REDUCE_ARGMIN:
+            source = schedule.buffer(operation.reads[0]) if len(operation.reads) == 1 else None
+            result = schedule.buffer(operation.writes[0]) if len(operation.writes) == 1 else None
+            add(
+                source is not None and result is not None and len(source.shape) == 2
+                and result.shape == source.shape[:1]
+                and source.space is MemorySpace.REGISTER and result.space is MemorySpace.REGISTER
+                and source.dtype.value == "fp32" and result.dtype.value == "int32",
+                "TRITON_ARGMIN_LAYOUT", f"operations[{index}]",
+                "row-wise argmin maps one FP32 register matrix to one INT32 index per row",
+            )
+            add(
+                not schedule.enclosing_loops(operation) or operation.parameters.across_loop,
+                "TRITON_ARGMIN_SCOPE", f"operations[{index}].parameters.across_loop",
+                "the in-loop argmin body requires explicit candidate-loop carry",
+            )
         if operation.kind is OperationKind.ELEMENTWISE:
             # The arithmetic vocabulary is closed but not frozen. An unmapped member is
             # a refusal this emitter owns, not a KeyError raised out of preflight.
@@ -334,6 +351,39 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                         )
         if operation.kind is OperationKind.MMA:
             instruction = operation.parameters.instruction
+            tile = operation.parameters.tile_shape
+            operands = [schedule.buffer(name) for name in operation.reads]
+            if tile is not None:
+                add(len(operands) >= 2 and operands[0] is not None and operands[1] is not None
+                    and operands[0].shape == (tile[0], tile[2])
+                    and operands[1].shape == (tile[1], tile[2])
+                    and len(operation.writes) == 1
+                    and (result := schedule.buffer(operation.writes[0])) is not None
+                    and result.shape == tile[:2],
+                    "TRITON_MMA_TILE_DOMAIN", f"operations[{index}].parameters.tile_shape",
+                    "the full input and result tile domains must match A[M,K], B[N,K] and result[M,N]")
+            if operation.parameters.k_ranges is not None:
+                p = operation.parameters
+                supported = (
+                    schedule.target == target.target_id and target.target_id in {"sm_100a", "sm_103a"}
+                    and instruction is not None and instruction.contract == "triton.dot.bf16_fp32"
+                    and instruction.shape is None and instruction.cta_group is None
+                    and instruction.operand_source is None and instruction.operand_major is None
+                    and tile is not None and tile[2] == 128 and p.selected_k == 64
+                    and all(extent >= 16 and extent & (extent - 1) == 0 for extent in tile[:2])
+                    and len(operands) == 2 and all(b is not None and b.space is MemorySpace.REGISTER
+                                                               and b.dtype is DType.BF16 for b in operands)
+                    and len(operation.writes) == 1
+                    and (result := schedule.buffer(operation.writes[0])) is not None
+                    and result.space is MemorySpace.REGISTER
+                    and result.dtype is DType.FP32
+                    and not any(schedule.mma_accumulates_over(operation, loop)
+                                for loop in schedule.enclosing_loops(operation))
+                )
+                add(supported, "TRITON_MMA_K_RANGES_UNSUPPORTED",
+                    f"operations[{index}].parameters.k_ranges",
+                    "selected K requires NVIDIA sm_100a/sm_103a BF16 register dot, full input K128, "
+                    "selected K64, power-of-two M/N >=16, one FP32 result and no contraction-loop carry")
             add(
                 instruction is not None,
                 "BACKEND_MMA_INSTRUCTION_REQUIRED",
@@ -461,10 +511,21 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         if operation.kind is OperationKind.REDUCE_ARGMIN:
             domain = schedule.argmin_domain(operation)
             chain = schedule.enclosing_loops(operation)
-            if domain is None or not chain or domain % chain[-1].tile:
-                findings.append(refusal("TRITON_ARGMIN_DOMAIN", f"operations[{index}].reads",
-                    "this argmin route requires a proven static loop candidate domain with complete tiles; "
-                    "runtime, indirect and partial candidate domains need explicit validity-aware lowering"))
+            partial_single_tile = (
+                domain is not None
+                and operation.parameters.across_loop
+                and chain
+                and domain[1] % chain[-1].tile
+                and domain[1] < 2 * chain[-1].tile
+            )
+            if domain is None or partial_single_tile:
+                findings.append(refusal(
+                    "TRITON_ARGMIN_DOMAIN",
+                    f"operations[{index}].reads",
+                    "this argmin route requires a proven static candidate domain; "
+                    "a partial single-tile candidate domain needs explicit validity-aware lowering",
+                ))
+
     for index, loop in enumerate(schedule.tile_loops):
         if loop.stop is None:
             continue
@@ -1521,6 +1582,35 @@ class _TritonEmitter:
             len(operation.reads) == 2 and len(tiles) == 2,
             "the dot takes exactly two staged operands and reads nothing else",
         )
+        if operation.parameters.k_ranges is not None:
+            parameters = operation.parameters
+            ordinal = f"tl.arange(0, {parameters.selected_k})"
+            spans = []
+            offset = 0
+            for start, end in parameters.contribution_ranges:
+                spans.append((offset + end - start, f"({ordinal} + {start - offset})"))
+                offset += end - start
+            indices = spans[-1][1]
+            for stop, expression in reversed(spans[:-1]):
+                indices = f"tl.where({ordinal} < {stop}, {expression}, {indices})"
+            selected = [
+                f"tl.gather({name}, tl.broadcast_to(({indices})[None, :], "
+                f"({self.schedule.buffer(name).shape[0]}, {parameters.selected_k})), 1)"
+                for name in tiles
+            ]
+            output = operation.writes[0]
+            self.line(
+                f"{pad}{output} = tl.dot({selected[0]}, tl.trans({selected[1]}), out_dtype=tl.float32)",
+                declares=(output,),
+            )
+            # An explicit partial result must survive dot-accumulator fusion. The
+            # fixed NVIDIA toolchain otherwise absorbs a following ADD into a dot.
+            self.line(
+                f'{pad}{output} = tl.inline_asm_elementwise("mov.b32 $0, $1;", '
+                f'constraints="=f,f", args=[{output}], dtype=tl.float32, is_pure=True, pack=1)',
+                declares=(output,),
+            )
+            return
         assign = "+=" if self._accumulating(operation) else "="
         input_precision = _TRITON_DOT_INPUT_PRECISION.get(contract)
         precision = (
@@ -1542,16 +1632,26 @@ class _TritonEmitter:
 
     def _emit_argmin(self, operation, pad: str) -> None:
         chain = self.schedule.enclosing_loops(operation)
-        _require(bool(chain), "loop-carried operation has no containing loop")
-        loop = chain[-1]
         source = operation.reads[0]
         best = operation.writes[0]
+        domain = self.schedule.argmin_domain(operation)
+        _require(domain is not None, "argmin has no proven candidate domain")
+        coordinate, extent = domain
+        width = self.schedule.buffer(source).shape[1]
+        values = source
+        if extent % width:
+            positions = f"{coordinate.name}_offsets"
+            values = f'tl.where({positions}[None, :] < {extent}, {source}, float("inf"))'
         lowest = operation.parameters.tie_break is IndexTieBreak.LOWEST_INDEX
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}block_position = tl.argmin(")
-        self.line(f"{pad}    {source}, axis=1, tie_break_left={lowest},")
+        self.line(f"{pad}    {values}, axis=1, tie_break_left={lowest},")
         self.line(f"{pad})")
-        self.line(f"{pad}block_distance = tl.min({source}, axis=1)")
+        if not chain:
+            self.line(f"{pad}{best} = block_position", declares=(best,))
+            return
+        loop = chain[-1]
+        self.line(f"{pad}block_distance = tl.min({values}, axis=1)")
         self.line(
             f"{pad}candidate_index = {loop.iterator} + block_position"
         )

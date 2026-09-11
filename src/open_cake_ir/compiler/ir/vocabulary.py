@@ -81,6 +81,7 @@ class LoweringBackend(str, Enum):
     METAL = "metal"
     TRITON = "triton"
     CUTLASS_CUTE_DSL = "cutlass_cute_dsl"
+    NATIVE_CUDA = "native_cuda"
 
 
 class ScanOp(str, Enum):
@@ -111,6 +112,7 @@ class ReduceOp(str, Enum):
 class LoadMovement(str, Enum):
     GLOBAL = "global"
     TMA = "tma"
+    TMEM = "tmem"
 
 
 class LoadReuse(str, Enum):

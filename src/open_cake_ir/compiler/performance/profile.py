@@ -367,7 +367,10 @@ def _lowering_document(
         "explicit_barrier_count": len(schedule.barriers),
         "tile_loop_count": len(schedule.tile_loops),
         "global_load_operations": sum(
-            operation.kind is OperationKind.LOAD for operation in schedule.operations
+            operation.kind is OperationKind.LOAD
+            and any((buffer := schedule.buffer(name)) is not None and buffer.space is MemorySpace.GLOBAL
+                    for name in operation.reads)
+            for operation in schedule.operations
         ),
         "global_store_operations": sum(
             operation.kind is OperationKind.STORE for operation in schedule.operations
@@ -507,6 +510,8 @@ def profile_envelope(
     loop_body = _loop_body_operations(schedule)
     if any(
         operation.kind is OperationKind.LOAD and operation.op_id in loop_body
+        and any((buffer := schedule.buffer(name)) is not None and buffer.space is MemorySpace.GLOBAL
+                for name in operation.reads)
         for operation in schedule.operations
     ):
         scoreboard_reasons.append("global loads execute inside a tiled program")

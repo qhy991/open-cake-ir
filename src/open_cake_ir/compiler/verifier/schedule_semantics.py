@@ -208,7 +208,18 @@ def _verify_loop_nest(schedule: Schedule, out: _Collector) -> None:
         # Shapes here are static, so the trip count is knowable and one of the two forms
         # has to be the form. This is the one that carries an iterator nothing reads.
         buffer = schedule.buffer(loop.buffer)
-        if buffer is not None and loop.dimension < len(buffer.shape):
+        if buffer is None:
+            out.add(
+                "LOOP_BUFFER_UNKNOWN", f"tile_loops[{index}].buffer",
+                f"loop {loop.name!r} names unknown buffer {loop.buffer!r}", category,
+            )
+        elif loop.dimension >= len(buffer.shape):
+            out.add(
+                "LOOP_DIMENSION_RANGE", f"tile_loops[{index}].dimension",
+                f"dimension {loop.dimension} is outside rank-{len(buffer.shape)} "
+                f"buffer {loop.buffer!r}", category,
+            )
+        else:
             extent = buffer.shape[loop.dimension]
             if (extent + loop.tile - 1) // loop.tile < 2:
                 out.add(

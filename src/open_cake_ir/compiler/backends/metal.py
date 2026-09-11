@@ -13,6 +13,7 @@ import math
 import re
 
 from .common import refusal, vocabulary_findings, Emission, EmitError
+from .simt import slots as _slots, private_values_per_thread
 from ..ir import (
     AccessIndexKind, BufferMode, DType, ElementwiseOp, LoadMovement,
     LoweringBackend, MemorySpace, OperationKind, ReduceOp, ReductionScope, Schedule,
@@ -72,10 +73,6 @@ def lane_width(schedule: Schedule) -> int:
     return SIMD_WIDTH * len(warps)
 
 
-def _slots(buffer, lanes: int = SIMD_WIDTH):
-    return (buffer.elements + lanes - 1) // lanes
-
-
 def _share_slots(schedule: Schedule, lanes: int) -> int:
     """Threadgroup floats needed to combine SIMD groups and publish scalars.
 
@@ -100,28 +97,14 @@ def _share_slots(schedule: Schedule, lanes: int) -> int:
     return max(lanes // SIMD_WIDTH, scalars, 1)
 
 
-def private_values_per_thread(schedule: Schedule, lanes: int = SIMD_WIDTH) -> int:
-    """Peak simultaneously live lane-owned FP32 values, without physical allocation claims.
-
-    Count source and destination at their common operation boundary. No speculative
-    in-place aliasing or compiler register reuse is assumed. Shuffle/reduction scalar
-    temporaries and backend spills are outside this declared-Buffer domain.
-    """
-    intervals = []
-    for buffer in schedule.buffers:
-        if buffer.space is not MemorySpace.REGISTER:
-            continue
-        uses = [index for index, operation in enumerate(schedule.operations)
-                if buffer.name in (*operation.reads, *operation.writes)]
-        intervals.append((uses[0], uses[-1], _slots(buffer, lanes)) if uses
-                         else (0, len(schedule.operations) - 1, _slots(buffer, lanes)))
-    return max((sum(slots for first, last, slots in intervals if first <= index <= last)
-                for index in range(len(schedule.operations))), default=0)
-
-
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent backend requirements, including unsupported vocabulary."""
-    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + tuple(
+        refusal("METAL_MMA_K_RANGES_UNSUPPORTED", f"operations[{index}].parameters.k_ranges",
+                "Metal does not implement selected MMA K contributions")
+        for index, operation in enumerate(schedule.operations)
+        if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
+    )
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:

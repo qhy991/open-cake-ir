@@ -17,7 +17,7 @@ from ._parse import (
     _string,
     _string_tuple,
 )
-from .mapping import AccessMap, ProgramMap, TileLoop
+from .mapping import AccessIndex, AccessMap, ProgramMap, TileLoop
 from .operations import Operation
 from .resources import (
     Allocation,
@@ -29,6 +29,7 @@ from .resources import (
 )
 from .vocabulary import (
     AccessIndexKind,
+    LoadMovement,
     LoweringBackend,
     MemorySpace,
     OperationKind,
@@ -147,83 +148,152 @@ class Schedule:
     def operation(self, op_id: str) -> Operation | None:
         return next((item for item in self.operations if item.op_id == op_id), None)
 
-    def argmin_domain(self, operation: Operation) -> int | None:
-        """Known candidate extent for the supported loop-carried value-flow domain.
+    def canonical_document(self, document: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Project normalized MMA selectors into this instance's parsed document.
 
-        The loop supplies candidate coordinates; the producing LOAD/MMA/arithmetic
-        chain must preserve that coordinate and have no runtime candidate validity.
-        A physical buffer capacity is not proof of a runtime valid prefix. Unknown
-        producers, indirect domains or candidate-dependent extent lookups abstain.
+        Copy only changed objects; keep every other field/default untouched. This
+        gives authoring, assessment and exact-template matching the typed owner's
+        canonical form without mutating the caller or reimplementing range rules.
         """
-        chain = self.enclosing_loops(operation)
-        if (operation.kind is not OperationKind.REDUCE_ARGMIN or len(operation.reads) != 1
-                or len(chain) != 1 or not operation.parameters.across_loop):
+        operations = None
+        for index, operation in enumerate(self.operations):
+            raw = document["operations"][index]
+            if operation.kind is not OperationKind.MMA or "k_ranges" not in raw["parameters"]:
+                continue
+            ranges = operation.parameters.k_ranges
+            normalized = None if ranges is None else [list(interval) for interval in ranges]
+            if normalized is not None and raw["parameters"]["k_ranges"] == normalized:
+                continue
+            if operations is None:
+                operations = list(document["operations"])
+            parameters = dict(raw["parameters"])
+            if normalized is None:
+                del parameters["k_ranges"]
+            else:
+                parameters["k_ranges"] = normalized
+            operations[index] = {**raw, "parameters": parameters}
+        return document if operations is None else {**document, "operations": operations}
+
+    def argmin_domain(self, operation: Operation) -> tuple[AccessIndex, int] | None:
+        """Prove the candidate coordinate and bound of one row-wise argmin.
+
+        A carried result indexes the enclosing candidate loop's global domain. A
+        resident result indexes its local tile; this bounded query admits only a
+        complete, zero-origin single tile, where local and global positions agree.
+        LOAD access dimensions, contraction axes and explicit broadcasts own the
+        proof. Physical tile width and similarly named/sized axes cannot establish it.
+        Runtime prefixes that limit or vary with candidate columns have no static
+        proof. None means the producer graph does not prove this finite domain.
+        """
+
+        if operation.kind is not OperationKind.REDUCE_ARGMIN or len(operation.reads) != 1:
             return None
-        loop = chain[0]
         source = self.buffer(operation.reads[0])
-        owner = self.buffer(loop.buffer)
-        if (source is None or owner is None or len(source.shape) != 2
-                or source.shape[1] != loop.tile or loop.stop is not None):
+        if source is None or len(source.shape) != 2:
             return None
 
-        def static_axis(name: str, axis: int, before: int) -> bool:
-            value = self.buffer(name)
-            if value is None or not 0 <= axis < len(value.shape):
-                return False
-            producers = [(i, op) for i, op in enumerate(self.operations[:before]) if name in op.writes]
-            if not producers:
-                return False
-            position, producer = producers[-1]
+        def walk(name: str, axis: int, seen: frozenset[tuple[str, int]]):
+            buffer = self.buffer(name)
+            if buffer is None or axis >= len(buffer.shape) or (name, axis) in seen:
+                return None
+            seen = seen | {(name, axis)}
+            producers = [op for op in self.operations if name in op.writes]
+            if len(producers) != 1:
+                return None
+            producer = producers[0]
             if producer.kind is OperationKind.LOAD and producer.reads:
-                loaded = self.buffer(producer.reads[0])
-                if loaded is None:
-                    return False
-                if loaded.space is not MemorySpace.GLOBAL:
-                    return loaded.shape == value.shape and static_axis(loaded.name, axis, position)
-                access = self.access_map(producer.op_id, loaded.name)
-                if access is None or any(c.source is AccessIndexKind.BUFFER for c in access.indices):
-                    return False
-                vectors = [(i, c) for i, c in enumerate(access.indices) if c.is_vector]
-                if len(vectors) != len(value.shape):
-                    return False
-                dimension, component = vectors[axis]
-                relation = loaded.valid_extent
-                if relation is not None and (relation.dimension == dimension or dimension in relation.indexed_by):
-                    return False
-                return (component.source is AccessIndexKind.LOOP_TILE
-                        and component.name == loop.iterator
-                        and loaded.shape[dimension] == owner.shape[loop.dimension])
-            if producer.kind is OperationKind.MMA and len(producer.reads) >= 2:
-                # A(M,K) x B(N,K) preserves A's row and B's column domains.
-                return static_axis(producer.reads[axis], 0, position)
+                parent = self.buffer(producer.reads[0])
+                if parent is None:
+                    return None
+                if producer.parameters.movement is LoadMovement.TMEM:
+                    return walk(parent.name, axis, seen) if parent.shape == buffer.shape else None
+                access = self.access_map(producer.op_id, parent.name)
+                if parent.space is not MemorySpace.GLOBAL or access is None:
+                    return None
+                if any(index.source is AccessIndexKind.BUFFER for index in access.indices):
+                    return None
+                vectors = [(position, index) for position, index in enumerate(access.indices)
+                           if index.source is not AccessIndexKind.PROGRAM]
+                if axis >= len(vectors):
+                    return None
+                position, index = vectors[axis]
+                if position >= len(parent.shape):
+                    return None
+                relation = parent.valid_extent
+                if relation is not None and (
+                    relation.dimension == position or position in relation.indexed_by
+                ):
+                    # LOAD zero-fill does not make a runtime-invalid candidate real.
+                    return None
+                if index.source is AccessIndexKind.PROGRAM_TILE:
+                    owner = self.program_map.axis(index.name) if self.program_map else None
+                elif index.source is AccessIndexKind.LOOP_TILE:
+                    owner = next((loop for loop in self.tile_loops if loop.iterator == index.name), None)
+                elif index.source is AccessIndexKind.DIMENSION:
+                    if index.offset != 0:
+                        return None
+                    width = index.extent if index.extent is not None else parent.shape[position]
+                    return (index, parent.shape[position]) if width == buffer.shape[axis] else None
+                else:
+                    return None
+                return ((index, parent.shape[position])
+                        if owner is not None and owner.tile == buffer.shape[axis] else None)
+            if producer.kind is OperationKind.MMA and len(producer.reads) == 2 and axis < 2:
+                # out[M,N] contracts a[M,K] with b[N,K].
+                return walk(producer.reads[axis], 0, seen)
             if producer.kind is OperationKind.CAST and len(producer.reads) == 1:
-                return static_axis(producer.reads[0], axis, position)
-            if producer.kind is OperationKind.ELEMENTWISE:
-                varying = []
-                for read in producer.reads:
-                    operand = self.buffer(read)
-                    if operand is None:
-                        return False
-                    if operand.is_scalar:
+                return walk(producer.reads[0], axis, seen)
+            if producer.kind is not OperationKind.ELEMENTWISE:
+                return None
+            domains = []
+            for operand in producer.reads:
+                parent = self.buffer(operand)
+                if parent is None:
+                    return None
+                if parent.is_scalar:
+                    continue
+                if len(parent.shape) == len(buffer.shape):
+                    parent_axis = axis
+                elif len(parent.shape) == 1 and producer.parameters.broadcast_axis is not None:
+                    if producer.parameters.broadcast_axis != axis:
                         continue
-                    if len(operand.shape) == len(value.shape):
-                        read_axis = axis
-                    elif len(operand.shape) == 1 and len(value.shape) == 2:
-                        broadcast_axis = producer.parameters.broadcast_axis
-                        if broadcast_axis is None:
-                            broadcast_axis = 1 if operand.shape[0] == value.shape[1] else 0
-                        read_axis = 0 if broadcast_axis == axis else None
-                    else:
-                        read_axis = axis - (len(value.shape) - len(operand.shape))
-                    if read_axis is None or read_axis < 0 or operand.shape[read_axis] == 1:
-                        continue
-                    varying.append(static_axis(read, read_axis, position))
-                return bool(varying) and all(varying)
-            return False
+                    parent_axis = 0
+                else:
+                    return None
+                domain = walk(operand, parent_axis, seen)
+                if domain is None:
+                    return None
+                domains.append(domain)
+            if not domains:
+                return None
+            # Dimension numbers belong to individual global Buffers. Once mapped
+            # to the same staged axis, coordinate kind/name and bounds must agree.
+            keys = {(index.source, index.name, index.offset, extent) for index, extent in domains}
+            return domains[0] if len(keys) == 1 else None
 
-        if static_axis(source.name, 1, self.operations.index(operation)):
-            return owner.shape[loop.dimension]
-        return None
+        domain = walk(source.name, 1, frozenset())
+        if domain is None:
+            return None
+        index, extent = domain
+        chain = self.enclosing_loops(operation)
+        if operation.parameters.across_loop:
+            if not chain or index.source is not AccessIndexKind.LOOP_TILE:
+                return None
+            loop = chain[-1]
+            owner = self.buffer(loop.buffer)
+            if (loop.iterator != index.name or loop.tile != source.shape[1]
+                    or loop.stop is not None or owner is None
+                    or loop.dimension >= len(owner.shape) or owner.shape[loop.dimension] != extent):
+                return None
+        elif index.source is AccessIndexKind.PROGRAM_TILE:
+            owner = self.program_map.axis(index.name) if self.program_map else None
+            buffer = self.buffer(owner.buffer) if owner else None
+            if (owner is None or buffer is None or owner.dimension >= len(buffer.shape)
+                    or buffer.shape[owner.dimension] != extent or owner.tile_count(extent) != 1):
+                return None
+        elif index.source is not AccessIndexKind.DIMENSION or extent != source.shape[1]:
+            return None
+        return domain
 
     def _staged_axis_filled_by(self, operand: str, loop: "TileLoop") -> int | None:
         """Which axis of a staged operand this loop's tile index fills, if any.

@@ -9,7 +9,7 @@ from typing import get_args, get_origin, get_type_hints
 from unittest.mock import patch
 
 from open_cake_ir.compiler import Compiler, EmitError, Finding, FindingSeverity
-from open_cake_ir.compiler.backends import BACKENDS, BackendModule, common, cutedsl, metal, triton
+from open_cake_ir.compiler.backends import BACKENDS, BackendModule, common, cutedsl, metal, native_cuda, triton
 from open_cake_ir.compiler.diagnostics import Finding as DiagnosticFinding
 from open_cake_ir.compiler.ir import DType, LoweringBackend, Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
@@ -102,6 +102,7 @@ class BackendBoundaryTests(unittest.TestCase):
 
     def test_backend_vocabulary_refusal_has_the_same_owner_at_both_entrypoints(self):
         for module, name, target_path in (
+            (native_cuda, "native-gemm-bias-sm103a", "sm_103a"),
             (triton, "fma-b8-smoke", "sm_100a"),
             (cutedsl, "flash-kmeans-assignment-full", "sm_100a"),
             (metal, "metal-elementwise-odd", "apple_gpu_family8"),

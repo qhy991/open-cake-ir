@@ -94,7 +94,7 @@ class IsolatedCuTeCompiler:
                      '--setenv', 'PYTHONPATH', '/compiler-src',
                      '--setenv', 'PYTHONDONTWRITEBYTECODE', '1',
                      '--setenv', 'CUDA_VISIBLE_DEVICES', '',
-                     '--setenv', 'CUTE_DSL_ARCH', 'sm_103a',
+                     '--setenv', 'CUTE_DSL_ARCH', requirements['target'],
                      '--setenv', 'CUTE_DSL_DISABLE_FILE_CACHING', '1',
                      '--setenv', 'CUTE_DSL_CACHE_DIR', '/tmp/cute-cache',
                      str(self.python), '-s', '-m', 'open_cake_ir.lab.cute_build', '/build/request.json']

@@ -9,7 +9,7 @@ from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler import Compiler, EmitError
-from open_cake_ir.compiler.backends import cutedsl, cutedsl_register
+from open_cake_ir.compiler.backends import cutedsl, cutedsl_register, cutedsl_simt
 from open_cake_ir.compiler.ir import OperationKind, Schedule
 from open_cake_ir.compiler.target import Target
 
@@ -56,6 +56,24 @@ def rename(document: dict, old: str, new: str) -> dict:
 
 
 class RegisterCuTeTests(unittest.TestCase):
+    def test_current_register_cute_refuses_selected_ranges_at_public_boundaries(self):
+        from open_cake_ir.compiler.backends import cutedsl, cutedsl_register
+        from open_cake_ir.compiler.backends.common import EmitError
+        from open_cake_ir.compiler.target import Target
+
+        value = json.loads((ROOT / 'corpus/schedules/b300-cute-register-primary.json').read_text())
+        operation = next(op for op in value['operations'] if op['kind'] == 'mma')
+        extent = operation['parameters']['tile_shape'][2]
+        operation['parameters']['k_ranges'] = [[0, extent // 2]]
+        schedule = Schedule.from_dict(value)
+        target = Target.load(ROOT / 'compiler/targets/sm_103a.json')
+        for backend in (cutedsl, cutedsl_register):
+            with self.subTest(backend=backend.__name__):
+                self.assertIn('CUTE_MMA_K_RANGES_UNSUPPORTED', [f.code for f in backend.requirements(schedule)])
+                self.assertIn('CUTE_MMA_K_RANGES_UNSUPPORTED', [f.code for f in backend.preflight(schedule, target)])
+                with self.assertRaises(EmitError):
+                    backend.emit(schedule, target)
+
     @classmethod
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
@@ -213,7 +231,7 @@ class RegisterCuTeTests(unittest.TestCase):
             (lambda d: d["buffers"][1]["shape"].__setitem__(1, 7), "CUTE_REGISTER_SHAPE"),
             (lambda d: d["buffers"][4].__setitem__("stages", 2), "CUTE_REGISTER_BUFFER_OPTIONS"),
             (lambda d: d["buffers"][0].__setitem__("byte_offset", 2), "CUTE_REGISTER_BUFFER_OPTIONS"),
-            (lambda d: d["buffers"][2].__setitem__("mode", "state"), "CUTE_REGISTER_BUFFER"),
+            (lambda d: d["buffers"][2].__setitem__("mode", "state"), "CUTE_STATE_UNSUPPORTED"),
             (lambda d: d["roles"][0].__setitem__("warps", [0, 1]), "CUTE_REGISTER_ROLE"),
             (lambda d: d.__setitem__("residency", {"registers_per_thread": 128}), "CUTE_REGISTER_RESIDENCY"),
             (lambda d: d["access_maps"].pop(), "CUTE_REGISTER_ACCESS"),
@@ -285,7 +303,7 @@ class RegisterCuTeTests(unittest.TestCase):
         document["target"] = "sm_103a"
         self.refuses(document, "CUTE_TARGET_UNSUPPORTED", "target")
         self.assertEqual(cutedsl.SUPPORTED_OPERATION_KINDS,
-                         frozenset(cutedsl.BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS)
+                         frozenset(cutedsl.BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS | cutedsl_simt.SUPPORTED_OPERATION_KINDS)
         self.assertIn(OperationKind.ELEMENTWISE, cutedsl.SUPPORTED_OPERATION_KINDS)
 
 

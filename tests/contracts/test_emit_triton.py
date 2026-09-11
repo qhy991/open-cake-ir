@@ -19,9 +19,9 @@ import struct
 import unittest
 from pathlib import Path
 
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, CompilerError
 from open_cake_ir.compiler.backends.common import EmitError
-from open_cake_ir.compiler.backends.triton import emit
+from open_cake_ir.compiler.backends.triton import emit, preflight
 from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
 
@@ -59,6 +59,170 @@ def _variant(**changes) -> dict:
         if operation["kind"] == "mma":
             operation["parameters"]["tile_shape"] = [block_n, block_k, 128]
     return document
+
+
+class ArgminDomainTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.compiler = Compiler.load(ROOT, DRAFT)
+
+    @staticmethod
+    def scores(k=4, *, carried=False):
+        def buffer(name, space, dtype, shape, mode):
+            return dict(name=name, space=space, dtype=dtype, shape=shape, mode=mode)
+        coordinate = dict(source="loop_tile" if carried else "program_tile", name="columns")
+        document = dict(
+            schema_version=1, schedule_id="row-minimum", target="sm_100a",
+            roles=[dict(name="compute", warps=[0, 1, 2, 3])], allocations=[], pipelines=[], barriers=[],
+            buffers=[buffer("scores", "global", "fp32", [3, k], "input"),
+                     buffer("indices", "global", "int32", [3], "output"),
+                     buffer("tile", "register", "fp32", [2, 64], "scratch"),
+                     buffer("winner", "register", "int32", [2], "scratch")],
+            operations=[
+                dict(id="read", kind="load", role="compute", reads=["scores"], writes=["tile"],
+                     parameters=dict(movement="global")),
+                dict(id="select", kind="reduce_argmin", role="compute", reads=["tile"], writes=["winner"],
+                     depends_on=["read"], parameters=dict(tie_break="lowest_index", nan_policy="reject_input", across_loop=carried)),
+                dict(id="write", kind="store", role="compute", reads=["winner"], writes=["indices"],
+                     depends_on=["select"], parameters=dict(coalesced=True))],
+            outputs=["indices"], metadata={}, lowering=dict(backend="triton", entry_point="cake_row_minimum"),
+            program_map=dict(axes=[dict(name="rows", axis=0, buffer="scores", dimension=0, tile=2)]),
+            tile_loops=[], access_maps=[
+                dict(operation="read", buffer="scores", boundary="mask_tiled_axes",
+                     indices=[dict(source="program_tile", name="rows"), coordinate]),
+                dict(operation="write", buffer="indices", boundary="mask_tiled_axes",
+                     indices=[dict(source="program_tile", name="rows")])])
+        if carried:
+            document["tile_loops"] = [dict(name="candidate_loop", iterator="columns", buffer="scores",
+                dimension=1, tile=64, body=["read", "select"], range_options=dict(
+                    num_stages=1, loop_unroll_factor=1, flatten=False, warp_specialize=False,
+                    disallow_acc_multi_buffer=True, disable_licm=False))]
+        else:
+            document["program_map"]["axes"].append(dict(name="columns", axis=1, buffer="scores", dimension=1, tile=64))
+        return document
+
+    @staticmethod
+    def one_tile_kmeans():
+        document = _variant(block_n=16)
+        for buffer in document["buffers"]:
+            if buffer["name"] in {"tokens", "centroids", "centroid_sq", "assignments"}:
+                buffer["shape"][0] = 1
+                buffer["shape"][1] = 4
+        document["target"] = "sm_103a"
+        loop = document["tile_loops"].pop()
+        document["program_map"]["axes"].insert(0, dict(
+            name="resident_candidates", axis=2, buffer=loop["buffer"], dimension=loop["dimension"], tile=loop["tile"]))
+        for access in document["access_maps"]:
+            for index in access["indices"]:
+                if index.get("source") == "loop_tile":
+                    index.update(source="program_tile", name="resident_candidates")
+        next(op for op in document["operations"] if op["kind"] == "reduce_argmin")["parameters"]["across_loop"] = False
+        return document
+
+    def lower(self, document):
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        lower = self.compiler.lower(assessment)
+        self.assertTrue(all(op["id"] in lower.source_map for op in document["operations"]))
+        return emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets" / (document["target"] + ".json")))
+
+    def refuse(self, document, code):
+        assessment = self.compiler.assess(document)
+        self.assertFalse(assessment.lowering_eligible)
+        self.assertTrue(any(f.code == code and f.path for f in assessment.findings), assessment.findings)
+
+    def test_resident_argmin_excludes_padding_even_when_legal_scores_are_positive_or_infinite(self):
+        from tests.contracts.test_triton_loop_scopes import _execute
+        document = self.scores()
+        emission = self.lower(document)
+        memories = dict(scores=[5, 5, 9, 9, 11, 9, 6, 6] + [float("inf")] * 4, indices=[None] * 3)
+        observed = _execute(emission, memories)
+        self.assertEqual(memories["indices"], [0, 2, 0])
+        self.assertEqual(set(observed.stores.values()), {1})
+        self.assertNotIn("best_distance", emission.source)
+        self.assertNotIn("tl.range(", emission.source)
+
+    def test_carried_argmin_masks_last_candidate_tile_and_keeps_global_lowest_ties(self):
+        from tests.contracts.test_triton_loop_scopes import _execute
+        emission = self.lower(self.scores(257, carried=True))
+        first, second, third = [20.0] * 257, [30.0] * 257, [10.0] * 257
+        first[256] = 5.0
+        second[1] = second[256] = 7.0
+        third[0] = 4.0
+        memories = dict(scores=first + second + third, indices=[None] * 3)
+        observed = _execute(emission, memories)
+        self.assertEqual(memories["indices"], [256, 1, 0])
+        self.assertEqual(set(observed.stores.values()), {1})
+        self.assertTrue(all(0 <= index < 257 for index in memories["indices"]))
+
+    def test_kmeans_composition_proves_the_column_domain_independent_of_axis_order(self):
+        document = self.one_tile_kmeans()
+        emission = self.lower(document)
+        self.assertIn("resident_candidates_offsets[None, :] < 4", emission.source)
+        self.assertEqual(emission.toolchain["grid"][2], 1)
+        self.assertIn("tl.dot(", emission.source)
+        # Input values are irrelevant to domain derivation. A shorter numeric norm
+        # input cannot shrink the actual centroid domain to two candidates.
+        next(b for b in document["buffers"] if b["name"] == "centroid_sq")["shape"][1] = 2
+        self.refuse(document, "TRITON_ARGMIN_DOMAIN")
+
+    def test_unsupported_argmin_domains_and_result_layouts_are_local_refusals(self):
+        document = self.scores()
+        document["operations"][1]["parameters"]["across_loop"] = True
+        self.refuse(document, "TRITON_ARGMIN_DOMAIN")
+        self.refuse(self.scores(65), "TRITON_ARGMIN_DOMAIN")
+        document = self.scores()
+        document["buffers"][-1]["shape"] = [2, 1]
+        # Common store-shape verification rejects this malformed graph before
+        # backend admission. Probe the backend's own layout rule separately.
+        self.refuse(document, "STORE_ACCESS_SHAPE_MISMATCH")
+        target = Target.load(ROOT / "compiler/targets/sm_100a.json")
+        self.assertTrue(any(f.code == "TRITON_ARGMIN_LAYOUT" and f.path
+                            for f in preflight(Schedule.from_dict(document), target)))
+        document = self.scores(128)
+        document["program_map"]["axes"] = document["program_map"]["axes"][:1]
+        document["access_maps"][0]["indices"][1] = dict(source="dimension", dimension=1, offset=4, extent=64)
+        self.refuse(document, "TRITON_ARGMIN_DOMAIN")
+
+    def test_runtime_candidate_prefix_is_refused_by_the_domain_owner(self):
+        original = json.loads((ROOT / "corpus/schedules/triton-argmin-runtime-domain-drift.json").read_text())
+        for form in ("program_tile", "dimension", "loop_tile"):
+            with self.subTest(form=form):
+                document = copy.deepcopy(original)
+                # The retained corpus fixture uses two 32-wide loop tiles. Build
+                # structurally valid resident forms before testing their domain;
+                # an unrelated load-tile mismatch cannot prove this refusal.
+                if form != "loop_tile":
+                    document["tile_loops"] = []
+                    document["operations"][1]["parameters"]["across_loop"] = False
+                    next(b for b in document["buffers"] if b["name"] == "tile")["shape"][1] = 64
+                if form == "dimension":
+                    document["access_maps"][0]["indices"][2] = dict(source="dimension", dimension=2)
+                elif form == "program_tile":
+                    document["program_map"]["axes"].append(dict(
+                        name="candidates", axis=2, buffer="scores", dimension=2, tile=64))
+                    document["access_maps"][0]["indices"][2] = dict(source="program_tile", name="candidates")
+                typed = Schedule.from_dict(document)
+                self.assertIsNone(typed.argmin_domain(typed.operation("select")))
+                assessment = self.compiler.assess(document)
+                self.assertTrue(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+                self.assertEqual([(finding.code, finding.path) for finding in assessment.findings],
+                                 [("TRITON_ARGMIN_DOMAIN", "operations[1].reads")])
+                target = Target.load(ROOT / "compiler/targets/sm_103a.json")
+                self.assertEqual(preflight(typed, target), assessment.findings)
+                with self.assertRaisesRegex(CompilerError, "TRITON_ARGMIN_DOMAIN"):
+                    self.compiler.lower(assessment)
+                with self.assertRaisesRegex(EmitError, "proven static"):
+                    emit(typed, target)
+
+    def test_runtime_row_prefix_does_not_erase_a_static_candidate_domain(self):
+        document = json.loads((ROOT / "corpus/schedules/triton-argmin-runtime-domain-drift.json").read_text())
+        document["buffers"][0]["valid_extent"]["dimension"] = 1
+        typed = Schedule.from_dict(document)
+        self.assertEqual(typed.argmin_domain(typed.operation("select"))[1], 64)
+        emission = self.lower(document)
+        self.assertIn("rows_offsets[:, None] < read_scores_valid_extent", emission.source)
 
 
 class EmissionTest(unittest.TestCase):
