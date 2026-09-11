@@ -23,6 +23,21 @@
       "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/study-repair/review",
       "artifacts": ["compiler-review-record-5357e8a1.json"],
       "note": "Independent review rebuilt the exact v76 Gate with all 124 cases matched and 175 bound sources before authoring the separate release approval. The previously released native v75 authority was preserved before the canonical cycle derived v76."
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/study-controls-v1/prepare-mirror/baselines",
+      "artifacts": ["gelu_tanh-command.json", "gelu_tanh-exit.json", "gelu_tanh/baseline-feedback.json", "gelu_tanh/baseline/candidate.json", "gelu_tanh_backward-command.json", "gelu_tanh_backward-exit.json", "gelu_tanh_backward/baseline-feedback.json", "gelu_tanh_backward/baseline/candidate.json"],
+      "note": "Both 128-by-1024 task baselines were built through the actual public launch_task --baseline-only path on source 094e985c, Compiler v76 and Executor v109. Real SDK compilation, sealing and ABI admission succeeded before any provider call."
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/study-controls-v3",
+      "artifacts": ["recovered-first-gelu.json"],
+      "note": "The original forward job gpuq-e7c4b54880d2 passed both arms' five declared input cases and timed correctness checks with no input mutation or output mismatch; maximum absolute error was 2.384185791015625e-7. Both canonical receipt and attempt replays pass. A/A is close_null, not a speedup. The later external JSON report failed on mappingproxy serialization; its original exit 1, partial report and report_adapter_fault remain preserved in the cited original root. Plain-JSON recovery made no new GPU call and changed no product source."
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-study-remain7-20260911-_0lt7e_h/gelu_tanh_backward-search",
+      "artifacts": ["result.json", "receipt-references.json", "attempt-references.json", "payloads/correctness_output", "payloads/timing_samples"],
+      "note": "Backward job gpuq-745e6d5cd299 passed the five declared cases and timed correctness checks with no input mutation or output mismatch; maximum absolute error was 2.4167820811271667e-6 and canonical replay passed. Its diagnostic A/A is also close_null. The evidence is for these fixed 128-by-1024 B300 workloads, not arbitrary shapes or performance qualification."
     }
   ],
   "observation": "The Triton backend already emits the declared libdevice.tanh.f32 operation, but project_triton_kernel discarded its import and validate_triton_kernel refused the call even with the explicit import present. This is an inconsistency between Compiler lowering and its common build interface, rather than a missing GELU primitive. The returned first repair also showed that naming an allowed attribute is insufficient when the module or function object can escape to another consumer.",
@@ -30,5 +45,5 @@
   "decision": "accepted",
   "implemented_in": "open-cake-ir-sm100a-v76+ed8bd1492c5965a4490b365ff39e02698831e3b81ca77601d5f411de0a7269ae",
   "verification_plan": "Independent hostile-AST review and a full canonical Corpus Gate bind the corrected source. Replay the failed GELU public projection/admission paths under the released successor, then compile and seal both task baselines through the actual common builder before any new provider campaign. Source/CPU checks alone do not establish GPU correctness or performance.",
-  "verified_by": null
+  "verified_by": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/study-controls-v3/aggregate.json"
 }
