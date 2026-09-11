@@ -145,6 +145,34 @@ class CuTeSourceAdmissionTests(unittest.TestCase):
 
 
 class CuTeArtifactTests(unittest.TestCase):
+    def test_fp32_variable_abi_keeps_exact_ptx_and_cubin_contract(self):
+        for target in ('sm_100a','sm_103a'):
+            for count in (2,3,5,7):
+                request={**requirements(),'target':target,'signature':[
+                    {'name':f'p{i}','dtype':'fp32'} for i in range(count)]}
+                name='kernel_cutlass_fixture_'+'_'.join(['ptrf32gmem']*count)+'_0'
+                params=',\n'.join(f'.param .u64 .ptr .global .align 4 {name}_param_{i}' for i in range(count))
+                ptx=f'.version 8.8\n.target {target}\n.address_size 64\n.visible .entry {name}(\n{params}\n)\n.reqntid 32, 1, 1\n{{ ret; }}\n'.encode()
+                metadata=''.join(f'Attribute: EIATTR_KPARAM_INFO\nFormat: EIFMT_SVAL\nValue: Index : 0x0 Ordinal : {i:#x} Offset : {8*i:#x} Size : 0x8\nPointee\'s logAlignment : 0x2 Space : 0x4 cbank : 0x1f\n' for i in reversed(range(count)))
+                elf=f'64-bit ELF: type=ET_EXEC, ABI=8, sm={target[3:]}, toolkit=12.9\n\n.nv.info.{name}\n'+metadata+f'Attribute: EIATTR_CBANK_PARAM_SIZE\nFormat: EIFMT_HVAL\nValue: {8*count:#x}\nAttribute: EIATTR_REQNTID\nFormat: EIFMT_SVAL\nValue: 0x20 0x1 0x1\n\n.nv.compat\n'
+                elf='\n'.join(('\t'+line if line.startswith(('Attribute:','Format:','Value:','Pointee')) else line) for line in elf.split('\n'))
+                validate_cute_requirements(request)
+                self.assertEqual(_ptx_entry(ptx,request),name)
+                self.assertEqual([p['offset'] for p in _cubin_parameters(elf,name,request['signature'],target=target)],list(range(0,8*count,8)))
+                for bad in (ptx.replace(b'.align 4 ',b'.align 2 ',1),ptx.replace(b'\n)\n',b', .param .u64 hidden\n)\n')):
+                    with self.assertRaises(ValueError):_ptx_entry(bad,request)
+                for bad in (elf.replace('Offset : 0x0','Offset : 0x8',1),elf.replace(f'Value: {8*count:#x}\n',f'Value: {8*count+8:#x}\n')):
+                    with self.assertRaises(ValueError):_cubin_parameters(bad,name,request['signature'],target=target)
+
+    def test_infinity_literal_cannot_call_shadowed_builtin(self):
+        source=SOURCE+b"    identity = cutlass.Float32(float('-inf'))\n"
+        validate_cute_kernel(source,requirements())
+        with self.assertRaisesRegex(ValueError,'unsupported call'):
+            validate_cute_kernel(source+b'    float = a\n',requirements())
+        request=requirements();request['signature'][0]['name']='float'
+        with self.assertRaisesRegex(ValueError,'unsupported call'):
+            validate_cute_kernel(source.replace(b'a: cute.Pointer',b'float: cute.Pointer'),request)
+
     def test_ptx_and_cubin_prove_ordered_four_pointer_abi_and_one_warp(self):
         self.assertEqual(_ptx_entry(ptx_fixture(), requirements()), NAME)
         self.assertEqual([row["offset"] for row in _cubin_parameters(elf_fixture(), NAME, requirements()["signature"])], [0, 8, 16, 24])

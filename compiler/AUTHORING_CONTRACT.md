@@ -18,6 +18,18 @@ owns its instruction, operands, unique write and accumulation derivation; combin
 partial contractions requires an explicit typed consumer such as FP32 `elementwise add`.
 There is no multi-MMA mode, count parameter, implicit shared accumulator, or split-K
 operation. A later MMA is checked and refused at its own path just like the first.
+Optional `mma.parameters.k_ranges` selects ordered half-open logical K intervals from
+both full input tiles. `tile_shape=[M,N,K]` continues to describe A[M,K] and B[N,K].
+Every interval has integer endpoints with `0 <= start < end <= K`; ranges are nonempty,
+ascending and disjoint. The typed owner merges adjacency and omits explicit full
+coverage. Invalid order/overlap is refused, never sorted or repaired. Each MMA still
+owns one result; two partial results combine only through an explicit operation.
+Native f16-family tcgen05 requires interval endpoints aligned to its declared atom K.
+Triton initially admits BF16 register operands on `sm_100a`/`sm_103a`, full input K128,
+selected K64, power-of-two M/N >=16, and no contraction-loop carry. It gathers exactly
+those logical coordinates and materializes the FP32 result before a consumer can
+recombine it. CuTe and Metal refuse this refinement. No selector means the original
+source path. Arithmetic counts use selected K; full operand storage/traffic remains.
 FP32 Triton MMA makes input precision explicit: `triton.dot.fp32_ieee` requests IEEE
 input precision, while `triton.dot.fp32_tf32` requests TF32 tensor-core input precision.
 Both keep FP32 operand Buffers and FP32 accumulation/results; the TF32 contract is not a
@@ -125,7 +137,7 @@ remains observable through the argument.
 storage for another operation does not widen that semantic contract.
 
 `lowering` owns only the materialization mechanism and executable symbol. Its `backend` is
-one of `triton`, `cutlass_cute_dsl`, or `metal`; `entry_point` is an identifier.
+one of `native_cuda`, `triton`, `cutlass_cute_dsl`, or `metal`; `entry_point` is an identifier.
 The retired `checked_cuda_asset` spelling is a structural refusal. Historical Schedules
 and results remain replay inputs for their pinned Git revisions, not a current source-selection path.
 The executable argument signature is derived from global Buffers and is never restated as
@@ -136,6 +148,20 @@ For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics,
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
 that skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its route, external
 tensor shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.
+
+Native CUDA/PTX (`native_cuda`) consumes the same typed operations and exact Target.
+A `load(movement="tmem", source_atom={"op":"tcgen05.Ld32x32b","repetition":16})`
+transfers one FP32 tensor tile into an identically shaped FP32 register tile; the atom
+has a power-of-two repetition in [1,128]. It has no global-memory traffic. It requires
+its MMA completion wait and cannot escape that accumulator's output-tile lifetime.
+`source_atom` is forbidden on other load movements; `reuse` is forbidden on TMEM load.
+A `global` load may explicitly stage a masked tile into shared storage and publish it
+through an mbarrier. Its real global/shared edges establish producer capability; merely
+tagging a register load with a pipeline does not. This admits unaligned global row
+strides without hidden host padding. The native backend derives the declared swizzle,
+fences stores into the async proxy and releases the stage only after all MMA readers.
+TMA continues to require a descriptor box and compatible global stride. Native support
+and host metadata are documented in `docs/NATIVE_CUDA_DESIGN.md` and `docs/NATIVE_CUDA.md`.
 
 ## Source, value-domain and hardware boundaries
 

@@ -634,10 +634,17 @@ class ProgramSafetyTest(unittest.TestCase):
             parameters["movement"] = "global"
             parameters.pop("descriptor_box")
 
-        unsupported = verify(
-            _mutated(ASSIGNMENT_FULL, make_synchronous),
-            TARGET,
-        )
+        synchronous = verify(_mutated(ASSIGNMENT_FULL, make_synchronous), TARGET)
+        self.assertNotIn("BARRIER_PIPELINE_PRODUCER_UNSUPPORTED", _codes(synchronous))
+
+        def register_load_is_not_a_stage(document: dict) -> None:
+            make_synchronous(document)
+            stage = next(b for b in document["buffers"] if b["name"] == "token_stage")
+            stage["space"] = "register"
+            stage.pop("allocation")
+            stage.pop("byte_offset")
+            stage.pop("swizzle")
+        unsupported = verify(_mutated(ASSIGNMENT_FULL, register_load_is_not_a_stage), TARGET)
         self.assertIn("BARRIER_PIPELINE_PRODUCER_UNSUPPORTED", _codes(unsupported))
 
 

@@ -83,9 +83,45 @@ the source checkout. The stable template is not rewritten by the frozen-Study he
 `OpenCakeEnvironment` and `NativeCuTeEnvironment` use the same `CuTeToolchainBuilder`
 and `IsolatedCuTeCompiler` from `open_cake_ir.lab.cute_build`. The compiled SDK symbol
 may differ from the authored Python name; the sealed TensorLaunchManifest uses the
-observed symbol and exactly four pointers, with no hidden parameters. Raw submissions,
+observed symbol and, for this GEMM study, exactly four pointers with no hidden parameters. Raw submissions,
 source, compiler diagnostics and artifacts remain in the ordinary append-only archive.
 Common Evaluation performs oracle correctness, paired cold-L2 CUPTI timing and separate
 profiler attribution. Source tests and successful CPU compilation do not establish GPU
 correctness, performance, or an IR advantage. Those claims require their own retained
 common Evaluation evidence and independent release gates.
+
+
+## General FP32 SIMT lowering
+
+Schedules without MMA may select `cutlass_cute_dsl` and enter a structural single-warp
+SIMT route. It supports FP32 loads/stores, add/sub/mul/div, square/relu/rsqrt/exp/exp2/
+reciprocal/tanh, explicit broadcasts and single-tile sum/max reductions, with multiple
+inputs and outputs on exact `sm_100a` or `sm_103a`. The BF16 register-MMA study above
+continues to use its own Workload and Study contracts.
+
+Declare one role with `warps=[0]`, nonpersistent scalar (tile=1) ProgramMap axes, global
+inputs/outputs, register intermediates and PROGRAM/DIMENSION AccessMaps. Element i is
+owned by lane i%32, slot i//32. For reduction axis `axis`, let `inner` be the product
+of the following dimensions. When `inner` is divisible by 32, every contributor is
+already on its output lane. The backend emits nested constexpr loops over output slots
+and the reduction extent, with source slot
+`(outslot // (inner//32)) * extent * (inner//32) + outslot % (inner//32) + k * (inner//32)`.
+Each lane folds in increasing `k` order, starting from FP32 zero for sum or negative
+infinity for max. It needs no cross-lane reduction and does not expand one scalar
+reduction per output element. The fixed stripe mapping determines this mechanically;
+it is not a new Schedule control, transformation pass or selectable reduction algorithm.
+The `CUTE_SIMT_EXECUTION` diagnostic describes both paths, and each local reduction's
+source comment records its trailing stride. Other strides, including 31 and 33, retain
+the uniform local fold followed by a full-warp collective. Broadcast shuffles source
+slots uniformly. Padded lanes still participate in those collectives. Global
+copies are scalar, with `coalesced=false` stores. Unsupported cache/reuse, residency,
+pipeline, barrier, loop and storage declarations are refused. The logical live-slot
+limit is an implementation bound, not physical register allocation or a spill estimate.
+
+Compilation accepts the complete ordered FP32 pointer signature. PTX and CUBIN checks
+bind parameter count, offsets, pointee alignment, address space and exact target.
+Source admission remains one kernel and fixed imports. CPU execution of generated source
+checks broadcasts, reduction axes, lane slots and output writes. It does not simulate
+CuTe compilation, GPU math approximations or physical allocation. Actual SDK compilation,
+GPU correctness, timing and profiling require separate evidence and remain unqualified
+by these source/CPU checks.

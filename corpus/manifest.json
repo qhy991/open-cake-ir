@@ -1677,6 +1677,281 @@
         "schedule_sha256": "48d4f745d5d9fea0584d51779d95f23be00389d179c61a39fa9d63a34c9aa13d",
         "lowering_source_sha256": "3602b39b4ddb49a5bf0cf0287f4b1ec2a1f4c1b21e30001f0a8112a01ebd1777"
       }
+    },
+    {
+      "case_id": "native-gemm-bias",
+      "schedule": "examples/schedules/native/gemm-bias.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "042704dc318ad7a49ec5a61842cf37e0438c62ae66be24a637749d1b06fe71e1",
+        "lowering_source_sha256": "66de7f152fe5ea124ad3ddb9a9438f9a0dbe2a5aa47a8d3617b7b2366669a066"
+      }
+    },
+    {
+      "case_id": "native-gemm-bias-k65-tail",
+      "schedule": "examples/schedules/native/gemm-bias-k65-tail.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ff6c287f12ba9de17ac252f42db4e05927fa7ed83190bd8cde5556a5b4bd45f4",
+        "lowering_source_sha256": "841705e6ba90928604acecd986c0c8dba4069c1b99ef3c9e3135cf693293a152"
+      }
+    },
+    {
+      "case_id": "native-two-mma",
+      "schedule": "examples/schedules/native/two-mma.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "039c46efd946bf7399e1e9ef3ba614ad57678e360d6d04e9fa6e89ba16ff3bae",
+        "lowering_source_sha256": "29fef717dee36c530deb5d9ab3437c74633cbbac39f606d72cd2ab1842948683"
+      }
+    },
+    {
+      "case_id": "native-kmeans",
+      "schedule": "examples/schedules/native/kmeans.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "3df7dcaa1bcedd558c72cd0034e30fa6749e1301ed469590aae3dd5ca00e8bf3",
+        "lowering_source_sha256": "5f8e7a5afc2e992c6593e596d4d299c7fa529d019e0222f2be4466b299415273"
+      }
+    },
+    {
+      "case_id": "native-gemm-bias-sm103a",
+      "schedule": "corpus/schedules/native-gemm-bias-sm103a.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "d22b3e94e923a2be0adaa7705d51231f11e8ec32f949230e4f42be143bf5c390",
+        "lowering_source_sha256": "fb93e40e50df7322541c3a2cc0f43d1f794e0e39e6b4507d8fa8bf6c8e05dbef"
+      }
+    },
+    {
+      "case_id": "native-pipeline-arrival-drift",
+      "schedule": "corpus/schedules/native-pipeline-arrival-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "NATIVE_PIPELINE_BARRIER"
+        ],
+        "schedule_sha256": "d8e4907bd629548facc3f10085335c3f248f53f9b0d6ae8e0e2c686521d2d947",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "native-tmem-role-drift",
+      "schedule": "corpus/schedules/native-tmem-role-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "NATIVE_ROLE_ALIGNMENT",
+          "NATIVE_ROLE_ALIGNMENT",
+          "NATIVE_ROLE_ALIGNMENT",
+          "NATIVE_ROLE_ALIGNMENT"
+        ],
+        "schedule_sha256": "616cbf851aa6bd5121cc7ca4b41e0120d463323693d2c3dd8ac4f874e133f73f",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "native-second-mma-placement-drift",
+      "schedule": "corpus/schedules/native-second-mma-placement-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND",
+          "NATIVE_MMA_CONTRACT"
+        ],
+        "schedule_sha256": "5097a4b529a1ad7bc145d9b2d8de74b3ac8161390159fe0839d821fa23cb9389",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "native-range-option-drift",
+      "schedule": "corpus/schedules/native-range-option-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "NATIVE_RANGE_OPTION_UNSUPPORTED"
+        ],
+        "schedule_sha256": "3c168b98dbe30e161b46c85697963ba8860f9fe12e70e204b3b3b829c8c4984e",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "native-kmeans-resident-k4",
+      "schedule": "corpus/schedules/native-kmeans-resident-k4.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "16c8a1cb43559ada5cdb647fc508508533e916eb31d27a5cab9bb077c9dd0f52",
+        "lowering_source_sha256": "ad6f681b3c57200936f3ba03f8290afe5f72a880fa17e991c357c37fd8d47a9b"
+      }
+    },
+    {
+      "case_id": "triton-kmeans-resident-k4",
+      "schedule": "corpus/schedules/triton-kmeans-resident-k4.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "474a7b652a04fe98061f876db14ffa45654653abacde18a97e8d13e465e24976",
+        "lowering_source_sha256": "16caef8d430e1e805589066c28772fe4ff4d26f4065e28d44c83cef5767e2189"
+      }
+    },
+    {
+      "case_id": "triton-kmeans-tail-k257",
+      "schedule": "corpus/schedules/triton-kmeans-tail-k257.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "44d9c1328c32fa4837ff3557e50202e0085fe09f20cbca4462c2b7861ff349c6",
+        "lowering_source_sha256": "84677ee8869906a8c578b771a51577a4ab852b3622a6d7055ccd491cdb3a1a09"
+      }
+    },
+    {
+      "case_id": "native-argmin-domain-drift",
+      "schedule": "corpus/schedules/native-argmin-domain-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "NATIVE_ARGMIN_DOMAIN",
+          "NATIVE_STORE_PROGRAM_OWNERSHIP"
+        ],
+        "schedule_sha256": "4096e2249f610e462bc37d95641004c98048d31b5a0daf31c00a49350a20bd24",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "triton-argmin-domain-drift",
+      "schedule": "corpus/schedules/triton-argmin-domain-drift.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TRITON_ARGMIN_DOMAIN"
+        ],
+        "schedule_sha256": "582257f1498644181d2de771665cb861bf737d18f10e20d26b702a74c28dca4e",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "native-kmeans-partials",
+      "schedule": "examples/schedules/native/kmeans-partials.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "ddfb37e32bc7cde61893229c1c29658ceb4981595befdb1aae90b6fab59be4e1",
+        "lowering_source_sha256": "08da6e25e7508caaeb933c3e7e9c356d819e6ac788932a4368fecc609d9df75a"
+      }
+    },
+    {
+      "case_id": "triton-kmeans-partials",
+      "schedule": "examples/schedules/triton/kmeans-partials.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "3c3d15097490c465a2153ddb6c3b65d587f587a471bec9d1b8ba45fc4eac8bed",
+        "lowering_source_sha256": "85c8b7f5bd5e58f95cb565ee17a7b9a3a483644f2fcb154755ac6af0730be048"
+      }
+    },
+    {
+      "case_id": "native-k-ranges-misaligned",
+      "schedule": "corpus/schedules/native-k-ranges-misaligned.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_K_RANGES_INSTRUCTION_MISMATCH"
+        ],
+        "schedule_sha256": "b3ba1e84da8ed95a29c3e1617f79c6bf74395028d52dea23198ee543097f096c",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "native-k-ranges-input-domain",
+      "schedule": "corpus/schedules/native-k-ranges-input-domain.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_INPUT_TILE_DOMAIN"
+        ],
+        "schedule_sha256": "a1779f5ab964694a05ee91b3c68cd8e36d8114622aec90f28e8f7b8c0749cd40",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "triton-k-ranges-selected-size",
+      "schedule": "corpus/schedules/triton-k-ranges-selected-size.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND",
+          "TRITON_MMA_K_RANGES_UNSUPPORTED"
+        ],
+        "schedule_sha256": "4c8a5cf7d762cf1d7739e762c2ef6bffed2dbe6319f22ed6c31f9095c7df5f12",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "mma-k-ranges-overlap",
+      "schedule": "corpus/schedules/mma-k-ranges-overlap.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "SCHEDULE_STRUCTURE"
+        ],
+        "schedule_sha256": "92b380e82656c2e8b58f503c384288c3c9ab9918b9ee94caf07e975a354eee08",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "cute-k-ranges-unsupported",
+      "schedule": "corpus/schedules/cute-k-ranges-unsupported.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "CUTE_MMA_K_RANGES_UNSUPPORTED",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "c7d480e36f01a630708ebcdf359319aa35f1d1647908f36709c9864487acbc5b",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

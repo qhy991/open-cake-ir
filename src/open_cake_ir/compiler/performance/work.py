@@ -417,15 +417,16 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
         parameters = operation.parameters
         if not isinstance(parameters, MmaParameters):
             return None
-        # `tile_shape` is the contraction this operation performs; an instruction shape
-        # is the atom a backend issues repeatedly to perform it. Preferring the atom
-        # would count one MMA where the tile needs many.
+        # `tile_shape` owns the full input domain; selected_k refines its contribution.
+        # An instruction shape is the repeatedly issued atom, not the performed tile.
         shape = parameters.tile_shape
         if shape is None and parameters.instruction is not None:
             shape = parameters.instruction.shape
         if shape is None:
             return None
         m, n, k = shape
+        if parameters.selected_k is not None:
+            k = parameters.selected_k
         return MULTIPLY_ADD_FLOPS * m * n * k
 
     if operation.kind is OperationKind.ELEMENTWISE:

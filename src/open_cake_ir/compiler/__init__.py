@@ -6,7 +6,7 @@ The Compiler owns four things, in the order a Schedule meets them:
 * `target` -- the exact hardware contract a Schedule is verified against.
 * `verifier` -- target-derived hard gates, grouped by the four contract classes the
   paper's harness reports, each finding naming a path and a violated contract.
-* `backends` -- Triton, CuTe-DSL and Metal emission with shared result/error types.
+* `backends` -- native CUDA, Triton, CuTe-DSL and Metal emission with shared result/error types.
 
 `Compiler.assess` composes the first three; `Compiler.lower` dispatches accepted Schedules
 to deterministic target emitters. Direct emission uses an explicit backend, for example

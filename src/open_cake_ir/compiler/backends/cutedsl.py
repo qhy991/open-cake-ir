@@ -38,7 +38,7 @@ from ..ir import (
 )
 from ..target import Target
 from ..diagnostics import Finding
-from . import cutedsl_register
+from . import cutedsl_register, cutedsl_simt
 
 
 _CUTLASS_DTYPE = {
@@ -84,7 +84,7 @@ BODY_EMITTERS: dict[OperationKind, str] = {
     OperationKind.STORE: "_emit_store",
 }
 
-SUPPORTED_OPERATION_KINDS = frozenset(BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS
+SUPPORTED_OPERATION_KINDS = frozenset(BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS | cutedsl_simt.SUPPORTED_OPERATION_KINDS
 SUPPORTED_EPILOGUE_FORMULAS = frozenset(
     {EpilogueFormula.CENTROID_SQ_MINUS_TWO_DOT}
 )
@@ -116,12 +116,22 @@ def _barrier_signaller_scopes(schedule: Schedule, barrier: Barrier) -> set[str |
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent backend requirements, including unsupported vocabulary."""
-    if cutedsl_register.applies(schedule):
-        return cutedsl_register.requirements(schedule)
     state = tuple(refusal("CUTE_STATE_UNSUPPORTED", f"buffers[{i}].mode",
         "CuTe lowering does not implement mutable state buffers")
         for i, buffer in enumerate(schedule.buffers) if buffer.mode is BufferMode.STATE)
-    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    if cutedsl_simt.applies(schedule):
+        return state + cutedsl_simt.requirements(schedule)
+    if cutedsl_register.applies(schedule):
+        return state + cutedsl_register.requirements(schedule)
+    common = vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + tuple(
+        refusal(
+            "CUTE_MMA_K_RANGES_UNSUPPORTED",
+            f"operations[{index}].parameters.k_ranges",
+            "CuTe-DSL does not implement selected MMA K contributions",
+        )
+        for index, operation in enumerate(schedule.operations)
+        if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
+    )
     if common:
         return state + common + python_name_findings(schedule)
     return state + python_name_findings(schedule) + vocabulary_findings(
@@ -134,6 +144,8 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
     findings = list(requirements(schedule))
     if findings:
         return tuple(findings)
+    if cutedsl_simt.applies(schedule):
+        return cutedsl_simt.preflight(schedule, target)
     if cutedsl_register.applies(schedule):
         return cutedsl_register.preflight(schedule, target)
 
@@ -1155,6 +1167,8 @@ def emit(
     failures = requirements(schedule)
     if failures:
         raise EmitError(failures[0].message)
+    if cutedsl_simt.applies(schedule):
+        return cutedsl_simt.emit(schedule, target, entry_point=entry_point)
     if cutedsl_register.applies(schedule):
         return cutedsl_register.emit(schedule, target, entry_point=entry_point)
     return _Emitter(schedule, target, entry_point).emit()

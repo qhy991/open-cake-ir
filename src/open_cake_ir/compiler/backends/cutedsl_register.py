@@ -42,7 +42,15 @@ def applies(schedule: Schedule) -> bool:
 
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
-    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + python_name_findings(schedule, register_route=True)
+    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + tuple(
+        refusal(
+            "CUTE_MMA_K_RANGES_UNSUPPORTED",
+            f"operations[{index}].parameters.k_ranges",
+            "CuTe-DSL does not implement selected MMA K contributions",
+        )
+        for index, operation in enumerate(schedule.operations)
+        if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
+    ) + python_name_findings(schedule, register_route=True)
 
 
 @dataclass(frozen=True)

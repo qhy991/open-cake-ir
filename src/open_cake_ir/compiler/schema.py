@@ -127,6 +127,7 @@ _PARAMETERS = {
             {"movement": _enum(LoadMovement)},
             {
                 "reuse": _enum(LoadReuse),
+                "source_atom": _object({"op": {"const": "tcgen05.Ld32x32b"}, "repetition": {"enum": [1,2,4,8,16,32,64,128]}}),
                 "descriptor_box": {
                     "type": "array",
                     "minItems": 1,
@@ -143,7 +144,14 @@ _PARAMETERS = {
     OperationKind.MMA: _object(
         {"accumulator": {"const": DType.FP32.value}},
         {
-            "tile_shape": _mnk("The tile this operation walks, as M, N and K."),
+            "tile_shape": _mnk("The complete input tile domain, as M, N and K; k_ranges selects contributions within K."),
+            "k_ranges": {
+                "type": "array", "minItems": 1,
+                "items": {"type": "array", "minItems": 2, "maxItems": 2,
+                          "items": {"type": "integer", "minimum": 0}},
+                "description": "Ordered disjoint half-open input K contributions; requires tile_shape. "
+                    "Each start < end <= tile_shape.K. Adjacent intervals merge; full coverage is omitted.",
+            },
             "instruction": _placed_only(
                 _object(
                     {"contract": {
@@ -273,6 +281,15 @@ _PARAMETERS = {
     },
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
 }
+
+
+_PARAMETERS[OperationKind.MMA]["dependentRequired"] = {"k_ranges": ["tile_shape"]}
+
+_PARAMETERS[OperationKind.LOAD].setdefault("allOf", []).extend([
+    {"if": {"properties": {"movement": {"const": "tmem"}}},
+     "then": {"required": ["source_atom"], "not": {"required": ["reuse"]}},
+     "else": {"not": {"required": ["source_atom"]}}}
+])
 
 
 def schedule_schema() -> dict[str, Any]:

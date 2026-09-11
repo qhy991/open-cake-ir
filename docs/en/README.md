@@ -1,5 +1,7 @@
 # Open Cake documentation
 
+For native CUDA/PTX schedules and their exact compile boundary, see the [native backend guide](../NATIVE_CUDA.md).
+
 [中文](../zh-CN/README.md) · [Complete bilingual catalog](../README.md) · [Repository home](../../README.md)
 
 See the [B300 guide](B300.md) for the three Python operator starting points.

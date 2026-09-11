@@ -381,6 +381,14 @@ def _verify_instruction_commitments(
                     )
             _verify_atom_placement(operation, instruction, path, out)
             _verify_register_mma(operation, instruction, buffers, path, out)
+            if (operation.parameters.k_ranges is not None and instruction.shape is not None
+                    and any(endpoint % instruction.shape[2]
+                            for interval in operation.parameters.k_ranges for endpoint in interval)):
+                out.add(
+                    "MMA_K_RANGES_INSTRUCTION_MISMATCH", f"{path}.k_ranges",
+                    "K contribution endpoints must align to the declared instruction K step "
+                    f"({instruction.shape[2]})", category,
+                )
             if (
                 instruction.shape is not None
                 and tile is not None

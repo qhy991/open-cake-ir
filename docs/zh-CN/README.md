@@ -1,5 +1,7 @@
 # Open Cake 中文文档：从零看懂这个系统
 
+原生 CUDA/PTX 的执行分工与使用，见[原生后端指南](NATIVE_CUDA.md)。
+
 [English](../en/README.md) · [全部中英文对照](../README.md) · [项目首页](../../README.md)
 
 在 B300 上运行三个 Python 算子起点，见 [B300 指南](../B300.md)。

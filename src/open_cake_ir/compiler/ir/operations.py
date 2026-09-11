@@ -61,13 +61,15 @@ def elementwise_result_dtype(operands: Iterable[DType]) -> DType | None:
 class LoadParameters:
     movement: LoadMovement
     descriptor_box: tuple[int, ...] | None
-    reuse: LoadReuse | None
     """TMA descriptor box extents -- the coordinate commitment the paper requires.
 
     Without it `movement: tma` is a flag: it says a bulk-tensor copy happens but not
     what tile the descriptor addresses, so the backend derives a box and the choice is
     not inspectable. Meaningless for `movement: global`.
     """
+    reuse: LoadReuse | None
+    source_atom: CopyAtom | None = None
+    """Explicit TMEM load atom; other movements may not name one."""
 
 
 # Whether an instruction places its own operands is a fact about the contract, so the
@@ -150,6 +152,49 @@ class MmaParameters:
     accumulator: DType
     instruction: MmaInstruction | None
     tile_shape: tuple[int, int, int] | None
+    k_ranges: tuple[tuple[int, int], ...] | None = None
+    """Logical half-open contributions within the input tile's K domain.
+
+    Both operands select these coordinates in order. This never changes their
+    storage shape, and each MMA still writes one independently materialized result.
+    None retains the original full contraction.
+    """
+
+    def __post_init__(self) -> None:
+        if self.k_ranges is None:
+            return
+        if self.tile_shape is None:
+            raise ScheduleParseError("mma.k_ranges requires tile_shape")
+        if not isinstance(self.k_ranges, (tuple, list)) or not self.k_ranges:
+            raise ScheduleParseError("mma.k_ranges must be a nonempty list of intervals")
+        normalized: list[tuple[int, int]] = []
+        for index, interval in enumerate(self.k_ranges):
+            path = f"mma.k_ranges[{index}]"
+            if not isinstance(interval, (tuple, list)) or len(interval) != 2:
+                raise ScheduleParseError(f"{path} must contain start and end")
+            start, end = (_nonnegative_int(value, path) for value in interval)
+            if start >= end or end > self.tile_shape[2]:
+                raise ScheduleParseError(f"{path} must be nonempty and within tile_shape.K")
+            if normalized and start < normalized[-1][1]:
+                raise ScheduleParseError(f"{path} must follow the previous interval without overlap")
+            if normalized and start == normalized[-1][1]:
+                normalized[-1] = (normalized[-1][0], end)
+            else:
+                normalized.append((start, end))
+        canonical = None if normalized == [(0, self.tile_shape[2])] else tuple(normalized)
+        object.__setattr__(self, "k_ranges", canonical)
+
+    @property
+    def contribution_ranges(self) -> tuple[tuple[int, int], ...] | None:
+        """Canonical traversal; full coverage is derived from its existing owner."""
+        if self.k_ranges is not None:
+            return self.k_ranges
+        return None if self.tile_shape is None else ((0, self.tile_shape[2]),)
+
+    @property
+    def selected_k(self) -> int | None:
+        ranges = self.contribution_ranges
+        return None if ranges is None else sum(end - start for start, end in ranges)
 
 
 @dataclass(frozen=True)
@@ -368,7 +413,7 @@ def _operation_parameters(
         obj = _strict_object(
             value,
             required={"movement"},
-            optional={"descriptor_box", "reuse"},
+            optional={"descriptor_box", "reuse", "source_atom"},
             context=context,
         )
         movement = _enum(LoadMovement, obj["movement"], f"{context}.movement")
@@ -384,17 +429,24 @@ def _operation_parameters(
                 for index, extent in enumerate(extents)
             )
         reuse = obj.get("reuse")
+        atom = obj.get("source_atom")
+        if movement is LoadMovement.TMEM:
+            if atom is None or reuse is not None:
+                raise ScheduleParseError(f"{context}: tmem requires source_atom and forbids reuse")
+        elif atom is not None:
+            raise ScheduleParseError(f"{context}.source_atom applies to tmem movement only")
         return LoadParameters(
             movement,
             box,
             None if reuse is None else _enum(LoadReuse, reuse, f"{context}.reuse"),
+            None if atom is None else CopyAtom.from_dict(atom, f"{context}.source_atom"),
         )
 
     if kind is OperationKind.MMA:
         obj = _strict_object(
             value,
             required={"accumulator"},
-            optional={"instruction", "tile_shape"},
+            optional={"instruction", "tile_shape", "k_ranges"},
             context=context,
         )
         accumulator = _enum(DType, obj["accumulator"], f"{context}.accumulator")
@@ -415,13 +467,22 @@ def _operation_parameters(
                 for index, extent in enumerate(extents)
             )
 
-        return MmaParameters(
-            accumulator,
-            None
-            if instruction is None
-            else MmaInstruction.from_dict(instruction, f"{context}.instruction"),
-            mnk("tile_shape"),
-        )
+        ranges = None
+        if "k_ranges" in obj:
+            ranges = _object_list(obj["k_ranges"], f"{context}.k_ranges", allow_empty=False)
+        try:
+            return MmaParameters(
+                accumulator,
+                None
+                if instruction is None
+                else MmaInstruction.from_dict(instruction, f"{context}.instruction"),
+                mnk("tile_shape"),
+                ranges,
+            )
+        except ScheduleParseError as error:
+            if str(error).startswith("mma.k_ranges"):
+                raise ScheduleParseError(str(error).replace("mma.", f"{context}.", 1)) from error
+            raise
 
     if kind is OperationKind.EPILOGUE:
         obj = _strict_object(
