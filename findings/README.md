@@ -55,3 +55,5 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-11-003 — a schema-rejected StructuredOutput call can recover through a later exact success (protocol, closed in Executor v102)
 - F-2026-09-11-004 — output-column specialization cuts Metal contraction private state and confirms 23.6x on M1 Pro GEMM-SiLU (behavior, Compiler-pass proposal; M4 transfer pending)
 - F-2026-09-11-005 — restricted NVIDIA counters require a bounded privileged NCU launch and caller-owned evidence (protocol, E107 attribution failure; closed in Executor v108 by two retained-candidate attribution replays)
+- F-2026-09-11-006 — GELU Compiler output loses its libdevice dependency at common build admission (bug, implemented in Compiler v76; successor baseline replay pending)
+- F-2026-09-11-007 — prepare every matrix baseline before provider spending and preregister sustained-search budgets and timing parameters (protocol, implemented in Executor v109; successor validation pending, old timing failures unchanged)

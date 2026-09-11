@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-11-007",
+  "kind": "protocol",
+  "title": "Prebuild every matrix baseline and preregister the sustained-search Study before spending provider tokens",
+  "date": "2026-09-11",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "executor_revision": "open-cake-ir-b200-v108+e248f79602b04bec71530f92fa37b5fe97c414c7f7633ebd7f5ab9306beafaf5",
+  "compiler_revision_id": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
+  "tasks": ["silu", "softsign", "gelu_tanh", "gelu_tanh_backward"],
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e108-all-20260911-x9cb9mrd/matrix/silu/campaign-evidence",
+      "run_id": "open_cake-1",
+      "event_sequences": [7],
+      "note": "The retained search receipt reports correctness passed, a descriptive pooled ratio of 1.12069 and 9/10 candidate pair wins, but all 20 arm cohorts exceed the frozen 5% CV bound. Its classification remains measurement_quality_failed."
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e108-all-20260911-x9cb9mrd/matrix/softsign/campaign-evidence",
+      "run_id": "open_cake-1",
+      "event_sequences": [13],
+      "note": "The second retained search receipt reports correctness passed, a descriptive pooled ratio of 1.05660 and 10/10 candidate pair wins, but one of 20 arm cohorts exceeds the frozen 5% CV bound. This result also remains measurement_quality_failed."
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/paired-ratio-iqr-diagnostic",
+      "artifacts": ["raw-analysis.json", "minimal-cv-successor-note.md"],
+      "note": "Read-only diagnostics preserve the original timing outcomes. The proposed paired-ratio IQR method was not implemented. The chosen smaller successor exposes the existing CV and required-win fields and must be checked for actual arm bias with controls; its 15% bound is not justified by fitting the old observed maximum CV."
+    },
+    {
+      "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/study-repair/review",
+      "artifacts": ["lab-source-review-5357e8a1.json"],
+      "note": "Independent source review accepted the existing-owner baseline ordering, budget forwarding and Study fields. That review does not replace the pending real baseline builds and measurement controls."
+    }
+  ],
+  "observation": "The old matrix prepares each task only when it is reached, so later deterministic baseline build failures can be discovered after earlier provider spending. Its microsecond timing observations also motivate a new, explicitly declared Study rather than a retrospective change to the old quality decisions. The user separately requested at least a 3,000,000-token budget per task; that budget is an owner instruction, not a deduction from benchmark results or a claim that every run will spend it.",
+  "proposed_change": "Reuse the single-task baseline builder to compile, seal and ABI-check every selected task before the first provider call, stopping on the first failed baseline and reusing successful sealed bundles in actual tasks. The launcher defaults become 3,000,000 tokens, 32 turns and 28,800 wall seconds per task. CUDA launcher Studies explicitly use maximum_cv=0.15 and required_pair_wins=9 of ten balanced pairs, retaining the existing CUPTI timing owner, 25 samples per cohort, L2 policy, 1.05 materiality and fresh confirmation. Metal keeps its existing timing defaults. These values enter the existing Study and CampaignLock owners; there is no new statistic, quality mode or acceptance table. Implementation is commit 015831a1.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v109+f78e7463e8e6f7f09714ab663b25d0eb04599c7c33777584d1fe8563e0907737",
+  "verification_plan": "Review the public single-task/matrix commands and frozen Study values, including stop-before-provider behavior for a later bad baseline. On a new source/Executor binding, run the complete selected baseline preflight and validate the timing contract through the real two-arm A/A path with label swap and a known-slow GPU-region control. Preserve null, slowdown, quality failure and infrastructure unknown outcomes. Do not tune the frozen thresholds after those controls or upgrade any E108 result. A future campaign uses the newly declared budget and requires ordinary fresh qualification and acceptance.",
+  "verified_by": null
+}
