@@ -97,6 +97,8 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                  ast.AsyncWith, ast.Try, ast.Raise, ast.Delete, ast.Await, ast.Yield,
                  ast.YieldFrom, ast.ListComp, ast.SetComp, ast.DictComp,
                  ast.GeneratorExp, ast.NamedExpr, ast.While)
+    parents = {child: parent for parent in ast.walk(kernel)
+               for child in ast.iter_child_nodes(parent)}
     for statement in kernel.body:
         for node in ast.walk(statement):
             if isinstance(node, forbidden):
@@ -109,6 +111,13 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
             if isinstance(node, ast.Name) and ("__" in node.id or
                 isinstance(node.ctx, ast.Store) and node.id in _TRITON_RESERVED_NAMES):
                 raise ValueError(f"native Triton reserved name at line {node.lineno}")
+            if isinstance(node, ast.Name) and node.id == "libdevice" and isinstance(node.ctx, ast.Load):
+                attribute = parents.get(node)
+                call = parents.get(attribute)
+                if (not isinstance(attribute, ast.Attribute) or attribute.value is not node
+                    or attribute.attr != "tanh" or not isinstance(call, ast.Call)
+                    or call.func is not attribute):
+                    raise ValueError(f"native Triton libdevice requires a direct tanh call at line {node.lineno}")
             if isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id == "tl":
                     allowed = node.attr in _TRITON_CALLS | _TRITON_TYPES

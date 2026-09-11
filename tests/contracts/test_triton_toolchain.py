@@ -54,6 +54,19 @@ class TritonToolchainAdmissionTests(unittest.TestCase):
     def test_native_tanh_and_result_cast_are_admitted(self):
         validate_triton_kernel(SOURCE.encode(), REQUIREMENTS)
 
+    def test_libdevice_module_and_function_values_cannot_escape_to_tensor_methods(self):
+        sources = (
+            SOURCE.replace("libdevice.tanh(x)", "libdevice.tanh.to(x)"),
+            SOURCE.replace("    y =", "    helper = libdevice\n    y =")
+                  .replace("libdevice.tanh(x)", "helper.to(x)"),
+            SOURCE.replace("    y =", "    helper = libdevice.tanh\n    y =")
+                  .replace("libdevice.tanh(x)", "helper.to(x)"),
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                with self.assertRaisesRegex(ValueError, "libdevice requires a direct tanh call"):
+                    validate_triton_kernel(source.encode(), REQUIREMENTS)
+
     def test_existing_module_without_libdevice_keeps_its_projection(self):
         source = SOURCE.replace(LIBDEVICE_IMPORT, "").replace("libdevice.tanh(x)", "tl.exp(x)")
         validate_triton_kernel(source.encode(), REQUIREMENTS)
