@@ -26,10 +26,10 @@
 
 ### `sm_103a`
 
-- 版本： `open-cake-ir-b200-v106+222fce39ca237ee7ac5a774af0fe31cc13604072d69d4b4aa67004021ee83afc`
+- 版本： `open-cake-ir-b200-v107+750f6c2f32eecfc40394ccf44eb60f1f5b64876385e64b49a3c429ac783cbe3c`
 - 状态： `released`
 - 绑定源码： `156` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v106+222fce39ca237ee7ac5a774af0fe31cc13604072d69d4b4aa67004021ee83afc.json`](../../runtime/executors/open-cake-ir-b200-v106+222fce39ca237ee7ac5a774af0fe31cc13604072d69d4b4aa67004021ee83afc.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v107+750f6c2f32eecfc40394ccf44eb60f1f5b64876385e64b49a3c429ac783cbe3c.json`](../../runtime/executors/open-cake-ir-b200-v107+750f6c2f32eecfc40394ccf44eb60f1f5b64876385e64b49a3c429ac783cbe3c.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
