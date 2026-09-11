@@ -35,7 +35,7 @@ from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
-from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, run_supervised, sanitized_environment
+from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
 from open_cake_ir.evaluation.paired import (
     PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
     candidate_from_identity, validate_pair_candidates,

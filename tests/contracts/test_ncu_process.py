@@ -60,6 +60,16 @@ class NcuProcessTests(unittest.TestCase):
         error = ncu.NcuProcessCancelled(15, b'output', b'diagnostic')
         self.assertEqual((error.code, error.stdout, error.stderr), (143, b'output', b'diagnostic'))
 
+    def test_privileged_deadline_kill_is_reported_as_timeout(self):
+        with patch.object(ncu, 'requires_sudo', return_value=True), \
+             patch.object(ncu.subprocess, 'Popen') as spawn, \
+             patch.object(ncu.time, 'monotonic', side_effect=[0, 7]):
+            spawn.return_value.poll.return_value = -9
+            spawn.return_value.returncode = -9
+            with self.assertRaises(ncu.SupervisedProcessTimeout):
+                ncu.run_ncu(['/ncu'], cwd=Path('/tmp'), timeout_seconds=1,
+                    environment={'CUDA_VISIBLE_DEVICES': 'cpu-fixture', 'GPUQ_JOB_ID': 'cpu-fixture'})
+
     def test_output_owner_distinguishes_direct_root_and_privileged_child(self):
         with patch.dict(os.environ, {'SUDO_UID': '1010', 'SUDO_GID': '1010'}), \
              patch.object(ncu.os, 'geteuid', return_value=0), \

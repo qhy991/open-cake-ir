@@ -70,7 +70,8 @@ def run_ncu(arguments: Sequence[str], *, cwd: Path, environment: Mapping[str, st
             process = subprocess.Popen(command, cwd=cwd, env=dict(environment),
                 stdin=subprocess.DEVNULL, stdout=stdout_file, stderr=stderr_file,
                 start_new_session=True)
-            deadline = time.monotonic() + timeout_seconds + 15
+            started = time.monotonic()
+            deadline = started + timeout_seconds + 15
             forwarded = False
             while process.poll() is None:
                 if pending is not None and not forwarded:
@@ -93,7 +94,9 @@ def run_ncu(arguments: Sequence[str], *, cwd: Path, environment: Mapping[str, st
             stderr = stderr_file.read(maximum_output_bytes)
             if pending is not None:
                 raise NcuProcessCancelled(pending, stdout, stderr)
-            if process.returncode in (124, 137):
+            if (process.returncode in (124, 137) or
+                    (process.returncode == -signal.SIGKILL and
+                     time.monotonic() - started >= timeout_seconds)):
                 raise SupervisedProcessTimeout(stdout, stderr)
             if max(sizes) > maximum_output_bytes:
                 raise SupervisedProcessOutputLimit(stdout, stderr)
