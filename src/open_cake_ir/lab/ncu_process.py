@@ -17,6 +17,12 @@ from open_cake_ir.lab.process import (
 )
 
 
+class NcuProcessCancelled(SystemExit):
+    def __init__(self, signum: int, stdout: bytes, stderr: bytes):
+        super().__init__(128 + signum)
+        self.stdout, self.stderr = stdout, stderr
+
+
 def requires_sudo() -> bool:
     if sys.platform != "linux" or os.geteuid() == 0:
         return False
@@ -44,10 +50,10 @@ def run_ncu(arguments: Sequence[str], *, cwd: Path, environment: Mapping[str, st
     for name in ("CUDA_VISIBLE_DEVICES", "GPUQ_JOB_ID"):
         if not environment.get(name):
             raise ValueError(f"privileged NCU requires broker {name}")
-    names = ("PATH", "CUDA_VISIBLE_DEVICES", "CUDA_DEVICE_ORDER", "GPUQ_JOB_ID",
-             "LD_LIBRARY_PATH", "TMPDIR", "CUDA_MODULE_LOADING")
+    names = ("CUDA_VISIBLE_DEVICES", "CUDA_DEVICE_ORDER", "GPUQ_JOB_ID",
+             "TMPDIR", "CUDA_MODULE_LOADING")
     command = ["/usr/bin/sudo", "-n", "--", "/usr/bin/timeout", "--signal=TERM",
-               "--kill-after=5s", f"{timeout_seconds}s", "/usr/bin/env",
+               "--kill-after=5s", f"{timeout_seconds}s", "/usr/bin/env", "PATH=/usr/bin:/bin",
                *(f"{name}={environment[name]}" for name in names if name in environment),
                *arguments]
     pending = None
@@ -86,7 +92,7 @@ def run_ncu(arguments: Sequence[str], *, cwd: Path, environment: Mapping[str, st
             stdout = stdout_file.read(maximum_output_bytes)
             stderr = stderr_file.read(maximum_output_bytes)
             if pending is not None:
-                raise SystemExit(128 + pending)
+                raise NcuProcessCancelled(pending, stdout, stderr)
             if process.returncode in (124, 137):
                 raise SupervisedProcessTimeout(stdout, stderr)
             if max(sizes) > maximum_output_bytes:

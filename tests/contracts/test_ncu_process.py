@@ -42,6 +42,24 @@ class NcuProcessTests(unittest.TestCase):
                 ncu.write_new(path, b'second')
             self.assertEqual(path.read_bytes(), b'first')
 
+    def test_sudo_environment_is_narrow_and_noninteractive(self):
+        environment = {'CUDA_VISIBLE_DEVICES': 'cpu-fixture', 'GPUQ_JOB_ID': 'cpu-fixture',
+                       'PATH': '/untrusted', 'LD_LIBRARY_PATH': '/untrusted', 'AUTH_TOKEN': 'excluded'}
+        with patch.object(ncu, 'requires_sudo', return_value=True), \
+             patch.object(ncu.subprocess, 'Popen') as spawn:
+            spawn.return_value.poll.return_value = 0
+            spawn.return_value.returncode = 0
+            ncu.run_ncu(['/ncu'], cwd=Path('/tmp'), environment=environment)
+        command = spawn.call_args.args[0]
+        self.assertEqual(command[:4], ['/usr/bin/sudo', '-n', '--', '/usr/bin/timeout'])
+        self.assertIn('PATH=/usr/bin:/bin', command)
+        self.assertIn('CUDA_VISIBLE_DEVICES=cpu-fixture', command)
+        self.assertFalse(any('/untrusted' in arg or 'excluded' in arg for arg in command))
+
+    def test_cancellation_retains_diagnostics(self):
+        error = ncu.NcuProcessCancelled(15, b'output', b'diagnostic')
+        self.assertEqual((error.code, error.stdout, error.stderr), (143, b'output', b'diagnostic'))
+
     def test_output_privileges_restore_on_creation_failure(self):
         calls = []
         with patch.object(ncu.os, 'geteuid', return_value=0), \

@@ -770,8 +770,8 @@ def _profile_candidate(
         "--output",
         str(child_result_path),
     ]
+    from open_cake_ir.lab.ncu_process import NcuProcessCancelled, run_ncu
     try:
-        from open_cake_ir.lab.ncu_process import run_ncu
         completed = run_ncu(
             command,
             cwd=ROOT,
@@ -779,7 +779,7 @@ def _profile_candidate(
             timeout_seconds=900,
             maximum_output_bytes=16 * 1024 * 1024,
         )
-    except (SupervisedProcessTimeout, SupervisedProcessOutputLimit) as error:
+    except (SupervisedProcessTimeout, SupervisedProcessOutputLimit, NcuProcessCancelled) as error:
         _forward_profile_output(error.stdout, error.stderr)
         raise
     if completed.returncode != 0:
