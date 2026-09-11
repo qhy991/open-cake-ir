@@ -13,6 +13,8 @@ from pathlib import Path
 from tests.contracts._executor_fixture import compiler_reference
 import tempfile
 import shutil
+import subprocess
+import sys
 from types import MappingProxyType, SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -255,6 +257,27 @@ class PairedExecutionTests(unittest.TestCase):
         self.assertIs(caught.exception.__cause__, self.close_error)
         self.assertEqual(len(self.created), 4)
         self.assertEqual(self.closed, self.created)
+
+    def test_profile_child_bootstraps_the_exact_source_without_ambient_python_path(self):
+        admission = SimpleNamespace(device_name='NVIDIA B300 SXM6 AC', compute_capability=(10,3),
+            gpu_uuid='GPU-test-only', broker_job_id='gpuq-123456789abc', mode='exclusive')
+        authority = SimpleNamespace(request_root=self.output, candidate=self.candidate,
+            executor=SimpleNamespace(admit_profiler=lambda: {'path':'/not-invoked/ncu'}))
+        with patch.object(worker,'observe_exclusive_cuda',return_value=admission), \
+             patch.object(worker,'run_supervised',side_effect=RuntimeError('stop before NCU')) as run:
+            with self.assertRaisesRegex(RuntimeError,'stop before NCU'):
+                worker._profile_candidate(authority,self.output/'request.json',{})
+        command = run.call_args.args[0]
+        child = command[command.index(sys.executable):]
+        self.assertEqual(child[:4], [sys.executable,'-I',
+            str(ROOT/'src/open_cake_ir/evaluation/source_bootstrap.py'),'open_cake_ir.tasks.evaluate'])
+        self.assertEqual(command[command.index('--launch-count')+1],'1')
+        self.assertEqual(command[command.index('--replay-mode')+1],'kernel')
+        completed = subprocess.run([*child,'--help'],cwd=self.output,
+            env={'PATH':os.environ.get('PATH',''),'PYTHONPATH':'/not-the-source','PYTHONDONTWRITEBYTECODE':'1'},
+            capture_output=True,text=True,timeout=30)
+        self.assertEqual(completed.returncode,0,completed.stdout+completed.stderr)
+        self.assertIn('usage:',completed.stdout)
 
     def test_actual_launcher_order_fresh_outputs_both_oracles_and_close_null(self):
         receipt = self.execute()

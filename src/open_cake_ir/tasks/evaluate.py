@@ -738,6 +738,7 @@ def _profile_candidate(
         },
     )
     child_result_path = authority.request_root / "profile-child-result.json"
+    from open_cake_ir.evaluation.source_bootstrap import module_command
     command = [
         str(profiler["path"]),
         "--csv",
@@ -755,8 +756,7 @@ def _profile_candidate(
         "1",
         "--replay-mode",
         "kernel",
-        sys.executable,
-        str(Path(__file__).resolve()),
+        *module_command(sys.executable, "open_cake_ir.tasks.evaluate"),
         "--profile-child",
         "--profile-admission",
         str(admission_path),
