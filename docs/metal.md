@@ -115,3 +115,27 @@ PYTHONPATH=src python3 -m unittest \
 Generated-body checks use a C++ CPU adapter when available; qualification tests use
 explicit executable fixtures. Actual Campaign qualification and performance still
 require reviewed releases and device execution.
+
+## Run a task matrix without repeating common setup failures
+
+`tools/launch_task_matrix.py` is a thin sequential driver over the launcher above. It
+does not create another Workload, Study, acceptance path or result authority. The first
+task obtains the live two-turn provider qualification; every later task reuses that exact
+receipt while model, effort, executable and candidate-count treatment stay fixed. If the
+first task fails before a qualification exists, the matrix stops because repeating it
+would manufacture copies of one common setup failure. Once qualified, an individual
+campaign fault is retained and later tasks continue.
+
+```sh
+python3 tools/launch_task_matrix.py \
+  --backend metal-m4 --harness claude-code --model "<exact-model-id>" --effort high \
+  --provider-executable /absolute/path/to/claude \
+  --workspace-root "$HOME/.local/share/open-cake-ir/runs/m4-matrix" \
+  --rows 128 --columns 1024 --depth 256 \
+  --turns 4 --token-budget 150000
+```
+
+Omit repeated `--task` flags to use the launcher's complete registered order, or repeat
+the flag for an ordered subset. The external root gets immutable per-task stdout/stderr,
+append-only `task-results.jsonl`, and a derived `terminal.json`. A nonzero matrix exit
+means at least one retained task fault; it does not erase successful siblings.

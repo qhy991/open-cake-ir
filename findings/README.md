@@ -53,3 +53,4 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-11-001 — Claude gateway tool ids may be reused only after the prior invocation completes (protocol, closed in Executor v101 and verified by a fresh layernorm campaign)
 - F-2026-09-11-002 — CLI tool-progress heartbeat outside the native contract shadowed the named compaction refusal (protocol, gemm v99 retry; closed in Executor v103)
 - F-2026-09-11-003 — a schema-rejected StructuredOutput call can recover through a later exact success (protocol, closed in Executor v102)
+- F-2026-09-11-004 — output-column specialization cuts Metal contraction private state and confirms 23.6x on M1 Pro GEMM-SiLU (behavior, Compiler-pass proposal; M4 transfer pending)
