@@ -60,6 +60,19 @@ class NcuProcessTests(unittest.TestCase):
         error = ncu.NcuProcessCancelled(15, b'output', b'diagnostic')
         self.assertEqual((error.code, error.stdout, error.stderr), (143, b'output', b'diagnostic'))
 
+    def test_output_owner_distinguishes_direct_root_and_privileged_child(self):
+        with patch.dict(os.environ, {'SUDO_UID': '1010', 'SUDO_GID': '1010'}), \
+             patch.object(ncu.os, 'geteuid', return_value=0), \
+             patch.object(ncu.os, 'getegid', return_value=0):
+            self.assertEqual(ncu.profile_output_owner({'uid': 0, 'gid': 0}), (0, 0))
+            self.assertEqual(ncu.profile_output_owner({'uid': 1010, 'gid': 1010}), (1010, 1010))
+            with self.assertRaises(ValueError):
+                ncu.profile_output_owner({'uid': 2000, 'gid': 2000})
+        with patch.object(ncu.os, 'geteuid', return_value=1010), \
+             patch.object(ncu.os, 'getegid', return_value=1010):
+            with self.assertRaises(ValueError):
+                ncu.profile_output_owner({'uid': 0, 'gid': 0})
+
     def test_output_privileges_restore_on_creation_failure(self):
         calls = []
         with patch.object(ncu.os, 'geteuid', return_value=0), \

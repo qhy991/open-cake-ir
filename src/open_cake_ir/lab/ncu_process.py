@@ -103,6 +103,19 @@ def run_ncu(arguments: Sequence[str], *, cwd: Path, environment: Mapping[str, st
             signal.signal(s, handler)
 
 
+def profile_output_owner(value: object) -> tuple[int, int]:
+    if (not isinstance(value, dict) or set(value) != {"uid", "gid"}
+            or any(type(v) is not int or v < 0 for v in value.values())):
+        raise ValueError("profile output owner fields differ")
+    owner = (value["uid"], value["gid"])
+    actual = (os.geteuid(), os.getegid())
+    if owner != actual:
+        if (actual[0] != 0 or owner !=
+                (int(os.environ.get("SUDO_UID", -1)), int(os.environ.get("SUDO_GID", -1)))):
+            raise ValueError("profile output owner differs from launching caller")
+    return owner
+
+
 def write_new(path: Path, payload: bytes, owner: tuple[int, int] | None = None) -> None:
     """Create profile artifacts as the admitted caller, without repairing custody."""
     uid, gid = os.geteuid(), os.getegid()

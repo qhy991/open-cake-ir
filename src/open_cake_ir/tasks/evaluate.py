@@ -872,17 +872,8 @@ def main() -> int:
                 "output_owner",
             } or admission_document.get("schema_version") != 1:
                 raise ValueError("profile admission fields differ")
-            owner = admission_document["output_owner"]
-            if (not isinstance(owner, dict) or set(owner) != {"uid", "gid"}
-                    or any(type(v) is not int or v < 0 for v in owner.values())):
-                raise ValueError("profile output owner fields differ")
-            actual_owner = (os.geteuid(), os.getegid())
-            if (owner["uid"], owner["gid"]) != actual_owner:
-                if (actual_owner[0] != 0 or
-                        (owner["uid"], owner["gid"]) !=
-                        (int(os.environ.get("SUDO_UID", -1)), int(os.environ.get("SUDO_GID", -1)))):
-                    raise ValueError("profile output owner differs from launching caller")
-            _PROFILE_OUTPUT_OWNER = (owner["uid"], owner["gid"])
+            from open_cake_ir.lab.ncu_process import profile_output_owner
+            _PROFILE_OUTPUT_OWNER = profile_output_owner(admission_document["output_owner"])
             capability = admission_document["compute_capability"]
             if not isinstance(capability, list) or len(capability) != 2:
                 raise ValueError("profile admission capability differs")
