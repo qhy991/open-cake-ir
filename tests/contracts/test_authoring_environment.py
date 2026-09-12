@@ -81,6 +81,11 @@ def _headline_schedule(workload: WorkloadContract) -> dict[str, object]:
 
 
 class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
+    def setUp(self):
+        from tests.contracts._executor_fixture import SemanticExecutorFixture
+        from tests.contracts._contexts import enter_context
+        enter_context(self, SemanticExecutorFixture())
+
     def test_empirical_flash_environment_preserves_native_gates_and_rank(self) -> None:
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
         workload = load_workload(ROOT / "contracts/workloads/flash-kmeans-assign-v2.json")

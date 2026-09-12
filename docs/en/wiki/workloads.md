@@ -51,6 +51,27 @@ Layer inputs, weights, and state feed qkvg/gate projections, the stateful core, 
 
 Contract loading and boundary validation do not supply a complete megaop Lab evaluator or GPU results. Exact shapes, oracle, output storage, and state requirements remain in the contracts.
 
+## Standalone AKA operator contracts
+
+These migrated contracts fix the `sm_100a` input domain, tensor ABI and independent CPU
+oracle. Historical AKA provenance does not qualify the current source on a GPU or establish performance.
+
+| Contract | Computation and outputs |
+| --- | --- |
+| [GEMM NT+bias FP32](../../../contracts/workloads/aka-gemm-nt-bias-fp32-triton-b200-v1.json) | Weights use `[N,K]` storage; compute `input @ weight_nt.T + bias`. |
+| [Histogram FP32](../../../contracts/workloads/aka-histogram-fp32-triton-b200-v1.json) | Count values in `[-4,4]`, ignore out-of-range values, and place the upper endpoint in the last bin. |
+| [Max-pool1d NWC FP32](../../../contracts/workloads/aka-max-pool1d-nwc-fp32-triton-b200-v1.json) | Take window maxima along the sequence axis; padding is excluded rather than compared as zero. |
+| [Momentum SGD FP32](../../../contracts/workloads/aka-momentum-sgd-fp32-triton-b200-v1.json) | Produce new parameters and momentum, with an explicit Nesterov branch and unchanged inputs. |
+| [Residual LayerNorm FP32](../../../contracts/workloads/aka-residual-layernorm-fp32-triton-b200-v1.json) | Add the residual, normalize, and return residual, normalized values, mean and reciprocal standard deviation. |
+| [Row gather FP32](../../../contracts/workloads/aka-row-gather-fp32-triton-b200-v1.json) | Copy FP32 rows using the declared indices into fresh nonaliasing output. |
+
+## DeepSeek-V4-Pro routing slices
+
+- [CSA indexer top-k](../../../contracts/workloads/deepseek-v4-csa-indexer-topk-fp32-triton-b200-v1.json) selects 1024 descending positions from 2048 unique scores. It excludes full CSA attention and short-context variable top-k.
+- [MoE gate](../../../contracts/workloads/deepseek-v4-moe-gate-fp32-triton-b200-v1.json) computes `sqrt(softplus(logits))`, selects six experts using selection-biased scores, and normalizes the original scores with scale 2.5.
+
+Both are standalone `sm_100a` routing contracts that exclude ties. They do not cover expert execution, shared experts, communication or complete serving, and do not imply current GPU qualification.
+
 ## Why some examples are not listed as Workloads
 
 Softmax and RoPE also appear as [Corpus cases](../../../corpus/manifest.json) or independent measurements. [State update](../../../examples/gpu/state_store_b200_correctness/README.md) and [FMA](../../../examples/gpu/fma_b200_correctness/README.md) have fixed GPU tasks. A JSON file or README does not automatically make them a complete Workload callable by arbitrary Studies; task semantics, evaluator, and evidence each need delivery.

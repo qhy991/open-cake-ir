@@ -219,19 +219,19 @@ class ReportTest(unittest.TestCase):
     def test_every_retained_schedule_reports_its_bound(self) -> None:
         revision_path = ROOT / "compiler" / "revision.lock.json"
         targets = json.loads(revision_path.read_text(encoding="utf-8"))["target_definitions"]
-        for path in sorted(
-            ROOT / case["schedule"]
-            for case in json.loads(
-                (ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8")
-            )["cases"]
-        ):
+        cases = json.loads((ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8"))["cases"]
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        for case in sorted(cases, key=lambda case: case["schedule"]):
+            path = ROOT / case["schedule"]
             with self.subTest(schedule=path.name):
                 document = corpus_document(path)
-                if document["lowering"]["backend"] == "checked_cuda_asset":
-                    # Retired syntax is a parser refusal, not a resource report.
-                    assessment = Compiler.load(ROOT, ROOT / "compiler/revision.json").assess(document)
+                if "SCHEDULE_STRUCTURE" in case["expected"]["finding_codes"]:
+                    # Intentional structural counterexamples have no Schedule to
+                    # analyze. Keep their declared public refusal under assertion.
+                    assessment = compiler.assess(document)
                     self.assertFalse(assessment.accepted)
-                    self.assertEqual([f.code for f in assessment.findings], ["SCHEDULE_STRUCTURE"])
+                    self.assertFalse(assessment.lowering_eligible)
+                    self.assertEqual([f.code for f in assessment.findings], case["expected"]["finding_codes"])
                     continue
                 schedule = Schedule.from_dict(document)
                 reference = targets.get(schedule.target)

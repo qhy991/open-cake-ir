@@ -432,7 +432,7 @@ def _generated_advisory_assessment(compiler):
 class SemanticLabTestCase(unittest.TestCase):
     def setUp(self):
         from tests.contracts._executor_fixture import SemanticExecutorFixture
-        enter_context(self, SemanticExecutorFixture())
+        self.executor_fixture = enter_context(self, SemanticExecutorFixture())
 
 
 class FindingRoutingContractTests(SemanticLabTestCase):
@@ -1162,15 +1162,7 @@ class LabContractTests(SemanticLabTestCase):
                 workload_sha256=workload_sha,
                 protocol_sha256=protocol_sha,
                 cwd=root,
-                executor=ExecutorRevision.load(
-                    ROOT,
-                    ROOT
-                    / json.loads(
-                        (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(
-                            encoding="utf-8"
-                        )
-                    )["current"]["path"],
-                ),
+                executor=self.executor_fixture.revision(ROOT),
                 compiler_reference=compiler_reference(ROOT),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,
@@ -1232,15 +1224,7 @@ class LabContractTests(SemanticLabTestCase):
                 workload_sha256=workload_sha,
                 protocol_sha256=protocol_sha,
                 cwd=root,
-                executor=ExecutorRevision.load(
-                    ROOT,
-                    ROOT
-                    / json.loads(
-                        (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(
-                            encoding="utf-8"
-                        )
-                    )["current"]["path"],
-                ),
+                executor=self.executor_fixture.revision(ROOT),
                 compiler_reference=compiler_reference(ROOT),
                 service_user=pwd.getpwuid(os.geteuid()).pw_name,
                 service_group=grp.getgrgid(os.getegid()).gr_name,
@@ -1277,15 +1261,7 @@ class LabContractTests(SemanticLabTestCase):
             "canonical_sha256": draft_sha256,
         }
         study["state"] = "frozen"
-        study["execution"]["executor_revision"] = {
-            field: value
-            for field, value in json.loads(
-                (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(
-                    encoding="utf-8"
-                )
-            )["current"].items()
-            if field in {"executor_id", "path", "canonical_sha256"}
-        }
+        study["execution"]["executor_revision"] = dict(self.executor_fixture.revision(ROOT).reference)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "study.json"
             path.write_text(json.dumps(study))

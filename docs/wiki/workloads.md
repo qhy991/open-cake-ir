@@ -95,6 +95,27 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 这里已接入合同加载与边界校验。**单靠注册不提供完整 megaop Lab evaluator，也不产生 GPU 正确性或速度结果。**
 具体形状、oracle、输出存储和状态规则都在各自合同里。
 
+## AKA 独立算子合同
+
+这些迁移合同固定 `sm_100a` 的输入域、tensor ABI 和独立 CPU oracle；历史 AKA 来源
+不等于当前源码的 GPU 或性能资格。
+
+| 合同 | 计算与输出 |
+| --- | --- |
+| [GEMM NT+bias FP32](../../contracts/workloads/aka-gemm-nt-bias-fp32-triton-b200-v1.json) | 权重按 `[N,K]` 存储，计算 `input @ weight_nt.T + bias`。 |
+| [Histogram FP32](../../contracts/workloads/aka-histogram-fp32-triton-b200-v1.json) | 统计 `[-4,4]` 内的值，范围外忽略，右端点归入最后一桶。 |
+| [Max-pool1d NWC FP32](../../contracts/workloads/aka-max-pool1d-nwc-fp32-triton-b200-v1.json) | 沿序列轴做窗口最大值；padding 不作为零参与比较。 |
+| [Momentum SGD FP32](../../contracts/workloads/aka-momentum-sgd-fp32-triton-b200-v1.json) | 输出新的参数和动量，包含明确的 Nesterov 分支；输入保持不变。 |
+| [Residual LayerNorm FP32](../../contracts/workloads/aka-residual-layernorm-fp32-triton-b200-v1.json) | 残差相加后归一化，同时输出残差、归一化结果、均值和标准差倒数。 |
+| [Row gather FP32](../../contracts/workloads/aka-row-gather-fp32-triton-b200-v1.json) | 按合同声明的行索引复制 FP32 行，独立输出不与输入别名。 |
+
+## DeepSeek-V4-Pro 路由切片
+
+- [CSA indexer top-k](../../contracts/workloads/deepseek-v4-csa-indexer-topk-fp32-triton-b200-v1.json)：从 2048 个唯一分数中选择降序的 1024 个位置，不包含完整 CSA attention 或短上下文可变 top-k。
+- [MoE gate](../../contracts/workloads/deepseek-v4-moe-gate-fp32-triton-b200-v1.json)：计算 `sqrt(softplus(logits))`，用带选择偏置的分数选 6 个专家，再用未加偏置的分数归一化权重并乘 2.5。
+
+两者都是 `sm_100a` 的独立路由合同，排除同分情形；不覆盖专家执行、共享专家、通信或完整模型服务，也不自动提供当前 GPU 资格。
+
 ## 为什么有些示例不在这张合同表里
 
 Softmax、RoPE 等还以 [Corpus Schedule](../../corpus/manifest.json)或独立测量任务出现。

@@ -20,6 +20,8 @@ from open_cake_ir.tasks.runtime import TaskLab
 from tools.freeze_live_matched_study import (  # noqa: E402
     _replace_artifact_feedback_budget,
 )
+from tests.contracts._executor_fixture import SemanticExecutorFixture
+from tests.contracts._contexts import enter_context
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -38,6 +40,15 @@ def _provider_fixture(project: Path, payload: bytes) -> Path:
 
 
 class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
+    def setUp(self):
+        # Freeze/claim semantics use an explicit CPU dependency, not whichever
+        # physical host happens to be published in this checkout's inventory.
+        enter_context(self, SemanticExecutorFixture())
+
+    @staticmethod
+    def _semantic_command(command):
+        return [command[0], "-m", "tests.contracts._executor_fixture", "--script", *command[1:]]
+
     def test_stable_cute_template_uses_execution_bindings_without_rewriting_study(self):
         template = ROOT / 'contracts/studies/matched-search-cute-b300-gemm-optimization-template.json'
         before = template.read_bytes()
@@ -111,7 +122,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             def ignored(path: str, names: list[str]) -> set[str]:
                 omitted = {"__pycache__", ".pytest_cache"}
                 if Path(path).resolve() == ROOT:
-                    omitted |= {"evidence", "migration", "tests"}
+                    omitted |= {"evidence", "migration"}
                 return omitted & set(names)
 
             shutil.copytree(
@@ -199,14 +210,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "--qualification-anchor",
                 str(anchor_path),
                 "--executor",
-                str(
-                    project
-                    / json.loads(
-                        (project / "inventory/EXECUTOR_REVISIONS.json").read_text(
-                            encoding="utf-8"
-                        )
-                    )["current"]["path"]
-                ),
+                str(project / SemanticExecutorFixture().revision(project).relative_path),
                 "--runtime-config",
                 str(runtime_path),
                 "--reasoning-effort",
@@ -219,7 +223,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             ]
 
             completed = subprocess.run(
-                command,
+                self._semantic_command(command),
                 cwd=project,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -286,7 +290,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 scientific_output
             )
             scientific_completed = subprocess.run(
-                scientific_command,
+                self._semantic_command(scientific_command),
                 cwd=project,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -329,7 +333,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertEqual(scientific_output.stat().st_mode & 0o444, 0o444)
 
             repeated = subprocess.run(
-                command,
+                self._semantic_command(command),
                 cwd=project,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -341,7 +345,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
 
             generic_output = project / "contracts/studies/unsafe-generic-live.json"
             generic = subprocess.run(
-                [
+                self._semantic_command([
                     sys.executable,
                     str(project / "tools/create_study_successor.py"),
                     "--project-root",
@@ -352,7 +356,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                     str(generic_output),
                     "--study-id",
                     "unsafe-generic-live",
-                ],
+                ]),
                 cwd=project,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -385,7 +389,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 str(project / "contracts/scaffolds/direct-cuda-clean-start-v1.cu"),
             ]
             clean = subprocess.run(
-                clean_command,
+                self._semantic_command(clean_command),
                 cwd=project,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -415,7 +419,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 "incomplete"
             )
             incomplete = subprocess.run(
-                incomplete_command,
+                self._semantic_command(incomplete_command),
                 cwd=project,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
@@ -435,7 +439,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             def ignored(path: str, names: list[str]) -> set[str]:
                 omitted = {"__pycache__", ".pytest_cache"}
                 if Path(path).resolve() == ROOT:
-                    omitted |= {"evidence", "migration", "tests"}
+                    omitted |= {"evidence", "migration"}
                 return omitted & set(names)
 
             shutil.copytree(ROOT, project, ignore=ignored)
@@ -507,9 +511,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             runtime_path = temporary / "runtime.json"
             runtime_path.write_bytes(_canonical_json_bytes(runtime))
             output = project / "contracts/studies/live-ralph.json"
-            current_executor = json.loads(
-                (project / "inventory/EXECUTOR_REVISIONS.json").read_text()
-            )["current"]["path"]
+            current_executor = SemanticExecutorFixture().revision(project).relative_path
             command = [
                 sys.executable,
                 str(project / "tools/freeze_live_matched_study.py"),
@@ -536,7 +538,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 str(output),
             ]
             completed = subprocess.run(
-                command,
+                self._semantic_command(command),
                 cwd=project,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,

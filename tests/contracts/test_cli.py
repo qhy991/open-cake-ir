@@ -113,6 +113,13 @@ assert cli.main(['--project-root', str(Path.cwd()), 'compiler', 'assess', '--rev
 
 
 class CliContractTests(unittest.TestCase):
+    def setUp(self):
+        # These CLI consumers test lock/JSON semantics, not host publication.
+        # Exact-target release admission remains exercised without this fixture.
+        from tests.contracts._executor_fixture import SemanticExecutorFixture
+        from tests.contracts._contexts import enter_context
+        enter_context(self, SemanticExecutorFixture())
+
     def test_preflight_forwards_explicit_empirical_model_to_the_existing_owner(self) -> None:
         lock = TaskLab(ROOT).preflight(ROOT / "contracts/studies/matched-search-system-qualification-ralph-template.json")
         for binding in (None, Path("/external/bindings.json")):

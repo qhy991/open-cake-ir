@@ -2,7 +2,12 @@
 from contextlib import ExitStack
 from functools import lru_cache
 from pathlib import Path
+import sys
 from unittest.mock import patch
+
+if __name__ == "__main__":
+    # Fresh-process tests may run from a copied project; bind imports to that copy.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from open_cake_ir.lab.executor import ExecutorRevision
 from tests.contracts.test_executor import _synthetic_cuda_host
@@ -29,10 +34,12 @@ class SemanticExecutorFixture:
             raise ValueError(f"{context} differs from the explicitly injected CPU fixture")
         return revision
 
-    def resolve(self, root, value, context, *, template):
+    def resolve(self, root, value, context, *, template, target=None):
         if template:
             if value != {"binding": "current_release"}:
                 raise ValueError("Study template Executor binding differs")
+            if not isinstance(target, str) or not target:
+                raise ValueError("current Executor resolution requires an exact target")
             return self.revision(root)
         if value == {"binding": "current_release"}:
             raise ValueError("frozen Study cannot follow the current Executor")
@@ -63,7 +70,11 @@ def compiler_reference(root):
 
 if __name__ == "__main__":
     # Explicit fresh-process semantic test driver, not a production runtime mode.
-    import sys
-    from open_cake_ir.cli import main
     with SemanticExecutorFixture():
-        raise SystemExit(main(sys.argv[1:]))
+        if sys.argv[1:2] == ["--script"]:
+            import runpy
+            sys.argv = sys.argv[2:]
+            runpy.run_path(sys.argv[0], run_name="__main__")
+        else:
+            from open_cake_ir.cli import main
+            raise SystemExit(main(sys.argv[1:]))
