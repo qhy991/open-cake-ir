@@ -94,6 +94,23 @@ def load_baseline_bundle(project_root, bundle_path):
     return candidate
 
 
+def load_prepared_baseline(project_root: Path, path: str | Path):
+    """Read one pre-provider handoff without reselecting or rebuilding its baseline."""
+    from .incumbents import validate_baseline_selection
+
+    document = json.loads(external_file(project_root, str(path), 'prepared baseline').read_bytes())
+    if (not isinstance(document, Mapping) or set(document) != {
+        'schema_version', 'fixed_baseline_bundle_path', 'fixed_baseline_candidate',
+        'fixed_baseline_selection',
+    } or type(document.get('schema_version')) is not int or document['schema_version'] != 1):
+        raise ValueError('prepared baseline fields differ')
+    bundle = external_file(project_root, document['fixed_baseline_bundle_path'], 'prepared baseline bundle')
+    baseline = load_baseline_bundle(project_root, bundle)
+    if candidate_identity(baseline) != document['fixed_baseline_candidate']:
+        raise ValueError('prepared baseline candidate differs from its sealed selection')
+    return bundle, baseline, validate_baseline_selection(document['fixed_baseline_selection'])
+
+
 def current_executor_reference(root: Path, target: str) -> dict[str, object]:
     """Return the one current Executor owned by an exact hardware target."""
     if not isinstance(target, str) or not target:

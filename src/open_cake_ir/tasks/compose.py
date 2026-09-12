@@ -27,7 +27,7 @@ from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 from open_cake_ir.lab.providers import CANDIDATE_SET_ENVELOPE_V1, CodexInvocationBuilder, CodexProviderAdapter, CodexRunProvider, ProviderQualificationReceipt, required_live_provider_qualification_scope
-from open_cake_ir.lab.pairing import comparison_arm, bind_baseline, native_backend
+from open_cake_ir.lab.pairing import comparison_arm, bind_baseline, native_backend, backend_policy
 from open_cake_ir.lab.claude import ClaudeInvocationBuilder, ClaudeProviderAdapter, ClaudeRunProvider
 from open_cake_ir.lab.provider_policy import provider_harness
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
@@ -248,11 +248,13 @@ def execute_matched_from_config(
     arms = _object(resolved["arm_environments"], "arm_environments")
     comparison = comparison_arm(arms)
     policy = native_backend(comparison)
+    if comparison is None and arms["open_cake"]["lowering_route"]["backend"] not in {"metal", "triton"}:
+        raise ValueError("single-environment live composition requires a supported Metal or Triton route")
     metal = comparison is None and arms["open_cake"]["lowering_route"]["backend"] == "metal"
-    if comparison is None and not metal:
-        raise ValueError("single-environment live composition requires the declared Metal backend")
+    tensor_policy = (backend_policy(arms["open_cake"]["lowering_route"]["backend"])
+                     if comparison is None and not metal else policy)
     config = load_runtime_config(runtime_config_path,
-                                 toolchain_kind="metal" if metal else policy.backend if policy is not None else "nvcc")
+                                 toolchain_kind="metal" if metal else tensor_policy.backend if tensor_policy is not None else "nvcc")
     provider_config, toolchain_config, broker_config = (config[name] for name in ("provider", "toolchain", "broker"))
     open_arm = _object(arms["open_cake"], "arm_environments.open_cake")
     direct_arm = _object(arms[comparison], f"arm_environments.{comparison}") if comparison is not None else {}
@@ -283,11 +285,11 @@ def execute_matched_from_config(
             host=MetalArchiveHost.from_executor(executor), project_root=root,
             compiler_reference=lock.document["compiler_revision"])
     else:
-        toolchain = (policy.isolated_compiler(toolchain_config) if policy is not None else
+        toolchain = (tensor_policy.isolated_compiler(toolchain_config) if tensor_policy is not None else
                      NvccToolchainBuilder(nvcc=toolchain_config["nvcc"], cuobjdump=toolchain_config["cuobjdump"]))
-    if policy is not None:
+    if tensor_policy is not None:
         toolchain.check_executor(executor, author_workspace=provider_config["workspace_root"])
-    toolchain_authority = open_arm if metal else direct_arm
+    toolchain_authority = open_arm if comparison is None else direct_arm
     if toolchain.canonical_sha256 != toolchain_authority["toolchain_sha256"] or (
         policy is not None and open_arm["toolchain_sha256"] != direct_arm["toolchain_sha256"]):
         raise ValueError("runtime toolchain differs from the Campaign Lock")
@@ -334,18 +336,20 @@ def execute_matched_from_config(
     if not metal:
         workload, workload_path, workload_contract = _load_workload_binding(root, lock)
         protocol = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
-    if (policy is not None or metal) and paired_protocol(protocol) is None:
+    if (tensor_policy is not None or metal) and paired_protocol(protocol) is None:
         raise ValueError('live tensor Campaign requires explicit fixed-baseline paired policy')
     if metal:
         builder = toolchain
         direct_environment = None
-    elif policy is not None:
-        skeleton = _object(open_arm["schedule_skeleton"], "schedule_skeleton")
-        baseline = bind_baseline(json.loads((root / str(skeleton["path"])).read_text()), workload_contract, str(protocol["case_id"]))
-        lowering = compiler.lower(compiler.assess(baseline))
-        builder = policy.builder(workload=workload_contract, case_id=str(protocol["case_id"]), isolated_compiler=toolchain)
-        direct_environment = policy.environment(builder, toolchain_requirements=lowering.toolchain_requirements,
-            authority_document=direct_arm, workload=workload_contract, case_id=str(protocol["case_id"]))
+    elif tensor_policy is not None:
+        builder = tensor_policy.builder(workload=workload_contract, case_id=str(protocol["case_id"]), isolated_compiler=toolchain)
+        direct_environment = None
+        if comparison is not None:
+            skeleton = _object(open_arm["schedule_skeleton"], "schedule_skeleton")
+            baseline = bind_baseline(json.loads((root / str(skeleton["path"])).read_text()), workload_contract, str(protocol["case_id"]))
+            lowering = compiler.lower(compiler.assess(baseline))
+            direct_environment = policy.environment(builder, toolchain_requirements=lowering.toolchain_requirements,
+                authority_document=direct_arm, workload=workload_contract, case_id=str(protocol["case_id"]))
     else:
         builder = FlashTritonToolchainBuilder()
         direct_environment = DirectCudaEnvironment(toolchain,

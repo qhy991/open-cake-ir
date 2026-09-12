@@ -119,7 +119,14 @@ require reviewed releases and device execution.
 ## Run a task matrix without repeating common setup failures
 
 `tools/launch_task_matrix.py` is a thin sequential driver over the launcher above. It
-does not create another Workload, Study, acceptance path or result authority. The first
+does not create another Workload, Study, acceptance path or result authority. Before any
+provider call, it builds, seals and checks the Workload ABI of every selected baseline
+through `launch_task.py --baseline-only`; a failure stops the matrix. The sealed bundles
+are reused by the actual tasks. With `--incumbent-registry`, each task selects its exact
+incumbent or starter fallback during this preparation. A prepared handoff retains that
+same artifact and selection provenance; execution checks the registry again before
+provider qualification and refuses a changed choice instead of selecting a new baseline.
+The first
 task obtains the live two-turn provider qualification; every later task reuses that exact
 receipt while model, effort, executable and candidate-count treatment stay fixed. If the
 first task fails before a qualification exists, the matrix stops because repeating it
@@ -139,3 +146,15 @@ Omit repeated `--task` flags to use the launcher's complete registered order, or
 the flag for an ordered subset. The external root gets immutable per-task stdout/stderr,
 append-only `task-results.jsonl`, and a derived `terminal.json`. A nonzero matrix exit
 means at least one retained task fault; it does not erase successful siblings.
+
+Without explicit overrides, both launchers allow 3,000,000 provider tokens per task,
+32 turns and eight hours of wall time (four hours of active authoring). These are ceilings;
+token accounting occurs at turn boundaries. CUDA launches record a 0.15 cohort CV bound
+and nine required wins out of ten pairs in the Study; Metal retains its existing IQR
+assay and six-win default. `--maximum-cv` and `--required-pair-wins` override those
+existing Study fields. The 1.05 materiality ratio, full correctness contract and fresh
+confirmation remain required. Changed values apply only to new Studies, never to old
+results. The CUDA settings are an experimental configuration, not universal timing
+calibration: qualify it with same-artifact A/A and on-GPU slowdown controls before a new
+campaign. Omit shape flags to use each task family's defaults instead of a smoke-test
+tile for every task.

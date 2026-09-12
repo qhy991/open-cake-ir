@@ -77,16 +77,17 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     if kind in METAL_KINDS:
         if protocol.route_calls_per_cohort <= protocol.samples_per_cohort:
             raise ValueError('Metal assay requires declared warmup calls before timestamp samples')
+    if kind in METAL_KINDS or 'validation_case_ids' in evaluation:
         validation_case_ids(evaluation)
     return protocol
 
 
 def validation_case_ids(evaluation: Mapping) -> tuple[str, ...]:
-    """Validate the frozen projection of Workload cases for the Metal assay."""
+    """Validate an explicit frozen projection of Workload validation cases."""
     cases = evaluation.get('validation_case_ids')
     if (not isinstance(cases, list) or not cases or any(not isinstance(case, str) or not case for case in cases)
             or len(set(cases)) != len(cases) or evaluation.get('case_id') not in cases):
-        raise ValueError('Metal evaluation validation_case_ids differ')
+        raise ValueError('evaluation validation_case_ids differ')
     return tuple(cases)
 
 
@@ -238,6 +239,8 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
                 raise ValueError('paired oracle check is missing')
             if raw['kind'] in METAL_KINDS:
                 validate_metal_correctness_checks(check, validation_case_ids(raw['evaluation_protocol']))
+            elif 'validation_case_ids' in raw['evaluation_protocol']:
+                _validate_case_checks(check, validation_case_ids(raw['evaluation_protocol']), metal=False)
             oracle_check(check, check.get('metrics'))
             passed = passed and check['passed']
         timed = value['timed_output_checks']
@@ -285,20 +288,25 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
         raise ValueError('paired missing timing is not a correctness rejection')
 
 
-def validate_metal_correctness_checks(check, case_ids, *, timed=False):
-    from .metal_observations import command_buffer_ms
+def _validate_case_checks(check, case_ids, *, timed=False, metal):
+    """One owner for complete per-case oracle metrics and their aggregation."""
+    label = 'Metal' if metal else 'CUDA'
     launches = check.get('launches')
     if (not isinstance(launches, list) or any(not isinstance(row, Mapping) for row in launches)
             or [row.get('input_case_id') for row in launches] != list(case_ids)):
-        raise ValueError('Metal correctness input-case coverage differs')
+        raise ValueError(f'{label} correctness input-case coverage differs')
     combined = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
     seen, passed = set(), True
     for row in launches:
-        command = row.get('command_buffer')
-        command_buffer_ms(command)
-        if command['launch_index'] in seen:
-            raise ValueError('Metal correctness launch is duplicated')
-        seen.add(command['launch_index'])
+        if metal:
+            from .metal_observations import command_buffer_ms
+            command = row.get('command_buffer')
+            command_buffer_ms(command)
+            if command['launch_index'] in seen:
+                raise ValueError('Metal correctness launch is duplicated')
+            seen.add(command['launch_index'])
+        elif set(row) != {'input_case_id', 'passed', 'metrics'}:
+            raise ValueError('CUDA per-case correctness fields differ')
         metrics = row.get('metrics')
         if (not isinstance(metrics, Mapping) or type(metrics.get('output_mismatches')) is not int
                 or metrics['output_mismatches'] < 0 or type(metrics.get('inputs_unchanged')) is not bool
@@ -306,14 +314,18 @@ def validate_metal_correctness_checks(check, case_ids, *, timed=False):
                 or not math.isfinite(metrics['max_abs_error']) or metrics['max_abs_error'] < 0
                 or type(row.get('passed')) is not bool
                 or row['passed'] != (metrics['output_mismatches'] == 0 and metrics['inputs_unchanged'])):
-            raise ValueError('Metal per-launch oracle metrics differ')
+            raise ValueError(f'{label} per-launch oracle metrics differ')
         combined['output_mismatches'] += metrics['output_mismatches']
         combined['max_abs_error'] = max(combined['max_abs_error'], metrics['max_abs_error'])
         combined['inputs_unchanged'] &= metrics['inputs_unchanged']
         passed &= row['passed']
     projected = {key: check.get(key) for key in combined} if timed else check.get('metrics')
     if projected != combined or check.get('passed') is not passed:
-        raise ValueError('Metal aggregate correctness differs from per-launch checks')
+        raise ValueError(f'{label} aggregate correctness differs from per-launch checks')
+
+
+def validate_metal_correctness_checks(check, case_ids, *, timed=False):
+    _validate_case_checks(check, case_ids, timed=timed, metal=True)
 
 
 def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
@@ -337,9 +349,11 @@ def validate_paired_broker(receipt, job_id, counters):
         return
     protocol = paired_protocol(raw['evaluation_protocol'])
     cohorts = len(protocol.pair_order) * 2 if receipt.timing is not None else 0
-    cases = len(validation_case_ids(raw['evaluation_protocol'])) if raw['kind'] in METAL_KINDS else 1
+    cases = (len(validation_case_ids(raw['evaluation_protocol']))
+             if raw['kind'] in METAL_KINDS or 'validation_case_ids' in raw['evaluation_protocol'] else 1)
     correctness_calls = (4 if cohorts else 2) * cases
-    expected = {'compiler_invocations': 0, 'module_loads': 2, 'preflight_calls': 2 * cases,
+    expected = {'compiler_invocations': 0, 'module_loads': 2 if raw['kind'] in METAL_KINDS else 2 * cases,
+        'preflight_calls': 2 * cases,
         'kernel_calls': correctness_calls + cohorts * protocol.route_calls_per_cohort,
         'timing_samples': cohorts * protocol.samples_per_cohort, 'fallback_calls': 0}
     launch = json.loads(receipt.artifact_payloads['launch_receipt'])

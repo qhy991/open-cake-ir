@@ -20,7 +20,9 @@ from open_cake_ir.lab.incumbents import (
     TaskIncumbentRegistry,
     _bound_audit_report,
     promote_task_incumbent,
+    admit_baseline_selection,
 )
+from open_cake_ir.lab.bindings import load_prepared_baseline
 from open_cake_ir.lab.execution import _baseline_comparison_feedback
 from open_cake_ir.serialization import canonical_json_bytes
 
@@ -277,6 +279,58 @@ class TaskIncumbentTests(unittest.TestCase):
         key = TaskIncumbentKey.from_campaign(first_fixture[0])
         with self.assertRaisesRegex(ValueError, "custody-audited"):
             TaskIncumbentRegistry.open(copied).current(key)
+
+    def test_prepared_incumbent_keeps_artifact_and_refuses_later_registry_advance(self):
+        baseline, _ = self.candidate("0")
+        first_fixture = self.campaign("first", "a", candidate_identity(baseline))
+        first = self.promote(first_fixture)
+        key = TaskIncumbentKey.from_campaign(first_fixture[0])
+        bundle, _ = TaskIncumbentRegistry.open(self.registry).materialize(key, self.base / "prepared-artifacts")
+        selection = {"schema_version": 1, "policy": "exact_incumbent_or_reference",
+                     "source": "task_incumbent", "incumbent_key": key.as_dict(),
+                     "promotion_run_id": first["run_id"], "registry_root": str(self.registry)}
+        document = {"schema_version": 1, "fixed_baseline_bundle_path": str(bundle),
+                    "fixed_baseline_candidate": first["candidate"], "fixed_baseline_selection": selection}
+        handoff = self.base / "prepared-baseline.json"
+        handoff.write_bytes(canonical_json_bytes(document))
+        path, loaded, selected = load_prepared_baseline(ROOT, handoff)
+        self.assertEqual(path, bundle)
+        self.assertEqual(candidate_identity(loaded), first["candidate"])
+        workload = SimpleNamespace(workload_id=key.workload_id,
+                                   canonical_sha256=key.workload_sha256, target=key.target)
+        arguments = dict(candidate=candidate_identity(loaded), workload=workload,
+                         case_id=key.case_id, backend=key.backend, evaluation_protocol=self.protocol)
+        self.assertTrue(admit_baseline_selection(selected, **arguments))
+        other_key = TaskIncumbentKey.from_dict({**key.as_dict(), "target": "apple_gpu_family7"})
+        wrong_key = {**selected, "incumbent_key": other_key.as_dict(),
+                     "promotion_run_id": f"incumbent-{other_key.canonical_sha256}-000000000000"}
+        with self.assertRaisesRegex(ValueError, "incumbent key differs"):
+            admit_baseline_selection(wrong_key, **arguments)
+        wrong_artifact = self.base / "wrong-artifact.json"
+        wrong_artifact.write_bytes(canonical_json_bytes({**document,
+            "fixed_baseline_candidate": candidate_identity(baseline)}))
+        with self.assertRaisesRegex(ValueError, "prepared baseline candidate differs"):
+            load_prepared_baseline(ROOT, wrong_artifact)
+        self.promote(self.campaign("second", "b", first["candidate"]))
+        with self.assertRaisesRegex(ValueError, "selected current incumbent"):
+            admit_baseline_selection(selected, **arguments)
+        self.assertEqual(candidate_identity(load_prepared_baseline(ROOT, handoff)[1]), first["candidate"])
+
+    def test_prepared_starter_fallback_refuses_when_its_registry_cell_becomes_nonempty(self):
+        baseline, _ = self.candidate("0")
+        fixture = self.campaign("first", "a", candidate_identity(baseline))
+        key = TaskIncumbentKey.from_campaign(fixture[0])
+        selection = {"schema_version": 1, "policy": "exact_incumbent_or_reference",
+                     "source": "starter_reference", "incumbent_key": key.as_dict(),
+                     "promotion_run_id": None, "registry_root": str(self.registry)}
+        arguments = dict(candidate=candidate_identity(baseline),
+                         workload=SimpleNamespace(workload_id=key.workload_id,
+                             canonical_sha256=key.workload_sha256, target=key.target),
+                         case_id=key.case_id, backend=key.backend, evaluation_protocol=self.protocol)
+        self.assertFalse(admit_baseline_selection(selection, **arguments))
+        self.promote(fixture)
+        with self.assertRaisesRegex(ValueError, "starter fallback is stale"):
+            admit_baseline_selection(selection, **arguments)
 
     def test_empty_cells_fall_back_independently_by_backend_and_exact_target(self):
         EvidenceStore.create(self.registry)

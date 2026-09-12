@@ -457,6 +457,31 @@ class TaskIncumbentRegistry:
         return bundle, record
 
 
+def admit_baseline_selection(value, *, candidate, workload, case_id, backend,
+                             evaluation_protocol) -> bool:
+    """Check the selected registry cell without silently choosing a newer baseline."""
+    selection = validate_baseline_selection(value)
+    if selection['policy'] != 'exact_incumbent_or_reference':
+        return False
+    key = TaskIncumbentKey.from_values(
+        workload_id=workload.workload_id, workload_sha256=workload.canonical_sha256,
+        case_id=case_id, target=workload.target, backend=backend,
+        evaluation_protocol=evaluation_protocol,
+    )
+    if selection['incumbent_key'] != key.as_dict():
+        raise ValueError('fixed baseline incumbent key differs from this Campaign')
+    registry = TaskIncumbentRegistry.open_if_exists(selection['registry_root'])
+    current = registry.current(key) if registry is not None else None
+    if selection['source'] == 'task_incumbent':
+        if (current is None or current['run_id'] != selection['promotion_run_id']
+            or current['candidate'] != candidate):
+            raise ValueError('fixed baseline is not the selected current incumbent')
+        return True
+    if current is not None:
+        raise ValueError('starter fallback is stale because an incumbent exists')
+    return False
+
+
 def _bound_audit_report(
     project: Path, lock: CampaignLock, lock_path: Path, evidence_path: Path
 ) -> Mapping[str, object]:

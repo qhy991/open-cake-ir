@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 from open_cake_ir.compiler.corpus import CorpusGateReport
 from open_cake_ir.compiler.target import Target
-from open_cake_ir.evaluation.paired import PAIRED_METAL_BATCHED_KIND, paired_protocol
+from open_cake_ir.evaluation.paired import PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab.contracts import StudyContract
 from open_cake_ir.tasks.normalization.study import study_template
@@ -135,6 +135,64 @@ class TaskLaunchTests(unittest.TestCase):
                 self.assertEqual((assay.maximum_cv, assay.materiality_ratio, assay.required_pair_wins), (0.05,1.05,6))
                 self.assertEqual(study["execution"]["gpu"]["mode"], "local_serialized")
                 self.assertIsNone(study["analysis_plan"]["estimand"])
+
+    def test_each_supported_hardware_uses_its_own_existing_assay_and_mode(self):
+        for backend, device in launch_task.DEVICE_BACKENDS.items():
+            with self.subTest(backend=backend):
+                document, source = create_task("silu", backend=backend, rows=2, columns=8)
+                workload = WorkloadContract(document)
+                path, starter = self.directory/f"{backend}.json", self.directory/f"{backend}.py"
+                path.write_text(json.dumps(document)); starter.write_text(source)
+                study = study_template(ROOT, workload, path, starter, harness="claude-code",
+                                       model="exact-model", effort="high", turns=2, token_budget=12000)
+                policy = study["evaluation_protocol"]
+                assay = paired_protocol(policy)
+                metal = device["route"] == "metal"
+                self.assertEqual(study["execution"]["target"], device["target"])
+                self.assertEqual(study["execution"]["gpu"]["mode"], "local_serialized" if metal else "exclusive")
+                self.assertEqual(policy["validation_case_ids"], list(workload.case_ids))
+                self.assertEqual(policy["paired_timing"]["kind"], PAIRED_METAL_BATCHED_KIND if metal else PAIRED_KIND)
+                self.assertEqual(assay.route_calls_per_cohort, 28 if metal else 42)
+                self.assertEqual((len(assay.pair_order), assay.samples_per_cohort,
+                                  assay.maximum_cv, assay.materiality_ratio, assay.required_pair_wins),
+                                 (10, 25, 0.05, 1.05, 6))
+                if not metal:
+                    frozen = json.loads((ROOT/'contracts/studies/matched-search-triton-b300-optimization-template.json').read_text())
+                    self.assertEqual(policy['paired_timing'], frozen['evaluation_protocol']['paired_timing'])
+                    self.assertNotIn('dispatches_per_sample', policy['paired_timing'])
+                    self.assertNotIn('maximum_relative_iqr', policy['paired_timing'])
+                    with self.assertRaisesRegex(ValueError, 'Metal command-buffer'):
+                        study_template(ROOT, workload, path, starter, harness="claude-code",
+                                       model="exact-model", effort="high", dispatches_per_sample=64)
+
+    def test_cuda_runtime_uses_existing_allocator_and_same_isolated_toolchain(self):
+        executor = SimpleNamespace(document={"host_environment": {
+            "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"}}})
+        with patch.object(launch_task, '_triton_runtime_roots', return_value=['/unit-test', '/usr']), \
+             patch.object(launch_task.shutil, 'which', return_value='/usr/bin/true'):
+            runtime = launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'triton',
+                gpu_run=Path('/unit-test/gpu-run'), broker_socket=Path('/unit-test/broker.sock'))
+            with patch.object(launch_task, 'IsolatedTritonCompiler') as compiler, \
+                 patch.object(launch_task, 'TritonToolchainBuilder'):
+                launch_task._triton_builder(executor, Mock())
+            self.assertEqual(compiler.call_args.kwargs, runtime['toolchain'])
+        path = self.directory/'runtime.json'; path.write_text(json.dumps(runtime))
+        from open_cake_ir.lab.runtime_config import load_runtime_config
+        self.assertEqual(load_runtime_config(path, toolchain_kind='triton')['toolchain'], runtime['toolchain'])
+        command = runtime['broker']['command']
+        for flag, value in (('--mode','exclusive'),('--gpu-count','1'),('--estimate','unknown'),
+                            ('--socket','/unit-test/broker.sock'),('--queue-timeout','1800s'),('--run-timeout','1800s')):
+            self.assertEqual(command[command.index(flag)+1], value)
+        self.assertEqual(command[command.index('--')+1:], ['/unit-test/python', '-I',
+            str(ROOT/'src/open_cake_ir/evaluation/source_bootstrap.py'), 'open_cake_ir.tasks.evaluate'])
+        self.assertNotIn('open_cake_ir.evaluation.local_broker', command)
+        self.assertNotIn('--env', command)
+        self.assertGreater(runtime['broker']['timeout_seconds'], 3600)
+        with patch.object(launch_task.shutil, 'which', return_value=None), self.assertRaisesRegex(ValueError, 'gpu-run'):
+            launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'triton')
+        with self.assertRaisesRegex(ValueError, 'Triton route'):
+            launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'metal',
+                                       broker_socket=Path('/unit-test/broker.sock'))
 
     def test_failed_full_gate_prevents_executor_and_provider_work(self):
         self.workspace.mkdir()
@@ -260,11 +318,12 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(anchor,self.workspace/'provider-anchor.json')
         self.assertFalse(receipt.exists())  # The process was mocked, so no capability was manufactured.
 
-    def _wiring(self, preflight_error=None, *, fixture_receipt=False,
-                preflight_only=False, report=None, expected_exit=0,
-                incumbent=False):
+    def _wiring(self, preflight_error=None, *, fixture_receipt=False, preflight_only=False, report=None, expected_exit=0,
+                backend="metal-m1-pro", baseline_only=False, baseline_error=None, extra_args=(), incumbent=False,
+                prepared_selection=None, selection_error=None):
         # Authority doubles are never persisted as qualification receipts or Evidence.
-        executor = SimpleNamespace(document={"host_environment":{"python":{"invocation_path":"/unit-test/python"}}})
+        executor = SimpleNamespace(document={"host_environment":{"python":{"invocation_path":"/unit-test/python"},
+                                                                 "packages":{"triton":"3.6.0"}}})
         receipt = SimpleNamespace(qualified=True, scope="zero_gpu_contract_fixture_only" if fixture_receipt else "live_two_turn_tool_rich_provider")
         lock = SimpleNamespace(document={"unit_test_lock":True})
         lab = Mock()
@@ -276,6 +335,8 @@ class TaskLaunchTests(unittest.TestCase):
         args = self.args() + (["--preflight-only"] if preflight_only else [])
         if incumbent:
             args += ["--incumbent-registry", str(self.directory / "incumbents")]
+        if prepared_selection is not None:
+            args += ["--prepared-baseline", str(self.directory / "prepared-baseline.json")]
         registry = Mock()
         key = SimpleNamespace(as_dict=lambda: {"fixture": "exact-key"})
         registry.key_for_launch.return_value = key
@@ -283,23 +344,44 @@ class TaskLaunchTests(unittest.TestCase):
             self.directory / "incumbent.json",
             {"run_id": "incumbent-fixture"},
         )
+        args.extend(extra_args)
+        if baseline_only:
+            args.append('--baseline-only')
+        if backend != "metal-m1-pro":
+            args[args.index('--backend')+1] = backend
+            args[args.index('--task')+1] = 'silu'
+            args[args.index('--columns')+1] = '8'
+            args += ['--gpu-run', '/usr/bin/true', '--broker-socket', '/unit-test/broker.sock']
         with patch.object(launch_task.shutil, "which", return_value="/usr/bin/true"), \
              patch.object(launch_task, "_admit_stack", return_value=(Mock(),executor,Mock(),{"fixture":"compiler"})) as admit, \
              patch.object(launch_task, "_prepare_baseline", return_value=self.directory/"baseline.json") as baseline, \
+             patch.object(launch_task, "load_baseline_bundle", return_value=Mock()), \
+             patch.object(launch_task, "load_prepared_baseline", return_value=(
+                 self.directory / "incumbent.json", Mock(), prepared_selection)), \
+             patch.object(launch_task, "candidate_identity", return_value={"unit_test_candidate": True}), \
+             patch.object(launch_task, "admit_baseline_selection", side_effect=selection_error), \
+             patch.object(launch_task, "validate_pair_candidates", side_effect=baseline_error) as validate_baseline, \
              patch.object(launch_task, "_qualify", return_value=(self.directory/"receipt.json",self.directory/"anchor.json")) as qualify, \
              patch.object(launch_task.ProviderQualificationReceipt, "load", return_value=receipt), \
              patch.object(launch_task.TaskIncumbentRegistry, "open_if_exists",
                           return_value=registry if incumbent == "present" else None), \
              patch.object(launch_task.TaskIncumbentRegistry, "key_for_launch", return_value=key), \
              patch.object(launch_task, "TaskLab", return_value=lab), \
+             patch.object(launch_task, 'admit_cohort_payload') as payload, \
              patch.object(launch_task, "execute_matched_from_config", return_value=SimpleNamespace(evidence_root="unit-test-campaign")) as execute, \
              contextlib.redirect_stdout(io.StringIO()) as stdout:
-            if preflight_error or fixture_receipt:
+            if preflight_error or fixture_receipt or baseline_error or selection_error:
                 with self.assertRaises(ValueError): launch_task.main(args)
                 execute.assert_not_called()
             else:
                 self.assertEqual(launch_task.main(args), expected_exit)
-                if preflight_only:
+                if baseline_only:
+                    qualify.assert_not_called()
+                    lab.preflight.assert_not_called()
+                    execute.assert_not_called()
+                    selected = 'incumbent.json' if incumbent == 'present' or prepared_selection is not None else 'baseline.json'
+                    self.assertIn(str(self.directory / selected), stdout.getvalue())
+                elif preflight_only:
                     execute.assert_not_called()
                     lab.audit.assert_not_called()
                 else:
@@ -307,12 +389,47 @@ class TaskLaunchTests(unittest.TestCase):
                     lab.audit.assert_called_once_with(execute.return_value)
                     self.assertIn("unit-test-campaign", stdout.getvalue())
             admit.assert_called_once()
-            if incumbent == "present":
+            if incumbent == "present" or prepared_selection is not None:
                 baseline.assert_not_called()
             else:
                 baseline.assert_called_once()
-            qualify.assert_called_once()
+            validate_baseline.assert_called_once()
+            if baseline_error or selection_error:
+                qualify.assert_not_called()
+                lab.preflight.assert_not_called()
+            elif not baseline_only:
+                qualify.assert_called_once()
+            if backend == 'metal-m1-pro':
+                payload.assert_called_once()
+            else:
+                payload.assert_not_called()
         return lab, lock
+
+    def test_public_cuda_launch_wires_cupti_exclusive_broker_and_triton_config(self):
+        self._wiring(preflight_only=True, backend='triton-b300')
+        study = json.loads((self.workspace/'study.json').read_text())
+        runtime = json.loads((self.workspace/'runtime.json').read_text())
+        self.assertEqual(study['evaluation_protocol']['paired_timing']['kind'], PAIRED_KIND)
+        self.assertEqual(study['evaluation_protocol']['paired_timing']['maximum_cv'], 0.15)
+        self.assertEqual(study['evaluation_protocol']['paired_timing']['required_pair_wins'], 9)
+        self.assertEqual(study['execution']['gpu']['mode'], 'exclusive')
+        self.assertEqual(runtime['toolchain']['triton_version'], '3.6.0')
+        self.assertNotIn('output_root', runtime['toolchain'])
+        self.assertNotIn('open_cake_ir.evaluation.local_broker', runtime['broker']['command'])
+
+    def test_baseline_only_builds_without_provider_qualification_or_campaign(self):
+        self._wiring(baseline_only=True, backend='triton-b300')
+
+    def test_baseline_abi_failure_precedes_provider_qualification(self):
+        self._wiring(baseline_error=ValueError('baseline ABI differs'), backend='triton-b300')
+
+    def test_explicit_timing_values_are_frozen_in_the_study(self):
+        self._wiring(preflight_only=True, backend='triton-b300',
+            extra_args=('--maximum-cv','0.12','--required-pair-wins','8'))
+        document=json.loads((self.workspace/'study.json').read_text())
+        assay=paired_protocol(document['evaluation_protocol'])
+        self.assertEqual((assay.maximum_cv,assay.required_pair_wins,assay.materiality_ratio), (0.12,8,1.05))
+        StudyContract.load(self.workspace/'study.json')
 
     def test_launcher_wires_existing_preflight_and_composer_with_persistent_actor_root(self):
         lab, _ = self._wiring()
@@ -353,6 +470,21 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(
             selection["registry_root"], str(self.directory / "incumbents")
         )
+
+    def test_prepared_incumbent_preserves_selection_and_skips_rebuilding(self):
+        selection = {
+            "schema_version": 1, "policy": "exact_incumbent_or_reference",
+            "source": "task_incumbent", "incumbent_key": {"fixture": "prepared-key"},
+            "promotion_run_id": "prepared-promotion", "registry_root": str(self.directory / "incumbents"),
+        }
+        self._wiring(preflight_only=True, prepared_selection=selection)
+        bindings = json.loads((self.workspace / "execution-bindings.json").read_text())
+        self.assertEqual(bindings["fixed_baseline_selection"], selection)
+        self.assertEqual(bindings["fixed_baseline_bundle_path"], str(self.directory / "incumbent.json"))
+
+    def test_prepared_selection_refusal_precedes_provider_qualification(self):
+        self._wiring(prepared_selection={"fixture": "stale-selection"},
+                     selection_error=ValueError("fixed baseline is not the selected current incumbent"))
 
     def test_launcher_returns_nonzero_for_a_recorded_provider_fault(self):
         self._wiring(report=SimpleNamespace(campaign_complete=True, archive_integrity_passed=True,

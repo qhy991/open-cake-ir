@@ -31,11 +31,11 @@ from open_cake_ir.tasks.flash_kmeans.workload import assignment_raw_sha256, clas
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda
 from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
-from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
+from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
-from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, run_supervised, sanitized_environment
+from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
 from open_cake_ir.evaluation.paired import (
     PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
     candidate_from_identity, validate_pair_candidates,
@@ -62,9 +62,12 @@ def _input_path(root: Path, value: object, context: str) -> Path:
     return path
 
 
+_PROFILE_OUTPUT_OWNER: tuple[int, int] | None = None
+
+
 def _write_new(path: Path, value: object) -> None:
-    with path.open("xb") as stream:
-        stream.write(_canonical_json_bytes(value))
+    from open_cake_ir.lab.ncu_process import write_new
+    write_new(path, _canonical_json_bytes(value), _PROFILE_OUTPUT_OWNER)
 
 
 def _base_result(job_id: str) -> dict[str, object]:
@@ -154,7 +157,15 @@ def _load_authority(request_path: Path) -> _Authority:
             baseline = candidate_from_identity({k: v for k, v in partner.items() if k != 'artifact_paths'},
                 {role: _input_path(request_root, path, f'baseline.{role}').read_bytes()
                  for role, path in paths.items()})
-            validate_pair_candidates(candidate, baseline, workload, case_id)
+            manifests = validate_pair_candidates(candidate, baseline, workload, case_id)
+            if not isinstance(manifest, MetalTensorLaunchManifest) and 'validation_case_ids' in evaluation:
+                cases = validation_case_ids(evaluation)
+                if (cases != workload.case_ids or workload.document['validation'].get('all_cases_required') is not True
+                        or case_id != workload.document['validation'].get('primary_case')):
+                    raise ValueError('CUDA evaluation case projection differs from Workload validation')
+                for validation_case in cases:
+                    for bound_manifest in manifests.values():
+                        bound_manifest.check_validation_case(workload, validation_case)
         elif 'baseline' in request:
             raise ValueError('worker baseline has no paired policy')
     elif 'baseline' in request:
@@ -203,19 +214,29 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
 
 def _evaluate_paired_tile(authority, result, helper, admission):
     """Execute both sealed participants in one allocation, in the frozen order."""
-    protocol = paired_protocol(authority.request['evaluation_protocol'])
+    evaluation = authority.request['evaluation_protocol']
+    protocol = paired_protocol(evaluation)
+    all_cases = 'validation_case_ids' in evaluation
+    cases = validation_case_ids(evaluation) if all_cases else (authority.case_id,)
+    if all_cases and (cases != authority.workload.case_ids
+            or authority.workload.document['validation'].get('all_cases_required') is not True
+            or authority.case_id != authority.workload.document['validation'].get('primary_case')):
+        raise ValueError('CUDA evaluation case projection differs from Workload validation')
     candidates = {'candidate': authority.candidate, 'baseline': authority.baseline}
     manifests = validate_pair_candidates(authority.candidate, authority.baseline,
                                         authority.workload, authority.case_id)
-    inputs = materialize_case(authority.workload, authority.case_id)
+    for case_id in cases:
+        if all_cases:
+            for manifest in manifests.values():
+                manifest.check_validation_case(authority.workload, case_id)
+    input_cases = {case_id: materialize_case(authority.workload, case_id) for case_id in cases}
+    inputs = input_cases[authority.case_id]
     expected = reference_outputs(authority.workload, authority.case_id, inputs)
     loaded = {}
     checks = {role: {'preflight': None, 'postflight': None, 'timed_output_checks': []}
               for role in protocol.arms}
     measurements = []
     counters = result['counters']
-    correctness_protocol = EvaluationProtocol('workload-tensor-worker-correctness',
-        authority.request['purpose'], authority.workload.canonical_sha256, authority.case_id, 'none')
     passed = True
     metrics = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
     correctness_calls = 0
@@ -228,24 +249,38 @@ def _evaluate_paired_tile(authority, result, helper, admission):
         metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and values['inputs_unchanged']
     def correctness(role, phase):
         nonlocal correctness_calls
-        receipt = evaluate_tile_workload(candidates[role], authority.workload,
-                                        correctness_protocol, loaded[role])
-        check = {'passed': receipt.correctness_passed, 'metrics': dict(receipt.correctness)}
+        launches = []
+        combined = {'output_mismatches': 0, 'max_abs_error': 0.0, 'inputs_unchanged': True}
+        for case_id in cases:
+            correctness_protocol = EvaluationProtocol('workload-tensor-worker-correctness',
+                authority.request['purpose'], authority.workload.canonical_sha256, case_id, 'none')
+            evaluate = evaluate_tile_validation_case if all_cases else evaluate_tile_workload
+            receipt = evaluate(candidates[role], authority.workload,
+                               correctness_protocol, loaded[(role, case_id)])
+            values = dict(receipt.correctness)
+            launches.append({'input_case_id': case_id, 'passed': receipt.correctness_passed, 'metrics': values})
+            combined['output_mismatches'] += values['output_mismatches']
+            combined['max_abs_error'] = max(combined['max_abs_error'], values['max_abs_error'])
+            combined['inputs_unchanged'] &= values['inputs_unchanged']
+            correctness_calls += 1
+        check = {'passed': all(row['passed'] for row in launches), 'metrics': combined}
+        if all_cases:
+            check['launches'] = launches
         checks[role][phase] = check
-        correctness_calls += 1
         accumulate(check)
     try:
         for role in protocol.arms:
-            loaded[role] = LoadedTorchTensorCandidate(candidates[role], manifests[role], inputs, admission)
-            counters['module_loads'] += 1
+            for case_id in cases:
+                loaded[(role, case_id)] = LoadedTorchTensorCandidate(candidates[role], manifests[role], input_cases[case_id], admission)
+                counters['module_loads'] += 1
             correctness(role, 'preflight')
-            counters['preflight_calls'] += 1
+            counters['preflight_calls'] += len(cases)
         if passed:
             strict_cupti = StrictCuptiBenchmark(helper)
             for index, order in enumerate(protocol.pair_order):
                 row = {'pair_index': index, 'order': list(order), 'arms': {}}
                 for position, role in enumerate(order):
-                    samples, check = _fresh_tile_cohort(loaded[role], strict_cupti,
+                    samples, check = _fresh_tile_cohort(loaded[(role, authority.case_id)], strict_cupti,
                         authority.workload, inputs, expected,
                         samples_per_cohort=protocol.samples_per_cohort,
                         route_calls_per_cohort=protocol.route_calls_per_cohort)
@@ -275,15 +310,25 @@ def _evaluate_paired_tile(authority, result, helper, admission):
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
             'candidate_sha256': authority.candidate.candidate_sha256, 'participants': identities,
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
-            'resources': {role: item.loaded.resources for role, item in loaded.items()}})
+            'resources': {role: loaded[(role, authority.case_id)].loaded.resources for role in protocol.arms}})
         result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
             'kernel_calls': 1, 'fallback_calls': 0, 'timing': timing,
             'artifacts': {'correctness_output': 'correctness-output.json',
                           'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
     finally:
         counters['kernel_calls'] = sum(item.loaded.launch_calls for item in loaded.values())
+        pending_error = sys.exc_info()[1]
+        cleanup_error = None
         for item in loaded.values():
-            item.close()
+            try:
+                item.close()
+            except BaseException as error:
+                if cleanup_error is None:
+                    cleanup_error = error
+        if cleanup_error is not None:
+            if pending_error is not None:
+                raise pending_error from cleanup_error
+            raise cleanup_error
 
 
 def _evaluate_tile_candidate(authority, result, helper, admission, collect_timing):
@@ -693,11 +738,14 @@ def _profile_candidate(
             "gpu_uuid": admission.gpu_uuid,
             "broker_job_id": admission.broker_job_id,
             "mode": admission.mode,
+            "output_owner": {"uid": os.geteuid(), "gid": os.getegid()},
         },
     )
     child_result_path = authority.request_root / "profile-child-result.json"
+    from open_cake_ir.evaluation.source_bootstrap import module_command
     command = [
         str(profiler["path"]),
+        "--forward-signals",
         "--csv",
         "--metrics",
         ",".join(NCU_ATTRIBUTION_METRICS),
@@ -713,8 +761,7 @@ def _profile_candidate(
         "1",
         "--replay-mode",
         "kernel",
-        sys.executable,
-        str(Path(__file__).resolve()),
+        *module_command(sys.executable, "open_cake_ir.tasks.evaluate"),
         "--profile-child",
         "--profile-admission",
         str(admission_path),
@@ -723,15 +770,16 @@ def _profile_candidate(
         "--output",
         str(child_result_path),
     ]
+    from open_cake_ir.lab.ncu_process import NcuProcessCancelled, run_ncu
     try:
-        completed = run_supervised(
+        completed = run_ncu(
             command,
             cwd=ROOT,
             environment=sanitized_environment(),
             timeout_seconds=900,
             maximum_output_bytes=16 * 1024 * 1024,
         )
-    except (SupervisedProcessTimeout, SupervisedProcessOutputLimit) as error:
+    except (SupervisedProcessTimeout, SupervisedProcessOutputLimit, NcuProcessCancelled) as error:
         _forward_profile_output(error.stdout, error.stderr)
         raise
     if completed.returncode != 0:
@@ -789,6 +837,7 @@ def _profile_candidate(
 
 
 def main() -> int:
+    global _PROFILE_OUTPUT_OWNER
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -820,8 +869,11 @@ def main() -> int:
                 "gpu_uuid",
                 "broker_job_id",
                 "mode",
+                "output_owner",
             } or admission_document.get("schema_version") != 1:
                 raise ValueError("profile admission fields differ")
+            from open_cake_ir.lab.ncu_process import profile_output_owner
+            _PROFILE_OUTPUT_OWNER = profile_output_owner(admission_document["output_owner"])
             capability = admission_document["compute_capability"]
             if not isinstance(capability, list) or len(capability) != 2:
                 raise ValueError("profile admission capability differs")

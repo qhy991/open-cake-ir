@@ -212,10 +212,13 @@ def claude_model_usage(terminal: Mapping, main_model: str, *, allow_zero: bool =
                 or not set(mapping.values()) <= set(row) <= set(mapping.values()) | optional
                 or any(type(row.get(key)) is not int or row[key] < 0 for key in mapping.values())):
             raise ValueError("Claude modelUsage counters differ")
-        for key in ("webSearchRequests", "contextWindow", "maxOutputTokens"):
+        for key in ("webSearchRequests", "contextWindow", "maxOutputTokens", "thinkingTokens"):
             if key in row and (type(row[key]) is not int or row[key] < 0):
                 raise ValueError("Claude modelUsage metadata differs")
         if (row.get("webSearchRequests", 0) != 0
+                # Only the observed cost-basis marker is admitted.
+                # thinkingTokens is detail metadata, not a fifth additive counter.
+                or "costBasis" in row and row["costBasis"] != "unknown"
                 or "costUSD" in row and (type(row["costUSD"]) not in (int, float) or not math.isfinite(row["costUSD"]) or row["costUSD"] < 0)
                 or any(key in row and (not isinstance(row[key], str) or not row[key]) for key in ("canonicalModel", "provider"))):
             raise ValueError("Claude modelUsage reports unsupported activity or malformed metadata")

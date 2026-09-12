@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract
+from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.lab import preflight, admission
@@ -27,8 +28,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class MetalPreflightTests(unittest.TestCase):
-    def fixture(self, directory, harness):
-        document, source = create_task('rmsnorm', rows=2, columns=7)
+    def fixture(self, directory, harness, *, backend='metal-m1-pro'):
+        cuda = backend.startswith('triton-')
+        document, source = create_task('silu' if cuda else 'rmsnorm', backend=backend,
+                                       rows=2, columns=8 if cuda else 7)
         workload = WorkloadContract(document)
         workload_path, starter = directory/'workload.json', directory/'starter.py'
         workload_path.write_bytes(canonical(document)); starter.write_text(source)
@@ -57,10 +60,17 @@ class MetalPreflightTests(unittest.TestCase):
         compiler = Compiler.load(ROOT, ROOT/'compiler/revision.lock.json')
         lowering = compiler.lower(compiler.assess(frontend.parse(source).document))
         requirements = lowering.toolchain_requirements
-        manifest = MetalTensorLaunchManifest.for_workload(workload, 'primary', target=workload.target,
-            kernel_name=lowering.route.entry_point, grid=requirements['threadgroups_per_grid'],
-            block=requirements['threads_per_threadgroup'])
-        payloads = {'lowered_source':lowering.source.encode(), 'metal_binary_archive':b'CPU test only, nonexecutable',
+        if cuda:
+            from open_cake_ir.lab.pairing import native_block
+            manifest = TensorLaunchManifest.for_workload(workload, 'primary', target=workload.target,
+                kernel_name=lowering.route.entry_point, grid=requirements['grid'], block=native_block(requirements),
+                dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=2)
+        else:
+            manifest = MetalTensorLaunchManifest.for_workload(workload, 'primary', target=workload.target,
+                kernel_name=lowering.route.entry_point, grid=requirements['threadgroups_per_grid'],
+                block=requirements['threads_per_threadgroup'])
+        payloads = {'lowered_source':lowering.source.encode(),
+                    ('cubin' if cuda else 'metal_binary_archive'):b'CPU test only, nonexecutable',
                     'launch_manifest':canonical(manifest.as_dict())}
         candidate = LaunchableCandidate(lowering.schedule_sha256, workload.target, lowering.route.entry_point,
             {key:sha256(value).hexdigest() for key,value in payloads.items()}, manifest.canonical_sha256, payloads)
@@ -71,6 +81,24 @@ class MetalPreflightTests(unittest.TestCase):
             fixed_baseline={'bundle_path':str(directory/'baseline-double.json'),'candidate':candidate_identity(candidate)},
             runtime_config={'path':str(directory/'runtime-double.json'),'sha256':'3'*64})
         return study_path, study, executor, receipt, candidate
+
+    def test_full_cuda_task_preflight_uses_existing_abi_policy_and_all_case_gate(self):
+        for backend in ('triton-b200','triton-b300'):
+            with self.subTest(backend=backend), tempfile.TemporaryDirectory() as temporary:
+                path,study,executor,receipt,candidate = self.fixture(Path(temporary).resolve(),'claude-code',backend=backend)
+                with patch.object(preflight,'resolve_execution_bindings',return_value=(study,executor)), \
+                     patch.object(admission.ProviderQualificationReceipt,'load',return_value=receipt), \
+                     patch.object(admission,'load_baseline_bundle',return_value=candidate):
+                    lock=TaskLab(ROOT).preflight(path)
+                    self.assertEqual(lock.document['execution']['gpu']['mode'],'exclusive')
+                    self.assertEqual(lock.document['evaluation_protocol']['paired_timing']['kind'],'fixed_baseline_paired_cupti_v1')
+                    self.assertEqual(len(lock.document['evaluation_protocol']['validation_case_ids']),5)
+                    study['evaluation_protocol']['validation_case_ids'].pop()
+                    with self.assertRaisesRegex(ValueError,'case projection'):
+                        TaskLab(ROOT).preflight(path)
+                    del study['evaluation_protocol']['validation_case_ids']
+                    with self.assertRaisesRegex(ValueError,'validation_case_ids'):
+                        TaskLab(ROOT).preflight(path)
 
     def test_full_preflight_reaches_lock_and_python_package_for_both_harnesses(self):
         for harness in ('codex','claude-code'):

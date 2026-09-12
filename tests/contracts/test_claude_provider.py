@@ -318,6 +318,41 @@ class ClaudeProviderContracts(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "understates terminal usage"):
             self.normalize(self.raw(understated))
 
+    def test_thinking_and_unknown_cost_basis_are_metadata_not_additive_usage(self):
+        for thinking in (0, 3):
+            with self.subTest(thinking=thinking):
+                events = self.events()
+                events[-1]['modelUsage']['exact-requested-model'].update(
+                    thinkingTokens=thinking, costBasis='unknown')
+                parsed = parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+                self.assertEqual(parsed.provider_tokens, 205)
+                self.assertEqual(self.normalize(self.raw(events)).provider_tokens, 205)
+                self.assertEqual(sum(item.provider_tokens for item in parsed.tool_activity
+                                     if item.provider_tokens is not None), 205)
+                self.assertIsNotNone(reported_claude_usage(self.raw(events), expected_model='exact-requested-model'))
+
+    def test_usage_metadata_keeps_closed_fields_types_and_complete_counter_checks(self):
+        mutations = [
+            {'thinkingTokens': value} for value in (-1, True, 0.0, '0', None)
+        ] + [
+            {'costBasis': value} for value in ('estimated', '', 'unknown ', 0, True, None, ['unknown'])
+        ] + [{'unobservedUsageField': 0}, {'outputTokens': True}, {'inputTokens': 1}]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                events = self.events()
+                row = events[-1]['modelUsage']['exact-requested-model']
+                row.update(thinkingTokens=0, costBasis='unknown')
+                row.update(mutation)
+                with self.assertRaises(ValueError):
+                    self.normalize(self.raw(events))
+                self.assertIsNone(reported_claude_usage(self.raw(events), expected_model='exact-requested-model'))
+        events = self.events()
+        row = events[-1]['modelUsage']['exact-requested-model']
+        row.update(thinkingTokens=0, costBasis='unknown')
+        del row['cacheReadInputTokens']
+        with self.assertRaisesRegex(ValueError, 'counters differ'):
+            self.normalize(self.raw(events))
+
     def test_native_structured_terminal_is_full_typed_object_not_prose_or_fence_extraction(self):
         events = self.events()
         events[-1]["result"] = "Display prose is not the terminal authority."

@@ -469,6 +469,17 @@ class TensorLaunchManifest:
             or self.target != workload.document['semantics'].get('target')):
             raise ValueError('sealed launch ABI differs from the selected Workload')
 
+    def check_validation_case(self, workload: WorkloadContract, case_id: str) -> None:
+        """Admit another required input distribution without changing the primary seal."""
+        self.check_workload(workload, self.case_id)
+        validation = workload.document['validation']
+        if (validation.get('all_cases_required') is not True
+                or self.case_id != validation.get('primary_case') or case_id not in workload.case_ids):
+            raise ValueError('validation case must belong to the primary Workload validation contract')
+        expected = tuple((t.name, t.shape, t.dtype, t.mode) for t in workload.tensor_abi(case_id))
+        if self.tensor_abi != expected:
+            raise ValueError('validation case must preserve the sealed primary Workload tensor ABI')
+
     @property
     def block_threads(self) -> int:
         return math.prod(self.block)

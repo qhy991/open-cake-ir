@@ -15,7 +15,7 @@ from .providers import (
     ProviderQualificationReceipt,
     required_live_provider_qualification_scope,
 )
-from .pairing import native_source, native_block, matched_run_arms
+from .pairing import native_source, native_block, matched_run_arms, backend_policy
 from .ralph import RalphBudget
 
 from .provider_policy import provider_configuration, provider_harness
@@ -232,6 +232,11 @@ def validate_evaluation(
             raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
     elif evaluation.get("paired_timing", {}).get("kind") in METAL_KINDS:
         raise ValueError("Metal paired assay cannot evaluate a different backend")
+    elif ("validation_case_ids" in evaluation
+          or single_environment and workload.document["validation"].get("all_cases_required") is True):
+        if (validation_case_ids(evaluation) != tuple(workload.case_ids)
+                or workload.document["validation"].get("all_cases_required") is not True):
+            raise ValueError("CUDA validation case projection differs from Workload validation")
     # How many candidates a Turn search-evaluates. Checked here because a Study that
     # asks for none, or for a word, would otherwise fault partway through a run --
     # and a run that faults has already spent the GPU time this Lab exists to gate.
@@ -285,34 +290,12 @@ def validate_evaluation(
         selection = fixed.get('selection')
         incumbent_baseline = False
         if selection is not None:
-            from .incumbents import (
-                TaskIncumbentKey,
-                TaskIncumbentRegistry,
-                validate_baseline_selection,
+            from .incumbents import admit_baseline_selection
+            incumbent_baseline = admit_baseline_selection(
+                selection, candidate=fixed['candidate'], workload=workload,
+                case_id=str(evaluation['case_id']), backend=str(route['backend']),
+                evaluation_protocol=evaluation,
             )
-            selection = validate_baseline_selection(selection)
-            if selection['policy'] == 'exact_incumbent_or_reference':
-                key = TaskIncumbentKey.from_values(
-                    workload_id=workload.workload_id,
-                    workload_sha256=workload.canonical_sha256,
-                    case_id=str(evaluation['case_id']),
-                    target=workload.target,
-                    backend=str(route['backend']),
-                    evaluation_protocol=evaluation,
-                )
-                if selection['incumbent_key'] != key.as_dict():
-                    raise ValueError('fixed baseline incumbent key differs from this Campaign')
-                registry = TaskIncumbentRegistry.open_if_exists(
-                    selection['registry_root'])
-                current = registry.current(key) if registry is not None else None
-                if selection['source'] == 'task_incumbent':
-                    if (current is None
-                            or current['run_id'] != selection['promotion_run_id']
-                            or current['candidate'] != fixed['candidate']):
-                        raise ValueError('fixed baseline is not the selected current incumbent')
-                    incumbent_baseline = True
-                elif current is not None:
-                    raise ValueError('starter fallback is stale because an incumbent exists')
         import ast
         requirements = baseline_lowering.toolchain_requirements
         source = sealed_baseline.artifact_payloads.get('lowered_source')
@@ -327,7 +310,7 @@ def validate_evaluation(
             observed_source = native_source(source, requirements)
             source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
             grid, block = requirements['grid'], tuple(native_block(requirements))
-            if manifest.hidden_null_pointer_parameters != policy.hidden_null_pointer_parameters:
+            if manifest.hidden_null_pointer_parameters != backend_policy(route["backend"]).hidden_null_pointer_parameters:
                 raise ValueError('fixed baseline hidden pointer commitments differ')
         reference_differs = (not source_matches or list(manifest.grid) != list(grid)
                              or manifest.block != block)

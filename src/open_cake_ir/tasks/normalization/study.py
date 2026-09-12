@@ -6,7 +6,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from open_cake_ir.compiler import frontend
-from open_cake_ir.evaluation.paired import PAIRED_METAL_BATCHED_KIND, paired_protocol
+from open_cake_ir.evaluation.paired import PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
 from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN
@@ -14,7 +14,7 @@ from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
 from open_cake_ir.lab.ralph import RalphBudget
 # The portable registry, so a Study can name an NVIDIA device as readily as an
 # Apple one; open_cake_ir.tasks.apple covers only the latter.
-from open_cake_ir.tasks.devices import device_name
+from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, device_name
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
 SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"
@@ -24,31 +24,49 @@ def canonical(document) -> bytes:
     return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
 
 
-def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sample: int = 64) -> dict:
+def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sample: int | None = None,
+                      maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6) -> dict:
     if type(searches_per_turn) is not int or searches_per_turn <= 0:
         raise ValueError("searches per Turn must be a positive integer")
-    if type(dispatches_per_sample) is not int or not 1 <= dispatches_per_sample <= 4096:
+    backend = backend_for_target(workload.target)
+    if backend is None:
+        raise ValueError("evaluation policy requires a supported exact target")
+    metal = BACKENDS[backend]["route"] == "metal"
+    if maximum_cv is None:
+        maximum_cv = 0.05 if metal else 0.15
+    if required_pair_wins is None:
+        required_pair_wins = 6 if metal else 9
+    if not metal and dispatches_per_sample is not None:
+        raise ValueError("dispatches_per_sample is a Metal command-buffer control")
+    dispatches = 64 if dispatches_per_sample is None else dispatches_per_sample
+    if type(dispatches) is not int or not 1 <= dispatches <= 4096:
         raise ValueError("dispatches per timed command buffer must be 1..4096")
+    timer = "metal" if metal else "cupti"
     policy = {
         "case_id": workload.document["validation"]["primary_case"],
         "validation_case_ids": list(workload.case_ids),
         "searches_per_turn": searches_per_turn,
-        "search_evaluation": "correctness_then_paired_metal",
-        "confirmatory_evaluation": "fresh_fixed_candidate_correctness_then_paired_metal",
+        "search_evaluation": f"correctness_then_paired_{timer}",
+        "confirmatory_evaluation": f"fresh_fixed_candidate_correctness_then_paired_{timer}",
         "attribution_evaluation": "correctness_then_profile_each_search_survivor",
         "paired_timing": {
-            "kind": PAIRED_METAL_BATCHED_KIND, "arms": ["candidate", "baseline"],
+            "kind": PAIRED_METAL_BATCHED_KIND if metal else PAIRED_KIND,
+            "arms": ["candidate", "baseline"],
             "pair_order": [["candidate", "baseline"], ["baseline", "candidate"]] * 5,
-            "samples_per_cohort": 25, "route_calls_per_cohort": _ROUTE_CALLS_PER_COHORT,
-            "maximum_cv": 0.05, "materiality_ratio": 1.05, "required_pair_wins": 6,
+            "samples_per_cohort": 25,
+            "route_calls_per_cohort": _ROUTE_CALLS_PER_COHORT if metal else 6 + 11 + 25,
+            "maximum_cv": maximum_cv, "materiality_ratio": 1.05, "required_pair_wins": required_pair_wins,
+        },
+    }
+    if metal:
+        policy["paired_timing"].update({
             # Fixed encode/submit/complete cost is paid once per command buffer. A
             # kernel shorter than that cost is otherwise measured mostly through it.
-            "dispatches_per_sample": dispatches_per_sample,
+            "dispatches_per_sample": dispatches,
             # Same strictness as maximum_cv, on a statistic an isolated disturbed
             # sample cannot veto. This assay does not exclude other GPU clients.
             "maximum_relative_iqr": 0.05,
-        },
-    }
+        })
     if searches_per_turn > 1:
         policy["search_materiality_ratio"] = 1.05
     paired_protocol(policy)
@@ -65,10 +83,11 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                    harness: str, model: str, effort: str, turns: int = 4,
                    token_budget: int = 150000, maximum_candidates: int = 3,
                    searches_per_turn: int = 2, wall_seconds: int = 14400,
-                   dispatches_per_sample: int = 64) -> dict:
+                   dispatches_per_sample: int | None = None,
+                   maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6) -> dict:
     """Bind mathematical inputs and treatment while leaving runtime facts unresolved.
 
-    The policy is operator-agnostic: every Apple task validates through its own
+    The policy is operator-agnostic: every task validates through its own
     registered contract and shares this matched-search treatment.
     """
     from open_cake_ir.tasks.workloads import validate_workload_document
@@ -117,10 +136,12 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                          "resume_invariants": ["authority", "cwd", "sandbox", "provider", "scaffold", "arm_environment", "task_package"],
                          "workspace_seed": "task_agents_only"},
         "evaluation_protocol": evaluation_policy(workload, searches_per_turn=searches_per_turn,
-                                                 dispatches_per_sample=dispatches_per_sample),
+                                                 dispatches_per_sample=dispatches_per_sample,
+                                                 maximum_cv=maximum_cv, required_pair_wins=required_pair_wins),
         "execution": {"target": workload.target, "executor_revision": dict(CURRENT_RELEASE_BINDING),
                       "broker_execution_sha256": dict(CAMPAIGN_BINDING), "fixed_baseline": dict(CAMPAIGN_BINDING),
-                      "gpu": {"name": device_name(workload.target), "count": 1, "mode": "local_serialized"},
+                      "gpu": {"name": device_name(workload.target), "count": 1,
+                              "mode": "local_serialized" if source.document["lowering"]["backend"] == "metal" else "exclusive"},
                       "sandbox": provider["sandbox"]},
         "analysis_plan": {**json.loads(canonical(_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN)),
                           "endpoint_policy": NORMAL_BUDGET_TERMINAL},

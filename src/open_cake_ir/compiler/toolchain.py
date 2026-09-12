@@ -43,25 +43,34 @@ _TRITON_CALLS = frozenset({
 })
 _TRITON_TYPES = frozenset({"constexpr", "float32", "float16", "bfloat16", "int32",
                            "int64", "uint32", "uint64", "int1"})
+_TRITON_IMPORTS = ("import triton", "import triton.language as tl")
+_LIBDEVICE_IMPORT = "from triton.language.extra import libdevice"
+_TRITON_MODULES = frozenset({"triton", "tl", "libdevice"})
+_TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range"}
 
 
 def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> None:
     """Admit one kernel-only module without importing or evaluating any source.
 
-    Module imports and @triton.jit have one spelling. Function annotations are only
-    tl.constexpr, defaults and arbitrary decorators are forbidden, and kernel calls
-    are a closed Triton language subset. No user-supplied host callbacks exist.
+    Module imports and @triton.jit have one spelling. The optional libdevice import
+    admits only tanh. Function annotations are only tl.constexpr, defaults and arbitrary
+    decorators are forbidden, and kernel calls are a closed Triton language subset.
+    No user-supplied host callbacks exist.
     """
     try:
         tree = ast.parse(source.decode("utf-8"), filename="candidate.triton.py")
     except (UnicodeError, SyntaxError) as error:
         raise ValueError(f"native Triton syntax: {error}") from error
-    expected_imports = [ast.dump(ast.parse(line).body[0]) for line in
-                        ("import triton", "import triton.language as tl")]
-    if len(tree.body) != 3 or [ast.dump(n) for n in tree.body[:2]] != expected_imports:
+    imports = _TRITON_IMPORTS + ((_LIBDEVICE_IMPORT,) if len(tree.body) == 4 else ())
+    expected_imports = [ast.dump(ast.parse(line).body[0]) for line in imports]
+    if (len(tree.body) != len(imports) + 1
+        or [ast.dump(n) for n in tree.body[:-1]] != expected_imports):
         raise ValueError("native Triton permits only fixed imports and one kernel definition")
-    kernel = tree.body[2]
-    if not isinstance(kernel, ast.FunctionDef) or kernel.name != requirements.get("kernel_entry_point"):
+    has_libdevice = len(imports) == 3
+    kernel = tree.body[-1]
+    if (not isinstance(kernel, ast.FunctionDef)
+        or kernel.name != requirements.get("kernel_entry_point")
+        or kernel.name in _TRITON_RESERVED_NAMES):
         raise ValueError("native Triton kernel entry point differs")
     args = kernel.args
     if (len(kernel.decorator_list) != 1
@@ -81,13 +90,15 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     for arg in args.args:
         expected = "tl.constexpr" if arg.arg in constants else None
         if ((ast.unparse(arg.annotation) if arg.annotation else None) != expected
-            or arg.arg in {"tl", "triton", "range"} or "__" in arg.arg):
+            or arg.arg in _TRITON_RESERVED_NAMES or "__" in arg.arg):
             raise ValueError("native Triton parameter annotations or names differ")
     forbidden = (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef,
                  ast.ClassDef, ast.Lambda, ast.Global, ast.Nonlocal, ast.With,
                  ast.AsyncWith, ast.Try, ast.Raise, ast.Delete, ast.Await, ast.Yield,
                  ast.YieldFrom, ast.ListComp, ast.SetComp, ast.DictComp,
                  ast.GeneratorExp, ast.NamedExpr, ast.While)
+    parents = {child: parent for parent in ast.walk(kernel)
+               for child in ast.iter_child_nodes(parent)}
     for statement in kernel.body:
         for node in ast.walk(statement):
             if isinstance(node, forbidden):
@@ -98,11 +109,20 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
             )):
                 raise ValueError(f"native Triton unsupported statement at line {node.lineno}")
             if isinstance(node, ast.Name) and ("__" in node.id or
-                isinstance(node.ctx, ast.Store) and node.id in {"tl", "triton", "range"}):
+                isinstance(node.ctx, ast.Store) and node.id in _TRITON_RESERVED_NAMES):
                 raise ValueError(f"native Triton reserved name at line {node.lineno}")
+            if isinstance(node, ast.Name) and node.id == "libdevice" and isinstance(node.ctx, ast.Load):
+                attribute = parents.get(node)
+                call = parents.get(attribute)
+                if (not isinstance(attribute, ast.Attribute) or attribute.value is not node
+                    or attribute.attr != "tanh" or not isinstance(call, ast.Call)
+                    or call.func is not attribute):
+                    raise ValueError(f"native Triton libdevice requires a direct tanh call at line {node.lineno}")
             if isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id == "tl":
                     allowed = node.attr in _TRITON_CALLS | _TRITON_TYPES
+                elif isinstance(node.value, ast.Name) and node.value.id == "libdevice":
+                    allowed = has_libdevice and node.attr == "tanh" and isinstance(node.ctx, ast.Load)
                 else:
                     allowed = node.attr == "to" and isinstance(node.ctx, ast.Load)
                 if not allowed:
@@ -112,7 +132,8 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                 allowed = (isinstance(fn, ast.Name) and fn.id == "range") or (
                     isinstance(fn, ast.Attribute) and (
                         isinstance(fn.value, ast.Name) and fn.value.id == "tl" and fn.attr in _TRITON_CALLS
-                        or fn.attr == "to" and not (isinstance(fn.value, ast.Name) and fn.value.id in {"triton", "tl"})
+                        or has_libdevice and isinstance(fn.value, ast.Name) and fn.value.id == "libdevice" and fn.attr == "tanh"
+                        or fn.attr == "to" and not (isinstance(fn.value, ast.Name) and fn.value.id in _TRITON_MODULES)
                     ))
                 if not allowed or any(kw.arg is None for kw in node.keywords):
                     raise ValueError(f"native Triton unsupported call at line {node.lineno}")
@@ -138,7 +159,11 @@ def project_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> 
         raise ValueError("Compiler lowering kernel entry point differs")
     kernel = kernels[0]
     start = min([kernel.lineno] + [node.lineno for node in kernel.decorator_list])
-    result = ("import triton\nimport triton.language as tl\n\n" +
+    imports = _TRITON_IMPORTS
+    libdevice_import = ast.dump(ast.parse(_LIBDEVICE_IMPORT).body[0])
+    if any(ast.dump(node) == libdevice_import for node in tree.body):
+        imports += (_LIBDEVICE_IMPORT,)
+    result = ("\n".join(imports) + "\n\n" +
               "\n".join(text.splitlines()[start - 1:kernel.end_lineno]) + "\n").encode()
     validate_triton_kernel(result, requirements)
     return result
