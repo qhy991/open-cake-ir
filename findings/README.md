@@ -62,3 +62,4 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-12-001 — exact-R2 row-reduction scalarization confirms 1.107x on M4 channel absmax and recurs in per-channel moments (behavior, Compiler-pass proposal)
 - F-2026-09-12-002 — native heartbeats establish liveness but not semantic progress or enforcement of an in-flight provider budget (capacity, provider-boundary proposal)
 - F-2026-09-12-003 — per-Run promotion now feeds an append-only exact-task incumbent chain for the next artifact-optimization baseline (capacity, closed in family7 v109/family9 v110)
+- F-2026-09-13-001 — M4 selected SDK 27 requires Swift 6.4 but installed CLT still provides Swift 6.3.3 (capacity, environment repair pending)

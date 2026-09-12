@@ -41,6 +41,11 @@
       "workspace": "/Users/haiyan-infiniai/.local/share/open-cake-ir/nvidia-kimi-20260911/study-controls-v3",
       "artifacts": ["aggregate.json", "outcome.md", "recovered-first-gelu.json", "terminal-mirror/result.json", "review/continuation-ready-v3.json"],
       "note": "On source 094e985c, Compiler v76 and Executor v109, all six fixed 128-by-1024 SiLU controls passed. Both original and reversed-label A/A were close_null in search and fresh confirmation. The 64-iteration volatile GPU-region slowdown preserved correctness; the baseline won 10/10 pairs in both stages, with baseline/candidate ratios 0.06205053 and 0.06206236. Every control passed the unchanged preregistered 15% CV bound; the largest observed cohort CV was 6.628%. Including the two GELU checks, the aggregate contains eight distinct GPU calls: one recovered original call and seven new continuation calls. The original external report_adapter_fault and exit 1 remain recorded; the first GPU call was not repeated. Provider calls and candidate promotions are zero. These controls verify this declared shape/scaffold, not a universal false-positive rate or an old candidate's performance qualification."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v76-v106-sdk-drift-20260912",
+      "run_id": "matrix",
+      "note": "Cross-target recurrence of the prebuild problem: two tasks completed, residual_rmsnorm spent 76,922 provider tokens before its Evaluation caught that the selected Metal SDK no longer matched Executor v106, and the old matrix then repeated the same host-admission refusal for 26 later tasks. The successor prebuild-first matrix would stop once before qualification with provider_calls=0. No old result is reclassified."
     }
   ],
   "observation": "The old matrix prepares each task only when it is reached, so later deterministic baseline build failures can be discovered after earlier provider spending. Its microsecond timing observations also motivate a new, explicitly declared Study rather than a retrospective change to the old quality decisions. The user separately requested at least a 3,000,000-token budget per task; that budget is an owner instruction, not a deduction from benchmark results or a claim that every run will spend it.",
