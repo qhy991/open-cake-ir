@@ -187,6 +187,8 @@ class MetalTests(unittest.TestCase):
 
     def execute_body(self, document, inputs):
         """Run the emitted SIMD body with a CPU intrinsic ABI; never dispatch Metal."""
+        from _ctypes import dlclose
+
         compiler = shutil.which("clang++") or shutil.which("c++")
         if compiler is None:
             self.skipTest("native C++ compiler required for generated-body CPU execution")
@@ -216,18 +218,23 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
             completed = subprocess.run([compiler, "-std=c++17", "-shared", "-fPIC", "-pthread", "-ffp-contract=off", "-fno-fast-math", str(path / "body.cpp"), "-o", str(path / "body.so")], capture_output=True, text=True)
             self.assertEqual(completed.returncode, 0, completed.stderr)
             library = ctypes.CDLL(str(path / "body.so"))
-            kernel = library.cpu_dispatch
-            arrays = []
-            for buffer in globals_:
-                values = inputs.get(buffer.name, [float("nan")] * buffer.elements)
-                self.assertEqual(len(values), buffer.elements)
-                arrays.append((ctypes.c_float * buffer.elements)(*values))
-            kernel.argtypes = [ctypes.POINTER(ctypes.c_float)] * len(arrays) + [_Program]
-            kernel.restype = ctypes.c_int
-            grid = lowering.toolchain_requirements["threadgroups_per_grid"]
-            for position in itertools.product(*(range(extent) for extent in grid)):
-                self.assertEqual(kernel(*arrays, _Program(*position)), 0, "SIMD collective participants or call sites diverged")
-            return {buffer.name: list(array) for buffer, array in zip(globals_, arrays)}
+            try:
+                kernel = library.cpu_dispatch
+                arrays = []
+                for buffer in globals_:
+                    values = inputs.get(buffer.name, [float("nan")] * buffer.elements)
+                    self.assertEqual(len(values), buffer.elements)
+                    arrays.append((ctypes.c_float * buffer.elements)(*values))
+                kernel.argtypes = [ctypes.POINTER(ctypes.c_float)] * len(arrays) + [_Program]
+                kernel.restype = ctypes.c_int
+                grid = lowering.toolchain_requirements["threadgroups_per_grid"]
+                for position in itertools.product(*(range(extent) for extent in grid)):
+                    self.assertEqual(kernel(*arrays, _Program(*position)), 0, "SIMD collective participants or call sites diverged")
+                return {buffer.name: list(array) for buffer, array in zip(globals_, arrays)}
+            finally:
+                # ctypes retains the mapping after this local object is discarded;
+                # unload before TemporaryDirectory removes the shared object on NFS.
+                dlclose(library._handle)
 
     def test_m1_pro_exact_target_and_uncalibrated_analysis(self):
         target = Target.load(ROOT / "compiler/targets/apple_gpu_family7.json")
