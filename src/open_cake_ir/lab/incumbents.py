@@ -12,6 +12,7 @@ import math
 import os
 import re
 import stat
+import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass
 from hashlib import sha256
@@ -28,6 +29,7 @@ from open_cake_ir.evidence.custody import external_path
 from open_cake_ir.serialization import canonical_json_bytes
 
 from .contracts import CampaignLock, CampaignRef, StudyReport
+from .executor import ExecutorRevision
 
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
@@ -455,13 +457,63 @@ class TaskIncumbentRegistry:
         return bundle, record
 
 
+def _bound_audit_report(
+    project: Path, lock: CampaignLock, lock_path: Path, evidence_path: Path
+) -> Mapping[str, object]:
+    """Audit through the frozen Campaign's own Executor source, including history."""
+
+    execution = _object(lock.document["execution"], "campaign execution")
+    reference = _object(
+        execution["executor_revision"], "campaign Executor Revision"
+    )
+    executor = ExecutorRevision.load_reference(
+        project, reference, "campaign Executor Revision"
+    )
+    python = executor.document["host_environment"]["python"]["invocation_path"]
+    bootstrap = project / "src/open_cake_ir/evaluation/source_bootstrap.py"
+    command = [
+        str(python),
+        "-I",
+        str(bootstrap),
+        "open_cake_ir.cli",
+        "--project-root",
+        str(project),
+        "lab",
+        "audit",
+        "--lock",
+        str(lock_path),
+        "--evidence-root",
+        str(evidence_path),
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=project,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise ValueError(
+            "campaign-bound semantic audit failed: "
+            + (completed.stderr.strip().splitlines() or ["no diagnostic"])[-1]
+        )
+    report = _object(json.loads(completed.stdout), "campaign-bound audit report")
+    if (
+        report.get("study_id") != lock.study_id
+        or report.get("claim_scope") != lock.claim_scope
+    ):
+        raise ValueError("campaign-bound audit report identity differs")
+    return report
+
+
 def promote_task_incumbent(
     *,
     project_root: str | Path,
     registry_root: str | Path,
     campaign_lock_path: str | Path,
     evidence_root: str | Path,
-    lab,
+    lab=None,
     run_id: str | None = None,
 ) -> Mapping[str, object]:
     """Promote one material confirmed winner and seal its complete artifact bundle."""
@@ -472,13 +524,20 @@ def promote_task_incumbent(
     lock = CampaignLock.load(lock_path)
     if lock.claim_scope != "artifact_optimization_only":
         raise ValueError("task incumbent promotion requires artifact_optimization_only")
-    campaign: CampaignRef = lab.reference_campaign(lock, evidence_path)
-    report: StudyReport = lab.audit(campaign)
+    if lab is None:
+        report = _bound_audit_report(project, lock, lock_path, evidence_path)
+        descriptive = _object(report.get("descriptive"), "campaign audit descriptive")
+    else:
+        campaign: CampaignRef = lab.reference_campaign(lock, evidence_path)
+        live_report: StudyReport = lab.audit(campaign)
+        descriptive = _object(
+            live_report.descriptive, "campaign audit descriptive"
+        )
     promoted = _object(
-        report.descriptive.get("promoted_artifacts"), "promoted artifacts"
+        descriptive.get("promoted_artifacts"), "promoted artifacts"
     )
     semantic_replay = _object(
-        report.descriptive.get("semantic_replay_by_run"),
+        descriptive.get("semantic_replay_by_run"),
         "promotion semantic replay",
     )
     eligible = [name for name, value in promoted.items() if value is not None]

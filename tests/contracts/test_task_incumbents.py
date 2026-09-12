@@ -18,6 +18,7 @@ from open_cake_ir.evidence import custody
 from open_cake_ir.lab.incumbents import (
     TaskIncumbentKey,
     TaskIncumbentRegistry,
+    _bound_audit_report,
     promote_task_incumbent,
 )
 from open_cake_ir.lab.execution import _baseline_comparison_feedback
@@ -324,6 +325,41 @@ class TaskIncumbentTests(unittest.TestCase):
             "candidate_speedup": 1.25,
             "measurement_quality_passed": True,
         })
+
+    def test_historical_promotion_audits_through_the_campaign_bound_source(self):
+        lock_path = self.base / "historical-lock.json"
+        lock_path.write_text("{}")
+        evidence = self.base / "historical-evidence"
+        evidence.mkdir()
+        lock = SimpleNamespace(
+            study_id="historical-study",
+            claim_scope="artifact_optimization_only",
+            document={"execution": {"executor_revision": {
+                "executor_id": "historical-executor",
+                "path": "runtime/executors/historical.json",
+                "canonical_sha256": "1" * 64,
+            }}},
+        )
+        executor = SimpleNamespace(document={"host_environment": {"python": {
+            "invocation_path": "/historical/python"}}})
+        report = {"study_id": lock.study_id, "claim_scope": lock.claim_scope,
+                  "descriptive": {}}
+        completed = SimpleNamespace(returncode=0, stdout=json.dumps(report), stderr="")
+        with patch("open_cake_ir.lab.incumbents.ExecutorRevision.load_reference",
+                   return_value=executor) as load, \
+             patch("open_cake_ir.lab.incumbents.subprocess.run",
+                   return_value=completed) as run:
+            self.assertEqual(
+                _bound_audit_report(ROOT, lock, lock_path, evidence), report
+            )
+        load.assert_called_once()
+        command = run.call_args.args[0]
+        self.assertEqual(command[:2], ["/historical/python", "-I"])
+        self.assertEqual(
+            command[2], str(ROOT / "src/open_cake_ir/evaluation/source_bootstrap.py")
+        )
+        self.assertEqual(command[-4:], ["--lock", str(lock_path),
+                                        "--evidence-root", str(evidence)])
 
 
 if __name__ == "__main__":

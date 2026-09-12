@@ -12,7 +12,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab.incumbents import promote_task_incumbent  # noqa: E402
-from open_cake_ir.tasks.runtime import TaskLab  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -29,7 +28,6 @@ def main(argv=None) -> int:
         registry_root=arguments.registry_root,
         campaign_lock_path=arguments.campaign_lock,
         evidence_root=arguments.evidence_root,
-        lab=TaskLab(project),
         run_id=arguments.run_id,
     )
     print(

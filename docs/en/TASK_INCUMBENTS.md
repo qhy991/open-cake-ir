@@ -21,6 +21,8 @@ The selected candidate must have a correctness-passing, measurement-quality-pass
 materially faster confirmation. A copied Git archive has no Filesystem Custody and cannot
 promote. After the first promotion, the Campaign's fixed baseline must be the current
 incumbent, preventing a side experiment from overwriting a stronger result.
+Historical Campaigns are audited through their own Executor-bound Python and source tree,
+not through the current TaskPackage renderer.
 
 ## Use incumbents in the next task or matrix
 

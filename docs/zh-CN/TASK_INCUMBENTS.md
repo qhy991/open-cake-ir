@@ -19,6 +19,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python tools/promote_task_incumbent.py 
 候选必须通过外部 oracle 正确性、确认测量质量和 Study 规定的 material speedup。
 Git 复制品没有 Filesystem Custody，不能晋升。第一次晋升后，新 Campaign 的 fixed
 baseline 必须与当前 incumbent 完全相同，旁支实验不能覆盖更强结果。
+历史 Campaign 使用它自己绑定的 Executor Python 与源码完成语义重放，不拿今天的
+TaskPackage renderer 去冒充当时的投影。
 
 ## 下一轮或矩阵使用 incumbent
 

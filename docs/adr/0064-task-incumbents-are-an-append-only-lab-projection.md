@@ -25,6 +25,11 @@ Close-null, slower, search-only, unstable, faulted and wrong-baseline results ca
 advance the chain. Concurrent writers serialize the current-read plus append; an
 incomplete promotion remains a refusal, not a record repaired in place.
 
+Historical promotion runs semantic replay through the Campaign's exact Executor-bound
+Python and source bootstrap. Replaying an old provider reference bundle with today's
+TaskPackage renderer would compare different projections and is therefore refused rather
+than called equivalent.
+
 `launch_task.py --incumbent-registry ROOT` resolves the exact cell after constructing the
 Workload and Study. If an incumbent exists, it materializes the registry CAS objects into
 the new external workspace and binds that bundle through the existing `fixed_baseline`
