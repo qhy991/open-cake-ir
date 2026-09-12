@@ -2,8 +2,8 @@
 
 The IR is the single owner of Schedule structure. These tests fix three properties:
 
-1. every retained Schedule parses, and the unified operation vocabulary carries each
-   operation's real kind and typed parameters (no legacy kind rewriting);
+1. retained valid Schedules parse, declared structural counterexamples are refused,
+   and the unified vocabulary carries each operation's real kind and typed parameters;
 2. parsing is total -- strict field checking means a parsed Schedule accounts for every
    field of its source document;
 3. rejections are localized: the message names the offending path and, for closed
@@ -53,12 +53,13 @@ from tests.contracts._corpus_documents import corpus_document
 ROOT = Path(__file__).resolve().parents[2]
 # The manifest is what the Corpus is; the directory also holds schedules
 # retained as history that the current Revision no longer admits.
-CORPUS = sorted(
-    ROOT / case["schedule"]
+CORPUS_EXPECTATIONS = {
+    ROOT / case["schedule"]: case["expected"]
     for case in json.loads(
         (ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8")
     )["cases"]
-)
+}
+CORPUS = sorted(CORPUS_EXPECTATIONS)
 B32 = ROOT / "corpus" / "schedules" / "flash-kmeans-b32-smoke-v2.json"
 TINYGEMM = ROOT / "corpus" / "schedules" / "tinygemm2-stage4-split-k.json"
 ASSIGNMENT_FULL = ROOT / "corpus" / "schedules" / "flash-kmeans-assignment-full.json"
@@ -120,16 +121,29 @@ class PublicIrBoundaryTest(unittest.TestCase):
 
 class RetainedScheduleTest(unittest.TestCase):
     def test_every_corpus_schedule_parses(self) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         self.assertTrue(CORPUS)
         for path in CORPUS:
             with self.subTest(schedule=path.name):
-                if _document(path)["lowering"]["backend"] == "checked_cuda_asset":
-                    with self.assertRaisesRegex(ScheduleParseError, "schedule.lowering.backend is unsupported"):
-                        Schedule.load(path)
+                document = _document(path)
+                expected = CORPUS_EXPECTATIONS[path]
+                if "SCHEDULE_STRUCTURE" in expected["finding_codes"]:
+                    with self.assertRaises(ScheduleParseError) as refusal:
+                        Schedule.from_dict(document)
+                    if document["lowering"]["backend"] == "checked_cuda_asset":
+                        self.assertIn("schedule.lowering.backend is unsupported", str(refusal.exception))
+                    assessment = compiler.assess(document)
+                    self.assertFalse(assessment.accepted)
+                    self.assertFalse(assessment.lowering_eligible)
+                    self.assertEqual([finding.code for finding in assessment.findings], expected["finding_codes"])
+                    finding = assessment.findings[0]
+                    self.assertEqual(f"{finding.path} {finding.message}", str(refusal.exception))
                     continue
-                schedule = Schedule.from_dict(_document(path))
+                schedule = Schedule.from_dict(document)
                 self.assertEqual(schedule.schema_version, 1)
-                self.assertEqual(schedule.target, _document(path)["target"])
+                self.assertEqual(schedule.target, document["target"])
                 self.assertTrue(schedule.operations)
                 self.assertTrue(
                     schedule.outputs
