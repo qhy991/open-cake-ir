@@ -337,6 +337,11 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
         from open_cake_ir.compiler.backends.metal import _UNARY
         from open_cake_ir.compiler.ir.vocabulary import ElementwiseOp
 
+        # Match the CPU shim's float libm boundary, not Python's double tanh.
+        process_math = ctypes.CDLL(None)
+        tanhf = process_math.tanhf
+        tanhf.argtypes = [ctypes.c_float]
+        tanhf.restype = ctypes.c_float
         expected = {ElementwiseOp.SQUARE: lambda v: fp32(v * v),
                     ElementwiseOp.RELU: lambda v: max(v, 0.0),
                     # The shim rounds the square root before the divide, as the emitted float does.
@@ -344,7 +349,7 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
                     ElementwiseOp.EXP: lambda v: fp32(math.exp(v)),
                     ElementwiseOp.EXP2: lambda v: fp32(2.0 ** v),
                     ElementwiseOp.RECIPROCAL: lambda v: fp32(1.0 / v),
-                    ElementwiseOp.TANH: lambda v: fp32(math.tanh(v))}
+                    ElementwiseOp.TANH: tanhf}
         self.assertEqual(set(_UNARY), set(expected))
         values = [0.5, 1.0, 2.0, 3.25, 0.125, 4.0, 1.5, 2.75]
         for op, reference in expected.items():
