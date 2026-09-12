@@ -110,15 +110,16 @@ def refresh_inventory(root: Path, target: str, record: dict) -> tuple[str, ...]:
         or not isinstance(inventory.get('superseded'), list)):
         raise ValueError('Executor inventory schema differs')
     current = inventory['current_by_target']
-    history = {item['path']: item for item in inventory['superseded']}
-    if len(history) != len(inventory['superseded']):
-        raise ValueError('duplicate superseded Executor index path')
+    # Historical rows may use archive_root rather than an active descriptor path.
+    # They remain opaque history; only newly retired active records need a path.
+    history = list(inventory['superseded'])
     expected = _source_map(_indexed_document(root, record))
     def retain(item):
-        previous = history.get(item['path'])
-        if previous is not None and previous != item:
+        previous = [entry for entry in history if entry.get('path') == item['path']]
+        if any(entry != item for entry in previous):
             raise ValueError('historical Executor index identity differs')
-        history[item['path']] = item
+        if not previous:
+            history.append(item)
     previous = current.get(target)
     if previous is not None and previous != record:
         _indexed_document(root, previous)
@@ -132,7 +133,7 @@ def refresh_inventory(root: Path, target: str, record: dict) -> tuple[str, ...]:
             stale.append(name)
     current_paths = {item['path'] for item in current.values()}
     inventory['superseded'] = sorted(
-        (item for key, item in history.items() if key not in current_paths),
+        (item for item in history if item.get('path') not in current_paths),
         key=lambda item: item['executor_id'])
     payload = (json.dumps(inventory, indent=2, sort_keys=True) + '\n').encode()
     if payload != before:

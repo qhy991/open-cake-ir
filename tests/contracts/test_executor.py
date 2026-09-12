@@ -504,15 +504,17 @@ class ExecutorInventoryProjectionTests(unittest.TestCase):
         other = self.record('other', [('src/b.py', 'b'), ('src/a.py', 'a')])
         changed = self.record('changed', [('src/a.py', 'c'), ('src/b.py', 'b')])
         incomplete = self.record('incomplete', [('src/a.py', 'a')])
+        legacy = {'executor_id': 'TEST-legacy', 'archive_root': 'historical/archive'}
         self.inventory.write_text(json.dumps({'schema_version': 2, 'current_by_target': {
             'current': current, 'other': other, 'changed': changed, 'incomplete': incomplete},
-            'superseded': [], 'archives': []}))
+            'superseded': [legacy], 'archives': []}))
         originals = {p: p.read_bytes() for p in (self.root/'runtime/executors').glob('*.json')}
         self.assertEqual(refresh_inventory(self.root, 'current', current), ('changed', 'incomplete'))
         after = self.inventory.read_bytes()
         index = json.loads(after)
         self.assertEqual(index['current_by_target'], {'current': current, 'other': other})
-        self.assertEqual({r['path'] for r in index['superseded']}, {changed['path'], incomplete['path']})
+        self.assertIn(legacy, index['superseded'])
+        self.assertEqual({r['path'] for r in index['superseded'] if 'path' in r}, {changed['path'], incomplete['path']})
         self.assertEqual(refresh_inventory(self.root, 'current', current), ())
         self.assertEqual(self.inventory.read_bytes(), after)
         self.assertEqual({p: p.read_bytes() for p in originals}, originals)
