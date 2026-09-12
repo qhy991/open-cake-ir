@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-12-002",
+  "kind": "capacity",
+  "title": "Native stream heartbeats prove liveness but neither progress nor enforcement of the Lab token budget",
+  "date": "2026-09-12",
+  "backend": "metal-m4",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v104+68dcdffc7bc2df2e383fdbe2cb1e47fd5c20dd417282d8f600179d77ab139d74",
+  "compiler_revision_id": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
+  "tasks": [
+    "layernorm_backward_input",
+    "gemm_silu",
+    "attention_decode",
+    "bias_gradient_reduction"
+  ],
+  "evidence": [
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v104-20260911/layernorm_backward_input",
+      "run": "open_cake-1",
+      "event": 1,
+      "note": "The 1800-second supervisor timeout retained 45,241 thinking_tokens events but no provider result or structured terminal. The final estimated token counter was only 1,890, so event volume was liveness noise rather than measurable task progress."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v104-20260911/attention_decode",
+      "run": "open_cake-1",
+      "event": 1,
+      "note": "A second 1800-second timeout retained 45,656 thinking_tokens events, final estimated tokens 5,957, and no provider result or structured terminal. This independent recurrence rules out treating heartbeat presence as forward progress."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v104-20260911/gemm_silu",
+      "run": "open_cake-1",
+      "event": 1,
+      "note": "The provider emitted a success result after 1,042,831 observed kimi-k3 tokens but no native structured_output. The closed parser correctly refused it; the nominal 250k Lab budget could only be charged after the already-oversized invocation returned."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v104-20260911/bias_gradient_reduction",
+      "run": "open_cake-1",
+      "event": 1,
+      "note": "An adhered turn reported 1,136,459 provider tokens under the same nominal 250k Lab budget. This shows overshoot is not specific to malformed terminals: post-terminal accounting observes usage but cannot govern one native invocation."
+    }
+  ],
+  "observation": "The native adapter has two distinct signals. Stream metadata establishes that the process is alive and preserves a reconstructible timeline; only semantic actions, candidate output or an advancing bounded progress metric establish work progress. Lab token checkpoints run after a provider terminal and therefore cannot stop a single invocation before it overshoots. Timeouts without a result also lack authoritative modelUsage, even though estimated thinking counters exist. Conflating these signals either kills healthy long tools, as earlier tool_progress handling did, or lets non-progressing streams consume the full wall budget while appearing active.",
+  "proposed_change": "Keep heartbeat metadata admissible but do not reset a semantic no-progress watchdog merely because another heartbeat arrived. Record the last advancing estimated counter, action or candidate event in timeout diagnostics. If hard spend control is required, enforce it at the provider/CLI or gateway boundary that can stop the active request; retain Lab checkpoints as accounting and inter-turn control. Any no-progress cutoff must be treatment-declared and evidence-calibrated so slow valid tools are not confused with stalled thinking streams.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Replay both retained timeout streams to prove the diagnostic reports event count, last advancing estimate and absence of terminal without changing protocol classification. Add synthetic streams for repeated equal heartbeats, advancing thinking estimates, a long tool_progress sequence followed by success, and a provider-side cutoff. Then run a bounded M4 task and confirm the request stops at the declared provider limit rather than only being charged afterward."
+}

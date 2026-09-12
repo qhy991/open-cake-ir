@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-12-001",
+  "kind": "behavior",
+  "title": "Exact-R2 row-reduction scalarization confirms a 1.107x M4 channel-absmax speedup and recurs in per-channel moments",
+  "date": "2026-09-12",
+  "backend": "metal-m4",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v104+68dcdffc7bc2df2e383fdbe2cb1e47fd5c20dd417282d8f600179d77ab139d74",
+  "compiler_revision_id": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
+  "tasks": [
+    "channel_absmax_scale",
+    "per_channel_moments",
+    "bias_gradient_reduction"
+  ],
+  "evidence": [
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v104-20260911/channel_absmax_scale",
+      "run": "open_cake-1",
+      "event": 13,
+      "note": "The candidate replaces one two-value vector load plus max reduction with two scalar row loads and an explicit branchless maximum. Confirmation passed correctness with maximum absolute error 4.657e-10 and measurement quality, reporting candidate 0.000711589 ms, baseline 0.000787761 ms, 1.107045x speedup, nine candidate pair wins and one baseline win."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/per-channel-moments-kimi-k3-high-r2c8-v102-20260911",
+      "run": "open_cake-1",
+      "note": "An independent task used the same exact-R2 mechanism: two scalar row loads directly form sum and sum-of-squares, replacing a vector load and two reductions. Search reported 1.083810x and confirmation retained 1.077299x, but confirmation measurement quality failed, so it corroborates applicability rather than a second speedup claim."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v104-20260911/bias_gradient_reduction",
+      "run": "open_cake-1",
+      "event": 13,
+      "note": "A third task isolates the structural mechanism more cleanly: two scalar row loads and one add replace the generic R2 sum reduction before adding the prior bias. Search passed quality at 1.143292x and confirmation retained 1.149491x, but confirmation quality failed, so it is recurrence evidence rather than a performance result."
+    }
+  ],
+  "observation": "When the reduced row extent is statically exactly two, a generic vector reduction carries setup and collective work that can be replaced by two scalar loads plus the operation's scalar combine. The channel-absmax candidate also strength-reduces division by 448, so this campaign does not isolate the scalarization's individual contribution. The structural mechanism nevertheless recurs in per-channel moments, while that task's unstable confirmation prevents claiming a general target-wide benefit. Applicability requires an exact extent of two, independent output columns and a reduction whose scalar combine preserves the Workload's numerical semantics. Anti-conditions include dynamic or non-two extents, cross-column coupling, side effects, order-sensitive accumulation outside tolerance, and targets where scalarized accesses cost more than the avoided collective.",
+  "proposed_change": "Retain exact-R2 scalarization as a deterministic candidate-producing Compiler-pass proposal, not an unconditional rewrite. Match the structural reduction and return either a complete scalarized Schedule or a named ineligibility reason while preserving the original. Keep division-strength reduction as a separate candidate so Lab can attribute and select mechanisms independently. Before promotion, add positive max/sum cases, valid-but-ineligible R3 and dynamic-extent cases, floating-point order counterexamples, and matched M1 Pro/M4 campaigns at representative column counts and dispatch amplification.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Separate scalarization from constant-division strength reduction; run channel_absmax_scale and per_channel_moments at R=2 with representative C values, plus R=3 and dynamic-extent anti-cases. Require external-oracle correctness, stable paired confirmation on both Apple targets, and a second quality-passing task before promotion."
+}

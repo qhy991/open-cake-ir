@@ -19,11 +19,17 @@
     {
       "workspace": "F-2026-09-10-010 ordinary GEMM campaigns",
       "note": "The same output-column decomposition was independently useful for ordinary GEMM, with 6x to 7x median gaps across three candidates; those measurements failed stability because of device contention, while the GEMM-SiLU confirmation above supplies the first stable second use."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v104-20260911/pairwise_sqdist",
+      "run": "open_cake-1",
+      "event": 6,
+      "note": "The M4 candidate independently selected a row-by-column ProgramMap, loaded one point and one centroid and produced one scalar distance. Two M4 Evaluations passed correctness. Search reported 1.107437x, but measurement quality failed and no confirmation ran; this establishes expressibility and correctness transfer, not M4 performance transfer."
     }
   ],
   "observation": "The baseline assigns one program to each output row, loads the full K-by-N second operand into private values and reduces K for all N outputs. The candidate adds the independent output-column program axis, loads one K-vector B[:,col], reduces to one scalar, applies the scalar bias and SiLU epilogue and stores out[row,col]. This trades more programs and strided column access for a factor-N reduction in per-program private contraction state. It transfers from ordinary GEMM to GEMM-SiLU and is not operator-name recognition: the structural invariant is an independent output axis with a pointwise epilogue. Attention decode is an explicit anti-case because softmax and the second contraction couple N. The result is exact to one M1 Pro shape and does not establish M4 benefit, a portfolio, or framework performance.",
   "proposed_change": "Extract a deterministic Compiler pass that returns a complete column-specialized Schedule or a reason for not applying, preserving the original. Match a row-programmed rank-2 contraction whose output N axis is independent through a scalar/pointwise epilogue; make target, access and semantic preconditions explicit. Refuse state/alias effects, cross-N reductions, attention/softmax coupling and unsupported column access. The pass exposes a candidate and never claims speedup; Lab selection chooses between original and transformed schedules. Retain the existing before/after programs as the mechanism evidence rather than copying them into a second recipe ledger.",
   "decision": "proposed",
   "implemented_in": null,
-  "verification_plan": "Compiler proposal requires positive GEMM and GEMM-SiLU cases, valid-but-ineligible attention decode and state/alias cases, numerical counterexamples for epilogue reassociation, full Corpus Gate and independent release review. Capability verification then runs matched M1 Pro and M4 campaigns at representative and held-out shapes, reporting baseline movement separately from candidate-minus-baseline and retaining negative transfer."
+  "verification_plan": "Compiler proposal requires positive GEMM and GEMM-SiLU cases, valid-but-ineligible attention decode and state/alias cases, numerical counterexamples for epilogue reassociation, full Corpus Gate and independent release review. M4 pairwise_sqdist now supplies correctness-passing but unstable smoke-shape transfer. Capability verification still requires matched M1 Pro and M4 campaigns at representative and held-out shapes, reporting baseline movement separately from candidate-minus-baseline and retaining negative transfer."
 }

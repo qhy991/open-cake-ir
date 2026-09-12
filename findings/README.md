@@ -56,3 +56,5 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-11-002 — CLI tool-progress heartbeat outside the native contract shadowed the named compaction refusal (protocol, gemm v99 retry; closed in Executor v103)
 - F-2026-09-11-003 — a schema-rejected StructuredOutput call can recover through a later exact success (protocol, closed in Executor v102)
 - F-2026-09-11-004 — output-column specialization cuts Metal contraction private state and confirms 23.6x on M1 Pro GEMM-SiLU (behavior, Compiler-pass proposal; M4 transfer pending)
+- F-2026-09-12-001 — exact-R2 row-reduction scalarization confirms 1.107x on M4 channel absmax and recurs in per-channel moments (behavior, Compiler-pass proposal)
+- F-2026-09-12-002 — native heartbeats establish liveness but not semantic progress or enforcement of an in-flight provider budget (capacity, provider-boundary proposal)
