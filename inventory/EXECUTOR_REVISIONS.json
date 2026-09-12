@@ -37,6 +37,13 @@
     }
   ],
   "current_by_target": {
+    "apple_gpu_family7": {
+      "canonical_sha256": "dcbce8a17bc9b9b47216c94193e353059701ab2f07f27d3a7324824319ccbe48",
+      "descriptor_raw_sha256": "032443de6966d07a96d7c2b26295784236d1515d30510a1e75df5e879a3b9c9f",
+      "executor_id": "open-cake-ir-b200-v105+0cb3b44fb50dec73fc9f25530d153a5614eed39f044ea9d66ff580a0a91b1340",
+      "path": "runtime/executors/open-cake-ir-b200-v105+0cb3b44fb50dec73fc9f25530d153a5614eed39f044ea9d66ff580a0a91b1340.json",
+      "source_count": 160
+    },
     "apple_gpu_family9": {
       "canonical_sha256": "5383172ccb3483fb2a19dc2d24155e91d019e16d1aeb715df3c25a2099475579",
       "descriptor_raw_sha256": "f967d3f2cdde27f9373625a52e79ae63e478e96d073cee6694f8f53f7112be9f",
