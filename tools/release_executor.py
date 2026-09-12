@@ -59,6 +59,97 @@ def _released_executor_paths(root: Path) -> tuple[Path, ...]:
     return tuple(sorted({*current, *archived}))
 
 
+def _indexed_document(root: Path, record: dict) -> dict:
+    """Verify the inventory-to-descriptor relation at a publication boundary."""
+    from open_cake_ir.lab.executor import _relative_file
+    if not isinstance(record, dict) or set(record) != {
+        'executor_id', 'path', 'canonical_sha256', 'descriptor_raw_sha256', 'source_count',
+    }:
+        raise ValueError('current Executor index fields differ')
+    _, path = _relative_file(root, record['path'], 'current Executor descriptor')
+    raw = path.read_bytes()
+    document = json.loads(raw)
+    if (not isinstance(document, dict) or document.get('state') != 'released'
+        or document.get('executor_id') != record['executor_id']
+        or sha256(raw).hexdigest() != record['descriptor_raw_sha256']
+        or sha256(_canonical_json_bytes(document)).hexdigest() != record['canonical_sha256']
+        or not isinstance(document.get('sources'), list)
+        or type(record['source_count']) is not int
+        or len(document['sources']) != record['source_count']):
+        raise ValueError('current Executor indexed descriptor identity differs')
+    return document
+
+
+def _source_map(document: dict) -> dict:
+    from open_cake_ir.lab.executor import _file_record
+    result = {}
+    for value in document['sources']:
+        value = _file_record(value, 'Executor source')
+        if value['path'] in result:
+            raise ValueError('duplicate Executor source path')
+        result[value['path']] = (value['sha256'], value['size_bytes'])
+    if not result:
+        raise ValueError('empty Executor source closure')
+    return result
+
+
+def refresh_inventory(root: Path, target: str, record: dict) -> tuple[str, ...]:
+    """Project current targets onto one verified runtime source closure.
+
+    The caller has just produced or source-verified ``record``. Other hosts may
+    retain their pointer only when their complete bound source map agrees. Their
+    immutable descriptors remain available as history when a host rebind is due.
+    No host is admitted here and no release identity is created by this projection.
+    """
+    root = root.resolve(strict=True)
+    path = root / 'inventory/EXECUTOR_REVISIONS.json'
+    before = path.read_bytes()
+    inventory = json.loads(before)
+    if (inventory.get('schema_version') != 2
+        or not isinstance(inventory.get('current_by_target'), dict)
+        or not isinstance(inventory.get('superseded'), list)):
+        raise ValueError('Executor inventory schema differs')
+    current = inventory['current_by_target']
+    history = {item['path']: item for item in inventory['superseded']}
+    if len(history) != len(inventory['superseded']):
+        raise ValueError('duplicate superseded Executor index path')
+    expected = _source_map(_indexed_document(root, record))
+    def retain(item):
+        previous = history.get(item['path'])
+        if previous is not None and previous != item:
+            raise ValueError('historical Executor index identity differs')
+        history[item['path']] = item
+    previous = current.get(target)
+    if previous is not None and previous != record:
+        _indexed_document(root, previous)
+        retain(previous)
+    current[target] = record
+    stale = []
+    for name, item in list(current.items()):
+        if _source_map(_indexed_document(root, item)) != expected:
+            retain(item)
+            del current[name]
+            stale.append(name)
+    current_paths = {item['path'] for item in current.values()}
+    inventory['superseded'] = sorted(
+        (item for key, item in history.items() if key not in current_paths),
+        key=lambda item: item['executor_id'])
+    payload = (json.dumps(inventory, indent=2, sort_keys=True) + '\n').encode()
+    if payload != before:
+        # All identities are checked before any write. Replacement never changes
+        # descriptor bytes and avoids exposing a half-written inventory.
+        import os, tempfile
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(payload)
+        try:
+            temporary.chmod(path.stat().st_mode & 0o777)
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+    return tuple(sorted(stale))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, required=True)

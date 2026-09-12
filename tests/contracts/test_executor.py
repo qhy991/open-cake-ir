@@ -473,5 +473,76 @@ class ExecutorReferenceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "fields differ"):
                 worker._load_authority(request)
 
+class ExecutorInventoryProjectionTests(unittest.TestCase):
+    """Schema-only index fixtures; no real release or host admission is fabricated."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        (self.root / 'inventory').mkdir()
+        (self.root / 'runtime/executors').mkdir(parents=True)
+        self.inventory = self.root / 'inventory/EXECUTOR_REVISIONS.json'
+
+    def record(self, name, sources):
+        from tools.release_executor import _canonical_json_bytes
+        document = {'schema_version': 1, 'executor_id': 'TEST-' + name,
+                    'state': 'released', 'host_environment': _synthetic_cuda_host(),
+                    'sources': [{'path': path, 'sha256': value * 64, 'size_bytes': 1}
+                                for path, value in sources]}
+        relative = 'runtime/executors/' + name + '.json'
+        payload = _canonical_json_bytes(document) + b'\n'
+        (self.root / relative).write_bytes(payload)
+        return {'executor_id': document['executor_id'], 'path': relative,
+                'canonical_sha256': sha256(_canonical_json_bytes(document)).hexdigest(),
+                'descriptor_raw_sha256': sha256(payload).hexdigest(),
+                'source_count': len(sources)}
+
+    def test_projection_preserves_matching_targets_and_retires_full_map_drift(self):
+        from tools.release_executor import refresh_inventory
+        current = self.record('current', [('src/a.py', 'a'), ('src/b.py', 'b')])
+        other = self.record('other', [('src/b.py', 'b'), ('src/a.py', 'a')])
+        changed = self.record('changed', [('src/a.py', 'c'), ('src/b.py', 'b')])
+        incomplete = self.record('incomplete', [('src/a.py', 'a')])
+        self.inventory.write_text(json.dumps({'schema_version': 2, 'current_by_target': {
+            'current': current, 'other': other, 'changed': changed, 'incomplete': incomplete},
+            'superseded': [], 'archives': []}))
+        originals = {p: p.read_bytes() for p in (self.root/'runtime/executors').glob('*.json')}
+        self.assertEqual(refresh_inventory(self.root, 'current', current), ('changed', 'incomplete'))
+        after = self.inventory.read_bytes()
+        index = json.loads(after)
+        self.assertEqual(index['current_by_target'], {'current': current, 'other': other})
+        self.assertEqual({r['path'] for r in index['superseded']}, {changed['path'], incomplete['path']})
+        self.assertEqual(refresh_inventory(self.root, 'current', current), ())
+        self.assertEqual(self.inventory.read_bytes(), after)
+        self.assertEqual({p: p.read_bytes() for p in originals}, originals)
+
+    def test_corrupt_index_identity_never_becomes_a_historical_row(self):
+        from tools.release_executor import refresh_inventory
+        current = self.record('current', [('src/a.py', 'a')])
+        for field in ('descriptor_raw_sha256', 'canonical_sha256', 'executor_id', 'source_count'):
+            with self.subTest(field=field):
+                broken = self.record('old', [('src/a.py', 'b')])
+                broken[field] = 2 if field == 'source_count' else 'wrong'
+                self.inventory.write_text(json.dumps({'schema_version': 2,
+                    'current_by_target': {'current': current, 'old': broken}, 'superseded': [], 'archives': []}))
+                before = self.inventory.read_bytes()
+                with self.assertRaises(ValueError):
+                    refresh_inventory(self.root, 'current', current)
+                self.assertEqual(self.inventory.read_bytes(), before)
+
+    def test_missing_descriptor_is_not_silently_retired(self):
+        from tools.release_executor import refresh_inventory
+        current = self.record('current', [('src/a.py', 'a')])
+        old = self.record('old', [('src/a.py', 'b')])
+        (self.root / old['path']).unlink()
+        self.inventory.write_text(json.dumps({'schema_version': 2,
+            'current_by_target': {'current': current, 'old': old}, 'superseded': [], 'archives': []}))
+        before = self.inventory.read_bytes()
+        with self.assertRaises(FileNotFoundError):
+            refresh_inventory(self.root, 'current', current)
+        self.assertEqual(self.inventory.read_bytes(), before)
+
+
 if __name__ == "__main__":
     unittest.main()

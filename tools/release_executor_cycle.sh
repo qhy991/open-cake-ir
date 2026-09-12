@@ -24,7 +24,7 @@ trap 'rm -r -- "$EXECUTOR_RELEASE_TMP"' EXIT
 import argparse, hashlib, json, os, pathlib, re, subprocess
 
 from open_cake_ir.lab.executor import ExecutorRevision
-from tools.release_executor import _released_executor_paths, _source_paths
+from tools.release_executor import _released_executor_paths, _source_paths, refresh_inventory, _indexed_document, _source_map
 
 parser = argparse.ArgumentParser(description="Release a new Executor successor (legacy id namespace)")
 parser.add_argument(
@@ -117,8 +117,12 @@ if inventory_path.exists():
     inventory = json.loads(inventory_path.read_text())
     if inventory.get("schema_version") != 2 or not isinstance(inventory.get("current_by_target"), dict):
         raise ValueError("Executor inventory schema differs")
+    # Refuse corrupt index relations before reserving another immutable identity.
+    for indexed in inventory["current_by_target"].values():
+        _source_map(_indexed_document(pathlib.Path.cwd(), indexed))
     current = inventory["current_by_target"].get(target)
     if isinstance(current, dict) and isinstance(current.get("path"), str):
+        current_unchanged = False
         try:
             admitted = ExecutorRevision.load_reference(pathlib.Path.cwd(), {
                 name: current[name] for name in ("executor_id", "path", "canonical_sha256")
@@ -128,12 +132,17 @@ if inventory_path.exists():
                             for p in _source_paths(pathlib.Path.cwd())}
             if (current_document["host_environment"] == host
                     and {item["path"] for item in current_document["sources"]} == source_paths):
-                temporary.joinpath("unchanged").write_text(admitted.executor_id)
-                print("--- released Executor already matches; no successor is needed ---")
-                raise SystemExit(0)
+                current_unchanged = True
         except (OSError, ValueError, KeyError):
             # Changed source requires a successor; it never rewrites the old descriptor.
             pass
+        if current_unchanged:
+            retired = refresh_inventory(pathlib.Path.cwd(), target, current)
+            temporary.joinpath("unchanged").write_text(admitted.executor_id)
+            if retired:
+                print("    source-stale targets moved to history: " + ", ".join(retired))
+            print("--- released Executor already matches; no successor is needed ---")
+            raise SystemExit(0)
 temporary.joinpath("proposal.json").write_text(json.dumps({
     "schema_version": 1,
     "executor_id": keep,
@@ -181,6 +190,7 @@ PY
 echo "--- update Executor inventory ---"
 "$OPEN_CAKE_PYTHON" - "$KEEP" "$(cat "$EXECUTOR_RELEASE_TMP/target")" <<'PY'
 import hashlib, json, pathlib, sys
+from tools.release_executor import refresh_inventory
 
 keep = sys.argv[1]
 target = sys.argv[2]
@@ -203,24 +213,9 @@ record = {
 }
 print(f"    {keep} -> {record['canonical_sha256'][:16]}  {record['source_count']} sources")
 
-inventory_path = pathlib.Path("inventory/EXECUTOR_REVISIONS.json")
-inventory = json.loads(inventory_path.read_text())
-if inventory.get("schema_version") != 2 or not isinstance(inventory.get("current_by_target"), dict):
-    raise ValueError("Executor inventory schema differs")
-previous = inventory["current_by_target"].get(target)
-inventory["current_by_target"][target] = record
-if (
-    isinstance(previous, dict)
-    and previous.get("path") != record["path"]
-    and pathlib.Path(str(previous.get("path"))).exists()
-    and all(
-        entry.get("path") != previous.get("path")
-        for entry in inventory["superseded"]
-    )
-):
-    inventory["superseded"].append(previous)
-inventory["superseded"].sort(key=lambda entry: entry["executor_id"])
-inventory_path.write_text(json.dumps(inventory, indent=2, sort_keys=True) + "\n")
+retired = refresh_inventory(pathlib.Path.cwd(), target, record)
+if retired:
+    print("    source-stale targets moved to history: " + ", ".join(retired))
 print("    Study templates resolve current; frozen contracts were unchanged")
 PY
 echo "--- done ---"
