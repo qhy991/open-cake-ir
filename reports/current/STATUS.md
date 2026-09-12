@@ -17,12 +17,19 @@
 
 ## Executor（按精确目标）
 
+### `apple_gpu_family7`
+
+- 版本： `open-cake-ir-b200-v109+99f78aaaf0544faf7a8688d179cb4abb4f5c54c098bff722d21e2d75d7c6f5a2`
+- 状态： `released`
+- 绑定源码： `161` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v109+99f78aaaf0544faf7a8688d179cb4abb4f5c54c098bff722d21e2d75d7c6f5a2.json`](../../runtime/executors/open-cake-ir-b200-v109+99f78aaaf0544faf7a8688d179cb4abb4f5c54c098bff722d21e2d75d7c6f5a2.json)
+
 ### `apple_gpu_family9`
 
-- 版本： `open-cake-ir-b200-v104+68dcdffc7bc2df2e383fdbe2cb1e47fd5c20dd417282d8f600179d77ab139d74`
+- 版本： `open-cake-ir-b200-v110+9ed39e403e123f1bda90ac2c9e0a909805999ec18287c58753476e98b25a4efa`
 - 状态： `released`
-- 绑定源码： `156` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v104+68dcdffc7bc2df2e383fdbe2cb1e47fd5c20dd417282d8f600179d77ab139d74.json`](../../runtime/executors/open-cake-ir-b200-v104+68dcdffc7bc2df2e383fdbe2cb1e47fd5c20dd417282d8f600179d77ab139d74.json)
+- 绑定源码： `161` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v110+9ed39e403e123f1bda90ac2c9e0a909805999ec18287c58753476e98b25a4efa.json`](../../runtime/executors/open-cake-ir-b200-v110+9ed39e403e123f1bda90ac2c9e0a909805999ec18287c58753476e98b25a4efa.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
