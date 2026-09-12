@@ -6,6 +6,7 @@ pointers name the original feedback in the retained provider reference bundle.
 
 from __future__ import annotations
 
+import math
 from typing import Mapping
 
 
@@ -87,6 +88,28 @@ def derive_rubric(feedback: object = _ABSENT) -> dict[str, object]:
         "confirmed": "The controller reports confirmatory qualification under this evaluation contract. It does not establish a causal mechanism, cross-workload generalization or serving benefit.",
         "unconfirmed": "The controller has not confirmed this candidate. This flag alone does not say whether confirmation was absent, incorrect or unstable; retain that uncertainty.",
     }.get(confirmation, "Confirmatory qualification is not established. Do not promote search timing or a missing confirmation field into acceptance."))
+
+    baseline = document.get("baseline_comparison", _ABSENT)
+    baseline_state = input_state or (
+        "absent" if baseline is _ABSENT else
+        "unknown" if baseline is None or baseline == "unknown" else
+        "observed" if isinstance(baseline, Mapping)
+        and isinstance(baseline.get("source"), str)
+        and isinstance(baseline.get("baseline_latency_ms"), (int, float))
+        and not isinstance(baseline.get("baseline_latency_ms"), bool)
+        and math.isfinite(float(baseline["baseline_latency_ms"]))
+        and float(baseline["baseline_latency_ms"]) > 0
+        and isinstance(baseline.get("candidate_speedup"), (int, float))
+        and not isinstance(baseline.get("candidate_speedup"), bool)
+        and math.isfinite(float(baseline["candidate_speedup"]))
+        and float(baseline["candidate_speedup"]) > 0
+        and isinstance(baseline.get("measurement_quality_passed"), bool) else
+        "malformed"
+    )
+    add("baseline", baseline_state, ("baseline_comparison",),
+        "Compare the next hypothesis against this exact black-box baseline cell. The latency and speedup are usable only when measurement_quality_passed is true; they do not grant access to the baseline implementation."
+        if baseline_state == "observed" else
+        "No exact baseline comparison is established in this feedback. Keep the Campaign's frozen baseline and do not infer its implementation or performance.")
 
     profile = document.get("profile", _ABSENT)
     profile_state = input_state or (

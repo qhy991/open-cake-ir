@@ -311,8 +311,14 @@ class CampaignLock:
                         raise ValueError('paired Campaign qualification binding differs')
                     _digest(reference['canonical_sha256'], f'provider.{field}.canonical_sha256')
             fixed = _object(document['execution'].get('fixed_baseline'), 'execution.fixed_baseline')
-            if set(fixed) != {'bundle_path', 'candidate'} or not Path(str(fixed['bundle_path'])).is_absolute():
+            if set(fixed) not in (
+                {'bundle_path', 'candidate'},
+                {'bundle_path', 'candidate', 'selection'},
+            ) or not Path(str(fixed['bundle_path'])).is_absolute():
                 raise ValueError('paired Campaign fixed baseline binding differs')
+            if 'selection' in fixed:
+                from .incumbents import validate_baseline_selection
+                validate_baseline_selection(fixed['selection'])
             bound_baseline = candidate_from_identity(fixed['candidate'])
             if bound_baseline.target != execution['target']:
                 raise ValueError('paired Campaign baseline target differs')

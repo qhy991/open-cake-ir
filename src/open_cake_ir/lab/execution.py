@@ -56,6 +56,38 @@ from .pairing import matched_run_arms
 from open_cake_ir.evaluation.paired import paired_protocol
 
 
+def _baseline_comparison_feedback(
+    lock: CampaignLock, timing: Mapping[str, object]
+) -> dict[str, object]:
+    """Project the exact black-box opponent into next-Turn feedback."""
+
+    medians = timing.get("pooled_medians_ms")
+    fixed = _object(lock.document["execution"], "campaign execution").get(
+        "fixed_baseline"
+    )
+    selection = (
+        _object(fixed, "fixed baseline").get("selection")
+        if isinstance(fixed, Mapping)
+        else None
+    )
+    return {
+        "source": (
+            _object(selection, "fixed baseline selection").get("source")
+            if isinstance(selection, Mapping)
+            else "campaign_fixed_baseline"
+        ),
+        "baseline_latency_ms": (
+            _object(medians, "paired timing medians").get("baseline")
+            if isinstance(medians, Mapping)
+            else None
+        ),
+        "candidate_speedup": timing.get("speedup"),
+        "measurement_quality_passed": timing.get(
+            "measurement_quality_passed"
+        ),
+    }
+
+
 def execute_campaign(
     lock: CampaignLock,
     evidence_root: str | Path,
@@ -434,6 +466,10 @@ def execute_campaign(
                         "confirmed_latency_ms": latency,
                         "findings": environment_result.feedback.get("findings", []),
                     }
+                    if isinstance(search.timing, Mapping):
+                        feedback_document["baseline_comparison"] = (
+                            _baseline_comparison_feedback(lock, search.timing)
+                        )
                     if "attribution_evaluation" in evaluation_protocol:
                         attribution_feedback = (
                             attribution.attribution_feedback

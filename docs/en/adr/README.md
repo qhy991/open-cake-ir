@@ -85,3 +85,5 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 - [0062: Explicit reference access by authoring arm](../../adr/0062-explicit-reference-access-treatment.md)
 
 - [0063: Normal budget terminal observations](../../adr/0063-normal-budget-terminal-observations.md)
+
+- [0064: Task incumbents are an append-only Lab projection](../../adr/0064-task-incumbents-are-an-append-only-lab-projection.md)

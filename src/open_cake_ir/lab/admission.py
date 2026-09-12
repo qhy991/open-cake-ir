@@ -282,6 +282,37 @@ def validate_evaluation(
         fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
         sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
         validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
+        selection = fixed.get('selection')
+        incumbent_baseline = False
+        if selection is not None:
+            from .incumbents import (
+                TaskIncumbentKey,
+                TaskIncumbentRegistry,
+                validate_baseline_selection,
+            )
+            selection = validate_baseline_selection(selection)
+            if selection['policy'] == 'exact_incumbent_or_reference':
+                key = TaskIncumbentKey.from_values(
+                    workload_id=workload.workload_id,
+                    workload_sha256=workload.canonical_sha256,
+                    case_id=str(evaluation['case_id']),
+                    target=workload.target,
+                    backend=str(route['backend']),
+                    evaluation_protocol=evaluation,
+                )
+                if selection['incumbent_key'] != key.as_dict():
+                    raise ValueError('fixed baseline incumbent key differs from this Campaign')
+                registry = TaskIncumbentRegistry.open_if_exists(
+                    selection['registry_root'])
+                current = registry.current(key) if registry is not None else None
+                if selection['source'] == 'task_incumbent':
+                    if (current is None
+                            or current['run_id'] != selection['promotion_run_id']
+                            or current['candidate'] != fixed['candidate']):
+                        raise ValueError('fixed baseline is not the selected current incumbent')
+                    incumbent_baseline = True
+                elif current is not None:
+                    raise ValueError('starter fallback is stale because an incumbent exists')
         import ast
         requirements = baseline_lowering.toolchain_requirements
         source = sealed_baseline.artifact_payloads.get('lowered_source')
@@ -298,8 +329,10 @@ def validate_evaluation(
             grid, block = requirements['grid'], tuple(native_block(requirements))
             if manifest.hidden_null_pointer_parameters != policy.hidden_null_pointer_parameters:
                 raise ValueError('fixed baseline hidden pointer commitments differ')
-        if (fixed['candidate'] != candidate_identity(sealed_baseline) or not source_matches
-                or list(manifest.grid) != list(grid) or manifest.block != block):
+        reference_differs = (not source_matches or list(manifest.grid) != list(grid)
+                             or manifest.block != block)
+        if (fixed['candidate'] != candidate_identity(sealed_baseline)
+                or (not incumbent_baseline and reference_differs)):
             raise ValueError('fixed baseline differs from the frozen Compiler kernel or launch commitments')
     if (
         execution.get("target") != workload.target

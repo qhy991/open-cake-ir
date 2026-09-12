@@ -87,3 +87,5 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [0062: Explicit reference access by authoring arm](0062-explicit-reference-access-treatment.md)
 
 - [0063: Normal budget terminal observations](0063-normal-budget-terminal-observations.md)
+
+- [0064: Task incumbents are an append-only Lab projection](0064-task-incumbents-are-an-append-only-lab-projection.md)

@@ -32,6 +32,7 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 | Matched IR/native Triton optimization from one baseline | [Paired Triton](PAIRED_TRITON.md) |
 | Matched IR/native CuTeDSL GEMM on B300 | [Paired CuTeDSL](PAIRED_CUTE.md) |
 | Operating a frozen Study | [Runbook](../RUNBOOK.md) |
+| Reusing each task's best verified artifact in the next optimization | [Task incumbents](TASK_INCUMBENTS.md) |
 | Reading evidence as a checklist and testing whether that feedback helps the Agent | [Rubric feedback](RUBRIC_FEEDBACK.md) |
 | Understanding acceptance evidence | [Acceptance gates](../ACCEPTANCE_GATES.md) |
 | Comparing paper claims and local evidence | [Paper contract](../PAPER_CONTRACT.md) |

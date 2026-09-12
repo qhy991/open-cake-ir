@@ -164,10 +164,13 @@ def resolve_execution_bindings(
         raise ValueError('complete campaign binding markers require external execution bindings')
     path = external_file(project_root, str(bindings_path), 'execution bindings')
     bindings = json.loads(path.read_bytes())
-    if not isinstance(bindings, Mapping) or set(bindings) != {
+    version = bindings.get('schema_version') if isinstance(bindings, Mapping) else None
+    expected = {
         'schema_version', 'qualification_path', 'qualification_anchor_path',
         'runtime_config_path', 'fixed_baseline_bundle_path',
-    } or type(bindings['schema_version']) is not int or bindings['schema_version'] != 1:
+    } | ({'fixed_baseline_selection'} if version == 2 else set())
+    if (not isinstance(bindings, Mapping) or set(bindings) != expected
+            or type(version) is not int or version not in {1, 2}):
         raise ValueError('external execution binding fields differ')
     receipt_path = external_file(project_root, bindings['qualification_path'], 'qualification')
     anchor_path = external_file(project_root, bindings['qualification_anchor_path'], 'qualification anchor')
@@ -212,8 +215,13 @@ def resolve_execution_bindings(
         cwd=Path(broker['cwd']).resolve(strict=True), project_root=Path(project_root),
         timeout_seconds=broker['timeout_seconds'], service_user=broker['service_user'], service_group=broker['service_group'])
     baseline = load_baseline_bundle(project_root, bindings['fixed_baseline_bundle_path'])
-    execution['fixed_baseline'] = {'bundle_path': str(external_file(project_root,
+    fixed_baseline = {'bundle_path': str(external_file(project_root,
         bindings['fixed_baseline_bundle_path'], 'fixed baseline bundle')), 'candidate': candidate_identity(baseline)}
+    if version == 2:
+        from .incumbents import validate_baseline_selection
+        fixed_baseline['selection'] = validate_baseline_selection(
+            bindings['fixed_baseline_selection'])
+    execution['fixed_baseline'] = fixed_baseline
     execution['runtime_config'] = {'path': str(runtime_path), 'sha256': sha256(runtime_path.read_bytes()).hexdigest()}
     return document, executor
 

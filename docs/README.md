@@ -40,6 +40,7 @@ Reading companions explain the material in simpler language. Detailed tables and
 | 独立 Tile Workload：共用 ABI、CPU oracle 与匹配基线 | [阅读](TILE_WORKLOADS.md) | [Read](en/TILE_WORKLOADS.md) |
 | Triton TileLoop：两层循环的作用域、累积与写回 | [阅读](TRITON_LOOP_SCOPES.md) | [Read](en/TRITON_LOOP_SCOPES.md) |
 | 同后端 Triton 配对：共同基线、隔离构建与 Evaluation | [阅读](PAIRED_TRITON.md) | [Read](en/PAIRED_TRITON.md) |
+| 每个任务的已验证最佳实现怎样成为下一轮 baseline | [阅读](zh-CN/TASK_INCUMBENTS.md) | [Read](en/TASK_INCUMBENTS.md) |
 
 ## 模块职责 / Contexts
 
@@ -172,3 +173,5 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [0062: Explicit reference access by authoring arm](adr/0062-explicit-reference-access-treatment.md)
 
 - [0063: Normal budget terminal observations](adr/0063-normal-budget-terminal-observations.md)
+
+- [0064: Task incumbents are an append-only Lab projection](adr/0064-task-incumbents-are-an-append-only-lab-projection.md)

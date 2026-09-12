@@ -58,3 +58,4 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-11-004 — output-column specialization cuts Metal contraction private state and confirms 23.6x on M1 Pro GEMM-SiLU (behavior, Compiler-pass proposal; M4 transfer pending)
 - F-2026-09-12-001 — exact-R2 row-reduction scalarization confirms 1.107x on M4 channel absmax and recurs in per-channel moments (behavior, Compiler-pass proposal)
 - F-2026-09-12-002 — native heartbeats establish liveness but not semantic progress or enforcement of an in-flight provider budget (capacity, provider-boundary proposal)
+- F-2026-09-12-003 — per-Run promotion now feeds an append-only exact-task incumbent chain for the next artifact-optimization baseline (capacity, accepted; successor release pending)

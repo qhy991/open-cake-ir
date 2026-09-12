@@ -31,13 +31,25 @@ class TaskMatrixLaunchTests(unittest.TestCase):
             model="m", effort="high", turns=1, token_budget=10, max_candidates=1,
             searches_per_turn=1, dispatches_per_sample=64, wall_seconds=10,
             rows=2, columns=8, depth=17, provider_executable=None,
-            provider_revision=None))()
+            provider_revision=None, incumbent_registry=None))()
         ordinary = matrix._command(args, "rmsnorm", self.root / "a", None)
         contraction = matrix._command(args, "gemm", self.root / "b", None)
         legacy = matrix._command(args, "gemm_bias", self.root / "c", None)
         self.assertNotIn("--depth", ordinary)
         for command in (contraction, legacy):
             self.assertEqual(command[command.index("--depth") + 1], "17")
+
+    def test_registry_is_one_matrix_input_but_each_task_resolves_its_own_cell(self):
+        registry = self.root.parent / "incumbents"
+        args = type("Args", (), dict(backend="metal-m4", harness="claude-code",
+            model="m", effort="high", turns=1, token_budget=10, max_candidates=1,
+            searches_per_turn=1, dispatches_per_sample=64, wall_seconds=10,
+            rows=2, columns=8, depth=17, provider_executable=None,
+            provider_revision=None, incumbent_registry=registry))()
+        command = matrix._command(args, "rmsnorm", self.root / "a", None)
+        self.assertEqual(
+            command[command.index("--incumbent-registry") + 1], str(registry)
+        )
 
     def test_first_qualification_is_reused_and_task_faults_do_not_stop_the_matrix(self):
         calls = []

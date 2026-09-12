@@ -461,8 +461,12 @@ class PairedExecutionTests(unittest.TestCase):
             config['toolchain'].pop('triton_version')
             config['toolchain'].update(cutlass_version='4.5.2', cuobjdump='fixture-cuobjdump')
         rp = self.output / 'runtime.json'; rp.write_bytes(encoded(config))
-        bindings = {'schema_version':1, 'qualification_path':str(qp), 'qualification_anchor_path':str(ap),
-                    'runtime_config_path':str(rp), 'fixed_baseline_bundle_path':str(bundle)}
+        baseline_selection = {'schema_version':1, 'policy':'starter_reference',
+            'source':'starter_reference', 'incumbent_key':None,
+            'promotion_run_id':None, 'registry_root':None}
+        bindings = {'schema_version':2, 'qualification_path':str(qp), 'qualification_anchor_path':str(ap),
+                    'runtime_config_path':str(rp), 'fixed_baseline_bundle_path':str(bundle),
+                    'fixed_baseline_selection':baseline_selection}
         bp = self.output / 'bindings.json'; bp.write_bytes(encoded(bindings))
         gate = SimpleNamespace(compiler_revision_id='fixture',compiler_revision_sha256='a'*64,passed=True)
         compiler_ref = {'revision_id':'fixture','path':'compiler/revision.lock.json','canonical_sha256':'a'*64}
@@ -501,6 +505,7 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(lock.document['study']['canonical_sha256'], study.canonical_sha256)
             self.assertEqual(template.read_bytes(), before)
             self.assertEqual(lock.document['execution']['fixed_baseline']['candidate'], candidate_identity(baseline))
+            self.assertEqual(lock.document['execution']['fixed_baseline']['selection'], baseline_selection)
             self.assertEqual(lock.document['execution']['runtime_config']['path'], str(rp))
             self.assertEqual(lock.document['resolved_inputs']['arm_environments'][comparison]['provider']['model'], 'gpt-5.6-sol')
             self.assertFalse((self.output / 'new-author-workspaces').exists())

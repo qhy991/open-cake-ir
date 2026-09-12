@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-12-003",
+  "kind": "capacity",
+  "title": "Per-Run promotion did not carry each exact task winner into the next optimization baseline",
+  "date": "2026-09-12",
+  "backend": "metal-m4",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v106+795cd0c2275ec8f8f779fae8cc8f35e5e6b88dd6022a254e51f66e18579e4a25",
+  "compiler_revision_id": "open-cake-ir-sm100a-v76+a0bf9f5d2cd4a98995966ce2fdc0d9e4214234c9d29d741dcffec81624a16872",
+  "tasks": [
+    "channel_absmax_scale",
+    "gemm_silu"
+  ],
+  "evidence": [
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v104-20260911/channel_absmax_scale",
+      "run": "open_cake-1",
+      "event": 13,
+      "note": "The Run produced a correctness- and quality-passing 1.107x material confirmation, so the existing audit could name a promoted_artifact, but no canonical path made that artifact the next exact task baseline."
+    },
+    {
+      "workspace": "/Users/haiyan-mini/.local/share/open-cake-ir/runs/m4-kimi-k3-all29-v76-v106-replication-20260912",
+      "note": "The next matched replication correctly started from each generated starter reference because no per-task incumbent input existed. This preserves comparability but spends the next optimization round rediscovering already established artifact headroom."
+    }
+  ],
+  "observation": "Artifact-optimization audit already selects the lowest-latency confirmatory-qualified Candidate per Run, and launch_task accepts one manually supplied fixed baseline bundle. Those endpoints did not meet: there was no append-only owner for cross-Campaign incumbent decisions, no exact cell key, no predecessor enforcement and no matrix-level registry input. A mutable best-score file would duplicate Evidence and let an unstable or wrong-target result overwrite history. The required grain is Workload digest, case, exact target, backend and Evaluation Protocol; all backends share one mechanism while their keys and artifact chains remain independent.",
+  "proposed_change": "Use a custody-bearing EvidenceStore as the sole task-incumbent registry. Each material confirmation appends one sealed promotion Run containing the candidate artifacts, confirmation receipt, source Campaign reference and exact predecessor. Current is replay-derived. The launcher resolves the exact cell, falls back explicitly to the starter when the registry or key is absent, freezes the selected bundle and selection provenance in the Campaign Lock, and tells the Agent only the black-box baseline source plus measured latency and speedup. Scientific matched studies retain their preregistered reference baselines.",
+  "decision": "accepted",
+  "implemented_in": null,
+  "verification_plan": "Contract tests cover empty cells, backend/target isolation, genesis and successor promotion, wrong-baseline and close-null refusal, copied-registry custody refusal, artifact materialization, Campaign Lock binding, TASK projection, StateCard feedback and matrix delegation. Release successor Executors for family7 and family9, then promote the custody-bearing M4 channel_absmax_scale Run and preflight the same exact cell against its incumbent."
+}

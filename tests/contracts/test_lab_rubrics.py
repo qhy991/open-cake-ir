@@ -34,6 +34,9 @@ def evaluation(**updates):
         "kind": "evaluation", "candidate_disposition": "qualified",
         "measurement_quality": "stable", "confirmed": True,
         "search_latency_ms": 1.0, "confirmed_latency_ms": 1.1,
+        "baseline_comparison": {"source": "task_incumbent",
+            "baseline_latency_ms": 1.2, "candidate_speedup": 1.2,
+            "measurement_quality_passed": True},
         "findings": [], "profile": {"metrics": {"occupancy": "unknown"}},
         **updates,
     }
@@ -51,18 +54,21 @@ class RubricContractTests(unittest.TestCase):
         self.assertEqual(missing["confirmation"], "absent")
         unknown = derive_rubric({"kind": "future_feedback", "candidate_disposition": "future_result",
                                 "measurement_quality": "unknown", "confirmed": None,
+                                "baseline_comparison": "unknown",
                                 "profile": "unknown", "findings": "unknown"})
         self.assertEqual(set(states(unknown).values()), {"unknown"})
         malformed = states(derive_rubric({"kind": [], "candidate_disposition": True,
                                         "measurement_quality": {}, "confirmed": "true",
-                                        "profile": 3, "findings": [None]}))
+                                        "baseline_comparison": [], "profile": 3,
+                                        "findings": [None]}))
         self.assertEqual(set(malformed.values()), {"malformed"})
         for key in ("blocks_lowering", "blocks_acceptance"):
             self.assertEqual(states(derive_rubric({"findings": [{key: "false"}]}))["findings"], "malformed")
 
     def test_evaluation_axes_preserve_independent_reported_states(self):
         expected = {"admission": "observed", "correctness": "qualified", "measurement": "stable",
-                    "confirmation": "confirmed", "profile": "observed", "findings": "none"}
+                    "confirmation": "confirmed", "baseline": "observed",
+                    "profile": "observed", "findings": "none"}
         self.assertEqual(states(derive_rubric(evaluation())), expected)
         for update, axis, status in (
             ({"confirmed": False}, "confirmation", "unconfirmed"),

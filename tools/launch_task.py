@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.lab.bindings import external_file, resolve_executor, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.environments import CandidateSubmission
+from open_cake_ir.lab.incumbents import TaskIncumbentRegistry
 from open_cake_ir.lab.build import TritonToolchainBuilder
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
@@ -281,8 +282,18 @@ def main(argv=None) -> int:
     parser.add_argument("--qualification", type=Path)
     parser.add_argument("--qualification-anchor", type=Path)
     parser.add_argument("--fixed-baseline-bundle", type=Path)
+    parser.add_argument(
+        "--incumbent-registry",
+        type=Path,
+        help=(
+            "external custody-bearing task-incumbent registry; use its exact cell "
+            "when present and otherwise retain the starter reference baseline"
+        ),
+    )
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Campaign preflight")
     args = parser.parse_args(argv)
+    if args.fixed_baseline_bundle is not None and args.incumbent_registry is not None:
+        parser.error("--fixed-baseline-bundle and --incumbent-registry are mutually exclusive")
     if (args.qualification is None) != (args.qualification_anchor is None):
         parser.error("--qualification and --qualification-anchor must be supplied together")
     workspace = _new_workspace(args.workspace)
@@ -308,10 +319,83 @@ def main(argv=None) -> int:
     _write(study_path, canonical(study))
     route = _route_of(args.backend)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
-    baseline_path = (external_file(ROOT, str(args.fixed_baseline_bundle), "fixed baseline bundle")
-                     if args.fixed_baseline_bundle else _prepare_baseline(
-                         ROOT, workspace, compiler, executor, host, workload, study, source,
-                         compiler_reference, route))
+    baseline_selection: dict[str, object]
+    if args.fixed_baseline_bundle is not None:
+        baseline_path = external_file(
+            ROOT, str(args.fixed_baseline_bundle), "fixed baseline bundle"
+        )
+        baseline_selection = {
+            "schema_version": 1,
+            "policy": "explicit_fixed_bundle",
+            "source": "explicit",
+            "incumbent_key": None,
+            "promotion_run_id": None,
+            "registry_root": None,
+        }
+    elif args.incumbent_registry is not None:
+        registry = TaskIncumbentRegistry.open_if_exists(args.incumbent_registry)
+        key = TaskIncumbentRegistry.key_for_launch(
+            workload_id=workload.workload_id,
+            workload_sha256=workload.canonical_sha256,
+            case_id=args.case,
+            target=workload.target,
+            backend=route,
+            evaluation_protocol=study["evaluation_protocol"],
+        )
+        materialized = (
+            registry.materialize(key, workspace / "incumbent-baseline")
+            if registry is not None
+            else None
+        )
+        if materialized is None:
+            baseline_path = _prepare_baseline(
+                ROOT,
+                workspace,
+                compiler,
+                executor,
+                host,
+                workload,
+                study,
+                source,
+                compiler_reference,
+                route,
+            )
+            source_kind = "starter_reference"
+            promotion_run_id = None
+        else:
+            baseline_path, incumbent = materialized
+            source_kind = "task_incumbent"
+            promotion_run_id = incumbent["run_id"]
+        baseline_selection = {
+            "schema_version": 1,
+            "policy": "exact_incumbent_or_reference",
+            "source": source_kind,
+            "incumbent_key": key.as_dict(),
+            "promotion_run_id": promotion_run_id,
+            "registry_root": str(args.incumbent_registry),
+        }
+    else:
+        baseline_path = _prepare_baseline(
+            ROOT,
+            workspace,
+            compiler,
+            executor,
+            host,
+            workload,
+            study,
+            source,
+            compiler_reference,
+            route,
+        )
+        baseline_selection = {
+            "schema_version": 1,
+            "policy": "starter_reference",
+            "source": "starter_reference",
+            "incumbent_key": None,
+            "promotion_run_id": None,
+            "registry_root": None,
+        }
+    _write(workspace / "baseline-selection.json", canonical(baseline_selection))
     receipt_path, anchor_path = _qualify(ROOT, workspace, args, executable, source_path)
     receipt = ProviderQualificationReceipt.load(receipt_path)
     if not receipt.qualified or receipt.scope != "live_two_turn_tool_rich_provider":
@@ -328,9 +412,10 @@ def main(argv=None) -> int:
     runtime_path = workspace / "runtime.json"
     _write(runtime_path, canonical(runtime))
     bindings_path = workspace / "execution-bindings.json"
-    _write(bindings_path, canonical({"schema_version": 1, "qualification_path": str(receipt_path),
+    _write(bindings_path, canonical({"schema_version": 2, "qualification_path": str(receipt_path),
         "qualification_anchor_path": str(anchor_path), "runtime_config_path": str(runtime_path),
-        "fixed_baseline_bundle_path": str(baseline_path)}))
+        "fixed_baseline_bundle_path": str(baseline_path),
+        "fixed_baseline_selection": baseline_selection}))
     lock = TaskLab(ROOT).preflight(study_path, execution_bindings_path=bindings_path)
     _write(workspace / "campaign-lock.json", canonical(lock.document))
     if args.preflight_only:

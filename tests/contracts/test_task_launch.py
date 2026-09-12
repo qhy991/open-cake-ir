@@ -260,7 +260,9 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(anchor,self.workspace/'provider-anchor.json')
         self.assertFalse(receipt.exists())  # The process was mocked, so no capability was manufactured.
 
-    def _wiring(self, preflight_error=None, *, fixture_receipt=False, preflight_only=False, report=None, expected_exit=0):
+    def _wiring(self, preflight_error=None, *, fixture_receipt=False,
+                preflight_only=False, report=None, expected_exit=0,
+                incumbent=False):
         # Authority doubles are never persisted as qualification receipts or Evidence.
         executor = SimpleNamespace(document={"host_environment":{"python":{"invocation_path":"/unit-test/python"}}})
         receipt = SimpleNamespace(qualified=True, scope="zero_gpu_contract_fixture_only" if fixture_receipt else "live_two_turn_tool_rich_provider")
@@ -272,11 +274,23 @@ class TaskLaunchTests(unittest.TestCase):
             filesystem_custody_verified=True, semantic_replay_passed=True,
             run_audits=(SimpleNamespace(protocol_adherence="adhered", endpoint_observation="no_qualified_candidate"),))
         args = self.args() + (["--preflight-only"] if preflight_only else [])
+        if incumbent:
+            args += ["--incumbent-registry", str(self.directory / "incumbents")]
+        registry = Mock()
+        key = SimpleNamespace(as_dict=lambda: {"fixture": "exact-key"})
+        registry.key_for_launch.return_value = key
+        registry.materialize.return_value = (
+            self.directory / "incumbent.json",
+            {"run_id": "incumbent-fixture"},
+        )
         with patch.object(launch_task.shutil, "which", return_value="/usr/bin/true"), \
              patch.object(launch_task, "_admit_stack", return_value=(Mock(),executor,Mock(),{"fixture":"compiler"})) as admit, \
              patch.object(launch_task, "_prepare_baseline", return_value=self.directory/"baseline.json") as baseline, \
              patch.object(launch_task, "_qualify", return_value=(self.directory/"receipt.json",self.directory/"anchor.json")) as qualify, \
              patch.object(launch_task.ProviderQualificationReceipt, "load", return_value=receipt), \
+             patch.object(launch_task.TaskIncumbentRegistry, "open_if_exists",
+                          return_value=registry if incumbent == "present" else None), \
+             patch.object(launch_task.TaskIncumbentRegistry, "key_for_launch", return_value=key), \
              patch.object(launch_task, "TaskLab", return_value=lab), \
              patch.object(launch_task, "execute_matched_from_config", return_value=SimpleNamespace(evidence_root="unit-test-campaign")) as execute, \
              contextlib.redirect_stdout(io.StringIO()) as stdout:
@@ -293,7 +307,10 @@ class TaskLaunchTests(unittest.TestCase):
                     lab.audit.assert_called_once_with(execute.return_value)
                     self.assertIn("unit-test-campaign", stdout.getvalue())
             admit.assert_called_once()
-            baseline.assert_called_once()
+            if incumbent == "present":
+                baseline.assert_not_called()
+            else:
+                baseline.assert_called_once()
             qualify.assert_called_once()
         return lab, lock
 
@@ -306,9 +323,36 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(runtime["broker"]["command"], ["/unit-test/python", "-I", str(ROOT / "src/open_cake_ir/evaluation/source_bootstrap.py"),
                          "open_cake_ir.evaluation.local_broker", "--worker-module", "open_cake_ir.tasks.evaluate"])
         self.assertEqual(set(json.loads((self.workspace/"execution-bindings.json").read_text())),
-                         {"schema_version","qualification_path","qualification_anchor_path","runtime_config_path","fixed_baseline_bundle_path"})
+                         {"schema_version","qualification_path","qualification_anchor_path","runtime_config_path","fixed_baseline_bundle_path","fixed_baseline_selection"})
         self.assertFalse((self.workspace/"actors").exists())  # The existing composer creates it once.
         with self.assertRaises(FileExistsError): launch_task._new_workspace(self.workspace)
+
+    def test_launcher_freezes_the_exact_task_incumbent_as_the_next_baseline(self):
+        self._wiring(incumbent="present")
+        selection = json.loads((self.workspace / "baseline-selection.json").read_text())
+        self.assertEqual(selection, {
+            "schema_version": 1,
+            "policy": "exact_incumbent_or_reference",
+            "source": "task_incumbent",
+            "incumbent_key": {"fixture": "exact-key"},
+            "promotion_run_id": "incumbent-fixture",
+            "registry_root": str(self.directory / "incumbents"),
+        })
+        bindings = json.loads((self.workspace / "execution-bindings.json").read_text())
+        self.assertEqual(
+            bindings["fixed_baseline_bundle_path"],
+            str(self.directory / "incumbent.json"),
+        )
+
+    def test_missing_incumbent_cell_explicitly_uses_the_starter_reference(self):
+        self._wiring(incumbent="missing")
+        selection = json.loads((self.workspace / "baseline-selection.json").read_text())
+        self.assertEqual(selection["policy"], "exact_incumbent_or_reference")
+        self.assertEqual(selection["source"], "starter_reference")
+        self.assertIsNone(selection["promotion_run_id"])
+        self.assertEqual(
+            selection["registry_root"], str(self.directory / "incumbents")
+        )
 
     def test_launcher_returns_nonzero_for_a_recorded_provider_fault(self):
         self._wiring(report=SimpleNamespace(campaign_complete=True, archive_integrity_passed=True,

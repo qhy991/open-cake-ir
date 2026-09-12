@@ -17,6 +17,7 @@ from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.lab import preflight, admission
+from open_cake_ir.lab.incumbents import TaskIncumbentKey
 from open_cake_ir.lab.provider_policy import provider_configuration
 from open_cake_ir.tasks.normalization.study import canonical, study_template, SCAFFOLD
 from open_cake_ir.tasks.runtime import TaskLab
@@ -105,6 +106,45 @@ class MetalPreflightTests(unittest.TestCase):
                  patch.object(admission.ProviderQualificationReceipt,'load',return_value=receipt), \
                  patch.object(admission,'load_baseline_bundle',return_value=candidate):
                 with self.assertRaisesRegex(ValueError,'fixed baseline differs'):
+                    TaskLab(ROOT).preflight(path)
+
+    def test_incumbent_baseline_may_differ_from_starter_but_must_be_registry_current(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary).resolve()
+            path,study,executor,receipt,candidate=self.fixture(directory,'claude-code')
+            payloads=dict(candidate.artifact_payloads)
+            payloads['lowered_source'] += b'\n// independently promoted implementation\n'
+            incumbent=LaunchableCandidate('9'*64,candidate.target,candidate.entry_point,
+                {key:sha256(value).hexdigest() for key,value in payloads.items()},
+                candidate.launch_spec_sha256,payloads)
+            workload=WorkloadContract(json.loads(Path(study['workload']['path']).read_text()))
+            key=TaskIncumbentKey.from_values(workload_id=workload.workload_id,
+                workload_sha256=workload.canonical_sha256,case_id='primary',target=workload.target,
+                backend='metal',evaluation_protocol=study['evaluation_protocol'])
+            run_id=f'incumbent-{key.canonical_sha256}-000000000000'
+            selection={'schema_version':1,'policy':'exact_incumbent_or_reference',
+                'source':'task_incumbent','incumbent_key':key.as_dict(),
+                'promotion_run_id':run_id,'registry_root':str(directory/'incumbents')}
+            study['execution']['fixed_baseline']={
+                'bundle_path':str(directory/'baseline-double.json'),
+                'candidate':candidate_identity(incumbent),'selection':selection}
+            current={'run_id':run_id,'candidate':candidate_identity(incumbent)}
+            registry=SimpleNamespace(current=lambda observed: current)
+            with patch.object(preflight,'resolve_execution_bindings',return_value=(study,executor)), \
+                 patch.object(admission.ProviderQualificationReceipt,'load',return_value=receipt), \
+                 patch.object(admission,'load_baseline_bundle',return_value=incumbent), \
+                 patch('open_cake_ir.lab.incumbents.TaskIncumbentRegistry.open_if_exists',return_value=registry):
+                lock=TaskLab(ROOT).preflight(path)
+            package=TaskLab(ROOT).task_package(lock,'open_cake-1')
+            self.assertIn('black-box `task_incumbent`',package.task_markdown)
+            self.assertIn(run_id,package.task_markdown)
+
+            registry.current=lambda observed: None
+            with patch.object(preflight,'resolve_execution_bindings',return_value=(study,executor)), \
+                 patch.object(admission.ProviderQualificationReceipt,'load',return_value=receipt), \
+                 patch.object(admission,'load_baseline_bundle',return_value=incumbent), \
+                 patch('open_cake_ir.lab.incumbents.TaskIncumbentRegistry.open_if_exists',return_value=registry):
+                with self.assertRaisesRegex(ValueError,'not the selected current'):
                     TaskLab(ROOT).preflight(path)
 
 

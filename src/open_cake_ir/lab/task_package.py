@@ -320,6 +320,23 @@ def render_task_package(
         workload_contract=workload_contract, prepare_schedule=prepare_schedule)
     budget = _object(resolved["budget"], "resolved_inputs.budget")
     evaluation = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
+    execution = _object(lock.document["execution"], "execution")
+    fixed = execution.get("fixed_baseline")
+    selection = (
+        _object(fixed, "fixed baseline").get("selection")
+        if isinstance(fixed, Mapping)
+        else None
+    )
+    baseline_source = (
+        _object(selection, "fixed baseline selection").get("source")
+        if isinstance(selection, Mapping)
+        else "campaign_fixed_baseline"
+    )
+    promotion_run = (
+        selection.get("promotion_run_id")
+        if isinstance(selection, Mapping)
+        else None
+    )
     output_contract = f'`{{"arm":"{arm}","candidates":[...],"schema_version":1}}`'
     task = f"""# TASK.md — {lock.study_id} / {run_id}
 
@@ -328,6 +345,11 @@ def render_task_package(
 Produce structurally distinct `{arm}` Candidates for the frozen Workload case
 `{evaluation['case_id']}` and improve the confirmed absolute latency without violating
 correctness, artifact custody, or the declared Claim Scope `{lock.claim_scope}`.
+
+The comparison baseline is the frozen black-box `{baseline_source}` artifact
+(`promotion_run_id={promotion_run}`). Its identity is in `run-authority.json`; its
+implementation is not additional reference access. Improve against its measured latency,
+and never call or inspect it from a Candidate.
 
 ## Candidate output
 

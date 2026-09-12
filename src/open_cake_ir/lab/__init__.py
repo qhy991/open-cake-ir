@@ -25,6 +25,11 @@ from open_cake_ir.lab.environments import (
     TritonToolchainBuilder,
 )
 from .executor import ExecutorRevision
+from .incumbents import (
+    TaskIncumbentKey,
+    TaskIncumbentRegistry,
+    promote_task_incumbent,
+)
 from .faults import CandidateCompileRejected, RunProtocolFault
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1,
@@ -70,6 +75,9 @@ __all__ = [
     "NativeTritonEnvironment",
     "EnvironmentResult",
     "ExecutorRevision",
+    "TaskIncumbentKey",
+    "TaskIncumbentRegistry",
+    "promote_task_incumbent",
     "OpenCakeEnvironment",
     "TritonToolchainBuilder",
     "ToolchainBuilder",

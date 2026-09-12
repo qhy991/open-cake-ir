@@ -68,6 +68,8 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
         command.extend(("--provider-executable", str(args.provider_executable)))
     if args.provider_revision is not None:
         command.extend(("--provider-revision", args.provider_revision))
+    if args.incumbent_registry is not None:
+        command.extend(("--incumbent-registry", str(args.incumbent_registry)))
     if qualification is not None:
         command.extend(("--qualification", str(qualification[0]),
                         "--qualification-anchor", str(qualification[1])))
@@ -85,6 +87,11 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace-root", type=Path, required=True)
     parser.add_argument("--provider-executable", type=Path)
     parser.add_argument("--provider-revision")
+    parser.add_argument(
+        "--incumbent-registry",
+        type=Path,
+        help="external per-task incumbent registry resolved independently by each task",
+    )
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
     parser.add_argument("--depth", type=int, default=256,
@@ -116,6 +123,14 @@ def main(argv=None) -> int:
                    "wall_seconds_per_task": args.wall_seconds},
         "shape": {"rows": args.rows, "columns": args.columns, "depth": args.depth},
         "qualification_policy": "qualify_first_task_then_reuse_exact_receipt",
+        "baseline_policy": (
+            {
+                "kind": "exact_incumbent_or_reference",
+                "registry_root": str(args.incumbent_registry),
+            }
+            if args.incumbent_registry is not None
+            else {"kind": "starter_reference"}
+        ),
         "failure_policy": "stop_before_first_qualification; retain_and_continue_afterward",
     }, sort_keys=True, indent=2, ensure_ascii=False, allow_nan=False).encode() + b"\n")
 
