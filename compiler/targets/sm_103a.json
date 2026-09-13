@@ -31,6 +31,7 @@
     "scan",
     "store"
   ],
+  "warp_size": 32,
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_warps_per_cta": 32,

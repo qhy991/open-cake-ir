@@ -286,6 +286,11 @@ class Target:
     compute_capability: tuple[int, int] | None
     memory_spaces: frozenset[MemorySpace]
     operation_kinds: frozenset[OperationKind]
+    # Width of a role slot -- an NVIDIA warp, an Apple SIMD group, another vendor's own
+    # name for the same thing. The Target that owns the fact declares it, beside the
+    # citation that evidences it; a shared constant here would be one value with two
+    # owners, and would read 32 against any width that is not 32.
+    warp_size: int
     resource_limits: ResourceLimits
     instruction_contracts: frozenset[str]
     synchronization_contracts: frozenset[str]
@@ -294,22 +299,13 @@ class Target:
     source: TargetSource | None = field(default=None, repr=False, compare=False)
 
     @property
-    def warp_size(self) -> int:
-        """Width of a role slot: NVIDIA warp or Apple8 SIMD group.
-
-        Metal execution additionally checks the compiled pipeline threadExecutionWidth.
-        This is no claim that Apple supports CUDA warpgroup instructions.
-        """
-        return 32
-
-    @property
     def warps_per_warpgroup(self) -> int | None:
         """Warps that issue a warpgroup-wide instruction together.
 
-        A constant of the ISA rather than a device observation, like `warp_size`, so it
-        lives here instead of in a Target document. `setmaxnreg` is warpgroup-wide, which
-        is what makes this a legality rule on a role's warp range rather than a
-        preference.
+        `setmaxnreg` is warpgroup-wide, which is what makes this a legality rule on a
+        role's warp range rather than a preference. Unlike `warp_size`, this is still
+        inferred from the presence of a CUDA field rather than positively declared; that
+        inference is F-2026-09-13-006's second step, not this one.
         """
 
         return 4 if self.compute_capability is not None else None
@@ -371,6 +367,16 @@ class Target:
                 "Apple GPU peaks admit only device-specification memory bandwidth; "
                 "arithmetic and microbenchmark calibration remain unavailable"
             )
+        # An undeclared width is refused, never substituted: reading 32 for a target that
+        # never said 32 is exactly the silent answer this field exists to stop.
+        warp_size = _int_field(value.get("warp_size"), "target.warp_size")
+        limits = ResourceLimits.from_dict(value.get("resource_limits"), "target.resource_limits")
+        if limits.maximum_warps_per_cta * warp_size > limits.maximum_threads_per_cta:
+            raise TargetParseError(
+                "target.warp_size disagrees with target.resource_limits: "
+                f"{limits.maximum_warps_per_cta} slots of {warp_size} threads exceed "
+                f"{limits.maximum_threads_per_cta} threads per CTA"
+            )
         return cls(
             target_id=_string(value.get("target_id"), "target.target_id"),
             architecture=_string(value.get("architecture"), "target.architecture"),
@@ -378,9 +384,8 @@ class Target:
             compute_capability=None if capability is None else (capability[0], capability[1]),
             memory_spaces=spaces,
             operation_kinds=kinds,
-            resource_limits=ResourceLimits.from_dict(
-                value.get("resource_limits"), "target.resource_limits"
-            ),
+            warp_size=warp_size,
+            resource_limits=limits,
             instruction_contracts=instruction_contracts,
             synchronization_contracts=frozenset(string_tuple("synchronization_contracts", allow_empty=True)),
             occupancy=(

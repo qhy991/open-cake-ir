@@ -109,6 +109,9 @@ def _load_target(
         "device_names",
         "memory_spaces",
         "operation_kinds",
+        # The role-slot width is required, not optional: a Revision that bound a Target
+        # document without one would be binding a fact the shared code used to invent.
+        "warp_size",
         "resource_limits",
         "instruction_contracts",
         "synchronization_contracts",

@@ -5,23 +5,23 @@
   "target_definitions": {
     "sm_100a": {
       "path": "compiler/targets/sm_100a.json",
-      "canonical_sha256": "348b78ae957f5eadaa4991ec96cb0adc0eeeeb87aa57588b612faf592e507f1d"
+      "canonical_sha256": "e10dadae7c34486b897a4e3a43f08c6518da7611f6651ab12821fd883e8fe1ac"
     },
     "apple_gpu_family8": {
       "path": "compiler/targets/apple_gpu_family8.json",
-      "canonical_sha256": "0f720a17c20afcfc2855e662a997b12474b5567e2ecff700eef3a2fe508e02b5"
+      "canonical_sha256": "1e090151dbd7408f771bf01d857520b6d3eebeee3801a69ea3f1e21c163ae400"
     },
     "apple_gpu_family9": {
       "path": "compiler/targets/apple_gpu_family9.json",
-      "canonical_sha256": "0517ff54a195baa8dfef8becdc70be12b5fef4f567f81599529ee05fe98230ea"
+      "canonical_sha256": "b4a22e79a522edd4e8e7536a800436359829ff0e68a40703f83d1bffdf22e14e"
     },
     "sm_103a": {
       "path": "compiler/targets/sm_103a.json",
-      "canonical_sha256": "bf554a2a6466b6c40158d8bc78d45aa0b425df612098cf4bc887b390095f469b"
+      "canonical_sha256": "9073cc6ae5084a0562164b56f47d00b64a1c209c13bdd2c5c29c8f520b8e944a"
     },
     "apple_gpu_family7": {
       "path": "compiler/targets/apple_gpu_family7.json",
-      "canonical_sha256": "cd5838e945079152dc8688fa5d637de86694d22594abb7cf601a4c4b31776a77"
+      "canonical_sha256": "13d941f354f450a7da54695ab81122730bb2fef580b6f313d15e6499394ac165"
     }
   },
   "corpus_manifest": "corpus/manifest.json",

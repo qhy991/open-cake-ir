@@ -30,6 +30,7 @@
     "scan",
     "store"
   ],
+  "warp_size": 32,
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_warps_per_cta": 32,
@@ -101,6 +102,11 @@
       "kind": "toolchain_api",
       "source": "https://github.com/triton-lang/triton/blob/v3.7.1/python/triton/language/standard.py",
       "locator": "Triton v3.7.1 standard.py defines the last-dimension bitonic_merge and topk frontend networks used only as a version-specific structural work model"
+    },
+    {
+      "kind": "device_specification",
+      "source": "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html",
+      "locator": "Technical specifications per compute capability: warp size 32 threads at compute capability 10.0"
     },
     {
       "kind": "device_observation",

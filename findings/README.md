@@ -66,3 +66,6 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-12-002 — native heartbeats establish liveness but not semantic progress or enforcement of an in-flight provider budget (capacity, provider-boundary proposal)
 - F-2026-09-12-003 — per-Run promotion now feeds an append-only exact-task incumbent chain for the next artifact-optimization baseline (capacity, closed in family7 v109/family9 v110)
 - F-2026-09-13-001 — M4 selected SDK 27 requires Swift 6.4 but installed CLT still provides Swift 6.3.3 (capacity, environment repair pending)
+- F-2026-09-13-005 — MLX's in-process JIT runs the emitted Metal route bit-identically on family7 across 95 differential cases, but sets one of three compile options and checks no pipeline commitment (capacity, second correctness host; not a lowering route)
+- F-2026-09-13-006 — naming AMD touches five shared sites, all pinned (three by the Compiler, two by the current family7 Executor), and warp_size must become Target-declared first (capacity, sequencing proposal; no AMD device available)
+- F-2026-09-13-004 — a per-role register budget dereferences the undeclared warpgroup width and crashes hardware conformance on every non-CUDA Target (bug, apple_gpu_family8 reproduction; repaired locally, successor Revision pending)

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-13-006",
+  "kind": "capacity",
+  "title": "Naming AMD touches five shared sites, all of them pinned by either the Compiler or the current Executor, and warp_size must become Target-declared before any AMD document is admitted",
+  "date": "2026-09-13",
+  "backend": "amd",
+  "target": "gfx942",
+  "executor_revision": "open-cake-ir-b200-v113+3d17b096a0d91baa5dfdf2698b9435c1de956803b10b297ba772df105943f9b6",
+  "compiler_revision_id": "open-cake-ir-sm100a-v79+a37102e0e5cf8c5563308bbc8b5fb949c51d0ddfb6fed5a3baffa4aff6bca36b",
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/.local/share/open-cake-ir/runtime/m1-amd-naming-20260913",
+      "note": "probe.py builds a well-formed gfx942 Target document by keeping an admitted Apple document's structure and changing only target_id, architecture and device_names, so that nothing reported depends on an invented AMD hardware number. Through the public boundaries: Target.from_dict refuses it with `target.compute_capability is required for CUDA targets`; executable_role refuses gfx942, apple_gpu_family10 and sm_120a all three with `unsupported exact CUDA target`; Target.warp_size returns 32 for apple_gpu_family7 as well, from a hardcoded `return 32` that five files read. amd-naming-preconditions.json also records, for each of the five sites AGENTS.md names, which artifact pins its bytes."
+    }
+  ],
+  "observation": "AGENTS.md's vendor-neutrality section says naming AMD means editing compiler/target.py, evaluation/artifacts.py, lab/executor.py, verifier/hardware_conformance.py and verifier/program_safety.py, `three of which compiler/source_set.json pins`. Measured in this checkout the count is five of five, under two different owners: source_set.json pins target.py, hardware_conformance.py and program_safety.py, and the current family7 Executor v113 pins artifacts.py and lab/executor.py. There is no free site, so the smallest honest AMD naming is a paired Compiler and Executor successor, each through its own release cycle and its own independent approval. Two facts make the order matter rather than only the cost. First, Target.warp_size is a hardcoded `return 32`, so a gfx942 document admitted before that becomes Target-declared would silently carry a 32-lane width against a 64-lane wavefront everywhere the five readers use it; the same section already calls this out and the probe confirms the constant is shared, not per-target. Second, this session had no evidence for any gfx942 hardware fact, and the document's own rule is that a target never inherits another target's constants, so the Target document cannot be written from the same act that names the vendor. The refusals themselves are the borrowed-block case: a non-CUDA vendor and two unimplemented targets of other vendors are all refused in CUDA's words.",
+  "proposed_change": "Sequence it, do not bundle it. (1) Make warp_size a declared Target field with its evidence in the Target document, and fix the five readers; this is a Compiler successor with no AMD content and is testable against the existing five targets. (2) Make the vendor-keyed rules read a positively declared field rather than the presence of compute_capability, and make executable_role and the Executor host-kind fall-through refuse in the class they own; artifacts.py and lab/executor.py are Executor-pinned, so this mints an Executor successor alongside. (3) Add the synthetic third-vendor Target fixture the section asks for and the neutrality tests it hooks, keeping the exact five-target pin in tests/contracts/test_compiler_revision_architecture.py. Only then is a real gfx942 Target document a data addition, and it still needs measured AMD hardware facts and a backend owning its own preflight, calibration and tests before it can lower anything. Do not add compiler/targets/gfx942.json before step 1: it would parse into a silently wrong wavefront width.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Replay for steps 1 and 2: the retained probe re-run on the successor pair must show a gfx942 document refused for the reason that applies to it rather than for a missing CUDA field, and must show warp_size sourced from the Target document for all five existing targets with their declared values unchanged. Step 3 verifies by the neutrality tests failing on a reintroduced vendor literal. No AMD device measurement is available to this project, so no step here may report an AMD performance or correctness result."
+}
