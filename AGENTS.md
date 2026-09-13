@@ -1,5 +1,96 @@
 # open-cake-ir local constraints
 
+## Targets are peers, and the shared layers are vendor-neutral
+
+Three architecture families are in scope as peers: NVIDIA across its architectures, Apple
+GPUs across theirs, and AMD. Where this section conflicts with another rule in this file,
+this section wins. It adds no portability -- the exact target match, a refusal that never
+steps a Schedule down, and the absence of a layout algebra all stand exactly as written.
+It is about the layers every target shares.
+
+- **A vendor arrives as documents plus one typed registration.** A new target is a Target
+  document under `compiler/targets/`. A new vendor is that, plus a backend module owning
+  its own `preflight`, its own calibration and its own tests, plus one `LoweringBackend`
+  member with its `BACKENDS` row -- held equal by
+  `tests/contracts/test_backend_boundaries.py:78`. The declaration mechanisms already work:
+  `instruction_contracts` and `synchronization_contracts` are open per-target string sets,
+  and `memory_spaces` and `operation_kinds` are per-target capability sets refused by name.
+  Anything beyond those sites that a new vendor forces you to edit in shared code is a
+  defect in that code. Naming AMD once today means editing `compiler/target.py:22`,
+  `evaluation/artifacts.py:4`, `lab/executor.py:183`,
+  `verifier/hardware_conformance.py:199` and `verifier/program_safety.py:19` -- three of
+  which `compiler/source_set.json` pins, so a data addition becomes a successor Revision.
+- **A hardware fact is declared by the Target that owns it, once.** The tell is a number in
+  shared Python that no Target document can state. `Target.warp_size` is `return 32`, nine
+  shared computations multiply by it, and the evidence for 32 exists only as citation prose
+  inside the Target documents -- value and evidence already have two owners.
+  `backends/metal.py:62` keeps a second copy and `backends/native_cuda.py:556` a third as a
+  literal. A backend may keep its own ISA constant; it may not be the neutral owner of one.
+  A duplicate is a defect while it still agrees, because it is found when it stops: the
+  exported `launch_cubin_once` transcribes `BINARY_VERSION != 100` and a B200
+  shared-memory literal (`evaluation/cuda_driver.py:479`, `:488`) of the two checks the
+  same file already does per target at `:234` and `:241`, and the permissive direction is
+  the dangerous one -- an `sm_100a` cubin passes `100 != 100` under an `sm_103a` manifest.
+- **Vendor identity is declared; no vendor lives in the `else`.** `warps_per_warpgroup` is
+  `4 if self.compute_capability is not None else None`, and the same inference recurs at
+  `target.py:340`, `performance/profile.py:405`, `backends/triton.py:213`,
+  `backends/cutedsl.py:157`, `evaluation/artifacts.py:14`, `evaluation/paired.py:58` and
+  `lab/executor.py:183`. Measured: a well-formed `gfx942` document is refused with
+  `target.compute_capability is required for CUDA targets`; give the same document a
+  fabricated capability pair and it parses, then silently carries `warp_size` 32 and a
+  four-warp warpgroup rule against a 64-lane wavefront. Every rule keyed on vendor reads a
+  positively declared field. That includes the incumbent: a host, arm or assay declaring no
+  kind is an explicitly named pre-`kind` CUDA form, never the fall-through.
+- **An undeclared fact is reported, never substituted and never dereferenced.** Reproduced
+  through the public boundary: `corpus/schedules/metal-rmsnorm-primary.json`
+  (`apple_gpu_family8`) with `registers_per_thread: 32` on its one role raises
+  `TypeError: unsupported operand type(s) for %: 'int' and 'NoneType'` at
+  `verifier/hardware_conformance.py:689`. The refusal that owns that input,
+  `METAL_REGISTER_CAP_UNSUPPORTED`, never runs, because verification precedes preflight.
+  The correct shape is sixteen lines above the crash: `TARGET_REGISTER_CAP_UNMODELED`
+  reports "this limit was not checked". A rule that raises or silently skips outside its
+  evidence is not a gate, and a fail-open default -- `_CONTRACT_DTYPES.get(...)` at
+  `hardware_conformance.py:346`, whose own comment says "Adding a contract adds a row
+  here" -- is worse than a refusal.
+- **A shared rule quotes the Target's declared sets; it never restates them, and never
+  reads how a mnemonic is spelled.** `hardware_conformance.py:199` intersects
+  `target.synchronization_contracts` with the literal `{"mbarrier", "barrier.sync"}`, which
+  is not closed even for NVIDIA because `sm_100a.json` declares `triton_program_order`, and
+  `program_safety.py:19` keeps the same literal. `PLACED_CONTRACT_PREFIXES`
+  (`ir/operations.py:79`) puts three NVIDIA mnemonic prefixes in the vendor-neutral IR, and
+  the authoring schema turns them into a refusal of any other vendor's atom placement.
+  Decide membership in what the Target declares, and quote that set back. Instruction
+  *typing* stays with the instruction (ADR 0022) -- declaring it per Target would duplicate
+  every contract that `sm_100a` and `sm_103a` both admit.
+- **Construction admits structure; an ISA range is a hardware-conformance Finding.**
+  `Schedule.from_dict` resolves no Target, so a range that holds only because one ISA
+  encodes it that way cannot live there. `Role.from_dict` nonetheless enforces the
+  `setmaxnreg` immediate (`ir/resources.py:83`, quoting the instruction in its own comment)
+  and the schema republishes it to every author of every target, while the two siblings in
+  that same file do it correctly: unbounded at parse, gated with the Target in scope.
+- **A refusal names the class it owns, and no vendor the caller did not name.** Refusing
+  `gfx942` is required; refusing it in CUDA's words is not. `executable_role`
+  (`evaluation/artifacts.py:14`) is the whole Evaluation layer's target-to-executable map
+  and falls through a hardcoded Apple id set into `cuda_architecture`, so `gfx942`,
+  `apple_gpu_family10` and `sm_120a` all raise `unsupported exact CUDA target`. This is the
+  borrowed-block rule below, still open.
+- **A gate report names the targets it examined.** `check_corpus` closes each case to
+  `{case_id, schedule, expected}`, and the word "target" does not occur in
+  `compiler/corpus.py`. Measured: of five declared targets, `apple_gpu_family7` and
+  `apple_gpu_family9` have zero cases and the full Gate passes. Report absence as missing;
+  do not mint cases to satisfy a count. No test asserts a vendor-neutrality invariant of
+  shared code today, and `tests/contracts/test_compiler_revision_architecture.py:119` pins
+  the exact five-target set, so a sixth target fails a test rather than being checked by
+  one. A synthetic third-vendor Target fixture is the hook this section needs; keep the pin.
+- **One vendor word is not the neutral word.** `Role.warps` is the only accepted spelling
+  for a role's execution slots, and `core.py:275` reports `total_warps` for every target.
+  Name a shared concept for the concept; vendor words belong in per-target diagnostics and
+  in emitted source, as `METAL_ROLE_UNSUPPORTED` (`backends/metal.py:140`) already does --
+  it reads the IR's `warps` and reports "consecutive SIMD groups". This one is deferred,
+  not optional: `semantic_sha256` covers the whole Schedule document, so a rename voids every
+  calibration binding and lands as its own successor-Revision act, separate from and after
+  the width fix above.
+
 ## Cake IR design principles (arXiv:2608.12629v1, Appendix B.1)
 
 The paper states eight. They bind IR changes here; the global doctrine covers the rest.
@@ -22,7 +113,8 @@ The paper states eight. They bind IR changes here; the global doctrine covers th
 
 - Layout is deliberately **not** a first-class abstraction. Do not introduce a layout
   algebra for an agent to manipulate. A Schedule records concrete storage and access
-  commitments -- an SMEM view offset, an operand byte offset, a TMEM column range -- and
+  commitments -- on sm_100a an SMEM view offset, an operand byte offset, a TMEM column
+  range; on another target its own storage in its own words -- and
   the compiler verifies they stay mutually consistent. New primitives extend verification
   coverage without an agent learning a second language.
 - Static analysis is a pre-compile gate **only within its modeled domain**. It does not
@@ -31,8 +123,10 @@ The paper states eight. They bind IR changes here; the global doctrine covers th
   a cost estimate never replaces it.
 - Feedback to an author is localized correctness and performance diagnostics. A pass/fail
   bit, or one latency number, is the failure mode this harness exists to avoid.
-- Timing-model coverage is evidence-gated per target. A target without its own calibration
-  reports a coverage limitation; it never inherits another target's estimates.
+- Timing-model coverage and hardware facts are both evidence-gated per target. A target
+  without its own calibration reports a coverage limitation, and a fact its Target document
+  does not declare is reported unmodeled; it never inherits another target's estimates, and
+  never another target's constants.
 - The paper uses human judgement to gate compiler evolution. This project's owner now
   permits an independent agent reviewer under ADR 0052; an automatic estimate still
   does not authorize a Revision.
@@ -168,18 +262,27 @@ invalidates the comparison, not just the run.
 
 - **Clean start / frontier synthesis** -- may inspect the mathematical specification,
   evaluation contract, correctness oracle and high-level code. May **not** inspect a
-  low-level target implementation (CUDA, PTX, SASS, or equivalent generated source). An
+  complete implementation for the target in any low-level or compiled form -- CUDA, PTX,
+  SASS or a cubin, MSL or a `metal_binary_archive`, and their equivalents. Access is a
+  semantic artifact role, not a file extension (ADR 0062): a restriction that a different
+  extension satisfies is not a restriction. An
   external implementation may be run through the harness as a black-box baseline; its
   internals stay unavailable.
 - **Known-kernel reproduction** -- may inspect the reference.
-- **Direct CUDA/PTX** -- may write low-level code, may not inspect an existing target
-  implementation.
+- **Direct low-level** -- may write the target's own low-level language, may not inspect an
+  existing target implementation. `lab/reference_access.py:15` already names the three
+  categories neutrally; the vendor leak is `environment_kind` at `:51`, which refuses an
+  unenumerated arm for an inherited implementation it never had. An arm kind that is not
+  enumerated is refused for the reason that applies to it.
 
 ## Measurement and replication (S5)
 
-- On-GPU correctness checks and CUPTI timing on B200, with L2 flushed before every timed
-  sample. Every reported candidate is compiled, correctness-checked and benchmarked at
-  the listed shape.
+- On-device correctness checks and target-native timing. A target declares its timer, what
+  the measured interval includes, and the device state reset before every timed sample; on
+  B200 and B300 that is CUPTI timing with L2 flushed before every timed sample. A target
+  that cannot state all three reports a measurement-coverage limitation instead of a
+  latency, and inherits no other target's timing semantics. Every reported candidate is
+  compiled, correctness-checked and benchmarked at the listed shape.
 - A replicated clean start fixes the agent and scaffold, model and reasoning effort, task
   statement, oracle, benchmark harness and the single target shape. Report median
   [min, max] across the matched runs, and retain the stopping and timing accounting.
@@ -234,7 +337,9 @@ invalidates the comparison, not just the run.
   the reviewer who writes the approval; do not write that basis yourself.
 - More generally: a repair run just before the check it satisfies manufactures the state it then reports. If a check
   fails because of the environment, say so and stop — do not normalize the environment and rerun.
-- Cake versus CUDA is an Authoring Environment assignment, not a syntax-only representation switch.
+- Cake versus a target's own low-level language is an Authoring Environment assignment, not a syntax-only
+  representation switch. CUDA on B200/B300 is today's instance of that second arm; the arm is the
+  environment, never the language.
 - Common Evaluation begins only after an arm produces a sealed launchable artifact.
 - Every candidate, evaluation and terminal outcome is append-only; reports and status docs are derived views.
 - An Evidence audit returns two orthogonal facts. `archive_integrity` can be true while `filesystem_custody_verified`
