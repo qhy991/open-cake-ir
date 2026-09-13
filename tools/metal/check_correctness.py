@@ -16,8 +16,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from open_cake_ir.compiler import Compiler, frontend
-from tools.metal.adapter import compile_runner, invoke, manifest
-from tools.metal import rmsnorm
+# compile_runner and invoke are the Swift host's half of the host interface; they are
+# reached through host_module rather than by name, and tests patch them here.
+from tools.metal.adapter import compile_runner, invoke, manifest  # noqa: F401
+from tools.metal import mlx_adapter, rmsnorm
 
 SHAPES = ((1, 1), (2, 7), (3, 32), (4, 65), (2, 257))
 DISTRIBUTIONS = ("zero", "uniform", "alternating", "mixed_magnitude")
@@ -140,10 +142,22 @@ def prepare_case(compiler, document, inputs, oracles, directory, device_names, c
     return launch
 
 
-def evaluate_case(compiler, binary, document, inputs, oracles, directory, device_names, case):
+def host_module(name: str):
+    """The Swift runner stays the default; this module binds it late so tests can patch it."""
+    return mlx_adapter if name == "mlx" else sys.modules[__name__]
+
+
+def evaluate_case(compiler, binary, document, inputs, oracles, directory, device_names, case,
+                  *, host=None):
+    """`host` is keyword-only and defaults to the Swift runner, as the CLI does.
+
+    Keeping it out of the positional list is deliberate: this function has a second
+    caller in benchmark.py, and inserting a positional parameter ahead of `binary`
+    rebound every argument there without failing a test.
+    """
     launch = prepare_case(compiler, document, inputs, oracles, directory, device_names, case)
     case.update(gpu_execution="requested", gpu_correctness="unknown")
-    runtime = invoke(binary, directory)
+    runtime = (host or host_module("swift")).invoke(binary, directory)
     case.update(device=runtime["device"], command_status=runtime["command_status"],
                 gpu_execution="completed", gpu_correctness="failed")
     comparisons = {}
@@ -163,6 +177,8 @@ def main() -> int:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"),
                         default="apple_gpu_family8", help="exact target; no device fallback")
+    parser.add_argument("--host", choices=("swift", "mlx"), default="swift",
+                        help="Metal host: the Swift runner, or MLX's in-process JIT")
     args = parser.parse_args()
     receipt = fresh_receipt(args.output_root)
     summary = {"started_at": datetime.now(timezone.utc).isoformat(),
@@ -175,7 +191,9 @@ def main() -> int:
         compiler, lock, device_names = released_compiler(receipt, args.target)
         summary["compiler_revision_id"] = lock["revision_id"]
         summary["target"] = args.target
-        binary = compile_runner(receipt)
+        host = host_module(args.host)
+        binary = host.compile_runner(receipt)
+        summary["host"] = {"host": "swift", "binary": str(binary)} if args.host == "swift" else binary
         for operator in ("elementwise", "row_sum", "row_max", "rmsnorm"):
             shapes = rmsnorm.CORRECTNESS_SHAPES if operator == "rmsnorm" else SHAPES
             for rows, columns in shapes:
@@ -196,7 +214,8 @@ def main() -> int:
                         oracles = {"out": {"expected": expected, "absolute_tolerance": tolerance}}
                     case = {"case": name, "gpu_correctness": "not_run"}
                     summary["cases"].append(case)
-                    evaluate_case(compiler, binary, document, inputs, oracles, directory, device_names, case)
+                    evaluate_case(compiler, binary, document, inputs, oracles, directory,
+                                  device_names, case, host=host)
         summary["status"] = "gpu_correctness_passed"
     except Exception as error:
         summary["error"] = f"{type(error).__name__}: {error}"

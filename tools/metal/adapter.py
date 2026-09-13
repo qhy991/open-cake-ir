@@ -12,6 +12,15 @@ from open_cake_ir.compiler import Assessment, Lowering
 from open_cake_ir.compiler.ir import Schedule
 
 
+# The exact target/device pairs any Metal host admits. Both the Swift runner and the
+# MLX host check against this one table; neither steps a Schedule down to another device.
+EXACT_DEVICE_NAMES = {
+    "apple_gpu_family7": ("Apple M1 Pro",),
+    "apple_gpu_family8": ("Apple M2",),
+    "apple_gpu_family9": ("Apple M4",),
+}
+
+
 def _require(condition: object, message: str) -> None:
     if not condition:
         raise ValueError(message)
@@ -65,11 +74,8 @@ def _project(schedule: Schedule, source: str, tc: dict, inputs: Mapping[str, byt
     _require(isinstance(device_names, list) and device_names and
              all(isinstance(n, str) and n for n in device_names),
              "revision-bound exact device names are required")
-    _require((schedule.target, tuple(device_names)) in {
-        ("apple_gpu_family7", ("Apple M1 Pro",)),
-        ("apple_gpu_family8", ("Apple M2",)),
-        ("apple_gpu_family9", ("Apple M4",)),
-    }, "exact Metal target/device names differ")
+    _require(EXACT_DEVICE_NAMES.get(schedule.target) == tuple(device_names),
+             "exact Metal target/device names differ")
     expected = {"target": schedule.target, "source_language": "metal",
                 "compiler": "MTLDevice.makeLibrary", "language_standard": "metal2.3",
                 "fast_math_enabled": False}
