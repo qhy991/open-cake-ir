@@ -11,6 +11,7 @@ from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
 from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN
 from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
+from open_cake_ir.lab.efficiency_policy import TASK_EFFICIENCY_V1
 from open_cake_ir.lab.ralph import RalphBudget
 # The portable registry, so a Study can name an NVIDIA device as readily as an
 # Apple one; open_cake_ir.tasks.apple covers only the latter.
@@ -144,7 +145,8 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                               "mode": "local_serialized" if source.document["lowering"]["backend"] == "metal" else "exclusive"},
                       "sandbox": provider["sandbox"]},
         "analysis_plan": {**json.loads(canonical(_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN)),
-                          "endpoint_policy": NORMAL_BUDGET_TERMINAL},
+                          "endpoint_policy": NORMAL_BUDGET_TERMINAL,
+                          "performance_reporting": TASK_EFFICIENCY_V1},
         "evidence": {"schema_version": 3, "terminal_archive_required_for_every_run": True,
                      "event_vocabulary": "matched_ralph_v1"},
     }

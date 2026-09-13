@@ -17,6 +17,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from open_cake_ir.cli import _json_projection
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.environments import CandidateSubmission
@@ -36,6 +37,7 @@ from open_cake_ir.tasks.optimizers.workload import TASKS as _OPTIMIZER_TASKS
 from open_cake_ir.tasks.contraction.workload import TASKS as _CONTRACTION_TASKS
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
+from open_cake_ir.tasks.reporting import primary_summary
 from open_cake_ir.tasks.workloads import create_task, load_workload
 from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates
 
@@ -491,7 +493,12 @@ def main(argv=None) -> int:
         return 0
     campaign = execute_matched_from_config(ROOT, lock, runtime_path, workspace / "campaign-evidence")
     print(campaign.evidence_root)
-    return _campaign_exit_code(TaskLab(ROOT).audit(campaign))
+    report = TaskLab(ROOT).audit(campaign)
+    _write(workspace / "report.json", canonical(_json_projection(report)))
+    performance = report.descriptive.get("performance")
+    if performance is not None:
+        print(primary_summary(performance))
+    return _campaign_exit_code(report)
 
 
 if __name__ == "__main__":
