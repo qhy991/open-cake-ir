@@ -114,7 +114,7 @@ def _load_target(
         "synchronization_contracts",
         "citations",
     }
-    optional_fields = {"occupancy", "compute_capability"}
+    optional_fields = {"occupancy", "compute_capability", "peak"}
     if (
         not expected_fields <= set(document) <= expected_fields | optional_fields
         or document.get("schema_version") != 1

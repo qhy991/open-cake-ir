@@ -68,7 +68,8 @@ class PeakSource(str, Enum):
     """Where a declared peak rate came from, which decides what a ratio against it means.
 
     A `device_specification` rate is the architecture's ceiling, so a utilisation against
-    it is the number everyone else reports and a value above one refutes something. A
+    it can refute a value above one only when the counted work and measurement scope
+    match that ceiling; logical bytes served from cache do not meet a DRAM premise. A
     `microbenchmark` rate is the best this repository has measured, so a utilisation
     against it says how far a Schedule is from the best known kernel and can legitimately
     exceed one when a better kernel turns up. They are not interchangeable and a peak
@@ -353,10 +354,23 @@ class Target:
         except ScheduleParseError as error:
             raise TargetParseError(str(error)) from error
 
-        if value.get("architecture") in _APPLE_ARCHITECTURES and ("occupancy" in value or "peak" in value):
-            raise TargetParseError("Apple GPU targets have no admitted occupancy or peak calibration")
+        if value.get("architecture") in _APPLE_ARCHITECTURES and "occupancy" in value:
+            raise TargetParseError("Apple GPU targets have no admitted occupancy calibration")
 
         instruction_contracts = frozenset(string_tuple("instruction_contracts", allow_empty=True))
+        peak = (
+            Peak.from_dict(value["peak"], instruction_contracts, "target.peak")
+            if "peak" in value else None
+        )
+        if value.get("architecture") in _APPLE_ARCHITECTURES and peak is not None and (
+            peak.arithmetic
+            or peak.memory_bandwidth is None
+            or peak.memory_bandwidth.source is not PeakSource.DEVICE_SPECIFICATION
+        ):
+            raise TargetParseError(
+                "Apple GPU peaks admit only device-specification memory bandwidth; "
+                "arithmetic and microbenchmark calibration remain unavailable"
+            )
         return cls(
             target_id=_string(value.get("target_id"), "target.target_id"),
             architecture=_string(value.get("architecture"), "target.architecture"),
@@ -374,9 +388,5 @@ class Target:
                 if "occupancy" in value
                 else None
             ),
-            peak=(
-                Peak.from_dict(value["peak"], instruction_contracts, "target.peak")
-                if "peak" in value
-                else None
-            ),
+            peak=peak,
         )

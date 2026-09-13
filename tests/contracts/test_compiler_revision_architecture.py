@@ -108,6 +108,12 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.assertEqual(target.resource_limits.maximum_threads_per_cta,
                          self.target["resource_limits"]["maximum_threads_per_cta"])
 
+    def test_bound_target_admits_specification_peak_without_arithmetic_coverage(self):
+        target = self.load().targets["sm_100a"]
+        self.assertEqual(target.peak.memory_bandwidth.value, 8e12)
+        self.assertFalse(target.peak.arithmetic)
+        self.assertEqual(target.source.document["peak"], self.target["peak"])
+
     def test_current_draft_retains_all_exact_targets_and_zero_tmem(self):
         revision = load_revision(ROOT, ROOT / "compiler/revision.json")
         self.assertEqual(set(revision.targets), {
