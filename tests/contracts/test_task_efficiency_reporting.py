@@ -85,6 +85,20 @@ class EfficiencyReportingTests(unittest.TestCase):
         self.assertFalse(enriched.campaign_complete)
         self.assertEqual(original.descriptive, {"original": True})
 
+    def test_real_projection_reports_missing_coverage_for_unqualified_audit(self):
+        policy = {"performance_reporting": TASK_EFFICIENCY_V1}
+        campaign = SimpleNamespace(lock=SimpleNamespace(analysis_plan=policy,
+            claim_scope="artifact_optimization_only", workload_id="fixture",
+            document={"analysis_plan": policy, "execution": {"target": "apple_gpu_family7"},
+                      "evaluation_protocol": {"case_id": "primary"}}))
+        with patch.object(Lab, "audit", return_value=report_fixture()):
+            report = TaskLab(ROOT).audit(campaign)
+        performance = report.descriptive["performance"]
+        self.assertEqual(performance["rows"], [])
+        self.assertEqual(performance["missing"], ["no_adhered_custody_verified_semantically_replayed_run"])
+        self.assertFalse(report.filesystem_custody_verified)
+        self.assertFalse(report.estimand_available)
+
     def test_primary_summary_retains_unavailable_status_and_missing_coverage(self):
         text = primary_summary({"policy": TASK_EFFICIENCY_V1, "rows": [
             {"role": "candidate", "primary_score": {"metric": "mfu", "value": None, "status": "missing_peak"}}],
