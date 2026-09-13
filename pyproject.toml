@@ -16,7 +16,7 @@ Repository = "https://github.com/qhy991/open-cake-ir"
 Issues = "https://github.com/qhy991/open-cake-ir/issues"
 
 [project.optional-dependencies]
-test = ["jsonschema>=4", "pytest>=8", "ruff>=0.12"]
+test = ["jsonschema>=4", "pytest>=8", "ruff>=0.12", "numpy>=1.24"]
 
 [project.scripts]
 open-cake-ir = "open_cake_ir.cli:main"

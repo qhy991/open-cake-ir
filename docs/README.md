@@ -1,5 +1,7 @@
 # 文档总目录 / Documentation catalog
 
+[任务效率评分](PERFORMANCE_SCORING.md)：固定任务字节数、带宽参考、审计报告与校准覆盖。
+
 原生 CUDA/PTX：[中文](zh-CN/NATIVE_CUDA.md) · [English](NATIVE_CUDA.md)
 
 [中文入门](zh-CN/README.md) · [English start](en/README.md) · [职责与文档归属](../CONTEXT-MAP.md)
