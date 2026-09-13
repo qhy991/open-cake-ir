@@ -26,6 +26,89 @@ REQUIREMENTS = {
 
 
 class TritonToolchainAdmissionTests(unittest.TestCase):
+    def test_fma_and_loop_max_lowering_reach_public_source_admission(self):
+        from tests.contracts.test_triton_loop_scopes import _reduction
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        for target in ("sm_100a", "sm_103a"):
+            source = f'''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="fma-admission", target="{target}", backend="triton", entry_point="kernel")
+def candidate(lm, x: cake.Tensor((2, 8), "fp32"), out: cake.Tensor((2, 8), "fp32", mode="output")):
+    compute = lm.role(warps=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        values = lm.load(x[row, :], id="load")
+        result = lm.fma(values, values, values, id="fma")
+        lm.store(out[row, :], result, coalesced=False, id="store")
+'''
+            maximum = _reduction("max")
+            maximum["target"] = target
+            for label, document in (("fma", frontend.parse(source).document), ("max", maximum)):
+                with self.subTest(target=target, primitive=label):
+                    assessment = compiler.assess(document)
+                    self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                    lowering = compiler.lower(assessment)
+                    projected = project_triton_kernel(lowering.source.encode(), lowering.toolchain_requirements)
+                    original = next(n for n in ast.parse(lowering.source).body
+                                    if isinstance(n, ast.FunctionDef)
+                                    and n.name == lowering.toolchain_requirements["kernel_entry_point"])
+                    self.assertEqual(ast.dump(ast.parse(projected).body[-1]), ast.dump(original))
+                    self.assertIn(b"fma.rn.f32" if label == "fma" else b'float("-inf")', projected)
+
+    def test_fma_admission_requires_exact_instruction_and_direct_callee(self):
+        expression = ('tl.inline_asm_elementwise("fma.rn.f32 $0, $1, $2, $3;", '
+                      'constraints="=f,f,f,f", args=[x, x, x], dtype=tl.float32, is_pure=True, pack=1)')
+        source = SOURCE.replace(LIBDEVICE_IMPORT, "").replace("libdevice.tanh(x)", expression)
+        requirements = {**REQUIREMENTS, "target": "sm_103a"}
+        validate_triton_kernel(source.encode(), requirements)
+        changes = (
+            ("fma.rn.f32", "fma.rn.ftz.f32"),
+            ("fma.rn.f32 $0, $1, $2, $3;", "mov.b32 $0, $1;"),
+            ('constraints="=f,f,f,f"', 'constraints="=r,r,r,r"'),
+            ("args=[x, x, x]", "args=[x, x]"),
+            ("args=[x, x, x]", "args=[*x, x, x]"),
+            ("dtype=tl.float32", "dtype=tl.float16"),
+            ("is_pure=True", "is_pure=False"),
+            ("pack=1", "pack=True"),
+            ("pack=1", "pack=2"),
+            ("pack=1", "pack=1, pack=1"),
+            ("pack=1", "pack=1, unknown=1"),
+            (", pack=1", ""),
+        )
+        for old, new in changes:
+            with self.subTest(change=new):
+                with self.assertRaisesRegex(ValueError, "exact FP32 FMA contract"):
+                    validate_triton_kernel(source.replace(old, new).encode(), requirements)
+        for target in (None, "apple_gpu_family8", "sm_90a"):
+            with self.subTest(target=target):
+                with self.assertRaisesRegex(ValueError, "exact FP32 FMA contract"):
+                    validate_triton_kernel(source.encode(), {**requirements, "target": target})
+        for value in ("tl.inline_asm_elementwise", "[tl.inline_asm_elementwise]",
+                      "tl.inline_asm_elementwise.to(x)"):
+            with self.subTest(escape=value):
+                escaped = source.replace("    y =", f"    escape = {value}\n    y =")
+                with self.assertRaisesRegex(ValueError, "exact FP32 FMA contract"):
+                    validate_triton_kernel(escaped.encode(), requirements)
+        callback = source.replace("args=[x, x, x]", "args=[callback(x), x, x]")
+        with self.assertRaisesRegex(ValueError, "unsupported call"):
+            validate_triton_kernel(callback.encode(), requirements)
+
+    def test_infinity_admission_never_allows_dynamic_conversion_or_name_escape(self):
+        source = SOURCE.replace(LIBDEVICE_IMPORT, "")
+        for literal in ('float("inf")', 'float("-inf")'):
+            validate_triton_kernel(source.replace("libdevice.tanh(x)", literal).encode(), REQUIREMENTS)
+        for expression in ('float("nan")', "float(x)", "float(1)", "float(*x)",
+                           'float(x="inf")', 'float("inf", "-inf")', "float", "[float]", "float.to(x)"):
+            with self.subTest(expression=expression):
+                with self.assertRaisesRegex(ValueError, "direct infinity literal"):
+                    validate_triton_kernel(source.replace("libdevice.tanh(x)", expression).encode(), REQUIREMENTS)
+        source = source.replace("libdevice.tanh(x)", 'float("-inf")')
+        with self.assertRaisesRegex(ValueError, "reserved name"):
+            validate_triton_kernel(source.replace("    y =", "    float = x\n    y =").encode(), REQUIREMENTS)
+        with self.assertRaisesRegex(ValueError, "parameter annotations or names"):
+            validate_triton_kernel(source.replace("kernel(a, b)", "kernel(float, b)").encode(),
+                                   {**REQUIREMENTS, "signature": {"float": "*fp32", "b": "*fp32"}})
+
     def test_compiler_gelu_projection_preserves_dependency_and_kernel_body(self):
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         for task in ("gelu_tanh", "gelu_tanh_backward"):

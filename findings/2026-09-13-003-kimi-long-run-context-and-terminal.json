@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-13",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "executor_revision": "open-cake-ir-b200-v109+f78e7463e8e6f7f09714ab663b25d0eb04599c7c33777584d1fe8563e0907737",
+  "compiler_revision_id": "open-cake-ir-sm100a-v76+ed8bd1492c5965a4490b365ff39e02698831e3b81ca77601d5f411de0a7269ae",
+  "id": "F-2026-09-13-003",
+  "kind": "protocol",
+  "title": "Three-million-token Kimi sweep recurs at actual context compaction and missing or wrong-turn structured terminals",
+  "tasks": [
+    "adadelta",
+    "adamw",
+    "attention_decode",
+    "bias_gradient_reduction",
+    "cosine_similarity",
+    "gemm",
+    "gemm_silu",
+    "layernorm_backward_input",
+    "momentum_sgd",
+    "rmsnorm_input_gradient",
+    "selu",
+    "softsign"
+  ],
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/adadelta",
+      "run": "open_cake-1",
+      "event": 77,
+      "note": "Claude compacted the Turn context mid-run, so what the author saw is not reconstructible and the Turn is not comparable"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/adamw",
+      "run": "open_cake-1",
+      "event": 144,
+      "note": "Claude compacted the Turn context mid-run, so what the author saw is not reconstructible and the Turn is not comparable"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/attention_decode",
+      "run": "open_cake-1",
+      "event": 139,
+      "note": "Claude native structured terminal message differs"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/bias_gradient_reduction",
+      "run": "open_cake-1",
+      "event": 196,
+      "note": "Claude native structured terminal message differs"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/cosine_similarity",
+      "run": "open_cake-1",
+      "event": 157,
+      "note": "Claude native structured terminal message differs"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/gemm",
+      "run": "open_cake-1",
+      "event": 102,
+      "note": "Claude native structured terminal message differs"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/gemm_silu",
+      "run": "open_cake-1",
+      "event": 137,
+      "note": "Claude compacted the Turn context mid-run, so what the author saw is not reconstructible and the Turn is not comparable"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/layernorm_backward_input",
+      "run": "open_cake-1",
+      "event": 142,
+      "note": "Claude compacted the Turn context mid-run, so what the author saw is not reconstructible and the Turn is not comparable"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/momentum_sgd",
+      "run": "open_cake-1",
+      "event": 183,
+      "note": "Claude compacted the Turn context mid-run, so what the author saw is not reconstructible and the Turn is not comparable"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/rmsnorm_input_gradient",
+      "run": "open_cake-1",
+      "event": 123,
+      "note": "Claude compacted the Turn context mid-run, so what the author saw is not reconstructible and the Turn is not comparable"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/selu",
+      "run": "open_cake-1",
+      "event": 142,
+      "note": "Claude compacted the Turn context mid-run, so what the author saw is not reconstructible and the Turn is not comparable"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/softsign",
+      "run": "open_cake-1",
+      "event": 195,
+      "note": "Claude compacted the Turn context mid-run, so what the author saw is not reconstructible and the Turn is not comparable"
+    }
+  ],
+  "observation": "Twelve retained streams reproduce the same named refusal on current main: eight actual auto-compactions (164009 to 243064 pre-context tokens), three missing structured_output/StructuredOutput calls (cosine_similarity, gemm, attention_decode), and bias_gradient_reduction emitting turn 12 while the request is turn 11. All 24 Studies are artifact_optimization_only. Aggregate token accounting is not a model context window; --autocompact 1M did not prevent these observed compactions.",
+  "proposed_change": "Lab/provider owns a prospective treatment: keep scientific no-compaction refusal; for artifact-only optimization, consider explicitly declaring and retaining compaction as auxiliary activity rather than claiming identical author context. This needs a successor Executor/Study and current CLI capture schema validation. Keep missing or wrong-turn terminals refused; any bounded repair invocation must be explicit, charged, same-workspace and same-candidate-custody, not synthesized success. Replay the 12 streams and validate a new bounded canary before a new sweep. Do not patch Compiler or retroactively change these run terminals.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "verification_plan": "A separately reviewed Lab/Executor protocol tick, retained-stream replay including scientific counterexamples, then new qualified bounded provider runs. See earlier F-2026-09-10-008/013/018 and F-2026-09-12-002; no duplicate provider runtime is proposed."
+}

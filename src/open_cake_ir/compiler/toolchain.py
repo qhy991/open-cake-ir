@@ -46,14 +46,46 @@ _TRITON_TYPES = frozenset({"constexpr", "float32", "float16", "bfloat16", "int32
 _TRITON_IMPORTS = ("import triton", "import triton.language as tl")
 _LIBDEVICE_IMPORT = "from triton.language.extra import libdevice"
 _TRITON_MODULES = frozenset({"triton", "tl", "libdevice"})
-_TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range"}
+_TRITON_RESERVED_NAMES = _TRITON_MODULES | {"range", "float"}
+
+
+def _infinity_literal(node: ast.AST) -> bool:
+    """Only the two constant reduction identities, never Python conversion code."""
+    return (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "float" and not node.keywords and len(node.args) == 1
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str) and node.args[0].value in {"inf", "-inf"})
+
+
+def _fp32_fma_call(node: ast.AST, target: object) -> bool:
+    """Admit the emitter's exact rounding contract, not a general assembly escape."""
+    if (target not in ("sm_100a", "sm_103a") or not isinstance(node, ast.Call)
+        or len(node.args) != 1 or not isinstance(node.args[0], ast.Constant)
+        or node.args[0].value != "fma.rn.f32 $0, $1, $2, $3;"):
+        return False
+    keywords = {kw.arg: kw.value for kw in node.keywords}
+    if len(keywords) != len(node.keywords) or set(keywords) != {
+        "constraints", "args", "dtype", "is_pure", "pack",
+    }:
+        return False
+    operands = keywords["args"]
+    return (
+        isinstance(operands, ast.List) and len(operands.elts) == 3
+        and all(not isinstance(operand, ast.Starred) for operand in operands.elts)
+        and ast.dump(keywords["dtype"]) == ast.dump(ast.parse("tl.float32", mode="eval").body)
+        and all(isinstance(keywords[key], ast.Constant)
+                and type(keywords[key].value) is type(value) and keywords[key].value == value
+                for key, value in (("constraints", "=f,f,f,f"), ("is_pure", True), ("pack", 1)))
+    )
 
 
 def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> None:
     """Admit one kernel-only module without importing or evaluating any source.
 
     Module imports and @triton.jit have one spelling. The optional libdevice import
-    admits only tanh. Function annotations are only tl.constexpr, defaults and arbitrary
+    admits only tanh. Constant infinity identities and the exact FP32 FMA instruction
+    emitted by this Compiler are admitted; arbitrary inline assembly is not.
+    Function annotations are only tl.constexpr, defaults and arbitrary
     decorators are forbidden, and kernel calls are a closed Triton language subset.
     No user-supplied host callbacks exist.
     """
@@ -111,6 +143,9 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
             if isinstance(node, ast.Name) and ("__" in node.id or
                 isinstance(node.ctx, ast.Store) and node.id in _TRITON_RESERVED_NAMES):
                 raise ValueError(f"native Triton reserved name at line {node.lineno}")
+            if isinstance(node, ast.Name) and node.id == "float" and isinstance(node.ctx, ast.Load):
+                if not _infinity_literal(parents.get(node)):
+                    raise ValueError(f"native Triton float requires a direct infinity literal at line {node.lineno}")
             if isinstance(node, ast.Name) and node.id == "libdevice" and isinstance(node.ctx, ast.Load):
                 attribute = parents.get(node)
                 call = parents.get(attribute)
@@ -121,6 +156,12 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
             if isinstance(node, ast.Attribute):
                 if isinstance(node.value, ast.Name) and node.value.id == "tl":
                     allowed = node.attr in _TRITON_CALLS | _TRITON_TYPES
+                    if node.attr == "inline_asm_elementwise":
+                        call = parents.get(node)
+                        allowed = (isinstance(call, ast.Call) and call.func is node
+                                   and _fp32_fma_call(call, requirements.get("target")))
+                        if not allowed:
+                            raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract at line {node.lineno}")
                 elif isinstance(node.value, ast.Name) and node.value.id == "libdevice":
                     allowed = has_libdevice and node.attr == "tanh" and isinstance(node.ctx, ast.Load)
                 else:
@@ -135,6 +176,15 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                         or has_libdevice and isinstance(fn.value, ast.Name) and fn.value.id == "libdevice" and fn.attr == "tanh"
                         or fn.attr == "to" and not (isinstance(fn.value, ast.Name) and fn.value.id in _TRITON_MODULES)
                     ))
+                if isinstance(fn, ast.Name) and fn.id == "float":
+                    allowed = _infinity_literal(node)
+                    if not allowed:
+                        raise ValueError(f"native Triton float requires a direct infinity literal at line {node.lineno}")
+                if (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
+                    and fn.value.id == "tl" and fn.attr == "inline_asm_elementwise"):
+                    allowed = _fp32_fma_call(node, requirements.get("target"))
+                    if not allowed:
+                        raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract at line {node.lineno}")
                 if not allowed or any(kw.arg is None for kw in node.keywords):
                     raise ValueError(f"native Triton unsupported call at line {node.lineno}")
             if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):

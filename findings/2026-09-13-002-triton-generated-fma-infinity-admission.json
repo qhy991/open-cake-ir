@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-13",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "executor_revision": "open-cake-ir-b200-v109+f78e7463e8e6f7f09714ab663b25d0eb04599c7c33777584d1fe8563e0907737",
+  "compiler_revision_id": "open-cake-ir-sm100a-v76+ed8bd1492c5965a4490b365ff39e02698831e3b81ca77601d5f411de0a7269ae",
+  "id": "F-2026-09-13-002",
+  "kind": "bug",
+  "title": "Compiler-generated exact FP32 FMA and infinity reduction identities are rejected by its own Triton source admission",
+  "tasks": [
+    "absmax_rescale",
+    "channel_absmax_scale",
+    "gelu_tanh",
+    "gelu_tanh_backward",
+    "layernorm_gamma_beta_backward",
+    "per_channel_moments",
+    "prelu",
+    "silu",
+    "softmax_backward",
+    "softplus_gradient"
+  ],
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/absmax_rescale",
+      "run": "open_cake-1",
+      "event": 16,
+      "note": "native Triton unsupported call at line 19"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/channel_absmax_scale",
+      "run": "open_cake-1",
+      "event": 23,
+      "note": "native Triton unsupported call at line 18"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/gelu_tanh",
+      "run": "open_cake-1",
+      "event": 2,
+      "note": "native Triton unsupported call at line 45"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/gelu_tanh_backward",
+      "run": "open_cake-1",
+      "event": 38,
+      "note": "native Triton unsupported call at line 42"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/layernorm_gamma_beta_backward",
+      "run": "open_cake-1",
+      "event": 63,
+      "note": "native Triton unsupported call at line 57"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/per_channel_moments",
+      "run": "open_cake-1",
+      "event": 68,
+      "note": "native Triton unsupported call at line 29"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/prelu",
+      "run": "open_cake-1",
+      "event": 2,
+      "note": "native Triton unsupported call at line 37"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/silu",
+      "run": "open_cake-1",
+      "event": 23,
+      "note": "native Triton unsupported call at line 35"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/softmax_backward",
+      "run": "open_cake-1",
+      "event": 44,
+      "note": "native Triton unsupported call at line 43"
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/softplus_gradient",
+      "run": "open_cake-1",
+      "event": 2,
+      "note": "native Triton unsupported call at line 41"
+    }
+  ],
+  "observation": "All 10 environment failures follow accepted Cake IR submissions. Replaying all 367 retained submissions on main 030d9167 identifies 16 generated-kernel projection refusals on the faulting turns: 13 exact fma.rn.f32 inline-assembly templates and 3 float(\"-inf\") reduction identities. The other 281 project, 45 fail parsing/lowering, and 25 are refused by assessment. The emitter already implements both primitives; the common closed source admission omitted them. These are Compiler handoff defects, not evidence of unsupported operator semantics or slow kernels.",
+  "proposed_change": "Admit only the emitter exact FP32 FMA instruction, constraints, three explicit arguments, dtype, purity and pack on sm100a/sm103a; admit only direct constant float(\"inf\") / float(\"-inf\") with reserved binding and no callable escape. Keep arbitrary assembly, dynamic Python conversion, other targets and existing invalid candidates refused. Preserve generated kernel bodies and all numerical contracts.",
+  "decision": "accepted",
+  "implemented_in": null,
+  "verified_by": null,
+  "verification_plan": "Successor Compiler full Corpus Gate, independent review, public frontend/lower/project positive and hostile-negative tests, and replay all 367 original submissions. Exactly the 16 owning projection failures must change; all prior refusal categories remain. Offline isolated SDK compilation is a separate bounded check, not GPU qualification.",
+  "promotion_disposition": "Compiler source-admission repair; no optimization pass. Original run endpoints remain faults. Unobserved top-k/atomic/other-asm source gaps stay deferred; no generic exception suppression.",
+  "analysis_record": "/Users/haiyan-infiniai/.local/share/open-cake-ir/b300-e109-evolution-20260913/result-analysis.json"
+}
