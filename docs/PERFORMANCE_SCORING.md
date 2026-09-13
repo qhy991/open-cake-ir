@@ -182,6 +182,8 @@ Finding supports a private-state/scheduling mechanism; it does not contain a mea
    unmeasured denominators. On-device evaluation and independent release review are
    required before claiming the new scoring is active or calibrated.
 
-The main checkout had unrelated uncommitted Compiler pass changes when this analysis
-began. This proposal lives in a separate worktree; those changes and historical
-evidence were not modified. No new provider or GPU experiment has been run here.
+The main checkout had uncommitted Compiler pass changes when this analysis began.
+The scoring implementation was prepared in a separate worktree; integration then
+preserved the committed output-column pass and obtained independent approval for
+the combined Compiler successor. Historical evidence remains unchanged. No new
+provider or GPU performance experiment has been run for this scoring change.
