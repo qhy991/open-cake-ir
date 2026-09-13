@@ -17,12 +17,12 @@
 
 ## Executor（按精确目标）
 
-### `apple_gpu_family7`
+### `sm_103a`
 
-- 版本： `open-cake-ir-b200-v113+3d17b096a0d91baa5dfdf2698b9435c1de956803b10b297ba772df105943f9b6`
+- 版本： `open-cake-ir-b200-v114+a97b3eed37dc94b78af1001bcab60bca1d1aa646000477036529cde39a353709`
 - 状态： `released`
 - 绑定源码： `165` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v113+3d17b096a0d91baa5dfdf2698b9435c1de956803b10b297ba772df105943f9b6.json`](../../runtime/executors/open-cake-ir-b200-v113+3d17b096a0d91baa5dfdf2698b9435c1de956803b10b297ba772df105943f9b6.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v114+a97b3eed37dc94b78af1001bcab60bca1d1aa646000477036529cde39a353709.json`](../../runtime/executors/open-cake-ir-b200-v114+a97b3eed37dc94b78af1001bcab60bca1d1aa646000477036529cde39a353709.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 

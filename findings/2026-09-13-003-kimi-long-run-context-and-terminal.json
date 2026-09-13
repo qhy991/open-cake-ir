@@ -99,8 +99,25 @@
   "observation": "Twelve retained streams reproduce the same named refusal on current main: eight actual auto-compactions (164009 to 243064 pre-context tokens), three missing structured_output/StructuredOutput calls (cosine_similarity, gemm, attention_decode), and bias_gradient_reduction emitting turn 12 while the request is turn 11. All 24 Studies are artifact_optimization_only. Aggregate token accounting is not a model context window; --autocompact 1M did not prevent these observed compactions.",
   "proposed_change": "Lab/provider owns a prospective treatment: keep scientific no-compaction refusal; for artifact-only optimization, consider explicitly declaring and retaining compaction as auxiliary activity rather than claiming identical author context. This needs a successor Executor/Study and current CLI capture schema validation. Keep missing or wrong-turn terminals refused; any bounded repair invocation must be explicit, charged, same-workspace and same-candidate-custody, not synthesized success. Replay the 12 streams and validate a new bounded canary before a new sweep. Do not patch Compiler or retroactively change these run terminals.",
   "decision": "accepted",
-  "implemented_in": null,
-  "verified_by": null,
+  "implemented_in": "open-cake-ir-b200-v114+a97b3eed37dc94b78af1001bcab60bca1d1aa646000477036529cde39a353709",
+  "verified_by": {
+    "kind": "prospective_protocol_replay_and_cpu_contracts",
+    "source_commit": "9ad718c9dbd70c320a1c4d7a7cdf6cd1c1b459f1",
+    "evidence_root": "/Users/haiyan-infiniai/.local/share/open-cake-ir/claude-v4-repair-20260913",
+    "stream_replay": "stream-replay.json",
+    "observed_delta": "Exactly eight complete compaction streams admit under v4 with auxiliary records; v3 still refuses all eight. Four missing/wrong-turn terminals remain refused under both versions. Historical runs are not reclassified.",
+    "cpu_contract_logs": [
+      "focused-03.log",
+      "focused-02.log",
+      "consumer-regression.log"
+    ],
+    "independent_review": "review/source-review-9ad718c9.json",
+    "host_admission": "host-admission.json",
+    "executor_release": "executor-release.log",
+    "live_v4_qualification": false,
+    "live_v4_canary": false,
+    "remaining": "New live qualification and a bounded canary must verify v4 operational behavior before a full sweep. Exact per-turn request schema is verified through the real Adapter and executable fixtures; it is not a guarantee of model compliance. No repair invocation was implemented."
+  },
   "verification_plan": "Replay all 12 original failed streams under both v3 and v4: exactly 8 complete compaction streams admit under v4 with unchanged usage, v3 keeps refusal, and 4 malformed terminals refuse under both. Test compaction shape/lifecycle/session counterexamples, artifact-only scope, v3-qualification/v4 rejection, common campaign auxiliary replay, and exact schema binding in executable qualification fixtures. Independent review and successor Executor publication follow. A new live v4 qualification and bounded task canary remain prerequisites to new formal provider/GPU experiments.",
   "implementation_scope": "Prospective claude_stream_candidate_v4 validates and records observed compaction under existing artifact-only single-arm policy, preserves v3 refusal, dispatches execution/qualification/fault usage/replay by declared contract, and binds per-invocation arm/turn in native schema. No terminal-only retry or historical terminal repair."
 }

@@ -35,7 +35,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 ## Index
 
 - F-2026-09-13-002 — Compiler-generated exact FP32 FMA and infinity identities fail common Triton admission (bug, 10 B300 tasks; closed in Compiler v80 by 367-candidate replay and 16 isolated SDK builds)
-- F-2026-09-13-003 — 3M-token Kimi sweep recurs at actual context compaction and missing/wrong-turn structured terminals (protocol, 12 B300 tasks; prospective Lab change proposed)
+- F-2026-09-13-003 — 3M-token Kimi sweep recurs at actual context compaction and missing/wrong-turn structured terminals (protocol, 12 B300 tasks; v4 compaction and exact terminal request implemented in Executor v114; live qualification pending)
 
 - F-2026-09-10-001 — multi-SIMD share DCE (bug, silu + swiglu recurrence; closed in Compiler v73)
 - F-2026-09-10-002 — observer cohort snapshot bound (capacity, adamw + momentum_sgd corroboration; launcher check in Executor v90, observer charging still open)
