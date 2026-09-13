@@ -30,6 +30,7 @@ from tests.contracts._corpus_documents import corpus_document
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = Target.load(ROOT / "compiler" / "targets" / "sm_100a.json")
+APPLE = Target.load(ROOT / "compiler" / "targets" / "apple_gpu_family8.json")
 # The manifest is what the Corpus is; the directory also holds schedules
 # retained as history that the current Revision no longer admits.
 CORPUS = sorted(
@@ -1007,6 +1008,34 @@ class RoleRegisterSplitTest(unittest.TestCase):
 
         codes = self._codes(self._split(warps=([0, 1], [2, 3, 4, 5, 6, 7])))
         self.assertIn("ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED", codes)
+
+    def test_a_target_without_a_warpgroup_width_reports_the_alignment_unchecked(self) -> None:
+        """A Target that declares no warpgroup width gets a report, not four warps.
+
+        `warps_per_warpgroup` is None wherever no CUDA compute capability is declared,
+        and the budget field itself is admitted at parse for every target. Borrowing
+        NVIDIA's four would hold an Apple Schedule to a rule its Target never stated, so
+        the alignment is reported unchecked and the checks that do not need the width
+        still run.
+        """
+
+        document = json.loads(
+            (ROOT / "corpus/schedules/metal-rmsnorm-primary.json").read_text(encoding="utf-8")
+        )
+        # warps [0] is exactly the shape sm_100a refuses above, so nothing but the
+        # missing width keeps the alignment rule from firing here.
+        document["roles"][0]["registers_per_thread"] = 32
+        self.assertIsNone(APPLE.warps_per_warpgroup)
+
+        findings = verify(Schedule.from_dict(document), APPLE)
+        unmodeled = [f for f in findings if f.code == "TARGET_WARPGROUP_WIDTH_UNMODELED"]
+        self.assertEqual(len(unmodeled), 1, findings)
+        self.assertEqual(unmodeled[0].severity, FindingSeverity.REPORT)
+        self.assertEqual(unmodeled[0].category, FindingCategory.HARDWARE_CONFORMANCE)
+        self.assertEqual(unmodeled[0].path, "roles")
+        self.assertNotIn("ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED", _codes(findings))
+        # The width is not what tells this split that it divides no declared allocation.
+        self.assertIn("ROLE_REGISTERS_WITHOUT_TOTAL", _codes(_blocking(findings)))
 
     def test_a_partial_split_is_refused(self) -> None:
         self.assertIn("ROLE_REGISTERS_PARTIAL", self._codes(self._split(budgets=(64, None))))

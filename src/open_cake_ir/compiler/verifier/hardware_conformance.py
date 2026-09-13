@@ -663,7 +663,9 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
 
     The instruction is warpgroup-wide, so a role that names a budget must occupy whole
     warpgroups. A role sharing a warpgroup with another role cannot have its own budget --
-    they would issue conflicting `setmaxnreg` from the same warpgroup.
+    they would issue conflicting `setmaxnreg` from the same warpgroup. A Target that
+    declares no warpgroup width is told that alignment was not checked; the width is not
+    borrowed from a Target that does declare one.
     """
 
     category = FindingCategory.HARDWARE_CONFORMANCE
@@ -682,19 +684,33 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
         return
 
     warps_per_group = target.warps_per_warpgroup
-    for index, role in enumerate(schedule.roles):
-        if role.registers_per_thread is None:
-            continue
-        first, count = role.warps[0], len(role.warps)
-        if first % warps_per_group or count % warps_per_group:
-            out.add(
-                "ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED",
-                f"roles[{index}].registers_per_thread",
-                f"role {role.name!r} holds warps {list(role.warps)}; a register budget is "
-                f"issued per warpgroup, so it must start on and span whole groups of "
-                f"{warps_per_group}",
-                category,
-            )
+    if warps_per_group is None:
+        # The budget field is admitted at parse for every target, so this rule is
+        # reachable on a Target that declares no warpgroup width. Substituting one would
+        # hold the Schedule to another architecture's grouping; say the alignment was not
+        # checked instead. The remaining checks below do not need the width.
+        out.add(
+            "TARGET_WARPGROUP_WIDTH_UNMODELED",
+            "roles",
+            "Target declares no warpgroup width, so the warpgroup alignment of these "
+            "per-role register budgets was not checked",
+            category,
+            FindingSeverity.REPORT,
+        )
+    else:
+        for index, role in enumerate(schedule.roles):
+            if role.registers_per_thread is None:
+                continue
+            first, count = role.warps[0], len(role.warps)
+            if first % warps_per_group or count % warps_per_group:
+                out.add(
+                    "ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED",
+                    f"roles[{index}].registers_per_thread",
+                    f"role {role.name!r} holds warps {list(role.warps)}; a register budget "
+                    f"is issued per warpgroup, so it must start on and span whole groups "
+                    f"of {warps_per_group}",
+                    category,
+                )
 
     if len(budgeted) != len(schedule.roles):
         unbudgeted = [role.name for role in schedule.roles if role.registers_per_thread is None]

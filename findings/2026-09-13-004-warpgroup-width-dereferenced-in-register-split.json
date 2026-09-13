@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-13-004",
+  "kind": "bug",
+  "title": "A per-role register budget crashes hardware conformance on every Target that declares no warpgroup width",
+  "date": "2026-09-13",
+  "backend": "not applicable: the crash is in the shared verifier and precedes every backend preflight",
+  "target": "apple_gpu_family8 (reproduced); reachable on any Target whose document declares no CUDA compute capability, which today is apple_gpu_family7, apple_gpu_family8 and apple_gpu_family9",
+  "executor_revision": "not applicable: reproduced through the public Compiler boundary with no Executor and no device",
+  "compiler_revision_id": "open-cake-ir-sm100a-v79+a37102e0e5cf8c5563308bbc8b5fb949c51d0ddfb6fed5a3baffa4aff6bca36b",
+  "tasks": [
+    "rmsnorm"
+  ],
+  "evidence": [
+    {
+      "workspace": "in-checkout reproduction; no campaign workspace exists for this finding",
+      "artifacts": [
+        "corpus/schedules/metal-rmsnorm-primary.json",
+        "compiler/targets/apple_gpu_family8.json"
+      ],
+      "note": "verify(Schedule.from_dict(doc), Target.load('compiler/targets/apple_gpu_family8.json')) with roles[0].registers_per_thread set to 32 on the retained metal-rmsnorm-primary Schedule raises TypeError: unsupported operand type(s) for %: 'int' and 'NoneType' at verifier/hardware_conformance.py:689 under the released v79 sources. The corpus Schedule itself is unchanged; the budget is added to the parsed document, which is what any author may write. Compiler.assess reaches the same line, so an Apple author gets a traceback rather than a Finding."
+    },
+    {
+      "workspace": "in-checkout regression test",
+      "artifacts": [
+        "tests/contracts/test_verifier.py::RoleRegisterSplitTest::test_a_target_without_a_warpgroup_width_reports_the_alignment_unchecked"
+      ],
+      "note": "Written before the repair and observed to fail with the same TypeError at the same line, then to pass after it. The existing coverage did not reach this path: tests/contracts/test_b300.py exercises a per-role budget only on sm_103a, and tests/contracts/test_metal.py covers the schedule-level residency.registers_per_thread refusal METAL_RESIDENCY_UNSUPPORTED, which is a backend precondition and runs after verification."
+    }
+  ],
+  "observation": "Target.warps_per_warpgroup returns None wherever no CUDA compute capability is declared, and that None is deliberate and pinned by tests/contracts/test_metal.py and tests/contracts/test_compiler_revision_architecture.py: substituting NVIDIA's four would hold a 32-lane Apple SIMD group to a grouping rule its Target never stated. _verify_role_register_split consumed it as `first % warps_per_group` with no None branch. The path is reachable on every target because Role.from_dict admits registers_per_thread with no Target argument at all, so a field whose only stated legality is the CUDA setmaxnreg immediate is parseable under an Apple Schedule. Two rules already in AGENTS.md name this shape: an undeclared fact is reported, never substituted and never dereferenced, and a rule that raises outside its evidence is not a gate. The refusal that would otherwise own this input, METAL_REGISTER_CAP_UNSUPPORTED, never runs, because verification precedes preflight. The remaining checks in the same function do not need the width: ROLE_REGISTERS_PARTIAL and ROLE_REGISTERS_WITHOUT_TOTAL are structural, and the conservation arithmetic multiplies target.warp_size into both sides of its equality, so it is independent of that constant's value.",
+  "proposed_change": "Follow TARGET_REGISTER_CAP_UNMODELED, sixteen lines above the crash, and report the fact the Target does not declare. When warps_per_warpgroup is None, emit TARGET_WARPGROUP_WIDTH_UNMODELED at roles as a hardware-conformance FindingSeverity.REPORT saying the warpgroup alignment of these per-role budgets was not checked, and run the width-independent checks unchanged. No width is fabricated, no Target document gains a field, and target.py and ir/resources.py are untouched. ADR 0027 settles that such a condition surfaces as a Finding rather than a late error. No Corpus case declares a per-role register budget, so Corpus Gate expectations are unchanged and none were regenerated. Ordering against F-2026-09-13-006, which is in flight in this same checkout: that finding's step 2 replaces the `4 if compute_capability is not None else None` inference with a positively declared warpgroup width. This repair is forward-compatible with it and does not pre-empt it -- a Target that declares no width still yields None, and None is what this branch reports. The two are independent edits to different files, but they land in the same Compiler Revision boundary, so the successor that carries them must be sequenced rather than raced.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Replay, no provider tokens: under the successor Revision, re-run the cited reproduction and require Findings rather than a TypeError, and require the new contract test to pass alongside the existing sm_100a alignment, partial-split, missing-total and conservation cases. The full Corpus Gate must stay 145/145 with expectations unmodified. This closes only the dereference; it does not decide whether a per-role register budget should be admissible at parse on a Target with no setmaxnreg, which AGENTS.md still records as an open construction-versus-conformance defect in ir/resources.py. Sequencing decided by the owner on 2026-09-13: hold this repair in the working tree and let F-2026-09-13-006's step-1 warp_size lane mint its successor first, then mint this one on top with its own Corpus Gate and its own ADR 0052 approval. No release cycle was run from the session that wrote this. Compiler v80 has since been released and v79 archived, so the successor carrying this repair is minted on v80, not v79."
+}
