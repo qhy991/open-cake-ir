@@ -1,0 +1,16 @@
+{
+  "schema_version": 3,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "d3467e037e7a370cf1c852f8f5bb707b96a38c5efb45f8d71dfa8413dc72e52c"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a08a0f-fe75-7f53-81a2-91704aa47a8a",
+    "author_session_id": "01a08a0f-4e51-7950-a7aa-569bd627adfa"
+  },
+  "approval_basis": "Independent review of exact prepared e3de64641e3d41435d934e6f7b8689b90b813fd3 on merge 071e50c0d8ecb1562706f67946b6c7b4368d4402, parents 0cb1c7abe26bf1c1298352366afc0ff3dc6566be and 42f1a160fd093c7aa62f8ec9f191500948e51da2. Canonical full Corpus Gate independently rebuilt and normalized-equal: 145/145 with 202 current-main source paths, unchanged Corpus expectations and source-set membership. Only current-main Compiler delta is compiler/toolchain.py, equal to the previously reviewed closed libdevice.tanh import/direct-consumer fix including hostile alias/method refusals; no IR, verifier, LLVM, Metal, native CUDA or CuTe source is discarded. Both distinct released C76 authorities remain archived; main source_set is canonically equivalent with cycle-owned JSON key ordering and B300 four-file archive bytes are original. All parent Executor descriptors remain. New 23 independent public CPU probes pass and separate Lab source review covers prepared incumbent identity/selection, current-registry pre-provider/final recheck, source reuse, typed Claude usage, exact CUDA/Metal policies and unchanged paired/NCU owners. Final integration author session 01a08a0f-4e51-7950-a7aa-569bd627adfa is distinct from reviewer; prior B300 Study/NCU author root session 01a08903-99d7-7b90-90ab-e70395b155e5 and prior libdevice integration author are explicitly included. Approval permits bounded Compiler source release only, with no new GPU/provider performance or Apple7/9 host admission claim. Exact external review record: /Users/haiyan-infiniai/.local/share/open-cake-ir/main-b300-merge-20260912/review/compiler-review-record-e3de6464.json; independent Gate/authority record: /Users/haiyan-infiniai/.local/share/open-cake-ir/main-b300-merge-20260912/review/gate-boundary-e3de6464.json; separate Lab source review: /Users/haiyan-infiniai/.local/share/open-cake-ir/main-b300-merge-20260912/review/lab-source-review-e3de6464.json.",
+  "review_record": "/Users/haiyan-infiniai/.local/share/open-cake-ir/main-b300-merge-20260912/review/compiler-review-record-e3de6464.json"
+}
