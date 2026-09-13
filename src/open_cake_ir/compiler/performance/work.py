@@ -14,10 +14,11 @@ Neither mentions a clock, a bandwidth or a second, and nothing here is divided b
 What a caller may then do with a *measured* time and a separately declared rate is divide.
 When that rate is a device-specification ceiling, the useful property of the quotient is
 that a sound lower bound cannot exceed one: no kernel performs more arithmetic than the
-architecture ceiling, and exact compulsory bytes do not cross faster than the specified
-memory ceiling. A microbenchmark rate is instead a comparative reference and may be
-exceeded. Supplying either rate is not this module's business and neither is the
-measurement.
+matching architecture ceiling. Exact logical buffer bytes do not prove traffic through
+a memory level. Applying a bandwidth ceiling additionally requires independent evidence
+that these bytes must cross that level inside the timed interval; warm-cache launches
+do not establish it. A microbenchmark rate is a comparative reference and may be exceeded.
+Supplying either rate and its measurement scope is not this module's business.
 
 Two error directions, and they are stated rather than hidden:
 
