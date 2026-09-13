@@ -85,8 +85,31 @@
   "observation": "All 10 environment failures follow accepted Cake IR submissions. Replaying all 367 retained submissions on main 030d9167 identifies 16 generated-kernel projection refusals on the faulting turns: 13 exact fma.rn.f32 inline-assembly templates and 3 float(\"-inf\") reduction identities. The other 281 project, 45 fail parsing/lowering, and 25 are refused by assessment. The emitter already implements both primitives; the common closed source admission omitted them. These are Compiler handoff defects, not evidence of unsupported operator semantics or slow kernels.",
   "proposed_change": "Admit only the emitter exact FP32 FMA instruction, constraints, three explicit arguments, dtype, purity and pack on sm100a/sm103a; admit only direct constant float(\"inf\") / float(\"-inf\") with reserved binding and no callable escape. Keep arbitrary assembly, dynamic Python conversion, other targets and existing invalid candidates refused. Preserve generated kernel bodies and all numerical contracts.",
   "decision": "accepted",
-  "implemented_in": null,
-  "verified_by": null,
+  "implemented_in": "open-cake-ir-sm100a-v80+c1905e48f874d1d88dac03d88dc5167d2348cad5c974140e8e24c19e44b80d6d",
+  "verified_by": {
+    "kind": "retained_candidate_source_and_isolated_sdk_replay",
+    "source_commit": "9c1f9e22f4ad0b1f9da2cf016dcdf9d6a37e0223",
+    "evidence_root": "/Users/haiyan-infiniai/.local/share/open-cake-ir/b300-e109-evolution-20260913",
+    "candidate_replay": {
+      "before": "replay-before.json",
+      "after": "replay-after.json",
+      "total": 367,
+      "owning_refusals_fixed": 16,
+      "other_outcomes_unchanged": 351
+    },
+    "isolated_sdk": {
+      "record": "sdk-results.json",
+      "compiled": 16,
+      "total": 16,
+      "target": "sm_103a",
+      "triton_version": "3.6.0",
+      "gpu_executed": false
+    },
+    "public_admission_tests": "focused-result.json",
+    "independent_review": "review/compiler-review-record-9c1f9e22.json",
+    "full_corpus_gate": "compiler/corpus-gate-report.json",
+    "limits": "Source-admission defect replay-closed. No GPU correctness/performance claim, no Lab/provider fix, no retroactive change to original terminal outcomes."
+  },
   "verification_plan": "Successor Compiler full Corpus Gate, independent review, public frontend/lower/project positive and hostile-negative tests, and replay all 367 original submissions. Exactly the 16 owning projection failures must change; all prior refusal categories remain. Offline isolated SDK compilation is a separate bounded check, not GPU qualification.",
   "promotion_disposition": "Compiler source-admission repair; no optimization pass. Original run endpoints remain faults. Unobserved top-k/atomic/other-asm source gaps stay deferred; no generic exception suppression.",
   "analysis_record": "/Users/haiyan-infiniai/.local/share/open-cake-ir/b300-e109-evolution-20260913/result-analysis.json"
