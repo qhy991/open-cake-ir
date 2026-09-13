@@ -31,7 +31,19 @@
     "metal.precise.tanh.f32"
   ],
   "synchronization_contracts": [],
+  "peak": {
+    "memory_bandwidth": {
+      "bytes_per_second": 200000000000.0,
+      "source": "device_specification",
+      "observed_at": "2026-09-13"
+    }
+  },
   "citations": [
+    {
+      "kind": "device_specification",
+      "source": "https://www.apple.com/newsroom/2021/10/introducing-m1-pro-and-m1-max-the-most-powerful-chips-apple-has-ever-built/",
+      "locator": "October 18, 2021: M1 Pro up to 200 GB/s unified SoC memory bandwidth; this is a device reference, not a GPU-exclusive sustained rate or cache bandwidth"
+    },
     {
       "kind": "toolchain_api",
       "source": "https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf",

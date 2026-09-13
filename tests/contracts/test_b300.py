@@ -106,7 +106,8 @@ class B300ContractTests(unittest.TestCase):
                 cuda_architecture(value)
         target = cuda_target('sm_103a')
         self.assertIsNone(target.occupancy)
-        self.assertIsNone(target.peak)
+        self.assertEqual(target.peak.memory_bandwidth.value, 8e12)
+        self.assertFalse(target.peak.arithmetic)
         document = baseline_schedule(self.workload, 'primary')
         assessment = self.compiler.assess(document)
         profile = profile_envelope(Schedule.from_dict(document), target,

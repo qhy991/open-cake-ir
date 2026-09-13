@@ -59,7 +59,19 @@
     "barrier.sync",
     "triton_program_order"
   ],
+  "peak": {
+    "memory_bandwidth": {
+      "bytes_per_second": 8000000000000.0,
+      "source": "device_specification",
+      "observed_at": "2026-09-13"
+    }
+  },
   "citations": [
+    {
+      "kind": "device_specification",
+      "source": "https://docs.nvidia.com/enterprise-reference-architectures/hgx-ai-factory/latest/components.html",
+      "locator": "Table 1, NVIDIA B300 SXM, GPU Bandwidth: up to 8 TB/s per GPU; distinct from aggregate bandwidth per node"
+    },
     {
       "kind": "device_specification",
       "source": "https://developer.nvidia.com/cuda/gpus",

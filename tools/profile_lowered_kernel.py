@@ -203,13 +203,15 @@ def _utilization(value: Utilization | None) -> dict[str, object] | None:
             None if value.arithmetic_peak is None else value.arithmetic_peak.source.value
         ),
         "bandwidth": value.bandwidth,
+        "memory_scope": value.memory_scope.value,
         "bandwidth_exact": value.bandwidth_exact,
         "bandwidth_peak_source": (
             None if value.bandwidth_peak is None else value.bandwidth_peak.source.value
         ),
         "roofline_seconds": value.roofline_seconds,
         "roofline_efficiency": value.roofline_efficiency,
-        # A ratio above one refutes the work count or the declared peak. It is stored
+        # A sound ceiling-backed ratio above one refutes an input. Logical bytes
+        # may exceed the DRAM reference without doing so. It is stored
         # beside the ratios so a reader cannot quote one without seeing it.
         "refuted": value.refuted,
     }

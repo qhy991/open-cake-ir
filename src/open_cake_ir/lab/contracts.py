@@ -15,6 +15,7 @@ from open_cake_ir.evaluation.paired import candidate_from_identity, paired_proto
 from open_cake_ir.evidence import RunAudit
 
 from .endpoints import analysis_without_endpoint_policy
+from .efficiency_policy import analysis_without_performance_policy, performance_reporting_policy
 from ._documents import _canonical_json_bytes, _digest, _name, _object
 from ._policies import (
     _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN,
@@ -104,6 +105,7 @@ class StudyContract:
         )
         for field in object_fields:
             _object(document.get(field), f"study.{field}")
+        performance_reporting_policy(document["analysis_plan"], claim_scope)
         if kind == "matched_search":
             validate_declarations(document["arms"])
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
@@ -180,6 +182,9 @@ class CampaignLock:
             raise ValueError("Campaign Lock run_order contains duplicates")
         study_kind = _name(study.get("kind"), "campaign_lock.study.kind")
         claim_scope = _name(study.get("claim_scope"), "campaign_lock.study.claim_scope")
+        performance_reporting_policy(
+            _object(document.get("analysis_plan"), "campaign_lock.analysis_plan"), claim_scope
+        )
         if study_kind == "matched_search":
             if claim_scope not in _MATCHED_CLAIM_SCOPES:
                 raise ValueError("matched Campaign Lock claim scope differs")
@@ -338,7 +343,7 @@ class CampaignLock:
                 raise ValueError("system qualification Campaign Lock Analysis Plan differs")
             estimand = None
         elif claim_scope == "artifact_optimization_only":
-            if analysis_without_endpoint_policy(analysis) != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
+            if analysis_without_endpoint_policy(analysis_without_performance_policy(analysis, claim_scope)) != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
                 raise ValueError("artifact optimization Campaign Lock Analysis Plan differs")
             estimand = None
         elif study_kind == "matched_search":

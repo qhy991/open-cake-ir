@@ -14,7 +14,8 @@ from open_cake_ir.compiler.corpus import CorpusGateReport
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.evaluation.paired import PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.lab.contracts import StudyContract
+from open_cake_ir.lab.contracts import StudyContract, StudyReport
+from open_cake_ir.evidence import RunAudit
 from open_cake_ir.tasks.normalization.study import study_template
 from open_cake_ir.tasks.workloads import create_task
 from tools import launch_task
@@ -294,6 +295,7 @@ class TaskLaunchTests(unittest.TestCase):
                 study = study_template(ROOT, workload, workload_path, starter, harness="claude-code",
                                        model="exact-model", effort="high", turns=2, token_budget=12000)
                 self.assertEqual(study["execution"]["target"], target)
+                self.assertEqual(study["analysis_plan"]["performance_reporting"], "task_efficiency_v1")
                 self.assertEqual(study["execution"]["gpu"], {"name": device, "count": 1, "mode": "local_serialized"})
                 # The Compiler target is the independent authority preflight checks this against.
                 self.assertEqual(Target.load(ROOT / "compiler/targets" / f"{target}.json").device_names, (device,))
@@ -329,9 +331,21 @@ class TaskLaunchTests(unittest.TestCase):
         lab = Mock()
         lab.preflight.side_effect = preflight_error
         lab.preflight.return_value = lock
-        lab.audit.return_value = report or SimpleNamespace(campaign_complete=True, archive_integrity_passed=True,
-            filesystem_custody_verified=True, semantic_replay_passed=True,
+        values = dict(study_id="fixture", claim_scope="artifact_optimization_only", system_qualification_passed=None,
+            estimand=None, campaign_complete=True, archive_integrity_passed=True,
+            filesystem_custody_verified=True, semantic_replay_passed=True, estimand_available=False,
+            missing_run_count=0, estimate=None, uncertainty=None, run_inclusion=(),
+            descriptive={"performance": {"policy": "task_efficiency_v1", "rows": [],
+                "missing": ["no qualified candidate"], "ranking_scope": "same task and target",
+                "threshold_status": "not_defined"}},
             run_audits=(SimpleNamespace(protocol_adherence="adhered", endpoint_observation="no_qualified_candidate"),))
+        if report is not None:
+            values.update(vars(report))
+        values["run_audits"] = tuple(RunAudit(run_id="fixture", authority_sha256=None, archive_integrity=True,
+            filesystem_custody_verified=True, event_count=0, protocol_adherence=audit.protocol_adherence,
+            endpoint_observation=audit.endpoint_observation, endpoint=None, terminal_seal_sha256=None, findings=())
+            for audit in values["run_audits"])
+        lab.audit.return_value = StudyReport(**values)
         args = self.args() + (["--preflight-only"] if preflight_only else [])
         if incumbent:
             args += ["--incumbent-registry", str(self.directory / "incumbents")]
@@ -388,6 +402,11 @@ class TaskLaunchTests(unittest.TestCase):
                     execute.assert_called_once_with(ROOT, lock, self.workspace/"runtime.json", self.workspace/"campaign-evidence")
                     lab.audit.assert_called_once_with(execute.return_value)
                     self.assertIn("unit-test-campaign", stdout.getvalue())
+                    self.assertIn("Task performance:", stdout.getvalue())
+                    saved = json.loads((self.workspace / "report.json").read_text())
+                    self.assertEqual(saved["descriptive"], lab.audit.return_value.descriptive)
+                    self.assertEqual(saved["run_audits"][0]["endpoint_observation"],
+                                     lab.audit.return_value.run_audits[0].endpoint_observation)
             admit.assert_called_once()
             if incumbent == "present" or prepared_selection is not None:
                 baseline.assert_not_called()

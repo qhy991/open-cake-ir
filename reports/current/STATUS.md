@@ -7,7 +7,7 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v77+4a8d367a1547e12668e473d0e0993b707575a67883a12a02f1d9cf0620426f8d`
+- 版本： `open-cake-ir-sm100a-v79+a37102e0e5cf8c5563308bbc8b5fb949c51d0ddfb6fed5a3baffa4aff6bca36b`
 - 状态： `released`
 - 目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, sm_100a, sm_103a`
 - 语料检查： `145/145` 项符合预期
@@ -17,26 +17,12 @@
 
 ## Executor（按精确目标）
 
-### `apple_gpu_family8`
+### `apple_gpu_family7`
 
-- 版本： `open-cake-ir-b200-v112+a57efc116d8d35d2dc3fee5ca080a0ac9614eb9adcad4034e13c850e4cc7ccf2`
+- 版本： `open-cake-ir-b200-v113+3d17b096a0d91baa5dfdf2698b9435c1de956803b10b297ba772df105943f9b6`
 - 状态： `released`
-- 绑定源码： `162` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v112+a57efc116d8d35d2dc3fee5ca080a0ac9614eb9adcad4034e13c850e4cc7ccf2.json`](../../runtime/executors/open-cake-ir-b200-v112+a57efc116d8d35d2dc3fee5ca080a0ac9614eb9adcad4034e13c850e4cc7ccf2.json)
-
-### `apple_gpu_family9`
-
-- 版本： `open-cake-ir-b200-v113+34d443d7ae240efd37e16b2f9becc6641817e5c3388fd5d75c4abff3b812036d`
-- 状态： `released`
-- 绑定源码： `162` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v113+34d443d7ae240efd37e16b2f9becc6641817e5c3388fd5d75c4abff3b812036d.json`](../../runtime/executors/open-cake-ir-b200-v113+34d443d7ae240efd37e16b2f9becc6641817e5c3388fd5d75c4abff3b812036d.json)
-
-### `sm_103a`
-
-- 版本： `open-cake-ir-b200-v111+f1f8c2e4a8bc4f9225ee70e356cd63185144edd5e57a21d251499d22beacb287`
-- 状态： `released`
-- 绑定源码： `162` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v111+f1f8c2e4a8bc4f9225ee70e356cd63185144edd5e57a21d251499d22beacb287.json`](../../runtime/executors/open-cake-ir-b200-v111+f1f8c2e4a8bc4f9225ee70e356cd63185144edd5e57a21d251499d22beacb287.json)
+- 绑定源码： `165` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v113+3d17b096a0d91baa5dfdf2698b9435c1de956803b10b297ba772df105943f9b6.json`](../../runtime/executors/open-cake-ir-b200-v113+3d17b096a0d91baa5dfdf2698b9435c1de956803b10b297ba772df105943f9b6.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 

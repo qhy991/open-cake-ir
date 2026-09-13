@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler.ir import Schedule, ScheduleParseError  # noqa: E402
 from open_cake_ir.compiler.target import Target  # noqa: E402
-from open_cake_ir.compiler.performance.utilization import roofline_seconds  # noqa: E402
+from open_cake_ir.compiler.performance.utilization import MemoryScope, roofline_seconds  # noqa: E402
 from open_cake_ir.compiler.performance.work import WorkBound, work_bound  # noqa: E402
 
 
@@ -42,6 +42,7 @@ def _row(
     intensity = bound.arithmetic_intensity
     return {
         "roofline_seconds": None if target is None else roofline_seconds(bound, target),
+        "memory_scope": MemoryScope.LOGICAL.value,
         "case_id": case_id,
         "schedule_id": schedule.schedule_id,
         "program_tiles": bound.program_tiles,

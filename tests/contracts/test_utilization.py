@@ -4,7 +4,7 @@ This is the only place in the Compiler where a measured number is an input, so i
 only place a utilisation can be produced -- and the only place one can be invented. What
 these tests pin is that it cannot be: without a declared peak there is no ratio, without a
 declared rate for the instruction actually issued there is no arithmetic ratio, and a
-ratio above one is reported as a refutation rather than as a good result.
+ceiling-backed ratio above one refutes its premises only within its measurement scope.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import PeakSource, Target, TargetParseError
-from open_cake_ir.compiler.performance.utilization import utilization
+from open_cake_ir.compiler.performance.utilization import MemoryScope, roofline_seconds, utilization
 from open_cake_ir.compiler.performance.work import work_bound
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +33,12 @@ DOT = "triton.dot.bf16_fp32"
 
 def _document() -> dict:
     return json.loads(TARGET_PATH.read_text(encoding="utf-8"))
+
+
+def _without_peak() -> Target:
+    document = _document()
+    document.pop("peak", None)
+    return Target.from_dict(document)
 
 
 def _with_peak(**block) -> Target:
@@ -62,18 +68,45 @@ def _bound(path: Path):
     return bound
 
 
-class ReleasedTargetTest(unittest.TestCase):
-    def test_the_released_target_declares_no_peak_and_stays_admissible(self) -> None:
-        """A peak decides nothing structural, so a Target without one is complete.
-
-        The released `sm_100a` has none because nobody has measured one on the device it
-        names. That is a missing measurement, not a missing feature, and every gate,
-        every lowering and every residency bound is unaffected by it.
-        """
-
-        target = Target.load(TARGET_PATH)
+class TargetReferenceTest(unittest.TestCase):
+    def test_a_target_without_peak_stays_admissible(self) -> None:
+        target = _without_peak()
         self.assertIsNone(target.peak)
         self.assertIsNotNone(target.occupancy)
+
+    def test_only_the_verified_exact_targets_declare_memory_references(self) -> None:
+        references = {
+            "apple_gpu_family7": (200e9, "Apple M1 Pro"),
+            "apple_gpu_family9": (120e9, "Apple M4"),
+            "sm_100a": (8e12, "NVIDIA B200"),
+            "sm_103a": (8e12, "NVIDIA B300"),
+        }
+        for name, (value, device) in references.items():
+            with self.subTest(target=name):
+                target = Target.load(TARGET_PATH.with_name(name + ".json"))
+                self.assertIn(device, target.device_names)
+                self.assertEqual(target.peak.memory_bandwidth.value, value)
+                self.assertEqual(target.peak.memory_bandwidth.source,
+                                 PeakSource.DEVICE_SPECIFICATION)
+                self.assertFalse(target.peak.arithmetic)
+                self.assertIsNone(target.peak.for_contract(DOT))
+        self.assertIsNone(Target.load(TARGET_PATH.with_name("apple_gpu_family8.json")).peak)
+
+    def test_apple_specification_does_not_admit_unverified_calibration(self) -> None:
+        for peak in (
+            {"memory_bandwidth": _rate(200e9, "bytes_per_second")},
+            {"arithmetic": {"metal.precise.tanh.f32": _rate(1e12, "flops_per_second", "device_specification")}},
+        ):
+            document = json.loads(TARGET_PATH.with_name("apple_gpu_family7.json").read_text())
+            document["peak"] = peak
+            with self.assertRaisesRegex(TargetParseError, "only device-specification memory bandwidth"):
+                Target.from_dict(document)
+
+    def test_loading_a_second_target_does_not_inherit_the_first_peak(self) -> None:
+        first = Target.load(TARGET_PATH.with_name("apple_gpu_family7.json"))
+        second = Target.load(TARGET_PATH.with_name("apple_gpu_family9.json"))
+        self.assertNotEqual(first.peak.memory_bandwidth.value, second.peak.memory_bandwidth.value)
+        self.assertIsNone(Target.load(TARGET_PATH.with_name("apple_gpu_family8.json")).peak)
 
 
 class PeakSchemaTest(unittest.TestCase):
@@ -130,8 +163,32 @@ class PeakSchemaTest(unittest.TestCase):
 class UtilizationTest(unittest.TestCase):
     def test_without_a_peak_there_is_no_ratio_at_all(self) -> None:
         self.assertIsNone(
-            utilization(_bound(GEMM), Target.load(TARGET_PATH), 1e-5)
+            utilization(_bound(GEMM), _without_peak(), 1e-5)
         )
+
+    def test_logical_bytes_above_dram_peak_do_not_refute_warm_cache_measurement(self) -> None:
+        target = _with_peak(memory_bandwidth=_rate(8e12, "bytes_per_second", "device_specification"))
+        bound = _bound(GEMM)
+        derived = utilization(bound, target, 1e-12)
+        self.assertGreater(derived.bandwidth, 1)
+        self.assertTrue(derived.bandwidth_exact)
+        self.assertEqual(derived.memory_scope, MemoryScope.LOGICAL)
+        self.assertFalse(derived.refuted)
+        self.assertIsNone(derived.roofline_seconds)
+        self.assertIsNone(roofline_seconds(bound, target))
+
+    def test_logical_memory_scope_preserves_an_independent_arithmetic_floor(self) -> None:
+        bound = _bound(GEMM)
+        derived = utilization(bound, _full_peak(), 1e-5)
+        self.assertAlmostEqual(derived.roofline_seconds, bound.flops / 2e15)
+
+    def test_unknown_memory_scope_is_refused(self) -> None:
+        for operation in (
+            lambda: utilization(_bound(GEMM), _full_peak(), 1e-5, memory_scope="warm"),
+            lambda: roofline_seconds(_bound(GEMM), _full_peak(), memory_scope="warm"),
+        ):
+            with self.assertRaises(ValueError):
+                operation()
 
     def test_the_ratios_are_work_over_rate_times_time(self) -> None:
         """67,239,936 FLOPs and 918,528 bytes, at 2 PFLOP/s and 8 TB/s, in 10 microseconds."""
@@ -149,7 +206,7 @@ class UtilizationTest(unittest.TestCase):
         """This GEMM moves 918,528 bytes and does 67 MFLOP: at these rates it is memory bound."""
 
         bound = _bound(GEMM)
-        derived = utilization(bound, _full_peak(), 1e-5)
+        derived = utilization(bound, _full_peak(), 1e-5, memory_scope=MemoryScope.COMPULSORY_DRAM)
         assert derived is not None
         self.assertAlmostEqual(derived.roofline_seconds, bound.compulsory_bytes / 8.0e12)
         self.assertGreater(derived.bandwidth, derived.arithmetic)
@@ -186,7 +243,7 @@ class UtilizationTest(unittest.TestCase):
                 8.0e12, "bytes_per_second", "device_specification"
             )
         )
-        derived = utilization(bound, target, 1e-12)
+        derived = utilization(bound, target, 1e-12, memory_scope=MemoryScope.COMPULSORY_DRAM)
         assert derived is not None
 
         self.assertTrue(bound.compulsory_bytes_exact)
@@ -258,7 +315,7 @@ class AbstentionTest(unittest.TestCase):
             )
         )
         bound = _bound(GEMM)
-        derived = utilization(bound, target, 1e-5)
+        derived = utilization(bound, target, 1e-5, memory_scope=MemoryScope.COMPULSORY_DRAM)
         assert derived is not None
         self.assertIsNone(derived.arithmetic)
         self.assertAlmostEqual(derived.roofline_seconds, bound.compulsory_bytes / 8.0e12)
@@ -280,7 +337,7 @@ class AbstentionTest(unittest.TestCase):
                 1.0, "bytes_per_second", "device_specification"
             )
         )
-        derived = utilization(bound, target, 1.0)
+        derived = utilization(bound, target, 1.0, memory_scope=MemoryScope.COMPULSORY_DRAM)
         assert derived is not None and derived.bandwidth is not None
 
         self.assertFalse(bound.compulsory_bytes_exact)
@@ -289,6 +346,23 @@ class AbstentionTest(unittest.TestCase):
         self.assertIsNone(derived.roofline_seconds)
         self.assertIsNone(derived.roofline_efficiency)
         self.assertFalse(derived.refuted)
+
+
+class ReportingScopeTest(unittest.TestCase):
+    def test_existing_reports_label_logical_bytes_and_do_not_introduce_dram_floors(self) -> None:
+        from tools.profile_lowered_kernel import _utilization
+        from tools.report_schedule_work import _row
+
+        target = Target.load(TARGET_PATH)
+        bound = _bound(GEMM)
+        projection = _utilization(utilization(bound, target, 1e-12))
+        self.assertEqual(projection["memory_scope"], "logical")
+        self.assertGreater(projection["bandwidth"], 1)
+        self.assertFalse(projection["refuted"])
+        self.assertIsNone(projection["roofline_seconds"])
+        row = _row("gemm", Schedule.load(GEMM), bound, target)
+        self.assertEqual(row["memory_scope"], "logical")
+        self.assertIsNone(row["roofline_seconds"])
 
 
 class InstrumentOutputTest(unittest.TestCase):
