@@ -10,6 +10,10 @@
   "compiler_revision_id": "open-cake-ir-sm100a-v74+daffd43042484dc2b6a0769e387c31abc6b4217b01cc2b4844dfffd577da3d45",
   "tasks": [
     "layernorm_backward_input",
+    "softmax_backward",
+    "swiglu",
+    "cosine_similarity",
+    "layernorm_gamma_beta_backward",
     "gemm_silu",
     "attention_decode",
     "bias_gradient_reduction"
@@ -38,6 +42,16 @@
       "run": "open_cake-1",
       "event": 1,
       "note": "An adhered turn reported 1,136,459 provider tokens under the same nominal 250k Lab budget. This shows overshoot is not specific to malformed terminals: post-terminal accounting observes usage but cannot govern one native invocation."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-incumbent-20260913",
+      "note": "Four fresh adhered turns crossed the same 250k checkpoint inside one active call: SWIGLU 520,182 tokens, cosine similarity 688,711, LayerNorm gamma/beta backward 684,678 and bias-gradient reduction 1,488,443. The last still produced a valid quality-passing confirmed winner, demonstrating why retrospective Lab accounting and semantic outcome must remain separate."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-incumbent-20260913/softmax_backward",
+      "run": "open_cake-1",
+      "event": 1,
+      "note": "The only provider fault in the 29-task sweep reached the 1800-second supervisor limit with no candidate and no authoritative terminal usage. The retained native stream was large, but liveness did not produce a semantic checkpoint or usable artifact."
     }
   ],
   "observation": "The native adapter has two distinct signals. Stream metadata establishes that the process is alive and preserves a reconstructible timeline; only semantic actions, candidate output or an advancing bounded progress metric establish work progress. Lab token checkpoints run after a provider terminal and therefore cannot stop a single invocation before it overshoots. Timeouts without a result also lack authoritative modelUsage, even though estimated thinking counters exist. Conflating these signals either kills healthy long tools, as earlier tool_progress handling did, or lets non-progressing streams consume the full wall budget while appearing active.",

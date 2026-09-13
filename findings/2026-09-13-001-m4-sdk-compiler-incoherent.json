@@ -47,11 +47,28 @@
     {
       "workspace": "/Users/haiyan-mini/.local/share/open-cake-ir/runtime/m4-v113-native-20260913/metal-host-wk4uvfb1",
       "note": "A fresh current-source helper build selected MacOSX27.0.sdk, SDK 27.0, Build 26A425. build.stderr says the SDK Swift module was built with Swift 6.4 while the installed compiler is Swift 6.3.3 and explicitly requires a matching toolchain. No helper or Executor was produced."
+    },
+    {
+      "workspace": "/Users/haiyan-mini/.local/share/open-cake-ir/runtime/m4-v113-native-ready-20260913",
+      "note": "After the authorized Command Line Tools 27.0 installation, the selected SDK remained 27.0/Build 26A425 and the compiler became Swift 6.4. Fresh archive and observer helpers built successfully; the resulting live capture was admitted and released as family9 Executor v113."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-incumbent-20260913/baseline-preflight",
+      "note": "The prebuild-first matrix compiled, sealed and ABI-checked all 29 requested exact-target baselines under Executor v113 before the first provider call. The complete sweep then produced 42 correctness-passing M4 Evaluation receipts without an SDK or compiler-coherence fault."
     }
   ],
   "observation": "Executor v106 truthfully bound SDK 26.5/Build 25F70. The M4 now selects SDK 27.0/Build 26A425, while com.apple.pkg.CLTools_Executables reports 26.6 and `/Library/Developer/CommandLineTools/usr/bin/swiftc` reports Swift 6.3.3. The host is therefore not merely different from v106; its selected SDK and compiler are internally incompatible. Exact admission and the fresh helper build both refuse. Manually selecting the older SDK, restoring modes or reusing the old helper would manufacture the state checked and would violate the target/toolchain boundary.",
   "proposed_change": "Install the already offered Command Line Tools for Xcode 27.0 so the selected SDK and Swift compiler are one coherent toolchain. Then build both helpers from current source, capture the live family9 host, release a successor Executor and run the complete prebuild-first matrix baseline gate before any provider call. No Compiler, IR, verifier or kernel change is justified.",
-  "decision": "proposed",
-  "implemented_in": null,
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v113+34d443d7ae240efd37e16b2f9becc6641817e5c3388fd5d75c4abff3b812036d",
+  "verified_by": {
+    "kind": "fresh_toolchain_capture_and_full_matrix_preflight",
+    "helper_build": "/Users/haiyan-mini/.local/share/open-cake-ir/runtime/m4-v113-native-ready-20260913",
+    "host_capture": "/Users/haiyan-mini/.local/share/open-cake-ir/runtime/m4-v113-host-ready-20260913.json",
+    "matrix": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-incumbent-20260913",
+    "baseline_preflight": "29/29 compiled, sealed and ABI-checked before provider qualification",
+    "device_evaluations": "42/42 correctness passed; no selected-SDK or Swift compatibility fault",
+    "limits": "This verifies the repaired family9 host/Executor boundary only. It does not establish kernel performance or calibration coverage."
+  },
   "verification_plan": "After explicit authorization for the system toolchain update: verify Swift and SDK compatibility with a fresh helper build, capture a live host document, publish a current family9 Executor from latest main, and require all selected matrix baselines to compile/seal/ABI-check before provider qualification."
 }
