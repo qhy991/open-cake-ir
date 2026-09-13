@@ -18,7 +18,7 @@ from .core import (
     Compiler,
     Lowering,
 )
-from .passes import FusionResult
+from .passes import FusionResult, SpecializationResult
 from .corpus import CorpusCaseReport, CorpusGateReport
 from .errors import CompilerError, LoweringRefusedError
 from .backends.common import EmitError, Emission
@@ -44,6 +44,7 @@ __all__ = [
     "FindingCategory",
     "FindingSeverity",
     "FusionResult",
+    "SpecializationResult",
     "Lowering",
     "LoweringRefusedError",
     "LoweringBackend",

@@ -13,7 +13,8 @@ from typing import Mapping, Sequence, cast
 
 from .backends import BACKENDS, Backend
 from .frontend import read_schedule
-from .passes import FusionResult, fuse_pointwise_epilogue
+from .passes import (FusionResult, SpecializationResult, fuse_pointwise_epilogue,
+                     specialize_output_columns)
 from .backends.common import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
@@ -211,6 +212,12 @@ class Compiler:
         """Explicit composition pass; it is never invoked by assess() or lower()."""
         return fuse_pointwise_epilogue(self, producer, epilogue,
             private_intermediate=private_intermediate, schedule_id=schedule_id, entry_point=entry_point)
+
+    def specialize_output_columns(self, schedule: Mapping[str, object], *,
+                                  schedule_id: str, entry_point: str) -> SpecializationResult:
+        """Explicit output-column specialization pass; never invoked by assess() or lower()."""
+        return specialize_output_columns(self, schedule,
+            schedule_id=schedule_id, entry_point=entry_point)
 
     def assess_file(self, path: str | Path) -> Assessment:
         """Assess a JSON or Python Schedule without executing authored Python."""
