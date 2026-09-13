@@ -56,7 +56,7 @@ class HarnessQualificationTests(unittest.TestCase):
             assert args[args.index('--effort')+1] == 'high'
             assert args[args.index('--permission-mode')+1] == 'acceptEdits'
             assert args[args.index('--tools')+1] == 'Read,Write,Edit,Glob,Grep'
-            assert json.loads(args[args.index('--json-schema')+1]) == {terminal_schema()!r}
+            native_schema = json.loads(args[args.index('--json-schema')+1])
             projection = json.loads(args[-1].split('\\n\\n', 1)[1])
             assert projection['task_markdown'] == Path('TASK.md').read_text()
             assert projection['agents_markdown'] == Path('AGENTS.md').read_text()
@@ -64,6 +64,10 @@ class HarnessQualificationTests(unittest.TestCase):
                                    if line.startswith('QUALIFICATION_PLAN_JSON=')))
             resumed = '--resume' in args
             turn = 2 if resumed else 1
+            expected_schema = {terminal_schema()!r}
+            expected_schema['properties']['arm']['const'] = 'open_cake'
+            expected_schema['properties']['turn']['const'] = turn
+            assert native_schema == expected_schema
             assert projection['state_card']['turn'] == turn
             session = {SESSION!r}
             if resumed:

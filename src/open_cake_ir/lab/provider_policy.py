@@ -6,7 +6,7 @@ from typing import Mapping
 
 from .providers import CANDIDATE_SET_ENVELOPE_V1, CODEX_DISABLED_FEATURES
 from ._documents import _canonical_json_bytes
-from .claude import CLAUDE_EVENT_CONTRACT, CLAUDE_AUTHORING_TOOLS, terminal_schema
+from .claude import CLAUDE_EVENT_CONTRACTS, CLAUDE_AUTHORING_TOOLS, terminal_schema
 
 _AUTHORITY = {"revision", "qualification", "qualification_anchor", "executable_sha256"}
 _COMMON = {"model", "reasoning_effort", "removed_environment", "sandbox", "cwd_policy", "reference_visibility"}
@@ -34,7 +34,7 @@ def provider_configuration(provider: Mapping[str, object], claim_scope: str, *, 
                 or set(arms) != {"open_cake"}
                 or provider.get("sandbox") != "none" or provider.get("permission_mode") != "acceptEdits"
                 or provider.get("safe_mode") is not True or provider.get("tools") != list(CLAUDE_AUTHORING_TOOLS)
-                or provider.get("event_contract") != CLAUDE_EVENT_CONTRACT
+                or provider.get("event_contract") not in CLAUDE_EVENT_CONTRACTS
                 or _canonical_json_bytes(provider.get("terminal_schema")) != _canonical_json_bytes(terminal_schema())
                 or provider["reasoning_effort"] not in {"low", "medium", "high", "xhigh", "max"}):
             raise ValueError("Study Contract Claude provider configuration or authoring scope differs")

@@ -40,7 +40,7 @@ class MetalTaskCompositionTests(unittest.TestCase):
             anchor_path = directory / "anchor.json"
             anchor_path.write_bytes(canonical(anchor))
             executable = Path('/usr/bin/true').resolve()
-            provider = {"harness":"claude-code", "model":"exact-test-model", "reasoning_effort":"high",
+            provider = {"harness":"claude-code","event_contract":"claude_stream_candidate_v4", "model":"exact-test-model", "reasoning_effort":"high",
                 "executable_sha256":sha256(executable.read_bytes()).hexdigest(),
                 "qualification":{"path":str(qualification_path),"canonical_sha256":"qualification-fixture"},
                 "qualification_anchor":{"path":str(anchor_path),"canonical_sha256":sha256(canonical(anchor)).hexdigest()},

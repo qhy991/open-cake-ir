@@ -10,6 +10,15 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ProviderPolicyTests(unittest.TestCase):
+    def test_claude_contract_successor_preserves_declared_contract_and_artifact_scope(self):
+        from open_cake_ir.lab.claude import CLAUDE_LEGACY_EVENT_CONTRACT
+        for contract in (CLAUDE_LEGACY_EVENT_CONTRACT, CLAUDE_EVENT_CONTRACT):
+            provider = {**self.claude(), "event_contract": contract}
+            configuration = provider_configuration(provider, "artifact_optimization_only", arms={"open_cake"})
+            self.assertEqual(configuration["event_contract"], contract)
+            with self.assertRaisesRegex(ValueError, "authoring scope"):
+                provider_configuration(provider, "scientific_matched_search", arms={"open_cake"})
+
     def test_codex_model_and_effort_are_explicit_factors_not_hardcoded_sol(self):
         p = json.loads((ROOT / "contracts/studies/artifact-optimization-ralph-template.json").read_text())["arms"]["open_cake"]["provider"]
         p.update(model="gpt-6-astra", reasoning_effort="high")

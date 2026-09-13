@@ -255,10 +255,10 @@ def _validate_invocation_pair(
         raise ValueError("Codex initial and resume environments differ")
 
 
-def _reported_models(turn, *, harness: str, requested_model: str) -> list[str]:
+def _reported_models(turn, *, harness: str, requested_model: str, event_contract: str) -> list[str]:
     if harness != "claude-code":
         return []
-    parsed = parse_claude_turn_events(turn.raw_events, expected_terminal_message=turn.terminal_message)
+    parsed = parse_claude_turn_events(turn.raw_events, expected_terminal_message=turn.terminal_message, event_contract=event_contract)
     if set(parsed.reported_models) != {requested_model}:
         raise RunProtocolFault("provider_fault", "Claude reported model differs from the exact requested model",
                                artifact_payloads={"provider_stdout": turn.raw_events})
@@ -583,7 +583,7 @@ def main() -> int:
                 arm=arm,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
-            initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model)
+            initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model, event_contract=event_contract)
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
@@ -619,7 +619,7 @@ def main() -> int:
                 arm=arm,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
-            resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model)
+            resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model, event_contract=event_contract)
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )

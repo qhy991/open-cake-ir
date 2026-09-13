@@ -34,15 +34,17 @@ from .providers import (
 from .provider_documents import _THREAD_ID, _read_candidate_nofollow, _reject_json_constant, _unique_json_object
 from ._documents import _canonical_json_bytes
 
-CLAUDE_EVENT_CONTRACT = "claude_stream_candidate_v3"
+CLAUDE_LEGACY_EVENT_CONTRACT = "claude_stream_candidate_v3"
+CLAUDE_EVENT_CONTRACT = "claude_stream_candidate_v4"
+CLAUDE_EVENT_CONTRACTS = (CLAUDE_LEGACY_EVENT_CONTRACT, CLAUDE_EVENT_CONTRACT)
 CLAUDE_TERMINAL_TOOL = "StructuredOutput"
 CLAUDE_AUTHORING_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep")
 # The largest auto-compact window this CLI admits. It has no value that turns compaction
 # off, so the boundary is pinned at the maximum. For a model the CLI does not recognize
 # (it logs claude-code:unrecognized_model) the CLI clamps even this window to its assumed
 # model context -- glm-5.3 reported contextWindow 200000 and compacted at 187,855 tokens
-# (F-2026-09-10-013) -- so a session crossing that ceiling is refused below, not
-# prevented here.
+# (F-2026-09-10-013). Legacy v3 refuses that rewrite; v4 retains the verified
+# lifecycle under the artifact-only treatment. This flag does not prevent it.
 CLAUDE_AUTOCOMPACT_WINDOW = "1M"
 CLAUDE_USAGE_FIELDS = (
     "input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens",
@@ -53,13 +55,19 @@ def _json(payload: str | bytes):
     return json.loads(payload, object_pairs_hook=_unique_json_object, parse_constant=_reject_json_constant)
 
 
-def terminal_schema() -> dict:
+def terminal_schema(expected: Mapping | None = None) -> dict:
     """Stable initial/resume schema; expected arm/turn are checked after reception."""
-    return {"type": "object", "properties": {
+    schema = {"type": "object", "properties": {
         "kind": {"type": "string", "const": "open_cake_ir_turn"},
         "arm": {"type": "string"}, "turn": {"type": "integer"},
         "candidate_written": {"type": "boolean", "const": True}},
         "required": ["kind", "arm", "turn", "candidate_written"], "additionalProperties": False}
+    if expected is not None:
+        if not _terminal(expected):
+            raise ValueError("Claude terminal expectation differs")
+        for name in ("arm", "turn"):
+            schema["properties"][name]["const"] = expected[name]
+    return schema
 
 
 def _terminal(value: object) -> bool:
@@ -92,6 +100,44 @@ def _is_context_mutation(event: Mapping) -> bool:
         return True
     return event.get("subtype") == "status" and (
         event.get("status") == "compacting" or "compact_result" in event)
+
+
+def _compaction_phase(event: Mapping) -> str:
+    """Validate observed CLI 2.1.263 compaction records; raw JSONL owns the details."""
+    common = {"type", "subtype", "session_id", "uuid"}
+    valid_uuid = lambda value: isinstance(value, str) and _THREAD_ID.fullmatch(value) is not None
+    if not valid_uuid(event.get("uuid")):
+        raise ValueError("Claude compaction event identity differs")
+    if event.get("subtype") == "status":
+        if set(event) == common | {"status"} and event["status"] == "compacting":
+            return "started"
+        if (set(event) == common | {"status", "compact_result"}
+                and event["status"] is None and event["compact_result"] == "success"):
+            return "completed"
+        raise ValueError("Claude compaction status differs")
+    metadata = event.get("compact_metadata")
+    if (event.get("subtype") != "compact_boundary"
+        or set(event) != common | {"compact_metadata", "logical_parent_uuid"}
+        or not isinstance(metadata, Mapping)
+        or set(metadata) != {"trigger", "pre_tokens", "post_tokens", "cumulative_dropped_tokens",
+                            "duration_ms", "preserved_segment", "preserved_messages"}
+        or metadata["trigger"] != "auto"
+        or any(type(metadata[k]) is not int or metadata[k] < 0
+               for k in ("pre_tokens", "post_tokens", "cumulative_dropped_tokens", "duration_ms"))
+        or metadata["post_tokens"] > metadata["pre_tokens"]
+        or not valid_uuid(event["logical_parent_uuid"])):
+        raise ValueError("Claude compaction boundary differs")
+    segment, messages = metadata["preserved_segment"], metadata["preserved_messages"]
+    if (not isinstance(segment, Mapping) or set(segment) != {"head_uuid", "anchor_uuid", "tail_uuid"}
+        or not all(valid_uuid(value) for value in segment.values())
+        or not isinstance(messages, Mapping) or set(messages) != {"anchor_uuid", "uuids", "all_uuids"}
+        or not valid_uuid(messages["anchor_uuid"])
+        or any(not isinstance(messages[k], list) or not messages[k]
+               or not all(valid_uuid(value) for value in messages[k]) for k in ("uuids", "all_uuids"))
+        or segment["anchor_uuid"] != messages["anchor_uuid"]
+        or segment["tail_uuid"] != event["logical_parent_uuid"]):
+        raise ValueError("Claude compaction retained-message identity differs")
+    return "boundary"
 
 
 def _metadata(event: Mapping) -> bool:
@@ -233,13 +279,14 @@ def claude_model_usage(terminal: Mapping, main_model: str, *, allow_zero: bool =
 
 
 def reported_claude_usage(raw_events: bytes, *, expected_model: str,
-                          expected_thread_id: str | None = None) -> ReportedProviderUsage | None:
+                          expected_thread_id: str | None = None,
+                          event_contract: str = CLAUDE_EVENT_CONTRACT) -> ReportedProviderUsage | None:
     """Observe a complete native usage statement without accepting its candidate.
 
     Invalid/partial or unbound reporting remains unavailable, not zero. A reported
     zero requires complete matching modelUsage rows. No retry metadata is charged.
     """
-    if not isinstance(raw_events, bytes):
+    if not isinstance(raw_events, bytes) or event_contract not in CLAUDE_EVENT_CONTRACTS:
         return None
     try:
         events = [_json(line) for line in raw_events.splitlines()]
@@ -263,7 +310,7 @@ def reported_claude_usage(raw_events: bytes, *, expected_model: str,
                 if not isinstance(message, Mapping) or message.get("model") != expected_model:
                     return None
         tokens, _ = claude_model_usage(terminal, expected_model, allow_zero=True)
-        return ReportedProviderUsage(CLAUDE_EVENT_CONTRACT, thread_id, tokens)
+        return ReportedProviderUsage(event_contract, thread_id, tokens)
     except (UnicodeError, ValueError, TypeError, OverflowError, RecursionError):
         return None
 
@@ -280,8 +327,11 @@ class ParsedClaudeTurnEvents:
     """Identifiers actually emitted by the main conversation; aliases unresolved."""
 
 
-def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: str) -> ParsedClaudeTurnEvents:
+def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: str,
+                            event_contract: str = CLAUDE_EVENT_CONTRACT) -> ParsedClaudeTurnEvents:
     """Require one completed native stream, coherent session and successful writes."""
+    if event_contract not in CLAUDE_EVENT_CONTRACTS:
+        raise ValueError("Claude event contract differs")
     try:
         events = [_json(line) for line in raw_events.splitlines()]
         expected = _json(expected_terminal_message)
@@ -318,12 +368,22 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     activity: list[ProviderAuxiliaryActivity] = []
     terminal_tool_failed = False
     terminal_tool_completed = False
+    compaction_phase = None
     # Where each invocation's auxiliary record sits, so a later errored result can restate
     # that one entry rather than adding a second record for the same item.
     errors: dict[str, int] = {}
     if isinstance(initial.get("model"), str) and initial["model"]:
         models.append(initial["model"])
     for event in events[1:-1]:
+        if _is_context_mutation(event) and event_contract == CLAUDE_EVENT_CONTRACT:
+            phase = _compaction_phase(event)
+            if ((phase == "started" and compaction_phase not in (None, "started"))
+                or (phase == "completed" and compaction_phase != "started")
+                or (phase == "boundary" and compaction_phase != "completed")):
+                raise ValueError("Claude compaction lifecycle differs")
+            compaction_phase = None if phase == "boundary" else phase
+            activity.append(ProviderAuxiliaryActivity(event["uuid"], "context_compaction", phase))
+            continue
         if _metadata(event):
             if event.get("subtype") == "api_retry":
                 activity.append(ProviderAuxiliaryActivity(event["uuid"], "api_retry", "observed"))
@@ -412,6 +472,8 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                     event["uuid"], "synthetic_continuation", "observed"))
             else:
                 raise ValueError("Claude content is outside the declared event contract")
+    if compaction_phase is not None:
+        raise ValueError("Claude compaction lifecycle is incomplete")
     if active_tools or not writes or len({path for path, _ in writes}) != 1:
         raise ValueError("Claude candidate write lifecycle is incomplete")
     if terminal_tool_failed and not terminal_tool_completed:
@@ -434,9 +496,10 @@ def normalize_claude_turn(raw_events: bytes, *, candidate_path: Path, expected_c
                           submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
                           arm: str | None = None, maximum_candidates_per_turn: int = 1) -> ProviderTurn:
     """Seal the existing candidate envelope; Python remains source inside its member."""
-    if event_contract != CLAUDE_EVENT_CONTRACT or expected_change not in {"add", "update"}:
+    if event_contract not in CLAUDE_EVENT_CONTRACTS or expected_change not in {"add", "update"}:
         raise ValueError("Claude event or candidate lifecycle contract differs")
-    parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal_message)
+    parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal_message,
+                                     event_contract=event_contract)
     if (parsed.candidate_path != str(candidate_path.absolute()) or
             expected_change == "add" and parsed.write_tools[0] != "Write"):
         raise ValueError("Claude candidate path or initial write differs")
@@ -458,7 +521,11 @@ class ClaudeInvocationBuilder:
     """Exact model/effort and persistent cwd; no qualification or model fallback."""
 
     def __init__(self, *, executable: Path, provider_revision: str, model: str,
-                 reasoning_effort: str, workspace: Path, removed_environment: tuple[str, ...]) -> None:
+                 reasoning_effort: str, workspace: Path, removed_environment: tuple[str, ...],
+                 event_contract: str = CLAUDE_EVENT_CONTRACT) -> None:
+        if event_contract not in CLAUDE_EVENT_CONTRACTS:
+            raise ValueError("Claude builder event contract differs")
+        self._event_contract = event_contract
         if any(not isinstance(value, str) or not value or "\x00" in value
                for value in (provider_revision, model, reasoning_effort)):
             raise ValueError("Claude invocation identity and effort are required")
@@ -479,7 +546,7 @@ class ClaudeInvocationBuilder:
         return {"harness": "claude-code", "model": self._model, "reasoning_effort": self._effort,
                 "permission_mode": "acceptEdits", "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
-                "removed_environment": list(self._removed_environment), "event_contract": CLAUDE_EVENT_CONTRACT,
+                "removed_environment": list(self._removed_environment), "event_contract": self._event_contract,
                 "submission_contract": CANDIDATE_SET_ENVELOPE_V1, "terminal_schema": terminal_schema()}
 
     def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation:
@@ -492,10 +559,10 @@ class ClaudeInvocationBuilder:
         # changes what the author saw and breaks comparability between arms. This CLI has
         # no off switch -- `--autocompact` takes only `auto` or a 100k..1M window -- so the
         # boundary is pinned at the maximum it accepts and a compaction that still happens
-        # is refused below rather than absorbed. F-2026-09-10-013: for a model the CLI
+        # is explicitly accounted for by the declared event contract. F-2026-09-10-013: for a model the CLI
         # does not recognize, that window is clamped to the CLI's assumed model context
-        # (glm-5.3: 200k), so a long session can still compact -- the refusal is the
-        # load-bearing rule, not this pin.
+        # (glm-5.3: 200k), so a long session can still compact. v3 refuses it;
+        # v4 validates and records it, without claiming identical author context.
         arguments = (str(self.executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
                      "--autocompact", CLAUDE_AUTOCOMPACT_WINDOW,
                      "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",
@@ -520,7 +587,7 @@ class ClaudeProviderAdapter:
                 expected_terminal_message: str, event_contract: str = CLAUDE_EVENT_CONTRACT,
                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
                 arm: str | None = None, maximum_candidates_per_turn: int = 1) -> ProviderTurn:
-        if (invocation.sandbox != "none" or event_contract != CLAUDE_EVENT_CONTRACT or
+        if (invocation.sandbox != "none" or event_contract not in CLAUDE_EVENT_CONTRACTS or
                 submission_contract != CANDIDATE_SET_ENVELOPE_V1 or expected_change not in {"add", "update"} or
                 candidate_path.absolute() != invocation.cwd.absolute() / "candidate-set.json"):
             raise ValueError("Claude invocation or candidate contract differs")
@@ -538,20 +605,27 @@ class ClaudeProviderAdapter:
                 raise ValueError("exact model value differs")
         except (IndexError, ValueError) as error:
             raise ValueError("Claude invocation exact model differs") from error
+        arguments = list(invocation.argv)
+        if event_contract == CLAUDE_EVENT_CONTRACT:
+            # The Study/qualification owns the stable schema template; this invocation
+            # binds only the arm and turn already fixed by the trusted Run request.
+            expected = _json(expected_terminal_message)
+            arguments[arguments.index("--json-schema") + 1] = _canonical_json_bytes(terminal_schema(expected)).decode()
         try:
-            completed = run_supervised(invocation.argv, cwd=invocation.cwd,
+            completed = run_supervised(tuple(arguments), cwd=invocation.cwd,
                 environment=sanitized_environment(invocation.removed_environment), timeout_seconds=self._timeout_seconds)
         except (SupervisedProcessTimeout, SupervisedProcessOutputLimit) as error:
             raise RunProtocolFault("provider_fault", str(error), artifact_payloads={
                 "provider_stdout": error.stdout, "provider_stderr": error.stderr},
                 reported_usage=reported_claude_usage(error.stdout, expected_model=requested_model,
-                    expected_thread_id=invocation.thread_id)) from error
+                    expected_thread_id=invocation.thread_id, event_contract=event_contract)) from error
         except OSError as error:
             raise RunProtocolFault("provider_fault", str(error)) from error
         try:
             if completed.returncode != 0:
                 raise ValueError(f"Claude process failed with exit code {completed.returncode}")
-            parsed = parse_claude_turn_events(completed.stdout, expected_terminal_message=expected_terminal_message)
+            parsed = parse_claude_turn_events(completed.stdout, expected_terminal_message=expected_terminal_message,
+                                             event_contract=event_contract)
             if parsed.reported_models != (requested_model,):
                 raise ValueError("Claude reported model differs from the exact requested model")
             return normalize_claude_turn(completed.stdout, candidate_path=candidate_path,
@@ -563,7 +637,7 @@ class ClaudeProviderAdapter:
             raise RunProtocolFault("provider_fault", str(error), artifact_payloads={
                 "provider_stdout": completed.stdout, "provider_stderr": completed.stderr},
                 reported_usage=reported_claude_usage(completed.stdout, expected_model=requested_model,
-                    expected_thread_id=invocation.thread_id)) from error
+                    expected_thread_id=invocation.thread_id, event_contract=event_contract)) from error
 
 
 class ClaudeRunProvider(QualifiedRunProvider):
@@ -580,7 +654,7 @@ class ClaudeRunProvider(QualifiedRunProvider):
                 and qualification.usage_observed):
             raise ValueError("Claude provider qualification lacks observed capabilities")
         if any(builder.configuration.get("harness") != "claude-code" or
-               builder.configuration.get("event_contract") != CLAUDE_EVENT_CONTRACT for builder in builders.values()):
+               builder.configuration.get("event_contract") not in CLAUDE_EVENT_CONTRACTS for builder in builders.values()):
             raise ValueError("Claude Run builder event contract differs")
         super().__init__(qualification=qualification, builders=builders, task_packages=task_packages,
                          adapter=adapter or ClaudeProviderAdapter())

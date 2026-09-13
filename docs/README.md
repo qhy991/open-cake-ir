@@ -2,6 +2,8 @@
 
 [任务效率评分](PERFORMANCE_SCORING.md)：固定任务字节数、带宽参考、审计报告与校准覆盖。
 
+[Claude artifact-only v4](CLAUDE_PROVIDER_V4.md)：上下文压缩记录、精确终态请求与旧契约兼容。
+
 原生 CUDA/PTX：[中文](zh-CN/NATIVE_CUDA.md) · [English](NATIVE_CUDA.md)
 
 [中文入门](zh-CN/README.md) · [English start](en/README.md) · [职责与文档归属](../CONTEXT-MAP.md)

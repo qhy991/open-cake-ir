@@ -250,10 +250,10 @@ def reported_provider_usage(raw_events: bytes, *, provider: Mapping[str, object]
     if contract in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
         return reported_codex_usage(raw_events, event_contract=contract,
                                     expected_thread_id=expected_thread_id)
-    from .claude import CLAUDE_EVENT_CONTRACT, reported_claude_usage
-    if contract == CLAUDE_EVENT_CONTRACT:
+    from .claude import CLAUDE_EVENT_CONTRACTS, reported_claude_usage
+    if contract in CLAUDE_EVENT_CONTRACTS:
         return reported_claude_usage(raw_events, expected_model=provider.get("model"),
-                                     expected_thread_id=expected_thread_id)
+                                     expected_thread_id=expected_thread_id, event_contract=contract)
     return None
 
 

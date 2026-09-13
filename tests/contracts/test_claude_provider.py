@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
 from open_cake_ir.lab.claude import (
-    CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder, ClaudeProviderAdapter,
+    CLAUDE_EVENT_CONTRACT, CLAUDE_LEGACY_EVENT_CONTRACT, ClaudeInvocationBuilder, ClaudeProviderAdapter,
     ClaudeRunProvider, normalize_claude_turn, parse_claude_turn_events, claude_model_usage, terminal_schema, reported_claude_usage,
 )
 from open_cake_ir.lab.faults import RunProtocolFault
@@ -25,6 +25,137 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
+    @staticmethod
+    def compaction_events():
+        common = {"type": "system", "session_id": SESSION, "uuid": OTHER_SESSION}
+        metadata = {"trigger": "auto", "pre_tokens": 170000, "post_tokens": 10000,
+                    "cumulative_dropped_tokens": 160000, "duration_ms": 100,
+                    "preserved_segment": dict.fromkeys(("head_uuid", "anchor_uuid", "tail_uuid"), SESSION),
+                    "preserved_messages": {"anchor_uuid": SESSION, "uuids": [SESSION], "all_uuids": [SESSION]}}
+        return [
+            {**common, "subtype": "status", "status": "compacting"},
+            {**common, "subtype": "status", "status": "compacting"},
+            {**common, "subtype": "status", "status": None, "compact_result": "success"},
+            {**common, "subtype": "compact_boundary", "compact_metadata": metadata, "logical_parent_uuid": SESSION},
+        ]
+
+    def test_v4_compaction_preserves_usage_raw_stream_and_existing_write_lifecycle(self):
+        ordinary = self.normalize()
+        events = self.events()
+        events[1:1] = self.compaction_events()
+        raw = self.raw(events)
+        compacted = self.normalize(raw)
+        self.assertEqual(compacted.raw_events, raw)
+        self.assertEqual(compacted.candidates, ordinary.candidates)
+        self.assertEqual(compacted.provider_tokens, ordinary.provider_tokens)
+        self.assertEqual([a.status for a in compacted.tool_activity if a.item_type == "context_compaction"],
+                         ["started", "started", "completed", "boundary"])
+        with self.assertRaisesRegex(ValueError, "compacted"):
+            parse_claude_turn_events(raw, expected_terminal_message=TERMINAL,
+                                    event_contract=CLAUDE_LEGACY_EVENT_CONTRACT)
+        events[-1]["structured_output"]["turn"] = 12
+        with self.assertRaisesRegex(ValueError, "structured terminal"):
+            self.normalize(self.raw(events))
+
+    def test_v4_compaction_rejects_malformed_or_incomplete_observations(self):
+        sequences = [self.compaction_events()[:-1], self.compaction_events()[2:],
+                     [self.compaction_events()[-1]], self.compaction_events()[::-1]]
+        for field, value in (("pre_tokens", True), ("post_tokens", -1), ("duration_ms", 0.5),
+                             ("trigger", "manual"), ("post_tokens", 999999)):
+            changed = self.compaction_events()
+            changed[-1]["compact_metadata"][field] = value
+            sequences.append(changed)
+        changed = self.compaction_events(); changed[-1]["compact_metadata"]["unknown"] = 1; sequences.append(changed)
+        changed = self.compaction_events(); changed[-1]["logical_parent_uuid"] = "bad"; sequences.append(changed)
+        changed = self.compaction_events(); changed[2]["compact_result"] = "failed"; sequences.append(changed)
+        changed = self.compaction_events(); changed[-1]["compact_metadata"]["preserved_messages"]["uuids"] = [1]; sequences.append(changed)
+        for index, sequence in enumerate(sequences):
+            with self.subTest(index=index):
+                events = self.events(); events[1:1] = sequence
+                with self.assertRaisesRegex(ValueError, "compaction"):
+                    self.normalize(self.raw(events))
+        events = self.events(); events[1:1] = self.compaction_events(); events[1]["session_id"] = OTHER_SESSION
+        with self.assertRaisesRegex(ValueError, "session identity"):
+            self.normalize(self.raw(events))
+
+    def test_v4_adapter_binds_exact_turn_schema_once_and_legacy_keeps_template(self):
+        for contract in (CLAUDE_EVENT_CONTRACT, CLAUDE_LEGACY_EVENT_CONTRACT):
+            with self.subTest(contract=contract):
+                invocation = self.builder(event_contract=contract).build("task", thread_id=SESSION)
+                completed = subprocess.CompletedProcess(invocation.argv, 0, self.raw(self.events()), b"")
+                with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed) as process:
+                    ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                        expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake",
+                        event_contract=contract)
+                process.assert_called_once()
+                actual = process.call_args.args[0]
+                schema = json.loads(actual[actual.index("--json-schema") + 1])
+                self.assertEqual(schema, terminal_schema(json.loads(TERMINAL)) if contract == CLAUDE_EVENT_CONTRACT
+                                 else terminal_schema())
+                self.assertEqual(json.loads(invocation.argv[invocation.argv.index("--json-schema") + 1]), terminal_schema())
+                self.assertEqual(actual[-1], invocation.argv[-1])
+
+    def test_usage_fault_projection_keeps_the_declared_contract(self):
+        from open_cake_ir.lab.provider_events import reported_provider_usage
+        for contract in (CLAUDE_EVENT_CONTRACT, CLAUDE_LEGACY_EVENT_CONTRACT):
+            events = self.events(); events[-1].pop("structured_output")
+            usage = reported_provider_usage(self.raw(events), provider={"event_contract": contract,
+                "model": events[0]["model"]}, expected_thread_id=SESSION)
+            self.assertIsNotNone(usage)
+            self.assertEqual(usage.event_contract, contract)
+            self.assertEqual(usage.provider_tokens, 205)
+
+    def test_v3_qualification_cannot_admit_v4_runtime(self):
+        from hashlib import sha256
+        from open_cake_ir.serialization import canonical_json_bytes
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        from open_cake_ir.lab.task_package import TaskPackage
+        legacy = self.builder(event_contract=CLAUDE_LEGACY_EVENT_CONTRACT)
+        receipt = ProviderQualificationReceipt(
+            provider_revision=legacy.provider_revision,
+            executable_sha256=sha256(self.executable.read_bytes()).hexdigest(),
+            configuration_sha256=sha256(canonical_json_bytes(legacy.configuration)).hexdigest(),
+            initial_and_resume_equivalent=True, file_lifecycle_observed=True, usage_observed=True,
+            qualified=True, scope="live_two_turn_tool_rich_provider")
+        with self.assertRaisesRegex(ValueError, "configuration differs from provider qualification"):
+            ClaudeRunProvider(qualification=receipt, builders={"open_cake-1": self.builder()},
+                task_packages={"open_cake-1": TaskPackage("open_cake-1", "open_cake", "task", "rules")})
+
+    def test_campaign_replay_dispatches_compaction_by_contract_and_checks_auxiliary_record(self):
+        from hashlib import sha256
+        from types import SimpleNamespace
+        from open_cake_ir.lab.replay_provider import _replay_provider_turns
+        from open_cake_ir.lab.task_package import TaskPackage
+        run_id = "open_cake-1"
+        package = TaskPackage(run_id, "open_cake", "task", "rules")
+        events = self.events(); events[1:1] = self.compaction_events()
+        raw = self.raw(events); turn = self.normalize(raw)
+        state = {"kind": "ralph_state_v1", "iteration": 1, "cumulative_provider_tokens": 0,
+                 "terminal_reason": None}
+        objects = {"provider_events": raw, "provider_reference_bundle": package.evidence_bundle(state),
+                   "provider_submission_envelope": self.submission, "candidate_submission_0000": turn.candidates[0]}
+        references = [{"role": role, "sha256": sha256(value).hexdigest()} for role, value in objects.items()]
+        payload = {"turn": 1, "thread_id": SESSION, "turn_provider_tokens": turn.provider_tokens,
+                   "cumulative_provider_tokens": turn.provider_tokens, "normalization": turn.normalization,
+                   "candidate_count": 1, "objects": references,
+                   "auxiliary_activity": [dict(a.document) for a in turn.tool_activity]}
+        arguments = dict(arm="open_cake", audit=SimpleNamespace(run_id=run_id),
+            evidence=SimpleNamespace(read_object=lambda ref: objects[ref["role"]]),
+            expected_task_package=package, maximum_candidates_per_turn=1,
+            provider_events=[{"payload": payload}])
+        authority = {"event_contract": CLAUDE_EVENT_CONTRACT, "model": events[0]["model"]}
+        result = _replay_provider_turns(**arguments, event_contract=CLAUDE_EVENT_CONTRACT,
+                                        provider_authority=authority)
+        self.assertIsNotNone(result)
+        self.assertEqual(result[0], {1: turn.provider_tokens})
+        with self.assertRaisesRegex(ValueError, "compacted"):
+            _replay_provider_turns(**arguments, event_contract=CLAUDE_LEGACY_EVENT_CONTRACT,
+                provider_authority={**authority, "event_contract": CLAUDE_LEGACY_EVENT_CONTRACT})
+        payload["auxiliary_activity"] = [a for a in payload["auxiliary_activity"]
+                                         if a["item_type"] != "context_compaction"]
+        self.assertIsNone(_replay_provider_turns(**arguments, event_contract=CLAUDE_EVENT_CONTRACT,
+                                               provider_authority=authority))
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -456,7 +587,8 @@ class ClaudeProviderContracts(unittest.TestCase):
             events[1:1] = [{"type": "system", "subtype": subtype, "session_id": SESSION,
                             "uuid": OTHER_SESSION}]
             with self.subTest(subtype=subtype), self.assertRaisesRegex(ValueError, "compacted"):
-                parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+                parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL,
+                                         event_contract=CLAUDE_LEGACY_EVENT_CONTRACT)
         # F-2026-09-10-013: this CLI also announces compaction as a bare status --
         # `status: "compacting"` when it starts, `status: null` with `compact_result`
         # when it lands (gemm and pairwise_sqdist turn 2 on Executor v98) -- and the
@@ -468,12 +600,14 @@ class ClaudeProviderContracts(unittest.TestCase):
             events[1:1] = [{"type": "system", "subtype": "status", **status_fields,
                             "session_id": SESSION, "uuid": OTHER_SESSION}]
             with self.subTest(status_fields=status_fields), self.assertRaisesRegex(ValueError, "compacted"):
-                parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+                parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL,
+                                         event_contract=CLAUDE_LEGACY_EVENT_CONTRACT)
         events = self.events()
         events[1:1] = [{"type": "system", "subtype": "status", "status": "idle",
                         "session_id": SESSION, "uuid": OTHER_SESSION}]
         with self.assertRaisesRegex(ValueError, "outside the declared native contract"):
-            parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL)
+            parse_claude_turn_events(self.raw(events), expected_terminal_message=TERMINAL,
+                                         event_contract=CLAUDE_LEGACY_EVENT_CONTRACT)
 
     def test_a_tool_progress_heartbeat_is_admitted_and_any_other_shape_fails_closed(self):
         """F-2026-09-11-015: the CLI emits a heartbeat while one tool call runs long.
@@ -643,7 +777,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual(retry.item_id, OTHER_SESSION)
         self.assertEqual(retry.status, "observed")
         self.assertIsNone(retry.provider_tokens)
-        self.assertEqual(CLAUDE_EVENT_CONTRACT, "claude_stream_candidate_v3")
+        self.assertEqual(CLAUDE_EVENT_CONTRACT, "claude_stream_candidate_v4")
         with self.assertRaises(ValueError): self.normalize(raw, event_contract="claude_stream_candidate_v2")
 
     def summary_event(self):

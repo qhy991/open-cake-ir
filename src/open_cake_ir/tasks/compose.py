@@ -417,7 +417,7 @@ def execute_matched_from_config(
             model=str(provider_authority["model"]), reasoning_effort=str(provider_authority["reasoning_effort"]),
             workspace=workspace, removed_environment=tuple(provider_authority["removed_environment"]))
         if harness == "claude-code":
-            builders[run_id] = ClaudeInvocationBuilder(**common_provider)
+            builders[run_id] = ClaudeInvocationBuilder(**common_provider, event_contract=provider_authority["event_contract"])
         else:
             builders[run_id] = CodexInvocationBuilder(**common_provider,
                 code_mode_host=_object(provider_authority["code_mode_host"], "provider.code_mode_host"),
