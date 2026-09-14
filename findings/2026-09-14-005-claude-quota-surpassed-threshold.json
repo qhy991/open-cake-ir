@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-14-005",
+  "kind": "protocol",
+  "title": "Subscription-authenticated Claude sessions report a surpassedThreshold fraction on the quota warning event that the pinned contract refused, stranding provider qualification",
+  "date": "2026-09-14",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v115+919a1871d27781ee4063359da7c2e7c3634bcde43184d1e0998d937f935cba37",
+  "compiler_revision_id": "open-cake-ir-sm100a-v80+c1905e48f874d1d88dac03d88dc5167d2348cad5c974140e8e24c19e44b80d6d",
+  "tasks": [
+    "gemm_silu"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/gemm-silu-op5-high-20260914-n32",
+      "note": "provider qualification refused at qualification.stderr with 'Claude quota is rejected or metadata differs' raised from _metadata, on the first turn of the first campaign whose author model (claude-opus-5) authenticates through the local Claude subscription rather than the API-token provider used by every earlier campaign on this host"
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/gemm-silu-op5-high-20260914-n32/qualification-evidence/objects/sha256/98/9886e1c6062d7d86a980d20f2ee09e4fdefe3b6798e2b1717bba9e72ac154ec8",
+      "note": "the recorded provider stream, line 4 of 24: {\"type\": \"rate_limit_event\", \"rate_limit_info\": {\"status\": \"allowed_warning\", \"resetsAt\": 1789455600, \"rateLimitType\": \"seven_day\", \"utilization\": 0.9, \"isUsingOverage\": false, \"surpassedThreshold\": 0.75}}. The stream's final line is a successful result -- the turn was served normally, after two transient api_retry unknowns that recovered -- so the refusal declined a completed turn. The same payload also records the account state the guard exists to observe: utilization 0.9 of the seven-day window."
+    }
+  ],
+  "observation": "The quota guard admitted by F-2026-09-10-009 names a closed optional set {overageStatus, overageDisabledReason, isUsingOverage, utilization} and fails closed on any field the CLI adds after those. Subscription-authenticated sessions of the same CLI 2.1.241 add surpassedThreshold (observed 0.75), the fraction at which the allowed_warning heads-up fires. It is the same kind of fraction as utilization and accompanies the same served-normally warning; refusing it strands every subscription-authored campaign at provider qualification before a single turn can be scored, exactly as the earlier refusal stranded every API-token campaign on this host. The account-state facts on the same event (utilization 0.9, resetsAt 1789455600) remain observable and are not affected by the admission.",
+  "proposed_change": "Admit surpassedThreshold as an optional fraction in [0, 1] with the same type and range validation as utilization, while everything after still fails closed: a surpassedThreshold outside [0, 1] or of the wrong type is refused, and a field the CLI has not been observed to emit is refused. The guard's purpose is unchanged -- it still refuses a quota that will not serve the campaign -- and a threshold at which a warning fires is not that condition.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7",
+  "verification_plan": "Protocol tick, so verification is by replay rather than by campaign: rerun provider qualification with the same subscription-authenticated CLI and the same author model on the successor Revision and observe it advance past the quota guard into the campaign. Contract tests cover the shapes directly, including the ones that must still fail."
+}

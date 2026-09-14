@@ -369,6 +369,9 @@ class ClaudeProviderContracts(unittest.TestCase):
             lambda rows: rows[1]["rate_limit_info"].update(utilization=1.5),
             lambda rows: rows[1]["rate_limit_info"].update(utilization=True),
             lambda rows: rows[1]["rate_limit_info"].update(utilization="0.55"),
+            lambda rows: rows[1]["rate_limit_info"].update(surpassedThreshold=1.5),
+            lambda rows: rows[1]["rate_limit_info"].update(surpassedThreshold=True),
+            lambda rows: rows[1]["rate_limit_info"].update(surpassedThreshold="0.75"),
             # And so does a field the CLI has not been observed to emit.
             lambda rows: rows[1]["rate_limit_info"].update(unobserved=1),
             lambda rows: rows[2].update(estimated_tokens=True),
@@ -386,19 +389,24 @@ class ClaudeProviderContracts(unittest.TestCase):
 
         Refusing it would strand a campaign on an account that is merely partway through
         its window, because the turn that carries the warning is served normally.
+        Subscription-authenticated sessions also report `surpassedThreshold`, the fraction
+        at which that heads-up fired; it is the same kind of fraction and admitted too.
         """
         for served in ("allowed", "allowed_warning"):
             events = self.events(); events[1:1] = self.metadata()
             events[1]["rate_limit_info"].update(status=served, utilization=0.55,
+                                                surpassedThreshold=0.75,
                                                 rateLimitType="seven_day")
             with self.subTest(status=served):
                 self.assertEqual(self.normalize(self.raw(events)).provider_tokens, 205)
         # The boundaries of the observed fraction are admitted; nothing outside them is.
-        for utilization in (0, 0.0, 1, 1.0):
-            events = self.events(); events[1:1] = self.metadata()
-            events[1]["rate_limit_info"].update(status="allowed_warning", utilization=utilization)
-            with self.subTest(utilization=utilization):
-                self.assertEqual(self.normalize(self.raw(events)).provider_tokens, 205)
+        for fraction_field in ("utilization", "surpassedThreshold"):
+            for fraction in (0, 0.0, 1, 1.0):
+                events = self.events(); events[1:1] = self.metadata()
+                events[1]["rate_limit_info"].update(status="allowed_warning",
+                                                    **{fraction_field: fraction})
+                with self.subTest(**{fraction_field: fraction}):
+                    self.assertEqual(self.normalize(self.raw(events)).provider_tokens, 205)
 
     def test_all_reported_model_usage_is_charged_once_and_auxiliary_models_stay_separate(self):
         events = self.events(); events[1:1] = self.metadata()
