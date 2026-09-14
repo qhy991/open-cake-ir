@@ -338,8 +338,9 @@ class ElementwiseInstruction:
     """The target instruction selected for arithmetic with multiple realizations.
 
     Most elementwise primitives have no separately admitted instruction in the current
-    vocabulary. FMA binds one RN-even, non-FTZ ternary operation. Tanh's approximate
-    PTX instruction differs in cost and numerical behaviour from a libdevice call.
+    vocabulary. FMA binds one correctly rounded, single-round ternary operation; its
+    target contract owns target-specific denormal and exceptional-value behaviour.
+    Tanh's approximate PTX instruction differs in cost and numerical behaviour from a libdevice call.
     Leaving it to the backend
     would make those two physical schedules have one spelling.
     """

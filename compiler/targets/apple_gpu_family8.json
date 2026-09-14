@@ -14,10 +14,16 @@
     "grid": {"x": 4294967295, "y": 4294967295, "z": 4294967295}
   },
   "instruction_contracts": [
+    "metal.fma.rn.f32",
     "metal.precise.tanh.f32"
   ],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "toolchain_api",
+      "source": "https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf",
+      "locator": "MSL math functions: fma(a,b,c) returns the correctly rounded representation of c plus the infinitely precise product of a and b"
+    },
     {
       "kind": "toolchain_api",
       "source": "https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf",

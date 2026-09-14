@@ -10,7 +10,8 @@
 - `lm.role`、存储声明、`lm.pipeline` 和 `lm.barrier` 对应现有资源；`with role` 指定操作所属角色。
 - `lm.program` 指定并行分块；`for tile in lm.range(...)` 构造一个 TileLoop，不在宿主 Python 中展开。
 - `lm.load`、计算表达式、`lm.store` 建立数据依赖。跨角色同步仍须显式声明 waits、signals 和 pipeline。
-- `lm.fma(a, b, c)` 保留现有单次 RN-even 舍入合同；`a * b + c` 构造两个独立操作。
+- `lm.fma(a, b, c, instruction={"contract": ...})` 显式选择 target 的单次正确舍入合同；
+  NVIDIA 使用 `ptx.fma.rn.f32`，Metal 使用 `metal.fma.rn.f32`。`a * b + c` 构造两个独立操作。
 - 广播通过 `lm.broadcast(value, axis=...)` 明示使用现有 `broadcast_axis`，不会增加 splat 或 reshape。
 - CLI 解析 Python AST，不执行源文件、导入、函数体或任意 Python 控制流。未支持的语法会带源码位置拒绝。
 - 语义与后端合法性仍由现有 Compiler 决定。源码位置只用于诊断展示，不加入规范 Schedule 或 Assessment。
@@ -60,7 +61,8 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 下标表达式只作为操作地址使用；不能再对它进行嵌套索引，或把它当作 `lm.program`、`lm.range`、
 `lm.broadcast` 所需的 Buffer 名称。这些位置会明确拒绝切片，不会丢弃其范围。
 
-算术可写 `a * b + c`、`x * 2.0`，或现有数学原语调用，例如 `lm.exp(x)`、`lm.fma(a, b, c)`。
+算术可写 `a * b + c`、`x * 2.0`，或现有数学原语调用，例如 `lm.exp(x)`；FMA 写成
+`lm.fma(a, b, c, instruction={"contract": "ptx.fma.rn.f32"})`，不能让 frontend 猜 target 合同。
 有广播时在第二操作数上写 `lm.broadcast(row_value, axis=0)`，或在数学调用中明确 `broadcast_axis`。
 归约使用 `lm.reduce(x, op="sum", axis=..., scope="cta")`；需要多个结果或目标存储的操作用
 `out=buffer` 或 `out=(buffer1, buffer2)`。显式 `out` 不再赋给另一个变量。

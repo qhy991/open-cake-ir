@@ -57,6 +57,7 @@ _UNARY = {
 # IR requires a contract for tanh and refusing every contract made the mapping above
 # unreachable from any Apple Target.
 _METAL_TANH_CONTRACT = "metal.precise.tanh.f32"
+_METAL_FMA_CONTRACT = "metal.fma.rn.f32"
 
 
 SIMD_WIDTH = 32
@@ -232,15 +233,18 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                   and schedule.buffer(operation.writes[0]).space is MemorySpace.GLOBAL,
                   "METAL_STORE_STORAGE_UNSUPPORTED", path, "Metal stores one private value into one global output")
         elif operation.kind is OperationKind.ELEMENTWISE:
-            check(parameters.op in _BINARY or parameters.op in _UNARY,
+            check(parameters.op in _BINARY or parameters.op in _UNARY
+                  or parameters.op is ElementwiseOp.FMA,
                   "METAL_ELEMENTWISE_UNSUPPORTED", path + ".parameters.op",
-                  "Metal supports add/sub/mul/div/square/relu/rsqrt/exp/exp2/reciprocal/tanh; "
-                  "PTX FMA and other contracts are not implemented")
+                  "Metal supports add/sub/mul/div/square/relu/rsqrt/exp/exp2/reciprocal/tanh/fma")
             check(parameters.instruction is None
                   or (parameters.op is ElementwiseOp.TANH
-                      and parameters.instruction.contract == _METAL_TANH_CONTRACT),
+                      and parameters.instruction.contract == _METAL_TANH_CONTRACT)
+                  or (parameters.op is ElementwiseOp.FMA
+                      and parameters.instruction.contract == _METAL_FMA_CONTRACT),
                   "METAL_INSTRUCTION_UNSUPPORTED", path + ".parameters.instruction",
-                  f"Metal implements only {_METAL_TANH_CONTRACT}, not a CUDA/PTX instruction contract")
+                  f"Metal implements only {_METAL_TANH_CONTRACT} for tanh and "
+                  f"{_METAL_FMA_CONTRACT} for fma")
             check(parameters.scalar is None or abs(parameters.scalar) <= 3.4028234663852886e38,
                   "METAL_SCALAR_RANGE_UNSUPPORTED", path + ".parameters.scalar", "literal must be representable as finite FP32")
         elif operation.kind is OperationKind.REDUCE:
@@ -466,8 +470,12 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
                     operands.append(f"operand{position}")
             if parameters.scalar is not None:
                 operands.append(f"{float(parameters.scalar)!r}f")
-            expression = (f"({operands[0]} {_BINARY[parameters.op]} {operands[1]})"
-                          if parameters.op in _BINARY else _UNARY[parameters.op].format(x=operands[0]))
+            if parameters.op in _BINARY:
+                expression = f"({operands[0]} {_BINARY[parameters.op]} {operands[1]})"
+            elif parameters.op is ElementwiseOp.FMA:
+                expression = f"fma({operands[0]}, {operands[1]}, {operands[2]})"
+            else:
+                expression = _UNARY[parameters.op].format(x=operands[0])
             lines.append(f"            {names[dst.name]}[s] = i < {count}u ? {expression} : 0.0f;")
         lines += ["        }", "    }"]
     lines += ["    // CAKE_KERNEL_END", "}", ""]

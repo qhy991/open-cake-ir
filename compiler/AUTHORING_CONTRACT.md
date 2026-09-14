@@ -45,11 +45,13 @@ register bound or legality gate. `residency.registers_per_thread` reaches the ba
 `maxnreg`; compiled-artifact evidence owns actual allocation and spills.
 FP32 `elementwise fma` reads exactly three same-shaped register Buffers in a, b, c order
 and writes one same-shaped FP32 register result. Its required instruction contract is
-`ptx.fma.rn.f32`: one RN-even rounding of a*b+c, without FTZ, saturation, reassociation
-or a rounded intermediate product. Scalar and broadcast fields are not admitted.
-The Triton emitter uses an explicit instruction; unsupported backends refuse before
-lowering. NaN payload identity is not promised. Preceding rounded producers and nested
-FMA dependencies remain explicit. Work counts two arithmetic operations per result;
+explicit in the Schedule: `ptx.fma.rn.f32` selects PTX RN-even without FTZ or saturation,
+and `metal.fma.rn.f32` selects MSL's correctly rounded `fma`. Neither permits
+reassociation or a rounded intermediate product, and neither contract is accepted by the
+other target. Scalar and broadcast fields are not admitted. The Triton and Metal emitters
+use their named fused operation; unsupported backends refuse before lowering. NaN payload
+identity and cross-target denormal equivalence are not promised. Preceding rounded
+producers and nested FMA dependencies remain explicit. Work counts two arithmetic operations per result;
 register pressure reuses the existing all-read dataflow model, not a physical-register
 or latency estimate.
 A block scale is an FP32 Buffer with one `scale_of` relation. `granularity` is written in

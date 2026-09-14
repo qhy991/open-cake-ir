@@ -403,8 +403,12 @@ class _Builder:
             if "op" in fields:
                 self.fail(node, "the called arithmetic primitive owns op")
             fields["op"] = method
-            if method == "fma":
-                fields.setdefault("instruction", {"contract": "ptx.fma.rn.f32"})
+            if method == "fma" and "instruction" not in fields:
+                self.fail(
+                    node,
+                    "fma requires an explicit instruction contract so the frontend does not "
+                    "select one vendor's implementation for another target",
+                )
             kind = "elementwise"
         else:
             kind = method

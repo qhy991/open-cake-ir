@@ -38,7 +38,8 @@ def candidate(lm, x: cake.Tensor((2, 8), "fp32"), out: cake.Tensor((2, 8), "fp32
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[row, :], id="load")
-        result = lm.fma(values, values, values, id="fma")
+        result = lm.fma(values, values, values,
+                        instruction={{"contract": "ptx.fma.rn.f32"}}, id="fma")
         lm.store(out[row, :], result, coalesced=False, id="store")
 '''
             maximum = _reduction("max")

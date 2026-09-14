@@ -45,6 +45,7 @@ _ELEMENTWISE_INSTRUCTIONS = {
     # Metal's own named-precision spelling. tanh requires a contract, so without one
     # here no Metal Schedule could reach the emitter's precise::tanh at all.
     "metal.precise.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
+    "metal.fma.rn.f32": (ElementwiseOp.FMA, DType.FP32),
     "ptx.fma.rn.f32": (ElementwiseOp.FMA, DType.FP32),
 }
 

@@ -12,5 +12,5 @@ def fma(lm, a: cake.Tensor((8, 128), "fp32"), b: cake.Tensor((8, 128), "fp32"),
         a_tile = lm.load(a[batch, :], reuse="streamed", id="load_a")
         b_tile = lm.load(b[batch, :], reuse="streamed", id="load_b")
         c_tile = lm.load(c[batch, :], reuse="streamed", id="load_c")
-        y_tile = lm.fma(a_tile, b_tile, c_tile, id="fma")
+        y_tile = lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")
         lm.store(y[batch, :], y_tile, id="store_y")

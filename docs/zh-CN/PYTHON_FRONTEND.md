@@ -29,7 +29,8 @@ def fma(lm, a: cake.Tensor((8, 128), "fp32"), b: cake.Tensor((8, 128), "fp32"),
         a_tile = lm.load(a[batch, :], reuse="streamed", id="load_a")
         b_tile = lm.load(b[batch, :], reuse="streamed", id="load_b")
         c_tile = lm.load(c[batch, :], reuse="streamed", id="load_c")
-        y_tile = lm.fma(a_tile, b_tile, c_tile, id="fma")
+        y_tile = lm.fma(a_tile, b_tile, c_tile,
+                        instruction={"contract": "ptx.fma.rn.f32"}, id="fma")
         lm.store(y[batch, :], y_tile, id="store_y")
 ```
 
@@ -37,7 +38,9 @@ def fma(lm, a: cake.Tensor((8, 128), "fp32"), b: cake.Tensor((8, 128), "fp32"),
 
 再看外面的说明：`cake.Tensor((8,128),"fp32")` 表示八行、一百二十八列的 FP32 数据；y 标为 output。`compute` 是计算角色，with 里的操作交给它。最上方装饰器写目标、后端、函数入口和资源约定。
 
-`lm.fma(a,b,c)` 要求最终只舍入一次。`a*b+c` 会构造独立乘法与加法，不能把两种数值约定当作同一种写法。参见[基本操作](../wiki/primitives.md#elementwise)。
+`lm.fma(a,b,c, instruction={"contract": ...})` 要求最终只舍入一次，并显式选择
+target 合同：NVIDIA 使用 `ptx.fma.rn.f32`，Metal 使用 `metal.fma.rn.f32`。
+`a*b+c` 会构造独立乘法与加法，不能把两种数值约定当作同一种写法。参见[基本操作](../wiki/primitives.md#elementwise)。
 
 ## 3. 不用 GPU，检查并生成源码
 

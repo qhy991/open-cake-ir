@@ -29,6 +29,7 @@
     }
   },
   "instruction_contracts": [
+    "metal.fma.rn.f32",
     "metal.precise.tanh.f32"
   ],
   "synchronization_contracts": [],
@@ -40,6 +41,11 @@
     }
   },
   "citations": [
+    {
+      "kind": "toolchain_api",
+      "source": "https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf",
+      "locator": "MSL math functions: fma(a,b,c) returns the correctly rounded representation of c plus the infinitely precise product of a and b"
+    },
     {
       "kind": "device_specification",
       "source": "https://www.apple.com/newsroom/2021/10/introducing-m1-pro-and-m1-max-the-most-powerful-chips-apple-has-ever-built/",

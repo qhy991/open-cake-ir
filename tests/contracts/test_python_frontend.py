@@ -64,7 +64,7 @@ class PythonFrontendTests(unittest.TestCase):
         self.assertEqual(parse(larger).document["operations"], doc["operations"])
 
     def test_multiplication_and_addition_do_not_become_fma(self):
-        separate = parse(FMA.replace('lm.fma(a_tile, b_tile, c_tile, id="fma")', 'a_tile * b_tile + c_tile'))
+        separate = parse(FMA.replace('lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")', 'a_tile * b_tile + c_tile'))
         arithmetic = [op for op in separate.document["operations"] if op["kind"] == "elementwise"]
         self.assertEqual([op["parameters"]["op"] for op in arithmetic], ["mul", "add"])
         self.assertIn(arithmetic[0]["id"], arithmetic[1]["depends_on"])
@@ -73,8 +73,13 @@ class PythonFrontendTests(unittest.TestCase):
         self.assertEqual(fused["parameters"]["instruction"], {"contract": "ptx.fma.rn.f32"})
         self.assertTrue(self.compiler.assess(separate.document).lowering_eligible)
 
+    def test_fma_requires_the_target_instruction_contract_explicitly(self):
+        explicit = 'lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")'
+        with self.assertRaisesRegex(FrontendError, "explicit instruction contract"):
+            parse(FMA.replace(explicit, 'lm.fma(a_tile, b_tile, c_tile, id="fma")'))
+
     def test_literal_binary_operand_uses_existing_scalar_contract(self):
-        source = parse(FMA.replace('lm.fma(a_tile, b_tile, c_tile, id="fma")', 'a_tile * 2.0'))
+        source = parse(FMA.replace('lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")', 'a_tile * 2.0'))
         operation = source.document["operations"][3]
         self.assertEqual(operation["parameters"], {"op": "mul", "scalar": 2.0})
         self.assertEqual(operation["reads"], ["a_tile"])
@@ -165,7 +170,9 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
         for axis in (0, 9):
             document = parse(self.scalar_source(f"lm.mul(values, lm.broadcast(scale, axis={axis}))")).document
             self.assertIn("ELEMENTWISE_BROADCAST", [f.code for f in self.compiler.assess(document).findings])
-        fma = parse(self.scalar_source("lm.fma(values, values, scale)")).document
+        fma = parse(self.scalar_source(
+            'lm.fma(values, values, scale, instruction={"contract": "ptx.fma.rn.f32"})'
+        )).document
         findings = self.compiler.assess(fma).findings
         self.assertIn("ELEMENTWISE_SHAPE_MISMATCH", [f.code for f in findings])
         self.assertEqual(fma["operations"][2]["parameters"]["instruction"], {"contract": "ptx.fma.rn.f32"})
@@ -194,7 +201,7 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
             cases = [injected + FMA, FMA + injected, "import os\n" + FMA,
                      FMA.replace('        y_tile = ', '        if True:\n            y_tile = '),
                      FMA.replace('with compute:', 'while True:'),
-                     FMA.replace('lm.fma(a_tile, b_tile, c_tile, id="fma")', 'eval("1")')]
+                     FMA.replace('lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")', 'eval("1")')]
             for source in cases:
                 with self.subTest(source=source[-80:]), self.assertRaises(FrontendError):
                     parse(source, filename="candidate.py")
@@ -208,8 +215,8 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
             ('a[batch, :]', 'a[batch, ::2]'),
             ('a[batch, :]', 'a[batch, 128:129]'),
             ('reuse="streamed", id="load_a"', 'out=[], id="load_a"'),
-            ('lm.fma(a_tile, b_tile, c_tile, id="fma")', 'lm.fma(a_tile, b_tile, 1.0)'),
-            ('lm.fma(a_tile, b_tile, c_tile, id="fma")', 'lm.unknown(a_tile)'),
+            ('lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")', 'lm.fma(a_tile, b_tile, 1.0)'),
+            ('lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")', 'lm.unknown(a_tile)'),
             ('registers_per_thread": 64', 'registers_per_thread": 1e400'),
             ('name="fma-b8-smoke"', 'name="\\ud800"'),
             ('def fma(lm, a:', 'def fma(lm, lm:'),
@@ -223,8 +230,8 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
     def test_single_assignment_and_explicit_out_do_not_silently_rebind_storage(self):
         for source in (
             FMA.replace('y_tile = lm.fma', 'a_tile = lm.fma'),
-            FMA.replace('lm.fma(a_tile, b_tile, c_tile, id="fma")', 'a_tile'),
-            FMA.replace('lm.fma(a_tile, b_tile, c_tile, id="fma")', 'lm.fma(a_tile, b_tile, c_tile, out=a_tile)'),
+            FMA.replace('lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")', 'a_tile'),
+            FMA.replace('lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")', 'lm.fma(a_tile, b_tile, c_tile, out=a_tile)'),
         ):
             with self.subTest(source=source[-180:]), self.assertRaises(FrontendError):
                 parse(source)
@@ -270,7 +277,7 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
         self.assertEqual(caught.exception.location.line, 9)
 
     def test_utf8_source_columns_are_character_columns(self):
-        source = FMA.replace('y_tile = lm.fma(a_tile, b_tile, c_tile, id="fma")', 'label = "中文"; lm.unknown()')
+        source = FMA.replace('y_tile = lm.fma(a_tile, b_tile, c_tile, instruction={"contract": "ptx.fma.rn.f32"}, id="fma")', 'label = "中文"; lm.unknown()')
         line = next(line for line in source.splitlines() if 'lm.unknown' in line)
         with self.assertRaises(FrontendError) as caught:
             parse(source, filename="unicode.py")

@@ -768,11 +768,45 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         tiled = frontend.parse(make_source().replace('tile=1', 'tile=2')).document
         self.assertIn("METAL_PROGRAM_TILE_UNSUPPORTED", [f.code for f in self.compiler.assess(tiled).findings])
         for source in (make_source().replace('"fp32"', '"bf16"'),
-                       make_source().replace('(a + b) * 2.0', 'lm.fma(a,b,a)'),
+                       make_source().replace('(a + b) * 2.0', 'lm.fma(a,b,a, instruction={"contract": "ptx.fma.rn.f32"})'),
                        make_source().replace('target="apple_gpu_family8"', 'target="sm_100a"')):
             result = self.compiler.assess(frontend.parse(source).document)
             self.assertFalse(result.lowering_eligible)
             self.assertTrue(any(f.blocks_lowering for f in result.findings))
+
+    def test_fma_uses_the_explicit_metal_contract_and_a_fused_call(self):
+        source = make_source().replace(
+            '(a + b) * 2.0',
+            f'lm.fma(a, b, a, instruction={{"contract": "{metal._METAL_FMA_CONTRACT}"}})',
+        )
+        for target in ("apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"):
+            exact = source.replace('target="apple_gpu_family8"', f'target="{target}"')
+            with self.subTest(target=target):
+                assessment = self.compiler.assess(frontend.parse(exact).document)
+                self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                lowering = self.compiler.lower(assessment)
+                self.assertIn("fma(", lowering.source)
+                self.assertNotIn("ptx.fma", lowering.source)
+
+        foreign = source.replace(metal._METAL_FMA_CONTRACT, "ptx.fma.rn.f32")
+        document = frontend.parse(foreign).document
+        refused = self.compiler.assess(document)
+        self.assertFalse(refused.lowering_eligible)
+        self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED", [f.code for f in refused.findings])
+
+        # If a malformed Target is made to admit PTX, Metal's own guard still refuses
+        # it for the backend-specific reason instead of emitting a multiply-plus-add.
+        from dataclasses import replace
+        permissive = replace(
+            self.target,
+            instruction_contracts=self.target.instruction_contracts | {"ptx.fma.rn.f32"},
+        )
+        self.assertIn(
+            "METAL_INSTRUCTION_UNSUPPORTED",
+            [f.code for f in metal.preflight(Schedule.from_dict(document), permissive)],
+        )
+        with self.assertRaisesRegex(metal.EmitError, "implements only"):
+            metal.emit(Schedule.from_dict(document), permissive)
 
     def test_cuda_backend_refuses_apple_target_before_source_emission(self):
         document = make_document(width=32)
