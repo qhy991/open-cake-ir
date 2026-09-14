@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-14-002",
+  "kind": "capacity",
+  "title": "M4 smoke timing withholds most candidates and reverses one direction between search and confirmation",
+  "date": "2026-09-14",
+  "backend": "metal-m4",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v113+34d443d7ae240efd37e16b2f9becc6641817e5c3388fd5d75c4abff3b812036d",
+  "compiler_revision_id": "open-cake-ir-sm100a-v78+30594cf5d879f4bd8a077a31957f0d1c7b46ec7ec5afd242210924cd168e2450",
+  "tasks": [
+    "residual_rmsnorm",
+    "silu",
+    "swiglu",
+    "gelu_tanh_backward",
+    "softsign",
+    "absmax_rescale",
+    "cosine_similarity",
+    "layernorm_gamma_beta_backward",
+    "per_channel_moments",
+    "adamw",
+    "adadelta",
+    "gemm_silu",
+    "attention_decode",
+    "gemm_bias"
+  ],
+  "evidence": [
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/RESULTS_V78_V113.tsv",
+      "note": "Only 6 of 18 search timings passed the preregistered quality gate; 4 of 6 confirmations passed. All 42 Evaluation receipts passed correctness, so withholding is measurement evidence rather than a correctness or admission failure."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-continuation21-20260913/adamw",
+      "run": "open_cake-1",
+      "note": "Search passed quality and favored the baseline at 0.910697x. Confirmation then showed 1.110108x in the opposite direction but failed measurement quality. The protocol correctly withheld both a regression and a speedup claim."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-continuation21-20260913/gemm_silu",
+      "run": "open_cake-1",
+      "note": "The candidate passed all correctness checks and reported a 1.314286x search ratio with nine candidate pair wins, but measurement quality failed and no confirmation ran. GEMM-bias, SWIGLU and Adadelta retain smaller favorable ratios under the same limitation."
+    }
+  ],
+  "observation": "The R2/C8/K8/N8 smoke shapes are valuable for correctness and protocol coverage but often produce sub-microsecond kernels whose signal competes with host, command-buffer and external-GPU variation. Dispatch amplification is already 64, so increasing it by assumption would repeat the failed reasoning recorded in F-2026-09-10-010. The evidence establishes insufficient certified signal on this target/shape set; it does not identify the noise source and cannot rank the withheld kernels. Timing-model and measurement coverage are target-specific owners, so no M1/M2 threshold or calibration may be inherited.",
+  "proposed_change": "Keep current quality gates and withhold unstable ratios. Add a bounded family9 measurement pilot over frozen artifacts that varies one declared condition at a time: aggregate command-buffer duration, dispatch amplification and exclusion/observation of other GPU clients. Select a future recipe only from a preregistered stability criterion, then use representative task shapes for performance campaigns while retaining smoke shapes for correctness/protocol coverage. This belongs to Lab study/measurement policy, not Compiler lowering.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Replay the retained timing samples to preserve current classifications. Run the same frozen baseline/candidate pairs under each pilot condition, require the quality gate to pass without changing its thresholds after observation, and repeat one known close-null pair plus the bias-gradient material pair. A successor recipe must reduce withheld measurements without changing correctness, pair order or materiality policy."
+}

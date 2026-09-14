@@ -34,6 +34,10 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-14-001 — the Python FMA frontend defaults every target to `ptx.fma.rn.f32`, causing four fresh and four prior Metal candidates to be correctly refused as foreign instructions (capacity, Compiler frontend/Target/Metal contract proposal)
+- F-2026-09-14-002 — M4 smoke timing certifies only 6/18 searches and 4/6 confirmations, with an AdamW direction reversal across stages (capacity, target-specific Lab measurement pilot; no withheld speedup claims)
+- F-2026-09-14-003 — the one-turn M4 matrix measures first-shot candidate yield but cannot test whether localized diagnostics repair the next candidate (behavior, successor multi-turn Study proposal; no Compiler relaxation)
+
 - F-2026-09-13-002 — Compiler-generated exact FP32 FMA and infinity identities fail common Triton admission (bug, 10 B300 tasks; closed in Compiler v80 by 367-candidate replay and 16 isolated SDK builds)
 - F-2026-09-13-003 — 3M-token Kimi sweep recurs at actual context compaction and missing/wrong-turn structured terminals (protocol, 12 B300 tasks; v4 compaction and exact terminal request implemented in Executor v114; live qualification pending)
 

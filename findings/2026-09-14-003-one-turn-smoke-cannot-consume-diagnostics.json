@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-14-003",
+  "kind": "behavior",
+  "title": "A one-turn matrix measures first-shot yield but cannot test whether localized Compiler diagnostics improve the next candidate",
+  "date": "2026-09-14",
+  "backend": "metal-m4",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v113+34d443d7ae240efd37e16b2f9becc6641817e5c3388fd5d75c4abff3b812036d",
+  "compiler_revision_id": "open-cake-ir-sm100a-v78+30594cf5d879f4bd8a077a31957f0d1c7b46ec7ec5afd242210924cd168e2450",
+  "tasks": [
+    "rmsnorm",
+    "layernorm",
+    "gelu_tanh",
+    "softplus_gradient",
+    "prelu",
+    "layernorm_backward_input",
+    "rmsnorm_input_gradient",
+    "channel_absmax_scale",
+    "gemm",
+    "pairwise_sqdist"
+  ],
+  "evidence": [
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/RESULTS_V78_V113.tsv",
+      "note": "Ten of 28 submitted candidates were refused before GPU time. Each Run ended after the same first turn, so its localized source location and repair guidance could not influence another candidate in that Run."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-incumbent-20260913/rmsnorm",
+      "run": "open_cake-1",
+      "event": 5,
+      "note": "The Compiler returned PYTHON_SYNTAX with the exact line and column for scalar-left literal placement, routed to the candidate. maximum_turns then ended the Run; the experiment contains no observation of whether the model could repair it."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-continuation21-20260913/pairwise_sqdist",
+      "run": "open_cake-1",
+      "event": 5,
+      "note": "The Environment precisely reported that a Python submission must contain python_source alone and named the extra candidate_id field. With no second turn, this remains first-shot format evidence rather than an agent-loop result."
+    }
+  ],
+  "observation": "The harness did localize each refusal and route it to the candidate, satisfying the feedback contract. The Campaign budget fixed maximum_turns to one, so the four-stage agent loop stopped after generation and filtering whenever the first candidate failed. A 64.3% launchable yield is therefore a first-shot authoring metric. It cannot answer whether diagnostics reduce repeated mistakes, whether a missing Compiler capability is irreducible, or how many GPU attempts the filter saves after repair. Treating these terminal refusals as ten requests for new IR would confuse Study design with Compiler expressibility.",
+  "proposed_change": "Create a successor matched-search Study on a frozen subset spanning syntax, instruction-contract, shape, broadcast and envelope refusals. Hold model, scaffold, task, oracle, target, baseline and per-turn candidate limit fixed; allow at least two turns and retain the same feedback projection. Report repair rate, attempts avoided before GPU, launchable yield by turn, provider tokens and any negative transfer. This is a Lab Study change; it does not change Compiler acceptance or retroactively reinterpret the one-turn matrix.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "For each refusal class, replay turn one unchanged and require the canonical diagnostic to appear in turn-two StateCard feedback. Verify the second candidate is either repaired or refused for a newly localized reason, with no hidden baseline implementation access. Compare against the frozen one-turn first-shot yield descriptively; do not claim model improvement without matched replications."
+}

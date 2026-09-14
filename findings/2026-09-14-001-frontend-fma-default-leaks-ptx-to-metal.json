@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-14-001",
+  "kind": "capacity",
+  "title": "The ergonomic FMA frontend hardcodes a PTX contract, so valid Metal intent is represented as a foreign instruction and refused",
+  "date": "2026-09-14",
+  "backend": "metal",
+  "target": "apple_gpu_family9",
+  "executor_revision": "open-cake-ir-b200-v113+34d443d7ae240efd37e16b2f9becc6641817e5c3388fd5d75c4abff3b812036d",
+  "compiler_revision_id": "open-cake-ir-sm100a-v78+30594cf5d879f4bd8a077a31957f0d1c7b46ec7ec5afd242210924cd168e2450",
+  "tasks": [
+    "layernorm",
+    "gelu_tanh",
+    "softplus_gradient",
+    "prelu"
+  ],
+  "evidence": [
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-incumbent-20260913/layernorm",
+      "run": "open_cake-1",
+      "event": 5,
+      "note": "The candidate used lm.fma in an Apple family9 Schedule. Frontend construction inserted ptx.fma.rn.f32, and hardware conformance correctly refused that foreign contract with TARGET_INSTRUCTION_UNSUPPORTED before lowering."
+    },
+    {
+      "workspace": "open-cake-ir-experiments:m4-family9/matrix-kimi-k3-high-v78-v113-incumbent-20260913",
+      "note": "The same first divergence recurs independently in gelu_tanh, softplus_gradient and prelu at each Run's event 5. The earlier v104 matrix also retained four Metal/PTX FMA refusals, so this is not a one-off candidate spelling."
+    },
+    {
+      "workspace": "source inspection at compiler v81",
+      "artifacts": [
+        "src/open_cake_ir/compiler/frontend.py:407",
+        "src/open_cake_ir/compiler/backends/metal.py:238",
+        "compiler/targets/apple_gpu_family9.json"
+      ],
+      "note": "frontend.py supplies ptx.fma.rn.f32 whenever lm.fma omits an instruction. Only sm_100a/sm_103a declare that contract, and Metal explicitly reports that PTX FMA and other instruction contracts are not implemented. The Target refusal is therefore correct; the frontend default is the vendor leak."
+    }
+  ],
+  "observation": "The IR already distinguishes the ternary FMA operation from its target implementation contract, following ADR 0022's ownership model. The ergonomic Python frontend collapses those facts by silently choosing NVIDIA PTX before the Target or backend evaluates the Schedule. On Metal, a mathematically meaningful FMA request cannot name a Metal implementation, while accepting the PTX string on Apple would lie about hardware behavior. Four fresh tasks and the prior matrix reach the same boundary. This is a Compiler expressibility gap, not four kernel bugs and not a reason to weaken exact-target admission.",
+  "proposed_change": "Design one explicit Metal FP32 FMA instruction contract and expose the implementation choice in the Python frontend instead of selecting PTX as a universal default. The smallest complete Compiler tick changes the frontend surface, typed instruction-kind mapping, Apple Target declarations, Metal preflight/emission, work accounting, source diagnostics and positive/near-miss tests together. Existing NVIDIA FMA behavior remains exact and explicit. The candidate API must preserve P1 ergonomics while making the selected contract visible in the constructed Schedule; accepting PTX on Apple or emitting multiply-plus-add under an FMA contract are invalid shortcuts.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Before release, exercise omission/foreign-contract/shape/dtype counterexamples and confirm they are refused by their owning rules. Run the unchanged full Corpus Gate and independent review. Device verification uses hard FP32 fused-rounding vectors and all affected Workload oracles on both M1 Pro family7 and M4 family9; only then run a successor multi-turn campaign to measure attempts avoided and launchable yield. No speedup is assumed."
+}
