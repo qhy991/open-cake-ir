@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-14-004",
+  "kind": "protocol",
+  "title": "A passing Corpus Gate named no Target, and two of the five declared Targets carry no case",
+  "date": "2026-09-14",
+  "backend": "compiler",
+  "target": "all_declared",
+  "executor_revision": "open-cake-ir-b200-v115+919a1871d27781ee4063359da7c2e7c3634bcde43184d1e0998d937f935cba37",
+  "compiler_revision_id": "open-cake-ir-sm100a-v81+a2d30f2b1fb2248fdc8038e47127a4ac782c946574649803f0c183b3c647e24d",
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/.local/share/open-cake-ir/runtime/m1-gate-coverage-20260914",
+      "note": "probe.py reads the released Gate artifact and the Corpus manifest as bytes and imports nothing from the checkout, so later working-tree edits cannot change what it observed. observed-v81.json records the result: the Gate reports 145/145 while neither its top-level keys nor its per-case keys contain the word target, so the document states nothing about which Targets produced that number."
+    },
+    {
+      "workspace": "/Users/haiyan/.local/share/open-cake-ir/runtime/m1-gate-coverage-20260914",
+      "note": "Counting each case's own declared target independently: sm_100a 102, sm_103a 29, apple_gpu_family8 13, and apple_gpu_family10 1. Of the five Targets the Revision declares, apple_gpu_family7 and apple_gpu_family9 carry zero cases and the full Gate still passes. apple_gpu_family10 is not declared at all; its single case exercises the refusal path, so counting it as coverage would read a rejection as an examination."
+    },
+    {
+      "workspace": "/Users/haiyan/.local/share/open-cake-ir/runtime/m1-mlx-host-v81-20260913/mlx-differential-v81-sb8ktn1x",
+      "note": "Why this was not theoretical here. The MLX second host under F-2026-09-13-005 was measured entirely on apple_gpu_family7 -- one of the two Targets with zero Gate cases. The 145/145 that gated Compiler v81 carried no evidence about that Target, and nothing in the Gate said so."
+    }
+  ],
+  "observation": "compiler/corpus.py resolves each case through compiler.assess_file, which already carries the Schedule's target, and then drops it: CorpusCaseReport closes to case_id, schedule_path, expected and observed fields, and the word target does not occur in the module. The Gate report is therefore a count of expectation matches that a reader takes for coverage of every declared Target. This is the repository's own 'a report states the domain it examined' rule applied to the Gate: omitting a Target reads as 'this Target is fine' and means 'this Target was not looked at', and the reader assumes the generous one.",
+  "proposed_change": "Report the domain, do not repair it. CorpusCaseReport gains the target the assessment already resolved; CorpusGateReport gains the Revision's declared_targets and derives examined_targets, unexamined_targets and undeclared_case_targets from them; and the reviewed Gate document gains a target_coverage block so the reviewer who writes the approval sees which Targets the pass covers. passed is deliberately unchanged: failing on an unexamined Target would pressure an author to mint cases to empty the list, which is the manufactured coverage AGENTS.md refuses. Closing a genuine gap stays a separate reviewed Corpus addition. src/open_cake_ir/cli.py would surface the same block in the text view, but it is pinned by both live Executor closures, so it is deliberately left out to keep this one Compiler successor rather than a paired Compiler and Executor release.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "verification_plan": "Replay, deterministic and without provider tokens: re-run the Corpus Gate on the successor Revision and require 145/145 unchanged with no expectation regenerated, target_coverage present in the reviewed Gate document, and unexamined_targets naming exactly apple_gpu_family7 and apple_gpu_family9. tests/contracts/test_corpus_target_coverage.py derives that set from the manifest rather than asserting it, and separately pins that a Gate with an unexamined Target still passes."
+}

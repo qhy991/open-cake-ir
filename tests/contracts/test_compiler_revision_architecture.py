@@ -276,10 +276,11 @@ class CorpusOwnershipTests(unittest.TestCase):
         ]}
         self.assessment = SimpleNamespace(
             accepted=True, lowering_eligible=True, findings=[SimpleNamespace(code=x) for x in ("FIRST", "SECOND")],
-            schedule_sha256="1" * 64,
+            schedule_sha256="1" * 64, target="fixture_target",
         )
         self.compiler = SimpleNamespace(
-            _revision=SimpleNamespace(project_root=self.root, revision_id="fixture", canonical_sha256="3" * 64),
+            _revision=SimpleNamespace(project_root=self.root, revision_id="fixture", canonical_sha256="3" * 64,
+                                      targets={"fixture_target": object(), "unexamined_target": object()}),
             assess_file=Mock(return_value=self.assessment),
             lower=Mock(return_value=SimpleNamespace(source_sha256="2" * 64)),
         )

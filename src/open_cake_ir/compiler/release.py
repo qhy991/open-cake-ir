@@ -196,6 +196,16 @@ def build_gate_report(
         "compiler_revision_sha256": gate.compiler_revision_sha256,
         "case_count": gate.case_count,
         "matched_case_count": sum(case.matched for case in gate.cases),
+        # A passing Gate is evidence only about the Targets it examined. Without this
+        # block a reviewer reads 145/145 as coverage of every declared Target, and two
+        # of the five carry no case at all. Reported, not repaired: the fix for an
+        # unexamined Target is a reviewed Corpus addition, never a count made to agree.
+        "target_coverage": {
+            "declared": list(gate.declared_targets),
+            "examined": dict(gate.examined_targets),
+            "unexamined": list(gate.unexamined_targets),
+            "undeclared_in_cases": dict(gate.undeclared_case_targets),
+        },
         "cases": [asdict(case) for case in gate.cases],
     }
     return CompilerGate(document, sha256(_canonical_json_bytes(document)).hexdigest())

@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Mapping
 
 from .errors import CompilerError
 from .revision import _digest, _name, _object, _objects, _strings
@@ -20,6 +21,7 @@ class CorpusCaseReport:
 
     case_id: str
     schedule_path: str
+    target: str
     expected_accepted: bool
     expected_lowering_eligible: bool
     expected_finding_codes: tuple[str, ...]
@@ -42,10 +44,52 @@ class CorpusGateReport:
     compiler_revision_sha256: str
     passed: bool
     cases: tuple[CorpusCaseReport, ...]
+    # Defaulted so the Revision's declared set, not the case list, decides what
+    # "unexamined" means. A Gate built without it reports no coverage rather than
+    # reporting full coverage.
+    declared_targets: tuple[str, ...] = ()
 
     @property
     def case_count(self) -> int:
         return len(self.cases)
+
+    @property
+    def examined_targets(self) -> Mapping[str, int]:
+        """Declared Targets the Corpus exercised, and how many cases carried each."""
+
+        counts: dict[str, int] = {}
+        declared = set(self.declared_targets)
+        for case in self.cases:
+            if case.target in declared:
+                counts[case.target] = counts.get(case.target, 0) + 1
+        return MappingProxyType(dict(sorted(counts.items())))
+
+    @property
+    def unexamined_targets(self) -> tuple[str, ...]:
+        """Declared Targets no case names, so this Gate states nothing about them.
+
+        A passing Gate is evidence only about the Targets it examined. Absence is
+        reported and never repaired here: minting cases to empty this tuple would
+        report a coverage the Corpus does not have.
+        """
+
+        examined = self.examined_targets
+        return tuple(target for target in sorted(self.declared_targets) if target not in examined)
+
+    @property
+    def undeclared_case_targets(self) -> Mapping[str, int]:
+        """Targets named only by cases whose Revision does not declare them.
+
+        These exercise the refusal path. Counting them as coverage would read a
+        rejection as an examination, so they are reported apart from examined.
+        """
+
+        counts: dict[str, int] = {}
+        declared = set(self.declared_targets)
+        for case in self.cases:
+            if case.target not in declared:
+                counts[case.target] = counts.get(case.target, 0) + 1
+        return MappingProxyType(dict(sorted(counts.items())))
 
     @property
     def accepted_case_count(self) -> int:
@@ -138,6 +182,7 @@ def check_corpus(compiler: Compiler, corpus_path: str | Path) -> CorpusGateRepor
             CorpusCaseReport(
                 case_id=case_id,
                 schedule_path=relative,
+                target=assessment.target,
                 expected_accepted=expected_accepted,
                 expected_lowering_eligible=expected_lowering,
                 expected_finding_codes=expected_codes,
@@ -157,4 +202,5 @@ def check_corpus(compiler: Compiler, corpus_path: str | Path) -> CorpusGateRepor
         compiler_revision_sha256=compiler._revision.canonical_sha256,
         passed=all(report.matched for report in reports),
         cases=tuple(reports),
+        declared_targets=tuple(sorted(compiler._revision.targets)),
     )
