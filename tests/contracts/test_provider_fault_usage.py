@@ -70,6 +70,58 @@ class ReportedProviderUsageTests(unittest.TestCase):
         self.assertIsNone(replay_fault_usage(payload=payload, evidence=evidence, provider=provider,
                           expected_thread_id="00000000-0000-0000-0000-000000000001"))
 
+    def test_claude_fault_quota_attribution_is_rederived_from_retained_stdout(self):
+        from open_cake_ir.lab.replay_provider import replay_fault_usage
+        from tests.contracts.test_claude_provider import ClaudeProviderContracts, CLAUDE_EVENT_CONTRACT
+        fixture = ClaudeProviderContracts()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        events = fixture.events()
+        events[-1].pop("structured_output")  # Failed Turn; the notice remains retained.
+        events[1:1] = [{"type": "rate_limit_event", "uuid": "11111111-2222-3333-4444-555555555555",
+            "session_id": THREAD, "rate_limit_info": {"status": "allowed_warning",
+                "resetsAt": 1789455600, "rateLimitType": "seven_day", "utilization": 0.99,
+                "isUsingOverage": False, "surpassedThreshold": 0.75}}]
+        raw = fixture.raw(events)
+        quota = {"status": "allowed_warning", "rateLimitType": "seven_day",
+                 "resetsAt": 1789455600, "utilization": 0.99, "surpassedThreshold": 0.75}
+        provider = {"event_contract": CLAUDE_EVENT_CONTRACT, "model": "exact-requested-model"}
+        evidence = SimpleNamespace(read_object=lambda _: raw)
+        base = {"stage": "provider", "provider_usage": {"status": "observed",
+                "event_contract": CLAUDE_EVENT_CONTRACT, "thread_id": THREAD, "provider_tokens": 205},
+                "objects": [{"role": "provider_stdout"}]}
+        # An attribution equal to the one the retained stdout rederives replays, and
+        # evidence sealed before the field exists replays unchanged without it.
+        self.assertEqual(replay_fault_usage(payload={**base, "observed_quota": quota},
+            evidence=evidence, provider=provider), 205)
+        self.assertEqual(replay_fault_usage(payload=base, evidence=evidence, provider=provider), 205)
+        # A declared attribution the retained stdout does not support is refused.
+        for tampered in ({"utilization": 0.5}, {"status": "allowed"}, {"resetsAt": 1789455601},
+                         {"rateLimitType": "five_hour"}, {"surpassedThreshold": 0.9},
+                         {"utilization": 0.99, "fabricated": 1}):
+            with self.subTest(tamper=tampered):
+                self.assertIsNone(replay_fault_usage(
+                    payload={**base, "observed_quota": {**quota, **tampered}},
+                    evidence=evidence, provider=provider))
+        # An attribution with no notice behind it in the stream is fabricated.
+        bare = fixture.raw(fixture.events())
+        self.assertIsNone(replay_fault_usage(payload={**base, "observed_quota": quota},
+            evidence=SimpleNamespace(read_object=lambda _: bare), provider=provider))
+        # The observed wall: the last notice is the rejection that killed the process,
+        # and an attribution naming the earlier warning instead is refused.
+        events[2:2] = [{"type": "rate_limit_event", "uuid": "11111111-2222-3333-4444-555555555555",
+            "session_id": THREAD, "rate_limit_info": {"status": "rejected",
+                "resetsAt": 1789455600, "rateLimitType": "seven_day",
+                "overageStatus": "rejected", "overageDisabledReason": "org_level_disabled",
+                "isUsingOverage": False}}]
+        died = fixture.raw(events)
+        rejected = {"status": "rejected", "rateLimitType": "seven_day", "resetsAt": 1789455600}
+        evidence_died = SimpleNamespace(read_object=lambda _: died)
+        self.assertEqual(replay_fault_usage(payload={**base, "observed_quota": rejected},
+            evidence=evidence_died, provider=provider), 205)
+        self.assertIsNone(replay_fault_usage(payload={**base, "observed_quota": quota},
+            evidence=evidence_died, provider=provider))
+
     def test_replayed_usage_refuses_boolean_and_float_token_witnesses(self):
         from open_cake_ir.lab.replay_provider import replay_fault_usage
         for native_tokens, claimed_tokens in ((0, False), (1, True), (191499, 191499.0)):
@@ -159,7 +211,7 @@ class FailedProviderConsumerTests(unittest.TestCase):
             raise AssertionError("failed-provider consumer must use its explicit CPU Executor")
 
     def campaign(self, *, fault_turn=2, tokens=191499, unknown=False, mismatch=False, stage="provider",
-                 returned_identity_refusal=False, missing_stdout=False):
+                 returned_identity_refusal=False, missing_stdout=False, quota=None):
         class Provider(consumers.FakeProvider):
             def turn(inner, request):
                 if request.turn == fault_turn and stage == "provider" and not returned_identity_refusal:
@@ -171,7 +223,8 @@ class FailedProviderConsumerTests(unittest.TestCase):
                         witness = ReportedProviderUsage(CONTRACT, thread, tokens + 1)
                     raise RunProtocolFault("provider_fault", "synthetic provider format fault",
                         artifact_payloads={} if missing_stdout else {"provider_stdout": raw},
-                        reported_usage=None if missing_stdout else witness)
+                        reported_usage=None if missing_stdout else witness,
+                        observed_quota=quota)
                 result = super().turn(request)
                 events = [json.loads(line) for line in result.raw_events.splitlines()]
                 rejected_return = returned_identity_refusal and request.turn == fault_turn
@@ -215,6 +268,15 @@ class FailedProviderConsumerTests(unittest.TestCase):
         self.assertEqual(state["cumulative_provider_tokens"], 286257)
         self.assertEqual(state["remaining"]["provider_tokens"], 0)
         self.assertEqual(state["terminal_reason"], "provider_fault")
+        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+
+    def test_observed_quota_attribution_is_retained_and_replays(self):
+        quota = {"status": "allowed_warning", "rateLimitType": "seven_day",
+                 "resetsAt": 1789455600, "utilization": 0.99, "surpassedThreshold": 0.75}
+        campaign, store, events = self.campaign(quota=quota)
+        fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
+        self.assertEqual(fault["observed_quota"], quota)
+        self.assertEqual(fault["provider_usage"]["provider_tokens"], 191499)
         self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
 
     def test_returned_turn_archive_refusal_counts_usage_without_committing_completion(self):

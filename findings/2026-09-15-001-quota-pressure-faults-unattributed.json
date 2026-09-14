@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-15-001",
+  "kind": "protocol",
+  "title": "Provider faults killed by the subscription quota wall are recorded as a generic exit-code failure; the rate-limit notice that explains the death stays buried in the retained stdout object",
+  "date": "2026-09-15",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7",
+  "compiler_revision_id": "open-cake-ir-sm100a-v82+40055ec251f4e5fe346c0edc3ae19e74aa3bb9abfb5a0d6a05784ad87fa84b6f",
+  "tasks": [
+    "layernorm", "residual_rmsnorm", "gelu_tanh", "softsign", "selu",
+    "softplus_gradient", "gelu_tanh_backward", "prelu", "softmax_backward",
+    "layernorm_backward_input", "rmsnorm_input_gradient", "absmax_rescale",
+    "cosine_similarity", "layernorm_gamma_beta_backward", "bias_gradient_reduction",
+    "per_channel_moments", "channel_absmax_scale", "momentum_sgd", "adamw"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/gelu_tanh-op5-high-20260914-v82",
+      "note": "run_fault at campaign-evidence/runs/open_cake-1/events/000000000001.json records only {fault: provider_fault, exception_message: 'Claude process failed with exit code 1'} with the stdout retained as an object. The retained stream (campaign-evidence/objects/sha256/d9/d9b4baec8fa14c9353194072a49a401ec34cbe0046948ee7e142dd7e04bc72a8, 12 lines) holds the entire account: line 2 a served allowed_warning at utilization 0.99 of the seven-day window (resetsAt 1789455600), line 10 a rate_limit_event with status rejected, overageStatus rejected, overageDisabledReason org_level_disabled, line 11 a synthetic assistant error, line 12 result is_error true. None of that reaches the fault classification."
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/layernorm-op5-high-20260914-v82",
+      "note": "the pressure-short-of-wall death class: the fault turn's retained stream ends on a served allowed_warning at utilization 0.96 with one transient api_retry, and no rejection is ever recorded (residual_rmsnorm the same). In the fault taxonomy this is indistinguishable from ordinary gateway instability; only the retained stream shows the quota pressure."
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/gemm-silu-op5-high-20260914b-n32",
+      "note": "the same generic classification also hides the opposite case: the 2026-09-14 daytime turn-7 fault (F-2026-09-14-005 attempt b) was a transient retry-exhaustion with the window at 0.9, not a wall. Without attribution at the fault seam, wall deaths, pressure deaths and transients all read identically and are separated only by hand-mining streams after the fact."
+    }
+  ],
+  "observation": "Nineteen overnight provider faults in the all-task opus-5 batch on Executor v116 share one classification: 'Claude process failed with exit code 1'. Seventeen of the retained streams end on a rejected seven-day notice (overage refused at org level, resetsAt 1789455600 = 2026-09-15 15:00 CST); two end on a served 0.96 warning with transient retries. The fault path already retains the stdout as an evidence object and already mines it for reported usage, but mines nothing else, so the one fact that explains the death is present in the store and absent from the record. The existing admission predicate cannot supply it either: _metadata refuses a rejected status, correctly, because a stream whose request was not served is not a Turn -- but that refusal leaves no seam that can name the rejection at fault time.",
+  "proposed_change": "Attribute at the fault seam only. Factor the rate_limit_info field predicate out of _metadata into _quota_observation, parameterized by admitted statuses. Add observed_claude_quota(stdout): scan from the end, take the LAST rate_limit_event, validate it under a fault-scoped status set {allowed, allowed_warning, rejected} -- the rejected shape now observed seventeen times -- and return the reportable subset {status, rateLimitType, resetsAt, utilization?, surpassedThreshold?}; an invalid last notice yields None and is never substituted with an earlier, healthier one. Attach the result as observed_quota on the exit-code RunProtocolFault only (the timeout branch stays out of observed scope); RunProtocolFault validates it, record_run_fault retains it in the run_fault payload, and replay rederives it from the retained provider_stdout, refusing any declaration that differs, while evidence sealed before the field replays unchanged. Turn admission is untouched: _metadata still refuses a rejected quota, because that stream's turn was not served.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79",
+  "verification_plan": "Protocol tick, so verification is by replay rather than by campaign: run observed_claude_quota over the retained provider_stdout of every cited faulted stream and observe the attribution the evidence already carries, with contract tests covering both terminal notice shapes and the shapes that must still be absent.",
+  "verified_by": "Replay on Executor v118: all nineteen cited fault streams attribute -- seventeen to the rejected seven-day notice (overage refused at org level, resetsAt 1789455600) and two (layernorm, residual_rmsnorm) to the served 0.96 warning -- where v116 recorded each as a bare exit-code provider_fault. tests/contracts/test_claude_provider.py asserts the last-notice rule (an invalid final notice is absent, never replaced by an earlier one; the observed rejected wall shape reports its subset) and the adapter-level exit-code fault carrying observed_quota with its retained stdout; tests/contracts/test_provider_fault_usage.py asserts replay rederives the attribution from the retained stdout, refuses every tampered or fabricated declaration, and passes evidence sealed before the field existed."
+}

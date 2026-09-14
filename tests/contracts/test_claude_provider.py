@@ -13,7 +13,7 @@ from unittest.mock import patch
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
 from open_cake_ir.lab.claude import (
     CLAUDE_EVENT_CONTRACT, CLAUDE_LEGACY_EVENT_CONTRACT, ClaudeInvocationBuilder, ClaudeProviderAdapter,
-    ClaudeRunProvider, normalize_claude_turn, parse_claude_turn_events, claude_model_usage, terminal_schema, reported_claude_usage,
+    ClaudeRunProvider, normalize_claude_turn, observed_claude_quota, parse_claude_turn_events, claude_model_usage, terminal_schema, reported_claude_usage,
 )
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.process import SupervisedProcessTimeout
@@ -407,6 +407,79 @@ class ClaudeProviderContracts(unittest.TestCase):
                                                     **{fraction_field: fraction})
                 with self.subTest(**{fraction_field: fraction}):
                     self.assertEqual(self.normalize(self.raw(events)).provider_tokens, 205)
+
+    def test_fault_attribution_takes_the_last_quota_notice_and_never_substitutes(self):
+        """A quota-exhausted CLI dies mid-retry behind a generic exit code.
+
+        The notice preceding that death is the only observed account of why, so
+        the last one decides: an earlier, healthier notice is never substituted
+        for a final one the served-contract predicate rejects.
+        """
+        from open_cake_ir.lab.claude import observed_claude_quota as observe
+        exhausted = {"type": "rate_limit_event", "uuid": OTHER_SESSION, "session_id": SESSION,
+            "rate_limit_info": {"status": "allowed_warning", "resetsAt": 1789455600,
+                "rateLimitType": "seven_day", "utilization": 0.99, "isUsingOverage": False,
+                "surpassedThreshold": 0.75}}
+        earlier = copy.deepcopy(exhausted)
+        earlier["rate_limit_info"].update(utilization=0.90)
+        stream = lambda *notices: self.raw(
+            [self.events()[0], *notices, *self.events()[1:]])
+        self.assertEqual(observe(stream(earlier, exhausted)), {
+            "status": "allowed_warning", "rateLimitType": "seven_day", "resetsAt": 1789455600,
+            "utilization": 0.99, "surpassedThreshold": 0.75})
+        # A trailing unparseable line does not hide the last notice.
+        self.assertEqual(observe(stream(exhausted) + b"death mid-retry, not JSON\n"), {
+            "status": "allowed_warning", "rateLimitType": "seven_day", "resetsAt": 1789455600,
+            "utilization": 0.99, "surpassedThreshold": 0.75})
+        # No notice carried, nothing to attribute; not bytes, nothing to read.
+        self.assertIsNone(observe(self.raw()))
+        self.assertIsNone(observe(b""))
+        self.assertIsNone(observe("not a byte stream"))
+        # At the observed wall the final notice is `rejected` with the org-level overage
+        # refusal; the fault is attributed with exactly that notice, fractions and all.
+        wall = {"type": "rate_limit_event", "uuid": OTHER_SESSION, "session_id": SESSION,
+            "rate_limit_info": {"status": "rejected", "resetsAt": 1789455600,
+                "rateLimitType": "seven_day", "overageStatus": "rejected",
+                "overageDisabledReason": "org_level_disabled", "isUsingOverage": False}}
+        self.assertEqual(observe(stream(earlier, wall)), {
+            "status": "rejected", "rateLimitType": "seven_day", "resetsAt": 1789455600})
+        # The final notice malformed is absent, not replaced by the earlier one.
+        for mutation in (lambda info: info.update(status="allowed_soon"),
+                         lambda info: info.update(utilization=1.5),
+                         lambda info: info.update(rateLimitType=""),
+                         lambda info: info.pop("resetsAt")):
+            dying = copy.deepcopy(exhausted)
+            mutation(dying["rate_limit_info"])
+            with self.subTest(mutation=mutation):
+                self.assertIsNone(observe(stream(earlier, dying)))
+        malformed = dict(exhausted, unexpected=1)
+        self.assertIsNone(observe(stream(earlier, malformed)))
+
+    def test_quota_exhausted_process_failure_retains_its_observed_attribution(self):
+        invocation = self.builder().build("task", thread_id=None)
+        warning = {"type": "rate_limit_event", "uuid": OTHER_SESSION, "session_id": SESSION,
+            "rate_limit_info": {"status": "allowed_warning", "resetsAt": 1789455600,
+                "rateLimitType": "seven_day", "utilization": 0.99, "isUsingOverage": False,
+                "surpassedThreshold": 0.75}}
+        wall = {"type": "rate_limit_event", "uuid": OTHER_SESSION, "session_id": SESSION,
+            "rate_limit_info": {"status": "rejected", "resetsAt": 1789455600,
+                "rateLimitType": "seven_day", "overageStatus": "rejected",
+                "overageDisabledReason": "org_level_disabled", "isUsingOverage": False}}
+        for notices, attributed in (
+            ([warning], {"status": "allowed_warning", "rateLimitType": "seven_day",
+                         "resetsAt": 1789455600, "utilization": 0.99, "surpassedThreshold": 0.75}),
+            ([warning, wall], {"status": "rejected", "rateLimitType": "seven_day",
+                               "resetsAt": 1789455600}),
+        ):
+            with self.subTest(last=notices[-1]["rate_limit_info"]["status"]):
+                events = self.events(); events[1:1] = notices
+                completed = subprocess.CompletedProcess(invocation.argv, 1, self.raw(events), b"")
+                with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
+                    with self.assertRaisesRegex(RunProtocolFault, "exit code 1") as captured:
+                        ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                            expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
+                self.assertEqual(captured.exception.observed_quota, attributed)
+                self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], completed.stdout)
 
     def test_all_reported_model_usage_is_charged_once_and_auxiliary_models_stay_separate(self):
         events = self.events(); events[1:1] = self.metadata()

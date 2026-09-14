@@ -47,15 +47,19 @@ class RunProtocolFault(RuntimeError):
         *,
         artifact_payloads: Mapping[str, bytes] | None = None,
         reported_usage: ReportedProviderUsage | None = None,
+        observed_quota: Mapping[str, object] | None = None,
     ) -> None:
         if protocol_adherence not in self._ADHERENCE:
             raise ValueError("Run protocol fault classification differs")
         if reported_usage is not None and not isinstance(reported_usage, ReportedProviderUsage):
             raise ValueError("Run protocol fault reported usage differs")
+        if observed_quota is not None and not isinstance(observed_quota, Mapping):
+            raise ValueError("Run protocol fault observed quota differs")
         super().__init__(message)
         self.protocol_adherence = protocol_adherence
         self.artifact_payloads = dict(artifact_payloads or {})
         self.reported_usage = reported_usage
+        self.observed_quota = dict(observed_quota) if observed_quota is not None else None
 
 
 class CandidateCompileRejected(ValueError):

@@ -49,6 +49,12 @@ def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evide
             # observed native usage or admitting its rejected candidate.
             fault_payload["provider_usage_witness_mismatch"] = (
                 dict(declared_usage.document) if declared_usage is not None else None)
+    observed_quota = (
+        error.observed_quota if isinstance(error, RunProtocolFault) else None)
+    if observed_quota is not None:
+        # The adapter's observed account of why a provider died, retained next to
+        # the stage that produced it; replay rederives it from the retained stdout.
+        fault_payload["observed_quota"] = dict(observed_quota)
     payloads = (artifact_payloads if artifact_payloads is not None else
                 error.artifact_payloads if isinstance(error, RunProtocolFault) else {})
     if payloads:
