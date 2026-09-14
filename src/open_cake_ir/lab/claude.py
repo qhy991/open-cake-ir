@@ -151,14 +151,20 @@ def _metadata(event: Mapping) -> bool:
         # `utilization` is the fraction of the window the account has consumed. The CLI
         # began reporting it alongside `allowed_warning`, which is a heads-up about that
         # fraction and not a refusal: the request it accompanies is served normally.
-        # Both are admitted; `rejected` and any status this does not name still fail
-        # closed, as does any field the CLI adds after these.
-        optional = {"overageStatus", "overageDisabledReason", "isUsingOverage", "utilization"}
+        # `surpassedThreshold` is the fraction at which that heads-up fires (observed
+        # 0.75), reported by subscription-authenticated sessions on the same event.
+        # Both fractions are admitted; `rejected` and any status this does not name
+        # still fail closed, as does any field the CLI adds after these.
+        optional = {"overageStatus", "overageDisabledReason", "isUsingOverage", "utilization",
+            "surpassedThreshold"}
         if (not isinstance(info, Mapping) or not required <= set(info) <= required | optional
                 or info.get("status") not in _QUOTA_SERVED
                 or "utilization" in info and (isinstance(info["utilization"], bool)
                     or not isinstance(info["utilization"], (int, float))
                     or not 0.0 <= info["utilization"] <= 1.0)
+                or "surpassedThreshold" in info and (isinstance(info["surpassedThreshold"], bool)
+                    or not isinstance(info["surpassedThreshold"], (int, float))
+                    or not 0.0 <= info["surpassedThreshold"] <= 1.0)
                 or type(info.get("resetsAt")) is not int or info["resetsAt"] < 0
                 or not isinstance(info.get("rateLimitType"), str) or not info["rateLimitType"]
                 or "isUsingOverage" in info and type(info["isUsingOverage"]) is not bool
