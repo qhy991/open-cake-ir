@@ -7,11 +7,11 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v81+a2d30f2b1fb2248fdc8038e47127a4ac782c946574649803f0c183b3c647e24d`
+- 版本： `open-cake-ir-sm100a-v82+40055ec251f4e5fe346c0edc3ae19e74aa3bb9abfb5a0d6a05784ad87fa84b6f`
 - 状态： `released`
 - 目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, sm_100a, sm_103a`
-- 语料检查： `145/145` 项符合预期
-- 绑定源码： `202` 个文件
+- 语料检查： `147/147` 项符合预期
+- 绑定源码： `204` 个文件
 - 已发布校准： `无`
 - 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
 
@@ -19,17 +19,10 @@
 
 ### `apple_gpu_family7`
 
-- 版本： `open-cake-ir-b200-v115+919a1871d27781ee4063359da7c2e7c3634bcde43184d1e0998d937f935cba37`
+- 版本： `open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7`
 - 状态： `released`
 - 绑定源码： `165` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v115+919a1871d27781ee4063359da7c2e7c3634bcde43184d1e0998d937f935cba37.json`](../../runtime/executors/open-cake-ir-b200-v115+919a1871d27781ee4063359da7c2e7c3634bcde43184d1e0998d937f935cba37.json)
-
-### `sm_103a`
-
-- 版本： `open-cake-ir-b200-v114+a97b3eed37dc94b78af1001bcab60bca1d1aa646000477036529cde39a353709`
-- 状态： `released`
-- 绑定源码： `165` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v114+a97b3eed37dc94b78af1001bcab60bca1d1aa646000477036529cde39a353709.json`](../../runtime/executors/open-cake-ir-b200-v114+a97b3eed37dc94b78af1001bcab60bca1d1aa646000477036529cde39a353709.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7.json`](../../runtime/executors/open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
