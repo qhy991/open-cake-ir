@@ -81,6 +81,13 @@ def _terminal(value: object) -> bool:
 # of the window is gone; it does not withhold the turn, so refusing it would strand a
 # campaign on an account that is merely over halfway through its quota.
 _QUOTA_SERVED = ("allowed", "allowed_warning")
+# At the wall itself the CLI dies behind a generic exit code, and the last notice the
+# retained stream carries is `rejected` (observed seventeen times on 2026-09-15, each with
+# `overageStatus: rejected` and `overageDisabledReason: org_level_disabled`, resetsAt naming
+# the same seven-day window). Turn admission below still refuses a rejected quota -- a
+# stream whose request was not served is not a Turn -- but a fault may be attributed with
+# the notice that killed it.
+_FAULT_QUOTA_STATUSES = _QUOTA_SERVED + ("rejected",)
 # Subtypes that mean the CLI rewrote the conversation the author was working in.
 _CONTEXT_MUTATIONS = ("compact_boundary", "compacting")
 
@@ -140,38 +147,88 @@ def _compaction_phase(event: Mapping) -> str:
     return "boundary"
 
 
+def _quota_observation(info: object, admitted_statuses = _QUOTA_SERVED) -> dict[str, object] | None:
+    """The reportable subset of a rate-limit notice, or None if it differs.
+
+    The same field predicate `_metadata` admits an event by, stated as a value,
+    with the admitted statuses named by the caller: the last notice a stream
+    carries is what a fault attributes, and one this rejects is reported as
+    absent, never guessed from an earlier notice.
+    """
+    if not isinstance(info, Mapping):
+        return None
+    required = {"status", "resetsAt", "rateLimitType"}
+    # `utilization` is the fraction of the window the account has consumed. The CLI
+    # began reporting it alongside `allowed_warning`, which is a heads-up about that
+    # fraction and not a refusal: the request it accompanies is served normally.
+    # `surpassedThreshold` is the fraction at which that heads-up fires (observed
+    # 0.75), reported by subscription-authenticated sessions on the same event.
+    # Both fractions are admitted; any status the caller does not name still
+    # fails closed, as does any field the CLI adds after these.
+    optional = {"overageStatus", "overageDisabledReason", "isUsingOverage", "utilization",
+        "surpassedThreshold"}
+    if (not required <= set(info) <= required | optional
+            or info.get("status") not in admitted_statuses
+            or "utilization" in info and (isinstance(info["utilization"], bool)
+                or not isinstance(info["utilization"], (int, float))
+                or not 0.0 <= info["utilization"] <= 1.0)
+            or "surpassedThreshold" in info and (isinstance(info["surpassedThreshold"], bool)
+                or not isinstance(info["surpassedThreshold"], (int, float))
+                or not 0.0 <= info["surpassedThreshold"] <= 1.0)
+            or type(info.get("resetsAt")) is not int or info["resetsAt"] < 0
+            or not isinstance(info.get("rateLimitType"), str) or not info["rateLimitType"]
+            or "isUsingOverage" in info and type(info["isUsingOverage"]) is not bool
+            or "overageStatus" in info and info["overageStatus"] not in ("allowed", "rejected")
+            or "overageDisabledReason" in info and info["overageDisabledReason"] is not None
+                and not isinstance(info["overageDisabledReason"], str)
+            or info.get("isUsingOverage") is True and info.get("overageStatus") != "allowed"):
+        return None
+    observation: dict[str, object] = {
+        "status": info["status"],
+        "rateLimitType": info["rateLimitType"],
+        "resetsAt": info["resetsAt"],
+    }
+    if "utilization" in info:
+        observation["utilization"] = info["utilization"]
+    if "surpassedThreshold" in info:
+        observation["surpassedThreshold"] = info["surpassedThreshold"]
+    return observation
+
+
+def observed_claude_quota(stdout: bytes) -> dict[str, object] | None:
+    """Attribute a fault to the last rate-limit notice its stream carried.
+
+    At the seven-day wall the CLI dies behind a generic exit code, and the last
+    notice the retained stream carries is the only observed account of why: a
+    `rejected` notice at the wall, or a still-served warning when the death was
+    gateway instability under quota pressure (F-2026-09-15-001). The last notice
+    decides -- an invalid one is reported as absent rather than substituted with
+    an earlier, healthier notice.
+    """
+    if not isinstance(stdout, (bytes, bytearray)):
+        return None
+    for line in reversed(stdout.splitlines()):
+        if b"rate_limit_event" not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except (UnicodeError, ValueError):
+            continue
+        if not isinstance(event, Mapping) or event.get("type") != "rate_limit_event":
+            continue
+        if set(event) != {"type", "rate_limit_info", "uuid", "session_id"}:
+            return None
+        return _quota_observation(event["rate_limit_info"], _FAULT_QUOTA_STATUSES)
+    return None
+
+
 def _metadata(event: Mapping) -> bool:
     """Admit the explicit native metadata shapes, not arbitrary system events."""
     kind = event.get("type")
     if kind == "rate_limit_event":
         if set(event) != {"type", "rate_limit_info", "uuid", "session_id"}:
             raise ValueError("Claude quota metadata fields differ")
-        info = event["rate_limit_info"]
-        required = {"status", "resetsAt", "rateLimitType"}
-        # `utilization` is the fraction of the window the account has consumed. The CLI
-        # began reporting it alongside `allowed_warning`, which is a heads-up about that
-        # fraction and not a refusal: the request it accompanies is served normally.
-        # `surpassedThreshold` is the fraction at which that heads-up fires (observed
-        # 0.75), reported by subscription-authenticated sessions on the same event.
-        # Both fractions are admitted; `rejected` and any status this does not name
-        # still fail closed, as does any field the CLI adds after these.
-        optional = {"overageStatus", "overageDisabledReason", "isUsingOverage", "utilization",
-            "surpassedThreshold"}
-        if (not isinstance(info, Mapping) or not required <= set(info) <= required | optional
-                or info.get("status") not in _QUOTA_SERVED
-                or "utilization" in info and (isinstance(info["utilization"], bool)
-                    or not isinstance(info["utilization"], (int, float))
-                    or not 0.0 <= info["utilization"] <= 1.0)
-                or "surpassedThreshold" in info and (isinstance(info["surpassedThreshold"], bool)
-                    or not isinstance(info["surpassedThreshold"], (int, float))
-                    or not 0.0 <= info["surpassedThreshold"] <= 1.0)
-                or type(info.get("resetsAt")) is not int or info["resetsAt"] < 0
-                or not isinstance(info.get("rateLimitType"), str) or not info["rateLimitType"]
-                or "isUsingOverage" in info and type(info["isUsingOverage"]) is not bool
-                or "overageStatus" in info and info["overageStatus"] not in ("allowed", "rejected")
-                or "overageDisabledReason" in info and info["overageDisabledReason"] is not None
-                    and not isinstance(info["overageDisabledReason"], str)
-                or info.get("isUsingOverage") is True and info.get("overageStatus") != "allowed"):
+        if _quota_observation(event["rate_limit_info"]) is None:
             raise ValueError("Claude quota is rejected or metadata differs")
     elif kind == "system" and _is_context_mutation(event):
         # Identified by subtype or by the observed status shapes above and refused. The
@@ -643,7 +700,8 @@ class ClaudeProviderAdapter:
             raise RunProtocolFault("provider_fault", str(error), artifact_payloads={
                 "provider_stdout": completed.stdout, "provider_stderr": completed.stderr},
                 reported_usage=reported_claude_usage(completed.stdout, expected_model=requested_model,
-                    expected_thread_id=invocation.thread_id, event_contract=event_contract)) from error
+                    expected_thread_id=invocation.thread_id, event_contract=event_contract),
+                observed_quota=observed_claude_quota(completed.stdout)) from error
 
 
 class ClaudeRunProvider(QualifiedRunProvider):

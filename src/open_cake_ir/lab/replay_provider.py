@@ -19,7 +19,7 @@ from .providers import (
 )
 from .task_package import TASK_AGENTS_RALPH_V1, TaskPackage
 
-from .claude import CLAUDE_EVENT_CONTRACTS, parse_claude_turn_events
+from .claude import CLAUDE_EVENT_CONTRACTS, observed_claude_quota, parse_claude_turn_events
 
 
 def _replay_provider_turns(
@@ -310,5 +310,15 @@ def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None) 
             except (TypeError, ValueError):
                 return None
         if declared == observed:
+            return None
+    if stdout and provider.get("event_contract") in CLAUDE_EVENT_CONTRACTS:
+        # Fault attribution is rederived from the retained stdout, never trusted
+        # from its declaration; evidence sealed before the field replays unchanged.
+        try:
+            quota = observed_claude_quota(evidence.read_object(stdout[0]))
+        except (OSError, ValueError, KeyError):
+            return None
+        retained_quota = payload.get("observed_quota")
+        if retained_quota is not None and retained_quota != quota:
             return None
     return observed.provider_tokens if observed is not None else 0

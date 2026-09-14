@@ -24,9 +24,11 @@ _REQUIRED_FAULT_FIELDS = frozenset({
     "fault", "exception_type", "turn", "stage", "terminal_provider_tokens",
 })
 # `exception_message` is optional, so evidence sealed before it replays unchanged.
+# `observed_quota` likewise: replay rederives it from the retained provider stdout
+# and rejects a value that differs, but evidence sealed without it replays unchanged.
 _OPTIONAL_FAULT_FIELDS = frozenset({
     "objects", "artifact_rejections", "provider_usage", "terminal_provider_tokens_scope",
-    "provider_usage_witness_mismatch", "exception_message",
+    "provider_usage_witness_mismatch", "exception_message", "observed_quota",
 })
 
 
