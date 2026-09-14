@@ -14,5 +14,5 @@ def metal_fma(lm, a: cake.Tensor((3, 37), "fp32"),
         b_values = lm.load(b[row, :], id="load_b")
         c_values = lm.load(c[row, :], id="load_c")
         result = lm.fma(a_values, b_values, c_values,
-                        instruction={"contract": "metal.fma.rn.f32"}, id="fma")
+                        instruction={"contract": "metal.fma.f32"}, id="fma")
         lm.store(out[row, :], result, coalesced=False, id="store_out")

@@ -11,7 +11,7 @@
 - `lm.program` 指定并行分块；`for tile in lm.range(...)` 构造一个 TileLoop，不在宿主 Python 中展开。
 - `lm.load`、计算表达式、`lm.store` 建立数据依赖。跨角色同步仍须显式声明 waits、signals 和 pipeline。
 - `lm.fma(a, b, c, instruction={"contract": ...})` 显式选择 target 的单次正确舍入合同；
-  NVIDIA 使用 `ptx.fma.rn.f32`，Metal 使用 `metal.fma.rn.f32`。`a * b + c` 构造两个独立操作。
+  NVIDIA 使用 `ptx.fma.rn.f32`，Metal 使用 `metal.fma.f32`。`a * b + c` 构造两个独立操作。
 - 广播通过 `lm.broadcast(value, axis=...)` 明示使用现有 `broadcast_axis`，不会增加 splat 或 reshape。
 - CLI 解析 Python AST，不执行源文件、导入、函数体或任意 Python 控制流。未支持的语法会带源码位置拒绝。
 - 语义与后端合法性仍由现有 Compiler 决定。源码位置只用于诊断展示，不加入规范 Schedule 或 Assessment。

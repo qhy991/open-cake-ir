@@ -57,7 +57,7 @@ _UNARY = {
 # IR requires a contract for tanh and refusing every contract made the mapping above
 # unreachable from any Apple Target.
 _METAL_TANH_CONTRACT = "metal.precise.tanh.f32"
-_METAL_FMA_CONTRACT = "metal.fma.rn.f32"
+_METAL_FMA_CONTRACT = "metal.fma.f32"
 
 
 SIMD_WIDTH = 32

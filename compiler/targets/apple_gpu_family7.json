@@ -29,7 +29,7 @@
     }
   },
   "instruction_contracts": [
-    "metal.fma.rn.f32",
+    "metal.fma.f32",
     "metal.precise.tanh.f32"
   ],
   "synchronization_contracts": [],
@@ -44,7 +44,7 @@
     {
       "kind": "toolchain_api",
       "source": "https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf",
-      "locator": "MSL math functions: fma(a,b,c) returns the correctly rounded representation of c plus the infinitely precise product of a and b"
+      "locator": "MSL 2026-06-04 Table 6.4: fma(a,b,c) returns the correctly rounded representation of c plus the infinitely precise product of a and b; section 8.2 permits ties-to-even or toward-zero for FP32, half and bfloat operations"
     },
     {
       "kind": "device_specification",
