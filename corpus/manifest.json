@@ -1952,6 +1952,32 @@
         "schedule_sha256": "c7d480e36f01a630708ebcdf359319aa35f1d1647908f36709c9864487acbc5b",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "python-metal-fma-accepted",
+      "schedule": "examples/python/metal_fma.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "METAL_SIMD_EXECUTION"
+        ],
+        "schedule_sha256": "d2e30e055326fd8a856227f6329221cc67da37e450485e7fe095e342bdc7baf8",
+        "lowering_source_sha256": "f5b2e7ef5a95197de16d28f05f65a36004ad0291f249c772439a1a8f40ea6d9a"
+      }
+    },
+    {
+      "case_id": "metal-fma-ptx-contract-refused",
+      "schedule": "corpus/schedules/metal-fma-ptx-contract-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TARGET_INSTRUCTION_UNSUPPORTED"
+        ],
+        "schedule_sha256": "aa114be12179fc78529ca48a3eda95b0c40ad5a343a91dd67895b2a7dc0a36be",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }
