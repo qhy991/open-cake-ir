@@ -17,6 +17,13 @@
 
 ## Executor（按精确目标）
 
+### `apple_gpu_family8`
+
+- 版本： `open-cake-ir-b200-v124+37201d8c5b0f7134728240c2bf1819e2afdba8585c483834a5937019b6c0252a`
+- 状态： `released`
+- 绑定源码： `167` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v124+37201d8c5b0f7134728240c2bf1819e2afdba8585c483834a5937019b6c0252a.json`](../../runtime/executors/open-cake-ir-b200-v124+37201d8c5b0f7134728240c2bf1819e2afdba8585c483834a5937019b6c0252a.json)
+
 ### `sm_103a`
 
 - 版本： `open-cake-ir-b200-v123+3499298af654cbe32f46e199aa9be800852be030c57e7fd2b9c35b7fb3e70129`
