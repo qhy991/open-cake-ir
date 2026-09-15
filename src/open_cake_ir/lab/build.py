@@ -10,7 +10,8 @@ from hashlib import sha256
 from typing import Mapping, Protocol
 
 from open_cake_ir.compiler import Finding, FindingCategory, FindingSeverity
-from open_cake_ir.compiler.toolchain import project_triton_kernel, validate_triton_kernel
+from open_cake_ir.compiler.toolchain import (project_triton_kernel, triton_route,
+                                             validate_triton_kernel)
 from open_cake_ir.evaluation import LaunchableCandidate
 from open_cake_ir.evaluation.core import TensorLaunchManifest
 
@@ -77,6 +78,7 @@ class TritonToolchainBuilder:
             raise ValueError("Triton build target differs from the Workload")
         if self._isolated is None:
             raise RunProtocolFault("harness_fault", "paired Triton requires filesystem-isolated compilation")
+        route = triton_route(request.target)
         kernel_source = (project_triton_kernel(request.source, requirements)
                          if request.source_role == "lowered_source" else request.source)
         validate_triton_kernel(kernel_source, requirements)
@@ -90,18 +92,22 @@ class TritonToolchainBuilder:
             "target": request.target, "kernel_name": kernel_name, "grid": grid,
             "block": [compilation.threads_per_cta, 1, 1],
             "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
-            "hidden_null_pointer_parameters": 2,
+            # Triton appends one hidden null pointer per scratch buffer its options
+            # declare. The CUDA route declares global and profile scratch and this was
+            # written as the literal 2; HIPOptions carries no global scratch field at all,
+            # so the AMDGCN route declares one and the same literal would have sealed an
+            # ABI with a parameter the kernel does not take.
+            "hidden_null_pointer_parameters": len(route.scratch_fields),
         }
         manifest = (TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch))
         manifest_bytes = canonical_json_bytes(manifest.as_dict())
+        # The route names the artifacts its backend produces -- ptx/cubin for CUDA,
+        # amdgcn/hsaco for AMDGCN. Naming them here instead meant the one place that
+        # seals a candidate could only seal a CUDA one.
         payloads = {
             request.source_role: request.source,
             "compiler_expanded_source": stages["source"],
-            "ttir": stages["ttir"],
-            "ttgir": stages["ttgir"],
-            "llir": stages["llir"],
-            "ptx": stages["ptx"],
-            "cubin": stages["cubin"],
+            **{role: stages[role] for role in route.artifact_roles if role != "source"},
             "launch_manifest": manifest_bytes,
         }
         return LaunchableCandidate(

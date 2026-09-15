@@ -6,9 +6,10 @@ import json
 import re
 from dataclasses import asdict, dataclass
 from hashlib import sha256
+from pathlib import Path
 from typing import Mapping, cast
 
-from open_cake_ir.compiler.target import cuda_target
+from open_cake_ir.compiler.target import Target, TargetParseError
 
 MANIFEST_PREFIX = "// CAKE_REPRO_LAUNCH_V1 "
 MAX_DYNAMIC_SHARED_MEMORY_BYTES = 232_448
@@ -67,6 +68,34 @@ def _dimensions(
     return cast(tuple[int, int, int], parsed)
 
 
+# A target id names one document under `compiler/targets/`; it is matched rather than
+# joined blindly, so a manifest cannot reach outside that directory with one.
+_TARGET_ID = re.compile(r"[a-z][a-z0-9_]*")
+
+
+def _launch_target(target_id: object) -> Target:
+    """Read the resource limits a sealed launch is checked against, whoever built the part.
+
+    This used to go through `compiler.target.cuda_target`, which decodes an sm_1xxa
+    capability first. A launch manifest needs grid, block and shared-memory limits, which
+    every Target document declares and none of which is CUDA's; routing them through that
+    decode refused a gfx938 manifest as an "unsupported exact CUDA target" -- a vendor's
+    words for a caller that named no vendor, and the defect AGENTS.md names for
+    `executable_role` in this same layer. The capability check still belongs to
+    `cuda_target`, and the CUDA paths that need it still call it.
+    """
+    if not isinstance(target_id, str) or _TARGET_ID.fullmatch(target_id) is None:
+        raise TargetParseError("exact launch target identity differs")
+    path = (Path(__file__).resolve().parents[3] / "compiler" / "targets"
+            / f"{target_id}.json")
+    if not path.is_file():
+        raise TargetParseError(f"no Target document declares {target_id!r}")
+    target = Target.load(path)
+    if target.target_id != target_id:
+        raise TargetParseError("Target document identity differs from its file name")
+    return target
+
+
 @dataclass(frozen=True)
 class CudaKernelSpec:
     """Structural launch limits shared by the distinct public tensor ABIs."""
@@ -84,7 +113,7 @@ class CudaKernelSpec:
         fields = _BASE_FIELDS - {"schema_version", "abi"}
         if set(document) not in (fields, fields | {"hidden_null_pointer_parameters"}):
             raise ValueError("CUDA kernel specification fields differ")
-        target = cuda_target(document.get("target"))
+        target = _launch_target(document.get("target"))
         limits = target.resource_limits
         spec = cls(
             target=target.target_id,

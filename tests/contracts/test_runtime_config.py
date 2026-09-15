@@ -21,8 +21,8 @@ from open_cake_ir.lab.runtime import (
 def runtime_document(toolchain_kind="triton"):
     toolchain = (
         {"python": "runtime/python", "bubblewrap": "bin/bwrap",
-         "runtime_roots": ["runtime", "/lib64"], "triton_version": "fixture",
-         "timeout_seconds": 30}
+         "runtime_roots": ["runtime", "/lib64"], "build_environment": {},
+         "triton_version": "fixture", "timeout_seconds": 30}
         if toolchain_kind == "triton"
         else {"nvcc": "cuda/bin/nvcc", "cuobjdump": "cuda/bin/cuobjdump"}
     )

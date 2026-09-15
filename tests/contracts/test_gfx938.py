@@ -332,5 +332,50 @@ class AmdgcnResourceParseTest(unittest.TestCase):
                     _parse_amdgcn_resources(stripped, self.ENTRY)
 
 
+class LaunchManifestTargetTest(unittest.TestCase):
+    """A sealed launch reads limits every Target declares, not a CUDA capability.
+
+    `CudaKernelSpec.from_dict` resolved its target through `compiler.target.cuda_target`,
+    which decodes an sm_1xxa capability first. Grid, block and shared-memory limits are
+    not CUDA's -- every Target document declares them -- so a gfx938 manifest was refused
+    as `unsupported exact CUDA target`: a vendor's words for a caller that named no
+    vendor. This is the same defect AGENTS.md records for `executable_role` in this layer.
+    """
+
+    def test_a_gfx938_launch_seals_against_its_own_declared_limits(self) -> None:
+        from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
+        spec = CudaKernelSpec.from_dict({
+            "target": "gfx938", "kernel_name": "cake_rmsnorm",
+            "grid": [128, 1, 1], "block": [256, 1, 1],
+            "dynamic_shared_memory_bytes": 0, "hidden_null_pointer_parameters": 1,
+        })
+        self.assertEqual((spec.target, spec.block_threads), ("gfx938", 256))
+        # 16 wave64 warps is what the document declares, and 1088 threads is past it.
+        with self.assertRaises(ValueError):
+            CudaKernelSpec.from_dict({
+                "target": "gfx938", "kernel_name": "cake_rmsnorm",
+                "grid": [128, 1, 1], "block": [1088, 1, 1],
+                "dynamic_shared_memory_bytes": 0, "hidden_null_pointer_parameters": 1,
+            })
+
+    def test_a_target_no_document_declares_is_refused_without_naming_a_vendor(self) -> None:
+        from open_cake_ir.compiler.target import TargetParseError
+        from open_cake_ir.evaluation.cuda_manifest import _launch_target
+        for absent in ("sm_999a", "gfx1", "apple_gpu_family99"):
+            with self.subTest(absent=absent):
+                with self.assertRaises(TargetParseError) as raised:
+                    _launch_target(absent)
+                self.assertIn(absent, str(raised.exception))
+                self.assertNotIn("CUDA", str(raised.exception))
+
+    def test_a_target_id_cannot_name_a_file_outside_the_target_directory(self) -> None:
+        from open_cake_ir.compiler.target import TargetParseError
+        from open_cake_ir.evaluation.cuda_manifest import _launch_target
+        for escape in ("../source_set", "/etc/passwd", "sm_103a/../../secret", "", None, 938):
+            with self.subTest(escape=escape):
+                with self.assertRaises(TargetParseError):
+                    _launch_target(escape)
+
+
 if __name__ == "__main__":
     unittest.main()

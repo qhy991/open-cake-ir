@@ -72,7 +72,8 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
         if name == "timeout_seconds":
             _runtime_positive_int(item, context)
         elif name == "runtime_roots":
-            if not isinstance(item, list) or not item:
+            # Emptiness stays the builder's admission decision, not this parser's.
+            if not isinstance(item, list):
                 raise ValueError(f"{context} must be a list")
             for root in item:
                 _runtime_string(root, f"{context}[]")
