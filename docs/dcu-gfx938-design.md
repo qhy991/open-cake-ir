@@ -422,11 +422,28 @@ gfx1151 result needs a gfx1151 toolchain and device.
    reading all eight of its columns rather than the five a truncated `sed` first showed --
    can be derived from rocprofv2's per-dispatch `Start`/`End` timestamps. *(blocked on the
    measurement)*
-9. The AMDGCN evaluation driver. `tasks/evaluate.py` dispatches on
-   `MetalTensorLaunchManifest` and otherwise `observe_exclusive_cuda`; there is no HIP
-   branch, so a campaign cannot yet evaluate a DCU candidate even for correctness.
-   `evaluation/triton_hip.py` owns the loader and exact-HIP runtime custody and is
-   host-tested; what it owes is a device-side end-to-end check. *(not started)*
+9. The AMDGCN evaluation driver. **Written, not yet run on the device.**
+   `evaluation/hip_driver.py` is the AMDGCN peer of `cuda_driver.py` -- smaller on
+   purpose, since CUDA's cluster attributes, binary-version check and dynamic-shared
+   opt-in threshold are not facts about an `amdgcn-amd-amdhsa--` object -- and it names
+   no soname (the admitted ROCm PyTorch has already loaded whichever fork this host
+   installs) and calls no `hipFuncGetAttribute` (the kernel's own `.amdgpu_metadata`
+   already carries its register and scratch counts). `observe_local_hip` is the allocation
+   half, reading the device contract off `triton_route` rather than a new request field,
+   and the local broker now serializes per device family so a DCU run is not recorded
+   under a `metal-` job id.
+
+   Four more not-Metal-so-CUDA branches were on the way there: the worker's own dispatch,
+   `allowed_artifact_roles`, an unconditional `collect_timing=True`, and attribution
+   handing a DCU candidate to Nsight Compute. Every refusal each of these owns is
+   host-tested in `tests/contracts/test_hip_driver.py`. What is owed is the device-side
+   run -- nothing has launched an HSACO through this path on a DCU yet.
+10. A DCU optimization campaign. **Correctly blocked, and it is the same block as gate 8.**
+   A single-arm optimization campaign selects on getting faster, so a Study with no timed
+   assay has nothing to select on; `validate_evaluation` refuses it and now gives the
+   reason that applies -- this target has no named timer -- rather than reporting a
+   misconfiguration. So the order is: correctness evaluation on the device (gate 9), then
+   a measurement (gate 8), then a campaign. *(blocked on gate 8)*
 
 ### Running it in the container
 

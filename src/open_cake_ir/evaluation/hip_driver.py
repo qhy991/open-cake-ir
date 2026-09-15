@@ -147,6 +147,10 @@ class LoadedHipModuleCandidate:
         self._function = function
         self.resources = dict(resources)
         self.launch_calls = 0
+        # The kernel-parameter array holds addresses of these, so they outlive the call
+        # only if something keeps a reference. Declared here rather than appearing on the
+        # instance mid-launch.
+        self._arguments: list[ctypes.c_void_p] = []
 
     @property
     def closed(self) -> bool:
@@ -218,7 +222,7 @@ class LoadedHipModuleCandidate:
         slots = (ctypes.c_void_p * len(pointers))(
             *(ctypes.cast(ctypes.pointer(pointer), ctypes.c_void_p) for pointer in pointers)
         )
-        self._retained = pointers  # keep the pointee alive across the call
+        self._arguments = pointers  # the array holds their addresses, not their values
         grid, block = self.manifest.grid, self.manifest.block
         _hip_call(
             self._api, "hipModuleLaunchKernel", self._function,
