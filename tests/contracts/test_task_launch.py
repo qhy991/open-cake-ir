@@ -529,6 +529,43 @@ class TaskLaunchTests(unittest.TestCase):
     def test_baseline_only_builds_without_provider_qualification_or_campaign(self):
         self._wiring(baseline_only=True, backend='triton-b300')
 
+    def test_baseline_only_needs_no_provider_and_writes_no_runtime_binding(self):
+        """The flag's own help says it stops before provider qualification.
+
+        It resolved the provider executable anyway, three statements before the workspace
+        was created, and refused a DCU baseline build for not having `claude` installed in
+        a compile container -- a refusal about the stage the flag exists to skip. The
+        runtime config is the same: it binds the provider and the allocator, and nothing
+        on this path reads it.
+        """
+        executor = SimpleNamespace(document={"host_environment": {
+            "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
+            "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]}}})
+        args = self.args() + ["--baseline-only"]
+        args[args.index("--backend") + 1] = "triton-dcu"
+        args[args.index("--columns") + 1] = "8"
+        with patch.object(launch_task.shutil, "which", return_value=None) as which, \
+             patch.object(launch_task, "_admit_stack",
+                          return_value=(Mock(), executor, Mock(), {"fixture": "compiler"})), \
+             patch.object(launch_task, "_prepare_baseline",
+                          return_value=self.directory / "baseline.json"), \
+             patch.object(launch_task, "load_baseline_bundle", return_value=Mock()), \
+             patch.object(launch_task, "candidate_identity", return_value={"unit_test": True}), \
+             patch.object(launch_task, "admit_baseline_selection"), \
+             patch.object(launch_task, "validate_pair_candidates"), \
+             patch.object(launch_task, "_qualify") as qualify, \
+             patch.object(launch_task, "TaskLab") as lab, \
+             contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertEqual(launch_task.main(args), 0)
+        qualify.assert_not_called()
+        lab.assert_not_called()
+        self.assertIn(str(self.directory / "baseline.json"), stdout.getvalue())
+        self.assertFalse((self.workspace / "runtime.json").exists())
+        # Nothing looked for a harness on PATH; the only `which` this path could make is
+        # the jail's, and the Executor host declared that one.
+        self.assertNotIn("claude", [call.args[0] for call in which.call_args_list])
+        self.assertTrue((self.workspace / "prepared-baseline.json").exists())
+
     def test_baseline_abi_failure_precedes_provider_qualification(self):
         self._wiring(baseline_error=ValueError('baseline ABI differs'), backend='triton-b300')
 

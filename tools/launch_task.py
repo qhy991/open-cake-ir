@@ -409,7 +409,12 @@ def main(argv=None) -> int:
     rows, columns = _default_shape(args.task, args.rows, args.columns)
     document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
                                    depth=args.depth, case_id=args.case)
-    executable = _provider_executable(args.harness, args.provider_executable)
+    # `--baseline-only` stops before provider qualification, so the provider it would
+    # have used is not part of this run. Resolving it here anyway refused a DCU baseline
+    # build for not having `claude` installed in a compile container -- a refusal about a
+    # stage the flag exists to skip. The full run still resolves it before any work.
+    executable = (None if args.baseline_only
+                  else _provider_executable(args.harness, args.provider_executable))
     workspace.mkdir(mode=0o750, parents=True)
     workload_path, source_path = workspace / "workload.json", workspace / "starter.py"
     _write(workload_path, canonical(document))
@@ -430,9 +435,13 @@ def main(argv=None) -> int:
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
-    runtime = _runtime_config(workspace, executor, executable, route,
-                              allocation=_allocation_of(args.backend),
-                              gpu_run=args.gpu_run, broker_socket=args.broker_socket)
+    # The runtime config binds the provider and the allocator, both of which belong to
+    # stages `--baseline-only` stops before; it is written only on the path that reaches
+    # them. Building it here regardless is what made the provider mandatory above.
+    runtime = (None if args.baseline_only else
+               _runtime_config(workspace, executor, executable, route,
+                               allocation=_allocation_of(args.backend),
+                               gpu_run=args.gpu_run, broker_socket=args.broker_socket))
     baseline_selection: dict[str, object]
     if args.prepared_baseline is not None:
         baseline_path, baseline, baseline_selection = load_prepared_baseline(
