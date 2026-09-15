@@ -44,7 +44,8 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
         or type(value["schema_version"]) is not int or value["schema_version"] != 1):
         raise ValueError("runtime configuration fields differ")
     if toolchain_kind == "triton":
-        toolchain_fields = {"python", "bubblewrap", "runtime_roots", "triton_version", "timeout_seconds"}
+        toolchain_fields = {"python", "bubblewrap", "runtime_roots", "library_path",
+                            "triton_version", "timeout_seconds"}
     elif toolchain_kind == "cutlass_cute_dsl":
         toolchain_fields = {"python", "bubblewrap", "runtime_roots", "cuobjdump", "cutlass_version", "timeout_seconds"}
     elif toolchain_kind == "metal":
@@ -70,8 +71,10 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
         context = f"runtime_config.toolchain.{name}"
         if name == "timeout_seconds":
             _runtime_positive_int(item, context)
-        elif name == "runtime_roots":
-            if not isinstance(item, list):
+        elif name in ("runtime_roots", "library_path"):
+            # `library_path` may legitimately be empty -- a CUDA host declares none --
+            # while `runtime_roots` may not; both are lists of non-empty strings.
+            if not isinstance(item, list) or (name == "runtime_roots" and not item):
                 raise ValueError(f"{context} must be a list")
             for root in item:
                 _runtime_string(root, f"{context}[]")

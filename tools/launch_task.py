@@ -158,7 +158,7 @@ def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal")
         "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
 
 
-def _triton_runtime_roots(interpreter: Path) -> list[str]:
+def _triton_runtime_roots(interpreter: Path, library_path: tuple[str, ...] = ()) -> list[str]:
     """Directories the jail must carry for the admitted interpreter to run inside it.
 
     The interpreter the Executor pins may be a venv whose `bin/python` is a symlink into
@@ -168,6 +168,9 @@ def _triton_runtime_roots(interpreter: Path) -> list[str]:
     Duplicates and nested paths are dropped so bwrap is not handed the same mount twice.
     """
     roots = [Path("/usr"), Path("/lib"), Path("/lib64"), Path("/opt")]
+    # A declared library directory outside these is mounted too; the jail refuses a search
+    # path it cannot see, rather than starting and failing to load the runtime.
+    roots.extend(Path(entry) for entry in library_path)
     for candidate in (interpreter, Path(os.path.realpath(interpreter))):
         # `.../prefix/bin/python` -> `.../prefix`
         roots.append(candidate.parents[1])
@@ -216,8 +219,12 @@ def _triton_toolchain_config(executor):
     """One explicit configuration for baseline preparation and the runtime builder."""
     host = executor.document["host_environment"]
     interpreter = Path(str(host["python"]["invocation_path"]))
+    # A HIP host declares where its runtime keeps its shared objects; a CUDA host does
+    # not, and keeps the empty search path the jail has always run with.
+    library_path = tuple(host.get("runtime", {}).get("library_path", ()) or ())
     return {"python": str(interpreter), "bubblewrap": _bubblewrap(host),
-            "runtime_roots": _triton_runtime_roots(interpreter),
+            "runtime_roots": _triton_runtime_roots(interpreter, library_path),
+            "library_path": list(library_path),
             "triton_version": host["packages"]["triton"], "timeout_seconds": 600}
 
 

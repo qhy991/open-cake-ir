@@ -217,6 +217,34 @@ class TaskLaunchTests(unittest.TestCase):
         with patch.object(launch_task.shutil, 'which', return_value=str(jail)):
             self.assertEqual(launch_task._bubblewrap({}), str(jail))
 
+    def test_a_hip_host_declares_the_search_path_its_jail_would_otherwise_lose(self):
+        """The jail runs --clearenv, so an env.sh-only library path does not survive it.
+
+        Measured on the DCU: /opt is mounted, /opt/dtk holds libgalaxyhip.so.5, ldconfig
+        does not know that directory, and the jailed build failed with "cannot open shared
+        object file" -- the files were there and nothing could find them. A CUDA host
+        declares none of this and keeps the empty search path it has always had, because
+        torch resolves its CUDA libraries through RPATH.
+        """
+        hip = SimpleNamespace(document={"host_environment": {
+            "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
+            "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]},
+            "runtime": {"backend": "hip", "library_path": ["/opt/dtk/lib", "/opt/hyhal/lib"]}}})
+        cuda = SimpleNamespace(document={"host_environment": {
+            "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
+            "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]}}})
+        with patch.object(launch_task, "_triton_runtime_roots", return_value=["/opt", "/usr"]):
+            self.assertEqual(launch_task._triton_toolchain_config(hip)["library_path"],
+                             ["/opt/dtk/lib", "/opt/hyhal/lib"])
+            self.assertEqual(launch_task._triton_toolchain_config(cuda)["library_path"], [])
+        # A declared directory the jail would not mount is mounted, so the search path
+        # never names something invisible inside the jail.
+        roots = launch_task._triton_runtime_roots(Path("/usr/local/bin/python"),
+                                                  ("/opt/dtk/lib",))
+        self.assertTrue(any(Path("/opt/dtk/lib") == Path(root)
+                            or Path("/opt/dtk/lib").is_relative_to(Path(root))
+                            for root in roots), roots)
+
     def test_cuda_runtime_uses_existing_allocator_and_same_isolated_toolchain(self):
         executor = SimpleNamespace(document={"host_environment": {
             "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"}}})

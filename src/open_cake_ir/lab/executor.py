@@ -50,6 +50,25 @@ _AMD_EXECUTOR_ID = _amd_executor_id()
 HIP_RUNTIME_LIBRARIES = frozenset({"libxml2.so.2"})
 
 
+def _library_search_path(value: object) -> tuple[str, ...]:
+    """Admit a declared shared-object search path: absolute directories, in order.
+
+    A HIP host states where its runtime keeps its shared objects because the isolated
+    build jail clears the environment. On the Hygon DTK host these directories reach the
+    loader only through /opt/dtk/env.sh -- ldconfig does not know them -- so a jail that
+    correctly discards the ambient environment cannot load libgalaxyhip without this.
+    Order is the loader's search order; duplicates are a malformed declaration, not a
+    harmless one, because they hide which entry was meant to win.
+    """
+    if not isinstance(value, (list, tuple)) or not value:
+        return ()
+    entries = tuple(value)
+    if any(not isinstance(entry, str) or not entry.startswith("/") or entry != entry.rstrip("/")
+           for entry in entries) or len(set(entries)) != len(entries):
+        return ()
+    return cast(tuple[str, ...], entries)
+
+
 def _canonical_json_bytes(value: object) -> bytes:
     return json.dumps(
         value,
@@ -229,6 +248,7 @@ class HipHostAdmission:
     executor_id: str
     torch_hip_version: str
     visible_device_count: int
+    library_path: tuple[str, ...]
     device_monitor: Mapping[str, object]
     profilers: tuple[Mapping[str, object], ...]
     build_tools: Mapping[str, Mapping[str, object]]
@@ -450,6 +470,7 @@ class ExecutorRevision:
             not isinstance(runtime, Mapping)
             or set(runtime) != {
                 "backend",
+                "library_path",
                 "torch_hip_version",
                 "visible_device_count",
             }
@@ -458,6 +479,7 @@ class ExecutorRevision:
             or not runtime["torch_hip_version"]
             or type(runtime.get("visible_device_count")) is not int
             or runtime["visible_device_count"] != 1
+            or not _library_search_path(runtime.get("library_path"))
         ):
             raise ValueError("Executor HIP runtime authority differs")
         tools = host["tools"]
@@ -723,6 +745,7 @@ def _admit_hip_environment(
         executor_id=executor_id,
         torch_hip_version=cast(str, runtime["torch_hip_version"]),
         visible_device_count=cast(int, runtime["visible_device_count"]),
+        library_path=_library_search_path(runtime["library_path"]),
         device_monitor=monitor,
         profilers=profilers,
         build_tools=build_tools,
