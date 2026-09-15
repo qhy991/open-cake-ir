@@ -19,6 +19,32 @@ def _load(relative_path: str) -> dict:
     return value
 
 
+def _coverage_lines(gate: dict) -> list[str]:
+    """State which Targets the pass count covers, next to that count.
+
+    A reader who sees every declared Target listed above a passing count assumes the count
+    covers all of them. The reviewed Gate document owns the domain, so it is quoted here,
+    and a Gate that does not state one is reported as not stating one.
+    """
+
+    path = gate.get("path")
+    coverage = _load(path).get("target_coverage") if isinstance(path, str) else None
+    if not isinstance(coverage, dict):
+        return ["- 语料覆盖： 本 Gate 报告未说明检查了哪些目标"]
+    examined = coverage.get("examined", {})
+    unexamined = coverage.get("unexamined", [])
+    undeclared = coverage.get("undeclared_in_cases", {})
+    examined_text = "、".join(f"`{target}`（{count}）" for target, count in sorted(examined.items())) or "无"
+    unexamined_text = ", ".join(unexamined)
+    undeclared_text = "、".join(f"`{target}`（{count}）" for target, count in sorted(undeclared.items())) or "无"
+    return [
+        f"- 语料覆盖： 检查了 {examined_text}",
+        (f"- 未检查的已声明目标： `{unexamined_text}`（上面的通过数不涵盖这些目标）"
+         if unexamined else "- 未检查的已声明目标： 无"),
+        f"- 只用于拒绝检查的未声明目标： {undeclared_text}",
+    ]
+
+
 def render() -> str:
     compiler = _load("compiler/revision.lock.json")
     executors = _load("inventory/EXECUTOR_REVISIONS.json")
@@ -68,6 +94,7 @@ def render() -> str:
             f"- 状态： `{compiler['state']}`",
             f"- 目标： `{targets}`",
             f"- 语料检查： `{gate.get('matched_case_count')}/{gate.get('case_count')}` 项符合预期",
+            *_coverage_lines(gate),
             f"- 绑定源码： `{len(compiler.get('sources', []))}` 个文件",
             f"- 已发布校准： `{calibration_text}`",
             "- 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)",

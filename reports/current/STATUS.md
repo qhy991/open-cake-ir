@@ -11,6 +11,9 @@
 - 状态： `released`
 - 目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, sm_100a, sm_103a`
 - 语料检查： `147/147` 项符合预期
+- 语料覆盖： 检查了 `apple_gpu_family8`（15）、`sm_100a`（102）、`sm_103a`（29）
+- 未检查的已声明目标： `apple_gpu_family7, apple_gpu_family9`（上面的通过数不涵盖这些目标）
+- 只用于拒绝检查的未声明目标： `apple_gpu_family10`（1）
 - 绑定源码： `204` 个文件
 - 已发布校准： `无`
 - 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
@@ -19,10 +22,10 @@
 
 ### `apple_gpu_family7`
 
-- 版本： `open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7`
+- 版本： `open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79`
 - 状态： `released`
 - 绑定源码： `165` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7.json`](../../runtime/executors/open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79.json`](../../runtime/executors/open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
