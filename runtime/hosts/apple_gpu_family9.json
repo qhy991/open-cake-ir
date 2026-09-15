@@ -1,0 +1,39 @@
+{
+  "host_environment": {
+    "archive_executable": {
+      "path": "/Users/haiyan-mini/.local/share/open-cake-ir/runtime/m4-v113-native-ready-20260913/metal-host-bx_7cmkk/metal-archive-host",
+      "sha256": "324cf744865a57894ce60dc92befe7e9e571ccdaa9a1d8841f9f54d2c626880f",
+      "size_bytes": 96512
+    },
+    "host": {
+      "device_name": "Apple M4",
+      "device_registry_id": "4294968950",
+      "operating_system": "Version 26.6.2 (Build 25G83)",
+      "target": "apple_gpu_family9"
+    },
+    "kind": "metal",
+    "observer_executable": {
+      "path": "/Users/haiyan-mini/.local/share/open-cake-ir/runtime/m4-v113-native-ready-20260913/metal-observer",
+      "sha256": "1b9c39d8ffbecd55afe3528f40cd6ba033a3c6560ad764d7d717a89551252bd4",
+      "size_bytes": 260720
+    },
+    "packages": {},
+    "python": {
+      "invocation_path": "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "resolved_sha256": "ff73afba45e095e0dadc9b51deb9b994ef90d097c36a211955c57336ce76508f",
+      "version": "3.14.3"
+    },
+    "sdk": {
+      "build_version": "26A425",
+      "path": "/Library/Developer/CommandLineTools/SDKs/MacOSX27.0.sdk",
+      "version": "27.0"
+    },
+    "swift": {
+      "invocation_path": "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "resolved_sha256": "cf81104bf554eef05e28a8bb5285c763f1323b4511b944d755d8bdd6cb8db717",
+      "version": "Apple Swift version 6.4 (swiftlang-6.4.0.34.1 clang-2100.3.34.1)\nTarget: arm64-apple-macosx26.0"
+    }
+  },
+  "schema_version": 1,
+  "target": "apple_gpu_family9"
+}

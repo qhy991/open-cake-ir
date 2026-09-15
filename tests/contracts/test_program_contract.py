@@ -16,7 +16,7 @@ from tests.contracts._historical_qsa_program import replay_program_v2
 class ProgramContractTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         cls.path = ROOT / "contracts/programs/qsa-prefill-t32768-v2.json"
 
     def test_qsa_program_has_one_public_abi_and_five_ordered_schedules(self) -> None:

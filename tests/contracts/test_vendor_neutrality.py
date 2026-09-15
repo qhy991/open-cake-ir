@@ -246,7 +246,7 @@ class FixtureIsNotADeviceTest(unittest.TestCase):
     """Keep the pin: this fixture must never become a sixth bound target."""
 
     def test_the_fixture_is_bound_by_no_revision(self) -> None:
-        for name in ("compiler/revision.json", "compiler/revision.lock.json"):
+        for name in ("compiler/revision.json", "compiler/revision.json"):
             document = json.loads((ROOT / name).read_text(encoding="utf-8"))
             with self.subTest(revision=name):
                 self.assertNotIn("synthetic_third_vendor", document["target_definitions"])

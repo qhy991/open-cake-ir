@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class NormalizationTaskTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def task(self, name="rmsnorm", rows=2, columns=7, backend="metal-m1-pro"):
         document, source = create_task(name, backend=backend, rows=rows, columns=columns)

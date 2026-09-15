@@ -53,12 +53,12 @@ def _text(command: list[str]) -> str | None:
 
 
 def current_executor(target: str) -> tuple[str, dict] | None:
-    """The Executor whose pinned host this checkout would have to match for `target`."""
-    inventory = json.loads((ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text())
-    entry = inventory.get("current_by_target", {}).get(target)
-    if entry is None:
+    """The committed host capture this checkout would have to match for `target`."""
+    path = ROOT / "runtime/hosts" / f"{target}.json"
+    if not path.is_file():
         return None
-    return entry["executor_id"], json.loads((ROOT / entry["path"]).read_text())["host_environment"]
+    document = json.loads(path.read_text())
+    return path.relative_to(ROOT).as_posix(), document["host_environment"]
 
 
 def check_interpreter(host: dict, executor_id: str) -> list[Check]:
@@ -73,7 +73,7 @@ def check_interpreter(host: dict, executor_id: str) -> list[Check]:
         return [Check("executor interpreter", "failed", f"{sys.version.split()[0]} {digest[:12]}",
                       f"{python['version']} {python['resolved_sha256'][:12]}",
                       f"{executor_id} pins this interpreter by digest; a toolchain upgrade "
-                      "invalidates its admission and needs a successor Executor, not a repair")]
+                      "invalidates its admission and needs a recapture, not a repair")]
     return [Check("executor interpreter", "ok", f"{python['version']} {digest[:12]}", "pinned digest")]
 
 
@@ -87,8 +87,8 @@ def check_packages(host: dict) -> list[Check]:
         checks.append(Check(f"package {distribution}", "ok" if observed == expected else "failed",
                             observed, expected,
                             "" if observed == expected else
-                            f"the Executor pins {distribution}=={expected}; installing it here does not "
-                            "re-admit the host, it only lets the check pass"))
+                            f"the host capture pins {distribution}=={expected}; installing it here does "
+                            "not re-admit the host, it only lets the check pass"))
     return checks
 
 
@@ -194,15 +194,15 @@ def run(kind: str, target: str | None) -> list[Check]:
     if target is not None:
         released = current_executor(target)
         if released is None:
-            checks.append(Check("current Executor", "unchecked", f"none for {target} in this checkout",
-                                "an entry in inventory/EXECUTOR_REVISIONS.json",
-                                "this checkout models one host; the pinned closure cannot be checked here"))
+            checks.append(Check("host capture", "unchecked", f"none for {target} in this checkout",
+                                f"a committed runtime/hosts/{target}.json",
+                                "capture this host with tools/capture_executor_host.py and commit it"))
         else:
             executor_id, host = released
-            checks.append(Check("current Executor", "ok", executor_id, "released"))
+            checks.append(Check("host capture", "ok", executor_id, "committed"))
             if host.get("kind") != HOST_KINDS[kind]:
-                checks.append(Check("Executor host kind", "failed", str(host.get("kind")),
-                                    str(HOST_KINDS[kind]), f"the current {target} Executor is not a {kind} host"))
+                checks.append(Check("host capture kind", "failed", str(host.get("kind")),
+                                    str(HOST_KINDS[kind]), f"the {target} host capture is not a {kind} host"))
             else:
                 checks += check_interpreter(host, executor_id) + check_packages(host)
     if kind == "metal":

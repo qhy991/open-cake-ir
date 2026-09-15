@@ -613,7 +613,7 @@ class PairedExecutionTests(unittest.TestCase):
                     'fixed_baseline_selection':baseline_selection}
         bp = self.output / 'bindings.json'; bp.write_bytes(encoded(bindings))
         gate = SimpleNamespace(compiler_revision_id='fixture',compiler_revision_sha256='a'*64,passed=True)
-        compiler_ref = {'revision_id':'fixture','path':'compiler/revision.lock.json','canonical_sha256':'a'*64}
+        compiler_ref = {'revision_id':'fixture','path':'compiler/revision.json','canonical_sha256':'a'*64}
         with ExitStack() as stack:
             stack.enter_context(patch('open_cake_ir.lab.preflight._resolve_compiler_reference',
                 return_value=(gate, compiler_ref['path'], compiler_ref)))

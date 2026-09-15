@@ -220,7 +220,7 @@ def _utilization(value: Utilization | None) -> dict[str, object] | None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--schedule", required=True)
-    parser.add_argument("--revision", default="compiler/revision.lock.json")
+    parser.add_argument("--revision", default="compiler/revision.json")
     parser.add_argument("--ncu", default="/usr/local/cuda/bin/ncu")
     parser.add_argument("--out", required=True)
     arguments = parser.parse_args()

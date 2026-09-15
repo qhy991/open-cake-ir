@@ -65,7 +65,7 @@ class MetalTaskCompositionTests(unittest.TestCase):
             lock = SimpleNamespace(study_kind='matched_search',claim_scope='artifact_optimization_only',run_order=('open_cake-1',),
                 document={"resolved_inputs":{"arm_environments":{"open_cake":open_arm},"budget":{}},
                     "workload":{"path":str(workload_path),"canonical_sha256":workload.canonical_sha256},
-                    "compiler_revision":{"path":"compiler/revision.lock.json","canonical_sha256":"compiler-fixture"},
+                    "compiler_revision":{"path":"compiler/revision.json","canonical_sha256":"compiler-fixture"},
                     "evaluation_protocol":evaluation_policy(workload),"execution":execution})
             compiler = SimpleNamespace(state='released',check_corpus=lambda:SimpleNamespace(passed=True,compiler_revision_sha256='compiler-fixture'))
             receipt = SimpleNamespace(scope='live_two_turn_tool_rich_provider',canonical_sha256='qualification-fixture',provider_revision='unit-fixture')

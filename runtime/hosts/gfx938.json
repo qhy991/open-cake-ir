@@ -1,0 +1,107 @@
+{
+  "host_environment": {
+    "kind": "hip",
+    "packages": {
+      "packaging": "26.3",
+      "psutil": "7.2.2",
+      "pybind11": "3.1.0",
+      "setuptools": "79.0.1",
+      "torch": "2.11.0+das.opt1.dtk2604.2608241728.gfb4aa7",
+      "triton": "3.6.0+dtk2604.torch2110.2608271608.g5a3e96"
+    },
+    "platform": {
+      "kernel_release": "4.19.90-89.11.v2401.ky10.x86_64",
+      "machine": "x86_64",
+      "system": "Linux"
+    },
+    "python": {
+      "invocation_path": "/usr/local/bin/python",
+      "resolved_sha256": "d6bca2b84e73c7775a0dd5e6a76899cfe4ee62863d7c8f88513811d1fda23f49",
+      "version": "3.10.12"
+    },
+    "runtime": {
+      "backend": "hip",
+      "torch_hip_version": "6.3.26113",
+      "visible_device_count": 1
+    },
+    "runtime_libraries": [
+      {
+        "path": "/lib/x86_64-linux-gnu/libxml2.so.2",
+        "sha256": "37ccd41c2833973912ac386d1ed978a291086f1f4c0c66099124d74cc120e0c1",
+        "size_bytes": 1967384,
+        "soname": "libxml2.so.2"
+      }
+    ],
+    "tools": {
+      "build_tools": [
+        {
+          "kind": "cxx",
+          "path": "/usr/bin/c++",
+          "sha256": "2360901d864cf10bfd6296e261cb2c14053552a80377761ab07146ec9ec9a2c0",
+          "size_bytes": 932680,
+          "version": "c++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0"
+        },
+        {
+          "kind": "git",
+          "path": "/usr/bin/git",
+          "sha256": "587ef21868c948b883993e23209b86a72a6ddc06aab1545c697ffc31075acd4a",
+          "size_bytes": 3710360,
+          "version": "git version 2.34.1"
+        },
+        {
+          "kind": "hipcc",
+          "path": "/opt/dtk/bin/hipcc",
+          "sha256": "f71c73a72c3d6f75b929ebf3cebd6c05212ba71fc5d16d0f3d30e2f142d4d78e",
+          "size_bytes": 172350376,
+          "version": "dcc version: 25.10.0-0"
+        },
+        {
+          "kind": "hipconfig",
+          "path": "/opt/dtk/bin/hipconfig",
+          "sha256": "acb4c4c2a4f63fb7886edaf4cf72a6d3af2f843f8ba2bdebf47e84ddc082c76d",
+          "size_bytes": 7812,
+          "version": "6.3.26113"
+        },
+        {
+          "kind": "ninja",
+          "path": "/usr/local/bin/ninja",
+          "sha256": "1fff2e033d215f758eccc46ea6df21596ae34af4a8895341fbd98f997f38e9cc",
+          "size_bytes": 154,
+          "version": "1.11.1.git.kitware.jobserver-1"
+        },
+        {
+          "kind": "rocminfo",
+          "path": "/opt/dtk/bin/rocminfo",
+          "sha256": "3e8212ee7f08d5193c9466c5df5ab5528cf0325f4994bc303a293627c8ffb5c8",
+          "size_bytes": 184840,
+          "version": "\u001b[37mC-3000 hycu module is loaded\u001b[0m"
+        },
+        {
+          "kind": "sh",
+          "path": "/usr/bin/sh",
+          "sha256": "4f291296e89b784cd35479fca606f228126e3641f5bcaee68dee36583d7c9483",
+          "size_bytes": 125688,
+          "version": "POSIX-sh"
+        }
+      ],
+      "device_monitor": {
+        "kind": "rocm-smi",
+        "path": "/opt/dtk/bin/rocm-smi",
+        "sha256": "5760b0e727c217774e838d380a3228a768b6c916376f8773447fd5663c7e169f",
+        "size_bytes": 126944,
+        "version": "Version 1.25.0 (Apr 21 2026 09:52:31 ce4649512e821d34f463fc654a530d14c1856f06)"
+      },
+      "profilers": [
+        {
+          "kind": "rocprof",
+          "path": "/opt/dtk/rocprofiler/bin/rocprof",
+          "sha256": "79da199434e5ce37d571f595c3e29500bca887ac075468cbd077d1bd6ffd3acf",
+          "size_bytes": 19489,
+          "version": "no version interface"
+        }
+      ]
+    }
+  },
+  "schema_version": 1,
+  "target": "gfx938"
+}

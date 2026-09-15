@@ -27,7 +27,7 @@ def write(path, document):
 class FitterBindingTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def fixture(self, root):
         run = root / "run"

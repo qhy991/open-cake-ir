@@ -98,7 +98,7 @@ def _time_ms(launch, arguments, *, reps: int, warmup: int, flush) -> float:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--schedule", default="corpus/schedules/rmsnorm-b8-smoke.json")
-    parser.add_argument("--revision", default="compiler/revision.lock.json")
+    parser.add_argument("--revision", default="compiler/revision.json")
     parser.add_argument("--first", type=int, default=60)
     parser.add_argument("--last", type=int, default=300)
     parser.add_argument("--step", type=int, default=2)

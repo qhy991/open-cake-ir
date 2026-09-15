@@ -67,7 +67,7 @@ class RevisionAdmissionTests(unittest.TestCase):
         # Exercise released admission with a tiny temporary source closure. Existing
         # Gate/approval bytes are copied unchanged; this is not a release builder
         # or evidence that the fixture satisfies the separate release policy.
-        published = json.loads((ROOT / "compiler/revision.lock.json").read_text())
+        published = json.loads((ROOT / "compiler/revision.json").read_text())
         source = b"temporary admission source"
         (self.root / "source.py").write_bytes(source)
         release = copy.deepcopy(self.draft)

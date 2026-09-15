@@ -1,0 +1,39 @@
+{
+  "host_environment": {
+    "archive_executable": {
+      "path": "/Users/haiyan/.local/share/open-cake-ir/runs/metal-tasks-20260909/archive-native/metal-host-iwmqn6k2/metal-archive-host",
+      "sha256": "20489c7f91db68a955e544f93792db35e05a7238a5d1e29577b3b3d22e28af51",
+      "size_bytes": 94624
+    },
+    "host": {
+      "device_name": "Apple M1 Pro",
+      "device_registry_id": "4294969663",
+      "operating_system": "Version 26.0 (Build 25A354)",
+      "target": "apple_gpu_family7"
+    },
+    "kind": "metal",
+    "observer_executable": {
+      "path": "/Users/haiyan/.local/share/open-cake-ir/runs/metal-tasks-20260909/observer-native-2/metal-observer",
+      "sha256": "684c49a492a5c58a747a3c4a842db9cb7329b582502058fd9ff11155de7b996b",
+      "size_bytes": 239344
+    },
+    "packages": {},
+    "python": {
+      "invocation_path": "/opt/homebrew/opt/python@3.14/bin/python3.14",
+      "resolved_sha256": "b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf",
+      "version": "3.14.6"
+    },
+    "sdk": {
+      "build_version": "24C94",
+      "path": "/Library/Developer/CommandLineTools/SDKs/MacOSX15.2.sdk",
+      "version": "15.2"
+    },
+    "swift": {
+      "invocation_path": "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "resolved_sha256": "5e8d5ed4ae99ec4978afcbdd37f028a0c08ef5eb75f707f1d4feaacd19556b1b",
+      "version": "Apple Swift version 6.0.3 (swiftlang-6.0.3.1.10 clang-1600.0.30.1)\nTarget: arm64-apple-macosx16.0"
+    }
+  },
+  "schema_version": 1,
+  "target": "apple_gpu_family7"
+}

@@ -1,0 +1,99 @@
+{
+  "host_environment": {
+    "cupti_python": {
+      "distribution": "cupti-python",
+      "files": [
+        {
+          "path": "cupti/__init__.py",
+          "sha256": "a0833b8fd41566149fdcdabd3e59461488709e1ecb39def32a4a0b86c02a38b7",
+          "size_bytes": 100
+        },
+        {
+          "path": "cupti/_internal/cupti.cpython-312-x86_64-linux-gnu.so",
+          "sha256": "8f3949fff4c1de724de723b0173bfe1b46b1ade5ed59e4e6eea2d5e3948ffeb9",
+          "size_bytes": 107128
+        },
+        {
+          "path": "cupti/_internal/utils.cpython-312-x86_64-linux-gnu.so",
+          "sha256": "ef4affa7f28f5e3d5daf1cd37b49c4e4094fc5f2ad47a89d4a04db18bced3b19",
+          "size_bytes": 89216
+        },
+        {
+          "path": "cupti/buffer_manager.cpython-312-x86_64-linux-gnu.so",
+          "sha256": "192cd2c2708cdc8e4378a6631d2a4cc1b858425fdc30e76bdf9af273a1f21a3e",
+          "size_bytes": 49976
+        },
+        {
+          "path": "cupti/callback_wrappers.cpython-312-x86_64-linux-gnu.so",
+          "sha256": "31843c05d301c787cc62c9754db6ea963ba5d3d7c1e0a3efc19d5918a2da603a",
+          "size_bytes": 51984
+        },
+        {
+          "path": "cupti/cupti.cpython-312-x86_64-linux-gnu.so",
+          "sha256": "7dfb7caeb2371248740d4efe3d6b9bce8daa9a5dee0ebba936fa941a0685152f",
+          "size_bytes": 5972856
+        },
+        {
+          "path": "cupti/cupti.pyi",
+          "sha256": "4d7ab24a449b8d630f1413b674e10982ab843d3fcd2968785404c797ffc5c011",
+          "size_bytes": 206160
+        },
+        {
+          "path": "cupti/cycupti.cpython-312-x86_64-linux-gnu.so",
+          "sha256": "df96d3bba75998577cbcaf6481a15355a143a7dede527dbdef3e86fd89d3351f",
+          "size_bytes": 32080
+        },
+        {
+          "path": "cupti/globals.cpython-312-x86_64-linux-gnu.so",
+          "sha256": "0fbb4371bd5d4d0f943fdc6d1bf33e7eca9782c96a4b3b288ec6a0b398de0d17",
+          "size_bytes": 31312
+        },
+        {
+          "path": "cupti/utils.cpython-312-x86_64-linux-gnu.so",
+          "sha256": "7ddf4bde9345e777313e4c36411a0c69d55caf41b90b32569d2abe6a6b6f456b",
+          "size_bytes": 47760
+        },
+        {
+          "path": "cupti_python-13.0.1.dist-info/METADATA",
+          "sha256": "8661149d9131450e09a7a599b4586e9e5e8153d6ee4226511bd7537e2a37fd6d",
+          "size_bytes": 22493
+        },
+        {
+          "path": "cupti_python-13.0.1.dist-info/RECORD",
+          "sha256": "382598a3890fceba4e062a0205ca01e6741054419333c5c5b5949d6de73672b9",
+          "size_bytes": 2624
+        }
+      ],
+      "site_packages_path": "/mnt/b300-shared/home/qinhaiyan/open-cake-round3-20260906-JdwgrZ/venv/lib/python3.12/site-packages",
+      "version": "13.0.1"
+    },
+    "flashinfer_helper": {
+      "distribution": "flashinfer-python",
+      "path": "/mnt/b300-shared/home/qinhaiyan/miniconda3/envs/sglang/lib/python3.12/site-packages/flashinfer/testing/utils.py",
+      "sha256": "3a7515a237a3c6531ffa15829a5d46e3d399b3c23f7d3dba853f9e6be46da490",
+      "size_bytes": 67087,
+      "version": "0.6.12"
+    },
+    "nsight_compute": {
+      "path": "/usr/local/cuda-13.1/nsight-compute-2025.4.1/target/linux-desktop-glibc_2_11_3-x64/ncu",
+      "sha256": "e38823ca390fb7b8521b2ddf3f10b19d880b05fe7befdcfe5ff6291381d6a137",
+      "size_bytes": 37703472,
+      "version": "2025.4.1.0"
+    },
+    "packages": {
+      "cuda-bindings": "13.3.1",
+      "cupti-python": "13.0.1",
+      "flashinfer-python": "0.6.12",
+      "numpy": "2.3.5",
+      "torch": "2.11.0",
+      "triton": "3.6.0"
+    },
+    "python": {
+      "invocation_path": "/mnt/b300-shared/home/qinhaiyan/open-cake-round3-20260906-JdwgrZ/venv/bin/python",
+      "resolved_sha256": "1eb639ad5a6a5ed98e9fe1e138f9961718cc250d57ac93eea52871f935ed83cf",
+      "version": "3.12.13"
+    }
+  },
+  "schema_version": 1,
+  "target": "sm_103a"
+}

@@ -129,7 +129,7 @@ def _collect():
     if kind not in {"correctness", "profile"}:
         raise ValueError("collection requires a correctness/profile stage")
     _write(stage / "execution-context.json", {"broker_peer": peer, "uid": os.geteuid(), "gid": os.getegid(), "run_id": os.environ["KERNELINFRA_RUN_ID"], "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")})
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     import torch
     from cuda.bindings import driver
     torch.set_num_threads(1)
@@ -252,7 +252,7 @@ def _fit(run, output):
     plan, observed = _read(stage / "plan.json"), _read(stage / "observations.json")
     if plan.get("state") != "frozen" or sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
         raise ValueError("fitting must use the frozen collection instrument")
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     reference = compiler.assess_file(stage / "0000/schedule.json")
     if reference.compiler_revision_id != plan["compiler_revision_id"] or reference.compiler_revision_sha256 != plan["compiler_revision_sha256"]:
         raise ValueError("fitting Compiler Revision differs")

@@ -1,37 +1,5 @@
 {
-  "schema_version": 1,
-  "revision_id": "open-cake-ir-sm100a-v84-draft",
-  "state": "draft",
-  "target_definitions": {
-    "sm_100a": {
-      "path": "compiler/targets/sm_100a.json",
-      "canonical_sha256": "1e0ae8402088fa4e9f4dbad50a3f82012e742a79818199aebfb8ca1dfb78540f"
-    },
-    "apple_gpu_family8": {
-      "path": "compiler/targets/apple_gpu_family8.json",
-      "canonical_sha256": "5ddf67c97f07296a59818e44b8d5c078953119992defadb953f03ba20f4a6723"
-    },
-    "apple_gpu_family9": {
-      "path": "compiler/targets/apple_gpu_family9.json",
-      "canonical_sha256": "8f957fad3d1392f5163f4c86b72d0c057206695e20f2017d06d96690b0ca62a2"
-    },
-    "sm_103a": {
-      "path": "compiler/targets/sm_103a.json",
-      "canonical_sha256": "93fdc1135684d196556f807dc9a04906c314d1f59196f86be0a1a84368a98047"
-    },
-    "apple_gpu_family7": {
-      "path": "compiler/targets/apple_gpu_family7.json",
-      "canonical_sha256": "27b9e44d2e18d21fdc6121f0a1730e54197031c3e60f3f0d0c5812e4eaa0fe9c"
-    },
-    "gfx938": {
-      "path": "compiler/targets/gfx938.json",
-      "canonical_sha256": "32a156ac05ffb56f064296aac7c1490091ab2272ed5f4c98708508961cf539c4"
-    },
-    "gfx1151": {
-      "path": "compiler/targets/gfx1151.json",
-      "canonical_sha256": "eb844e7926047d8ba8e70bd0acc09b077e40cfac80f39b31234cb681a3fd37db"
-    }
-  },
+  "schema_version": 2,
   "corpus_manifest": "corpus/manifest.json",
   "calibration_coverage": []
 }

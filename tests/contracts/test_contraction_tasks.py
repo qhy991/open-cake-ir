@@ -35,7 +35,7 @@ ELEMENTWISE_FAMILIES = ("activation", "rowwise", "reductions", "optimizers")
 class ContractionTaskTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def task(self, name, backend="metal-m1-pro", **shape):
         document, source = create_task(name, backend=backend, **{**SHAPE, **shape})

@@ -96,13 +96,13 @@ def main() -> int:
         )
     execution["executor_revision"] = dict(executor.reference)
 
-    compiler = Compiler.load(root, root / "compiler/revision.lock.json")
+    compiler = Compiler.load(root, root / "compiler/revision.json")
     gate = compiler.check_corpus()
-    if compiler.state != "released" or not gate.passed:
+    if compiler.commit is None or not gate.passed:
         raise ValueError("current Compiler is not a gated release")
     compiler_reference = {
         "revision_id": gate.compiler_revision_id,
-        "path": "compiler/revision.lock.json",
+        "path": "compiler/revision.json",
         "canonical_sha256": gate.compiler_revision_sha256,
     }
     if document.get("kind") == "portfolio":

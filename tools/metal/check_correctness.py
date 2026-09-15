@@ -79,27 +79,22 @@ def fresh_receipt(output_root: Path, *, prefix: str = "metal-correctness-") -> P
 
 
 def released_compiler(receipt: Path, target_id: str = "apple_gpu_family8") -> tuple[Compiler, dict, list[str]]:
-    lock_path = ROOT / "compiler/revision.lock.json"
-    lock = json.loads(lock_path.read_text())
-    if lock.get("state") != "released":
-        raise ValueError("GPU correctness requires a reviewed released Compiler")
-    # Canonical release verification owns reviewer independence and the bound closure.
-    command = [sys.executable, str(ROOT / "tools/release_compiler.py"), "--project-root", str(ROOT),
-               "--proposal", str(ROOT / "compiler/revision.json"),
-               "--source-set", str(ROOT / "compiler/source_set.json"),
-               "--gate-report", str(ROOT / "compiler/corpus-gate-report.json"),
-               "--approval", str(ROOT / "compiler/release-approval.json"),
-               "--output", str(lock_path), "--verify"]
-    check = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=300)
-    (receipt / "release-verification.log").write_text(check.stdout + check.stderr)
-    if check.returncode:
-        raise ValueError("reviewed release verification failed; see release-verification.log")
-    compiler = Compiler.load(ROOT, lock_path)
-    target_ref = lock["target_definitions"].get(target_id)
-    if target_ref is None:
-        raise ValueError(f"released Compiler does not bind {target_id}")
-    target = json.loads((ROOT / target_ref["path"]).read_text())
-    return compiler, lock, target["device_names"]
+    # The checkout's clean commit is the Compiler identity; its Gate is run here rather
+    # than read from a retained report, so the receipt records what this source does.
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+    gate = compiler.check_corpus()
+    identity = {"revision_id": gate.compiler_revision_id,
+                "canonical_sha256": gate.compiler_revision_sha256,
+                "case_count": gate.case_count,
+                "matched_case_count": sum(case.matched for case in gate.cases)}
+    (receipt / "compiler-gate.json").write_text(json.dumps(identity, indent=2, sort_keys=True) + "\n")
+    if compiler.commit is None or not gate.passed:
+        raise ValueError("GPU correctness requires a clean committed checkout whose Corpus Gate passes")
+    target_path = ROOT / "compiler/targets" / f"{target_id}.json"
+    if not target_path.is_file():
+        raise ValueError(f"the Compiler declares no {target_id} Target")
+    target = json.loads(target_path.read_text())
+    return compiler, identity, target["device_names"]
 
 
 def runtime_source() -> dict:

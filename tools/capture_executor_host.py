@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import importlib
 import importlib.metadata
@@ -13,6 +14,7 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
 from hashlib import sha256
 from pathlib import Path
 
@@ -21,6 +23,24 @@ from open_cake_ir.lab.executor import (
     HIP_PROFILERS, HIP_RUNTIME_LIBRARIES,
     _external_file, admit_host_environment, admit_profiler_environment,
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+@contextlib.contextmanager
+def _inspection_root(arguments: argparse.Namespace):
+    """Metal inspection artifacts stay outside every checkout, and are kept only if asked."""
+
+    if arguments.inspection_directory is None:
+        with tempfile.TemporaryDirectory(prefix="metal-host-capture-") as directory:
+            yield Path(directory)
+        return
+    directory = arguments.inspection_directory
+    if (not directory.is_absolute() or PROJECT_ROOT in directory.parents
+            or any((parent / ".git").exists() for parent in (directory, *directory.parents))):
+        raise ValueError("--inspection-directory must be absolute and outside every checkout")
+    directory.mkdir(parents=True, exist_ok=True)
+    yield directory
 
 
 def _file_record(path: Path, recorded_path: str) -> dict[str, object]:
@@ -208,7 +228,7 @@ def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
     }
 
 
-def _capture_metal_host(arguments: argparse.Namespace, output: Path) -> dict[str, object]:
+def _capture_metal_host(arguments: argparse.Namespace) -> dict[str, object]:
     from open_cake_ir.compiler.target import Target
     from open_cake_ir.lab.metal_host import command_text, inspect_metal_host, observe_sdk
     if (arguments.target is None or arguments.swiftc is None or arguments.archive_executable is None
@@ -233,8 +253,9 @@ def _capture_metal_host(arguments: argparse.Namespace, output: Path) -> dict[str
         "sdk": observe_sdk(),
         "archive_executable": _file_record(arguments.archive_executable, str(arguments.archive_executable)),
         "observer_executable": _file_record(arguments.observer_executable, str(arguments.observer_executable))}
-    host["host"] = inspect_metal_host(arguments.archive_executable, target=arguments.target,
-        expected_device_names=list(target.device_names), directory=output.with_name(output.stem + "-inspection"))
+    with _inspection_root(arguments) as inspection:
+        host["host"] = inspect_metal_host(arguments.archive_executable, target=arguments.target,
+            expected_device_names=list(target.device_names), directory=inspection / "inspect")
     return host
 
 
@@ -260,19 +281,23 @@ def main(argv: list[str] | None = None) -> int:
                         metavar=("KIND", "PATH"))
     parser.add_argument("--hip-runtime-library", nargs=2, action="append", default=[],
                         metavar=("SONAME", "PATH"))
-    parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8",
-                                             "apple_gpu_family9"))
+    parser.add_argument("--target", required=True,
+                        choices=sorted(path.stem for path in (PROJECT_ROOT / "compiler/targets").glob("*.json")),
+                        help="exact target this host runs; the capture is committed as runtime/hosts/<target>.json")
     parser.add_argument("--swiftc", type=Path)
     parser.add_argument("--archive-executable", type=Path)
     parser.add_argument("--observer-executable", type=Path)
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--replace", action="store_true",
+                        help="recapture a target whose host capture already exists")
+    parser.add_argument("--inspection-directory", type=Path,
+                        help="absolute external directory keeping the Metal inspection request and result")
     arguments = parser.parse_args(argv)
     if arguments.host_kind == "amd":
         arguments.host_kind = "hip"
     cuda_arguments = (arguments.cupti_distribution, arguments.flashinfer_distribution, arguments.ncu)
     hip_arguments = (arguments.device_monitor, arguments.hip_build_tool,
                      arguments.hip_runtime_library)
-    metal_arguments = (arguments.target, arguments.swiftc, arguments.archive_executable,
+    metal_arguments = (arguments.swiftc, arguments.archive_executable,
                        arguments.observer_executable)
     if arguments.host_kind == "cuda":
         if not arguments.package or not all(cuda_arguments) or any(hip_arguments) \
@@ -288,34 +313,31 @@ def main(argv: list[str] | None = None) -> int:
     elif not all(hip_arguments) or any(cuda_arguments) \
             or any(value is not None for value in metal_arguments):
         raise ValueError("HIP capture requires its monitor, build tools and libraries only")
-    if not arguments.output.is_absolute():
-        raise ValueError("host capture output must be an absolute external path")
-    output = arguments.output.parent.resolve(strict=True) / arguments.output.name
-    if output.exists() or output.is_symlink():
-        raise FileExistsError("refusing to overwrite an Executor host capture")
-    project_root = Path(__file__).resolve().parents[1]
-    if project_root in output.parents or any(
-        (parent / ".git").exists() for parent in output.parents
-    ):
-        raise ValueError("host capture output must be outside project checkouts")
+    # The capture belongs to the checkout: it is committed, and the commit plus this
+    # document is the Executor identity (ADR 0065).
+    output = PROJECT_ROOT / "runtime/hosts" / f"{arguments.target}.json"
+    if output.exists() and not arguments.replace:
+        raise FileExistsError(
+            f"{output} already describes this target; pass --replace to recapture this host"
+        )
+    output.parent.mkdir(parents=True, exist_ok=True)
 
-    host = (_capture_metal_host(arguments, output) if arguments.host_kind == "metal"
+    host = (_capture_metal_host(arguments) if arguments.host_kind == "metal"
             else _capture_host(arguments))
-    ExecutorRevision._validate_host_document(
-        host, schema_version=2 if arguments.host_kind == "hip" else 1,
-    )
+    ExecutorRevision._validate_host_document(host)
     admit_host_environment(host)
     if arguments.host_kind == "cuda":
         admit_profiler_environment(host)
-    payload = json.dumps(host, indent=2, sort_keys=True, allow_nan=False) + "\n"
-    with output.open("x", encoding="utf-8") as stream:
-        stream.write(payload)
+    document = {"schema_version": 1, "target": arguments.target, "host_environment": host}
+    payload = json.dumps(document, indent=2, sort_keys=True, allow_nan=False, ensure_ascii=False) + "\n"
+    output.write_text(payload, encoding="utf-8")
     # Metal's observer is admitted inside admit_host_environment, not as a separate
     # profiler step, so its capture reports the same admitted observation the CUDA
     # NCU step does.
     profiler_admitted = (arguments.host_kind in ("cuda", "metal")
                          or bool(arguments.hip_profiler))
-    print(json.dumps({"output": str(output), "host_admitted": True, "profiler_admitted": profiler_admitted}))
+    print(json.dumps({"output": str(output), "target": arguments.target,
+                      "host_admitted": True, "profiler_admitted": profiler_admitted}))
     return 0
 
 

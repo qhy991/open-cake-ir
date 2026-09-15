@@ -189,13 +189,13 @@ def main() -> int:
         raise ValueError("qualified provider executable differs")
 
     arms = _object(study["arms"], "study.arms")
-    compiler = Compiler.load(root, root / "compiler/revision.lock.json")
+    compiler = Compiler.load(root, root / "compiler/revision.json")
     gate = compiler.check_corpus()
-    if compiler.state != "released" or not gate.passed:
+    if compiler.commit is None or not gate.passed:
         raise ValueError("live Study requires the current gated Compiler release")
     _object(arms["open_cake"], "study.arms.open_cake")["compiler_revision"] = {
         "revision_id": gate.compiler_revision_id,
-        "path": "compiler/revision.lock.json",
+        "path": "compiler/revision.json",
         "canonical_sha256": gate.compiler_revision_sha256,
     }
     for arm_name in arms:

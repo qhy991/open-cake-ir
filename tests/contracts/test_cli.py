@@ -148,7 +148,7 @@ class CliContractTests(unittest.TestCase):
             with self.subTest(schedule=schedule), redirect_stdout(StringIO()) as output:
                 code = main([
                     "--project-root", str(ROOT), "compiler", "assess", "--format", "text",
-                    "--revision", str(ROOT / "compiler/revision.lock.json"),
+                    "--revision", str(ROOT / "compiler/revision.json"),
                     str(ROOT / "corpus/schedules" / schedule),
                 ])
             text = output.getvalue()
@@ -167,7 +167,7 @@ class CliContractTests(unittest.TestCase):
                 target = Path(directory) / "source.txt"
                 arguments = [
                     "--project-root", str(ROOT), "compiler", "lower", "--format", "text",
-                    "--revision", str(ROOT / "compiler/revision.lock.json"),
+                    "--revision", str(ROOT / "compiler/revision.json"),
                     str(ROOT / "corpus/schedules" / schedule), "--output", str(target),
                 ]
                 with redirect_stdout(StringIO()) as output:
@@ -185,7 +185,7 @@ class CliContractTests(unittest.TestCase):
             with redirect_stdout(StringIO()) as output, redirect_stderr(StringIO()) as error:
                 code = main([
                     "--project-root", str(ROOT), "compiler", "lower", "--format", "text",
-                    "--revision", str(ROOT / "compiler/revision.lock.json"),
+                    "--revision", str(ROOT / "compiler/revision.json"),
                     str(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"),
                     "--output", str(target),
                 ])
@@ -206,7 +206,7 @@ class CliContractTests(unittest.TestCase):
             ):
                 arguments = [
                     "--project-root", str(project_root), "compiler", "assess", "--format", "text",
-                    "--revision", str(ROOT / "compiler/revision.lock.json"), str(schedule),
+                    "--revision", str(ROOT / "compiler/revision.json"), str(schedule),
                 ]
                 with self.subTest(schedule=schedule, root=project_root), \
                      redirect_stdout(StringIO()) as output, redirect_stderr(StringIO()) as error:
@@ -219,7 +219,7 @@ class CliContractTests(unittest.TestCase):
         with redirect_stdout(StringIO()) as output:
             code = main([
                 "--project-root", str(ROOT), "compiler", "check-corpus", "--format", "text",
-                "--revision", str(ROOT / "compiler/revision.lock.json"),
+                "--revision", str(ROOT / "compiler/revision.json"),
             ])
         count = len(json.loads((ROOT / "corpus/manifest.json").read_text())["cases"])
         self.assertEqual(code, 0)
@@ -445,7 +445,7 @@ class CliContractTests(unittest.TestCase):
                     "compiler",
                     "assess",
                     "--revision",
-                    str(ROOT / "compiler/revision.lock.json"),
+                    str(ROOT / "compiler/revision.json"),
                     str(ROOT / "corpus/schedules/flash-kmeans-assignment-full.json"),
                 ]
             )
@@ -471,7 +471,7 @@ class CliContractTests(unittest.TestCase):
                         "compiler",
                         "lower",
                         "--revision",
-                        str(ROOT / "compiler/revision.lock.json"),
+                        str(ROOT / "compiler/revision.json"),
                         str(ROOT / "corpus/schedules/flash-kmeans-assignment-full.json"),
                         "--output",
                         str(target),
@@ -489,7 +489,7 @@ class CliContractTests(unittest.TestCase):
             with self.assertRaisesRegex(CompilerError, "SCHEDULE_STRUCTURE"):
                 main([
                     "--project-root", str(ROOT), "compiler", "lower",
-                    "--revision", str(ROOT / "compiler/revision.lock.json"),
+                    "--revision", str(ROOT / "compiler/revision.json"),
                     str(ROOT / "corpus/schedules/tinygemm2-stage4-split-k.json"),
                     "--output", str(retired),
                 ])

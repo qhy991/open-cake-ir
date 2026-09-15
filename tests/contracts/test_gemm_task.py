@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class GemmTaskTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def task(self, rows=4, depth=8, columns=3, backend="metal-m2"):
         document, source = create_task("gemm_bias", backend=backend, rows=rows, depth=depth, columns=columns)

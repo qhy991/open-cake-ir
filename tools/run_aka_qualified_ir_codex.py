@@ -695,11 +695,7 @@ def _phase0_check_checkout(paths: Mapping[str, Path]) -> None:
 
 def _phase0_current_compiler() -> tuple[dict[str, object], Compiler]:
     try:
-        return _compiler_identity(
-            ROOT,
-            ROOT / "compiler/revision.json",
-            ROOT / "compiler/source_set.json",
-        )
+        return _compiler_identity(ROOT, ROOT / "compiler/revision.json")
     except ValueError as error:
         raise Phase0Error(f"Compiler closure is not frozen: {error}", "task") from error
 
@@ -861,17 +857,13 @@ def verify_phase0_manifest(path: Path) -> dict[str, Any]:
             "project_root",
             "git_commit",
             "revision_path",
-            "source_set_path",
             "revision_id",
-            "state",
         }
         or compiler.get("project_root") != str(ROOT)
         or compiler.get("git_commit") != PHASE0_OPEN_CAKE_COMMIT
         or compiler.get("revision_path") != "compiler/revision.json"
-        or compiler.get("source_set_path") != "compiler/source_set.json"
         or not isinstance(compiler.get("revision_id"), str)
         or not compiler["revision_id"]
-        or compiler.get("state") not in {"draft", "released"}
     ):
         raise Phase0Error("corpus manifest Compiler identity differs", "task")
     expected_treatment = {

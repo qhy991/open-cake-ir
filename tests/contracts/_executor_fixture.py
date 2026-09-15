@@ -21,9 +21,11 @@ class SemanticExecutorFixture:
     """
     def revision(self, root):
         return ExecutorRevision(executor_id="CPU-semantic-fixture", canonical_sha256="e" * 64,
-            document={"schema_version": 1, "state": "fixture", "sources": [],
+            document={"schema_version": 1, "executor_id": "CPU-semantic-fixture",
+                      "commit": "0" * 40, "target": "cpu-semantic-fixture",
                       "host_environment": _synthetic_cuda_host()},
-            project_root=Path(root).resolve(), relative_path="CPU-semantic-fixture.json")
+            project_root=Path(root).resolve(),
+            relative_path="runtime/hosts/cpu-semantic-fixture.json")
 
     def load(self, root, path):
         return self.revision(root)
@@ -59,13 +61,11 @@ class SemanticExecutorFixture:
 
 @lru_cache(maxsize=None)
 def compiler_reference(root):
-    """Read the declared fixture input identity; Compiler admission is tested separately."""
-    import json
-    from hashlib import sha256
-    document = json.loads((Path(root) / "compiler/revision.lock.json").read_bytes())
-    payload = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-    return {"path": "compiler/revision.lock.json", "revision_id": document["revision_id"],
-            "canonical_sha256": sha256(payload).hexdigest()}
+    """The exact reference this checkout provides; Compiler admission is tested separately."""
+    from open_cake_ir.compiler.revision import load_revision
+    revision = load_revision(root, Path(root) / "compiler/revision.json")
+    return {"path": "compiler/revision.json", "revision_id": revision.revision_id,
+            "canonical_sha256": revision.canonical_sha256}
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ def abi_fixture(target: str = "apple_gpu_family7"):
 
 def request_fixture(target: str = "apple_gpu_family7"):
     source = rmsnorm.source(3, 7, target=target)
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     if compiler.state != "released":
         raise AssertionError("native test requires the existing released Compiler")
     assessment = compiler.assess(frontend.parse(source).document)

@@ -62,15 +62,15 @@ def _current_executor() -> ExecutorRevision:
 
 
 def _preflight_authorities() -> tuple[ExecutorRevision, ProgramContract, dict[str, object]]:
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     gate = compiler.check_corpus()
-    if compiler.state != "released" or not gate.passed:
+    if compiler.commit is None or not gate.passed:
         raise ValueError("released Compiler Corpus Gate is not current")
     program = ProgramContract.load(ROOT, _PROGRAM_PATH, compiler)
     workload = load_workload(_WORKLOAD_PATH)
     if program.workload.canonical_sha256 != workload.canonical_sha256:
         raise ValueError("QSA Program and Workload differ")
-    return _current_executor(), program, {"path": "compiler/revision.lock.json",
+    return _current_executor(), program, {"path": "compiler/revision.json",
         "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
 
 

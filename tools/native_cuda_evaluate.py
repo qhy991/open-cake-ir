@@ -289,8 +289,8 @@ def capture(argv, *, cwd, timeout=600):
 
 
 def revision():
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-    require(compiler.state == "released", "a released Compiler is required", "release")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+    require(compiler.commit is not None, "a released Compiler is required", "release")
     return compiler
 
 

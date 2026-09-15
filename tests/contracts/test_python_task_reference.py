@@ -87,7 +87,7 @@ class PythonTaskReferenceTests(unittest.TestCase):
                 payloads = {"lowered_source": request.source, "metal_binary_archive": archive}
                 return LaunchableCandidate(request.candidate_sha256, request.target, request.entry_point,
                     {role: sha256(data).hexdigest() for role, data in payloads.items()}, "b" * 64, payloads)
-        environment = OpenCakeEnvironment(Compiler.load(ROOT, "compiler/revision.lock.json"), Builder(),
+        environment = OpenCakeEnvironment(Compiler.load(ROOT, "compiler/revision.json"), Builder(),
             authority_document={"input_format": "schedule_or_python_v1", "lowering_route": prepared["lowering"]},
             workload=workload, case_id="odd")
         result = environment.build(CandidateSubmission.seal(environment.media_type,

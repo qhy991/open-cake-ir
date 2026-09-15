@@ -165,7 +165,7 @@ class Compiler:
         project_root: Path,
         revision_id: str,
         revision_sha256: str,
-        state: str,
+        commit: str | None,
         target_definitions: Mapping[str, Target],
         corpus_path: Path,
         calibration_coverage: frozenset[str],
@@ -174,28 +174,28 @@ class Compiler:
             project_root=project_root,
             revision_id=revision_id,
             canonical_sha256=revision_sha256,
-            state=state,
+            commit=commit,
             targets=MappingProxyType(dict(target_definitions)),
             corpus_path=corpus_path,
             calibration_coverage=calibration_coverage,
         )
 
     @property
-    def state(self) -> str:
-        """Return draft or released without exposing mutable manifest state."""
+    def commit(self) -> str | None:
+        """The clean git commit this Compiler was loaded from, or None without one."""
 
-        return self._revision.state
+        return self._revision.commit
 
     @classmethod
     def load(cls, project_root: str | Path, revision_path: str | Path) -> "Compiler":
-        """Load a draft or released Compiler Revision manifest."""
+        """Load the Compiler manifest, its declared Targets and the checkout's commit."""
 
         revision = load_revision(project_root, revision_path)
         return cls(
             project_root=revision.project_root,
             revision_id=revision.revision_id,
             revision_sha256=revision.canonical_sha256,
-            state=revision.state,
+            commit=revision.commit,
             target_definitions=revision.targets,
             corpus_path=revision.corpus_path,
             calibration_coverage=revision.calibration_coverage,

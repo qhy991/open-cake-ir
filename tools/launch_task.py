@@ -117,30 +117,30 @@ def _route_of(backend: str) -> str:
 
 
 def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal"):
-    compiler = Compiler.load(root, root / "compiler/revision.lock.json")
+    compiler = Compiler.load(root, root / "compiler/revision.json")
     gate = compiler.check_corpus()
     _write(workspace / "compiler-gate.json", canonical(asdict(gate)))
-    if compiler.state != "released" or not gate.passed:
-        raise ValueError("task launch requires a released Compiler and passing full Corpus Gate")
+    if compiler.commit is None or not gate.passed:
+        raise ValueError("task launch requires a clean committed checkout and a passing full Corpus Gate")
     try:
         executor = resolve_executor(root, CURRENT_RELEASE_BINDING, "task.execution",
                                     template=True, target=target)
     except ValueError as error:
-        raise ValueError(f"task launch requires a released Metal Executor matching this source; {error}") from error
+        raise ValueError(f"task launch requires a committed host capture for {target!r}; {error}") from error
     is_metal_host = executor.document["host_environment"].get("kind") == "metal"
     if route == "metal" and not is_metal_host:
-        raise ValueError("task launch requires an actually released Metal Executor")
+        raise ValueError(f"the Metal route requires a Metal host capture for {target!r}")
     if route != "metal" and is_metal_host:
-        raise ValueError(f"the {route!r} route requires a released Executor bound to a GPU host; "
-                         "the current one is Metal, and no host is substituted for another")
+        raise ValueError(f"the {route!r} route requires a GPU host capture; the capture for "
+                         f"{target!r} is Metal, and no host is substituted for another")
     host = None
     if route == "metal":
-        released = executor.document["host_environment"].get("host", {}).get("target")
-        if released != target:
-            raise ValueError(f"released Metal Executor is bound to {released!r}, not the requested "
+        captured = executor.document["host_environment"].get("host", {}).get("target")
+        if captured != target:
+            raise ValueError(f"the Metal host capture describes {captured!r}, not the requested "
                              f"{target!r}; no other Apple GPU is substituted")
         host = MetalArchiveHost.from_executor(executor)
-    return compiler, executor, host, {"path": "compiler/revision.lock.json",
+    return compiler, executor, host, {"path": "compiler/revision.json",
         "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
 
 

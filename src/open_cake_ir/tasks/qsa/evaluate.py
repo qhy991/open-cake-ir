@@ -1019,7 +1019,7 @@ def main(argv: list[str] | None = None) -> int:
                     nvcc=arguments.nvcc.resolve(strict=True),
                     cuobjdump=arguments.cuobjdump.resolve(strict=True),
                     compiler=Compiler(project_root=root, revision_id=dependency.revision_id,
-                        revision_sha256=dependency.canonical_sha256, state=dependency.state,
+                        revision_sha256=dependency.canonical_sha256, commit=dependency.commit,
                         target_definitions=dependency.targets, corpus_path=dependency.corpus_path,
                         calibration_coverage=dependency.calibration_coverage),
                     target=dependency.targets["sm_100a"],

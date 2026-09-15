@@ -117,12 +117,12 @@ def _authorities(plan):
     if set(compiler_ref) != {"path", "revision_id", "canonical_sha256"}:
         raise ValueError("Compiler reference differs")
     compiler = Compiler.load(ROOT, _external_file(ROOT, compiler_ref["path"], "Compiler"))
-    if compiler.state != "released":
-        raise ValueError("collection and fitting require the released Compiler")
+    if compiler.commit is None:
+        raise ValueError("collection and fitting require a Compiler at a clean committed checkout")
     executor_ref = plan["executor_revision"]
+    # The Executor's commit binds every tracked source, the collection instrument and the
+    # common evaluator included, so there is no per-file list to check here.
     executor = ExecutorRevision.load_reference(ROOT, executor_ref, "calibration.executor_revision")
-    if not {"src/open_cake_ir/tasks/flash_kmeans/calibrate.py", "src/open_cake_ir/tasks/evaluate.py"}.issubset({row["path"] for row in executor.document["sources"]}):
-        raise ValueError("Executor must bind both collection instrument and common evaluator")
     ref = plan["workload"]
     if set(ref) != {"path", "workload_id", "canonical_sha256"}:
         raise ValueError("Workload reference differs")

@@ -278,59 +278,29 @@ def _relative_file(root: Path, path: Path, label: str) -> str:
     return relative
 
 
-def _source_set_paths(root: Path, source_set_path: Path) -> tuple[str, ...]:
-    document = _load_object(source_set_path, "Compiler source set")
-    _expect_fields(document, {"schema_version", "paths"}, "Compiler source set")
-    if document.get("schema_version") != 1:
-        raise ReviewError("Compiler source set schema is unsupported")
-    values = document.get("paths")
-    if not isinstance(values, list) or not values:
-        raise ReviewError("Compiler source set paths must be a non-empty array")
-    paths: list[str] = []
-    for index, value in enumerate(values):
-        relative = PurePosixPath(_nonempty(value, f"source_set.paths[{index}]"))
-        if relative.is_absolute() or ".." in relative.parts:
-            raise ReviewError(f"source_set.paths[{index}] is not project-relative")
-        resolved = (root / relative).resolve(strict=True)
-        if not _inside(resolved, root) or (root / relative).is_symlink():
-            raise ReviewError(f"source_set.paths[{index}] escapes or is a symlink")
-        _require_regular(resolved, f"source_set.paths[{index}]")
-        paths.append(relative.as_posix())
-    if len(set(paths)) != len(paths):
-        raise ReviewError("Compiler source set contains duplicate paths")
-    return tuple(paths)
-
-
 def _compiler_identity(
-    root: Path, revision_path: Path, source_set_path: Path
+    root: Path, revision_path: Path
 ) -> tuple[dict[str, object], Compiler]:
+    """Identify the Compiler under review by the checkout's clean commit (ADR 0065).
+
+    The commit covers every tracked byte, so the manifest records it once instead of a
+    per-file closure that had to be listed and rehashed.
+    """
     root = root.resolve(strict=True)
     if root != ROOT:
         raise ReviewError("this bridge checks only the Compiler in its own checkout")
     revision_relative = _relative_file(root, revision_path, "Compiler Revision")
-    source_set_relative = _relative_file(root, source_set_path, "Compiler source set")
-    closure = tuple(
-        dict.fromkeys(
-            (revision_relative, source_set_relative)
-            + _source_set_paths(root, source_set_path)
-        )
-    )
-    closure_identity = _git_closure_identity(root, closure, "Compiler")
+    closure_identity = _git_closure_identity(root, (revision_relative,), "Compiler")
 
     compiler = Compiler.load(root, revision_path)
-    revision = _load_object(revision_path, "Compiler Revision")
-    revision_id = _nonempty(revision.get("revision_id"), "revision_id")
-    state = revision.get("state")
-    if state not in {"draft", "released"} or state != compiler.state:
-        raise ReviewError("Compiler Revision state is invalid")
+    if compiler.commit is None:
+        raise ReviewError("Compiler review requires a clean committed checkout")
     return (
         {
             "project_root": str(root),
             "git_commit": closure_identity["git_commit"],
             "revision_path": revision_relative,
-            "source_set_path": source_set_relative,
-            "revision_id": revision_id,
-            "state": state,
+            "revision_id": f"open-cake-ir@{compiler.commit}",
         },
         compiler,
     )
@@ -575,9 +545,7 @@ def initialize(
             else ROOT / compiler_revision
         )
     ).resolve(strict=True)
-    compiler_ref, _ = _compiler_identity(
-        ROOT, revision_path, ROOT / "compiler/source_set.json"
-    )
+    compiler_ref, _ = _compiler_identity(ROOT, revision_path)
     checker_ref = _checker_identity()
     validator_ref = _validator_identity(parent_validator)
     snapshot = verify_git_snapshot(dataset_root, source_revision)
@@ -653,9 +621,7 @@ def _load_manifest(work_root: Path) -> dict[str, Any]:
             "project_root",
             "git_commit",
             "revision_path",
-            "source_set_path",
             "revision_id",
-            "state",
         },
         "work manifest compiler",
     )
@@ -708,14 +674,9 @@ def _load_context(work_root: Path) -> Context:
     revision_path = project_root / PurePosixPath(
         _nonempty(compiler_stored["revision_path"], "compiler.revision_path")
     )
-    source_set_path = project_root / PurePosixPath(
-        _nonempty(compiler_stored["source_set_path"], "compiler.source_set_path")
-    )
-    compiler_current, compiler = _compiler_identity(
-        project_root, revision_path, source_set_path
-    )
+    compiler_current, compiler = _compiler_identity(project_root, revision_path)
     if compiler_current != compiler_stored:
-        raise ReviewError("Compiler Git/Revision/source-set identity drifted")
+        raise ReviewError("Compiler commit or Revision identity drifted from the work manifest")
     _check_reference_bundle(work_root, compiler_stored, checker_stored)
     return Context(work_root, manifest, snapshot, records, compiler)
 
@@ -1405,7 +1366,6 @@ def _derive_review(
         "reported_axes": expected_input["challenge_case"]["reported_axes"],
         "relation": expected_input["challenge_case"]["relation"],
         "compiler": dict(compiler_ref),
-        "compiler_maturity": compiler_ref["state"],
         "semantic_binding": "reviewer_claimed",
         "parent_contract": parent,
         "complete_parent_expressibility": complete_result,

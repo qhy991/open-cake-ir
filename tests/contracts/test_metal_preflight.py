@@ -57,7 +57,7 @@ class MetalPreflightTests(unittest.TestCase):
             configuration_sha256=sha256(canonical(configuration)).hexdigest(), initial_and_resume_equivalent=True,
             file_lifecycle_observed=True, usage_observed=True, qualified=True,
             scope='live_two_turn_tool_rich_provider', canonical_sha256=receipt_identity)
-        compiler = Compiler.load(ROOT, ROOT/'compiler/revision.lock.json')
+        compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
         lowering = compiler.lower(compiler.assess(frontend.parse(source).document))
         requirements = lowering.toolchain_requirements
         if cuda:

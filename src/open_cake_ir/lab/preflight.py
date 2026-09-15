@@ -306,11 +306,10 @@ def preflight(
     executor_reference = dict(executor.reference)
     gpu = _object(execution.get("gpu"), "study.execution.gpu")
     from open_cake_ir.compiler.target import Target
-    revision_document = json.loads((project_root / compiler_relative).read_bytes())
-    target_reference = revision_document["target_definitions"].get(execution["target"])
-    if target_reference is None:
-        raise ValueError("Study target is not bound by the Compiler Revision")
-    _, target_path = _project_path(project_root, target_reference["path"], "compiler.target")
+    target_relative = f"compiler/targets/{execution['target']}.json"
+    if not (project_root / target_relative).is_file():
+        raise ValueError("Study target is not declared by the Compiler")
+    _, target_path = _project_path(project_root, target_relative, "compiler.target")
     target = Target.load(target_path)
     if (set(gpu) != {'name', 'count', 'mode'} or gpu.get('name') not in target.device_names
         or type(gpu.get('count')) is not int or gpu['count'] != 1 or gpu.get('mode') != ('local_serialized' if route['backend'] == 'metal' else 'exclusive')):

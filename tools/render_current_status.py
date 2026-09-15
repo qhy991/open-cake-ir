@@ -1,117 +1,107 @@
 #!/usr/bin/env python3
-"""Render the human-readable current release view from canonical authorities."""
+"""Render the human-readable current view from the Compiler manifest and host captures."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "reports" / "current" / "STATUS.md"
+sys.path.insert(0, str(ROOT / "src"))
+
+from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.compiler.corpus import CorpusGateReport  # noqa: E402
 
 
-def _load(relative_path: str) -> dict:
-    value = json.loads((ROOT / relative_path).read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"{relative_path} must contain one JSON object")
-    return value
-
-
-def _coverage_lines(gate: dict) -> list[str]:
+def _coverage_lines(report: CorpusGateReport) -> list[str]:
     """State which Targets the pass count covers, next to that count.
 
-    A reader who sees every declared Target listed above a passing count assumes the count
-    covers all of them. The reviewed Gate document owns the domain, so it is quoted here,
-    and a Gate that does not state one is reported as not stating one.
+    A reader who sees every declared Target listed above a passing count assumes the
+    count covers all of them. Absence is reported, never repaired by minting cases.
     """
 
-    path = gate.get("path")
-    coverage = _load(path).get("target_coverage") if isinstance(path, str) else None
-    if not isinstance(coverage, dict):
-        return ["- 语料覆盖： 本 Gate 报告未说明检查了哪些目标"]
-    examined = coverage.get("examined", {})
-    unexamined = coverage.get("unexamined", [])
-    undeclared = coverage.get("undeclared_in_cases", {})
-    examined_text = "、".join(f"`{target}`（{count}）" for target, count in sorted(examined.items())) or "无"
-    unexamined_text = ", ".join(unexamined)
-    undeclared_text = "、".join(f"`{target}`（{count}）" for target, count in sorted(undeclared.items())) or "无"
+    examined = "、".join(
+        f"`{target}`（{count}）" for target, count in sorted(report.examined_targets.items())
+    ) or "无"
+    undeclared = "、".join(
+        f"`{target}`（{count}）" for target, count in sorted(report.undeclared_case_targets.items())
+    ) or "无"
+    unexamined = ", ".join(report.unexamined_targets)
     return [
-        f"- 语料覆盖： 检查了 {examined_text}",
-        (f"- 未检查的已声明目标： `{unexamined_text}`（上面的通过数不涵盖这些目标）"
-         if unexamined else "- 未检查的已声明目标： 无"),
-        f"- 只用于拒绝检查的未声明目标： {undeclared_text}",
+        f"- 语料覆盖： 检查了 {examined}",
+        (f"- 未检查的已声明目标： `{unexamined}`（上面的通过数不涵盖这些目标）"
+         if report.unexamined_targets else "- 未检查的已声明目标： 无"),
+        f"- 只用于拒绝检查的未声明目标： {undeclared}",
     ]
 
 
-def render() -> str:
-    compiler = _load("compiler/revision.lock.json")
-    executors = _load("inventory/EXECUTOR_REVISIONS.json")
-    current_by_target = executors.get("current_by_target")
-    if executors.get("schema_version") != 2 or not isinstance(current_by_target, dict):
-        raise ValueError("inventory/EXECUTOR_REVISIONS.json has no exact-target current index")
-    executor_lines: list[str] = []
-    for target, current_executor in sorted(current_by_target.items()):
-        if not isinstance(current_executor, dict):
-            raise ValueError(f"current executor for {target} differs")
-        executor_path = current_executor.get("path")
-        if not isinstance(executor_path, str):
-            raise ValueError(f"current executor path for {target} is missing")
-        executor = _load(executor_path)
-        executor_id = current_executor.get("executor_id")
-        if executor.get("executor_id") != executor_id:
-            raise ValueError(f"current executor index and descriptor disagree for {target}")
-        if len(executor.get("sources", [])) != current_executor.get("source_count"):
-            raise ValueError(f"current executor source count disagrees for {target}")
-        executor_lines.extend([
-            f"### `{target}`",
+def _host_lines() -> list[str]:
+    """One committed capture per target; a target without one has no runnable host."""
+
+    directory = ROOT / "runtime/hosts"
+    captures = sorted(directory.glob("*.json")) if directory.is_dir() else []
+    if not captures:
+        return ["还没有任何目标提交主机采集。", ""]
+    lines: list[str] = []
+    for path in captures:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        host = document["host_environment"]
+        python = host["python"]
+        relative = path.relative_to(ROOT).as_posix()
+        lines.extend([
+            f"### `{document['target']}`",
             "",
-            f"- 版本： `{executor_id}`",
-            f"- 状态： `{executor['state']}`",
-            f"- 绑定源码： `{len(executor.get('sources', []))}` 个文件",
-            f"- 描述文件： [`{executor_path}`](../../{executor_path})",
+            f"- 主机类型： `{host.get('kind') or 'cuda'}`",
+            f"- 解释器： `{python['invocation_path']}`（{python['version']}）",
+            f"- 采集文件： [`{relative}`](../../{relative})",
             "",
         ])
+    return lines
 
-    gate = compiler.get("corpus_gate", {})
-    targets = ", ".join(sorted(compiler.get("target_definitions", {}))) or "none"
-    calibration = compiler.get("calibration_coverage", [])
-    calibration_text = ", ".join(calibration) if calibration else "无"
+
+def render() -> str:
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+    report = compiler.check_corpus()
+    revision = json.loads((ROOT / "compiler/revision.json").read_text(encoding="utf-8"))
+    calibration = revision.get("calibration_coverage", [])
+    targets = ", ".join(sorted(report.declared_targets)) or "none"
+    matched = sum(case.matched for case in report.cases)
 
     return "\n".join(
         [
-            "# 当前发布状态",
+            "# 当前状态",
             "",
             "<!-- Generated by tools/render_current_status.py. Do not edit by hand. -->",
             "",
-            "本页由发布记录自动生成，说明现在固定使用哪些版本。",
-            "发布完成不代表新的 GPU 实验、性能结果或运行授权。",
+            "本页由当前提交上的编译器清单和主机采集自动生成。",
+            "源码身份是这份检出的 git 提交；检查通过不代表新的 GPU 实验、性能结果或运行授权。",
             "",
             "## Compiler",
             "",
-            f"- 版本： `{compiler['revision_id']}`",
-            f"- 状态： `{compiler['state']}`",
-            f"- 目标： `{targets}`",
-            f"- 语料检查： `{gate.get('matched_case_count')}/{gate.get('case_count')}` 项符合预期",
-            *_coverage_lines(gate),
-            f"- 绑定源码： `{len(compiler.get('sources', []))}` 个文件",
-            f"- 已发布校准： `{calibration_text}`",
-            "- 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)",
+            f"- 声明的目标： `{targets}`",
+            f"- 语料检查： `{matched}/{report.case_count}` 项符合预期",
+            *_coverage_lines(report),
+            f"- 已发布校准： `{', '.join(calibration) if calibration else '无'}`",
+            "- 负责记录： [`compiler/revision.json`](../../compiler/revision.json) 与 "
+            "[`compiler/targets/`](../../compiler/targets)",
             "",
-            "## Executor（按精确目标）",
+            "## 主机采集（按精确目标）",
             "",
-            *executor_lines,
-            "- 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)",
+            *_host_lines(),
+            "- 负责记录： [`runtime/hosts/`](../../runtime/hosts)",
             "",
             "## 这些数字说明什么",
             "",
-            "项目尚无统一的已验收 Study Report 索引，不能从这些版本号生成全项目的成绩榜。",
+            "项目尚无统一的已验收 Study Report 索引，不能从这一页生成全项目的成绩榜。",
             "算子、完整 Program、模型和服务的结果，仍以各自绑定的实验报告与原始证据为准。",
             "本页不复制这些实验结论。",
             "",
-            "[`inventory/CURRENT_STATE.md`](../../inventory/CURRENT_STATE.md) 是旧迁移记录，",
-            "不是当前状态；需要了解概念可从 [中文 Wiki](../../docs/wiki/README.md) 开始。",
+            "历史发布记录保留在 [`compiler/releases/`](../../compiler/releases)、",
+            "[`runtime/executors/`](../../runtime/executors) 和 [`inventory/`](../../inventory)，",
+            "它们只在各自的原提交上用当时的工具重放。",
             "",
         ]
     )

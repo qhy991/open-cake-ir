@@ -52,11 +52,11 @@ class FlashCalibrationTest(unittest.TestCase):
         cls.project.mkdir()
         # Preserve the actual frozen Compiler bytes and identity. This fixture
         # exercises lowering/model semantics, not the independent release workflow.
-        manifest = json.loads((ROOT / "compiler/revision.lock.json").read_bytes())
+        manifest = json.loads((ROOT / "compiler/revision.json").read_bytes())
         paths = {record["path"] for record in manifest["sources"]}
         paths.update(reference["path"] for reference in manifest["target_definitions"].values())
         paths.update(manifest[key]["path"] for key in ("corpus_manifest", "corpus_gate", "release_approval"))
-        paths.update({"compiler/revision.lock.json", "compiler/revision.json", "compiler/source_set.json",
+        paths.update({"compiler/revision.json", "compiler/revision.json", "compiler/source_set.json",
                       "contracts/workloads/flash-kmeans-assign-v2.json", "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
         # The child-process supervision probes need the actual Python runtime code.
         shutil.copytree(ROOT / "src", cls.project / "src", ignore=shutil.ignore_patterns("__pycache__"))

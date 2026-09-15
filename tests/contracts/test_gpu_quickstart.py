@@ -287,7 +287,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
                     artifact_payloads=payloads,
                 )
 
-        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         workload = load_workload(
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )

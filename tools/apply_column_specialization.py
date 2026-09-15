@@ -22,13 +22,13 @@ def main() -> int:
     output = args.output.absolute()
     if output != output.resolve() or output.exists() or any((parent/'.git').exists() for parent in output.parents):
         p.error('output must be a new canonical directory outside every Git checkout')
-    compiler = Compiler.load(ROOT, ROOT/'compiler/revision.lock.json')
+    compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
     schedule = frontend.read_schedule(args.schedule).document
     result = compiler.specialize_output_columns(schedule,
         schedule_id=args.schedule_id, entry_point=args.entry_point)
     output.mkdir(parents=True)
     report = {'applied':result.applied, 'reason':result.reason, 'message':result.message,
-              'compiler_revision_path':str(ROOT/'compiler/revision.lock.json'),
+              'compiler_revision_path':str(ROOT/'compiler/revision.json'),
               'schedule':str(args.schedule.resolve()),
               'scope':'explicit_output_column_specialization; static_only; no_GPU_or_performance_qualification'}
     if result.applied:

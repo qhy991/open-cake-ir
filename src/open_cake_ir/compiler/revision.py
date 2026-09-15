@@ -1,7 +1,10 @@
-"""Strict admission of draft and released Compiler Revisions.
+"""The Compiler manifest, its declared Targets and the source identity it runs from.
 
-A Revision binds identities and parsed Targets. Hardware facts remain in Target;
-source, Corpus Gate and approval checks retain the released admission boundary.
+`compiler/revision.json` names the Corpus manifest and the calibration coverage. Every
+document under `compiler/targets/` is a declared Target, so adding a target is adding a
+document. Code identity is the clean git commit of the checkout (ADR 0065): the Compiler
+records it when there is one and still assesses and lowers without it, while the Lab
+refuses to run a Campaign without it.
 """
 
 from __future__ import annotations
@@ -13,19 +16,44 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, cast
 
+from ..source_identity import checkout_commit_or_none
 from .errors import CompilerError
 from .ir import ScheduleParseError
 from .target import Target, TargetParseError, TargetSource
 
+TARGETS_DIRECTORY = "compiler/targets"
+
+_TARGET_REQUIRED_FIELDS = frozenset({
+    "schema_version",
+    "target_id",
+    "architecture",
+    "device_names",
+    "memory_spaces",
+    "operation_kinds",
+    # The role-slot width is required, not optional: a Target without one would leave a
+    # fact for shared code to invent.
+    "warp_size",
+    # Vendor is required for the same reason: shared code used to infer it from the
+    # presence of a CUDA field.
+    "vendor",
+    "resource_limits",
+    "instruction_contracts",
+    "synchronization_contracts",
+    "citations",
+})
+_TARGET_OPTIONAL_FIELDS = frozenset({
+    "occupancy", "compute_capability", "peak", "warps_per_warpgroup",
+})
+
 
 @dataclass(frozen=True)
 class CompilerRevision:
-    """Admitted Compiler identity and its exact typed Target bindings."""
+    """Declared Targets, Corpus and calibration coverage at one source identity."""
 
     project_root: Path
     revision_id: str
     canonical_sha256: str
-    state: str
+    commit: str | None
     targets: Mapping[str, Target]
     corpus_path: Path
     calibration_coverage: frozenset[str]
@@ -88,52 +116,20 @@ def _project_path(root: Path, value: object, context: str) -> tuple[str, Path]:
     return relative, path
 
 
-def _load_target(
-    root: Path,
-    target_id: str,
-    value: object,
-    context: str,
-) -> Target:
-    reference = _object(value, context)
-    if set(reference) != {"path", "canonical_sha256"}:
-        raise CompilerError(f"{context} fields differ")
-    _, path = _project_path(root, reference.get("path"), f"{context}.path")
+def _load_target(target_path: Path) -> Target:
+    target_id = target_path.stem
     document = _object(
-        json.loads(path.read_text(encoding="utf-8")),
+        json.loads(target_path.read_text(encoding="utf-8")),
         f"target_definition.{target_id}",
     )
-    expected_fields = {
-        "schema_version",
-        "target_id",
-        "architecture",
-        "device_names",
-        "memory_spaces",
-        "operation_kinds",
-        # The role-slot width is required, not optional: a Revision that bound a Target
-        # document without one would be binding a fact the shared code used to invent.
-        "warp_size",
-        # Vendor is required for the same reason: a Revision that bound a document
-        # without one would be binding a vendor the shared code used to infer from the
-        # presence of a CUDA field.
-        "vendor",
-        "resource_limits",
-        "instruction_contracts",
-        "synchronization_contracts",
-        "citations",
-    }
-    optional_fields = {"occupancy", "compute_capability", "peak",
-                       "warps_per_warpgroup"}
     if (
-        not expected_fields <= set(document) <= expected_fields | optional_fields
+        not _TARGET_REQUIRED_FIELDS <= set(document)
+        <= _TARGET_REQUIRED_FIELDS | _TARGET_OPTIONAL_FIELDS
         or document.get("schema_version") != 1
     ):
         raise CompilerError(f"target definition {target_id!r} fields differ")
     if document.get("target_id") != target_id:
-        raise CompilerError(f"target definition {target_id!r} identity differs")
-    document_bytes = _canonical_json_bytes(document)
-    canonical_sha256 = sha256(document_bytes).hexdigest()
-    if reference.get("canonical_sha256") != canonical_sha256:
-        raise CompilerError(f"target definition {target_id!r} bytes differ")
+        raise CompilerError(f"target definition {target_id!r} identity differs from its file name")
     try:
         typed_target = Target.from_dict(document)
     except (TargetParseError, ScheduleParseError) as error:
@@ -151,148 +147,58 @@ def _load_target(
     citations = _objects(document.get("citations"), f"target_definition.{target_id}.citations")
     if not citations:
         raise CompilerError(f"target definition {target_id!r} requires citations")
+    document_bytes = _canonical_json_bytes(document)
     return replace(
         typed_target,
-        source=TargetSource(canonical_sha256=canonical_sha256, document_bytes=document_bytes),
+        source=TargetSource(
+            canonical_sha256=sha256(document_bytes).hexdigest(),
+            document_bytes=document_bytes,
+        ),
     )
 
 
 def load_revision(project_root: str | Path, revision_path: str | Path) -> CompilerRevision:
-    """Load a draft or released manifest without relaxing its admission checks."""
+    """Load the Compiler manifest, every declared Target and the checkout's commit."""
 
     root = Path(project_root).resolve(strict=True)
     path = Path(revision_path).resolve(strict=True)
-    value = json.loads(path.read_text(encoding="utf-8"))
-    revision = _object(value, "compiler_revision")
-    draft_fields = {
-        "schema_version",
-        "revision_id",
-        "state",
-        "target_definitions",
-        "corpus_manifest",
-        "calibration_coverage",
-    }
-    released_fields = {
-        "schema_version",
-        "revision_id",
-        "state",
-        "target_definitions",
-        "corpus_manifest",
-        "calibration_coverage",
-        "corpus_gate",
-        "release_approval",
-        "sources",
-    }
-    state = revision.get("state")
-    expected_fields = draft_fields if state == "draft" else released_fields
-    if set(revision) != expected_fields or revision.get("schema_version") != 1:
+    revision = _object(json.loads(path.read_text(encoding="utf-8")), "compiler_revision")
+    if (set(revision) != {"schema_version", "corpus_manifest", "calibration_coverage"}
+            or revision.get("schema_version") != 2):
         raise CompilerError("compiler revision fields differ")
-    if state not in {"draft", "released"}:
-        raise CompilerError("compiler revision state must be draft or released")
-    revision_id = _name(revision.get("revision_id"), "compiler_revision.revision_id")
-    target_references = _object(
-        revision.get("target_definitions"),
-        "compiler_revision.target_definitions",
+    _, corpus_path = _project_path(
+        root, revision.get("corpus_manifest"), "compiler_revision.corpus_manifest"
     )
-    if not target_references:
-        raise CompilerError("compiler revision must bind at least one Target")
-    targets = {
-        _name(target_id, "compiler_revision.target_definitions key"): _load_target(
-            root,
-            target_id,
-            reference,
-            f"compiler_revision.target_definitions.{target_id}",
-        )
-        for target_id, reference in target_references.items()
-    }
     calibration = revision.get("calibration_coverage")
     if not isinstance(calibration, list) or any(
         not isinstance(item, str) or not item for item in calibration
     ):
         raise CompilerError("compiler revision calibration_coverage must be a list")
-    if state == "draft":
-        _, corpus_path = _project_path(
-            root, revision.get("corpus_manifest"), "compiler_revision.corpus_manifest"
-        )
-    else:
-        corpus = _object(revision.get("corpus_manifest"), "compiler_revision.corpus_manifest")
-        if set(corpus) != {"path", "canonical_sha256"}:
-            raise CompilerError("released corpus_manifest fields differ")
-        _, corpus_path = _project_path(
-            root, corpus.get("path"), "compiler_revision.corpus_manifest.path"
-        )
-        corpus_document = json.loads(corpus_path.read_text(encoding="utf-8"))
-        if corpus.get("canonical_sha256") != sha256(
-            _canonical_json_bytes(corpus_document)
-        ).hexdigest():
-            raise CompilerError("released corpus manifest bytes differ")
-        sources = revision.get("sources")
-        if not isinstance(sources, list) or not sources:
-            raise CompilerError("released Compiler Revision sources differ")
-        observed_paths: set[str] = set()
-        for index, source in enumerate(sources):
-            item = _object(source, f"compiler_revision.sources[{index}]")
-            if set(item) != {"path", "sha256", "size_bytes"}:
-                raise CompilerError(f"compiler_revision.sources[{index}] fields differ")
-            relative, source_path = _project_path(
-                root, item.get("path"), f"compiler_revision.sources[{index}].path"
-            )
-            if relative in observed_paths:
-                raise CompilerError(f"released compiler source {relative!r} is duplicated")
-            observed_paths.add(relative)
-            payload = source_path.read_bytes()
-            if (
-                item.get("sha256") != sha256(payload).hexdigest()
-                or item.get("size_bytes") != len(payload)
-            ):
-                raise CompilerError(f"released compiler source {relative!r} differs")
-        gate = _object(revision.get("corpus_gate"), "compiler_revision.corpus_gate")
-        if set(gate) != {
-            "path",
-            "canonical_sha256",
-            "case_count",
-            "matched_case_count",
-        }:
-            raise CompilerError("released corpus_gate fields differ")
-        _, gate_path = _project_path(
-            root, gate.get("path"), "compiler_revision.corpus_gate.path"
-        )
-        gate_document = json.loads(gate_path.read_text(encoding="utf-8"))
-        if gate.get("canonical_sha256") != sha256(
-            _canonical_json_bytes(gate_document)
-        ).hexdigest() or gate.get("case_count") != gate_document.get(
-            "case_count"
-        ) or gate.get("matched_case_count") != gate_document.get("matched_case_count"):
-            raise CompilerError("released Corpus Gate report bytes differ")
-        approval = _object(
-            revision.get("release_approval"), "compiler_revision.release_approval"
-        )
-        if set(approval) != {"path", "canonical_sha256"}:
-            raise CompilerError("released approval reference fields differ")
-        _, approval_path = _project_path(
-            root, approval.get("path"), "compiler_revision.release_approval.path"
-        )
-        approval_document = _object(
-            json.loads(approval_path.read_text(encoding="utf-8")),
-            "compiler_revision.release_approval.document",
-        )
-        approval_gate = _object(
-            approval_document.get("gate_report"),
-            "compiler_revision.release_approval.gate_report",
-        )
-        if (
-            approval.get("canonical_sha256")
-            != sha256(_canonical_json_bytes(approval_document)).hexdigest()
-            or approval_document.get("decision") != "approved"
-            or approval_gate.get("path") != gate.get("path")
-            or approval_gate.get("canonical_sha256") != gate.get("canonical_sha256")
-        ):
-            raise CompilerError("released Compiler approval bytes differ")
+    directory = root / TARGETS_DIRECTORY
+    target_paths = sorted(directory.glob("*.json")) if directory.is_dir() else []
+    if not target_paths:
+        raise CompilerError(f"{TARGETS_DIRECTORY} declares no Target")
+    targets: dict[str, Target] = {}
+    for target_path in target_paths:
+        if target_path.is_symlink() or not target_path.is_file():
+            raise CompilerError(f"target definition {target_path.name!r} custody differs")
+        targets[target_path.stem] = _load_target(target_path)
+    corpus_document = json.loads(corpus_path.read_text(encoding="utf-8"))
+    commit = checkout_commit_or_none(root)
+    identity = {
+        "commit": commit,
+        "revision": revision,
+        "targets": {
+            target_id: cast(TargetSource, targets[target_id].source).canonical_sha256
+            for target_id in sorted(targets)
+        },
+        "corpus_manifest": sha256(_canonical_json_bytes(corpus_document)).hexdigest(),
+    }
     return CompilerRevision(
         project_root=root,
-        revision_id=revision_id,
-        canonical_sha256=sha256(_canonical_json_bytes(revision)).hexdigest(),
-        state=cast(str, state),
+        revision_id=f"open-cake-ir@{commit or 'uncommitted'}",
+        canonical_sha256=sha256(_canonical_json_bytes(identity)).hexdigest(),
+        commit=commit,
         targets=MappingProxyType(targets),
         corpus_path=corpus_path,
         calibration_coverage=frozenset(cast(list[str], calibration)),

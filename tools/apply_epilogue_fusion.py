@@ -24,14 +24,14 @@ def main() -> int:
     output = args.output.absolute()
     if output != output.resolve() or output.exists() or any((parent/'.git').exists() for parent in output.parents):
         p.error('output must be a new canonical directory outside every Git checkout')
-    compiler = Compiler.load(ROOT, ROOT/'compiler/revision.lock.json')
+    compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
     producer = frontend.read_schedule(args.producer).document
     epilogue = frontend.read_schedule(args.epilogue).document
     result = compiler.fuse_pointwise_epilogue(producer, epilogue,
         private_intermediate=args.private_intermediate, schedule_id=args.schedule_id, entry_point=args.entry_point)
     output.mkdir(parents=True)
     report = {'applied':result.applied, 'reason':result.reason, 'message':result.message,
-              'compiler_revision_path':str(ROOT/'compiler/revision.lock.json'),
+              'compiler_revision_path':str(ROOT/'compiler/revision.json'),
               'producer':str(args.producer.resolve()),'epilogue':str(args.epilogue.resolve()),
               'scope':'explicit_private_composition; static_only; no_GPU_or_performance_qualification'}
     if result.applied:

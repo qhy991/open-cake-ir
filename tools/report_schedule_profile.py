@@ -136,7 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--revision",
         type=Path,
-        default=ROOT / "compiler/revision.lock.json",
+        default=ROOT / "compiler/revision.json",
     )
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--all", action="store_true")

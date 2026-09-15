@@ -205,7 +205,7 @@ def _keys(row: dict) -> dict[str, float]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--schedule", default="corpus/schedules/rmsnorm-b8-smoke.json")
-    parser.add_argument("--revision", default="compiler/revision.lock.json")
+    parser.add_argument("--revision", default="compiler/revision.json")
     parser.add_argument(
         "--size",
         type=int,

@@ -77,7 +77,7 @@ def prepare(*, omoe_root: Path, omoe_ref: str, output: Path, task: str,
                             'evidence_status': 'source_record_only_not_requalified'})
             materials.append(source if representation == 'case' else project_steps(fields, body))
     document, source = create_task(task, backend=backend, rows=rows, columns=columns, depth=depth)
-    compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.lock.json')
+    compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
     assessment = compiler.assess(frontend.parse(source).document)
     if not assessment.lowering_eligible:
         codes = ', '.join(f.code for f in assessment.findings)

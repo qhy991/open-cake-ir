@@ -328,7 +328,7 @@ def execute_matched_from_config(
     compiler = Compiler.load(root, root / str(compiler_ref["path"]))
     compiler_gate = compiler.check_corpus()
     if (
-        compiler.state != "released"
+        compiler.commit is None
         or not compiler_gate.passed
         or compiler_gate.compiler_revision_sha256 != compiler_ref["canonical_sha256"]
     ):

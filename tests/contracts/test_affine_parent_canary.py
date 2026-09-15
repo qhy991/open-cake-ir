@@ -71,7 +71,7 @@ class AffineParentCanaryTests(unittest.TestCase):
                 canary.verify(record)
 
     @unittest.skipUnless(
-        json.loads((ROOT / "compiler/revision.lock.json").read_text())["revision_id"] == "open-cake-ir-sm100a-v43",
+        json.loads((ROOT / "compiler/revision.json").read_text())["revision_id"] == "open-cake-ir-sm100a-v43",
         "requires the canary's complete frozen Compiler v43 checkout",
     )
     def test_prepare_uses_pinned_schedule_and_one_correctness_stage(self):
@@ -93,7 +93,7 @@ class AffineParentCanaryTests(unittest.TestCase):
             self.assertEqual((output / "candidate/kernel.py").read_text(), source)
 
     @unittest.skipIf(
-        json.loads((ROOT / "compiler/revision.lock.json").read_text())["revision_id"]
+        json.loads((ROOT / "compiler/revision.json").read_text())["revision_id"]
         == "open-cake-ir-sm100a-v43",
         "the current checkout is the canary's original v43 Compiler",
     )

@@ -116,11 +116,9 @@ def campaign_performance(project_root, campaign, report) -> dict:
         result["missing"] = [f"task_io_convention_unavailable: {error}"]
         return result
     result["work"] = work
-    # Read the target reference from the already admitted Compiler lock, not a
-    # current/default device table that could silently change the denominator.
-    _, revision_path = source_reference_path(root, lock["compiler_revision"]["path"], "performance Compiler")
-    revision = json.loads(revision_path.read_bytes())
-    _, target_path = source_reference_path(root, revision["target_definitions"][workload.target]["path"], "performance target")
+    # Read the Target document the admitted Compiler declares, not a current/default
+    # device table that could silently change the denominator.
+    _, target_path = source_reference_path(root, f"compiler/targets/{workload.target}.json", "performance target")
     target = Target.load(target_path)
     if target.target_id != workload.target:
         raise ValueError("performance target differs from the Workload")

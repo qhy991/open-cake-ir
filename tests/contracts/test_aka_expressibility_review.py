@@ -417,7 +417,6 @@ class AkaExpressibilityReviewTests(unittest.TestCase):
         )
         self.assertEqual(result["delta_expressibility"]["classification"], "not_applicable")
         self.assertEqual(result["semantic_binding"], "reviewer_claimed")
-        self.assertEqual(result["compiler_maturity"], "draft")
         self.assertEqual(result["gpu_test"], "not_run")
         self.assertEqual(result["review_state"], "checked")
 

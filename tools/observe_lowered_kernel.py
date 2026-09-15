@@ -88,7 +88,7 @@ def main() -> int:
     parser.add_argument(
         "--schedule", default="corpus/schedules/flash-kmeans-assignment-full.json"
     )
-    parser.add_argument("--revision", default="compiler/revision.lock.json")
+    parser.add_argument("--revision", default="compiler/revision.json")
     parser.add_argument("--out", required=True)
     parser.add_argument(
         "--tolerance",

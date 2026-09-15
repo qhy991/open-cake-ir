@@ -1,0 +1,39 @@
+{
+  "host_environment": {
+    "archive_executable": {
+      "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/metal-m2-executor-v4/native/metal-archive-host",
+      "sha256": "9d3573b69eca8561011929ef18a5c2f91961cc848b9a00aeff7bf6227b5ba6f6",
+      "size_bytes": 94464
+    },
+    "host": {
+      "device_name": "Apple M2",
+      "device_registry_id": "4294968689",
+      "operating_system": "Version 15.7.3 (Build 24G419)",
+      "target": "apple_gpu_family8"
+    },
+    "kind": "metal",
+    "observer_executable": {
+      "path": "/Users/haiyan-infiniai/.local/share/open-cake-ir/metal-m2-executor-v4/native/metal-observer",
+      "sha256": "a539b2211aa9f3626277307a57e2b2f33b9ba7416966b3ff0e8d0306b1e63384",
+      "size_bytes": 255552
+    },
+    "packages": {},
+    "python": {
+      "invocation_path": "/Users/haiyan-infiniai/Agent4Kernel/open-cake-ir/.venv/bin/python",
+      "resolved_sha256": "a12be0bc84dc8ce345e2a4c94eef11739bdd21f7615c06c6bbbdfeded346e589",
+      "version": "3.14.6"
+    },
+    "sdk": {
+      "build_version": "24F74",
+      "path": "/Library/Developer/CommandLineTools/SDKs/MacOSX15.5.sdk",
+      "version": "15.5"
+    },
+    "swift": {
+      "invocation_path": "/usr/bin/swiftc",
+      "resolved_sha256": "7f30f076d0e9c38f772a76449fca9da8cf97f6a3d43b94c90a00e4f9ce7ad39e",
+      "version": "Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2 clang-1700.0.13.5)\nTarget: arm64-apple-macosx15.0"
+    }
+  },
+  "schema_version": 1,
+  "target": "apple_gpu_family8"
+}

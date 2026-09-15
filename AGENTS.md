@@ -184,8 +184,8 @@ things to do because the rules above did not stop either one.
   performance-transparent and verification-friendly.
 - A primitive and its analyses evolve together. Syntax without effects and legality rules
   makes the IR less analyzable, which is a reason to refuse it, not to defer them.
-- Changes are test-gated across the kernel corpus and require independent review under
-  ADR 0052 before release or merge.
+- Changes are test-gated across the kernel corpus and reviewed once at the merge to
+  `main`, by a session other than the author's (ADR 0065).
 - Recurring failures are what become new verifier rules, IR primitives, cost-model
   calibrations, explicit transformation passes and reusable tactics. A one-off failure
   is not evidence for a rule.
@@ -220,9 +220,9 @@ things to do because the rules above did not stop either one.
 
 ## Tick-tock between campaigns and Revisions (outer loop cadence)
 
-- Campaigns run only on frozen Revisions; that is the tock. A compiler or executor change
-  is a tick that mints successor Revisions through the existing release cycles and never
-  edits a pinned source in place.
+- Campaigns run only on frozen code; that is the tock. A compiler or executor change is a
+  tick: it lands as commits on a branch and reaches campaigns when it merges, so the commit
+  a Campaign pinned never changes under it (ADR 0065).
 - The unit of curation between the two is a Finding under `findings/`, append-only like
   evidence and following that directory's record contract. A finding cites workspaces,
   runs and event sequences by path and index -- the ledger's own hash chain settles byte
@@ -315,23 +315,21 @@ invalidates the comparison, not just the run.
   operation body is a backend capability Finding before lowering, not a name lookup. A new operator that composes
   existing primitives therefore needs a Workload Contract, not a Compiler change; if it needs a Compiler change, say
   which primitive is missing rather than widening a route.
-- Compiler changes require a full Corpus Gate and independent approval before producing a new Compiler Revision.
-  The author and release cycle may prepare a release but may not write `compiler/release-approval.json`.
-  A human reviewer or a distinct agent session may write it after reviewing the exact change and Gate. An agent
-  reviewer must use a model in `ALLOWED_REVIEW_MODELS` in `src/open_cake_ir/compiler/release.py`; record the actual
-  model and distinct author/reviewer session ids, with no silent model substitution or author self-approval.
-  Missing, malformed, stale, disallowed-model or same-session approval exits 3 and preserves the prior lock and
-  approval bytes. See ADR 0052, which supersedes ADR 0030's human-only interpretation.
-- A file can be frozen by being named with a digest somewhere else, not only by living under `evidence/`. Before
-  editing anything under `tools/`, `src/`, `examples/` or `corpus/`, check whether `compiler/source_set.json`, a
-  `runtime/executors/*.json` closure or a `contracts/calibrations/*.json` plan pins its bytes. Editing a pinned file
-  breaks the replay of whatever that digest supports; the answer is a successor, not an edit. If you already edited
-  one, restore it and re-verify the digest before doing anything else.
-- A Revision id is derived by its cycle script, never chosen by hand. Released Compiler locks and Executor
-  descriptors reserve their identities even without local consumers; never delete or reuse one based on an
-  absence of local witnesses. Compiler preparation reuses its pending draft until release, and an unchanged
-  verified release is a no-op. See [ADR 0049](docs/adr/0049-released-executor-descriptors-reserve-their-identities.md)
-  and [ADR 0050](docs/adr/0050-released-compiler-locks-reserve-their-identities.md).
+- Compiler changes require a full Corpus Gate and one review at the merge to `main`. CI runs the Gate on the
+  commit; the reviewer is the owner or an agent session other than the author's, and the merge commit names the
+  reviewer. No release document is minted per change (ADR 0065).
+- Source identity is the clean commit of the checkout, so editing a tracked file is ordinary work: commit it.
+  What a historical record pins stays pinned at its own commit. Released locks under `compiler/releases/`,
+  descriptors under `runtime/executors/`, frozen `contracts/calibrations/*.json` plans and retained Evidence replay
+  with the tools of the commit that produced them, never against today's tree (ADR 0065).
+- A host is captured once per exact target as `runtime/hosts/<target>.json` and committed. A target without one is
+  reported as having none, and no other host is substituted for it. Recapture only when the host itself changes,
+  with `tools/capture_executor_host.py --target <target>`.
+- A Compiler identity is `open-cake-ir@<commit>` and an Executor identity is `<target>@<commit>`; neither is
+  chosen by hand, and a checkout carrying changes has neither. Historical released identities under
+  `compiler/releases/` and `runtime/executors/` stay reserved and are never deleted or reused; see
+  [ADR 0049](docs/adr/0049-released-executor-descriptors-reserve-their-identities.md) and
+  [ADR 0050](docs/adr/0050-released-compiler-locks-reserve-their-identities.md) for what they meant.
 - Never regenerate Corpus Gate expectations to make the gate pass — that reports a match it just manufactured. Adopt
   new expectations as a separate, reviewed act (`tools/refresh_corpus_expectations.py --write`). State the reason to
   the reviewer who writes the approval; do not write that basis yourself.

@@ -97,14 +97,11 @@ def build_run_reference_documents(
         raise ValueError("task package Workload differs from CampaignLock")
     compiler = _object(lock.document["compiler_revision"], "campaign_lock.compiler")
     scaffold = _object(arm["scaffold"], "arm.scaffold")
-    revision_document = _object(
-        json.loads(_read_relative(root, compiler["path"], "compiler_revision")),
-        "compiler_revision",
-    )
-    targets = _object(revision_document["target_definitions"], "target_definitions")
     execution = _object(lock.document['execution'], 'campaign_lock.execution')
     target_id = str(execution['target'])
-    target = _object(targets[target_id], f"target_definitions.{target_id}")
+    # The Compiler declares every document under compiler/targets, so the package reads
+    # the Target from there rather than from a second reference table.
+    target_relative = f"compiler/targets/{target_id}.json"
     resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
     assigned_arms = _object(resolved["arm_environments"], "arm_environments")
     if not any(arm == value for value in assigned_arms.values()):
@@ -139,7 +136,7 @@ def build_run_reference_documents(
     documents: dict[str, bytes] = {
         "run-authority.json": _canonical_json(run_authority).encode(),
         "workload.json": _read_relative(root, workload["path"], "workload"),
-        "target.json": _read_relative(root, target["path"], "target"),
+        "target.json": _read_relative(root, target_relative, "target"),
         "scaffold.md": _read_relative(root, scaffold["path"], "scaffold"),
     }
     environment_kind = arm.get("environment_kind")

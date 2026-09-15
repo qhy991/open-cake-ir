@@ -1,4 +1,4 @@
-"""Content-bound Executor Revision shared by every Study variant."""
+"""Executor identity: one clean source commit and the captured host that runs it."""
 
 from __future__ import annotations
 
@@ -8,13 +8,14 @@ import importlib.util
 import json
 import os
 import platform
-import re
 import sys
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, cast
+
+from open_cake_ir.source_identity import SourceIdentityError, checkout_commit
 
 
 HIP_PACKAGES = frozenset({"packaging", "pybind11", "psutil", "setuptools", "torch", "triton"})
@@ -27,26 +28,6 @@ HIP_PROFILERS = frozenset({"rocprofv3", "rocprof", "omniperf"})
 HIP_DEVICE_MONITORS = frozenset({"amd-smi", "rocm-smi", "hy-smi"})
 
 
-def _amd_executor_id() -> "re.Pattern[str]":
-    """Schema v2 identities, one alternative per AMD target the layer can build for.
-
-    Pinned to the declared code-object family rather than to one target's name: a regex
-    naming only gfx1151 refused gfx938 for being the wrong vendor's target, which it is
-    not -- they are different vendors, AMD and Hygon, and what schema v2 is about is the
-    HIP host and the AMDGCN object they share. The released id carries the authority digest the
-    release tool appends, and the reserved pre-digest spellings stay admissible --
-    open-cake-ir-gfx1151-v1 and -v2 were released before that suffix existed and their
-    identities are reserved (ADR 0049).
-    """
-    from open_cake_ir.evaluation.artifacts import AMDGCN_TARGETS
-
-    alternatives = "|".join(re.escape(target) for target in sorted(AMDGCN_TARGETS))
-    return re.compile(
-        rf"open-cake-ir-(?:{alternatives})-v[1-9][0-9]*(?:\+[0-9a-f]{{64}})?"
-    )
-
-
-_AMD_EXECUTOR_ID = _amd_executor_id()
 HIP_RUNTIME_LIBRARIES = frozenset({"libxml2.so.2"})
 
 
@@ -235,9 +216,18 @@ class HipHostAdmission:
     runtime_libraries: Mapping[str, Mapping[str, object]]
 
 
+HOSTS_DIRECTORY = "runtime/hosts"
+
+
 @dataclass(frozen=True)
 class ExecutorRevision:
-    """One source and host-runtime closure for all experiment side effects."""
+    """One clean source commit and the captured host that runs it (ADR 0065).
+
+    The commit binds every tracked source byte, so there is no per-file closure to
+    re-release when a shared file changes, and a change never retires another host. The
+    host capture is committed under `runtime/hosts/<target>.json` and changes only when
+    the host does.
+    """
 
     executor_id: str
     canonical_sha256: str
@@ -249,7 +239,7 @@ class ExecutorRevision:
     def load_reference(
         cls, project_root: str | Path, reference: object, context: str
     ) -> "ExecutorRevision":
-        """Verify one exact descriptor reference and its repository source closure.
+        """Verify one exact Executor reference against this checkout and host capture.
 
         Host admission is a separate live-execution boundary. Every producer,
         worker and replay consumer calls this validator independently.
@@ -265,96 +255,106 @@ class ExecutorRevision:
             or revision.canonical_sha256 != _digest(
                 reference["canonical_sha256"], f"{context}.canonical_sha256"
             )):
-            raise ValueError(f"{context} Executor Revision differs")
+            raise ValueError(
+                f"{context} Executor Revision differs: the reference pins "
+                f"{reference['executor_id']!r} and this checkout provides "
+                f"{revision.executor_id!r}"
+            )
         return revision
 
     @classmethod
+    def for_target(cls, project_root: str | Path, target: object) -> "ExecutorRevision":
+        """Return the Executor for one exact target from its committed host capture."""
+
+        if not isinstance(target, str) or not target:
+            raise ValueError("current Executor resolution requires an exact target")
+        root = Path(project_root).resolve(strict=True)
+        path = root / HOSTS_DIRECTORY / f"{target}.json"
+        if not path.is_file():
+            raise ValueError(
+                f"no host capture is published for exact target {target!r}; capture one "
+                "with tools/capture_executor_host.py and commit it"
+            )
+        return cls.load(root, path)
+
+    @classmethod
     def load(cls, project_root: str | Path, path: str | Path) -> "ExecutorRevision":
-        """Load and verify every repository-owned byte in a released Executor."""
+        """Load one committed host capture and bind it to the checkout's clean commit."""
 
         root = Path(project_root).resolve(strict=True)
         unresolved_source = Path(path)
         if unresolved_source.is_symlink():
-            raise ValueError("Executor Revision custody differs")
+            raise ValueError("Executor host capture custody differs")
         source = unresolved_source.resolve(strict=True)
         try:
             relative_source = source.relative_to(root).as_posix()
         except ValueError as error:
-            raise ValueError("Executor Revision escapes the project root") from error
+            raise ValueError("Executor host capture escapes the project root") from error
+        if (PurePosixPath(relative_source).parent != PurePosixPath(HOSTS_DIRECTORY)
+                or source.suffix != ".json"):
+            raise ValueError(
+                f"an Executor host capture lives at {HOSTS_DIRECTORY}/<target>.json"
+            )
+        target = source.stem
         document = json.loads(source.read_text(encoding="utf-8"))
         if (
             not isinstance(document, Mapping)
-            or set(document)
-            != {
-                "schema_version",
-                "executor_id",
-                "state",
-                "sources",
-                "host_environment",
-            }
+            or set(document) != {"schema_version", "target", "host_environment"}
             or type(document.get("schema_version")) is not int
-            or document["schema_version"] not in (1, 2)
-            or document.get("state") != "released"
-            or not isinstance(document.get("executor_id"), str)
-            or not document["executor_id"]
+            or document["schema_version"] != 1
+            or document.get("target") != target
         ):
-            raise ValueError("Executor Revision fields, schema, or state differ")
-        if (
-            document["schema_version"] == 2
-            and _AMD_EXECUTOR_ID.fullmatch(document["executor_id"]) is None
-        ):
-            raise ValueError("Executor schema v2 AMD identity differs")
-        sources = document["sources"]
-        host = document["host_environment"]
-        if not isinstance(sources, list) or not sources or not isinstance(host, Mapping):
-            raise ValueError("Executor Revision closure differs")
-        seen: set[str] = set()
-        for index, value in enumerate(sources):
-            record = _file_record(value, f"executor.sources[{index}]")
-            relative, file_path = _relative_file(
-                root, record["path"], f"executor.sources[{index}]"
-            )
-            if relative in seen:
-                raise ValueError(f"Executor Revision path {relative!r} is duplicated")
-            seen.add(relative)
-            payload = file_path.read_bytes()
-            if (
-                record["sha256"] != sha256(payload).hexdigest()
-                or record["size_bytes"] != len(payload)
-            ):
-                raise ValueError(f"Executor Revision file {relative!r} differs")
-        cls._validate_host_document(
-            cast(Mapping[str, object], host), schema_version=document["schema_version"]
-        )
+            raise ValueError("Executor host capture fields, schema or target differ")
+        host = cast(Mapping[str, object], document["host_environment"])
+        cls._validate_host_document(host)
+        if host.get("kind") == "metal" and cast(Mapping[str, object], host["host"])["target"] != target:
+            raise ValueError("Metal host capture describes another target")
+        try:
+            commit = checkout_commit(root)
+        except SourceIdentityError as error:
+            raise ValueError(
+                f"the Executor for {target!r} requires a clean committed checkout: {error}"
+            ) from error
+        executor_id = f"{target}@{commit}"
         detached = cast(
             Mapping[str, object],
-            _freeze_json(json.loads(_canonical_json_bytes(document))),
+            _freeze_json(json.loads(_canonical_json_bytes({
+                "schema_version": 1,
+                "executor_id": executor_id,
+                "commit": commit,
+                "target": target,
+                "host_environment": host,
+            }))),
         )
         return cls(
-            executor_id=str(document["executor_id"]),
-            canonical_sha256=sha256(_canonical_json_bytes(document)).hexdigest(),
+            executor_id=executor_id,
+            canonical_sha256=sha256(_canonical_json_bytes(
+                {"commit": commit, "host_capture": document}
+            )).hexdigest(),
             document=detached,
             project_root=root,
             relative_path=relative_source,
         )
 
     @staticmethod
-    def _validate_host_document(
-        host: Mapping[str, object], *, schema_version: int = 1,
-    ) -> None:
-        if not isinstance(host, Mapping) or type(schema_version) is not int:
+    def _validate_host_document(host: Mapping[str, object]) -> None:
+        """Validate one captured host by the kind it declares.
+
+        A host declaring no kind is the explicitly named pre-kind CUDA form, never a
+        fall-through for a kind this module does not know.
+        """
+        if not isinstance(host, Mapping):
             raise ValueError("Executor host environment fields differ")
-        if schema_version == 2:
+        kind = host.get("kind")
+        if kind == "hip":
             ExecutorRevision._validate_hip_host_document(host)
             return
-        if schema_version != 1:
-            raise ValueError("Executor host environment schema differs")
-        if host.get("kind") == "metal":
+        if kind == "metal":
             from .metal_host import validate_metal_host
             validate_metal_host(host)
             return
-        if host.get("kind") is not None:
-            raise ValueError(f"Executor host kind {host.get('kind')!r} is not admitted")
+        if kind is not None:
+            raise ValueError(f"Executor host kind {kind!r} is not admitted")
         legacy_fields = {
             "python",
             "packages",
@@ -526,23 +526,20 @@ class ExecutorRevision:
         )
 
     def admit_host(self) -> object:
-        """Verify the pinned host and return its admitted CUPTI helper."""
+        """Verify the captured CUDA or Metal host and return its admission."""
 
-        if self.document["schema_version"] != 1:
-            raise ValueError("B200 host admission requires Executor schema v1")
-        return admit_host_environment(
-            cast(Mapping[str, object], self.document["host_environment"])
-        )
+        host = cast(Mapping[str, object], self.document["host_environment"])
+        if host.get("kind") == "hip":
+            raise ValueError("a HIP host is admitted through admit_hip_host")
+        return admit_host_environment(host)
 
     def admit_hip_host(self) -> HipHostAdmission:
-        """Admit the pinned software host; exact device admission follows lowering."""
+        """Admit the captured software host; exact device admission follows lowering."""
 
-        if self.document["schema_version"] != 2:
-            raise ValueError("HIP host admission requires Executor schema v2")
-        return cast(HipHostAdmission, admit_host_environment(
-            cast(Mapping[str, object], self.document["host_environment"]),
-            executor_id=self.executor_id,
-        ))
+        host = cast(Mapping[str, object], self.document["host_environment"])
+        if host.get("kind") != "hip":
+            raise ValueError("HIP host admission requires a HIP host capture")
+        return cast(HipHostAdmission, admit_host_environment(host, executor_id=self.executor_id))
 
     def admit_profiler(self) -> Mapping[str, object]:
         """Verify and return the optional exact NCU executable for attribution."""
@@ -576,8 +573,7 @@ def admit_host_environment(
 
     if not isinstance(host, Mapping):
         raise ValueError("Executor host environment fields differ")
-    schema = 2 if host.get("kind") == "hip" else 1
-    ExecutorRevision._validate_host_document(host, schema_version=schema)
+    ExecutorRevision._validate_host_document(host)
     if host.get("kind") == "metal":
         # A Metal host owns its whole admission, including a package map that is
         # legitimately empty -- v110 and v112 both carry `"packages": {}`. The shared
@@ -586,7 +582,7 @@ def admit_host_environment(
         from .metal_host import admit_metal_host
         return admit_metal_host(host)
     _admit_python_and_packages(host)
-    if schema == 2:
+    if host.get("kind") == "hip":
         return _admit_hip_environment(host, executor_id=executor_id)
 
     cupti = cast(Mapping[str, object], host["cupti_python"])

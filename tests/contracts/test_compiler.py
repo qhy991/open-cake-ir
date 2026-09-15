@@ -15,7 +15,7 @@ from pathlib import Path
 from tests.contracts._corpus_documents import corpus_document
 
 ROOT = Path(__file__).resolve().parents[2]
-REVISION_PATH = ROOT / "compiler/revision.lock.json"
+REVISION_PATH = ROOT / "compiler/revision.json"
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import (  # noqa: E402
@@ -419,7 +419,7 @@ class CompilerContractTests(unittest.TestCase):
 
             shutil.copytree(ROOT, project, ignore=ignored)
             approval_path = project / "compiler/release-approval.json"
-            lock_path = project / "compiler/revision.lock.json"
+            lock_path = project / "compiler/revision.json"
             prior_approval = approval_path.read_bytes()
             prior_lock = lock_path.read_bytes()
             prior = json.loads(prior_lock)

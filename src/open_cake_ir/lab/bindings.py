@@ -19,6 +19,7 @@ from ._documents import _object, _digest, _project_path
 
 CAMPAIGN_BINDING = {'binding': 'campaign_lock'}
 CURRENT_RELEASE_BINDING = {'binding': 'current_release'}
+COMPILER_REVISION_PATH = "compiler/revision.json"
 
 
 def canonical(value):
@@ -112,23 +113,8 @@ def load_prepared_baseline(project_root: Path, path: str | Path):
 
 
 def current_executor_reference(root: Path, target: str) -> dict[str, object]:
-    """Return the one current Executor owned by an exact hardware target."""
-    if not isinstance(target, str) or not target:
-        raise ValueError("current Executor resolution requires an exact target")
-    inventory = json.loads((root / "inventory/EXECUTOR_REVISIONS.json").read_text())
-    if not isinstance(inventory, Mapping) or inventory.get("schema_version") != 2:
-        raise ValueError("Executor inventory schema differs")
-    currents = inventory.get("current_by_target")
-    if not isinstance(currents, Mapping):
-        raise ValueError("Executor inventory current_by_target must be an object")
-    current = currents.get(target)
-    if not isinstance(current, Mapping):
-        raise ValueError(f"no current Executor is published for exact target {target!r}")
-    fields = ("executor_id", "path", "canonical_sha256")
-    try:
-        return {field: current[field] for field in fields}
-    except KeyError as error:
-        raise ValueError(f"current Executor for exact target {target!r} differs") from error
+    """Return the reference of the Executor for one exact target at this checkout."""
+    return dict(ExecutorRevision.for_target(root, target).reference)
 
 
 def resolve_executor(
@@ -141,12 +127,10 @@ def resolve_executor(
     if template:
         if value != CURRENT_RELEASE_BINDING:
             raise ValueError("Study template Executor binding differs")
-        exact = current_executor_reference(root, target)
-    else:
-        if value == CURRENT_RELEASE_BINDING:
-            raise ValueError("frozen Study cannot follow the current Executor")
-        exact = value
-    return ExecutorRevision.load_reference(root, exact, f"{context}.executor_revision")
+        return ExecutorRevision.for_target(root, target)
+    if value == CURRENT_RELEASE_BINDING:
+        raise ValueError("frozen Study cannot follow the current Executor")
+    return ExecutorRevision.load_reference(root, value, f"{context}.executor_revision")
 
 
 def resolve_execution_bindings(
@@ -256,7 +240,7 @@ def _resolve_compiler_reference(
     if template:
         if reference != CURRENT_RELEASE_BINDING:
             raise ValueError("Study template Compiler binding differs")
-        relative = "compiler/revision.lock.json"
+        relative = COMPILER_REVISION_PATH
         path = (root / relative).resolve(strict=True)
     else:
         if reference == CURRENT_RELEASE_BINDING:
@@ -269,9 +253,11 @@ def _resolve_compiler_reference(
         relative, path = _project_path(root, reference["path"], f"{context}.path")
 
     compiler = Compiler.load(root, path)
+    if compiler.commit is None:
+        raise ValueError("Study Contract requires a Compiler at a clean committed checkout")
     gate = compiler.check_corpus()
-    if compiler.state != "released" or not gate.passed:
-        raise ValueError("Study Contract requires a released gated Compiler Revision")
+    if not gate.passed:
+        raise ValueError("Study Contract requires a Compiler whose full Corpus Gate passes")
     if not template and (
         gate.compiler_revision_sha256
         != _digest(reference["canonical_sha256"], f"{context}.canonical_sha256")
@@ -292,9 +278,9 @@ def _resolve_compiler_reference(
 def load_compiler_reference(root: Path, value: object, context: str):
     """Verify a Campaign's exact Compiler dependency at a process handoff.
 
-    Compiler owns its transitive sources and targets. This does not run the Corpus
-    Gate again; release/preflight owns that gate, while this boundary verifies the
-    released manifest and its source closure before runtime interpretation.
+    This does not run the Corpus Gate again; preflight owns that gate. The boundary
+    checks that the checkout is clean at the pinned commit and that the manifest and
+    declared Targets are the ones the Campaign bound.
     """
     from open_cake_ir.compiler.revision import load_revision
     reference = _object(value, context)
@@ -302,7 +288,12 @@ def load_compiler_reference(root: Path, value: object, context: str):
         raise ValueError(f"{context} Compiler reference fields differ")
     _, path = _project_path(root, reference["path"], f"{context}.path")
     revision = load_revision(root, path)
-    if (revision.state != "released" or revision.revision_id != reference["revision_id"]
+    if revision.commit is None:
+        raise ValueError(f"{context} requires a clean committed checkout")
+    if (revision.revision_id != reference["revision_id"]
             or revision.canonical_sha256 != _digest(reference["canonical_sha256"], context)):
-        raise ValueError(f"{context} Compiler Revision differs")
+        raise ValueError(
+            f"{context} Compiler Revision differs: the reference pins "
+            f"{reference['revision_id']!r} and this checkout provides {revision.revision_id!r}"
+        )
     return revision

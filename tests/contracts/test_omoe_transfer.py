@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class OmoeTransferTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.lock.json')
+        cls.compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
 
     def task(self, columns=4, rows=1, backend='triton-b200'):
         document, source = create_task('add_rmsnorm_bf16', rows=rows, columns=columns, backend=backend)

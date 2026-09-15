@@ -560,7 +560,7 @@ class LabContractTests(SemanticLabTestCase):
             )
             compiler = lock.document["compiler_revision"]
             current_compiler = json.loads(
-                (ROOT / "compiler/revision.lock.json").read_text(encoding="utf-8")
+                (ROOT / "compiler/revision.json").read_text(encoding="utf-8")
             )
             self.assertEqual(
                 compiler["revision_id"], current_compiler["revision_id"], name
@@ -1946,7 +1946,7 @@ class LabContractTests(SemanticLabTestCase):
         seed = KernelSeed.load(
             ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"
         )
-        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         cases = {
             case_id: workload.case(case_id)["shape"]
             for case_id in ("headline_b32", "b32_smoke", "public_b1")
@@ -3871,7 +3871,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
         cls.executor = cls.executor_fixture.revision(cls.root)
         cls.lab = TaskLab(cls.root)
         cls.workload = load_workload(cls.root / "contracts/workloads/flash-kmeans-assign-v2.json")
-        cls.compiler = Compiler.load(cls.root, cls.root / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(cls.root, cls.root / "compiler/revision.json")
         cls.study = json.loads((cls.root / "contracts/studies/artifact-optimization-ralph-template.json").read_text())
         cls.study["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
         cls.study["evaluation_protocol"].pop("attribution_evaluation")

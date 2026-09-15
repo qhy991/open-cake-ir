@@ -51,7 +51,7 @@ import open_cake_ir.compiler as compiler_module
 import open_cake_ir.tasks.qsa.program as program_module
 for module in (compiler_module,program_module):
     assert Path(module.__file__).resolve().is_relative_to(root/'src')
-compiler=compiler_module.Compiler.load(root,root/'compiler/revision.lock.json')
+compiler=compiler_module.Compiler.load(root,root/'compiler/revision.json')
 path=root/'contracts/programs/qsa-prefill-t32768-v2.json'
 original=json.loads(path.read_text())
 program=program_module.ProgramContract.load(root,path,compiler)

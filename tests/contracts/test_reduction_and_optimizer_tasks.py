@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class ColumnReductionTaskTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def task(self, name, rows=8, columns=4, backend="metal-m1-pro"):
         document, source = create_task(name, backend=backend, rows=rows, columns=columns)
@@ -130,7 +130,7 @@ class ColumnReductionTaskTests(unittest.TestCase):
 class OptimizerTaskTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def task(self, name, rows=2, columns=8, backend="metal-m1-pro"):
         document, source = create_task(name, backend=backend, rows=rows, columns=columns)

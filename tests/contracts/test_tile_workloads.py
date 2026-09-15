@@ -27,7 +27,7 @@ class TileWorkloadTest(unittest.TestCase):
             name: load_workload(ROOT / f"contracts/workloads/{name}-v1.json")
             for name in ("rmsnorm-fp32", "gemm-bias-bf16-fp32", "indexed-gather-bf16")
         }
-        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
     def load_document(self, document: dict) -> WorkloadContract:
         with tempfile.TemporaryDirectory() as directory:
