@@ -37,25 +37,11 @@
     }
   ],
   "current_by_target": {
-    "apple_gpu_family8": {
-      "canonical_sha256": "ba945de20f4cfff1b3813cb49fe2da27ba2b77045d1e4656c687d5b3696b69e7",
-      "descriptor_raw_sha256": "f98f32b7ba4bb642387f0253a9672edbb860ba02841e5e0bf5aabc90b0b5fd6f",
-      "executor_id": "open-cake-ir-b200-v136+deab50b23ff09a923b7659cd7b2e7bfaa6d3e46c6353edfed7aacc6f5eda3449",
-      "path": "runtime/executors/open-cake-ir-b200-v136+deab50b23ff09a923b7659cd7b2e7bfaa6d3e46c6353edfed7aacc6f5eda3449.json",
-      "source_count": 168
-    },
     "gfx938": {
-      "canonical_sha256": "8d478da3265a6dc59ccc36746fab9957e572a12753c392f28ef6e1777dc75677",
-      "descriptor_raw_sha256": "c4ff53685454b62890c46a4914ab936be35966a755668896dd139029248ed1f9",
-      "executor_id": "open-cake-ir-gfx938-v11+b05725942cf658944a1582139e068d279d7254411f195f2fcae9e5223e2808a0",
-      "path": "runtime/executors/open-cake-ir-gfx938-v11+b05725942cf658944a1582139e068d279d7254411f195f2fcae9e5223e2808a0.json",
-      "source_count": 168
-    },
-    "sm_103a": {
-      "canonical_sha256": "ecbb96f2241810084977b666738fd710be5d7d4fd96d902c209a1b39ef559cb3",
-      "descriptor_raw_sha256": "07d10d5538ae290f1e14a524f45b436fba75182c9e490f15afe84a2d0ef784cc",
-      "executor_id": "open-cake-ir-b200-v135+d896cf47c8b05ed44b194159d87602ef16d665e036dfc50cd2a0425de107b290",
-      "path": "runtime/executors/open-cake-ir-b200-v135+d896cf47c8b05ed44b194159d87602ef16d665e036dfc50cd2a0425de107b290.json",
+      "canonical_sha256": "9660c22e3bdd9b43cd1bd96c8b7cb8650e0c1f19253c75a4fd102f7d3ec55e39",
+      "descriptor_raw_sha256": "6d706312c367e85c69401ab83aa36db630e735836211d6ce5368663133aac226",
+      "executor_id": "open-cake-ir-gfx938-v12+eee680a39e4cb58a67c9a129d5932802b75842eac6a532e63385877fec53a43a",
+      "path": "runtime/executors/open-cake-ir-gfx938-v12+eee680a39e4cb58a67c9a129d5932802b75842eac6a532e63385877fec53a43a.json",
       "source_count": 168
     }
   },
@@ -382,6 +368,20 @@
       "executor_id": "open-cake-ir-b200-v134+3059aff55a28230834e595606e8285864b7705b71939f29540264bd45dbcdff8",
       "path": "runtime/executors/open-cake-ir-b200-v134+3059aff55a28230834e595606e8285864b7705b71939f29540264bd45dbcdff8.json",
       "source_count": 167
+    },
+    {
+      "canonical_sha256": "ecbb96f2241810084977b666738fd710be5d7d4fd96d902c209a1b39ef559cb3",
+      "descriptor_raw_sha256": "07d10d5538ae290f1e14a524f45b436fba75182c9e490f15afe84a2d0ef784cc",
+      "executor_id": "open-cake-ir-b200-v135+d896cf47c8b05ed44b194159d87602ef16d665e036dfc50cd2a0425de107b290",
+      "path": "runtime/executors/open-cake-ir-b200-v135+d896cf47c8b05ed44b194159d87602ef16d665e036dfc50cd2a0425de107b290.json",
+      "source_count": 168
+    },
+    {
+      "canonical_sha256": "ba945de20f4cfff1b3813cb49fe2da27ba2b77045d1e4656c687d5b3696b69e7",
+      "descriptor_raw_sha256": "f98f32b7ba4bb642387f0253a9672edbb860ba02841e5e0bf5aabc90b0b5fd6f",
+      "executor_id": "open-cake-ir-b200-v136+deab50b23ff09a923b7659cd7b2e7bfaa6d3e46c6353edfed7aacc6f5eda3449",
+      "path": "runtime/executors/open-cake-ir-b200-v136+deab50b23ff09a923b7659cd7b2e7bfaa6d3e46c6353edfed7aacc6f5eda3449.json",
+      "source_count": 168
     },
     {
       "canonical_sha256": "47aca05e1f62bf51fc47897028f69d2d1e124f35e31e8bc5815e6a7db355f532",
@@ -1040,6 +1040,13 @@
       "executor_id": "open-cake-ir-gfx938-v10+8ea5d04d3af14607232c047f2956b4a927dd39eedcbae6ac3644ce08a7d01e77",
       "path": "runtime/executors/open-cake-ir-gfx938-v10+8ea5d04d3af14607232c047f2956b4a927dd39eedcbae6ac3644ce08a7d01e77.json",
       "source_count": 167
+    },
+    {
+      "canonical_sha256": "8d478da3265a6dc59ccc36746fab9957e572a12753c392f28ef6e1777dc75677",
+      "descriptor_raw_sha256": "c4ff53685454b62890c46a4914ab936be35966a755668896dd139029248ed1f9",
+      "executor_id": "open-cake-ir-gfx938-v11+b05725942cf658944a1582139e068d279d7254411f195f2fcae9e5223e2808a0",
+      "path": "runtime/executors/open-cake-ir-gfx938-v11+b05725942cf658944a1582139e068d279d7254411f195f2fcae9e5223e2808a0.json",
+      "source_count": 168
     },
     {
       "canonical_sha256": "17e2775011dab5b8eb48136e94fd9656a9a11d7a97b49c85bcb15d72fd9b1a89",
