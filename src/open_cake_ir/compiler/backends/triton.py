@@ -328,6 +328,15 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "roles",
         "the Triton backend requires exactly one role",
     )
+    if len(schedule.roles) == 1:
+        warp_count = len(schedule.roles[0].warps)
+        add(
+            warp_count > 0 and warp_count & (warp_count - 1) == 0,
+            "TRITON_NUM_WARPS_UNSUPPORTED", "roles[0].warps",
+            f"Triton compile option num_warps requires a positive power of two; "
+            f"the declared role has {warp_count} warps. Choose the role explicitly; "
+            "the Compiler does not round the launch size.",
+        )
 
     counts = {
         kind: sum(operation.kind is kind for operation in schedule.operations)

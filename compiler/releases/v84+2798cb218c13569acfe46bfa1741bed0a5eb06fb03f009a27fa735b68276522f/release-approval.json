@@ -1,0 +1,13 @@
+{
+  "schema_version": 3,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "ead2cf6c3ecc07f4ac63a11f2c5e58375b2b09928d3b739fc1fcb2c9df249dac"
+  },
+  "reviewer": {
+    "kind": "human",
+    "name": "haiyan"
+  },
+  "approval_basis": "Approved by the repository owner as the human reviewer of Compiler v84-draft, binding Corpus Gate 151/151 over 210 sources, on the working tree at 918ac88a27bda5190d63bf073c3df25ed4bff77b plus the uncommitted vendor correction this release is for. Basis and its limits, unchanged from the v83 approval and restated because the record should not imply more than happened: it rests on the author session's reported Gate and change summary, not on a separate line-by-line inspection by a second party. What this release changes is one fact: gfx938 declared vendor amd on hardware that is Hygon's. The correction was the owner's, and the evidence is in the retained survey -- rocminfo reports vendor C-3000 and device type HCU where an AMD agent reports AMD and GPU, Triton registers a separate hcu backend with its own driver beside the amd one and selects it, the FP16 tl.dot lowers to v_mmac_f32_16x16x16_f16 and to no v_mfma, the hcu options carry enable_v_mmac_cluster and mmac_layout_force, dcc 25.10.0's llc names gfx926/928/936/938 beside the AMD CPUs, and the host installs hy-smi and rocm-smi and no amd-smi. Vendor.HYGON is a declared vendor beside nvidia, apple and amd; gfx1151 stays amd because it is AMD hardware. The judgement this carries is the distinction it rests on: the emitted object keeps the amdgcn-amd-amdhsa-- triple, which is the ABI it conforms to and not a claim about who built the chip, so the Triton route, AMDGCN_TARGETS and the schema v2 Executor identity are code-object facts spanning two vendors rather than vendor facts. Corpus expectations are unchanged for all 151 cases; the vendor rename is inert for every one of them. F-2026-09-15-004 records the pattern behind this and seven sibling repairs and is proposed, not implemented here. Scope: bounded Compiler successor release only. No AMD or Hygon performance result, no correctness result beyond the retained gfx938 reference check, no Executor release. The contracts that fail on the released v83 lock's Target digests are not counted as passing here and must be rerun after this release."
+}

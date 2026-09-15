@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-15-005",
+  "kind": "capacity",
+  "date": "2026-09-15",
+  "title": "Caller-selected CTA width recurs in RMSNorm gradient and SwiGLU; expose a guarded explicit candidate rewrite",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v82+8e8b99ef026d1feca9b60d8353411bc3926bf8efc7ac7bf7b426956391364b16",
+  "executor_revision": "open-cake-ir-b200-v117+2aaa1daa05700454ca2aa9e51a2dd844df079b51b3c00e8fb1b59a811c0001ca",
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-rmsgrad-tock-20260914-qqx0tn0n/run",
+      "run": "open_cake-1",
+      "event": 40,
+      "note": "Turn 2 confirmation records correctness and stable timing: 2.432 us candidate versus 3.040 us baseline, 10/10 pair wins. Candidate declares 16 warps. Run later fails at turn 4 for missing structured terminal; the local confirmation remains evidence, not Run promotion."
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/swiglu",
+      "run": "open_cake-1",
+      "event": 54,
+      "note": "Terminal-best confirmation: 2.144 us candidate versus 3.488 us baseline, with a 16-warp role. This is an independent pointwise family, not a second copy of RMSNorm."
+    }
+  ],
+  "observation": "Single-role pure tensor Triton programs map the role width to num_warps. Caller-chosen width changes SDK resource/layout choices while preserving the operation/access graph. A previous missing power-of-two preflight allowed a six-warp RMSNorm candidate to crash the SDK; the current integration also needs that guarded refusal before SDK entry.",
+  "proposed_change": "Add explicit specialize_triton_warps using existing SpecializationResult and whole-candidate reassessment. Match only the documented bounded operation/ownership domain, preserve ABI and metadata, reject invalid or excessive widths before allocation, and keep the measured choice in Lab. No implicit tuning, no bitwise-equivalence or universal-speedup promise.",
+  "decision": "accepted",
+  "implemented_in": null,
+  "verified_by": null,
+  "verification_plan": "Independent source review and full Corpus Gate; public positive/negative tests including a held-out family. On the successor, evaluate current width-1 floor and pass-produced width-8/16 candidates for RMSNorm gradient and SwiGLU against the same old fixed baselines, with five-case correctness, stable paired timing and NCU. Retain null/negative transfer and original failed Run states."
+}
