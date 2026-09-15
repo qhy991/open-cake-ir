@@ -123,7 +123,11 @@ else:
         "sha256": hashlib.sha256(ncu_payload).hexdigest(),
         "size_bytes": len(ncu_payload),
     }
-ExecutorRevision._validate_host_document(host)
+# The schema a host document belongs to is its declared kind, the same way
+# admit_host_environment selects one. Validating a HIP host at schema 1 refuses it for
+# declaring the kind that makes it schema 2.
+schema_version = 2 if host.get("kind") == "hip" else 1
+ExecutorRevision._validate_host_document(host, schema_version=schema_version)
 if host.get("kind") == "metal":
     from open_cake_ir.lab.executor import admit_host_environment
     admit_host_environment(host)
@@ -166,7 +170,7 @@ if inventory_path.exists():
             print("--- released Executor already matches; no successor is needed ---")
             raise SystemExit(0)
 temporary.joinpath("proposal.json").write_text(json.dumps({
-    "schema_version": 1,
+    "schema_version": schema_version,
     "executor_id": keep,
     "state": "draft",
     "sources": [],
