@@ -7,7 +7,7 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v84+2798cb218c13569acfe46bfa1741bed0a5eb06fb03f009a27fa735b68276522f`
+- 版本： `open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca`
 - 状态： `released`
 - 目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, gfx1151, gfx938, sm_100a, sm_103a`
 - 语料检查： `151/151` 项符合预期
