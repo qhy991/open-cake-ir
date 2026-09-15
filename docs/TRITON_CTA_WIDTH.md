@@ -47,3 +47,21 @@ current Compiler's width-1 floor separately from width-8/16 candidates. This
 distinguishes compiler-floor movement from caller-selected width headroom. It is
 not a randomized provider study or evidence of broad shape/architecture transfer.
 F-2026-09-15-005 owns the extraction evidence and verification disposition.
+
+The reusable consumer is `tools/evaluate_triton_widths.py`. For example:
+
+```sh
+python tools/evaluate_triton_widths.py --source /absolute/frozen-checkout \
+  --predecessor /external/retained-matrix --output /external/new-evaluation \
+  --task softmax_backward --task cosine_similarity
+```
+
+The predecessor supplies each task's Workload, starter, evaluation protocol and
+sealed `baseline-preflight/<task>/baseline/candidate.json`. Task names must be unique
+identifiers. With no `--task`, the extraction pair is used. All requested tasks build
+widths 1/8/16 and validate ABI pairs before any GPU work. The CPU parent must have
+no GPU lease or selected device; the existing broker command allocates each GPU job.
+The chosen frozen checkout must have released Compiler and matching Executor sources.
+Each task then performs three searches, a fresh confirmation of the selected stable
+correct candidate and primary-case NCU. The output is create-only. A missing/failed
+receipt stops the sequence and retains the preceding evidence.
