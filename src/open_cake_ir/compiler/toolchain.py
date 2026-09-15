@@ -267,10 +267,14 @@ def triton_route(target: object) -> TritonRoute:
             artifact_roles=("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco"),
             binary_role="hsaco",
             text_role="amdgcn",
+            # The quotes are the emitter's YAML, not part of the target: `gfx938:xnack-`
+            # contains a colon so it is quoted, and a bare `gfx1151` with no feature flags
+            # is not. Anchoring the end of the line is what keeps `gfx938` from matching a
+            # `gfx9380` this toolchain might one day name.
             target_pattern=(
-                rb"amdhsa\.target:\s*'amdgcn-amd-amdhsa--"
+                rb"^\s*amdhsa\.target:\s*'?amdgcn-amd-amdhsa--"
                 + target.encode("ascii")
-                + rb"(?::[a-z0-9]+[+-])*'"
+                + rb"(?::[a-z0-9]+[+-])*'?\s*$"
             ),
             # HIPOptions carries no global scratch field at all, so there is nothing to
             # read; `profile_scratch_size` is present and is checked like the CUDA route.

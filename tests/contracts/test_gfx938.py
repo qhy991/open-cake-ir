@@ -232,11 +232,16 @@ class TritonRouteTest(unittest.TestCase):
             b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:xnack-'",
             b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:sramecc+:xnack-'",
             b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938'",
+            # Unquoted, because the emitter quotes only what YAML makes it quote: a
+            # feature suffix contains a colon and a bare target name does not. Measured
+            # on this toolchain, which writes gfx938:xnack- quoted and gfx1151 bare.
+            b"amdhsa.target:   amdgcn-amd-amdhsa--gfx938",
         ):
             with self.subTest(line=line):
                 self.assertIsNotNone(re.search(pattern, line, re.MULTILINE))
         for line in (
             b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx9380:xnack-'",
+            b"amdhsa.target:   amdgcn-amd-amdhsa--gfx9380",
             b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx942:xnack-'",
             b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:xnack'",
         ):

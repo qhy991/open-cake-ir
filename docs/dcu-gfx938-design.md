@@ -282,6 +282,33 @@ Nothing above is a correctness or performance result for those 27. Checking them
 exactly what [F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json)
 says there is no code for.
 
+## The second AMD target, and what it is evidence for
+
+`gfx1151` is admitted beside `gfx938` from the retained `rocminfo` and
+`hipGetDeviceProperties` observations of the earlier delivery on
+`codex/main-native-amd-followup-20260909`. This session never reached that device, and
+the Target document says so in its own citations.
+
+It earns its place by being **wave32**. It shares a vendor with gfx938 and not a lane
+width, so nothing on the AMD route can be a wave64 constant wearing a vendor's name. The
+same Schedule lowered for both launches 256 threads on gfx938 and 128 on gfx1151, from
+four role slots either way, and the corpus reports a residency bound for gfx938 and none
+for gfx1151 because only one of them declares occupancy.
+
+Adding it also found a real bug in the exact-target check. The emitter quotes the
+`amdhsa.target` line only when YAML makes it: `'amdgcn-amd-amdhsa--gfx938:xnack-'`
+contains a colon and is quoted, while a bare `amdgcn-amd-amdhsa--gfx1151` with no feature
+flags is not. The pattern required the closing quote, so it would have refused any
+feature-flag-free build of *either* target. The quotes are now optional and the line end
+is anchored, which is what keeps `gfx938` from matching a `gfx9380`.
+
+Both targets compile through the route in the DCU container. That is evidence for gfx938,
+which is the device in the room; **it is not evidence for gfx1151**. This toolchain's
+`llc -march=amdgcn -mcpu=help` lists 51 AMDGPU CPUs including the Hygon gfx926/928/936/938
+and RDNA3's gfx1100-gfx1103, and does not list gfx1151. The emitted object names gfx1151
+and the compile returns cleanly, and neither fact says the code would run on one. A
+gfx1151 result needs a gfx1151 toolchain and device.
+
 ## Open decisions
 
 - **Exact-target string.** The device reports `gfx938:sramecc+:xnack-`; the toolchain
