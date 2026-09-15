@@ -362,41 +362,91 @@ gfx1151 result needs a gfx1151 toolchain and device.
    fail-closed. The executable role, the AMD-parameterized Executor identity and the single
    host `kind` field are in. *(partly done)*
 7. Actually launching a Lab task on the DCU. This gate was not on the list until
-   `launch_task.py --baseline-only` was run against `triton-dcu` for real, and the first
-   thing it found was in neither the compile chain nor the Evaluation half: **allocation**.
-   The launcher read the allocator off the lowering route, so a Triton route demanded the
-   `gpu-run` CUDA cluster allocator and refused a device that has no use for one. Route and
-   allocation are now separate declared columns of `tasks/devices.py`, and `triton-dcu` is
-   `triton` + `local_broker`. Immediately behind it, the isolated build's jail was the
-   constant `/usr/bin/bwrap`; it is now discovered on the host, with a refusal naming
-   bubblewrap rather than a `FileNotFoundError` naming a path nobody chose. Both are
-   recorded as the fourth axis in
-   [F-2026-09-15-004](../findings/2026-09-15-004-three-axes-collapsed-into-target-identity.json),
-   together with the process lesson: the eight-gate readiness checklist that preceded this
-   reached 7/8 and had no gate for how a sealed candidate reaches a device, because every
-   gate in it was assembled from a compile-chain failure already seen. *(source done and
-   host-tested; the launch itself is blocked -- see below)*
-8. A named AMD timing source. `_PAIRED_BACKENDS` maps a policy kind to `cupti` or `metal`
-   and deliberately has no AMD entry: adding a `rocprofv3` kind before a measurement
-   exists would be a measurement name with nothing behind it. The open question is whether
+   `launch_task.py --baseline-only` was run against `triton-dcu` for real. **Done**: the
+   DCU now builds and seals a baseline candidate through the real entry point --
+   `/runs/.../baseline/candidate.json`, a 5800-byte HSACO beside 19 KB of AMDGCN assembly,
+   a launch manifest declaring block `[64, 1, 1]` (one wave64), grid `[128, 1, 1]` and one
+   hidden scratch pointer. Seven separate defects stood between the checklist's 7/8 and
+   that file, and only the first two were in the compile chain the checklist covered:
+
+   1. **Allocation.** The launcher read the allocator off the lowering route, so a Triton
+      route demanded the `gpu-run` CUDA cluster allocator and refused a device with no use
+      for one. Route and allocation are now separate declared columns of
+      `tasks/devices.py`; `triton-dcu` is `triton` + `local_broker`.
+   2. **The jail binary.** `/usr/bin/bwrap` was a constant -- a fact about the
+      distributions this route was built against, not about bubblewrap, which the DTK
+      image does not ship at all. Discovered on the host now, with a refusal naming
+      bubblewrap instead of a `FileNotFoundError` naming a path nobody chose.
+   3. **The provider.** `--baseline-only` says it stops before provider qualification and
+      then resolved the harness executable three statements before creating the
+      workspace, refusing a DCU baseline for not having `claude` in a compile container.
+   4. **The jail environment.** The jail runs `--clearenv`, correctly. Two DTK facts live
+      only in `/opt/dtk/env.sh`: without `LD_LIBRARY_PATH` the build died with
+      `libgalaxyhip.so.5: cannot open shared object file` while the file sat mounted under
+      `/opt`, because ldconfig does not know `/opt/dtk`; with it, clang-18 reported
+      `cannot find ROCm device library` because `ROCM_PATH` was gone too. A HIP host now
+      declares `runtime.build_environment`, one fact rather than one field per variable.
+   5. **Artifact roles.** `TritonToolchainBuilder` named `ptx` and `cubin` as literals
+      while `triton_route` has carried `artifact_roles` per target all along, and wrote
+      `hidden_null_pointer_parameters: 2` -- Triton's two CUDA scratch pointers. HIPOptions
+      has no global scratch field, so the literal would have sealed an ABI with a
+      parameter the kernel does not take. Both come from the route now, and the measured
+      manifest says 1.
+   6. **The launch target.** `CudaKernelSpec.from_dict` resolved its target through
+      `cuda_target`, which decodes an sm_1xxa capability first, so a gfx938 manifest came
+      back as `unsupported exact CUDA target`. Grid, block and shared-memory limits are
+      declared by every Target document and none of them is CUDA's; the Evaluation layer
+      reads the document directly now, as `executable_role` in that layer already does.
+   7. **Allowed roles.** `allowed_artifact_roles` returned the CUDA set for anything that
+      was not Metal, so a candidate carrying the assembly and HSACO its own route produced
+      was refused for not being PTX and a CUBIN.
+
+   Five of the seven are the same defect in different files: a per-target question decided
+   by "is it Metal? otherwise CUDA". They are recorded in
+   [F-2026-09-15-004](../findings/2026-09-15-004-three-axes-collapsed-into-target-identity.json)
+   with the process lesson -- the eight-gate readiness checklist reached 7/8 and had no
+   gate for how a sealed candidate reaches a device, because every gate in it was
+   assembled from a compile-chain failure already seen.
+8. A named AMD timing source. **This is where the DCU stops today, and it stops honestly.**
+   The Study template chose its measurement source with `"metal" if metal else "cupti"`,
+   so the first DCU study declared `correctness_then_paired_cupti` and
+   `fixed_baseline_paired_cupti_v1` -- a profiler's name on evidence that profiler never
+   produced, on a machine where CUPTI is not installed. `timing_source` is now a declared
+   column of the device registry, `triton-dcu` declares None, and its Study states the
+   coverage limitation instead: no `paired_timing`, and an explicit `measurement_coverage`
+   saying no latency is reported for this target and why. So the DCU builds, seals and can
+   be checked for correctness, and reports that nothing has measured a latency on it.
+
+   Minting the source needs a measurement, not a row. The open question is whether
    `MinNs`, `MaxNs` and `StdDev` -- which `hipprof`'s stats CSV does not carry, verified by
    reading all eight of its columns rather than the five a truncated `sed` first showed --
-   can be derived from rocprofv2's per-dispatch `Start`/`End` timestamps. That needs the
-   device. *(blocked)*
+   can be derived from rocprofv2's per-dispatch `Start`/`End` timestamps. *(blocked on the
+   measurement)*
+9. The AMDGCN evaluation driver. `tasks/evaluate.py` dispatches on
+   `MetalTensorLaunchManifest` and otherwise `observe_exclusive_cuda`; there is no HIP
+   branch, so a campaign cannot yet evaluate a DCU candidate even for correctness.
+   `evaluation/triton_hip.py` owns the loader and exact-HIP runtime custody and is
+   host-tested; what it owes is a device-side end-to-end check. *(not started)*
 
-### What is blocking gates 7 and 8 right now
+### Running it in the container
 
-`bw1100` (10.17.176.11) is unreachable from this host: no ICMP reply, no route over the
-active tunnel, `ssh` times out at connect. Three consequences, none of them worked around:
+The DTK image needs two things the B200/B300 hosts do not, both established by probing:
 
-- The `gfx938` Executor successor is not released. The release cycle can inherit the
-  released HIP host rather than re-capture it, but doing so requires asserting that the
-  pinned host still matches the live one, and that assertion cannot be made from here. The
-  cycle now refuses with that reason instead of the one it used to give -- it asked a
-  Hygon DTK container for an x86_64 Nsight Compute, because the profiler-resolution branch
-  was reached by being "not Metal".
-- `--baseline-only` for `triton-dcu` has not been re-run past the allocation fix, so gate
-  7's remaining failures are unknown rather than absent.
-- `load_hip_candidate` still owes its device-side end-to-end check. Everything it refuses
-  before touching a device is host-tested in `tests/contracts/test_hip_candidate.py`,
-  including the arch comparison that refused the only DCU this route has seen.
+- `bubblewrap`, which the image does not ship. It installs from the configured aliyun
+  jammy mirror (0.6.1) once `TMPDIR` points somewhere writable -- `/tmp` in this image is
+  `drwxr-xr-t`, and apt fails to create its own temporary files there.
+- `--security-opt systempaths=unconfined` on `docker run`. Measured, rather than assumed:
+  user namespaces work in this container, mount namespaces work, and `bwrap` without
+  `--proc` works; the single refused operation is mounting a fresh procfs. On this 4.19
+  kernel that is `mount_too_revealing()` -- Docker bind-mounts over `/proc/kcore`,
+  `/proc/keys` and friends, and the kernel then refuses any new procfs mount inside a
+  nested user namespace. Relaxing seccomp and AppArmor, tried first, changes nothing:
+  it is not a filtered syscall, it is a kernel visibility check. Authorized by the
+  repository owner on 2026-09-15 for this development container.
+
+### What still blocks a full campaign
+
+`bw1100` is intermittently unreachable from the development host -- several multi-minute
+outages over one session, each with no ICMP reply and `ssh` timing out at connect, while
+the B300 hosts on the same tunnel stayed up throughout. Work continues across them; runs
+are started detached so an outage costs the wait rather than the run.
