@@ -183,4 +183,3 @@ if __name__ == '__main__':
     except Exception as error:
         print(f'{type(error).__name__}: {error}', file=sys.stderr, flush=True)
         raise
-
