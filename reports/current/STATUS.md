@@ -17,12 +17,26 @@
 
 ## Executor（按精确目标）
 
+### `apple_gpu_family8`
+
+- 版本： `open-cake-ir-b200-v128+c062d1e85e1bf7fc7dd9481fe04c87d796a6aea2eaa346265abe2b54ff604359`
+- 状态： `released`
+- 绑定源码： `167` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v128+c062d1e85e1bf7fc7dd9481fe04c87d796a6aea2eaa346265abe2b54ff604359.json`](../../runtime/executors/open-cake-ir-b200-v128+c062d1e85e1bf7fc7dd9481fe04c87d796a6aea2eaa346265abe2b54ff604359.json)
+
 ### `gfx938`
 
 - 版本： `open-cake-ir-gfx938-v7+59bfa337fba346d04e5a3031a6c0162e8d5c94384771215f4af5be5b465d9bc7`
 - 状态： `released`
 - 绑定源码： `167` 个文件
 - 描述文件： [`runtime/executors/open-cake-ir-gfx938-v7+59bfa337fba346d04e5a3031a6c0162e8d5c94384771215f4af5be5b465d9bc7.json`](../../runtime/executors/open-cake-ir-gfx938-v7+59bfa337fba346d04e5a3031a6c0162e8d5c94384771215f4af5be5b465d9bc7.json)
+
+### `sm_103a`
+
+- 版本： `open-cake-ir-b200-v127+d89ff0f705f52388b59a36763bc9348b00de823f386120b2e7c88a89d49de505`
+- 状态： `released`
+- 绑定源码： `167` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v127+d89ff0f705f52388b59a36763bc9348b00de823f386120b2e7c88a89d49de505.json`](../../runtime/executors/open-cake-ir-b200-v127+d89ff0f705f52388b59a36763bc9348b00de823f386120b2e7c88a89d49de505.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
