@@ -19,10 +19,10 @@
 
 ### `apple_gpu_family7`
 
-- 版本： `open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7`
+- 版本： `open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79`
 - 状态： `released`
 - 绑定源码： `165` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7.json`](../../runtime/executors/open-cake-ir-b200-v116+daa2352329da00d43947a62441e03b259e5fe393ebe38b440b24b7e357da16b7.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79.json`](../../runtime/executors/open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
