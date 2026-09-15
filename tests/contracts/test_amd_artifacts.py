@@ -326,11 +326,37 @@ class HipArtifactContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             hip.artifact_records({"hsaco": b"\x7fELFfixture"})
 
-    def test_ambiguous_malformed_or_non_wave32_resource_blocks_are_refused(self) -> None:
+    def test_the_declared_wave_mode_is_read_not_assumed(self) -> None:
+        """wavefront_size32 selects a mode; it does not gate the reader.
+
+        `.amdhsa_wavefront_size32 0` is a wave64 RDNA kernel and refusing it described one
+        mode as the only one. A CDNA-class kernel omits the directive entirely -- measured
+        on gfx938, whose 43 directives include none of the three RDNA-only ones -- and is
+        wave64 by its ISA.
+        """
+        wave32 = hip.amdgcn_resource_record(ASSEMBLY)
+        self.assertEqual(wave32["wave_size"], 32)
+        wave64 = hip.amdgcn_resource_record(
+            ASSEMBLY.replace(b".amdhsa_wavefront_size32 1", b".amdhsa_wavefront_size32 0"))
+        self.assertEqual(wave64["wave_size"], 64)
+        cdna = ASSEMBLY
+        for directive in (b"  .amdhsa_wavefront_size32 1\n",
+                          b"  .amdhsa_shared_vgpr_count 0\n",
+                          b"  .amdhsa_workgroup_processor_mode 1\n"):
+            cdna = cdna.replace(directive, b"")
+        record = hip.amdgcn_resource_record(cdna)
+        self.assertEqual(record["wave_size"], 64)
+        # Absence is reported as absence, not as a value the kernel never declared.
+        self.assertIsNone(record["shared_vgpr_count"])
+        self.assertIsNone(record["workgroup_processor_mode"])
+        self.assertEqual(record["vgpr_count"], wave32["vgpr_count"])
+
+    def test_ambiguous_or_malformed_resource_blocks_are_refused(self) -> None:
         for payload in (
             b"\xff", ASSEMBLY + ASSEMBLY,
             ASSEMBLY.replace(b".end_amdhsa_kernel", b""),
-            ASSEMBLY.replace(b".amdhsa_wavefront_size32 1", b".amdhsa_wavefront_size32 0"),
+            # Dropping a directive every AMDGCN kernel declares is still a refusal.
+            ASSEMBLY.replace(b"  .amdhsa_kernarg_size 40\n", b""),
             ASSEMBLY.replace(b".amdhsa_next_free_vgpr 117", b".amdhsa_next_free_vgpr -1"),
             ASSEMBLY.replace(b".amdhsa_uses_dynamic_stack 0", b".amdhsa_uses_dynamic_stack 2"),
             ASSEMBLY.replace(b".amdhsa_next_free_vgpr 117", b".amdhsa_next_free_vgpr 1.5"),
@@ -405,7 +431,9 @@ class ExactHipTargetAdmissionTests(unittest.TestCase):
             elif kind == "wave":
                 runtime_target.warp_size = 64
             elif kind == "properties":
-                torch.cuda.get_device_properties.return_value.gcnArchName = "gfx1151:xnack-"
+                # A different ISA, not the same one naming its features: gfx1151:xnack- is
+                # the device the Target describes and is admitted below.
+                torch.cuda.get_device_properties.return_value.gcnArchName = "gfx11510"
             else:
                 torch.cuda.get_device_properties.return_value.warp_size = "32"
             with self.subTest(kind=kind), patch.object(hip.importlib, "import_module", side_effect=modules.__getitem__):

@@ -217,35 +217,50 @@ def amdgcn_resource_record(payload: bytes) -> dict[str, object]:
         if match is None or match.group("name") in fields:
             raise ValueError("AMDGCN resource declarations are malformed or duplicated")
         fields[match.group("name")] = int(match.group("value"))
+    # Every AMDGCN kernel declares these, whatever generation it targets.
     required = {
         "group_segment_fixed_size",
         "private_segment_fixed_size",
         "kernarg_size",
-        "wavefront_size32",
         "uses_dynamic_stack",
         "next_free_vgpr",
         "next_free_sgpr",
-        "shared_vgpr_count",
-        "workgroup_processor_mode",
     }
-    if (
-        not required.issubset(fields) or fields["wavefront_size32"] != 1
-        or any(fields[name] not in (0, 1) for name in ("uses_dynamic_stack", "workgroup_processor_mode"))
-    ):
+    # These three are RDNA's. `wavefront_size32` selects between the two wave modes gfx10+
+    # has, `workgroup_processor_mode` selects WGP against CU mode, and `shared_vgpr_count`
+    # describes a register file gfx9 does not have. A CDNA-class kernel emits none of
+    # them -- measured on gfx938, whose 43 directives include all six above and not one of
+    # these -- so requiring them described one generation and refused the other. Their
+    # absence is reported as absence, not defaulted to a value the kernel never declared.
+    rdna_only = {"wavefront_size32", "workgroup_processor_mode", "shared_vgpr_count"}
+    if not required.issubset(fields):
         raise ValueError("AMDGCN resource declarations differ")
+    if fields["uses_dynamic_stack"] not in (0, 1):
+        raise ValueError("AMDGCN uses_dynamic_stack declaration differs")
+    for name in rdna_only & set(fields):
+        if name != "shared_vgpr_count" and fields[name] not in (0, 1):
+            raise ValueError(f"AMDGCN {name} declaration differs")
+    # The wave mode is what the kernel declares, not what this reader assumes. gfx10+
+    # says so with wavefront_size32; a kernel that never mentions it is wave64.
+    wave_size = 32 if fields.get("wavefront_size32") == 1 else 64
     return {
         "kernel_name": kernels[0],
-        "wave_size": 32,
+        "wave_size": wave_size,
         "vgpr_count": fields["next_free_vgpr"],
         "sgpr_count": fields["next_free_sgpr"],
-        "shared_vgpr_count": fields["shared_vgpr_count"],
+        "shared_vgpr_count": fields.get("shared_vgpr_count"),
         "lds_bytes_per_workgroup": fields["group_segment_fixed_size"],
         "scratch_bytes_per_workitem": fields["private_segment_fixed_size"],
         "kernarg_bytes": fields["kernarg_size"],
         "uses_dynamic_stack": bool(fields["uses_dynamic_stack"]),
-        "workgroup_processor_mode": bool(fields["workgroup_processor_mode"]),
+        "workgroup_processor_mode": (
+            None if "workgroup_processor_mode" not in fields
+            else bool(fields["workgroup_processor_mode"])
+        ),
         "occupancy_derived": False,
-        "occupancy_limit": "gfx1151_target_facts_unavailable",
+        # Named for the target it is missing for, rather than for one target this reader
+        # was first written against.
+        "occupancy_limit": "target_facts_unavailable",
     }
 
 
