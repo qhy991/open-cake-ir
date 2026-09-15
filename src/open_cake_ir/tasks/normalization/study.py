@@ -80,6 +80,16 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
 _ROUTE_CALLS_PER_COHORT = 28
 
 
+def _allocation_mode(target: object) -> str:
+    """How a run on this Target's backend reaches its device, as the registry declares."""
+    from open_cake_ir.tasks.devices import allocation, backend_for_target
+
+    backend = backend_for_target(target)
+    if backend is None:
+        raise ValueError("Workload target has no admitted backend")
+    return "local_serialized" if allocation(backend) == "local_broker" else "exclusive"
+
+
 def study_template(root: Path, workload, workload_path: Path, starter_path: Path, *,
                    harness: str, model: str, effort: str, turns: int = 4,
                    token_budget: int = 150000, maximum_candidates: int = 3,
@@ -142,7 +152,9 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         "execution": {"target": workload.target, "executor_revision": dict(CURRENT_RELEASE_BINDING),
                       "broker_execution_sha256": dict(CAMPAIGN_BINDING), "fixed_baseline": dict(CAMPAIGN_BINDING),
                       "gpu": {"name": device_name(workload.target), "count": 1,
-                              "mode": "local_serialized" if source.document["lowering"]["backend"] == "metal" else "exclusive"},
+                              # The allocation, not the lowering route: a DCU lowers through Triton and
+                              # serializes one local device.
+                              "mode": _allocation_mode(workload.target)},
                       "sandbox": provider["sandbox"]},
         "analysis_plan": {**json.loads(canonical(_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN)),
                           "endpoint_policy": NORMAL_BUDGET_TERMINAL,

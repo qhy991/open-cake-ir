@@ -323,9 +323,10 @@ gfx1151 result needs a gfx1151 toolchain and device.
 - **Matrix instructions.** `v_mmac_f32_16x16x16_f16` exists and is unadmitted. Adding it
   means a contract name, its numerical behaviour, and the verifier and cost-model rules
   that go with it -- a second change, with its own evidence.
-- **An Executor.** None exists. Capturing one from the container's exact Python 3.10.12,
-  PyTorch 2.11.0 (HIP 6.3.26113), Triton 3.6.0 and dcc 25.10.0 is a separate gate, and a
-  B200/B300 Executor is not a fallback.
+- **An Executor.** One exists: `open-cake-ir-gfx938-v5`, captured from the container's
+  exact Python 3.10.12, PyTorch 2.11.0 (HIP 6.3.26113), Triton 3.6.0 and dcc 25.10.0. It
+  is a separate gate from the Compiler, and a B200/B300 Executor was never a fallback for
+  it. Its successor is pending: see gate 7 below.
 
 ## Environment notes
 
@@ -344,11 +345,13 @@ gfx1151 result needs a gfx1151 toolchain and device.
 3. The task registry: one device registry, every family deriving route and Target from
    it, and four capability checks in place of device lists. *(done)*
 4. Independent ADR 0052 review of the exact source and Gate diff, then a released
-   Compiler successor. *(pending; the author may not write the approval)*
-5. An Executor successor. This change touches `evaluation/artifacts.py`,
-   `lab/executor.py` and the task registry files, all pinned by the current released
-   Executor -- the paired successor F-2026-09-13-006 predicted. *(pending; needs the
-   host each descriptor is bound to)*
+   Compiler successor. *(done: reviewed by haiyan, Compiler v83 then v84, 7 targets,
+   210 sources, Gate 151/151)*
+5. An Executor successor for every target whose pinned closure this change touched --
+   `evaluation/artifacts.py`, `lab/executor.py` and the task registry files -- the paired
+   successor F-2026-09-13-006 predicted. *(done: `apple_gpu_family8` v124 on this M2,
+   `sm_103a` v123 on B300-M2, `gfx938` v5 on bw1100. `apple_gpu_family7` has none; its
+   M1 Pro host is not reachable and no other host may stand in for it.)*
 6. A DCU Executor and the rest of the AMDGCN Evaluation half, under
    [F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json).
    An earlier version of this document said `capture_executor_host.py` could not produce a
@@ -356,7 +359,44 @@ gfx1151 result needs a gfx1151 toolchain and device.
    stale ref and is wrong. It admits `hip` and `amd`, `HipHostAdmission` verifies the host
    without touching a device, `evaluation/triton_hip.py` owns exact-HIP runtime custody and
    `evaluation/rocprofv3.py` projects kernel-trace, kernel-stats and results evidence
-   fail-closed. What is missing is connective: no gfx target has an executable role, a
-   rocprofv3 trace is not a named timing path beside `metal` and `cupti`, and the schema v2
-   executor identity pins gfx1151 while this Compiler target is gfx938. Only past that is a
-   correctness matrix -- and nothing about performance -- in scope.
+   fail-closed. The executable role, the AMD-parameterized Executor identity and the single
+   host `kind` field are in. *(partly done)*
+7. Actually launching a Lab task on the DCU. This gate was not on the list until
+   `launch_task.py --baseline-only` was run against `triton-dcu` for real, and the first
+   thing it found was in neither the compile chain nor the Evaluation half: **allocation**.
+   The launcher read the allocator off the lowering route, so a Triton route demanded the
+   `gpu-run` CUDA cluster allocator and refused a device that has no use for one. Route and
+   allocation are now separate declared columns of `tasks/devices.py`, and `triton-dcu` is
+   `triton` + `local_broker`. Immediately behind it, the isolated build's jail was the
+   constant `/usr/bin/bwrap`; it is now discovered on the host, with a refusal naming
+   bubblewrap rather than a `FileNotFoundError` naming a path nobody chose. Both are
+   recorded as the fourth axis in
+   [F-2026-09-15-004](../findings/2026-09-15-004-three-axes-collapsed-into-target-identity.json),
+   together with the process lesson: the eight-gate readiness checklist that preceded this
+   reached 7/8 and had no gate for how a sealed candidate reaches a device, because every
+   gate in it was assembled from a compile-chain failure already seen. *(source done and
+   host-tested; the launch itself is blocked -- see below)*
+8. A named AMD timing source. `_PAIRED_BACKENDS` maps a policy kind to `cupti` or `metal`
+   and deliberately has no AMD entry: adding a `rocprofv3` kind before a measurement
+   exists would be a measurement name with nothing behind it. The open question is whether
+   `MinNs`, `MaxNs` and `StdDev` -- which `hipprof`'s stats CSV does not carry, verified by
+   reading all eight of its columns rather than the five a truncated `sed` first showed --
+   can be derived from rocprofv2's per-dispatch `Start`/`End` timestamps. That needs the
+   device. *(blocked)*
+
+### What is blocking gates 7 and 8 right now
+
+`bw1100` (10.17.176.11) is unreachable from this host: no ICMP reply, no route over the
+active tunnel, `ssh` times out at connect. Three consequences, none of them worked around:
+
+- The `gfx938` Executor successor is not released. The release cycle can inherit the
+  released HIP host rather than re-capture it, but doing so requires asserting that the
+  pinned host still matches the live one, and that assertion cannot be made from here. The
+  cycle now refuses with that reason instead of the one it used to give -- it asked a
+  Hygon DTK container for an x86_64 Nsight Compute, because the profiler-resolution branch
+  was reached by being "not Metal".
+- `--baseline-only` for `triton-dcu` has not been re-run past the allocation fix, so gate
+  7's remaining failures are unknown rather than absent.
+- `load_hip_candidate` still owes its device-side end-to-end check. Everything it refuses
+  before touching a device is host-tested in `tests/contracts/test_hip_candidate.py`,
+  including the arch comparison that refused the only DCU this route has seen.

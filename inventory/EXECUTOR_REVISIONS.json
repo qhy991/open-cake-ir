@@ -38,24 +38,10 @@
   ],
   "current_by_target": {
     "apple_gpu_family8": {
-      "canonical_sha256": "50a6b5b1b56102385dd2dc6db1a26468fecb9630d90272d63b040312f4665338",
-      "descriptor_raw_sha256": "086493aff5614fdfac842a6ae5a0ae5e6f3ef680e50b0c831496cf8ebca69e7e",
-      "executor_id": "open-cake-ir-b200-v124+37201d8c5b0f7134728240c2bf1819e2afdba8585c483834a5937019b6c0252a",
-      "path": "runtime/executors/open-cake-ir-b200-v124+37201d8c5b0f7134728240c2bf1819e2afdba8585c483834a5937019b6c0252a.json",
-      "source_count": 167
-    },
-    "gfx938": {
-      "canonical_sha256": "1b1c3c690b90f2c6a5cf3cd9fbc9a3e09872c0766807351a9e46c7eaa010b2b4",
-      "descriptor_raw_sha256": "626299153f30c9dd4b25f341b5406a08828cc1f48e233c6f4956569e7eb1386c",
-      "executor_id": "open-cake-ir-gfx938-v5+ab8d59210f68783150fe38b6871d7236324c4fad9b719ac6b930eb0f6bec05f0",
-      "path": "runtime/executors/open-cake-ir-gfx938-v5+ab8d59210f68783150fe38b6871d7236324c4fad9b719ac6b930eb0f6bec05f0.json",
-      "source_count": 167
-    },
-    "sm_103a": {
-      "canonical_sha256": "494ad6d70763d8b333d4c74aa00d6d83508155de779d3cc800dff02c4d1ddfc9",
-      "descriptor_raw_sha256": "6aef17cb9158a841b475f813893138cafc98fd0b649a8da70272216645c45e8c",
-      "executor_id": "open-cake-ir-b200-v123+3499298af654cbe32f46e199aa9be800852be030c57e7fd2b9c35b7fb3e70129",
-      "path": "runtime/executors/open-cake-ir-b200-v123+3499298af654cbe32f46e199aa9be800852be030c57e7fd2b9c35b7fb3e70129.json",
+      "canonical_sha256": "64d5950b44d1ba709fa2f2ce7cbb53b7c2a5fc2db49935950b57532673c84b80",
+      "descriptor_raw_sha256": "8a8c3f626edd8e8e5d9cbd7e29c04d5981022d49f4841fb589c94809f09d5caa",
+      "executor_id": "open-cake-ir-b200-v125+081dff5b1def0ed45c3a4bd85b9325df56950fd633fdaeca892ac67f7a1dae61",
+      "path": "runtime/executors/open-cake-ir-b200-v125+081dff5b1def0ed45c3a4bd85b9325df56950fd633fdaeca892ac67f7a1dae61.json",
       "source_count": 167
     }
   },
@@ -290,6 +276,20 @@
       "descriptor_raw_sha256": "82eaa800ce1f37d871f4ae54e348100cf4e4ad13109e0488b65beadfa00d705b",
       "executor_id": "open-cake-ir-b200-v122+8e7709b32d792f8a38054311f7c17b677349c75844e25c6f66700725555c4668",
       "path": "runtime/executors/open-cake-ir-b200-v122+8e7709b32d792f8a38054311f7c17b677349c75844e25c6f66700725555c4668.json",
+      "source_count": 167
+    },
+    {
+      "canonical_sha256": "494ad6d70763d8b333d4c74aa00d6d83508155de779d3cc800dff02c4d1ddfc9",
+      "descriptor_raw_sha256": "6aef17cb9158a841b475f813893138cafc98fd0b649a8da70272216645c45e8c",
+      "executor_id": "open-cake-ir-b200-v123+3499298af654cbe32f46e199aa9be800852be030c57e7fd2b9c35b7fb3e70129",
+      "path": "runtime/executors/open-cake-ir-b200-v123+3499298af654cbe32f46e199aa9be800852be030c57e7fd2b9c35b7fb3e70129.json",
+      "source_count": 167
+    },
+    {
+      "canonical_sha256": "50a6b5b1b56102385dd2dc6db1a26468fecb9630d90272d63b040312f4665338",
+      "descriptor_raw_sha256": "086493aff5614fdfac842a6ae5a0ae5e6f3ef680e50b0c831496cf8ebca69e7e",
+      "executor_id": "open-cake-ir-b200-v124+37201d8c5b0f7134728240c2bf1819e2afdba8585c483834a5937019b6c0252a",
+      "path": "runtime/executors/open-cake-ir-b200-v124+37201d8c5b0f7134728240c2bf1819e2afdba8585c483834a5937019b6c0252a.json",
       "source_count": 167
     },
     {
@@ -969,6 +969,13 @@
       "descriptor_raw_sha256": "a255c5f56c9dbd188f37cdb136cec07e23c9847c80c5f6b116bbed3d9086b0ab",
       "executor_id": "open-cake-ir-gfx938-v4+d0fb0b34ddfb12076319510dbd2e1a7ae8e6ea4d9d9ec7be594da5592e40163a",
       "path": "runtime/executors/open-cake-ir-gfx938-v4.json",
+      "source_count": 167
+    },
+    {
+      "canonical_sha256": "1b1c3c690b90f2c6a5cf3cd9fbc9a3e09872c0766807351a9e46c7eaa010b2b4",
+      "descriptor_raw_sha256": "626299153f30c9dd4b25f341b5406a08828cc1f48e233c6f4956569e7eb1386c",
+      "executor_id": "open-cake-ir-gfx938-v5+ab8d59210f68783150fe38b6871d7236324c4fad9b719ac6b930eb0f6bec05f0",
+      "path": "runtime/executors/open-cake-ir-gfx938-v5+ab8d59210f68783150fe38b6871d7236324c4fad9b719ac6b930eb0f6bec05f0.json",
       "source_count": 167
     }
   ]

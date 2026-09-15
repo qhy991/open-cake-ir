@@ -97,6 +97,19 @@ if host.get("kind") == "metal":
     print("    using explicit native Metal host; no CUDA host inheritance")
 elif arguments.host_environment is not None:
     print("    using supplied verified host environment")
+elif host.get("kind") == "hip":
+    # Nsight Compute is a CUDA profiler. This branch used to be reached by being "not
+    # Metal", so inheriting a released HIP host asked a Hygon DTK container for an
+    # x86_64 NVIDIA profiler and refused the release for not having one. A HIP host
+    # pins its own profilers -- rocprof here -- in its `profilers` list at capture.
+    if os.environ.get("OPEN_CAKE_REUSE_VERIFIED_HOST") != "1":
+        raise SystemExit(
+            "inheriting the released HIP host environment requires "
+            "OPEN_CAKE_REUSE_VERIFIED_HOST=1, set only after verifying that pinned host "
+            "against the live executor host; pass --host-environment to supply a fresh "
+            "capture instead"
+        )
+    print("    reusing operator-verified HIP host environment")
 elif not candidates:
     if os.environ.get("OPEN_CAKE_REUSE_VERIFIED_HOST") != "1":
         raise SystemExit(
