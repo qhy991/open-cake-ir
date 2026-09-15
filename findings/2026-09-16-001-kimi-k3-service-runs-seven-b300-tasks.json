@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-001",
+  "kind": "behavior",
+  "title": "A kimi-k3 experiment service runs seven B300 tasks end to end, every campaign protocol-adherent and custody-verified",
+  "date": "2026-09-16",
+  "backend": "triton",
+  "target": "sm_103a",
+  "executor_revision": "open-cake-ir-b200-v146",
+  "compiler_revision_id": "open-cake-ir-sm100a-v84",
+  "tasks": [
+    "rmsnorm",
+    "layernorm",
+    "softmax",
+    "silu",
+    "swiglu",
+    "gelu_tanh",
+    "residual_rmsnorm"
+  ],
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oci-service-runs on B300-M2",
+      "note": "One workspace per task, each holding its own study.json, campaign-lock.json, campaign-evidence hash chain and report.json. The sweep ledger sweep-20260916-034037.tsv records each task's exit code and workspace."
+    }
+  ],
+  "observation": "Seven tasks ran through tools/launch_task.py on B300 with kimi-k3 as the authoring provider, reached over an Anthropic-compatible endpoint the repository owner supplied. All seven campaigns report campaign_complete, archive_integrity, filesystem_custody_verified and semantic_replay true, and every run is protocol_adherence 'adhered' with endpoint_observation 'qualified'. Five terminated at maximum_turns and two at the provider token limit. Measured candidate and baseline logical task bandwidth, as reference percentages: rmsnorm 5.79/5.48 against 5.11/5.07; layernorm 5.36/5.36 against 3.65; softmax 5.32 against 5.25; silu 6.21 against 5.39; swiglu 6.08 and 4.33 against 5.59/5.44; gelu_tanh 3.01 against 2.97; residual_rmsnorm 8.21 and 6.10 against 6.10/6.04. Best confirmed latencies ranged 0.0021 to 0.0044 ms. Token spend per campaign ranged 130577 to 283531.\n\nTwo environment facts cost a campaign before these ran. The launcher's default gpu-run socket is /tmp/agent-gpu-broker.sock and this host's broker listens on /tmp/h210fix-gpu.sock, so the first attempt reached the allocator and faulted with 'cannot reach broker' after the provider had already authored and sealed a candidate -- 77103 tokens spent on a run that could not be evaluated. The second is that node and Claude Code are installed under ~/.local/bin on this host and are not on a non-login shell's PATH, and the host has no route to the public internet, so neither is installable at run time.",
+  "proposed_change": "No Compiler or Executor change is proposed. What this establishes is that the artifact-optimization path works end to end under a non-Anthropic model reached through an Anthropic-compatible endpoint, which was previously only exercised with Claude and Kimi builds recorded in F-2026-09-13-003. Claim scope is artifact_optimization_only and estimand_available is false on every run, so these are not arm comparisons and none of the ratios above is a speedup claim against an external reference; they are candidate-versus-baseline measurements inside one task, case, target and assay.\n\nThe broker-socket default is worth routing: a launcher that defaults to a socket path this host does not use spends a full authoring turn before finding out. Either the default is discovered from the running broker, or the launcher probes the socket before it admits the provider -- the second is cheaper and refuses before any token is spent.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Behavior finding, so verification is by campaign. The seven workspaces above are the observation; a second sweep over the optimizer, row-wise and reduction families on the same Executor and Compiler Revisions tests whether adherence and qualification hold across task shapes rather than only the normalization and activation families."
+}
