@@ -219,17 +219,86 @@ def project_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> 
     return result
 
 
+@dataclass(frozen=True)
+class TritonRoute:
+    """One exact code-generation target and the artifacts its Triton backend produces.
+
+    Triton reaches every vendor through the same `GPUTarget`, but nothing else about a
+    compilation is shared: the artifact roles differ, the text that names the emitted
+    target differs, and the metadata object carries different scratch fields. Routing
+    those on the declared target keeps each commitment visible instead of leaving three
+    CUDA assumptions buried in one function.
+    """
+
+    gpu_backend: str
+    architecture: object
+    warp_size: int
+    artifact_roles: tuple[str, ...]
+    binary_role: str
+    text_role: str
+    target_pattern: bytes
+    scratch_fields: tuple[str, ...]
+
+
+# Exact AMDGCN targets, named here and not read from a Target document: offline
+# compilation never opens that data in its jail, which is the same reason
+# `cuda_architecture` decodes sm_100a and sm_103a by itself. The gfx938 contract test
+# holds this table against the document so the two cannot drift apart.
+#
+# `arch` is the bare ISA name Triton passes to the AMDGPU backend;
+# the emitted `amdhsa.target` adds the feature flags the toolchain selected, which are
+# not the same string the device reports (a BW1101 reports `gfx938:sramecc+:xnack-` and
+# this toolchain emits `gfx938:xnack-`). The pattern below therefore pins the ISA exactly
+# and admits only well-formed feature suffixes after it, rather than pretending the two
+# strings are one fact.
+_AMDGCN_TRITON_TARGETS = MappingProxyType({"gfx938": 64})
+
+
+def triton_route(target: object) -> TritonRoute:
+    """Decode the one exact target this compilation is for, or refuse it."""
+
+    from .target import cuda_architecture
+
+    if isinstance(target, str) and target in _AMDGCN_TRITON_TARGETS:
+        return TritonRoute(
+            gpu_backend="hip",
+            architecture=target,
+            warp_size=_AMDGCN_TRITON_TARGETS[target],
+            artifact_roles=("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco"),
+            binary_role="hsaco",
+            text_role="amdgcn",
+            target_pattern=(
+                rb"amdhsa\.target:\s*'amdgcn-amd-amdhsa--"
+                + target.encode("ascii")
+                + rb"(?::[a-z0-9]+[+-])*'"
+            ),
+            # HIPOptions carries no global scratch field at all, so there is nothing to
+            # read; `profile_scratch_size` is present and is checked like the CUDA route.
+            scratch_fields=("profile_scratch_size",),
+        )
+    architecture = cuda_architecture(target)
+    return TritonRoute(
+        gpu_backend="cuda",
+        architecture=architecture,
+        warp_size=32,
+        artifact_roles=("source", "ttir", "ttgir", "llir", "ptx", "cubin"),
+        binary_role="cubin",
+        text_role="ptx",
+        target_pattern=rb"^\.target\s+" + target.encode("ascii") + rb"(?:\s|,|$)",
+        scratch_fields=("global_scratch_size", "profile_scratch_size"),
+    )
+
+
 def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonCompilation:
     """Compile a complete emitted source; never launch it or initialize GPU handles."""
-    from .target import cuda_architecture
     target = requirements.get("target")
-    architecture = cuda_architecture(target)
+    route = triton_route(target)
     if (
         requirements.get("compiler") != "triton"
         or requirements.get("source_language") != "python"
         or not source
     ):
-        raise ValueError("offline Triton compilation requires an explicit CUDA target contract")
+        raise ValueError("offline Triton compilation requires an explicit target contract")
     name = requirements.get("kernel_entry_point")
     signature = requirements.get("signature")
     constants = requirements.get("compile_constants")
@@ -255,10 +324,11 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
             raise ValueError("Triton lowering kernel entry point is missing")
         compiled = triton_compile(
             ASTSource(kernel, dict(signature), dict(constants)),
-            target=GPUTarget("cuda", architecture, 32), options=dict(options),
+            target=GPUTarget(route.gpu_backend, route.architecture, route.warp_size),
+            options=dict(options),
         )
         artifacts = {}
-        for role in ("source", "ttir", "ttgir", "llir", "ptx", "cubin"):
+        for role in route.artifact_roles:
             payload = compiled.asm[role]
             if isinstance(payload, str):
                 payload = payload.encode("utf-8")
@@ -270,16 +340,93 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         metadata = compiled.metadata
         if metadata.name != name or metadata.num_ctas != 1:
             raise ValueError("offline resource model requires the requested single-CTA-cluster kernel")
-        if metadata.global_scratch_size or metadata.profile_scratch_size:
+        # Only the fields this route's backend actually defines. Reading an absent one
+        # through a default would report "no auxiliary scratch" for a backend that was
+        # never asked, which is the failure this names instead.
+        if any(getattr(metadata, field) for field in route.scratch_fields):
             raise ValueError("offline resource model does not cover auxiliary global scratch")
-        if not artifacts["cubin"].startswith(b"\x7fELF") or re.search(
-            rb"^\.target\s+" + target.encode("ascii") + rb"(?:\s|,|$)", artifacts["ptx"], re.MULTILINE
+        # The lane width is a launch fact the analyses derive thread counts from, so a
+        # backend that returns a different one than the Target declared invalidates them.
+        if getattr(metadata, "warp_size", route.warp_size) != route.warp_size:
+            raise ValueError(f"Triton compiled {target} at a lane width the Target does not declare")
+        if not artifacts[route.binary_role].startswith(b"\x7fELF") or re.search(
+            route.target_pattern, artifacts[route.text_role], re.MULTILINE
         ) is None:
-            raise ValueError(f"Triton output does not match the exact {target} CUBIN target")
+            raise ValueError(
+                f"Triton output does not match the exact {target} "
+                f"{route.binary_role.upper()} target"
+            )
         return TritonCompilation(
             source, target, name, MappingProxyType(artifacts),
-            int(metadata.num_warps) * 32, int(metadata.shared), importlib.metadata.version("triton"),
+            int(metadata.num_warps) * route.warp_size, int(metadata.shared),
+            importlib.metadata.version("triton"),
         )
+
+
+def _parse_amdgcn_resources(assembly: str, entry_point: str) -> dict[str, int]:
+    """Read one unambiguous kernel's allocation from the .amdgpu_metadata note.
+
+    The AMDGPU backend writes this note into the assembly it already produced, so there
+    is no second binary utility to run and nothing here loads the hsaco. Counts are
+    documented at
+    https://llvm.org/docs/AMDGPUUsage.html#code-object-v5-metadata.
+
+    Two of them do not line up one-to-one with the CUDA report, and neither is silently
+    reshaped to look as though they do:
+
+    - `.vgpr_count` is the per-lane vector register allocation and is the analogue of a
+      CUDA per-thread register count. `.sgpr_count` is per wavefront, not per thread, so
+      it is not folded into that number.
+    - `.private_segment_fixed_size` is one per-lane scratch allocation covering what CUDA
+      reports separately as LOCAL and STACK. This ISA does not separate them, so the whole
+      figure is reported as local bytes and the stack figure is zero because it is not an
+      observable quantity here -- not because no stack frame exists.
+    """
+    # A kernel's first metadata key carries a YAML list dash, so every field pattern
+    # here tolerates one. Relying on the keys staying in an order that keeps `-` off
+    # the fields being read would make this parser depend on an external format's
+    # incidental ordering.
+    names = re.findall(r"^[ \t]*(?:-[ \t]+)?\.name:\s*(\S+)\s*$", assembly, flags=re.MULTILINE)
+    if names.count(entry_point) != 1 or len(names) != 1:
+        raise ValueError("AMDGCN metadata does not name exactly one requested kernel")
+    result: dict[str, int] = {}
+    for label, name in (
+        (".vgpr_count", "registers_per_thread"),
+        (".group_segment_fixed_size", "static_shared_bytes"),
+        (".private_segment_fixed_size", "local_bytes"),
+    ):
+        values = re.findall(
+            rf"^[ \t]*(?:-[ \t]+)?{re.escape(label)}:\s*(\d+)\s*$", assembly, flags=re.MULTILINE
+        )
+        if len(values) != 1:
+            raise ValueError(f"AMDGCN metadata has missing or ambiguous {label}")
+        result[name] = int(values[0])
+    result["stack_bytes"] = 0
+    return result
+
+
+def inspect_amdgcn_resources(compilation: TritonCompilation) -> CompiledResources:
+    """Inspect AMDGPU compiler output, with no GPU runtime and no external utility.
+
+    The CUDA peer of this shells out to `cuobjdump`. That utility has no counterpart in
+    the Hygon DTK image, and it needs none: the allocation facts are already in the
+    assembly Triton returned, so the inspector here is the compiler that produced them.
+    """
+    route = triton_route(compilation.target)
+    if route.text_role != "amdgcn":
+        raise ValueError(f"target {compilation.target!r} does not produce AMDGCN assembly")
+    return CompiledResources(
+        source_sha256=sha256(compilation.source).hexdigest(),
+        cubin_sha256=sha256(compilation.artifacts[route.binary_role]).hexdigest(),
+        target=compilation.target, entry_point=compilation.entry_point,
+        threads_per_cta=compilation.threads_per_cta,
+        dynamic_shared_bytes=compilation.dynamic_shared_bytes,
+        compiler_version=compilation.compiler_version,
+        inspector_version=f"amdgpu-metadata via triton {compilation.compiler_version}",
+        **_parse_amdgcn_resources(
+            compilation.artifacts[route.text_role].decode("utf-8"), compilation.entry_point
+        ),
+    )
 
 
 def _parse_cuobjdump_resources(report: str, entry_point: str) -> dict[str, int]:
@@ -307,6 +454,12 @@ def _parse_cuobjdump_resources(report: str, entry_point: str) -> dict[str, int]:
 
 def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Path) -> CompiledResources:
     """Inspect compiler output using NVIDIA's binary utility, with no GPU runtime."""
+    # An AMDGCN compilation has no CUBIN for this utility to read. Say that, rather
+    # than failing on a missing artifact key several frames further in.
+    if triton_route(compilation.target).text_role != "ptx":
+        raise ValueError(
+            f"target {compilation.target!r} produces no CUBIN; use inspect_amdgcn_resources"
+        )
     inspector = str(Path(cuobjdump).resolve(strict=True))
     version = subprocess.check_output([inspector, "--version"], text=True, timeout=20).strip()
     with tempfile.TemporaryDirectory(prefix="open-cake-cubin-") as directory:

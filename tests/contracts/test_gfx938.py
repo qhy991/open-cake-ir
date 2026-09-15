@@ -1,0 +1,329 @@
+"""The exact gfx938 target, its wave64 arithmetic and its AMDGCN lowering route.
+
+Everything here runs on the host without a DCU. The on-device evidence that the emitted
+program compiles to an hsaco and matches a reference across five input distributions is
+retained separately and cited by F-2026-09-14-001; a passing test file is not that
+evidence and does not stand in for it.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+import json
+from pathlib import Path
+import unittest
+
+from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.backends import triton
+from open_cake_ir.compiler.ir import Schedule
+from open_cake_ir.compiler.target import Target, TargetParseError, Vendor
+from open_cake_ir.compiler.toolchain import (
+    TritonCompilation,
+    _parse_amdgcn_resources,
+    inspect_triton_resources,
+    triton_route,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def _document(name: str) -> dict:
+    return json.loads((ROOT / "corpus/schedules" / f"{name}.json").read_text(encoding="utf-8"))
+
+
+class TargetDocumentTest(unittest.TestCase):
+    """The declared hardware facts, and the two spellings the parser refuses."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.document = json.loads(
+            (ROOT / "compiler/targets/gfx938.json").read_text(encoding="utf-8")
+        )
+        cls.target = Target.from_dict(cls.document)
+
+    def test_the_declared_width_and_vendor_belong_to_the_document(self) -> None:
+        self.assertIs(self.target.vendor, Vendor.AMD)
+        self.assertEqual(self.target.warp_size, 64)
+        # No CUDA capability, and no borrowed warpgroup rule against a 64-lane wavefront.
+        self.assertIsNone(self.target.compute_capability)
+        self.assertIsNone(self.target.warps_per_warpgroup)
+
+    def test_the_cta_budget_agrees_with_the_declared_lane_width(self) -> None:
+        limits = self.target.resource_limits
+        self.assertEqual(limits.maximum_threads_per_cta, 1024)
+        self.assertEqual(
+            limits.maximum_warps_per_cta * self.target.warp_size,
+            limits.maximum_threads_per_cta,
+        )
+        self.assertEqual(limits.maximum_shared_memory_bytes, 65536)
+        self.assertEqual(limits.maximum_tensor_memory_bytes, 0)
+
+    def test_the_per_multiprocessor_facts_were_read_from_a_device(self) -> None:
+        kinds = {citation["kind"] for citation in self.document["citations"]}
+        self.assertIn("device_observation", kinds)
+        self.assertEqual(
+            self.document["occupancy"],
+            {
+                "multiprocessor_count": 64,
+                "registers_per_multiprocessor": 131072,
+                "shared_memory_per_multiprocessor_bytes": 65536,
+                "maximum_threads_per_multiprocessor": 2560,
+            },
+        )
+        occupancy = self.target.occupancy
+        assert occupancy is not None
+        self.assertEqual(
+            occupancy.maximum_threads_per_multiprocessor % self.target.warp_size, 0
+        )
+
+    def test_no_peak_is_declared_without_a_calibration(self) -> None:
+        self.assertNotIn("peak", self.document)
+        self.assertIsNone(self.target.peak)
+
+    def test_an_amd_document_carries_no_cuda_capability(self) -> None:
+        with self.assertRaises(TargetParseError):
+            Target.from_dict({**self.document, "compute_capability": [9, 3]})
+
+    def test_the_declared_width_is_not_a_default(self) -> None:
+        document = {k: v for k, v in self.document.items() if k != "warp_size"}
+        with self.assertRaises(TargetParseError):
+            Target.from_dict(document)
+
+
+class Wave64ArithmeticTest(unittest.TestCase):
+    """One Schedule, two targets: the lane width is what separates the verdicts."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+
+    def test_thirty_two_slots_fit_a_cuda_cta_and_overrun_a_wave64_one(self) -> None:
+        wide = _document("gfx938-wave64-thread-extent-refusal")
+        refused = self.compiler.assess(wide)
+        codes = {finding.code for finding in refused.findings}
+        self.assertFalse(refused.accepted)
+        self.assertIn("TARGET_THREAD_LIMIT", codes)
+        self.assertIn("TARGET_WARP_LIMIT", codes)
+        self.assertTrue(
+            any("2048 threads" in finding.message for finding in refused.findings),
+            [finding.message for finding in refused.findings],
+        )
+
+        control = {**wide, "schedule_id": "control-32-slots-sm100a", "target": "sm_100a"}
+        accepted = self.compiler.assess(control)
+        self.assertTrue(accepted.accepted, [f.message for f in accepted.findings])
+        self.assertTrue(accepted.lowering_eligible)
+
+    def test_the_accepted_schedule_launches_sixty_four_lane_slots(self) -> None:
+        document = _document("gfx938-rmsnorm-b8-smoke")
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.accepted, [f.message for f in assessment.findings])
+        self.assertTrue(assessment.lowering_eligible)
+        schedule = Schedule.from_dict(document)
+        target = Target.load(ROOT / "compiler/targets/gfx938.json")
+        self.assertEqual(schedule.total_warp_extent * target.warp_size, 256)
+        # The residency report counts those 256 threads, not 128.
+        self.assertTrue(
+            any("256 of 2560 threads" in finding.message for finding in assessment.findings),
+            [finding.message for finding in assessment.findings],
+        )
+
+
+class TritonAdmissionTest(unittest.TestCase):
+    """What this backend emits for, and the one budget it refuses to pretend to hold."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        cls.target = Target.load(ROOT / "compiler/targets/gfx938.json")
+
+    def test_a_declared_register_budget_is_refused_rather_than_dropped(self) -> None:
+        assessment = self.compiler.assess(_document("gfx938-register-budget-refusal"))
+        codes = {finding.code for finding in assessment.findings}
+        self.assertIn("TRITON_AMDGCN_REGISTER_BUDGET_UNENFORCEABLE", codes)
+        self.assertFalse(assessment.lowering_eligible)
+        # The same budget is enforceable on CUDA and carries no such refusal there.
+        cuda = self.compiler.assess(_document("rmsnorm-b8-smoke"))
+        self.assertNotIn(
+            "TRITON_AMDGCN_REGISTER_BUDGET_UNENFORCEABLE",
+            {finding.code for finding in cuda.findings},
+        )
+
+    def test_the_backend_admits_the_exact_target_and_still_refuses_metal(self) -> None:
+        schedule = Schedule.from_dict(_document("gfx938-rmsnorm-b8-smoke"))
+        self.assertEqual(triton.preflight(schedule, self.target), ())
+        apple = Target.load(ROOT / "compiler/targets/apple_gpu_family9.json")
+        codes = {finding.code for finding in triton.preflight(schedule, apple)}
+        self.assertIn("BACKEND_TARGET_UNSUPPORTED", codes)
+
+    def test_a_target_whose_identity_drifted_is_not_admitted(self) -> None:
+        """The route is pinned to an id, an architecture and a lane width together.
+
+        Built with `replace` rather than a document, because a document naming an
+        unknown architecture is refused by the parser first and would prove nothing
+        about what the backend admits.
+        """
+        schedule = Schedule.from_dict(_document("gfx938-rmsnorm-b8-smoke"))
+        for field, value in (("target_id", "gfx942"), ("architecture", "c4000"),
+                             ("warp_size", 32)):
+            with self.subTest(field=field):
+                drifted = replace(self.target, **{field: value})
+                codes = {f.code for f in triton.preflight(schedule, drifted)}
+                self.assertIn("BACKEND_TARGET_UNSUPPORTED", codes)
+
+
+class TritonRouteTest(unittest.TestCase):
+    """Neither vendor's artifact names, target text nor scratch fields are assumed."""
+
+    def test_the_amdgcn_route_names_its_own_artifacts(self) -> None:
+        route = triton_route("gfx938")
+        self.assertEqual(route.gpu_backend, "hip")
+        self.assertEqual(route.architecture, "gfx938")
+        self.assertEqual(route.warp_size, 64)
+        self.assertEqual(route.binary_role, "hsaco")
+        self.assertEqual(route.text_role, "amdgcn")
+        self.assertNotIn("ptx", route.artifact_roles)
+        self.assertNotIn("cubin", route.artifact_roles)
+        # HIPOptions defines no global scratch field, so nothing reads one.
+        self.assertEqual(route.scratch_fields, ("profile_scratch_size",))
+
+    def test_the_route_and_the_target_document_cannot_drift(self) -> None:
+        """Offline compilation never opens a Target document, so the two are checked."""
+        target = Target.load(ROOT / "compiler/targets/gfx938.json")
+        route = triton_route(target.target_id)
+        self.assertEqual(route.warp_size, target.warp_size)
+        self.assertEqual(route.architecture, target.target_id)
+
+    def test_the_cuda_route_is_unchanged(self) -> None:
+        for target, architecture in (("sm_100a", 100), ("sm_103a", 103)):
+            with self.subTest(target=target):
+                route = triton_route(target)
+                self.assertEqual(route.gpu_backend, "cuda")
+                self.assertEqual(route.architecture, architecture)
+                self.assertEqual(route.warp_size, 32)
+                self.assertEqual(route.binary_role, "cubin")
+                self.assertEqual(route.text_role, "ptx")
+                self.assertEqual(
+                    route.scratch_fields, ("global_scratch_size", "profile_scratch_size")
+                )
+
+    def test_the_cuda_inspector_refuses_an_amdgcn_compilation(self) -> None:
+        """It has no CUBIN to read, and says so instead of failing on a missing key."""
+        compilation = TritonCompilation(
+            source=b"# lowered\n", target="gfx938", entry_point="k",
+            artifacts={"amdgcn": b"", "hsaco": b""},
+            threads_per_cta=256, dynamic_shared_bytes=0, compiler_version="3.6.0",
+        )
+        with self.assertRaises(ValueError) as raised:
+            inspect_triton_resources(compilation, "/nonexistent/cuobjdump")
+        self.assertIn("inspect_amdgcn_resources", str(raised.exception))
+
+    def test_an_unlisted_target_is_refused_not_stepped_down(self) -> None:
+        for target in ("gfx942", "gfx936", "gfx9380", "apple_gpu_family9", "", None):
+            with self.subTest(target=target):
+                with self.assertRaises(TargetParseError):
+                    triton_route(target)
+
+    def test_the_emitted_target_line_must_name_the_exact_isa(self) -> None:
+        import re
+
+        pattern = triton_route("gfx938").target_pattern
+        for line in (
+            b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:xnack-'",
+            b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:sramecc+:xnack-'",
+            b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938'",
+        ):
+            with self.subTest(line=line):
+                self.assertIsNotNone(re.search(pattern, line, re.MULTILINE))
+        for line in (
+            b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx9380:xnack-'",
+            b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx942:xnack-'",
+            b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:xnack'",
+        ):
+            with self.subTest(line=line):
+                self.assertIsNone(re.search(pattern, line, re.MULTILINE))
+
+
+# One kernel's .amdgpu_metadata note, as the DTK 26.04 AMDGPU backend wrote it for the
+# lowered gfx938-rmsnorm-b8-smoke Schedule. Trimmed to the fields the parser reads plus
+# enough neighbours to keep the shape honest.
+_METADATA = """\t.amdgpu_metadata
+---
+amdhsa.kernels:
+  - .agpr_count:     0
+    .args:
+      - .address_space:  global
+        .offset:         0
+        .size:           8
+        .value_kind:     global_buffer
+    .group_segment_fixed_size: 0
+    .kernarg_segment_align: 8
+    .kernarg_segment_size: 40
+    .max_flat_workgroup_size: 256
+    .name:           _cake_gfx938_rmsnorm_b8_smoke_kernel
+    .private_segment_fixed_size: 0
+    .sgpr_count:     47
+    .sgpr_spill_count: 0
+    .symbol:         _cake_gfx938_rmsnorm_b8_smoke_kernel.kd
+    .uniform_work_group_size: 1
+    .uses_dynamic_stack: false
+    .vgpr_count:     134
+    .vgpr_spill_count: 0
+    .wavefront_size: 64
+amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:xnack-'
+amdhsa.version:
+  - 1
+  - 2
+...
+"""
+
+
+class AmdgcnResourceParseTest(unittest.TestCase):
+    """The compiler's own note replaces cuobjdump, and refuses the same ambiguities."""
+
+    ENTRY = "_cake_gfx938_rmsnorm_b8_smoke_kernel"
+
+    def test_it_reads_the_per_lane_allocation(self) -> None:
+        self.assertEqual(
+            _parse_amdgcn_resources(_METADATA, self.ENTRY),
+            {
+                "registers_per_thread": 134,
+                "static_shared_bytes": 0,
+                "local_bytes": 0,
+                "stack_bytes": 0,
+            },
+        )
+
+    def test_the_scalar_count_is_not_folded_into_a_per_thread_number(self) -> None:
+        """.sgpr_count is per wavefront; reading it as per thread would be 47 too many."""
+        self.assertEqual(
+            _parse_amdgcn_resources(_METADATA, self.ENTRY)["registers_per_thread"], 134
+        )
+
+    def test_a_note_naming_another_kernel_is_refused(self) -> None:
+        with self.assertRaises(ValueError):
+            _parse_amdgcn_resources(_METADATA, "some_other_kernel")
+
+    def test_a_two_kernel_note_is_refused_rather_than_guessed(self) -> None:
+        doubled = _METADATA.replace(
+            "amdhsa.target:",
+            "  - .agpr_count:     0\n    .name:           second_kernel\namdhsa.target:",
+            1,
+        )
+        with self.assertRaises(ValueError):
+            _parse_amdgcn_resources(doubled, self.ENTRY)
+
+    def test_a_missing_field_is_refused(self) -> None:
+        for label in (".vgpr_count", ".group_segment_fixed_size",
+                      ".private_segment_fixed_size"):
+            with self.subTest(label=label):
+                stripped = "\n".join(
+                    line for line in _METADATA.splitlines()
+                    if not line.strip().startswith(label + ":")
+                )
+                with self.assertRaises(ValueError):
+                    _parse_amdgcn_resources(stripped, self.ENTRY)
+
+
+if __name__ == "__main__":
+    unittest.main()
