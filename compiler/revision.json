@@ -1,27 +1,35 @@
 {
   "schema_version": 1,
-  "revision_id": "open-cake-ir-sm100a-v82-draft",
+  "revision_id": "open-cake-ir-sm100a-v84-draft",
   "state": "draft",
   "target_definitions": {
     "sm_100a": {
       "path": "compiler/targets/sm_100a.json",
-      "canonical_sha256": "e10dadae7c34486b897a4e3a43f08c6518da7611f6651ab12821fd883e8fe1ac"
+      "canonical_sha256": "1e0ae8402088fa4e9f4dbad50a3f82012e742a79818199aebfb8ca1dfb78540f"
     },
     "apple_gpu_family8": {
       "path": "compiler/targets/apple_gpu_family8.json",
-      "canonical_sha256": "b89f2413d4ed0f28b0526f08abd69d6d5f0a78bfaafa7293982877332d68ee33"
+      "canonical_sha256": "5ddf67c97f07296a59818e44b8d5c078953119992defadb953f03ba20f4a6723"
     },
     "apple_gpu_family9": {
       "path": "compiler/targets/apple_gpu_family9.json",
-      "canonical_sha256": "fa8134d89d0887cfea4c5a54fb2049f545d7f3899a881fd97bbbfbcdb2dfdaa0"
+      "canonical_sha256": "8f957fad3d1392f5163f4c86b72d0c057206695e20f2017d06d96690b0ca62a2"
     },
     "sm_103a": {
       "path": "compiler/targets/sm_103a.json",
-      "canonical_sha256": "9073cc6ae5084a0562164b56f47d00b64a1c209c13bdd2c5c29c8f520b8e944a"
+      "canonical_sha256": "93fdc1135684d196556f807dc9a04906c314d1f59196f86be0a1a84368a98047"
     },
     "apple_gpu_family7": {
       "path": "compiler/targets/apple_gpu_family7.json",
-      "canonical_sha256": "9e189faae4fceb6988937fe88f8e0994da461b29aa9d92e0182389d96f0acd77"
+      "canonical_sha256": "27b9e44d2e18d21fdc6121f0a1730e54197031c3e60f3f0d0c5812e4eaa0fe9c"
+    },
+    "gfx938": {
+      "path": "compiler/targets/gfx938.json",
+      "canonical_sha256": "32a156ac05ffb56f064296aac7c1490091ab2272ed5f4c98708508961cf539c4"
+    },
+    "gfx1151": {
+      "path": "compiler/targets/gfx1151.json",
+      "canonical_sha256": "eb844e7926047d8ba8e70bd0acc09b077e40cfac80f39b31234cb681a3fd37db"
     }
   },
   "corpus_manifest": "corpus/manifest.json",

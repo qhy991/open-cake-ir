@@ -17,14 +17,15 @@ down instead of being spread through each family's authoring code:
   and this registry refuses to create one rather than emitting a Schedule that cannot
   lower.
 
-`open_cake_ir.tasks.apple` stays the authority for the Apple entries; the assertion below
-keeps this table from drifting away from it.
+This is the one registry. `open_cake_ir.tasks.apple` is a read-only Metal-only view of
+it for code that is genuinely Apple-specific; it holds no rows of its own, because two
+tables for one fact is how five task families ended up admitting every backend while two
+admitted only Metal.
 """
 from __future__ import annotations
 
 import math
-
-from open_cake_ir.tasks.apple import BACKENDS as _APPLE
+from pathlib import Path
 
 # The largest `tl.arange` span the Triton backend admits, from its own refusal text.
 TRITON_MAXIMUM_TILE = 1 << 20
@@ -49,11 +50,15 @@ BACKENDS = {
     "triton-b300": {"target": "sm_103a", "device_name": "NVIDIA B300",
                     "provenance_token": "B300", "route": "triton",
                     "tanh_contract": "libdevice.tanh.f32", "power_of_two_width": True},
+    # Hygon DCU. `tanh_contract` is None because gfx938 declares no tanh instruction
+    # contract: on ROCm Triton's `libdevice` resolves to ocml, and reusing the CUDA
+    # spelling would claim NVIDIA libdevice numerics for a different function. A task
+    # that needs tanh is refused here by name rather than lowered against a contract
+    # nobody measured -- see docs/dcu-gfx938-design.md.
+    "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
+                   "provenance_token": "BW1101", "route": "triton",
+                   "tanh_contract": None, "power_of_two_width": True},
 }
-
-# One registry, not two: the Apple rows here must stay exactly what the Apple tasks use.
-assert all(all(BACKENDS[name][field] == device[field] for field in device)
-           for name, device in _APPLE.items()), "Apple backend registry drift"
 
 
 def backend_for_target(target: object) -> str | None:
@@ -78,6 +83,62 @@ def admit_width(backend: str, columns: int) -> None:
         raise ValueError(
             f"{backend} tiles a row with tl.arange, which requires a positive power-of-two "
             f"span no larger than {TRITON_MAXIMUM_TILE}; {columns} is not one")
+
+
+def admit_dtype(backend: str, dtype: str) -> None:
+    """Refuse a Workload dtype the backend's lowering route cannot name.
+
+    Read from the Compiler's own backend vocabulary rather than restated here, so a task
+    is available on exactly the devices whose route can express its ABI. A hard-coded
+    list of backend names says the same thing until a sixth device exists, and then says
+    something false.
+    """
+    from open_cake_ir.compiler.backends import BACKENDS as _ROUTES
+    from open_cake_ir.compiler.ir import DType, LoweringBackend
+
+    route = LoweringBackend(BACKENDS[backend]["route"])
+    if DType(dtype) not in _ROUTES[route].module.SUPPORTED_DTYPES:
+        raise ValueError(
+            f"{backend} lowers through {route.value}, which cannot name dtype {dtype!r}")
+
+
+def admit_operations(backend: str, kinds: tuple[str, ...]) -> None:
+    """Refuse a backend whose Target does not admit every operation kind a task needs.
+
+    A task knows its own body; what a Target admits is a hardware commitment recorded in
+    the Target document. Asking it is how a task family stays available on exactly the
+    devices that can express it, instead of naming the devices that could when it was
+    written.
+    """
+    from open_cake_ir.compiler.target import Target
+
+    root = Path(__file__).resolve().parents[3]
+    target_id = BACKENDS[backend]["target"]
+    admitted = {kind.value for kind in
+                Target.load(root / "compiler" / "targets" / f"{target_id}.json").operation_kinds}
+    missing = [kind for kind in kinds if kind not in admitted]
+    if missing:
+        raise ValueError(
+            f"{backend} targets {target_id}, which does not admit operation "
+            f"{'kinds' if len(missing) > 1 else 'kind'} {', '.join(repr(k) for k in missing)}")
+
+
+def tanh_contract(backend: str) -> str:
+    """Name the device's admitted tanh instruction contract, or refuse the task.
+
+    Each Target names this function in its own vocabulary and no Target admits another's
+    spelling, which is the point of naming a contract at all. A device whose Target
+    declares none is refused here by name: the alternative is emitting some other
+    Target's spelling and finding out at lowering, or worse, lowering against numerics
+    nobody measured on this hardware.
+    """
+    contract = BACKENDS[backend]["tanh_contract"]
+    if contract is None:
+        raise ValueError(
+            f"{backend} has no admitted tanh instruction contract, so no task in this "
+            "family that needs one has a Schedule on it; admitting one is a Target "
+            "change with its own hardware evidence")
+    return contract
 
 
 def admit_cohort_payload(workload, case_id: str, route_calls_per_cohort: int) -> None:

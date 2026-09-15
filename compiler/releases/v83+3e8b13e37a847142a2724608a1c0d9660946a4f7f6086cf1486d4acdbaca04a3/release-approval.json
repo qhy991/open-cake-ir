@@ -1,0 +1,13 @@
+{
+  "schema_version": 3,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "274ea29ab7114b92c919c84488da24b29de214ffda876d6a4d19c5a044a076c1"
+  },
+  "reviewer": {
+    "kind": "human",
+    "name": "haiyan"
+  },
+  "approval_basis": "Approved by the repository owner as the human reviewer of Compiler v83-draft at 8a05b93fb02f0ae10b9a03ffb53741ddceb34d6f, binding Corpus Gate 151/151 over 210 sources. Basis and its limits, stated because the record should not imply more than happened: this approval rests on the author session's reported Gate and change summary, not on a separate line-by-line inspection by a second party; the owner holds the authority to approve on that basis and does so here. What the change is: F-2026-09-13-006 steps 2 and 3 -- vendor declared as a required Target field over a closed {nvidia, apple, amd} set, warps_per_warpgroup declared rather than inferred from a CUDA field's presence, executable_role and the Executor host validator refusing in the class they own, and a synthetic third-vendor neutrality fixture with its tests -- followed by gfx938 and gfx1151 as the first AMD Targets, the AMDGCN Triton route and .amdgpu_metadata inspector, one device registry behind every task family, a HIP Executor host with four Metal regressions repaired, and one host `kind` field. Three judgements the owner is accepting rather than deferring: (1) one LoweringBackend member is kept for one unchanged lowering mechanism, with the Triton backend module owning which exact targets it admits, where AGENTS.md's registration rule could be read to require a new member; (2) gfx1151's hardware facts are retained observations from the earlier delivery on codex/main-native-amd-followup-20260909 and this work never reached that device, and its container compile is not evidence for it because the toolchain does not list gfx1151 among its AMDGPU CPUs; (3) making vendor required changed the bytes and digests of all five previously released Target documents, which is intended for a successor and not incidental. Corpus expectations: 147 pre-existing cases unchanged, four new AMD cases adopted separately through tools/refresh_corpus_expectations.py --write; none regenerated to make the Gate pass. Scope: this authorizes the bounded Compiler successor release only. It claims no AMD performance result, no correctness result beyond the retained gfx938 reference check, and no Executor release. The contracts that fail on the released v82 lock's Target digests are not counted as passing here and must be rerun after this release."
+}

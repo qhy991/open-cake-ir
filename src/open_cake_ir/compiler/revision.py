@@ -112,12 +112,17 @@ def _load_target(
         # The role-slot width is required, not optional: a Revision that bound a Target
         # document without one would be binding a fact the shared code used to invent.
         "warp_size",
+        # Vendor is required for the same reason: a Revision that bound a document
+        # without one would be binding a vendor the shared code used to infer from the
+        # presence of a CUDA field.
+        "vendor",
         "resource_limits",
         "instruction_contracts",
         "synchronization_contracts",
         "citations",
     }
-    optional_fields = {"occupancy", "compute_capability", "peak"}
+    optional_fields = {"occupancy", "compute_capability", "peak",
+                       "warps_per_warpgroup"}
     if (
         not expected_fields <= set(document) <= expected_fields | optional_fields
         or document.get("schema_version") != 1

@@ -5,6 +5,7 @@
   "device_names": [
     "NVIDIA B200"
   ],
+  "vendor": "nvidia",
   "compute_capability": [
     10,
     0
@@ -117,6 +118,11 @@
       "kind": "device_specification",
       "source": "https://docs.nvidia.com/cuda/blackwell-tuning-guide/index.html#occupancy",
       "locator": "Blackwell maximum number of registers per thread:255; compile-time cap capacity, separate from setmaxnreg immediate encoding"
+    },
+    {
+      "kind": "device_specification",
+      "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html",
+      "locator": "setmaxnreg is a warpgroup-wide instruction and a warpgroup is four contiguous warps; the register redistribution it performs is therefore a legality rule on a role's slot range, not a preference"
     }
   ],
   "occupancy": {
@@ -124,5 +130,6 @@
     "registers_per_multiprocessor": 65536,
     "shared_memory_per_multiprocessor_bytes": 233472,
     "maximum_threads_per_multiprocessor": 2048
-  }
+  },
+  "warps_per_warpgroup": 4
 }

@@ -32,7 +32,7 @@ from ..ir import (
     Schedule,
     TopKParameters,
 )
-from ..target import Target
+from ..target import Target, Vendor
 from .work import WorkBound, work_bound
 
 _ESTIMATE_KINDS = {
@@ -402,9 +402,11 @@ def profile_envelope(
         if lowering.schedule_id != schedule.schedule_id or lowering.target != target.target_id:
             raise ValueError("profile lowering context differs from Schedule or Target")
         lowered_source = lowering.source
-    if target.compute_capability is None:
+    if target.vendor is not Vendor.NVIDIA:
         if compiled_resources is not None:
-            raise ValueError("CUDA compiled-resource feedback does not describe a Metal kernel")
+            raise ValueError(
+                f"CUDA compiled-resource feedback does not describe a {target.vendor.value} kernel"
+            )
         structures = {index: top_k_merge_structure(schedule, operation)
                       for index, operation in enumerate(schedule.operations)
                       if operation.kind is OperationKind.TOP_K}

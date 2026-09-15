@@ -115,9 +115,17 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.assertEqual(target.source.document["peak"], self.target["peak"])
 
     def test_current_draft_retains_all_exact_targets_and_zero_tmem(self):
+        """The exact declared set, updated only by a deliberate data addition.
+
+        AGENTS.md keeps this pin so a sixth target is a decision rather than an accident;
+        the neutrality invariants it used to stand in for now live in
+        `test_vendor_neutrality.py` against a fixture that is bound by no Revision.
+        gfx938 is the first AMD entry and carries measured device facts.
+        """
         revision = load_revision(ROOT, ROOT / "compiler/revision.json")
         self.assertEqual(set(revision.targets), {
             "sm_100a", "apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9", "sm_103a",
+            "gfx938", "gfx1151",
         })
         for target_id, device in (("apple_gpu_family7", "Apple M1 Pro"),
                                   ("apple_gpu_family8", "Apple M2"),

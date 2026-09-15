@@ -8,6 +8,8 @@ import json
 from hashlib import sha256
 from pathlib import Path
 
+from open_cake_ir.lab.executor import ExecutorRevision
+
 _SOURCE_ROOTS = (
     "src/open_cake_ir/lab",
     "src/open_cake_ir/evaluation",
@@ -176,7 +178,10 @@ def main() -> int:
             "sources",
             "host_environment",
         }
-        or document.get("schema_version") != 1
+        # A HIP host document is schema 2; the schema the proposal declares is carried
+        # into the released descriptor, and ExecutorRevision.load validates the host
+        # against that same number rather than against a version this tool assumed.
+        or document.get("schema_version") not in (1, 2)
         or document.get("state") != "draft"
         or not isinstance(document.get("executor_id"), str)
         or not document["executor_id"]
@@ -216,6 +221,13 @@ def main() -> int:
         stream.write(_canonical_json_bytes(document))
         stream.write(b"\n")
     output.chmod(0o644)
+    # A descriptor written into the checkout has to load through the same admission every
+    # consumer uses, including the host validator for its declared schema; writing one
+    # that only this tool accepts would publish an identity nothing can replay. A
+    # descriptor released to an external path is outside that loader's project root by
+    # construction, so it is verified where it is consumed rather than here.
+    if root in output.parents:
+        ExecutorRevision.load(root, output)
     print(
         json.dumps(
             {

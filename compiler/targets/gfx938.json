@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "target_id": "gfx938",
+  "architecture": "c3000",
+  "device_names": [
+    "BW1101"
+  ],
+  "vendor": "hygon",
+  "memory_spaces": [
+    "global",
+    "shared",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "elementwise",
+    "reduce",
+    "store"
+  ],
+  "warp_size": 64,
+  "resource_limits": {
+    "maximum_threads_per_cta": 1024,
+    "maximum_warps_per_cta": 16,
+    "maximum_shared_memory_bytes": 65536,
+    "maximum_tensor_memory_bytes": 0,
+    "grid": {
+      "x": 2147483647,
+      "y": 2147483647,
+      "z": 2147483647
+    }
+  },
+  "instruction_contracts": [],
+  "synchronization_contracts": [],
+  "occupancy": {
+    "multiprocessor_count": 64,
+    "registers_per_multiprocessor": 131072,
+    "shared_memory_per_multiprocessor_bytes": 65536,
+    "maximum_threads_per_multiprocessor": 2560
+  },
+  "citations": [
+    {
+      "kind": "device_observation",
+      "source": "rocminfo inside the DCU development container",
+      "locator": "Agent 9-16 report Name gfx938, Marketing Name BW1101, Vendor Name C-3000, Device Type HCU, ISA amdgcn-amd-amdhsa--gfx938:sramecc+:xnack-, Wavefront Size 64, Workgroup Max Size 1024, GROUP segment 64 KiB, Compute Unit 64, SIMDs per CU 4, Max Waves Per CU 40, Max Work-item Per CU 2560; observed 2026-09-14 on bw1100"
+    },
+    {
+      "kind": "device_observation",
+      "source": "hipGetDeviceProperties on BW1101",
+      "locator": "occupancy block and grid limits; gcnArchName gfx938:sramecc+:xnack-, warpSize 64, multiProcessorCount 64, regsPerBlock 131072, maxSharedMemoryPerMultiProcessor 65536, maxThreadsPerMultiProcessor 2560, maxThreadsPerBlock 1024, sharedMemPerBlock 65536, maxGridSize 2147483647 in each dimension; observed 2026-09-14 on bw1100. torch.cuda.get_device_properties reports shared_memory_per_multiprocessor 4194304 on the same device, which contradicts this API and rocminfo and is not used"
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "hipcc -Rpass-analysis=kernel-resource-usage, dcc 25.10.0 / clang 17, --offload-arch=gfx938",
+      "locator": "Occupancy waves/SIMD for one 256-thread workgroup falls 10, 8, 4, 2, 1 as declared LDS rises 4, 8, 16, 32, 64 KiB, which confirms 64 KiB of LDS per compute unit rather than a larger per-multiprocessor budget"
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "triton.backends.hcu.driver, Triton 3.6.0",
+      "locator": "get_current_target() returns GPUTarget(backend='hip', arch='gfx938', warp_size=64); ahead-of-time triton.compile against that target yields the artifact roles source, ttir, ttgir, llir, amdgcn and hsaco, and no ptx or cubin"
+    },
+    {
+      "kind": "device_observation",
+      "source": "rocprofv2 --kernel-trace on BW1101",
+      "locator": "per-dispatch rows report Wave_Size 64 alongside nanosecond Start_Timestamp and End_Timestamp; no arithmetic or memory peak has been calibrated for this target, so none is declared"
+    },
+    {
+      "kind": "device_observation",
+      "source": "rocminfo, triton.backends and the DTK toolchain inside the container",
+      "locator": "Vendor is hygon, not amd: rocminfo reports Vendor Name C-3000 and Device Type HCU where an AMD agent reports AMD and GPU; Triton registers a separate hcu backend with its own HCUDriver beside the amd one and selects it here; the FP16 tl.dot lowers to v_mmac_f32_16x16x16_f16 and to no v_mfma instruction; the hcu backend options carry enable_v_mmac_cluster, mmac_layout_force and hcu_use_gfx946_sched_model_v2; dcc 25.10.0's llc names gfx926, gfx928, gfx936 and gfx938 alongside the AMD CPUs; and the host installs hy-smi and rocm-smi and no amd-smi. The emitted object still carries the amdgcn-amd-amdhsa-- triple, which is the ABI this code object conforms to rather than a statement about the hardware's vendor; observed 2026-09-14 and 2026-09-15 on bw1100"
+    }
+  ]
+}

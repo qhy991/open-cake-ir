@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.tasks.devices import BACKENDS, backend_for_target
 from .workload import validate_normalization_contract
 
 
@@ -45,12 +46,17 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
 
 
 def _emit(workload: WorkloadContract, operator: str, args, body: list[str]) -> str:
-    """Render one readable Schedule around a task's own operation body."""
+    """Render one readable Schedule around a task's own operation body.
+
+    One operation body serves every route; only the declared route and the Target come
+    from the device, as in every other family here.
+    """
+    device = BACKENDS[backend_for_target(workload.target)]
     declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
                     + (', mode="output")' if arg.mode == "output" else ')') for arg in args]
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
             f'@cake.schedule(name="{workload.workload_id}", target="{workload.target}",\n'
-            f'               backend="metal", entry_point="cake_{operator}",\n'
+            f'               backend="{device["route"]}", entry_point="cake_{operator}",\n'
             f'               metadata={{"workload_contract_sha256": "{workload.canonical_sha256}"}})\n'
             f'def candidate(lm, {", ".join(declarations)}):\n'
             '    compute = lm.role(warps=[0])\n'

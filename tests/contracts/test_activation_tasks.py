@@ -59,10 +59,27 @@ class ActivationTaskTests(unittest.TestCase):
             supplied[extra] = fill if len(shape) == 2 else fill[:1] * 1
         return supplied
 
+    def admits(self, name, backend):
+        """Whether this backend's Target admits the contracts this task's body needs.
+
+        gelu_tanh and its backward name a tanh instruction contract, and a Target that
+        declares none refuses them by name. That is the capability boundary working, not
+        a task missing from a registry, so the suites below skip the pair rather than
+        assert a document that cannot exist.
+        """
+        from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS
+
+        return "tanh" not in name or DEVICE_BACKENDS[backend]["tanh_contract"] is not None
+
     def test_every_task_registers_one_backend_bound_frozen_document(self):
         with tempfile.TemporaryDirectory() as directory:
             for name in activation.TASKS:
                 for backend, device in activation.BACKENDS.items():
+                    if not self.admits(name, backend):
+                        with self.subTest(task=name, backend=backend), \
+                                self.assertRaises(ValueError):
+                            create_task(name, backend=backend, rows=2, columns=8)
+                        continue
                     with self.subTest(task=name, backend=backend):
                         document, _ = create_task(name, backend=backend, rows=2, columns=8)
                         path = Path(directory) / f"{name}-{backend}.json"
@@ -74,9 +91,11 @@ class ActivationTaskTests(unittest.TestCase):
                         for case_id in workload.case_ids:
                             self.assertEqual(workload.tensor_abi(case_id), workload.tensor_abi("primary"))
         # Distinct operators and backends never collide on one frozen identity.
+        admitted = [(name, backend) for name in activation.TASKS
+                    for backend in activation.BACKENDS if self.admits(name, backend)]
         identities = {create_task(name, backend=backend, rows=2, columns=8)[0]["workload_id"]
-                      for name in activation.TASKS for backend in activation.BACKENDS}
-        self.assertEqual(len(identities), len(activation.TASKS) * len(activation.BACKENDS))
+                      for name, backend in admitted}
+        self.assertEqual(len(identities), len(admitted))
         self.assertEqual(set(activation.INPUTS), set(activation.TASKS))
 
     def test_each_migrated_task_names_the_aka_row_it_came_from(self):
@@ -189,6 +208,8 @@ class ActivationTaskTests(unittest.TestCase):
         for name in activation.TASKS:
             frozen = {}
             for backend, device in BACKENDS.items():
+                if not self.admits(name, backend):
+                    continue  # No tanh contract on this Target; refused at creation above.
                 document, source = create_task(name, backend=backend, rows=2, columns=8)
                 with self.subTest(task=name, backend=backend):
                     self.assertEqual(document["semantics"]["target"], device["target"])
@@ -403,6 +424,8 @@ class ActivationTaskTests(unittest.TestCase):
                         admit_width(backend, width)
                     except ValueError:
                         continue  # This route cannot tile this width; covered separately.
+                    if not self.admits(name, backend):
+                        continue  # No tanh contract on this Target; covered above.
                     with self.subTest(task=name, width=width, backend=backend):
                         workload, source = self.task(name, columns=width, backend=backend)
                         schedule = frontend.parse(source).document
