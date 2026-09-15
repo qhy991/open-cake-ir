@@ -103,6 +103,8 @@ class _Authority:
     payloads: Mapping[str, bytes]
     case_id: str
     baseline: LaunchableCandidate | None = None
+    # What the Study says about whether a latency can be reported for this run.
+    timed_assay_available: bool = True
 
 
 def _load_authority(request_path: Path) -> _Authority:
@@ -146,11 +148,18 @@ def _load_authority(request_path: Path) -> _Authority:
     if isinstance(manifest, (TensorLaunchManifest, MetalTensorLaunchManifest)):
         manifest.check_workload(workload, case_id)
     baseline = None
+    timed_assay_available = True
     evaluation = request.get('evaluation_protocol')
     if evaluation is not None:
         evaluation = _object(evaluation, 'request.evaluation_protocol')
         if sha256(_canonical_json_bytes(evaluation)).hexdigest() != request['evaluation_protocol_sha256']:
             raise ValueError('worker evaluation policy identity differs')
+        # Whether this run is timed is the Study's statement, not this worker's guess and
+        # not a property of the target read here. A Study for a target with no named
+        # timer carries a measurement-coverage limitation instead of a paired assay.
+        coverage = evaluation.get('measurement_coverage')
+        if isinstance(coverage, Mapping) and coverage.get('timed_assay') == 'unavailable':
+            timed_assay_available = False
         if paired_protocol(evaluation) is not None:
             if isinstance(manifest, MetalTensorLaunchManifest) != (evaluation['paired_timing']['kind'] in METAL_KINDS):
                 raise ValueError('paired assay backend differs from sealed manifest')
@@ -182,6 +191,7 @@ def _load_authority(request_path: Path) -> _Authority:
         payloads,
         case_id,
         baseline,
+        timed_assay_available=timed_assay_available,
     )
 
 
@@ -946,9 +956,24 @@ def main() -> int:
         elif purpose == "attribution":
             if args.profile_admission is not None:
                 raise ValueError("profile admission is internal-only")
+            # Attribution runs Nsight Compute, which is CUDA's profiler. A target that
+            # builds another code object is refused by name here rather than sent to it:
+            # this branch was reached by not being Metal, which would have handed a DCU
+            # candidate to ncu.
+            if executable_role(authority.candidate.target) != "cubin":
+                raise ValueError(
+                    f"attribution profiles through Nsight Compute, which "
+                    f"{authority.candidate.target!r} has no counterpart for; its "
+                    "profiler assay is a separate, evidence-gated act"
+                )
             _profile_candidate(authority, request_path, result)
         else:
-            _evaluate_candidate(authority, result, collect_timing=True)
+            # The Study says whether a latency can be reported for this run; a target
+            # whose Study declares a measurement-coverage limitation is evaluated for
+            # correctness and reports no timing, rather than being timed under a timer
+            # nobody named.
+            _evaluate_candidate(authority, result,
+                                collect_timing=authority.timed_assay_available)
     except Exception as error:
         result["error"] = "evaluator_failed"
         result["failure_class"] = type(error).__name__
