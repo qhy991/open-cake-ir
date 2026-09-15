@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
-from typing import cast
+from typing import Mapping, cast
 
 from open_cake_ir.evaluation.paired import paired_protocol, METAL_KINDS, validation_case_ids
 
@@ -224,6 +224,19 @@ def validate_evaluation(
     if assay is not None and policy is None and not single_environment:
         raise ValueError('fixed-baseline assay requires the same-backend native Study')
     if single_environment and assay is None:
+        # A single-arm optimization campaign selects on getting faster, so with no timed
+        # assay there is nothing to select on. Say which of the two reasons applies: a
+        # Study that declares a measurement-coverage limitation is not misconfigured, it
+        # is running against a target no timer has been named for, and reporting that as
+        # a missing assay sends the reader to fix a configuration that is already correct.
+        coverage = evaluation.get("measurement_coverage")
+        if isinstance(coverage, Mapping) and coverage.get("timed_assay") == "unavailable":
+            raise ValueError(
+                "single-environment optimization requires a timed assay, and this Study "
+                f"reports none is available: {coverage.get('reason')}. Correctness "
+                "evaluation of a sealed candidate for this target does not need one; a "
+                "campaign that selects on latency does."
+            )
         raise ValueError("single-environment optimization requires an explicit fixed-baseline paired assay")
     if route["backend"] == "metal":
         if (not single_environment or evaluation.get("paired_timing", {}).get("kind") not in METAL_KINDS
@@ -310,7 +323,17 @@ def validate_evaluation(
             observed_source = native_source(source, requirements)
             source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
             grid, block = requirements['grid'], tuple(native_block(requirements))
-            if manifest.hidden_null_pointer_parameters != backend_policy(route["backend"]).hidden_null_pointer_parameters:
+            # How many hidden null pointers Triton appends is the scratch count its
+            # options declare for this exact target, not a per-backend constant: the CUDA
+            # route declares global and profile scratch, and HIPOptions has no global
+            # scratch field at all. The table's 2 was right for every Triton target there
+            # was when it was written.
+            if route["backend"] == "triton":
+                from open_cake_ir.compiler.toolchain import triton_route
+                expected_hidden = len(triton_route(workload.target).scratch_fields)
+            else:
+                expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
+            if manifest.hidden_null_pointer_parameters != expected_hidden:
                 raise ValueError('fixed baseline hidden pointer commitments differ')
         reference_differs = (not source_matches or list(manifest.grid) != list(grid)
                              or manifest.block != block)

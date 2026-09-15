@@ -377,5 +377,59 @@ class LaunchManifestTargetTest(unittest.TestCase):
                     _launch_target(escape)
 
 
+class MeasurementCoverageTest(unittest.TestCase):
+    """Where the DCU stops today, stated as a test rather than found by running one."""
+
+    def study(self, backend: str):
+        from open_cake_ir.tasks.normalization.study import study_template
+        from open_cake_ir.tasks.workloads import create_task
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        import json, tempfile
+        from pathlib import Path as _Path
+        document, source = create_task("silu", backend=backend, rows=2, columns=8)
+        directory = _Path(tempfile.mkdtemp())
+        workload_path = directory / "workload.json"
+        starter = directory / "starter.py"
+        workload_path.write_text(json.dumps(document))
+        starter.write_text(source)
+        root = _Path(__file__).resolve().parents[2]
+        return study_template(root, WorkloadContract(document), workload_path, starter,
+                              harness="claude-code", model="m", effort="high", turns=2,
+                              token_budget=12000)
+
+    def test_the_dcu_study_names_no_timer_and_says_so(self) -> None:
+        policy = self.study("triton-dcu")["evaluation_protocol"]
+        self.assertNotIn("paired_timing", policy)
+        self.assertEqual(policy["measurement_coverage"]["timed_assay"], "unavailable")
+        self.assertIn("gfx938", policy["measurement_coverage"]["reason"])
+        # Not "correctness_then_paired_cupti", which is what falling through produced on a
+        # machine where CUPTI is not installed.
+        for stage in ("search_evaluation", "confirmatory_evaluation"):
+            self.assertNotIn("cupti", policy[stage])
+            self.assertNotIn("metal", policy[stage])
+
+    def test_a_b300_study_still_names_cupti(self) -> None:
+        policy = self.study("triton-b300")["evaluation_protocol"]
+        self.assertEqual(policy["search_evaluation"], "correctness_then_paired_cupti")
+        self.assertNotIn("measurement_coverage", policy)
+
+    def test_the_hidden_pointer_count_a_paired_baseline_is_held_to_is_the_route_s(self) -> None:
+        """Not a per-backend constant: the CUDA route declares two scratch buffers, the
+        AMDGCN route one, and the pairing table's 2 was right only while every Triton
+        target was a B200. Nothing reaches this check today -- the DCU has no timed assay
+        -- which is exactly why it is pinned before one exists.
+        """
+        from open_cake_ir.compiler.toolchain import triton_route
+        self.assertEqual(len(triton_route("gfx938").scratch_fields), 1)
+        self.assertEqual(len(triton_route("gfx1151").scratch_fields), 1)
+        self.assertEqual(len(triton_route("sm_103a").scratch_fields), 2)
+        from open_cake_ir.lab.pairing import backend_policy
+        self.assertEqual(backend_policy("triton").hidden_null_pointer_parameters, 2)
+        import inspect
+        from open_cake_ir.lab.admission import validate_evaluation
+        source = inspect.getsource(validate_evaluation)
+        self.assertIn("triton_route(workload.target).scratch_fields", source)
+
+
 if __name__ == "__main__":
     unittest.main()
