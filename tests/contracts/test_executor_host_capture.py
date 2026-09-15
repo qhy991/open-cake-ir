@@ -249,9 +249,17 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
             self.assertFalse(output.exists())
 
     def test_canonical_host_rejection_produces_no_capture(self) -> None:
-        inventory = json.loads((ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text())
-        current = next(iter(inventory["current_by_target"].values()))
-        host = json.loads((ROOT / current["path"]).read_text())["host_environment"]
+        # A CUDA capture needs a CUDA-shaped host. Taking whichever descriptor happens to
+        # be current stopped working the moment a HIP host was one, and refused for the
+        # kind rather than for the Python mismatch this case is about.
+        hosts = []
+        for path in sorted((ROOT / "runtime/executors").glob("*.json")):
+            document = json.loads(path.read_text())
+            environment = document.get("host_environment", {})
+            if document.get("state") == "released" and environment.get("kind") is None:
+                hosts.append(environment)
+        self.assertTrue(hosts, "no released pre-kind CUDA host to exercise this refusal")
+        host = hosts[-1]
         host["python"]["invocation_path"] = sys.executable
         host["python"]["version"] = "not-the-running-python-version"
         with tempfile.TemporaryDirectory() as directory:
@@ -288,7 +296,8 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
             paths[kind] = tool
         library = root / "libxml2.so.2"
         library.write_bytes(b"modeled compatibility library")
-        arguments = ["--runtime-kind", "hip", "--amd-smi", str(paths["amd-smi"])]
+        arguments = ["--runtime-kind", "hip",
+                     "--device-monitor", "amd-smi", str(paths["amd-smi"])]
         for name in sorted(capture.HIP_PACKAGES):
             arguments += ["--package", name]
         for kind in sorted(capture.HIP_BUILD_TOOLS):

@@ -2,9 +2,11 @@
 
 METAL_TARGETS = frozenset({"apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"})
 _CUBIN_TARGETS = frozenset({"sm_100a", "sm_103a"})
-# The AMD targets this layer can build an executable for. Declared here, beside the two
-# sets it already owned, so the target-to-executable map stays one table rather than a
-# vendor branch; `lab/executor.py` reads it for the Executor identities schema v2 admits.
+# The targets this layer builds an AMDGCN code object for. A code-object family rather
+# than a vendor: gfx1151 is AMD hardware and gfx938 is Hygon's, and what puts them in one
+# set is the hsaco they produce. Declared here beside the two sets this layer already
+# owned, so the target-to-executable map stays one table rather than a vendor branch;
+# `lab/executor.py` reads it for the Executor identities schema v2 admits.
 AMDGCN_TARGETS = frozenset({"gfx938", "gfx1151"})
 _BUILD_ROLES = {
     "metal": frozenset({"metal_binary_archive", "metal_build_report", "launch_manifest"}),

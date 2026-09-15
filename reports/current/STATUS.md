@@ -7,7 +7,7 @@
 
 ## Compiler
 
-- 版本： `open-cake-ir-sm100a-v83+3e8b13e37a847142a2724608a1c0d9660946a4f7f6086cf1486d4acdbaca04a3`
+- 版本： `open-cake-ir-sm100a-v84+2798cb218c13569acfe46bfa1741bed0a5eb06fb03f009a27fa735b68276522f`
 - 状态： `released`
 - 目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, gfx1151, gfx938, sm_100a, sm_103a`
 - 语料检查： `151/151` 项符合预期
@@ -17,12 +17,12 @@
 
 ## Executor（按精确目标）
 
-### `apple_gpu_family7`
+### `gfx938`
 
-- 版本： `open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79`
+- 版本： `open-cake-ir-gfx938-v3+c1112f6524c06729cd0427fc7c73578930f10de9f6b4fa51e355e121d7263fc2`
 - 状态： `released`
-- 绑定源码： `165` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79.json`](../../runtime/executors/open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79.json)
+- 绑定源码： `167` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-gfx938-v3.json`](../../runtime/executors/open-cake-ir-gfx938-v3.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 

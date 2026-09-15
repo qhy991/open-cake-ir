@@ -17,23 +17,36 @@ from types import MappingProxyType
 from typing import Mapping, cast
 
 
-def _amd_executor_id() -> re.Pattern[str]:
+HIP_PACKAGES = frozenset({"packaging", "pybind11", "psutil", "setuptools", "torch", "triton"})
+HIP_BUILD_TOOLS = frozenset({"cxx", "git", "hipcc", "hipconfig", "ninja", "rocminfo", "sh"})
+HIP_PROFILERS = frozenset({"rocprofv3", "rocprof", "omniperf"})
+# The device monitor is a declared kind for the same reason the build tools and profilers
+# above are: a ROCm host ships amd-smi, a Hygon DTK host ships rocm-smi and hy-smi, and a
+# record that pinned one name would either refuse the other host or, worse, carry its
+# binary under a label naming a tool that is not installed.
+HIP_DEVICE_MONITORS = frozenset({"amd-smi", "rocm-smi", "hy-smi"})
+
+
+def _amd_executor_id() -> "re.Pattern[str]":
     """Schema v2 identities, one alternative per AMD target the layer can build for.
 
-    Pinned to the declared set rather than to one target's name: gfx1151 and gfx938 are
-    both AMD, and a regex naming only the first refuses the second for being the wrong
-    vendor's target, which it is not.
+    Pinned to the declared code-object family rather than to one target's name: a regex
+    naming only gfx1151 refused gfx938 for being the wrong vendor's target, which it is
+    not -- they are different vendors, AMD and Hygon, and what schema v2 is about is the
+    HIP host and the AMDGCN object they share. The released id carries the authority digest the
+    release tool appends, and the reserved pre-digest spellings stay admissible --
+    open-cake-ir-gfx1151-v1 and -v2 were released before that suffix existed and their
+    identities are reserved (ADR 0049).
     """
     from open_cake_ir.evaluation.artifacts import AMDGCN_TARGETS
 
     alternatives = "|".join(re.escape(target) for target in sorted(AMDGCN_TARGETS))
-    return re.compile(rf"open-cake-ir-(?:{alternatives})-v[1-9][0-9]*")
+    return re.compile(
+        rf"open-cake-ir-(?:{alternatives})-v[1-9][0-9]*(?:\+[0-9a-f]{{64}})?"
+    )
 
 
 _AMD_EXECUTOR_ID = _amd_executor_id()
-HIP_PACKAGES = frozenset({"packaging", "pybind11", "psutil", "setuptools", "torch", "triton"})
-HIP_BUILD_TOOLS = frozenset({"cxx", "git", "hipcc", "hipconfig", "ninja", "rocminfo", "sh"})
-HIP_PROFILERS = frozenset({"rocprofv3", "rocprof", "omniperf"})
 HIP_RUNTIME_LIBRARIES = frozenset({"libxml2.so.2"})
 
 
@@ -457,7 +470,7 @@ class ExecutorRevision:
         monitor = _executable_record(
             tools["device_monitor"], "Executor HIP device monitor"
         )
-        if monitor["kind"] != "amd-smi":
+        if monitor["kind"] not in HIP_DEVICE_MONITORS:
             raise ValueError("Executor HIP device monitor kind differs")
         profilers = tools["profilers"]
         if not isinstance(profilers, (list, tuple)):

@@ -42,7 +42,9 @@ class TargetDocumentTest(unittest.TestCase):
         cls.target = Target.from_dict(cls.document)
 
     def test_the_declared_width_and_vendor_belong_to_the_document(self) -> None:
-        self.assertIs(self.target.vendor, Vendor.AMD)
+        # Hygon, not AMD: the hardware reports vendor C-3000 and device type HCU, and
+        # the amdgcn-amd-amdhsa triple in its object is the ABI, not the manufacturer.
+        self.assertIs(self.target.vendor, Vendor.HYGON)
         self.assertEqual(self.target.warp_size, 64)
         # No CUDA capability, and no borrowed warpgroup rule against a 64-lane wavefront.
         self.assertIsNone(self.target.compute_capability)
@@ -80,7 +82,7 @@ class TargetDocumentTest(unittest.TestCase):
         self.assertNotIn("peak", self.document)
         self.assertIsNone(self.target.peak)
 
-    def test_an_amd_document_carries_no_cuda_capability(self) -> None:
+    def test_a_non_nvidia_document_carries_no_cuda_capability(self) -> None:
         with self.assertRaises(TargetParseError):
             Target.from_dict({**self.document, "compute_capability": [9, 3]})
 

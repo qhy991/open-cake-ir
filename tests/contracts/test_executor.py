@@ -401,11 +401,21 @@ class ExecutorReferenceTests(unittest.TestCase):
         self.source = self.root / "source.py"
         self.source.write_bytes(b"CPU reference fixture; no host admission.\n")
         self.path = self.root / "executor.json"
+        # The host is borrowed from whichever descriptor is current, so the schema has to
+        # be borrowed with it: a HIP host is schema 2 and a pre-kind CUDA host is schema 1,
+        # and pairing one with the other's number is the incoherence the validator catches.
+        borrowed = json.loads(CURRENT_EXECUTOR.read_text())
+        # The id follows the borrowed namespace too: schema 2 admits only an AMD identity,
+        # so a fixture that borrowed a HIP host and kept a free-form id would be refused
+        # for a reason that has nothing to do with what this suite tests.
+        identity = ("reference-fixture" if borrowed["schema_version"] == 1
+                    else borrowed["executor_id"].split("+")[0])
         self.document = {
-            "schema_version": 1, "executor_id": "reference-fixture", "state": "released",
+            "schema_version": borrowed["schema_version"],
+            "executor_id": identity, "state": "released",
             "sources": [{"path": self.source.name, "sha256": sha256(self.source.read_bytes()).hexdigest(),
                          "size_bytes": self.source.stat().st_size}],
-            "host_environment": json.loads(CURRENT_EXECUTOR.read_text())["host_environment"],
+            "host_environment": borrowed["host_environment"],
         }
         payload = json.dumps(self.document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
         self.path.write_bytes(payload)

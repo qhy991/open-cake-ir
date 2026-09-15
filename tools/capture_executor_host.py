@@ -17,7 +17,8 @@ from hashlib import sha256
 from pathlib import Path
 
 from open_cake_ir.lab.executor import (
-    ExecutorRevision, HIP_PACKAGES, HIP_BUILD_TOOLS, HIP_PROFILERS, HIP_RUNTIME_LIBRARIES,
+    ExecutorRevision, HIP_PACKAGES, HIP_BUILD_TOOLS, HIP_DEVICE_MONITORS,
+    HIP_PROFILERS, HIP_RUNTIME_LIBRARIES,
     _external_file, admit_host_environment, admit_profiler_environment,
 )
 
@@ -109,12 +110,25 @@ def _capture_profiler(path: Path) -> dict[str, object]:
     return {**_file_record(path, str(path)), "version": match.group(1)}
 
 
+# Some tools expose no version interface at all, so asking for one and refusing on a
+# non-zero exit refuses the host rather than the tool. Measured on a Hygon DTK host:
+# rocprof exits 1 for --version, -v and --help alike, printing its run banner every time.
+# A tool listed here is identified by the digest this record already pins, which is the
+# stronger identity anyway, and its version field says plainly that there is none rather
+# than carrying a line scraped out of a usage message.
+_NO_VERSION_INTERFACE = "no version interface"
+_HIP_TOOLS_WITHOUT_VERSION = frozenset({"rocprof"})
+
+
 def _capture_hip_tool(kind: str, path: Path) -> dict[str, object]:
     if (
-        kind not in HIP_BUILD_TOOLS | HIP_PROFILERS | {"amd-smi"}
+        kind not in HIP_BUILD_TOOLS | HIP_PROFILERS | HIP_DEVICE_MONITORS
         or not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK)
     ):
         raise ValueError("HIP tool requires a known kind and explicit absolute executable")
+    if kind in _HIP_TOOLS_WITHOUT_VERSION:
+        return {**_file_record(path.resolve(strict=True), str(path)),
+                "kind": kind, "version": _NO_VERSION_INTERFACE}
     # The schema preserves invocation paths (e.g. /bin/sh); the record pins the
     # resolved executable bytes. The shell's interface label has no --version API.
     arguments = ["-c", "printf 'POSIX-sh\\n'"] if kind == "sh" else ["--version"]
@@ -169,7 +183,9 @@ def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
             # admit_exact_hip and requires the Compiler's lowering requirements.
             "runtime": {"backend": "hip", "torch_hip_version": hip, "visible_device_count": 1},
             "tools": {
-                "device_monitor": _capture_hip_tool("amd-smi", arguments.amd_smi),
+                "device_monitor": _capture_hip_tool(
+                    arguments.device_monitor[0], Path(arguments.device_monitor[1])
+                ),
                 "build_tools": [
                     _capture_hip_tool(kind, Path(path))
                     for kind, path in arguments.hip_build_tool
@@ -234,7 +250,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cupti-distribution")
     parser.add_argument("--flashinfer-distribution")
     parser.add_argument("--ncu", type=Path)
-    parser.add_argument("--amd-smi", type=Path)
+    parser.add_argument("--device-monitor", "--amd-smi", dest="device_monitor",
+                        nargs=2, metavar=("KIND", "PATH"),
+                        help="installed device monitor: one of "
+                             + ", ".join(sorted(HIP_DEVICE_MONITORS)))
     parser.add_argument("--hip-build-tool", nargs=2, action="append", default=[],
                         metavar=("KIND", "PATH"))
     parser.add_argument("--hip-profiler", nargs=2, action="append", default=[],
@@ -251,7 +270,8 @@ def main(argv: list[str] | None = None) -> int:
     if arguments.host_kind == "amd":
         arguments.host_kind = "hip"
     cuda_arguments = (arguments.cupti_distribution, arguments.flashinfer_distribution, arguments.ncu)
-    hip_arguments = (arguments.amd_smi, arguments.hip_build_tool, arguments.hip_runtime_library)
+    hip_arguments = (arguments.device_monitor, arguments.hip_build_tool,
+                     arguments.hip_runtime_library)
     metal_arguments = (arguments.target, arguments.swiftc, arguments.archive_executable,
                        arguments.observer_executable)
     if arguments.host_kind == "cuda":

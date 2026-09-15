@@ -194,8 +194,10 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     return tuple(findings)
 
 
-# The exact AMDGCN targets this backend emits for, each pinned to the architecture and
-# role-slot width its Target document declares. The lowering mechanism is Triton for every
+# The exact AMDGCN-code-object targets this backend emits for, each pinned to the
+# architecture and role-slot width its Target document declares. The set spans vendors:
+# gfx1151 is AMD hardware and gfx938 is Hygon's, and what they share is the code object
+# Triton emits, not a manufacturer. The lowering mechanism is Triton for every
 # target here -- one emitter, one emitted language, one `LoweringBackend` member -- so this
 # is the backend module owning which targets it admits, not a second member spelling the
 # same mechanism twice. An unlisted AMD target is refused, never stepped down to a listed
@@ -229,14 +231,14 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             findings.append(refusal(code, path, message))
 
     amdgcn = _AMDGCN_TARGETS.get(target.target_id)
+    amdgcn_vendor = target.vendor in (Vendor.AMD, Vendor.HYGON)
     add(
         target.vendor is Vendor.NVIDIA
-        or (target.vendor is Vendor.AMD
-            and amdgcn == (target.architecture, target.warp_size)),
+        or (amdgcn_vendor and amdgcn == (target.architecture, target.warp_size)),
         "BACKEND_TARGET_UNSUPPORTED", "target",
-        "the Triton backend emits for exact NVIDIA targets and for gfx938",
+        "the Triton backend emits for exact NVIDIA targets and for the listed AMDGCN ones",
     )
-    if amdgcn is not None and target.vendor is Vendor.AMD:
+    if amdgcn is not None and amdgcn_vendor:
         # Triton's HIPOptions carries no maxnreg field and its option parser drops an
         # unknown key without raising, so the cap the emitter attaches for CUDA would be
         # accepted here and never applied. A budget that is silently not enforced is worse

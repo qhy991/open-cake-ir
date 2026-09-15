@@ -5,7 +5,7 @@
   "device_names": [
     "BW1101"
   ],
-  "vendor": "amd",
+  "vendor": "hygon",
   "memory_spaces": [
     "global",
     "shared",
@@ -62,6 +62,11 @@
       "kind": "device_observation",
       "source": "rocprofv2 --kernel-trace on BW1101",
       "locator": "per-dispatch rows report Wave_Size 64 alongside nanosecond Start_Timestamp and End_Timestamp; no arithmetic or memory peak has been calibrated for this target, so none is declared"
+    },
+    {
+      "kind": "device_observation",
+      "source": "rocminfo, triton.backends and the DTK toolchain inside the container",
+      "locator": "Vendor is hygon, not amd: rocminfo reports Vendor Name C-3000 and Device Type HCU where an AMD agent reports AMD and GPU; Triton registers a separate hcu backend with its own HCUDriver beside the amd one and selects it here; the FP16 tl.dot lowers to v_mmac_f32_16x16x16_f16 and to no v_mfma instruction; the hcu backend options carry enable_v_mmac_cluster, mmac_layout_force and hcu_use_gfx946_sched_model_v2; dcc 25.10.0's llc names gfx926, gfx928, gfx936 and gfx938 alongside the AMD CPUs; and the host installs hy-smi and rocm-smi and no amd-smi. The emitted object still carries the amdgcn-amd-amdhsa-- triple, which is the ABI this code object conforms to rather than a statement about the hardware's vendor; observed 2026-09-14 and 2026-09-15 on bw1100"
     }
   ]
 }

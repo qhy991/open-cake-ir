@@ -37,6 +37,15 @@ class Vendor(str, Enum):
     NVIDIA = "nvidia"
     APPLE = "apple"
     AMD = "amd"
+    # Hygon is its own vendor, not an AMD spelling. Its DCU reports vendor C-3000 and
+    # device type HCU rather than AMD and GPU, Triton ships a separate `hcu` backend
+    # beside `amd`, its FP16 dot lowers to v_mmac rather than v_mfma, its toolchain is
+    # the dcc fork whose llc names gfx926/928/936/938, and it installs hy-smi where a
+    # ROCm host installs amd-smi. The emitted code object still carries the
+    # `amdgcn-amd-amdhsa--` triple, which is the ABI it conforms to and not a claim about
+    # who built the hardware; that distinction is why vendor and code-object family are
+    # two fields here and not one.
+    HYGON = "hygon"
 
 
 def cuda_architecture(target_id: str) -> int:

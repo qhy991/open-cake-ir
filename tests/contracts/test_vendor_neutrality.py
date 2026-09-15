@@ -12,6 +12,7 @@ declared vendor identity, and step 3, the fixture and its tests.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import re
@@ -20,6 +21,7 @@ import unittest
 from open_cake_ir.compiler.backends import cutedsl, triton
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target, TargetParseError, Vendor
+from open_cake_ir.compiler.toolchain import triton_route
 from open_cake_ir.evaluation.artifacts import executable_role
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +71,43 @@ class DeclaredVendorTest(unittest.TestCase):
         with self.assertRaises(TargetParseError) as raised:
             Target.from_dict(document)
         self.assertIn("warp_size", str(raised.exception))
+
+
+class VendorsAreNotFoldedTogetherTest(unittest.TestCase):
+    """Two vendors sharing a code-object family are still two vendors."""
+
+    def test_hygon_and_amd_are_distinct_declared_vendors(self) -> None:
+        gfx938 = Target.load(ROOT / "compiler/targets/gfx938.json")
+        gfx1151 = Target.load(ROOT / "compiler/targets/gfx1151.json")
+        self.assertIs(gfx938.vendor, Vendor.HYGON)
+        self.assertIs(gfx1151.vendor, Vendor.AMD)
+        # What they share is the object Triton emits, not a manufacturer, and the set
+        # that says so lives in the Evaluation layer under a code-object name.
+        from open_cake_ir.evaluation.artifacts import AMDGCN_TARGETS, executable_role
+
+        self.assertEqual({gfx938.target_id, gfx1151.target_id}, set(AMDGCN_TARGETS))
+        self.assertEqual(executable_role(gfx938.target_id), "hsaco")
+        self.assertEqual(executable_role(gfx1151.target_id), "hsaco")
+
+    def test_the_route_admits_both_and_neither_inherits_the_other(self) -> None:
+        document = json.loads(
+            (ROOT / "corpus/schedules/rmsnorm-b8-smoke.json").read_text(encoding="utf-8")
+        )
+        for name, width in (("gfx938", 64), ("gfx1151", 32)):
+            target = Target.load(ROOT / "compiler/targets" / f"{name}.json")
+            schedule = Schedule.from_dict({**document, "target": name})
+            with self.subTest(target=name):
+                self.assertEqual(target.warp_size, width)
+                self.assertEqual(
+                    [f.code for f in triton.preflight(schedule, target)
+                     if f.code == "BACKEND_TARGET_UNSUPPORTED"], [])
+        # Swapping one vendor's declaration onto the other's document is refused: the
+        # route is pinned to the architecture and width each Target declares.
+        borrowed = Target.load(ROOT / "compiler/targets/gfx938.json")
+        drifted = replace(borrowed, vendor=Vendor.APPLE)
+        schedule = Schedule.from_dict({**document, "target": "gfx938"})
+        self.assertIn("BACKEND_TARGET_UNSUPPORTED",
+                      {f.code for f in triton.preflight(schedule, drifted)})
 
 
 class SharedArithmeticTest(unittest.TestCase):
@@ -136,6 +175,38 @@ class RefusalOwnershipTest(unittest.TestCase):
                 # The caller named no Apple device, so no refusal here may either.
                 for finding in findings:
                     self.assertNotIn("Metal", finding.message)
+
+
+class OfflineRouteMatchesEveryDeclaredDocumentTest(unittest.TestCase):
+    """The one duplication the offline jail is allowed to keep, held verified.
+
+    `compile_triton` must not open a Target document -- offline compilation never reads
+    that data in its jail -- so it carries its own table of exact AMDGCN targets. That
+    makes the lane width two owners' fact, which F-2026-09-15-004 proposes to end by
+    having the emitter pass the width it already holds. Until then the duplication is at
+    least checked: a target added to the Revision without the table fails here rather
+    than compiling at a width nobody declared.
+    """
+
+    def test_every_declared_amdgcn_target_matches_the_offline_route(self) -> None:
+        revision = json.loads((ROOT / "compiler/revision.json").read_text(encoding="utf-8"))
+        checked = 0
+        for target_id, reference in revision["target_definitions"].items():
+            target = Target.load(ROOT / reference["path"])
+            if target.vendor not in (Vendor.AMD, Vendor.HYGON):
+                with self.subTest(target=target_id):
+                    # A non-AMDGCN target must not be decoded by the AMDGCN branch.
+                    route = triton_route(target_id) if target.vendor is Vendor.NVIDIA else None
+                    if route is not None:
+                        self.assertEqual(route.text_role, "ptx")
+                continue
+            with self.subTest(target=target_id):
+                route = triton_route(target_id)
+                self.assertEqual(route.warp_size, target.warp_size)
+                self.assertEqual(route.architecture, target.target_id)
+                self.assertEqual(route.text_role, "amdgcn")
+                checked += 1
+        self.assertTrue(checked, "no AMDGCN target was declared to check")
 
 
 class NoVendorInTheElseTest(unittest.TestCase):

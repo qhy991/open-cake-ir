@@ -37,12 +37,12 @@
     }
   ],
   "current_by_target": {
-    "apple_gpu_family7": {
-      "canonical_sha256": "ac0f8d6d7da4c4079c67c3b33e4df8f7c2aef1a7b024b0d94646345f122c8238",
-      "descriptor_raw_sha256": "da54ab0f2f901146416e3c4268811975ed90dbaa4349fd22c726cd4a79604a8c",
-      "executor_id": "open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79",
-      "path": "runtime/executors/open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79.json",
-      "source_count": 165
+    "gfx938": {
+      "canonical_sha256": "be0552ac881fa611a16465cdf35984b9e1241a4361d135a4ae7fa5709925e6bc",
+      "descriptor_raw_sha256": "c2afdbb237bbb943f455687252ccc1ac68dba0427b57d5efc789eb2449ef72f8",
+      "executor_id": "open-cake-ir-gfx938-v3+c1112f6524c06729cd0427fc7c73578930f10de9f6b4fa51e355e121d7263fc2",
+      "path": "runtime/executors/open-cake-ir-gfx938-v3.json",
+      "source_count": 167
     }
   },
   "schema_version": 2,
@@ -234,6 +234,13 @@
       "descriptor_raw_sha256": "0e235d49018498d1c82ca79c7b172e21688481d319a64e42a629bb3c1f64666a",
       "executor_id": "open-cake-ir-b200-v117+af241c475cd46a345b0996f4bf91f1d076bbe0780cd102883c5ff9d3acccaead",
       "path": "runtime/executors/open-cake-ir-b200-v117+af241c475cd46a345b0996f4bf91f1d076bbe0780cd102883c5ff9d3acccaead.json",
+      "source_count": 165
+    },
+    {
+      "canonical_sha256": "ac0f8d6d7da4c4079c67c3b33e4df8f7c2aef1a7b024b0d94646345f122c8238",
+      "descriptor_raw_sha256": "da54ab0f2f901146416e3c4268811975ed90dbaa4349fd22c726cd4a79604a8c",
+      "executor_id": "open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79",
+      "path": "runtime/executors/open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79.json",
       "source_count": 165
     },
     {
@@ -893,6 +900,20 @@
       "executor_id": "open-cake-ir-b200-v99+f420d07c87fa7d0cbfecd67ae30d6e6dc3ced1d6c22126b3498f87bb26960d97",
       "path": "runtime/executors/open-cake-ir-b200-v99+f420d07c87fa7d0cbfecd67ae30d6e6dc3ced1d6c22126b3498f87bb26960d97.json",
       "source_count": 156
+    },
+    {
+      "canonical_sha256": "f427b74bb58b76b9600260a031220f25e9e71f76c833687848c0b779d9b7b3dd",
+      "descriptor_raw_sha256": "0474b21f93fd23a2b1540adfc4cdd3e5fba8c7e8d1d33ecd1f6ad6a3b869f02c",
+      "executor_id": "open-cake-ir-gfx938-v1+6f3e50e3e7735794df36b150d3141344fe3aa75bd16fb5b4f6c740fcce12d5a0",
+      "path": "runtime/executors/open-cake-ir-gfx938-v1.json",
+      "source_count": 167
+    },
+    {
+      "canonical_sha256": "17e2775011dab5b8eb48136e94fd9656a9a11d7a97b49c85bcb15d72fd9b1a89",
+      "descriptor_raw_sha256": "cd1a26193443633c8951d69520ee424c5bacf340c756c924dfca39d8c31cc71a",
+      "executor_id": "open-cake-ir-gfx938-v2+624ffbc0214018728c44bf89893337cddd673c89bb933d223ae9e10dd7e62959",
+      "path": "runtime/executors/open-cake-ir-gfx938-v2.json",
+      "source_count": 167
     }
   ]
 }
