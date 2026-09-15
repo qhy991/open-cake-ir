@@ -144,6 +144,52 @@ def admit_exact_hip(
     return torch, triton, properties
 
 
+@dataclass(frozen=True)
+class HipDeviceAdmission:
+    """What a HIP evaluation was admitted against, recorded before anything launches.
+
+    The peer of `CudaDeviceAdmission`, and shaped by the same two questions its consumers
+    ask: which broker job owns this process, and which physical device answered. It is not
+    a copy of the CUDA one -- there is no CUPTI handle here and no exclusive cluster
+    lease, because a DCU is reached through the local broker that serializes one machine's
+    single device, the same allocation an Apple GPU uses.
+    """
+
+    broker_job_id: str
+    target: str
+    device_arch: str
+    device_name: str
+    warp_size: int
+    gpu_uuid: str
+
+
+def observe_local_hip(requirements: Mapping[str, object]) -> HipDeviceAdmission:
+    """Admit this process's local-broker job and the one visible HIP device.
+
+    `admit_exact_hip` owns the device half and is reused verbatim; what is added here is
+    the allocation half, which the CUDA path gets from its cluster broker and this one
+    from the local serializer. A job id issued for another device family is refused: a
+    DCU evaluation recorded under a `metal-` job would misattribute the run exactly the
+    way a DCU latency recorded as CUPTI would misattribute the measurement.
+    """
+    from .local_broker import observe_local_job
+
+    job = observe_local_job("hip")
+    torch, _triton, properties = admit_exact_hip(requirements)
+    target = require_object(requirements["triton_target"], "triton_target")
+    uuid = getattr(properties, "uuid", None)
+    return HipDeviceAdmission(
+        broker_job_id=job,
+        target=str(target["arch"]),
+        device_arch=str(getattr(properties, "gcnArchName", "")),
+        device_name=str(getattr(properties, "name", "")),
+        warp_size=int(properties.warp_size),
+        # A DTK device reports no UUID; the record says so rather than inventing one or
+        # leaving the reader to guess what an empty string meant.
+        gpu_uuid=str(uuid) if uuid else "not_reported_by_this_runtime",
+    )
+
+
 def load_generated_module(
     lowering: object,
 ) -> tuple[object, tempfile.TemporaryDirectory[str]]:

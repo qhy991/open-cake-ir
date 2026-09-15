@@ -1,7 +1,12 @@
-"""Serialize local Metal jobs for one user, then exec the bound common worker.
+"""Serialize local single-device jobs for one user, then exec the bound common worker.
 
 This is process admission only. It does not evaluate a candidate, own a Ralph loop,
 or promise exclusive physical GPU access against WindowServer or unrelated apps.
+
+The allocation, not the API: an Apple GPU and a Hygon DCU are both one visible device on
+one machine, and both are reached this way. Each kind keeps its own lock and its own job
+prefix, so a DCU job is not recorded as a Metal one -- the same mislabelling as a DCU
+latency recorded as CUPTI, arriving through the allocator instead of the timer.
 """
 from __future__ import annotations
 
@@ -19,8 +24,13 @@ import uuid
 from .attempts import valid_job_mode
 
 
-def _lock_path() -> Path:
-    return Path(tempfile.gettempdir()) / f"open-cake-ir-metal-{os.geteuid()}.lock"
+LOCAL_KINDS = ("metal", "hip")
+
+
+def _lock_path(kind: str = "metal") -> Path:
+    if kind not in LOCAL_KINDS:
+        raise ValueError(f"local broker kind {kind!r} is unsupported")
+    return Path(tempfile.gettempdir()) / f"open-cake-ir-{kind}-{os.geteuid()}.lock"
 
 
 def _acquire(path: Path) -> int:
@@ -28,7 +38,7 @@ def _acquire(path: Path) -> int:
     try:
         metadata = os.fstat(fd)
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid() or metadata.st_nlink != 1:
-            raise ValueError("local Metal broker lock ownership differs")
+            raise ValueError("local broker lock ownership differs")
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return fd
     except BaseException:
@@ -36,24 +46,33 @@ def _acquire(path: Path) -> int:
         raise
 
 
-def observe_local_metal_job() -> str:
+def observe_local_job(kind: str = "metal") -> str:
+    """Observe this process's own local-broker admission for one allocation kind."""
     job = os.environ.get("METAL_JOB_ID", "")
     raw_fd = os.environ.get("METAL_BROKER_LOCK_FD", "")
-    if not valid_job_mode(job, "local_serialized") or not raw_fd.isdecimal() or int(raw_fd) < 3:
-        raise ValueError("local Metal broker admission is missing")
+    if (not valid_job_mode(job, "local_serialized") or not job.startswith(f"{kind}-")
+            or not raw_fd.isdecimal() or int(raw_fd) < 3):
+        raise ValueError(f"local {kind} broker admission is missing")
     fd = int(raw_fd)
     metadata = os.fstat(fd)
-    expected = _lock_path().stat(follow_symlinks=False)
+    expected = _lock_path(kind).stat(follow_symlinks=False)
     if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
             or metadata.st_nlink != 1 or (metadata.st_dev, metadata.st_ino) != (expected.st_dev, expected.st_ino)):
-        raise ValueError("local Metal broker descriptor is not the shared user lock")
+        raise ValueError(f"local {kind} broker descriptor is not the shared user lock")
     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     return job
+
+
+def observe_local_metal_job() -> str:
+    """The Metal spelling every retained Metal run replays through."""
+    return observe_local_job("metal")
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--worker-module", required=True)
+    parser.add_argument("--kind", choices=LOCAL_KINDS, default="metal",
+                        help="which local device family this job serializes")
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -61,13 +80,13 @@ def main(argv=None) -> int:
         parser.error("worker must be a bound open_cake_ir module")
     if not args.request.is_absolute() or not args.output.is_absolute() or args.output.exists():
         parser.error("request/output must be absolute and output must be new")
-    job = "metal-" + uuid.uuid4().hex[:12]
-    print(f"[metal-run] accepted job {job}", file=sys.stderr, flush=True)
+    job = f"{args.kind}-" + uuid.uuid4().hex[:12]
+    print(f"[{args.kind}-run] accepted job {job}", file=sys.stderr, flush=True)
     try:
-        fd = _acquire(_lock_path())
+        fd = _acquire(_lock_path(args.kind))
     except BlockingIOError:
         result = {"schema_version": 1, "job_id": job, "mode": "local_serialized", "admitted": False,
-                  "error": "metal_broker_busy", "failure_class": "admission", "receipt": None,
+                  "error": f"{args.kind}_broker_busy", "failure_class": "admission", "receipt": None,
                   "counters": {name: 0 for name in ("compiler_invocations", "module_loads", "preflight_calls", "kernel_calls", "timing_samples", "fallback_calls")}}
         with args.output.open("x") as stream:
             json.dump(result, stream)

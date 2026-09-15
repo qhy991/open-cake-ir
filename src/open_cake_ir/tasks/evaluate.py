@@ -30,6 +30,8 @@ from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.tasks.flash_kmeans.workload import assignment_raw_sha256, classify_flash_kmeans_output, flash_kmeans_oracle, generate_flash_kmeans_case
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda
+from open_cake_ir.evaluation.artifacts import executable_role
+from open_cake_ir.evaluation.local_broker import LOCAL_KINDS
 from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case
 from open_cake_ir.tasks.launch import parse_launch_manifest
@@ -546,6 +548,37 @@ def _evaluate_metal_candidate(authority, result):
         'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
 
 
+def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None):
+    """Evaluate one sealed AMDGCN candidate for correctness on its admitted DCU.
+
+    Timing is deliberately absent, and refused rather than skipped quietly: `triton-dcu`
+    declares no timing source, so its Study carries a `measurement_coverage` limitation
+    instead of a paired assay, and a caller that asks for timing here is asking for a
+    latency under a timer nobody has named. Correctness, the oracle, the cohort shape and
+    the receipts are the same ones every tensor-tile evaluation uses.
+    """
+    from open_cake_ir.evaluation.triton_hip import observe_local_hip
+
+    if collect_timing:
+        raise ValueError(
+            f"{authority.candidate.target!r} declares no timing source, so this "
+            "evaluation reports correctness only; a timed assay for it is a separate, "
+            "evidence-gated act"
+        )
+    if admission is None:
+        requirements = _object(authority.request.get("lowering_requirements"),
+                               "lowering requirements")
+        try:
+            admission = observe_local_hip(requirements)
+        except (ValueError, RuntimeError):
+            result["error"] = "gpu_admission_differs"
+            return
+    result["job_id"] = admission.broker_job_id
+    result["mode"] = "local_serialized"
+    result["admitted"] = True
+    _evaluate_tile_candidate(authority, result, None, admission, False)
+
+
 def _evaluate_candidate(
     authority: _Authority,
     result: dict[str, object],
@@ -555,6 +588,14 @@ def _evaluate_candidate(
 ) -> None:
     if isinstance(authority.manifest, MetalTensorLaunchManifest):
         _evaluate_metal_candidate(authority, result)
+        return
+    # A CUDA and an AMDGCN candidate share this manifest class -- both are
+    # `workload_tensors_v1` -- so the family is read from the executable the target
+    # builds, not from the manifest's type. Dispatching on "is it Metal? otherwise CUDA"
+    # sent every DCU candidate into `observe_exclusive_cuda`.
+    if executable_role(authority.candidate.target) == "hsaco":
+        _evaluate_hip_candidate(authority, result, collect_timing=collect_timing,
+                                admission=admission)
         return
     helper = authority.executor.admit_host()
     if admission is None:
@@ -846,7 +887,8 @@ def main() -> int:
     args = parser.parse_args()
     request_path = args.request.resolve(strict=True)
     result = _base_result(os.environ.get("METAL_JOB_ID", os.environ.get("GPUQ_JOB_ID", "gpuq-000000000000")))
-    if str(result["job_id"]).startswith("metal-"):
+    # Both local allocations issue their own prefix; the mode they share is the mode.
+    if str(result["job_id"]).split("-")[0] in LOCAL_KINDS:
         result["mode"] = "local_serialized"
     try:
         authority = _load_authority(request_path)

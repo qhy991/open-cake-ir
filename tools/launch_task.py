@@ -254,7 +254,12 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             raise ValueError("CUDA broker options require the gpu_run allocation")
         toolchain = ({"output_root": str(workspace / "builds")} if route == "metal"
                      else _triton_toolchain_config(executor))
+        # The local broker serializes one machine's single device, and each device family
+        # keeps its own lock and job prefix. A DCU job recorded under a `metal-` id would
+        # misattribute the run the way a DCU latency recorded as CUPTI misattributes the
+        # measurement, so the kind is passed rather than defaulted.
         command = module_command(python, "open_cake_ir.evaluation.local_broker",
+                                 "--kind", "metal" if route == "metal" else "hip",
                                  "--worker-module", "open_cake_ir.tasks.evaluate")
         timeout = 1800
     elif allocation == "gpu_run":

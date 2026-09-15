@@ -202,6 +202,8 @@ class TaskLaunchTests(unittest.TestCase):
         command = runtime['broker']['command']
         self.assertIn('open_cake_ir.evaluation.local_broker', command)
         self.assertNotIn('gpu-run', ' '.join(command))
+        # Its own lock and its own job prefix; a DCU run is not recorded as a Metal one.
+        self.assertEqual(command[command.index('--kind') + 1], 'hip')
         # The toolchain is still Triton's, because the route did not change.
         self.assertEqual(runtime['toolchain']['triton_version'], '3.6.0')
         self.assertNotIn('output_root', runtime['toolchain'])
@@ -631,7 +633,8 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(runtime["provider"]["workspace_root"], str(self.workspace/"actors"))
         self.assertEqual(runtime["toolchain"], {"output_root":str(self.workspace/"builds")})
         self.assertEqual(runtime["broker"]["command"], ["/unit-test/python", "-I", str(ROOT / "src/open_cake_ir/evaluation/source_bootstrap.py"),
-                         "open_cake_ir.evaluation.local_broker", "--worker-module", "open_cake_ir.tasks.evaluate"])
+                         "open_cake_ir.evaluation.local_broker", "--kind", "metal",
+                         "--worker-module", "open_cake_ir.tasks.evaluate"])
         self.assertEqual(set(json.loads((self.workspace/"execution-bindings.json").read_text())),
                          {"schema_version","qualification_path","qualification_anchor_path","runtime_config_path","fixed_baseline_bundle_path","fixed_baseline_selection"})
         self.assertFalse((self.workspace/"actors").exists())  # The existing composer creates it once.
