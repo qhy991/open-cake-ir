@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import shutil
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -301,6 +302,42 @@ class TaskLaunchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'allocation'):
             launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'triton',
                                         allocation='slurm')
+
+    def test_a_broken_allocator_is_found_before_a_token_is_spent(self):
+        """Measured at the cost of a full authoring turn, so it is checked by using it.
+
+        The launcher's gpu-run default socket was not the socket the B300 host's broker
+        listens on. The campaign authored a candidate, sealed it, reached the allocator
+        and faulted with "cannot reach broker" -- 77103 provider tokens for a run that
+        could never be evaluated (F-2026-09-16-001). The allocator is the one participant
+        a launch cannot check by reading a file.
+        """
+        false = shutil.which("false") or "/usr/bin/false"
+        runtime = {"broker": {"cwd": str(self.directory),
+                              "command": [false, "--label", "x", "--", "evaluator"]}}
+        with self.assertRaisesRegex(ValueError, "refused a trivial lease"):
+            launch_task._admit_allocator(runtime)
+        # The probe replaces the evaluator with /bin/true and keeps everything the
+        # campaign will actually pass the allocator.
+        true = shutil.which("true") or "/usr/bin/true"
+        recorded = {}
+
+        def record(probe, **kwargs):
+            recorded["probe"] = probe
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch.object(launch_task.subprocess, "run", record):
+            launch_task._admit_allocator(
+                {"broker": {"cwd": str(self.directory),
+                            "command": [true, "--mode", "exclusive", "--", "evaluator",
+                                        "--request", "r"]}})
+        self.assertEqual(recorded["probe"],
+                         [true, "--mode", "exclusive", "--", "/bin/true"])
+        # A local broker takes no lease, so there is nothing to probe and nothing is run.
+        with patch.object(launch_task.subprocess, "run") as never:
+            launch_task._admit_allocator(
+                {"broker": {"cwd": str(self.directory), "command": ["python", "-m", "b"]}})
+        never.assert_not_called()
 
     def test_failed_full_gate_prevents_executor_and_provider_work(self):
         self.workspace.mkdir()

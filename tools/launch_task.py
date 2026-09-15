@@ -238,6 +238,35 @@ def _triton_builder(executor, workload):
         isolated_compiler=IsolatedTritonCompiler(**_triton_toolchain_config(executor)))
 
 
+def _admit_allocator(runtime) -> None:
+    """Take one trivial lease before any authoring token is spent.
+
+    Measured, at the cost of a full authoring turn: the launcher's gpu-run default socket
+    is not the socket this B300 host's broker listens on, so a campaign authored a
+    candidate, sealed it, reached the allocator and faulted with "cannot reach broker" --
+    77103 provider tokens for a run that could never be evaluated (F-2026-09-16-001). The
+    allocator is the one participant a launch cannot check by reading a file, so it is
+    checked by using it: the same command the campaign will use, with `/bin/true` in place
+    of the evaluator. One short lease, before the provider is admitted.
+    """
+    broker = runtime["broker"]
+    command = list(broker["command"])
+    if "--" not in command:
+        return  # the local broker takes no lease and needs no probe
+    probe = command[: command.index("--") + 1] + ["/bin/true"]
+    try:
+        completed = subprocess.run(probe, cwd=broker["cwd"], capture_output=True,
+                                   text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError(f"the declared allocator could not be run: {error}") from error
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+        raise ValueError(
+            "the declared allocator refused a trivial lease, so no candidate could be "
+            "evaluated on it: " + (detail[-1] if detail else f"exit {completed.returncode}")
+        )
+
+
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     gpu_run=None, broker_socket=None):
     """Bind the declared toolchain to the declared allocator.
@@ -457,6 +486,8 @@ def main(argv=None) -> int:
                _runtime_config(workspace, executor, executable, route,
                                allocation=_allocation_of(args.backend),
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket))
+    if runtime is not None:
+        _admit_allocator(runtime)
     baseline_selection: dict[str, object]
     if args.prepared_baseline is not None:
         baseline_path, baseline, baseline_selection = load_prepared_baseline(
