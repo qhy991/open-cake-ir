@@ -5,6 +5,7 @@
   "device_names": [
     "Apple M1 Pro"
   ],
+  "vendor": "apple",
   "memory_spaces": [
     "global",
     "shared",

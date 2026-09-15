@@ -180,10 +180,16 @@ class ExecutorRevision:
 
     @staticmethod
     def _validate_host_document(host: Mapping[str, object]) -> None:
-        if host.get("kind") == "metal":
+        kind = host.get("kind")
+        if kind == "metal":
             from .metal_host import validate_metal_host
             validate_metal_host(host)
             return
+        # A host declaring no kind is the pre-`kind` CUDA form, named here rather than
+        # reached by falling through every other vendor into CUDA's field set. A host
+        # that declares some other kind is refused for being that kind.
+        if kind is not None:
+            raise ValueError(f"Executor host kind {kind!r} is not admitted")
         legacy_fields = {
             "python",
             "packages",

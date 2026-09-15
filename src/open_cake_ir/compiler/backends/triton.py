@@ -37,7 +37,7 @@ from ..ir import (
     Schedule,
     TileLoop,
 )
-from ..target import Target
+from ..target import Target, Vendor
 from ..diagnostics import Finding
 
 _TL_DTYPE = {
@@ -210,9 +210,9 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             findings.append(refusal(code, path, message))
 
     add(
-        target.compute_capability is not None,
+        target.vendor is Vendor.NVIDIA,
         "BACKEND_TARGET_UNSUPPORTED", "target",
-        "the current Triton backend emits CUDA kernels and cannot target Metal",
+        "the current Triton backend emits CUDA kernels and admits only NVIDIA targets",
     )
 
     def arange(start: int, end: int, path: str) -> None:

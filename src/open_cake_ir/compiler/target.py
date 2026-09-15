@@ -19,11 +19,24 @@ from typing import Any, Mapping
 
 from .ir import MemorySpace, OperationKind, ScheduleParseError, _enum, _string
 
-_APPLE_ARCHITECTURES = frozenset({"apple7", "apple8", "apple9"})
-
-
 class TargetParseError(ValueError):
     """One Target document is not admissible."""
+
+
+class Vendor(str, Enum):
+    """Which vendor's hardware a Target describes, declared rather than inferred.
+
+    Every rule keyed on vendor reads this field. The alternative, and what this replaces,
+    was reading the presence of a CUDA field: a well-formed AMD document was refused with
+    `target.compute_capability is required for CUDA targets`, and the same document with a
+    fabricated capability pair parsed and then carried NVIDIA's warpgroup rule against a
+    wavefront. No vendor lives in an `else` here, which is why this is a closed set that
+    refuses an unknown name rather than a string anyone may extend from a Target document.
+    """
+
+    NVIDIA = "nvidia"
+    APPLE = "apple"
+    AMD = "amd"
 
 
 def cuda_architecture(target_id: str) -> int:
@@ -283,6 +296,7 @@ class Target:
     target_id: str
     architecture: str
     device_names: tuple[str, ...]
+    vendor: Vendor
     compute_capability: tuple[int, int] | None
     memory_spaces: frozenset[MemorySpace]
     operation_kinds: frozenset[OperationKind]
@@ -296,19 +310,12 @@ class Target:
     synchronization_contracts: frozenset[str]
     occupancy: Occupancy | None
     peak: Peak | None
+    # Role slots that issue a warpgroup-wide instruction together, on an ISA that has the
+    # concept. `setmaxnreg` is warpgroup-wide, which is what makes this a legality rule on
+    # a role's slot range rather than a preference. Declared beside its citation like
+    # `warp_size`, and absent -- not zero, not a borrowed four -- on an ISA without it.
+    warps_per_warpgroup: int | None = None
     source: TargetSource | None = field(default=None, repr=False, compare=False)
-
-    @property
-    def warps_per_warpgroup(self) -> int | None:
-        """Warps that issue a warpgroup-wide instruction together.
-
-        `setmaxnreg` is warpgroup-wide, which is what makes this a legality rule on a
-        role's warp range rather than a preference. Unlike `warp_size`, this is still
-        inferred from the presence of a CUDA field rather than positively declared; that
-        inference is F-2026-09-13-006's second step, not this one.
-        """
-
-        return 4 if self.compute_capability is not None else None
 
     @classmethod
     def load(cls, path: str | Path) -> "Target":
@@ -327,16 +334,27 @@ class Target:
                 raise TargetParseError(f"target.{field} must be a non-empty list")
             return tuple(_string(item, f"target.{field}[]") for item in items)
 
+        try:
+            vendor = Vendor(value.get("vendor"))
+        except ValueError as error:
+            raise TargetParseError(
+                "target.vendor must be one of "
+                + ", ".join(sorted(item.value for item in Vendor))
+            ) from error
         capability = value.get("compute_capability")
         if capability is not None and (
             not isinstance(capability, list) or len(capability) != 2
             or any(type(item) is not int or item < 0 for item in capability)
         ):
             raise TargetParseError("target.compute_capability must be a nonnegative integer pair")
-        if capability is None and value.get("architecture") not in _APPLE_ARCHITECTURES:
-            raise TargetParseError("target.compute_capability is required for CUDA targets")
-        if value.get("architecture") in _APPLE_ARCHITECTURES and "compute_capability" in value:
-            raise TargetParseError("Apple GPU targets have no CUDA compute capability")
+        # Keyed on the declared vendor, so a non-NVIDIA document is refused for the reason
+        # that applies to it instead of for a field its ISA does not have.
+        if vendor is Vendor.NVIDIA and capability is None:
+            raise TargetParseError("target.compute_capability is required for NVIDIA targets")
+        if vendor is not Vendor.NVIDIA and "compute_capability" in value:
+            raise TargetParseError(
+                f"{vendor.value} targets have no CUDA compute capability"
+            )
 
         try:
             spaces = frozenset(
@@ -350,7 +368,7 @@ class Target:
         except ScheduleParseError as error:
             raise TargetParseError(str(error)) from error
 
-        if value.get("architecture") in _APPLE_ARCHITECTURES and "occupancy" in value:
+        if vendor is Vendor.APPLE and "occupancy" in value:
             raise TargetParseError("Apple GPU targets have no admitted occupancy calibration")
 
         instruction_contracts = frozenset(string_tuple("instruction_contracts", allow_empty=True))
@@ -358,7 +376,7 @@ class Target:
             Peak.from_dict(value["peak"], instruction_contracts, "target.peak")
             if "peak" in value else None
         )
-        if value.get("architecture") in _APPLE_ARCHITECTURES and peak is not None and (
+        if vendor is Vendor.APPLE and peak is not None and (
             peak.arithmetic
             or peak.memory_bandwidth is None
             or peak.memory_bandwidth.source is not PeakSource.DEVICE_SPECIFICATION
@@ -370,6 +388,9 @@ class Target:
         # An undeclared width is refused, never substituted: reading 32 for a target that
         # never said 32 is exactly the silent answer this field exists to stop.
         warp_size = _int_field(value.get("warp_size"), "target.warp_size")
+        warpgroup = value.get("warps_per_warpgroup")
+        if warpgroup is not None:
+            warpgroup = _int_field(warpgroup, "target.warps_per_warpgroup")
         limits = ResourceLimits.from_dict(value.get("resource_limits"), "target.resource_limits")
         if limits.maximum_warps_per_cta * warp_size > limits.maximum_threads_per_cta:
             raise TargetParseError(
@@ -381,6 +402,7 @@ class Target:
             target_id=_string(value.get("target_id"), "target.target_id"),
             architecture=_string(value.get("architecture"), "target.architecture"),
             device_names=string_tuple("device_names"),
+            vendor=vendor,
             compute_capability=None if capability is None else (capability[0], capability[1]),
             memory_spaces=spaces,
             operation_kinds=kinds,
@@ -394,4 +416,5 @@ class Target:
                 else None
             ),
             peak=peak,
+            warps_per_warpgroup=warpgroup,
         )

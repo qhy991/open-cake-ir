@@ -36,7 +36,7 @@ from ..ir import (
     Swizzle,
     TileLoop,
 )
-from ..target import Target
+from ..target import Target, Vendor
 from ..diagnostics import Finding
 from . import cutedsl_register, cutedsl_simt
 
@@ -154,9 +154,9 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             findings.append(refusal(code, path, message))
 
     add(
-        target.compute_capability is not None,
+        target.vendor is Vendor.NVIDIA,
         "BACKEND_TARGET_UNSUPPORTED", "target",
-        "the current CuTe-DSL backend emits CUDA kernels and cannot target Metal",
+        "the current CuTe-DSL backend emits CUDA kernels and admits only NVIDIA targets",
     )
     add(
         target.target_id != "sm_103a",
