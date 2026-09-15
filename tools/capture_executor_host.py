@@ -154,24 +154,21 @@ def _capture_hip_library(soname: str, path: Path) -> dict[str, object]:
     return {**_file_record(path.resolve(strict=True), str(path)), "soname": soname}
 
 
-def _capture_library_path(entries: list[str]) -> list[str]:
-    """Admit the declared HIP shared-object search path, in the order given.
+def _capture_build_environment(entries: list[list[str]]) -> dict[str, str]:
+    """Admit the environment this host's toolchain needs inside the isolated build jail.
 
-    Each entry must be an absolute directory that actually holds a shared object; a path
-    that does not is a capture-time error rather than a jail that starts and then cannot
-    load its runtime. Order is the loader's search order and is preserved.
+    Every absolute path a value names must exist here, now, so a missing directory is a
+    capture-time error rather than a jail that starts and then cannot find the runtime it
+    was pointed at. Values are kept verbatim: a search path's order is the loader's.
     """
-    admitted: list[str] = []
-    for entry in entries:
-        directory = Path(entry)
-        if not directory.is_absolute() or not directory.is_dir():
-            raise ValueError(f"HIP library path requires an existing absolute directory: {entry}")
-        resolved = str(directory.resolve(strict=True))
-        if not any(child.name.endswith(".so") or ".so." in child.name
-                   for child in directory.iterdir() if child.is_file() or child.is_symlink()):
-            raise ValueError(f"HIP library path holds no shared object: {entry}")
-        if resolved not in admitted:
-            admitted.append(resolved)
+    admitted: dict[str, str] = {}
+    for name, value in entries:
+        if name in admitted:
+            raise ValueError(f"build environment declares {name!r} twice")
+        for part in value.split(":"):
+            if part.startswith("/") and not Path(part).is_dir():
+                raise ValueError(f"build environment {name} names a missing directory: {part}")
+        admitted[name] = value
     return admitted
 
 
@@ -202,15 +199,16 @@ def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
             },
             # This is the required topology. Exact device observation is owned by
             # admit_exact_hip and requires the Compiler's lowering requirements.
-            # `library_path` is where this host's HIP runtime keeps its shared objects.
-            # It is declared rather than inherited because the isolated build jail runs
-            # --clearenv: on the Hygon DTK host these directories are on LD_LIBRARY_PATH
-            # only because /opt/dtk/env.sh put them there, ldconfig does not know them,
-            # and a jail that correctly discards the ambient environment then cannot load
-            # libgalaxyhip. A CUDA host declares none and keeps the empty search path it
-            # has always had.
+            # `build_environment` is what this host's toolchain needs inside the
+            # isolated build jail, which runs --clearenv. On the Hygon DTK host that is
+            # LD_LIBRARY_PATH, without which libgalaxyhip.so.5 is mounted and unfindable
+            # because ldconfig does not know /opt/dtk, and ROCM_PATH, without which
+            # clang-18 reports "cannot find ROCm device library". Both live only in
+            # /opt/dtk/env.sh, which the jail correctly discards. A CUDA host declares
+            # none and keeps the empty environment it has always had.
             "runtime": {"backend": "hip", "torch_hip_version": hip, "visible_device_count": 1,
-                        "library_path": _capture_library_path(arguments.hip_library_path)},
+                        "build_environment": _capture_build_environment(
+                            arguments.hip_build_environment)},
             "tools": {
                 "device_monitor": _capture_hip_tool(
                     arguments.device_monitor[0], Path(arguments.device_monitor[1])
@@ -289,10 +287,11 @@ def main(argv: list[str] | None = None) -> int:
                         metavar=("KIND", "PATH"))
     parser.add_argument("--hip-runtime-library", nargs=2, action="append", default=[],
                         metavar=("SONAME", "PATH"))
-    parser.add_argument("--hip-library-path", action="append", default=[], metavar="DIR",
-                        help="directory holding this host's HIP shared objects; repeat in "
-                             "search order. The isolated build jail clears the environment, "
-                             "so a path only an env.sh knows about is declared here or lost.")
+    parser.add_argument("--hip-build-environment", nargs=2, action="append", default=[],
+                        metavar=("NAME", "VALUE"),
+                        help="environment variable the isolated build jail must be given; "
+                             "repeat per variable. The jail clears the environment, so a "
+                             "value only an env.sh knows about is declared here or lost.")
     parser.add_argument("--target", choices=("apple_gpu_family7", "apple_gpu_family8",
                                              "apple_gpu_family9"))
     parser.add_argument("--swiftc", type=Path)

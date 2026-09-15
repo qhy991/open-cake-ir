@@ -29,7 +29,7 @@ class IsolatedTritonCompiler:
 
     def __init__(self, *, python: str, bubblewrap: str, runtime_roots: list[str],
                  triton_version: str, timeout_seconds: int = 600,
-                 library_path: tuple[str, ...] | list[str] = ()):
+                 build_environment: Mapping[str, str] | None = None):
         if sys.platform != "linux":
             raise ValueError("native Triton build requires Linux bubblewrap filesystem isolation")
         self.python = Path(os.path.abspath(python))
@@ -46,21 +46,22 @@ class IsolatedTritonCompiler:
                    for source, _ in self._runtime_mounts)
             or not any(self.python.is_relative_to(p) for p in self.runtime_roots)):
             raise ValueError("isolated Triton runtime mount contract differs")
-        # The jail runs --clearenv, so a runtime whose shared objects are reachable only
-        # through LD_LIBRARY_PATH is invisible inside it even when its files are mounted.
-        # Measured on the Hygon DCU: /opt is mounted, the DTK libraries are there, and
-        # `import triton` still fails with "libgalaxyhip.so.5: cannot open shared object
-        # file" because ldconfig does not know /opt/dtk and the container's own path came
-        # from an env.sh the jail correctly discarded. CUDA hosts declare nothing here and
-        # keep the empty search path they have always had -- torch finds its CUDA
-        # libraries through RPATH.
-        self.library_path = tuple(str(Path(os.path.abspath(entry))) for entry in library_path)
-        if any(not Path(entry).is_dir() for entry in self.library_path):
-            raise ValueError("isolated Triton runtime library path must name existing directories")
-        if any(not any(Path(entry).is_relative_to(destination)
+        # The jail runs --clearenv, so a fact that lives only in the invoking shell's
+        # environment does not survive it. That is correct and costs a CUDA host nothing.
+        # On the Hygon DTK host it costs two things, both measured: without
+        # LD_LIBRARY_PATH `import triton` fails with "libgalaxyhip.so.5: cannot open
+        # shared object file" while the file is mounted and present, and without
+        # ROCM_PATH clang-18 reports "cannot find ROCm device library". The host declares
+        # what it needs; nothing is inherited.
+        self.build_environment = dict(build_environment or {})
+        declared_paths = [part for value in self.build_environment.values()
+                          for part in value.split(":") if part.startswith("/")]
+        if any(not Path(part).is_dir() for part in declared_paths):
+            raise ValueError("isolated Triton build environment names a missing directory")
+        if any(not any(Path(part).is_relative_to(destination)
                        for destination in self.runtime_roots)
-               for entry in self.library_path):
-            raise ValueError("isolated Triton runtime library path must lie inside a mounted root")
+               for part in declared_paths):
+            raise ValueError("isolated Triton build environment names a path outside every mount")
         self.triton_version = triton_version
         self.timeout_seconds = timeout_seconds
 
@@ -90,7 +91,7 @@ class IsolatedTritonCompiler:
                 "bubblewrap_sha256": sha256(self.bubblewrap.read_bytes()).hexdigest(),
                 "runtime_roots": [{'source': str(source), 'destination': str(destination)}
                                   for source, destination in self._runtime_mounts],
-                "library_path": list(self.library_path),
+                "build_environment": dict(sorted(self.build_environment.items())),
                 "triton_version": self.triton_version, "timeout_seconds": self.timeout_seconds}
 
     @property
@@ -117,8 +118,8 @@ class IsolatedTritonCompiler:
                      '--setenv', 'PYTHONPATH', '/compiler-src',
                      '--setenv', 'PYTHONDONTWRITEBYTECODE', '1',
                      '--setenv', 'TRITON_CACHE_DIR', '/tmp/triton-cache']
-            if self.library_path:
-                argv += ['--setenv', 'LD_LIBRARY_PATH', ':'.join(self.library_path)]
+            for name, value in sorted(self.build_environment.items()):
+                argv += ['--setenv', name, value]
             argv += [
                      str(self.python), '-s', '-m', 'open_cake_ir.lab.triton_build', '/build/request.json']
             try:

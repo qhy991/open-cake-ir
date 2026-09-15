@@ -50,23 +50,37 @@ _AMD_EXECUTOR_ID = _amd_executor_id()
 HIP_RUNTIME_LIBRARIES = frozenset({"libxml2.so.2"})
 
 
-def _library_search_path(value: object) -> tuple[str, ...]:
-    """Admit a declared shared-object search path: absolute directories, in order.
+_ENVIRONMENT_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 
-    A HIP host states where its runtime keeps its shared objects because the isolated
-    build jail clears the environment. On the Hygon DTK host these directories reach the
-    loader only through /opt/dtk/env.sh -- ldconfig does not know them -- so a jail that
-    correctly discards the ambient environment cannot load libgalaxyhip without this.
-    Order is the loader's search order; duplicates are a malformed declaration, not a
-    harmless one, because they hide which entry was meant to win.
+
+def _build_environment(value: object) -> dict[str, str]:
+    """Admit the environment a host's toolchain needs inside the isolated build jail.
+
+    The jail runs --clearenv, which is correct: it must not inherit whatever the invoking
+    shell exported. That costs a CUDA host nothing, because torch finds its libraries
+    through RPATH and nvcc needs no variable. It is fatal on the Hygon DTK host, where
+    two separate facts live only in /opt/dtk/env.sh -- LD_LIBRARY_PATH, without which
+    libgalaxyhip.so.5 is present and unfindable, and ROCM_PATH, without which clang-18
+    reports "cannot find ROCm device library" and the hcu backend's own path_to_rocm()
+    falls back to a directory that is not there.
+
+    Both are the same kind of fact, so they are one declaration rather than one field
+    each. A value's absolute-path components are checked against the jail's mounts by the
+    compiler that consumes this, so a declared path can never name something the jail
+    cannot see.
     """
-    if not isinstance(value, (list, tuple)) or not value:
-        return ()
-    entries = tuple(value)
-    if any(not isinstance(entry, str) or not entry.startswith("/") or entry != entry.rstrip("/")
-           for entry in entries) or len(set(entries)) != len(entries):
-        return ()
-    return cast(tuple[str, ...], entries)
+    if not isinstance(value, Mapping) or not value:
+        return {}
+    admitted: dict[str, str] = {}
+    for name, item in value.items():
+        if (not isinstance(name, str) or _ENVIRONMENT_NAME.fullmatch(name) is None
+                or not isinstance(item, str) or not item or item != item.strip()):
+            return {}
+        if any(part.endswith("/") or ".." in Path(part).parts
+               for part in item.split(":") if part.startswith("/")):
+            return {}
+        admitted[name] = item
+    return admitted
 
 
 def _canonical_json_bytes(value: object) -> bytes:
@@ -248,7 +262,7 @@ class HipHostAdmission:
     executor_id: str
     torch_hip_version: str
     visible_device_count: int
-    library_path: tuple[str, ...]
+    build_environment: Mapping[str, str]
     device_monitor: Mapping[str, object]
     profilers: tuple[Mapping[str, object], ...]
     build_tools: Mapping[str, Mapping[str, object]]
@@ -470,7 +484,7 @@ class ExecutorRevision:
             not isinstance(runtime, Mapping)
             or set(runtime) != {
                 "backend",
-                "library_path",
+                "build_environment",
                 "torch_hip_version",
                 "visible_device_count",
             }
@@ -479,7 +493,7 @@ class ExecutorRevision:
             or not runtime["torch_hip_version"]
             or type(runtime.get("visible_device_count")) is not int
             or runtime["visible_device_count"] != 1
-            or not _library_search_path(runtime.get("library_path"))
+            or not _build_environment(runtime.get("build_environment"))
         ):
             raise ValueError("Executor HIP runtime authority differs")
         tools = host["tools"]
@@ -745,7 +759,7 @@ def _admit_hip_environment(
         executor_id=executor_id,
         torch_hip_version=cast(str, runtime["torch_hip_version"]),
         visible_device_count=cast(int, runtime["visible_device_count"]),
-        library_path=_library_search_path(runtime["library_path"]),
+        build_environment=MappingProxyType(_build_environment(runtime["build_environment"])),
         device_monitor=monitor,
         profilers=profilers,
         build_tools=build_tools,

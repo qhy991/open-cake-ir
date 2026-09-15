@@ -217,33 +217,38 @@ class TaskLaunchTests(unittest.TestCase):
         with patch.object(launch_task.shutil, 'which', return_value=str(jail)):
             self.assertEqual(launch_task._bubblewrap({}), str(jail))
 
-    def test_a_hip_host_declares_the_search_path_its_jail_would_otherwise_lose(self):
-        """The jail runs --clearenv, so an env.sh-only library path does not survive it.
+    def test_a_hip_host_declares_the_environment_its_jail_would_otherwise_lose(self):
+        """The jail runs --clearenv, and two DTK facts live only in /opt/dtk/env.sh.
 
-        Measured on the DCU: /opt is mounted, /opt/dtk holds libgalaxyhip.so.5, ldconfig
-        does not know that directory, and the jailed build failed with "cannot open shared
-        object file" -- the files were there and nothing could find them. A CUDA host
-        declares none of this and keeps the empty search path it has always had, because
-        torch resolves its CUDA libraries through RPATH.
+        Measured on the DCU, one after the other: without LD_LIBRARY_PATH the jailed build
+        failed with "libgalaxyhip.so.5: cannot open shared object file" while /opt was
+        mounted and the file was sitting in it, because ldconfig does not know /opt/dtk;
+        with it, the build reached the AMDGCN compile and clang-18 reported "cannot find
+        ROCm device library", because ROCM_PATH was gone too. Same kind of fact twice, so
+        one declaration rather than a field each. A CUDA host declares none -- torch finds
+        its libraries through RPATH.
         """
+        environment = {"LD_LIBRARY_PATH": "/opt/dtk/lib:/opt/hyhal/lib",
+                       "ROCM_PATH": "/opt/dtk"}
         hip = SimpleNamespace(document={"host_environment": {
             "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
             "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]},
-            "runtime": {"backend": "hip", "library_path": ["/opt/dtk/lib", "/opt/hyhal/lib"]}}})
+            "runtime": {"backend": "hip", "build_environment": environment}}})
         cuda = SimpleNamespace(document={"host_environment": {
             "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
             "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]}}})
         with patch.object(launch_task, "_triton_runtime_roots", return_value=["/opt", "/usr"]):
-            self.assertEqual(launch_task._triton_toolchain_config(hip)["library_path"],
-                             ["/opt/dtk/lib", "/opt/hyhal/lib"])
-            self.assertEqual(launch_task._triton_toolchain_config(cuda)["library_path"], [])
-        # A declared directory the jail would not mount is mounted, so the search path
-        # never names something invisible inside the jail.
-        roots = launch_task._triton_runtime_roots(Path("/usr/local/bin/python"),
-                                                  ("/opt/dtk/lib",))
-        self.assertTrue(any(Path("/opt/dtk/lib") == Path(root)
-                            or Path("/opt/dtk/lib").is_relative_to(Path(root))
-                            for root in roots), roots)
+            self.assertEqual(launch_task._triton_toolchain_config(hip)["build_environment"],
+                             environment)
+            self.assertEqual(launch_task._triton_toolchain_config(cuda)["build_environment"], {})
+        # Every absolute path the declaration names is mounted, so the jail is never
+        # pointed at something it cannot see.
+        roots = [Path(root) for root in
+                 launch_task._triton_runtime_roots(Path("/usr/local/bin/python"),
+                                                   ("/opt/dtk/lib", "/opt/hyhal/lib", "/opt/dtk"))]
+        for declared in (Path("/opt/dtk/lib"), Path("/opt/hyhal/lib"), Path("/opt/dtk")):
+            self.assertTrue(any(declared == root or declared.is_relative_to(root)
+                                for root in roots), (declared, roots))
 
     def test_cuda_runtime_uses_existing_allocator_and_same_isolated_toolchain(self):
         executor = SimpleNamespace(document={"host_environment": {

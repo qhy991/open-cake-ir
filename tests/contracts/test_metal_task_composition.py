@@ -56,7 +56,7 @@ class MetalTaskCompositionTests(unittest.TestCase):
                           "service_user":"test-user","service_group":"test-group"}}
             if not metal:
                 runtime['toolchain'] = {'python':'/unit-test/python','bubblewrap':'/unit-test/bwrap',
-                    'runtime_roots':['/unit-test'],'library_path':[],'triton_version':'3.6.0','timeout_seconds':600}
+                    'runtime_roots':['/unit-test'],'build_environment':{},'triton_version':'3.6.0','timeout_seconds':600}
             runtime_path = directory/'runtime.json'
             runtime_path.write_bytes(canonical(runtime))
             execution = {"broker_execution_sha256":"broker-fixture",
