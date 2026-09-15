@@ -43,6 +43,13 @@
       "executor_id": "open-cake-ir-gfx938-v10+8ea5d04d3af14607232c047f2956b4a927dd39eedcbae6ac3644ce08a7d01e77",
       "path": "runtime/executors/open-cake-ir-gfx938-v10+8ea5d04d3af14607232c047f2956b4a927dd39eedcbae6ac3644ce08a7d01e77.json",
       "source_count": 167
+    },
+    "sm_103a": {
+      "canonical_sha256": "b232bc99ec79f36c0c7731ea9f0a5e070457dbd0cec58a2688f31aa3a3377f13",
+      "descriptor_raw_sha256": "13ed810aae90a57a5780a24b956732ee6de4891b5021ceb887171082ab7fdb40",
+      "executor_id": "open-cake-ir-b200-v133+868ff6598dad7f72ca001a1f7488985ec6536593d57280e785a775c7b03b50b5",
+      "path": "runtime/executors/open-cake-ir-b200-v133+868ff6598dad7f72ca001a1f7488985ec6536593d57280e785a775c7b03b50b5.json",
+      "source_count": 167
     }
   },
   "schema_version": 2,
