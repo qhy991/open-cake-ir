@@ -34,7 +34,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-15-005 — explicit caller-selected Triton CTA width from RMSNorm-gradient and SwiGLU evidence (capacity; Compiler v85, two B300 fixed-shape paired confirmations and NCU; broader transfer unverified)
+- F-2026-09-15-005 — explicit caller-selected Triton CTA width (Compiler v85; RMSNorm gradient, SwiGLU, softmax backward and cosine similarity validated at one B300 shape with paired confirmations/NCU; broader shape/architecture transfer unverified)
 
 - F-2026-09-15-004 — vendor, code-object family, lowering route and allocation are four axes, and shared code keeps collapsing them into hand-enumerated target ids; ten repairs in one bring-up are the same defect (capacity, proposed; declaring the code object is the next step warp_size and vendor began, and the eight-gate readiness checklist covered the compile chain and had no gate for how a sealed candidate reaches a device)
 - F-2026-09-15-002 — Hygon DCU gfx938 is measurable AMD hardware, retiring F-2026-09-13-006's "no AMD device measurement is available"; its steps 2 and 3 and the first AMD Target land together (capacity, accepted; Gate 150/150, device-checked, ADR 0052 review and paired Executor successor pending)

@@ -51,7 +51,33 @@
       "candidate_pair_wins": 10
     },
     "null_results": "Both current width-1 floors match their paired old baselines (speedup 1.0); RMS width 8 and 16 have equal search medians. No universal optimal-width rule follows.",
-    "limits": "FP32 128x1024 on sm_103a only. SwiGLU baseline is 3.488 us during search and 3.648 us during confirmation: report each ratio from its own pair, not a cross-phase denominator. No automatic default change, broad architecture transfer, serving/E2E or retroactive promotion of old faulted Runs."
+    "limits": "FP32 128x1024 on sm_103a only. SwiGLU baseline is 3.488 us during search and 3.648 us during confirmation: report each ratio from its own pair, not a cross-phase denominator. No automatic default change, broad architecture transfer, serving/E2E or retroactive promotion of old faulted Runs.",
+    "additional_task_validation": {
+      "source_commit": "a5734239c6fa2a55aec5f874a3e88a78cb02f883",
+      "compiler_and_executor": "Same frozen Compiler v85 / Executor v126; only the reusable CLI and explicit task selection were added",
+      "evidence_root": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oc-width-transfer-20260915-KoekDV",
+      "result": "evaluation/result.json",
+      "tasks": ["softmax_backward", "cosine_similarity"],
+      "checks": "Six searches, two fresh confirmations and two primary NCU profiles completed, exit 0; eight timing receipts retain both participants' five-case correctness and stable paired samples",
+      "softmax_backward": {
+        "selected_num_warps": 16,
+        "baseline_ms": 0.0029275,
+        "candidate_ms": 0.00256,
+        "paired_speedup": 1.1435546875,
+        "candidate_pair_wins": 10,
+        "receipt": "evaluation/softmax_backward/w16/confirmatory/receipt.json"
+      },
+      "cosine_similarity": {
+        "selected_num_warps": 8,
+        "baseline_ms": 0.002976,
+        "candidate_ms": 0.002528,
+        "paired_speedup": 1.177215189873418,
+        "candidate_pair_wins": 10,
+        "receipt": "evaluation/cosine_similarity/w8/confirmatory/receipt.json"
+      },
+      "null_and_selection_limits": "Width-1 floors classify close_null (softmax backward 1.01099x, cosine 1.0x). Cosine width16 is slower than width8 in search but still faster than its paired baseline; only the selected width8 received fresh confirmation. No universal preferred width or statistically blind holdout claim.",
+      "disposition": "The existing pass transferred to two additional fixed-shape tasks. No new IR primitive, automatic parameter choice or Compiler Revision was justified by this round."
+    }
   },
   "verification_plan": "Independent source review and full Corpus Gate; public positive/negative tests including a held-out family. On the successor, evaluate current width-1 floor and pass-produced width-8/16 candidates for RMSNorm gradient and SwiGLU against the same old fixed baselines, with five-case correctness, stable paired timing and NCU. Retain null/negative transfer and original failed Run states."
 }
