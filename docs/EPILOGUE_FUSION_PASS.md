@@ -48,7 +48,7 @@ cast 既不构成可靠的舍入边界，也不是 IR 的合法规范形式。�
 ```python
 from open_cake_ir.compiler import Compiler, frontend
 
-compiler = Compiler.load(".", "compiler/revision.lock.json")
+compiler = Compiler.load(".", "compiler/revision.json")
 producer = frontend.read_schedule("examples/python/epilogue_producer.py").document
 consumer = frontend.read_schedule("examples/python/epilogue_consumer.py").document
 result = compiler.fuse_pointwise_epilogue(

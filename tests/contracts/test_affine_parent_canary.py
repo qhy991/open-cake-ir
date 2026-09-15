@@ -70,9 +70,8 @@ class AffineParentCanaryTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 canary.verify(record)
 
-    @unittest.skipUnless(
-        json.loads((ROOT / "compiler/revision.json").read_text())["revision_id"] == "open-cake-ir-sm100a-v43",
-        "requires the canary's complete frozen Compiler v43 checkout",
+    @unittest.skip(
+        "the affine parent canary replays in its own frozen v43 checkout (ADR 0065)"
     )
     def test_prepare_uses_pinned_schedule_and_one_correctness_stage(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -92,11 +91,6 @@ class AffineParentCanaryTests(unittest.TestCase):
                 prepare.prepare(output, Path(sys.executable).absolute(), ROOT)
             self.assertEqual((output / "candidate/kernel.py").read_text(), source)
 
-    @unittest.skipIf(
-        json.loads((ROOT / "compiler/revision.json").read_text())["revision_id"]
-        == "open-cake-ir-sm100a-v43",
-        "the current checkout is the canary's original v43 Compiler",
-    )
     def test_prepare_refuses_a_different_compiler_checkout(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "bundle"

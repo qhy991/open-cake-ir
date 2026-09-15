@@ -79,13 +79,13 @@ class TaskEfficiencyTests(unittest.TestCase):
                 workload_path = source / "workload.json"
                 workload_path.write_text(json.dumps(self.document))
                 workload = load_workload(workload_path)
-                target_path = source / "target.json"
+                target_path = source / "compiler/targets/apple_gpu_family7.json"
+                target_path.parent.mkdir(parents=True, exist_ok=True)
                 target_document = json.loads((ROOT / "compiler/targets/apple_gpu_family7.json").read_text())
                 target_document["peak"] = {"memory_bandwidth": {"bytes_per_second": 200e9,
                     "source": "device_specification", "observed_at": "2026-09-13"}}
                 target_path.write_text(json.dumps(target_document))
-                (source / "compiler.json").write_text(json.dumps({"target_definitions": {
-                    "apple_gpu_family7": {"path": "target.json"}}}))
+                (source / "compiler.json").write_text(json.dumps({"schema_version": 2}))
                 store = EvidenceStore.create(base / "evidence")
                 run = store.start_run("open_cake-1", authority_sha256=sha256(b"{}").hexdigest(), authority={})
                 for purpose, good, stable, latency in (

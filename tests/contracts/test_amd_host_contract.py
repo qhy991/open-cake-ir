@@ -46,16 +46,8 @@ class HipExecutorFixture:
         libxml2.write_bytes(b"ELF libxml2 fixture\n")
         python = Path(sys.executable).absolute()
         self.document: dict[str, object] = {
-            "schema_version": 2,
-            "executor_id": "open-cake-ir-gfx1151-v1",
-            "state": "released",
-            "sources": [
-                {
-                    "path": "runner.py",
-                    "sha256": sha256(source.read_bytes()).hexdigest(),
-                    "size_bytes": source.stat().st_size,
-                }
-            ],
+            "schema_version": 1,
+            "target": "gfx1151",
             "host_environment": {
                 "kind": "hip",
                 "platform": {
@@ -93,8 +85,9 @@ class HipExecutorFixture:
                 },
             },
         }
-        self.path = self.root / "runtime/executors/open-cake-ir-gfx1151-v1.json"
+        self.path = self.root / "runtime/hosts/gfx1151.json"
         self.write()
+        self.commit = self.commit_fixture()
 
     @staticmethod
     def tool_record(kind: str, path: Path) -> dict[str, object]:
@@ -122,12 +115,34 @@ class HipExecutorFixture:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self.document), encoding="utf-8")
 
+    def commit_fixture(self) -> str:
+        """The capture only has an identity once the fixture checkout commits it."""
+        import subprocess
+
+        def run(*arguments: str) -> str:
+            return subprocess.run(
+                ["git", "-C", str(self.root), "-c", "user.name=fixture",
+                 "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false",
+                 *arguments],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+
+        if not (self.root / ".git").exists():
+            run("init", "-q")
+        run("add", "-A")
+        run("commit", "-q", "--no-verify", "--allow-empty", "-m", "host capture fixture")
+        self.commit = run("rev-parse", "HEAD")
+        return self.commit
+
     @property
     def host(self) -> dict[str, object]:
         return self.document["host_environment"]  # type: ignore[return-value]
 
     def load(self) -> ExecutorRevision:
-        return ExecutorRevision.load(self.root, self.path)
+        # Whatever this fixture changed is committed first: a changed capture or tool is
+        # a new commit, and admission is what these tests are about.
+        self.commit_fixture()
+        return ExecutorRevision.for_target(self.root, "gfx1151")
 
 
 class HipExecutorSchemaTests(unittest.TestCase):
@@ -136,8 +151,8 @@ class HipExecutorSchemaTests(unittest.TestCase):
 
         executor = fixture.load()
 
-        self.assertEqual(executor.executor_id, "open-cake-ir-gfx1151-v1")
-        with self.assertRaisesRegex(ValueError, "B200 host admission"):
+        self.assertEqual(executor.executor_id, f"gfx1151@{fixture.commit}")
+        with self.assertRaisesRegex(ValueError, "admitted through admit_hip_host"):
             executor.admit_host()
         with self.assertRaisesRegex(ValueError, "does not pin Nsight Compute"):
             executor.admit_profiler()
@@ -160,7 +175,7 @@ class HipExecutorSchemaTests(unittest.TestCase):
             "extra_package": lambda fixture: fixture.host["packages"].__setitem__(
                 "numpy", "2.0"
             ),
-            "b200_identity": lambda fixture: fixture.document.__setitem__(
+            "foreign_identity_field": lambda fixture: fixture.document.__setitem__(
                 "executor_id", "open-cake-ir-b200-v31"
             ),
         }
@@ -223,7 +238,7 @@ class HipExecutorAdmissionTests(unittest.TestCase):
 
         admission = self._admit(fixture.load(), self._torch())
 
-        self.assertEqual(admission.executor_id, "open-cake-ir-gfx1151-v1")
+        self.assertEqual(admission.executor_id, f"gfx1151@{fixture.commit}")
         self.assertEqual(admission.torch_hip_version, "7.2.1")
         self.assertEqual(admission.visible_device_count, 1)
         self.assertEqual(admission.device_monitor["kind"], "amd-smi")

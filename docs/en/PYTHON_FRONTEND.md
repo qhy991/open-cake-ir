@@ -37,11 +37,11 @@ Use the project environment from [Getting started](GETTING_STARTED.md), running 
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler assess \
-  --revision compiler/revision.lock.json examples/python/fma.py --format text
+  --revision compiler/revision.json examples/python/fma.py --format text
 
 CAKE_PYTHON_OUTPUT=$(mktemp -d)
 PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler lower \
-  --revision compiler/revision.lock.json examples/python/fma.py \
+  --revision compiler/revision.json examples/python/fma.py \
   --output "$CAKE_PYTHON_OUTPUT/fma.py" --format text
 ```
 

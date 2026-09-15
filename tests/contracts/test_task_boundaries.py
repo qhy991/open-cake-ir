@@ -53,9 +53,10 @@ class TaskOwnershipTests(unittest.TestCase):
         self.assertEqual(result.returncode,2)
         self.assertIn("invalid choice",result.stderr)
 
-    def test_executor_closure_includes_nested_task_implementations(self):
-        from tools.release_executor import _source_paths
-        sources={path.relative_to(ROOT).as_posix() for path in _source_paths(ROOT)}
+    def test_the_commit_covers_every_nested_task_implementation(self):
+        """The Executor closure is the commit, so task code counts once it is tracked."""
+        tracked=set(subprocess.run(["git","-C",str(ROOT),"ls-files"],check=True,
+                                   capture_output=True,text=True).stdout.splitlines())
         expected={path.relative_to(ROOT).as_posix() for path in (ROOT/"src/open_cake_ir/tasks").rglob("*.py")}
-        self.assertTrue(expected <= sources)
-        self.assertIn("src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",sources)
+        self.assertTrue(expected <= tracked)
+        self.assertIn("src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",tracked)

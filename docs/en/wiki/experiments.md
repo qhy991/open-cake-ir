@@ -31,7 +31,7 @@ Read [current release status](../../../reports/current/STATUS.md). The two no-GP
 ```bash
 .venv/bin/python tools/render_current_status.py --check
 .venv/bin/open-cake-ir compiler check-corpus --format text \
-  --revision compiler/revision.lock.json
+  --revision compiler/revision.json
 ```
 
 Neither allocates a GPU or calls AI. A real run still needs the actual host, toolchain, driver, and controlled allocation. Old absolute paths do not prove current availability. Infrastructure templates contain simulated provider/toolchain facts and cannot be relabeled as a live environment.

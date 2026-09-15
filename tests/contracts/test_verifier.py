@@ -230,9 +230,7 @@ class QuietOnValidScheduleTest(unittest.TestCase):
         paths = sorted(accepted) + [
             ROOT / "examples" / "gpu" / "flash-kmeans-b32-smoke-v2.json"
         ]
-        targets = json.loads(
-            (ROOT / "compiler" / "revision.lock.json").read_text(encoding="utf-8")
-        )["target_definitions"]
+        targets = {path.stem: path for path in (ROOT / "compiler/targets").glob("*.json")}
         for path in paths:
             with self.subTest(schedule=path.name):
                 document = corpus_document(path)
@@ -241,7 +239,7 @@ class QuietOnValidScheduleTest(unittest.TestCase):
                         Schedule.from_dict(document)
                     continue
                 schedule = Schedule.from_dict(document)
-                target = Target.load(ROOT / targets[schedule.target]["path"])
+                target = Target.load(targets[schedule.target])
                 self.assertEqual(_blocking(verify(schedule, target)), ())
 
     def test_a_broadcast_axis_no_shape_rule_could_infer_is_checked(self) -> None:

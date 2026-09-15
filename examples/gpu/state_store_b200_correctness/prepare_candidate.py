@@ -36,23 +36,22 @@ NEGATIVE = {
 def _load_frozen_compiler() -> Compiler:
     if Path(inspect.getfile(Compiler)).resolve() != ROOT / "src/open_cake_ir/compiler/core.py":
         raise RuntimeError("state-store v5 imported a Compiler from a different checkout")
+    # Source identity is the commit (ADR 0065), so the frozen source is checked by
+    # comparing this checkout's clean commit with the one this candidate was built from.
     try:
-        frozen_lock = subprocess.run(
-            ["git", "--no-replace-objects", "-C", str(ROOT), "show",
-             f"{FIXED_SOURCE_COMMIT}:compiler/revision.lock.json"],
-            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError) as error:
+        from open_cake_ir.source_identity import checkout_commit
+    except ImportError as error:  # pragma: no cover - import guard
+        raise RuntimeError("state-store v5 requires the Compiler source tree") from error
+    try:
+        commit = checkout_commit(ROOT)
+    except ValueError as error:
         raise RuntimeError(
-            "state-store v5 requires a Git checkout containing Compiler commit "
-            f"{FIXED_SOURCE_COMMIT}; a source archive alone cannot verify its origin"
+            "state-store v5 requires a clean Git checkout containing Compiler commit "
+            f"{FIXED_SOURCE_COMMIT}; a source archive alone cannot verify its origin: {error}"
         ) from error
-    lock_path = ROOT / "compiler/revision.lock.json"
-    if lock_path.read_bytes() != frozen_lock:
-        raise RuntimeError("current Compiler lock differs from the frozen state-store v5 source")
-    # The existing released-Compiler loader verifies every bound source, Target,
-    # Gate and approval. A later release needs an explicit task successor.
-    return Compiler.load(ROOT, lock_path)
+    if commit != FIXED_SOURCE_COMMIT:
+        raise RuntimeError("current Compiler commit differs from the frozen state-store v5 source")
+    return Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
 
 def _decisive(assessment) -> list[tuple[str, str]]:

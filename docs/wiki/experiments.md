@@ -52,7 +52,7 @@ AI 看到 `TASK.md` 中的题目和预算，以及 `AGENTS.md` 中的工具与�
 ```bash
 .venv/bin/python tools/render_current_status.py --check
 .venv/bin/open-cake-ir compiler check-corpus --format text \
-  --revision compiler/revision.lock.json
+  --revision compiler/revision.json
 ```
 
 这两个命令不会申请 GPU，也不会调用 AI。

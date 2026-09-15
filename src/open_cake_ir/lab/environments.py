@@ -107,8 +107,6 @@ class OpenCakeEnvironment:
         case_id: str,
         executor: ExecutorRevision | None = None,
     ) -> None:
-        if compiler.commit is None:
-            raise ValueError("Open Cake Environment requires a Compiler at a clean committed checkout")
         self._compiler = compiler
         self._toolchain = toolchain
         self._workload = workload

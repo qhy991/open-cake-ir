@@ -13,7 +13,7 @@ Use a clean Git checkout with Python 3.10 or newer:
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
 .venv/bin/python -m open_cake_ir.cli compiler check-corpus \
-  --revision compiler/revision.lock.json
+  --revision compiler/revision.json
 .venv/bin/python -m pytest tests/contracts
 ```
 

@@ -110,13 +110,16 @@ class PublicIrBoundaryTest(unittest.TestCase):
                     for annotation in hints.values():
                         check_annotation(annotation)
 
-    def test_compiler_source_set_covers_imported_ir_code(self) -> None:
-        """A new IR module must remain inside the frozen Compiler source closure."""
-        paths = set(json.loads((ROOT / "compiler/source_set.json").read_text())["paths"])
+    def test_the_commit_covers_every_imported_ir_module(self) -> None:
+        """A new IR module joins the Compiler identity only once it is tracked."""
+        import subprocess
+
+        tracked = set(subprocess.run(["git", "-C", str(ROOT), "ls-files"], check=True,
+                                     capture_output=True, text=True).stdout.splitlines())
         for name, module in tuple(sys.modules.items()):
             if name == ir.__name__ or name.startswith(ir.__name__ + "."):
                 with self.subTest(module=name):
-                    self.assertIn(Path(module.__file__).resolve().relative_to(ROOT).as_posix(), paths)
+                    self.assertIn(Path(module.__file__).resolve().relative_to(ROOT).as_posix(), tracked)
 
 
 class RetainedScheduleTest(unittest.TestCase):

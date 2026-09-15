@@ -15,7 +15,7 @@ from hashlib import sha256
 from open_cake_ir.lab.executor import ExecutorRevision, admit_host_environment, admit_profiler_environment
 from open_cake_ir.lab.metal_host import validate_metal_host, inspect_metal_host
 from open_cake_ir.lab.metal_build import MetalArchiveHost
-from tools import capture_executor_host as capture, release_executor
+from tools import capture_executor_host as capture
 
 
 class MetalExecutorContracts(unittest.TestCase):
@@ -146,17 +146,6 @@ class MetalExecutorContracts(unittest.TestCase):
             command.assert_not_called()
         self.assertFalse((self.root / "host.json").exists())
 
-    def test_executor_source_closure_includes_native_assets(self):
-        source_root = self.root / "runtime"
-        (source_root / "metal").mkdir(parents=True)
-        (source_root / "host.py").write_text("pass\n")
-        observer = source_root / "metal/observer.swift"
-        observer.write_text("// native observation source fixture\n")
-        (source_root / "readme.md").write_text("not executable runtime source\n")
-        with patch.object(release_executor, "_SOURCE_ROOTS", ("runtime",)), \
-             patch.object(release_executor, "_SOURCE_FILES", ()):
-            paths = release_executor._source_paths(self.root)
-        self.assertEqual(set(paths), {source_root / "host.py", observer})
 
 
 if __name__ == "__main__":

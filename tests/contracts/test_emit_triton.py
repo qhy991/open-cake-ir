@@ -1016,7 +1016,7 @@ class EmittedObservationTest(unittest.TestCase):
     def test_each_observation_remains_historical_after_route_migration(self) -> None:
         from open_cake_ir.compiler import Compiler
 
-        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.json")
         for name, record_name, schedule_name in self.OBSERVED:
             with self.subTest(operator=name):
                 record = json.loads(
@@ -1050,7 +1050,7 @@ class EmittedObservationTest(unittest.TestCase):
     def test_a_row_wise_kernel_carries_no_loop(self) -> None:
         from open_cake_ir.compiler import Compiler
 
-        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.json")
         for schedule_name in self.LOOPLESS:
             with self.subTest(schedule=schedule_name):
                 source = compiler.lower(
@@ -1073,7 +1073,7 @@ class EmittedObservationTest(unittest.TestCase):
 
         from open_cake_ir.compiler import Compiler
 
-        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.json")
         schedules = ROOT / "corpus" / "schedules"
         gemm = compiler.lower(
             compiler.assess_file(schedules / "gemm-bias-b1-smoke.json")
@@ -1099,7 +1099,7 @@ class EmittedObservationTest(unittest.TestCase):
 
         from open_cake_ir.compiler import Compiler
 
-        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.lock.json")
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.json")
         source = compiler.lower(
             compiler.assess_file(
                 ROOT / "corpus" / "schedules" / "rmsnorm-b128-persistent.json"

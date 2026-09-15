@@ -123,7 +123,8 @@ python3 -m venv .venv
 正式术语见 [GLOSSARY](docs/GLOSSARY.md)，执行流程见 [RUNBOOK](docs/zh-CN/RUNBOOK.md)，
 设计决策见 [ADR](docs/adr/README.md)，代码职责见 [CONTEXT-MAP](docs/zh-CN/CONTEXT-MAP.md)。
 
-当前版本只由下面两个文件决定，README 不另存一份版本表：
+当前版本由这份检出的 git 提交决定，README 不另存一份版本表：
 
-- [`compiler/revision.lock.json`](compiler/revision.lock.json)：Compiler。
-- [`inventory/EXECUTOR_REVISIONS.json`](inventory/EXECUTOR_REVISIONS.json)：Executor。
+- [`compiler/revision.json`](compiler/revision.json) 与 [`compiler/targets/`](compiler/targets)：编译器绑定的语料与已声明目标。
+- [`runtime/hosts/`](runtime/hosts)：每个精确目标已提交的主机采集。
+- 提交本身就是源码身份，见 [ADR 0065](docs/adr/0065-source-identity-is-the-commit.md)。

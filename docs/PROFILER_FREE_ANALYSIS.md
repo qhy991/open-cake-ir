@@ -85,7 +85,7 @@ launch 线程数；不按 Schedule 显示名称猜测匹配。记录携带原编
 
 ```bash
 python3 src/open_cake_ir/tasks/qsa/project_feedback.py compiler \
-  --revision compiler/revision.lock.json \
+  --revision compiler/revision.json \
   --compiled-report /tmp/cake-compiled-profile/report.json \
   corpus/schedules/gemm-bias-b1-smoke.json
 ```

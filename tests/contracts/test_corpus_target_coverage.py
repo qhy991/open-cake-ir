@@ -13,7 +13,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.compiler.corpus import CorpusCaseReport, CorpusGateReport  # noqa: E402
-from open_cake_ir.compiler.release import build_gate_report  # noqa: E402
 
 
 def _case(case_id: str, target: str, *, matched: bool = True) -> CorpusCaseReport:
@@ -105,11 +104,9 @@ class LiveCorpusContracts(unittest.TestCase):
             if case.case_id in declared_by_path:
                 self.assertEqual(case.target, declared_by_path[case.case_id], case.case_id)
 
-    def test_the_declared_target_set_matches_the_revision(self):
-        revision = json.loads((ROOT / "compiler/revision.json").read_text(encoding="utf-8"))
-        self.assertEqual(
-            set(self.report.declared_targets), set(revision["target_definitions"])
-        )
+    def test_the_declared_target_set_is_the_targets_directory(self):
+        declared = {path.stem for path in (ROOT / "compiler/targets").glob("*.json")}
+        self.assertEqual(set(self.report.declared_targets), declared)
 
     def test_unexamined_is_derived_from_the_manifest_not_asserted(self):
         counted = {case.target for case in self.report.cases}
@@ -119,21 +116,6 @@ class LiveCorpusContracts(unittest.TestCase):
         )
 
 
-class GateDocumentContracts(unittest.TestCase):
-    def test_the_reviewed_gate_document_states_the_domain_it_examined(self):
-        gate = build_gate_report(ROOT, ROOT / "compiler/revision.json", ROOT / "compiler/source_set.json")
-        coverage = gate.document["target_coverage"]
-        self.assertEqual(
-            set(coverage), {"declared", "examined", "unexamined", "undeclared_in_cases"}
-        )
-        report = Compiler.load(ROOT, ROOT / "compiler/revision.json").check_corpus()
-        self.assertEqual(coverage["declared"], list(report.declared_targets))
-        self.assertEqual(coverage["examined"], dict(report.examined_targets))
-        self.assertEqual(coverage["unexamined"], list(report.unexamined_targets))
-        self.assertEqual(
-            coverage["undeclared_in_cases"], dict(report.undeclared_case_targets)
-        )
-        self.assertIn("target", asdict(report.cases[0]))
 
 
 if __name__ == "__main__":

@@ -67,7 +67,7 @@ successor boundary.
 ## Acceptance evidence
 
 - The README contains no hand-maintained release history or opaque migration-gate codes.
-- Generated current status matches `compiler/revision.lock.json` and
+- Generated current status matches `compiler/revision.json` and
   `inventory/EXECUTOR_REVISIONS.json`.
 - Context documents do not carry parallel glossary definitions.
 - Stable gate headings use capability names rather than sequence codes.

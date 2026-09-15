@@ -26,7 +26,7 @@ relationships only.
   program safety, and backend lowering preconditions.
 - Report modeled analysis coverage without presenting estimates as GPU truth.
 - Deterministically lower eligible Schedules to inspectable source for a current backend.
-- Release semantics only through the full Corpus Gate and external approval boundary.
+- Change semantics only through the full Corpus Gate and one review at the merge to `main`.
 
 The Compiler does not own Workload semantics, input materialization, correctness oracles,
 providers, Campaigns, GPU allocation, Evaluation, Evidence, or claims.
@@ -36,10 +36,10 @@ providers, Campaigns, GPU allocation, Evaluation, Evidence, or claims.
 - A Schedule is assessed by exactly one Compiler Revision against exactly one Target.
 - An Assessment contains zero or more Findings and separately records acceptance and
   lowering eligibility.
-- A released Compiler Revision binds one complete Corpus expectation set.
+- A Compiler Revision at one clean commit binds one complete Corpus expectation set.
 - Calibration belongs to one Compiler Revision and Target domain and never transfers
   implicitly.
-- The Lab may consume a released Compiler Revision; the Compiler never imports the Lab.
+- The Lab may consume a Compiler Revision at a clean commit; the Compiler never imports the Lab.
 
 ## Boundary examples
 

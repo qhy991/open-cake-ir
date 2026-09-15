@@ -1,39 +1,32 @@
+"""Executor identity: one clean commit over one committed host capture (ADR 0065)."""
+
 from __future__ import annotations
 
 import json
 import os
 import re
-import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-from hashlib import sha256
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-# The current Executor Revision advances whenever a runtime source changes. Read it from
-# the inventory rather than naming a version, so a bump is not a test edit.
-_INVENTORY = json.loads(
-    (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-)
-CURRENT_RECORD = next(iter(_INVENTORY["current_by_target"].values()), None)
-if CURRENT_RECORD is None:
-    # During an inventory-schema tick the successor is minted before this suite runs.
-    raise RuntimeError("Executor contract tests require one exact-target current release")
-CURRENT_EXECUTOR = ROOT / CURRENT_RECORD["path"]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab import ExecutorRevision  # noqa: E402
+from open_cake_ir.lab.executor import HOSTS_DIRECTORY  # noqa: E402
+from open_cake_ir.source_identity import checkout_commit_or_none  # noqa: E402
+
+HOSTS = ROOT / HOSTS_DIRECTORY
 
 
 def _synthetic_cuda_host() -> dict:
     """Schema-only CPU fixture, following the existing paired/Flash fixtures.
 
     These deliberately nonexistent runtime paths must never be admitted as a
-    real host. The fixture tests source binding and CUDA advisory contracts,
-    independently of whichever hardware owns the current released Executor.
+    real host. The fixture tests reference admission and CUDA advisory contracts,
+    independently of whichever hardware owns a captured host.
     """
     return {
         "python": {"invocation_path": "/SYNTHETIC/not-an-executable/python",
@@ -47,350 +40,69 @@ def _synthetic_cuda_host() -> dict:
     }
 
 
-class ExecutorRevisionContractTests(unittest.TestCase):
-    def test_inventory_observation_plans_keep_bound_executor_bytes_resolvable(self) -> None:
-        bindings: list[tuple[str, str]] = []
+def _git(root: Path, *arguments: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(root), "-c", "user.name=fixture",
+         "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", *arguments],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
 
-        def collect(value: object) -> None:
-            if isinstance(value, dict):
-                if {
-                    "executor_descriptor",
-                    "executor_descriptor_raw_sha256",
-                } <= set(value):
-                    bindings.append(
-                        (
-                            str(value["executor_descriptor"]),
-                            str(value["executor_descriptor_raw_sha256"]),
-                        )
-                    )
-                for child in value.values():
-                    collect(child)
-            elif isinstance(value, list):
-                for child in value:
-                    collect(child)
 
-        for path in (ROOT / "inventory").glob("*.json"):
-            collect(json.loads(path.read_text(encoding="utf-8")))
+class CommittedHostCaptureTests(unittest.TestCase):
+    """What this checkout publishes: one capture per exact target, and nothing else."""
 
-        self.assertTrue(bindings)
-        for relative, expected_sha256 in bindings:
-            with self.subTest(path=relative):
-                source = ROOT / relative
-                self.assertTrue(source.is_file())
-                self.assertEqual(sha256(source.read_bytes()).hexdigest(), expected_sha256)
+    def test_every_capture_is_named_by_the_target_it_describes(self) -> None:
+        captures = sorted(HOSTS.glob("*.json"))
+        self.assertTrue(captures, "this checkout publishes no host capture")
+        for path in captures:
+            with self.subTest(target=path.stem):
+                document = json.loads(path.read_text(encoding="utf-8"))
+                self.assertEqual(set(document), {"schema_version", "target", "host_environment"})
+                self.assertEqual(document["schema_version"], 1)
+                self.assertEqual(document["target"], path.stem)
+                host = document["host_environment"]
+                self.assertIn(host.get("kind"), {None, "metal", "hip"})
+                if host.get("kind") == "metal":
+                    self.assertEqual(host["host"]["target"], path.stem)
 
-    def test_released_executor_covers_the_complete_runtime_source_closure(self) -> None:
-        executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
-        self.assertEqual(executor.executor_id, CURRENT_RECORD["executor_id"])
-        self.assertEqual(
-            CURRENT_EXECUTOR.stat().st_mode & 0o444,
-            0o444,
-        )
-        observed = {
-            str(record["path"])
-            for record in executor.document["sources"]
-        }
-        expected = {
-            path.relative_to(ROOT).as_posix()
-            for directory in (
-                ROOT / "src/open_cake_ir/lab",
-                ROOT / "src/open_cake_ir/evaluation",
-                ROOT / "src/open_cake_ir/evidence",
-                ROOT / "src/open_cake_ir/tasks",
-            )
-            for path in directory.rglob("*") if path.suffix in {".py", ".swift"}
-        } | {
-            "contracts/scaffolds/open-cake-clean-start-v1.json",
-            "contracts/scaffolds/direct-cuda-clean-start-v1.cu",
-            "contracts/scaffolds/matched-search-v1.md",
-            "docs/en/PAIRED_TRITON.md",
-            "docs/en/PAIRED_CUTE.md",
-            "contracts/providers/native-cute-candidate-v1.schema.json",
-            "examples/gpu/flash_kmeans_quickstart.py",
-            "src/open_cake_ir/__init__.py",
-            "src/open_cake_ir/cli.py",
-            "src/open_cake_ir/serialization.py",
-            "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu",
-            "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json",
-            "tools/capture_executor_host.py",
-            "tools/observe_target_peak.py",
-        }
+    def test_a_capture_carries_the_checkout_commit_as_its_identity(self) -> None:
+        commit = checkout_commit_or_none(ROOT)
+        if commit is None:
+            self.skipTest("this checkout has uncommitted or untracked changes")
+        for path in sorted(HOSTS.glob("*.json")):
+            with self.subTest(target=path.stem):
+                executor = ExecutorRevision.for_target(ROOT, path.stem)
+                self.assertEqual(executor.executor_id, f"{path.stem}@{commit}")
+                self.assertEqual(executor.relative_path, f"{HOSTS_DIRECTORY}/{path.stem}.json")
+                self.assertEqual(executor.document["commit"], commit)
+                with self.assertRaises(TypeError):
+                    executor.document["host_environment"]["packages"]["torch"] = "changed"
 
-        self.assertEqual(observed, expected)
-        with self.assertRaises(TypeError):
-            executor.document["host_environment"]["packages"]["torch"] = "changed"
+    def test_a_target_without_a_capture_is_reported_as_having_none(self) -> None:
+        with self.assertRaisesRegex(ValueError, "no host capture is published"):
+            ExecutorRevision.for_target(ROOT, "synthetic-absent-target")
 
     @unittest.skipUnless(os.environ.get("OPEN_CAKE_RUN_BOUND_EXECUTOR_TESTS") == "1",
-                         "requires the released Executor's exact runtime/profiler host; opt in with OPEN_CAKE_RUN_BOUND_EXECUTOR_TESTS=1")
-    def test_current_executor_pins_the_attribution_profiler(self) -> None:
-        executor = ExecutorRevision.load(ROOT, CURRENT_EXECUTOR)
+                         "requires the captured host's exact runtime/profiler; opt in with "
+                         "OPEN_CAKE_RUN_BOUND_EXECUTOR_TESTS=1")
+    def test_a_capture_pins_the_attribution_profiler(self) -> None:
+        captures = sorted(HOSTS.glob("*.json"))
+        executor = ExecutorRevision.for_target(ROOT, captures[0].stem)
         profiler = executor.admit_profiler()
         if executor.document["host_environment"].get("kind") == "metal":
-            self.assertEqual(dict(profiler), dict(executor.document["host_environment"]["observer_executable"]))
+            self.assertEqual(dict(profiler),
+                             dict(executor.document["host_environment"]["observer_executable"]))
             return  # This observer has no --version command; do not dispatch it.
-        completed = subprocess.run(
-            [str(profiler["path"]), "--version"], check=True, capture_output=True,
-            text=True, timeout=30,
-        )
+        completed = subprocess.run([str(profiler["path"]), "--version"], check=True,
+                                   capture_output=True, text=True, timeout=30)
         match = re.search(r"^Version (\S+)", completed.stdout, re.MULTILINE)
         self.assertIsNotNone(match, completed.stdout)
         assert match is not None
         self.assertEqual(profiler["version"], match.group(1))
 
-    def test_g8_inventory_resolves_the_complete_historical_executor(self) -> None:
-        inventory = json.loads(
-            (ROOT / "inventory/G8_SYSTEM_QUALIFICATION_20260822.json").read_text()
-        )
-        reference = inventory["executor_revision"]
-        archive_root = ROOT / reference["archive_root"]
-        executor = ExecutorRevision.load(
-            archive_root,
-            archive_root / "runtime/executor.json",
-        )
-
-        self.assertEqual(executor.executor_id, reference["executor_id"])
-        self.assertEqual(executor.canonical_sha256, reference["canonical_sha256"])
-        self.assertEqual(
-            sha256((archive_root / "runtime/executor.json").read_bytes()).hexdigest(),
-            reference["descriptor_raw_sha256"],
-        )
-        self.assertEqual(len(executor.document["sources"]), reference["source_count"])
-        self.assertNotEqual(
-            executor.canonical_sha256,
-            ExecutorRevision.load(ROOT, CURRENT_EXECUTOR).canonical_sha256,
-        )
-
-    def test_executor_revision_inventory_resolves_current_and_archived_closures(self) -> None:
-        inventory = json.loads(
-            (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
-        )
-        for target, current in inventory["current_by_target"].items():
-            with self.subTest(target=target):
-                current_executor = ExecutorRevision.load(ROOT, ROOT / current["path"])
-                self.assertEqual(current_executor.executor_id, current["executor_id"])
-                self.assertEqual(current_executor.canonical_sha256, current["canonical_sha256"])
-                self.assertEqual(len(current_executor.document["sources"]), current["source_count"])
-                self.assertEqual(
-                    sha256((ROOT / current["path"]).read_bytes()).hexdigest(),
-                    current["descriptor_raw_sha256"],
-                )
-        for archived in inventory["archives"]:
-            archive_root = ROOT / archived["archive_root"]
-            executor = ExecutorRevision.load(
-                archive_root,
-                archive_root / "runtime/executor.json",
-            )
-            self.assertEqual(executor.executor_id, archived["executor_id"])
-            self.assertEqual(executor.canonical_sha256, archived["canonical_sha256"])
-            self.assertEqual(len(executor.document["sources"]), archived["source_count"])
-            self.assertEqual(
-                sha256((archive_root / "runtime/executor.json").read_bytes()).hexdigest(),
-                archived["descriptor_raw_sha256"],
-            )
-
-    def test_executor_release_is_create_only_and_world_readable(self) -> None:
-        document = json.loads(CURRENT_EXECUTOR.read_text(encoding="utf-8"))
-        document["executor_id"] = "open-cake-ir-test-v1"
-        document["state"] = "draft"
-        document["sources"] = []
-        with tempfile.TemporaryDirectory() as directory:
-            temporary = Path(directory)
-            proposal = temporary / "proposal.json"
-            output = temporary / "released.json"
-            proposal.write_text(json.dumps(document), encoding="utf-8")
-            command = (
-                sys.executable,
-                str(ROOT / "tools/release_executor.py"),
-                "--project-root",
-                str(ROOT),
-                "--proposal",
-                str(proposal),
-                "--output",
-                str(output),
-            )
-
-            first = subprocess.run(command, capture_output=True, check=False)
-            self.assertEqual(first.returncode, 0, first.stderr.decode())
-            released = output.read_bytes()
-            self.assertEqual(output.stat().st_mode & 0o444, 0o444)
-
-            second = subprocess.run(command, capture_output=True, check=False)
-            self.assertNotEqual(second.returncode, 0)
-            self.assertEqual(output.read_bytes(), released)
-
-            document["executor_id"] = "open-cake-ir-b200-v2"
-            collision_proposal = temporary / "collision-proposal.json"
-            collision_output = temporary / "collision-release.json"
-            collision_proposal.write_text(json.dumps(document), encoding="utf-8")
-            collision = subprocess.run(
-                (*command[:-3], str(collision_proposal), "--output", str(collision_output)),
-                capture_output=True,
-                check=False,
-            )
-            self.assertNotEqual(collision.returncode, 0)
-            self.assertFalse(collision_output.exists())
-
-    def test_release_cycle_preserves_released_ids_without_local_run_witnesses(self) -> None:
-        from tools.release_executor import _SOURCE_FILES
-
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "project"
-            root.mkdir()
-            shutil.copytree(ROOT / "src", root / "src", ignore=shutil.ignore_patterns("__pycache__"))
-            for relative in (
-                *_SOURCE_FILES, "tools/release_executor.py", "tools/release_executor_cycle.sh",
-                "tools/release_runtime.sh", "tools/check_executor_ledger.py",
-            ):
-                destination = root / relative
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(ROOT / relative, destination)
-            runtime = root / "runtime/executors"
-            runtime.mkdir(parents=True)
-            preserved = {}
-            for version in (41, 42):
-                path = runtime / f"open-cake-ir-b200-v{version}.json"
-                raw = (ROOT / path.relative_to(root)).read_bytes()
-                path.write_bytes(raw)
-                preserved[path] = raw
-            archived = root / "evidence/executors/open-cake-ir-b200-v46-review/runtime/executor.json"
-            archived.parent.mkdir(parents=True)
-            document = json.loads(CURRENT_EXECUTOR.read_text())
-            document["executor_id"] = "open-cake-ir-b200-v46"
-            # Exercise id reservation with an explicit CPU-only CUDA schema;
-            # the current release may bind a real Metal host and must not leak in.
-            document["host_environment"] = _synthetic_cuda_host()
-            archived.write_text(json.dumps(document))
-            preserved[archived] = archived.read_bytes()
-            inventory_path = root / "inventory/EXECUTOR_REVISIONS.json"
-            inventory_path.parent.mkdir()
-            previous = next(
-                entry for entry in (*_INVENTORY["current_by_target"].values(), *_INVENTORY["superseded"])
-                if entry["executor_id"] == "open-cake-ir-b200-v42"
-            )
-            inventory_path.write_text(json.dumps({
-                "schema_version": 2, "current_by_target": {"sm_100a": previous},
-                "archives": [], "superseded": [],
-            }))
-            host = document["host_environment"]
-            host_path = root / "synthetic-host.json"
-            host_path.write_text(json.dumps(host))
-            runtime_log = root.parent / "runtime-invocations"
-            selected_python = root.parent / "selected python"
-            selected_python.write_text(
-                "#!/bin/sh\nprintf '%s\\n' \"$OPEN_CAKE_PYTHON\" >> "
-                + shlex.quote(str(runtime_log)) + "\nexec "
-                + shlex.quote(sys.executable) + ' "$@"\n'
-            )
-            selected_python.chmod(0o755)
-            commands = root.parent / "commands"
-            commands.mkdir()
-            fallback = commands / "python3"
-            fallback.write_text("#!/bin/sh\nexit 97\n")
-            fallback.chmod(0o755)
-            environment = dict(os.environ)
-            environment["OPEN_CAKE_PYTHON"] = "./selected python"
-            environment["PATH"] = str(commands) + os.pathsep + environment["PATH"]
-            environment.pop("OPEN_CAKE_REUSE_VERIFIED_HOST", None)
-            # This fixture has no remote, so the ledger guard cannot establish that the
-            # released set is complete. That is exactly the condition it refuses on, and
-            # the acknowledgement is how an isolated host proceeds deliberately.
-            environment["OPEN_CAKE_LEDGER_ISOLATED"] = "release fixture has no ledger remote"
-            command = [
-                "bash", str(root / "tools/release_executor_cycle.sh"),
-                "--host-environment", str(host_path), "--target", "sm_100a",
-            ]
-            # Two actual worktrees begin with the same released ordinal history.
-            subprocess.run(["git", "init", "-q", str(root)], check=True)
-            subprocess.run(["git", "-C", str(root), "add", "."], check=True)
-            subprocess.run(["git", "-C", str(root), "-c", "user.name=Release Fixture",
-                            "-c", "user.email=release@test.invalid", "commit", "-qm", "fixture"], check=True)
-            other_root = root.parent / "other-worktree"
-            subprocess.run(["git", "-C", str(root), "worktree", "add", "--detach", "-q", str(other_root)], check=True)
-            other_source = other_root / "src/open_cake_ir/cli.py"
-            other_source.write_text(other_source.read_text() + "\n# Other worktree CPU fixture.\n")
-            for version in (47, 48):
-                if version == 48:
-                    changed = root / "src/open_cake_ir/cli.py"
-                    changed.write_text(changed.read_text() + "\n# Second prospective CPU fixture.\n")
-                completed = subprocess.run(
-                    command, cwd=root.parent, env=environment, capture_output=True, text=True,
-                    check=False, timeout=30,
-                )
-                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-                identity = json.loads(inventory_path.read_text())["current_by_target"]["sm_100a"]["executor_id"]
-                self.assertRegex(identity, rf"^open-cake-ir-b200-v{version}\+[0-9a-f]{{64}}$")
-                released = runtime / f"{identity}.json"
-                executor = ExecutorRevision.load(root, released)
-                self.assertEqual(executor.executor_id, identity)
-                self.assertEqual(json.loads(released.read_text())["host_environment"], host)
-                for path, raw in preserved.items():
-                    self.assertEqual(path.read_bytes(), raw)
-                preserved[released] = released.read_bytes()
-                if version == 47:
-                    # What the ledger guard does and does not reach, asserted rather than
-                    # assumed. A peer that cannot see the descriptor just released here
-                    # still mints the same ordinal over different bytes: nothing can see
-                    # another working tree's untracked files, so the window between
-                    # releasing and publishing is not closed by any local check. This is
-                    # the residual gap named in F-2026-09-10-012, and it is the shape that
-                    # actually happened between an Apple and a B300 checkout.
-                    other_command = ["bash", str(other_root / "tools/release_executor_cycle.sh"),
-                                     "--host-environment", str(host_path), "--target", "sm_100a"]
-                    other = subprocess.run(other_command, cwd=root.parent, env=environment,
-                                           capture_output=True, text=True, timeout=30)
-                    self.assertEqual(other.returncode, 0, other.stdout + other.stderr)
-                    other_id = json.loads((other_root / "inventory/EXECUTOR_REVISIONS.json").read_text())["current_by_target"]["sm_100a"]["executor_id"]
-                    self.assertRegex(other_id, r"^open-cake-ir-b200-v47\+[0-9a-f]{64}$")
-                    self.assertNotEqual(other_id, identity)
-                    # What the guard does close: this checkout cannot mint again while it
-                    # still holds an unpublished descriptor, so the window above cannot be
-                    # left open indefinitely by the host that opened it. The source has to
-                    # change for a successor to be wanted at all -- verifying an unchanged
-                    # release mints nothing and is deliberately not gated.
-                    held_source = root / "src/open_cake_ir/cli.py"
-                    original = held_source.read_text()
-                    held_source.write_text(original + "\n# Mint-attempt fixture.\n")
-                    held = subprocess.run(command, cwd=root.parent, env=environment,
-                                          capture_output=True, text=True, timeout=30)
-                    self.assertNotEqual(held.returncode, 0, held.stdout)
-                    self.assertIn("not committed", held.stderr)
-                    self.assertIn("v47", held.stderr)
-                    held_source.write_text(original)
-                    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
-                    subprocess.run(["git", "-C", str(root), "-c", "user.name=Release Fixture",
-                                    "-c", "user.email=release@test.invalid", "commit", "-qm",
-                                    "released v47"], check=True)
-                    proposal = root.parent / "duplicate-proposal.json"
-                    proposal.write_text(json.dumps({"schema_version": 1,
-                        "executor_id": "open-cake-ir-b200-v47", "state": "draft",
-                        "sources": [], "host_environment": host}))
-                    alias = runtime / "duplicate-alias.json"
-                    duplicate = subprocess.run([sys.executable, str(root / "tools/release_executor.py"),
-                        "--project-root", str(root), "--proposal", str(proposal), "--output", str(alias)],
-                        capture_output=True, text=True)
-                    self.assertNotEqual(duplicate.returncode, 0)
-                    self.assertIn("identity already released", duplicate.stderr)
-                    self.assertFalse(alias.exists())
-            self.assertGreater(len(runtime_log.read_text().splitlines()), 2)
-            self.assertEqual(
-                {Path(value).resolve() for value in runtime_log.read_text().splitlines()},
-                {selected_python.resolve()},
-            )
-            inventory = json.loads(inventory_path.read_text())
-            self.assertEqual(inventory["current_by_target"]["sm_100a"]["executor_id"], identity)
-            self.assertEqual(
-                {entry["executor_id"].partition("+")[0] for entry in inventory["superseded"]},
-                {"open-cake-ir-b200-v42", "open-cake-ir-b200-v47"},
-            )
-            unchanged = subprocess.run(command, cwd=root.parent, env=environment,
-                                       capture_output=True, text=True, timeout=30)
-            self.assertEqual(unchanged.returncode, 0, unchanged.stdout + unchanged.stderr)
-            self.assertIn("no successor is needed", unchanged.stdout)
-            self.assertEqual(json.loads(inventory_path.read_text()), inventory)
-
 
 class ExecutorReferenceTests(unittest.TestCase):
-    """Exact-reference admission with a tiny independent CPU source closure."""
+    """Exact-reference admission over a tiny committed fixture checkout."""
 
     def setUp(self):
         from types import SimpleNamespace
@@ -398,75 +110,75 @@ class ExecutorReferenceTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory(prefix="cake-executor-reference-")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
-        self.source = self.root / "source.py"
-        self.source.write_bytes(b"CPU reference fixture; no host admission.\n")
-        self.path = self.root / "executor.json"
-        # The host is borrowed from whichever descriptor is current, so the schema has to
-        # be borrowed with it: a HIP host is schema 2 and a pre-kind CUDA host is schema 1,
-        # and pairing one with the other's number is the incoherence the validator catches.
-        borrowed = json.loads(CURRENT_EXECUTOR.read_text())
-        # The id follows the borrowed namespace too: schema 2 admits only an AMD identity,
-        # so a fixture that borrowed a HIP host and kept a free-form id would be refused
-        # for a reason that has nothing to do with what this suite tests.
-        identity = ("reference-fixture" if borrowed["schema_version"] == 1
-                    else borrowed["executor_id"].split("+")[0])
-        self.document = {
-            "schema_version": borrowed["schema_version"],
-            "executor_id": identity, "state": "released",
-            "sources": [{"path": self.source.name, "sha256": sha256(self.source.read_bytes()).hexdigest(),
-                         "size_bytes": self.source.stat().st_size}],
-            "host_environment": borrowed["host_environment"],
-        }
-        payload = json.dumps(self.document, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
-        self.path.write_bytes(payload)
-        self.reference = {"path": self.path.name, "executor_id": self.document["executor_id"],
-                          "canonical_sha256": sha256(payload).hexdigest()}
+        self.path = self.root / HOSTS_DIRECTORY / "fixture-target.json"
+        self.path.parent.mkdir(parents=True)
+        self.document = {"schema_version": 1, "target": "fixture-target",
+                         "host_environment": _synthetic_cuda_host()}
+        self.path.write_text(json.dumps(self.document, sort_keys=True, indent=2) + "\n",
+                             encoding="utf-8")
+        _git(self.root, "init", "-q")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-q", "--no-verify", "-m", "fixture")
+        self.commit = _git(self.root, "rev-parse", "HEAD")
+        self.executor = ExecutorRevision.for_target(self.root, "fixture-target")
+        self.reference = dict(self.executor.reference)
         self.lock = SimpleNamespace(document={"execution": {"executor_revision": self.reference}})
 
-    def test_current_and_frozen_binding_return_the_verified_object_once(self):
-        from unittest.mock import patch
+    def test_identity_is_the_target_and_the_commit(self):
+        self.assertEqual(self.executor.executor_id, f"fixture-target@{self.commit}")
+        self.assertEqual(self.reference["path"], f"{HOSTS_DIRECTORY}/fixture-target.json")
+        loaded = ExecutorRevision.load_reference(self.root, self.reference, "fixture")
+        self.assertEqual(loaded.canonical_sha256, self.executor.canonical_sha256)
+
+    def test_current_and_frozen_binding_return_the_verified_object(self):
         from open_cake_ir.lab.bindings import resolve_executor
 
-        executor = ExecutorRevision.load_reference(self.root, self.reference, "fixture")
-        inventory = self.root / "inventory/EXECUTOR_REVISIONS.json"
-        inventory.parent.mkdir()
-        inventory.write_text(json.dumps({"schema_version": 2,
-                                         "current_by_target": {"fixture-target": self.reference}}))
-        with patch.object(ExecutorRevision, "load", return_value=executor) as loader:
-            current = resolve_executor(self.root, {"binding": "current_release"}, "study.execution",
-                                       template=True, target="fixture-target")
-            self.assertIs(current, executor)
-            loader.assert_called_once_with(self.root, self.path)
-        with patch.object(ExecutorRevision, "load", return_value=executor) as loader:
-            frozen = resolve_executor(self.root, self.reference, "study.execution", template=False)
-            self.assertIs(frozen, executor)
-            loader.assert_called_once_with(self.root, self.path)
+        current = resolve_executor(self.root, {"binding": "current_release"}, "study.execution",
+                                   template=True, target="fixture-target")
+        self.assertEqual(current.executor_id, self.executor.executor_id)
+        frozen = resolve_executor(self.root, self.reference, "study.execution", template=False)
+        self.assertEqual(frozen.executor_id, self.executor.executor_id)
         for value, template in ((self.reference, True), ({"binding": "current_release"}, False)):
             with self.subTest(template=template), self.assertRaises(ValueError):
                 resolve_executor(self.root, value, "study.execution", template=template)
+
+    def test_an_untracked_file_leaves_the_checkout_without_an_identity(self):
+        (self.root / "shadow.py").write_text("VALUE = 1\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "clean committed checkout"):
+            ExecutorRevision.load_reference(self.root, self.reference, "replay")
+
+    def test_a_later_commit_does_not_satisfy_a_pinned_reference(self):
+        (self.root / "note.md").write_text("second\n", encoding="utf-8")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-q", "--no-verify", "-m", "second")
+        with self.assertRaisesRegex(ValueError, "Executor Revision differs"):
+            ExecutorRevision.load_reference(self.root, self.reference, "replay")
 
     def test_reference_fields_identity_and_paths_are_checked(self):
         specimens = [None, {}, {**self.reference, "extra": True},
                      {**self.reference, "executor_id": "other"},
                      {**self.reference, "canonical_sha256": "0" * 64}]
-        for path in (True, "../executor.json", str(self.path), "dir\\executor.json"):
+        for path in (True, "../executor.json", str(self.path), "dir\\fixture-target.json"):
             specimens.append({**self.reference, "path": path})
         for reference in specimens:
             with self.subTest(reference=reference), self.assertRaises(ValueError):
                 ExecutorRevision.load_reference(self.root, reference, "fixture")
-        alias = self.root / "alias.json"
-        alias.symlink_to(self.path)
-        with self.assertRaisesRegex(ValueError, "custody"):
-            ExecutorRevision.load_reference(self.root, {**self.reference, "path": alias.name}, "fixture")
 
-    def test_every_load_rechecks_the_source_closure_without_host_admission(self):
-        from unittest.mock import patch
+    def test_a_capture_describing_another_target_is_refused(self):
+        other = self.root / HOSTS_DIRECTORY / "other-target.json"
+        other.write_text(json.dumps(self.document, sort_keys=True), encoding="utf-8")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-q", "--no-verify", "-m", "mislabelled capture")
+        with self.assertRaisesRegex(ValueError, "fields, schema or target differ"):
+            ExecutorRevision.for_target(self.root, "other-target")
 
-        with patch.object(ExecutorRevision, "admit_host", side_effect=AssertionError("archive loading is not live host admission")):
-            ExecutorRevision.load_reference(self.root, self.reference, "first")
-            self.source.write_bytes(b"changed")
-            with self.assertRaisesRegex(ValueError, "file.*differs"):
-                ExecutorRevision.load_reference(self.root, self.reference, "replay")
+    def test_a_capture_outside_the_hosts_directory_is_refused(self):
+        stray = self.root / "fixture-target.json"
+        stray.write_text(json.dumps(self.document, sort_keys=True), encoding="utf-8")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-q", "--no-verify", "-m", "stray capture")
+        with self.assertRaisesRegex(ValueError, "host capture lives at"):
+            ExecutorRevision.load(self.root, stray)
 
     def test_composition_and_worker_each_refuse_a_forged_exact_reference(self):
         from unittest.mock import patch
@@ -474,86 +186,15 @@ class ExecutorReferenceTests(unittest.TestCase):
         from open_cake_ir.tasks import evaluate as worker
 
         self.reference["extra"] = True
-        with patch.object(ExecutorRevision, "admit_host", side_effect=AssertionError("must reject before live host")):
+        with patch.object(ExecutorRevision, "admit_host",
+                          side_effect=AssertionError("must reject before live host")):
             with self.assertRaisesRegex(ValueError, "fields differ"):
                 _admit_executor(self.root, self.lock)
         request = self.root / "request.json"
-        request.write_text(json.dumps({"executor_revision": self.reference}))
+        request.write_text(json.dumps({"executor_revision": self.reference}), encoding="utf-8")
         with patch.object(worker, "ROOT", self.root):
             with self.assertRaisesRegex(ValueError, "fields differ"):
                 worker._load_authority(request)
-
-class ExecutorInventoryProjectionTests(unittest.TestCase):
-    """Schema-only index fixtures; no real release or host admission is fabricated."""
-
-    def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name).resolve()
-        (self.root / 'inventory').mkdir()
-        (self.root / 'runtime/executors').mkdir(parents=True)
-        self.inventory = self.root / 'inventory/EXECUTOR_REVISIONS.json'
-
-    def record(self, name, sources):
-        from tools.release_executor import _canonical_json_bytes
-        document = {'schema_version': 1, 'executor_id': 'TEST-' + name,
-                    'state': 'released', 'host_environment': _synthetic_cuda_host(),
-                    'sources': [{'path': path, 'sha256': value * 64, 'size_bytes': 1}
-                                for path, value in sources]}
-        relative = 'runtime/executors/' + name + '.json'
-        payload = _canonical_json_bytes(document) + b'\n'
-        (self.root / relative).write_bytes(payload)
-        return {'executor_id': document['executor_id'], 'path': relative,
-                'canonical_sha256': sha256(_canonical_json_bytes(document)).hexdigest(),
-                'descriptor_raw_sha256': sha256(payload).hexdigest(),
-                'source_count': len(sources)}
-
-    def test_projection_preserves_matching_targets_and_retires_full_map_drift(self):
-        from tools.release_executor import refresh_inventory
-        current = self.record('current', [('src/a.py', 'a'), ('src/b.py', 'b')])
-        other = self.record('other', [('src/b.py', 'b'), ('src/a.py', 'a')])
-        changed = self.record('changed', [('src/a.py', 'c'), ('src/b.py', 'b')])
-        incomplete = self.record('incomplete', [('src/a.py', 'a')])
-        legacy = {'executor_id': 'TEST-legacy', 'archive_root': 'historical/archive'}
-        self.inventory.write_text(json.dumps({'schema_version': 2, 'current_by_target': {
-            'current': current, 'other': other, 'changed': changed, 'incomplete': incomplete},
-            'superseded': [legacy], 'archives': []}))
-        originals = {p: p.read_bytes() for p in (self.root/'runtime/executors').glob('*.json')}
-        self.assertEqual(refresh_inventory(self.root, 'current', current), ('changed', 'incomplete'))
-        after = self.inventory.read_bytes()
-        index = json.loads(after)
-        self.assertEqual(index['current_by_target'], {'current': current, 'other': other})
-        self.assertIn(legacy, index['superseded'])
-        self.assertEqual({r['path'] for r in index['superseded'] if 'path' in r}, {changed['path'], incomplete['path']})
-        self.assertEqual(refresh_inventory(self.root, 'current', current), ())
-        self.assertEqual(self.inventory.read_bytes(), after)
-        self.assertEqual({p: p.read_bytes() for p in originals}, originals)
-
-    def test_corrupt_index_identity_never_becomes_a_historical_row(self):
-        from tools.release_executor import refresh_inventory
-        current = self.record('current', [('src/a.py', 'a')])
-        for field in ('descriptor_raw_sha256', 'canonical_sha256', 'executor_id', 'source_count'):
-            with self.subTest(field=field):
-                broken = self.record('old', [('src/a.py', 'b')])
-                broken[field] = 2 if field == 'source_count' else 'wrong'
-                self.inventory.write_text(json.dumps({'schema_version': 2,
-                    'current_by_target': {'current': current, 'old': broken}, 'superseded': [], 'archives': []}))
-                before = self.inventory.read_bytes()
-                with self.assertRaises(ValueError):
-                    refresh_inventory(self.root, 'current', current)
-                self.assertEqual(self.inventory.read_bytes(), before)
-
-    def test_missing_descriptor_is_not_silently_retired(self):
-        from tools.release_executor import refresh_inventory
-        current = self.record('current', [('src/a.py', 'a')])
-        old = self.record('old', [('src/a.py', 'b')])
-        (self.root / old['path']).unlink()
-        self.inventory.write_text(json.dumps({'schema_version': 2,
-            'current_by_target': {'current': current, 'old': old}, 'superseded': [], 'archives': []}))
-        before = self.inventory.read_bytes()
-        with self.assertRaises(FileNotFoundError):
-            refresh_inventory(self.root, 'current', current)
-        self.assertEqual(self.inventory.read_bytes(), before)
 
 
 if __name__ == "__main__":

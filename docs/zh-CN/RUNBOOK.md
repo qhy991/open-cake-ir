@@ -12,23 +12,24 @@
 
 | 入口 | 告诉你什么 |
 | --- | --- |
-| [`compiler/revision.lock.json`](../../compiler/revision.lock.json) | 正式发布的编译器及它固定的内容 |
-| [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json) | 已发布执行器的目录和当前指向 |
-| [自动生成的状态页](../../reports/current/STATUS.md) | 前两者的阅读版 |
+| `git rev-parse HEAD` 和干净的 `git status` | 源码身份，就是这份检出的提交 |
+| [`compiler/revision.json`](../../compiler/revision.json) 与 [`compiler/targets/`](../../compiler/targets) | 编译器绑定的语料与已声明目标 |
+| [`runtime/hosts/`](../../runtime/hosts) | 每个精确目标已提交的主机采集 |
+| [自动生成的状态页](../../reports/current/STATUS.md) | 以上内容的阅读版 |
 
-编译器负责检查和生成代码；执行器固定实验、评测、证据工具及环境。这是两种版本，不能拿一个代替另一个。
+编译器负责检查和生成代码；执行器固定实验、评测、证据工具及主机。两者共用同一个提交，主机采集单独记录，互不替代。
 
-实验模板可以写 `current_release`，意思是“准备实验时选择当前发布版”。运行前检查 `preflight` 会把这次选择固定到 `CampaignLock`。以后主线升级，这次实验也不会自动换版本。已经冻结的 Study 本来就使用明确引用。
+编译器身份写作 `open-cake-ir@<commit>`，执行器写作 `<target>@<commit>`。带未提交或未跟踪改动的检出没有身份，Lab 的每个边界都会拒绝，并列出不一致的路径（[ADR 0065](../adr/0065-source-identity-is-the-commit.md)）。
 
-## 2. 核对发布资格
+实验模板可以写 `current_release`，意思是“准备实验时选择当前提交”。运行前检查 `preflight` 会把这次选择固定到 `CampaignLock`。以后主线继续前进，这次实验也不会自动换提交。已经冻结的 Study 本来就使用明确引用。
 
-使用编译器前，按[英文手册第 2 节](../RUNBOOK.md#2-verify-or-prepare-a-compiler-release)运行语料检查和发布核验。语料里既有应该通过的计划，也有应该被拒绝的计划；两种表现都要符合已审查的预期。
+## 2. 核对编译器与主机
 
-如果准备新的编译器版本，发布脚本会计算版本身份，并准备完整 Corpus Gate。作者不能自己写批准文件。人类审查者，或符合模型和会话要求的独立代理，必须检查这次具体改动和 Gate。缺失、错误或过期的批准会让发布停止，退出码为 `3`，保留上一版。详细要求见 [ADR 0052](adr/0052-independent-agent-release-review.md)。
+使用编译器前，按[英文手册第 2 节](../RUNBOOK.md#2-verify-the-compiler-and-capture-a-host)运行语料检查。语料里既有应该通过的计划，也有应该被拒绝的计划；两种表现都要符合已审查的预期。CI 在每个提交上跑同一项检查。
 
-修改硬件目标，也必须更新明确的提案引用并审查硬件规则。不能为了让检查通过，顺手把“预期答案”重新生成一遍。采用新预期是一项单独审查的决定。旧版本用当时固定的源码和批准文件回放。
+不再为每次改动生成发布文件：改动合并进 `main` 时接受一次审查，审查者不是作者本人。修改硬件目标不是普通源码改动，要连同硬件规则和引用一起审查。不能为了让检查通过，顺手把“预期答案”重新生成一遍；采用新预期是一项单独审查的决定。
 
-执行器同样只能发布后继版本。源码、评测器、审计工具、AI 工具或主机环境发生相关变化，就需要新的描述文件；已经发布的身份和输出路径不能重复使用。
+主机在它自己那台机器上采集，用打算使用的 Python 和已安装的发行包名，写成 `runtime/hosts/<target>.json` 并提交。只有主机本身变化时才重新采集，加 `--replace`。没有采集的目标就报告没有，不会借用另一台主机。
 
 ### 外部 AKA 数据怎样检查
 

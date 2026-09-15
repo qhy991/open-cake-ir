@@ -65,7 +65,7 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 ```
 
 These commands explicitly use a development draft. After independent release approval,
-use `compiler/revision.lock.json` for a released Compiler. Lowering never compiles or
+use `compiler/revision.json` for a released Compiler. Lowering never compiles or
 launches the kernel. The Python API also exposes the launch/compile metadata:
 
 ```python

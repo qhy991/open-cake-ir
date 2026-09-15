@@ -47,7 +47,7 @@ program 轴，`b` 的访问变为 `[dim0, program:col]`，秩 1 全轴向量载�
 ```python
 from open_cake_ir.compiler import Compiler, frontend
 
-compiler = Compiler.load(".", "compiler/revision.lock.json")
+compiler = Compiler.load(".", "compiler/revision.json")
 schedule = frontend.read_schedule("row_gemm_silu.py").document
 result = compiler.specialize_output_columns(
     schedule, schedule_id="gemm_silu_columns", entry_point="gemm_silu_columns")

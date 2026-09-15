@@ -189,10 +189,10 @@ class OfflineRouteMatchesEveryDeclaredDocumentTest(unittest.TestCase):
     """
 
     def test_every_declared_amdgcn_target_matches_the_offline_route(self) -> None:
-        revision = json.loads((ROOT / "compiler/revision.json").read_text(encoding="utf-8"))
         checked = 0
-        for target_id, reference in revision["target_definitions"].items():
-            target = Target.load(ROOT / reference["path"])
+        for path in sorted((ROOT / "compiler/targets").glob("*.json")):
+            target_id = path.stem
+            target = Target.load(path)
             if target.vendor not in (Vendor.AMD, Vendor.HYGON):
                 with self.subTest(target=target_id):
                     # A non-AMDGCN target must not be decoded by the AMDGCN branch.
@@ -245,11 +245,9 @@ class NoVendorInTheElseTest(unittest.TestCase):
 class FixtureIsNotADeviceTest(unittest.TestCase):
     """Keep the pin: this fixture must never become a sixth bound target."""
 
-    def test_the_fixture_is_bound_by_no_revision(self) -> None:
-        for name in ("compiler/revision.json", "compiler/revision.json"):
-            document = json.loads((ROOT / name).read_text(encoding="utf-8"))
-            with self.subTest(revision=name):
-                self.assertNotIn("synthetic_third_vendor", document["target_definitions"])
+    def test_the_fixture_is_declared_by_no_target_document(self) -> None:
+        declared = {path.stem for path in (ROOT / "compiler/targets").glob("*.json")}
+        self.assertNotIn("synthetic_third_vendor", declared)
 
     def test_the_fixture_says_it_is_not_a_device(self) -> None:
         kinds = {citation["kind"] for citation in _document()["citations"]}

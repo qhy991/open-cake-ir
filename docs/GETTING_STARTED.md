@@ -43,7 +43,7 @@ python3 -m venv .venv
 
 ```bash
 .venv/bin/open-cake-ir compiler assess --format text \
-  --revision compiler/revision.lock.json \
+  --revision compiler/revision.json \
   corpus/schedules/fma-b8-smoke.json
 ```
 
@@ -68,7 +68,7 @@ python3 -m venv .venv
 ```bash
 CAKE_TUTORIAL_DIR=$(mktemp -d)
 .venv/bin/open-cake-ir compiler lower --format text \
-  --revision compiler/revision.lock.json \
+  --revision compiler/revision.json \
   corpus/schedules/fma-b8-smoke.json \
   --output "$CAKE_TUTORIAL_DIR/fma.py"
 ```
@@ -86,7 +86,7 @@ CAKE_TUTORIAL_DIR=$(mktemp -d)
 
 ```bash
 .venv/bin/open-cake-ir compiler assess --format text \
-  --revision compiler/revision.lock.json \
+  --revision compiler/revision.json \
   corpus/schedules/fma-b8-smoke-arity-drift.json
 ```
 
@@ -97,7 +97,7 @@ CAKE_TUTORIAL_DIR=$(mktemp -d)
 
 ```bash
 .venv/bin/open-cake-ir compiler check-corpus --format text \
-  --revision compiler/revision.lock.json
+  --revision compiler/revision.json
 ```
 
 “符合预期”既包括正确计划被接受，也包括错误计划被拒绝。

@@ -64,7 +64,7 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
   --output /absolute/external/output/gemm-bias.cu
 ```
 
-这里明确使用开发草稿。独立批准并发布后，改用 `compiler/revision.lock.json`。
+这里明确使用开发草稿。独立批准并发布后，改用 `compiler/revision.json`。
 生成代码不会启动 GPU。生成物的 `toolchain_requirements` 给出真实参数顺序、线程数、
 共享内存字节数和精确编译参数；`source_map` 把生成行映射回操作与资源声明。
 具体 Python 调用和 C 接口见[英文接口说明](../NATIVE_CUDA.md#host-interface)。

@@ -454,10 +454,10 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(result["accepted"])
         self.assertTrue(result["lowering_eligible"])
-        released = json.loads(
-            (ROOT / "compiler" / "revision.lock.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(result["compiler_revision_id"], released["revision_id"])
+        from open_cake_ir.compiler.revision import load_revision
+
+        revision = load_revision(ROOT, ROOT / "compiler/revision.json")
+        self.assertEqual(result["compiler_revision_id"], revision.revision_id)
 
     def test_compiler_json_lower_exposes_generated_source_and_refuses_retired_route(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

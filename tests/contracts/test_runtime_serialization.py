@@ -35,7 +35,7 @@ class RuntimeSerializationTests(unittest.TestCase):
         authority = {"notes": "基线", "lowering_route": {"backend": "metal", "entry_point": "kernel"}}
         workload = SimpleNamespace(canonical_sha256="a" * 64, target="apple_gpu_family7",
                                    document={"semantics": {}}, tensor_abi=lambda _: [])
-        cake = OpenCakeEnvironment(SimpleNamespace(state="released"), object(),
+        cake = OpenCakeEnvironment(SimpleNamespace(commit="0" * 40), object(),
             authority_document=authority, workload=workload, case_id="fixture")
         direct = DirectCudaEnvironment(object(), toolchain_requirements={}, authority_document=authority)
         wire = json.dumps(authority, sort_keys=True, separators=(",", ":"),

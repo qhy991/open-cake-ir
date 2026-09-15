@@ -36,7 +36,7 @@ class StateStoreB200CorrectnessContractTests(unittest.TestCase):
                 generator, "FIXED_SOURCE_COMMIT",
                 "7fdac036626a4eaf0a0e047dca1565c0a88f19aa",
             ):
-                with self.assertRaisesRegex(RuntimeError, "Compiler lock differs"):
+                with self.assertRaisesRegex(RuntimeError, "Compiler commit differs"):
                     generator.prepare(output)
             self.assertFalse(output.exists())
 

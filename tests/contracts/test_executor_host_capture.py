@@ -16,6 +16,15 @@ sys.path.insert(0, str(ROOT / "src"))
 from tools import capture_executor_host as capture  # noqa: E402
 
 
+def declare_target(root: Path, target: str) -> None:
+    """A capture belongs to a checkout that declares the target it describes."""
+    directory = root / "compiler/targets"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{target}.json").write_bytes(
+        (ROOT / "compiler/targets" / f"{target}.json").read_bytes()
+    )
+
+
 class ExecutorHostCaptureContractTests(unittest.TestCase):
     def run_fixture_capture(self, root: Path, helper_prefix: str = "") -> subprocess.CompletedProcess[str]:
         """Use importable CPU fixtures to exercise the fresh-process software path."""
@@ -45,13 +54,15 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
         profiler = root / "ncu"
         profiler.write_text("#!/bin/sh\nprintf 'Version 1.0\\n'\n")
         profiler.chmod(0o755)
+        declare_target(root, "sm_103a")
         return subprocess.run(
             [
                 sys.executable, str(ROOT / "tools/capture_executor_host.py"),
+                "--project-root", str(root), "--target", "sm_103a",
                 "--package", "cupti-python", "--package", "flashinfer-python",
                 "--cupti-distribution", "cupti-python",
                 "--flashinfer-distribution", "flashinfer-python",
-                "--ncu", str(profiler), "--output", str(root / "host.json"),
+                "--ncu", str(profiler),
             ],
             cwd=root, env={
                 **os.environ, "PYTHONDONTWRITEBYTECODE": "1",
@@ -65,8 +76,11 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
             root = Path(directory).resolve()
             completed = self.run_fixture_capture(root)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-            output = root / "host.json"
-            host = json.loads(output.read_text())
+            output = root / "runtime/hosts/sm_103a.json"
+            document = json.loads(output.read_text())
+            self.assertEqual(set(document), {"schema_version", "target", "host_environment"})
+            self.assertEqual(document["target"], "sm_103a")
+            host = document["host_environment"]
             self.assertEqual(set(host), {
                 "python", "packages", "cupti_python", "flashinfer_helper", "nsight_compute",
             })
@@ -74,9 +88,10 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
             self.assertEqual(host["packages"], {"cupti-python": "1.0", "flashinfer-python": "1.0"})
             self.assertEqual(host["nsight_compute"]["version"], "1.0")
             self.assertEqual(json.loads(completed.stdout), {
-                "output": str(output), "host_admitted": True, "profiler_admitted": True,
+                "output": str(output), "target": "sm_103a",
+                "host_admitted": True, "profiler_admitted": True,
             })
-            self.assertEqual(list(root.glob("*.json")), [output])
+            self.assertEqual(sorted((root / "runtime/hosts").glob("*.json")), [output])
 
     def test_cold_helper_import_failure_produces_no_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -84,7 +99,7 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
             completed = self.run_fixture_capture(root, "raise RuntimeError('cold import failed')")
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("cold import failed", completed.stderr)
-            self.assertFalse((root / "host.json").exists())
+            self.assertFalse((root / "runtime/hosts/sm_103a.json").exists())
 
     def test_profiler_change_during_host_admission_produces_no_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -94,14 +109,16 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
             )
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("Executor Nsight Compute bytes differ", completed.stderr)
-            self.assertFalse((root / "host.json").exists())
+            self.assertFalse((root / "runtime/hosts/sm_103a.json").exists())
 
-    def arguments(self, output: Path) -> list[str]:
+    def arguments(self, root: Path, target: str = "sm_103a") -> list[str]:
+        declare_target(root, target)
         return [
+            "--project-root", str(root), "--target", target,
             "--package", "open-cake-ir-no-such-distribution-for-test",
             "--cupti-distribution", "cupti-python",
             "--flashinfer-distribution", "flashinfer-python",
-            "--ncu", sys.executable, "--output", str(output),
+            "--ncu", sys.executable,
         ]
 
     def distribution(
@@ -118,39 +135,32 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
                 path.write_bytes(b"test distribution file\n")
         return importlib.metadata.Distribution.at(metadata)
 
-    def test_capture_refuses_to_overwrite_existing_output(self) -> None:
+    def test_capture_refuses_to_recapture_without_being_asked(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "host.json"
+            root = Path(directory).resolve()
+            arguments = self.arguments(root)
+            output = root / "runtime/hosts/sm_103a.json"
+            output.parent.mkdir(parents=True)
             output.write_text("existing capture\n")
-            with self.assertRaisesRegex(FileExistsError, "overwrite"):
-                capture.main(self.arguments(output))
+            with self.assertRaisesRegex(FileExistsError, "recapture"):
+                capture.main(arguments)
             self.assertEqual(output.read_text(), "existing capture\n")
 
-    def test_capture_refuses_a_dangling_output_symlink(self) -> None:
+    def test_capture_refuses_a_target_this_checkout_does_not_declare(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "host.json"
-            target = Path(directory) / "missing.json"
-            output.symlink_to(target)
-            with self.assertRaises(FileExistsError):
-                capture.main(self.arguments(output))
-            self.assertTrue(output.is_symlink())
-            self.assertFalse(target.exists())
-
-    def test_capture_refuses_output_in_a_checkout(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / ".git").write_text("gitdir: /test/worktree\n")
-            output = root / "host.json"
-            with self.assertRaisesRegex(ValueError, "outside project checkouts"):
-                capture.main(self.arguments(output))
-            self.assertFalse(output.exists())
+            root = Path(directory).resolve()
+            arguments = self.arguments(root)
+            arguments[arguments.index("--target") + 1] = "synthetic-absent-target"
+            with self.assertRaisesRegex(ValueError, "not a Target this checkout declares"):
+                capture.main(arguments)
+            self.assertFalse((root / "runtime/hosts").exists())
 
     def test_missing_distribution_produces_no_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "host.json"
+            root = Path(directory).resolve()
             with self.assertRaises(importlib.metadata.PackageNotFoundError):
-                capture.main(self.arguments(output))
-            self.assertFalse(output.exists())
+                capture.main(self.arguments(root))
+            self.assertFalse((root / "runtime/hosts/sm_103a.json").exists())
 
     def test_cupti_file_capture_uses_the_distribution_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -242,11 +252,11 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
 
     def test_canonical_schema_rejection_produces_no_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "host.json"
+            root = Path(directory).resolve()
             with patch.object(capture, "_capture_host", return_value={}):
                 with self.assertRaisesRegex(ValueError, "host environment fields differ"):
-                    capture.main(self.arguments(output))
-            self.assertFalse(output.exists())
+                    capture.main(self.arguments(root))
+            self.assertFalse((root / "runtime/hosts/sm_103a.json").exists())
 
     def test_canonical_host_rejection_produces_no_capture(self) -> None:
         # A CUDA capture needs a CUDA-shaped host. Taking whichever descriptor happens to
@@ -263,11 +273,11 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
         host["python"]["invocation_path"] = sys.executable
         host["python"]["version"] = "not-the-running-python-version"
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "host.json"
+            root = Path(directory).resolve()
             with patch.object(capture, "_capture_host", return_value=host):
                 with self.assertRaisesRegex(ValueError, "Python runtime differs"):
-                    capture.main(self.arguments(output))
-            self.assertFalse(output.exists())
+                    capture.main(self.arguments(root))
+            self.assertFalse((root / "runtime/hosts/sm_103a.json").exists())
 
 
 class HipExecutorHostCaptureContractTests(unittest.TestCase):
@@ -296,7 +306,9 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
             paths[kind] = tool
         library = root / "libxml2.so.2"
         library.write_bytes(b"modeled compatibility library")
-        arguments = ["--runtime-kind", "hip",
+        declare_target(root, "gfx938")
+        arguments = ["--project-root", str(root), "--target", "gfx938",
+                     "--runtime-kind", "hip",
                      "--device-monitor", "amd-smi", str(paths["amd-smi"])]
         for name in sorted(capture.HIP_PACKAGES):
             arguments += ["--package", name]
@@ -305,7 +317,6 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
         arguments += [
             "--hip-profiler", "rocprofv3", str(paths["rocprofv3"]),
             "--hip-runtime-library", "libxml2.so.2", str(library),
-            "--output", str(root / "host.json"),
         ]
         program = (
             "import platform, runpy; platform.system = lambda: 'Linux'; "
@@ -323,8 +334,10 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
             root = Path(directory).resolve()
             completed = self.run_fixture_capture(root)
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
-            host = json.loads((root / "host.json").read_text())
-            capture.ExecutorRevision._validate_host_document(host, schema_version=2)
+            document = json.loads((root / "runtime/hosts/gfx938.json").read_text())
+            self.assertEqual(document["target"], "gfx938")
+            host = document["host_environment"]
+            capture.ExecutorRevision._validate_host_document(host)
             self.assertEqual(host["kind"], "hip")
             self.assertEqual(host["platform"]["system"], "Linux")
             self.assertEqual(host["runtime"]["torch_hip_version"], "7.2.1")
@@ -338,7 +351,7 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
             completed = self.run_fixture_capture(root, import_failure=True)
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("cold HIP import failed", completed.stderr)
-            self.assertFalse((root / "host.json").exists())
+            self.assertFalse((root / "runtime/hosts/sm_103a.json").exists())
 
     def test_hip_profiler_changed_during_version_probe_produces_no_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -346,17 +359,19 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
             completed = self.run_fixture_capture(root, changing_profiler=True)
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("profilers[0] bytes differ", completed.stderr)
-            self.assertFalse((root / "host.json").exists())
+            self.assertFalse((root / "runtime/hosts/sm_103a.json").exists())
 
     def test_cuda_inputs_cannot_be_mixed_into_hip_capture(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "host.json"
+            root = Path(directory).resolve()
+            declare_target(root, "gfx938")
             with self.assertRaisesRegex(ValueError, "HIP capture requires"):
                 capture.main([
+                    "--project-root", str(root), "--target", "gfx938",
                     "--runtime-kind", "hip", "--package", "torch",
-                    "--cupti-distribution", "cupti-python", "--output", str(output),
+                    "--cupti-distribution", "cupti-python",
                 ])
-            self.assertFalse(output.exists())
+            self.assertFalse((root / "runtime/hosts/gfx938.json").exists())
 
 
 if __name__ == "__main__":

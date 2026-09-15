@@ -46,7 +46,7 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
     }
 
     def setUp(self) -> None:
-        self.compiler = Compiler.load(ROOT, "compiler/revision.lock.json")
+        self.compiler = Compiler.load(ROOT, "compiler/revision.json")
 
     def test_every_sweep_has_one_oracle_and_one_tile_domain(self) -> None:
         self.assertEqual(set(VARIANTS), set(DEFAULT_TILES))
@@ -145,7 +145,7 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
                 release_name = revision_id.rsplit("-", 1)[-1]
                 revision_path = ROOT / f"compiler/releases/{release_name}/revision.lock.json"
                 if not revision_path.exists():
-                    revision_path = ROOT / "compiler/revision.lock.json"
+                    revision_path = ROOT / "compiler/revision.json"
                 revision = json.loads(revision_path.read_text(encoding="utf-8"))
                 canonical = json.dumps(
                     revision,

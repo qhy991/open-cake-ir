@@ -36,7 +36,7 @@ FP32 fused multiply-add rounds only once at the final result. A separately round
 
 ```bash
 .venv/bin/open-cake-ir compiler assess --format text \
-  --revision compiler/revision.lock.json \
+  --revision compiler/revision.json \
   corpus/schedules/fma-b8-smoke.json
 ```
 
@@ -51,7 +51,7 @@ Create new output outside the checkout:
 ```bash
 CAKE_TUTORIAL_DIR=$(mktemp -d)
 .venv/bin/open-cake-ir compiler lower --format text \
-  --revision compiler/revision.lock.json \
+  --revision compiler/revision.json \
   corpus/schedules/fma-b8-smoke.json \
   --output "$CAKE_TUTORIAL_DIR/fma.py"
 ```
@@ -66,7 +66,7 @@ The repository includes a sibling missing an FMA input:
 
 ```bash
 .venv/bin/open-cake-ir compiler assess --format text \
-  --revision compiler/revision.lock.json \
+  --revision compiler/revision.json \
   corpus/schedules/fma-b8-smoke-arity-drift.json
 ```
 
@@ -76,7 +76,7 @@ Now check the complete Compiler Corpus:
 
 ```bash
 .venv/bin/open-cake-ir compiler check-corpus --format text \
-  --revision compiler/revision.lock.json
+  --revision compiler/revision.json
 ```
 
 Matching expectations includes both accepted positives and rejected negatives. Read the actual count from the command rather than copying an old report.

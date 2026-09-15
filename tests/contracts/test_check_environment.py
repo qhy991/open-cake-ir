@@ -30,13 +30,13 @@ class EnvironmentReportContracts(unittest.TestCase):
         # Which targets have an Executor here changes with the inventory, so ask it rather
         # than naming one: a declared target the inventory does not carry cannot have its
         # pinned closure read, and that has to report unchecked rather than pass or fail.
-        inventory = json.loads((ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text())
+        captured = {path.stem for path in (ROOT / "runtime/hosts").glob("*.json")}
         declared = {path.stem for path in (ROOT / "compiler/targets").glob("*.json")}
-        absent = sorted(declared - set(inventory.get("current_by_target", {})))
+        absent = sorted(declared - captured)
         if not absent:
-            self.skipTest("every declared target currently has an Executor in this checkout")
+            self.skipTest("every declared target has a committed host capture in this checkout")
         statuses = {check.name: check.status for check in check_environment.run("cuda", absent[0])}
-        self.assertEqual(statuses.get("current Executor"), "unchecked")
+        self.assertEqual(statuses.get("host capture"), "unchecked")
 
     def test_amd_is_reported_unsupported_until_the_checkout_names_it(self):
         checks = {check.name: check for check in check_environment.run("amd", None)}

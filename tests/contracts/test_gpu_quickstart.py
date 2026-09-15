@@ -21,8 +21,10 @@ from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeE
 def _resolve_executor(executor_id: str) -> dict:
     """Find a Revision descriptor by id: current, superseded, or archived."""
 
+    # Historical quickstart evidence names a released descriptor; the frozen index is
+    # where those identities now live (ADR 0065).
     inventory = json.loads(
-        (ROOT / "inventory/EXECUTOR_REVISIONS.json").read_text(encoding="utf-8")
+        (ROOT / "inventory/EXECUTOR_REVISIONS_FINAL_20260916.json").read_text(encoding="utf-8")
     )
     for candidate in [
         *inventory["current_by_target"].values(),

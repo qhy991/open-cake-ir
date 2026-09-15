@@ -163,17 +163,10 @@ class MetalTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temporary = tempfile.TemporaryDirectory(prefix="cake-metal-contracts-")
         directory = Path(cls.temporary.name)
-        # A draft uses the same exact-target loader as release. No release lock or
-        # approval is created, and the owning target reference is computed only here.
-        draft = json.loads((ROOT / "compiler/revision.json").read_text())
+        # The Compiler declares every document under compiler/targets, so this reads the
+        # same Target the manifest binds rather than composing a second reference.
         document = json.loads((ROOT / "compiler/targets/apple_gpu_family8.json").read_text())
-        draft["target_definitions"]["apple_gpu_family8"] = {
-            "path": "compiler/targets/apple_gpu_family8.json",
-            "canonical_sha256": hashlib.sha256(_canonical_json_bytes(document)).hexdigest(),
-        }
-        proposal = directory / "draft.json"
-        proposal.write_text(json.dumps(draft))
-        cls.compiler = Compiler.load(ROOT, proposal)
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         cls.target = Target.from_dict(document)
 
     @classmethod
@@ -299,20 +292,12 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
 
     def test_apple_family9_m4_target_lowers_without_device_fallback(self):
         document = json.loads((ROOT / "compiler/targets/apple_gpu_family9.json").read_text())
-        draft = json.loads((ROOT / "compiler/revision.json").read_text())
-        draft["target_definitions"]["apple_gpu_family9"] = {
-            "path": "compiler/targets/apple_gpu_family9.json",
-            "canonical_sha256": hashlib.sha256(_canonical_json_bytes(document)).hexdigest(),
-        }
-        with tempfile.TemporaryDirectory(prefix="cake-metal-m4-") as temporary:
-            proposal = Path(temporary) / "draft.json"
-            proposal.write_text(json.dumps(draft))
-            compiler = Compiler.load(ROOT, proposal)
-            schedule = make_document()
-            schedule["target"] = "apple_gpu_family9"
-            assessment = compiler.assess(schedule)
-            self.assertTrue(assessment.lowering_eligible, assessment.findings)
-            lowering = compiler.lower(assessment)
+        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+        schedule = make_document()
+        schedule["target"] = "apple_gpu_family9"
+        assessment = compiler.assess(schedule)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        lowering = compiler.lower(assessment)
         self.assertEqual(document["architecture"], "apple9")
         self.assertEqual(document["device_names"], ["Apple M4"])
         self.assertEqual(lowering.target, "apple_gpu_family9")

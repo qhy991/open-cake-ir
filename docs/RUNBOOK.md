@@ -11,97 +11,65 @@ New users should first follow [`GETTING_STARTED.md`](GETTING_STARTED.md), which 
 provider Campaign and makes no performance claim. Terms in this runbook are defined in
 [`GLOSSARY.md`](GLOSSARY.md).
 
-## 1. Resolve released authorities
+## 1. Resolve the source identity and the host
 
-Do not copy revision ids from prose. Read the canonical authorities:
+Do not copy identities from prose. The identity is this checkout's commit:
 
 ```bash
-jq -r '.revision_id' compiler/revision.lock.json
-jq -r '.current.executor_id, .current.path' inventory/EXECUTOR_REVISIONS.json
+git rev-parse HEAD
+git status --porcelain --untracked-files=all   # must print nothing
+ls runtime/hosts
 .venv/bin/python tools/render_current_status.py --check
 ```
 
+A Compiler is `open-cake-ir@<commit>` and an Executor is `<target>@<commit>` over the
+committed capture in `runtime/hosts/<target>.json`
+([ADR 0065](adr/0065-source-identity-is-the-commit.md)). A checkout carrying modified or
+untracked files has no identity, and every Lab boundary refuses it with the paths that
+differ.
+
 A Study template may use `{"binding":"current_release"}`. Lab preflight resolves that
 moving reference once into exact Compiler and Executor references in the CampaignLock. A
-frozen Study always carries exact references and never follows a later release.
+frozen Study always carries exact references and never follows a later commit.
 
-## 2. Verify or prepare a Compiler release
+## 2. Verify the Compiler and capture a host
 
-Verify the released Compiler and complete Corpus before using it:
-
-```bash
-open-cake-ir compiler check-corpus --revision compiler/revision.lock.json
-python tools/release_compiler.py --project-root . \
-  --proposal compiler/revision.json \
-  --source-set compiler/source_set.json \
-  --gate-report compiler/corpus-gate-report.json \
-  --approval compiler/release-approval.json \
-  --output compiler/revision.lock.json \
-  --verify
-```
-
-Both release cycles select `OPEN_CAKE_PYTHON` (default: `python3`) once and require Python
-3.10 or newer before creating temporary files or changing release artifacts. Every Python
-step uses that same executable. Select an installed environment explicitly when needed:
+Run the full Corpus Gate before using the Compiler:
 
 ```bash
-OPEN_CAKE_PYTHON="$PWD/.venv/bin/python" bash tools/release_compiler_cycle.sh
+open-cake-ir compiler check-corpus --revision compiler/revision.json
 ```
 
-For a proposed successor, `bash tools/release_compiler_cycle.sh` derives the revision id
-and prepares the full Corpus Gate. The cycle never writes
-`compiler/release-approval.json`. Missing, malformed, or stale approval exits with status
-3 and leaves the prior release untouched. A human or an independent agent session outside
-that automation inspects the exact source and Gate diff and writes a schema-version-2
-approval. Agent reviewers must use an allowed model and a session distinct from the author;
-the author may not write the approval. The schema, canonical model policy, and session
-verification procedure are in [ADR 0052](adr/0052-independent-agent-release-review.md).
-Historical releases replay through their pinned source revisions with their original
-approval bytes; do not convert old approvals to the new schema.
+CI runs that same check on every commit. No release document is minted per change: a
+change reaches campaigns when it merges to `main`, and the merge carries one review by
+someone other than its author. Changing a Target definition is not an ordinary source
+edit; review the hardware contract and its citations with it. Never regenerate Corpus
+expectations merely to make a proposed change pass. Adopting new expectations is a
+separate reviewed action (`tools/refresh_corpus_expectations.py --write`).
 
-Changing a Target definition is not an ordinary source edit. Update its explicit proposal
-pin and review the hardware contract. Never regenerate Corpus expectations merely to make
-a proposed change pass; expectation adoption is a separate reviewed action.
-
-Executor descriptors are also create-only:
-
-```bash
-python tools/release_executor.py --project-root . \
-  --proposal /new/path/executor-successor.draft.json \
-  --output runtime/executors/open-cake-ir-b200-<successor>.json
-```
-
-A released id or output path is never reused. Source, evaluator, audit, provider, or host
-closure changes require a successor descriptor.
-
-`tools/release_executor_cycle.sh` derives the next Executor id and accepts the same
-`OPEN_CAKE_PYTHON` selection. Its `--host-environment /verified/host-environment.json`
-argument requires a host environment already verified against the intended executor host;
-choosing the local release interpreter does not verify that remote environment.
-
-Capture a new host on that host, using its intended Python invocation and explicit
-installed distribution names and Nsight Compute executable. The destination directory
-must already exist outside every project checkout, and the output file must be new:
+Capture a host on that host, using its intended Python invocation and the installed
+distribution names, then commit the file it writes:
 
 ```bash
 PYTHONPATH=src /absolute/environment/bin/python tools/capture_executor_host.py \
+  --target sm_103a \
   --package torch --package triton --package numpy \
   --package cuda-bindings --package flashinfer-python \
   --cupti-distribution cupti-python --flashinfer-distribution flashinfer-python \
-  --ncu /absolute/nsight-compute/target/linux-desktop-glibc_2_11_3-x64/ncu \
-  --output /new/external/host-environment.json
+  --ncu /absolute/nsight-compute/target/linux-desktop-glibc_2_11_3-x64/ncu
 ```
 
-The command records the current interpreter and installed versions, binds CUPTI's
-non-bytecode package files plus its distribution metadata and RECORD, and binds
-FlashInfer's distribution-owned `flashinfer/testing/utils.py`. It reads `ncu --version`
-from the supplied executable. The existing Executor schema, host admission (including
-real CUPTI and helper imports), and profiler admission must all succeed before the JSON
-is created. Run it as a fresh process and retain stdout/stderr, including any cold-import
-failure; it does not install packages or repair the environment. These file bindings
-establish the new host capture boundary, not GPU correctness or performance. No kernel
-is dispatched, and no Compiler or Executor release is created. Pass the resulting JSON
-to the Executor release cycle only as part of an authorized successor delivery.
+The command writes `runtime/hosts/<target>.json`. It records the current interpreter and
+installed versions, binds CUPTI's non-bytecode package files plus its distribution
+metadata and RECORD, and binds FlashInfer's distribution-owned
+`flashinfer/testing/utils.py`. It reads `ncu --version` from the supplied executable. Host
+admission, including the real CUPTI and helper imports, and profiler admission must
+succeed before the file is written. Run it as a fresh process and retain stdout/stderr,
+including any cold-import failure; it installs nothing and repairs nothing. A Metal host
+passes `--kind metal` with its Swift, archive and observer executables instead. Recapture
+only when the host itself changes, with `--replace`, and commit that change. This
+establishes the host boundary, not GPU correctness or performance: no kernel is
+dispatched.
 
 ### Review an external AKA corpus
 

@@ -25,7 +25,8 @@ def _frozen_compiler_root(root: Path) -> Path:
             ["git","--no-replace-objects","-C",str(ROOT),"show",f"{FROZEN_SOURCE}:{relative}"],
             capture_output=True,check=True,
         ).stdout
-        if (root/relative).read_bytes()!=expected:
+        candidate=root/relative
+        if not candidate.is_file() or candidate.read_bytes()!=expected:
             raise ValueError(f"v41 replay source differs: {relative}; use a complete frozen checkout")
     return root
 

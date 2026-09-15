@@ -88,3 +88,5 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 - [0063: Normal budget terminal observations](../../adr/0063-normal-budget-terminal-observations.md)
 
 - [0064：每个任务的最佳实现由 Lab 的 append-only 晋升链负责](../../adr/0064-task-incumbents-are-an-append-only-lab-projection.md)
+
+- [0065：源码身份就是提交，主机采集单独成文](../../adr/0065-source-identity-is-the-commit.md)

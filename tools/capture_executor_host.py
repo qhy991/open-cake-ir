@@ -242,7 +242,7 @@ def _capture_metal_host(arguments: argparse.Namespace) -> dict[str, object]:
                 or name != "swiftc" and path.is_symlink()):
             raise ValueError(f"Metal {name} requires an explicit executable path")
     swiftc = arguments.swiftc.absolute()
-    target = Target.load(Path(__file__).resolve().parents[1] / "compiler/targets" / f"{arguments.target}.json")
+    target = Target.load(arguments.project_root / "compiler/targets" / f"{arguments.target}.json")
     python = Path(sys.executable).absolute()
     host = {"kind": "metal", "python": {
         "invocation_path": str(python), "version": sys.version.split()[0],
@@ -281,9 +281,11 @@ def main(argv: list[str] | None = None) -> int:
                         metavar=("KIND", "PATH"))
     parser.add_argument("--hip-runtime-library", nargs=2, action="append", default=[],
                         metavar=("SONAME", "PATH"))
+    parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT,
+                        help="checkout whose runtime/hosts/<target>.json this capture writes")
     parser.add_argument("--target", required=True,
-                        choices=sorted(path.stem for path in (PROJECT_ROOT / "compiler/targets").glob("*.json")),
-                        help="exact target this host runs; the capture is committed as runtime/hosts/<target>.json")
+                        help="exact target this host runs; the capture is committed as "
+                             "runtime/hosts/<target>.json")
     parser.add_argument("--swiftc", type=Path)
     parser.add_argument("--archive-executable", type=Path)
     parser.add_argument("--observer-executable", type=Path)
@@ -315,7 +317,13 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("HIP capture requires its monitor, build tools and libraries only")
     # The capture belongs to the checkout: it is committed, and the commit plus this
     # document is the Executor identity (ADR 0065).
-    output = PROJECT_ROOT / "runtime/hosts" / f"{arguments.target}.json"
+    project_root = arguments.project_root.resolve(strict=True)
+    if not (project_root / "compiler/targets" / f"{arguments.target}.json").is_file():
+        raise ValueError(
+            f"{arguments.target!r} is not a Target this checkout declares; "
+            "capture a host only for a declared exact target"
+        )
+    output = project_root / "runtime/hosts" / f"{arguments.target}.json"
     if output.exists() and not arguments.replace:
         raise FileExistsError(
             f"{output} already describes this target; pass --replace to recapture this host"

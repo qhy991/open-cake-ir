@@ -74,11 +74,11 @@ Deterministically generated target source and mapping information, or selection 
 
 ### Compiler Revision
 
-A frozen compiler binding semantics, targets, checking, analysis, generation, Corpus expectations, and calibration coverage. Its release lock owns identity; a moving Git branch does not.
+The compiler at one clean commit: the commit binds semantics, checking, analysis and generation, `compiler/revision.json` binds the Corpus and calibration coverage, and every document under `compiler/targets/` is a declared Target. Its identity is `open-cake-ir@<commit>`; a checkout carrying modified or untracked files has none (ADR 0065).
 
 ### Executor Revision
 
-A released descriptor binding Lab, evaluation, evidence tooling, and Python/profiling environment. Source and actual host are checked separately. It differs from Compiler identity and does not imply every Workload has a live evaluator.
+The Lab, evaluation and evidence code at one clean commit, with that target's committed host capture `runtime/hosts/<target>.json`. Its identity is `<target>@<commit>`. Commit and actual host are checked separately; a target without a capture is reported as having none, and this does not imply every Workload has a live evaluator.
 
 ### Corpus
 

@@ -217,8 +217,7 @@ class ReportTest(unittest.TestCase):
         }
 
     def test_every_retained_schedule_reports_its_bound(self) -> None:
-        revision_path = ROOT / "compiler" / "revision.lock.json"
-        targets = json.loads(revision_path.read_text(encoding="utf-8"))["target_definitions"]
+        targets = {path.stem: path for path in (ROOT / "compiler/targets").glob("*.json")}
         cases = json.loads((ROOT / "corpus" / "manifest.json").read_text(encoding="utf-8"))["cases"]
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         for case in sorted(cases, key=lambda case: case["schedule"]):
@@ -236,7 +235,7 @@ class ReportTest(unittest.TestCase):
                 schedule = Schedule.from_dict(document)
                 reference = targets.get(schedule.target)
                 if reference is None:
-                    compiler = Compiler.load(ROOT, revision_path)
+                    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
                     assessment = compiler.assess_file(path)
                     codes = [finding.code for finding in assessment.findings]
                     self.assertFalse(assessment.accepted)
@@ -246,7 +245,7 @@ class ReportTest(unittest.TestCase):
                     with self.assertRaises(CompilerError):
                         compiler.lower(assessment)
                     continue
-                target = Target.load(ROOT / reference["path"])
+                target = Target.load(reference)
                 self.assertEqual(schedule.target, target.target_id)
                 reports = self._reports(path, target)
                 if target.occupancy is None:

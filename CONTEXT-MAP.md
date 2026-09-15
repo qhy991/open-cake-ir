@@ -45,8 +45,8 @@ does not redefine operator semantics or the oracle.
 - **Compiler -> none**: the Compiler is independent of providers, Campaigns, Workloads,
   Evaluation, and Evidence.
 
-Runtime evidence may motivate a Compiler proposal. Only a full Corpus Gate, external
-release approval, and a released successor can change Compiler semantics.
+Runtime evidence may motivate a Compiler proposal. Only a full Corpus Gate and a reviewed
+merge to `main` can change Compiler semantics (ADR 0065).
 
 ## Where new information goes
 

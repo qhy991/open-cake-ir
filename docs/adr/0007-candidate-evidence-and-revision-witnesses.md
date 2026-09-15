@@ -50,7 +50,7 @@ observation already consumed that otherwise unissued name, so the first unambigu
 successor is `open-cake-ir-sm100a-v7`.
 
 This ADR supersedes ADR 0005 only on its promised directory move for the next Compiler and
-Executor descriptors. Current consumers already bind `compiler/revision.lock.json` and
+Executor descriptors. Current consumers already bind `compiler/revision.json` and
 `runtime/executors/` as their authorities; moving them during this identity repair would
 create a second writable authority or require a broader migration. The lifecycle invariant
 is enforced now—released bytes and frozen Study Contracts are not rewritten—while a future

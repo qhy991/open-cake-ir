@@ -74,12 +74,12 @@ CAKE 指论文中的系统与研究思路。项目只引用其已公开说明，
 
 ### Compiler Revision
 
-固定的一版编译器：绑定语义、目标、检查、分析、源码生成、语料预期和校准覆盖。负责者是发布 lock；一个正在变化的 Git 分支不是这个身份。
+某个干净提交上的编译器：提交绑定语义、检查、分析和源码生成，`compiler/revision.json` 绑定语料与校准覆盖，`compiler/targets/` 里的每份文档是一个已声明目标。身份写作 `open-cake-ir@<commit>`；带未提交或未跟踪改动的检出没有这个身份（ADR 0065）。
 
 ### Executor Revision
 
-Lab、评测、证据工具及 Python/分析工具环境的固定组合，由已发布 descriptor 负责。
-使用前分别核对实际源码和实际主机；它与 Compiler Revision 是不同身份，不代表所有 Workload 都已接通执行路径。
+某个干净提交上的 Lab、评测与证据代码，加上该目标已提交的主机采集 `runtime/hosts/<target>.json`。身份写作 `<target>@<commit>`。
+使用前分别核对提交与实际主机；没有采集的目标就报告没有，不会借用另一台主机，也不代表所有 Workload 都已接通执行路径。
 
 ### Corpus
 

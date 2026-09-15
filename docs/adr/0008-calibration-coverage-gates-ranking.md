@@ -9,7 +9,7 @@ automatically promote calibration, or change the construction and verifier gates
 
 ## Owners and dataflow
 
-`compiler/revision.lock.json` is the sole authority for released calibration coverage.
+`compiler/revision.json` is the sole authority for released calibration coverage.
 `Compiler.assess` projects membership into `Assessment.calibration_available`, and
 `Compiler.rank` replays the Assessment and consumes that fact before calling the
 structural ranking primitive. The primitive remains independently testable, but it is not

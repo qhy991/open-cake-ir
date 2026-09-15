@@ -117,7 +117,8 @@ class PythonTaskReferenceTests(unittest.TestCase):
                 "docs/PYTHON_FRONTEND.md": "Python frontend fixture",
                 "compiler/AUTHORING_CONTRACT.md": "Schedule authoring fixture",
                 "examples/python/fma.py": (ROOT / "examples/python/fma.py").read_text(),
-                "compiler.json": json.dumps({"target_definitions": {"apple_gpu_family8": {"path": "target.json"}}}),
+                "compiler/targets/apple_gpu_family8.json": "{}",
+                "compiler.json": json.dumps({"schema_version": 2}),
             }.items():
                 path = root / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(contents)
             lock = SimpleNamespace(document={"workload": {"path": "workload.json", "canonical_sha256": "a" * 64},

@@ -26,7 +26,7 @@ Compiler 变更需通过完整 Corpus Gate；后继正式发布仍消费外部�
 ## 运行
 
 使用项目的 Python 3.10 或更新环境。在开发分支中，`compiler/revision.json` 指定当前待审草案；
-正式发布后使用 `compiler/revision.lock.json`。已有发布锁不适用于改过绑定源码的开发分支。
+正式发布后使用 `compiler/revision.json`。已有发布锁不适用于改过绑定源码的开发分支。
 
 ```bash
 PYTHONPATH=src python3 -m open_cake_ir.cli compiler assess \
