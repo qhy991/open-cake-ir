@@ -322,7 +322,14 @@ says there is no code for.
    `lab/executor.py` and the task registry files, all pinned by the current released
    Executor -- the paired successor F-2026-09-13-006 predicted. *(pending; needs the
    host each descriptor is bound to)*
-6. A DCU Executor, which `tools/capture_executor_host.py` cannot yet produce because its
-   `--kind` admits only `cuda` and `metal`, and the AMDGCN Evaluation half under
+6. A DCU Executor and the rest of the AMDGCN Evaluation half, under
    [F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json).
-   Only then is a correctness matrix -- and nothing about performance -- in scope.
+   An earlier version of this document said `capture_executor_host.py` could not produce a
+   DCU Executor because its `--kind` admitted only `cuda` and `metal`; that was read from a
+   stale ref and is wrong. It admits `hip` and `amd`, `HipHostAdmission` verifies the host
+   without touching a device, `evaluation/triton_hip.py` owns exact-HIP runtime custody and
+   `evaluation/rocprofv3.py` projects kernel-trace, kernel-stats and results evidence
+   fail-closed. What is missing is connective: no gfx target has an executable role, a
+   rocprofv3 trace is not a named timing path beside `metal` and `cupti`, and the schema v2
+   executor identity pins gfx1151 while this Compiler target is gfx938. Only past that is a
+   correctness matrix -- and nothing about performance -- in scope.
