@@ -42,20 +42,17 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.path = self.root / "revision.json"
         self.target = json.loads((ROOT / "compiler/targets/sm_100a.json").read_text())
         self.draft = {
-            "schema_version": 1, "revision_id": "admission-fixture", "state": "draft",
-            "target_definitions": {}, "corpus_manifest": "corpus.json",
+            "schema_version": 2, "corpus_manifest": "corpus.json",
             "calibration_coverage": [],
         }
+        (self.root / "compiler/targets").mkdir(parents=True)
         _write(self.root / "corpus.json", {"fixture": True})
         self.bind_target(self.target)
 
     def bind_target(self, document):
-        # Bind each mutated specimen before testing semantic/field admission, so an
-        # unrelated byte mismatch cannot hide a missing rule.
-        _write(self.root / "target.json", document)
-        self.draft["target_definitions"] = {"sm_100a": {
-            "path": "target.json", "canonical_sha256": sha256(_canonical(document)).hexdigest(),
-        }}
+        # Every document under compiler/targets is a declared Target (ADR 0065), so the
+        # fixture declares one by writing it there before testing field admission.
+        _write(self.root / "compiler/targets/sm_100a.json", document)
         _write(self.path, self.draft)
 
     def load(self, document=None):
@@ -63,29 +60,7 @@ class RevisionAdmissionTests(unittest.TestCase):
             _write(self.path, document)
         return load_revision(self.root, self.path)
 
-    def released_specimen(self):
-        # Exercise released admission with a tiny temporary source closure. Existing
-        # Gate/approval bytes are copied unchanged; this is not a release builder
-        # or evidence that the fixture satisfies the separate release policy.
-        published = json.loads((ROOT / "compiler/revision.json").read_text())
-        source = b"temporary admission source"
-        (self.root / "source.py").write_bytes(source)
-        release = copy.deepcopy(self.draft)
-        release.update(
-            state="released",
-            sources=[{"path": "source.py", "sha256": sha256(source).hexdigest(), "size_bytes": len(source)}],
-            corpus_manifest={"path": "corpus.json", "canonical_sha256": sha256(
-                (self.root / "corpus.json").read_bytes()).hexdigest()},
-            corpus_gate=published["corpus_gate"], release_approval=published["release_approval"],
-        )
-        for reference in (release["corpus_gate"], release["release_approval"]):
-            destination = self.root / reference["path"]
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes((ROOT / reference["path"]).read_bytes())
-        _write(self.path, release)
-        return release
-
-    def test_draft_holds_typed_targets_and_preserves_source_provenance(self):
+    def test_manifest_holds_typed_targets_and_preserves_source_provenance(self):
         revision = self.load()
         target = revision.targets["sm_100a"]
         self.assertIsInstance(target, Target)
@@ -94,11 +69,13 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.assertEqual(target, Target.from_dict(self.target))
         self.assertEqual(target.source.document, self.target)
         self.assertEqual(target.source.citations, tuple(self.target["citations"]))
-        self.assertEqual(target.source.canonical_sha256,
-                         self.draft["target_definitions"]["sm_100a"]["canonical_sha256"])
+        self.assertEqual(target.source.canonical_sha256, sha256(_canonical(self.target)).hexdigest())
         self.assertEqual(revision.project_root, self.root)
         self.assertEqual(revision.corpus_path, self.root / "corpus.json")
-        self.assertEqual(revision.state, "draft")
+        # The fixture root is no checkout, so it has no commit to be identified by;
+        # identity reports that absence instead of substituting one.
+        self.assertIsNone(revision.commit)
+        self.assertEqual(revision.revision_id, "open-cake-ir@uncommitted")
         with self.assertRaises(TypeError):
             revision.targets["other"] = target
         with self.assertRaises(dataclasses.FrozenInstanceError):
@@ -114,7 +91,7 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.assertFalse(target.peak.arithmetic)
         self.assertEqual(target.source.document["peak"], self.target["peak"])
 
-    def test_current_draft_retains_all_exact_targets_and_zero_tmem(self):
+    def test_current_manifest_retains_all_exact_targets_and_zero_tmem(self):
         """The exact declared set, updated only by a deliberate data addition.
 
         AGENTS.md keeps this pin so a sixth target is a decision rather than an accident;
@@ -139,13 +116,15 @@ class RevisionAdmissionTests(unittest.TestCase):
                 self.assertNotIn(MemorySpace.TENSOR, target.memory_spaces)
         self.assertEqual(revision.targets["sm_103a"].compute_capability, (10, 3))
 
-    def test_revision_fields_state_targets_and_calibration_remain_strict(self):
+    def test_revision_fields_targets_and_calibration_remain_strict(self):
+        # The retired schema-1 fields are refused as unexpected rather than half-read:
+        # a stale manifest must not load as if it declared today's Compiler.
         mutations = [
-            ("schema_version", 2), ("state", "unknown"), ("revision_id", ""),
-            ("target_definitions", {}), ("target_definitions", []),
+            ("schema_version", 1), ("state", "released"), ("revision_id", "v1"),
+            ("target_definitions", {}), ("sources", []), ("release_approval", {}),
             ("calibration_coverage", "sm_100a"), ("calibration_coverage", [False]),
             ("calibration_coverage", [""]), ("unexpected", True),
-            ("corpus_manifest", {"path": "corpus.json"}),
+            ("corpus_manifest", {"path": "corpus.json"}), ("corpus_manifest", "../escape.json"),
         ]
         for field, value in mutations:
             with self.subTest(field=field, value=value):
@@ -154,32 +133,29 @@ class RevisionAdmissionTests(unittest.TestCase):
                 with self.assertRaises(CompilerError):
                     self.load(document)
 
-    def test_target_reference_identity_and_paths_remain_strict(self):
-        references = [
-            {"path": "target.json"},
-            {"path": "target.json", "canonical_sha256": "0" * 64},
-            {"path": "target.json", "canonical_sha256": "0" * 64, "extra": 1},
-        ]
-        for path in ("../target.json", str(self.root / "target.json"), "dir\\target.json"):
-            references.append({**self.draft["target_definitions"]["sm_100a"], "path": path})
-        for reference in references:
-            with self.subTest(reference=reference):
-                document = copy.deepcopy(self.draft)
-                document["target_definitions"]["sm_100a"] = reference
-                with self.assertRaises(CompilerError):
-                    self.load(document)
-        document = copy.deepcopy(self.draft)
-        document["target_definitions"] = {"sm_103a": document["target_definitions"]["sm_100a"]}
+    def test_declared_target_custody_and_identity_remain_strict(self):
+        """Discovery replaces per-target references: the directory is the declaration.
+
+        So identity is checked against the file name that declares it, custody at the
+        file itself, and an empty directory is reported rather than read as no targets.
+        """
+        document = copy.deepcopy(self.target)
+        document["target_id"] = "sm_103a"
+        self.bind_target(document)
         with self.assertRaisesRegex(CompilerError, "identity differs"):
-            self.load(document)
+            self.load()
+        self.bind_target(self.target)
         with tempfile.TemporaryDirectory() as outside:
             external = Path(outside) / "target.json"
             _write(external, self.target)
-            (self.root / "linked.json").symlink_to(external)
-            document = copy.deepcopy(self.draft)
-            document["target_definitions"]["sm_100a"]["path"] = "linked.json"
-            with self.assertRaisesRegex(CompilerError, "escapes project root"):
-                self.load(document)
+            link = self.root / "compiler/targets/sm_120a.json"
+            link.symlink_to(external)
+            with self.assertRaisesRegex(CompilerError, "custody differs"):
+                self.load()
+            link.unlink()
+        (self.root / "compiler/targets/sm_100a.json").unlink()
+        with self.assertRaisesRegex(CompilerError, "declares no Target"):
+            self.load()
 
     def test_target_root_resource_and_citation_checks_are_not_lost(self):
         mutations = [
@@ -210,62 +186,6 @@ class RevisionAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilerError, "maximum_threads_per_cta") as caught:
             self.load()
         self.assertIsInstance(caught.exception.__cause__, TargetParseError)
-
-    def test_released_admission_then_rejects_changed_source(self):
-        release = self.released_specimen()
-        revision = self.load()
-        self.assertEqual(revision.state, "released")
-        self.assertEqual(revision.revision_id, release["revision_id"])
-        source = release["sources"][0]
-        (self.root / source["path"]).write_bytes(b"changed source")
-        with self.assertRaisesRegex(CompilerError, "released compiler source"):
-            self.load()
-
-    def test_released_source_fields_duplicates_sizes_and_paths_remain_strict(self):
-        release = self.released_specimen()
-        cases = []
-        for sources in ([], [*release["sources"], release["sources"][0]]):
-            cases.append({**release, "sources": sources})
-        for field, value in (("size_bytes", -1), ("sha256", "0" * 64),
-                             ("path", "../escape"), ("extra", True)):
-            sources = copy.deepcopy(release["sources"])
-            sources[0][field] = value
-            cases.append({**release, "sources": sources})
-        for index, document in enumerate(cases):
-            with self.subTest(index=index), self.assertRaises(CompilerError):
-                self.load(document)
-
-    def test_released_corpus_gate_and_approval_bindings_remain_strict(self):
-        release = self.released_specimen()
-        for reference in ("corpus_manifest", "corpus_gate", "release_approval"):
-            for field, value in (("canonical_sha256", "0" * 64), ("extra", True),
-                                 ("path", "../escape")):
-                document = copy.deepcopy(release)
-                document[reference][field] = value
-                with self.subTest(reference=reference, field=field), self.assertRaises(CompilerError):
-                    self.load(document)
-        for field in ("case_count", "matched_case_count"):
-            document = copy.deepcopy(release)
-            document["corpus_gate"][field] += 1
-            with self.subTest(field=field), self.assertRaisesRegex(CompilerError, "Corpus Gate"):
-                self.load(document)
-        # Alter approval input only in memory; keep the archived approval bytes intact.
-        approval_path = self.root / release["release_approval"]["path"]
-        approval = json.loads(approval_path.read_text())
-        read_text = Path.read_text
-        for field in ("decision", "gate_path", "gate_identity"):
-            changed = copy.deepcopy(approval)
-            if field == "decision":
-                changed["decision"] = "rejected"
-            else:
-                changed["gate_report"]["path" if field == "gate_path" else "canonical_sha256"] = "different"
-            document = copy.deepcopy(release)
-            document["release_approval"]["canonical_sha256"] = sha256(_canonical(changed)).hexdigest()
-            def supplied(path, *args, **kwargs):
-                return _canonical(changed).decode() if path == approval_path else read_text(path, *args, **kwargs)
-            with self.subTest(field=field), patch.object(Path, "read_text", supplied):
-                with self.assertRaisesRegex(CompilerError, "Compiler approval"):
-                    self.load(document)
 
 
 class CorpusOwnershipTests(unittest.TestCase):

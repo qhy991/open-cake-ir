@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from open_cake_ir.lab.bindings import load_compiler_reference
 from open_cake_ir.tasks import evaluate as worker
-from tests.contracts._executor_fixture import compiler_reference
+from tests.contracts._executor_fixture import commit_project, compiler_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,11 +30,15 @@ class CompilerDependencyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             shutil.copytree(ROOT / "compiler", root / "compiler")
+            shutil.copytree(ROOT / "corpus", root / "corpus")
             target = root / "compiler/targets/apple_gpu_family7.json"
             document = json.loads(target.read_bytes())
             document["device_names"] = ["substituted test target"]
             target.write_text(json.dumps(document))
-            with self.assertRaisesRegex(ValueError, "[Tt]arget"):
+            # The copy is committed, so the checkout is clean and what refuses is the
+            # Target document itself: every declared Target feeds Compiler identity.
+            commit_project(root)
+            with self.assertRaisesRegex(ValueError, "Compiler Revision differs"):
                 load_compiler_reference(root, compiler_reference(ROOT), "fixture")
 
     def test_worker_refuses_dependency_before_workload_or_artifact_interpretation(self):

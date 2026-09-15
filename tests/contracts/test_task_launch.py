@@ -214,7 +214,7 @@ class TaskLaunchTests(unittest.TestCase):
         with patch.object(launch_task.Compiler,"load",return_value=compiler), \
              patch.object(launch_task,"resolve_executor",return_value=executor), \
              patch.object(launch_task.MetalArchiveHost,"from_executor") as host:
-            with self.assertRaisesRegex(ValueError,"released Metal Executor"):
+            with self.assertRaisesRegex(ValueError,"Metal host capture"):
                 launch_task._admit_stack(ROOT,self.workspace,"apple_gpu_family7")
             host.assert_not_called()
 
@@ -235,7 +235,7 @@ class TaskLaunchTests(unittest.TestCase):
         with patch.object(launch_task.Compiler, "load", return_value=compiler), \
              patch.object(launch_task, "resolve_executor", return_value=metal), \
              patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
-            with self.assertRaisesRegex(ValueError, "bound to a GPU host"):
+            with self.assertRaisesRegex(ValueError, "requires a GPU host capture"):
                 launch_task._admit_stack(ROOT, first, "sm_103a", "triton")
             host.assert_not_called()
         # And a host with no `kind` is what the CUDA capture actually writes, so the GPU
@@ -244,7 +244,7 @@ class TaskLaunchTests(unittest.TestCase):
         with patch.object(launch_task.Compiler, "load", return_value=compiler), \
              patch.object(launch_task, "resolve_executor", return_value=cuda), \
              patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
-            with self.assertRaisesRegex(ValueError, "released Metal Executor"):
+            with self.assertRaisesRegex(ValueError, "Metal host capture"):
                 launch_task._admit_stack(ROOT, second, "sm_103a", "metal")
             host.assert_not_called()
             compiler_, executor_, resolved_host, _ = launch_task._admit_stack(
@@ -252,14 +252,14 @@ class TaskLaunchTests(unittest.TestCase):
             self.assertIsNone(resolved_host)
             host.assert_not_called()
 
-    def test_stale_executor_refusal_names_the_required_release_boundary(self):
+    def test_stale_executor_refusal_names_the_required_host_capture(self):
         self.workspace.mkdir()
         gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
         compiler = SimpleNamespace(commit="0" * 40, check_corpus=lambda: gate)
         with patch.object(launch_task.Compiler, "load", return_value=compiler), \
              patch.object(launch_task, "resolve_executor", side_effect=ValueError("source differs")), \
              patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
-            with self.assertRaisesRegex(ValueError, "released Metal Executor matching this source; source differs"):
+            with self.assertRaisesRegex(ValueError, "committed host capture for 'apple_gpu_family7'; source differs"):
                 launch_task._admit_stack(ROOT, self.workspace, "apple_gpu_family7")
             host.assert_not_called()
 

@@ -17,12 +17,20 @@ from open_cake_ir.lab.metal_host import validate_metal_host, inspect_metal_host
 from open_cake_ir.lab.metal_build import MetalArchiveHost
 from tools import capture_executor_host as capture
 
+ROOT = Path(__file__).resolve().parents[2]
+
 
 class MetalExecutorContracts(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
+        # A host is captured only for a target the checkout declares, so the fixture
+        # checkout declares the one this host describes.
+        declared = self.root / "compiler/targets/apple_gpu_family7.json"
+        declared.parent.mkdir(parents=True)
+        declared.write_bytes((ROOT / "compiler/targets/apple_gpu_family7.json").read_bytes())
+        self.capture_path = self.root / "runtime/hosts/apple_gpu_family7.json"
         self.archive = self.root / "archive-helper"
         self.observer = self.root / "observer"
         self.swift = self.root / "swiftc"
@@ -122,21 +130,23 @@ class MetalExecutorContracts(unittest.TestCase):
             MetalArchiveHost.build(self.root / "new-output")
 
     def test_capture_uses_native_admission_without_cuda_profiler(self):
-        output = self.root / "captured-host.json"
         args = ["--kind", "metal", "--target", "apple_gpu_family7", "--swiftc", str(self.swift),
-                "--archive-executable", str(self.archive), "--observer-executable", str(self.observer), "--output", str(output)]
+                "--archive-executable", str(self.archive), "--observer-executable", str(self.observer),
+                "--project-root", str(self.root)]
         with patch.object(capture, "_capture_metal_host", return_value=self.host), \
              patch.object(capture, "_capture_host", side_effect=AssertionError("no CUDA capture")), \
              patch.object(capture, "admit_host_environment", return_value={"kind": "metal"}) as admit, \
              patch.object(capture, "admit_profiler_environment", side_effect=AssertionError("native observer already admitted")):
             self.assertEqual(capture.main(args), 0)
-        self.assertEqual(json.loads(output.read_text()), self.host)
+        self.assertEqual(json.loads(self.capture_path.read_text()),
+                         {"schema_version": 1, "target": "apple_gpu_family7",
+                          "host_environment": self.host})
         admit.assert_called_once_with(self.host)
 
     def test_capture_refuses_mixed_host_or_missing_native_binary_before_observation(self):
         args = ["--kind", "metal", "--target", "apple_gpu_family7", "--swiftc", str(self.swift),
                 "--archive-executable", str(self.archive), "--observer-executable", str(self.observer),
-                "--output", str(self.root / "host.json")]
+                "--project-root", str(self.root)]
         with self.assertRaisesRegex(ValueError, "CUDA host fields"):
             capture.main(args + ["--ncu", str(self.observer)])
         self.observer.unlink()
@@ -144,7 +154,7 @@ class MetalExecutorContracts(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "explicit executable"):
                 capture.main(args)
             command.assert_not_called()
-        self.assertFalse((self.root / "host.json").exists())
+        self.assertFalse(self.capture_path.exists())
 
 
 

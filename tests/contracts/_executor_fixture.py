@@ -2,6 +2,8 @@
 from contextlib import ExitStack
 from functools import lru_cache
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 from unittest.mock import patch
 
@@ -57,6 +59,33 @@ class SemanticExecutorFixture:
 
     def __exit__(self, *args):
         return self.stack.__exit__(*args)
+
+
+def commit_project(root):
+    """Make one copied project a clean checkout of itself, and return its commit.
+
+    A copy is never a checkout of itself: a worktree's `.git` is a file naming the
+    original, and a copy that omits tracked directories reads as deletions. Both make
+    `checkout_commit` refuse, so the copy is given a repository of its own. The commit
+    is the copy's source identity (ADR 0065); it publishes nothing.
+    """
+    from open_cake_ir.source_identity import checkout_commit
+
+    root = Path(root).resolve(strict=True)
+    git = root / ".git"
+    if git.is_dir():
+        shutil.rmtree(git)
+    elif git.exists():
+        git.unlink()
+
+    def run(*arguments):
+        subprocess.run(["git", "-C", str(root), *arguments], check=True, capture_output=True)
+
+    run("init", "-q")
+    run("add", "-A")
+    run("-c", "user.name=fixture", "-c", "user.email=fixture@invalid",
+        "commit", "-q", "-m", "fixture checkout", "--allow-empty")
+    return checkout_commit(root)
 
 
 @lru_cache(maxsize=None)

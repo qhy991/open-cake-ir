@@ -35,7 +35,7 @@ def _object(value: object, context: str) -> Mapping[str, object]:
 
 
 def _summary(project_root: Path, schedule_bytes: bytes) -> dict[str, object]:
-    compiler = Compiler.load(project_root, project_root / "compiler/revision.lock.json")
+    compiler = Compiler.load(project_root, project_root / "compiler/revision.json")
     schedule = _object(json.loads(schedule_bytes), "schedule")
     assessment = compiler.assess(schedule)
     findings = [
@@ -157,7 +157,7 @@ def _run_gpu(
         "path": executor.relative_path,
     }
     admission = observe_exclusive_b200()
-    compiler = Compiler.load(project_root, project_root / "compiler/revision.lock.json")
+    compiler = Compiler.load(project_root, project_root / "compiler/revision.json")
     workload = load_workload(
         project_root / "contracts/workloads/flash-kmeans-assign-v2.json"
     )

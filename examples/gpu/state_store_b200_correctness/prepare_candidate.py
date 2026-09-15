@@ -46,8 +46,9 @@ def _load_frozen_compiler() -> Compiler:
         commit = checkout_commit(ROOT)
     except ValueError as error:
         raise RuntimeError(
-            "state-store v5 requires a clean Git checkout containing Compiler commit "
-            f"{FIXED_SOURCE_COMMIT}; a source archive alone cannot verify its origin: {error}"
+            "state-store v5 requires a Git checkout containing Compiler commit "
+            f"{FIXED_SOURCE_COMMIT} with no uncommitted changes; a source archive alone "
+            f"cannot verify its origin: {error}"
         ) from error
     if commit != FIXED_SOURCE_COMMIT:
         raise RuntimeError("current Compiler commit differs from the frozen state-store v5 source")
@@ -127,7 +128,7 @@ def prepare(output_root: Path) -> dict[str, object]:
         "schedule_id": accepted.schedule_id,
         "schedule_path": f"corpus/schedules/{POSITIVE}",
         "shape": [8, 128],
-        "generated_via": "Compiler.load(revision.lock.json).assess_file/lower",
+        "generated_via": "Compiler.load(revision.json).assess_file/lower",
         "parent_id": "contiguous_apply2_add_fp32_u32_block256_v1",
         "parent_source_record": "data_movement_and_layout__memory_addressing__analysis__l000001_b200_v1__directderived_sol_ultra_v2",
         "parent_node_locator": "b200-local/directderived-contiguous-fp32-add-u32-v1-452f56c1e353",

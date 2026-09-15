@@ -20,7 +20,7 @@ from open_cake_ir.tasks.runtime import TaskLab
 from tools.freeze_live_matched_study import (  # noqa: E402
     _replace_artifact_feedback_budget,
 )
-from tests.contracts._executor_fixture import SemanticExecutorFixture
+from tests.contracts._executor_fixture import SemanticExecutorFixture, commit_project
 from tests.contracts._contexts import enter_context
 
 
@@ -130,6 +130,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 project,
                 ignore=ignored,
             )
+            commit_project(project)
             executable = _provider_fixture(project, b"qualified codex fixture")
             provider_revision = "codex-live-contract-fixture"
             invocation = CodexInvocationBuilder(
@@ -443,6 +444,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
                 return omitted & set(names)
 
             shutil.copytree(ROOT, project, ignore=ignored)
+            commit_project(project)
             executable = _provider_fixture(project, b"qualified Ralph Codex fixture")
             provider_revision = "codex-live-ralph-contract-fixture"
             invocation = CodexInvocationBuilder(

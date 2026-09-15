@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir import compiler as public
-from open_cake_ir.compiler import core, corpus, diagnostics, errors, release, verifier
+from open_cake_ir.compiler import core, corpus, diagnostics, errors, verifier
 from open_cake_ir.compiler.target import TargetSource
 
 
@@ -33,7 +33,6 @@ class CompilerConvergenceContractTests(unittest.TestCase):
     def test_public_diagnostic_error_and_report_types_have_one_owner(self) -> None:
         self.assertIs(public.CompilerError, errors.CompilerError)
         self.assertIs(core.CompilerError, errors.CompilerError)
-        self.assertIs(release.CompilerError, errors.CompilerError)
         self.assertIs(public.CorpusCaseReport, corpus.CorpusCaseReport)
         self.assertIs(core.CorpusGateReport, corpus.CorpusGateReport)
         for name in ("Finding", "FindingCategory", "FindingSeverity"):
@@ -47,13 +46,13 @@ class CompilerConvergenceContractTests(unittest.TestCase):
             project_root=revision.project_root,
             revision_id=revision.revision_id,
             revision_sha256=revision.canonical_sha256,
-            state=revision.state,
+            commit=revision.commit,
             target_definitions=targets,
             corpus_path=revision.corpus_path,
             calibration_coverage=revision.calibration_coverage,
         )
         targets.clear()
-        self.assertEqual(compiler.state, self.compiler.state)
+        self.assertEqual(compiler.commit, self.compiler.commit)
         self.assertEqual(compiler.assess(self.document()), self.compiler.assess(self.document()))
 
     def test_assess_lower_profile_and_rank_reuse_the_admitted_target(self) -> None:

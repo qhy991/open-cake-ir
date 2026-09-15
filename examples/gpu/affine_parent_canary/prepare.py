@@ -26,13 +26,19 @@ def prepare(output: Path, python: Path, judge_cwd: Path) -> dict:
         raise ValueError("judge Python and cwd must be explicit absolute runtime paths")
     if Path(inspect.getfile(Compiler)).resolve() != ROOT / "src/open_cake_ir/compiler/core.py":
         raise ValueError("Compiler imported from a different checkout")
-    expected_lock = subprocess.run(
-        ["git", "--no-replace-objects", "-C", str(ROOT), "show", f"{SOURCE_COMMIT}:compiler/revision.lock.json"],
-        check=True, capture_output=True,
-    ).stdout
-    if (ROOT / "compiler/revision.lock.json").read_bytes() != expected_lock:
+    # Source identity is the commit (ADR 0065): this canary belongs to one frozen
+    # checkout, so the commit is what is compared rather than one file's bytes.
+    from open_cake_ir.source_identity import SourceIdentityError, checkout_commit
+
+    try:
+        commit = checkout_commit(ROOT)
+    except SourceIdentityError as error:
+        raise ValueError(
+            f"canary requires its frozen v43 Compiler source; use its full Git checkout: {error}"
+        ) from error
+    if commit != SOURCE_COMMIT:
         raise ValueError("canary requires its frozen v43 Compiler source; use its full Git checkout")
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     # Read the reviewed candidate from its fixed source object, not mutable data in a
     # different checkout. The generator never edits this Schedule or emitted source.
     result_bytes = subprocess.run(

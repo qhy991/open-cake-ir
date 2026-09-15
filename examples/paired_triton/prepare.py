@@ -76,7 +76,7 @@ def prepare_baseline(workload: WorkloadContract, case_id: str, output_root: Path
     output = output_root.resolve()
     if any((parent / ".git").exists() for parent in (output, *output.parents)):
         raise ValueError("baseline preparation output must be outside every checkout")
-    compiler = Compiler.load(root, compiler_revision or root / "compiler/revision.lock.json")
+    compiler = Compiler.load(root, compiler_revision or root / "compiler/revision.json")
     assessment = compiler.assess(baseline_schedule(workload, case_id, project_root=root))
     if not assessment.accepted or not assessment.lowering_eligible:
         findings = "; ".join(f"{finding.code}: {finding.path}: {finding.message}" for finding in assessment.findings)

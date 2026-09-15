@@ -10,8 +10,12 @@ import shutil
 import sys
 
 ROOT = Path(__file__).resolve().parents[3]
+# The v41 Compiler is the source at this commit; `tools/verify_aka_fma_v41_reaudit.py`
+# replays the same one. It is not a revision this checkout can rebuild (ADR 0065).
+FROZEN_V41_COMMIT = "d9d56e835cf96eecf70e0259b65bc1b20c4f6f0d"
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import Compiler
+from open_cake_ir.source_identity import checkout_commit_or_none
 from oracle import FAMILIES, MODES, SHAPE
 
 
@@ -22,10 +26,12 @@ def prepare(output: Path, python: Path, judge_cwd: Path) -> dict:
         raise ValueError("runtime Python is not executable")
     if not judge_cwd.is_dir():
         raise ValueError("judge cwd does not exist")
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.lock.json")
-    lock = json.loads((ROOT / "compiler/revision.lock.json").read_text())
-    if lock["state"] != "released" or lock["revision_id"] != "open-cake-ir-sm100a-v41":
-        raise ValueError("this task requires the released v41 Compiler")
+    commit = checkout_commit_or_none(ROOT)
+    if commit != FROZEN_V41_COMMIT:
+        raise ValueError(
+            f"this task requires the frozen v41 Compiler checkout {FROZEN_V41_COMMIT}; "
+            f"this checkout provides {commit or 'uncommitted changes'}")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     candidate = output / "candidate"
     output.mkdir(parents=True, exist_ok=False)
     candidate.mkdir()

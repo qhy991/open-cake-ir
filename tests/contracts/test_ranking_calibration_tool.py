@@ -200,7 +200,7 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
             )
         )
         revision = json.loads(
-            (ROOT / "compiler/revision.lock.json").read_text(encoding="utf-8")
+            (ROOT / "compiler/revision.json").read_text(encoding="utf-8")
         )
         self.assertEqual(revision["calibration_coverage"], [])
 
@@ -234,7 +234,7 @@ class RankingCalibrationInstrumentTests(unittest.TestCase):
             1.05,
         )
         revision = json.loads(
-            (ROOT / "compiler/revision.lock.json").read_text(encoding="utf-8")
+            (ROOT / "compiler/revision.json").read_text(encoding="utf-8")
         )
         self.assertEqual(revision["calibration_coverage"], [])
 

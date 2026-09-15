@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.tasks.workloads import load_workload
 from tests.contracts._contexts import enter_context
-from tests.contracts._executor_fixture import compiler_reference
+from tests.contracts._executor_fixture import commit_project, compiler_reference
 
 from open_cake_ir.evaluation import (  # noqa: E402
     BrokerAttempt,
@@ -559,11 +559,8 @@ class LabContractTests(SemanticLabTestCase):
                 name,
             )
             compiler = lock.document["compiler_revision"]
-            current_compiler = json.loads(
-                (ROOT / "compiler/revision.json").read_text(encoding="utf-8")
-            )
             self.assertEqual(
-                compiler["revision_id"], current_compiler["revision_id"], name
+                compiler["revision_id"], compiler_reference(ROOT)["revision_id"], name
             )
             if lock.study_kind == "matched_search":
                 self.assertEqual(
@@ -1244,12 +1241,14 @@ class LabContractTests(SemanticLabTestCase):
             {"broker_stdout": b"worker-out\n", "broker_stderr": b"worker-err\n"},
         )
 
-    def test_preflight_rejects_a_draft_compiler_revision(self) -> None:
+    def test_preflight_rejects_a_compiler_revision_this_checkout_does_not_provide(self) -> None:
         study = json.loads((ROOT / "contracts/studies/matched-search-infrastructure-template.json").read_text())
-        draft = json.loads((ROOT / "compiler/revision.json").read_text())
-        draft_sha256 = sha256(
+        published = json.loads((ROOT / "compiler/revision.json").read_text())
+        # The manifest's own bytes are not the Compiler's identity: that covers the
+        # commit, every declared Target and the Corpus the manifest names (ADR 0065).
+        manifest_sha256 = sha256(
             json.dumps(
-                draft,
+                published,
                 sort_keys=True,
                 separators=(",", ":"),
                 ensure_ascii=False,
@@ -1258,14 +1257,14 @@ class LabContractTests(SemanticLabTestCase):
         ).hexdigest()
         study["arms"]["open_cake"]["compiler_revision"] = {
             "path": "compiler/revision.json",
-            "canonical_sha256": draft_sha256,
+            "canonical_sha256": manifest_sha256,
         }
         study["state"] = "frozen"
         study["execution"]["executor_revision"] = dict(self.executor_fixture.revision(ROOT).reference)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "study.json"
             path.write_text(json.dumps(study))
-            with self.assertRaisesRegex(ValueError, "released"):
+            with self.assertRaisesRegex(ValueError, "Compiler Revision differs"):
                 TaskLab(ROOT).preflight(path)
 
     def test_preflight_rejects_an_unsupported_analysis_plan(self) -> None:
@@ -3866,6 +3865,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
         cls.parent = Path(cls.temporary.name).resolve()
         cls.root = cls.parent / "prospective-project"
         shutil.copytree(ROOT, cls.root, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        commit_project(cls.root)
         from tests.contracts._executor_fixture import SemanticExecutorFixture
         cls.executor_fixture = SemanticExecutorFixture()
         cls.executor = cls.executor_fixture.revision(cls.root)

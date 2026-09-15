@@ -52,12 +52,16 @@ class FlashCalibrationTest(unittest.TestCase):
         cls.project.mkdir()
         # Preserve the actual frozen Compiler bytes and identity. This fixture
         # exercises lowering/model semantics, not the independent release workflow.
+        # The Compiler is its manifest, the Target documents it declares and the Corpus
+        # that manifest names (ADR 0065).
         manifest = json.loads((ROOT / "compiler/revision.json").read_bytes())
-        paths = {record["path"] for record in manifest["sources"]}
-        paths.update(reference["path"] for reference in manifest["target_definitions"].values())
-        paths.update(manifest[key]["path"] for key in ("corpus_manifest", "corpus_gate", "release_approval"))
-        paths.update({"compiler/revision.json", "compiler/revision.json", "compiler/source_set.json",
-                      "contracts/workloads/flash-kmeans-assign-v2.json", "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
+        corpus = json.loads((ROOT / manifest["corpus_manifest"]).read_bytes())
+        paths = {case["schedule"] for case in corpus["cases"]}
+        paths.update(path.relative_to(ROOT).as_posix()
+                     for path in (ROOT / "compiler/targets").glob("*.json"))
+        paths.update({"compiler/revision.json", manifest["corpus_manifest"],
+                      "contracts/workloads/flash-kmeans-assign-v2.json",
+                      "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
         # The child-process supervision probes need the actual Python runtime code.
         shutil.copytree(ROOT / "src", cls.project / "src", ignore=shutil.ignore_patterns("__pycache__"))
         for relative in paths:

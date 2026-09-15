@@ -10,7 +10,7 @@ import os
 import grp
 import pwd
 from pathlib import Path
-from tests.contracts._executor_fixture import compiler_reference
+from tests.contracts._executor_fixture import commit_project, compiler_reference
 import tempfile
 import shutil
 import subprocess
@@ -509,8 +509,8 @@ class PairedExecutionTests(unittest.TestCase):
     def _external_preflight_contract(self, template_path, workload, comparison, schedule=None):
         from open_cake_ir.lab.pairing import native_backend, native_block
         policy = native_backend(comparison)
-        # Independent CPU fixture: real descriptor bytes, source closure, inventory
-        # and resolver. No released project descriptor or host environment is edited.
+        # Independent CPU fixture: a real committed host capture and the real resolver.
+        # No published host capture or host environment of this checkout is edited.
         project = self.output / 'project'
         project.mkdir()
         for directory in ('contracts', 'corpus', 'compiler', 'docs', 'examples/python'):
@@ -531,30 +531,16 @@ class PairedExecutionTests(unittest.TestCase):
         before = template.read_bytes()
         source = project / 'cpu-executor-source.txt'
         source.write_bytes(b'Independent CPU resolver fixture; not GPU qualification.\n')
-        descriptor = {
-            'schema_version': 1, 'executor_id': 'cpu-fixture-executor', 'state': 'released',
-            'sources': [{'path': source.name, 'sha256': sha256(source.read_bytes()).hexdigest(),
-                         'size_bytes': source.stat().st_size}],
-            'host_environment': {
-                'python': {'invocation_path': '/cpu-fixture/python', 'version': 'fixture', 'resolved_sha256': 'a'*64},
-                'packages': {'triton': 'fixture'},
-                'cupti_python': {'site_packages_path': '/cpu-fixture/site-packages',
-                    'distribution': 'cupti-python', 'version': 'fixture',
-                    'files': [{'path': 'cupti/__init__.py', 'sha256': 'b'*64, 'size_bytes': 1}]},
-                'flashinfer_helper': {'path': '/cpu-fixture/testing.py', 'distribution': 'flashinfer-python',
-                    'version': 'fixture', 'sha256': 'c'*64, 'size_bytes': 1},
-            },
-        }
-        executor_path = project / 'runtime/executors/cpu-fixture.json'
-        executor_path.parent.mkdir(parents=True)
-        executor_path.write_bytes(encoded(descriptor))
-        executor_ref = {'executor_id': descriptor['executor_id'],
-            'path': executor_path.relative_to(project).as_posix(),
-            'canonical_sha256': sha256(encoded(descriptor)).hexdigest()}
-        inventory = project / 'inventory/EXECUTOR_REVISIONS.json'
-        inventory.parent.mkdir()
-        inventory.write_bytes(encoded({'schema_version': 2,
-            'current_by_target': {'sm_103a': executor_ref}}))
+        from tests.contracts.test_executor import _synthetic_cuda_host
+        from open_cake_ir.lab.executor import ExecutorRevision
+        capture = project / 'runtime/hosts/sm_103a.json'
+        capture.parent.mkdir(parents=True)
+        capture.write_bytes(encoded({'schema_version': 1, 'target': 'sm_103a',
+                                     'host_environment': _synthetic_cuda_host()}))
+        # The Executor is this commit plus that capture (ADR 0065), so the fixture
+        # project is committed once every file it resolves against exists.
+        commit_project(project)
+        executor_ref = dict(ExecutorRevision.for_target(project, 'sm_103a').reference)
         draft = DraftCompilerFixture()
         schedule = bind_baseline(json.loads((project / study.document['arms']['open_cake']['schedule_skeleton']['path']).read_bytes()),
                                  workload, 'primary')
