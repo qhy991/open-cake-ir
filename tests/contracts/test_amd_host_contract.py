@@ -57,7 +57,7 @@ class HipExecutorFixture:
                 }
             ],
             "host_environment": {
-                "runtime_kind": "hip",
+                "kind": "hip",
                 "platform": {
                     "system": "Linux",
                     "machine": platform.machine(),
@@ -292,7 +292,7 @@ class HipHostBoundaryTests(unittest.TestCase):
 
     def test_public_admission_validates_before_python_or_package_access(self) -> None:
         from open_cake_ir.lab.executor import admit_host_environment
-        for host in (None, [], {}, {"runtime_kind": "hip"}):
+        for host in (None, [], {}, {"kind": "hip"}):
             with self.subTest(host=host), patch(
                 "open_cake_ir.lab.executor.importlib.metadata.version"
             ) as metadata:

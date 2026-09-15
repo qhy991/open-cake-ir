@@ -2,10 +2,18 @@
 
 METAL_TARGETS = frozenset({"apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9"})
 _CUBIN_TARGETS = frozenset({"sm_100a", "sm_103a"})
+# The AMD targets this layer can build an executable for. Declared here, beside the two
+# sets it already owned, so the target-to-executable map stays one table rather than a
+# vendor branch; `lab/executor.py` reads it for the Executor identities schema v2 admits.
+AMDGCN_TARGETS = frozenset({"gfx938", "gfx1151"})
 _BUILD_ROLES = {
     "metal": frozenset({"metal_binary_archive", "metal_build_report", "launch_manifest"}),
     "triton": frozenset({"compiler_expanded_source", "ptx", "cubin", "launch_manifest"}),
     "cuda": frozenset({"ptx", "cubin", "sass", "launch_manifest"}),
+    # Triton on AMDGCN emits its own roles: assembly and an ELF HSACO where the CUDA
+    # route has PTX and a CUBIN. evaluation/triton_hip.ARTIFACT_ROLES is the producer.
+    "triton_amdgcn": frozenset({"compiler_expanded_source", "amdgcn", "hsaco",
+                                "launch_manifest"}),
 }
 _CUDA_ALLOWED = frozenset({"authored_source", "lowered_source", "compiler_expanded_source",
     "ttir", "ttgir", "llir", "ptx", "cubin", "sass", "toolchain_resource_report", "launch_manifest"})
@@ -24,9 +32,11 @@ def executable_role(target: str) -> str:
         return "metal_binary_archive"
     if target in _CUBIN_TARGETS:
         return "cubin"
+    if target in AMDGCN_TARGETS:
+        return "hsaco"
     raise ValueError(
         f"target {target!r} has no executable role in this Evaluation layer; it builds "
-        f"{', '.join(sorted(METAL_TARGETS))} and {', '.join(sorted(_CUBIN_TARGETS))}"
+        + ", ".join(sorted(METAL_TARGETS | _CUBIN_TARGETS | AMDGCN_TARGETS))
     )
 
 

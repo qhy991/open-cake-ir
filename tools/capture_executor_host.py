@@ -141,7 +141,7 @@ def _capture_hip_library(soname: str, path: Path) -> dict[str, object]:
 
 
 def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
-    if arguments.runtime_kind == "hip" and set(arguments.package) != HIP_PACKAGES:
+    if arguments.host_kind == "hip" and set(arguments.package) != HIP_PACKAGES:
         raise ValueError("Executor HIP package set differs")
     python = Path(sys.executable).absolute()
     common = {
@@ -152,7 +152,7 @@ def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
         },
         "packages": {name: importlib.metadata.version(name) for name in sorted(set(arguments.package))},
     }
-    if arguments.runtime_kind == "hip":
+    if arguments.host_kind == "hip":
         torch = importlib.import_module("torch")
         version = getattr(torch, "version", None)
         hip = getattr(version, "hip", None)
@@ -160,7 +160,7 @@ def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
             raise ValueError("Executor HIP runtime differs")
         return {
             **common,
-            "runtime_kind": "hip",
+            "kind": "hip",
             "platform": {
                 "system": platform.system(), "machine": platform.machine(),
                 "kernel_release": platform.release(),
@@ -228,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
     # v110 and v112 both carry one. CUDA and HIP require their own sets below.
     parser.add_argument("--package", action="append", default=[],
                         help="installed distribution to bind; repeat for each runtime dependency")
-    parser.add_argument("--runtime-kind", "--kind", dest="runtime_kind",
+    parser.add_argument("--kind", "--runtime-kind", dest="host_kind",
                         choices=("cuda", "hip", "amd", "metal"), default="cuda",
                         help="host runtime kind; amd is the public name for the HIP/DCU host")
     parser.add_argument("--cupti-distribution")
@@ -248,19 +248,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--observer-executable", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args(argv)
-    if arguments.runtime_kind == "amd":
-        arguments.runtime_kind = "hip"
+    if arguments.host_kind == "amd":
+        arguments.host_kind = "hip"
     cuda_arguments = (arguments.cupti_distribution, arguments.flashinfer_distribution, arguments.ncu)
     hip_arguments = (arguments.amd_smi, arguments.hip_build_tool, arguments.hip_runtime_library)
     metal_arguments = (arguments.target, arguments.swiftc, arguments.archive_executable,
                        arguments.observer_executable)
-    if arguments.runtime_kind == "cuda":
+    if arguments.host_kind == "cuda":
         if not arguments.package or not all(cuda_arguments) or any(hip_arguments) \
                 or arguments.hip_profiler \
                 or any(value is not None for value in metal_arguments):
             raise ValueError(
                 "CUDA capture requires packages and its CUPTI, FlashInfer and NCU inputs only")
-    elif arguments.runtime_kind == "metal":
+    elif arguments.host_kind == "metal":
         # _capture_metal_host owns the refusal of inherited CUDA fields and names them;
         # only the HIP inputs it has never heard of are refused here.
         if any(hip_arguments) or arguments.hip_profiler:
@@ -279,13 +279,13 @@ def main(argv: list[str] | None = None) -> int:
     ):
         raise ValueError("host capture output must be outside project checkouts")
 
-    host = (_capture_metal_host(arguments, output) if arguments.runtime_kind == "metal"
+    host = (_capture_metal_host(arguments, output) if arguments.host_kind == "metal"
             else _capture_host(arguments))
     ExecutorRevision._validate_host_document(
-        host, schema_version=2 if arguments.runtime_kind == "hip" else 1,
+        host, schema_version=2 if arguments.host_kind == "hip" else 1,
     )
     admit_host_environment(host)
-    if arguments.runtime_kind == "cuda":
+    if arguments.host_kind == "cuda":
         admit_profiler_environment(host)
     payload = json.dumps(host, indent=2, sort_keys=True, allow_nan=False) + "\n"
     with output.open("x", encoding="utf-8") as stream:
@@ -293,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
     # Metal's observer is admitted inside admit_host_environment, not as a separate
     # profiler step, so its capture reports the same admitted observation the CUDA
     # NCU step does.
-    profiler_admitted = (arguments.runtime_kind in ("cuda", "metal")
+    profiler_admitted = (arguments.host_kind in ("cuda", "metal")
                          or bool(arguments.hip_profiler))
     print(json.dumps({"output": str(output), "host_admitted": True, "profiler_admitted": profiler_admitted}))
     return 0

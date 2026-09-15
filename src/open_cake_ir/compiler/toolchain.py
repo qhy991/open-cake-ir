@@ -251,7 +251,7 @@ class TritonRoute:
 # this toolchain emits `gfx938:xnack-`). The pattern below therefore pins the ISA exactly
 # and admits only well-formed feature suffixes after it, rather than pretending the two
 # strings are one fact.
-_AMDGCN_TRITON_TARGETS = MappingProxyType({"gfx938": 64})
+_AMDGCN_TRITON_TARGETS = MappingProxyType({"gfx938": 64, "gfx1151": 32})
 
 
 def triton_route(target: object) -> TritonRoute:

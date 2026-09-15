@@ -208,6 +208,8 @@
     "compiler/targets/gfx938.json",
     "corpus/schedules/gfx938-rmsnorm-b8-smoke.json",
     "corpus/schedules/gfx938-wave64-thread-extent-refusal.json",
-    "corpus/schedules/gfx938-register-budget-refusal.json"
+    "corpus/schedules/gfx938-register-budget-refusal.json",
+    "compiler/targets/gfx1151.json",
+    "corpus/schedules/gfx1151-rmsnorm-b8-smoke.json"
   ]
 }

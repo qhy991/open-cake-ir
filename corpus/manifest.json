@@ -2037,6 +2037,17 @@
         "schedule_sha256": "20bb9f59fa9ab4a61028d59560dc65427d6e0a64166b1ec84d589d8a19449571",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "gfx1151-rmsnorm-accepted",
+      "schedule": "corpus/schedules/gfx1151-rmsnorm-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "75f72773398b5baf0f31fbb7b14c794ce3e089c9ff715bd3221286642940906c",
+        "lowering_source_sha256": "6d94dfef40db23eebde0727a9c8894964639c44ba19c1729bfa56692414d2b64"
+      }
     }
   ]
 }

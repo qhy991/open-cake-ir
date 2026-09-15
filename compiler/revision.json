@@ -26,6 +26,10 @@
     "gfx938": {
       "path": "compiler/targets/gfx938.json",
       "canonical_sha256": "d2e73dd74c193037a85c989a7b366a0117d603fdf97ad8ccfdc84a1fd1681831"
+    },
+    "gfx1151": {
+      "path": "compiler/targets/gfx1151.json",
+      "canonical_sha256": "eb844e7926047d8ba8e70bd0acc09b077e40cfac80f39b31234cb681a3fd37db"
     }
   },
   "corpus_manifest": "corpus/manifest.json",

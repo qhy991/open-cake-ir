@@ -17,7 +17,20 @@ from types import MappingProxyType
 from typing import Mapping, cast
 
 
-_GFX1151_EXECUTOR_ID = re.compile(r"open-cake-ir-gfx1151-v[1-9][0-9]*")
+def _amd_executor_id() -> re.Pattern[str]:
+    """Schema v2 identities, one alternative per AMD target the layer can build for.
+
+    Pinned to the declared set rather than to one target's name: gfx1151 and gfx938 are
+    both AMD, and a regex naming only the first refuses the second for being the wrong
+    vendor's target, which it is not.
+    """
+    from open_cake_ir.evaluation.artifacts import AMDGCN_TARGETS
+
+    alternatives = "|".join(re.escape(target) for target in sorted(AMDGCN_TARGETS))
+    return re.compile(rf"open-cake-ir-(?:{alternatives})-v[1-9][0-9]*")
+
+
+_AMD_EXECUTOR_ID = _amd_executor_id()
 HIP_PACKAGES = frozenset({"packaging", "pybind11", "psutil", "setuptools", "torch", "triton"})
 HIP_BUILD_TOOLS = frozenset({"cxx", "git", "hipcc", "hipconfig", "ninja", "rocminfo", "sh"})
 HIP_PROFILERS = frozenset({"rocprofv3", "rocprof", "omniperf"})
@@ -275,9 +288,9 @@ class ExecutorRevision:
             raise ValueError("Executor Revision fields, schema, or state differ")
         if (
             document["schema_version"] == 2
-            and _GFX1151_EXECUTOR_ID.fullmatch(document["executor_id"]) is None
+            and _AMD_EXECUTOR_ID.fullmatch(document["executor_id"]) is None
         ):
-            raise ValueError("Executor schema v2 gfx1151 identity differs")
+            raise ValueError("Executor schema v2 AMD identity differs")
         sources = document["sources"]
         host = document["host_environment"]
         if not isinstance(sources, list) or not sources or not isinstance(host, Mapping):
@@ -395,14 +408,14 @@ class ExecutorRevision:
     @staticmethod
     def _validate_hip_host_document(host: Mapping[str, object]) -> None:
         if not isinstance(host, Mapping) or set(host) != {
-            "runtime_kind",
+            "kind",
             "platform",
             "python",
             "packages",
             "runtime",
             "runtime_libraries",
             "tools",
-        } or host.get("runtime_kind") != "hip":
+        } or host.get("kind") != "hip":
             raise ValueError("Executor HIP host environment fields differ")
         platform_value = host["platform"]
         if (
@@ -550,7 +563,7 @@ def admit_host_environment(
 
     if not isinstance(host, Mapping):
         raise ValueError("Executor host environment fields differ")
-    schema = 2 if host.get("runtime_kind") == "hip" else 1
+    schema = 2 if host.get("kind") == "hip" else 1
     ExecutorRevision._validate_host_document(host, schema_version=schema)
     if host.get("kind") == "metal":
         # A Metal host owns its whole admission, including a package map that is

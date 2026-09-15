@@ -202,7 +202,14 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
 # one. Whether a vendor reaching an existing mechanism should instead mint its own
 # `LoweringBackend` member is a reading of AGENTS.md's registration rule that belongs to
 # the reviewer, not to this comment.
-_AMDGCN_TARGETS = MappingProxyType({"gfx938": ("c3000", 64)})
+_AMDGCN_TARGETS = MappingProxyType({
+    "gfx938": ("c3000", 64),
+    # A wave32 AMD target, which is what keeps this route's arithmetic honest: it shares
+    # a vendor with gfx938 and not a lane width, so nothing here can be a wave64 constant
+    # wearing a vendor's name. Its hardware facts are retained observations from an
+    # earlier delivery and no device check exists for it in this repository.
+    "gfx1151": ("rdna3_5", 32),
+})
 
 
 def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) -> tuple[Finding, ...]:

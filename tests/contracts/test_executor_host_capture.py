@@ -316,7 +316,7 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
             host = json.loads((root / "host.json").read_text())
             capture.ExecutorRevision._validate_host_document(host, schema_version=2)
-            self.assertEqual(host["runtime_kind"], "hip")
+            self.assertEqual(host["kind"], "hip")
             self.assertEqual(host["platform"]["system"], "Linux")
             self.assertEqual(host["runtime"]["torch_hip_version"], "7.2.1")
             self.assertEqual(set(host["packages"]), capture.HIP_PACKAGES)

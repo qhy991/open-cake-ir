@@ -125,7 +125,7 @@ class RevisionAdmissionTests(unittest.TestCase):
         revision = load_revision(ROOT, ROOT / "compiler/revision.json")
         self.assertEqual(set(revision.targets), {
             "sm_100a", "apple_gpu_family7", "apple_gpu_family8", "apple_gpu_family9", "sm_103a",
-            "gfx938",
+            "gfx938", "gfx1151",
         })
         for target_id, device in (("apple_gpu_family7", "Apple M1 Pro"),
                                   ("apple_gpu_family8", "Apple M2"),

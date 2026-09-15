@@ -24,6 +24,16 @@ PAIRED_METAL_KIND = 'fixed_baseline_paired_metal_v1'
 PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
 METAL_KINDS = {PAIRED_METAL_KIND, PAIRED_METAL_BATCHED_KIND}
 PAIRED_KINDS = {PAIRED_KIND, *METAL_KINDS}
+# Which measurement source each declared policy names, stated rather than reached by an
+# `else`. CUPTI used to be whatever was not Metal, so a third source would have been
+# measured as CUDA under a name nobody chose. There is deliberately no AMD entry: adding
+# a rocprofv3 policy kind before anything produces one would be a measurement name with
+# no measurement behind it.
+_PAIRED_BACKENDS = {
+    PAIRED_KIND: 'cupti',
+    PAIRED_METAL_KIND: 'metal',
+    PAIRED_METAL_BATCHED_KIND: 'metal',
+}
 _BASE_FIELDS = {
     'kind', 'arms', 'pair_order', 'samples_per_cohort', 'route_calls_per_cohort',
     'maximum_cv', 'materiality_ratio', 'required_pair_wins',
@@ -55,7 +65,7 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     if (not isinstance(value, Mapping) or set(value) != expected_fields
             or kind not in PAIRED_KINDS or value.get('arms') != ['candidate', 'baseline']):
         raise ValueError('fixed-baseline paired policy fields or roles differ')
-    backend = 'metal' if kind in METAL_KINDS else 'cupti'
+    backend = _PAIRED_BACKENDS[kind]
     if (evaluation.get('search_evaluation') != f'correctness_then_paired_{backend}'
         or evaluation.get('confirmatory_evaluation') != f'fresh_fixed_candidate_correctness_then_paired_{backend}'):
         raise ValueError('paired policy requires search and fresh confirmation')
