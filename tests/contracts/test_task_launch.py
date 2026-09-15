@@ -279,11 +279,18 @@ class TaskLaunchTests(unittest.TestCase):
     def test_each_backend_binds_its_own_exact_target_and_admitted_device(self):
         expected = {"metal-m1-pro": ("apple_gpu_family7", "Apple M1 Pro"),
                     "metal-m2": ("apple_gpu_family8", "Apple M2"),
-                    "metal-m4": ("apple_gpu_family9", "Apple M4")}
+                    "metal-m4": ("apple_gpu_family9", "Apple M4"),
+                    "triton-b200": ("sm_100a", "NVIDIA B200"),
+                    "triton-b300": ("sm_103a", "NVIDIA B300"),
+                    "triton-dcu": ("gfx938", "BW1101")}
+        # This family read an Apple-only registry until the task families were given one
+        # device registry, so a normalization Workload could be frozen for Metal alone.
         self.assertEqual(set(launch_task.BACKENDS), set(expected))
         for backend, (target, device) in expected.items():
+            # Metal stripes any width; Triton needs a power-of-two span.
+            columns = 8 if launch_task.DEVICE_BACKENDS[backend]["power_of_two_width"] else 7
             with self.subTest(backend=backend):
-                document, source = create_task("rmsnorm", backend=backend, rows=2, columns=7)
+                document, source = create_task("rmsnorm", backend=backend, rows=2, columns=columns)
                 workload_path = self.directory / f"{backend}-workload.json"
                 starter = self.directory / f"{backend}-starter.py"
                 workload_path.write_text(json.dumps(document))
@@ -296,9 +303,21 @@ class TaskLaunchTests(unittest.TestCase):
                                        model="exact-model", effort="high", turns=2, token_budget=12000)
                 self.assertEqual(study["execution"]["target"], target)
                 self.assertEqual(study["analysis_plan"]["performance_reporting"], "task_efficiency_v1")
-                self.assertEqual(study["execution"]["gpu"], {"name": device, "count": 1, "mode": "local_serialized"})
-                # The Compiler target is the independent authority preflight checks this against.
-                self.assertEqual(Target.load(ROOT / "compiler/targets" / f"{target}.json").device_names, (device,))
+                # Metal runs serialized on one local device; the CUDA and AMD routes
+                # take the GPU exclusively. The mode follows the route, as the study
+                # template has always had it, so the expectation follows it too.
+                mode = ("local_serialized"
+                        if launch_task.DEVICE_BACKENDS[backend]["route"] == "metal"
+                        else "exclusive")
+                self.assertEqual(study["execution"]["gpu"],
+                                 {"name": device, "count": 1, "mode": mode})
+                # The Compiler target is the independent authority preflight checks this
+                # against. A Target may admit more than one marketing name for one device
+                # -- sm_103a declares both NVIDIA B300 spellings -- so the registry's name
+                # has to be one of them rather than the only one.
+                self.assertIn(
+                    device,
+                    Target.load(ROOT / "compiler/targets" / f"{target}.json").device_names)
 
     def test_qualification_uses_shared_entry_with_exact_model_effort_and_python_source(self):
         self.workspace.mkdir()

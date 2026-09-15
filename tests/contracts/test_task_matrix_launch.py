@@ -140,8 +140,12 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         self.assertNotIn('--dispatches-per-sample', command)
 
     def test_unsupported_requested_factory_fails_before_workspace_or_provider(self):
-        args = self.args('silu','rmsnorm')
-        args[args.index('--backend')+1] = 'triton-b300'
+        # rmsnorm on triton-b300 used to be the unsupported pair here, because the
+        # normalization family read an Apple-only registry. It is supported now, so
+        # this case is carried by a pair still refused for a stated capability
+        # reason: gelu_tanh names a tanh instruction contract and gfx938 admits none.
+        args = self.args('silu','gelu_tanh')
+        args[args.index('--backend')+1] = 'triton-dcu'
         with self.assertRaises(SystemExit),patch.object(matrix.subprocess,'run') as run:
             matrix.main(args)
         run.assert_not_called()
