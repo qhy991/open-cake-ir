@@ -334,7 +334,16 @@ def _evaluate_paired_tile(authority, result, helper, admission):
 
 
 def _evaluate_tile_candidate(authority, result, helper, admission, collect_timing):
-    """Use the common oracle and one loaded module across correctness and timing."""
+    """Use the common oracle and one loaded module across correctness and timing.
+
+    `helper` is the timing host, required when timing is collected and unused otherwise.
+    It was always supplied, because only the CUDA path reached here, so a correctness-only
+    caller passing None depended on the argument never being touched -- an agreement two
+    functions were keeping without stating it. The CUDA caller still passes its helper on
+    both paths; what is stated here is that a timed run cannot proceed without one.
+    """
+    if collect_timing and helper is None:
+        raise ValueError("timed tile evaluation requires its Executor timing host")
     inputs = materialize_case(authority.workload, authority.case_id)
     loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
     counters = result['counters']

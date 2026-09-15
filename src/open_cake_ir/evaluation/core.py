@@ -560,6 +560,9 @@ class LoadedTorchTensorCandidate:
         self.admission = admission
         self.inputs = {name: list(values) for name, values in inputs.items()}
         dtypes = {'fp32': torch.float32, 'bf16': torch.bfloat16, 'fp16': torch.float16, 'int32': torch.int32}
+        # `cuda:0` is torch's device string for both runtimes: a ROCm build keeps the
+        # `torch.cuda` namespace and maps it onto HIP. It reads like a vendor leak and is
+        # not one, so it is left alone rather than aliased into a second spelling.
         self.arguments = [
             torch.tensor(inputs[name], dtype=dtypes[dtype], device='cuda:0').reshape(shape)
             if mode == 'input' else torch.full(shape,
