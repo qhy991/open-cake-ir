@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 # The v41 Compiler is the source at this commit; `tools/verify_aka_fma_v41_reaudit.py`
 # replays the same one. It is not a revision this checkout can rebuild (ADR 0065).
 FROZEN_V41_COMMIT = "d9d56e835cf96eecf70e0259b65bc1b20c4f6f0d"
+FROZEN_V41_REVISION_ID = "open-cake-ir-sm100a-v41"
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.source_identity import checkout_commit_or_none
@@ -49,7 +50,7 @@ def prepare(output: Path, python: Path, judge_cwd: Path) -> dict:
         shutil.copyfile(Path(__file__).with_name(name), candidate / name)
     workloads = [f"{m}-{f}" for m in MODES for f in FAMILIES]
     contract = {
-        "compiler_revision_id": lock["revision_id"], "shape": list(SHAPE),
+        "compiler_revision_id": FROZEN_V41_REVISION_ID, "shape": list(SHAPE),
         "entry_points": entries, "workloads": workloads,
         "numeric_acceptance": "bitwise except NaN payload/sign; NaN results must be quiet",
         "oracle": "exact integer binary32 RN-even arithmetic, no FTZ",

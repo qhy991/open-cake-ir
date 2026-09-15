@@ -529,8 +529,6 @@ class PairedExecutionTests(unittest.TestCase):
         template.write_bytes(encoded(fixture_study))
         study = StudyContract.load(template)
         before = template.read_bytes()
-        source = project / 'cpu-executor-source.txt'
-        source.write_bytes(b'Independent CPU resolver fixture; not GPU qualification.\n')
         from tests.contracts.test_executor import _synthetic_cuda_host
         from open_cake_ir.lab.executor import ExecutorRevision
         capture = project / 'runtime/hosts/sm_103a.json'
@@ -626,7 +624,8 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertIs(bound_executor, resolved_executors[0])
             self.assertEqual(dict(bound_executor.reference), executor_ref)
             self.assertEqual(bound_executor.project_root, project)
-            self.assertEqual(bound_executor.document['sources'][0]['path'], source.name)
+            self.assertEqual(bound_executor.document['target'], 'sm_103a')
+            self.assertEqual(bound_executor.relative_path, 'runtime/hosts/sm_103a.json')
             # The resolver still rejects exact references in an original template.
             with self.assertRaisesRegex(ValueError, 'Study template Executor binding differs'):
                 resolve_executor(project, executor_ref, 'study.execution', template=True,

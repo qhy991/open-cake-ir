@@ -85,6 +85,14 @@ def commit_project(root):
     run("add", "-A")
     run("-c", "user.name=fixture", "-c", "user.email=fixture@invalid",
         "commit", "-q", "-m", "fixture checkout", "--allow-empty")
+    # A fixture keeps generating into its project after this point -- a frozen Study,
+    # a provider stub, a captured run. Those are outputs, not the source the commit
+    # identifies, so they are ignored rather than committed again at every boundary.
+    # Editing a file the commit tracks still dirties the checkout, which is the
+    # refusal these fixtures exist downstream of.
+    exclude = root / ".git/info/exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    exclude.write_text("*\n", encoding="utf-8")
     return checkout_commit(root)
 
 

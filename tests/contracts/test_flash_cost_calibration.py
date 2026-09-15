@@ -33,7 +33,7 @@ from open_cake_ir.evaluation import WorkloadContract
 from open_cake_ir.tasks.flash_kmeans import environment as environments
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.lab.selection import _empirical_context
-from tests.contracts._executor_fixture import SemanticExecutorFixture, compiler_reference
+from tests.contracts._executor_fixture import SemanticExecutorFixture, commit_project, compiler_reference
 from open_cake_ir.tasks.flash_kmeans.seed import ExactShape, KernelSeed
 
 
@@ -69,6 +69,10 @@ class FlashCalibrationTest(unittest.TestCase):
             destination.parent.mkdir(parents=True, exist_ok=True)
             if not destination.exists():
                 shutil.copyfile(ROOT / relative, destination)
+        # The worker admits its Compiler dependency independently, and that admission
+        # requires a clean committed checkout (ADR 0065), so the synthetic source is
+        # committed once every file it depends on has been copied.
+        commit_project(cls.project)
         cls.compiler_ref = compiler_reference(cls.project)
         cls.compiler = Compiler.load(cls.project, cls.project / cls.compiler_ref["path"])
         executor = SemanticExecutorFixture().revision(cls.project)
