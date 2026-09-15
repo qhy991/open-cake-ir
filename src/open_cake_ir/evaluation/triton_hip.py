@@ -8,6 +8,8 @@ import json
 import re
 import subprocess
 import tempfile
+from types import MappingProxyType
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, cast
@@ -69,6 +71,27 @@ def git_state(project_root: Path) -> dict[str, object]:
     return {"revision": revision, "tree_clean": not bool(status)}
 
 
+_DEVICE_ARCH_FEATURES = re.compile(r"(?::[a-z0-9]+[+-])*")
+
+
+def device_arch_matches(observed: object, declared: str) -> bool:
+    """Whether a device's reported ISA name is the declared one, features aside.
+
+    A device names its ISA with the features it was built with, and the Target declares
+    the bare ISA: a BW1101 reports `gfx938:sramecc+:xnack-` for a Target that declares
+    `gfx938`, and comparing the two as equal strings refuses the device it describes.
+    Only well-formed feature suffixes are admitted after the declared name, which is what
+    keeps `gfx938` from matching a `gfx9380`. This is the same distinction the emitted
+    object's `amdhsa.target` line already needs, where the toolchain writes a third
+    spelling again -- `gfx938:xnack-`.
+    """
+    if not isinstance(observed, str) or not declared:
+        return False
+    if not observed.startswith(declared):
+        return False
+    return _DEVICE_ARCH_FEATURES.fullmatch(observed[len(declared):]) is not None
+
+
 def admit_exact_hip(
     requirements: Mapping[str, object],
 ) -> tuple[object, object, object]:
@@ -113,7 +136,7 @@ def admit_exact_hip(
             f"Triton runtime Target {observed!r} differs from lowering {expected!r}"
         )
     if (
-        getattr(properties, "gcnArchName", None) != expected[1]
+        not device_arch_matches(getattr(properties, "gcnArchName", None), expected[1])
         or type(getattr(properties, "warp_size", None)) is not int
         or properties.warp_size != expected[2]
     ):
@@ -126,11 +149,11 @@ def load_generated_module(
 ) -> tuple[object, tempfile.TemporaryDirectory[str]]:
     """Load one generated module without placing source or bytecode in the checkout."""
 
-    directory = tempfile.TemporaryDirectory(prefix="open-cake-gfx1151-")
+    directory = tempfile.TemporaryDirectory(prefix="open-cake-amdgcn-")
     source_path = Path(directory.name) / "generated.py"
     source_path.write_text(lowering.source, encoding="utf-8")
     specification = importlib.util.spec_from_file_location(
-        f"open_cake_gfx1151_{lowering.source_sha256[:16]}", source_path
+        f"open_cake_amdgcn_{lowering.source_sha256[:16]}", source_path
     )
     if specification is None or specification.loader is None:
         directory.cleanup()
@@ -241,3 +264,112 @@ def resolve_new_external_directory(project_root: Path, value: Path) -> Path:
 def write_new_json(path: Path, value: object) -> None:
     with path.open("xb") as stream:
         stream.write(canonical_json_bytes(value) + b"\n")
+
+
+@dataclass(frozen=True)
+class LoadedHipCandidate:
+    """One sealed AMDGCN candidate, admitted and loaded, before common Evaluation.
+
+    This is the seam the CUDA path reaches through `LoadedCudaCandidate`: an arm's output
+    becomes a thing that can be launched, with its artifacts and its declared resource
+    allocation recorded beside it. The two are not built alike and should not be. CUDA
+    loads a CUBIN through the driver API and launches the function itself; here Triton
+    owns the module and its own launch, so what this adds is the admission, the exact
+    artifact set, the AMDGCN resource record and one entry point -- not a second launcher.
+
+    It holds no device handle and no GPU state of its own. `close()` removes the
+    generated source that backs the loaded module, and nothing else.
+    """
+
+    target: str
+    entry_point: str
+    source_sha256: str
+    artifacts: Mapping[str, dict[str, object]]
+    resources: Mapping[str, object]
+    device_arch: str
+    warp_size: int
+    entry: object
+    _payloads: Mapping[str, bytes] = field(repr=False, default_factory=dict)
+    _directory: object = field(repr=False, default=None)
+
+    def payload(self, role: str) -> bytes:
+        """The exact bytes of one admitted artifact role."""
+        if role not in self._payloads:
+            raise ValueError(f"AMDGCN candidate has no artifact role {role!r}")
+        return self._payloads[role]
+
+    def close(self) -> None:
+        if self._directory is not None:
+            self._directory.cleanup()
+
+
+def load_hip_candidate(
+    lowering: object, requirements: Mapping[str, object],
+) -> LoadedHipCandidate:
+    """Admit the exact device, compile the lowering, and return its launchable entry.
+
+    Every refusal here belongs to this route and names it. The device is admitted before
+    anything is compiled, the artifact roles are the AMDGCN ones and the absence of a
+    `ptx` or `cubin` role is part of that check, and the entry point named by the lowering
+    has to exist in the module the generated source defines.
+
+    No timing happens here and none can: this returns something launchable, and what a
+    launch is worth is a measurement this route does not yet have a source for.
+    """
+    requirements = require_object(requirements, "lowering requirements")
+    _, triton, properties = admit_exact_hip(requirements)
+    entry_point = requirements.get("host_entry_point") or getattr(lowering, "entry_point", None)
+    if not isinstance(entry_point, str) or not entry_point:
+        raise ValueError("AMDGCN candidate requires its host entry point")
+
+    module, directory = load_generated_module(lowering)
+    try:
+        entry = getattr(module, entry_point, None)
+        if entry is None or not callable(entry):
+            raise ValueError(
+                f"generated AMDGCN module defines no callable entry {entry_point!r}"
+            )
+        compiled = _compile_through_the_module(module, requirements, triton)
+        payloads = extract_artifacts(compiled)
+        records = artifact_records(payloads)
+        resources = amdgcn_resource_record(payloads["amdgcn"])
+    except BaseException:
+        directory.cleanup()
+        raise
+    return LoadedHipCandidate(
+        target=str(requirements["target"]),
+        entry_point=entry_point,
+        source_sha256=str(lowering.source_sha256),
+        artifacts=MappingProxyType(records),
+        resources=MappingProxyType(dict(resources)),
+        device_arch=str(getattr(properties, "gcnArchName", "")),
+        warp_size=int(getattr(properties, "warp_size")),
+        entry=entry,
+        _payloads=MappingProxyType(dict(payloads)),
+        _directory=directory,
+    )
+
+
+def _compile_through_the_module(
+    module: object, requirements: Mapping[str, object], triton: object,
+) -> object:
+    """Compile the kernel the generated module defines, for its declared Target."""
+
+    kernel_name = requirements.get("kernel_entry_point")
+    signature = requirements.get("signature")
+    constants = requirements.get("compile_constants")
+    options = requirements.get("compile_options")
+    if (not isinstance(kernel_name, str) or not kernel_name
+            or any(not isinstance(item, Mapping) for item in (signature, constants, options))):
+        raise ValueError("AMDGCN compile contract differs")
+    kernel = getattr(module, kernel_name, None)
+    if kernel is None:
+        raise ValueError(f"generated AMDGCN module defines no kernel {kernel_name!r}")
+    target = require_object(requirements["triton_target"], "triton_target")
+    gpu_target = importlib.import_module("triton.backends.compiler").GPUTarget
+    compiler = importlib.import_module("triton.compiler")
+    return compiler.compile(
+        compiler.ASTSource(kernel, dict(signature), dict(constants)),
+        target=gpu_target(target["backend"], target["arch"], target["warp_size"]),
+        options=dict(options),
+    )

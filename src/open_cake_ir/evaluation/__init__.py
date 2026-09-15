@@ -10,6 +10,7 @@ from .attempts import (
 from open_cake_ir.evaluation.core import EvaluationProtocol, EvaluationReceipt, LaunchableCandidate, LaunchObservation
 from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission, CudaDriverLaunchReceipt, CudaLifecycleError, LoadedCudaCandidate, launch_candidate_once, launch_cubin_once
 from open_cake_ir.evaluation.benchmark import CuptiBenchmark, StrictCuptiBenchmark
+from open_cake_ir.evaluation.triton_hip import LoadedHipCandidate, load_hip_candidate
 from .profiler import (
     NCU_ATTRIBUTION_METRICS,
     build_ncu_attribution_profile,
@@ -25,6 +26,8 @@ from .timing import (
 from .workload import WorkloadContract
 
 __all__ = [
+    "LoadedHipCandidate",
+    "load_hip_candidate",
     "PairedTimingObservation",
     "PairedTimingProtocol",
     "EvaluationProtocol",

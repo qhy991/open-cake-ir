@@ -31,6 +31,13 @@
 - 绑定源码： `167` 个文件
 - 描述文件： [`runtime/executors/open-cake-ir-gfx938-v3.json`](../../runtime/executors/open-cake-ir-gfx938-v3.json)
 
+### `sm_103a`
+
+- 版本： `open-cake-ir-b200-v120+e3aa0d8484c612028522d8078330bc4128a4ebf188f3de1bbb133f2c9b0a20c3`
+- 状态： `released`
+- 绑定源码： `167` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v120+e3aa0d8484c612028522d8078330bc4128a4ebf188f3de1bbb133f2c9b0a20c3.json`](../../runtime/executors/open-cake-ir-b200-v120+e3aa0d8484c612028522d8078330bc4128a4ebf188f3de1bbb133f2c9b0a20c3.json)
+
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
 ## 这些数字说明什么
