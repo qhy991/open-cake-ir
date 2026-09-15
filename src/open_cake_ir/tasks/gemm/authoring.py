@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.tasks.devices import BACKENDS, backend_for_target
 from .workload import validate_gemm_contract
 
 
@@ -12,6 +13,7 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     reading of the definition and not a claim that it is the cheapest arrangement.
     """
     validate_gemm_contract(workload.document)
+    device = BACKENDS[backend_for_target(workload.target)]
     operator = workload.document["operator"]
     args = workload.tensor_abi(case_id)
     declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
@@ -24,7 +26,7 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
             'lm.store(out[row, :], totals + biases, coalesced=False, id="store_out")']
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
             f'@cake.schedule(name="{workload.workload_id}", target="{workload.target}",\n'
-            f'               backend="metal", entry_point="cake_{operator}",\n'
+            f'               backend="{device["route"]}", entry_point="cake_{operator}",\n'
             f'               metadata={{"workload_contract_sha256": "{workload.canonical_sha256}"}})\n'
             f'def candidate(lm, {", ".join(declarations)}):\n'
             '    compute = lm.role(warps=[0])\n'

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.devices import BACKENDS, backend_for_target
+from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, tanh_contract
 from .workload import (
     GELU_CUBIC_SCALE,
     GELU_INNER_SCALE,
@@ -12,7 +12,7 @@ from .workload import (
 )
 
 
-def _body(operator: str, primary: str, tanh_contract: str) -> tuple[list[str], str]:
+def _body(operator: str, primary: str, contract: str | None) -> tuple[list[str], str]:
     """Return one task's operation statements and the expression its store writes.
 
     Two compositions here are the ones the AKA v6 expressibility review recorded, and
@@ -24,13 +24,13 @@ def _body(operator: str, primary: str, tanh_contract: str) -> tuple[list[str], s
     if operator == "gelu_tanh_fp32":
         return ([load, 'squares = lm.square(values, id="square")',
                  f'inner = (values + squares * values * {GELU_CUBIC_SCALE!r}) * {GELU_INNER_SCALE!r}',
-                 f'saturated = lm.tanh(inner, instruction={{"contract": "{tanh_contract}"}}, id="tanh")'],
+                 f'saturated = lm.tanh(inner, instruction={{"contract": "{contract}"}}, id="tanh")'],
                 'values * 0.5 * (saturated + 1.0)')
     if operator == "gelu_tanh_backward_fp32":
         return ([load, 'gradients = lm.load(dy[row, :], id="load_dy")',
                  'squares = lm.square(values, id="square")',
                  f'inner = (values + squares * values * {GELU_CUBIC_SCALE!r}) * {GELU_INNER_SCALE!r}',
-                 f'saturated = lm.tanh(inner, instruction={{"contract": "{tanh_contract}"}}, id="tanh")',
+                 f'saturated = lm.tanh(inner, instruction={{"contract": "{contract}"}}, id="tanh")',
                  'tangent_squared = lm.square(saturated, id="square_tanh")',
                  # The parent's own mechanism: reuse the tangent for sech^2 instead of
                  # forming a hyperbolic cosine out of two exponentials.
@@ -85,7 +85,8 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     device = BACKENDS[backend_for_target(workload.target)]
     args = workload.tensor_abi(case_id)
     primary = args[0].name
-    body, result = _body(operator, primary, device["tanh_contract"])
+    contract = tanh_contract(backend_for_target(workload.target)) if "tanh" in operator else None
+    body, result = _body(operator, primary, contract)
     body.append(f'lm.store(out[row, :], {result}, coalesced=False, id="store_out")')
     declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
                     + (', mode="output")' if arg.mode == "output" else ')') for arg in args]

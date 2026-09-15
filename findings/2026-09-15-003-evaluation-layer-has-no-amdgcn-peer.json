@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-15-003",
+  "kind": "capacity",
+  "title": "The Evaluation layer has a CUDA and a Metal half and no AMDGCN peer, so a gfx938 Candidate can be lowered but never evaluated",
+  "date": "2026-09-15",
+  "backend": "triton-dcu",
+  "target": "gfx938",
+  "executor_revision": "unavailable: no released DCU Executor",
+  "compiler_revision_id": "open-cake-ir-sm100a-v83-draft",
+  "tasks": [],
+  "evidence": [
+    {
+      "workspace": "~/.local/share/open-cake-ir/dcu-gfx938-survey-20260914/probes/measurement-log.md",
+      "note": "The survey that establishes the timing and cache facts an AMDGCN evaluation half would have to be built on: torch.cuda.Event is unusable at 8.48 us empty-interval overhead against 3-7 us kernels; rocprofv2 --kernel-trace supplies per-dispatch nanosecond Start_Timestamp/End_Timestamp together with LDS, SCR, Arch_VGPR, ACCUM_VGPR, SGPR and Wave_Size; hipprof --hip-trace is a second source; rocprofv3 is absent from the image. L2 flush has no HIP API, costs 243.8 us as a 256 MiB zero_(), and measurably changes the answer only below about 4 MiB per buffer."
+    },
+    {
+      "workspace": "~/.local/share/open-cake-ir/dcu-gfx938-survey-20260914/lowering",
+      "note": "The other half of the gap, measured: the Compiler already lowers and compiles a gfx938 Schedule to an hsaco and the emitted wrapper matches a reference across five input distributions on one BW1101. Nothing in the Evaluation layer can take that artifact."
+    }
+  ],
+  "observation": "Evaluation is split into one CUDA half (evaluation/cuda_driver.py 606 lines, cuda_manifest.py 107, admission.py 61, all reached through cuda_target/cuda_architecture, which admit only sm_100a and sm_103a) and one Metal half (metal_manifest.py 134, metal_runtime.py 183, metal_observations.py 139 plus evaluation/metal/observer.swift). There is no third. With the gfx938 Target and the AMDGCN Triton route in the Compiler draft, 27 of the 29 launcher tasks reach a lowering-eligible Schedule on triton-dcu and one of them has been compiled and checked against a reference on the device; none of them can be admitted, launched, correctness-checked or timed through the Evaluation layer, because every path to a launchable artifact is one of those two halves. The timing contract is the sharpest instance: the CUDA half is built on CUPTI and the Metal half on compute-stage timestamps, and the DCU equivalent is a rocprofv2 kernel trace whose rows are not either shape. This is a capacity gap, not a defect: nothing here is wrong, there is simply no code that does it. Re-measured against origin/main after the pull, and one gap is sharper than first recorded: tools/capture_executor_host.py's --kind admits only cuda and metal, so a DCU Executor descriptor cannot be produced at all, independently of what the Evaluation layer would then do with it. executable_role and the Executor host validator now refuse in the class they own rather than in CUDA's words, which makes the absence legible but does not fill it.",
+  "proposed_change": "Add an AMDGCN evaluation half as a peer of the existing two rather than by widening the CUDA one. Its manifest admits the gfx938 Target and the hsaco the Compiler already produces; its driver launches through HIP without the cuda_target admission path; its timing reads per-dispatch Start_Timestamp/End_Timestamp from a rocprofv2 kernel trace, with the L2 flush before every timed sample spelled as the 256 MiB device write the survey measured, since HIP exposes no flush API. Per-dispatch LDS, SCR, Arch_VGPR, ACCUM_VGPR and SGPR come from the same trace row, so the runtime resource report needs no second mechanism. The CUDA half must not be made vendor-generic on the way: cuda_driver.py encodes NVIDIA driver-API attribute semantics that have no HIP meaning, and a shared abstraction over the two would hide which one an observation came from. Report gfx938 timing-model coverage as unavailable throughout: this finding delivers a measurement path, not a calibration. Sizing, for review rather than as a commitment: the CUDA half is about 774 lines and the Metal half about 456 plus a Swift observer, so this is work of the same order as the Compiler change that F-2026-09-14-001 carried, and it is a separate Executor-side gate from that finding's Compiler-side one.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Capability finding, so verification is by campaign. It cannot begin before a released Compiler successor carrying gfx938 and a DCU Executor captured in the container from its exact Python 3.10.12, PyTorch 2.11.0 (HIP 6.3.26113), Triton 3.6.0 and dcc 25.10.0. With both, run the common correctness matrix for one fixed-shape Workload across every declared input case on triton-dcu, then an end-to-end evaluation in the target framework, and compare against a frozen per-task baseline bundle so baseline movement and candidate headroom are reported separately. A passing host-side test suite is not evidence for any of this."
+}

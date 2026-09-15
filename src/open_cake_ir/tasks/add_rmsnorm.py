@@ -11,23 +11,42 @@ import random
 from collections.abc import Mapping
 
 from open_cake_ir.evaluation.workload import WorkloadContract
-from .devices import BACKENDS, backend_for_target
+from .devices import BACKENDS, admit_dtype, admit_operations, backend_for_target
 from .tiles.workload import _checked_inputs, _round
 
 TASK = "add_rmsnorm_bf16"
 EPSILON = 1e-6
+# What this task's one baseline body actually asks a Target for.
+OPERATION_KINDS = ("load", "elementwise", "reduce", "cast", "store")
 CASES = {"primary": ("uniform", 7601), "zeros": ("zeros", 7602),
          "rounding_ties": ("rounding_ties", 7603),
          "cancellation": ("cancellation", 7604),
          "mixed_magnitude": ("mixed_magnitude", 7605)}
-BACKENDS_SUPPORTED = ("triton-b200", "triton-b300")
+
+
+def admitted_backends() -> tuple[str, ...]:
+    """The devices this task's BF16 ABI and operation body can actually be frozen for."""
+    admitted = []
+    for backend in BACKENDS:
+        try:
+            admit_dtype(backend, "bf16")
+            admit_operations(backend, OPERATION_KINDS)
+        except ValueError:
+            continue
+        admitted.append(backend)
+    return tuple(admitted)
 
 
 def workload_document(*, rows: int = 128, columns: int = 2560,
                       backend: str = "triton-b200") -> dict:
-    if (backend not in BACKENDS_SUPPORTED or type(rows) is not int or type(columns) is not int
+    if (backend not in BACKENDS or type(rows) is not int or type(columns) is not int
             or rows <= 0 or not 1 <= columns <= 16384 or rows * columns * 2 > 2**31 - 1):
-        raise ValueError("add-RMSNorm requires a B200/B300 Triton target and bounded BF16 R/C shape")
+        raise ValueError("add-RMSNorm requires an admitted backend and a bounded BF16 R/C shape")
+    # Which devices this task admits is its BF16 ABI meeting a route's dtype vocabulary,
+    # read from the Compiler. Naming two backends instead froze the task at whichever
+    # devices existed when it was written.
+    admit_dtype(backend, "bf16")
+    admit_operations(backend, OPERATION_KINDS)
     tensors = {name: {"shape": ["C"] if name == "weight" else ["R", "C"],
                       "dtype": "bf16", "layout": "contiguous_row_major", "finite_only": True,
                       **({"max_abs": 1.5 if name == "weight" else 256.0}
@@ -151,7 +170,7 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     ]
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
             f'@cake.schedule(name="{workload.workload_id}", target="{workload.target}",\n'
-            '               backend="triton", entry_point="cake_add_rmsnorm",\n'
+            f'               backend="{BACKENDS[backend_for_target(workload.target)]["route"]}", entry_point="cake_add_rmsnorm",\n'
             f'               metadata={{"workload_contract_sha256": "{workload.canonical_sha256}"}})\n'
             f'def candidate(lm, {", ".join(declarations)}):\n'
             '    compute = lm.role(warps=[0, 1, 2, 3])\n'

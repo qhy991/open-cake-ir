@@ -1,22 +1,19 @@
-"""Apple backend registry shared by every task that targets a Metal device.
+"""Metal-only view of the one device registry in `open_cake_ir.tasks.devices`.
 
-One backend names exactly one Compiler target and one admitted device; the provenance
-token keeps every already frozen Workload document byte-identical.
+Apple-specific code asks here so that a Metal path cannot accidentally be handed a CUDA
+or AMDGCN row. It holds no rows of its own: a second table is what let two task families
+freeze at "Metal only" while five others admitted every backend, and a view cannot drift
+from what it is a view of.
 """
 from __future__ import annotations
 
-BACKENDS = {
-    "metal-m1-pro": {"target": "apple_gpu_family7", "device_name": "Apple M1 Pro",
-                     "provenance_token": "M1_Pro"},
-    "metal-m2": {"target": "apple_gpu_family8", "device_name": "Apple M2",
-                 "provenance_token": "M2"},
-    "metal-m4": {"target": "apple_gpu_family9", "device_name": "Apple M4",
-                 "provenance_token": "M4"},
-}
+from open_cake_ir.tasks.devices import BACKENDS as _ALL
+
+BACKENDS = {name: device for name, device in _ALL.items() if device["route"] == "metal"}
 
 
 def backend_for_target(target: object) -> str | None:
-    """Name the single backend that admits one Compiler target, or None."""
+    """Name the single Metal backend that admits one Compiler target, or None."""
     return next((name for name, device in BACKENDS.items() if device["target"] == target), None)
 
 

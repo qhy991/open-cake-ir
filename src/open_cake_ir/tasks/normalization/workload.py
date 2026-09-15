@@ -13,8 +13,10 @@ from collections.abc import Mapping, Sequence
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.tiles.workload import _checked_inputs, _round
 from open_cake_ir.tasks.tiles.workload import reference_outputs as tile_reference_outputs
-# Every Apple task shares one backend registry; these names stay importable here.
-from open_cake_ir.tasks.apple import BACKENDS, backend_for_target, device_name  # noqa: F401
+# The one device registry; these names stay importable here.
+from open_cake_ir.tasks.devices import (  # noqa: F401
+    BACKENDS, admit_width, backend_for_target, device_name,
+)
 
 TASKS = {
     "rmsnorm": ("rmsnorm_fp32", "3"),
@@ -42,7 +44,9 @@ def workload_document(task_name: str, *, rows: int = 128, columns: int = 1024,
     device = BACKENDS[backend]
     if (type(rows) is not int or type(columns) is not int or rows <= 0 or columns <= 0
             or rows * columns * 4 > 2**31 - 1):
-        raise ValueError("normalization shape must fit the FP32 Metal buffer ABI")
+        raise ValueError("normalization shape must fit the FP32 buffer ABI")
+    # A width the declared route cannot tile would freeze a Workload with no Schedule.
+    admit_width(backend, columns)
     operator, revision = TASKS[task_name]
     tensors = {"x": {"shape": ["R", "C"], "max_abs": 256.0}}
     if task_name != "softmax":

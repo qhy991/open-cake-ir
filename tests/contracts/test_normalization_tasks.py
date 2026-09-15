@@ -27,6 +27,16 @@ class NormalizationTaskTests(unittest.TestCase):
         document, source = create_task(name, backend=backend, rows=rows, columns=columns)
         return WorkloadContract(document), source
 
+    def width_for(self, backend, odd=7, even=8):
+        """A width the backend's route can actually tile.
+
+        Metal stripes any width, so these tests keep the odd one that exercises the tail;
+        Triton needs a power-of-two span and gets the nearest one. Before the task
+        families shared one registry this question could not arise here, because this
+        family admitted only Metal.
+        """
+        return even if normalization.BACKENDS[backend]["power_of_two_width"] else odd
+
     def test_registered_workloads_preserve_legacy_cuda_contracts(self):
         for revision, target in (("1", "sm_100a"), ("2", "sm_103a")):
             workload = load_workload(ROOT / f"contracts/workloads/rmsnorm-fp32-v{revision}.json")
@@ -37,7 +47,8 @@ class NormalizationTaskTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             for name in normalization.TASKS:
                 for backend, device in normalization.BACKENDS.items():
-                    document, _ = create_task(name, backend=backend, rows=2, columns=7)
+                    document, _ = create_task(name, backend=backend, rows=2,
+                                              columns=self.width_for(backend))
                     path = Path(directory) / f"{name}-{backend}.json"
                     path.write_text(json.dumps(document))
                     workload = load_workload(path)
@@ -119,7 +130,8 @@ class NormalizationTaskTests(unittest.TestCase):
                 create_task("rmsnorm", **options)
 
     def test_each_backend_freezes_one_device_and_never_mixes_with_another(self):
-        documents = {backend: create_task("rmsnorm", backend=backend, rows=2, columns=7)[0]
+        documents = {backend: create_task("rmsnorm", backend=backend, rows=2,
+                                          columns=self.width_for(backend))[0]
                      for backend in normalization.BACKENDS}
         self.assertEqual(len({document["workload_id"] for document in documents.values()}), len(documents))
         for backend, document in documents.items():
@@ -136,7 +148,11 @@ class NormalizationTaskTests(unittest.TestCase):
                 changed[field] = deepcopy(documents[other][field])
                 with self.subTest(backend=backend, field=field), self.assertRaises(ValueError):
                     normalization.validate_normalization_contract(changed)
-        for target in ("sm_100a", "", None):
+        # Every admitted backend's target resolves; only a target no backend admits is
+        # refused. A CUDA target used to land here because this family read the
+        # Apple-only registry, which is what made four tasks Metal-only.
+        self.assertEqual(normalization.device_name("sm_100a"), "NVIDIA B200")
+        for target in ("apple_gpu_family10", "sm_90a", "", None):
             with self.subTest(target=target), self.assertRaises(ValueError):
                 normalization.device_name(target)
 
@@ -197,11 +213,24 @@ class NormalizationTaskTests(unittest.TestCase):
                 with self.subTest(task=name, missing=sorted(set(inputs) - {"x"})), self.assertRaises(ValueError):
                     reference_outputs(workload, "primary", {"x": inputs["x"]})
 
-    def test_starter_binds_workload_and_all_case_abis_for_apple_lowering(self):
+    def test_starter_binds_workload_and_all_case_abis_on_every_route(self):
+        """Every admitted backend, not just the Apple ones.
+
+        A route that cannot tile a width refuses the Workload rather than freezing one
+        with no Schedule, so those pairs are absent here by construction. Emitted bodies
+        are compared within a route: Metal and Triton are different source, and that is
+        the whole point of the route being a device fact.
+        """
         for name in normalization.TASKS:
             for width in (1, 7, 32, 65, 257, 1024, 4096):
                 lowered = {}
                 for backend in normalization.BACKENDS:
+                    if normalization.BACKENDS[backend]["power_of_two_width"] and (
+                            width & (width - 1)):
+                        with self.subTest(task=name, width=width, backend=backend), \
+                                self.assertRaises(ValueError):
+                            self.task(name, columns=width, backend=backend)
+                        continue
                     with self.subTest(task=name, width=width, backend=backend):
                         workload, source = self.task(name, columns=width, backend=backend)
                         schedule = frontend.parse(source).document
@@ -215,14 +244,28 @@ class NormalizationTaskTests(unittest.TestCase):
                         lowering = self.compiler.lower(assessment)
                         self.assertEqual(lowering.toolchain_requirements["target"], workload.target)
                         self.assertFalse(assessment.calibration_available)
-                        lowered[backend] = (dict(lowering.toolchain_requirements), lowering.source)
-                # Only the target commitment separates the Apple backends here, so the
-                # CPU semantic contracts below stay valid for one emitted body.
-                (first, *rest) = lowered.values()
-                for requirements, source in rest:
-                    self.assertEqual(source, first[1])
-                    self.assertEqual({name: value for name, value in requirements.items() if name != "target"},
-                                     {name: value for name, value in first[0].items() if name != "target"})
+                        route = normalization.BACKENDS[backend]["route"]
+                        lowered.setdefault(route, []).append(
+                            (dict(lowering.toolchain_requirements), lowering.source))
+                # Within one route only the target commitment differs, so the CPU
+                # semantic contracts below stay valid for one emitted body per route.
+                # The Triton emitter stamps the Schedule id and digest into a header
+                # comment and the Metal emitter does not, and those two lines differ by
+                # construction because the Workload id names its backend. Compare the
+                # program, which is the thing being claimed identical.
+                def body(source: str) -> list[str]:
+                    return [line for line in source.splitlines()
+                            if not line.startswith(("# Generated by open-cake-ir",
+                                                    "# schedule_sha256="))]
+
+                for route, emitted in lowered.items():
+                    (first, *rest) = emitted
+                    for requirements, source in rest:
+                        with self.subTest(task=name, width=width, route=route):
+                            self.assertEqual(body(source), body(first[1]))
+                            self.assertEqual(
+                                {k: v for k, v in requirements.items() if k != "target"},
+                                {k: v for k, v in first[0].items() if k != "target"})
 
     def test_generated_starters_match_all_input_case_oracles_on_cpu(self):
         from tests.contracts import test_metal as cpu_contracts

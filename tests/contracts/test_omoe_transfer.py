@@ -104,7 +104,11 @@ class OmoeTransferTests(unittest.TestCase):
             self.assertTrue(compare_tile_outputs(workload, values, out, out, values)[0])
 
     def test_real_non_power_two_width_lowers_with_zero_masked_padding(self):
-        for backend in add_rmsnorm.BACKENDS_SUPPORTED:
+        # Exactly the devices whose route names BF16 and whose Target admits this
+        # body, rather than the two that existed when the task was written.
+        admitted = add_rmsnorm.admitted_backends()
+        self.assertTrue(admitted)
+        for backend in admitted:
             for columns in (1, 7, 2559, 2560, 2561):
                 with self.subTest(backend=backend, columns=columns):
                     workload, source = self.task(columns=columns, rows=2, backend=backend)

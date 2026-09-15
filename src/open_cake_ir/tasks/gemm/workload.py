@@ -13,7 +13,7 @@ import random
 from collections.abc import Mapping, Sequence
 
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.apple import BACKENDS, backend_for_target
+from open_cake_ir.tasks.devices import BACKENDS, admit_width, backend_for_target
 from open_cake_ir.tasks.tiles.workload import _checked_inputs, _round
 
 TASKS = {"gemm_bias": ("gemm_bias_fp32", "1")}
@@ -35,7 +35,10 @@ def workload_document(task_name: str, *, rows: int = 128, depth: int = 256, colu
     if (any(type(value) is not int for value in (rows, depth, columns))
             or min(rows, depth, columns) <= 0
             or (rows * depth + depth * columns + rows * columns) * 4 > 2**31 - 1):
-        raise ValueError("GEMM shape must fit the FP32 Metal buffer ABI")
+        raise ValueError("GEMM shape must fit the FP32 buffer ABI")
+    # The starter unrolls the output column count, so that is the extent a route has to
+    # be able to tile.
+    admit_width(backend, columns)
     operator, revision = TASKS[task_name]
     tensors = {
         "a": {"shape": ["M", "K"], "max_abs": 256.0},

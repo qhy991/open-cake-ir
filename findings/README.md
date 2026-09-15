@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-15-002 — Hygon DCU gfx938 is measurable AMD hardware, retiring F-2026-09-13-006's "no AMD device measurement is available"; its steps 2 and 3 and the first AMD Target land together (capacity, accepted; Gate 150/150, device-checked, ADR 0052 review and paired Executor successor pending)
+- F-2026-09-15-003 — the Evaluation layer has a CUDA and a Metal half and no AMDGCN peer, and capture_executor_host.py admits only cuda and metal, so a gfx938 Candidate can be lowered and compiled but never admitted, launched, correctness-checked or timed (capacity, proposed)
 - F-2026-09-14-001 — the Python FMA frontend defaults every target to `ptx.fma.rn.f32`, causing four fresh and four prior Metal candidates to be correctly refused as foreign instructions (capacity, Compiler frontend/Target/Metal contract proposal)
 - F-2026-09-14-002 — M4 smoke timing certifies only 6/18 searches and 4/6 confirmations, with an AdamW direction reversal across stages (capacity, target-specific Lab measurement pilot; no withheld speedup claims)
 - F-2026-09-14-003 — the one-turn M4 matrix measures first-shot candidate yield but cannot test whether localized diagnostics repair the next candidate (behavior, successor multi-turn Study proposal; no Compiler relaxation)
