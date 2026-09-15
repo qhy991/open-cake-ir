@@ -566,10 +566,8 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
             "evidence-gated act"
         )
     if admission is None:
-        requirements = _object(authority.request.get("lowering_requirements"),
-                               "lowering requirements")
         try:
-            admission = observe_local_hip(requirements)
+            admission = observe_local_hip(authority.candidate.target)
         except (ValueError, RuntimeError):
             result["error"] = "gpu_admission_differs"
             return

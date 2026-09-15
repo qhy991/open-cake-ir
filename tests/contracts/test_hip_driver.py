@@ -160,5 +160,46 @@ class DispatchTest(unittest.TestCase):
         self.assertEqual(executable_role("apple_gpu_family8"), "metal_binary_archive")
 
 
+class AdmissionRequirementsTest(unittest.TestCase):
+    """The device contract an evaluation admits against comes from the target's route."""
+
+    def test_each_amdgcn_target_states_its_own_isa_and_lane_width(self) -> None:
+        from open_cake_ir.evaluation.triton_hip import hip_admission_requirements
+        self.assertEqual(hip_admission_requirements("gfx938"), {
+            "target": "gfx938", "binary_role": "hsaco", "assembly_role": "amdgcn",
+            "triton_target": {"backend": "hip", "arch": "gfx938", "warp_size": 64}})
+        # Same code object, different vendor, different wavefront. Reading the route is
+        # what keeps these two apart without a second table to maintain.
+        self.assertEqual(
+            hip_admission_requirements("gfx1151")["triton_target"]["warp_size"], 32)
+
+    def test_a_target_that_does_not_lower_through_hip_is_refused_by_name(self) -> None:
+        from open_cake_ir.evaluation.triton_hip import hip_admission_requirements
+        for target in ("sm_100a", "sm_103a"):
+            with self.subTest(target=target):
+                with self.assertRaises(ValueError) as raised:
+                    hip_admission_requirements(target)
+                self.assertIn(target, str(raised.exception))
+
+    def test_it_is_the_contract_admit_exact_hip_checks(self) -> None:
+        """Not a second copy of the build's requirements -- the same fields it validates."""
+        from open_cake_ir.evaluation.triton_hip import (
+            admit_exact_hip, hip_admission_requirements)
+        requirements = hip_admission_requirements("gfx938")
+        # Reaches the runtime check, which means every field-shape check above it passed;
+        # this host has no ROCm PyTorch, so that is where it stops.
+        with self.assertRaises((RuntimeError, ModuleNotFoundError)):
+            admit_exact_hip(requirements)
+        for missing in ("binary_role", "assembly_role", "target"):
+            with self.subTest(missing=missing):
+                broken = {k: v for k, v in requirements.items() if k != missing}
+                with self.assertRaisesRegex(ValueError, "HIP lowering Target"):
+                    admit_exact_hip(broken)
+        # The Target block is refused by its own name, before the fields that read it.
+        with self.assertRaisesRegex(ValueError, "triton_target"):
+            admit_exact_hip({k: v for k, v in requirements.items()
+                             if k != "triton_target"})
+
+
 if __name__ == "__main__":
     unittest.main()

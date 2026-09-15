@@ -163,7 +163,30 @@ class HipDeviceAdmission:
     gpu_uuid: str
 
 
-def observe_local_hip(requirements: Mapping[str, object]) -> HipDeviceAdmission:
+def hip_admission_requirements(target_id: str) -> dict[str, object]:
+    """State the exact device contract for one AMDGCN target, from its own route.
+
+    `admit_exact_hip` takes the lowering requirements a build was compiled under. An
+    evaluation worker is handed a sealed candidate and not those requirements, and the
+    answer is not to add a field carrying them: the route is already the owner of which
+    backend, ISA and lane width this target compiles and runs under, and reading it here
+    is reading the same fact the build read, not a second copy of it.
+    """
+    from open_cake_ir.compiler.toolchain import triton_route
+
+    route = triton_route(target_id)
+    if route.gpu_backend != "hip":
+        raise ValueError(f"{target_id!r} does not lower through the HIP backend")
+    return {
+        "target": target_id,
+        "binary_role": route.binary_role,
+        "assembly_role": route.text_role,
+        "triton_target": {"backend": route.gpu_backend, "arch": str(route.architecture),
+                          "warp_size": route.warp_size},
+    }
+
+
+def observe_local_hip(target_id: str) -> HipDeviceAdmission:
     """Admit this process's local-broker job and the one visible HIP device.
 
     `admit_exact_hip` owns the device half and is reused verbatim; what is added here is
@@ -174,6 +197,7 @@ def observe_local_hip(requirements: Mapping[str, object]) -> HipDeviceAdmission:
     """
     from .local_broker import observe_local_job
 
+    requirements = hip_admission_requirements(target_id)
     job = observe_local_job("hip")
     torch, _triton, properties = admit_exact_hip(requirements)
     target = require_object(requirements["triton_target"], "triton_target")
