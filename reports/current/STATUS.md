@@ -24,6 +24,13 @@
 - 绑定源码： `167` 个文件
 - 描述文件： [`runtime/executors/open-cake-ir-b200-v121+340f20717ab203c2900a444181e388b98231f5830837ade8964cc373bfe8ad7c.json`](../../runtime/executors/open-cake-ir-b200-v121+340f20717ab203c2900a444181e388b98231f5830837ade8964cc373bfe8ad7c.json)
 
+### `gfx938`
+
+- 版本： `open-cake-ir-gfx938-v4+d0fb0b34ddfb12076319510dbd2e1a7ae8e6ea4d9d9ec7be594da5592e40163a`
+- 状态： `released`
+- 绑定源码： `167` 个文件
+- 描述文件： [`runtime/executors/open-cake-ir-gfx938-v4.json`](../../runtime/executors/open-cake-ir-gfx938-v4.json)
+
 ### `sm_103a`
 
 - 版本： `open-cake-ir-b200-v122+8e7709b32d792f8a38054311f7c17b677349c75844e25c6f66700725555c4668`

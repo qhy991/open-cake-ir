@@ -40,10 +40,28 @@ arguments = parser.parse_args()
 temporary = pathlib.Path(os.environ["EXECUTOR_RELEASE_TMP"])
 
 
-# Keep the existing reserved id sequence. The descriptor's explicit host kind,
-# not its historical id spelling, selects native runtime admission.
+# CUDA and Metal descriptors keep the historical `b200` sequence, whose spelling carries
+# no meaning: the descriptor's explicit host kind, not its id, selects native runtime
+# admission. An AMD target is the exception, and not by preference -- a schema v2
+# descriptor is admitted only under an id naming an AMD target, so minting a `b200` one
+# for an AMD host produces an identity its own loader then refuses. Each AMD target owns
+# its own sequence for the same reason gfx938 and gfx1151 are separate targets.
+AMD_NAMESPACES = frozenset({"gfx938", "gfx1151"})
+# Ordinals released from checkouts whose descriptors are not here. ADR 0049: a released
+# identity is reserved even without a local witness, and no scan of this checkout can
+# authorize reusing one. open-cake-ir-gfx1151-v1 and -v2 were released on the AMD
+# migration branch (e71a6548) and are not on this one; deriving the next ordinal from
+# what is visible here would mint v1 again.
+RESERVED_FLOOR = {"gfx1151": 2}
+
+namespace = (f"open-cake-ir-{arguments.target}"
+             if arguments.target in AMD_NAMESPACES else "open-cake-ir-b200")
+
+
 def ordinal(value: str) -> int:
-    match = re.fullmatch(r"open-cake-ir-b200-v([1-9][0-9]*)(?:\+[0-9a-f]{64})?", value)
+    match = re.fullmatch(
+        rf"{re.escape(namespace)}-v([1-9][0-9]*)(?:\+[0-9a-f]{{64}})?", value
+    )
     return int(match.group(1)) if match else 0
 
 
@@ -53,9 +71,13 @@ for path in _released_executor_paths(pathlib.Path.cwd()):
     if document.get("state") == "released" and ordinal(document["executor_id"]):
         released.append(document)
 released.sort(key=lambda document: ordinal(document["executor_id"]))
-history = max((ordinal(document["executor_id"]) for document in released), default=0)
-keep = f"open-cake-ir-b200-v{history + 1}"
-print(f"--- released history ends at v{history}; releasing {keep} ---")
+history = max(
+    [ordinal(document["executor_id"]) for document in released]
+    + [RESERVED_FLOOR.get(arguments.target, 0)],
+    default=0,
+)
+keep = f"{namespace}-v{history + 1}"
+print(f"--- released history ends at {namespace}-v{history}; releasing {keep} ---")
 if arguments.host_environment is not None:
     host = json.loads(arguments.host_environment.read_text())
 elif released:
