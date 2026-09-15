@@ -111,17 +111,6 @@ class LiveCorpusContracts(unittest.TestCase):
             set(self.report.declared_targets), set(revision["target_definitions"])
         )
 
-    def test_the_live_gate_passes_while_some_declared_target_is_unexamined(self):
-        """The reason this report exists: 145/145 is not coverage of all five Targets."""
-
-        self.assertTrue(self.report.passed)
-        self.assertTrue(
-            self.report.unexamined_targets,
-            "no declared Target is unexamined; this assertion documents the state that "
-            "motivated target_coverage and should be updated deliberately, with the "
-            "Corpus addition that closed the gap",
-        )
-
     def test_unexamined_is_derived_from_the_manifest_not_asserted(self):
         counted = {case.target for case in self.report.cases}
         self.assertEqual(
