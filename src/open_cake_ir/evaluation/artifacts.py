@@ -19,6 +19,11 @@ _BUILD_ROLES = {
 }
 _CUDA_ALLOWED = frozenset({"authored_source", "lowered_source", "compiler_expanded_source",
     "ttir", "ttgir", "llir", "ptx", "cubin", "sass", "toolchain_resource_report", "launch_manifest"})
+# The AMDGCN peer of the set above. Triton's stages up to LLVM IR are the same on both
+# routes; below that the CUDA route has PTX and a CUBIN where this one has assembly and
+# an ELF HSACO, and there is no ptxas, so no `sass`.
+_AMDGCN_ALLOWED = frozenset({"authored_source", "lowered_source", "compiler_expanded_source",
+    "ttir", "ttgir", "llir", "amdgcn", "hsaco", "toolchain_resource_report", "launch_manifest"})
 
 
 def executable_role(target: str) -> str:
@@ -51,6 +56,16 @@ def required_build_roles(backend: str) -> frozenset[str]:
 
 
 def allowed_artifact_roles(target: str) -> frozenset[str]:
-    if executable_role(target) == "metal_binary_archive":
+    """Which artifact roles a sealed candidate for this target may carry.
+
+    Decided by the executable the target builds, which is the code-object family. This
+    used to return the CUDA set for anything that was not Metal, so a gfx938 candidate
+    carrying the assembly and HSACO its own route produced was refused for carrying roles
+    that are not PTX and a CUBIN.
+    """
+    executable = executable_role(target)
+    if executable == "metal_binary_archive":
         return _BUILD_ROLES["metal"] | {"authored_source", "lowered_source"}
+    if executable == "hsaco":
+        return _AMDGCN_ALLOWED
     return _CUDA_ALLOWED
