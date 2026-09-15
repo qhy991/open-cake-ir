@@ -149,13 +149,27 @@ class TaskLaunchTests(unittest.TestCase):
                 policy = study["evaluation_protocol"]
                 assay = paired_protocol(policy)
                 metal = device["route"] == "metal"
+                self.assertEqual(study["execution"]["target"], device["target"])
+                self.assertEqual(policy["validation_case_ids"], list(workload.case_ids))
+                if device["timing_source"] is None:
+                    # A backend with no named timing source states the coverage
+                    # limitation instead of inheriting another target's timer. The
+                    # template used to read `metal ? metal : cupti`, so the DCU study
+                    # said `paired_cupti` on a machine with no CUPTI installed.
+                    self.assertIsNone(assay)
+                    self.assertNotIn("paired_timing", policy)
+                    self.assertEqual(policy["measurement_coverage"]["timed_assay"],
+                                     "unavailable")
+                    self.assertIn(device["target"],
+                                  policy["measurement_coverage"]["reason"])
+                    for stage in ("search_evaluation", "confirmatory_evaluation"):
+                        self.assertNotIn("paired", policy[stage])
+                    continue
                 # Two axes, read separately: the route picks the paired assay and its
                 # cohort shape, the allocation picks how the device is reached.
                 local = device["allocation"] == "local_broker"
-                self.assertEqual(study["execution"]["target"], device["target"])
                 self.assertEqual(study["execution"]["gpu"]["mode"],
                                  "local_serialized" if local else "exclusive")
-                self.assertEqual(policy["validation_case_ids"], list(workload.case_ids))
                 self.assertEqual(policy["paired_timing"]["kind"], PAIRED_METAL_BATCHED_KIND if metal else PAIRED_KIND)
                 self.assertEqual(assay.route_calls_per_cohort, 28 if metal else 42)
                 self.assertEqual((len(assay.pair_order), assay.samples_per_cohort,

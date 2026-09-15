@@ -12,6 +12,11 @@ down instead of being spread through each family's authoring code:
   the route: a DCU lowers through Triton like a B200 and is reached like an Apple device,
   and inferring one axis from the other refused every DCU launch with "Triton execution
   requires the existing gpu-run allocator";
+* the measurement source a timed assay is allowed to name. `metal` and `cupti` are
+  the two that exist; `None` means this backend has no named timing source yet, and a
+  Study for it is refused rather than declared against whichever source the code reaches
+  by falling through. A DCU has no CUPTI, and a study that said `paired_cupti` on one
+  would have labelled its evidence with a profiler that is not installed;
 * the instruction contract for `tanh`, which each Target names in its own vocabulary --
   `metal.precise.tanh.f32` against Metal's named-precision function, `libdevice.tanh.f32`
   against the CUDA one. They are different functions and neither Target admits the other's
@@ -43,23 +48,28 @@ BACKENDS = {
     "metal-m1-pro": {"target": "apple_gpu_family7", "device_name": "Apple M1 Pro",
                      "provenance_token": "M1_Pro", "route": "metal",
                      "allocation": "local_broker",
-                     "tanh_contract": "metal.precise.tanh.f32", "power_of_two_width": False},
+                     "tanh_contract": "metal.precise.tanh.f32", "timing_source": "metal",
+                    "power_of_two_width": False},
     "metal-m2": {"target": "apple_gpu_family8", "device_name": "Apple M2",
                  "provenance_token": "M2", "route": "metal",
                  "allocation": "local_broker",
-                 "tanh_contract": "metal.precise.tanh.f32", "power_of_two_width": False},
+                 "tanh_contract": "metal.precise.tanh.f32", "timing_source": "metal",
+                    "power_of_two_width": False},
     "metal-m4": {"target": "apple_gpu_family9", "device_name": "Apple M4",
                  "provenance_token": "M4", "route": "metal",
                  "allocation": "local_broker",
-                 "tanh_contract": "metal.precise.tanh.f32", "power_of_two_width": False},
+                 "tanh_contract": "metal.precise.tanh.f32", "timing_source": "metal",
+                    "power_of_two_width": False},
     "triton-b200": {"target": "sm_100a", "device_name": "NVIDIA B200",
                     "provenance_token": "B200", "route": "triton",
                     "allocation": "gpu_run",
-                    "tanh_contract": "libdevice.tanh.f32", "power_of_two_width": True},
+                    "tanh_contract": "libdevice.tanh.f32", "timing_source": "cupti",
+                    "power_of_two_width": True},
     "triton-b300": {"target": "sm_103a", "device_name": "NVIDIA B300",
                     "provenance_token": "B300", "route": "triton",
                     "allocation": "gpu_run",
-                    "tanh_contract": "libdevice.tanh.f32", "power_of_two_width": True},
+                    "tanh_contract": "libdevice.tanh.f32", "timing_source": "cupti",
+                    "power_of_two_width": True},
     # Hygon DCU. `tanh_contract` is None because gfx938 declares no tanh instruction
     # contract: on ROCm Triton's `libdevice` resolves to ocml, and reusing the CUDA
     # spelling would claim NVIDIA libdevice numerics for a different function. A task
@@ -68,8 +78,19 @@ BACKENDS = {
     "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
                    "provenance_token": "BW1101", "route": "triton",
                    "allocation": "local_broker",
-                   "tanh_contract": None, "power_of_two_width": True},
+                   "tanh_contract": None, "timing_source": None,
+                   "power_of_two_width": True},
 }
+
+
+def timing_source(backend: str) -> str | None:
+    """Name the measurement source a timed assay may declare for this backend.
+
+    `None` is a real answer and the caller must handle it: the backend exists, lowers and
+    builds, and nothing has yet measured a latency on it under a named timer. Returning a
+    default here would put a profiler's name on evidence that profiler never produced.
+    """
+    return BACKENDS[backend]["timing_source"]
 
 
 def backend_for_target(target: object) -> str | None:
