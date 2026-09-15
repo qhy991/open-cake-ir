@@ -33,7 +33,7 @@
     "evidence_root": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oc-width-ticktock-20260915-DBihzZ",
     "result": "evaluation/result.json",
     "fixed_baselines": "Original v114 matrix/baseline-preflight per-task sealed bundles; unchanged",
-    "checks": "Six complete candidates built and ABI-paired before GPU use; six search, two fresh confirmation, two NCU attribution receipts; every returned receipt correct and every timing receipt stable under the original five-input-case policy, 10 cohort pairs and CV 0.15",
+    "checks": "Six complete candidates built and ABI-paired before GPU use; six search and two fresh confirmation receipts validate both participants on all five input cases, with 10 cohort pairs and CV 0.15; two NCU attribution receipts validate primary input. All ten receipts correct and all eight timing receipts stable.",
     "rmsnorm_input_gradient": {
       "selected_num_warps": 8,
       "confirmation": "evaluation/rmsnorm_input_gradient/w8/confirmatory/receipt.json",
