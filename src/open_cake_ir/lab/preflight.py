@@ -15,6 +15,7 @@ from .endpoints import analysis_without_endpoint_policy
 from .efficiency_policy import analysis_without_performance_policy, performance_reporting_policy
 from ._documents import _canonical_json_bytes, _digest, _name, _object, _project_path
 from ._policies import (
+    untimed,
     _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN,
     _ATTRIBUTION_EVALUATION,
     _LEGACY_ATTRIBUTION_EVALUATION,
@@ -233,24 +234,37 @@ def preflight(
     if (open_cake.get("tool_surface") != (["submit_schedule_or_python"] if policy is not None or single_environment else ["submit_schedule"])
             or (comparison is not None and direct_cuda.get("tool_surface") != ([policy.submit_tool] if policy is not None else ["submit_cuda"]))):
         raise ValueError("Study Contract Authoring Environment tool surfaces differ")
-    attribution_evaluation = _object(
+    evaluation_protocol = _object(
         study.document.get("evaluation_protocol"),
         "study.evaluation_protocol",
-    ).get("attribution_evaluation")
+    )
+    attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
+    # A Study for a target whose backend names no timing source carries a
+    # measurement-coverage limitation instead of a paired assay. `evaluation_policy` has
+    # written that shape since the DCU was admitted, and this gate never accepted it, so
+    # no such Study reached a Campaign: its attribution is `correctness_only`, which was
+    # not in the set below, and its arms can be given neither a qualified latency nor a
+    # profile. Both halves are admitted here, from the one predicate the policy uses.
+    no_timed_assay = untimed(evaluation_protocol)
     if attribution_evaluation not in {
         None,
         _LEGACY_ATTRIBUTION_EVALUATION,
         _ATTRIBUTION_EVALUATION,
+        *(("correctness_only",) if no_timed_assay else ()),
     }:
         raise ValueError("Study Contract attribution Evaluation differs")
-    profile_feedback = ["profile"] if attribution_evaluation is not None else []
+    if no_timed_assay:
+        timed_feedback, profile_feedback = [], []
+    else:
+        timed_feedback = ["qualified_timing"]
+        profile_feedback = ["profile"] if attribution_evaluation is not None else []
     if open_cake.get("feedback") != [
         "findings",
         "correctness",
-        "qualified_timing",
+        *timed_feedback,
         *profile_feedback,
     ] or (comparison is not None and direct_cuda.get("feedback") != [
-        "compile", "correctness", "qualified_timing", *profile_feedback,
+        "compile", "correctness", *timed_feedback, *profile_feedback,
     ]):
         raise ValueError("Study Contract Authoring Environment feedback differs")
     gate, compiler_relative, compiler_reference = (

@@ -9,7 +9,7 @@ from open_cake_ir.compiler import frontend
 from open_cake_ir.evaluation.paired import PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
-from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN
+from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN, untimed
 from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
 from open_cake_ir.lab.efficiency_policy import TASK_EFFICIENCY_V1
 from open_cake_ir.lab.ralph import RalphBudget
@@ -23,6 +23,14 @@ SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"
 
 def canonical(document) -> bytes:
     return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+
+
+def arm_feedback(evaluation) -> list[str]:
+    """The feedback an Authoring Environment can actually be given under this policy."""
+
+    if untimed(evaluation):
+        return ["findings", "correctness"]
+    return ["findings", "correctness", "qualified_timing", "profile"]
 
 
 def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sample: int | None = None,
@@ -150,6 +158,9 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         provider.update(sandbox="workspace-write", service_tier="default", disabled_features=[],
                         event_contract="tool_rich_candidate_v1", code_mode_host=dict(CAMPAIGN_BINDING),
                         output_schema={"path": OUTPUT_SCHEMA, "sha256": sha256((root / OUTPUT_SCHEMA).read_bytes()).hexdigest()})
+    evaluation = evaluation_policy(workload, searches_per_turn=searches_per_turn,
+                                   dispatches_per_sample=dispatches_per_sample,
+                                   maximum_cv=maximum_cv, required_pair_wins=required_pair_wins)
     return {
         "schema_version": 2, "state": "template", "kind": "matched_search",
         "study_id": f"{workload.workload_id}-{harness}-artifact-optimization",
@@ -163,7 +174,12 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
             "lowering_route": source.document["lowering"],
             "schedule_skeleton": {"path": str(starter_path), "canonical_sha256": sha256(canonical(source.document)).hexdigest()},
             "input_format": "schedule_or_python_v1", "tool_surface": ["submit_schedule_or_python"],
-            "feedback": ["findings", "correctness", "qualified_timing", "profile"],
+            # Stated from the policy rather than asserted: on a target whose backend
+            # declares no timing source the policy carries a measurement-coverage
+            # limitation, and an arm that still advertised `qualified_timing` and
+            # `profile` would promise an author two kinds of feedback nothing on this
+            # device can produce.
+            "feedback": arm_feedback(evaluation),
             "toolchain_sha256": dict(CAMPAIGN_BINDING),
         }},
         "allocation": {"method": "predeclared_balanced_blocks", "order": ["open_cake-1"]},
@@ -171,9 +187,7 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         "run_protocol": {"automatic_retries": 0, "independent_thread": True, "replacement_runs": 0,
                          "resume_invariants": ["authority", "cwd", "sandbox", "provider", "scaffold", "arm_environment", "task_package"],
                          "workspace_seed": "task_agents_only"},
-        "evaluation_protocol": evaluation_policy(workload, searches_per_turn=searches_per_turn,
-                                                 dispatches_per_sample=dispatches_per_sample,
-                                                 maximum_cv=maximum_cv, required_pair_wins=required_pair_wins),
+        "evaluation_protocol": evaluation,
         "execution": {"target": workload.target, "executor_revision": dict(CURRENT_RELEASE_BINDING),
                       "broker_execution_sha256": dict(CAMPAIGN_BINDING), "fixed_baseline": dict(CAMPAIGN_BINDING),
                       "gpu": {"name": device_name(workload.target), "count": 1,

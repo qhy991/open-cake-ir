@@ -184,3 +184,15 @@ def _scientific_analysis_plan_version(
     if analysis == _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2:
         return "two_part_v2"
     raise ValueError(f"{context} is unsupported")
+
+
+def untimed(evaluation) -> bool:
+    """Whether an evaluation policy states that no timed assay is available.
+
+    One rule, read by the Study builder that writes the policy and by the preflight that
+    admits it. Two copies of this predicate is how the no-timer branch came to exist in
+    the policy while the gate below it still expected every Study to be timed.
+    """
+
+    coverage = evaluation.get("measurement_coverage")
+    return bool(coverage) and coverage.get("timed_assay") == "unavailable"
