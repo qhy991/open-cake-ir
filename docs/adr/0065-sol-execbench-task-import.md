@@ -1,7 +1,7 @@
 # ADR 0065: SoL-ExecBench task import, namespace and gate translation
 
-Status: proposed. The first task (`fib_rmsnorm_h4096`) is implemented against this
-decision; the remaining tasks are not imported by it.
+Status: proposed. The pack's nine RMSNorm-family captures are implemented against this
+decision; the other 111 tasks are not imported by it.
 
 ## Context
 
@@ -72,9 +72,13 @@ provenance as a fact about the upstream and excluded in `semantics.exclusions`; 
 a portfolio question a later Study may take up, and listing them in a contract that
 never examines them would report a domain it did not look at.
 
-The seed extent is chosen for what it exercises, not for what it flatters. For
-`fib_rmsnorm_h4096` it is `batch_size = 170`, the extent at which the upstream baseline
-was weakest.
+The seed extent is the largest declared upstream batch whose element-by-element CPU
+oracle stays tractable, and each contract's `exclusions` says so: it is chosen for oracle
+reach, **not** for memory-bandwidth saturation, so the upstream's prefill-sized extents
+are neither examined nor claimed. The rule reads only the declared axis. It deliberately
+does not consult the pack's `baseline.worst_workload`, which is upstream evidence and
+outside the importer's reading whitelist, and it hardcodes no SM count, which no Target
+document here states.
 
 ### `int64` and `bool` are narrowed explicitly or not imported
 
@@ -114,10 +118,25 @@ Metal backends for `bf16`, and refused on `triton-dcu` because `gfx938` declares
 limit of the DCU line for every BF16 task in this pack, and is reported as such rather
 than worked around.
 
-Two upstream tasks in the pack, `rmsnorm_h1536` and `rmsnorm_h7168`, carry hidden sizes
-that are not powers of two. `admit_width` refuses them on every Triton route. They are
-not importable as written; that is a Finding about the width rule, not a reason to relax
-it here.
+Three of the pack's RMSNorm captures -- `fused_add_rmsnorm_h7168`, `rmsnorm_h1536` and
+`rmsnorm_h7168` -- carry hidden sizes that are not powers of two, which the Triton route
+cannot tile with `tl.arange`. They are registered, and `admitting_backends` reports an
+empty set for each; the launcher offers only what some backend admits. Registering and
+reporting them is the point: a task list filtered to hide them would say the pack is
+smaller than it is. Their width is a Finding about the route, not a reason to relax the
+rule, and not evidence that the operator is inexpressible -- a route without that tiling
+constraint would admit them.
+
+The Compiler's `native_cuda` route is not an alternative for this family today. It names
+`bf16` and `cast` and it targets `sm_100a`/`sm_103a`, but its emittable operation kinds
+are `load`, `mma`, `elementwise`, `cast`, `reduce_argmin` and `store`: it has no `reduce`,
+so a row sum is refused with `BACKEND_OPERATION_UNEMITTABLE`. Registering a CUDA backend
+row for B300 would therefore not make these tasks lower; the missing primitive is a
+CUDA-side row reduction, which is an IR/lowering Finding and not part of this import.
+
+Epsilon is per capture, not per family: the two Llama-3.1-8B captures fix `1e-5` and the
+other seven fix `1e-6`. A family constant would be silently wrong for seven of nine, so
+it lives in the per-task spec and each contract carries its own.
 
 Registration is not a launchable task: `deepseek_v4_*` is registered without being in
 `--task`, and `dsa/` has a contract with no oracle. An imported task counts as landed

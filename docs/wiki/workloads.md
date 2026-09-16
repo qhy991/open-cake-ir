@@ -116,6 +116,27 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 
 两者都是 `sm_100a` 的独立路由合同，排除同分情形；不覆盖专家执行、共享专家、通信或完整模型服务，也不自动提供当前 GPU 资格。
 
+## SoL-ExecBench：FlashInfer-Bench 定义的 RMSNorm 家族
+
+从 `flashinfer-bench-tasks` 导入，上游权威是 FlashInfer-Bench 的算子定义（[ADR 0065](../adr/0065-sol-execbench-task-import.md)）。
+每个合同绑定一个 batch extent —— CPU oracle 逐元素跑得动的最大上游取值，**为 oracle 覆盖选的，不是为跑满带宽选的**，
+上游更大的取值记在 provenance 里但不声称检查过。epsilon 按 capture 走，不是家族常量。
+上游的 `matched_ratio` 0.99 门槛换成了全元素比较（`atol` 2⁻¹⁶，`rtol` 2⁻⁷），这是更严的门、不是同一个门。
+上游的 baseline 目录声明为 `restricted_artifact`。B300 的设备编译、正确性、计时、profiler 与框架评估均待办。
+
+| 合同 | 计算与输出 |
+| --- | --- |
+| [RMSNorm h128 BF16](../../contracts/workloads/solx-fib-rmsnorm-h128-bf16-triton-b300-r2528-v1.json) | Qwen3-30B-A3B capture，epsilon `1e-6`，batch 2528。 |
+| [RMSNorm h512 BF16](../../contracts/workloads/solx-fib-rmsnorm-h512-bf16-triton-b300-r539-v1.json) | DeepSeek-V3 capture，epsilon `1e-6`，batch 539。 |
+| [RMSNorm h2048 BF16](../../contracts/workloads/solx-fib-rmsnorm-h2048-bf16-triton-b300-r79-v1.json) | Qwen3-30B-A3B capture，epsilon `1e-6`，batch 79。 |
+| [RMSNorm h4096 BF16](../../contracts/workloads/solx-fib-rmsnorm-h4096-bf16-triton-b300-r170-v1.json) | Llama-3.1-8B capture，epsilon `1e-5`，batch 170。 |
+| [Fused add+RMSNorm h2048 BF16](../../contracts/workloads/solx-fib-fused-add-rmsnorm-h2048-bf16-triton-b300-r79-v1.json) | 残差在 FP32 相加后再归一化；epsilon `1e-6`，batch 79。 |
+| [Fused add+RMSNorm h4096 BF16](../../contracts/workloads/solx-fib-fused-add-rmsnorm-h4096-bf16-triton-b300-r170-v1.json) | 同上；epsilon `1e-5`，batch 170。 |
+
+上游同一家族还有三个 capture（`fused_add_rmsnorm_h7168`、`rmsnorm_h1536`、`rmsnorm_h7168`）的 hidden size 不是 2 的幂，
+Triton 路线用 `tl.arange` 铺不了。它们在 `src/open_cake_ir/tasks/solx_fib/workload.py` 里注册，
+`admitting_backends` 返回空集合，因此没有合同文件 —— 是被报告出来，不是被省略。
+
 ## 为什么有些示例不在这张合同表里
 
 Softmax、RoPE 等还以 [Corpus Schedule](../../corpus/manifest.json)或独立测量任务出现。

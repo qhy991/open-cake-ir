@@ -323,14 +323,17 @@ def validate_evaluation(
             observed_source = native_source(source, requirements)
             source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
             grid, block = requirements['grid'], tuple(native_block(requirements))
-            # How many hidden null pointers Triton appends is the scratch count its
-            # options declare for this exact target, not a per-backend constant: the CUDA
-            # route declares global and profile scratch, and HIPOptions has no global
-            # scratch field at all. The table's 2 was right for every Triton target there
-            # was when it was written.
+            # How many pointers the kernel takes beyond its tensors is the kernel's own
+            # fact, not a per-backend constant. For AMDGCN it is in the sealed assembly's
+            # `.amdgpu_metadata`; the table's 2 was right for every Triton target there
+            # was when it was written, and is still the CUDA route's.
+            from open_cake_ir.compiler.toolchain import triton_route
+            from open_cake_ir.lab.build import _hidden_pointers
+
             if route["backend"] == "triton":
-                from open_cake_ir.compiler.toolchain import triton_route
-                expected_hidden = len(triton_route(workload.target).scratch_fields)
+                expected_hidden = _hidden_pointers(
+                    triton_route(workload.target), sealed_baseline.artifact_payloads,
+                    len(workload.tensor_abi(str(evaluation['case_id']))))
             else:
                 expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
             if manifest.hidden_null_pointer_parameters != expected_hidden:

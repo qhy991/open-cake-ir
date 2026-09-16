@@ -9,25 +9,32 @@ from .workload import validate_solx_fib_contract
 def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     """Emit high-level Python for the selected shape, with frozen Workload metadata.
 
-    The BF16 ABI is explicit on both sides: the reduction and the affine scale happen in
-    FP32 between a widening cast of each operand and one narrowing cast of the result,
-    which is what the upstream definition's reference does and what the tolerance assumes.
+    The BF16 ABI is explicit on both sides: every operand widens on load, the reduction
+    and the affine scale happen in FP32, and one narrowing cast produces the result. That
+    is what the upstream definition's reference does and what the tolerance assumes.
     """
     validate_solx_fib_contract(workload.document)
     operator = workload.document["operator"]
     args = workload.tensor_abi(case_id)
+    names = {arg.name for arg in args}
     width = args[0].shape[-1]
     epsilon = workload.document["semantics"]["epsilon"]
-    body = [
-        'stored = lm.load(x[row, :], id="load_x")',
-        'values = lm.cast(stored, to="fp32", id="widen_x")',
+    body = ['stored = lm.load(x[row, :], id="load_x")',
+            'values = lm.cast(stored, to="fp32", id="widen_x")']
+    operand = "values"
+    if "residual" in names:
+        body += ['stored_residual = lm.load(residual[row, :], id="load_residual")',
+                 'residual_values = lm.cast(stored_residual, to="fp32", id="widen_residual")',
+                 'combined = values + residual_values']
+        operand = "combined"
+    body += [
         'stored_weight = lm.load(weight[:], id="load_weight")',
         'weights = lm.cast(stored_weight, to="fp32", id="widen_weight")',
-        'squares = lm.square(values, id="square")',
+        f'squares = lm.square({operand}, id="square")',
         'square_sum = lm.reduce(squares, op="sum", axis=0, scope="cta", across_loop=False, id="sum_square")',
         f'mean_square = square_sum / {float(width)!r}',
         f'inverse = lm.rsqrt(mean_square + {epsilon!r}, id="inverse")',
-        'normalized = values * inverse',
+        f'normalized = {operand} * inverse',
         'weighted = normalized * weights',
         'narrowed = lm.cast(weighted, to="bf16", id="narrow_out")',
         'lm.store(out[row, :], narrowed, coalesced=False, id="store_out")',

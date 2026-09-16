@@ -261,6 +261,49 @@ def artifact_records(payloads: Mapping[str, bytes]) -> dict[str, dict[str, objec
     }
 
 
+_AMDGPU_METADATA = re.compile(
+    r"^\s*\.amdgpu_metadata\s*$(.*?)^\s*\.end_amdgpu_metadata\s*$",
+    re.MULTILINE | re.DOTALL,
+)
+_KERNARG_POINTER = re.compile(r"^\s*\.value_kind:\s*global_buffer\s*$", re.MULTILINE)
+
+
+def amdgcn_kernarg_pointers(payload: bytes) -> int:
+    """Count the pointer arguments the emitted kernel actually declares.
+
+    The launch passes one address per declared argument, and the count is the kernel's
+    own fact: its `.amdgpu_metadata` lists every argument with a value kind, and a Triton
+    AMDGCN kernel's are all `global_buffer`. Deriving it instead from the route's scratch
+    fields was wrong and the device said so -- an rmsnorm taking three tensors declares
+    five, the launcher passed four, and the kernel read its fifth pointer out of
+    uninitialized kernarg memory. One launch survived that because this kernel never
+    dereferences its scratch; a second did not.
+    """
+    if not isinstance(payload, bytes) or not payload:
+        raise ValueError("AMDGCN artifact must contain assembly bytes")
+    try:
+        source = payload.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("AMDGCN artifact is not UTF-8 assembly") from error
+    blocks = _AMDGPU_METADATA.findall(source)
+    if len(blocks) != 1:
+        raise ValueError("AMDGCN artifact must carry exactly one .amdgpu_metadata block")
+    pointers = len(_KERNARG_POINTER.findall(blocks[0]))
+    if pointers <= 0:
+        raise ValueError("AMDGCN kernel declares no pointer arguments")
+    segment = re.search(r"^\s*\.kernarg_segment_size:\s*(\d+)\s*$", blocks[0], re.MULTILINE)
+    if segment is None:
+        raise ValueError("AMDGCN kernel declares no kernarg segment size")
+    # Every argument here is an 8-byte pointer, so the two facts must agree. They are
+    # both the kernel's, and a disagreement means this is not the shape assumed.
+    if int(segment.group(1)) != 8 * pointers:
+        raise ValueError(
+            f"AMDGCN kernarg segment is {segment.group(1)} bytes for {pointers} pointer "
+            "arguments; this kernel does not take pointers alone"
+        )
+    return pointers
+
+
 def amdgcn_resource_record(payload: bytes) -> dict[str, object]:
     """Extract exact AMDHSA resource declarations from one emitted assembly artifact."""
 

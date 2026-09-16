@@ -78,12 +78,17 @@ four gate translations these imports make, and
 [`src/open_cake_ir/tasks/solx_fib/workload.py`](../../src/open_cake_ir/tasks/solx_fib/workload.py)
 generates each document.
 
-[`solx-fib-rmsnorm-h4096-bf16-triton-b300-r170-v1.json`](solx-fib-rmsnorm-h4096-bf16-triton-b300-r170-v1.json)
-is the first. It binds one batch extent, 170, which is where the upstream baseline was
-weakest; the pack's other thirteen extents are recorded in provenance and explicitly
-excluded rather than claimed. The upstream `matched_ratio` 0.99 gate is replaced by an
-all-element comparison at `atol` 2**-16 and `rtol` 2**-7, which is a stricter gate and not
-the same one. No upstream candidate source, latency or score is inherited, and the pack's
-baseline directories are declared `restricted_artifact` so a clean-start arm's refusal is
-a property of the contract. B300 device compile, correctness, timing, profiler and
-framework evaluation remain pending.
+The nine RMSNorm-family captures are registered; the six whose hidden size a Triton route
+can tile carry a committed contract here, and `fused_add_rmsnorm_h7168`, `rmsnorm_h1536`
+and `rmsnorm_h7168` are registered with no admitting backend rather than omitted.
+
+Each contract binds one batch extent -- the largest declared upstream batch whose CPU
+oracle stays tractable -- and says in its own `exclusions` that this is chosen for oracle
+reach and not for memory-bandwidth saturation, so the upstream's larger extents are
+recorded in provenance but neither examined nor claimed. Epsilon is the capture's own
+(`1e-5` for the two Llama-3.1-8B captures, `1e-6` for the rest). The upstream
+`matched_ratio` 0.99 gate is replaced by an all-element comparison at `atol` 2**-16 and
+`rtol` 2**-7, which is a stricter gate and not the same one. No upstream candidate source,
+latency or score is inherited, and each pack baseline directory is declared
+`restricted_artifact` so a clean-start arm's refusal is a property of the contract. B300
+device compile, correctness, timing, profiler and framework evaluation remain pending.

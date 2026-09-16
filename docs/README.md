@@ -181,3 +181,5 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [0063: Normal budget terminal observations](adr/0063-normal-budget-terminal-observations.md)
 
 - [0064: Task incumbents are an append-only Lab projection](adr/0064-task-incumbents-are-an-append-only-lab-projection.md)
+
+- [0065: SoL-ExecBench task import, namespace and gate translation](adr/0065-sol-execbench-task-import.md)

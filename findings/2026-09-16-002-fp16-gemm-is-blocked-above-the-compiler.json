@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-002",
+  "kind": "capacity",
+  "date": "2026-09-16",
+  "title": "The Compiler already lowers the SoL-ExecBench FP16 GEMM shape to CUDA on sm_103a; three layers above it refuse FP16, and the Triton route declares no FP16 dot",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-b200-v150+236a48cb3838b3d928389a1a0dabdc073067ccbd44f4e41d737833eec11c7fca",
+  "evidence": [
+    {
+      "workspace": "source_probe_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "This finding has no campaign evidence and claims no measurement. It is a set of Compiler.assess probes over corpus schedules, each reproducible from the checkout at the cited Compiler Revision. No device was used and no latency is reported."
+    },
+    {
+      "workspace": "corpus/schedules/native-gemm-bias-sm103a.json",
+      "run": "none",
+      "event": 1,
+      "note": "Retyping every bf16 buffer to fp16, dropping the bias chain and narrowing the FP32 accumulator with one cast before an fp16 store yields Compiler.assess lowering_eligible=True and a complete CUDA C++ lowering. This is exactly the upstream FIB GEMM shape: C = A @ B.T, FP16 operands, FP16 result. The instruction is tcgen05.mma.cta_group::1.kind::f16, which sm_103a declares and whose _CONTRACT_DTYPES row already admits {BF16, FP16}."
+    },
+    {
+      "workspace": "corpus/schedules/gemm-bias-b1-smoke.json",
+      "run": "none",
+      "event": 2,
+      "note": "The same retyping on the Triton route is refused twice, each by the rule that owns it: 'triton.dot.fp16_fp32' raises TARGET_INSTRUCTION_UNSUPPORTED because neither sm_100a nor sm_103a declares it, and reusing 'triton.dot.bf16_fp32' for FP16 operands raises MMA_OPERAND_DTYPE_DIFFERS. Neither refusal is a workaround candidate."
+    },
+    {
+      "workspace": "src/open_cake_ir/evaluation/workload.py",
+      "run": "none",
+      "event": 3,
+      "note": "WorkloadContract.tensor_abi restates a dtype whitelist {fp32, bf16, int32} instead of quoting the route's own SUPPORTED_DTYPES, so an FP16 tensor cannot be declared by any Workload Contract at all: 'workload tensor x dtype is unsupported'. Both Triton and native_cuda name fp16; the IR's DType names it. This is the shared-layer restatement AGENTS.md calls a defect, and it is the first of the three blockers to hit."
+    }
+  ],
+  "observation": "All eight FlashInfer-Bench GEMM captures in flashinfer-bench-tasks (004-011) are FP16 A[M,K] x B[N,K]^T -> C[M,N], and L1_077 is FP16 too. The Compiler is not what blocks them. Three layers above it do, in this order: (1) the Workload ABI cannot name fp16; (2) tasks/devices.py declares no native_cuda backend row, so no task selects the route that does admit the instruction; (3) lab/ has TritonToolchainBuilder, CuTeToolchainBuilder and MetalToolchainBuilder but no native-CUDA ToolchainBuilder, so a native_cuda candidate has no build path. Separately and independently, the Triton route declares no FP16 dot contract on either NVIDIA target, so adding a backend row alone would not serve these tasks on the route the task layer already has. This is the same shape as F-2026-09-15-004: capability that exists at one layer is unreachable because a shared layer restates a set instead of quoting it.",
+  "proposed_change": "Three separable changes, smallest first. (a) Make WorkloadContract.tensor_abi quote the admitted dtype vocabulary rather than restate it, so a Workload can declare exactly what some route can name; this edits a file pinned by every Executor closure and therefore mints successor Executor Revisions. (b) Declare a native_cuda backend row in tasks/devices.py with its own target, allocation and timing source, or report a measurement-coverage limitation if it cannot state all three. (c) Add a native-CUDA ToolchainBuilder to lab/ so a sealed candidate on that route can be built. Declaring 'triton.dot.fp16_fp32' on an NVIDIA Target is a separate, evidence-gated Target change with its own citation and its own _CONTRACT_DTYPES row (hardware_conformance.py names that site in its own comment); it is not required for (a)-(c) and must not be bundled with them.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

@@ -3,50 +3,50 @@
     {
       "case_id": "primary",
       "mode": "uniform",
-      "seed": 2501,
+      "seed": 2641,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 512,
+        "R": 539
       }
     },
     {
       "case_id": "zeros",
       "mode": "zeros",
-      "seed": 2502,
+      "seed": 2642,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 512,
+        "R": 539
       }
     },
     {
       "case_id": "near_zero",
       "mode": "near_zero",
-      "seed": 2503,
+      "seed": 2643,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 512,
+        "R": 539
       }
     },
     {
       "case_id": "alternating",
       "mode": "alternating",
-      "seed": 2504,
+      "seed": 2644,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 512,
+        "R": 539
       }
     },
     {
       "case_id": "mixed_magnitude",
       "mode": "mixed_magnitude",
-      "seed": 2505,
+      "seed": 2645,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 512,
+        "R": 539
       }
     }
   ],
-  "operator": "solx_fib_rmsnorm_h4096_bf16",
+  "operator": "solx_fib_rmsnorm_h512_bf16",
   "oracle": {
     "callable": "open_cake_ir.tasks.solx_fib.workload.reference_outputs",
     "implementation": "independent_standard_library_math_no_compiler_or_generated_source",
@@ -55,38 +55,32 @@
   },
   "provenance": [
     {
-      "definition": "upstream/definitions/rmsnorm/rmsnorm_h4096.json",
+      "definition": "upstream/definitions/rmsnorm/rmsnorm_h512.json",
       "kind": "solx_pack_task",
-      "model": "meta-llama/Llama-3.1-8B",
-      "path": "flashinfer-bench-tasks/tasks/025_rmsnorm_h4096",
+      "model": "deepseek-ai/DeepSeek-V3",
+      "path": "flashinfer-bench-tasks/tasks/022_rmsnorm_h512",
       "scope": "semantic_source_only; no_upstream_candidate_source_latency_or_score_is_inherited",
       "upstream": "flashinfer-bench",
       "upstream_batch_axis": [
         1,
         7,
-        15,
-        16,
-        34,
-        63,
+        18,
+        32,
         64,
-        79,
-        170,
-        8804,
-        10827,
-        11832,
-        14418,
-        14509
+        539,
+        11949,
+        14521
       ]
     },
     {
       "kind": "restricted_artifact",
-      "path": "flashinfer-bench-tasks/tasks/025_rmsnorm_h4096/baseline/",
+      "path": "flashinfer-bench-tasks/tasks/022_rmsnorm_h512/baseline/",
       "role": "complete_low_level_target_implementation",
       "scope": "black_box_baseline_only; not_readable_by_clean_start_or_direct_low_level_arm"
     },
     {
       "kind": "restricted_artifact",
-      "path": "flashinfer-bench-tasks/dcu_sol/025_rmsnorm_h4096/",
+      "path": "flashinfer-bench-tasks/dcu_sol/022_rmsnorm_h512/",
       "role": "complete_low_level_target_implementation",
       "scope": "black_box_baseline_only; not_readable_by_clean_start_or_direct_low_level_arm"
     },
@@ -116,7 +110,7 @@
       ]
     },
     "definition": "out[r,c] = round_bf16(x[r,c] * weight[c] / sqrt(mean_j(x[r,j]^2) + epsilon))",
-    "epsilon": 1e-05,
+    "epsilon": 1e-06,
     "exclusions": "one_batch_extent_only; the extent is the largest declared upstream batch whose element-by-element CPU oracle stays tractable, chosen for oracle reach and not for memory-bandwidth saturation, so the upstream's larger extents are neither examined nor claimed; no_framework_ABI_cross_shape_or_serving_claim",
     "input_effects": "unchanged",
     "materialization": {
@@ -173,5 +167,5 @@
     "rtol": 0.0078125,
     "tolerance_rationale": "BF16 has an 8-bit significand, so rtol 2**-7 is two output ulp: enough for an FP32 reduction order and an rsqrt approximation that both differ from the fsum oracle before the final BF16 rounding. atol 2**-16 covers outputs below that relative floor. The upstream pack gates on matched_ratio 0.99 at atol=rtol=1e-2, which admits 1 percent wrong elements; every element is compared here, so this is a stricter gate and not the same gate. Not a device calibration."
   },
-  "workload_id": "solx-fib-rmsnorm-h4096-bf16-triton-b300-r170-v1"
+  "workload_id": "solx-fib-rmsnorm-h512-bf16-triton-b300-r539-v1"
 }

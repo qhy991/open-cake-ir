@@ -3,90 +3,83 @@
     {
       "case_id": "primary",
       "mode": "uniform",
-      "seed": 2501,
+      "seed": 2601,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 2048,
+        "R": 79
       }
     },
     {
       "case_id": "zeros",
       "mode": "zeros",
-      "seed": 2502,
+      "seed": 2602,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 2048,
+        "R": 79
       }
     },
     {
       "case_id": "near_zero",
       "mode": "near_zero",
-      "seed": 2503,
+      "seed": 2603,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 2048,
+        "R": 79
       }
     },
     {
       "case_id": "alternating",
       "mode": "alternating",
-      "seed": 2504,
+      "seed": 2604,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 2048,
+        "R": 79
       }
     },
     {
       "case_id": "mixed_magnitude",
       "mode": "mixed_magnitude",
-      "seed": 2505,
+      "seed": 2605,
       "shape": {
-        "C": 4096,
-        "R": 170
+        "C": 2048,
+        "R": 79
       }
     }
   ],
-  "operator": "solx_fib_rmsnorm_h4096_bf16",
+  "operator": "solx_fib_fused_add_rmsnorm_h2048_bf16",
   "oracle": {
     "callable": "open_cake_ir.tasks.solx_fib.workload.reference_outputs",
     "implementation": "independent_standard_library_math_no_compiler_or_generated_source",
-    "kind": "real_rmsnorm_fsum_then_bf16",
+    "kind": "real_fused_add_rmsnorm_fsum_then_bf16",
     "output_rounding": "round_to_nearest_ties_to_even"
   },
   "provenance": [
     {
-      "definition": "upstream/definitions/rmsnorm/rmsnorm_h4096.json",
+      "definition": "upstream/definitions/rmsnorm/fused_add_rmsnorm_h2048.json",
       "kind": "solx_pack_task",
-      "model": "meta-llama/Llama-3.1-8B",
-      "path": "flashinfer-bench-tasks/tasks/025_rmsnorm_h4096",
+      "model": "Qwen/Qwen3-30B-A3B",
+      "path": "flashinfer-bench-tasks/tasks/001_fused_add_rmsnorm_h2048",
       "scope": "semantic_source_only; no_upstream_candidate_source_latency_or_score_is_inherited",
       "upstream": "flashinfer-bench",
       "upstream_batch_axis": [
         1,
-        7,
-        15,
-        16,
+        6,
         34,
-        63,
         64,
         79,
-        170,
-        8804,
-        10827,
-        11832,
-        14418,
-        14509
+        12383,
+        16254
       ]
     },
     {
       "kind": "restricted_artifact",
-      "path": "flashinfer-bench-tasks/tasks/025_rmsnorm_h4096/baseline/",
+      "path": "flashinfer-bench-tasks/tasks/001_fused_add_rmsnorm_h2048/baseline/",
       "role": "complete_low_level_target_implementation",
       "scope": "black_box_baseline_only; not_readable_by_clean_start_or_direct_low_level_arm"
     },
     {
       "kind": "restricted_artifact",
-      "path": "flashinfer-bench-tasks/dcu_sol/025_rmsnorm_h4096/",
+      "path": "flashinfer-bench-tasks/dcu_sol/001_fused_add_rmsnorm_h2048/",
       "role": "complete_low_level_target_implementation",
       "scope": "black_box_baseline_only; not_readable_by_clean_start_or_direct_low_level_arm"
     },
@@ -104,19 +97,21 @@
       "operands": "bf16",
       "output": "round_to_nearest_ties_to_even_bf16",
       "reduction_order": "backend_defined_within_tolerance",
+      "residual_addition": "round_to_nearest_ties_to_even_fp32_before_normalization",
       "rsqrt": "backend_approximation_within_tolerance"
     },
     "candidate_abi": {
       "inputs": [
         "x",
+        "residual",
         "weight"
       ],
       "outputs": [
         "out"
       ]
     },
-    "definition": "out[r,c] = round_bf16(x[r,c] * weight[c] / sqrt(mean_j(x[r,j]^2) + epsilon))",
-    "epsilon": 1e-05,
+    "definition": "z[r,c] = round_fp32(x[r,c] + residual[r,c]); out[r,c] = round_bf16(z[r,c] * weight[c] / sqrt(mean_j(z[r,j]^2) + epsilon))",
+    "epsilon": 1e-06,
     "exclusions": "one_batch_extent_only; the extent is the largest declared upstream batch whose element-by-element CPU oracle stays tractable, chosen for oracle reach and not for memory-bandwidth saturation, so the upstream's larger extents are neither examined nor claimed; no_framework_ABI_cross_shape_or_serving_claim",
     "input_effects": "unchanged",
     "materialization": {
@@ -138,6 +133,16 @@
       "dtype": "bf16",
       "finite_only": true,
       "layout": "contiguous_row_major",
+      "shape": [
+        "R",
+        "C"
+      ]
+    },
+    "residual": {
+      "dtype": "bf16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 256.0,
       "shape": [
         "R",
         "C"
@@ -173,5 +178,5 @@
     "rtol": 0.0078125,
     "tolerance_rationale": "BF16 has an 8-bit significand, so rtol 2**-7 is two output ulp: enough for an FP32 reduction order and an rsqrt approximation that both differ from the fsum oracle before the final BF16 rounding. atol 2**-16 covers outputs below that relative floor. The upstream pack gates on matched_ratio 0.99 at atol=rtol=1e-2, which admits 1 percent wrong elements; every element is compared here, so this is a stricter gate and not the same gate. Not a device calibration."
   },
-  "workload_id": "solx-fib-rmsnorm-h4096-bf16-triton-b300-r170-v1"
+  "workload_id": "solx-fib-fused-add-rmsnorm-h2048-bf16-triton-b300-r79-v1"
 }

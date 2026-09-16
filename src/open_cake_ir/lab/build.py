@@ -53,6 +53,25 @@ class ToolchainBuilder(Protocol):
         """Build with the Campaign-pinned toolchain and retain artifact roles."""
 
 
+def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> int:
+    """Pointers the kernel takes beyond the Workload's tensors, from the kernel itself."""
+    if route.gpu_backend != "hip":
+        # Triton's two CUDA scratch pointers, the count every retained CUDA manifest
+        # replays through. Reading it from the artifact here would restate a settled
+        # relation on a path nothing has reported a problem with.
+        return 2
+    from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
+
+    declared = amdgcn_kernarg_pointers(stages[route.text_role])
+    hidden = declared - tensor_count
+    if hidden < 0:
+        raise ValueError(
+            f"the emitted kernel declares {declared} pointer arguments, fewer than the "
+            f"{tensor_count} tensors this Workload case binds"
+        )
+    return hidden
+
+
 class TritonToolchainBuilder:
     """Compile the canonical parametric Triton lowering to its exact CUDA CUBIN."""
 
@@ -92,12 +111,15 @@ class TritonToolchainBuilder:
             "target": request.target, "kernel_name": kernel_name, "grid": grid,
             "block": [compilation.threads_per_cta, 1, 1],
             "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
-            # Triton appends one hidden null pointer per scratch buffer its options
-            # declare. The CUDA route declares global and profile scratch and this was
-            # written as the literal 2; HIPOptions carries no global scratch field at all,
-            # so the AMDGCN route declares one and the same literal would have sealed an
-            # ABI with a parameter the kernel does not take.
-            "hidden_null_pointer_parameters": len(route.scratch_fields),
+            # How many pointers the kernel takes beyond its tensors is the kernel's own
+            # fact, and for AMDGCN it is written in the emitted `.amdgpu_metadata`.
+            # Deriving it from the route's scratch fields was a guess, and the device
+            # refused it: an rmsnorm over three tensors declares five pointer arguments,
+            # the launcher passed four, and the kernel read its fifth out of
+            # uninitialized kernarg memory. The CUDA route keeps its own literal, which
+            # every retained CUDA manifest has replayed through.
+            "hidden_null_pointer_parameters": _hidden_pointers(
+                route, stages, len(self._workload.tensor_abi(self._case_id))),
         }
         manifest = (TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch))
         manifest_bytes = canonical_json_bytes(manifest.as_dict())

@@ -36,7 +36,8 @@ from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
 from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
 from open_cake_ir.tasks.optimizers.workload import TASKS as _OPTIMIZER_TASKS
 from open_cake_ir.tasks.contraction.workload import TASKS as _CONTRACTION_TASKS
-from open_cake_ir.tasks.solx_fib.workload import TASKS as _SOLX_FIB_TASKS, HIDDEN_SIZE as _SOLX_FIB_HIDDEN
+from open_cake_ir.tasks.solx_fib.workload import (
+    SPECS as _SOLX_FIB_SPECS, default_rows as _solx_fib_rows, launchable_tasks as _solx_fib_launchable)
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.reporting import primary_summary
@@ -52,8 +53,11 @@ OPTIMIZER_TASKS = tuple(_OPTIMIZER_TASKS)
 # The arithmetic-bound family declares a K extent, as the legacy GEMM task does.
 CONTRACTION_TASKS = tuple(_CONTRACTION_TASKS)
 # SoL-ExecBench tasks carry their upstream definition's constant axis in their own name,
-# so only the batch extent is a flag here.
-SOLX_FIB_TASKS = tuple(_SOLX_FIB_TASKS)
+# so only the batch extent is a flag here. The launcher offers the tasks some registered
+# backend admits; three of the pack's RMSNorm captures have a hidden size that is not a
+# power of two, which no registered route can tile, and the task module reports them
+# rather than pretending the pack is smaller.
+SOLX_FIB_TASKS = _solx_fib_launchable()
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -392,7 +396,8 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
         # one is refused by name rather than silently authoring a different task. The
         # batch default is the extent at which the upstream baseline was weakest, which
         # is the shape worth seeding, not the one that flatters a bandwidth number.
-        return 170 if rows is None else rows, _SOLX_FIB_HIDDEN[task] if columns is None else columns
+        return (_solx_fib_rows(task) if rows is None else rows,
+                _SOLX_FIB_SPECS[task]["hidden"] if columns is None else columns)
     return 128 if rows is None else rows, 1024 if columns is None else columns
 
 
