@@ -14,8 +14,21 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
 .venv/bin/python -m open_cake_ir.cli compiler check-corpus \
   --revision compiler/revision.json
-.venv/bin/python -m pytest tests/contracts
 ```
+
+**Run the suite in its own worktree, at a commit.** Source identity is the clean commit of
+the checkout, so a tracked file changing while the suite runs takes that identity away and
+every test needing a Compiler or an Executor fails from that moment on — which reads like
+broken code rather than like a checkout someone edited. The suite takes tens of minutes,
+and this repository is often worked on from more than one place at once.
+
+```bash
+git worktree add /tmp/oci-test HEAD
+cd /tmp/oci-test && PYTHONPATH=src python -m pytest tests/contracts
+```
+
+Say which commit a reported run was at. When you are the only one touching the checkout and
+it is clean, running in place is the same thing.
 
 The [CI](.github/workflows/ci.yml) discovers every contract test on Python 3.10, 3.11,
 and 3.12. Individual tests report missing optional dependencies or exact historical

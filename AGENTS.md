@@ -322,6 +322,15 @@ invalidates the comparison, not just the run.
   What a historical record pins stays pinned at its own commit. Released locks under `compiler/releases/`,
   descriptors under `runtime/executors/`, frozen `contracts/calibrations/*.json` plans and retained Evidence replay
   with the tools of the commit that produced them, never against today's tree (ADR 0065).
+- **Run the suite in its own worktree, at a commit.** `git worktree add /tmp/<name> <commit>`, then run there.
+  Source identity is the clean commit, so a tracked file changing under a running suite takes its identity away
+  mid-run and every test that needs a Compiler or an Executor fails from that moment. Measured: a suite in the
+  shared checkout was 40 minutes in when another session committed `compiler/targets/gfx1151.json`, and several
+  hundred tests turned red at once -- reading exactly like broken code, not like a checkout someone touched. This
+  repository is worked on by several sessions at a time, so the shared checkout is the one place a long run cannot
+  survive. A worktree costs a `git worktree add` and removes the whole failure mode; it also lets an agent keep
+  editing while the run finishes. Report which commit the run was at.
+
 - A host is captured once per exact target as `runtime/hosts/<target>.json` and committed. A target without one is
   reported as having none, and no other host is substituted for it. Recapture only when the host itself changes,
   with `tools/capture_executor_host.py --target <target>`.
