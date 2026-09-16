@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler, EmpiricalCostModel  # noqa: E402
+from open_cake_ir.compiler.corpus import assess_case  # noqa: E402
 from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources  # noqa: E402
 from open_cake_ir.compiler.performance.compiled_resources import load_compiled_resources  # noqa: E402
 
@@ -24,17 +25,24 @@ def _display_path(path: Path) -> str:
         return str(path)
 
 
-def _paths(arguments: argparse.Namespace) -> list[Path]:
+def _cases(arguments: argparse.Namespace) -> list[tuple[Path, dict | None]]:
+    """Each Schedule to profile, beside the declared case that selected it.
+
+    A case may name the exact target to assess its Schedule on, and two cases may then
+    share one Schedule. Carrying the case here lets the assessment come from the Gate's
+    own rule; a path alone would profile whichever target the document happens to
+    declare, which is the one thing the named target exists to override.
+    """
     if arguments.manifest is not None:
         manifest = json.loads(arguments.manifest.resolve(strict=True).read_text())
         return [
-            ROOT / case["schedule"]
+            (ROOT / case["schedule"], case)
             for case in manifest["cases"]
             if arguments.all or case["expected"].get("lowering_eligible") is True
         ]
     if not arguments.schedules:
         raise ValueError("provide at least one Schedule or --manifest")
-    return [path.resolve(strict=True) for path in arguments.schedules]
+    return [(path.resolve(strict=True), None) for path in arguments.schedules]
 
 
 def _metric(document: dict[str, object], name: str) -> dict[str, object]:
@@ -171,8 +179,9 @@ def main(argv: list[str] | None = None) -> int:
     cost_model = EmpiricalCostModel.load(arguments.cost_model) if arguments.cost_model else None
     rows: list[dict[str, object]] = []
     skipped: list[dict[str, object]] = []
-    for path in _paths(arguments):
-        assessment = compiler.assess_file(path)
+    for path, case in _cases(arguments):
+        assessment = (assess_case(compiler, ROOT, case) if case is not None
+                      else compiler.assess_file(path))
         findings = [
             finding.to_dict() for finding in assessment.findings + assessment.guidance
         ]
@@ -212,6 +221,9 @@ def main(argv: list[str] | None = None) -> int:
         rows.append(
             {
                 "schedule": _display_path(path),
+                # Two rows may share a Schedule and differ only by target, so each row
+                # states the target it was actually assessed on.
+                "target": assessment.target,
                 "schedule_id": assessment.schedule_id,
                 "findings": findings,
                 "profile": profile.as_dict(),

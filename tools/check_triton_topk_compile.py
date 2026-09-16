@@ -25,22 +25,38 @@ def load_compiler(root: Path, revision: str):
     sys.path.insert(0, str(source))
     compiler_module = importlib.import_module('open_cake_ir.compiler')
     toolchain_module = importlib.import_module('open_cake_ir.compiler.toolchain')
-    for module in (compiler_module, toolchain_module):
+    corpus_module = importlib.import_module('open_cake_ir.compiler.corpus')
+    for module in (compiler_module, toolchain_module, corpus_module):
         if not Path(module.__file__).resolve(strict=True).is_relative_to(source):
             raise ValueError('Compiler/toolchain import differs from the selected source tree')
     compiler = compiler_module.Compiler.load(root, root / revision)
-    return compiler, toolchain_module
+    return compiler, toolchain_module, corpus_module
 
 
-def select_cases(compiler, root: Path):
+def select_cases(compiler, corpus_module, root: Path):
     selected, refused = [], []
+    # This script is always the successor's, but the Compiler it drives comes from the
+    # tree --project-root selects, which may predate case-named targets. Ask that tree
+    # for its own assessment rule rather than assuming one, and refuse a case it cannot
+    # express instead of silently assessing the target the Schedule happens to declare.
+    assess_case = getattr(corpus_module, 'assess_case', None)
     for case in json.loads((root / 'corpus/manifest.json').read_text())['cases']:
-        assessment = compiler.assess_file(root / case['schedule'])
+        if assess_case is not None:
+            assessment = assess_case(compiler, root, case)
+        elif case.get('target') is not None:
+            raise ValueError(
+                f"corpus case {case['case_id']!r} names a target this source tree cannot "
+                'assess; the selected Compiler predates case-named targets')
+        else:
+            assessment = compiler.assess_file(root / case['schedule'])
         document = json.loads(assessment.schedule_bytes)
         if (document['lowering']['backend'] != 'triton' or not any(
                 op['kind'] == 'top_k' and op['parameters'].get('across_loop') for op in document['operations'])):
             continue
-        record = {'case_id':case['case_id'], 'schedule':case['schedule']}
+        # Two cases may now share one Schedule, so the record names the target it was
+        # actually assessed on rather than leaving the pair ambiguous.
+        record = {'case_id':case['case_id'], 'schedule':case['schedule'],
+                  'target':assessment.target}
         if assessment.accepted and assessment.lowering_eligible:
             selected.append(record)
         else:
@@ -55,10 +71,10 @@ def child_command(root, revision, directory, case_id):
 
 
 def worker(root, revision, directory, case_id):
-    compiler, toolchain = load_compiler(root, revision)
+    compiler, toolchain, corpus_module = load_compiler(root, revision)
     if importlib.metadata.version('triton') != PINNED_TRITON:
         raise ValueError(f'offline compile requires Triton {PINNED_TRITON}')
-    selected, _ = select_cases(compiler, root)
+    selected, _ = select_cases(compiler, corpus_module, root)
     case = next((case for case in selected if case['case_id'] == case_id), None)
     if case is None:
         raise ValueError('worker case is not an accepted loop-carried top-k Corpus case')
@@ -88,8 +104,8 @@ def main(argv=None):
     root = args.project_root.resolve(strict=True)
     if args.worker_case:
         return worker(root, args.revision, args.output_root.resolve(strict=True), args.worker_case)
-    compiler, toolchain = load_compiler(root, args.revision)
-    selected, refused = select_cases(compiler, root)
+    compiler, toolchain, corpus_module = load_compiler(root, args.revision)
+    selected, refused = select_cases(compiler, corpus_module, root)
     if args.list:
         print(json.dumps({'selected':selected,'refused':refused,
             'compiler_module':str(Path(sys.modules['open_cake_ir.compiler'].__file__).resolve()),

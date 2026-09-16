@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, corpus
 from tools import check_triton_topk_compile as gate
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -15,7 +15,9 @@ ROOT=Path(__file__).resolve().parents[2]
 class OfflineTopkGateTests(unittest.TestCase):
     def test_gate_selects_only_accepted_loop_carried_corpus_cases(self):
         compiler=Compiler.load(ROOT,ROOT/'compiler/revision.json')
-        selected,refused=gate.select_cases(compiler,ROOT)
+        # The gate asks the selected tree for its assessment rule, so the tree it
+        # was loaded from is passed beside the Compiler.
+        selected,refused=gate.select_cases(compiler,corpus,ROOT)
         self.assertEqual(len(selected),5)
         self.assertTrue(any('qsa-score-topk' in case['case_id'] for case in selected))
         self.assertTrue(any('int32' in case['case_id'] for case in refused))
