@@ -225,28 +225,40 @@ class AdmissionRequirementsTest(unittest.TestCase):
 class WorkerDispatchTest(unittest.TestCase):
     """What the worker does with a request for a target that is not CUDA's."""
 
-    def test_attribution_refuses_a_target_nsight_compute_cannot_profile(self) -> None:
-        """This branch was reached by not being Metal, which sent a DCU to ncu."""
-        import inspect
-        from open_cake_ir.tasks import evaluate
-        source = inspect.getsource(evaluate.main)
-        self.assertIn('executable_role(authority.candidate.target) != "cubin"', source)
-        self.assertIn("Nsight Compute", source)
+    def test_attribution_is_not_taken_on_the_hsaco_platform_s_behalf(self) -> None:
+        """Attribution profiles through Nsight Compute, which is CUDA's profiler.
 
-    def test_timing_is_the_studys_statement_not_the_workers_guess(self) -> None:
-        """`collect_timing=True` was unconditional, so every search evaluation timed.
+        The branch that reached it was once "not Metal", which would have handed a DCU
+        candidate to ncu. It is a declared property of the platform row now: `hsaco` has
+        no attribution source, so the request is refused by name.
+        """
+        from open_cake_ir.tasks import evaluate
+        self.assertIsNone(evaluate._PLATFORMS["hsaco"].attribution)
+        self.assertFalse(evaluate._PLATFORMS["hsaco"].profiled_child)
+        self.assertEqual(evaluate._PLATFORMS["cubin"].attribution, "separate")
+
+    def test_timing_is_the_studys_statement_not_the_platform_table_s(self) -> None:
+        """Every row read `collect_timing=True`, so every search evaluation timed.
 
         A Study for a target with no named timer carries a measurement-coverage
-        limitation instead of a paired assay, and the worker reads that rather than
-        deciding from the target -- which would put the timing question back on the
-        code-object axis it does not belong to.
+        limitation instead of a paired assay, and the row reads that. Deciding it from
+        the target would put the timing question back on the code-object axis, where two
+        targets can share an object and differ in whether anything has measured them.
         """
-        import inspect
         from open_cake_ir.tasks import evaluate
-        self.assertIn("collect_timing=authority.timed_assay_available",
-                      inspect.getsource(evaluate.main))
+        for name in ("cubin", "hsaco"):
+            with self.subTest(platform=name):
+                authority = SimpleNamespace(
+                    candidate=SimpleNamespace(target="gfx938" if name == "hsaco" else "sm_103a"),
+                    manifest=SimpleNamespace(), timed_assay_available=False)
+                seen = {}
+                target = "_evaluate_hip_candidate" if name == "hsaco" else "_evaluate_candidate"
+                with patch.object(evaluate, target,
+                                  lambda a, r, **kw: seen.update(kw)):
+                    evaluate._PLATFORMS[name].evaluate(authority, {})
+                self.assertFalse(seen["collect_timing"])
         self.assertIn("timed_assay_available: bool = True",
-                      inspect.getsource(evaluate._Authority))
+                      __import__("inspect").getsource(evaluate._Authority))
 
     def test_a_timed_hip_evaluation_is_refused_rather_than_silently_untimed(self) -> None:
         from open_cake_ir.tasks import evaluate

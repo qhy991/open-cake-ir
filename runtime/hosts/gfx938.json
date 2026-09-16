@@ -21,6 +21,10 @@
     },
     "runtime": {
       "backend": "hip",
+      "build_environment": {
+        "LD_LIBRARY_PATH": "/opt/dtk/dcc/comgr/lib:/opt/dtk/dcc/lib:/opt/dtk/hip/lib:/opt/dtk/hipprof_utils/lib:/opt/dtk/lib:/opt/hyhal/lib",
+        "ROCM_PATH": "/opt/dtk"
+      },
       "torch_hip_version": "6.3.26113",
       "visible_device_count": 1
     },

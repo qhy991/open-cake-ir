@@ -317,8 +317,9 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
         arguments += [
             "--hip-profiler", "rocprofv3", str(paths["rocprofv3"]),
             "--hip-runtime-library", "libxml2.so.2", str(library),
+            # The jail clears the environment, so a HIP host states what its toolchain
+            # needs inside it rather than inheriting an env.sh.
             "--hip-build-environment", "ROCM_PATH", str(root),
-            "--output", str(root / "host.json"),
         ]
         program = (
             "import platform, runpy; platform.system = lambda: 'Linux'; "

@@ -19,9 +19,12 @@ from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks import evaluate as worker
 
 
-def _authority(target: str, *, metal_manifest: bool = False):
+def _authority(target: str, *, metal_manifest: bool = False, timed: bool = True):
     manifest = object.__new__(MetalTensorLaunchManifest) if metal_manifest else SimpleNamespace()
-    return SimpleNamespace(candidate=SimpleNamespace(target=target), manifest=manifest)
+    # Whether a run is timed is the Study's statement, carried on the authority; a target
+    # with no named timer arrives here with it false.
+    return SimpleNamespace(candidate=SimpleNamespace(target=target), manifest=manifest,
+                           timed_assay_available=timed)
 
 
 class ExecutionPlatformSelection(unittest.TestCase):
@@ -43,15 +46,30 @@ class ExecutionPlatformSelection(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "declared execution platform differ"):
                     worker._execution_platform(_authority(target, metal_manifest=metal_manifest))
 
-    def test_an_unimplemented_platform_is_named_rather_than_sent_to_cuda(self) -> None:
-        """The measured failure this replaces: an hsaco candidate reached nvidia-smi."""
+    def test_an_hsaco_candidate_reaches_its_own_launch_and_not_cuda_s(self) -> None:
+        """The measured failure this replaces: an hsaco candidate reached nvidia-smi.
+
+        `hsaco` had no launch when this row was written and the refusal was the whole of
+        it. It has one now, verified on a DCU, so what this pins is that the candidate
+        reaches that one -- CUDA's exclusive admission is still never asked.
+        """
         result: dict[str, object] = {}
+        authority = _authority("gfx938")
         with patch.object(worker, "observe_exclusive_cuda") as admission, \
-             patch.object(worker, "_evaluate_metal_candidate") as metal:
-            with self.assertRaisesRegex(ValueError, "no execution platform implements 'hsaco'"):
-                worker._evaluate_candidate(_authority("gfx938"), result, collect_timing=True)
+             patch.object(worker, "_evaluate_metal_candidate") as metal, \
+             patch.object(worker, "_evaluate_hip_candidate") as hip:
+            worker._PLATFORMS["hsaco"].evaluate(authority, result)
+            hip.assert_called_once()
             admission.assert_not_called()
             metal.assert_not_called()
+
+    def test_the_cubin_path_refuses_an_object_it_does_not_launch(self) -> None:
+        """Reached again by the profile child, so it still names what it will not do."""
+        result: dict[str, object] = {}
+        with patch.object(worker, "observe_exclusive_cuda") as admission:
+            with self.assertRaisesRegex(ValueError, "does not launch through this path"):
+                worker._evaluate_candidate(_authority("gfx938"), result, collect_timing=False)
+            admission.assert_not_called()
 
     def test_a_metal_candidate_still_reaches_the_metal_path(self) -> None:
         result: dict[str, object] = {}
@@ -81,8 +99,15 @@ class EveryDeclaredObjectIsARow(unittest.TestCase):
                          "a declared code object with no execution platform row")
 
     def test_an_object_no_platform_implements_is_refused_by_name(self) -> None:
-        with self.assertRaisesRegex(ValueError, "no execution platform implements 'hsaco'"):
-            worker._platform(_authority("gfx938"))
+        """Every declared object has a row now, so the refusal is tested on an absent one.
+
+        The point of the row table is that an eighth Target cannot land without one; what
+        that costs when it happens is a refusal naming the object, not a fall-through.
+        """
+        with patch.dict(worker._PLATFORMS, {"hsaco": worker._ExecutionPlatform(
+                evaluate=None, attribution=None)}):
+            with self.assertRaisesRegex(ValueError, "no execution platform implements 'hsaco'"):
+                worker._platform(_authority("gfx938"))
 
     def test_attribution_is_not_taken_on_another_platforms_behalf(self) -> None:
         """The measured failure: a profile request reached CUDA's device admission.
@@ -91,8 +116,9 @@ class EveryDeclaredObjectIsARow(unittest.TestCase):
         request to fall through to whichever branch follows.
         """
         self.assertIsNone(worker._PLATFORMS["hsaco"].attribution)
-        self.assertIsNone(worker._PLATFORMS["hsaco"].evaluate)
         self.assertFalse(worker._PLATFORMS["hsaco"].profiled_child)
+        # It launches and checks correctness; what it has no source for is a profile.
+        self.assertIsNotNone(worker._PLATFORMS["hsaco"].evaluate)
 
     def test_each_implemented_platform_states_where_its_profile_comes_from(self) -> None:
         self.assertEqual(worker._PLATFORMS["cubin"].attribution, "separate")

@@ -415,7 +415,7 @@ class TaskLaunchTests(unittest.TestCase):
         second.mkdir()
         with patch.object(launch_task.Compiler, "load", return_value=compiler), \
              patch.object(launch_task, "resolve_executor", side_effect=ValueError("source differs")):
-            with self.assertRaisesRegex(ValueError, "released Executor for 'gfx938'"):
+            with self.assertRaisesRegex(ValueError, "committed host capture for 'gfx938'"):
                 launch_task._admit_stack(ROOT, second, "gfx938", "triton")
 
     def test_executor_for_another_apple_gpu_is_refused_before_archive_helper_admission(self):
