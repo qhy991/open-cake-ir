@@ -84,7 +84,7 @@ from .operations import (
     OnlineSoftmaxParameters,
     Operation,
     OperationParameters,
-    PLACED_CONTRACT_PREFIXES,
+    PLACED_CONTRACTS,
     PLACEMENT_FIELDS,
     ReduceArgminParameters,
     ReduceParameters,

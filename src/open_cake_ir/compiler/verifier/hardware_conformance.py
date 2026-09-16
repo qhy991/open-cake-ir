@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..ir import (
-    PLACED_CONTRACT_PREFIXES,
+    PLACED_CONTRACTS,
     PLACEMENT_FIELDS,
     TMEM_COLUMN_BYTES,
     OperandSource,
@@ -549,13 +549,13 @@ def _verify_epilogue_commitments(schedule: Schedule, out: _Collector) -> None:
 # backend. Requiring both to say the same things would force one of them to invent an
 # answer, so the requirement follows the contract. The lists live in `ir` because the
 # authoring Schema projects the same fact.
-_PLACED_CONTRACT_PREFIXES = PLACED_CONTRACT_PREFIXES
+_PLACED_CONTRACTS = PLACED_CONTRACTS
 _PLACEMENT_FIELDS = PLACEMENT_FIELDS
 
 
 def _verify_atom_placement(operation, instruction, path: str, out: _Collector) -> None:
     category = FindingCategory.HARDWARE_CONFORMANCE
-    placed = instruction.contract.startswith(_PLACED_CONTRACT_PREFIXES)
+    placed = instruction.contract in _PLACED_CONTRACTS
     declared = [
         field
         for field in _PLACEMENT_FIELDS

@@ -24,7 +24,7 @@ from jsonschema import Draft202012Validator
 
 from open_cake_ir.compiler import ir
 from open_cake_ir.compiler.ir import (
-    PLACED_CONTRACT_PREFIXES,
+    PLACED_CONTRACTS,
     AccessIndexKind,
     BoundaryPolicy,
     BufferMode,
@@ -216,7 +216,7 @@ class RetainedScheduleTest(unittest.TestCase):
             operation for operation in document["operations"]
             if operation["kind"] == "mma"
         )["parameters"]["instruction"]
-        self.assertFalse(instruction["contract"].startswith(PLACED_CONTRACT_PREFIXES))
+        self.assertNotIn(instruction["contract"], PLACED_CONTRACTS)
         self.assertEqual(list(validator.iter_errors(document)), [])
 
         for field, value in (
@@ -238,7 +238,9 @@ class RetainedScheduleTest(unittest.TestCase):
             operation for operation in placed["operations"]
             if operation["kind"] == "mma"
         )["parameters"]["instruction"]
-        placed_instruction["contract"] = PLACED_CONTRACT_PREFIXES[0] + "mma.bf16"
+        # A contract that places its operands is now named rather than spelled, so
+        # the fixture takes a registered one instead of building a matching prefix.
+        placed_instruction["contract"] = sorted(PLACED_CONTRACTS)[0]
         placed_instruction.update(
             {"shape": [64, 64, 16], "cta_group": 1,
              "operand_source": "shared", "operand_major": ["k", "k"]}

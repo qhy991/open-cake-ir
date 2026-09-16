@@ -13,7 +13,7 @@ import json
 from typing import Any
 
 from .ir import (
-    PLACED_CONTRACT_PREFIXES,
+    PLACED_CONTRACTS,
     PLACEMENT_FIELDS,
     AccessIndexKind,
     AtomicMemoryOrder,
@@ -99,14 +99,14 @@ def _permitted_only_when(
 
 
 def _placed_only(instruction: dict[str, Any]) -> dict[str, Any]:
-    escaped = "|".join(prefix.replace(".", r"\.") for prefix in PLACED_CONTRACT_PREFIXES)
+    placed = sorted(PLACED_CONTRACTS)
     return _permitted_only_when(
         instruction,
         "contract",
-        {"pattern": "^(?:%s)" % escaped},
+        {"enum": placed},
         PLACEMENT_FIELDS,
         "Only %s place their operands; every other contract leaves %s to the backend."
-        % (", ".join(PLACED_CONTRACT_PREFIXES), ", ".join(PLACEMENT_FIELDS)),
+        % (", ".join(placed), ", ".join(PLACEMENT_FIELDS)),
     )
 
 
