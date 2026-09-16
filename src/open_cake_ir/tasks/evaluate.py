@@ -30,6 +30,7 @@ from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.tasks.flash_kmeans.workload import assignment_raw_sha256, classify_flash_kmeans_output, flash_kmeans_oracle, generate_flash_kmeans_case
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda
+from open_cake_ir.evaluation.artifacts import executable_role
 from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case
 from open_cake_ir.tasks.launch import parse_launch_manifest
@@ -181,6 +182,27 @@ def _load_authority(request_path: Path) -> _Authority:
         case_id,
         baseline,
     )
+
+
+def _execution_platform(authority: _Authority) -> str:
+    """The declared object that selects how this candidate is executed.
+
+    A Target declares what its toolchain produces, so the execution path follows that
+    declaration rather than the type of the launch manifest. No platform is reached by
+    falling through another's branch: before this, every candidate that was not Metal's
+    reached CUDA's device admission, including one built for a target CUDA never names.
+
+    The manifest and the declaration must agree. Either alone would be a second owner of
+    the same fact, and a mismatched pair is a sealed candidate nobody can launch.
+    """
+    platform = executable_role(authority.candidate.target)
+    metal_manifest = isinstance(authority.manifest, MetalTensorLaunchManifest)
+    if metal_manifest != (platform == "metal_binary_archive"):
+        raise ValueError(
+            "launch manifest and declared execution platform differ: "
+            f"{authority.candidate.target!r} declares {platform!r}"
+        )
+    return platform
 
 
 def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
@@ -553,9 +575,18 @@ def _evaluate_candidate(
     collect_timing: bool,
     admission: CudaDeviceAdmission | None = None,
 ) -> None:
-    if isinstance(authority.manifest, MetalTensorLaunchManifest):
+    platform = _execution_platform(authority)
+    if platform == "metal_binary_archive":
         _evaluate_metal_candidate(authority, result)
         return
+    if platform != "cubin":
+        # Named, not fallen through. The AMDGCN half admits a device and loads a
+        # candidate (F-2026-09-15-003) but has no launch or timing source, and a
+        # candidate is never stepped down onto another platform's path.
+        raise ValueError(
+            f"no execution platform implements {platform!r}: this worker launches and "
+            "times a cubin and observes a Metal binary archive"
+        )
     helper = authority.executor.admit_host()
     if admission is None:
         try:
@@ -890,7 +921,7 @@ def main() -> int:
                 collect_timing=False,
                 admission=admission,
             )
-        elif isinstance(authority.manifest, MetalTensorLaunchManifest):
+        elif _execution_platform(authority) == "metal_binary_archive":
             if args.profile_admission is not None:
                 raise ValueError("Metal profile admission is provided by its Executor")
             _evaluate_metal_candidate(authority, result)
