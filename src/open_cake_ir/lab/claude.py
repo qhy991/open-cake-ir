@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
+import subprocess
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
@@ -580,6 +582,37 @@ def normalize_claude_turn(raw_events: bytes, *, candidate_path: Path, expected_c
     )
 
 
+# Every long option this builder passes apart from the context-window control, which is
+# handled separately below. A CLI that does not advertise one of these is refused by name:
+# without the probe the run dies as `exit code 1` with the reason only in a retained
+# stderr object, which is a diagnosis the harness already had and did not report.
+CLAUDE_REQUIRED_OPTIONS = (
+    "--output-format", "--verbose", "--safe-mode", "--json-schema", "--model",
+    "--effort", "--permission-mode", "--tools", "--allowedTools", "--resume",
+)
+CLAUDE_AUTOCOMPACT_OPTION = "--autocompact"
+CLAUDE_AUTOCOMPACT_UNSUPPORTED = "unsupported_by_cli"
+_LONG_OPTION = re.compile(r"--[A-Za-z][A-Za-z0-9-]*")
+
+
+def advertised_options(executable: Path) -> frozenset[str]:
+    """Which long options this CLI build accepts, read from the build itself.
+
+    The argument list was written against one Claude Code build. Which options a build
+    accepts is a fact about the installed executable, not about Claude Code, and the
+    qualification receipt already pins that executable's bytes -- so the set is read from
+    it rather than assumed to match the build this file was written against.
+    """
+
+    completed = subprocess.run([str(executable), "--help"], check=False,
+                               capture_output=True, text=True, timeout=120)
+    if completed.returncode:
+        raise ValueError(
+            f"Claude executable did not report its options: --help exited "
+            f"{completed.returncode}")
+    return frozenset(_LONG_OPTION.findall(completed.stdout or completed.stderr))
+
+
 class ClaudeInvocationBuilder:
     """Exact model/effort and persistent cwd; no qualification or model fallback."""
 
@@ -603,6 +636,20 @@ class ClaudeInvocationBuilder:
         self.provider_revision = provider_revision
         self._model, self._effort = model, reasoning_effort
         self._removed_environment = removed_environment
+        options = advertised_options(self.executable)
+        missing = [name for name in CLAUDE_REQUIRED_OPTIONS if name not in options]
+        if missing:
+            raise ValueError(
+                "this Claude build does not accept " + ", ".join(missing)
+                + "; the invocation this Lab builds is not expressible on it")
+        # F-2026-09-10-008 pinned the context window because auto-compaction silently
+        # drops author context mid-turn. A build without the control cannot be pinned, so
+        # the fact is carried into `configuration` -- and therefore into the provider
+        # identity every arm and receipt records -- instead of the flag being dropped and
+        # the run reading as though the window had been set.
+        self._autocompact = (CLAUDE_AUTOCOMPACT_WINDOW
+                             if CLAUDE_AUTOCOMPACT_OPTION in options
+                             else CLAUDE_AUTOCOMPACT_UNSUPPORTED)
 
     @property
     def configuration(self) -> Mapping[str, object]:
@@ -610,6 +657,7 @@ class ClaudeInvocationBuilder:
                 "permission_mode": "acceptEdits", "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 "removed_environment": list(self._removed_environment), "event_contract": self._event_contract,
+                "autocompact": self._autocompact,
                 "submission_contract": CANDIDATE_SET_ENVELOPE_V1, "terminal_schema": terminal_schema()}
 
     def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation:
@@ -626,8 +674,10 @@ class ClaudeInvocationBuilder:
         # does not recognize, that window is clamped to the CLI's assumed model context
         # (glm-5.3: 200k), so a long session can still compact. v3 refuses it;
         # v4 validates and records it, without claiming identical author context.
+        window = (() if self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED
+                  else (CLAUDE_AUTOCOMPACT_OPTION, self._autocompact))
         arguments = (str(self.executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
-                     "--autocompact", CLAUDE_AUTOCOMPACT_WINDOW,
+                     *window,
                      "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",
                      "--tools", tools, "--allowedTools", tools)
         if thread_id is not None:

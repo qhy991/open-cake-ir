@@ -89,7 +89,11 @@ class FamilyRegistrationTests(unittest.TestCase):
     def test_the_launchable_set_is_exactly_the_remaining_captures(self):
         self.assertEqual(set(launchable_tasks()), set(TASKS) - set(WIDTH_BLOCKED))
         for task in launchable_tasks():
-            self.assertEqual(admitting_backends(task), ("triton-b200", "triton-b300"), task)
+            # Declaration order, so a registered backend that can express the task is
+            # listed the moment the registry gains it -- which is the point of asking the
+            # registry instead of naming the devices that could when this was written.
+            self.assertEqual(admitting_backends(task),
+                             ("triton-b200", "triton-b300", "triton-gfx1151"), task)
 
     def test_the_seed_extent_is_the_largest_upstream_batch_the_oracle_can_serve(self):
         for task, spec in SPECS.items():

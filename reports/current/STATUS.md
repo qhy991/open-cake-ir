@@ -35,6 +35,12 @@
 - 解释器： `/opt/homebrew/opt/python@3.14/bin/python3.14`（3.14.3）
 - 采集文件： [`runtime/hosts/apple_gpu_family9.json`](../../runtime/hosts/apple_gpu_family9.json)
 
+### `gfx1151`
+
+- 主机类型： `hip`
+- 解释器： `/home/wwxq/workspace/venv-open-cake-amd-rocm72/bin/python`（3.12.13）
+- 采集文件： [`runtime/hosts/gfx1151.json`](../../runtime/hosts/gfx1151.json)
+
 ### `gfx938`
 
 - 主机类型： `hip`
