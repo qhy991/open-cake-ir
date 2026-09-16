@@ -15,6 +15,19 @@ representation, verification, lowering, or analysis gaps. The current distributi
 这里的 IR 是“中间表示”：它比最终机器代码好读，又比一句“把矩阵乘快一点”明确。
 项目独立重建了 [CAKE 论文](https://arxiv.org/abs/2608.12629v1)中的部分思路，并非论文未公开实现的复制品。
 
+## News
+
+- **2026-09-16 — 海光 DCU（gfx938）成为第三个可运行目标。** 一个 Triton 降级的 kernel 在 DTK 容器里编译成 HSACO，
+  经 `evaluation/hip_driver.py` 装载，在 BW1101 上 launch，并对外部 CPU oracle 检查通过：`output_mismatches: 0`，
+  `max_abs_error: 4.77e-07`。这条路径与 NVIDIA、Apple 并列，不是从它们任何一条降级而来——
+  海光是独立的 vendor（`Vendor.HYGON`），与 AMD 共享 `amdgcn-amd-amdhsa--` 代码对象而不共享其它。
+  **它现在报告的是正确性，不是延迟**：gfx938 还没有被命名的计时来源，Study 因此声明测量覆盖限制而非配对 assay，
+  收据里 `timing` 为 `null`。计时来源要靠测出来，不是加一行表——见 [DCU 设计记录](docs/dcu-gfx938-design.md)。
+
+- **2026-09-16 — 源码身份改为 git 提交（[ADR 0065](docs/adr/0065-source-identity-is-the-commit.md)）。**
+  Compiler 是 `open-cake-ir@<commit>`，Executor 是 `<target>@<commit>`，
+  共享源码的一次改动不再作废其它每一台主机的 Executor。
+
 ## 从这里开始
 
 - **第一次看项目：** [中文 Wiki](docs/wiki/README.md)，按问题找答案。
@@ -111,6 +124,27 @@ python3 -m venv .venv
 当前尚未提供脱离源码工作区的独立 Compiler 发行包；Python 安装不会替你配置 CUDA 或 GPU 评测环境。
 
 [贡献说明](CONTRIBUTING.md) · [安全问题](SECURITY.md) · [开发分支](docs/DEVELOPMENT_BRANCHES.md) · [引用信息](CITATION.cff)
+
+## 引用
+
+```bibtex
+@software{qin_open_cake_ir,
+  author  = {Qin, Haiyan},
+  title   = {{open-cake-ir}: Agent-driven compiler and kernel co-evolution},
+  url     = {https://github.com/qhy991/open-cake-ir},
+  license = {Apache-2.0},
+  note    = {Cite the commit the work was run at, with its target and workload}
+}
+```
+
+联系方式：Haiyan Qin \<haiyanq@buaa.edu.cn\>。机器可读的元数据见 [CITATION.cff](CITATION.cff)。
+
+**请连同提交一起引用。** 源码身份就是检出的 git 提交（[ADR 0065](docs/adr/0065-source-identity-is-the-commit.md)），
+所以 `open-cake-ir@<commit>` 才是可复现的那一个坐标；再加上精确目标（如 `sm_103a`、`gfx938`、`apple_gpu_family8`）
+和工作负载，别人才能知道你引用的是哪一次运行。一个数字脱离这三者是不可复查的。
+
+引用测量结果时，一并说明该目标的计时来源与它声明的覆盖范围：不同目标用不同的计时器，
+有的目标（当前的 gfx938）只报告正确性并明确声明没有延迟。
 
 ## 许可证
 

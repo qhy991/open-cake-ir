@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-006",
+  "kind": "bug",
+  "date": "2026-09-16",
+  "title": "On wave64 the CUDA warp-32 shuffle semantics shared code assumes are not a refusal but a wrong answer: an independent DCU port measured ~50% matched elements until every shuffle carried an explicit width",
+  "backend": "external-corpus-analysis",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-gfx938-v20+098e54db6bb3f83e424d8a350eccad855f94f4b666ae7484acd245790f385b46",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign. The measurement is an external port of 26 CUDA kernels to Hygon DCU gfx938 under DTK 26.04, recorded in flashinfer-bench-tasks/dcu_port/DCU-PORT-REPORT.md, 2026-09-15."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/dcu_port/patch_dcu.py",
+      "run": "none",
+      "event": 1,
+      "note": "Patch rule 1, attributed to tasks 012-019 (eight GQA/MLA attention kernels): DTK's __shfl_*_sync requires a 64-bit mask, and HIP's default shuffle width is the whole wave. Rewriting to __shfl_*(v, ..., 32) is required to preserve CUDA warp-32 semantics. The report records that without the explicit width, down/up/plain shuffles reduce across 32-lane group boundaries and matched_ratio falls to roughly 50%."
+    },
+    {
+      "workspace": "src/open_cake_ir/compiler/target.py",
+      "run": "none",
+      "event": 2,
+      "note": "Target.warp_size is `return 32` in shared code, and AGENTS.md already names nine shared computations that multiply by it, plus second and third copies at backends/metal.py:62 and backends/native_cuda.py:556. The evidence for 32 exists only as citation prose inside the Target documents, so the value and its justification have two owners."
+    }
+  ],
+  "observation": "AGENTS.md states the warp-width defect as a design argument. This is its failure mode, measured on hardware, and the failure mode is the dangerous one: not a refusal naming the class it owns, but a silently wrong numerical answer on eight of twenty-six kernels. That distinction matters for where the fix belongs. A hardcoded 32 that produced a crash on a 64-lane wavefront would be caught by any correctness gate; one that produces half-correct reductions is caught only by an all-element comparison against an independent oracle, which is what ADR 0065 already chose for the SoL-ExecBench import and what the external port's matched_ratio>=0.99 gate did not catch until it was investigated.",
+  "proposed_change": "Let the Target that owns the fact declare the lane width, and let the shared computations quote it, retiring the literal at compiler/target.py and the copies at backends/metal.py:62 and backends/native_cuda.py:556. A backend may keep its own ISA constant; it may not be the neutral owner of one. This finding supplies the measured consequence the change has been missing; it does not by itself size the change, which touches files pinned by compiler/source_set.json and therefore mints a successor rather than an edit.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

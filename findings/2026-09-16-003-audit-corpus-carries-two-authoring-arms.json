@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-003",
+  "kind": "protocol",
+  "date": "2026-09-16",
+  "title": "The FlashInfer-Bench workflow audit carries two authoring arms in one table: ten of twenty-six tasks stage only half their baseline, and its single-file packer is why copying the other half would not fix it",
+  "backend": "external-corpus-analysis",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-b200-v154+c6974314c0a177dedd07b4ad6280dc23a47531763b0c02a882bb388c25f6d9f8",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign, no device, no latency claimed. This reads an external corpus at ~/Agent4Kernel/flashinfer-bench-tasks, whose own sweep was live during the reading (missions/run_matrix.py --go, matrix-20260916-150815.log). Counts are a snapshot of 244 measured cells of ~2520."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/missions/wf_audit.py",
+      "run": "none",
+      "event": 1,
+      "note": "Lines 247-248 derive the staged seed as entry_point.split('::')[0] and copy that one file. The module docstring promises every run 'an identical task, an identical seed kernel' so that 'differences in the output are differences in the workflow'."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/tasks/003_fused_add_rmsnorm_h7168/baseline",
+      "run": "none",
+      "event": 2,
+      "note": "solution.json names sources ['kernel.cu','kernel_binding.cpp']. kernel_binding.cpp declares fused_add_rmsnorm_h7168_launch at line 24 and calls it at line 97; the definition is in kernel.cu, which staging never copies. Ten of the 26 SoL tasks declare sources beyond the staged entry point. Nine of those are device-code splits -- eight norm tasks plus 013_gqa_paged_decode_h32_kv8 -- and the tenth, 006_gemm, names a model_new.py reference rather than a second kernel, so only nine cost a seed. The other 16 carry PYBIND11_MODULE inside one .cu, and the 94 L1 tasks carry no device code at all."
+    },
+    {
+      "workspace": "KerSor/workflows/Awesome-Kernel-Workflows/_substrate/integration/pack_sol_candidate.py",
+      "run": "none",
+      "event": 3,
+      "note": "The packer takes one --kernel file and emits sources as a single-element list (line 120, build_solution at 71-76). Staging the companion .cu would therefore not help: a workflow that edited it would have that edit silently dropped at pack time. The single-file shape the other 16 tasks already use is the fix, not a multi-file copy."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/candidates.jsonl",
+      "run": "none",
+      "event": 4,
+      "note": "Derived table, one row per measured candidate, arm_kind computed from what is present in each workspace rather than from any date: 503 usable of 565 rows, 175 clean_start over 4 tasks and 328 optimize_existing over 11 tasks, 11 workflows each. Superseded _previous and _contended runs are excluded as non-independent retries of the same workflow on the same task."
+    }
+  ],
+  "observation": "An audit whose stated premise is one identical seed per task does not hold that premise on 10 of 26 tasks. Those cells measure clean-start synthesis against the reference, not optimization of a seed, and the two are different authoring environments in open-cake-ir's own terms (lab/reference_access.py names clean start and known-kernel reproduction as distinct categories whose confusion invalidates the comparison rather than one run). Pooling them is not a small error: the norm family's median 8.027x sits inside the historical baseline band of 7-12x, which is what cold-start reaching parity looks like, not what improving on a seed looks like. The defect is also not where it appears to be. Copying the missing .cu alongside the entry point would leave the packer carrying only one of the two files, so a workflow that edited the kernel would be measured on a candidate that does not contain its edit.",
+  "proposed_change": "For open-cake-ir: do not consume this corpus as calibration input until every measured cell carries arm_kind, and never pool the two arms in one estimate. missions/extract_table.py computes that column from workspace contents and is safe to re-run as the sweep grows. For the corpus itself (not an open-cake-ir change): merge the 10 split baselines into the single-file shape the other 16 already use, which is what pack_sol_candidate.py's has_binding branch expects. That merge changes what every future cell measures and has not been compiled on a device from here, so it is prepared, not activated. Already-measured cells are labelled rather than discarded; re-running them is a separate decision with its own GPU cost.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-011",
+  "kind": "behavior",
+  "date": "2026-09-16",
+  "title": "The eight FIB GEMM tasks are a dispatcher corpus: 733 of 735 kernel-plus-library candidates branch on M, and at large N the branch hides an authored kernel measuring 0.35x behind a library path reporting 1.14x",
+  "backend": "external-corpus-analysis",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-b200-v154+c6974314c0a177dedd07b4ad6280dc23a47531763b0c02a882bb388c25f6d9f8",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign and no device. 1,107 harvested candidates across tasks 004-011, live cells only; see F-2026-09-16-010 on why the lost evaluations may not be read as candidate quality."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks/gemm-family-ledger.json",
+      "run": "none",
+      "event": 1,
+      "note": "868 of 1,107 candidates contain both a __global__ kernel and a cuBLAS or at::matmul call; 160 are library only and 79 authored a kernel without a library fallback. Of the 735 checked for a runtime size branch, 733 carry one, and the candidates name it themselves: 'medium-M bucket (M in [65,257])', 'M<=8 small tile', 'M>=258'."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks",
+      "run": "none",
+      "event": 2,
+      "note": "Live-and-correct medians, authored-kernel candidates against library-only ones on the same task: n=128 1.28x vs 1.10x; n=2048 1.03x vs 1.03x; n=4096 0.99x vs 1.04x; n=5120 1.15x vs 1.15x; n=6144 0.35x vs 1.14x; n=28672 0.44x vs 1.05x. So an authored GEMM beats cuBLAS only at the smallest shape and loses by two to three times at the largest, while the dispatcher's aggregate still reports above parity."
+    },
+    {
+      "workspace": "src/open_cake_ir/compiler/ir/vocabulary.py",
+      "run": "none",
+      "event": 3,
+      "note": "OperationKind declares no branch, select, conditional or predicate member, and a Schedule carries exactly one `lowering` route with one entry point. The dominant pattern in this family therefore has no spelling at all, which is the intended behaviour rather than a gap."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks/011_gemm_n28672_k4096",
+      "run": "none",
+      "event": 4,
+      "note": "The full Blackwell stack -- cluster, TMA, mbarrier, MMA and warp specialization together -- was measured on this family and buys nothing: 011 has 15 such candidates with 10 live-correct at best 1.02x, and 008 has 12 with 1 live at 1.02x. On GQA prefill the same specialization measures 2-4x within-workflow (F-2026-09-16-009); here it is parity."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks",
+      "run": "none",
+      "event": 5,
+      "note": "Re-derived after a classifier audit found that matching raw source text, comments included, gave 62-64% false positives on some mechanisms and forced the retraction of F-2026-09-16-009. Repeating this record's counts on comment-stripped source, and requiring an actual call paren rather than the bare token 'cublas': 707 candidates contain both an authored __global__ kernel and a library call, and 699 of those (99%) carry a runtime M branch in code rather than in a comment. The raw-text numbers this record was written with were 868 and 733 of 735. The claim stands; its magnitude is about 19% smaller. The per-shape medians are unaffected -- they were computed from measured speedups, not from classification."
+    }
+  ],
+  "observation": "S6 says a slow seed is never hidden behind a dispatcher predicate. This is that, measured (counts re-derived on comment-stripped source after a classifier audit; 707 of 1,107 candidates, 699 of them branching in code): at n=6144 and n=28672 the authored kernels median 0.35x and 0.44x, and the surrounding M-branch routes those ranges to cuBLAS so the reported number lands at 1.14x and 1.05x. Nothing here was concealed deliberately -- the candidates document their buckets in their own comments -- but the aggregate a leaderboard reads does conceal it. Two consequences for open-cake-ir. First, the family contributes almost no IR evidence: its dominant pattern is correctly inexpressible, so 'the rewrite fails' here means the design is working. Second, it supplies the anti-condition half that the warp-specialization case was missing, from measurements rather than from absence.",
+  "proposed_change": "Do not treat these tasks as a source of IR requirements, and do not read their headline ratios as kernel quality. Where they are useful is as a portfolio-validation fixture: S6 requires covering overlapping or missing guards and the fallback path, and 733 documented bucket boundaries across eight shapes are exactly that material, at the Lab layer where a portfolio belongs. Record the GEMM parity result as the anti-condition on F-2026-09-16-009 so any future warp-specialization proposal carries both signs.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

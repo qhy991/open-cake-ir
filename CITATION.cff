@@ -3,6 +3,24 @@ message: "If you use open-cake-ir, cite this software and identify the source re
 type: software
 title: "open-cake-ir: Agent-driven compiler and kernel co-evolution"
 authors:
-  - name: "open-cake-ir contributors"
+  - family-names: "Qin"
+    given-names: "Haiyan"
+    email: "haiyanq@buaa.edu.cn"
+    affiliation: "Beihang University"
 repository-code: "https://github.com/qhy991/open-cake-ir"
 license: Apache-2.0
+abstract: >-
+  A research system for agent-driven co-evolution of GPU kernels and compiler
+  capabilities. Agents author kernels through a structured execution plan, use
+  compiler and on-device feedback, and improve the compiler when real workloads
+  expose representation, verification, lowering, or analysis gaps. Source identity
+  is the git commit of the checkout, so a citation should name the commit the work
+  was run at along with the target and workload.
+keywords:
+  - GPU kernels
+  - compilers
+  - intermediate representation
+  - agent systems
+  - CUDA
+  - Metal
+  - HIP

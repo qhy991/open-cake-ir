@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-005",
+  "kind": "capacity",
+  "date": "2026-09-16",
+  "title": "Intra-CTA split-K with warp-specialized TMA producers is expressible today; what is not is a cross-CTA partial plus a declared merge, and the corpus I offered as evidence has no contrast for it",
+  "backend": "external-corpus-analysis",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-b200-v154+c6974314c0a177dedd07b4ad6280dc23a47531763b0c02a882bb388c25f6d9f8",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign and no device. This record exists partly to retract a count I stated before applying the independence rule below."
+    },
+    {
+      "workspace": "src/open_cake_ir/compiler/ir/vocabulary.py",
+      "run": "none",
+      "event": 1,
+      "note": "ReductionScope has one member, CTA. OnlineSoftmaxParameters takes that scope, so the two-kernel decomposition every retained attention decode kernel uses -- partial outputs plus LSE, then a merge kernel combining them -- has no spelling. The gap is real and independent of any corpus."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/candidates.jsonl",
+      "run": "none",
+      "event": 2,
+      "note": "After separating authoring arms and counting only mechanisms a candidate ADDED to its seed: optimize_existing/attn has 53 candidates and ZERO that added split-K, because the 012/014/015 seeds already contain it -- one observation shared by 53 candidates, not 53. clean_start/attn has 8 candidates on one task from 4 workflows and ALL EIGHT contain split-K, so there is no without-group and no contrast. optimize_existing/gemm is the only measured contrast in the corpus: 77 added it across 5 tasks and 9 workflows, median 1.012x against 198 without at 1.040x, delta -0.029."
+    },
+    {
+      "workspace": "KerSor/experience-bank/b200-sm100.json",
+      "run": "none",
+      "event": 3,
+      "note": "Corroborating and also negative, measured on B200: split-K with atomic_add into an fp32 accumulator plus a separate cast kernel reads 0.27-0.28x at M=11948/14104 and 0.155x at M=901 for skinny-N GEMM, attributed to two extra launches and a 14.4 MB fp32 buffer; a two-pass split-K plus fp32 partial reduce reads 0.7541x at K=4096/N=6144."
+    },
+    {
+      "workspace": "corpus/schedules/tinygemm2-stage4-split-k.json",
+      "run": "none",
+      "event": 4,
+      "note": "Found by probing the Compiler rather than by reading the vocabulary, and it narrows this record twice over. That schedule declares three roles -- one compute plus two producers -- loads both operands with movement 'tma' on the producer roles, accumulates into a shared-memory `partial_accumulators` buffer and folds it with `reduce` at scope 'cta'. So split-K, warp specialization and TMA staging are each expressible today, together, in one Schedule. What 012's retained kernels do instead is split across CTAs -- grid (kv_heads, batch, NUM_SPLITS) writing partial outputs plus LSE, then a second kernel launch merging them by online softmax. That is the part with no spelling: ReductionScope admits only CTA, and a Schedule materializes one kernel."
+    }
+  ],
+  "observation": "I previously reported this corpus as supplying a +11.54 attention delta for split-K. That number came from pooling two authoring arms and comparing across tasks with different baselines. Under the independence rule the corpus is built to support -- candidates sharing a seed are not independent observations of what the seed contains -- the attention evidence collapses to a single seed on one arm and a zero-contrast group of eight on the other. What survives is the opposite sign, on GEMM, from two independent sources. The IR gap does not go away: it is visible from the vocabulary alone, without any corpus. What went away is my claim to have measured its value, and the anti-conditions are now the better-evidenced half. Two corrections since this record was first written, both from running Compiler.assess rather than reading ir/vocabulary.py. First, the earlier claim that 'split-K with a declared merge is inexpressible' was too broad: intra-CTA split-K is expressible and the corpus already carries one, with TMA producers and warp specialization. Second, the probe separates three refusals that had been collapsed into one: a device-scope online softmax raises SCHEDULE_STRUCTURE 'admitted values are cta' (missing vocabulary), TMA on a runtime-indexed gather raises ACCESS_INDEXED_MOVEMENT_UNLOWERABLE (a hardware-coherence refusal that is correct -- a descriptor cannot gather scattered page_size=1 rows), and TMA on a contiguous load raises TRITON_LOAD_MOVEMENT (a route capability, not an IR gap, since the native route admits it).",
+  "proposed_change": "Scope any future proposal to the cross-CTA case alone: a Schedule that declares a partial result and the merge that combines it across CTAs or launches. Do not propose a device-scope ReductionScope member as the whole answer, and do not propose anything for intra-CTA split-K, warp specialization or TMA staging, which corpus/schedules/tinygemm2-stage4-split-k.json already expresses. The positive evidence still does not exist: the corpus has no attention candidates that differ in whether they split under one arm on one task. The 94 SOL-ExecBench L1 tasks include 20 attention captures and remain the natural held-out set, which is a second reason to land the solx_l1 import ADR 0065 specifies. Until that contrast exists this stays a case.",
+  "decision": "deferred",
+  "implemented_in": null,
+  "verified_by": null
+}

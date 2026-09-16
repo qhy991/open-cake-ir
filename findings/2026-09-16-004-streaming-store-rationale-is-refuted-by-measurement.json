@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-004",
+  "kind": "behavior",
+  "date": "2026-09-16",
+  "title": "A mechanism's recurrence across retained kernels measures how often a rationale was copied, not whether it helped: four corpora disagree with the comments on the streaming store, and StoreParameters should not grow a reuse field",
+  "backend": "external-corpus-analysis",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-b200-v154+c6974314c0a177dedd07b4ad6280dc23a47531763b0c02a882bb388c25f6d9f8",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign and no device. Three external corpora plus this project's own source are read; every number below is theirs, measured on their hardware under their harness."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/tasks/*/baseline/kernel.cu",
+      "run": "none",
+      "event": 1,
+      "note": "Five distinct tasks (002, 003, 022, 025, 026) emit st.global.cs for the output store, each with the same stated reason: the output is write-once and should not displace the weight that is reused across rows. Read as five independent confirmations this looks decisive. It is one rationale carried across five files."
+    },
+    {
+      "workspace": "KerSor/experience-bank/rtx-4090-sm89.json",
+      "run": "none",
+      "event": 2,
+      "note": "Measured, directive=avoid: 'Store policy sweep (cs/wt/plain) showed identical performance -- the output store policy is not a differentiator at this BW ceiling. st.global.cs was kept for L2 hygiene but does not change measured latency.' A sibling lesson records st.global.cs.v4 regressing against plain uint4 stores, and a third records __ldcs+__ldca on the inputs regressing to 0.8113x from 1.154x."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/mechanisms.json",
+      "run": "none",
+      "event": 3,
+      "note": "Independent of the bank, on B300 sm_103a: clean_start/norm, 167 candidates over 3 tasks and 11 workflows, st_cs present in 123 with median 7.929x against 44 without at 8.660x, delta -0.731. The same table puts cuda_graph at +4.948 and shared-memory use at +4.382 in that family, so the store policy is not merely small, it is beside the two effects that dominate."
+    },
+    {
+      "workspace": "src/open_cake_ir/compiler/ir/operations.py",
+      "run": "none",
+      "event": 4,
+      "note": "StoreParameters carries only `coalesced`, while LoadParameters carries LoadReuse{REUSED,STREAMED} which backends/triton.py:1184 lowers to evict_last or cache_modifier='.cg'. The asymmetry is real. What is not established is that closing it would buy anything."
+    }
+  ],
+  "observation": "Counting how many retained kernels contain a mechanism counts copies of a belief, not observations of an effect. The streaming store is the clean instance: it survives in five baselines because it is cheap and sounds right, and three independent measurements -- a 4090 sweep, a B200 eviction-policy probe, and 167 B300 candidates -- say it is neutral at best and slightly negative at worst. A fourth corpus fact sharpens it: the same B200 lesson records evict_first as a win on the pointer-arithmetic path and a regression on the TMA block_ptr path, so even on the load side the sign of a reuse hint is conditioned on the route, not on the operand. open-cake-ir is not currently exposed to that: backends/triton.py:449 refuses any load whose movement is not LoadMovement.GLOBAL, which is the path where the hint measured positive. It becomes a live question the moment the Triton route admits TMA.",
+  "proposed_change": "Do not add a reuse or cache-policy field to StoreParameters; the asymmetry with LoadParameters is not by itself a reason, and no measurement supports closing it. Record the rationale as refuted rather than deleting it, because it says where a plausible causal model is wrong. Separately, when the Triton route admits LoadMovement.TMA, make the LoadReuse lowering route-conditioned rather than unconditional, and cite this record for why; until then pin the TRITON_LOAD_MOVEMENT refusal with a test so the constraint surfaces at the moment it stops being latent.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

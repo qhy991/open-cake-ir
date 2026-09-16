@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-010",
+  "kind": "protocol",
+  "date": "2026-09-16",
+  "title": "A third of the audit's GPU evaluations report only 'no trace produced', but the candidate's real compile error is in the same stderr above that line; a quarter of those errors are the harness's own contract, not the candidate's code",
+  "backend": "external-corpus-analysis",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-b200-v154+c6974314c0a177dedd07b4ad6280dc23a47531763b0c02a882bb388c25f6d9f8",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign and no device. Counts are over 1,839 evaluations recorded in the external audit's journals at the 2026-09-16 snapshot, while its sweep was still running."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/scripts/sol_remote.py",
+      "run": "none",
+      "event": 1,
+      "note": "Line 105 writes the remote stderr's last 8000 characters before line 117 prints 'sol_remote: no trace produced'. So the diagnosis was never lost -- it sits above the verdict in the same field. Splitting on that verdict line reclassifies 612 no_trace evaluations: 464 (75.8%) carry an nvcc or ptxas error, 130 (21.2%) have an empty remote stderr and are genuinely uninformative, 18 are unclassified. Reading only the first 200 characters or the last line of that field reports zero compile errors, which is what this record's author did before splitting it."
+    },
+    {
+      "workspace": "KerSor/workflows/Awesome-Kernel-Workflows/_substrate/integration/pack_sol_candidate.py",
+      "run": "none",
+      "event": 2,
+      "note": "build_solution at line 77 hardcodes entry_point = f'{kernel_filename}::run' whenever the source carries a PYBIND11_MODULE, and wf_audit.py:175 invokes it with --contract /dev/null so nothing can override it. Three of the 27 SoL tasks declare a different symbol -- 009, 012 and 013 are 'kernel.cu::forward' or 'kernel_binding.cpp::forward'. The failure 'built extension has no symbol run (exports: [forward])' occurs 49 times and on exactly those three tasks and no others: 28 on 012, 17 on 009, 4 on 013. A candidate that preserved its seed's export name could not load; one that happened to rename it could."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/scripts/fib_run.py",
+      "run": "none",
+      "event": 3,
+      "note": "_cuda_arch_flags at line 261 builds '-gencode=arch=compute_103,code=sm_103' from torch.cuda.get_device_capability, never the sm_103a form. tcgen05, cp.async.bulk.tensor with .multicast::cluster and the cluster features require the 'a' variant; one candidate's ptxas output says so verbatim before aborting. Measured scope is small and worth stating as such: 11 no_trace failures name an sm_*a-only feature, 3 of them ptxas-fatal. This is a real defect that did not, on this evidence, wipe out the advanced design space."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks/012_gqa_paged_decode_h32_kv4_d128_ps1",
+      "run": "none",
+      "event": 4,
+      "note": "Tracing 012's 30 never-measured kernels that use cp.async.bulk, mbarrier, cluster or producer roles back to their own errors: 8 are the entry-symbol mismatch above, 7 a build failure under both C++ standards, 8 have no remote stderr, 6 are absent from the journal, 1 is a syntax error. So the reason this task's most structurally distinct designs carry zero comparable measurements is mostly harness contract, not an unbuildable design."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction",
+      "run": "none",
+      "event": 5,
+      "note": "Across the 464 compile errors, 160 distinct message shapes. By cause: roughly 148 are harness or environment contract -- the entry symbol (49), a torch API change where at::CuBLASReductionOption no longer converts to bool (57, the same change the Hygon DCU port patched as its rule 9), a missing kernel.h (42); roughly 282 are the candidate's own code, led by an undefined layout_col_major (104), syntax errors (75), a misused wmma store_matrix_sync (19) and 42 occurrences of 'extended character is not valid in an identifier', which is a model emitting an em dash into CUDA source."
+    }
+  ],
+  "observation": "Two different things were being called the same failure. The harness reports a transport symptom where it holds a diagnosis, and roughly a quarter of the diagnoses are its own contract rather than the candidate's design. For open-cake-ir the interest is not the bug but the shape: this is precisely the 'pass/fail bit, or one latency number' that AGENTS.md names as the failure mode the harness exists to avoid, observed at scale on a real sweep -- 612 evaluations that each cost a build and a GPU slot and returned a scp error to their author. Two of these classes are also things a Compiler can refuse statically and for free: an entry point the route does not export, and a target feature the Target does not declare.",
+  "proposed_change": "For open-cake-ir: nothing to change, and one thing to cite. This is external corroboration for the diagnostic contract -- a blocking check that names the region and the contract class -- and for keeping target identity exact, since sm_103a and sm_103 are different targets and the audit's harness cannot say which it built for. Do not import any of these 612 evaluations as evidence about candidate quality. For the corpus itself, which is not an open-cake-ir change: surface the remote stderr above the verdict line rather than behind it, take the entry symbol from the task instead of hardcoding 'run', and emit the sm_103a form. The first is the one that matters, since it turns 464 already-recorded diagnoses from invisible into readable.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

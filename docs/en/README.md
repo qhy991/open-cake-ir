@@ -10,6 +10,23 @@ See the [B300 guide](B300.md) for the three Python operator starting points.
 
 A Workload defines the problem, a Schedule describes workers and data, the Compiler checks and translates it, Evaluation checks outputs and measurements, and Evidence preserves observations. A Study fixes a research question and fair comparison before execution.
 
+## News
+
+- **2026-09-16 — the Hygon DCU (gfx938) is a third target that runs.** A Triton-lowered kernel
+  compiles to an HSACO inside the DTK container, loads through `evaluation/hip_driver.py`,
+  launches on a BW1101 and passes the external CPU oracle: `output_mismatches: 0`,
+  `max_abs_error: 4.77e-07`. The route sits beside NVIDIA and Apple rather than stepping down
+  from either — Hygon is its own vendor (`Vendor.HYGON`), sharing the
+  `amdgcn-amd-amdhsa--` code object with AMD and nothing else.
+  **It reports correctness, not latency**: gfx938 has no named timing source yet, so its Study
+  states a measurement-coverage limitation instead of a paired assay and the receipt carries
+  `timing: null`. A timing source is minted by measuring, not by adding a row — see the
+  [DCU design record](../dcu-gfx938-design.md).
+
+- **2026-09-16 — source identity is the git commit ([ADR 0065](../adr/0065-source-identity-is-the-commit.md)).**
+  A Compiler is `open-cake-ir@<commit>` and an Executor is `<target>@<commit>`, so one shared
+  source change no longer retires every other host's Executor.
+
 ## Start here
 
 1. [System overview](ARCHITECTURE.md).
@@ -49,3 +66,28 @@ The [English guide](wiki/README.md) also links every learning page. Use the [Glo
 Metal uses `simd_program_tile` with 32 lanes per threadgroup and runs normalization tasks through the existing TaskLab/Ralph evaluation path. Host construction, warmed host calls and GPU command-buffer intervals are recorded separately; reported gains require the recorded noise controls to pass.
 
 Original documents retain their paths. Chinese reading companions for English originals live under zh-CN; English counterparts to Chinese originals live here. Companions simplify explanations and link full historical tables rather than creating a second authority. Dates, scope, failures, and unverified outcomes retain their original meaning. Source generation, compilation, correctness, and performance remain distinct.
+
+## Citation
+
+```bibtex
+@software{qin_open_cake_ir,
+  author  = {Qin, Haiyan},
+  title   = {{open-cake-ir}: Agent-driven compiler and kernel co-evolution},
+  url     = {https://github.com/qhy991/open-cake-ir},
+  license = {Apache-2.0},
+  note    = {Cite the commit the work was run at, with its target and workload}
+}
+```
+
+Contact: Haiyan Qin \<haiyanq@buaa.edu.cn\>. Machine-readable metadata is in
+[CITATION.cff](../../CITATION.cff).
+
+**Cite the commit.** Source identity is the git commit of the checkout
+([ADR 0065](adr/0065-source-identity-is-the-commit.md)), so `open-cake-ir@<commit>` is the
+reproducible coordinate; naming the exact target (`sm_103a`, `gfx938`, `apple_gpu_family8`)
+and the workload alongside it is what lets a reader find the run. A number without those
+three cannot be checked.
+
+When citing a measurement, say which timing source that target declares and what coverage it
+states: targets use different timers, and a target may report correctness with no latency at
+all, saying so explicitly.

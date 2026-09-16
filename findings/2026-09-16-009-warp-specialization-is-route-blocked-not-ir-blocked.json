@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-009",
+  "kind": "protocol",
+  "date": "2026-09-16",
+  "title": "RETRACTED: the 2-4x warp-specialization result was a regex matching the word 'producer' in comments; four of the six candidates it rested on are explicitly not warp-specialized",
+  "backend": "external-corpus-analysis",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-b200-v154+c6974314c0a177dedd07b4ad6280dc23a47531763b0c02a882bb388c25f6d9f8",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign and no device of this project's own. The measurements are the external audit's, on B300 under its own harness. Only `live` cells are used: a `_contended` directory measured its reference while the GPU was busy and reports 900-1000x where live cells report ~59x (F-2026-09-16-003's provenance column exists for this)."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
+      "run": "none",
+      "event": 1,
+      "note": "203 harvested kernels, 40 distinct mechanism signatures, 60 live-and-correct candidates. Pooled: 14 warp-specialized at median 44.84x against 46 without at 11.10x. The confound check is the load-bearing one, because only two workflows contributed the specialized group: within ksearch, 6 specialized at median 55.71x against its own 3 unspecialized at 13.49x (4.13x); within cupilot, 5 at 50.43x against its own 6 at 25.44x (1.98x); within kernelblaster, its single specialized candidate matches its own 11 unspecialized at 9.98x (1.00x). So it is not that those workflows are stronger."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks/012_gqa_paged_decode_h32_kv4_d128_ps1",
+      "run": "none",
+      "event": 2,
+      "note": "The same check on the decode sibling does not replicate: 2 warp-specialized live candidates at median 50.78x against 39 without at 52.96x, and within cupilot 1 against 5 at ratio 0.88x. 013 and 015 admit no comparison at all -- one side is empty on each. So the result is one task with an internal replication, not a family result."
+    },
+    {
+      "workspace": "src/open_cake_ir/compiler/backends/triton.py",
+      "run": "none",
+      "event": 3,
+      "note": "Probed with Compiler.assess on sm_103a from corpus/schedules/qsa-selected-attention-t32768.json, whose q[32768,32,128] and k,v[32768,4,128] is this task family's shape. Declaring producer and consumer roles raises TRITON_ROLE_COUNT, 'the Triton backend requires exactly one role'. The IR itself says it: 19 corpus schedules declare more than one role, and corpus/schedules/tinygemm2-stage4-split-k.json runs three roles with TMA producers staging into shared memory. The limit is the route, not the vocabulary."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks/gemm-family-ledger.json",
+      "run": "none",
+      "event": 4,
+      "note": "Anti-condition, measured rather than absent (F-2026-09-16-011): the same full stack -- cluster, TMA, mbarrier, MMA and warp specialization -- appears on GEMM 011 with 10 live-correct candidates at best 1.02x and on 008 with 1 at 1.02x. Parity. So the mechanism's effect is operator-conditioned in both directions, not merely unobserved outside prefill."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/tasks/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/kernels",
+      "run": "none",
+      "event": 5,
+      "note": "Retraction evidence. The `warp_spec` classifier was the regex producer|consumer warp|warp.special over raw source. Stripping comments before matching: 7 of the 14 candidates it selected on this task match only in a comment, and all four ksearch candidates that produced the headline 4.13x ratio are among them. Reading ksearch__ksearch_c1_a1 (58.35x) directly: 'producer' occurs once, at line 623, in a comment naming which kernel wrote a buffer, and the header states the opposite design -- 'single SMEM buffer (N_BUF=1) so 2 CTAs fit per SM; memory latency is hidden by inter-CTA occupancy rather than intra-CTA double-buffering'. Its own change list is headed 'all shape-only, math unchanged': per-row chunk_counts replacing a [total_q,32] fill that cost 524k serialized stores, removal of a 134 MB host-side memset, and a tighter tile bound cutting launched CTAs from 436k to about 8k. The speedup came from grid sizing and metadata layout, not from warp specialization. Across the whole corpus the same comment-stripping test puts this classifier at 64.2% false positives (372 raw hits, 239 comment-only), and `persistent` at 62.4%."
+    }
+  ],
+  "observation": "Retracted. One candidate in the set is genuinely warp-specialized -- cupilot's 52.28x kernel declares NUM_PRODUCER_WARPS=4 as warps 8..11 with mbarrier-armed TMA staging and a packed m16n8k16 MMA -- but the same workflow's 11.90x candidate carries the identical structure, so within cupilot the mechanism spans 11.90x to 52.28x and explains nothing. The two best kernels on this task take opposite approaches: one eliminates dead CTAs and host memsets, the other builds a producer/consumer TMA pipeline. A token-presence classifier merged them. The general lesson is the one this record now exists for: a regex over source text, comments included, is not a reading of a design, and every performance claim built on one in this analysis has to be re-derived from the code. What survives untouched is the refusal probing, which ran the Compiler rather than a regex: TRITON_ROLE_COUNT, TRITON_LOAD_MOVEMENT and the rest are measured facts about the IR.",
+  "proposed_change": "Withdraw the warp-specialization case entirely; it has no evidence. Keep the separable fact it was wrapped around, which was established by probing and not by classification: warp specialization is expressible in the IR (19 corpus schedules declare more than one role, and corpus/schedules/tinygemm2-stage4-split-k.json runs three with TMA producers) and the Triton route refuses it with TRITON_ROLE_COUNT. That is a route capability question with no performance evidence attached in either direction. Any future claim about this mechanism must come from reading candidates, not from matching tokens.",
+  "decision": "rejected",
+  "implemented_in": null,
+  "verified_by": null
+}

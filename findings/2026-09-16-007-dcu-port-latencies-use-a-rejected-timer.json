@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-007",
+  "kind": "protocol",
+  "date": "2026-09-16",
+  "title": "The external DCU port's 26 speedups are timed with torch.cuda.Event, the timer this project measured at an 8.48 us empty interval on that same host and rejected; the ratios are usable, the latencies are not",
+  "backend": "external-corpus-analysis",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-gfx938-v20+098e54db6bb3f83e424d8a350eccad855f94f4b666ae7484acd245790f385b46",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign. This cross-checks an external corpus against a measurement this project already made and recorded."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/scripts/fib_run_dcu.py",
+      "run": "none",
+      "event": 1,
+      "note": "time_ms at line 450 brackets each sample with torch.cuda.Event(True) pairs and host-synchronizes, with an optional 256 MB zero_() L2 flush behind --flush-l2. The same function times both the reference and the candidate, so the reported per-task geomeans are ratios of two equally biased measurements."
+    },
+    {
+      "workspace": "docs/dcu-gfx938-design.md",
+      "run": "none",
+      "event": 2,
+      "note": "Recorded in commit 8c1d287f, measured on bw1100 under the same DTK container: torch.cuda.Event has an 8.48 us empty-interval floor and is marked unusable; a raw HIP event pair through ctypes reads 5.60 us min and misreads a 1 MiB mul at 15.68 us against the profiler's 3.36 us; torch.profiler over roctracer reads that same mul at 3.071 us and attributes _cake_rmsnorm_fp32_kernel through evaluation/hip_driver.py at 3.359 us for one launch."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/dcu_port/DCU-PORT-REPORT.md",
+      "run": "none",
+      "event": 3,
+      "note": "26/26 tasks pass correctness at atol/rtol 0.01 with an overall geomean of 3.02x. The norm and attention kernels being timed are in the 3-7 us range, which is below the timer's own empty interval."
+    }
+  ],
+  "observation": "An additive bias of about 8.5 us on both sides of a ratio does not reverse its sign, so the port's correctness result and the direction of its speedups stand. What does not stand is any absolute latency from that run, and the ratios are compressed toward 1 for exactly the small-batch shapes where the norm kernels live. This matters now rather than later because the same project has just settled which timer gfx938 should declare, and the remaining work was described as wiring rather than evidence: adopting these 26 numbers as a gfx938 baseline would import a timer the target is about to stop using.",
+  "proposed_change": "Do not adopt the external port's latencies as gfx938 baseline evidence, and cite its correctness result and speedup directions separately from its timings. If those 26 tasks are wanted as a baseline bundle, re-time them through the source the design document now names -- torch.profiler's CUDA activity, the dispatch as roctracer reports it, and the 256 MiB zero_() flush as the device-state reset -- which is the same three facts AGENTS.md requires any target to declare before reporting a latency.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

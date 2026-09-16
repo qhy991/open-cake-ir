@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-008",
+  "kind": "behavior",
+  "date": "2026-09-16",
+  "title": "On gfx938 the MoE routing reference is itself nondeterministic: torch.topk flips its tie-break between calls, and the mask fill value and sigmoid spelling each move which expert a tied token selects",
+  "backend": "external-corpus-analysis",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "executor_revision": "open-cake-ir-gfx938-v20+098e54db6bb3f83e424d8a350eccad855f94f4b666ae7484acd245790f385b46",
+  "evidence": [
+    {
+      "workspace": "external_corpus_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No open-cake-ir campaign. External investigation of task 020 during the DCU port, with its own debug scripts retained."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/dcu_port/dbg020b.py",
+      "run": "none",
+      "event": 1,
+      "note": "Measured: for one fixed input, the reference's own topk_idx changes between calls -- token 22 alternates between two expert sets and token 1 between experts 63 and 67 -- and the script reports `ref deterministic: False`. The routing scores of the tied experts are bit-identical and the tie falls at the top-8 truncation, so torch-ROCm's topk tie-break, which involves atomics, decides it by coin flip."
+    },
+    {
+      "workspace": "flashinfer-bench-tasks/dcu_port/dbg020c.py",
+      "run": "none",
+      "event": 2,
+      "note": "Against a deterministic CPU oracle reproducing the reference's arithmetic without an atomic topk, the candidate matches on every token but one tied row. Changing masked_fill from -inf to -FLT_MAX moves the pass count between 15/19 and 17/19 without changing the conclusion: it relocates where the coin lands. Replacing at::sigmoid with the reference's own 1/(1+exp(-x)) was separately required because the ULP difference flipped routing on near-ties."
+    },
+    {
+      "workspace": "docs/adr/0065-sol-execbench-task-import.md",
+      "run": "none",
+      "event": 3,
+      "note": "ADR 0065 already replaces the upstream matched_ratio gate with an all-element comparison against this project's own independent CPU oracle. This is independent measured support for that choice, arriving from hardware the ADR was not written about."
+    }
+  ],
+  "observation": "A correctness gate that compares a candidate against a live reference assumes the reference is a function. On this device, for this operator, it is not: the same input produces two different stable outputs. Three separate things then masquerade as candidate bugs -- the atomic tie-break, the fill value that decides which scores tie, and the ULP difference between two spellings of sigmoid -- and the first cannot be fixed by any change to the candidate. The upstream task passes on CUDA only because candidate and reference there call the same deterministic kernel, which is agreement by shared implementation rather than by correctness.",
+  "proposed_change": "Keep ADR 0065's independent CPU oracle and cite this record as its external confirmation. Beyond that, TopKParameters pairs with IndexTieBreak.LOWEST_INDEX as a construction-time commitment, and nothing checks that the oracle a Workload Contract compares against honours the same rule; a data-consistency check that a top-k comparison is decided deterministically on both sides is the rule this argues for. Do not add it on one operator on one device: this is one operator on one device, and AGENTS.md is explicit that a one-off is not evidence for a rule. Record it and look for the second.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
