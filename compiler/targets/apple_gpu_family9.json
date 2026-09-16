@@ -6,6 +6,7 @@
     "Apple M4"
   ],
   "vendor": "apple",
+  "code_object": "metal_binary_archive",
   "memory_spaces": [
     "global",
     "shared",

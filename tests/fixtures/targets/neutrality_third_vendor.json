@@ -6,6 +6,7 @@
     "Synthetic Neutrality Device"
   ],
   "vendor": "amd",
+  "code_object": "hsaco",
   "memory_spaces": [
     "global",
     "shared",

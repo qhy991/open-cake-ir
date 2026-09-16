@@ -17,7 +17,15 @@ from unittest.mock import Mock
 
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.target import Target
-from open_cake_ir.evaluation.artifacts import METAL_TARGETS, executable_role, required_build_roles
+from open_cake_ir.evaluation.artifacts import (
+    builds_metal_archive, executable_role, required_build_roles)
+
+# The Metal targets are whichever declared documents name a Metal binary archive,
+# read from the declaration rather than listed here a second time.
+METAL_TARGETS = frozenset(
+    path.stem
+    for path in (Path(__file__).resolve().parents[2] / "compiler/targets").glob("*.json")
+    if builds_metal_archive(path.stem))
 from open_cake_ir.evaluation.core import LaunchableCandidate
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.evaluation.workload import WorkloadContract

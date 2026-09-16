@@ -8,7 +8,7 @@ import json
 import math
 import re
 from typing import Mapping
-from .artifacts import METAL_TARGETS
+from .artifacts import builds_metal_archive
 
 METAL_TIMER = "MTLCommandBuffer.GPUStartTime/GPUEndTime"
 METAL_CACHE = "warm_no_explicit_flush"
@@ -48,7 +48,7 @@ def validate_host(host: object) -> dict:
     fields = {"device_name", "device_registry_id", "operating_system", "target"}
     if (not isinstance(host, Mapping) or set(host) != fields
             or any(not isinstance(value, str) or not value for value in host.values())
-            or host["target"] not in METAL_TARGETS
+            or not builds_metal_archive(host["target"])
             or not host["device_registry_id"].isdigit() or int(host["device_registry_id"]) <= 0):
         raise ValueError("Metal observation host identity differs")
     return dict(host)

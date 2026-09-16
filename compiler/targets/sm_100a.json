@@ -6,6 +6,7 @@
     "NVIDIA B200"
   ],
   "vendor": "nvidia",
+  "code_object": "cubin",
   "compute_capability": [
     10,
     0

@@ -81,11 +81,11 @@ class VendorsAreNotFoldedTogetherTest(unittest.TestCase):
         gfx1151 = Target.load(ROOT / "compiler/targets/gfx1151.json")
         self.assertIs(gfx938.vendor, Vendor.HYGON)
         self.assertIs(gfx1151.vendor, Vendor.AMD)
-        # What they share is the object Triton emits, not a manufacturer, and the set
-        # that says so lives in the Evaluation layer under a code-object name.
-        from open_cake_ir.evaluation.artifacts import AMDGCN_TARGETS, executable_role
+        # What they share is the object Triton emits, not a manufacturer, and each
+        # document says so itself rather than appearing in a set the Evaluation layer keeps.
+        from open_cake_ir.evaluation.artifacts import executable_role
 
-        self.assertEqual({gfx938.target_id, gfx1151.target_id}, set(AMDGCN_TARGETS))
+        self.assertEqual(gfx938.code_object, gfx1151.code_object)
         self.assertEqual(executable_role(gfx938.target_id), "hsaco")
         self.assertEqual(executable_role(gfx1151.target_id), "hsaco")
 

@@ -18,7 +18,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .executor import _digest, _file_record
-from open_cake_ir.evaluation.artifacts import METAL_TARGETS
+from open_cake_ir.evaluation.artifacts import builds_metal_archive
 
 HOST_FIELDS = {"device_name", "device_registry_id", "operating_system", "target"}
 
@@ -57,7 +57,8 @@ def validate_metal_host(host: Mapping[str, object]) -> None:
     device = host["host"]
     if (not isinstance(device, Mapping) or set(device) != HOST_FIELDS
             or any(not isinstance(v, str) or not v for v in device.values())
-            or device["target"] not in METAL_TARGETS or not device["device_registry_id"].isdigit()):
+            or not builds_metal_archive(device["target"])
+            or not device["device_registry_id"].isdigit()):
         raise ValueError("Metal Executor device/OS fields differ")
     for name in ("archive_executable", "observer_executable"):
         record = _file_record(host[name], f"Metal {name}")
@@ -80,7 +81,7 @@ def admit_metal_executable(record: Mapping[str, object], context: str) -> Mappin
 def inspect_metal_host(executable: Path, *, target: str, expected_device_names: list[str],
                        directory: Path) -> dict[str, str]:
     """Retain an inspect-only helper request/result in a fresh external directory."""
-    if target not in METAL_TARGETS or not expected_device_names:
+    if not builds_metal_archive(target) or not expected_device_names:
         raise ValueError("Metal host inspection requires an exact target/device")
     from .metal_build import MetalArchiveHost
     report = MetalArchiveHost(executable, {}).invoke({"action": "inspect", "target": target,

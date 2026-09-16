@@ -20,6 +20,7 @@ One node, eight agents, each reporting ISA `amdgcn-amd-amdhsa--gfx938:sramecc+:x
 | --- | --- | --- |
 | Marketing name / vendor | `BW1101` / `C-3000` | `device_names`, `architecture: c3000`, `vendor: amd` |
 | Wavefront size | **64** | `warp_size`, and every thread count derived from it |
+| Compiled object | `hsaco` | `code_object`, read by the Evaluation layer |
 | Workgroup max size | 1024 | `maximum_threads_per_cta` |
 | Workgroup max slots | 1024 / 64 = 16 | `maximum_warps_per_cta` |
 | GROUP segment | 64 KiB | `maximum_shared_memory_bytes` |

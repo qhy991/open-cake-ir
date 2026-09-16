@@ -48,11 +48,45 @@ class Vendor(str, Enum):
     HYGON = "hygon"
 
 
+class CodeObject(str, Enum):
+    """The object a target's toolchain produces, declared rather than enumerated.
+
+    The third of the three axes F-2026-09-15-004 names: `vendor` is who built the
+    hardware, a Schedule's `lowering.backend` is which mechanism emits source, and this
+    is what the compiled artifact is. gfx938 and gfx1151 share this and differ by vendor;
+    sm_100a and gfx938 share a lowering route and neither of the other two. Declaring it
+    is what lets the Evaluation layer stop partitioning target ids by hand, so an eighth
+    target is a document rather than a document plus six edits in shared code.
+    """
+
+    CUBIN = "cubin"
+    METAL_BINARY_ARCHIVE = "metal_binary_archive"
+    HSACO = "hsaco"
+
+
 def cuda_architecture(target_id: str) -> int:
     """Decode the two admitted exact CUDA code-generation targets."""
     if not isinstance(target_id, str) or re.fullmatch(r"sm_(100|103)a", target_id) is None:
         raise TargetParseError("unsupported exact CUDA target")
     return int(target_id[3:-1])
+
+
+def declared_target(target_id: str) -> "Target":
+    """Read the Target document this checkout declares for one exact id.
+
+    The Evaluation layer resolves declared hardware facts through here. Offline
+    compilation does not and must not: it never opens a Target document inside its jail,
+    which is why `cuda_architecture` and the AMDGCN route table decode their own targets.
+    """
+    if not isinstance(target_id, str) or not target_id:
+        raise TargetParseError("an exact target id is required")
+    path = Path(__file__).resolve().parents[3] / "compiler" / "targets" / f"{target_id}.json"
+    if not path.is_file():
+        raise TargetParseError(f"no Target document declares {target_id!r}")
+    target = Target.load(path)
+    if target.target_id != target_id:
+        raise TargetParseError("Target identity differs from the document naming it")
+    return target
 
 
 def cuda_target(target_id: str) -> "Target":
@@ -306,6 +340,9 @@ class Target:
     architecture: str
     device_names: tuple[str, ...]
     vendor: Vendor
+    # What this target's toolchain produces. Read by the Evaluation layer in place of its
+    # own target-id partition; see CodeObject.
+    code_object: CodeObject
     compute_capability: tuple[int, int] | None
     memory_spaces: frozenset[MemorySpace]
     operation_kinds: frozenset[OperationKind]
@@ -349,6 +386,13 @@ class Target:
             raise TargetParseError(
                 "target.vendor must be one of "
                 + ", ".join(sorted(item.value for item in Vendor))
+            ) from error
+        try:
+            code_object = CodeObject(value.get("code_object"))
+        except ValueError as error:
+            raise TargetParseError(
+                "target.code_object must be one of "
+                + ", ".join(sorted(item.value for item in CodeObject))
             ) from error
         capability = value.get("compute_capability")
         if capability is not None and (
@@ -412,6 +456,7 @@ class Target:
             architecture=_string(value.get("architecture"), "target.architecture"),
             device_names=string_tuple("device_names"),
             vendor=vendor,
+            code_object=code_object,
             compute_capability=None if capability is None else (capability[0], capability[1]),
             memory_spaces=spaces,
             operation_kinds=kinds,

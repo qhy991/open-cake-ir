@@ -36,6 +36,9 @@ _TARGET_REQUIRED_FIELDS = frozenset({
     # Vendor is required for the same reason: shared code used to infer it from the
     # presence of a CUDA field.
     "vendor",
+    # And the code object for the same reason again: the Evaluation layer used to hold
+    # three frozensets of target ids that no Target document could state.
+    "code_object",
     "resource_limits",
     "instruction_contracts",
     "synchronization_contracts",

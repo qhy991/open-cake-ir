@@ -17,7 +17,7 @@ from typing import Mapping
 
 from .bindings import load_compiler_reference
 from open_cake_ir.evaluation.core import LaunchableCandidate
-from open_cake_ir.evaluation.artifacts import METAL_TARGETS
+from open_cake_ir.evaluation.artifacts import builds_metal_archive
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest, compile_options
 from .environments import BuildRequest
 from .faults import CandidateCompileRejected, RunProtocolFault
@@ -165,7 +165,7 @@ class MetalToolchainBuilder:
     def __init__(self, *, workload, case_id: str, output_root: Path,
                  compiler_reference: Mapping[str, object],
                  host: MetalArchiveHost | None = None, project_root: Path = ROOT):
-        if workload.target not in METAL_TARGETS:
+        if not builds_metal_archive(workload.target):
             raise ValueError("Metal builder requires a supported exact Metal target")
         self.workload, self.case_id = workload, case_id
         self.output_root = _external_root(output_root)

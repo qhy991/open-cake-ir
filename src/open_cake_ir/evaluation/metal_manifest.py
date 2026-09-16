@@ -7,7 +7,7 @@ import json
 import re
 from typing import Mapping
 
-from .artifacts import METAL_TARGETS
+from .artifacts import builds_metal_archive
 from .workload import WorkloadContract
 
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
@@ -52,7 +52,7 @@ class MetalTensorLaunchManifest:
         if (not isinstance(document, Mapping) or set(document) != fields or
                 type(document.get("schema_version")) is not int or document.get("schema_version") != 1 or document.get("abi") != "metal_workload_tensors_v1"):
             raise ValueError("Metal tensor launch manifest fields differ")
-        if (not isinstance(document["target"], str) or document["target"] not in METAL_TARGETS or not isinstance(document["workload_sha256"], str)
+        if (not isinstance(document["target"], str) or not builds_metal_archive(document["target"]) or not isinstance(document["workload_sha256"], str)
                 or not _DIGEST.fullmatch(document["workload_sha256"])
                 or not isinstance(document["case_id"], str) or not document["case_id"]
                 or not isinstance(document["kernel_name"], str) or not document["kernel_name"].isascii()

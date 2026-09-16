@@ -23,14 +23,19 @@ from .providers import CANDIDATE_SET_ENVELOPE_V1, ProviderTurn, _project_candida
 
 def _arm_artifact_roles(arm: str, target: str) -> frozenset[str]:
     """Arm owns source provenance; backend owns its actual compiled products."""
-    if executable_role(target) == "metal_binary_archive":
+    role = executable_role(target)
+    if role == "metal_binary_archive":
         if arm != "open_cake":
             raise ValueError("Authoring Environment and compiled target differ")
         return required_build_roles("metal") | {"lowered_source"}
+    # Triton's products follow the declared object: an hsaco and its AMDGCN assembly where
+    # the CUDA route has a cubin and PTX. Reading "triton" for every target would archive
+    # a candidate under roles its own route never emitted.
+    triton = "triton_amdgcn" if role == "hsaco" else "triton"
     if arm == "open_cake":
-        return required_build_roles("triton") | {"lowered_source"}
+        return required_build_roles(triton) | {"lowered_source"}
     if arm in {"direct_cuda", "native_triton", "native_cute_dsl"}:
-        return required_build_roles("cuda" if arm == "direct_cuda" else "triton") | {"authored_source"}
+        return required_build_roles("cuda" if arm == "direct_cuda" else triton) | {"authored_source"}
     raise ValueError("Authoring Environment and compiled target differ")
 
 

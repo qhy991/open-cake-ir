@@ -6,6 +6,7 @@
     "BW1101"
   ],
   "vendor": "hygon",
+  "code_object": "hsaco",
   "memory_spaces": [
     "global",
     "shared",
