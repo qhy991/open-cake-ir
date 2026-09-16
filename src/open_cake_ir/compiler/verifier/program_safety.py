@@ -16,8 +16,6 @@ from ..diagnostics import FindingCategory, FindingSeverity
 from ._collector import _Collector
 
 
-TARGET_SYNC_HINT = {"mbarrier", "barrier.sync"}
-
 
 def _verify_state_store_ownership(schedule: Schedule, out: _Collector) -> None:
     """Prove the first direct, single-writer ordinary store to caller-owned state."""
@@ -200,7 +198,8 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                 "BARRIER_MECHANISM_UNDECLARED",
                 f"{path}.mechanism",
                 f"barrier {barrier.name!r} does not say how it is realized; the Target "
-                f"admits {', '.join(sorted(TARGET_SYNC_HINT))} and the backend chooses",
+                f"admits {', '.join(sorted(m.value for m in BarrierMechanism))} "
+                "and the backend chooses",
                 category,
                 FindingSeverity.HINT,
             )

@@ -6,6 +6,7 @@ from ..ir import (
     PLACED_CONTRACTS,
     PLACEMENT_FIELDS,
     TMEM_COLUMN_BYTES,
+    BarrierMechanism,
     OperandSource,
     LoadMovement,
     MemorySpace,
@@ -197,8 +198,14 @@ def verify(
 
     # `synchronization_contracts` names the handshakes the Target can actually lower.
     # A Schedule that declares barriers on a Target without one is not lowerable.
+    #
+    # The mechanisms are quoted from the vocabulary that owns them, not restated here: a
+    # literal pair would tell a Target that declares its own barrier contract under
+    # another name that it admits none, and BarrierMechanism is already what a Schedule's
+    # `mechanism` parses through and what the authoring Schema projects.
     if schedule.barriers and not (
-        target.synchronization_contracts & {"mbarrier", "barrier.sync"}
+        target.synchronization_contracts
+        & {mechanism.value for mechanism in BarrierMechanism}
     ):
         out.add(
             "TARGET_SYNCHRONIZATION_UNSUPPORTED",
