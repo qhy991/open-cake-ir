@@ -62,6 +62,21 @@ class RunProtocolFault(RuntimeError):
         self.observed_quota = dict(observed_quota) if observed_quota is not None else None
 
 
+class ProviderBoundaryDeclarationFault(RunProtocolFault):
+    """A successful CLI result whose candidate write the retained stream never witnesses.
+
+    F-2026-09-16-002: at a token-budget boundary the final Turn can emit its
+    structured terminal (declaring ``candidate_written`` true, CLI exit 0) while
+    carrying no Write at all. While in flight this is still a provider fault and
+    fails closed; the terminal conversion to the checkpoint-settled outcome is
+    execution's to decide and replay's to rederive. The type is the marker, so
+    unconverted instances record exactly like any other provider fault.
+    """
+
+    def __init__(self, message: str, **kwargs) -> None:
+        super().__init__("provider_fault", message, **kwargs)
+
+
 class CandidateCompileRejected(ValueError):
     """Observed compiler rejection that may feed the next Turn."""
 

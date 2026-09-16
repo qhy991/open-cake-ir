@@ -10,6 +10,7 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from ._documents import _canonical_json_bytes, _object
 from ._policies import _MATCHED_EVENT_KINDS_V1, _matched_evidence_policy_version
+from .claude import CLAUDE_EVENT_CONTRACTS, candidate_write_declared_unwitnessed
 from .contracts import CampaignLock
 from .executor import ExecutorRevision
 from .endpoints import endpoint_policy
@@ -17,7 +18,11 @@ from .evaluation_lifecycle import replay_evaluation_invocations
 from .selection import _EmpiricalSelection, _empirical_context
 from .replay_candidates import _artifact_outcomes_are_closed, _replay_candidates
 from .replay_outcomes import _replay_terminal
-from .replay_provider import _replay_provider_turns, replay_fault_usage
+from .replay_provider import (
+    _expected_terminal_message,
+    _replay_provider_turns,
+    replay_fault_usage,
+)
 from .replay_selection import _replay_candidate_selection
 
 _REQUIRED_FAULT_FIELDS = frozenset({
@@ -88,12 +93,43 @@ def replay_matched_run(
     terminal_payload = _object(
         events[-1].get("payload"), "run_terminal.payload"
     )
-    if terminal_payload != {
+    expected_terminal = {
         "protocol_adherence": audit.protocol_adherence,
         "endpoint_observation": audit.endpoint_observation,
         "endpoint": dict(audit.endpoint) if audit.endpoint is not None else None,
-    }:
+    }
+    if (
+        set(terminal_payload) - set(expected_terminal) - {"boundary_diagnostic"}
+        or {key: terminal_payload[key] for key in expected_terminal}
+        != expected_terminal
+    ):
         return False
+    boundary_diagnostic = terminal_payload.get("boundary_diagnostic")
+    if boundary_diagnostic is not None:
+        # F-2026-09-16-002: the terminal names the retained provider fault its
+        # settled checkpoint outlived. The marker is closed, requires exactly the
+        # one fault observation it converts, and only an adhered terminal can
+        # carry it; usage, quota and the unwitnessed shape are rederived below
+        # from the retained fault stdout, never from this declaration.
+        if (
+            not isinstance(boundary_diagnostic, Mapping)
+            or set(boundary_diagnostic) != {"turn", "stage", "diagnostic"}
+            or boundary_diagnostic.get("stage") != "provider"
+            or boundary_diagnostic.get("diagnostic")
+            != "candidate_write_declared_unwitnessed"
+            or type(boundary_diagnostic.get("turn")) is not int
+            or boundary_diagnostic["turn"] <= 0
+            or audit.protocol_adherence != "adhered"
+            or len(
+                [
+                    event
+                    for event in events
+                    if event.get("kind") == "run_fault"
+                ]
+            )
+            != 1
+        ):
+            return False
     turn_events = [
         _object(event.get("payload"), f"event.{event.get('kind')}.payload")[
             "turn"
@@ -204,7 +240,12 @@ def replay_matched_run(
             or not _artifact_outcomes_are_closed(fault_payload)
         ):
             return False
-        if fault_payload.get("fault") != audit.protocol_adherence:
+        if (
+            fault_payload.get("fault") != audit.protocol_adherence
+            and boundary_diagnostic is None
+        ):
+            # The converted boundary terminal, validated against its fault
+            # below, is the one adherent exception to fault == adherence.
             return False
         fault_turn_value = fault_payload.get("turn")
         fault_stage = fault_payload.get("stage")
@@ -235,6 +276,37 @@ def replay_matched_run(
             )
         ):
             return False
+        if boundary_diagnostic is not None:
+            # Scoped to exactly the named boundary fault: same stage, same Turn,
+            # the fault type that carries the name, and a retained stdout that
+            # reparses into the declared-but-unwitnessed shape under the fault
+            # Turn's own terminal expectation.
+            if (
+                fault_payload.get("fault") != "provider_fault"
+                or fault_stage != "provider"
+                or fault_payload.get("exception_type")
+                != "ProviderBoundaryDeclarationFault"
+                or boundary_diagnostic.get("turn") != fault_turn_value
+            ):
+                return False
+            stdout_references = [
+                cast(Mapping[str, object], reference)
+                for reference in fault_payload.get("objects", [])
+                if isinstance(reference, Mapping)
+                and reference.get("role") == "provider_stdout"
+            ]
+            if (
+                event_contract not in CLAUDE_EVENT_CONTRACTS
+                or len(stdout_references) != 1
+                or not candidate_write_declared_unwitnessed(
+                    evidence.read_object(stdout_references[0]),
+                    expected_terminal_message=_expected_terminal_message(
+                        arm, fault_turn_value, event_contract
+                    ),
+                    event_contract=event_contract,
+                )
+            ):
+                return False
         fault_turn = fault_turn_value
         fault_terminal_tokens = fault_terminal_value
 
@@ -290,6 +362,7 @@ def replay_matched_run(
         receipts=receipts,
         searches_per_turn=searches_per_turn,
         invocation_counts=invocation_counts,
+        boundary_converted=boundary_diagnostic is not None,
     )
 
 def _replay_provider_fault(

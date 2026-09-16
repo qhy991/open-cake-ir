@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import unittest
 
 from open_cake_ir.evidence import EvidenceStore
-from open_cake_ir.lab.faults import ReportedProviderUsage, RunProtocolFault
+from open_cake_ir.lab.faults import ReportedProviderUsage, RunProtocolFault, ProviderBoundaryDeclarationFault
 from open_cake_ir.lab.provider_events import reported_codex_usage
 from open_cake_ir.tasks.runtime import TaskLab
 from tests.contracts._contexts import enter_class_context
@@ -122,6 +122,50 @@ class ReportedProviderUsageTests(unittest.TestCase):
         self.assertIsNone(replay_fault_usage(payload={**base, "observed_quota": quota},
             evidence=evidence_died, provider=provider))
 
+    def test_absent_notice_at_a_claude_fault_is_the_recorded_observation(self):
+        """F-2026-09-16-001: gateway-transport deaths carry no rate-limit notice at all.
+
+        The absence itself is what the fault seam records and what replay
+        rederives; evidence sealed while the field stayed absent still replays
+        unchanged, and the marker cannot stand in for a notice in either
+        direction.
+        """
+        from open_cake_ir.lab.replay_provider import replay_fault_usage
+        from tests.contracts.test_claude_provider import ClaudeProviderContracts, CLAUDE_EVENT_CONTRACT
+        fixture = ClaudeProviderContracts()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        events = fixture.events()
+        events[-1].pop("structured_output")  # Failed Turn; no notice is carried either.
+        bare = fixture.raw(events)
+        noticed = fixture.events()
+        noticed[-1].pop("structured_output")
+        noticed[1:1] = [{"type": "rate_limit_event", "uuid": "11111111-2222-3333-4444-555555555555",
+            "session_id": THREAD, "rate_limit_info": {"status": "allowed_warning",
+                "resetsAt": 1789455600, "rateLimitType": "seven_day", "utilization": 0.99,
+                "isUsingOverage": False, "surpassedThreshold": 0.75}}]
+        quota = {"status": "allowed_warning", "rateLimitType": "seven_day",
+                 "resetsAt": 1789455600, "utilization": 0.99, "surpassedThreshold": 0.75}
+        provider = {"event_contract": CLAUDE_EVENT_CONTRACT, "model": "exact-requested-model"}
+        base = {"stage": "provider", "provider_usage": {"status": "observed",
+                "event_contract": CLAUDE_EVENT_CONTRACT, "thread_id": THREAD, "provider_tokens": 205},
+                "objects": [{"role": "provider_stdout"}]}
+        bare_evidence = SimpleNamespace(read_object=lambda _: bare)
+        # The recorded absence replays against the notice-free stream behind it,
+        # and evidence sealed before the distinction exists replays unchanged.
+        self.assertEqual(replay_fault_usage(
+            payload={**base, "observed_quota": {"observed": "no_notice"}},
+            evidence=bare_evidence, provider=provider), 205)
+        self.assertEqual(replay_fault_usage(payload=base, evidence=bare_evidence, provider=provider), 205)
+        # The marker cannot ride a stream that does carry a notice, and a notice
+        # cannot masquerade as the recorded absence.
+        evidence_noticed = SimpleNamespace(read_object=lambda _: fixture.raw(noticed))
+        self.assertIsNone(replay_fault_usage(
+            payload={**base, "observed_quota": {"observed": "no_notice"}},
+            evidence=evidence_noticed, provider=provider))
+        self.assertIsNone(replay_fault_usage(payload={**base, "observed_quota": quota},
+            evidence=bare_evidence, provider=provider))
+
     def test_replayed_usage_refuses_boolean_and_float_token_witnesses(self):
         from open_cake_ir.lab.replay_provider import replay_fault_usage
         for native_tokens, claimed_tokens in ((0, False), (1, True), (191499, 191499.0)):
@@ -211,7 +255,7 @@ class FailedProviderConsumerTests(unittest.TestCase):
             raise AssertionError("failed-provider consumer must use its explicit CPU Executor")
 
     def campaign(self, *, fault_turn=2, tokens=191499, unknown=False, mismatch=False, stage="provider",
-                 returned_identity_refusal=False, missing_stdout=False, quota=None):
+                 returned_identity_refusal=False, missing_stdout=False, quota=None, boundary=False):
         class Provider(consumers.FakeProvider):
             def turn(inner, request):
                 if request.turn == fault_turn and stage == "provider" and not returned_identity_refusal:
@@ -221,6 +265,15 @@ class FailedProviderConsumerTests(unittest.TestCase):
                                                    expected_thread_id=request.thread_id)
                     if mismatch:
                         witness = ReportedProviderUsage(CONTRACT, thread, tokens + 1)
+                    if boundary:
+                        # F-2026-09-16-002: the boundary fault's own type at the
+                        # provider seam; the harness keeps a Codex usage stream so
+                        # the synthetic campaign's accounting stays replayable.
+                        raise ProviderBoundaryDeclarationFault(
+                            "Claude terminal declared candidate_written without a witnessed write",
+                            artifact_payloads={"provider_stdout": raw, "provider_stderr": b""},
+                            reported_usage=witness,
+                            observed_quota={"observed": "no_notice"})
                     raise RunProtocolFault("provider_fault", "synthetic provider format fault",
                         artifact_payloads={} if missing_stdout else {"provider_stdout": raw},
                         reported_usage=None if missing_stdout else witness,
@@ -277,6 +330,44 @@ class FailedProviderConsumerTests(unittest.TestCase):
         fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
         self.assertEqual(fault["observed_quota"], quota)
         self.assertEqual(fault["provider_usage"]["provider_tokens"], 191499)
+        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+
+    def test_settled_checkpoint_outlives_a_budget_boundary_declaration_fault(self):
+        """F-2026-09-16-002: the boundary fault converts only what already settled.
+
+        The fault observation stays in the ledger; the terminal goes to the
+        settled checkpoint with the conversion named on the terminal event and
+        the natural budget stop reason. This synthetic campaign is
+        Codex-contract, so semantic replay must refuse the converted marker
+        here: the marker belongs to the Claude contract whose adapter can raise
+        the fault, which is exactly what the refusal asserts.
+        """
+        limit = self.lock.document["resolved_inputs"]["budget"]["limit"]
+        campaign, store, events = self.campaign(boundary=True, tokens=limit - 94758)
+        fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
+        self.assertEqual(fault["fault"], "provider_fault")
+        self.assertEqual(fault["exception_type"], "ProviderBoundaryDeclarationFault")
+        self.assertEqual(fault["terminal_provider_tokens"], limit)
+        state = events[-2]["payload"]["ralph"]
+        self.assertEqual(state["terminal_reason"], "provider_token_limit")
+        terminal = events[-1]["payload"]
+        self.assertEqual(terminal["protocol_adherence"], "adhered")
+        self.assertEqual(terminal["boundary_diagnostic"],
+                         {"turn": 2, "stage": "provider",
+                          "diagnostic": "candidate_write_declared_unwitnessed"})
+        self.assertEqual(terminal["endpoint_observation"], "qualified")
+        self.assertFalse(self.lab.audit(campaign).semantic_replay_passed)
+
+    def test_boundary_declaration_without_a_settled_checkpoint_stays_a_fault(self):
+        """The declaration check still fails closed with nothing settled."""
+        campaign, store, events = self.campaign(boundary=True, fault_turn=1, tokens=500)
+        fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
+        self.assertEqual((fault["fault"], fault["exception_type"]),
+                         ("provider_fault", "ProviderBoundaryDeclarationFault"))
+        terminal = events[-1]["payload"]
+        self.assertNotIn("boundary_diagnostic", terminal)
+        self.assertEqual(terminal["protocol_adherence"], "provider_fault")
+        self.assertEqual(terminal["endpoint_observation"], "missing")
         self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
 
     def test_returned_turn_archive_refusal_counts_usage_without_committing_completion(self):

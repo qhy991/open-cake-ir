@@ -87,6 +87,7 @@ def _seal_run(
     protocol_adherence: str,
     ralph: RalphController,
     analysis: Mapping[str, object] | None = None,
+    boundary_diagnostic: Mapping[str, object] | None = None,
 ) -> None:
     if ralph_stop_reason is None:
         ralph_stop_reason = ralph.stop_reason(
@@ -129,4 +130,5 @@ def _seal_run(
         protocol_adherence=protocol_adherence,
         endpoint_observation=endpoint_observation,
         endpoint=endpoint,
+        boundary_diagnostic=boundary_diagnostic,
     )

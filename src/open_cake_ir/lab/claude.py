@@ -20,7 +20,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Mapping
 
-from .faults import RunProtocolFault, ReportedProviderUsage
+from .faults import RunProtocolFault, ReportedProviderUsage, ProviderBoundaryDeclarationFault
 from .task_package import TaskPackage
 from .process import (
     SupervisedProcessOutputLimit, SupervisedProcessTimeout,
@@ -222,6 +222,18 @@ def observed_claude_quota(stdout: bytes) -> dict[str, object] | None:
     return None
 
 
+def observed_claude_quota_at_fault(stdout: bytes) -> dict[str, object]:
+    """A fault's quota attribution is an observation even when no notice exists.
+
+    F-2026-09-16-001: a gateway-transport death carries no rate-limit notice at
+    all, and an absent field reads as "was not looked at". The absence is
+    recorded as exactly that; a notice the stream does carry is still the last
+    notice's, per observed_claude_quota, never a substitution.
+    """
+    quota = observed_claude_quota(stdout)
+    return quota if quota is not None else {"observed": "no_notice"}
+
+
 def _metadata(event: Mapping) -> bool:
     """Admit the explicit native metadata shapes, not arbitrary system events."""
     kind = event.get("type")
@@ -390,6 +402,16 @@ class ParsedClaudeTurnEvents:
     """Identifiers actually emitted by the main conversation; aliases unresolved."""
 
 
+class ClaudeCandidateWriteUnwitnessed(ValueError):
+    """The terminal declared candidate_written; the stream carries no Write.
+
+    F-2026-09-16-002: the exact budget-boundary shape -- the structured terminal
+    tool completed (the declaration was made), every tool pairing closed (no
+    Write is in flight either), and no write exists to witness. Any other
+    incomplete lifecycle stays the generic refusal.
+    """
+
+
 def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: str,
                             event_contract: str = CLAUDE_EVENT_CONTRACT) -> ParsedClaudeTurnEvents:
     """Require one completed native stream, coherent session and successful writes."""
@@ -538,6 +560,13 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
     if compaction_phase is not None:
         raise ValueError("Claude compaction lifecycle is incomplete")
     if active_tools or not writes or len({path for path, _ in writes}) != 1:
+        if not writes and not active_tools and terminal_tool_completed:
+            # The structured terminal above already matched the expected message
+            # exactly, so candidate_written was declared true by the only channel
+            # that can. A declaration with no witness and nothing in flight is
+            # the named boundary shape, not a generic lifecycle break.
+            raise ClaudeCandidateWriteUnwitnessed(
+                "Claude terminal declared candidate_written without a witnessed write")
         raise ValueError("Claude candidate write lifecycle is incomplete")
     if terminal_tool_failed and not terminal_tool_completed:
         raise ValueError("Claude schema terminal tool did not recover")
@@ -551,6 +580,24 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
         tool_activity=tuple(activity) + model_activity,
         reported_models=tuple(models),
     )
+
+
+def candidate_write_declared_unwitnessed(raw_events: bytes, *, expected_terminal_message: str,
+                                         event_contract: str = CLAUDE_EVENT_CONTRACT) -> bool:
+    """Whether a retained stream is exactly the declared-but-unwitnessed boundary.
+
+    Replay's check, not a live decision: the fault payload's exception type is a
+    declaration, so the retained stdout is reparsed under the same expectation
+    and must raise the named shape by itself.
+    """
+    try:
+        parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal_message,
+                                 event_contract=event_contract)
+    except ClaudeCandidateWriteUnwitnessed:
+        return True
+    except (UnicodeError, ValueError, TypeError, OverflowError, RecursionError):
+        return False
+    return False
 
 
 def normalize_claude_turn(raw_events: bytes, *, candidate_path: Path, expected_change: str,
@@ -696,12 +743,21 @@ class ClaudeProviderAdapter:
                 expected_thread_id=invocation.thread_id, event_contract=event_contract,
                 submission_contract=submission_contract, arm=arm,
                 maximum_candidates_per_turn=maximum_candidates_per_turn)
+        except ClaudeCandidateWriteUnwitnessed as error:
+            # F-2026-09-16-002: the boundary shape gets its own fault type so the
+            # terminal conversion can be scoped to exactly it; while in flight it
+            # is still a provider fault like the generic parse refusal beside it.
+            raise ProviderBoundaryDeclarationFault(str(error), artifact_payloads={
+                "provider_stdout": completed.stdout, "provider_stderr": completed.stderr},
+                reported_usage=reported_claude_usage(completed.stdout, expected_model=requested_model,
+                    expected_thread_id=invocation.thread_id, event_contract=event_contract),
+                observed_quota=observed_claude_quota_at_fault(completed.stdout)) from error
         except (OSError, ValueError, TypeError, OverflowError, RecursionError) as error:
             raise RunProtocolFault("provider_fault", str(error), artifact_payloads={
                 "provider_stdout": completed.stdout, "provider_stderr": completed.stderr},
                 reported_usage=reported_claude_usage(completed.stdout, expected_model=requested_model,
                     expected_thread_id=invocation.thread_id, event_contract=event_contract),
-                observed_quota=observed_claude_quota(completed.stdout)) from error
+                observed_quota=observed_claude_quota_at_fault(completed.stdout)) from error
 
 
 class ClaudeRunProvider(QualifiedRunProvider):

@@ -103,6 +103,7 @@ def _replay_terminal(
     receipts: Mapping[tuple[int, str, str], EvaluationReceipt],
     searches_per_turn: int,
     invocation_counts: Mapping[str, int] | None = None,
+    boundary_converted: bool = False,
 ) -> bool:
     if not observations and not faults and endpoint_policy(lock.analysis_plan) is None:
         return False
@@ -125,6 +126,12 @@ def _replay_terminal(
         }
         for item in projected
     ]
+    if boundary_converted and projected[-1].state == "unreached":
+        # F-2026-09-16-002: the conversion exists because a checkpoint had
+        # already settled. A terminal whose own replayed facts leave the final
+        # checkpoint unreached has nothing settled to convert, so the marker
+        # cannot stand -- the fault terminal it displaced does.
+        return False
     checkpoint_payload = _object(
         checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
     )
@@ -158,17 +165,24 @@ def _replay_terminal(
     if endpoint_policy(lock.analysis_plan) is not None and state_turn != min(
             budget["maximum_turns"] + 1, len(observations) + 1):
         return False
-    expected_stop_reason = audit.protocol_adherence if faults else derive_ralph_stop_reason(
-        RalphBudget.from_mapping(budget),
-        turn=state_turn,
-        cumulative_provider_tokens=terminal_tokens,
-        elapsed_wall_seconds=float(elapsed_wall),
-        active_authoring_seconds=float(active_authoring),
-        evaluation_counts=expected_counts,
-        searches_per_turn=searches_per_turn,
-        profile_each_search_survivor=(
-            attribution_evaluation == _ATTRIBUTION_EVALUATION
-        ),
+    # A converted boundary terminal keeps its fault observation in the ledger
+    # but derives its stop reason like any normal budget terminal; every other
+    # faulted Run reports the adherence it ended with.
+    expected_stop_reason = (
+        audit.protocol_adherence
+        if faults and not boundary_converted
+        else derive_ralph_stop_reason(
+            RalphBudget.from_mapping(budget),
+            turn=state_turn,
+            cumulative_provider_tokens=terminal_tokens,
+            elapsed_wall_seconds=float(elapsed_wall),
+            active_authoring_seconds=float(active_authoring),
+            evaluation_counts=expected_counts,
+            searches_per_turn=searches_per_turn,
+            profile_each_search_survivor=(
+                attribution_evaluation == _ATTRIBUTION_EVALUATION
+            ),
+        )
     )
     if (
         ralph_state.get("kind") != "ralph_state_v1"
