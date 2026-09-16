@@ -14,6 +14,7 @@
   ],
   "operation_kinds": [
     "load",
+    "cast",
     "elementwise",
     "reduce",
     "store"
@@ -47,6 +48,11 @@
       "kind": "device_observation",
       "source": "the same earlier delivery's compiler/targets/gfx1151.json",
       "locator": "That document declared instruction contract libdevice.tanh.f32. It is not carried here: on ROCm Triton's libdevice resolves to ocml, so the CUDA spelling would claim NVIDIA libdevice numerics for a different function. This target declares no instruction contracts, as gfx938 does, until one is measured on the device."
+    },
+    {
+      "kind": "device_observation",
+      "source": "open-cake-ir Triton route on AMD Radeon Graphics gfx1151, ROCm 7.2.1, torch 2.9.1",
+      "locator": "This Target admitted only load/elementwise/reduce/store, the same four every non-NVIDIA Target here declares, and refused TARGET_OPERATION_UNSUPPORTED for a bf16 RMSNorm whose reduction is fp32 -- the standard LLM norm shape, where the dtype of storage and the dtype of arithmetic differ and a cast is what states the difference. Admitted after measuring the lowered kernel on the device against the SoL-ExecBench rmsnorm_h4096 reference: see the run recorded under tasks/025_rmsnorm_h4096 in the FlashInfer/SoL pack, observed 2026-09-16. No other Target is changed by this: gfx938 and the Apple families declare the same four kinds and no device was reached for them here."
     }
   ]
 }
