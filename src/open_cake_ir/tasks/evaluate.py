@@ -31,6 +31,7 @@ from open_cake_ir.tasks.flash_kmeans.workload import assignment_raw_sha256, clas
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda
 from open_cake_ir.evaluation.artifacts import executable_role
+from open_cake_ir.evaluation.local_broker import LOCAL_KINDS
 from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case
 from open_cake_ir.tasks.launch import parse_launch_manifest
@@ -102,6 +103,8 @@ class _Authority:
     payloads: Mapping[str, bytes]
     case_id: str
     baseline: LaunchableCandidate | None = None
+    # What the Study says about whether a latency can be reported for this run.
+    timed_assay_available: bool = True
 
 
 def _load_authority(request_path: Path) -> _Authority:
@@ -145,11 +148,18 @@ def _load_authority(request_path: Path) -> _Authority:
     if isinstance(manifest, (TensorLaunchManifest, MetalTensorLaunchManifest)):
         manifest.check_workload(workload, case_id)
     baseline = None
+    timed_assay_available = True
     evaluation = request.get('evaluation_protocol')
     if evaluation is not None:
         evaluation = _object(evaluation, 'request.evaluation_protocol')
         if sha256(_canonical_json_bytes(evaluation)).hexdigest() != request['evaluation_protocol_sha256']:
             raise ValueError('worker evaluation policy identity differs')
+        # Whether this run is timed is the Study's statement, not this worker's guess and
+        # not a property of the target read here. A Study for a target with no named
+        # timer carries a measurement-coverage limitation instead of a paired assay.
+        coverage = evaluation.get('measurement_coverage')
+        if isinstance(coverage, Mapping) and coverage.get('timed_assay') == 'unavailable':
+            timed_assay_available = False
         if paired_protocol(evaluation) is not None:
             if isinstance(manifest, MetalTensorLaunchManifest) != (evaluation['paired_timing']['kind'] in METAL_KINDS):
                 raise ValueError('paired assay backend differs from sealed manifest')
@@ -181,6 +191,7 @@ def _load_authority(request_path: Path) -> _Authority:
         payloads,
         case_id,
         baseline,
+        timed_assay_available=timed_assay_available,
     )
 
 
@@ -354,7 +365,16 @@ def _evaluate_paired_tile(authority, result, helper, admission):
 
 
 def _evaluate_tile_candidate(authority, result, helper, admission, collect_timing):
-    """Use the common oracle and one loaded module across correctness and timing."""
+    """Use the common oracle and one loaded module across correctness and timing.
+
+    `helper` is the timing host, required when timing is collected and unused otherwise.
+    It was always supplied, because only the CUDA path reached here, so a correctness-only
+    caller passing None depended on the argument never being touched -- an agreement two
+    functions were keeping without stating it. The CUDA caller still passes its helper on
+    both paths; what is stated here is that a timed run cannot proceed without one.
+    """
+    if collect_timing and helper is None:
+        raise ValueError("timed tile evaluation requires its Executor timing host")
     inputs = materialize_case(authority.workload, authority.case_id)
     loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
     counters = result['counters']
@@ -568,6 +588,35 @@ def _evaluate_metal_candidate(authority, result):
         'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
 
 
+def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None):
+    """Evaluate one sealed AMDGCN candidate for correctness on its admitted DCU.
+
+    Timing is deliberately absent, and refused rather than skipped quietly: `triton-dcu`
+    declares no timing source, so its Study carries a `measurement_coverage` limitation
+    instead of a paired assay, and a caller that asks for timing here is asking for a
+    latency under a timer nobody has named. Correctness, the oracle, the cohort shape and
+    the receipts are the same ones every tensor-tile evaluation uses.
+    """
+    from open_cake_ir.evaluation.triton_hip import observe_local_hip
+
+    if collect_timing:
+        raise ValueError(
+            f"{authority.candidate.target!r} declares no timing source, so this "
+            "evaluation reports correctness only; a timed assay for it is a separate, "
+            "evidence-gated act"
+        )
+    if admission is None:
+        try:
+            admission = observe_local_hip(authority.candidate.target)
+        except (ValueError, RuntimeError):
+            result["error"] = "gpu_admission_differs"
+            return
+    result["job_id"] = admission.broker_job_id
+    result["mode"] = "local_serialized"
+    result["admitted"] = True
+    _evaluate_tile_candidate(authority, result, None, admission, False)
+
+
 def _evaluate_candidate(
     authority: _Authority,
     result: dict[str, object],
@@ -580,12 +629,11 @@ def _evaluate_candidate(
         _evaluate_metal_candidate(authority, result)
         return
     if platform != "cubin":
-        # Named, not fallen through. The AMDGCN half admits a device and loads a
-        # candidate (F-2026-09-15-003) but has no launch or timing source, and a
-        # candidate is never stepped down onto another platform's path.
+        # This is the cubin row's own evaluate, reached again by the profile child. Named,
+        # not fallen through, and never stepped down onto another platform's path.
         raise ValueError(
-            f"no execution platform implements {platform!r}: this worker launches and "
-            "times a cubin and observes a Metal binary archive"
+            f"{platform!r} does not launch through this path: the hsaco row launches its "
+            "own, and a Metal binary archive is observed rather than launched"
         )
     helper = authority.executor.admit_host()
     if admission is None:
@@ -889,8 +937,11 @@ class _ExecutionPlatform:
 
 _PLATFORMS = {
     "cubin": _ExecutionPlatform(
+        # Whether a run is timed is the Study's statement, not this table's: a Study for
+        # a target with no named timer carries a measurement-coverage limitation instead
+        # of a paired assay, and this was an unconditional True.
         evaluate=lambda authority, result: _evaluate_candidate(
-            authority, result, collect_timing=True),
+            authority, result, collect_timing=authority.timed_assay_available),
         attribution="separate",
         profiled_child=True,
     ),
@@ -898,10 +949,15 @@ _PLATFORMS = {
         evaluate=_evaluate_metal_candidate,
         attribution="inside_evaluate",
     ),
-    # The AMDGCN half admits a device and loads a candidate (F-2026-09-15-003) and has
-    # neither a launch nor a timing source, so it is a row that says so rather than an
-    # absence another platform's branch would absorb.
-    "hsaco": _ExecutionPlatform(evaluate=None, attribution=None),
+    # The AMDGCN half admits a device, loads a candidate and launches it, verified on a
+    # DCU (F-2026-09-15-003). It reports correctness and no latency: gfx938 declares no
+    # timing source. `attribution` stays None because Nsight Compute is CUDA's profiler
+    # and a profile is not taken on another platform's behalf.
+    "hsaco": _ExecutionPlatform(
+        evaluate=lambda authority, result: _evaluate_hip_candidate(
+            authority, result, collect_timing=authority.timed_assay_available),
+        attribution=None,
+    ),
 }
 
 
@@ -912,7 +968,7 @@ def _platform(authority: _Authority) -> _ExecutionPlatform:
     if platform is None or platform.evaluate is None:
         raise ValueError(
             f"no execution platform implements {name!r}: this worker launches and times "
-            "a cubin and observes a Metal binary archive"
+            "a cubin, launches an hsaco, and observes a Metal binary archive"
         )
     return platform
 
@@ -927,7 +983,8 @@ def main() -> int:
     args = parser.parse_args()
     request_path = args.request.resolve(strict=True)
     result = _base_result(os.environ.get("METAL_JOB_ID", os.environ.get("GPUQ_JOB_ID", "gpuq-000000000000")))
-    if str(result["job_id"]).startswith("metal-"):
+    # Both local allocations issue their own prefix; the mode they share is the mode.
+    if str(result["job_id"]).split("-")[0] in LOCAL_KINDS:
         result["mode"] = "local_serialized"
     try:
         authority = _load_authority(request_path)

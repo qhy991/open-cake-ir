@@ -61,6 +61,66 @@ def _whole_dimension(index, dimension: int) -> bool:
             and index.offset == 0 and index.extent is None)
 
 
+def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
+                             num_warps: int, schedule_id: str,
+                             entry_point: str) -> SpecializationResult:
+    """Select an explicit CTA width for a pure single-role Triton program.
+
+    Caller selection stays visible in the Schedule. The operation graph, accesses,
+    ABI and workload metadata are unchanged. A different reduction implementation
+    may round differently; the existing external oracle must qualify each candidate.
+    No speedup, target transfer or bitwise equivalence is inferred from this rewrite.
+    """
+    def refused(reason: str, message: str) -> SpecializationResult:
+        return SpecializationResult(None, reason, message)
+
+    if type(num_warps) is not int or num_warps <= 0 or num_warps & (num_warps - 1):
+        return refused('warp_count', 'num_warps must be a positive power of two.')
+    try:
+        copied = deepcopy(dict(schedule))
+        assessed = compiler.assess(copied)
+        if not assessed.lowering_eligible:
+            return refused('input_refused', ', '.join(f.code for f in assessed.findings
+                if f.blocks_lowering or f.blocks_acceptance))
+        s = Schedule.from_dict(copied)
+    except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
+        return refused('input_refused', str(error))
+    if s.lowering.backend is not LoweringBackend.TRITON or s.target not in {'sm_100a', 'sm_103a'}:
+        return refused('target_route', 'This specialization has bounded NVIDIA Triton evidence only.')
+    maximum = compiler._revision.targets[s.target].resource_limits.maximum_warps_per_cta
+    if num_warps > maximum:
+        return refused('warp_count', f'Target {s.target} admits at most {maximum} warps per CTA.')
+    if (not isinstance(schedule_id, str) or not schedule_id or schedule_id == s.schedule_id
+        or not isinstance(entry_point, str) or not entry_point.isidentifier()):
+        return refused('result_identity', 'A distinct Schedule id and valid entry point are required.')
+    if (len(s.roles) != 1 or s.roles[0].warps != tuple(range(len(s.roles[0].warps)))
+        or s.roles[0].registers_per_thread is not None or s.residency is not None
+        or s.allocations or s.pipelines or s.barriers or s.tile_loops
+        or s.program_map is None or s.program_map.persistent
+        or any(op.waits or op.signals or op.pipeline for op in s.operations)
+        or any(b.space not in {MemorySpace.GLOBAL, MemorySpace.REGISTER}
+               or b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
+               or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent for b in s.buffers)):
+        return refused('execution_commitments', 'Require one zero-based role without explicit storage, loop, synchronization or residency commitments.')
+    if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
+                          OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
+        return refused('operation_domain', 'Only pure tensor arithmetic, CTA reductions and ordinary loads/stores are admitted.')
+    if num_warps == len(s.roles[0].warps):
+        return refused('unchanged', 'The requested width is already declared.')
+    copied['schedule_id'] = schedule_id
+    copied['lowering']['entry_point'] = entry_point
+    copied['roles'][0]['warps'] = list(range(num_warps))
+    try:
+        result = compiler.assess(copied)
+    except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
+        return refused('result_refused', str(error))
+    if not result.lowering_eligible:
+        return refused('result_refused', ', '.join(f.code for f in result.findings
+            if f.blocks_lowering or f.blocks_acceptance))
+    return SpecializationResult(result, 'applied',
+        'CTA width explicitly specialized; Lab must measure correctness, timing and resources.')
+
+
 def _row_axis(schedule: Schedule, rows: int):
     mapping = schedule.program_map
     if mapping is None or mapping.persistent or len(mapping.axes) != 1:

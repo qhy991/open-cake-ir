@@ -28,6 +28,8 @@ from .contraction import workload as contraction_math
 from .contraction.authoring import starter_source as contraction_starter_source
 from .aka_v3 import workload as aka_v3_math
 from .deepseek_v4 import workload as deepseek_v4_math
+from .solx_fib import workload as solx_fib_math
+from .solx_fib.authoring import starter_source as solx_fib_starter_source
 
 _TASKS = {
     add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
@@ -58,6 +60,10 @@ _TASKS = {
        for operator, _ in optimizers_math.TASKS.values()},
     **{operator: (contraction_math.validate_contraction_contract, WorkloadContract)
        for operator, _ in contraction_math.TASKS.values()},
+    # SoL-ExecBench, FlashInfer-Bench definitions. The `solx_fib_` prefix is the upstream
+    # authority; the SOL-ExecBench L1 subset registers separately under `solx_l1_`.
+    **{operator: (solx_fib_math.validate_solx_fib_contract, WorkloadContract)
+       for operator, _ in solx_fib_math.TASKS.values()},
 }
 
 def _registered_task(document: Mapping[str, object]):
@@ -112,6 +118,8 @@ def _tensor_math(workload: WorkloadContract):
         return aka_v3_math
     if operator in {name for name, _ in deepseek_v4_math.TASKS.values()}:
         return deepseek_v4_math
+    if operator in {name for name, _ in solx_fib_math.TASKS.values()}:
+        return solx_fib_math
     if operator in {"rmsnorm_fp32", "gemm_bias_bf16_fp32", "indexed_gather_bf16"}:
         validate_tile_contract(workload.document)
         return tile_math
@@ -171,6 +179,10 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
         document = activation_math.workload_document(task_name, backend=backend, rows=rows,
                                                      columns=columns)
         return document, activation_starter_source(WorkloadContract(document), case_id)
+    if task_name in solx_fib_math.TASKS:
+        document = solx_fib_math.workload_document(task_name, backend=backend, rows=rows,
+                                                   columns=columns)
+        return document, solx_fib_starter_source(WorkloadContract(document), case_id)
     document = normalization_math.workload_document(task_name, backend=backend, rows=rows, columns=columns)
     workload = WorkloadContract(document)
     return document, starter_source(workload, case_id)

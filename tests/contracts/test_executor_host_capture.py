@@ -317,6 +317,8 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
         arguments += [
             "--hip-profiler", "rocprofv3", str(paths["rocprofv3"]),
             "--hip-runtime-library", "libxml2.so.2", str(library),
+            "--hip-build-environment", "ROCM_PATH", str(root),
+            "--output", str(root / "host.json"),
         ]
         program = (
             "import platform, runpy; platform.system = lambda: 'Linux'; "
@@ -341,6 +343,8 @@ class HipExecutorHostCaptureContractTests(unittest.TestCase):
             self.assertEqual(host["kind"], "hip")
             self.assertEqual(host["platform"]["system"], "Linux")
             self.assertEqual(host["runtime"]["torch_hip_version"], "7.2.1")
+            # Declared, not inherited: the isolated build jail runs --clearenv.
+            self.assertEqual(host["runtime"]["build_environment"], {"ROCM_PATH": str(root)})
             self.assertEqual(set(host["packages"]), capture.HIP_PACKAGES)
             self.assertEqual(host["tools"]["profilers"][0]["kind"], "rocprofv3")
             self.assertTrue(json.loads(completed.stdout)["host_admitted"])

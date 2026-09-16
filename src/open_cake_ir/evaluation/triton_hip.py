@@ -144,6 +144,76 @@ def admit_exact_hip(
     return torch, triton, properties
 
 
+@dataclass(frozen=True)
+class HipDeviceAdmission:
+    """What a HIP evaluation was admitted against, recorded before anything launches.
+
+    The peer of `CudaDeviceAdmission`, and shaped by the same two questions its consumers
+    ask: which broker job owns this process, and which physical device answered. It is not
+    a copy of the CUDA one -- there is no CUPTI handle here and no exclusive cluster
+    lease, because a DCU is reached through the local broker that serializes one machine's
+    single device, the same allocation an Apple GPU uses.
+    """
+
+    broker_job_id: str
+    target: str
+    device_arch: str
+    device_name: str
+    warp_size: int
+    gpu_uuid: str
+
+
+def hip_admission_requirements(target_id: str) -> dict[str, object]:
+    """State the exact device contract for one AMDGCN target, from its own route.
+
+    `admit_exact_hip` takes the lowering requirements a build was compiled under. An
+    evaluation worker is handed a sealed candidate and not those requirements, and the
+    answer is not to add a field carrying them: the route is already the owner of which
+    backend, ISA and lane width this target compiles and runs under, and reading it here
+    is reading the same fact the build read, not a second copy of it.
+    """
+    from open_cake_ir.compiler.toolchain import triton_route
+
+    route = triton_route(target_id)
+    if route.gpu_backend != "hip":
+        raise ValueError(f"{target_id!r} does not lower through the HIP backend")
+    return {
+        "target": target_id,
+        "binary_role": route.binary_role,
+        "assembly_role": route.text_role,
+        "triton_target": {"backend": route.gpu_backend, "arch": str(route.architecture),
+                          "warp_size": route.warp_size},
+    }
+
+
+def observe_local_hip(target_id: str) -> HipDeviceAdmission:
+    """Admit this process's local-broker job and the one visible HIP device.
+
+    `admit_exact_hip` owns the device half and is reused verbatim; what is added here is
+    the allocation half, which the CUDA path gets from its cluster broker and this one
+    from the local serializer. A job id issued for another device family is refused: a
+    DCU evaluation recorded under a `metal-` job would misattribute the run exactly the
+    way a DCU latency recorded as CUPTI would misattribute the measurement.
+    """
+    from .local_broker import observe_local_job
+
+    requirements = hip_admission_requirements(target_id)
+    job = observe_local_job("hip")
+    torch, _triton, properties = admit_exact_hip(requirements)
+    target = require_object(requirements["triton_target"], "triton_target")
+    uuid = getattr(properties, "uuid", None)
+    return HipDeviceAdmission(
+        broker_job_id=job,
+        target=str(target["arch"]),
+        device_arch=str(getattr(properties, "gcnArchName", "")),
+        device_name=str(getattr(properties, "name", "")),
+        warp_size=int(properties.warp_size),
+        # A DTK device reports no UUID; the record says so rather than inventing one or
+        # leaving the reader to guess what an empty string meant.
+        gpu_uuid=str(uuid) if uuid else "not_reported_by_this_runtime",
+    )
+
+
 def load_generated_module(
     lowering: object,
 ) -> tuple[object, tempfile.TemporaryDirectory[str]]:
@@ -189,6 +259,96 @@ def artifact_records(payloads: Mapping[str, bytes]) -> dict[str, dict[str, objec
         role: {"sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)}
         for role, payload in sorted(payloads.items())
     }
+
+
+_AMDGPU_METADATA = re.compile(
+    r"^\s*\.amdgpu_metadata\s*$(.*?)^\s*\.end_amdgpu_metadata\s*$",
+    re.MULTILINE | re.DOTALL,
+)
+_KERNARG_SIZE = re.compile(r"^\s*\.kernarg_segment_size:\s*(\d+)\s*$", re.MULTILINE)
+_ARGUMENT_KIND = re.compile(r"^\s*\.value_kind:\s*(?P<kind>\S+)\s*$")
+_METADATA_KEY = re.compile(r"^(?P<indent>\s*)(?P<marker>-\s+)?\.(?P<name>[a-z_]+):")
+
+
+def _key_depth(match: "re.Match[str]") -> int:
+    """Where a key sits in the document, counting a list marker as indentation.
+
+    `  - .args:` and `    .kernarg_segment_size:` are siblings: the first key of a list
+    item is written after the dash, and the dash occupies the columns the item's later
+    keys are indented to. Reading the marker as zero-width made `.args` look shallower
+    than its own siblings, so the scan ran past the end of the list and into
+    `.unfolded_args`, counting every argument twice.
+    """
+    return len(match.group("indent")) + len(match.group("marker") or "")
+
+
+def _argument_kinds(block: str) -> list[str]:
+    """The value kinds under `.args`, and nothing else.
+
+    This emitter writes the same entries twice -- once under `.args` and again under
+    `.unfolded_args` -- so a value-kind count over the whole block counts every argument
+    twice, which is what it did. The list ends at the next key written at the same
+    indentation as `.args` itself, which is how the document nests.
+    """
+    lines = block.splitlines()
+    kinds: list[str] = []
+    depth: int | None = None
+    for line in lines:
+        key = _METADATA_KEY.match(line)
+        if depth is None:
+            if key is not None and key.group("name") == "args":
+                depth = _key_depth(key)
+            continue
+        if key is not None and _key_depth(key) <= depth and key.group("name") != "args":
+            break
+        kind = _ARGUMENT_KIND.match(line)
+        if kind is not None:
+            kinds.append(kind.group("kind"))
+    return kinds
+
+
+def amdgcn_kernarg_pointers(payload: bytes) -> int:
+    """Count the pointer arguments the emitted kernel actually declares.
+
+    The launch passes one address per declared argument, and the count is the kernel's
+    own fact: its `.amdgpu_metadata` lists every argument under `.args` with a value kind,
+    and a Triton AMDGCN kernel's are all `global_buffer`. Deriving it instead from the
+    route's scratch fields was wrong and the device said so -- an rmsnorm taking three
+    tensors declares five, the launcher passed four, and the kernel read its fifth pointer
+    out of uninitialized kernarg memory. One launch survived that because this kernel
+    never dereferences its scratch; a second did not.
+
+    Two of the kernel's own statements have to agree: the number of entries under `.args`,
+    and `.kernarg_segment_size` at eight bytes per pointer. A kernel that takes scalars
+    breaks that relation, and is refused here rather than counted as if it did not.
+    """
+    if not isinstance(payload, bytes) or not payload:
+        raise ValueError("AMDGCN artifact must contain assembly bytes")
+    try:
+        source = payload.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("AMDGCN artifact is not UTF-8 assembly") from error
+    blocks = _AMDGPU_METADATA.findall(source)
+    if len(blocks) != 1:
+        raise ValueError("AMDGCN artifact must carry exactly one .amdgpu_metadata block")
+    kinds = _argument_kinds(blocks[0])
+    if not kinds:
+        raise ValueError("AMDGCN kernel declares no arguments")
+    if any(kind != "global_buffer" for kind in kinds):
+        raise ValueError(
+            "AMDGCN kernel declares "
+            + ", ".join(sorted(set(kinds)))
+            + "; this launch packs pointer arguments alone"
+        )
+    segment = _KERNARG_SIZE.search(blocks[0])
+    if segment is None:
+        raise ValueError("AMDGCN kernel declares no kernarg segment size")
+    if int(segment.group(1)) != 8 * len(kinds):
+        raise ValueError(
+            f"AMDGCN kernarg segment is {segment.group(1)} bytes for {len(kinds)} pointer "
+            "arguments; this kernel does not take pointers alone"
+        )
+    return len(kinds)
 
 
 def amdgcn_resource_record(payload: bytes) -> dict[str, object]:

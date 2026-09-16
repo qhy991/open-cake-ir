@@ -332,5 +332,151 @@ class AmdgcnResourceParseTest(unittest.TestCase):
                     _parse_amdgcn_resources(stripped, self.ENTRY)
 
 
+class LaunchManifestTargetTest(unittest.TestCase):
+    """A sealed launch reads limits every Target declares, not a CUDA capability.
+
+    `CudaKernelSpec.from_dict` resolved its target through `compiler.target.cuda_target`,
+    which decodes an sm_1xxa capability first. Grid, block and shared-memory limits are
+    not CUDA's -- every Target document declares them -- so a gfx938 manifest was refused
+    as `unsupported exact CUDA target`: a vendor's words for a caller that named no
+    vendor. This is the same defect AGENTS.md records for `executable_role` in this layer.
+    """
+
+    def test_a_gfx938_launch_seals_against_its_own_declared_limits(self) -> None:
+        from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
+        spec = CudaKernelSpec.from_dict({
+            "target": "gfx938", "kernel_name": "cake_rmsnorm",
+            "grid": [128, 1, 1], "block": [256, 1, 1],
+            "dynamic_shared_memory_bytes": 0, "hidden_null_pointer_parameters": 1,
+        })
+        self.assertEqual((spec.target, spec.block_threads), ("gfx938", 256))
+        # 16 wave64 warps is what the document declares, and 1088 threads is past it.
+        with self.assertRaises(ValueError):
+            CudaKernelSpec.from_dict({
+                "target": "gfx938", "kernel_name": "cake_rmsnorm",
+                "grid": [128, 1, 1], "block": [1088, 1, 1],
+                "dynamic_shared_memory_bytes": 0, "hidden_null_pointer_parameters": 1,
+            })
+
+    def test_a_target_no_document_declares_is_refused_without_naming_a_vendor(self) -> None:
+        from open_cake_ir.compiler.target import TargetParseError
+        from open_cake_ir.evaluation.cuda_manifest import _launch_target
+        for absent in ("sm_999a", "gfx1", "apple_gpu_family99"):
+            with self.subTest(absent=absent):
+                with self.assertRaises(TargetParseError) as raised:
+                    _launch_target(absent)
+                self.assertIn(absent, str(raised.exception))
+                self.assertNotIn("CUDA", str(raised.exception))
+
+    def test_a_target_id_cannot_name_a_file_outside_the_target_directory(self) -> None:
+        from open_cake_ir.compiler.target import TargetParseError
+        from open_cake_ir.evaluation.cuda_manifest import _launch_target
+        for escape in ("../source_set", "/etc/passwd", "sm_103a/../../secret", "", None, 938):
+            with self.subTest(escape=escape):
+                with self.assertRaises(TargetParseError):
+                    _launch_target(escape)
+
+
+class MeasurementCoverageTest(unittest.TestCase):
+    """Where the DCU stops today, stated as a test rather than found by running one."""
+
+    def study(self, backend: str):
+        from open_cake_ir.tasks.normalization.study import study_template
+        from open_cake_ir.tasks.workloads import create_task
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        import json, tempfile
+        from pathlib import Path as _Path
+        document, source = create_task("silu", backend=backend, rows=2, columns=8)
+        directory = _Path(tempfile.mkdtemp())
+        workload_path = directory / "workload.json"
+        starter = directory / "starter.py"
+        workload_path.write_text(json.dumps(document))
+        starter.write_text(source)
+        root = _Path(__file__).resolve().parents[2]
+        return study_template(root, WorkloadContract(document), workload_path, starter,
+                              harness="claude-code", model="m", effort="high", turns=2,
+                              token_budget=12000)
+
+    def test_the_dcu_study_names_no_timer_and_says_so(self) -> None:
+        policy = self.study("triton-dcu")["evaluation_protocol"]
+        self.assertNotIn("paired_timing", policy)
+        self.assertEqual(policy["measurement_coverage"]["timed_assay"], "unavailable")
+        self.assertIn("gfx938", policy["measurement_coverage"]["reason"])
+        # Not "correctness_then_paired_cupti", which is what falling through produced on a
+        # machine where CUPTI is not installed.
+        for stage in ("search_evaluation", "confirmatory_evaluation"):
+            self.assertNotIn("cupti", policy[stage])
+            self.assertNotIn("metal", policy[stage])
+
+    def test_a_b300_study_still_names_cupti(self) -> None:
+        policy = self.study("triton-b300")["evaluation_protocol"]
+        self.assertEqual(policy["search_evaluation"], "correctness_then_paired_cupti")
+        self.assertNotIn("measurement_coverage", policy)
+
+    def test_the_hidden_pointer_count_comes_from_the_kernel_not_a_constant(self) -> None:
+        """Measured on the DCU, by segfault, after a correctness run had already passed.
+
+        An rmsnorm over three tensors emits a kernel declaring five pointer arguments and
+        a 40-byte kernarg segment. Deriving the hidden count from the route's scratch
+        fields gave one, the launcher passed four addresses, and the kernel read its fifth
+        out of uninitialized kernarg memory. One launch survived that -- this kernel never
+        dereferences its scratch -- which is why a passing correctness run did not catch
+        it and a second launch did.
+        """
+        from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
+        from open_cake_ir.lab.build import _hidden_pointers
+        from open_cake_ir.compiler.toolchain import triton_route
+
+        def metadata(pointers: int, segment: int | None = None) -> bytes:
+            """The shape this emitter writes, including the duplicate it writes twice."""
+            entries = "\n".join(
+                "      - .address_space: global\n"
+                f"        .offset:         {index * 8}\n"
+                "        .size:           8\n"
+                "        .value_kind:     global_buffer"
+                for index in range(pointers))
+            size = 8 * pointers if segment is None else segment
+            return ("\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n"
+                    f"{entries}\n    .group_segment_fixed_size: 0\n"
+                    f"    .kernarg_segment_size: {size}\n    .name:           k\n"
+                    # The emitter repeats every argument under `.unfolded_args`, and a
+                    # count over the whole block counted each one twice.
+                    f"    .unfolded_args:\n{entries}\n    .wavefront_size: 64\n...\n"
+                    "\t.end_amdgpu_metadata\n").encode()
+
+        self.assertEqual(amdgcn_kernarg_pointers(metadata(5)), 5)
+        # Three tensors and five declared pointers means two hidden, not the one the
+        # route's single scratch field would have given.
+        self.assertEqual(
+            _hidden_pointers(triton_route("gfx938"), {"amdgcn": metadata(5)}, 3), 2)
+        self.assertEqual(
+            _hidden_pointers(triton_route("gfx1151"), {"amdgcn": metadata(4)}, 2), 2)
+        # The CUDA route keeps the literal every retained CUDA manifest replays through.
+        self.assertEqual(_hidden_pointers(triton_route("sm_103a"), {}, 3), 2)
+
+    def test_a_kernel_that_is_not_pointers_alone_is_refused_rather_than_counted(self) -> None:
+        from open_cake_ir.compiler.target import TargetParseError  # noqa: F401
+        from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
+        from open_cake_ir.lab.build import _hidden_pointers
+        from open_cake_ir.compiler.toolchain import triton_route
+
+        mixed = ("\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n"
+                 "      - .address_space: global\n        .offset:         0\n"
+                 "        .size:           8\n        .value_kind:     global_buffer\n"
+                 "      - .offset:         8\n        .size:           4\n"
+                 "        .value_kind:     by_value\n"
+                 "    .kernarg_segment_size: 12\n...\n\t.end_amdgpu_metadata\n").encode()
+        with self.assertRaisesRegex(ValueError, "packs pointer arguments alone"):
+            amdgcn_kernarg_pointers(mixed)
+        # And a kernel declaring fewer pointers than the case binds tensors is refused
+        # rather than yielding a negative hidden count.
+        fine = ("\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n"
+                "      - .address_space: global\n        .offset:         0\n"
+                "        .size:           8\n        .value_kind:     global_buffer\n"
+                "    .kernarg_segment_size: 8\n...\n\t.end_amdgpu_metadata\n").encode()
+        with self.assertRaisesRegex(ValueError, "fewer than"):
+            _hidden_pointers(triton_route("gfx938"), {"amdgcn": fine}, 3)
+
+
 if __name__ == "__main__":
     unittest.main()

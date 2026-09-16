@@ -15,7 +15,7 @@ from open_cake_ir.lab.efficiency_policy import TASK_EFFICIENCY_V1
 from open_cake_ir.lab.ralph import RalphBudget
 # The portable registry, so a Study can name an NVIDIA device as readily as an
 # Apple one; open_cake_ir.tasks.apple covers only the latter.
-from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, device_name
+from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, timing_source, device_name
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
 SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"
@@ -42,7 +42,32 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
     dispatches = 64 if dispatches_per_sample is None else dispatches_per_sample
     if type(dispatches) is not int or not 1 <= dispatches <= 4096:
         raise ValueError("dispatches per timed command buffer must be 1..4096")
-    timer = "metal" if metal else "cupti"
+    # The backend declares its measurement source. This was `"metal" if metal else
+    # "cupti"`, so every non-Apple target inherited CUPTI by falling through -- and the
+    # DCU study it produced said `paired_cupti` on a machine with no CUPTI installed,
+    # which is a profiler's name on evidence that profiler never produced. A backend
+    # with no named source is refused here; a timing source is minted by measuring, not
+    # by adding a row.
+    timer = timing_source(backend)
+    if timer is None:
+        # Report the coverage limitation; do not inherit another target's timer. A Study
+        # with no `paired_timing` is already a valid one -- `paired_protocol` returns None
+        # for it -- and it says what is true: this target builds, seals and can be checked
+        # for correctness, and nothing has measured a latency on it under a named timer.
+        # A timing source is minted by measuring, not by adding a row here.
+        return {
+            "case_id": workload.document["validation"]["primary_case"],
+            "validation_case_ids": list(workload.case_ids),
+            "searches_per_turn": searches_per_turn,
+            "search_evaluation": "correctness_only",
+            "confirmatory_evaluation": "fresh_fixed_candidate_correctness_only",
+            "attribution_evaluation": "correctness_only",
+            "measurement_coverage": {
+                "timed_assay": "unavailable",
+                "reason": (f"{backend} declares no timing source; no timed assay is "
+                           f"stated for {workload.target!r} and no latency is reported"),
+            },
+        }
     policy = {
         "case_id": workload.document["validation"]["primary_case"],
         "validation_case_ids": list(workload.case_ids),
@@ -78,6 +103,16 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
 # launcher checks this same number against the observer's payload bound before a campaign
 # starts, and the two must not drift (F-2026-09-10-002).
 _ROUTE_CALLS_PER_COHORT = 28
+
+
+def _allocation_mode(target: object) -> str:
+    """How a run on this Target's backend reaches its device, as the registry declares."""
+    from open_cake_ir.tasks.devices import allocation, backend_for_target
+
+    backend = backend_for_target(target)
+    if backend is None:
+        raise ValueError("Workload target has no admitted backend")
+    return "local_serialized" if allocation(backend) == "local_broker" else "exclusive"
 
 
 def study_template(root: Path, workload, workload_path: Path, starter_path: Path, *,
@@ -142,7 +177,9 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         "execution": {"target": workload.target, "executor_revision": dict(CURRENT_RELEASE_BINDING),
                       "broker_execution_sha256": dict(CAMPAIGN_BINDING), "fixed_baseline": dict(CAMPAIGN_BINDING),
                       "gpu": {"name": device_name(workload.target), "count": 1,
-                              "mode": "local_serialized" if source.document["lowering"]["backend"] == "metal" else "exclusive"},
+                              # The allocation, not the lowering route: a DCU lowers through Triton and
+                              # serializes one local device.
+                              "mode": _allocation_mode(workload.target)},
                       "sandbox": provider["sandbox"]},
         "analysis_plan": {**json.loads(canonical(_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN)),
                           "endpoint_policy": NORMAL_BUDGET_TERMINAL,

@@ -174,6 +174,24 @@ def _capture_hip_library(soname: str, path: Path) -> dict[str, object]:
     return {**_file_record(path.resolve(strict=True), str(path)), "soname": soname}
 
 
+def _capture_build_environment(entries: list[list[str]]) -> dict[str, str]:
+    """Admit the environment this host's toolchain needs inside the isolated build jail.
+
+    Every absolute path a value names must exist here, now, so a missing directory is a
+    capture-time error rather than a jail that starts and then cannot find the runtime it
+    was pointed at. Values are kept verbatim: a search path's order is the loader's.
+    """
+    admitted: dict[str, str] = {}
+    for name, value in entries:
+        if name in admitted:
+            raise ValueError(f"build environment declares {name!r} twice")
+        for part in value.split(":"):
+            if part.startswith("/") and not Path(part).is_dir():
+                raise ValueError(f"build environment {name} names a missing directory: {part}")
+        admitted[name] = value
+    return admitted
+
+
 def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
     if arguments.host_kind == "hip" and set(arguments.package) != HIP_PACKAGES:
         raise ValueError("Executor HIP package set differs")
@@ -201,7 +219,16 @@ def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
             },
             # This is the required topology. Exact device observation is owned by
             # admit_exact_hip and requires the Compiler's lowering requirements.
-            "runtime": {"backend": "hip", "torch_hip_version": hip, "visible_device_count": 1},
+            # `build_environment` is what this host's toolchain needs inside the
+            # isolated build jail, which runs --clearenv. On the Hygon DTK host that is
+            # LD_LIBRARY_PATH, without which libgalaxyhip.so.5 is mounted and unfindable
+            # because ldconfig does not know /opt/dtk, and ROCM_PATH, without which
+            # clang-18 reports "cannot find ROCm device library". Both live only in
+            # /opt/dtk/env.sh, which the jail correctly discards. A CUDA host declares
+            # none and keeps the empty environment it has always had.
+            "runtime": {"backend": "hip", "torch_hip_version": hip, "visible_device_count": 1,
+                        "build_environment": _capture_build_environment(
+                            arguments.hip_build_environment)},
             "tools": {
                 "device_monitor": _capture_hip_tool(
                     arguments.device_monitor[0], Path(arguments.device_monitor[1])
@@ -281,6 +308,11 @@ def main(argv: list[str] | None = None) -> int:
                         metavar=("KIND", "PATH"))
     parser.add_argument("--hip-runtime-library", nargs=2, action="append", default=[],
                         metavar=("SONAME", "PATH"))
+    parser.add_argument("--hip-build-environment", nargs=2, action="append", default=[],
+                        metavar=("NAME", "VALUE"),
+                        help="environment variable the isolated build jail must be given; "
+                             "repeat per variable. The jail clears the environment, so a "
+                             "value only an env.sh knows about is declared here or lost.")
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT,
                         help="checkout whose runtime/hosts/<target>.json this capture writes")
     parser.add_argument("--target", required=True,

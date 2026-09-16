@@ -91,3 +91,4 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [0064: Task incumbents are an append-only Lab projection](0064-task-incumbents-are-an-append-only-lab-projection.md)
 
 - [0065: Source identity is the commit, and a host capture is its own document](0065-source-identity-is-the-commit.md)
+- [0066: SoL-ExecBench task import, namespace and gate translation](0066-sol-execbench-task-import.md)

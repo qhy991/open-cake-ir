@@ -10,7 +10,8 @@ from hashlib import sha256
 from typing import Mapping, Protocol
 
 from open_cake_ir.compiler import Finding, FindingCategory, FindingSeverity
-from open_cake_ir.compiler.toolchain import project_triton_kernel, validate_triton_kernel
+from open_cake_ir.compiler.toolchain import (project_triton_kernel, triton_route,
+                                             validate_triton_kernel)
 from open_cake_ir.evaluation import LaunchableCandidate
 from open_cake_ir.evaluation.core import TensorLaunchManifest
 
@@ -52,6 +53,25 @@ class ToolchainBuilder(Protocol):
         """Build with the Campaign-pinned toolchain and retain artifact roles."""
 
 
+def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> int:
+    """Pointers the kernel takes beyond the Workload's tensors, from the kernel itself."""
+    if route.gpu_backend != "hip":
+        # Triton's two CUDA scratch pointers, the count every retained CUDA manifest
+        # replays through. Reading it from the artifact here would restate a settled
+        # relation on a path nothing has reported a problem with.
+        return 2
+    from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
+
+    declared = amdgcn_kernarg_pointers(stages[route.text_role])
+    hidden = declared - tensor_count
+    if hidden < 0:
+        raise ValueError(
+            f"the emitted kernel declares {declared} pointer arguments, fewer than the "
+            f"{tensor_count} tensors this Workload case binds"
+        )
+    return hidden
+
+
 class TritonToolchainBuilder:
     """Compile the canonical parametric Triton lowering to its exact CUDA CUBIN."""
 
@@ -77,6 +97,7 @@ class TritonToolchainBuilder:
             raise ValueError("Triton build target differs from the Workload")
         if self._isolated is None:
             raise RunProtocolFault("harness_fault", "paired Triton requires filesystem-isolated compilation")
+        route = triton_route(request.target)
         kernel_source = (project_triton_kernel(request.source, requirements)
                          if request.source_role == "lowered_source" else request.source)
         validate_triton_kernel(kernel_source, requirements)
@@ -90,18 +111,25 @@ class TritonToolchainBuilder:
             "target": request.target, "kernel_name": kernel_name, "grid": grid,
             "block": [compilation.threads_per_cta, 1, 1],
             "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
-            "hidden_null_pointer_parameters": 2,
+            # How many pointers the kernel takes beyond its tensors is the kernel's own
+            # fact, and for AMDGCN it is written in the emitted `.amdgpu_metadata`.
+            # Deriving it from the route's scratch fields was a guess, and the device
+            # refused it: an rmsnorm over three tensors declares five pointer arguments,
+            # the launcher passed four, and the kernel read its fifth out of
+            # uninitialized kernarg memory. The CUDA route keeps its own literal, which
+            # every retained CUDA manifest has replayed through.
+            "hidden_null_pointer_parameters": _hidden_pointers(
+                route, stages, len(self._workload.tensor_abi(self._case_id))),
         }
         manifest = (TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch))
         manifest_bytes = canonical_json_bytes(manifest.as_dict())
+        # The route names the artifacts its backend produces -- ptx/cubin for CUDA,
+        # amdgcn/hsaco for AMDGCN. Naming them here instead meant the one place that
+        # seals a candidate could only seal a CUDA one.
         payloads = {
             request.source_role: request.source,
             "compiler_expanded_source": stages["source"],
-            "ttir": stages["ttir"],
-            "ttgir": stages["ttgir"],
-            "llir": stages["llir"],
-            "ptx": stages["ptx"],
-            "cubin": stages["cubin"],
+            **{role: stages[role] for role in route.artifact_roles if role != "source"},
             "launch_manifest": manifest_bytes,
         }
         return LaunchableCandidate(

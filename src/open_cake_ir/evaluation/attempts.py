@@ -9,13 +9,20 @@ from typing import Callable, Mapping
 from .core import EvaluationReceipt, LaunchableCandidate
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-_JOB_ID = re.compile(r"^(gpuq|metal)-[0-9a-f]{12}$")
+# A job id names the allocator that issued it, not the API the candidate uses. `gpuq` is
+# the cluster allocator and `metal` was the only local one; a DCU is reached the same way
+# an Apple device is and issues `hip` ids, because a DCU job recorded as a Metal one would
+# be the same mislabelling as a DCU latency recorded as CUPTI.
+_LOCAL_PREFIXES = ("metal", "hip")
+_JOB_ID = re.compile(r"^(gpuq|metal|hip)-[0-9a-f]{12}$")
+_JOB_MODES = {"gpuq": "exclusive", "metal": "local_serialized", "hip": "local_serialized"}
 
 
 def valid_job_mode(job_id: str, mode: str) -> bool:
     match = _JOB_ID.fullmatch(job_id) if isinstance(job_id, str) else None
-    return bool(match and mode == {"gpuq": "exclusive", "metal": "local_serialized"}[match[1]]
-                and (match[1] != "metal" or job_id != "metal-000000000000"))
+    return bool(match and mode == _JOB_MODES[match[1]]
+                and (match[1] not in _LOCAL_PREFIXES
+                     or job_id != f"{match[1]}-000000000000"))
 
 
 @dataclass(frozen=True)

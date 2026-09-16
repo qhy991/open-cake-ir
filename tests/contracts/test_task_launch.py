@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import shutil
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -150,8 +151,26 @@ class TaskLaunchTests(unittest.TestCase):
                 assay = paired_protocol(policy)
                 metal = device["route"] == "metal"
                 self.assertEqual(study["execution"]["target"], device["target"])
-                self.assertEqual(study["execution"]["gpu"]["mode"], "local_serialized" if metal else "exclusive")
                 self.assertEqual(policy["validation_case_ids"], list(workload.case_ids))
+                if device["timing_source"] is None:
+                    # A backend with no named timing source states the coverage
+                    # limitation instead of inheriting another target's timer. The
+                    # template used to read `metal ? metal : cupti`, so the DCU study
+                    # said `paired_cupti` on a machine with no CUPTI installed.
+                    self.assertIsNone(assay)
+                    self.assertNotIn("paired_timing", policy)
+                    self.assertEqual(policy["measurement_coverage"]["timed_assay"],
+                                     "unavailable")
+                    self.assertIn(device["target"],
+                                  policy["measurement_coverage"]["reason"])
+                    for stage in ("search_evaluation", "confirmatory_evaluation"):
+                        self.assertNotIn("paired", policy[stage])
+                    continue
+                # Two axes, read separately: the route picks the paired assay and its
+                # cohort shape, the allocation picks how the device is reached.
+                local = device["allocation"] == "local_broker"
+                self.assertEqual(study["execution"]["gpu"]["mode"],
+                                 "local_serialized" if local else "exclusive")
                 self.assertEqual(policy["paired_timing"]["kind"], PAIRED_METAL_BATCHED_KIND if metal else PAIRED_KIND)
                 self.assertEqual(assay.route_calls_per_cohort, 28 if metal else 42)
                 self.assertEqual((len(assay.pair_order), assay.samples_per_cohort,
@@ -166,12 +185,95 @@ class TaskLaunchTests(unittest.TestCase):
                         study_template(ROOT, workload, path, starter, harness="claude-code",
                                        model="exact-model", effort="high", dispatches_per_sample=64)
 
+    def test_a_triton_route_can_be_reached_by_a_local_broker(self):
+        """The DCU case: Triton's toolchain, an Apple-shaped allocator, no gpu-run.
+
+        Reading the allocator off the route refused this combination outright, with
+        "Triton execution requires the existing gpu-run allocator" -- a CUDA cluster
+        allocator a Hygon DCU has no use for.
+        """
+        executor = SimpleNamespace(document={"host_environment": {
+            "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
+            "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]}}})
+        with patch.object(launch_task, '_triton_runtime_roots', return_value=['/unit-test', '/usr']), \
+             patch.object(launch_task.shutil, 'which', return_value=None):
+            runtime = launch_task._runtime_config(
+                self.workspace, executor, Path('/unit-test/provider'), 'triton',
+                allocation='local_broker')
+        command = runtime['broker']['command']
+        self.assertIn('open_cake_ir.evaluation.local_broker', command)
+        self.assertNotIn('gpu-run', ' '.join(command))
+        # Its own lock and its own job prefix; a DCU run is not recorded as a Metal one.
+        self.assertEqual(command[command.index('--kind') + 1], 'hip')
+        # The toolchain is still Triton's, because the route did not change.
+        self.assertEqual(runtime['toolchain']['triton_version'], '3.6.0')
+        self.assertNotIn('output_root', runtime['toolchain'])
+        with self.assertRaisesRegex(ValueError, 'gpu_run allocation'):
+            launch_task._runtime_config(
+                self.workspace, executor, Path('/unit-test/provider'), 'triton',
+                allocation='local_broker', gpu_run=Path('/unit-test/gpu-run'))
+
+    def test_the_jail_is_found_on_this_host_and_refused_by_name_when_absent(self):
+        """`/usr/bin/bwrap` was a constant; it is a fact about a host, not about bwrap.
+
+        The DCU container installs its own userspace, and a path written against another
+        distribution surfaces as a FileNotFoundError from inside the isolated compiler,
+        naming a path no one on this host chose.
+        """
+        jail = self.directory / 'bwrap'
+        jail.write_bytes(b'#!/bin/sh\n')
+        declared = {"tools": {"build_tools": [
+            {"kind": "hipcc", "path": "/opt/dtk/bin/hipcc"}, {"kind": "bwrap", "path": str(jail)}]}}
+        with patch.object(launch_task.shutil, 'which', return_value=None):
+            # A host that pins it is believed over the conventional location.
+            self.assertEqual(launch_task._bubblewrap(declared), str(jail))
+            # Released HIP and CUDA descriptors pin no jail: HIP_BUILD_TOOLS is closed and
+            # has no bwrap, so every captured host is silent here and PATH decides.
+            with self.assertRaisesRegex(ValueError, 'bubblewrap'):
+                launch_task._bubblewrap({"tools": {"build_tools": []}})
+        with patch.object(launch_task.shutil, 'which', return_value=str(jail)):
+            self.assertEqual(launch_task._bubblewrap({}), str(jail))
+
+    def test_a_hip_host_declares_the_environment_its_jail_would_otherwise_lose(self):
+        """The jail runs --clearenv, and two DTK facts live only in /opt/dtk/env.sh.
+
+        Measured on the DCU, one after the other: without LD_LIBRARY_PATH the jailed build
+        failed with "libgalaxyhip.so.5: cannot open shared object file" while /opt was
+        mounted and the file was sitting in it, because ldconfig does not know /opt/dtk;
+        with it, the build reached the AMDGCN compile and clang-18 reported "cannot find
+        ROCm device library", because ROCM_PATH was gone too. Same kind of fact twice, so
+        one declaration rather than a field each. A CUDA host declares none -- torch finds
+        its libraries through RPATH.
+        """
+        environment = {"LD_LIBRARY_PATH": "/opt/dtk/lib:/opt/hyhal/lib",
+                       "ROCM_PATH": "/opt/dtk"}
+        hip = SimpleNamespace(document={"host_environment": {
+            "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
+            "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]},
+            "runtime": {"backend": "hip", "build_environment": environment}}})
+        cuda = SimpleNamespace(document={"host_environment": {
+            "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
+            "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]}}})
+        with patch.object(launch_task, "_triton_runtime_roots", return_value=["/opt", "/usr"]):
+            self.assertEqual(launch_task._triton_toolchain_config(hip)["build_environment"],
+                             environment)
+            self.assertEqual(launch_task._triton_toolchain_config(cuda)["build_environment"], {})
+        # Every absolute path the declaration names is mounted, so the jail is never
+        # pointed at something it cannot see.
+        roots = [Path(root) for root in
+                 launch_task._triton_runtime_roots(Path("/usr/local/bin/python"),
+                                                   ("/opt/dtk/lib", "/opt/hyhal/lib", "/opt/dtk"))]
+        for declared in (Path("/opt/dtk/lib"), Path("/opt/hyhal/lib"), Path("/opt/dtk")):
+            self.assertTrue(any(declared == root or declared.is_relative_to(root)
+                                for root in roots), (declared, roots))
+
     def test_cuda_runtime_uses_existing_allocator_and_same_isolated_toolchain(self):
         executor = SimpleNamespace(document={"host_environment": {
             "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"}}})
         with patch.object(launch_task, '_triton_runtime_roots', return_value=['/unit-test', '/usr']), \
              patch.object(launch_task.shutil, 'which', return_value='/usr/bin/true'):
             runtime = launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'triton',
+                allocation='gpu_run',
                 gpu_run=Path('/unit-test/gpu-run'), broker_socket=Path('/unit-test/broker.sock'))
             with patch.object(launch_task, 'IsolatedTritonCompiler') as compiler, \
                  patch.object(launch_task, 'TritonToolchainBuilder'):
@@ -189,11 +291,53 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertNotIn('open_cake_ir.evaluation.local_broker', command)
         self.assertNotIn('--env', command)
         self.assertGreater(runtime['broker']['timeout_seconds'], 3600)
-        with patch.object(launch_task.shutil, 'which', return_value=None), self.assertRaisesRegex(ValueError, 'gpu-run'):
-            launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'triton')
-        with self.assertRaisesRegex(ValueError, 'Triton route'):
+        with patch.object(launch_task.shutil, 'which', return_value=None), \
+                self.assertRaisesRegex(ValueError, 'gpu-run'):
+            launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'triton',
+                                        allocation='gpu_run')
+        with self.assertRaisesRegex(ValueError, 'gpu_run allocation'):
             launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'metal',
-                                       broker_socket=Path('/unit-test/broker.sock'))
+                                        allocation='local_broker',
+                                        broker_socket=Path('/unit-test/broker.sock'))
+        with self.assertRaisesRegex(ValueError, 'allocation'):
+            launch_task._runtime_config(self.workspace, executor, Path('/unit-test/provider'), 'triton',
+                                        allocation='slurm')
+
+    def test_a_broken_allocator_is_found_before_a_token_is_spent(self):
+        """Measured at the cost of a full authoring turn, so it is checked by using it.
+
+        The launcher's gpu-run default socket was not the socket the B300 host's broker
+        listens on. The campaign authored a candidate, sealed it, reached the allocator
+        and faulted with "cannot reach broker" -- 77103 provider tokens for a run that
+        could never be evaluated (F-2026-09-16-001). The allocator is the one participant
+        a launch cannot check by reading a file.
+        """
+        false = shutil.which("false") or "/usr/bin/false"
+        runtime = {"broker": {"cwd": str(self.directory),
+                              "command": [false, "--label", "x", "--", "evaluator"]}}
+        with self.assertRaisesRegex(ValueError, "refused a trivial lease"):
+            launch_task._admit_allocator(runtime)
+        # The probe replaces the evaluator with /bin/true and keeps everything the
+        # campaign will actually pass the allocator.
+        true = shutil.which("true") or "/usr/bin/true"
+        recorded = {}
+
+        def record(probe, **kwargs):
+            recorded["probe"] = probe
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+        with patch.object(launch_task.subprocess, "run", record):
+            launch_task._admit_allocator(
+                {"broker": {"cwd": str(self.directory),
+                            "command": [true, "--mode", "exclusive", "--", "evaluator",
+                                        "--request", "r"]}})
+        self.assertEqual(recorded["probe"],
+                         [true, "--mode", "exclusive", "--", "/bin/true"])
+        # A local broker takes no lease, so there is nothing to probe and nothing is run.
+        with patch.object(launch_task.subprocess, "run") as never:
+            launch_task._admit_allocator(
+                {"broker": {"cwd": str(self.directory), "command": ["python", "-m", "b"]}})
+        never.assert_not_called()
 
     def test_failed_full_gate_prevents_executor_and_provider_work(self):
         self.workspace.mkdir()
@@ -259,9 +403,20 @@ class TaskLaunchTests(unittest.TestCase):
         with patch.object(launch_task.Compiler, "load", return_value=compiler), \
              patch.object(launch_task, "resolve_executor", side_effect=ValueError("source differs")), \
              patch.object(launch_task.MetalArchiveHost, "from_executor") as host:
-            with self.assertRaisesRegex(ValueError, "committed host capture for 'apple_gpu_family7'; source differs"):
+            # The refusal names the target whose capture is stale, not one vendor: the
+            # same boundary refuses a CUDA or HIP target and used to report it as a
+            # missing Metal Executor.
+            with self.assertRaisesRegex(
+                    ValueError,
+                    "committed host capture for 'apple_gpu_family7'; source differs"):
                 launch_task._admit_stack(ROOT, self.workspace, "apple_gpu_family7")
             host.assert_not_called()
+        second = self.directory / "second-task"
+        second.mkdir()
+        with patch.object(launch_task.Compiler, "load", return_value=compiler), \
+             patch.object(launch_task, "resolve_executor", side_effect=ValueError("source differs")):
+            with self.assertRaisesRegex(ValueError, "released Executor for 'gfx938'"):
+                launch_task._admit_stack(ROOT, second, "gfx938", "triton")
 
     def test_executor_for_another_apple_gpu_is_refused_before_archive_helper_admission(self):
         self.workspace.mkdir()
@@ -306,8 +461,10 @@ class TaskLaunchTests(unittest.TestCase):
                 # Metal runs serialized on one local device; the CUDA and AMD routes
                 # take the GPU exclusively. The mode follows the route, as the study
                 # template has always had it, so the expectation follows it too.
+                # The allocation decides this, not the route: a DCU lowers through
+                # Triton and serializes one local device.
                 mode = ("local_serialized"
-                        if launch_task.DEVICE_BACKENDS[backend]["route"] == "metal"
+                        if launch_task.DEVICE_BACKENDS[backend]["allocation"] == "local_broker"
                         else "exclusive")
                 self.assertEqual(study["execution"]["gpu"],
                                  {"name": device, "count": 1, "mode": mode})
@@ -458,6 +615,43 @@ class TaskLaunchTests(unittest.TestCase):
     def test_baseline_only_builds_without_provider_qualification_or_campaign(self):
         self._wiring(baseline_only=True, backend='triton-b300')
 
+    def test_baseline_only_needs_no_provider_and_writes_no_runtime_binding(self):
+        """The flag's own help says it stops before provider qualification.
+
+        It resolved the provider executable anyway, three statements before the workspace
+        was created, and refused a DCU baseline build for not having `claude` installed in
+        a compile container -- a refusal about the stage the flag exists to skip. The
+        runtime config is the same: it binds the provider and the allocator, and nothing
+        on this path reads it.
+        """
+        executor = SimpleNamespace(document={"host_environment": {
+            "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
+            "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]}}})
+        args = self.args() + ["--baseline-only"]
+        args[args.index("--backend") + 1] = "triton-dcu"
+        args[args.index("--columns") + 1] = "8"
+        with patch.object(launch_task.shutil, "which", return_value=None) as which, \
+             patch.object(launch_task, "_admit_stack",
+                          return_value=(Mock(), executor, Mock(), {"fixture": "compiler"})), \
+             patch.object(launch_task, "_prepare_baseline",
+                          return_value=self.directory / "baseline.json"), \
+             patch.object(launch_task, "load_baseline_bundle", return_value=Mock()), \
+             patch.object(launch_task, "candidate_identity", return_value={"unit_test": True}), \
+             patch.object(launch_task, "admit_baseline_selection"), \
+             patch.object(launch_task, "validate_pair_candidates"), \
+             patch.object(launch_task, "_qualify") as qualify, \
+             patch.object(launch_task, "TaskLab") as lab, \
+             contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertEqual(launch_task.main(args), 0)
+        qualify.assert_not_called()
+        lab.assert_not_called()
+        self.assertIn(str(self.directory / "baseline.json"), stdout.getvalue())
+        self.assertFalse((self.workspace / "runtime.json").exists())
+        # Nothing looked for a harness on PATH; the only `which` this path could make is
+        # the jail's, and the Executor host declared that one.
+        self.assertNotIn("claude", [call.args[0] for call in which.call_args_list])
+        self.assertTrue((self.workspace / "prepared-baseline.json").exists())
+
     def test_baseline_abi_failure_precedes_provider_qualification(self):
         self._wiring(baseline_error=ValueError('baseline ABI differs'), backend='triton-b300')
 
@@ -476,7 +670,8 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertEqual(runtime["provider"]["workspace_root"], str(self.workspace/"actors"))
         self.assertEqual(runtime["toolchain"], {"output_root":str(self.workspace/"builds")})
         self.assertEqual(runtime["broker"]["command"], ["/unit-test/python", "-I", str(ROOT / "src/open_cake_ir/evaluation/source_bootstrap.py"),
-                         "open_cake_ir.evaluation.local_broker", "--worker-module", "open_cake_ir.tasks.evaluate"])
+                         "open_cake_ir.evaluation.local_broker", "--kind", "metal",
+                         "--worker-module", "open_cake_ir.tasks.evaluate"])
         self.assertEqual(set(json.loads((self.workspace/"execution-bindings.json").read_text())),
                          {"schema_version","qualification_path","qualification_anchor_path","runtime_config_path","fixed_baseline_bundle_path","fixed_baseline_selection"})
         self.assertFalse((self.workspace/"actors").exists())  # The existing composer creates it once.

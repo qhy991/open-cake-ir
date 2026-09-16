@@ -13,6 +13,7 @@ import pwd
 import shutil
 import subprocess
 import sys
+from typing import Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -35,6 +36,8 @@ from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
 from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
 from open_cake_ir.tasks.optimizers.workload import TASKS as _OPTIMIZER_TASKS
 from open_cake_ir.tasks.contraction.workload import TASKS as _CONTRACTION_TASKS
+from open_cake_ir.tasks.solx_fib.workload import (
+    SPECS as _SOLX_FIB_SPECS, default_rows as _solx_fib_rows, launchable_tasks as _solx_fib_launchable)
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.reporting import primary_summary
@@ -49,6 +52,12 @@ REDUCTION_TASKS = tuple(_REDUCTION_TASKS)
 OPTIMIZER_TASKS = tuple(_OPTIMIZER_TASKS)
 # The arithmetic-bound family declares a K extent, as the legacy GEMM task does.
 CONTRACTION_TASKS = tuple(_CONTRACTION_TASKS)
+# SoL-ExecBench tasks carry their upstream definition's constant axis in their own name,
+# so only the batch extent is a flag here. The launcher offers the tasks some registered
+# backend admits; three of the pack's RMSNorm captures have a hidden size that is not a
+# power of two, which no registered route can tile, and the task module reports them
+# rather than pretending the pack is smaller.
+SOLX_FIB_TASKS = _solx_fib_launchable()
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -116,6 +125,10 @@ def _route_of(backend: str) -> str:
     return DEVICE_BACKENDS[backend]["route"]
 
 
+def _allocation_of(backend: str) -> str:
+    return DEVICE_BACKENDS[backend]["allocation"]
+
+
 def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal"):
     compiler = Compiler.load(root, root / "compiler/revision.json")
     gate = compiler.check_corpus()
@@ -144,7 +157,7 @@ def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal")
         "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
 
 
-def _triton_runtime_roots(interpreter: Path) -> list[str]:
+def _triton_runtime_roots(interpreter: Path, declared_paths: tuple[str, ...] = ()) -> list[str]:
     """Directories the jail must carry for the admitted interpreter to run inside it.
 
     The interpreter the Executor pins may be a venv whose `bin/python` is a symlink into
@@ -154,6 +167,10 @@ def _triton_runtime_roots(interpreter: Path) -> list[str]:
     Duplicates and nested paths are dropped so bwrap is not handed the same mount twice.
     """
     roots = [Path("/usr"), Path("/lib"), Path("/lib64"), Path("/opt")]
+    # A path the host's declared build environment names, outside these, is mounted too;
+    # the jail refuses an environment it cannot see rather than starting and then failing
+    # to load the runtime it was pointed at.
+    roots.extend(Path(entry) for entry in declared_paths)
     for candidate in (interpreter, Path(os.path.realpath(interpreter))):
         # `.../prefix/bin/python` -> `.../prefix`
         roots.append(candidate.parents[1])
@@ -168,12 +185,48 @@ def _triton_runtime_roots(interpreter: Path) -> list[str]:
     return [str(root) for root in admitted]
 
 
+def _bubblewrap(host) -> str:
+    """Where this host keeps the jail every isolated Triton build runs inside.
+
+    `/usr/bin/bwrap` was written here as a constant, which is the location on the hosts
+    this route was built against and not a property of bubblewrap. A host that installs
+    it elsewhere -- or does not install it -- then fails inside the compiler's
+    `resolve(strict=True)` with a FileNotFoundError naming a path nobody chose, instead
+    of a refusal naming the tool that is missing.
+
+    The Executor host may pin it, as it pins every other build tool, but no released HIP
+    or CUDA descriptor does: `HIP_BUILD_TOOLS` is a closed set that does not include it,
+    so every host captured so far is silent here and discovery is the authority. The
+    bytes actually used are not unrecorded either way -- the isolated build writes
+    `bubblewrap_sha256` into its own build record.
+    """
+    declared = next(
+        (tool.get("path") for tool in host.get("tools", {}).get("build_tools", [])
+         if isinstance(tool, Mapping) and tool.get("kind") == "bwrap"),
+        None,
+    )
+    candidates = [declared, shutil.which("bwrap"), "/usr/bin/bwrap"]
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate and Path(candidate).is_file():
+            return str(Path(candidate).resolve(strict=True))
+    raise ValueError(
+        "isolated Triton builds require bubblewrap; no `bwrap` executable is declared by "
+        "the released Executor host, on PATH, or at /usr/bin/bwrap"
+    )
+
+
 def _triton_toolchain_config(executor):
     """One explicit configuration for baseline preparation and the runtime builder."""
     host = executor.document["host_environment"]
     interpreter = Path(str(host["python"]["invocation_path"]))
-    return {"python": str(interpreter), "bubblewrap": "/usr/bin/bwrap",
-            "runtime_roots": _triton_runtime_roots(interpreter),
+    # A HIP host declares the environment its toolchain needs inside the jail; a CUDA
+    # host declares none and keeps the empty environment the jail has always run with.
+    environment = dict(host.get("runtime", {}).get("build_environment", {}) or {})
+    declared = tuple(part for value in environment.values()
+                     for part in value.split(":") if part.startswith("/"))
+    return {"python": str(interpreter), "bubblewrap": _bubblewrap(host),
+            "runtime_roots": _triton_runtime_roots(interpreter, declared),
+            "build_environment": environment,
             "triton_version": host["packages"]["triton"], "timeout_seconds": 600}
 
 
@@ -184,21 +237,63 @@ def _triton_builder(executor, workload):
         isolated_compiler=IsolatedTritonCompiler(**_triton_toolchain_config(executor)))
 
 
-def _runtime_config(workspace, executor, executable, route, *, gpu_run=None, broker_socket=None):
-    """Use the existing allocator and worker for each declared backend route."""
+def _admit_allocator(runtime) -> None:
+    """Take one trivial lease before any authoring token is spent.
+
+    Measured, at the cost of a full authoring turn: the launcher's gpu-run default socket
+    is not the socket this B300 host's broker listens on, so a campaign authored a
+    candidate, sealed it, reached the allocator and faulted with "cannot reach broker" --
+    77103 provider tokens for a run that could never be evaluated (F-2026-09-16-001). The
+    allocator is the one participant a launch cannot check by reading a file, so it is
+    checked by using it: the same command the campaign will use, with `/bin/true` in place
+    of the evaluator. One short lease, before the provider is admitted.
+    """
+    broker = runtime["broker"]
+    command = list(broker["command"])
+    if "--" not in command:
+        return  # the local broker takes no lease and needs no probe
+    probe = command[: command.index("--") + 1] + ["/bin/true"]
+    try:
+        completed = subprocess.run(probe, cwd=broker["cwd"], capture_output=True,
+                                   text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError(f"the declared allocator could not be run: {error}") from error
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip().splitlines()
+        raise ValueError(
+            "the declared allocator refused a trivial lease, so no candidate could be "
+            "evaluated on it: " + (detail[-1] if detail else f"exit {completed.returncode}")
+        )
+
+
+def _runtime_config(workspace, executor, executable, route, *, allocation,
+                    gpu_run=None, broker_socket=None):
+    """Bind the declared toolchain to the declared allocator.
+
+    The route decides which toolchain builds a candidate; the allocation decides how a run
+    reaches a device. They are separate because they vary separately: a DCU lowers through
+    Triton like a B200 and is reached like an Apple device, so reading one off the other
+    refused every DCU launch for lacking a CUDA cluster allocator it has no use for.
+    """
     from open_cake_ir.evaluation.source_bootstrap import module_command
     python = executor.document["host_environment"]["python"]["invocation_path"]
-    if route == "metal":
+    if allocation == "local_broker":
         if gpu_run is not None or broker_socket is not None:
-            raise ValueError("CUDA broker options require the Triton route")
-        toolchain = {"output_root": str(workspace / "builds")}
+            raise ValueError("CUDA broker options require the gpu_run allocation")
+        toolchain = ({"output_root": str(workspace / "builds")} if route == "metal"
+                     else _triton_toolchain_config(executor))
+        # The local broker serializes one machine's single device, and each device family
+        # keeps its own lock and job prefix. A DCU job recorded under a `metal-` id would
+        # misattribute the run the way a DCU latency recorded as CUPTI misattributes the
+        # measurement, so the kind is passed rather than defaulted.
         command = module_command(python, "open_cake_ir.evaluation.local_broker",
+                                 "--kind", "metal" if route == "metal" else "hip",
                                  "--worker-module", "open_cake_ir.tasks.evaluate")
         timeout = 1800
-    elif route == "triton":
+    elif allocation == "gpu_run":
         discovered = shutil.which(str(gpu_run) if gpu_run is not None else "gpu-run")
         if discovered is None:
-            raise ValueError("Triton execution requires the existing gpu-run allocator")
+            raise ValueError("the gpu_run allocation requires the existing gpu-run allocator")
         command = [str(Path(discovered).resolve(strict=True))]
         if broker_socket is not None:
             if not broker_socket.is_absolute():
@@ -214,7 +309,7 @@ def _runtime_config(workspace, executor, executable, route, *, gpu_run=None, bro
         toolchain = _triton_toolchain_config(executor)
         timeout = queue_seconds + run_seconds + 60
     else:
-        raise ValueError("task execution route is unsupported")
+        raise ValueError(f"task execution allocation {allocation!r} is unsupported")
     return {"schema_version": 1,
             "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors")},
             "toolchain": toolchain,
@@ -287,6 +382,13 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
     """
     if task in CONTRACTION_TASKS:
         return 1024 if rows is None else rows, 64 if columns is None else columns
+    if task in SOLX_FIB_TASKS:
+        # The hidden size is the upstream task's constant, not a default: passing another
+        # one is refused by name rather than silently authoring a different task. The
+        # batch default is the extent at which the upstream baseline was weakest, which
+        # is the shape worth seeding, not the one that flatters a bandwidth number.
+        return (_solx_fib_rows(task) if rows is None else rows,
+                _SOLX_FIB_SPECS[task]["hidden"] if columns is None else columns)
     return 128 if rows is None else rows, 1024 if columns is None else columns
 
 
@@ -304,6 +406,7 @@ def main(argv=None) -> int:
     parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
                                           *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS,
                                           *OPTIMIZER_TASKS, *CONTRACTION_TASKS,
+                                          *SOLX_FIB_TASKS,
                                           "gemm_bias"), required=True)
     parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
     parser.add_argument("--model", required=True)
@@ -357,7 +460,12 @@ def main(argv=None) -> int:
     rows, columns = _default_shape(args.task, args.rows, args.columns)
     document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
                                    depth=args.depth, case_id=args.case)
-    executable = _provider_executable(args.harness, args.provider_executable)
+    # `--baseline-only` stops before provider qualification, so the provider it would
+    # have used is not part of this run. Resolving it here anyway refused a DCU baseline
+    # build for not having `claude` installed in a compile container -- a refusal about a
+    # stage the flag exists to skip. The full run still resolves it before any work.
+    executable = (None if args.baseline_only
+                  else _provider_executable(args.harness, args.provider_executable))
     workspace.mkdir(mode=0o750, parents=True)
     workload_path, source_path = workspace / "workload.json", workspace / "starter.py"
     _write(workload_path, canonical(document))
@@ -378,8 +486,15 @@ def main(argv=None) -> int:
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
-    runtime = _runtime_config(workspace, executor, executable, route,
-                              gpu_run=args.gpu_run, broker_socket=args.broker_socket)
+    # The runtime config binds the provider and the allocator, both of which belong to
+    # stages `--baseline-only` stops before; it is written only on the path that reaches
+    # them. Building it here regardless is what made the provider mandatory above.
+    runtime = (None if args.baseline_only else
+               _runtime_config(workspace, executor, executable, route,
+                               allocation=_allocation_of(args.backend),
+                               gpu_run=args.gpu_run, broker_socket=args.broker_socket))
+    if runtime is not None:
+        _admit_allocator(runtime)
     baseline_selection: dict[str, object]
     if args.prepared_baseline is not None:
         baseline_path, baseline, baseline_selection = load_prepared_baseline(

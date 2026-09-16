@@ -553,13 +553,16 @@ class LoadedTorchTensorCandidate:
     """One Workload-shaped argument set and admitted CUBIN for preflight/timing/postflight."""
 
     def __init__(self, candidate, manifest, inputs, admission):
-        from .cuda_driver import LoadedCudaCandidate
+        from .artifacts import executable_role
         import torch
         self.candidate = candidate
         self.manifest = manifest
         self.admission = admission
         self.inputs = {name: list(values) for name, values in inputs.items()}
         dtypes = {'fp32': torch.float32, 'bf16': torch.bfloat16, 'fp16': torch.float16, 'int32': torch.int32}
+        # `cuda:0` is torch's device string for both runtimes: a ROCm build keeps the
+        # `torch.cuda` namespace and maps it onto HIP. It reads like a vendor leak and is
+        # not one, so it is left alone rather than aliased into a second spelling.
         self.arguments = [
             torch.tensor(inputs[name], dtype=dtypes[dtype], device='cuda:0').reshape(shape)
             if mode == 'input' else torch.full(shape,
@@ -567,7 +570,24 @@ class LoadedTorchTensorCandidate:
                 dtype=dtypes[dtype], device='cuda:0')
             for name, shape, dtype, mode in manifest.tensor_abi
         ]
-        self.loaded = LoadedCudaCandidate.load(candidate, candidate.artifact_payloads['cubin'], manifest, admission)
+        # The executable the target builds decides which driver retains the module. This
+        # named the CUBIN one directly, so the whole tensor-tile evaluation path -- the
+        # oracle, the cohorts, the receipts, none of which is CUDA's -- could only ever
+        # run a CUDA candidate.
+        executable = executable_role(candidate.target)
+        if executable == 'cubin':
+            from .cuda_driver import LoadedCudaCandidate
+            self.loaded = LoadedCudaCandidate.load(
+                candidate, candidate.artifact_payloads['cubin'], manifest, admission)
+        elif executable == 'hsaco':
+            from .hip_driver import LoadedHipModuleCandidate
+            self.loaded = LoadedHipModuleCandidate.load(
+                candidate, candidate.artifact_payloads['hsaco'], manifest,
+                admission.device_arch)
+        else:
+            raise ValueError(
+                f'{candidate.target!r} builds a {executable!r}, which this tensor-tile '
+                'path has no driver for')
 
     def fresh_argument_sets(self, count):
         """Prepare non-reusable outputs and finish their initialization outside timing."""

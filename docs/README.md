@@ -1,5 +1,7 @@
 # 文档总目录 / Documentation catalog
 
+[Triton CTA 宽度特化与 tick-tock 经验总结](TRITON_CTA_WIDTH.md)：显式候选变换、经验归属、适用条件与配对测量。
+
 [任务效率评分](PERFORMANCE_SCORING.md)：固定任务字节数、带宽参考、审计报告与校准覆盖。
 
 [Claude artifact-only v4](CLAUDE_PROVIDER_V4.md)：上下文压缩记录、精确终态请求与旧契约兼容。
@@ -181,3 +183,4 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [0064: Task incumbents are an append-only Lab projection](adr/0064-task-incumbents-are-an-append-only-lab-projection.md)
 
 - [0065: Source identity is the commit, and a host capture is its own document](adr/0065-source-identity-is-the-commit.md)
+- [0066: SoL-ExecBench task import, namespace and gate translation](adr/0066-sol-execbench-task-import.md)

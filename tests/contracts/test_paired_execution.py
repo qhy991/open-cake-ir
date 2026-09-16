@@ -581,12 +581,15 @@ class PairedExecutionTests(unittest.TestCase):
         ap = self.output / 'anchor.json'; ap.write_bytes(encoded(anchor))
         config = {'schema_version':1,
             'provider':{'executable':str(executable),'workspace_root':str(self.output / 'new-author-workspaces')},
-            'toolchain':{'python':'fixture-python','bubblewrap':'fixture-bwrap','runtime_roots':[],
+            'toolchain':{'python':'fixture-python','bubblewrap':'fixture-bwrap','runtime_roots':[],'build_environment':{},
                          'triton_version':'fixture','timeout_seconds':30},
             'broker':{'command':['fixture-broker'],'cwd':str(project),'timeout_seconds':30,
                       'service_user':'fixture','service_group':'fixture'}}
         if comparison == 'native_cute_dsl':
             config['toolchain'].pop('triton_version')
+            # The declared jail environment is the Triton toolchain's field; the CuTe one
+            # keeps its own set.
+            config['toolchain'].pop('build_environment')
             config['toolchain'].update(cutlass_version='4.5.2', cuobjdump='fixture-cuobjdump')
         rp = self.output / 'runtime.json'; rp.write_bytes(encoded(config))
         baseline_selection = {'schema_version':1, 'policy':'starter_reference',

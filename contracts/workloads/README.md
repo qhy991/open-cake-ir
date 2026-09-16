@@ -66,3 +66,29 @@ binds the score-routed V4-Pro MoE gate: `sqrtsoftplus`, selection-only bias, six
 routed experts, normalized weights and the `2.5` route scale.  It deliberately excludes
 the first three hash-routed layers, expert dispatch, local FP4 expert MLPs, cross-rank
 all-reduce and the shared expert. Those edges belong in a future MoE Program Contract.
+
+## SoL-ExecBench imports
+
+`solx-fib-*` and `solx-l1-*` are imports from the `flashinfer-bench-tasks` pack, split by
+upstream authority: `fib` for the 26 tasks whose definitions come from FlashInfer-Bench,
+`l1` for the 94 from `nvidia/SOL-ExecBench` subset L1. The split is not a difficulty
+grading; it is which upstream owns the definition, the workload axis and the baseline.
+[ADR 0066](../../docs/adr/0066-sol-execbench-task-import.md) states the namespace and the
+four gate translations these imports make, and
+[`src/open_cake_ir/tasks/solx_fib/workload.py`](../../src/open_cake_ir/tasks/solx_fib/workload.py)
+generates each document.
+
+The nine RMSNorm-family captures are registered; the six whose hidden size a Triton route
+can tile carry a committed contract here, and `fused_add_rmsnorm_h7168`, `rmsnorm_h1536`
+and `rmsnorm_h7168` are registered with no admitting backend rather than omitted.
+
+Each contract binds one batch extent -- the largest declared upstream batch whose CPU
+oracle stays tractable -- and says in its own `exclusions` that this is chosen for oracle
+reach and not for memory-bandwidth saturation, so the upstream's larger extents are
+recorded in provenance but neither examined nor claimed. Epsilon is the capture's own
+(`1e-5` for the two Llama-3.1-8B captures, `1e-6` for the rest). The upstream
+`matched_ratio` 0.99 gate is replaced by an all-element comparison at `atol` 2**-16 and
+`rtol` 2**-7, which is a stricter gate and not the same one. No upstream candidate source,
+latency or score is inherited, and each pack baseline directory is declared
+`restricted_artifact` so a clean-start arm's refusal is a property of the contract. B300
+device compile, correctness, timing, profiler and framework evaluation remain pending.

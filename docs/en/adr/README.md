@@ -89,3 +89,4 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 - [0064: Task incumbents are an append-only Lab projection](../../adr/0064-task-incumbents-are-an-append-only-lab-projection.md)
 
 - [0065: Source identity is the commit, and a host capture is its own document](../../adr/0065-source-identity-is-the-commit.md)
+- [0066: SoL-ExecBench task import, namespace and gate translation](../../adr/0066-sol-execbench-task-import.md)

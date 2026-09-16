@@ -371,7 +371,7 @@ class NativePairingContractTests(unittest.TestCase):
             (root / 'fixture.json').write_text('{}')
             config = {'schema_version':1, 'provider':{'executable':str(executable),'workspace_root':str(root/'author')},
                 'toolchain':{'python':str(other),'bubblewrap':str(bwrap),'runtime_roots':[str(runtime)],
-                             'triton_version':'fixture','timeout_seconds':1},
+                             'build_environment':{},'triton_version':'fixture','timeout_seconds':1},
                 'broker':{'command':['unused'],'cwd':str(root),'timeout_seconds':1,'service_user':'fixture','service_group':'fixture'}}
             path = root/'runtime.json'; path.write_bytes(encoded(config))
             with mock.patch('open_cake_ir.tasks.compose._admit_executor',return_value=(executor,None)), \

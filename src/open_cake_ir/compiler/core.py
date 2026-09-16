@@ -14,7 +14,7 @@ from typing import Mapping, Sequence, cast
 from .backends import BACKENDS, Backend
 from .frontend import read_schedule
 from .passes import (FusionResult, SpecializationResult, fuse_pointwise_epilogue,
-                     specialize_output_columns)
+                     specialize_output_columns, specialize_triton_warps)
 from .backends.common import EmitError
 from .ir import (
     _SCHEDULE_OPTIONAL,
@@ -218,6 +218,12 @@ class Compiler:
         """Explicit output-column specialization pass; never invoked by assess() or lower()."""
         return specialize_output_columns(self, schedule,
             schedule_id=schedule_id, entry_point=entry_point)
+
+    def specialize_triton_warps(self, schedule: Mapping[str, object], *, num_warps: int,
+                                schedule_id: str, entry_point: str) -> SpecializationResult:
+        """Explicit launch-width candidate; never invoked by assess or lower."""
+        return specialize_triton_warps(self, schedule, num_warps=num_warps,
+                                       schedule_id=schedule_id, entry_point=entry_point)
 
     def assess_file(self, path: str | Path) -> Assessment:
         """Assess a JSON or Python Schedule without executing authored Python."""

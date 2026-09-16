@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-15-005",
+  "kind": "capacity",
+  "date": "2026-09-15",
+  "title": "Caller-selected CTA width recurs in RMSNorm gradient and SwiGLU; expose a guarded explicit candidate rewrite",
+  "backend": "triton-b300",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir-sm100a-v82+8e8b99ef026d1feca9b60d8353411bc3926bf8efc7ac7bf7b426956391364b16",
+  "executor_revision": "open-cake-ir-b200-v117+2aaa1daa05700454ca2aa9e51a2dd844df079b51b3c00e8fb1b59a811c0001ca",
+  "evidence": [
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-rmsgrad-tock-20260914-qqx0tn0n/run",
+      "run": "open_cake-1",
+      "event": 40,
+      "note": "Turn 2 confirmation records correctness and stable timing: 2.432 us candidate versus 3.040 us baseline, 10/10 pair wins. Candidate declares 16 warps. Run later fails at turn 4 for missing structured terminal; the local confirmation remains evidence, not Run promotion."
+    },
+    {
+      "workspace": "/mnt/b300-shared/home/qinhaiyan/oc-kimi-e109-3m-20260911-4esfampw/matrix/swiglu",
+      "run": "open_cake-1",
+      "event": 54,
+      "note": "Terminal-best confirmation: 2.144 us candidate versus 3.488 us baseline, with a 16-warp role. This is an independent pointwise family, not a second copy of RMSNorm."
+    }
+  ],
+  "observation": "Single-role pure tensor Triton programs map the role width to num_warps. Caller-chosen width changes SDK resource/layout choices while preserving the operation/access graph. A previous missing power-of-two preflight allowed a six-warp RMSNorm candidate to crash the SDK; the current integration also needs that guarded refusal before SDK entry.",
+  "proposed_change": "Add explicit specialize_triton_warps using existing SpecializationResult and whole-candidate reassessment. Match only the documented bounded operation/ownership domain, preserve ABI and metadata, reject invalid or excessive widths before allocation, and keep the measured choice in Lab. No implicit tuning, no bitwise-equivalence or universal-speedup promise.",
+  "decision": "accepted",
+  "implemented_in": "open-cake-ir-sm100a-v85+576cd730acde3c0857a668527f31acd86c87b39c8d8ca93ef95eea2d8a9693ca",
+  "verified_by": {
+    "scope": "bounded two-task engineering tock using the existing common evaluator; no provider-study or cross-shape claim",
+    "source_commit": "6198976b215e03c308cf8cc7f0e766f4ad9385a3",
+    "executor_revision": "open-cake-ir-b200-v126+552650ee4e39df3e2867b2b9fc6f3b6637b5e88a14a52f5bc86787935a2f8c7c",
+    "evidence_root": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oc-width-ticktock-20260915-DBihzZ",
+    "result": "evaluation/result.json",
+    "fixed_baselines": "Original v114 matrix/baseline-preflight per-task sealed bundles; unchanged",
+    "checks": "Six complete candidates built and ABI-paired before GPU use; six search and two fresh confirmation receipts validate both participants on all five input cases, with 10 cohort pairs and CV 0.15; two NCU attribution receipts validate primary input. All ten receipts correct and all eight timing receipts stable.",
+    "rmsnorm_input_gradient": {
+      "selected_num_warps": 8,
+      "confirmation": "evaluation/rmsnorm_input_gradient/w8/confirmatory/receipt.json",
+      "baseline_ms": 0.003104,
+      "candidate_ms": 0.0024965,
+      "paired_speedup": 1.243340676947727,
+      "candidate_pair_wins": 10
+    },
+    "swiglu": {
+      "selected_num_warps": 16,
+      "confirmation": "evaluation/swiglu/w16/confirmatory/receipt.json",
+      "baseline_ms": 0.003648,
+      "candidate_ms": 0.002208,
+      "paired_speedup": 1.652173913043478,
+      "candidate_pair_wins": 10
+    },
+    "null_results": "Both current width-1 floors match their paired old baselines (speedup 1.0); RMS width 8 and 16 have equal search medians. No universal optimal-width rule follows.",
+    "limits": "FP32 128x1024 on sm_103a only. SwiGLU baseline is 3.488 us during search and 3.648 us during confirmation: report each ratio from its own pair, not a cross-phase denominator. No automatic default change, broad architecture transfer, serving/E2E or retroactive promotion of old faulted Runs.",
+    "additional_task_validation": {
+      "source_commit": "a5734239c6fa2a55aec5f874a3e88a78cb02f883",
+      "compiler_and_executor": "Same frozen Compiler v85 / Executor v126; only the reusable CLI and explicit task selection were added",
+      "evidence_root": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oc-width-transfer-20260915-KoekDV",
+      "result": "evaluation/result.json",
+      "tasks": ["softmax_backward", "cosine_similarity"],
+      "checks": "Six searches, two fresh confirmations and two primary NCU profiles completed, exit 0; eight timing receipts retain both participants' five-case correctness and stable paired samples",
+      "softmax_backward": {
+        "selected_num_warps": 16,
+        "baseline_ms": 0.0029275,
+        "candidate_ms": 0.00256,
+        "paired_speedup": 1.1435546875,
+        "candidate_pair_wins": 10,
+        "receipt": "evaluation/softmax_backward/w16/confirmatory/receipt.json"
+      },
+      "cosine_similarity": {
+        "selected_num_warps": 8,
+        "baseline_ms": 0.002976,
+        "candidate_ms": 0.002528,
+        "paired_speedup": 1.177215189873418,
+        "candidate_pair_wins": 10,
+        "receipt": "evaluation/cosine_similarity/w8/confirmatory/receipt.json"
+      },
+      "null_and_selection_limits": "Width-1 floors classify close_null (softmax backward 1.01099x, cosine 1.0x). Cosine width16 is slower than width8 in search but still faster than its paired baseline; only the selected width8 received fresh confirmation. No universal preferred width or statistically blind holdout claim.",
+      "disposition": "The existing pass transferred to two additional fixed-shape tasks. No new IR primitive, automatic parameter choice or Compiler Revision was justified by this round."
+    }
+  },
+  "verification_plan": "Independent source review and full Corpus Gate; public positive/negative tests including a held-out family. On the successor, evaluate current width-1 floor and pass-produced width-8/16 candidates for RMSNorm gradient and SwiGLU against the same old fixed baselines, with five-case correctness, stable paired timing and NCU. Retain null/negative transfer and original failed Run states."
+}

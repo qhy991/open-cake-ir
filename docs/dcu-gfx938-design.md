@@ -324,9 +324,10 @@ gfx1151 result needs a gfx1151 toolchain and device.
 - **Matrix instructions.** `v_mmac_f32_16x16x16_f16` exists and is unadmitted. Adding it
   means a contract name, its numerical behaviour, and the verifier and cost-model rules
   that go with it -- a second change, with its own evidence.
-- **An Executor.** None exists. Capturing one from the container's exact Python 3.10.12,
-  PyTorch 2.11.0 (HIP 6.3.26113), Triton 3.6.0 and dcc 25.10.0 is a separate gate, and a
-  B200/B300 Executor is not a fallback.
+- **An Executor.** One exists: `open-cake-ir-gfx938-v5`, captured from the container's
+  exact Python 3.10.12, PyTorch 2.11.0 (HIP 6.3.26113), Triton 3.6.0 and dcc 25.10.0. It
+  is a separate gate from the Compiler, and a B200/B300 Executor was never a fallback for
+  it. Its successor is pending: see gate 7 below.
 
 ## Environment notes
 
@@ -345,11 +346,13 @@ gfx1151 result needs a gfx1151 toolchain and device.
 3. The task registry: one device registry, every family deriving route and Target from
    it, and four capability checks in place of device lists. *(done)*
 4. Independent ADR 0052 review of the exact source and Gate diff, then a released
-   Compiler successor. *(pending; the author may not write the approval)*
-5. An Executor successor. This change touches `evaluation/artifacts.py`,
-   `lab/executor.py` and the task registry files, all pinned by the current released
-   Executor -- the paired successor F-2026-09-13-006 predicted. *(pending; needs the
-   host each descriptor is bound to)*
+   Compiler successor. *(done: reviewed by haiyan, Compiler v83 then v84, 7 targets,
+   210 sources, Gate 151/151)*
+5. An Executor successor for every target whose pinned closure this change touched --
+   `evaluation/artifacts.py`, `lab/executor.py` and the task registry files -- the paired
+   successor F-2026-09-13-006 predicted. *(done: `apple_gpu_family8` v124 on this M2,
+   `sm_103a` v123 on B300-M2, `gfx938` v5 on bw1100. `apple_gpu_family7` has none; its
+   M1 Pro host is not reachable and no other host may stand in for it.)*
 6. A DCU Executor and the rest of the AMDGCN Evaluation half, under
    [F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json).
    An earlier version of this document said `capture_executor_host.py` could not produce a
@@ -357,7 +360,162 @@ gfx1151 result needs a gfx1151 toolchain and device.
    stale ref and is wrong. It admits `hip` and `amd`, `HipHostAdmission` verifies the host
    without touching a device, `evaluation/triton_hip.py` owns exact-HIP runtime custody and
    `evaluation/rocprofv3.py` projects kernel-trace, kernel-stats and results evidence
-   fail-closed. What is missing is connective: no gfx target has an executable role, a
-   rocprofv3 trace is not a named timing path beside `metal` and `cupti`, and the schema v2
-   executor identity pins gfx1151 while this Compiler target is gfx938. Only past that is a
-   correctness matrix -- and nothing about performance -- in scope.
+   fail-closed. The executable role, the AMD-parameterized Executor identity and the single
+   host `kind` field are in. *(partly done)*
+7. Actually launching a Lab task on the DCU. This gate was not on the list until
+   `launch_task.py --baseline-only` was run against `triton-dcu` for real. **Done**: the
+   DCU now builds and seals a baseline candidate through the real entry point --
+   `/runs/.../baseline/candidate.json`, a 5800-byte HSACO beside 19 KB of AMDGCN assembly,
+   a launch manifest declaring block `[64, 1, 1]` (one wave64), grid `[128, 1, 1]` and one
+   hidden scratch pointer. Seven separate defects stood between the checklist's 7/8 and
+   that file, and only the first two were in the compile chain the checklist covered:
+
+   1. **Allocation.** The launcher read the allocator off the lowering route, so a Triton
+      route demanded the `gpu-run` CUDA cluster allocator and refused a device with no use
+      for one. Route and allocation are now separate declared columns of
+      `tasks/devices.py`; `triton-dcu` is `triton` + `local_broker`.
+   2. **The jail binary.** `/usr/bin/bwrap` was a constant -- a fact about the
+      distributions this route was built against, not about bubblewrap, which the DTK
+      image does not ship at all. Discovered on the host now, with a refusal naming
+      bubblewrap instead of a `FileNotFoundError` naming a path nobody chose.
+   3. **The provider.** `--baseline-only` says it stops before provider qualification and
+      then resolved the harness executable three statements before creating the
+      workspace, refusing a DCU baseline for not having `claude` in a compile container.
+   4. **The jail environment.** The jail runs `--clearenv`, correctly. Two DTK facts live
+      only in `/opt/dtk/env.sh`: without `LD_LIBRARY_PATH` the build died with
+      `libgalaxyhip.so.5: cannot open shared object file` while the file sat mounted under
+      `/opt`, because ldconfig does not know `/opt/dtk`; with it, clang-18 reported
+      `cannot find ROCm device library` because `ROCM_PATH` was gone too. A HIP host now
+      declares `runtime.build_environment`, one fact rather than one field per variable.
+   5. **Artifact roles.** `TritonToolchainBuilder` named `ptx` and `cubin` as literals
+      while `triton_route` has carried `artifact_roles` per target all along, and wrote
+      `hidden_null_pointer_parameters: 2` -- Triton's two CUDA scratch pointers. HIPOptions
+      has no global scratch field, so the literal would have sealed an ABI with a
+      parameter the kernel does not take. Both come from the route now, and the measured
+      manifest says 1.
+   6. **The launch target.** `CudaKernelSpec.from_dict` resolved its target through
+      `cuda_target`, which decodes an sm_1xxa capability first, so a gfx938 manifest came
+      back as `unsupported exact CUDA target`. Grid, block and shared-memory limits are
+      declared by every Target document and none of them is CUDA's; the Evaluation layer
+      reads the document directly now, as `executable_role` in that layer already does.
+   7. **Allowed roles.** `allowed_artifact_roles` returned the CUDA set for anything that
+      was not Metal, so a candidate carrying the assembly and HSACO its own route produced
+      was refused for not being PTX and a CUBIN.
+
+   Five of the seven are the same defect in different files: a per-target question decided
+   by "is it Metal? otherwise CUDA". They are recorded in
+   [F-2026-09-15-004](../findings/2026-09-15-004-three-axes-collapsed-into-target-identity.json)
+   with the process lesson -- the eight-gate readiness checklist reached 7/8 and had no
+   gate for how a sealed candidate reaches a device, because every gate in it was
+   assembled from a compile-chain failure already seen.
+8. A named AMD timing source. **The measurement exists now; the name does not yet.**
+
+   What blocked this was never that the device cannot be timed. It was that the timer
+   CUDA uses is an in-process API -- CUPTI wraps one Python callable and hands back
+   per-dispatch nanoseconds -- and the DCU's obvious profiler, `rocprofv2`, wraps a whole
+   process. Naming it would have changed the assay's shape, not just its source. Three
+   candidates were measured instead of argued:
+
+   | candidate | result |
+   | --- | --- |
+   | `torch.cuda.Event` | 8.48 us empty-interval floor against kernels of 3-7 us. Unusable. |
+   | raw HIP event pair through ctypes | 5.60 us min / 6.08 us median empty interval; a 1 MiB `mul` reads 15.68 us where the profiler says 3.36 us. Still unusable, and now measured at the C level rather than inferred from torch's wrapper. |
+   | `torch.profiler` (roctracer underneath) | Per-kernel device time. A 1 MiB `mul` reads 3.071 us against `rocprofv2`'s retained 3.36 us for the same kernel and shape -- the same measurement through an interface already inside the admitted runtime. |
+
+   roctracer's in-process activity API is present on this host (`roctracer_open_pool_expl`
+   and friends resolve, and `/opt/dtk/lib/libroctracer64.so` is on disk), which is what
+   makes `torch.profiler` CUPTI's structural peer here rather than a convenience. Reading
+   roctracer's records directly would mean pinning a record layout that varies by version;
+   torch is a package the Executor host already pins.
+
+   **It attributes the harness's own dispatch.** That was the question a torch-operator
+   measurement could not answer, since the evaluation launches through
+   `hipModuleLaunchKernel` from its own driver. Measured: `_cake_rmsnorm_fp32_kernel`
+   n=1 3.359 us, n=30 2.964 us, launched through `evaluation/hip_driver.py`.
+
+   So all three of what AGENTS.md requires a target to declare can now be stated: the
+   timer is `torch.profiler`'s CUDA activity, the interval is the dispatch as roctracer
+   reports it, and the device-state reset is the 256 MiB `zero_()` L2 flush, which costs
+   244-251 us a sample and changes the answer only below about 4 MiB of working set.
+
+   What is left is the wiring, not the evidence: a benchmark with `StrictCuptiBenchmark`'s
+   call shape, a paired policy kind beside `cupti` and `metal`, and a `timing_source` on
+   the DCU's registry row. *(next)*
+
+   The paragraph below records what was true before those measurements.
+
+   > **This was where the DCU stopped, and it stopped honestly.**
+   The Study template chose its measurement source with `"metal" if metal else "cupti"`,
+   so the first DCU study declared `correctness_then_paired_cupti` and
+   `fixed_baseline_paired_cupti_v1` -- a profiler's name on evidence that profiler never
+   produced, on a machine where CUPTI is not installed. `timing_source` is now a declared
+   column of the device registry, `triton-dcu` declares None, and its Study states the
+   coverage limitation instead: no `paired_timing`, and an explicit `measurement_coverage`
+   saying no latency is reported for this target and why. So the DCU builds, seals and can
+   be checked for correctness, and reports that nothing has measured a latency on it.
+
+   Minting the source needs a measurement, not a row. The open question is whether
+   `MinNs`, `MaxNs` and `StdDev` -- which `hipprof`'s stats CSV does not carry, verified by
+   reading all eight of its columns rather than the five a truncated `sed` first showed --
+   can be derived from rocprofv2's per-dispatch `Start`/`End` timestamps. *(blocked on the
+   measurement)*
+9. The AMDGCN evaluation driver. **Done, and verified on the device.**
+   `evaluation/hip_driver.py` is the AMDGCN peer of `cuda_driver.py` -- smaller on
+   purpose, since CUDA's cluster attributes, binary-version check and dynamic-shared
+   opt-in threshold are not facts about an `amdgcn-amd-amdhsa--` object -- and it names
+   no soname (the admitted ROCm PyTorch has already loaded whichever fork this host
+   installs) and calls no `hipFuncGetAttribute` (the kernel's own `.amdgpu_metadata`
+   already carries its register and scratch counts). `observe_local_hip` is the allocation
+   half, reading the device contract off `triton_route` rather than a new request field,
+   and the local broker now serializes per device family so a DCU run is not recorded
+   under a `metal-` job id.
+
+   Four more not-Metal-so-CUDA branches were on the way there: the worker's own dispatch,
+   `allowed_artifact_roles`, an unconditional `collect_timing=True`, and attribution
+   handing a DCU candidate to Nsight Compute.
+
+   The device run then named three more that no host test could have. `Compiler.load`
+   returns an object with no identity of its own, so a request carrying
+   `compiler.revision_id` is refused -- the released Revision is the authority.
+   `load_hip_runtime` resolved through `ctypes.CDLL(None)`, on the reasoning that the
+   admitted ROCm PyTorch has already loaded whichever fork this host installs; torch loads
+   its extensions with RTLD_LOCAL, so on the DCU all five entry points were mapped and
+   none globally visible, and the lookup now reads the process's own memory map (still
+   naming no soname). And `close()` took no arguments where the shared tensor-tile
+   lifecycle closes both drivers through one call with `synchronize=torch.cuda.synchronize`
+   -- which surfaced only *after* the kernel had launched, at `module_loads` 1,
+   `preflight_calls` 1, `kernel_calls` 1.
+
+   **The passing run**: local-broker job `hip-ecbdb752ace2`, `correctness_passed` true,
+   `output_mismatches` 0, `max_abs_error` 4.76837158203125e-07 against the external CPU
+   oracle, `inputs_unchanged` true, `timing` null -- the target declares no timing source
+   and the receipt says so rather than reporting a latency.
+10. A DCU optimization campaign. **Correctly blocked, and it is the same block as gate 8.**
+   A single-arm optimization campaign selects on getting faster, so a Study with no timed
+   assay has nothing to select on; `validate_evaluation` refuses it and now gives the
+   reason that applies -- this target has no named timer -- rather than reporting a
+   misconfiguration. So the order is: correctness evaluation on the device (gate 9), then
+   a measurement (gate 8), then a campaign. *(blocked on gate 8)*
+
+### Running it in the container
+
+The DTK image needs two things the B200/B300 hosts do not, both established by probing:
+
+- `bubblewrap`, which the image does not ship. It installs from the configured aliyun
+  jammy mirror (0.6.1) once `TMPDIR` points somewhere writable -- `/tmp` in this image is
+  `drwxr-xr-t`, and apt fails to create its own temporary files there.
+- `--security-opt systempaths=unconfined` on `docker run`. Measured, rather than assumed:
+  user namespaces work in this container, mount namespaces work, and `bwrap` without
+  `--proc` works; the single refused operation is mounting a fresh procfs. On this 4.19
+  kernel that is `mount_too_revealing()` -- Docker bind-mounts over `/proc/kcore`,
+  `/proc/keys` and friends, and the kernel then refuses any new procfs mount inside a
+  nested user namespace. Relaxing seccomp and AppArmor, tried first, changes nothing:
+  it is not a filtered syscall, it is a kernel visibility check. Authorized by the
+  repository owner on 2026-09-15 for this development container.
+
+### What still blocks a full campaign
+
+`bw1100` is intermittently unreachable from the development host -- several multi-minute
+outages over one session, each with no ICMP reply and `ssh` timing out at connect, while
+the B300 hosts on the same tunnel stayed up throughout. Work continues across them; runs
+are started detached so an outage costs the wait rather than the run.

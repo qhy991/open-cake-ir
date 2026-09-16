@@ -72,6 +72,9 @@ class HipExecutorFixture:
                 },
                 "runtime": {
                     "backend": "hip",
+                    # The jail clears the environment, so a HIP host states what its
+                    # toolchain needs inside it rather than inheriting an env.sh.
+                    "build_environment": {"ROCM_PATH": "/opt/rocm"},
                     "torch_hip_version": "7.2.1",
                     "visible_device_count": 1,
                 },
