@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-002",
+  "kind": "protocol",
+  "title": "At a hard run boundary the final turn declares candidate_written true with no witnessed write in the retained stream; the broker correctly refuses the declaration, but the fault overwrites a terminal state the checkpoint had already settled",
+  "date": "2026-09-16",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v118+a47cfdd532eaa8eb4ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79",
+  "compiler_revision_id": "open-cake-ir-sm100a-v82+40055ec251f4e5fe346c0edc3ae19e74aa3bb9abfb5a0d6a05784ad87fa84b6f",
+  "tasks": [
+    "momentum_sgd", "layernorm_backward_input", "rmsnorm_input_gradient",
+    "absmax_rescale"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/layernorm_backward_input-op5-high-20260916-v118-d",
+      "note": "run_fault at campaign-evidence/runs/open_cake-1/events/000000000117.json: RunProtocolFault 'Claude candidate write lifecycle is incomplete', turn 8. The retained provider_stdout (campaign-evidence/objects/sha256/7d/7de9192d330530334c1e8a957062ee9a62f588d98f338f756a77080a939c14e2, 12 lines) is one clean exchange: thinking, a summary text reporting the turn-7 evaluation ('late scaling gave peak live 17 and 0.011621 ms / 3.166x'), a StructuredOutput tool_use declaring candidate_written true, its tool_result, one rate_limit_event (five_hour, allowed), then result is_error false subtype success. No Write call anywhere. Event 000000000118 is checkpoints_projected with state reached_no_qualified_candidate at provider_tokens exactly 3000000; event 000000000119 is run_terminal endpoint_observation missing, protocol_adherence provider_fault. terminal_provider_tokens 3277759."
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/rmsnorm_input_gradient-op5-high-20260916-v118-d",
+      "note": "same byte shape: turn 10, retained stream (objects/sha256/ed/edec7dd7b71de98da44b9b2dae51fa8f86597d06ebd9c8389587427e7df0b817) ends StructuredOutput candidate_written true with no Write, result success; observed_quota seven_day allowed_warning utilization 0.25 -- quota healthy, so the boundary, not the wall, is the trigger. terminal_provider_tokens 3217979."
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/absmax_rescale-op5-high-20260916-v118-d",
+      "note": "third instance, turn 9, terminal_provider_tokens 3249745, observed_quota seven_day allowed_warning 0.26. Three of the eleven full-budget runs in the -d batch faulted this way (~27%); the eight that ended cleanly declared candidate_written consistently with the witnessed lifecycle at their own token-limit boundaries."
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/momentum_sgd-op5-high-20260915-v118-c",
+      "note": "the first instance and the only five-hour-boundary one: turn 10, observed_quota five_hour allowed with overage rejected (resetsAt 1789476000), same exception message, turn-10 result itself successful. Its -d rerun under the same Revision completed cleanly as no_qualified_candidate, so the mismatch is not task-deterministic. momentum_sgd-d's clean terminal also shows the class does not require a code change to recover."
+    }
+  ],
+  "observation": "Four runs faulted with 'Claude candidate write lifecycle is incomplete' after a successful CLI result: the boundary-exhausted final turn declares candidate_written true while its retained stream witnesses no write. The broker is right to refuse an unwitnessed declaration -- accepting it would let a turn claim work it did not do. The defect is ordering: in all four, the checkpoint projection had ALREADY settled the run's terminal state at the exact budget boundary (reached_no_qualified_candidate at provider_tokens 3000000 in the layernorm_backward_input-d case), and the post-hoc declaration check then converts that settled no_qualified outcome into provider_fault. Nothing scientific is lost -- search evidence is complete, no qualified endpoint existed at any of the four boundaries, and one of the three affected -d tasks' models even retained its final search finding in the stream -- but the terminal classification is wrong-shaped, and three tasks (layernorm_backward_input, rmsnorm_input_gradient, absmax_rescale) now have no clean terminal across three attempts each (quota wall, gateway window, boundary mismatch) purely through fault-class luck.",
+  "proposed_change": "Order the boundary so a settled checkpoint wins: when the token-budget (or five-hour) boundary has produced a terminal checkpoint state, complete run_terminal from that checkpoint and record the unreconciled candidate_written declaration as a named protocol diagnostic on the terminal event, instead of raising RunProtocolFault after the fact. The declaration check itself is unchanged and still fails closed for any turn whose write lifecycle is incomplete WITHOUT a settled terminal behind it. Alternatively (or additionally) validate the declaration at the turn seam so the mismatch is a named refusal the author sees, not a post-run fault.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Protocol tick, replay-verified: replay the four cited fault streams under the successor and observe a no_qualified_candidate terminal carrying the diagnostic, with contract tests covering (a) settled-checkpoint boundary with an unreconciled declaration, (b) an incomplete write lifecycle with NO settled checkpoint still faulting, and (c) evidence sealed before the change replaying unchanged.",
+  "verified_by": null
+}
