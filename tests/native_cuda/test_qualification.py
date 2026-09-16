@@ -14,7 +14,7 @@ import sys
 import struct
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -108,12 +108,31 @@ class PublicContracts(unittest.TestCase):
         self.assertIn("-lcudart", commands["shared"])
 
     def test_draft_never_authorizes_prepare(self):
+        """A draft is a Compiler with no commit, and the test has to build one.
+
+        `revision()` refuses when `Compiler.commit` is None, which is what a checkout
+        carrying edits produces. Relying on the checkout to be in that state makes the
+        assertion depend on the working tree: it passes while the author has uncommitted
+        files and fails on every clean checkout, CI included. The draft is constructed
+        here so the refusal being tested is the one the code owns.
+        """
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "uncreated"
-            with patch.object(e.Compiler, "load", return_value=self.compiler):
+            with patch.object(e.Compiler, "load", return_value=self.compiler), \
+                    patch.object(type(self.compiler), "commit",
+                                 new_callable=PropertyMock, return_value=None):
+                self.assertIsNone(self.compiler.commit)
                 with self.assertRaises(c.QualificationError):
                     e.prepare(root)
             self.assertFalse(root.exists())
+            # And the same call on a committed Compiler is not refused for this reason:
+            # without this half the test would still pass if `revision()` refused
+            # unconditionally.
+            if self.compiler.commit is not None:
+                with patch.object(e.Compiler, "load", return_value=self.compiler):
+                    e.prepare(root)
+                self.assertTrue((root / "manifest.json").exists())
 
     def test_two_mma_requires_both_contractions_numerically(self):
         row = {"family": "two_mma", "case_id": "tiny"}

@@ -185,6 +185,14 @@ def _triton_runtime_roots(interpreter: Path, declared_paths: tuple[str, ...] = (
     return [str(root) for root in admitted]
 
 
+# The conventional location, named rather than written inline at the point of use: a
+# caller that wants to establish "this host has no jail" has to be able to say so, and a
+# literal buried in a candidate list can only be satisfied by the filesystem. A test that
+# asserts the refusal while this file exists is asserting a property of the host it runs
+# on, not of the function.
+CONVENTIONAL_JAIL = "/usr/bin/bwrap"
+
+
 def _bubblewrap(host) -> str:
     """Where this host keeps the jail every isolated Triton build runs inside.
 
@@ -205,13 +213,13 @@ def _bubblewrap(host) -> str:
          if isinstance(tool, Mapping) and tool.get("kind") == "bwrap"),
         None,
     )
-    candidates = [declared, shutil.which("bwrap"), "/usr/bin/bwrap"]
+    candidates = [declared, shutil.which("bwrap"), CONVENTIONAL_JAIL]
     for candidate in candidates:
         if isinstance(candidate, str) and candidate and Path(candidate).is_file():
             return str(Path(candidate).resolve(strict=True))
     raise ValueError(
         "isolated Triton builds require bubblewrap; no `bwrap` executable is declared by "
-        "the released Executor host, on PATH, or at /usr/bin/bwrap"
+        f"the released Executor host, on PATH, or at {CONVENTIONAL_JAIL}"
     )
 
 

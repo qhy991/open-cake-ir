@@ -224,13 +224,19 @@ class TaskLaunchTests(unittest.TestCase):
         jail.write_bytes(b'#!/bin/sh\n')
         declared = {"tools": {"build_tools": [
             {"kind": "hipcc", "path": "/opt/dtk/bin/hipcc"}, {"kind": "bwrap", "path": str(jail)}]}}
+        absent = str(self.directory / 'no-such-bwrap')
         with patch.object(launch_task.shutil, 'which', return_value=None):
             # A host that pins it is believed over the conventional location.
             self.assertEqual(launch_task._bubblewrap(declared), str(jail))
             # Released HIP and CUDA descriptors pin no jail: HIP_BUILD_TOOLS is closed and
-            # has no bwrap, so every captured host is silent here and PATH decides.
-            with self.assertRaisesRegex(ValueError, 'bubblewrap'):
-                launch_task._bubblewrap({"tools": {"build_tools": []}})
+            # has no bwrap, so every captured host is silent here, and discovery decides --
+            # PATH first, then the conventional location. Both have to be taken away to
+            # reach the refusal: on a host that has /usr/bin/bwrap (any ordinary ROCm
+            # workstation) the conventional candidate resolves and no refusal is raised,
+            # so a test that only clears PATH is asserting a property of its own host.
+            with patch.object(launch_task, 'CONVENTIONAL_JAIL', absent):
+                with self.assertRaisesRegex(ValueError, 'bubblewrap'):
+                    launch_task._bubblewrap({"tools": {"build_tools": []}})
         with patch.object(launch_task.shutil, 'which', return_value=str(jail)):
             self.assertEqual(launch_task._bubblewrap({}), str(jail))
 
