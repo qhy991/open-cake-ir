@@ -18,10 +18,12 @@ import json
 from pathlib import Path
 
 from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.corpus import assess_case
 
 
-def _expected(compiler: Compiler, root: Path, schedule: str) -> dict[str, object]:
-    assessment = compiler.assess_file(root / schedule)
+def _expected(compiler: Compiler, root: Path, case: dict) -> dict[str, object]:
+    """Recompute one case through the Gate's own assessment, target rule included."""
+    assessment = assess_case(compiler, root, case)
     return {
         "accepted": assessment.accepted,
         "lowering_eligible": assessment.lowering_eligible,
@@ -47,7 +49,7 @@ def main() -> int:
 
     differences = 0
     for case in manifest["cases"]:
-        observed = _expected(compiler, root, case["schedule"])
+        observed = _expected(compiler, root, case)
         recorded = case.get("expected", {})
         changed = {
             field: (recorded.get(field), value)

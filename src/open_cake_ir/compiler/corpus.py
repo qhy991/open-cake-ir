@@ -108,6 +108,52 @@ class CorpusGateReport:
         return self.case_count - self.lowerable_case_count
 
 
+def assess_case(compiler: Compiler, project_root: str | Path,
+                case: Mapping[str, object]):
+    """Assess one declared case exactly as the Gate does.
+
+    Any tool that recomputes an expectation must reach the same verdict as the Gate it
+    is recomputing for. A second copy of the target rule here would let the refresher
+    adopt a pin the Gate never produces, which is the manufactured match its own
+    refusal exists to prevent.
+    """
+
+    case_id = _name(case.get("case_id"), "corpus case case_id")
+    relative = _name(case.get("schedule"), f"corpus case {case_id!r} schedule")
+    schedule_path = (Path(project_root) / relative).resolve(strict=True)
+    return _assess_case(compiler, case, case_id, f"corpus case {case_id!r}", schedule_path)
+
+
+def _assess_case(compiler: Compiler, case: Mapping[str, object], case_id: str,
+                 context: str, schedule_path: Path):
+    """Assess one case, on the target it names or the one its Schedule declares.
+
+    A Schedule embeds its own target, so a second target used to mean a second copy of
+    the whole document -- which is why two declared Targets carry no case at all. A case
+    may instead name the exact target to assess this Schedule on. Nothing is stepped
+    down: the named target replaces the declared one and each pair keeps its own
+    expectation, so a Schedule legal on one target and refused on another states both.
+    """
+
+    override = case.get("target")
+    if override is None:
+        return compiler.assess_file(schedule_path)
+    target_id = _name(override, f"{context}.target")
+    if schedule_path.suffix != ".json":
+        raise CompilerError(
+            f"corpus case {case_id!r} names a target for a {schedule_path.suffix} "
+            "Schedule; only a JSON Schedule document carries a target to replace"
+        )
+    document = json.loads(schedule_path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise CompilerError(f"corpus case {case_id!r} Schedule must be an object")
+    if document.get("target") == target_id:
+        raise CompilerError(
+            f"corpus case {case_id!r} names the target its Schedule already declares"
+        )
+    return compiler.assess({**document, "target": target_id})
+
+
 def check_corpus(compiler: Compiler, corpus_path: str | Path) -> CorpusGateReport:
     """Assess and lower every declared case through the public Compiler methods.
 
@@ -130,7 +176,9 @@ def check_corpus(compiler: Compiler, corpus_path: str | Path) -> CorpusGateRepor
     reports: list[CorpusCaseReport] = []
     observed_ids: set[str] = set()
     for index, case in enumerate(cases):
-        if set(case) != {"case_id", "schedule", "expected"}:
+        if not {"case_id", "schedule", "expected"} <= set(case) <= {
+            "case_id", "schedule", "expected", "target",
+        }:
             raise CompilerError(f"corpus.cases[{index}] fields differ")
         case_id = _name(case.get("case_id"), f"corpus.cases[{index}].case_id")
         if case_id in observed_ids:
@@ -166,7 +214,8 @@ def check_corpus(compiler: Compiler, corpus_path: str | Path) -> CorpusGateRepor
             f"corpus.cases[{index}].expected.lowering_source_sha256",
             nullable=True,
         )
-        assessment = compiler.assess_file(schedule_path)
+        assessment = _assess_case(
+            compiler, case, case_id, f"corpus.cases[{index}]", schedule_path)
         observed_codes = tuple(finding.code for finding in assessment.findings)
         observed_source_sha = (
             compiler.lower(assessment).source_sha256 if assessment.lowering_eligible else None
