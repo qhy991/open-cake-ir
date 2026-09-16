@@ -27,7 +27,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     ProviderQualificationReceipt,
 )
 from open_cake_ir.lab.claude import (
-    CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder,
+    CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder, advertised_options,
     ClaudeProviderAdapter, parse_claude_turn_events, terminal_schema,
 )
 from open_cake_ir.lab.task_package import (  # noqa: E402
@@ -553,7 +553,8 @@ def main() -> int:
                 model=args.model, reasoning_effort=args.reasoning_effort, workspace=arm_workspace,
                 removed_environment=removed_environment)
             if args.harness == "claude-code":
-                builder = ClaudeInvocationBuilder(**common_builder_args)
+                builder = ClaudeInvocationBuilder(
+                    **common_builder_args, cli_options=advertised_options(executable))
             else:
                 builder = CodexInvocationBuilder(**common_builder_args,
                     code_mode_host=code_mode_host, service_tier=args.service_tier,

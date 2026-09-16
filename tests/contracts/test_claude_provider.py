@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
+from open_cake_ir.lab import claude
 from open_cake_ir.lab.claude import (
     CLAUDE_EVENT_CONTRACT, CLAUDE_LEGACY_EVENT_CONTRACT, ClaudeInvocationBuilder, ClaudeProviderAdapter,
     ClaudeRunProvider, normalize_claude_turn, observed_claude_quota, parse_claude_turn_events, claude_model_usage, terminal_schema, reported_claude_usage,
@@ -172,7 +173,11 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.candidate.write_bytes(self.submission)
 
     def builder(self, **changes):
+        # The fixture's own bytes say it is never executed, so the option set the builder
+        # checks against is stated here rather than read off it.
         args = dict(executable=self.executable, provider_revision="claude-native-contract-fixture",
+                    cli_options=frozenset(claude.CLAUDE_REQUIRED_OPTIONS)
+                    | {claude.CLAUDE_AUTOCOMPACT_OPTION},
                     model="exact-requested-model", reasoning_effort="high", workspace=self.workspace,
                     removed_environment=("OPENAI_API_KEY", "ANTHROPIC_API_KEY"))
         args.update(changes)

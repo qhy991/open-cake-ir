@@ -618,6 +618,7 @@ class ClaudeInvocationBuilder:
 
     def __init__(self, *, executable: Path, provider_revision: str, model: str,
                  reasoning_effort: str, workspace: Path, removed_environment: tuple[str, ...],
+                 cli_options: frozenset[str] | set[str] | tuple[str, ...],
                  event_contract: str = CLAUDE_EVENT_CONTRACT) -> None:
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
             raise ValueError("Claude builder event contract differs")
@@ -636,7 +637,11 @@ class ClaudeInvocationBuilder:
         self.provider_revision = provider_revision
         self._model, self._effort = model, reasoning_effort
         self._removed_environment = removed_environment
-        options = advertised_options(self.executable)
+        # Supplied, not probed here: the provider executable is read by whoever is about
+        # to run it. This builder is constructed in tests against a fixture whose bytes
+        # say "never execute this fixture", and a constructor that ran `--help` on it
+        # would be executing exactly that.
+        options = frozenset(cli_options)
         missing = [name for name in CLAUDE_REQUIRED_OPTIONS if name not in options]
         if missing:
             raise ValueError(

@@ -28,7 +28,7 @@ from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 from open_cake_ir.lab.providers import CANDIDATE_SET_ENVELOPE_V1, CodexInvocationBuilder, CodexProviderAdapter, CodexRunProvider, ProviderQualificationReceipt, required_live_provider_qualification_scope
 from open_cake_ir.lab.pairing import comparison_arm, bind_baseline, native_backend, backend_policy
-from open_cake_ir.lab.claude import ClaudeInvocationBuilder, ClaudeProviderAdapter, ClaudeRunProvider
+from open_cake_ir.lab.claude import ClaudeInvocationBuilder, advertised_options, ClaudeProviderAdapter, ClaudeRunProvider
 from open_cake_ir.lab.provider_policy import provider_harness
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from open_cake_ir.lab.runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter, broker_execution_sha256, load_runtime_config
@@ -417,7 +417,9 @@ def execute_matched_from_config(
             model=str(provider_authority["model"]), reasoning_effort=str(provider_authority["reasoning_effort"]),
             workspace=workspace, removed_environment=tuple(provider_authority["removed_environment"]))
         if harness == "claude-code":
-            builders[run_id] = ClaudeInvocationBuilder(**common_provider, event_contract=provider_authority["event_contract"])
+            builders[run_id] = ClaudeInvocationBuilder(
+                **common_provider, cli_options=advertised_options(executable),
+                event_contract=provider_authority["event_contract"])
         else:
             builders[run_id] = CodexInvocationBuilder(**common_provider,
                 code_mode_host=_object(provider_authority["code_mode_host"], "provider.code_mode_host"),
