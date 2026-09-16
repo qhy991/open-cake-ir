@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
+from open_cake_ir.lab import claude as claude_module
 from open_cake_ir.lab.task_package import TaskPackage
 from open_cake_ir.tasks import compose
 from open_cake_ir.tasks.normalization.study import canonical, evaluation_policy, SCAFFOLD
@@ -39,7 +40,18 @@ class MetalTaskCompositionTests(unittest.TestCase):
             anchor = {"qualification_receipt_sha256":"qualification-fixture"}
             anchor_path = directory / "anchor.json"
             anchor_path.write_bytes(canonical(anchor))
-            executable = Path('/usr/bin/true').resolve()
+            # `/usr/bin/true` stood in for the provider while nothing read anything off
+            # it. The composer now asks the executable which options it accepts, so the
+            # double answers that too -- a stand-in has to stand in for what is read.
+            executable = directory / 'claude-double'
+            executable.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = --help ]; then echo '"
+                + ' '.join((*claude_module.CLAUDE_REQUIRED_OPTIONS,
+                            claude_module.CLAUDE_AUTOCOMPACT_OPTION))
+                + "'; fi\nexit 0\n")
+            executable.chmod(0o700)
+            executable = executable.resolve()
             provider = {"harness":"claude-code","event_contract":"claude_stream_candidate_v4", "model":"exact-test-model", "reasoning_effort":"high",
                 "executable_sha256":sha256(executable.read_bytes()).hexdigest(),
                 "qualification":{"path":str(qualification_path),"canonical_sha256":"qualification-fixture"},
