@@ -627,12 +627,31 @@ class EvidenceStore:
             terminal_seal = cast(str, terminal_seal_value)
             _require_sealed_sequence(events)
             terminal_payload = _object(events[-1].get("payload"), "run_terminal.payload")
-            if set(terminal_payload) != {
+            if set(terminal_payload) - {
                 "protocol_adherence",
                 "endpoint_observation",
                 "endpoint",
-            }:
+                # Optional since F-2026-09-16-002; the marker's own semantics
+                # are replay's to rederive, this archive check admits only its
+                # closed shape so an unfamiliar field still fails the audit.
+                "boundary_diagnostic",
+            } or not {
+                "protocol_adherence",
+                "endpoint_observation",
+                "endpoint",
+            } <= set(terminal_payload):
                 raise ValueError("run_terminal payload fields differ")
+            boundary_diagnostic = terminal_payload.get("boundary_diagnostic")
+            if boundary_diagnostic is not None and (
+                not isinstance(boundary_diagnostic, Mapping)
+                or set(boundary_diagnostic) != {"turn", "stage", "diagnostic"}
+                or boundary_diagnostic.get("stage") != "provider"
+                or not isinstance(boundary_diagnostic.get("diagnostic"), str)
+                or not boundary_diagnostic.get("diagnostic")
+                or type(boundary_diagnostic.get("turn")) is not int
+                or boundary_diagnostic["turn"] <= 0
+            ):
+                raise ValueError("run_terminal boundary diagnostic differs")
             protocol_value = terminal_payload.get("protocol_adherence")
             endpoint_value = terminal_payload.get("endpoint_observation")
             if protocol_value not in _PROTOCOL or endpoint_value not in _ENDPOINT:
@@ -994,6 +1013,7 @@ class RunLedger:
         protocol_adherence: str,
         endpoint_observation: str,
         endpoint: Mapping[str, object] | None = None,
+        boundary_diagnostic: Mapping[str, object] | None = None,
     ) -> str:
         """Append the sole terminal event and atomically publish its seal."""
 
@@ -1003,12 +1023,28 @@ class RunLedger:
             raise ValueError("observed endpoint requires endpoint data")
         if endpoint_observation == "missing" and endpoint is not None:
             raise ValueError("missing endpoint cannot carry endpoint data")
+        payload = {
+            "protocol_adherence": protocol_adherence,
+            "endpoint_observation": endpoint_observation,
+            "endpoint": dict(endpoint) if endpoint is not None else None,
+        }
+        if boundary_diagnostic is not None:
+            # F-2026-09-16-002: an optional marker naming the retained fault the
+            # settled checkpoint outlived. Seals written without it (everything
+            # sealed before the field exists) stay byte-identical.
+            if (
+                not isinstance(boundary_diagnostic, Mapping)
+                or set(boundary_diagnostic) != {"turn", "stage", "diagnostic"}
+                or boundary_diagnostic.get("stage") != "provider"
+                or not isinstance(boundary_diagnostic.get("diagnostic"), str)
+                or not boundary_diagnostic.get("diagnostic")
+                or type(boundary_diagnostic.get("turn")) is not int
+                or boundary_diagnostic["turn"] <= 0
+            ):
+                raise ValueError("terminal boundary diagnostic differs")
+            payload["boundary_diagnostic"] = dict(boundary_diagnostic)
         return self._append_locked(
             "run_terminal",
-            {
-                "protocol_adherence": protocol_adherence,
-                "endpoint_observation": endpoint_observation,
-                "endpoint": dict(endpoint) if endpoint is not None else None,
-            },
+            payload,
             terminal=True,
         )

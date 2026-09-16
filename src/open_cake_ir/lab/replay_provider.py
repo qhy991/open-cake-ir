@@ -22,6 +22,23 @@ from .task_package import TASK_AGENTS_RALPH_V1, TaskPackage
 from .claude import CLAUDE_EVENT_CONTRACTS, observed_claude_quota, parse_claude_turn_events
 
 
+def _expected_terminal_message(arm: str, turn: int, event_contract: str) -> str:
+    """The exact structured terminal each completed or faulted Turn must have declared."""
+    terminal_document: dict[str, object] = {
+        "arm": arm,
+        "candidate_written": True,
+        "kind": "open_cake_ir_turn",
+        "turn": turn,
+    }
+    if event_contract == "closed_file_change_v1":
+        terminal_document["tool_calls"] = 1
+    return json.dumps(
+        terminal_document,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
 def _replay_provider_turns(
     *,
     arm: str,
@@ -207,19 +224,7 @@ def _replay_provider_turns(
                     return None
             except (UnicodeError, json.JSONDecodeError, ValueError):
                 return None
-        terminal_document: dict[str, object] = {
-            "arm": arm,
-            "candidate_written": True,
-            "kind": "open_cake_ir_turn",
-            "turn": expected_turn,
-        }
-        if event_contract == "closed_file_change_v1":
-            terminal_document["tool_calls"] = 1
-        expected_terminal = json.dumps(
-            terminal_document,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+        expected_terminal = _expected_terminal_message(arm, expected_turn, event_contract)
         expected_change = "add" if expected_turn == 1 else "update"
         expected_name = (
             "candidate-set.json"
@@ -318,6 +323,11 @@ def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None) 
             quota = observed_claude_quota(evidence.read_object(stdout[0]))
         except (OSError, ValueError, KeyError):
             return None
+        if quota is None:
+            # F-2026-09-16-001: at a fault seam an absent notice is itself the
+            # recorded observation; evidence sealed while the field stayed absent
+            # (retained None) still replays unchanged below.
+            quota = {"observed": "no_notice"}
         retained_quota = payload.get("observed_quota")
         if retained_quota is not None and retained_quota != quota:
             return None

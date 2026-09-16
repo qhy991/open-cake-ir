@@ -24,9 +24,9 @@ from .execution_admission import validate_execution_bindings
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
 from .diagnoses import rejected_peer_feedback
 from .run_completion import _seal_run, record_run_fault
-from .faults import RunProtocolFault, ReportedProviderUsage
+from .faults import RunProtocolFault, ReportedProviderUsage, ProviderBoundaryDeclarationFault
 from .provider_events import reported_provider_usage
-from .checkpoints import TurnObservation
+from .checkpoints import TurnObservation, project_checkpoints
 from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, TurnRequest
 from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
@@ -199,6 +199,7 @@ def execute_campaign(
             clock=clock,
         )
         ralph_stop_reason: str | None = None
+        boundary_diagnostic: Mapping[str, object] | None = None
         evaluation_writer = EvaluationWriter(
             evidence=evidence, ledger=ledger, evaluator=evaluator, ralph=ralph,
             case_id=case_id, workload_sha256=workload_sha256,
@@ -516,6 +517,25 @@ def execute_campaign(
                     provider=provider_document, expected_thread_id=thread_id)
                 if observed_usage is not None:
                     cumulative_tokens += observed_usage.provider_tokens
+            # F-2026-09-16-002: the budget boundary can take the final Turn's
+            # candidate write with it while the CLI still reports success and
+            # the author still declares candidate_written. The fault observation
+            # is retained below either way; but when the checkpoint grid had
+            # already settled an outcome on completed Turns, that settled
+            # observation wins the terminal instead of a post-hoc fault
+            # overwriting it. With nothing settled the fault stands unchanged.
+            boundary_diagnostic = (
+                {"turn": turn_number, "stage": "provider",
+                 "diagnostic": "candidate_write_declared_unwitnessed"}
+                if isinstance(error, ProviderBoundaryDeclarationFault)
+                and observations
+                and project_checkpoints(
+                    turns=observations,
+                    checkpoints=checkpoints,
+                    terminal_provider_tokens=cumulative_tokens,
+                )[-1].state != "unreached"
+                else None
+            )
             fault = record_run_fault(
                 error=error,
                 live_stage=live_stage,
@@ -528,8 +548,12 @@ def execute_campaign(
                 declared_usage=declared_usage,
                 artifact_payloads=payloads,
             )
-            protocol_adherence = fault
-            ralph_stop_reason = fault
+            if boundary_diagnostic is not None:
+                protocol_adherence = "adhered"
+                ralph_stop_reason = None
+            else:
+                protocol_adherence = fault
+                ralph_stop_reason = fault
 
         _seal_run(
             ralph_stop_reason=ralph_stop_reason,
@@ -542,6 +566,7 @@ def execute_campaign(
             protocol_adherence=protocol_adherence,
             ralph=ralph,
             analysis=lock.analysis_plan,
+            boundary_diagnostic=boundary_diagnostic,
         )
 
     return CampaignRef(lock=lock, evidence_root=evidence.root)

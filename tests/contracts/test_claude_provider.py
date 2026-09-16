@@ -12,10 +12,11 @@ from unittest.mock import patch
 
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
 from open_cake_ir.lab.claude import (
-    CLAUDE_EVENT_CONTRACT, CLAUDE_LEGACY_EVENT_CONTRACT, ClaudeInvocationBuilder, ClaudeProviderAdapter,
-    ClaudeRunProvider, normalize_claude_turn, observed_claude_quota, parse_claude_turn_events, claude_model_usage, terminal_schema, reported_claude_usage,
+    CLAUDE_EVENT_CONTRACT, CLAUDE_LEGACY_EVENT_CONTRACT, ClaudeCandidateWriteUnwitnessed, ClaudeInvocationBuilder, ClaudeProviderAdapter,
+    ClaudeRunProvider, candidate_write_declared_unwitnessed, normalize_claude_turn, observed_claude_quota,
+    observed_claude_quota_at_fault, parse_claude_turn_events, claude_model_usage, terminal_schema, reported_claude_usage,
 )
-from open_cake_ir.lab.faults import RunProtocolFault
+from open_cake_ir.lab.faults import RunProtocolFault, ProviderBoundaryDeclarationFault
 from open_cake_ir.lab.process import SupervisedProcessTimeout
 from open_cake_ir.lab.providers import CodexRunProvider, QualifiedRunProvider, ProviderAuxiliaryActivity
 
@@ -480,6 +481,91 @@ class ClaudeProviderContracts(unittest.TestCase):
                             expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
                 self.assertEqual(captured.exception.observed_quota, attributed)
                 self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], completed.stdout)
+
+    def test_gateway_transport_fault_records_the_absent_notice_as_its_observation(self):
+        """F-2026-09-16-001: a fault seam with no notice reports exactly that.
+
+        An absent field reads as "was not looked at"; the wrapper records the
+        absence while last-notice-wins attribution stays untouched.
+        """
+        wall = {"type": "rate_limit_event", "uuid": OTHER_SESSION, "session_id": SESSION,
+            "rate_limit_info": {"status": "rejected", "resetsAt": 1789455600,
+                "rateLimitType": "seven_day", "overageStatus": "rejected",
+                "overageDisabledReason": "org_level_disabled", "isUsingOverage": False}}
+        self.assertEqual(observed_claude_quota_at_fault(self.raw()), {"observed": "no_notice"})
+        self.assertEqual(observed_claude_quota_at_fault(b""), {"observed": "no_notice"})
+        self.assertEqual(observed_claude_quota_at_fault(b"death mid-retry, not JSON\n"),
+                         {"observed": "no_notice"})
+        self.assertEqual(observed_claude_quota_at_fault(
+            self.raw([self.events()[0], wall, *self.events()[1:]])), {
+            "status": "rejected", "rateLimitType": "seven_day", "resetsAt": 1789455600})
+
+    def boundary_events(self):
+        """A successful budget-boundary Turn: the declaration without the write."""
+        structured = {"type": "assistant", "session_id": SESSION, "parent_tool_use_id": None, "message": {
+            "model": "exact-requested-model", "content": [
+                {"type": "tool_use", "id": "toolu_structured", "name": "StructuredOutput",
+                 "input": json.loads(TERMINAL)}]}}
+        completed = {"type": "user", "session_id": SESSION, "parent_tool_use_id": None,
+            "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "toolu_structured", "content": "ok"}]}}
+        ordinary = self.events()
+        return [ordinary[0], ordinary[3], structured, completed, ordinary[-1]]
+
+    def test_budget_boundary_declaration_without_a_write_is_its_own_named_shape(self):
+        """F-2026-09-16-002: exit-0 success, terminal declared, no Write to witness.
+
+        The named shape is exactly this; every other incomplete lifecycle -- a
+        Write still in flight, or no declaration made at all -- stays the
+        generic refusal.
+        """
+        boundary = self.raw(self.boundary_events())
+        with self.assertRaisesRegex(ClaudeCandidateWriteUnwitnessed, "declared candidate_written"):
+            parse_claude_turn_events(boundary, expected_terminal_message=TERMINAL)
+        self.assertTrue(candidate_write_declared_unwitnessed(boundary, expected_terminal_message=TERMINAL))
+        # A Write invoked but never completed is a genuine interruption, not the boundary.
+        interrupted = self.events()
+        del interrupted[2]
+        with self.assertRaisesRegex(ValueError, "candidate write lifecycle is incomplete"):
+            parse_claude_turn_events(self.raw(interrupted), expected_terminal_message=TERMINAL)
+        self.assertFalse(candidate_write_declared_unwitnessed(self.raw(interrupted),
+                                                             expected_terminal_message=TERMINAL))
+        # No declaration made and no write: still the generic refusal. A second
+        # text event keeps the stream past the four-event Turn boundary without
+        # adding any tool activity.
+        ordinary = self.events()
+        undeclared = [ordinary[0], ordinary[3], ordinary[3], ordinary[-1]]
+        with self.assertRaisesRegex(ValueError, "candidate write lifecycle is incomplete"):
+            parse_claude_turn_events(self.raw(undeclared), expected_terminal_message=TERMINAL)
+        self.assertFalse(candidate_write_declared_unwitnessed(self.raw(undeclared),
+                                                             expected_terminal_message=TERMINAL))
+        # A normal witnessed Turn is not the boundary shape.
+        self.assertFalse(candidate_write_declared_unwitnessed(self.raw(), expected_terminal_message=TERMINAL))
+
+    def test_boundary_declaration_adapter_fault_is_named_and_fails_closed(self):
+        invocation = self.builder().build("task", thread_id=None)
+        boundary = self.raw(self.boundary_events())
+        completed = subprocess.CompletedProcess(invocation.argv, 0, boundary, b"")
+        with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
+            with self.assertRaises(ProviderBoundaryDeclarationFault) as captured:
+                ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                    expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
+        error = captured.exception
+        self.assertIsInstance(error, RunProtocolFault)
+        self.assertEqual(error.protocol_adherence, "provider_fault")
+        self.assertEqual(error.observed_quota, {"observed": "no_notice"})
+        self.assertEqual(error.artifact_payloads["provider_stdout"], boundary)
+        self.assertEqual(error.reported_usage.provider_tokens, 205)
+        # A mid-lifecycle interruption keeps the generic provider fault.
+        interrupted = self.events()
+        del interrupted[2]
+        broken = subprocess.CompletedProcess(invocation.argv, 0, self.raw(interrupted), b"")
+        with patch("open_cake_ir.lab.claude.run_supervised", return_value=broken):
+            with self.assertRaises(RunProtocolFault) as generic:
+                ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
+                    expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
+        self.assertNotIsInstance(generic.exception, ProviderBoundaryDeclarationFault)
+        self.assertEqual(generic.exception.observed_quota, {"observed": "no_notice"})
 
     def test_all_reported_model_usage_is_charged_once_and_auxiliary_models_stay_separate(self):
         events = self.events(); events[1:1] = self.metadata()
