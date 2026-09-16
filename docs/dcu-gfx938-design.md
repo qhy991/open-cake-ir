@@ -407,7 +407,43 @@ gfx1151 result needs a gfx1151 toolchain and device.
    with the process lesson -- the eight-gate readiness checklist reached 7/8 and had no
    gate for how a sealed candidate reaches a device, because every gate in it was
    assembled from a compile-chain failure already seen.
-8. A named AMD timing source. **This is where the DCU stops today, and it stops honestly.**
+8. A named AMD timing source. **The measurement exists now; the name does not yet.**
+
+   What blocked this was never that the device cannot be timed. It was that the timer
+   CUDA uses is an in-process API -- CUPTI wraps one Python callable and hands back
+   per-dispatch nanoseconds -- and the DCU's obvious profiler, `rocprofv2`, wraps a whole
+   process. Naming it would have changed the assay's shape, not just its source. Three
+   candidates were measured instead of argued:
+
+   | candidate | result |
+   | --- | --- |
+   | `torch.cuda.Event` | 8.48 us empty-interval floor against kernels of 3-7 us. Unusable. |
+   | raw HIP event pair through ctypes | 5.60 us min / 6.08 us median empty interval; a 1 MiB `mul` reads 15.68 us where the profiler says 3.36 us. Still unusable, and now measured at the C level rather than inferred from torch's wrapper. |
+   | `torch.profiler` (roctracer underneath) | Per-kernel device time. A 1 MiB `mul` reads 3.071 us against `rocprofv2`'s retained 3.36 us for the same kernel and shape -- the same measurement through an interface already inside the admitted runtime. |
+
+   roctracer's in-process activity API is present on this host (`roctracer_open_pool_expl`
+   and friends resolve, and `/opt/dtk/lib/libroctracer64.so` is on disk), which is what
+   makes `torch.profiler` CUPTI's structural peer here rather than a convenience. Reading
+   roctracer's records directly would mean pinning a record layout that varies by version;
+   torch is a package the Executor host already pins.
+
+   **It attributes the harness's own dispatch.** That was the question a torch-operator
+   measurement could not answer, since the evaluation launches through
+   `hipModuleLaunchKernel` from its own driver. Measured: `_cake_rmsnorm_fp32_kernel`
+   n=1 3.359 us, n=30 2.964 us, launched through `evaluation/hip_driver.py`.
+
+   So all three of what AGENTS.md requires a target to declare can now be stated: the
+   timer is `torch.profiler`'s CUDA activity, the interval is the dispatch as roctracer
+   reports it, and the device-state reset is the 256 MiB `zero_()` L2 flush, which costs
+   244-251 us a sample and changes the answer only below about 4 MiB of working set.
+
+   What is left is the wiring, not the evidence: a benchmark with `StrictCuptiBenchmark`'s
+   call shape, a paired policy kind beside `cupti` and `metal`, and a `timing_source` on
+   the DCU's registry row. *(next)*
+
+   The paragraph below records what was true before those measurements.
+
+   > **This was where the DCU stopped, and it stopped honestly.**
    The Study template chose its measurement source with `"metal" if metal else "cupti"`,
    so the first DCU study declared `correctness_then_paired_cupti` and
    `fixed_baseline_paired_cupti_v1` -- a profiler's name on evidence that profiler never
