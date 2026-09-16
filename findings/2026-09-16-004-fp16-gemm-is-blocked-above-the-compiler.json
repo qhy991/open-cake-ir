@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-002",
+  "id": "F-2026-09-16-004",
   "kind": "capacity",
   "date": "2026-09-16",
   "title": "The Compiler already lowers the SoL-ExecBench FP16 GEMM shape to CUDA on sm_103a; three layers above it refuse FP16, and the Triton route declares no FP16 dot",

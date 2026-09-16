@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-001",
+  "id": "F-2026-09-16-003",
   "kind": "behavior",
   "title": "A kimi-k3 experiment service runs B300 tasks end to end; twelve of thirteen campaigns are protocol-adherent, and the refused one used a tool the authoring environment does not offer",
   "date": "2026-09-16",

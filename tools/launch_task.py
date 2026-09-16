@@ -243,7 +243,7 @@ def _admit_allocator(runtime) -> None:
     Measured, at the cost of a full authoring turn: the launcher's gpu-run default socket
     is not the socket this B300 host's broker listens on, so a campaign authored a
     candidate, sealed it, reached the allocator and faulted with "cannot reach broker" --
-    77103 provider tokens for a run that could never be evaluated (F-2026-09-16-001). The
+    77103 provider tokens for a run that could never be evaluated (F-2026-09-16-003). The
     allocator is the one participant a launch cannot check by reading a file, so it is
     checked by using it: the same command the campaign will use, with `/bin/true` in place
     of the evaluator. One short lease, before the provider is admitted.

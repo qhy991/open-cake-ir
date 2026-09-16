@@ -309,7 +309,7 @@ class TaskLaunchTests(unittest.TestCase):
         The launcher's gpu-run default socket was not the socket the B300 host's broker
         listens on. The campaign authored a candidate, sealed it, reached the allocator
         and faulted with "cannot reach broker" -- 77103 provider tokens for a run that
-        could never be evaluated (F-2026-09-16-001). The allocator is the one participant
+        could never be evaluated (F-2026-09-16-003). The allocator is the one participant
         a launch cannot check by reading a file.
         """
         false = shutil.which("false") or "/usr/bin/false"
