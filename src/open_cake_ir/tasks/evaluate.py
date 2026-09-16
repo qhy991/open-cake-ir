@@ -17,7 +17,7 @@ import sys
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
-from typing import Mapping, cast
+from typing import Callable, Mapping, cast
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
@@ -867,6 +867,56 @@ def _profile_candidate(
         raise
 
 
+@dataclass(frozen=True)
+class _ExecutionPlatform:
+    """How one declared code object is evaluated, attributed and profiled.
+
+    A platform is a row here rather than a branch in `main`, so a code object nothing
+    implements is refused by name instead of reaching whichever branch it happens to
+    fall into. That was not hypothetical: attribution had no platform test at all, so a
+    candidate built for an AMDGCN target asking for a profile reached CUDA's exclusive
+    device admission and was refused by nvidia-smi.
+
+    `attribution` names where a profile comes from, because the two implementations do
+    not have the same shape: CUDA profiles through a separate NCU-supervised entry, and
+    Metal's own evaluation writes the profile its Executor already admitted.
+    """
+
+    evaluate: Callable[[_Authority, dict], None] | None
+    attribution: str | None
+    profiled_child: bool = False
+
+
+_PLATFORMS = {
+    "cubin": _ExecutionPlatform(
+        evaluate=lambda authority, result: _evaluate_candidate(
+            authority, result, collect_timing=True),
+        attribution="separate",
+        profiled_child=True,
+    ),
+    "metal_binary_archive": _ExecutionPlatform(
+        evaluate=_evaluate_metal_candidate,
+        attribution="inside_evaluate",
+    ),
+    # The AMDGCN half admits a device and loads a candidate (F-2026-09-15-003) and has
+    # neither a launch nor a timing source, so it is a row that says so rather than an
+    # absence another platform's branch would absorb.
+    "hsaco": _ExecutionPlatform(evaluate=None, attribution=None),
+}
+
+
+def _platform(authority: _Authority) -> _ExecutionPlatform:
+    """The row for this candidate's declared object, or a refusal naming the object."""
+    name = _execution_platform(authority)
+    platform = _PLATFORMS.get(name)
+    if platform is None or platform.evaluate is None:
+        raise ValueError(
+            f"no execution platform implements {name!r}: this worker launches and times "
+            "a cubin and observes a Metal binary archive"
+        )
+    return platform
+
+
 def main() -> int:
     global _PROFILE_OUTPUT_OWNER
     parser = argparse.ArgumentParser(description=__doc__)
@@ -885,6 +935,10 @@ def main() -> int:
         if args.profile_child:
             if purpose != "attribution" or args.profile_admission is None:
                 raise ValueError("profile child requires attribution purpose")
+            if not _platform(authority).profiled_child:
+                raise ValueError(
+                    f"{_execution_platform(authority)!r} has no profiled child launch"
+                )
             admission_path = _input_path(
                 authority.request_root,
                 args.profile_admission.name,
@@ -921,16 +975,23 @@ def main() -> int:
                 collect_timing=False,
                 admission=admission,
             )
-        elif _execution_platform(authority) == "metal_binary_archive":
-            if args.profile_admission is not None:
-                raise ValueError("Metal profile admission is provided by its Executor")
-            _evaluate_metal_candidate(authority, result)
         elif purpose == "attribution":
-            if args.profile_admission is not None:
-                raise ValueError("profile admission is internal-only")
-            _profile_candidate(authority, request_path, result)
+            platform = _platform(authority)
+            if platform.attribution is None:
+                raise ValueError(
+                    f"{_execution_platform(authority)!r} has no attribution source; a "
+                    "profile is not taken on another platform's behalf"
+                )
+            if platform.attribution == "inside_evaluate":
+                if args.profile_admission is not None:
+                    raise ValueError("Metal profile admission is provided by its Executor")
+                platform.evaluate(authority, result)
+            else:
+                if args.profile_admission is not None:
+                    raise ValueError("profile admission is internal-only")
+                _profile_candidate(authority, request_path, result)
         else:
-            _evaluate_candidate(authority, result, collect_timing=True)
+            _platform(authority).evaluate(authority, result)
     except Exception as error:
         result["error"] = "evaluator_failed"
         result["failure_class"] = type(error).__name__

@@ -63,5 +63,44 @@ class ExecutionPlatformSelection(unittest.TestCase):
             admission.assert_not_called()
 
 
+class EveryDeclaredObjectIsARow(unittest.TestCase):
+    """A platform is a row, so an eighth Target cannot land without one."""
+
+    def _declared_objects(self) -> set[str]:
+        import json
+        from pathlib import Path as _Path
+
+        root = _Path(__file__).resolve().parents[2]
+        return {json.loads(path.read_text(encoding="utf-8"))["code_object"]
+                for path in (root / "compiler/targets").glob("*.json")}
+
+    def test_the_registry_covers_every_object_a_target_declares(self) -> None:
+        declared = self._declared_objects()
+        self.assertTrue(declared)
+        self.assertEqual(declared - set(worker._PLATFORMS), set(),
+                         "a declared code object with no execution platform row")
+
+    def test_an_object_no_platform_implements_is_refused_by_name(self) -> None:
+        with self.assertRaisesRegex(ValueError, "no execution platform implements 'hsaco'"):
+            worker._platform(_authority("gfx938"))
+
+    def test_attribution_is_not_taken_on_another_platforms_behalf(self) -> None:
+        """The measured failure: a profile request reached CUDA's device admission.
+
+        `hsaco` has no attribution source, and the row says so rather than leaving the
+        request to fall through to whichever branch follows.
+        """
+        self.assertIsNone(worker._PLATFORMS["hsaco"].attribution)
+        self.assertIsNone(worker._PLATFORMS["hsaco"].evaluate)
+        self.assertFalse(worker._PLATFORMS["hsaco"].profiled_child)
+
+    def test_each_implemented_platform_states_where_its_profile_comes_from(self) -> None:
+        self.assertEqual(worker._PLATFORMS["cubin"].attribution, "separate")
+        self.assertEqual(
+            worker._PLATFORMS["metal_binary_archive"].attribution, "inside_evaluate")
+        self.assertTrue(worker._PLATFORMS["cubin"].profiled_child)
+        self.assertFalse(worker._PLATFORMS["metal_binary_archive"].profiled_child)
+
+
 if __name__ == "__main__":
     unittest.main()
