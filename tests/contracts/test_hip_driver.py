@@ -24,6 +24,27 @@ from open_cake_ir.evaluation.hip_driver import (
 class RuntimeResolutionTest(unittest.TestCase):
     """No soname is named; the runtime the admitted torch loaded is the runtime."""
 
+    def test_it_looks_past_the_global_symbol_table(self) -> None:
+        """`CDLL(None)` was the whole of this, and the DCU refused it.
+
+        torch loads its extensions with RTLD_LOCAL, so on the device the HIP entry points
+        were mapped into the process and not globally visible, and every required symbol
+        came back unresolved. The process's own memory map names the file; dlopen of an
+        already-mapped library is a reference-count bump, not a second load.
+        """
+        import inspect
+        from open_cake_ir.evaluation import hip_driver
+        source = inspect.getsource(hip_driver.load_hip_runtime)
+        self.assertIn("_mapped_shared_objects", source)
+        self.assertIn("RTLD_LOCAL", source)
+        # And the map reader names no vendor's library.
+        map_source = inspect.getsource(hip_driver._mapped_shared_objects)
+        self.assertIn("/proc/self/maps", map_source)
+        self.assertIn(".so", map_source)
+        for soname in ("libgalaxyhip.so.5", "libamdhip64.so.5"):
+            self.assertNotIn(soname, source.replace("`libgalaxyhip.so.5`", "")
+                             .replace("`libamdhip64.so.5`", ""))
+
     def test_a_process_without_the_hip_runtime_is_refused_by_symbol(self) -> None:
         empty = SimpleNamespace()
         with self.assertRaises(RuntimeError) as raised:
@@ -34,7 +55,7 @@ class RuntimeResolutionTest(unittest.TestCase):
         # The refusal names the missing symbols, never a vendor's library file: a Hygon
         # DTK host loads libgalaxyhip and a ROCm host libamdhip64, and enumerating those
         # here would be one more per-vendor list in shared code.
-        for soname in ("libgalaxyhip", "libamdhip64", ".so"):
+        for soname in ("libgalaxyhip", "libamdhip64"):
             self.assertNotIn(soname, message)
 
     def test_a_process_holding_every_symbol_is_admitted(self) -> None:

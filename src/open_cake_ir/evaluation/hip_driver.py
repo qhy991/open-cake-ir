@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ctypes
 from hashlib import sha256
+from pathlib import Path
 from typing import Mapping, Sequence
 
 from .core import LaunchableCandidate
@@ -55,20 +56,63 @@ class HipLifecycleError(RuntimeError):
         )
 
 
+def _exports_every_symbol(library: object) -> bool:
+    return all(hasattr(library, name) for name in _REQUIRED_SYMBOLS)
+
+
+def _mapped_shared_objects() -> list[str]:
+    """Every shared object this process has mapped, in first-mapped order.
+
+    The process's own memory map is the vendor-neutral way to find the runtime torch
+    loaded: a Hygon DTK host maps `libgalaxyhip.so.5` and a ROCm host `libamdhip64.so.5`,
+    and neither name appears here.
+    """
+    seen: list[str] = []
+    try:
+        lines = Path("/proc/self/maps").read_text().splitlines()
+    except OSError:
+        return seen
+    for line in lines:
+        path = line.split(" ", 5)[-1].strip() if line.count(" ") >= 5 else ""
+        if path.startswith("/") and (path.endswith(".so") or ".so." in path):
+            if path not in seen:
+                seen.append(path)
+    return seen
+
+
 def load_hip_runtime(library: object | None = None) -> object:
     """Resolve the HIP runtime already loaded by the admitted ROCm PyTorch.
 
-    Nothing is opened by name: `admit_exact_hip` imports torch and refuses a build whose
-    `torch.version.hip` is absent, so by the time anything here runs the process holds
-    the runtime this host actually installs, whichever vendor's fork that is.
+    Nothing is opened by name. `admit_exact_hip` imports torch and refuses a build whose
+    `torch.version.hip` is absent, so by the time anything here runs the process has the
+    runtime this host installs mapped -- whichever vendor's fork that is.
+
+    Finding it is not as simple as the global symbol table, which is what this tried
+    first and what the DCU refused: torch loads its extensions with RTLD_LOCAL, so the
+    HIP entry points are mapped but not globally visible, and `CDLL(None)` reports every
+    one of them unresolved. The process's own memory map names the file, and `dlopen` of
+    an already-mapped library is a reference-count bump rather than a second load.
     """
-    api = ctypes.CDLL(None) if library is None else library
+    if library is not None:
+        api = library
+    else:
+        api = ctypes.CDLL(None)
+        if not _exports_every_symbol(api):
+            for path in _mapped_shared_objects():
+                try:
+                    candidate = ctypes.CDLL(path)
+                except OSError:
+                    continue
+                if _exports_every_symbol(candidate):
+                    api = candidate
+                    break
     missing = [name for name in _REQUIRED_SYMBOLS if not hasattr(api, name)]
     if missing:
         raise RuntimeError(
             "the HIP runtime is not loaded in this process; "
             + ", ".join(missing)
-            + " are unresolved. An admitted ROCm PyTorch loads it before this point."
+            + " are unresolved in the global symbol table and in every shared object this "
+            "process has mapped. An admitted ROCm PyTorch loads it before this point."
         )
     return api
 
