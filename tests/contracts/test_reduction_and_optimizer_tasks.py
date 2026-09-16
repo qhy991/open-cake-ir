@@ -101,15 +101,18 @@ class ColumnReductionTaskTests(unittest.TestCase):
             for rows in (1, 8, 32):
                 workload, source = self.task(name, rows=rows, columns=5)
                 schedule = frontend.parse(source).document
-                for case_id in reductions.CASES:
-                    with self.subTest(task=name, rows=rows, case=case_id):
-                        inputs = materialize_case(workload, case_id)
-                        expected = reference_outputs(workload, case_id, inputs)
-                        outputs = runner.execute_body(schedule, inputs)
-                        passed, metrics = compare_tile_outputs(
-                            workload, inputs, expected, {k: outputs[k] for k in expected},
-                            {k: outputs[k] for k in inputs})
-                        self.assertTrue(passed, metrics)
+                # One compile per Schedule, not per case: the emitted body does
+                # not depend on which input case runs through it.
+                with runner.compiled_body(schedule) as run:
+                    for case_id in reductions.CASES:
+                        with self.subTest(task=name, rows=rows, case=case_id):
+                            inputs = materialize_case(workload, case_id)
+                            expected = reference_outputs(workload, case_id, inputs)
+                            outputs = run(inputs)
+                            passed, metrics = compare_tile_outputs(
+                                workload, inputs, expected, {k: outputs[k] for k in expected},
+                                {k: outputs[k] for k in inputs})
+                            self.assertTrue(passed, metrics)
 
     def test_frozen_contract_rejects_drift(self):
         document, _ = create_task("per_channel_moments", rows=8, columns=4)
@@ -210,15 +213,18 @@ class OptimizerTaskTests(unittest.TestCase):
             for width in (1, 8, 65):
                 workload, source = self.task(name, columns=width)
                 schedule = frontend.parse(source).document
-                for case_id in optimizers.CASES:
-                    with self.subTest(task=name, width=width, case=case_id):
-                        inputs = materialize_case(workload, case_id)
-                        expected = reference_outputs(workload, case_id, inputs)
-                        outputs = runner.execute_body(schedule, inputs)
-                        passed, metrics = compare_tile_outputs(
-                            workload, inputs, expected, {k: outputs[k] for k in expected},
-                            {k: outputs[k] for k in inputs})
-                        self.assertTrue(passed, metrics)
+                # One compile per Schedule, not per case: the emitted body does
+                # not depend on which input case runs through it.
+                with runner.compiled_body(schedule) as run:
+                    for case_id in optimizers.CASES:
+                        with self.subTest(task=name, width=width, case=case_id):
+                            inputs = materialize_case(workload, case_id)
+                            expected = reference_outputs(workload, case_id, inputs)
+                            outputs = run(inputs)
+                            passed, metrics = compare_tile_outputs(
+                                workload, inputs, expected, {k: outputs[k] for k in expected},
+                                {k: outputs[k] for k in inputs})
+                            self.assertTrue(passed, metrics)
 
     def test_a_shape_the_observer_cannot_hold_is_refused_before_the_campaign(self):
         """F-2026-09-10-002: multi-buffer tasks died at first evaluation, tokens spent.

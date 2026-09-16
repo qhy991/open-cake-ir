@@ -275,15 +275,18 @@ class NormalizationTaskTests(unittest.TestCase):
             for width, cases in ((1, ("primary",)), (7, tuple(normalization.CASES)), (65, ("mixed_magnitude",))):
                 workload, source = self.task(name, columns=width)
                 schedule = frontend.parse(source).document
-                for case_id in cases:
-                    with self.subTest(task=name, width=width, case=case_id):
-                        inputs = materialize_case(workload, case_id)
-                        expected = reference_outputs(workload, case_id, inputs)
-                        outputs = runner.execute_body(schedule, inputs)
-                        observed = {"out": outputs["out"]}
-                        after = {key: outputs[key] for key in inputs}
-                        passed, metrics = compare_tile_outputs(workload, inputs, expected, observed, after)
-                        self.assertTrue(passed, metrics)
+                # One compile per Schedule, not per case: the emitted body does
+                # not depend on which input case runs through it.
+                with runner.compiled_body(schedule) as run:
+                    for case_id in cases:
+                        with self.subTest(task=name, width=width, case=case_id):
+                            inputs = materialize_case(workload, case_id)
+                            expected = reference_outputs(workload, case_id, inputs)
+                            outputs = run(inputs)
+                            observed = {"out": outputs["out"]}
+                            after = {key: outputs[key] for key in inputs}
+                            passed, metrics = compare_tile_outputs(workload, inputs, expected, observed, after)
+                            self.assertTrue(passed, metrics)
 
 
 if __name__ == "__main__":
