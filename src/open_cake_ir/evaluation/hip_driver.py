@@ -25,7 +25,7 @@ from __future__ import annotations
 import ctypes
 from hashlib import sha256
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 from .core import LaunchableCandidate
 
@@ -280,5 +280,26 @@ class LoadedHipModuleCandidate:
     def synchronize(self) -> None:
         _hip_call(self._api, "hipDeviceSynchronize")
 
-    def close(self) -> None:
-        self._modules.close()
+    def close(self, *, synchronize: Callable[[], None] | None = None,
+              primary: BaseException | None = None) -> None:
+        """Drain the device, then unload, keeping every failure observed on the way.
+
+        The signature is the CUDA loader's because the one caller -- the shared
+        tensor-tile lifecycle -- closes both through it. Draining first is the point: an
+        unload while a launch is still in flight is what `synchronize` exists to prevent,
+        and the caller passes `torch.cuda.synchronize`, which a ROCm build maps onto HIP.
+        """
+        failures: list[BaseException] = [] if primary is None else [primary]
+        if synchronize is not None and not self.closed:
+            try:
+                synchronize()
+            except BaseException as error:
+                failures.append(error)
+        try:
+            self._modules.close()
+        except BaseException as error:
+            failures.append(error)
+        if len(failures) == 1:
+            raise failures[0]
+        if failures:
+            raise HipLifecycleError(failures[0], *failures[1:])

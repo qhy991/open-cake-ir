@@ -255,5 +255,71 @@ class WorkerDispatchTest(unittest.TestCase):
             evaluate._evaluate_hip_candidate(authority, {}, collect_timing=True)
 
 
+class CloseContractTest(unittest.TestCase):
+    """Teardown drains the device first, and matches the lifecycle that calls it."""
+
+    def loaded(self, api):
+        from unittest.mock import patch as _patch
+        candidate = SimpleNamespace(
+            target="gfx938", entry_point="k", launch_spec_sha256="c" * 64,
+            artifact_roles={"hsaco": sha256(b"\x7fELF").hexdigest()},
+            artifact_payloads={"amdgcn": b".amdhsa_kernel k\n"})
+        manifest = SimpleNamespace(target="gfx938", kernel_name="k",
+                                   canonical_sha256="c" * 64)
+        with _patch("open_cake_ir.evaluation.triton_hip.amdgcn_resource_record",
+                    return_value={}):
+            return LoadedHipModuleCandidate.load(candidate, b"\x7fELF", manifest,
+                                                 "gfx938", api=api)
+
+    def working_api(self, **overrides):
+        api = SimpleNamespace(**{name: (lambda *a: 0) for name in (
+            "hipModuleLoadData", "hipModuleGetFunction", "hipModuleLaunchKernel",
+            "hipModuleUnload", "hipDeviceSynchronize")})
+        for name, value in overrides.items():
+            setattr(api, name, value)
+        return api
+
+    def test_it_takes_the_same_arguments_the_shared_lifecycle_passes(self) -> None:
+        """The tensor-tile lifecycle closes both drivers through one call.
+
+        Measured on the DCU after the kernel had already launched: close() took no
+        keywords and the run failed at teardown with 'unexpected keyword argument
+        synchronize', after module_loads=1, preflight_calls=1 and kernel_calls=1.
+        """
+        import inspect
+        from open_cake_ir.evaluation.cuda_driver import CudaModules
+        self.assertEqual(str(inspect.signature(LoadedHipModuleCandidate.close)),
+                         str(inspect.signature(CudaModules.close)))
+
+    def test_the_device_is_drained_before_anything_is_unloaded(self) -> None:
+        order = []
+        api = self.working_api(hipModuleUnload=lambda *a: order.append("unload") or 0)
+        loaded = self.loaded(api)
+        loaded.close(synchronize=lambda: order.append("synchronize"))
+        self.assertEqual(order, ["synchronize", "unload"])
+        self.assertTrue(loaded.closed)
+
+    def test_a_drain_failure_does_not_skip_the_unload_and_is_not_hidden(self) -> None:
+        unloaded = []
+        api = self.working_api(hipModuleUnload=lambda *a: unloaded.append(1) or 0)
+        loaded = self.loaded(api)
+
+        def drain():
+            raise RuntimeError("device drain failed")
+
+        with self.assertRaisesRegex(RuntimeError, "device drain failed"):
+            loaded.close(synchronize=drain)
+        self.assertEqual(unloaded, [1])
+
+    def test_a_primary_failure_is_kept_beside_the_teardown_one(self) -> None:
+        api = self.working_api(hipModuleUnload=lambda *a: 7)
+        loaded = self.loaded(api)
+        primary = ValueError("the launch failed")
+        with self.assertRaises(HipLifecycleError) as raised:
+            loaded.close(primary=primary)
+        self.assertIs(raised.exception.primary, primary)
+        self.assertIn("hipModuleUnload", str(raised.exception.teardown))
+
+
 if __name__ == "__main__":
     unittest.main()
