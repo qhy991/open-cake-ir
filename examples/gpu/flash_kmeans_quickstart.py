@@ -148,8 +148,7 @@ def _run_gpu(
     schedule_bytes: bytes,
     summary: dict[str, object],
 ) -> int:
-    executor_path = _current_executor_path(project_root, "sm_100a")
-    executor = ExecutorRevision.load(project_root, executor_path)
+    executor = ExecutorRevision.for_target(project_root, "sm_100a")
     executor.admit_host()
     summary["executor_revision"] = {
         "executor_id": executor.executor_id,
@@ -247,25 +246,6 @@ def _run_gpu(
         "scientific_claim_authorized": False,
     }
     return 0 if receipt.correctness_passed else 2
-
-
-def _current_executor_path(project_root: Path, target: str) -> Path:
-    inventory = _object(
-        json.loads(
-            (project_root / "inventory/EXECUTOR_REVISIONS.json").read_text(
-                encoding="utf-8"
-            )
-        ),
-        "executor inventory",
-    )
-    if inventory.get("schema_version") != 2:
-        raise ValueError("executor inventory schema differs")
-    currents = _object(inventory.get("current_by_target"), "executor inventory.current_by_target")
-    current = _object(currents.get(target), f"executor inventory.current_by_target.{target}")
-    path = current.get("path")
-    if not isinstance(path, str) or not path:
-        raise ValueError("current Executor path differs")
-    return (project_root / path).resolve(strict=True)
 
 
 def main() -> int:

@@ -232,7 +232,7 @@ Failure remains a sealed observation and issues no passing receipt. Reauthentica
 using another Run id; never delete or rewrite a failed archive.
 
 Freeze a live system-qualification successor from its matching receipt, seal anchor,
-current Executor descriptor, and exact runtime configuration:
+committed host capture, and exact runtime configuration:
 
 ```bash
 python tools/freeze_live_matched_study.py \
@@ -240,7 +240,7 @@ python tools/freeze_live_matched_study.py \
   --template contracts/studies/matched-search-system-qualification-ralph-template.json \
   --qualification contracts/providers/<new-closed-receipt>.json \
   --qualification-anchor evidence/qualifications/<new-closed-anchor>.json \
-  --executor "$(jq -r '.current.path' inventory/EXECUTOR_REVISIONS.json)" \
+  --executor runtime/hosts/<target>.json \
   --runtime-config /new/external/path/runtime.json \
   --reasoning-effort xhigh \
   --study-id <new-system-qualification-study-id> \

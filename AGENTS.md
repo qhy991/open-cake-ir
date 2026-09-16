@@ -18,8 +18,8 @@ It is about the layers every target shares.
   Anything beyond those sites that a new vendor forces you to edit in shared code is a
   defect in that code. Naming AMD once today means editing `compiler/target.py:22`,
   `evaluation/artifacts.py:4`, `lab/executor.py:183`,
-  `verifier/hardware_conformance.py:199` and `verifier/program_safety.py:19` -- three of
-  which `compiler/source_set.json` pins, so a data addition becomes a successor Revision.
+  `verifier/hardware_conformance.py:199` and `verifier/program_safety.py:19` -- every one
+  of them shared code, so what should be a data addition still arrives as a code change.
 - **A hardware fact is declared by the Target that owns it, once.** The tell is a number in
   shared Python that no Target document can state. `Target.warp_size` is `return 32`, nine
   shared computations multiply by it, and the evidence for 32 exists only as citation prose

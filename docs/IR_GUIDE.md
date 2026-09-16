@@ -222,6 +222,6 @@ assert "fma.rn.f32" in lowering.source
 2. 从公共入口导出需要给调用方使用的类型；生成 Schema 和 authoring 文档应与同一规范相符，不另加一套注册表或旧新 parser 路径。
 3. 同步更新 [Verifier](../src/open_cake_ir/compiler/verifier/__init__.py)、相关 [residency](../src/open_cake_ir/compiler/performance/residency.py) / [work](../src/open_cake_ir/compiler/performance/work.py) 及目标后端。不能先接受字段，再让 lowering 默默忽略它。
 4. 对稳定接口或已复现错误补聚焦测试，并通过完整 Corpus Gate。期望变化需要单独审查，不能为了变绿而重写期望。
-5. 新文件纳入 [Compiler source set](../compiler/source_set.json)，按 [发布流程](RUNBOOK.md) 准备后继并独立审查。历史 release、Executor 与实验固定的源码使用原 Git 版本回放。
+5. 新文件提交即属于 Compiler：源码身份就是这次检出的 git 提交（[ADR 0065](adr/0065-source-identity-is-the-commit.md)），没有另一份源码清单要登记，评审在合并到 main 时进行一次。历史 release、Executor 与实验固定的源码使用原 Git 版本回放。
 
 查看代码中的现行词汇可以运行 `tools/ir_vocabulary.py`。它从公共 IR 对象投影枚举和结构，因此文件拆分不会使这份工具清单变成第二份手工维护的事实来源。是否真的可用，仍对目标 Schedule 执行 assessment。
