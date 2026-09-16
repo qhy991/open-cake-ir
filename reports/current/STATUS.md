@@ -11,6 +11,9 @@
 - 状态： `released`
 - 目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, gfx1151, gfx938, sm_100a, sm_103a`
 - 语料检查： `151/151` 项符合预期
+- 语料覆盖： 检查了 `apple_gpu_family8`（15）、`gfx1151`（1）、`gfx938`（3）、`sm_100a`（102）、`sm_103a`（29）
+- 未检查的已声明目标： `apple_gpu_family7, apple_gpu_family9`（上面的通过数不涵盖这些目标）
+- 只用于拒绝检查的未声明目标： `apple_gpu_family10`（1）
 - 绑定源码： `210` 个文件
 - 已发布校准： `无`
 - 负责记录： [`compiler/revision.lock.json`](../../compiler/revision.lock.json)
