@@ -66,3 +66,24 @@ binds the score-routed V4-Pro MoE gate: `sqrtsoftplus`, selection-only bias, six
 routed experts, normalized weights and the `2.5` route scale.  It deliberately excludes
 the first three hash-routed layers, expert dispatch, local FP4 expert MLPs, cross-rank
 all-reduce and the shared expert. Those edges belong in a future MoE Program Contract.
+
+## SoL-ExecBench imports
+
+`solx-fib-*` and `solx-l1-*` are imports from the `flashinfer-bench-tasks` pack, split by
+upstream authority: `fib` for the 26 tasks whose definitions come from FlashInfer-Bench,
+`l1` for the 94 from `nvidia/SOL-ExecBench` subset L1. The split is not a difficulty
+grading; it is which upstream owns the definition, the workload axis and the baseline.
+[ADR 0065](../../docs/adr/0065-sol-execbench-task-import.md) states the namespace and the
+four gate translations these imports make, and
+[`src/open_cake_ir/tasks/solx_fib/workload.py`](../../src/open_cake_ir/tasks/solx_fib/workload.py)
+generates each document.
+
+[`solx-fib-rmsnorm-h4096-bf16-triton-b300-r170-v1.json`](solx-fib-rmsnorm-h4096-bf16-triton-b300-r170-v1.json)
+is the first. It binds one batch extent, 170, which is where the upstream baseline was
+weakest; the pack's other thirteen extents are recorded in provenance and explicitly
+excluded rather than claimed. The upstream `matched_ratio` 0.99 gate is replaced by an
+all-element comparison at `atol` 2**-16 and `rtol` 2**-7, which is a stricter gate and not
+the same one. No upstream candidate source, latency or score is inherited, and the pack's
+baseline directories are declared `restricted_artifact` so a clean-start arm's refusal is
+a property of the contract. B300 device compile, correctness, timing, profiler and
+framework evaluation remain pending.

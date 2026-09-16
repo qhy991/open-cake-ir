@@ -422,7 +422,7 @@ gfx1151 result needs a gfx1151 toolchain and device.
    reading all eight of its columns rather than the five a truncated `sed` first showed --
    can be derived from rocprofv2's per-dispatch `Start`/`End` timestamps. *(blocked on the
    measurement)*
-9. The AMDGCN evaluation driver. **Written, not yet run on the device.**
+9. The AMDGCN evaluation driver. **Done, and verified on the device.**
    `evaluation/hip_driver.py` is the AMDGCN peer of `cuda_driver.py` -- smaller on
    purpose, since CUDA's cluster attributes, binary-version check and dynamic-shared
    opt-in threshold are not facts about an `amdgcn-amd-amdhsa--` object -- and it names
@@ -435,9 +435,24 @@ gfx1151 result needs a gfx1151 toolchain and device.
 
    Four more not-Metal-so-CUDA branches were on the way there: the worker's own dispatch,
    `allowed_artifact_roles`, an unconditional `collect_timing=True`, and attribution
-   handing a DCU candidate to Nsight Compute. Every refusal each of these owns is
-   host-tested in `tests/contracts/test_hip_driver.py`. What is owed is the device-side
-   run -- nothing has launched an HSACO through this path on a DCU yet.
+   handing a DCU candidate to Nsight Compute.
+
+   The device run then named three more that no host test could have. `Compiler.load`
+   returns an object with no identity of its own, so a request carrying
+   `compiler.revision_id` is refused -- the released Revision is the authority.
+   `load_hip_runtime` resolved through `ctypes.CDLL(None)`, on the reasoning that the
+   admitted ROCm PyTorch has already loaded whichever fork this host installs; torch loads
+   its extensions with RTLD_LOCAL, so on the DCU all five entry points were mapped and
+   none globally visible, and the lookup now reads the process's own memory map (still
+   naming no soname). And `close()` took no arguments where the shared tensor-tile
+   lifecycle closes both drivers through one call with `synchronize=torch.cuda.synchronize`
+   -- which surfaced only *after* the kernel had launched, at `module_loads` 1,
+   `preflight_calls` 1, `kernel_calls` 1.
+
+   **The passing run**: local-broker job `hip-ecbdb752ace2`, `correctness_passed` true,
+   `output_mismatches` 0, `max_abs_error` 4.76837158203125e-07 against the external CPU
+   oracle, `inputs_unchanged` true, `timing` null -- the target declares no timing source
+   and the receipt says so rather than reporting a latency.
 10. A DCU optimization campaign. **Correctly blocked, and it is the same block as gate 8.**
    A single-arm optimization campaign selects on getting faster, so a Study with no timed
    assay has nothing to select on; `validate_evaluation` refuses it and now gives the

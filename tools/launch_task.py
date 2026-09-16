@@ -36,6 +36,7 @@ from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
 from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
 from open_cake_ir.tasks.optimizers.workload import TASKS as _OPTIMIZER_TASKS
 from open_cake_ir.tasks.contraction.workload import TASKS as _CONTRACTION_TASKS
+from open_cake_ir.tasks.solx_fib.workload import TASKS as _SOLX_FIB_TASKS, HIDDEN_SIZE as _SOLX_FIB_HIDDEN
 from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.reporting import primary_summary
@@ -50,6 +51,9 @@ REDUCTION_TASKS = tuple(_REDUCTION_TASKS)
 OPTIMIZER_TASKS = tuple(_OPTIMIZER_TASKS)
 # The arithmetic-bound family declares a K extent, as the legacy GEMM task does.
 CONTRACTION_TASKS = tuple(_CONTRACTION_TASKS)
+# SoL-ExecBench tasks carry their upstream definition's constant axis in their own name,
+# so only the batch extent is a flag here.
+SOLX_FIB_TASKS = tuple(_SOLX_FIB_TASKS)
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -383,6 +387,12 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
     """
     if task in CONTRACTION_TASKS:
         return 1024 if rows is None else rows, 64 if columns is None else columns
+    if task in SOLX_FIB_TASKS:
+        # The hidden size is the upstream task's constant, not a default: passing another
+        # one is refused by name rather than silently authoring a different task. The
+        # batch default is the extent at which the upstream baseline was weakest, which
+        # is the shape worth seeding, not the one that flatters a bandwidth number.
+        return 170 if rows is None else rows, _SOLX_FIB_HIDDEN[task] if columns is None else columns
     return 128 if rows is None else rows, 1024 if columns is None else columns
 
 
@@ -400,6 +410,7 @@ def main(argv=None) -> int:
     parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
                                           *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS,
                                           *OPTIMIZER_TASKS, *CONTRACTION_TASKS,
+                                          *SOLX_FIB_TASKS,
                                           "gemm_bias"), required=True)
     parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
     parser.add_argument("--model", required=True)
