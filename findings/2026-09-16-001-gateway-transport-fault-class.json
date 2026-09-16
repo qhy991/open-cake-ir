@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-16-001",
+  "kind": "behavior",
+  "title": "The subscription gateway serves sustained transport-failure windows with no rate-limit notice at all; those deaths are distinguishable from the quota wall only by observed_quota being absent, and a turn-1-gated requeue under the same frozen Revision recovers them",
+  "date": "2026-09-16",
+  "backend": "metal-m1-pro",
+  "target": "apple_gpu_family7",
+  "executor_revision": "open-cake-ir-b200-v118+a47cfdd532eaa8eb4144ff784d95cbb599aaf3f67039a66d22ba18cdbc258f79",
+  "compiler_revision_id": "open-cake-ir-sm100a-v82+40055ec251f4e5fe346c0edc3ae19e74aa3bb9abfb5a0d6a05784ad87fa84b6f",
+  "tasks": [
+    "adadelta", "softsign", "selu", "softplus_gradient", "gelu_tanh_backward",
+    "prelu", "softmax_backward", "layernorm_backward_input", "rmsnorm_input_gradient",
+    "absmax_rescale", "cosine_similarity", "layernorm_gamma_beta_backward",
+    "bias_gradient_reduction", "per_channel_moments", "channel_absmax_scale"
+  ],
+  "evidence": [
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/softsign-op5-high-20260915-v118-c",
+      "note": "representative retry-exhaustion shape: 10/10 api_retry events with error \"unknown\" and null error_status spaced ~33-40 s apart, then a synthetic assistant API-error message and result is_error true; ZERO rate_limit_event anywhere in the retained stream. Twelve of the fifteen 2026-09-15 v118-c gateway deaths share this shape."
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/adadelta-op5-high-20260915-v118-c",
+      "note": "the billed-call variant: one 96-second billed assistant call, then transport death with no notice. The other two variants are streams truncated mid-retry-backoff (no terminal result line at all). The window was sustained 23:09-02:54 (2026-09-15/16); two shorter windows occurred 2026-09-14 (attempt b turn-7 retry-exhaustion, attempt f connection-lost-mid-response) and 2026-09-15 ~20:05."
+    },
+    {
+      "workspace": "/Users/haiyan/Documents/lab-workspaces/layernorm_backward_input-op5-high-20260916-v118-d",
+      "note": "the recovery leg: the -d requeue relaunched all sixteen faulted tasks under the same frozen v118 with a turn-1 gate (stop if the first task dies at turn 1). The gate passed at 06:59 and all sixteen tasks reached full campaigns with zero gateway deaths -- the window was transient, and the queue discipline (fresh-suffix workspaces, gate, sequential relaunch) recovered it without a Revision change."
+    }
+  ],
+  "observation": "The F-2026-09-15-001 attribution seam made the two provider-death families legible: quota-wall streams terminate on a rejected rate-limit notice that observed_quota now reports, while gateway-transport streams carry no notice layer event at all, so observed_quota is correctly absent from their fault payloads. Fifteen of twenty-four v118-c tasks died this way in one sustained overnight window (three windows total observed on this arm), each recorded as a bare exit-code provider_fault whose only distinguishing feature is the absence of observed_quota. That absence is diagnostic but implicit -- an operator reading the fault payload cannot tell 'no notice existed' from 'the seam failed to mine one'. The -d requeue establishes the class is transient and operationally recoverable under the same frozen Revision.",
+  "proposed_change": "Make the absence explicit rather than inferred: at the exit-code fault seam, when the retained stdout contains no valid rate-limit notice, record observed_quota as a named absent shape (e.g. {\"observed\": \"no_notice\"}) instead of omitting the key, keeping replay rederivation and the never-substitute rule unchanged. No change to turn admission -- a stream with no notice still fails closed where it fails today. The operational recipe (turn-1 gate plus fresh-suffix requeue, never deleting the faulted workspace) is already validated by the -d batch and needs no code.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verification_plan": "Protocol seam change, so replay: rederive the absent shape from the fifteen cited v118-c gateway streams (each must report no_notice, never a fabricated earlier notice) and confirm the seventeen F-2026-09-15-001 wall streams still report their rejected notices; contract tests for the absent shape and for evidence sealed before the field.",
+  "verified_by": null
+}
