@@ -265,19 +265,62 @@ _AMDGPU_METADATA = re.compile(
     r"^\s*\.amdgpu_metadata\s*$(.*?)^\s*\.end_amdgpu_metadata\s*$",
     re.MULTILINE | re.DOTALL,
 )
-_KERNARG_POINTER = re.compile(r"^\s*\.value_kind:\s*global_buffer\s*$", re.MULTILINE)
+_KERNARG_SIZE = re.compile(r"^\s*\.kernarg_segment_size:\s*(\d+)\s*$", re.MULTILINE)
+_ARGUMENT_KIND = re.compile(r"^\s*\.value_kind:\s*(?P<kind>\S+)\s*$")
+_METADATA_KEY = re.compile(r"^(?P<indent>\s*)(?P<marker>-\s+)?\.(?P<name>[a-z_]+):")
+
+
+def _key_depth(match: "re.Match[str]") -> int:
+    """Where a key sits in the document, counting a list marker as indentation.
+
+    `  - .args:` and `    .kernarg_segment_size:` are siblings: the first key of a list
+    item is written after the dash, and the dash occupies the columns the item's later
+    keys are indented to. Reading the marker as zero-width made `.args` look shallower
+    than its own siblings, so the scan ran past the end of the list and into
+    `.unfolded_args`, counting every argument twice.
+    """
+    return len(match.group("indent")) + len(match.group("marker") or "")
+
+
+def _argument_kinds(block: str) -> list[str]:
+    """The value kinds under `.args`, and nothing else.
+
+    This emitter writes the same entries twice -- once under `.args` and again under
+    `.unfolded_args` -- so a value-kind count over the whole block counts every argument
+    twice, which is what it did. The list ends at the next key written at the same
+    indentation as `.args` itself, which is how the document nests.
+    """
+    lines = block.splitlines()
+    kinds: list[str] = []
+    depth: int | None = None
+    for line in lines:
+        key = _METADATA_KEY.match(line)
+        if depth is None:
+            if key is not None and key.group("name") == "args":
+                depth = _key_depth(key)
+            continue
+        if key is not None and _key_depth(key) <= depth and key.group("name") != "args":
+            break
+        kind = _ARGUMENT_KIND.match(line)
+        if kind is not None:
+            kinds.append(kind.group("kind"))
+    return kinds
 
 
 def amdgcn_kernarg_pointers(payload: bytes) -> int:
     """Count the pointer arguments the emitted kernel actually declares.
 
     The launch passes one address per declared argument, and the count is the kernel's
-    own fact: its `.amdgpu_metadata` lists every argument with a value kind, and a Triton
-    AMDGCN kernel's are all `global_buffer`. Deriving it instead from the route's scratch
-    fields was wrong and the device said so -- an rmsnorm taking three tensors declares
-    five, the launcher passed four, and the kernel read its fifth pointer out of
-    uninitialized kernarg memory. One launch survived that because this kernel never
-    dereferences its scratch; a second did not.
+    own fact: its `.amdgpu_metadata` lists every argument under `.args` with a value kind,
+    and a Triton AMDGCN kernel's are all `global_buffer`. Deriving it instead from the
+    route's scratch fields was wrong and the device said so -- an rmsnorm taking three
+    tensors declares five, the launcher passed four, and the kernel read its fifth pointer
+    out of uninitialized kernarg memory. One launch survived that because this kernel
+    never dereferences its scratch; a second did not.
+
+    Two of the kernel's own statements have to agree: the number of entries under `.args`,
+    and `.kernarg_segment_size` at eight bytes per pointer. A kernel that takes scalars
+    breaks that relation, and is refused here rather than counted as if it did not.
     """
     if not isinstance(payload, bytes) or not payload:
         raise ValueError("AMDGCN artifact must contain assembly bytes")
@@ -288,20 +331,24 @@ def amdgcn_kernarg_pointers(payload: bytes) -> int:
     blocks = _AMDGPU_METADATA.findall(source)
     if len(blocks) != 1:
         raise ValueError("AMDGCN artifact must carry exactly one .amdgpu_metadata block")
-    pointers = len(_KERNARG_POINTER.findall(blocks[0]))
-    if pointers <= 0:
-        raise ValueError("AMDGCN kernel declares no pointer arguments")
-    segment = re.search(r"^\s*\.kernarg_segment_size:\s*(\d+)\s*$", blocks[0], re.MULTILINE)
+    kinds = _argument_kinds(blocks[0])
+    if not kinds:
+        raise ValueError("AMDGCN kernel declares no arguments")
+    if any(kind != "global_buffer" for kind in kinds):
+        raise ValueError(
+            "AMDGCN kernel declares "
+            + ", ".join(sorted(set(kinds)))
+            + "; this launch packs pointer arguments alone"
+        )
+    segment = _KERNARG_SIZE.search(blocks[0])
     if segment is None:
         raise ValueError("AMDGCN kernel declares no kernarg segment size")
-    # Every argument here is an 8-byte pointer, so the two facts must agree. They are
-    # both the kernel's, and a disagreement means this is not the shape assumed.
-    if int(segment.group(1)) != 8 * pointers:
+    if int(segment.group(1)) != 8 * len(kinds):
         raise ValueError(
-            f"AMDGCN kernarg segment is {segment.group(1)} bytes for {pointers} pointer "
+            f"AMDGCN kernarg segment is {segment.group(1)} bytes for {len(kinds)} pointer "
             "arguments; this kernel does not take pointers alone"
         )
-    return pointers
+    return len(kinds)
 
 
 def amdgcn_resource_record(payload: bytes) -> dict[str, object]:

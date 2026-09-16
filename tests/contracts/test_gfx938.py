@@ -428,6 +428,7 @@ class MeasurementCoverageTest(unittest.TestCase):
         from open_cake_ir.compiler.toolchain import triton_route
 
         def metadata(pointers: int, segment: int | None = None) -> bytes:
+            """The shape this emitter writes, including the duplicate it writes twice."""
             entries = "\n".join(
                 "      - .address_space: global\n"
                 f"        .offset:         {index * 8}\n"
@@ -436,7 +437,11 @@ class MeasurementCoverageTest(unittest.TestCase):
                 for index in range(pointers))
             size = 8 * pointers if segment is None else segment
             return ("\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n"
-                    f"{entries}\n    .kernarg_segment_size: {size}\n...\n"
+                    f"{entries}\n    .group_segment_fixed_size: 0\n"
+                    f"    .kernarg_segment_size: {size}\n    .name:           k\n"
+                    # The emitter repeats every argument under `.unfolded_args`, and a
+                    # count over the whole block counted each one twice.
+                    f"    .unfolded_args:\n{entries}\n    .wavefront_size: 64\n...\n"
                     "\t.end_amdgpu_metadata\n").encode()
 
         self.assertEqual(amdgcn_kernarg_pointers(metadata(5)), 5)
@@ -461,7 +466,7 @@ class MeasurementCoverageTest(unittest.TestCase):
                  "      - .offset:         8\n        .size:           4\n"
                  "        .value_kind:     by_value\n"
                  "    .kernarg_segment_size: 12\n...\n\t.end_amdgpu_metadata\n").encode()
-        with self.assertRaisesRegex(ValueError, "does not take pointers alone"):
+        with self.assertRaisesRegex(ValueError, "packs pointer arguments alone"):
             amdgcn_kernarg_pointers(mixed)
         # And a kernel declaring fewer pointers than the case binds tensors is refused
         # rather than yielding a negative hidden count.
