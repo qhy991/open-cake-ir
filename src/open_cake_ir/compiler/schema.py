@@ -418,12 +418,9 @@ def schedule_schema() -> dict[str, Any]:
                         },
                     },
                     {
-                        "registers_per_thread": {
-                            "type": "integer",
-                            "minimum": 24,
-                            "maximum": 256,
-                            "multipleOf": 8,
-                        }
+                        # Which immediates `setmaxnreg` admits belongs to the backend
+                        # that emits it, not to every author of every target.
+                        "registers_per_thread": _POSITIVE
                     },
                 ),
             },

@@ -1041,13 +1041,19 @@ class RoleRegisterSplitTest(unittest.TestCase):
     def test_a_split_without_the_allocation_it_divides_is_refused(self) -> None:
         self.assertIn("ROLE_REGISTERS_WITHOUT_TOTAL", self._codes(self._split(total=None)))
 
-    def test_an_illegal_register_count_is_a_parse_error(self) -> None:
-        # Not a tuning choice the backend can decline: setmaxnreg takes a multiple of
-        # eight in [24, 256] and anything else is an illegal instruction.
+    def test_an_illegal_register_count_is_not_a_parse_error(self) -> None:
+        """Construction admits structure; the immediate belongs to the emitter.
+
+        This parse resolves no Target, so it cannot know whether the ISA it would encode
+        for has `setmaxnreg` at all. Enforcing the range here held every author of every
+        target to one ISA. The refusal now lives with the backend that emits the
+        redistribution, and every other route refuses the split outright; see
+        tests/contracts/test_register_split_ownership.py.
+        """
         for bad in (100, 20, 264):
             with self.subTest(registers=bad):
-                with self.assertRaisesRegex(ScheduleParseError, "multiple of 8"):
-                    Schedule.from_dict(self._split(budgets=(bad, 192)))
+                schedule = Schedule.from_dict(self._split(budgets=(bad, 192)))
+                self.assertEqual(schedule.roles[0].registers_per_thread, bad)
 
 
 class ContractionAccumulatorDiagnosticTest(unittest.TestCase):

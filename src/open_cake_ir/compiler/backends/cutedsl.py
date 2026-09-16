@@ -163,6 +163,29 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "CUTE_TARGET_UNSUPPORTED", "target",
         "the B300 successor currently admits the Triton backend only",
     )
+    # `_emit_role_body` is the only place in this Compiler that emits the
+    # redistribution, so the legal immediates are this backend's constant to hold. The
+    # parse admits any positive budget, because a range that holds only because one ISA
+    # encodes it that way is not a fact a Target-less construction can state.
+    capacity = target.resource_limits.maximum_registers_per_thread
+    for index, role in enumerate(schedule.roles):
+        budget = role.registers_per_thread
+        if budget is None:
+            continue
+        add(
+            budget % 8 == 0 and 24 <= budget <= 256,
+            "CUTE_ROLE_REGISTERS_ILLEGAL_IMMEDIATE",
+            f"roles[{index}].registers_per_thread",
+            f"setmaxnreg takes a multiple of 8 in [24, 256]; {budget} is not a tuning "
+            "choice this backend can decline, it is an illegal instruction",
+        )
+        add(
+            capacity is None or budget <= capacity,
+            "CUTE_ROLE_REGISTERS_EXCEED_TARGET",
+            f"roles[{index}].registers_per_thread",
+            f"role budget {budget} exceeds the per-thread capacity "
+            f"{capacity} that {target.target_id!r} declares",
+        )
 
     kinds = {
         kind: [

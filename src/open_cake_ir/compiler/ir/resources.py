@@ -77,13 +77,13 @@ class Role:
             )
         registers = obj.get("registers_per_thread")
         if registers is not None:
+            # Construction admits structure. Which immediates are legal is `setmaxnreg`'s
+            # encoding, and this parse resolves no Target, so enforcing that range here
+            # held every author of every target to one ISA -- including targets whose
+            # backends refuse the redistribution outright. The backend that emits the
+            # instruction owns its range; the two siblings below are already unbounded
+            # here and gated with the Target in scope.
             registers = _positive_int(registers, f"{context}.registers_per_thread")
-            # setmaxnreg takes a multiple of eight in [24, 256]; a value outside that is
-            # not a tuning choice the backend can decline, it is an illegal instruction.
-            if registers % 8 or not 24 <= registers <= 256:
-                raise ScheduleParseError(
-                    f"{context}.registers_per_thread must be a multiple of 8 in [24, 256]"
-                )
         return cls(_string(obj["name"], f"{context}.name"), parsed, registers)
 
 

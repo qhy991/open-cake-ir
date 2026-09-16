@@ -251,6 +251,19 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             "thread; the declared budget would be dropped rather than enforced",
         )
 
+    # Triton emits no per-role redistribution: `_emit_role_body` has no peer here, and
+    # the only register option this route carries is the CTA-wide `maxnreg` cap. A split
+    # declared for this route was neither applied nor reported until now, which is the
+    # silent drop the sibling AMDGCN refusal above exists to avoid.
+    for index, role in enumerate(schedule.roles):
+        add(
+            role.registers_per_thread is None,
+            "TRITON_ROLE_REGISTERS_UNSUPPORTED",
+            f"roles[{index}].registers_per_thread",
+            "the Triton backend emits no per-role register redistribution; this budget "
+            "would be dropped rather than applied",
+        )
+
     def arange(start: int, end: int, path: str) -> None:
         # Match the arange emitted below. Triton 3.7.1 checks end-start, so a
         # nonzero start is legal when the span is a power of two. block_type
