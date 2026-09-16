@@ -22,24 +22,24 @@
 
 ### `apple_gpu_family8`
 
-- 版本： `open-cake-ir-b200-v148+c1f080e7e9fd56411a0eb767e5924945bc08f08090b91b96a38f25bcd475fa46`
+- 版本： `open-cake-ir-b200-v150+236a48cb3838b3d928389a1a0dabdc073067ccbd44f4e41d737833eec11c7fca`
 - 状态： `released`
 - 绑定源码： `168` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v148+c1f080e7e9fd56411a0eb767e5924945bc08f08090b91b96a38f25bcd475fa46.json`](../../runtime/executors/open-cake-ir-b200-v148+c1f080e7e9fd56411a0eb767e5924945bc08f08090b91b96a38f25bcd475fa46.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v150+236a48cb3838b3d928389a1a0dabdc073067ccbd44f4e41d737833eec11c7fca.json`](../../runtime/executors/open-cake-ir-b200-v150+236a48cb3838b3d928389a1a0dabdc073067ccbd44f4e41d737833eec11c7fca.json)
 
 ### `gfx938`
 
-- 版本： `open-cake-ir-gfx938-v17+d20d8548d2ad3e4c58a885276d3ca211007d90b23b11d1fc2fafaed43170a4e0`
+- 版本： `open-cake-ir-gfx938-v18+4410e07976a402cbd1ca7298397f07c7bf06b9ad29940f92f25821da6999f41e`
 - 状态： `released`
 - 绑定源码： `168` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-gfx938-v17+d20d8548d2ad3e4c58a885276d3ca211007d90b23b11d1fc2fafaed43170a4e0.json`](../../runtime/executors/open-cake-ir-gfx938-v17+d20d8548d2ad3e4c58a885276d3ca211007d90b23b11d1fc2fafaed43170a4e0.json)
+- 描述文件： [`runtime/executors/open-cake-ir-gfx938-v18+4410e07976a402cbd1ca7298397f07c7bf06b9ad29940f92f25821da6999f41e.json`](../../runtime/executors/open-cake-ir-gfx938-v18+4410e07976a402cbd1ca7298397f07c7bf06b9ad29940f92f25821da6999f41e.json)
 
 ### `sm_103a`
 
-- 版本： `open-cake-ir-b200-v147+b51a6ad13f81133a3491aa4620290ce0eb5e7a4351468860e01270959e2424c9`
+- 版本： `open-cake-ir-b200-v149+1dbd1069c291919f07b40628ca609b6c6ab1313a78d20c6c3eb5181f4033acbc`
 - 状态： `released`
 - 绑定源码： `168` 个文件
-- 描述文件： [`runtime/executors/open-cake-ir-b200-v147+b51a6ad13f81133a3491aa4620290ce0eb5e7a4351468860e01270959e2424c9.json`](../../runtime/executors/open-cake-ir-b200-v147+b51a6ad13f81133a3491aa4620290ce0eb5e7a4351468860e01270959e2424c9.json)
+- 描述文件： [`runtime/executors/open-cake-ir-b200-v149+1dbd1069c291919f07b40628ca609b6c6ab1313a78d20c6c3eb5181f4033acbc.json`](../../runtime/executors/open-cake-ir-b200-v149+1dbd1069c291919f07b40628ca609b6c6ab1313a78d20c6c3eb5181f4033acbc.json)
 
 - 负责记录： [`inventory/EXECUTOR_REVISIONS.json`](../../inventory/EXECUTOR_REVISIONS.json)
 
