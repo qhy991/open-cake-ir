@@ -352,6 +352,20 @@ def _verify_instruction_commitments(
             # accepted, lowered, and 0.06 off on a B200, because `tl.dot` quietly picks
             # TF32 for fp32 inputs. Adding a contract adds a row here.
             admitted = _CONTRACT_DTYPES.get(instruction.contract)
+            if admitted is None:
+                # A contract this table does not model reached here, so the operand
+                # agreement below never ran. Saying so beats returning silence: a reader
+                # who sees no dtype Finding would otherwise take it for a check that
+                # passed, which is the generous reading absence always gets.
+                out.add(
+                    "MMA_CONTRACT_DTYPES_UNMODELED",
+                    f"{path}.instruction.contract",
+                    f"contract {instruction.contract!r} is admitted by the Target but "
+                    "this Compiler models no operand or accumulator dtypes for it; "
+                    "their agreement was not checked",
+                    category,
+                    FindingSeverity.REPORT,
+                )
             if admitted is not None:
                 operands, accumulate = admitted
                 data_reads = operation.reads[:2]
