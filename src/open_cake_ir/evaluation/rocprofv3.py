@@ -491,3 +491,141 @@ __all__ = [
     "parse_results_json",
     "validate_cross_output_agreement",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# Timed assay. The projection above validates dispatch timestamps and then states
+# `duration_used_for_timing_or_promotion: False`, because when it was written nothing on
+# an AMD target had produced a timed assay and a duration read out of it would have been
+# a latency under a timer nobody had named. What follows is that timer, named: device
+# dispatch spans bracketed by roctx ranges, which is what `rocprofv3 --kernel-trace
+# --marker-trace` reports on the same clock. It is a separate entry point on purpose --
+# the statement the resource projection makes about its own callers stays true.
+
+ROCTX_PREFIX = "OPENCAKE"
+ROCTX_SEPARATOR = "|"
+_MARKER_COLUMNS = {"Domain", "Function", "Start_Timestamp", "End_Timestamp"}
+
+
+def iteration_label(cohort: str, index: int) -> str:
+    """The roctx message one timed iteration is bracketed by."""
+
+    if not isinstance(cohort, str) or not cohort or ROCTX_SEPARATOR in cohort:
+        raise ValueError("rocprofv3 cohort label must be a non-empty separator-free string")
+    if type(index) is not int or index < 0:
+        raise ValueError("rocprofv3 iteration index must be a non-negative integer")
+    return ROCTX_SEPARATOR.join((ROCTX_PREFIX, cohort, str(index)))
+
+
+def find_marker_trace_csv(output_root: Path) -> Path:
+    """Locate the one raw marker trace beside the kernel trace."""
+
+    return _find_one(output_root, "*_marker_api_trace.csv", "marker-API-trace CSV")
+
+
+def _marker_ranges(payload: bytes) -> list[tuple[int, int, str]]:
+    try:
+        source = payload.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("rocprofv3 marker trace is not UTF-8 CSV") from error
+    reader = csv.DictReader(io.StringIO(source, newline=""), strict=True)
+    fields = reader.fieldnames
+    if fields is None or not _MARKER_COLUMNS.issubset(fields):
+        raise ValueError("rocprofv3 marker-trace columns differ")
+    ranges = []
+    for row in reader:
+        label = row.get("Function") or ""
+        if not label.startswith(ROCTX_PREFIX + ROCTX_SEPARATOR):
+            continue
+        start = _integer(row, "Start_Timestamp")
+        end = _integer(row, "End_Timestamp")
+        if end < start:
+            raise ValueError("rocprofv3 marker range timestamps differ")
+        ranges.append((start, end, label))
+    if not ranges:
+        raise ValueError("rocprofv3 marker trace holds no open-cake iteration range")
+    return sorted(ranges)
+
+
+def project_iteration_durations(
+    kernel_payload: bytes,
+    marker_payload: bytes,
+    expectation: Rocprofv3KernelTraceExpectation,
+    *,
+    cohort: str,
+    iterations: int,
+) -> dict[str, object]:
+    """Per-iteration device time in milliseconds, and what that interval contains.
+
+    A dispatch belongs to an iteration when its whole span lies inside that iteration's
+    roctx range. The caller synchronises before closing a range, so a dispatch that
+    started inside has also finished inside; one that does not fall inside any range --
+    input materialisation, warm-up, a cache flush issued before the range opens -- is
+    attributed to nothing and is not counted.
+
+    Every declared iteration must hold at least one dispatch of the expected kernel. An
+    iteration that holds none is reported as a refusal rather than as a zero: a zero here
+    would read as an infinitely fast kernel and would win every ranking.
+    """
+
+    if type(iterations) is not int or iterations <= 0:
+        raise ValueError("rocprofv3 timed cohort needs a positive iteration count")
+    dispatches = []
+    try:
+        source = kernel_payload.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError("rocprofv3 kernel trace is not UTF-8 CSV") from error
+    reader = csv.DictReader(io.StringIO(source, newline=""), strict=True)
+    fields = reader.fieldnames
+    if fields is None or not _REQUIRED_COLUMNS.issubset(fields):
+        raise ValueError("rocprofv3 kernel-trace columns differ")
+    for row in reader:
+        if row.get("Kind") != "KERNEL_DISPATCH":
+            raise ValueError("rocprofv3 trace contains a non-kernel-dispatch row")
+        if row.get("Kernel_Name") != expectation.kernel_name:
+            continue
+        start = _integer(row, "Start_Timestamp")
+        end = _integer(row, "End_Timestamp")
+        if end < start:
+            raise ValueError("rocprofv3 dispatch timestamps differ")
+        dispatches.append((start, end))
+    dispatches.sort()
+
+    wanted = {iteration_label(cohort, index): index for index in range(iterations)}
+    per_iteration: dict[int, tuple[int, int]] = {}
+    for start, end, label in _marker_ranges(marker_payload):
+        index = wanted.get(label)
+        if index is None:
+            continue
+        if index in per_iteration:
+            raise ValueError("rocprofv3 iteration range is declared twice")
+        total = sum(stop - begin for begin, stop in dispatches
+                    if begin >= start and stop <= end)
+        count = sum(1 for begin, stop in dispatches if begin >= start and stop <= end)
+        per_iteration[index] = (total, count)
+    missing = sorted(set(range(iterations)) - set(per_iteration))
+    if missing:
+        raise ValueError(
+            f"rocprofv3 trace holds no range for iteration(s) {missing[:8]} of cohort "
+            f"{cohort!r}")
+    empty = sorted(index for index, (_, count) in per_iteration.items() if count == 0)
+    if empty:
+        raise ValueError(
+            f"rocprofv3 iteration(s) {empty[:8]} of cohort {cohort!r} contain no dispatch "
+            f"of {expectation.kernel_name!r}; an unmeasured iteration is not a zero")
+    samples = [per_iteration[index][0] / 1e6 for index in range(iterations)]
+    return {
+        "schema_version": 1,
+        "kind": "rocprofv3_iteration_duration_projection_v1",
+        "kernel_name": expectation.kernel_name,
+        "cohort": cohort,
+        "iterations": iterations,
+        "dispatches_per_iteration": [per_iteration[i][1] for i in range(iterations)],
+        "samples_ms": samples,
+        "interval": (
+            "sum of KERNEL_DISPATCH device spans whose whole span lies inside one roctx "
+            "iteration range; host launch gaps between dispatches, and any dispatch "
+            "outside every range, are excluded"),
+        "timestamps_projected": True,
+        "duration_used_for_timing_or_promotion": True,
+    }
