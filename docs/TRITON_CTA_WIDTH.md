@@ -12,7 +12,8 @@ kernels to 16. A fresh common evaluation determines the useful width per task.
 
 ## Contract
 
-- Current evidence covers exact `sm_100a`/`sm_103a` Triton routes. Other targets are
+- Static admission covers exact `sm_100a`/`sm_103a` Triton routes. GPU performance
+  evidence currently covers only FP32 128x1024 on `sm_103a`. Other targets are
   valid inputs but ineligible for this pass; no target is substituted.
 - Input must already be lowering-eligible, have one zero-based role, and declare
   no per-role register split, residency, loops, persistent grid, explicit storage
@@ -46,7 +47,8 @@ The paired engineering replay fixes the old baseline binary and evaluates the
 current Compiler's width-1 floor separately from width-8/16 candidates. This
 distinguishes compiler-floor movement from caller-selected width headroom. It is
 not a randomized provider study or evidence of broad shape/architecture transfer.
-F-2026-09-15-005 owns the extraction evidence and verification disposition.
+[F-2026-09-15-005](../findings/2026-09-15-005-explicit-triton-cta-width.json)
+owns the extraction evidence, both GPU rounds and verification disposition.
 
 The reusable consumer is `tools/evaluate_triton_widths.py`. For example:
 
@@ -65,3 +67,30 @@ The chosen frozen checkout must have released Compiler and matching Executor sou
 Each task then performs three searches, a fresh confirmation of the selected stable
 correct candidate and primary-case NCU. The output is create-only. A missing/failed
 receipt stops the sequence and retains the preceding evidence.
+
+## Tick-tock readout
+
+The [project cadence](../AGENTS.md#tick-tock-between-campaigns-and-revisions-outer-loop-cadence)
+and [experience promotion rules](../AGENTS.md#kernelcompiler-co-evolution-experience-promotion)
+remain the policy owners. This pass is one concrete application of them:
+
+| Observation | Promoted owner | Retained limitation |
+| --- | --- | --- |
+| Compiler-generated FMA/infinity code failed common source admission | [Compiler source-admission repair](../findings/2026-09-13-002-triton-generated-fma-infinity-admission.json) | A successful compile is not GPU correctness or speedup. |
+| Six declared warps reached a Triton SDK assertion | Triton preflight `TRITON_NUM_WARPS_UNSUPPORTED` | The constraint belongs to this backend, not a vendor-neutral Role parser. |
+| Width changes recurred in RMSNorm gradient and SwiGLU | Explicit `specialize_triton_warps` candidate construction | No implicit width selection or bitwise reduction equivalence. |
+| The same pass produced confirmed candidates for softmax backward and cosine similarity | Additional task evidence in the existing Finding | Same FP32 128x1024 B300 scope; no cross-shape or architecture conclusion. |
+| Missing provider terminal or writes to a different directory ended a Run | Lab/provider protocol diagnosis | A local valid receipt does not retroactively qualify a faulted Run. |
+
+The measured selections differ: RMSNorm gradient and cosine similarity selected
+8 warps; SwiGLU and softmax backward selected 16. Width-1 comparisons were null or
+below materiality. These observations keep the parameter choice in Lab rather than
+turning this pass into a global default. The original Finding owns the actual
+paired values and paths; summaries must use each confirmation's own baseline.
+
+This tick-tock integration combines the unchanged, approved Compiler v85 source
+with the newer runtime. [Current release status](../reports/current/STATUS.md) owns the
+active version pointers. The historical GPU evidence remains bound to its recorded
+Executor v126; integrating a newer Executor does not rebind or upgrade that evidence.
+Next experiments can vary a shape or dtype under a new frozen workload boundary,
+keeping the selected mechanism and fixed baseline explicit before measuring again.

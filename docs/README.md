@@ -1,6 +1,6 @@
 # 文档总目录 / Documentation catalog
 
-[Triton CTA 宽度特化](TRITON_CTA_WIDTH.md)：显式候选变换、适用条件与配对测量。
+[Triton CTA 宽度特化与 tick-tock 经验总结](TRITON_CTA_WIDTH.md)：显式候选变换、经验归属、适用条件与配对测量。
 
 [任务效率评分](PERFORMANCE_SCORING.md)：固定任务字节数、带宽参考、审计报告与校准覆盖。
 
