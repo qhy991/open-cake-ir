@@ -862,6 +862,20 @@ def main() -> int:
     with receipt_output.open("xb") as stream:
         stream.write(_canonical_json_bytes(receipt.document) + b"\n")
     receipt_output.chmod(0o644)
+    # What the installed build could not honour is a property of that binary, not a term
+    # of the Study, so it is retained beside the receipt instead of inside it: the receipt
+    # is a closed document whose digest every frozen Study pins.
+    limitations = getattr(builder, "cli_limitations", None)
+    if limitations is not None:
+        report = receipt_output.parent / "provider-cli-limitations.json"
+        if not report.exists():
+            with report.open("xb") as stream:
+                stream.write(_canonical_json_bytes({
+                    "schema_version": 1, "harness": args.harness,
+                    "provider_revision": args.provider_revision,
+                    "executable_sha256": receipt.executable_sha256,
+                    **dict(limitations)}) + b"\n")
+            report.chmod(0o644)
     _write_anchor(
         anchor_output,
         evidence=evidence,

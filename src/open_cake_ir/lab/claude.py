@@ -648,10 +648,15 @@ class ClaudeInvocationBuilder:
                 "this Claude build does not accept " + ", ".join(missing)
                 + "; the invocation this Lab builds is not expressible on it")
         # F-2026-09-10-008 pinned the context window because auto-compaction silently
-        # drops author context mid-turn. A build without the control cannot be pinned, so
-        # the fact is carried into `configuration` -- and therefore into the provider
-        # identity every arm and receipt records -- instead of the flag being dropped and
-        # the run reading as though the window had been set.
+        # drops author context mid-turn, "which changes what the author saw and breaks
+        # comparability between arms". A build that does not offer the control cannot be
+        # pinned. That is reported here rather than silently dropped -- but it is not a
+        # refusal, and the reason is structural: `provider_policy.provider_configuration`
+        # admits this harness only under `artifact_optimization_only` with the single
+        # `open_cake` arm, so a Claude run in this repository has no second arm for an
+        # unpinned window to be incomparable with. What it does lose is the guarantee that
+        # one run's author saw an uncompacted context, so `context_window` says which of
+        # the two held, and `launch_task` retains it beside the Campaign it launched.
         self._autocompact = (CLAUDE_AUTOCOMPACT_WINDOW
                              if CLAUDE_AUTOCOMPACT_OPTION in options
                              else CLAUDE_AUTOCOMPACT_UNSUPPORTED)
@@ -662,8 +667,31 @@ class ClaudeInvocationBuilder:
                 "permission_mode": "acceptEdits", "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 "removed_environment": list(self._removed_environment), "event_contract": self._event_contract,
-                "autocompact": self._autocompact,
                 "submission_contract": CANDIDATE_SET_ENVELOPE_V1, "terminal_schema": terminal_schema()}
+
+    @property
+    def cli_limitations(self) -> Mapping[str, object]:
+        """What this provider build could not honour, named rather than left implicit.
+
+        Kept out of `configuration`: that map is the declared treatment the Study fixes
+        and the qualification receipt pins by digest, and every frozen Study's provider
+        block is a closed field set. A property of the installed binary is not a term of
+        the Study, so it is reported separately and retained beside the Campaign.
+        """
+
+        unpinned = self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED
+        return {
+            "context_window": (CLAUDE_AUTOCOMPACT_UNSUPPORTED if unpinned
+                               else CLAUDE_AUTOCOMPACT_WINDOW),
+            "finding": "F-2026-09-10-008",
+            "consequence": (
+                "this build offers no --autocompact, so auto-compaction may drop author "
+                "context mid-turn and no run here can claim an uncompacted author "
+                "context; the finding's arm-comparability harm does not arise, because "
+                "this harness is admitted only for the single-arm "
+                "artifact_optimization_only scope" if unpinned else
+                "the context window is pinned at the maximum this build accepts"),
+        }
 
     def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation:
         if not isinstance(prompt, str) or not prompt or "\x00" in prompt:
