@@ -295,12 +295,18 @@ class FakeEvaluator:
         *,
         raw_kernel_calls: int = 1,
         compiler_revision_reference=None,
+        project_root=ROOT,
     ) -> None:
         self.protocol = protocol
         self.protocol_sha256 = protocol_sha256
         self.workload_sha256 = workload_sha256
         self.raw_kernel_calls = raw_kernel_calls
-        self.compiler_reference = dict(compiler_reference(ROOT) if compiler_revision_reference is None else compiler_revision_reference)
+        # The request this fake stamps is replayed against the Campaign Lock, and the
+        # Compiler's identity is the commit of the checkout the campaign ran in, so a
+        # campaign on a copied project must name that copy rather than this one.
+        self.compiler_reference = dict(compiler_reference(project_root)
+                                       if compiler_revision_reference is None
+                                       else compiler_revision_reference)
         self.calls = 0
 
     def evaluate(self, candidate, *, case_id, purpose):
@@ -4084,7 +4090,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
         toolchain = Toolchain()
         environment = OpenCakeEnvironment(self.compiler, toolchain, authority_document=arms["open_cake"], workload=self.workload, case_id="headline_b32", executor=self.executor)
         model_path.unlink()  # Runtime and replay must depend on the lock, not this file.
-        campaign = _execute(self.lab, lock, directory / "evidence", provider=provider, environments={"open_cake": environment, "direct_cuda": FakeEnvironment("direct_cuda", arms["direct_cuda"])}, evaluator=FakeEvaluator(lock.document["evaluation_protocol"], sha256(json.dumps(lock.document["evaluation_protocol"], sort_keys=True, separators=(",", ":")).encode()).hexdigest(), lock.document["workload"]["canonical_sha256"]))
+        campaign = _execute(self.lab, lock, directory / "evidence", provider=provider, environments={"open_cake": environment, "direct_cuda": FakeEnvironment("direct_cuda", arms["direct_cuda"])}, evaluator=FakeEvaluator(lock.document["evaluation_protocol"], sha256(json.dumps(lock.document["evaluation_protocol"], sort_keys=True, separators=(",", ":")).encode()).hexdigest(), lock.document["workload"]["canonical_sha256"], project_root=self.root))
         return campaign, provider, toolchain
 
     def test_actual_search_feedback_and_fresh_process_replay(self):

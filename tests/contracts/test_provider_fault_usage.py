@@ -250,7 +250,7 @@ class FailedProviderConsumerTests(unittest.TestCase):
             environments={name: Environment(name, arm) for name, arm in arms.items()},
             evaluator=consumers.FakeEvaluator(protocol,
                 sha256(json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
-                self.lock.document["workload"]["canonical_sha256"]))
+                self.lock.document["workload"]["canonical_sha256"], project_root=self.root))
         store = EvidenceStore.open(campaign.evidence_root)
         events = store.replay_events("open_cake-1")
         return campaign, store, events

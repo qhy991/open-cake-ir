@@ -97,6 +97,7 @@ class FlashCalibrationTest(unittest.TestCase):
             return self.executor
         patch.object(ExecutorRevision, "load_reference", side_effect=admit_cpu_executor).start()
         self.calls = []
+        self._real_subprocess_run = subprocess.run
 
     def plan(self):
         pool = [{"id": name, "schedule": f"schedules/{name}.json"} for name in ("n128-k64-w4", "n256-k64-w4", "n256-k128-w8", "n128-k128-w8")]
@@ -109,6 +110,11 @@ class FlashCalibrationTest(unittest.TestCase):
         return TritonCompilation(source, "sm_100a", requirements["kernel_entry_point"], payloads, requirements["compile_options"]["num_warps"] * 32, 0, "SYNTHETIC")
 
     def _fake_evaluator(self, command, **kwargs):
+        # This stands in for the evaluator child only. Compiler identity reads the
+        # checkout's commit by running git (ADR 0065), and that call goes through the
+        # same module, so anything that is not the evaluator runs for real.
+        if command[:1] != [self.executor.document["host_environment"]["python"]["invocation_path"]]:
+            return self._real_subprocess_run(command, **kwargs)
         self.calls.append(command)
         self.assertEqual(command[:2], [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "src/open_cake_ir/tasks/evaluate.py")])
         self.assertEqual(command[2], "--request")
