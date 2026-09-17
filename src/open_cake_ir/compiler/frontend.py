@@ -127,6 +127,10 @@ class _Broadcast:
 
 
 _BINARY = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul", ast.Div: "div"}
+# The two whose operands may be exchanged without changing what is computed. A leading
+# literal is canonicalised to the second position for these and refused for the others,
+# where `2.0 - x` is not `x - 2.0` and swapping would silently compute something else.
+_COMMUTATIVE = {"add", "mul"}
 _MATH = {op.value for op in ElementwiseOp}
 _OPERATIONS = {op.value for op in OperationKind} - {"elementwise"}
 _DECLARATIONS = dict(roles=Role, allocations=Allocation, buffers=Buffer,
@@ -333,8 +337,17 @@ class _Builder:
         if isinstance(node, ast.Subscript):
             return self.access(node)
         if isinstance(node, ast.BinOp) and type(node.op) in _BINARY:
-            return self.operation("elementwise", [self.value(node.left), self.value(node.right)],
-                                  {"op": _BINARY[type(node.op)]}, {}, target, node)
+            op = _BINARY[type(node.op)]
+            operands = [self.value(node.left), self.value(node.right)]
+            # `2.0 * x` is how this is written in NumPy and in PyTorch, and for a
+            # commutative operator it denotes what `x * 2.0` denotes. Admitting only one
+            # spelling of one computation is what P3 asks to avoid, and refusing the
+            # familiar one is what P1 asks to avoid; canonicalising here gives both,
+            # because everything downstream still sees the literal at position 1.
+            if (op in _COMMUTATIVE and type(operands[0]) in (int, float)
+                    and type(operands[1]) not in (int, float)):
+                operands.reverse()
+            return self.operation("elementwise", operands, {"op": op}, {}, target, node)
         if isinstance(node, ast.Call):
             return self.call(node, target)
         return self.literal(node)
@@ -436,7 +449,12 @@ class _Builder:
                 parameters["broadcast_axis"], value = value.axis, value.buffer
             if type(value) in (int, float):
                 if kind != "elementwise" or position != 1 or len(values) != 2 or parameters["op"] == "fma" or "scalar" in parameters:
-                    self.fail(node, "a literal is supported only as the second binary arithmetic operand")
+                    # Reached now only where the position carries meaning, so the refusal
+                    # says which operators exchange their operands rather than stating a
+                    # position an author cannot act on.
+                    self.fail(node, "a literal is supported as the second binary arithmetic "
+                                    "operand, and as the first only for "
+                                    + " and ".join(sorted(_COMMUTATIVE)))
                 parameters["scalar"] = value
                 continue
             ref = self.reference(value.buffer if isinstance(value, _Access) else value, node)
