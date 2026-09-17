@@ -40,9 +40,32 @@ from .runtime_config import (
 )
 
 
-_BROKER_JOB_OBSERVATION = re.compile(
-    rb"(?m)^(?:\[gpu-run\] accepted job (?=gpuq-)|\[metal-run\] accepted job (?=metal-))((?:gpuq|metal)-[0-9a-f]{12})\b"
-)
+def _broker_job_observation() -> "re.Pattern[bytes]":
+    """Match the job line of every allocator that issues one, from their own declarations.
+
+    This enumerated two: the cluster allocator and Metal. `local_broker.LOCAL_KINDS`
+    already declares which local device families it serializes, and a kind absent from
+    this pattern produces a line nobody matches -- the HIP broker prints
+    `[hip-run] accepted job hip-<12 hex>` in exactly the shape of the two that are here,
+    and a Campaign on it died with "broker job observation coverage differs", which says
+    the count was wrong and not that a third allocator exists. The local kinds are read
+    from the module that owns them; the cluster allocator keeps its own spelling because
+    it is not one of them.
+    """
+
+    from open_cake_ir.evaluation.local_broker import LOCAL_KINDS
+
+    alternatives = [rb"\[gpu-run\] accepted job (?=gpuq-)"]
+    prefixes = [rb"gpuq"]
+    for kind in LOCAL_KINDS:
+        encoded = kind.encode()
+        alternatives.append(rb"\[" + encoded + rb"-run\] accepted job (?=" + encoded + rb"-)")
+        prefixes.append(encoded)
+    return re.compile(rb"(?m)^(?:" + rb"|".join(alternatives) + rb")((?:"
+                      + rb"|".join(prefixes) + rb")-[0-9a-f]{12})\b")
+
+
+_BROKER_JOB_OBSERVATION = _broker_job_observation()
 
 _WORKER_JOB_PLACEHOLDER = "gpuq-000000000000"
 
