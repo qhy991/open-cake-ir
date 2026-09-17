@@ -1,8 +1,6 @@
 # ADR 0047: Documentation separates stable rules, history, and current views
 
-## Status
-
-Accepted by the repository owner, 2026-08-30. This decision changes documentation
+Status: accepted by the repository owner, 2026-08-30. This decision changes documentation
 ownership only. It changes no Compiler Revision, Executor Revision, Workload Contract,
 Study Contract, Evidence object, evaluator, or experimental claim.
 

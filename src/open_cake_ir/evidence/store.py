@@ -13,6 +13,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, cast
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
 from .custody import WriterCustody, external_path
 from .secret_detection import contains_forbidden_secret
 
@@ -31,14 +32,6 @@ _PROTOCOL = {
 }
 _ENDPOINT = {"qualified", "no_qualified_candidate", "missing", "observed"}
 _MAX_OBJECT_BYTES = 1 << 30
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _canonical_line(value: object) -> bytes:

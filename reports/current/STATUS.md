@@ -61,6 +61,6 @@
 算子、完整 Program、模型和服务的结果，仍以各自绑定的实验报告与原始证据为准。
 本页不复制这些实验结论。
 
-历史发布记录保留在 [`compiler/releases/`](../../compiler/releases)、
-[`runtime/executors/`](../../runtime/executors) 和 [`inventory/`](../../inventory)，
-它们只在各自的原提交上用当时的工具重放。
+历史发布记录保留在 `history` 分支的原路径上，
+由 [`docs/history/identities.json`](../../docs/history/identities.json) 索引到各自的产生提交；
+[`inventory/`](../../inventory) 只是阅读投影。它们只在各自的原提交上用当时的工具重放。

@@ -1,6 +1,6 @@
 # ADR 0057: Metal and CLI harnesses use the existing Lab
 
-Status: implemented; validation baseline `555b403`, Metal Executor v64.
+Status: accepted and implemented; validation baseline `555b403`, Metal Executor v64.
 Provider-driven optimization remains unproven.
 
 The owner requires Python frontend operator tasks launched with explicit task,

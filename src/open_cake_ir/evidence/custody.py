@@ -14,6 +14,8 @@ import re
 import stat
 import uuid
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 MARKER = ".writer-custody"
 ENVIRONMENT = "OPEN_CAKE_CUSTODY_DIRECTORY"
 _IDENTIFIER = re.compile(r"[0-9a-f]{32}\Z")
@@ -66,7 +68,7 @@ def _read(directory_fd: int, name: str) -> dict:
             raise ValueError("external custody record protection or size differs")
         payload = os.read(descriptor, 8193)
         value = json.loads(payload)
-        canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode() + b"\n"
+        canonical = canonical_json_bytes(value) + b"\n"
         if len(payload) != metadata.st_size or payload != canonical or not isinstance(value, dict):
             raise ValueError("external custody record is not a canonical object")
         return value
@@ -75,7 +77,7 @@ def _read(directory_fd: int, name: str) -> dict:
 
 
 def _publish(directory_fd: int, name: str, value: dict) -> None:
-    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode() + b"\n"
+    payload = canonical_json_bytes(value) + b"\n"
     if len(payload) > 8192:
         raise ValueError("external custody record exceeds its bound")
     descriptor = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400, dir_fd=directory_fd)

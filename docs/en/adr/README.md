@@ -4,7 +4,7 @@
 
 ADRs retain the rationale and status of a decision. A proposal, accepted decision, released revision, and GPU-qualified artifact are different facts. Consult the original status and any successor, then the [generated release view](../../../reports/current/STATUS.md).
 
-There are two historical records numbered 0038 and two numbered 0039, and two numbered 0053. Their full filenames distinguish their subjects; this index does not renumber history.
+Until 2026-09-18 three numbers (0038, 0039, 0053) were each held by two records. The later-added record of each pair is now 0068, 0069 and 0070; each carries its original number in its first Status line.
 
 Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft work is permitted within its scope, accepted records an accepted decision, superseded points to a successor, and rejected retains the reason a proposal was refused. None replaces current task authorization.
 
@@ -47,10 +47,8 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 | 0035 | [atomic slot reservation is state plus RMW](../../adr/0035-atomic-slot-reservation-is-state-plus-rmw.md) | [用调用者状态和原子加法分配唯一位置](../../zh-CN/adr/0035-atomic-slot-reservation-is-state-plus-rmw.md) |
 | 0036 | [atomic reservation proves indexed-store ownership](../../adr/0036-atomic-reservation-proves-indexed-store-ownership.md) | [只有从原子分配推得唯一位置，才允许普通索引写入](../../zh-CN/adr/0036-atomic-reservation-proves-indexed-store-ownership.md) |
 | 0037 | [A prefix scan is not a fold with a flag](../../adr/0037-a-prefix-scan-is-not-a-fold-with-a-flag.md) | [前缀和要保留每一步，不能冒充总和](../../zh-CN/adr/0037-a-prefix-scan-is-not-a-fold-with-a-flag.md) |
-| 0038 | [AKA is a challenge corpus, not a Compiler Corpus](../../adr/0038-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) | [AKA 是发现问题的外部题库，不是正式验收语料](../../zh-CN/adr/0038-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) |
 | 0038 | [QSA needs stateful selection and launch composition](../../adr/0038-qsa-needs-stateful-selection-and-launch-composition.md) | [QSA 需要跨块选择状态和多次启动组合](../../zh-CN/adr/0038-qsa-needs-stateful-selection-and-launch-composition.md) |
 | 0039 | [Logical register pressure is not a physical bound](../../adr/0039-logical-register-pressure-is-not-a-physical-bound.md) | [逻辑寄存器压力不能当成真实寄存器下界](../../zh-CN/adr/0039-logical-register-pressure-is-not-a-physical-bound.md) |
-| 0039 | [a single-writer state update is a proven store effect](../../adr/0039-single-writer-state-store-is-a-store-effect.md) | [单写入者的原地更新使用已有 store](../../zh-CN/adr/0039-single-writer-state-store-is-a-store-effect.md) |
 | 0040 | [QSA utilization is a whole-Program roofline claim](../../adr/0040-qsa-utilization-and-component-attribution.md) | [QSA 利用率看完整程序，并说明分母来自哪里](../../zh-CN/adr/0040-qsa-utilization-and-component-attribution.md) |
 | 0041 | [Resident top-k supports signed INT32 values](../../adr/0041-resident-top-k-supports-signed-int32.md) | [驻留 top-k 可以按有符号 INT32 排序](../../zh-CN/adr/0041-resident-top-k-supports-signed-int32.md) |
 | 0042 | [Loop-carried top-k may batch two source tiles](../../adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md) | [跨循环 top-k 可以每两个来源块合并一次](../../zh-CN/adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md) |
@@ -68,7 +66,6 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 
 ## 原始决策补充索引 / Additional original decisions
 
-- [ADR 0053: B300 is an exact target on the existing Triton path](../../adr/0053-b300-is-an-exact-target.md)
 - [ADR 0054: Lab uses only Ralph](../../adr/0054-lab-uses-only-ralph.md)
 - [ADR 0055: Task implementations live outside the common Lab](../../adr/0055-task-implementations-live-outside-the-common-lab.md)
 - [ADR 0056 — One fixed-baseline paired assay per candidate](../../adr/0056-fixed-baseline-paired-execution.md)
@@ -90,3 +87,7 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 
 - [0065: Source identity is the commit, and a host capture is its own document](../../adr/0065-source-identity-is-the-commit.md)
 - [0066: SoL-ExecBench task import, namespace and gate translation](../../adr/0066-sol-execbench-task-import.md)
+- [0067: Retired release outputs live on the `history` branch](../../adr/0067-retired-release-outputs-live-on-the-history-branch.md)
+- [0068: AKA is a challenge corpus, not a Compiler Corpus](../../adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) (was 0038) · [中文](../../zh-CN/adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)
+- [0069: a single-writer state update is a proven store effect](../../adr/0069-single-writer-state-store-is-a-store-effect.md) (was 0039) · [中文](../../zh-CN/adr/0069-single-writer-state-store-is-a-store-effect.md)
+- [0070: B300 is an exact target on the existing Triton path](../../adr/0070-b300-is-an-exact-target.md) (was 0053)

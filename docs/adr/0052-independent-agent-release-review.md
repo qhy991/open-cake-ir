@@ -1,7 +1,10 @@
 # ADR 0052: Independent agent sessions may review Compiler releases
 
-Status: accepted owner policy, 2026-09-06; implementation requires independent review.
-Supersedes the human-only interpretation of ADR 0030. Its external-writer boundary stays.
+Status: superseded by [ADR 0065](0065-source-identity-is-the-commit.md), 2026-09-18 (accepted 2026-09-06). The mechanism is gone:
+`ALLOWED_REVIEW_MODELS` and `src/open_cake_ir/compiler/release.py` were deleted in
+`7c951715`, and under the owner's direct-commit policy (decision D9, 2026-09-18) an
+independent review at the merge to `main` is advice, not a gate. Originally: supersedes
+the human-only interpretation of ADR 0030; its external-writer boundary stays.
 
 ## Contract
 

@@ -1,6 +1,8 @@
 # ADR 0030: Compiler release approval is external to the release cycle
 
-Status: accepted for successor releases, 2026-08-25.
+Status: superseded by [ADR 0065](0065-source-identity-is-the-commit.md), 2026-09-18 (accepted 2026-08-25). The release cycle and
+`compiler/release-approval.json` were removed in `7c951715`; the external-writer
+invariant survives as the merge review ADR 0065 describes.
 
 ## Outcome and non-goals
 

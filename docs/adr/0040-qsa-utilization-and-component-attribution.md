@@ -1,8 +1,6 @@
 # ADR 0040: QSA utilization is a whole-Program roofline claim
 
-## Status
-
-Accepted for the user-authorized continuing artifact-optimization loop. It changes no
+Status: accepted for the user-authorized continuing artifact-optimization loop. It changes no
 Workload semantics, Candidate acceptance threshold, Compiler Revision, scientific Study,
 checkpoint claim, or serving claim.
 

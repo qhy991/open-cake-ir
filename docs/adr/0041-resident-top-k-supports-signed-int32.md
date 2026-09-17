@@ -1,8 +1,6 @@
 # ADR 0041: Resident top-k supports signed INT32 values
 
-## Status
-
-Proposed. It authorizes implementation and Corpus Gate preparation, not a Compiler
+Status: proposed. It authorizes implementation and Corpus Gate preparation, not a Compiler
 Revision, provider run, GPU campaign, or Candidate promotion. Release remains behind the
 external repository-owner approval gate.
 

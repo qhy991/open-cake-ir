@@ -32,5 +32,7 @@ jobs:
         run: python -m ruff check --select F821 src tools tests
       - name: Scan tracked files for credential shapes
         run: python tools/check_tracked_secrets.py
+      - name: Check findings against their record contract
+        run: python tools/check_findings.py
       - name: Discover and run all contract tests
         run: python -m pytest tests/contracts -ra

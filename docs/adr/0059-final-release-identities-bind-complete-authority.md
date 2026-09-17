@@ -1,8 +1,10 @@
 # ADR 0059: Final release identities bind complete authority
 
-Status: accepted design after independent review, 2026-09-09; implementation and
-release remain test-gated. Extends [0049](0049-released-executor-descriptors-reserve-their-identities.md)
-and [0050](0050-released-compiler-locks-reserve-their-identities.md).
+Status: superseded by [ADR 0065](0065-source-identity-is-the-commit.md), 2026-09-18 (accepted 2026-09-09). A release identity is
+now the commit, so there is no ordinal to reserve and no final id to derive; the
+`vNN+<authority>` ids already minted stay reserved ([ADR 0067](0067-retired-release-outputs-live-on-the-history-branch.md)). Extends
+[0049](0049-released-executor-descriptors-reserve-their-identities.md) and
+[0050](0050-released-compiler-locks-reserve-their-identities.md).
 
 ## Problem
 

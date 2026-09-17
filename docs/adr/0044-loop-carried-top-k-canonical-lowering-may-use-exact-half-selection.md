@@ -1,8 +1,6 @@
 # ADR 0044: Loop-carried top-k canonical lowering may use exact half-selection
 
-## Status
-
-Proposed. This records a generic lowering successor and its evidence gates. It does not
+Status: proposed. This records a generic lowering successor and its evidence gates. It does not
 authorize Corpus expectation adoption, a Compiler Revision, provider run, GPU campaign,
 or Candidate promotion. Those transitions remain externally reviewed and content-bound.
 

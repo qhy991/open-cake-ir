@@ -18,6 +18,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from ..serialization import canonical_json_bytes as _encode
 from .ir import (
     Allocation, Barrier, Buffer, ElementwiseOp, OperationKind, Pipeline,
     ProgramAxis, Role, Schedule, ScheduleParseError,
@@ -101,11 +102,6 @@ def schedule(**options):
             line_offset=first_line - 1,
         )
     return decorate
-
-
-def _encode(document: Any) -> bytes:
-    return json.dumps(document, sort_keys=True, separators=(",", ":"),
-                      ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 
 @dataclass(frozen=True)

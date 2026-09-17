@@ -6,9 +6,10 @@ digests each case must produce. That pin is only worth holding if adopting a new
 deliberate act: a release path that recomputed expectations before gating would report a
 match it had just manufactured, and unintended semantic drift would pass silently.
 
-So this runs separately from the release. It prints what would change and exits non-zero
-while a difference stands; `--write` adopts the difference, and the approval basis
-recorded at release is where the reason for adopting it belongs.
+So this runs separately from the Gate. It prints what would change and exits non-zero
+while a difference stands; `--write` adopts the difference, and the commit that carries
+the rewritten manifest is where the reason for adopting it belongs (ADR 0065: no release
+document is minted per change).
 """
 
 from __future__ import annotations

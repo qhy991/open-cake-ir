@@ -24,16 +24,7 @@ from open_cake_ir.tasks.flash_kmeans.environment import NvccToolchainBuilder
 from open_cake_ir.lab.runtime import broker_execution_sha256, load_runtime_config
 
 from open_cake_ir.lab.pairing import comparison_arm, native_backend, native_optimization_analysis_plan
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes  # noqa: E402
 
 
 def _object(value: object, context: str) -> dict[str, object]:

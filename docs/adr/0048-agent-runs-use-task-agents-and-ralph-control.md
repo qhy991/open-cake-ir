@@ -1,8 +1,6 @@
 # ADR 0048: Agent Runs use TASK.md, AGENTS.md, and external Ralph control
 
-## Status
-
-Accepted by the repository owner, 2026-08-30. Implemented by the matched-search schema-v2
+Status: accepted by the repository owner, 2026-08-30. Implemented by the matched-search schema-v2
 successor and Executor `open-cake-ir-b200-v42`. This changes the Agent-facing Lab path; it
 does not change Compiler semantics, Workload oracles, Evaluation, or historical Evidence.
 

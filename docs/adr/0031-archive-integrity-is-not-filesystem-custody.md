@@ -1,6 +1,7 @@
 # ADR 0031: Archive integrity is not filesystem custody
 
-Status: accepted in the current unwitnessed Executor v27 working release, 2026-08-25.
+Status: accepted, 2026-08-25; first shipped in the unwitnessed Executor v27 working
+release. The per-release mechanism named there was replaced by [ADR 0065](0065-source-identity-is-the-commit.md).
 
 ## Outcome and non-goals
 

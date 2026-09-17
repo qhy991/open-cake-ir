@@ -11,6 +11,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, Sequence, cast
 
+from ..serialization import canonical_json_bytes as _canonical_json_bytes
 from .backends import BACKENDS, Backend
 from .frontend import read_schedule
 from .passes import (FusionResult, SpecializationResult, fuse_pointwise_epilogue,
@@ -85,16 +86,6 @@ class Lowering:
 # parsed cleanly and was then rejected as an unknown root field by this check.
 _REQUIRED_TOP_LEVEL_FIELDS = set(_SCHEDULE_REQUIRED)
 _OPTIONAL_TOP_LEVEL_FIELDS = set(_SCHEDULE_OPTIONAL)
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _object(value: object, path: str) -> Mapping[str, object]:

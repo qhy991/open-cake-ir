@@ -19,17 +19,8 @@ from open_cake_ir.lab.endpoints import endpoint_policy
 from open_cake_ir.lab.pairing import comparison_arm, native_backend, native_optimization_analysis_plan  # noqa: E402
 from open_cake_ir.lab import scientific_matched_analysis_plan_v2
 from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes  # noqa: E402
 from open_cake_ir.tasks.runtime import TaskLab
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
 
 
 def _object(value: object, context: str) -> dict[str, object]:

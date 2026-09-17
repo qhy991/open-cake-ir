@@ -3,7 +3,8 @@ import json,re
 from dataclasses import dataclass,asdict
 from hashlib import sha256
 from typing import Mapping
-from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec,_canonical_json_bytes,_object,_integer,_BASE_FIELDS,_FIELDS_WITH_HIDDEN,_KERNEL_NAME,MANIFEST_PREFIX
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec,_object,_integer,_BASE_FIELDS,_FIELDS_WITH_HIDDEN,_KERNEL_NAME,MANIFEST_PREFIX
 
 @dataclass(frozen=True)
 class CudaLaunchManifest:

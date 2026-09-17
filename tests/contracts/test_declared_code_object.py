@@ -63,7 +63,7 @@ class DeclaredCodeObject(unittest.TestCase):
         self.assertIn("hsaco", allowed_artifact_roles(target))
 
     def test_an_id_no_document_declares_refuses_in_this_layers_words(self) -> None:
-        for target in ("synthetic_third_vendor", "sm_120a", "apple_gpu_family10"):
+        for target in ("synthetic_third_vendor", "zz_undeclared_target_for_test"):
             with self.subTest(target=target), self.assertRaises(ValueError) as raised:
                 executable_role(target)
             self.assertIn("no executable role in this Evaluation layer", str(raised.exception))

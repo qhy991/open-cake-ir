@@ -150,7 +150,7 @@ class RefusalOwnershipTest(unittest.TestCase):
     """A refusal names the class it owns, and no vendor the caller did not name."""
 
     def test_the_evaluation_layer_refuses_in_its_own_words(self) -> None:
-        for target in ("synthetic_third_vendor", "sm_120a", "apple_gpu_family10"):
+        for target in ("synthetic_third_vendor", "zz_undeclared_target_for_test"):
             with self.subTest(target=target):
                 with self.assertRaises(ValueError) as raised:
                     executable_role(target)

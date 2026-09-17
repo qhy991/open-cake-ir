@@ -1,8 +1,9 @@
 # ADR 0060: Release review provenance and historical exceptions
 
-Status: accepted design after independent review, 2026-09-09. The historical
-clarification below records existing artifacts; implementation and release remain
-test-gated.
+Status: superseded by [ADR 0065](0065-source-identity-is-the-commit.md), 2026-09-18 (accepted 2026-09-09). The prospective review
+provenance record was never implemented and the release cycle it was for is gone; the
+historical clarification below stands as a record of the v41-v43 approvals, which now
+live on the `history` branch ([ADR 0067](0067-retired-release-outputs-live-on-the-history-branch.md)).
 Related: [ADR 0030](0030-compiler-release-approval-is-external.md),
 [ADR 0052](0052-independent-agent-release-review.md), and
 [issue #73](https://github.com/qhy991/open-cake-ir/issues/73).
@@ -12,17 +13,17 @@ Related: [ADR 0030](0030-compiler-release-approval-is-external.md),
 The approval records for Compiler v41, v42 and v43 record task-specific owner
 delegation. They do not establish the standing independent approval procedure:
 
-- [v41 approval](../../compiler/releases/v41/release-approval.json) names the
+- v41 approval (`compiler/releases/v41/release-approval.json` on the `history` branch) names the
   repository owner, with Codex recording the authorization. Its basis and
   [review account](../AKA_FMA_RELEASE_REVIEW_20260904.md) identify the delegated
   `fma_release_review` agent as the actual technical reviewer. That account records
   a distinct read-only review, but does not record its effective model or reviewer
   session id. The approval is therefore not evidence of a separately performed
   human review or an allowed-model review under ADR 0052.
-- [v42 approval](../../compiler/releases/v42/release-approval.json) expressly
+- v42 approval (`compiler/releases/v42/release-approval.json` on the `history` branch) expressly
   records owner-delegated Codex review without claiming a separate human or
   independent agent review.
-- [v43 approval](../../compiler/releases/v43/release-approval.json) makes the same
+- v43 approval (`compiler/releases/v43/release-approval.json` on the `history` branch) makes the same
   limitation explicit. The later B200 affine-parent canary's use of v43 does not
   supply the missing release-review independence.
 

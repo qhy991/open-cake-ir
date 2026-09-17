@@ -1,8 +1,6 @@
 # ADR 0045: Triton lowering admits multiple explicit MMA DAG nodes
 
-## Status
-
-Proposed. This removes one backend restriction over existing typed IR. It does not
+Status: proposed. This removes one backend restriction over existing typed IR. It does not
 authorize Corpus expectation adoption, a Compiler Revision, a QSA candidate, GPU work,
 or promotion; those remain separately gated.
 

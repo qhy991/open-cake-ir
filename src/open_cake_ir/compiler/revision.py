@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, cast
 
+from ..serialization import canonical_json_bytes as _canonical_json_bytes
 from ..source_identity import checkout_commit_or_none
 from .errors import CompilerError
 from .ir import ScheduleParseError
@@ -60,16 +61,6 @@ class CompilerRevision:
     targets: Mapping[str, Target]
     corpus_path: Path
     calibration_coverage: frozenset[str]
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _object(value: object, path: str) -> Mapping[str, object]:

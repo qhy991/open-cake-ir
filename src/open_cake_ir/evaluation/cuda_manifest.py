@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import asdict, dataclass
 from hashlib import sha256
@@ -24,16 +23,6 @@ _BASE_FIELDS = {
 }
 _FIELDS_WITH_HIDDEN = _BASE_FIELDS | {"hidden_null_pointer_parameters"}
 _KERNEL_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:

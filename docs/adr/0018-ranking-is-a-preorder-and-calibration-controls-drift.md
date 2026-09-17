@@ -1,5 +1,7 @@
 # ADR 0018: ranking is a preorder and calibration controls drift
 
+Status: accepted, 2026-08-24.
+
 ## Outcome and non-goals
 
 The pre-GPU model may remove a candidate only when its declaration-derived key strictly

@@ -1,7 +1,9 @@
 # ADR 0050: a released Compiler lock reserves its identity
 
-Status: accepted, 2026-09-06. This extends the release identity rule to Compiler
-locks; it does not remove the explicit approval input or change IR semantics.
+Status: superseded by [ADR 0065](0065-source-identity-is-the-commit.md) and [ADR 0067](0067-retired-release-outputs-live-on-the-history-branch.md), 2026-09-18 (accepted 2026-09-06). Compiler
+locks are no longer released; the identities this record reserved stay reserved in
+`docs/history/identities.json`, and the locks live on the `history` branch. Originally:
+extends the release identity rule to Compiler locks without removing the approval input.
 
 At main `3de2ff2`, Compiler v41 was released and used by the retained FMA task.
 The canonical local witness scan found no v41 reference and stopped at v40. The

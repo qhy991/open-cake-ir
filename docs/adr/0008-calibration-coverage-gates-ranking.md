@@ -1,5 +1,7 @@
 # ADR 0008: calibration coverage gates public ranking
 
+Status: accepted, 2026-08-24.
+
 ## Outcome and non-goals
 
 A released Compiler orders candidates for a profile only when that Compiler Revision's

@@ -4,6 +4,16 @@
 > counterexample are retained together because they explain the withdrawn bound. Future
 > calibrations produce new contracts, Evidence, and reports; they do not silently update
 > these rows. Released calibration coverage is read from the current Compiler Revision.
+>
+> **Where the instruments went (2026-09-18).** The three calibration plans
+> (`contracts/calibrations/*.json`), their measurements (`evidence/calibration/`) and the
+> drivers `tools/check_ranking_calibration.py`, `tools/calibrate_gemm_ranking_interleaved.py`
+> and `tools/calibrate_ranking_at_scale.py` now live on the `history` branch at their
+> original paths (`git show history:<path>`); the Compiler Revisions they were bound to are
+> indexed by `docs/history/identities.json`. No further ranking calibration is planned and
+> the Compiler's ranking (`Compiler.rank`, `compiler/performance/ranking.py`) is scheduled
+> for removal, so the paths below are historical references, not current entry points. The
+> analysis itself is kept as written.
 
 The paper's harness reports a performance analysis as a *report*, and says plainly that
 on-device measurement remains the ground truth. This repository had the report and none of

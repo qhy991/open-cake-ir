@@ -71,39 +71,18 @@ only when the host itself changes, with `--replace`, and commit that change. Thi
 establishes the host boundary, not GPU correctness or performance: no kernel is
 dispatched.
 
-### Review an external AKA corpus
+### The external AKA corpus (closed)
 
-AKA review is a read-only challenge-corpus workflow, not a Compiler Corpus Gate, an IR
-relevance judgment, or GPU/performance evidence. Bind the exact AKA commit and record
-format, keep generated case state outside both repositories, and begin with one case:
-
-```bash
-python tools/audit_aka_corpus.py \
-  /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
-  --source-revision <AKA_COMMIT> \
-  --record-format aka_v1_operator_sft \
-  --dataset-label cuda_kernel_dataset_v1
-
-python tools/review_aka_expressibility.py init \
-  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
-  --source-revision <AKA_COMMIT> \
-  --record-format aka_v1_operator_sft \
-  --work-root /new/external/aka-expressibility-review
-
-python tools/run_aka_expressibility_codex.py \
-  --dataset-root /absolute/AKA/datasets/curated/cuda_kernel_dataset_v1 \
-  --source-revision <AKA_COMMIT> \
-  --record-format aka_v1_operator_sft \
-  --work-root /new/external/aka-expressibility-sol-max \
-  --limit 1
-```
-
-Use `aka_v2_review_projection` only for an explicitly audit-only v2 projection. A
-non-unknown result requires a canonical complete-parent completion, and every result
-remains provisional with `semantic_binding=reviewer_claimed` and `gpu_test=not_run` until
-the independent owners provide stronger evidence. Use `review_aka_expressibility.py
-verify` and `status` to check the deterministic case state; never infer a new primitive
-from the model Turn alone.
+AKA review was a read-only challenge-corpus workflow, not a Compiler Corpus Gate, an IR
+relevance judgment, or GPU/performance evidence ([ADR 0068](adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)).
+The campaign is closed. Its harness -- `tools/audit_aka_corpus.py`,
+`tools/review_aka_expressibility.py`, the `tools/run_aka_*.py` runners and their
+plan, admission and summary tools, with their contract tests -- lives on the `history`
+branch at its original paths (`git show history:tools/<name>.py`), and its published
+dataset stays under `docs/data/` with `tools/verify_aka_qualified_review_export.py` and
+`tools/verify_aka_fma_v41_reaudit.py` as the retained verifiers. Every retained result
+remains provisional with `semantic_binding=reviewer_claimed` and `gpu_test=not_run`; do
+not infer a new primitive from a model Turn alone.
 
 ## 3. Select and freeze a Study
 

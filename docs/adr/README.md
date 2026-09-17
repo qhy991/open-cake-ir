@@ -12,16 +12,17 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 | 代码与运行产物放在哪里 | [0005](../zh-CN/adr/0005-forward-compatible-lifecycle-layout.md) |
 | 为什么估算需要校准 | [0008](../zh-CN/adr/0008-calibration-coverage-gates-ranking.md) |
 | 生成源码与固定源码有什么区别 | [0019](../zh-CN/adr/0019-lowering-generation-is-observable.md) |
-| 为什么 Corpus 与 Workload 不同 | [0029](../zh-CN/adr/0029-lowering-route-is-not-a-workload-profile.md)、[0038](../zh-CN/adr/0038-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) |
-| 发布如何使用独立人类或模型会话的批准 | [0052](../zh-CN/adr/0052-independent-agent-release-review.md)，背景：[0030](../zh-CN/adr/0030-compiler-release-approval-is-external.md) |
+| 为什么 Corpus 与 Workload 不同 | [0029](../zh-CN/adr/0029-lowering-route-is-not-a-workload-profile.md)、[0068](../zh-CN/adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) |
+| 发布如何使用独立人类或模型会话的批准 | [0052](../zh-CN/adr/0052-independent-agent-release-review.md)，背景：[0030](../zh-CN/adr/0030-compiler-release-approval-is-external.md)；两者已被 [0065](0065-source-identity-is-the-commit.md) 取代 |
 | 为什么完整文件不等于可信的权限历史 | [0031](../zh-CN/adr/0031-archive-integrity-is-not-filesystem-custody.md) |
 | 文档怎样避免重复维护事实 | [0047](../zh-CN/adr/0047-documentation-separates-stable-history-and-current-views.md) |
 | AI 怎样读取任务并受预算约束 | [0048](../zh-CN/adr/0048-agent-runs-use-task-agents-and-ralph-control.md) |
-| 已发布身份怎样保留 | [Executor：0049](../zh-CN/adr/0049-released-executor-descriptors-reserve-their-identities.md)、[Compiler：0050](../zh-CN/adr/0050-released-compiler-locks-reserve-their-identities.md) |
+| 已发布身份怎样保留 | [Executor：0049](../zh-CN/adr/0049-released-executor-descriptors-reserve-their-identities.md)、[Compiler：0050](../zh-CN/adr/0050-released-compiler-locks-reserve-their-identities.md)；机制由 [0065](0065-source-identity-is-the-commit.md) 取代，身份表见 [0067](0067-retired-release-outputs-live-on-the-history-branch.md) |
+| 源码身份为什么是提交，退役的发布产物在哪里 | [0065](0065-source-identity-is-the-commit.md)、[0067](0067-retired-release-outputs-live-on-the-history-branch.md) |
 | 为什么读取不能隐式复制成一组数 | [0051](../zh-CN/adr/0051-load-values-follow-the-access-domain.md) |
 | Study 怎样显式使用外部模型给候选排序 | [0053](0053-study-bound-advisory-cost-selection.md) |
 
-[中文设计记录目录](../zh-CN/adr/README.md)逐条对应英文原文。历史中重复的编号按完整文件名区分。状态含义：
+[中文设计记录目录](../zh-CN/adr/README.md)逐条对应英文原文。2026-09-18 之前有三对记录共用编号（0038、0039、0053）；每对中后加入的一份已改为 0068、0069、0070，正文首行记录原编号。状态含义：
 
 - **proposed：** 提案，可按授权范围实现和审查，不代表已发布或 GPU 通过。
 - **accepted：** 决策已被接受；具体权限范围仍看该记录和当前任务授权。
@@ -65,7 +66,6 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [ADR 0037: A prefix scan is not a fold with a flag](0037-a-prefix-scan-is-not-a-fold-with-a-flag.md)
 - [ADR 0038: QSA needs stateful selection and launch composition](0038-qsa-needs-stateful-selection-and-launch-composition.md)
 - [ADR 0039: Logical register pressure is not a physical bound](0039-logical-register-pressure-is-not-a-physical-bound.md)
-- [ADR 0039: a single-writer state update is a proven store effect](0039-single-writer-state-store-is-a-store-effect.md)
 - [ADR 0040: QSA utilization is a whole-Program roofline claim](0040-qsa-utilization-and-component-attribution.md)
 - [ADR 0041: Resident top-k supports signed INT32 values](0041-resident-top-k-supports-signed-int32.md)
 - [ADR 0042: Loop-carried top-k may batch two source tiles](0042-loop-carried-top-k-may-batch-two-source-tiles.md)
@@ -73,7 +73,6 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [ADR 0044: Loop-carried top-k canonical lowering may use exact half-selection](0044-loop-carried-top-k-canonical-lowering-may-use-exact-half-selection.md)
 - [ADR 0045: Triton lowering admits multiple explicit MMA DAG nodes](0045-triton-lowering-admits-multiple-explicit-mma-dag-nodes.md)
 - [ADR 0046: Dynamic loop stop owns whole-grid work](0046-dynamic-loop-stop-owns-whole-grid-work.md)
-- [ADR 0053: B300 is an exact target on the existing Triton path](0053-b300-is-an-exact-target.md)
 - [ADR 0057: Metal and CLI harnesses use the existing Lab](0057-metal-and-harnesses-use-the-existing-lab.md)
 
 - [0060: Release review provenance and historical exceptions](0060-release-review-provenance-and-historical-exceptions.md)
@@ -92,3 +91,7 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 
 - [0065: Source identity is the commit, and a host capture is its own document](0065-source-identity-is-the-commit.md)
 - [0066: SoL-ExecBench task import, namespace and gate translation](0066-sol-execbench-task-import.md)
+- [0067: Retired release outputs live on the `history` branch](0067-retired-release-outputs-live-on-the-history-branch.md)
+- [0068: AKA is a challenge corpus, not a Compiler Corpus](0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)（原 0038）
+- [0069: a single-writer state update is a proven store effect](0069-single-writer-state-store-is-a-store-effect.md)（原 0039）
+- [0070: B300 is an exact target on the existing Triton path](0070-b300-is-an-exact-target.md)（原 0053）

@@ -13,15 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.evidence.secret_detection import contains_forbidden_secret  # noqa: E402
 
-# These immutable historical detectors and the active detector contain bare
-# policy markers. Only an exact marker literal is exempt, never a file or token.
+# The active detector contains bare policy markers. Only an exact marker literal is
+# exempt, never a file or token. The vendored historical detectors that once shared this
+# exemption live on the `history` branch now (evidence/executors/*/src/.../store.py) and
+# are no longer tracked here.
 _POLICY_SOURCES = {
     "src/open_cake_ir/evidence/secret_detection.py",
-    *(f"evidence/executors/{revision}/src/open_cake_ir/evidence/store.py" for revision in (
-        "open-cake-ir-b200-v1-5bdc9106", "open-cake-ir-b200-v2-4be390bf",
-        "open-cake-ir-b200-v3-1c18cbfb", "open-cake-ir-b200-v4-203b2d8f",
-        "open-cake-ir-b200-v5-7f437598",
-    )),
 }
 _BARE_MARKERS = {
     b"BEGIN " + b"PRIVATE KEY", b"OPENAI_" + b"API_KEY=",

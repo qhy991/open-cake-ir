@@ -18,16 +18,7 @@ from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuil
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.evidence import EvidenceStore  # noqa: E402
 from open_cake_ir.lab import BuildRequest, TritonToolchainBuilder  # noqa: E402
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes  # noqa: E402
 
 
 def _media_type(role: str) -> str:

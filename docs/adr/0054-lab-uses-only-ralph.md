@@ -1,6 +1,6 @@
 # ADR 0054: Lab uses only Ralph
 
-Status: accepted by the repository owner, 2026-09-07; source implementation for an Executor successor.
+Status: accepted by the repository owner, 2026-09-07. The Executor successor this named as its release path was replaced by [ADR 0065](0065-source-identity-is-the-commit.md).
 
 ## Decision
 

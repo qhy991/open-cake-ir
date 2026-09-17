@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import json
 import re
 import subprocess
 import tempfile
@@ -14,6 +13,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, cast
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 
 ARTIFACT_ROLES = ("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco")
 _AMDHSA_KERNEL = re.compile(r"^\s*\.amdhsa_kernel\s+(\S+)\s*$", re.MULTILINE)
@@ -21,16 +22,6 @@ _AMDHSA_FIELD = re.compile(
     r"^\s*\.amdhsa_(?P<name>[a-z0-9_]+)\s+(?P<value>[0-9]+)\s*$",
     re.MULTILINE,
 )
-
-
-def canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def require_object(value: object, context: str) -> Mapping[str, object]:

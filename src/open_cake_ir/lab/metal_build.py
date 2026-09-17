@@ -18,16 +18,13 @@ from typing import Mapping
 from .bindings import load_compiler_reference
 from open_cake_ir.evaluation.core import LaunchableCandidate
 from open_cake_ir.evaluation.artifacts import builds_metal_archive
+from open_cake_ir.serialization import canonical_json_bytes as _json
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest, compile_options
 from .environments import BuildRequest
 from .faults import CandidateCompileRejected, RunProtocolFault
 
 ROOT = Path(__file__).resolve().parents[3]
 SWIFT_SOURCE = Path(__file__).with_name("metal") / "archive.swift"
-
-
-def _json(document: object) -> bytes:
-    return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
 
 
 def _external_root(path: Path) -> Path:

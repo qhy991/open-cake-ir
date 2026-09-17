@@ -19,20 +19,34 @@ from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeE
 
 
 def _resolve_executor(executor_id: str) -> dict:
-    """Find a Revision descriptor by id: current, superseded, or archived."""
+    """Find a retired Executor descriptor by id and read it from the `history` branch."""
 
-    # Historical quickstart evidence names a released descriptor; the frozen index is
-    # where those identities now live (ADR 0065).
-    inventory = json.loads(
-        (ROOT / "inventory/EXECUTOR_REVISIONS_FINAL_20260916.json").read_text(encoding="utf-8")
+    # Historical quickstart evidence names a released descriptor. Retired identities are
+    # indexed by docs/history/identities.json, and the document itself lives on the
+    # `history` branch at its original path (ADR 0065): `git show history:<path>`.
+    identities = json.loads(
+        (ROOT / "docs/history/identities.json").read_text(encoding="utf-8")
     )
-    for candidate in [
-        *inventory["current_by_target"].values(),
-        *inventory.get("superseded", []),
-        *inventory["archives"],
-    ]:
-        if candidate["executor_id"] == executor_id:
-            return candidate
+    for entry in identities["entries"]:
+        if entry["kind"] == "executor" and entry["id"] == executor_id:
+            shown = subprocess.run(
+                ["git", "show", f"{identities['history_branch']}:{entry['path']}"],
+                cwd=ROOT,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            if shown.returncode != 0:
+                raise AssertionError(
+                    f"{entry['path']} is not resolvable on the "
+                    f"{identities['history_branch']!r} branch: "
+                    f"{shown.stderr.decode('utf-8', 'replace').strip()}"
+                )
+            return {
+                "executor_id": entry["id"],
+                "path": entry["path"],
+                "document_bytes": shown.stdout,
+            }
     raise AssertionError(f"executor {executor_id!r} is not resolvable")
 
 
@@ -103,9 +117,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
         executor_inventory = _resolve_executor(
             inventory["executor_revision"]["executor_id"]
         )
-        descriptor = json.loads(
-            (ROOT / executor_inventory["path"]).read_text(encoding="utf-8")
-        )
+        descriptor = json.loads(executor_inventory["document_bytes"])
 
         self.assertEqual(inventory["status"], "passed")
         self.assertFalse(inventory["scientific_claim_authorized"])
@@ -139,12 +151,12 @@ class GpuQuickstartContractTests(unittest.TestCase):
             superseded["current_schedule_raw_sha256"],
         )
         self.assertIn("GPUQ_JOB_ID", superseded["requalification_blocked_by"])
+        # The retired descriptor's canonical digest is a pre-ADR-0065 scheme the current
+        # loader no longer computes and docs/history/identities.json does not carry; what
+        # stays checkable is that the history branch still serves the bytes this record
+        # observed.
         self.assertEqual(
-            executor_inventory["canonical_sha256"],
-            inventory["executor_revision"]["canonical_sha256"],
-        )
-        self.assertEqual(
-            sha256((ROOT / executor_inventory["path"]).read_bytes()).hexdigest(),
+            sha256(executor_inventory["document_bytes"]).hexdigest(),
             inventory["executor_revision"]["descriptor_raw_sha256"],
         )
         executor_sources = {

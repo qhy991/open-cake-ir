@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, cast
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
 from open_cake_ir.source_identity import SourceIdentityError, checkout_commit
 
 
@@ -63,16 +64,6 @@ def _build_environment(value: object) -> dict[str, str]:
             return {}
         admitted[name] = item
     return admitted
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
 
 
 def _freeze_json(value: object) -> object:
