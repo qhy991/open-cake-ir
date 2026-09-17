@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-011",
+  "kind": "capacity",
+  "date": "2026-09-17",
+  "title": "gfx938 declares mma, the Gate covers it and the hardware answers it, and a qualified gemm campaign still lowered a contraction with no matrix instruction at all",
+  "backend": "triton-dcu",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@b85c696a",
+  "executor_revision": "gfx938@b85c696a",
+  "evidence": {
+    "retained": "bw1100 /home/testuser01/oci-dcu-runs/gemm-20260917-225918, protocol_adherence adhered, endpoint qualified_by_budget true, best_confirmed_latency_ms 0.409279",
+    "sites": [
+      "the run's candidate artifacts -- lowered_source, ttir, ttgir and amdgcn all contain zero tl.dot, zero mma operations and no v_mmac mnemonic",
+      "the same run's provider_reference_bundle and provider_events -- both name triton.dot.fp16_fp32 and triton.dot.fp8e4m3_fp32, so the declaration did reach the author",
+      "compiler/targets/gfx938.json -- declares mma and both dot contracts with their BW1101 citations",
+      "corpus/manifest.json -- gfx938-gemm-bias-mma-accepted lowers to tl.dot and the Gate pins its emitted source"
+    ]
+  },
+  "observation": "Everything below the author is in place. The Target declares the operation kind and two contracts, each beside a measurement taken on the device; the Corpus exercises one of them and pins the emitted source; the ISA answers it -- Triton emits v_mmac_f32_16x16x16_f16 for fp16 operands and v_mmac_f32_16x16x32_fp8_fp8 for fp8, checked elementwise against a torch oracle. The declaration is not aspirational.\n\nThe campaign still did not use it. gemm ran to a qualified endpoint at 0.409279 ms and the candidate it confirmed contains no tl.dot, no mma operation and no matrix mnemonic anywhere in its AMDGCN -- a contraction lowered as elementwise work. The author was not kept from it: the reference bundle it was given names both contracts.\n\nThis is worth separating from the two failure shapes already recorded. It is not F-2026-09-17-009, where the Gate said nothing because no case existed; a case exists and passes. It is not F-2026-09-17-008, where the analysis behind a declaration was missing; the analyses are there and a mismatched dtype is refused by them. A capability can be declared, gate-covered, hardware-verified and reachable by the author, and still not be reached for. Nothing in the loop measures that gap, because a candidate that never attempts the instruction produces no finding about it -- it simply runs slower and qualifies.\n\nHow much slower is not established here. 0.409 ms is the confirmed latency of this candidate against this baseline at this shape, and no mma candidate exists to compare it with; treating the ratio between a matrix kernel and this one as known would be inventing the number this record exists to say is missing.",
+  "proposed_change": "Do not widen anything to force it. The candidate is correct and the run is adherent; what is absent is the author choosing an available instruction, and that is a property of the authoring environment rather than of the Compiler or the Lab.\n\nThe question worth answering first is whether the author can tell that mma is available for this target in a form it can act on. The reference bundle names the contracts, which is not the same as showing that a contraction on this target is expected to use one -- on the CUDA targets the corpus and the starters carry worked mma Schedules, and gfx938's three older cases are all elementwise and reduction shapes. If that is the difference, the fix is a gfx938 starter or corpus example that uses the declared contract, which is a Lab and Corpus act with no Compiler change.\n\nWhatever is done, it changes the authoring environment, so it changes the treatment: S5 fixes the task statement as part of what is held constant, and campaigns before and after are not matched. That is a reason to decide it deliberately and record the boundary, not a reason to avoid it.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
