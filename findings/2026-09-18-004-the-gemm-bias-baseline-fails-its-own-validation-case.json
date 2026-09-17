@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-18-004",
+  "kind": "bug",
+  "date": "2026-09-18",
+  "title": "The gemm_bias fixed baseline fails its own mixed_magnitude validation case on gfx938, so no candidate can qualify however it is written",
+  "backend": "triton-dcu",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@43e736f6",
+  "executor_revision": "gfx938@43e736f6",
+  "evidence": {
+    "retained": "bw1100 /home/testuser01/oci-dcu-runs/gemm_bias-20260918-064243, four turns and a 400000 token budget, protocol_adherence adhered, endpoint_observation no_qualified_candidate",
+    "sites": [
+      "that run's correctness_output: participants.baseline.preflight.launches -- mixed_magnitude passed false, max_abs_error 0.09375, output_mismatches 27, while primary, zeros, near_zero and alternating all pass",
+      "the same document's candidate half fails the same case with the same 0.09375, and the run's pooled output_mismatches is 54 -- 27 from each participant",
+      "two turns of the same run rejected on correctness with the identical max_abs_error, on different candidate digests",
+      "the contrast within the family: gemm_silu's baseline passes every case and only its candidate fails, and gemm's baseline and candidate both pass every case"
+    ]
+  },
+  "observation": "The baseline is the starter reference the task ships with, and on this target it does not pass the Workload's own validation set. mixed_magnitude is the case it fails -- signed powers of two from 2^-12 to 2^8, so a contraction over K accumulates terms whose magnitudes span twenty binades -- and it fails by 0.09375 on 27 elements while the other four cases pass, primary at 6.87e-05.\n\nThat makes gemm_bias unqualifiable on gfx938 by construction. Common Evaluation checks both participants against the external oracle, so a candidate is compared to a reference that is itself outside tolerance; two turns produced two different candidate digests and both were rejected on correctness with the identical error, which is the tell that the error is not the candidate's.\n\nThe family separates cleanly and that is what makes this a defect rather than a hard task. gemm's baseline and candidate both pass every case. gemm_silu's baseline passes every case and its candidate fails all five with errors from 0.5 to 100.8 -- a wrong kernel, caught by the oracle, working as intended. Only gemm_bias has a baseline that cannot pass.\n\nWhat this record does not establish is where the fault sits. A reference that disagrees with torch by 0.09375 at this spread is consistent with an accumulation-order difference the tolerance does not admit, and equally with a tolerance chosen against a different target's arithmetic. Deciding between those needs the same case run on a target whose arithmetic is known to satisfy it, which is not in this evidence.",
+  "proposed_change": "Run gemm_bias's mixed_magnitude case against the oracle on sm_103a and compare. If the baseline passes there, the tolerance was calibrated on CUDA arithmetic and the Workload Contract owns the fix -- either a tolerance that states the accumulation it assumes, or a case whose magnitude spread a declared fp32 reduction can meet. If it fails there too, the baseline itself is wrong and the fix is the reference, not the tolerance.\n\nUntil that is known, gemm_bias should be reported as blocked on this target rather than counted as a task the loop failed: no candidate can qualify, and a sweep that lists it beside tasks whose authors simply wrote poor kernels is mixing two different facts.\n\nDo not widen the tolerance to make it pass. The oracle is the ground truth this harness exists to defend, and a tolerance loosened to admit a reference is the same act as regenerating a Gate expectation to admit a mismatch.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
