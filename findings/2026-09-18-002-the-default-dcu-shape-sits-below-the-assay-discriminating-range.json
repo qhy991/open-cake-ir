@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-18-002",
+  "kind": "protocol",
+  "date": "2026-09-18",
+  "title": "Seven DCU tasks moving 1.0 and 1.5 MiB all report the same 0.005439 ms, so at the default shape the paired assay returns close_null by construction",
+  "backend": "triton-dcu",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@9b51e3cd",
+  "executor_revision": "gfx938@9b51e3cd",
+  "evidence": {
+    "retained": "bw1100 campaign evidence for rmsnorm, layernorm, silu, selu, swiglu, softmax_backward and rmsnorm_input_gradient, all on 2026-09-17, each confirmatory receipt carrying pooled_medians_ms for both arms",
+    "sites": [
+      "every one of those seven runs: pooled_medians_ms candidate and baseline both 0.005439, speedup 1.000, classification close_null",
+      "swiglu and gelu_tanh: candidate 0.005439 against baseline 0.005599 and 0.006399, speedup 1.029 and 1.026, still close_null",
+      "the tensor ABI at the default shape: silu and selu move 1.000 MiB, rmsnorm and prelu 1.004, layernorm 1.008, swiglu and softmax_backward 1.500, rmsnorm_input_gradient 1.504",
+      "src/open_cake_ir/evaluation/hip_benchmark.py -- the assay reports resolution_us, and a cohort this coarse is largely the timer's quantum"
+    ]
+  },
+  "observation": "Seven operators of different arithmetic report the identical pooled median, to six decimal places, for both arms. That alone would suggest a shared floor; the byte counts settle what kind. silu moves 1.000 MiB and swiglu 1.500, a half again as much, and both take 0.005439 ms. Bandwidth-bound work does not do that -- the implied rates are 193 and 289 GB/s for the same duration, which is one number being held fixed while the other varies.\n\nSo at the default 128x1024 shape these kernels are latency-bound, and what the assay measures is a dispatch floor rather than the candidate. The consequence is not that the numbers are wrong; they are what the device does. The consequence is that the comparison cannot work: a candidate that halved the arithmetic and one that doubled it would both report 0.005439, and the paired assay would call both close_null. Of the ten qualified DCU campaigns, seven landed exactly there.\n\nThat also reframes the three that did not. gelu_tanh_backward, prelu and gemm are classified second_arm_faster with the candidate slower than its baseline -- 0.012639 against 0.006719, 0.009759 against 0.005439, 0.409279 against 0.305599. Those are the runs where something rose above the floor, and in each the author's candidate lost to the starter reference. Being able to see that is exactly what the seven cannot offer.\n\nWhat this does not establish: where the floor comes from. Launch overhead, the profiler's own attribution boundary and a genuinely small kernel would all look like this from here, and the assay's resolution_us is reported per cohort precisely so a reader can tell a spread from a quantum. Naming the cause needs a shape sweep, not another campaign at this shape.",
+  "proposed_change": "Run one task at several shapes on this target and read where the reported time starts tracking the bytes -- that is the smallest experiment that distinguishes a dispatch floor from a small kernel, and it needs no Compiler or Lab change. If the times separate at a larger shape, the DCU task shapes should be chosen above that point, and the choice recorded with the measurement that justified it rather than inherited from the CUDA defaults.\n\nDo not read the seven close_null results as evidence that the authored candidates matched their baselines. They are evidence that the assay could not tell, which is a different statement and the one the receipts support. A campaign at a shape below the discriminating range spends provider budget to learn nothing about latency, and that is worth knowing before a sweep rather than after.\n\nThis says nothing about correctness: all seven passed their five validation cases against the external oracle, and that half of the evaluation is unaffected by the floor.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
