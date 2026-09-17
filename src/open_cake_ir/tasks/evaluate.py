@@ -338,7 +338,13 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             for role in protocol.arms:
                 correctness(role, 'postflight')
         identities = {role: candidate_identity(item) for role, item in candidates.items()}
-        raw = {'kind': PAIRED_KIND, 'evaluation_protocol': authority.request['evaluation_protocol'],
+        # The assay the Study declared, not the one this producer was written against.
+        # It read PAIRED_KIND, which was true while CUPTI was the only source a tensor
+        # pair could be timed by; the Metal producer below already reads the declaration,
+        # and the receipt validator compares the two, so a third source turned a
+        # hardcoded name into 'paired raw kind differs from the declared assay'.
+        raw = {'kind': evaluation['paired_timing']['kind'],
+            'evaluation_protocol': authority.request['evaluation_protocol'],
             'participants': identities, 'workload_sha256': authority.workload.canonical_sha256,
             'case_id': authority.case_id, 'purpose': authority.request['purpose'],
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
