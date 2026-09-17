@@ -67,10 +67,23 @@ def _raw_reference_path(
 
 
 def _admit_executor(root: Path, lock: CampaignLock) -> tuple[ExecutorRevision, object]:
+    """Admit the Executor's host through the admission that host's kind declares.
+
+    `admit_host` covers CUDA and Metal and refuses a HIP capture by name, pointing at
+    `admit_hip_host` -- which carries the executor id into the admission and returns the
+    ROCm facts the build jail needs. This dispatched to neither: it called `admit_host`
+    for every capture, so a HIP Campaign died at composition on a refusal that was telling
+    it which door to use. The kind is read from the capture that declares it rather than
+    inferred from anything else.
+    """
+
     execution = _object(lock.document["execution"], "campaign_lock.execution")
     revision = ExecutorRevision.load_reference(
         root, execution["executor_revision"], "execution.executor_revision"
     )
+    host = _object(revision.document["host_environment"], "executor.host_environment")
+    if host.get("kind") == "hip":
+        return revision, revision.admit_hip_host()
     return revision, revision.admit_host()
 
 
