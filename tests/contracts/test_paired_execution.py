@@ -137,7 +137,12 @@ class PairedExecutionTests(unittest.TestCase):
         result = worker._base_result('gpuq-123456789abc')
         admission = SimpleNamespace(broker_job_id='gpuq-123456789abc', gpu_uuid='GPU-CPU-fixture')
         with patch.object(worker, 'LoadedTorchTensorCandidate', FakeLoaded):
-            worker._evaluate_paired_tile(authority, result, Helper(), admission)
+            # The producer takes the assay, not the helper it used to build one from:
+            # which assay times an arm is the backend's to say. CUPTI is not bound to a
+            # kernel, so both arms share the one instance this builds.
+            strict_cupti = worker.StrictCuptiBenchmark(Helper())
+            worker._evaluate_paired_tile(authority, result,
+                                         lambda role, manifest: strict_cupti, admission)
         self.result = result
         return self.receipt()
 
