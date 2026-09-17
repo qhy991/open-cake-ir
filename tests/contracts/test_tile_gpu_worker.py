@@ -85,17 +85,19 @@ class TileGpuWorkerTests(unittest.TestCase):
             authority = SimpleNamespace(workload=workload, case_id='tiny', candidate=self.candidate,
                 manifest=self.manifest, request={'purpose': 'confirmatory'}, request_root=root)
             result = worker._base_result(self.admission.broker_job_id)
-            with mock.patch.object(worker, 'LoadedTorchTensorCandidate', Loaded), \
-                 mock.patch.object(worker, 'StrictCuptiBenchmark', return_value=measure):
+            # The benchmark is the caller's now, not something this function constructs,
+            # so the double is handed in rather than patched over a constructor that is
+            # no longer called.
+            with mock.patch.object(worker, 'LoadedTorchTensorCandidate', Loaded):
                 if timing_error:
                     with self.assertRaisesRegex(RuntimeError, 'CUPTI failure'):
-                        worker._evaluate_tile_candidate(authority, result, object(), self.admission, True)
+                        worker._evaluate_tile_candidate(authority, result, measure, self.admission, True)
                     self.assertTrue(instances[0].closed)
                     self.assertEqual(result['counters']['kernel_calls'], 3)
                     self.assertEqual(result['counters']['timing_samples'], 0)
                     self.assertIsNone(result['receipt'])
                     return
-                worker._evaluate_tile_candidate(authority, result, object(), self.admission, True)
+                worker._evaluate_tile_candidate(authority, result, measure, self.admission, True)
             raw = result['receipt']
             artifacts = {role: (root / path).read_bytes() for role, path in raw['artifacts'].items()}
             receipt = EvaluationReceipt(self.candidate.candidate_sha256, workload.canonical_sha256,
