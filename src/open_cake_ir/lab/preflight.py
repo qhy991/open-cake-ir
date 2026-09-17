@@ -15,6 +15,7 @@ from .endpoints import analysis_without_endpoint_policy
 from .efficiency_policy import analysis_without_performance_policy, performance_reporting_policy
 from ._documents import _canonical_json_bytes, _digest, _name, _object, _project_path
 from ._policies import (
+    untimed,
     _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN,
     _ATTRIBUTION_EVALUATION,
     _LEGACY_ATTRIBUTION_EVALUATION,
@@ -233,24 +234,41 @@ def preflight(
     if (open_cake.get("tool_surface") != (["submit_schedule_or_python"] if policy is not None or single_environment else ["submit_schedule"])
             or (comparison is not None and direct_cuda.get("tool_surface") != ([policy.submit_tool] if policy is not None else ["submit_cuda"]))):
         raise ValueError("Study Contract Authoring Environment tool surfaces differ")
-    attribution_evaluation = _object(
+    evaluation_protocol = _object(
         study.document.get("evaluation_protocol"),
         "study.evaluation_protocol",
-    ).get("attribution_evaluation")
+    )
+    attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
+    # A Study for a target whose backend names no timing source carries a
+    # measurement-coverage limitation instead of a paired assay. `evaluation_policy` has
+    # written that shape since the DCU was admitted, and this gate never accepted it, so
+    # no such Study reached a Campaign: its attribution is `correctness_only`, which was
+    # not in the set below, and its arms can be given neither a qualified latency nor a
+    # profile. Both halves are admitted here, from the one predicate the policy uses.
+    # Whether the Study's coverage claim is true of the device is not checked here: the
+    # registry that owns which backend admits a target and what source it may name lives
+    # in the task layer, and `lab` does not import it (tests/contracts/test_task_boundaries.py).
+    # `TaskLab.preflight` checks the claim against that owner before delegating here.
+    no_timed_assay = untimed(evaluation_protocol)
     if attribution_evaluation not in {
         None,
         _LEGACY_ATTRIBUTION_EVALUATION,
         _ATTRIBUTION_EVALUATION,
+        *(("correctness_only",) if no_timed_assay else ()),
     }:
         raise ValueError("Study Contract attribution Evaluation differs")
-    profile_feedback = ["profile"] if attribution_evaluation is not None else []
+    if no_timed_assay:
+        timed_feedback, profile_feedback = [], []
+    else:
+        timed_feedback = ["qualified_timing"]
+        profile_feedback = ["profile"] if attribution_evaluation is not None else []
     if open_cake.get("feedback") != [
         "findings",
         "correctness",
-        "qualified_timing",
+        *timed_feedback,
         *profile_feedback,
     ] or (comparison is not None and direct_cuda.get("feedback") != [
-        "compile", "correctness", "qualified_timing", *profile_feedback,
+        "compile", "correctness", *timed_feedback, *profile_feedback,
     ]):
         raise ValueError("Study Contract Authoring Environment feedback differs")
     gate, compiler_relative, compiler_reference = (
@@ -311,8 +329,17 @@ def preflight(
         raise ValueError("Study target is not declared by the Compiler")
     _, target_path = _project_path(project_root, target_relative, "compiler.target")
     target = Target.load(target_path)
+    # The mode is checked against its closed vocabulary here and against the device that
+    # owns it in the task layer. It used to be read as `local_serialized if metal else
+    # exclusive`, which infers how a run reaches its device from the route it lowers
+    # through -- the two axes `tasks.devices` keeps as separate columns precisely because
+    # "a DCU lowers through Triton like a B200 and is reached like an Apple device", and
+    # inferring one from the other is what refused every DCU launch once already. `lab`
+    # cannot read that registry (tests/contracts/test_task_boundaries.py), so
+    # `TaskLab.preflight` checks which of the two is right for this target.
     if (set(gpu) != {'name', 'count', 'mode'} or gpu.get('name') not in target.device_names
-        or type(gpu.get('count')) is not int or gpu['count'] != 1 or gpu.get('mode') != ('local_serialized' if route['backend'] == 'metal' else 'exclusive')):
+        or type(gpu.get('count')) is not int or gpu['count'] != 1
+        or gpu.get('mode') not in {'local_serialized', 'exclusive'}):
         raise ValueError("Study Contract GPU admission differs")
     analysis = _object(study.document.get("analysis_plan"), "study.analysis_plan")
     performance_reporting_policy(analysis, claim_scope)

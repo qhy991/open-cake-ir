@@ -1,0 +1,111 @@
+{
+  "host_environment": {
+    "kind": "hip",
+    "packages": {
+      "packaging": "26.2",
+      "psutil": "7.2.2",
+      "pybind11": "3.0.4",
+      "setuptools": "83.0.0",
+      "torch": "2.9.1+rocm7.2.1.lw.gitff65f5bc",
+      "triton": "3.5.1+rocm7.2.1.gita272dfa8"
+    },
+    "platform": {
+      "kernel_release": "7.0.0-28-generic",
+      "machine": "x86_64",
+      "system": "Linux"
+    },
+    "python": {
+      "invocation_path": "/home/wwxq/workspace/venv-open-cake-amd-rocm72/bin/python",
+      "resolved_sha256": "424f058ada04b74306d1930fd4ed5e150620d5e654c1c6a5932fe961ea1f83f7",
+      "version": "3.12.13"
+    },
+    "runtime": {
+      "backend": "hip",
+      "build_environment": {
+        "LD_LIBRARY_PATH": "/home/wwxq/workspace/rocm72-libxml2-compat-noble-2.12.7/root/usr/lib/x86_64-linux-gnu:/opt/rocm/lib",
+        "ROCM_PATH": "/opt/rocm"
+      },
+      "torch_hip_version": "7.2.53211-e1a6bc5663",
+      "visible_device_count": 1
+    },
+    "runtime_libraries": [
+      {
+        "path": "/home/wwxq/workspace/rocm72-libxml2-compat-noble-2.12.7/root/usr/lib/x86_64-linux-gnu/libxml2.so.2",
+        "sha256": "8a780e8c21f6b24f35bd8dc8013c3f1a01db201559bc648bc4bff513219a24b2",
+        "size_bytes": 2012552,
+        "soname": "libxml2.so.2"
+      }
+    ],
+    "tools": {
+      "build_tools": [
+        {
+          "kind": "cxx",
+          "path": "/usr/bin/c++",
+          "sha256": "e6718f7e0c7d057c3ff77b550c603da9bc4030e3ede3c053705acce1293dbe4d",
+          "size_bytes": 1305304,
+          "version": "c++ (Ubuntu 15.2.0-16ubuntu1) 15.2.0"
+        },
+        {
+          "kind": "git",
+          "path": "/usr/bin/git",
+          "sha256": "5516c9f362c29376ab9a499a33082f9f611941d8c75930c880e30ad109e39c9a",
+          "size_bytes": 4547768,
+          "version": "git version 2.53.0"
+        },
+        {
+          "kind": "hipcc",
+          "path": "/usr/bin/hipcc",
+          "sha256": "7e6614203ff9838f64581a4c9522dd4794834d7e91bad8074bb8c88d85618d09",
+          "size_bytes": 249280,
+          "version": "HIP version: 7.2.53211-e1a6bc5663"
+        },
+        {
+          "kind": "hipconfig",
+          "path": "/usr/bin/hipconfig",
+          "sha256": "9185d4f91758679a3f23bd601b5cb971c1767fd62d3044f21bc49eeeb7cffe67",
+          "size_bytes": 253376,
+          "version": "7.2.53211-e1a6bc5663"
+        },
+        {
+          "kind": "ninja",
+          "path": "/home/wwxq/.pyenv/versions/3.12.13/bin/ninja",
+          "sha256": "696f9628a79d9ce50314cf9556d7cd1a1d1ec52b8fd52828f6f9db1719565b67",
+          "size_bytes": 372384,
+          "version": "1.13.0.git.kitware.jobserver-pipe-1"
+        },
+        {
+          "kind": "rocminfo",
+          "path": "/usr/bin/rocminfo",
+          "sha256": "e22d9361a66797b4f5fc8ff1a305f1492e70d323f76b7bd89b7db2a981b567ed",
+          "size_bytes": 72040,
+          "version": "\u001b[37mROCk module is loaded\u001b[0m"
+        },
+        {
+          "kind": "sh",
+          "path": "/usr/bin/sh",
+          "sha256": "c626229526bb58ec2d0f585f3c3ae1412e6f973b4353385042d11c38d8426917",
+          "size_bytes": 129856,
+          "version": "POSIX-sh"
+        }
+      ],
+      "device_monitor": {
+        "kind": "amd-smi",
+        "path": "/usr/bin/amd-smi",
+        "sha256": "c6185991e96dc45b3ae930eace23869f070fce2afab5e061a336c0a7e2e9fa4a",
+        "size_bytes": 9752,
+        "version": "AMDSMI Tool: 26.2.1+unknown | AMDSMI Library version: 26.2.2 | ROCm version: 7.2.1 | amdgpu version: Linuxversion7.0.0-28-generic(buildd@lcy02-amd64-047)(x86_64-linux-gnu-gcc(Ubuntu15.2.0-16ubuntu1)15.2.0,GNUld(GNUBinutilsforUbuntu)2.46)#28-UbuntuSMPPREEMPT_DYNAMICSunJun2101:01:36UTC2026 | hsmp version: N/A"
+      },
+      "profilers": [
+        {
+          "kind": "rocprofv3",
+          "path": "/opt/rocm/bin/rocprofv3",
+          "sha256": "13060810d6b80653631b14f0f5e33ea160c2b79a6a3a4c6850142010b48b8ec8",
+          "size_bytes": 62506,
+          "version": "version: 1.1.0"
+        }
+      ]
+    }
+  },
+  "schema_version": 1,
+  "target": "gfx1151"
+}

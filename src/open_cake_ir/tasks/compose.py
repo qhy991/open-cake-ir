@@ -28,7 +28,7 @@ from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 from open_cake_ir.lab.providers import CANDIDATE_SET_ENVELOPE_V1, CodexInvocationBuilder, CodexProviderAdapter, CodexRunProvider, ProviderQualificationReceipt, required_live_provider_qualification_scope
 from open_cake_ir.lab.pairing import comparison_arm, bind_baseline, native_backend, backend_policy
-from open_cake_ir.lab.claude import ClaudeInvocationBuilder, ClaudeProviderAdapter, ClaudeRunProvider
+from open_cake_ir.lab.claude import ClaudeInvocationBuilder, advertised_options, ClaudeProviderAdapter, ClaudeRunProvider
 from open_cake_ir.lab.provider_policy import provider_harness
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from open_cake_ir.lab.runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter, broker_execution_sha256, load_runtime_config
@@ -67,10 +67,23 @@ def _raw_reference_path(
 
 
 def _admit_executor(root: Path, lock: CampaignLock) -> tuple[ExecutorRevision, object]:
+    """Admit the Executor's host through the admission that host's kind declares.
+
+    `admit_host` covers CUDA and Metal and refuses a HIP capture by name, pointing at
+    `admit_hip_host` -- which carries the executor id into the admission and returns the
+    ROCm facts the build jail needs. This dispatched to neither: it called `admit_host`
+    for every capture, so a HIP Campaign died at composition on a refusal that was telling
+    it which door to use. The kind is read from the capture that declares it rather than
+    inferred from anything else.
+    """
+
     execution = _object(lock.document["execution"], "campaign_lock.execution")
     revision = ExecutorRevision.load_reference(
         root, execution["executor_revision"], "execution.executor_revision"
     )
+    host = _object(revision.document["host_environment"], "executor.host_environment")
+    if host.get("kind") == "hip":
+        return revision, revision.admit_hip_host()
     return revision, revision.admit_host()
 
 
@@ -407,6 +420,14 @@ def execute_matched_from_config(
     workspace_root.mkdir(mode=0o750, parents=False, exist_ok=False)
     builders = {}
     task_packages = {}
+    _claude_options: list = []
+
+    def claude_cli_options():
+        """Ask this one executable once; every Run in this Campaign uses the same binary."""
+        if not _claude_options:
+            _claude_options.append(advertised_options(executable))
+        return _claude_options[0]
+
     for run_id in lock.run_order:
         workspace = workspace_root / run_id
         workspace.mkdir(mode=0o750)
@@ -417,7 +438,9 @@ def execute_matched_from_config(
             model=str(provider_authority["model"]), reasoning_effort=str(provider_authority["reasoning_effort"]),
             workspace=workspace, removed_environment=tuple(provider_authority["removed_environment"]))
         if harness == "claude-code":
-            builders[run_id] = ClaudeInvocationBuilder(**common_provider, event_contract=provider_authority["event_contract"])
+            builders[run_id] = ClaudeInvocationBuilder(
+                **common_provider, cli_options=claude_cli_options(),
+                event_contract=provider_authority["event_contract"])
         else:
             builders[run_id] = CodexInvocationBuilder(**common_provider,
                 code_mode_host=_object(provider_authority["code_mode_host"], "provider.code_mode_host"),

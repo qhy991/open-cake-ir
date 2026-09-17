@@ -184,3 +184,26 @@ def _scientific_analysis_plan_version(
     if analysis == _SCIENTIFIC_MATCHED_ANALYSIS_PLAN_V2:
         return "two_part_v2"
     raise ValueError(f"{context} is unsupported")
+
+
+def untimed(evaluation) -> bool:
+    """Whether an evaluation policy states that no timed assay is available.
+
+    One rule, read by the Study builder that writes the policy and by the preflight that
+    admits it. Two copies of this predicate is how the no-timer branch came to exist in
+    the policy while the gate below it still expected every Study to be timed.
+
+    The coverage field is read from an external Study document, so a malformed one is
+    refused by name rather than dereferenced: `evaluation["measurement_coverage"]` being a
+    string used to raise `AttributeError: 'str' object has no attribute 'get'` from inside
+    a gate, which is a crash where a refusal belongs.
+    """
+
+    if not isinstance(evaluation, Mapping):
+        raise ValueError("evaluation protocol must be an object")
+    coverage = evaluation.get("measurement_coverage")
+    if coverage is None:
+        return False
+    if not isinstance(coverage, Mapping):
+        raise ValueError("evaluation_protocol.measurement_coverage must be an object")
+    return coverage.get("timed_assay") == "unavailable"

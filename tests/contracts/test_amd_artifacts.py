@@ -12,7 +12,8 @@ from unittest.mock import Mock, patch
 
 from open_cake_ir.evaluation import triton_hip as hip
 from open_cake_ir.evaluation.rocprofv3 import (
-    Rocprofv3KernelTraceExpectation, find_kernel_trace_csv,
+    Rocprofv3KernelTraceExpectation, find_kernel_trace_csv, iteration_label,
+    project_iteration_durations,
     parse_kernel_stats_csv, parse_kernel_trace_csv, parse_results_json,
     validate_cross_output_agreement,
 )
@@ -482,3 +483,140 @@ class Rocprofv3MalformedBoundaryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+MARKER_HEADER = ("Domain", "Function", "Process_Id", "Thread_Id", "Correlation_Id",
+                 "Start_Timestamp", "End_Timestamp")
+
+
+def _marker_rows(spans):
+    return _csv_bytes(MARKER_HEADER, [
+        ["MARKER_CORE_RANGE_API", label, 99, 99, index, start, end]
+        for index, (label, start, end) in enumerate(spans)])
+
+
+class Rocprofv3TimedAssayTests(unittest.TestCase):
+    """The timed assay the resource projection deliberately does not make.
+
+    That projection states `duration_used_for_timing_or_promotion: False` for its own
+    callers. These durations are a separate, named entry point, so both statements stay
+    true at once.
+    """
+
+    def _cohort(self, iterations=3, gap=5_000_000):
+        """One dispatch per iteration, each inside its own range, plus one outside."""
+
+        kernel_rows, spans = [], []
+        for index in range(iterations):
+            base = 1000 + index * gap
+            kernel_rows.append(_trace_row(dispatch=index + 1, start=base + 10,
+                                          end=base + 10 + (index + 1) * 1_000_000))
+            spans.append((iteration_label("search", index), base, base + gap - 1))
+        # Warm-up: a dispatch of the same kernel before any range opens.
+        kernel_rows.insert(0, _trace_row(dispatch=99, start=1, end=5))
+        return _csv_bytes(HEADER, kernel_rows), _marker_rows(spans)
+
+    def test_each_iteration_is_the_sum_of_the_dispatches_inside_its_own_range(self):
+        kernel, marker = self._cohort()
+        projection = project_iteration_durations(
+            kernel, marker, _expectation(), cohort="search", iterations=3)
+        self.assertEqual(projection["kind"], "rocprofv3_iteration_duration_projection_v1")
+        self.assertEqual(projection["samples_ms"], [1.0, 2.0, 3.0])
+        self.assertEqual(projection["dispatches_per_iteration"], [1, 1, 1])
+        self.assertTrue(projection["duration_used_for_timing_or_promotion"])
+        # The warm-up dispatch lies outside every range and is attributed to nothing.
+        self.assertNotIn(0.000004, projection["samples_ms"])
+
+    def test_work_a_candidate_does_in_a_second_kernel_is_counted_and_named(self):
+        """Excluded from the latency, but not silent: dropping it makes a split
+        candidate read as faster than it is."""
+
+        kernel_rows = [
+            _trace_row(dispatch=1, start=1010, end=1_001_010),
+            _trace_row(kernel="second_kernel_of_this_candidate", dispatch=2,
+                       start=1_100_000, end=1_900_000),
+        ]
+        marker = _marker_rows([(iteration_label("search", 0), 1000, 1_999_999)])
+        projection = project_iteration_durations(
+            _csv_bytes(HEADER, kernel_rows), marker, _expectation(),
+            cohort="search", iterations=1)
+        self.assertEqual(projection["samples_ms"], [1.0])
+        self.assertEqual(projection["non_target_dispatches_per_iteration"], [1])
+        self.assertEqual(projection["non_target_dispatch_count"], 1)
+        self.assertIn("second kernel", projection["interval"])
+
+    def test_a_dispatch_of_another_kernel_inside_the_range_is_not_counted(self):
+        kernel_rows = [
+            _trace_row(dispatch=1, start=1010, end=1_001_010),
+            _trace_row(kernel="unrelated_torch_kernel", dispatch=2, start=1_100_000,
+                       end=1_900_000),
+        ]
+        marker = _marker_rows([(iteration_label("search", 0), 1000, 1_999_999)])
+        projection = project_iteration_durations(
+            _csv_bytes(HEADER, kernel_rows), marker, _expectation(),
+            cohort="search", iterations=1)
+        self.assertEqual(projection["samples_ms"], [1.0])
+        self.assertEqual(projection["dispatches_per_iteration"], [1])
+        self.assertEqual(projection["non_target_dispatch_count"], 1)
+
+    def test_an_iteration_with_no_dispatch_is_refused_rather_than_measured_as_zero(self):
+        kernel = _csv_bytes(HEADER, [_trace_row(dispatch=1, start=1010, end=1_001_010)])
+        marker = _marker_rows([(iteration_label("search", 0), 1000, 1_999_999),
+                               (iteration_label("search", 1), 2_000_000, 2_999_999)])
+        with self.assertRaisesRegex(ValueError, "not a zero"):
+            project_iteration_durations(kernel, marker, _expectation(),
+                                        cohort="search", iterations=2)
+
+    def test_a_declared_iteration_with_no_range_is_refused(self):
+        kernel, marker = self._cohort(iterations=2)
+        with self.assertRaisesRegex(ValueError, "holds no range for iteration"):
+            project_iteration_durations(kernel, marker, _expectation(),
+                                        cohort="search", iterations=3)
+
+    def test_another_cohort_s_ranges_do_not_satisfy_this_one(self):
+        kernel, marker = self._cohort(iterations=2)
+        with self.assertRaisesRegex(ValueError, "holds no range for iteration"):
+            project_iteration_durations(kernel, marker, _expectation(),
+                                        cohort="confirmatory", iterations=2)
+
+    def test_a_marker_trace_without_an_open_cake_range_is_refused(self):
+        kernel, _ = self._cohort(iterations=1)
+        foreign = _marker_rows([("someone_elses_range", 1000, 1999)])
+        with self.assertRaisesRegex(ValueError, "no open-cake iteration range"):
+            project_iteration_durations(kernel, foreign, _expectation(),
+                                        cohort="search", iterations=1)
+
+    def test_overlapping_iteration_ranges_are_refused_rather_than_double_counted(self):
+        """A dispatch inside two ranges would be charged to both, making each look slower
+        while the pair looks consistent. The refusal was added without a test."""
+
+        kernel = _csv_bytes(HEADER, [_trace_row(dispatch=1, start=1010, end=1_001_010)])
+        overlapping = _marker_rows([
+            (iteration_label("search", 0), 1000, 3_000_000),
+            (iteration_label("search", 1), 2_000_000, 4_000_000),
+        ])
+        with self.assertRaisesRegex(ValueError, "overlap"):
+            project_iteration_durations(kernel, overlapping, _expectation(),
+                                        cohort="search", iterations=2)
+
+    def test_ranges_that_merely_touch_are_not_overlapping(self):
+        """The boundary case the refusal must not swallow: one range ends where the next
+        begins, which is what a back-to-back cohort actually produces."""
+
+        kernel = _csv_bytes(HEADER, [
+            _trace_row(dispatch=1, start=1010, end=1_001_010),
+            _trace_row(dispatch=2, start=2_000_010, end=2_002_010),
+        ])
+        touching = _marker_rows([
+            (iteration_label("search", 0), 1000, 2_000_000),
+            (iteration_label("search", 1), 2_000_000, 3_000_000),
+        ])
+        projection = project_iteration_durations(kernel, touching, _expectation(),
+                                                 cohort="search", iterations=2)
+        self.assertEqual(projection["dispatches_per_iteration"], [1, 1])
+
+    def test_the_label_is_closed_over_its_own_separator(self):
+        self.assertEqual(iteration_label("search", 2), "OPENCAKE|search|2")
+        for cohort, index in (("a|b", 0), ("", 0), ("search", -1)):
+            with self.assertRaises(ValueError):
+                iteration_label(cohort, index)

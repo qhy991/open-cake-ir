@@ -376,7 +376,34 @@ def _qualify(root, workspace, args, executable, source_path):
     _write(workspace / "qualification.stderr", completed.stderr.encode())
     if completed.returncode:
         raise ValueError("provider qualification refused; see qualification.stderr")
+    _report_provider_limitations(receipt)
     return receipt, anchor
+
+
+def _report_provider_limitations(receipt: Path) -> None:
+    """Say out loud what the qualified provider build could not honour.
+
+    The qualification writes this beside the receipt. A file nobody reads is not a report:
+    a launch that is about to spend a budget on a build whose context boundary cannot be
+    pinned should say so where the person starting it will see it, not only where an
+    auditor might later look.
+    """
+
+    report = receipt.parent / "provider-cli-limitations.json"
+    if not report.is_file():
+        return
+    try:
+        document = json.loads(report.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        print(f"[provider] {report} is unreadable", file=sys.stderr, flush=True)
+        return
+    if document.get("severity") in (None, "none"):
+        return
+    print(f"[provider] {document.get('harness')} build "
+          f"{str(document.get('executable_sha256'))[:12]} carries a limitation "
+          f"({document.get('severity')}, {document.get('finding')}): "
+          f"{document.get('consequence')}", file=sys.stderr, flush=True)
+    print(f"[provider] recorded at {report}", file=sys.stderr, flush=True)
 
 
 

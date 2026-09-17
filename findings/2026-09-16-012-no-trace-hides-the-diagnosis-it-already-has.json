@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-010",
+  "id": "F-2026-09-16-012",
   "kind": "protocol",
   "date": "2026-09-16",
   "title": "A third of the audit's GPU evaluations report only 'no trace produced', but the candidate's real compile error is in the same stderr above that line; a quarter of those errors are the harness's own contract, not the candidate's code",

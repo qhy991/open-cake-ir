@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-009",
+  "id": "F-2026-09-16-011",
   "kind": "protocol",
   "date": "2026-09-16",
   "title": "RETRACTED: the 2-4x warp-specialization result was a regex matching the word 'producer' in comments; four of the six candidates it rested on are explicitly not warp-specialized",
@@ -13,7 +13,7 @@
       "workspace": "external_corpus_no_campaign",
       "run": "none",
       "event": 0,
-      "note": "No open-cake-ir campaign and no device of this project's own. The measurements are the external audit's, on B300 under its own harness. Only `live` cells are used: a `_contended` directory measured its reference while the GPU was busy and reports 900-1000x where live cells report ~59x (F-2026-09-16-003's provenance column exists for this)."
+      "note": "No open-cake-ir campaign and no device of this project's own. The measurements are the external audit's, on B300 under its own harness. Only `live` cells are used: a `_contended` directory measured its reference while the GPU was busy and reports 900-1000x where live cells report ~59x (F-2026-09-16-013's provenance column exists for this)."
     },
     {
       "workspace": "open-cake-ir-experiments/fib-extraction/tasks/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
@@ -37,7 +37,7 @@
       "workspace": "open-cake-ir-experiments/fib-extraction/tasks/gemm-family-ledger.json",
       "run": "none",
       "event": 4,
-      "note": "Anti-condition, measured rather than absent (F-2026-09-16-011): the same full stack -- cluster, TMA, mbarrier, MMA and warp specialization -- appears on GEMM 011 with 10 live-correct candidates at best 1.02x and on 008 with 1 at 1.02x. Parity. So the mechanism's effect is operator-conditioned in both directions, not merely unobserved outside prefill."
+      "note": "Anti-condition, measured rather than absent (F-2026-09-16-013): the same full stack -- cluster, TMA, mbarrier, MMA and warp specialization -- appears on GEMM 011 with 10 live-correct candidates at best 1.02x and on 008 with 1 at 1.02x. Parity. So the mechanism's effect is operator-conditioned in both directions, not merely unobserved outside prefill."
     },
     {
       "workspace": "open-cake-ir-experiments/fib-extraction/tasks/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/kernels",

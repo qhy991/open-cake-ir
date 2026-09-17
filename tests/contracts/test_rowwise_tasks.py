@@ -230,21 +230,24 @@ class RowwiseTaskTests(unittest.TestCase):
                 workload, source = self.task(name, columns=width)
                 schedule = frontend.parse(source).document
                 allowance = workload.document["validation"]["atol"]
-                for case_id in rowwise.CASES:
-                    with self.subTest(task=name, width=width, case=case_id):
-                        inputs = materialize_case(workload, case_id)
-                        expected = reference_outputs(workload, case_id, inputs)
-                        outputs = runner.execute_body(schedule, inputs)
-                        passed, metrics = compare_tile_outputs(
-                            workload, inputs, expected, {"out": outputs["out"]},
-                            {key: outputs[key] for key in inputs})
-                        self.assertTrue(passed, metrics)
-                        observed = max(abs(a - b) for a, b
-                                       in zip(expected["out"], outputs["out"]))
-                        # The contract carries a worst case that assumes every rounding
-                        # aligns; the portable semantics stay far inside it. If this ever
-                        # tightens to the allowance, the body changed, not the bound.
-                        self.assertLess(observed, allowance / 10 + 1e-6)
+                # One compile per Schedule, not per case: the emitted body does
+                # not depend on which input case runs through it.
+                with runner.compiled_body(schedule) as run:
+                    for case_id in rowwise.CASES:
+                        with self.subTest(task=name, width=width, case=case_id):
+                            inputs = materialize_case(workload, case_id)
+                            expected = reference_outputs(workload, case_id, inputs)
+                            outputs = run(inputs)
+                            passed, metrics = compare_tile_outputs(
+                                workload, inputs, expected, {"out": outputs["out"]},
+                                {key: outputs[key] for key in inputs})
+                            self.assertTrue(passed, metrics)
+                            observed = max(abs(a - b) for a, b
+                                           in zip(expected["out"], outputs["out"]))
+                            # The contract carries a worst case that assumes every rounding
+                            # aligns; the portable semantics stay far inside it. If this ever
+                            # tightens to the allowance, the body changed, not the bound.
+                            self.assertLess(observed, allowance / 10 + 1e-6)
 
 
 if __name__ == "__main__":

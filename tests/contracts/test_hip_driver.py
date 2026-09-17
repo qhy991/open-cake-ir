@@ -226,16 +226,52 @@ class WorkerDispatchTest(unittest.TestCase):
     """What the worker does with a request for a target that is not CUDA's."""
 
     def test_attribution_is_not_taken_on_the_hsaco_platform_s_behalf(self) -> None:
-        """Attribution profiles through Nsight Compute, which is CUDA's profiler.
+        """Nsight Compute is CUDA's profiler and this platform still never reaches it.
 
-        The branch that reached it was once "not Metal", which would have handed a DCU
-        candidate to ncu. It is a declared property of the platform row now: `hsaco` has
-        no attribution source, so the request is refused by name.
+        The branch that once reached it was "not Metal", which would have handed a DCU
+        candidate to ncu. The answer was first to declare no source at all, and is now to
+        declare this platform's own: roctracer activity, taken inside evaluate. Both
+        satisfy the rule; only the second gives an authoring Turn something to act on.
         """
         from open_cake_ir.tasks import evaluate
-        self.assertIsNone(evaluate._PLATFORMS["hsaco"].attribution)
+        self.assertEqual(evaluate._PLATFORMS["hsaco"].attribution, "inside_evaluate")
         self.assertFalse(evaluate._PLATFORMS["hsaco"].profiled_child)
         self.assertEqual(evaluate._PLATFORMS["cubin"].attribution, "separate")
+
+    def test_the_hsaco_profile_declares_its_own_kind_and_states_what_it_omits(self) -> None:
+        """The projection is bounded, and names the three metrics ncu has and it does not.
+
+        An omitted field reads as "does not constrain" and means "was not looked at", so
+        occupancy, bandwidth and instruction counters are named in the record rather than
+        left to be inferred from silence.
+        """
+        from open_cake_ir.evaluation.hip_observations import (
+            HIP_PROFILE_KIND, NOT_COLLECTED, hip_attribution_feedback, hip_profile_summary)
+        raw = {"source": "roctracer_device_activity", "instrumented_dispatches": 1,
+               "device_time_us": 3.071, "non_target_dispatches": 0,
+               "not_collected": list(NOT_COLLECTED)}
+        summary = hip_profile_summary(raw)
+        self.assertEqual(summary["coverage"], "per_dispatch_device_time")
+        self.assertEqual(summary["timing_use"], "attribution_only")
+        self.assertEqual(list(summary["not_collected"]),
+                         ["occupancy", "bandwidth", "instruction_counters"])
+        feedback = hip_attribution_feedback(
+            {"kernel_name": "_cake_rmsnorm_fp32_kernel", "summary": summary})
+        self.assertEqual(feedback["kind"], "hip_dispatch_attribution")
+        self.assertEqual(feedback["device_time_us"], 3.071)
+        self.assertNotEqual(HIP_PROFILE_KIND, "ncu_kernel_attribution")
+
+    def test_an_activity_record_this_source_did_not_produce_is_refused(self) -> None:
+        from open_cake_ir.evaluation.hip_observations import NOT_COLLECTED, hip_profile_summary
+        good = {"source": "roctracer_device_activity", "instrumented_dispatches": 1,
+                "device_time_us": 3.071, "non_target_dispatches": 0,
+                "not_collected": list(NOT_COLLECTED)}
+        for field, value in (("source", "ncu"), ("instrumented_dispatches", 2),
+                             ("device_time_us", 0.0), ("device_time_us", 3),
+                             ("non_target_dispatches", -1), ("not_collected", [])):
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(ValueError):
+                    hip_profile_summary({**good, field: value})
 
     def test_timing_is_the_studys_statement_not_the_platform_table_s(self) -> None:
         """Every row read `collect_timing=True`, so every search evaluation timed.
@@ -260,11 +296,18 @@ class WorkerDispatchTest(unittest.TestCase):
         self.assertIn("timed_assay_available: bool = True",
                       __import__("inspect").getsource(evaluate._Authority))
 
-    def test_a_timed_hip_evaluation_is_refused_rather_than_silently_untimed(self) -> None:
+    def test_a_timed_tile_evaluation_refuses_without_a_source(self) -> None:
+        """The source is an argument now, so the absence is caught where it is used.
+
+        `_evaluate_hip_candidate` used to refuse timing outright, because gfx938 had no
+        named timer. It has one; what stays is that a timed run cannot proceed without a
+        source, rather than quietly producing an untimed receipt.
+        """
         from open_cake_ir.tasks import evaluate
-        authority = SimpleNamespace(candidate=SimpleNamespace(target="gfx938"))
-        with self.assertRaisesRegex(ValueError, "no timing source"):
-            evaluate._evaluate_hip_candidate(authority, {}, collect_timing=True)
+        with self.assertRaisesRegex(ValueError, "requires its timing source"):
+            evaluate._evaluate_tile_candidate(
+                SimpleNamespace(), {}, None, SimpleNamespace(), True,
+                route_calls_per_cohort=evaluate.ROUTE_CALLS_PER_COHORT["hip_dispatch"])
 
 
 class CloseContractTest(unittest.TestCase):

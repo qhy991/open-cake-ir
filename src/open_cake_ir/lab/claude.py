@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
+import subprocess
 from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
@@ -627,11 +629,47 @@ def normalize_claude_turn(raw_events: bytes, *, candidate_path: Path, expected_c
     )
 
 
+# Every long option this builder passes apart from the context-window control, which is
+# handled separately below. A CLI that does not advertise one of these is refused by name:
+# without the probe the run dies as `exit code 1` with the reason only in a retained
+# stderr object, which is a diagnosis the harness already had and did not report.
+CLAUDE_REQUIRED_OPTIONS = (
+    "--output-format", "--verbose", "--safe-mode", "--json-schema", "--model",
+    "--effort", "--permission-mode", "--tools", "--allowedTools", "--resume",
+)
+CLAUDE_AUTOCOMPACT_OPTION = "--autocompact"
+CLAUDE_AUTOCOMPACT_UNSUPPORTED = "unsupported_by_cli"
+_LONG_OPTION = re.compile(r"--[A-Za-z][A-Za-z0-9-]*")
+
+
+def advertised_options(executable: Path) -> frozenset[str]:
+    """Which long options this CLI build accepts, read from the build itself.
+
+    The argument list was written against one Claude Code build. Which options a build
+    accepts is a fact about the installed executable, not about Claude Code, and the
+    qualification receipt already pins that executable's bytes -- so the set is read from
+    it rather than assumed to match the build this file was written against.
+    """
+
+    try:
+        completed = subprocess.run([str(executable), "--help"], check=False,
+                                   capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError(
+            f"Claude executable could not be asked for its options: {error}") from error
+    if completed.returncode:
+        raise ValueError(
+            f"Claude executable did not report its options: --help exited "
+            f"{completed.returncode}")
+    return frozenset(_LONG_OPTION.findall(completed.stdout or completed.stderr))
+
+
 class ClaudeInvocationBuilder:
     """Exact model/effort and persistent cwd; no qualification or model fallback."""
 
     def __init__(self, *, executable: Path, provider_revision: str, model: str,
                  reasoning_effort: str, workspace: Path, removed_environment: tuple[str, ...],
+                 cli_options: frozenset[str] | set[str] | tuple[str, ...],
                  event_contract: str = CLAUDE_EVENT_CONTRACT) -> None:
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
             raise ValueError("Claude builder event contract differs")
@@ -650,6 +688,27 @@ class ClaudeInvocationBuilder:
         self.provider_revision = provider_revision
         self._model, self._effort = model, reasoning_effort
         self._removed_environment = removed_environment
+        # Supplied, not probed here: the provider executable is read by whoever is about
+        # to run it. This builder is constructed in tests against a fixture whose bytes
+        # say "never execute this fixture", and a constructor that ran `--help` on it
+        # would be executing exactly that.
+        options = frozenset(cli_options)
+        missing = [name for name in CLAUDE_REQUIRED_OPTIONS if name not in options]
+        if missing:
+            raise ValueError(
+                "this Claude build does not accept " + ", ".join(missing)
+                + "; the invocation this Lab builds is not expressible on it")
+        # F-2026-09-10-008 has two halves and only one of them is this flag. The window
+        # was pinned so compaction is reached later; the event contract also refuses
+        # `compact_boundary` and `compacting` by name (`_CONTEXT_MUTATIONS` above), which
+        # is why the finding's own title calls compaction "campaign-fatal at turn 4 on
+        # long-context tasks". A build without the control does not merely leave the
+        # window unpinned: it reaches that refusal sooner, and the run ends there. That is
+        # the consequence `cli_limitations` states, and `tools/qualify_codex_provider.py`
+        # writes beside the receipt it just issued.
+        self._autocompact = (CLAUDE_AUTOCOMPACT_WINDOW
+                             if CLAUDE_AUTOCOMPACT_OPTION in options
+                             else CLAUDE_AUTOCOMPACT_UNSUPPORTED)
 
     @property
     def configuration(self) -> Mapping[str, object]:
@@ -658,6 +717,43 @@ class ClaudeInvocationBuilder:
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 "removed_environment": list(self._removed_environment), "event_contract": self._event_contract,
                 "submission_contract": CANDIDATE_SET_ENVELOPE_V1, "terminal_schema": terminal_schema()}
+
+    @property
+    def cli_limitations(self) -> Mapping[str, object]:
+        """What this provider build could not honour, named rather than left implicit.
+
+        Kept out of `configuration`: that map is the declared treatment the Study fixes
+        and the qualification receipt pins by digest, and every frozen Study's provider
+        block is a closed field set. A property of the installed binary is not a term of
+        the Study, so it is reported separately, beside the receipt.
+        """
+
+        unpinned = self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED
+        if not unpinned:
+            return {
+                "context_window": CLAUDE_AUTOCOMPACT_WINDOW,
+                "finding": "F-2026-09-10-008",
+                "severity": "none",
+                "consequence": "the context window is pinned at the maximum this build accepts",
+            }
+        return {
+            "context_window": CLAUDE_AUTOCOMPACT_UNSUPPORTED,
+            "finding": "F-2026-09-10-008",
+            "severity": "campaign_fatal_on_long_context_turns",
+            "consequence": (
+                "this build offers no --autocompact, so the compaction boundary sits "
+                "wherever the build puts it. When compaction happens the CLI emits "
+                f"{' or '.join(_CONTEXT_MUTATIONS)}, which this event contract refuses by "
+                "name, and the Run ends there -- the finding this cites calls that "
+                "campaign-fatal at turn 4 on long-context tasks, and nothing here makes "
+                "it less so. A short-turn Campaign may never reach it; a long-context one "
+                "should expect to. Separately, no run on this build can claim its author "
+                "saw an uncompacted context."),
+            "arm_comparability": (
+                "not at stake here: provider_policy admits this harness only under "
+                "artifact_optimization_only with the single open_cake arm, so there is no "
+                "second arm for an unpinned window to be incomparable with"),
+        }
 
     def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation:
         if not isinstance(prompt, str) or not prompt or "\x00" in prompt:
@@ -673,8 +769,10 @@ class ClaudeInvocationBuilder:
         # does not recognize, that window is clamped to the CLI's assumed model context
         # (glm-5.3: 200k), so a long session can still compact. v3 refuses it;
         # v4 validates and records it, without claiming identical author context.
+        window = (() if self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED
+                  else (CLAUDE_AUTOCOMPACT_OPTION, self._autocompact))
         arguments = (str(self.executable), "-p", "--output-format", "stream-json", "--verbose", "--safe-mode",
-                     "--autocompact", CLAUDE_AUTOCOMPACT_WINDOW,
+                     *window,
                      "--json-schema", _canonical_json_bytes(terminal_schema()).decode(), "--model", self._model, "--effort", self._effort, "--permission-mode", "acceptEdits",
                      "--tools", tools, "--allowedTools", tools)
         if thread_id is not None:

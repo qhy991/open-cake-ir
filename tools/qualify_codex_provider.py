@@ -27,7 +27,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     ProviderQualificationReceipt,
 )
 from open_cake_ir.lab.claude import (
-    CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder,
+    CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, ClaudeInvocationBuilder, advertised_options,
     ClaudeProviderAdapter, parse_claude_turn_events, terminal_schema,
 )
 from open_cake_ir.lab.task_package import (  # noqa: E402
@@ -553,7 +553,8 @@ def main() -> int:
                 model=args.model, reasoning_effort=args.reasoning_effort, workspace=arm_workspace,
                 removed_environment=removed_environment)
             if args.harness == "claude-code":
-                builder = ClaudeInvocationBuilder(**common_builder_args)
+                builder = ClaudeInvocationBuilder(
+                    **common_builder_args, cli_options=advertised_options(executable))
             else:
                 builder = CodexInvocationBuilder(**common_builder_args,
                     code_mode_host=code_mode_host, service_tier=args.service_tier,
@@ -861,6 +862,22 @@ def main() -> int:
     with receipt_output.open("xb") as stream:
         stream.write(_canonical_json_bytes(receipt.document) + b"\n")
     receipt_output.chmod(0o644)
+    # What the installed build could not honour is a property of that binary, not a term
+    # of the Study, so it is retained beside the receipt instead of inside it: the receipt
+    # is a closed document whose digest every frozen Study pins.
+    limitations = getattr(builder, "cli_limitations", None)
+    if limitations is not None:
+        # Exclusive-create like the receipt beside it: a report left over from an earlier
+        # qualification would describe a different build than the receipt it now sits next
+        # to, which is worse than having none.
+        report = receipt_output.parent / "provider-cli-limitations.json"
+        with report.open("xb") as stream:
+            stream.write(_canonical_json_bytes({
+                "schema_version": 1, "harness": args.harness,
+                "provider_revision": args.provider_revision,
+                "executable_sha256": receipt.executable_sha256,
+                **dict(limitations)}) + b"\n")
+        report.chmod(0o644)
     _write_anchor(
         anchor_output,
         evidence=evidence,

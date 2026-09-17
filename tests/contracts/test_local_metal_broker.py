@@ -198,3 +198,37 @@ class SourceBoundBrokerProcessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrokerJobObservationTests(unittest.TestCase):
+    """Every allocator that issues a job line must be matched by the reader of those lines.
+
+    The pattern enumerated the cluster allocator and Metal. `local_broker.LOCAL_KINDS`
+    declares which local families exist, and a kind missing from the pattern produces a
+    line nobody matches: the first HIP Campaign to reach evaluation failed with "broker
+    job observation coverage differs", which reports a wrong count and not a third
+    allocator.
+    """
+
+    def test_each_declared_allocator_line_is_matched_once(self):
+        from open_cake_ir.evaluation.local_broker import LOCAL_KINDS
+        from open_cake_ir.lab.runtime import _BROKER_JOB_OBSERVATION
+
+        lines = {"gpuq": b"[gpu-run] accepted job gpuq-0123456789ab"}
+        for kind in LOCAL_KINDS:
+            lines[kind] = f"[{kind}-run] accepted job {kind}-0123456789ab".encode()
+        for prefix, line in lines.items():
+            with self.subTest(prefix=prefix):
+                self.assertEqual(_BROKER_JOB_OBSERVATION.findall(line),
+                                 [f"{prefix}-0123456789ab".encode()])
+
+    def test_an_allocator_naming_another_one_s_job_is_not_matched(self):
+        """The prefix has to belong to the allocator that printed the line."""
+
+        from open_cake_ir.lab.runtime import _BROKER_JOB_OBSERVATION
+
+        for line in (b"[hip-run] accepted job metal-0123456789ab",
+                     b"[gpu-run] accepted job hip-0123456789ab",
+                     b"[metal-run] accepted job gpuq-0123456789ab"):
+            with self.subTest(line=line):
+                self.assertEqual(_BROKER_JOB_OBSERVATION.findall(line), [])

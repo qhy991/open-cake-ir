@@ -7,6 +7,7 @@ not GPU, timing, physical-resource or MSL-toolchain qualification.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import hashlib
 import itertools
@@ -180,6 +181,19 @@ class MetalTests(unittest.TestCase):
 
     def execute_body(self, document, inputs):
         """Run the emitted SIMD body with a CPU intrinsic ABI; never dispatch Metal."""
+        with self.compiled_body(document) as run:
+            return run(inputs)
+
+    @contextlib.contextmanager
+    def compiled_body(self, document):
+        """Compile the emitted body once and hand back something that runs input sets.
+
+        The compile depends on the Schedule alone, and the callers that dominate this
+        suite's wall clock run one Schedule against every input case the Workload
+        declares. Compiling inside the per-case loop made each of those tests pay a fresh
+        clang++ invocation per case: six of them were 2024 of 4551 seconds, and the cases
+        are the cheap part. Same coverage, one compile.
+        """
         from _ctypes import dlclose
 
         compiler = shutil.which("clang++") or shutil.which("c++")
@@ -213,17 +227,26 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
             library = ctypes.CDLL(str(path / "body.so"))
             try:
                 kernel = library.cpu_dispatch
-                arrays = []
-                for buffer in globals_:
-                    values = inputs.get(buffer.name, [float("nan")] * buffer.elements)
-                    self.assertEqual(len(values), buffer.elements)
-                    arrays.append((ctypes.c_float * buffer.elements)(*values))
-                kernel.argtypes = [ctypes.POINTER(ctypes.c_float)] * len(arrays) + [_Program]
-                kernel.restype = ctypes.c_int
                 grid = lowering.toolchain_requirements["threadgroups_per_grid"]
-                for position in itertools.product(*(range(extent) for extent in grid)):
-                    self.assertEqual(kernel(*arrays, _Program(*position)), 0, "SIMD collective participants or call sites diverged")
-                return {buffer.name: list(array) for buffer, array in zip(globals_, arrays)}
+
+                def run(inputs):
+                    """One input set through the already-compiled body.
+
+                    Fresh argument arrays every call: the kernel writes through them, so
+                    reusing them across cases would let one case read another's output.
+                    """
+                    arrays = []
+                    for buffer in globals_:
+                        values = inputs.get(buffer.name, [float("nan")] * buffer.elements)
+                        self.assertEqual(len(values), buffer.elements)
+                        arrays.append((ctypes.c_float * buffer.elements)(*values))
+                    kernel.argtypes = [ctypes.POINTER(ctypes.c_float)] * len(arrays) + [_Program]
+                    kernel.restype = ctypes.c_int
+                    for position in itertools.product(*(range(extent) for extent in grid)):
+                        self.assertEqual(kernel(*arrays, _Program(*position)), 0, "SIMD collective participants or call sites diverged")
+                    return {buffer.name: list(array) for buffer, array in zip(globals_, arrays)}
+
+                yield run
             finally:
                 # ctypes retains the mapping after this local object is discarded;
                 # unload before TemporaryDirectory removes the shared object on NFS.

@@ -36,6 +36,13 @@ _CONTRACT_DTYPES = {
     "triton.dot.fp32_ieee": ({DType.FP32}, DType.FP32),
     "triton.dot.fp32_tf32": ({DType.FP32}, DType.FP32),
     "triton.dot.fp8e4m3_block_scale_fp32": ({DType.FP8_E4M3}, DType.FP32),
+    # gfx938's two, measured on a BW1101 at 64x64x64 against a torch oracle at matched
+    # input precision: fp16 max_abs_error 1.14441e-05, fp8e4m3 exactly 0, 0 of 4096
+    # elements outside tolerance. Both accumulate in fp32, which is what tl.dot's
+    # accumulator is on that route. Unlike the block-scaled sibling above, neither
+    # carries a scale operand.
+    "triton.dot.fp16_fp32": ({DType.FP16}, DType.FP32),
+    "triton.dot.fp8e4m3_fp32": ({DType.FP8_E4M3}, DType.FP32),
 }
 
 _BLOCK_SCALE_MMA_CONTRACT = "triton.dot.fp8e4m3_block_scale_fp32"

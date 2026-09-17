@@ -85,9 +85,21 @@ def native_source(source: bytes, requirements: Mapping[str, object]) -> bytes:
     return source
 
 
-def native_block(requirements: Mapping[str, object]) -> list[int]:
+def native_block(requirements: Mapping[str, object], *, warp_size: int) -> list[int]:
+    """Threads per block a Triton route's `num_warps` commits to, at this target's width.
+
+    `num_warps` counts role slots, not threads, so the width is the Target's to declare
+    and this function's to be told. It used to read a literal 32, which is a fourth copy
+    of a fact `Target.warp_size` already owns and the only one that could not be corrected
+    by fixing the Target document. Measured on gfx938, whose document declares 64: a
+    baseline that launched at 64 threads was compared against an expected 32 and the
+    fixed-baseline admission gate refused it -- a correct baseline rejected in a message
+    about the Compiler kernel, which is the shape a borrowed constant always takes.
+    """
+    if not isinstance(warp_size, int) or isinstance(warp_size, bool) or warp_size <= 0:
+        raise ValueError("a block width needs the target's declared role-slot width")
     policy = backend_policy(requirements.get("compiler"))
-    return ([requirements["compile_options"]["num_warps"] * 32, 1, 1]
+    return ([requirements["compile_options"]["num_warps"] * warp_size, 1, 1]
             if policy.backend == "triton" else list(requirements["block"]))
 
 

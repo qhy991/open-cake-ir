@@ -262,21 +262,24 @@ class ContractionTaskTests(unittest.TestCase):
                 workload, source = self.task(name, rows=rows, depth=depth, columns=columns)
                 schedule = frontend.parse(source).document
                 allowance = workload.document["validation"]["atol"]
-                for case_id in contraction.CASES:
-                    with self.subTest(task=name, shape=(rows, depth, columns), case=case_id):
-                        inputs = materialize_case(workload, case_id)
-                        expected = reference_outputs(workload, case_id, inputs)
-                        outputs = runner.execute_body(schedule, inputs)
-                        observed = {key: outputs[key] for key in expected}
-                        passed, metrics = compare_tile_outputs(
-                            workload, inputs, expected, observed,
-                            {key: outputs[key] for key in inputs})
-                        self.assertTrue(passed, metrics)
-                        worst = max(abs(a - b) for key in expected
-                                    for a, b in zip(expected[key], observed[key]))
-                        # The derived allowance is a worst case; the portable semantics
-                        # stay well inside it, so it is not what makes this pass.
-                        self.assertLess(worst, allowance / 5 + 1e-6)
+                # One compile per Schedule, not per case: the emitted body does
+                # not depend on which input case runs through it.
+                with runner.compiled_body(schedule) as run:
+                    for case_id in contraction.CASES:
+                        with self.subTest(task=name, shape=(rows, depth, columns), case=case_id):
+                            inputs = materialize_case(workload, case_id)
+                            expected = reference_outputs(workload, case_id, inputs)
+                            outputs = run(inputs)
+                            observed = {key: outputs[key] for key in expected}
+                            passed, metrics = compare_tile_outputs(
+                                workload, inputs, expected, observed,
+                                {key: outputs[key] for key in inputs})
+                            self.assertTrue(passed, metrics)
+                            worst = max(abs(a - b) for key in expected
+                                        for a, b in zip(expected[key], observed[key]))
+                            # The derived allowance is a worst case; the portable semantics
+                            # stay well inside it, so it is not what makes this pass.
+                            self.assertLess(worst, allowance / 5 + 1e-6)
 
 
 if __name__ == "__main__":

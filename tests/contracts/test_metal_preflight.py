@@ -61,9 +61,11 @@ class MetalPreflightTests(unittest.TestCase):
         lowering = compiler.lower(compiler.assess(frontend.parse(source).document))
         requirements = lowering.toolchain_requirements
         if cuda:
+            from open_cake_ir.compiler.target import Target
             from open_cake_ir.lab.pairing import native_block
             manifest = TensorLaunchManifest.for_workload(workload, 'primary', target=workload.target,
-                kernel_name=lowering.route.entry_point, grid=requirements['grid'], block=native_block(requirements),
+                kernel_name=lowering.route.entry_point, grid=requirements['grid'], block=native_block(requirements, warp_size=Target.load(
+                    ROOT / f'compiler/targets/{workload.target}.json').warp_size),
                 dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=2)
         else:
             manifest = MetalTensorLaunchManifest.for_workload(workload, 'primary', target=workload.target,

@@ -13,6 +13,7 @@ import unittest
 from unittest.mock import patch
 
 from open_cake_ir.evidence import EvidenceStore
+from open_cake_ir.lab import claude as claude_module
 from open_cake_ir.lab.claude import ClaudeInvocationBuilder, ClaudeProviderAdapter, terminal_schema
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.lab.providers import ProviderQualificationReceipt, QualifiedRunProvider
@@ -45,12 +46,19 @@ class HarnessQualificationTests(unittest.TestCase):
                                '        lm.store(out[row, :], values, coalesced=False)\n')
 
     def provider(self, failure=None):
+        required = claude_module.CLAUDE_REQUIRED_OPTIONS
+        autocompact = claude_module.CLAUDE_AUTOCOMPACT_OPTION
         self.executable.write_text(textwrap.dedent(f'''\
             #!{sys.executable}
             import json
             import sys
             from pathlib import Path
             args = sys.argv[1:]
+            if args == ['--help']:
+                # The qualification reads the build's own option set before it invokes
+                # it, so a fixture standing in for the CLI advertises what the CLI does.
+                print(' '.join(({required!r} + ({autocompact!r},))))
+                raise SystemExit(0)
             assert args[0] == '-p' and '--safe-mode' in args
             assert args[args.index('--model')+1] == {MODEL!r}
             assert args[args.index('--effort')+1] == 'high'
@@ -149,7 +157,9 @@ class HarnessQualificationTests(unittest.TestCase):
         workspace = self.root/'workspace/open_cake'
         builder = ClaudeInvocationBuilder(executable=self.executable, provider_revision=receipt.provider_revision,
             model=MODEL, reasoning_effort='high', workspace=workspace,
-            removed_environment=('OPENAI_API_KEY','ANTHROPIC_API_KEY'))
+            removed_environment=('OPENAI_API_KEY','ANTHROPIC_API_KEY'),
+            cli_options=frozenset(claude_module.CLAUDE_REQUIRED_OPTIONS)
+                        | {claude_module.CLAUDE_AUTOCOMPACT_OPTION})
         run_id = 'claude-qualification-fixture-open_cake'
         package = TaskPackage(run_id, 'open_cake', (workspace/'TASK.md').read_text(), (workspace/'AGENTS.md').read_text())
         with self.assertRaisesRegex(ValueError, 'authority differs'):

@@ -15,6 +15,7 @@
   "operation_kinds": [
     "load",
     "elementwise",
+    "mma",
     "reduce",
     "store"
   ],
@@ -30,7 +31,10 @@
       "z": 2147483647
     }
   },
-  "instruction_contracts": [],
+  "instruction_contracts": [
+    "triton.dot.fp16_fp32",
+    "triton.dot.fp8e4m3_fp32"
+  ],
   "synchronization_contracts": [],
   "occupancy": {
     "multiprocessor_count": 64,
@@ -68,6 +72,16 @@
       "kind": "device_observation",
       "source": "rocminfo, triton.backends and the DTK toolchain inside the container",
       "locator": "Vendor is hygon, not amd: rocminfo reports Vendor Name C-3000 and Device Type HCU where an AMD agent reports AMD and GPU; Triton registers a separate hcu backend with its own HCUDriver beside the amd one and selects it here; the FP16 tl.dot lowers to v_mmac_f32_16x16x16_f16 and to no v_mfma instruction; the hcu backend options carry enable_v_mmac_cluster, mmac_layout_force and hcu_use_gfx946_sched_model_v2; dcc 25.10.0's llc names gfx926, gfx928, gfx936 and gfx938 alongside the AMD CPUs; and the host installs hy-smi and rocm-smi and no amd-smi. The emitted object still carries the amdgcn-amd-amdhsa-- triple, which is the ABI this code object conforms to rather than a statement about the hardware's vendor; observed 2026-09-14 and 2026-09-15 on bw1100"
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "triton 3.6.0 hcu backend, --offload-arch=gfx938, on BW1101",
+      "locator": "tl.dot emits this ISA's own matrix instruction, spelled v_mmac and not AMD's v_mfma: fp16 operands compile to v_mmac_f32_16x16x16_f16 (16 occurrences) and fp8e4m3 operands to v_mmac_f32_16x16x32_fp8_fp8 (8) beside v_cvt_pk_fp8_f32 (32). The fp8 form's K is 32 against fp16's 16, so the operands reach the matrix unit as fp8 rather than being widened first. An llvm-mc probe using AMD's v_mfma spellings rejected every form including fp16, which is what a shared rule reading how a mnemonic is spelled looks like when it is wrong; observed 2026-09-17 on bw1100"
+    },
+    {
+      "kind": "device_observation",
+      "source": "triton 3.6.0 tl.dot against a torch fp32 oracle at the same reduced input precision, on BW1101",
+      "locator": "64x64x64: fp16 max_abs_error 1.14441e-05 (relative 3.457e-07), fp8e4m3 max_abs_error 0, 0 of 4096 elements outside tolerance and all finite in both. Compilation alone would not license this declaration -- the wave64 shuffle defect (F-2026-09-16-008) compiled and returned wrong numbers -- so the contraction was run and checked elementwise; observed 2026-09-17 on bw1100"
     }
   ]
 }

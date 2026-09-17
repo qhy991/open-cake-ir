@@ -6,11 +6,13 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
+from open_cake_ir.lab import claude
 from open_cake_ir.lab.claude import (
     CLAUDE_EVENT_CONTRACT, CLAUDE_LEGACY_EVENT_CONTRACT, ClaudeCandidateWriteUnwitnessed, ClaudeInvocationBuilder, ClaudeProviderAdapter,
     ClaudeRunProvider, candidate_write_declared_unwitnessed, normalize_claude_turn, observed_claude_quota,
@@ -173,7 +175,11 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.candidate.write_bytes(self.submission)
 
     def builder(self, **changes):
+        # The fixture's own bytes say it is never executed, so the option set the builder
+        # checks against is stated here rather than read off it.
         args = dict(executable=self.executable, provider_revision="claude-native-contract-fixture",
+                    cli_options=frozenset(claude.CLAUDE_REQUIRED_OPTIONS)
+                    | {claude.CLAUDE_AUTOCOMPACT_OPTION},
                     model="exact-requested-model", reasoning_effort="high", workspace=self.workspace,
                     removed_environment=("OPENAI_API_KEY", "ANTHROPIC_API_KEY"))
         args.update(changes)
@@ -1046,3 +1052,87 @@ class ClaudeProviderContracts(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClaudeBuildOptionContracts(unittest.TestCase):
+    """The build that lacks `--autocompact` -- the case these changes exist for.
+
+    Every other fixture in this file hands the builder an option set that contains the
+    flag, so without this class the whole missing-option path ships unexercised: the
+    refusal, the argv omission and the limitation report were all written for a build
+    nobody tested against.
+    """
+
+    FULL = frozenset(claude.CLAUDE_REQUIRED_OPTIONS) | {claude.CLAUDE_AUTOCOMPACT_OPTION}
+
+    def setUp(self):
+        self.directory = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.directory, ignore_errors=True)
+        self.executable = self.directory / "claude"
+        self.executable.write_bytes(b"not a CLI; never execute this fixture")
+        self.executable.chmod(0o700)
+        self.workspace = self.directory / "workspace"
+        self.workspace.mkdir()
+
+    def _builder(self, options):
+        return ClaudeInvocationBuilder(
+            executable=self.executable, provider_revision="fixture", model="exact-model",
+            reasoning_effort="high", workspace=self.workspace,
+            removed_environment=("OPENAI_API_KEY", "ANTHROPIC_API_KEY"),
+            cli_options=options)
+
+    def test_a_build_without_autocompact_omits_the_flag_and_says_what_that_costs(self):
+        builder = self._builder(frozenset(claude.CLAUDE_REQUIRED_OPTIONS))
+        argv = builder.build("author something", thread_id=None).argv
+        self.assertNotIn(claude.CLAUDE_AUTOCOMPACT_OPTION, argv)
+        self.assertNotIn(claude.CLAUDE_AUTOCOMPACT_WINDOW, argv)
+        # Everything else the invocation declares is unchanged by the omission.
+        for option in claude.CLAUDE_REQUIRED_OPTIONS:
+            if option != "--resume":
+                self.assertIn(option, argv, option)
+        limitations = builder.cli_limitations
+        self.assertEqual(limitations["context_window"], claude.CLAUDE_AUTOCOMPACT_UNSUPPORTED)
+        self.assertEqual(limitations["finding"], "F-2026-09-10-008")
+        # The operational half, not only the comparability one: compaction is refused by
+        # name by this event contract, so reaching it ends the Run.
+        self.assertEqual(limitations["severity"], "campaign_fatal_on_long_context_turns")
+        for mutation in claude._CONTEXT_MUTATIONS:
+            self.assertIn(mutation, limitations["consequence"])
+
+    def test_a_build_with_autocompact_pins_the_window_and_reports_no_severity(self):
+        builder = self._builder(self.FULL)
+        argv = builder.build("author something", thread_id=None).argv
+        self.assertEqual(argv[argv.index(claude.CLAUDE_AUTOCOMPACT_OPTION) + 1],
+                         claude.CLAUDE_AUTOCOMPACT_WINDOW)
+        self.assertEqual(builder.cli_limitations["severity"], "none")
+
+    def test_the_declared_treatment_is_the_same_either_way(self):
+        """`configuration` is what the Study fixes and the receipt pins by digest.
+
+        A property of the installed binary must not move it, or every frozen Study's
+        closed provider field set would refuse the run.
+        """
+
+        without = self._builder(frozenset(claude.CLAUDE_REQUIRED_OPTIONS)).configuration
+        with_flag = self._builder(self.FULL).configuration
+        self.assertEqual(dict(without), dict(with_flag))
+        self.assertNotIn("autocompact", without)
+
+    def test_a_build_missing_a_required_option_is_refused_by_that_option_s_name(self):
+        for absent in ("--json-schema", "--effort", "--resume"):
+            with self.subTest(absent=absent):
+                options = self.FULL - {absent}
+                with self.assertRaises(ValueError) as raised:
+                    self._builder(options)
+                self.assertIn(absent, str(raised.exception))
+
+    def test_advertised_options_reads_the_build_and_refuses_one_that_cannot_say(self):
+        answering = self.directory / "answers"
+        answering.write_text("#!/bin/sh\necho '  --model <m>   --effort <e>'\n")
+        answering.chmod(0o700)
+        self.assertEqual(claude.advertised_options(answering), frozenset({"--model", "--effort"}))
+        refusing = self.directory / "refuses"
+        refusing.write_text("#!/bin/sh\nexit 3\n")
+        refusing.chmod(0o700)
+        with self.assertRaisesRegex(ValueError, "did not report its options"):
+            claude.advertised_options(refusing)

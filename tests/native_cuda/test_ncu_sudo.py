@@ -313,17 +313,20 @@ class ProfileCaptureSafety(unittest.TestCase):
 
     def test_first_cancellation_is_deferred_at_real_spawn_and_receipt_boundaries(self):
         # This test spawns a fresh interpreter and asserts that the supervisor restored
-        # SIGINT to `default_int_handler`. A disposition of SIG_IGN is inherited across
-        # exec and CPython then leaves SIGINT ignored, so the child cannot report the
-        # handler this asserts no matter what the supervisor does. A shell puts SIGINT on
-        # SIG_IGN for every background job, which is how CI and `nohup` launch a suite --
-        # measured here: the whole run reports SIG_IGN from its first test onward. The
-        # precondition is named rather than assumed, because assuming it turns a launch
-        # method into four failing subtests that look like a supervisor defect.
-        if signal.getsignal(signal.SIGINT) is signal.SIG_IGN:
-            self.skipTest("this process inherited SIGINT=SIG_IGN (a background or nohup "
-                          "launch), so a spawned child cannot observe the restored "
-                          "handler; run the suite in the foreground to check it")
+        # SIGINT to `default_int_handler`. SIG_IGN is inherited across exec and CPython
+        # then leaves SIGINT ignored, so a child spawned from a process whose SIGINT is
+        # ignored cannot report that handler whatever the supervisor does. A shell puts
+        # SIGINT on SIG_IGN for every background job, which is how CI and `nohup` launch a
+        # suite -- measured here: such a run reports SIG_IGN from its first test onward.
+        #
+        # That is a condition to construct, not to skip on. The disposition this process
+        # passes to its children is this process's own, so it is set to the default for
+        # the duration and restored afterwards, the same save/restore the sibling test
+        # above uses. Skipping instead left the test permanently unrun under exactly the
+        # launch method the suite is started with.
+        inherited = signal.getsignal(signal.SIGINT)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        self.addCleanup(signal.signal, signal.SIGINT, inherited)
         for edge, signum in (("spawn", signal.SIGTERM), ("spawn", signal.SIGINT),
                              ("receipt", signal.SIGTERM), ("receipt", signal.SIGINT)):
             with self.subTest(edge=edge, signal=signum):

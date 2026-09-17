@@ -124,6 +124,9 @@ class OutputColumnSpecializationTests(unittest.TestCase):
     # than forking the intrinsic ABI.
     lower = test_metal.MetalTests.lower
     execute_body = test_metal.MetalTests.execute_body
+    # `execute_body` compiles through `compiled_body`, so a class borrowing one borrows
+    # both; taking only the first left `self` without the second.
+    compiled_body = test_metal.MetalTests.compiled_body
 
     def assert_refused(self, document, reason):
         self.assertTrue(self.compiler.assess(document).lowering_eligible)

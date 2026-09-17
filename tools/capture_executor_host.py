@@ -150,8 +150,13 @@ def _capture_hip_tool(kind: str, path: Path) -> dict[str, object]:
         return {**_file_record(path.resolve(strict=True), str(path)),
                 "kind": kind, "version": _NO_VERSION_INTERFACE}
     # The schema preserves invocation paths (e.g. /bin/sh); the record pins the
-    # resolved executable bytes. The shell's interface label has no --version API.
-    arguments = ["-c", "printf 'POSIX-sh\\n'"] if kind == "sh" else ["--version"]
+    # resolved executable bytes. The shell's interface label has no --version API, and
+    # amd-smi spells version as a subcommand: `amd-smi --version` exits 1 with
+    # AmdSmiInvalidSubcommandException, while the DTK host's rocm-smi takes the flag.
+    # `--version` is one monitor's spelling, not the interface every monitor offers, so
+    # the exception is named per kind rather than assumed away.
+    _VERSION_ARGUMENTS = {"sh": ["-c", "printf 'POSIX-sh\\n'"], "amd-smi": ["version"]}
+    arguments = _VERSION_ARGUMENTS.get(kind, ["--version"])
     record = _file_record(path.resolve(strict=True), str(path))
     completed = subprocess.run(
         [str(path), *arguments], check=False, capture_output=True, text=True, timeout=30,

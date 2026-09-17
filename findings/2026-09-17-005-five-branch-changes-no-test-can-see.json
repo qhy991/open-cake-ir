@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-005",
+  "kind": "protocol",
+  "date": "2026-09-17",
+  "title": "Five behaviour changes on this branch are invisible to the suite, and two fields carry comments naming a reader that does not exist",
+  "backend": "triton-gfx1151, triton-dcu",
+  "target": "gfx1151, gfx938",
+  "compiler_revision_id": "open-cake-ir@1853e637",
+  "executor_revision": "none -- read from source and from full-suite mutation, no device",
+  "evidence": {
+    "retained": "mutation results reproduced by an independent reviewer at open-cake-ir@8f9ee9bb; each is a full-suite run under an out-of-tree pytest plugin that neuters one behaviour",
+    "method": "baseline 2018 passed / 24 skipped / 5836 subtests; a change is invisible when the mutated run is byte-identical to it",
+    "invisible": [
+      "evaluation/hip_benchmark.py resolution_us -- assigned, never read anywhere in src, tests or tools, while the module docstring says 'the caller is told'",
+      "evaluation/hip_benchmark.py the device_time filter on device_events -- every test event carries one, so the filter that keeps host-side events out of a device count is pinned by nothing",
+      "tasks/evaluate.py the Study-declared maximum_cv (db6a4488) -- and evaluation/core.py recomputes cohort stability against a hardcoded 0.05, so the literal the change set out to dethrone still refuses the receipt",
+      "tasks/compose.py the HIP host admission dispatch (a575cfc1) -- _admit_executor is patched out in every composition test",
+      "tasks/evaluate.py the Study-declared paired kind (55ed1a08) -- restoring the hardcoded PAIRED_KIND changes nothing"
+    ]
+  },
+  "observation": "Five independent reviews of this branch each blocked on the same class: a change shipped without a test, found by mutation rather than by reading. Each round's fix closed exactly the line the reviewer named. The mutation sweep above shows why that does not converge -- the branch's habit is to land production behaviour and let a test follow when someone points at it, so the set of untested changes is replenished as fast as it is drained. Two of the five are the same defect the third review blocked on (a field nothing reads, with a comment claiming a reader), one of them in the same class as the counter that review was about and untouched by four rounds of fixing it. One is worse than untested: the `maximum_cv` change left the literal owning the decision from the other side.",
+  "proposed_change": "Treat this as the branch's disposition rather than five separate repairs. The `maximum_cv` split owner is a defect to fix with a test that fails without it; `resolution_us` should reach a report or be removed; the remaining three want tests in the change that introduced them. Going forward the rule that would have prevented all five is the one the reviews kept applying by hand: a behaviour change is not done until a mutation of it fails the suite.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

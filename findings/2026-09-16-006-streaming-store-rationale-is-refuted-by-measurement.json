@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-004",
+  "id": "F-2026-09-16-006",
   "kind": "behavior",
   "date": "2026-09-16",
   "title": "A mechanism's recurrence across retained kernels measures how often a rationale was copied, not whether it helped: four corpora disagree with the comments on the streaming store, and StoreParameters should not grow a reuse field",

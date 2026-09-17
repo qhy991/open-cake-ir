@@ -23,16 +23,42 @@ PAIRED_METAL_KIND = 'fixed_baseline_paired_metal_v1'
 # its exact single-dispatch meaning; frozen Studies replay unchanged.
 PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
 METAL_KINDS = {PAIRED_METAL_KIND, PAIRED_METAL_BATCHED_KIND}
-PAIRED_KINDS = {PAIRED_KIND, *METAL_KINDS}
+# One dispatch of one AMDGCN kernel, timed by roctracer through the profiler the admitted
+# torch carries. Named `v1` for the same reason the others are: what the interval includes
+# and what resets the device are part of the policy, and a successor states its own.
+PAIRED_HIP_KIND = 'fixed_baseline_paired_hip_dispatch_v1'
+PAIRED_KINDS = {PAIRED_KIND, PAIRED_HIP_KIND, *METAL_KINDS}
 # Which measurement source each declared policy names, stated rather than reached by an
 # `else`. CUPTI used to be whatever was not Metal, so a third source would have been
-# measured as CUDA under a name nobody chose. There is deliberately no AMD entry: adding
-# a rocprofv3 policy kind before anything produces one would be a measurement name with
-# no measurement behind it.
+# measured as CUDA under a name nobody chose.
+#
+# The AMDGCN entry was withheld until something produced a measurement, which is the rule
+# this table exists to keep: a policy kind here is a name for a measurement, and minting
+# one first would have labelled evidence with a profiler that never produced it. It has
+# one now. `hip_dispatch` is roctracer's per-dispatch device time, read through the
+# profiler the admitted torch already carries, measured on a BW1101 against rocprofv2's
+# own reading of the same kernel and shape (3.071 us against 3.36 us) and shown to
+# attribute the harness's own `hipModuleLaunchKernel` dispatches. See
+# `evaluation/hip_benchmark.py` for what the interval includes and what resets the device.
 _PAIRED_BACKENDS = {
     PAIRED_KIND: 'cupti',
     PAIRED_METAL_KIND: 'metal',
     PAIRED_METAL_BATCHED_KIND: 'metal',
+    PAIRED_HIP_KIND: 'hip_dispatch',
+}
+# How many times a cohort calls the route, per measurement source. CUPTI's six extra calls
+# are its calibration callbacks; the HIP assay has none. Declared here beside the kinds
+# because it is a property of the assay, and because `tasks.evaluate` kept three separate
+# copies of these sums -- one of them a CUDA default in a shared signature, in a function
+# whose own docstring says the count comes from the caller that knows which source is
+# running. A duplicate is a defect while it still agrees.
+# Metal's is not here: its cohort is the native observer's snapshot, sized against that
+# observer's payload bound, and it lives with the launcher check it must not drift from
+# (`tasks/normalization/study._ROUTE_CALLS_PER_COHORT`, F-2026-09-10-002). Named so a
+# reader of this table does not conclude Metal has no count.
+ROUTE_CALLS_PER_COHORT = {
+    'cupti': 6 + 11 + 25,
+    'hip_dispatch': 11 + 25,
 }
 _BASE_FIELDS = {
     'kind', 'arms', 'pair_order', 'samples_per_cohort', 'route_calls_per_cohort',
@@ -84,6 +110,10 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     # This is the retained helper's existing invocation contract, not another engine.
     if value['kind'] == PAIRED_KIND and protocol.route_calls_per_cohort != 6 + 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from retained CUPTI callback contract')
+    # The HIP benchmark calls the route exactly once per warmup and once per sample; it
+    # has no calibration callbacks of its own, which is where CUPTI's extra six go.
+    if value['kind'] == PAIRED_HIP_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
+        raise ValueError('paired policy differs from the HIP dispatch invocation contract')
     if kind in METAL_KINDS:
         if protocol.route_calls_per_cohort <= protocol.samples_per_cohort:
             raise ValueError('Metal assay requires declared warmup calls before timestamp samples')
@@ -179,6 +209,52 @@ def paired_summary(raw):
         'speedup': observation.speedup, 'classification': observation.classification}
 
 
+def admit_device_identity(raw, launch, participants) -> None:
+    """Check the device and allocation identity the declared assay implies.
+
+    One branch per declared kind, and a kind with no branch refused by name. This was
+    `if Metal ... elif <everything else>`, so an AMDGCN pair went down CUDA's branch and
+    was refused for not being a cubin -- true, and not the point. It is a function so it
+    can be exercised directly: reaching it through `validate_paired_receipt` means
+    constructing every earlier check's state, which is why no test had reached it.
+    """
+
+    if raw['kind'] in METAL_KINDS:
+        from .metal_observations import validate_host
+        host = validate_host(raw.get('host'))
+        if (re.fullmatch(r'metal-[0-9a-f]{12}', raw['job_id']) is None or raw['job_id'] == 'metal-000000000000'
+                or raw.get('allocation_mode') != 'local_serialized' or launch.get('allocation_mode') != 'local_serialized'
+                or raw.get('external_gpu_activity') != 'not_excluded' or launch.get('external_gpu_activity') != 'not_excluded'
+                or launch.get('host') != host or raw.get('device_registry_id') != host['device_registry_id']
+                or host['target'] != participants['candidate']['target']):
+            raise ValueError('paired Metal device/host identity differs')
+    elif raw['kind'] == PAIRED_KIND:
+        if (executable_role(participants['candidate']['target']) != 'cubin'
+                or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
+                or re.fullmatch(r'gpuq-[0-9a-f]{12}', raw['job_id']) is None
+                or raw['job_id'] == 'gpuq-000000000000'
+                or launch.get('gpu_uuid') != raw['gpu_uuid']):
+            raise ValueError('paired CUDA device/host identity differs')
+    elif raw['kind'] == PAIRED_HIP_KIND:
+        # An AMDGCN pair: the hsaco role, a local-broker job, and whatever the runtime
+        # says about a device id. A DTK device reports no UUID and `observe_local_hip`
+        # records that in words rather than inventing one, so the check is that both
+        # records agree on what was said -- not that something UUID-shaped was said.
+        if (executable_role(participants['candidate']['target']) != 'hsaco'
+                or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
+                or re.fullmatch(r'hip-[0-9a-f]{12}', raw['job_id']) is None
+                or raw['job_id'] == 'hip-000000000000'
+                or launch.get('gpu_uuid') != raw['gpu_uuid']):
+            raise ValueError('paired AMDGCN device/host identity differs')
+    else:
+        # Every declared kind is checked by name above. Reaching here means a policy kind
+        # was admitted upstream that nothing here knows how to check, which is not the
+        # same as the evidence being wrong -- and was previously CUDA's branch, so a third
+        # vendor's pair was refused for not being a cubin.
+        raise ValueError(
+            f"paired assay {raw['kind']!r} has no declared device/host identity check")
+
+
 def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=None, baseline=None, candidate=None):
     """Bind both identities, actual order, every oracle check and one job to the lock."""
     if not isinstance(raw, Mapping) or raw.get('kind') not in PAIRED_KINDS:
@@ -196,28 +272,33 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
         raise ValueError('paired receipt partner is missing')
     for role in protocol.arms:
         candidate_from_identity(participants[role])
-    if (participants['candidate']['candidate_sha256'] != receipt.candidate_sha256
-        or participants['candidate']['target'] != participants['baseline']['target']
-        or launch.get('participants') != participants
-        or not isinstance(raw.get('job_id'), str) or not raw['job_id']
-        or launch.get('job_id') != raw['job_id']):
-        raise ValueError('paired receipt participant or allocation identity differs')
+    # Five distinct facts, each said by name. As one condition this reported that
+    # something about the participants or the allocation differed and left the reader to
+    # find which, from a worker whose artifacts are gone by the time anyone reads it.
+    if participants['candidate']['candidate_sha256'] != receipt.candidate_sha256:
+        raise ValueError(
+            f"paired receipt candidate {participants['candidate']['candidate_sha256'][:12]} "
+            f"is not the evaluated candidate {receipt.candidate_sha256[:12]}")
+    if participants['candidate']['target'] != participants['baseline']['target']:
+        raise ValueError(
+            f"paired arms target different devices: candidate "
+            f"{participants['candidate']['target']!r}, baseline "
+            f"{participants['baseline']['target']!r}")
+    if launch.get('participants') != participants:
+        differing = sorted(
+            role for role in set(participants) | set(launch.get('participants') or {})
+            if (launch.get('participants') or {}).get(role) != participants.get(role))
+        raise ValueError(
+            f"paired launch receipt and timing record disagree on {', '.join(differing)}")
+    if not isinstance(raw.get('job_id'), str) or not raw['job_id']:
+        raise ValueError('paired timing record names no broker job')
+    if launch.get('job_id') != raw['job_id']:
+        raise ValueError(
+            f"paired launch receipt job {launch.get('job_id')!r} is not the timing "
+            f"record's job {raw['job_id']!r}")
     if raw['kind'] != raw['evaluation_protocol']['paired_timing']['kind']:
         raise ValueError('paired raw kind differs from the declared assay')
-    if raw['kind'] in METAL_KINDS:
-        from .metal_observations import validate_host
-        host = validate_host(raw.get('host'))
-        if (re.fullmatch(r'metal-[0-9a-f]{12}', raw['job_id']) is None or raw['job_id'] == 'metal-000000000000'
-                or raw.get('allocation_mode') != 'local_serialized' or launch.get('allocation_mode') != 'local_serialized'
-                or raw.get('external_gpu_activity') != 'not_excluded' or launch.get('external_gpu_activity') != 'not_excluded'
-                or launch.get('host') != host or raw.get('device_registry_id') != host['device_registry_id']
-                or host['target'] != participants['candidate']['target']):
-            raise ValueError('paired Metal device/host identity differs')
-    elif (executable_role(participants['candidate']['target']) != 'cubin'
-          or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
-          or re.fullmatch(r'gpuq-[0-9a-f]{12}', raw['job_id']) is None
-          or raw['job_id'] == 'gpuq-000000000000' or launch.get('gpu_uuid') != raw['gpu_uuid']):
-        raise ValueError('paired receipt participant or allocation identity differs')
+    admit_device_identity(raw, launch, participants)
     if baseline is not None and participants['baseline'] != baseline:
         raise ValueError('paired receipt fixed baseline differs from Campaign Lock')
     if candidate is not None and participants['candidate'] != candidate_identity(candidate):

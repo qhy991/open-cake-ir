@@ -14,6 +14,7 @@ from unittest.mock import Mock, patch
 from open_cake_ir.compiler.corpus import CorpusGateReport
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.evaluation.paired import PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol
+from open_cake_ir.tasks.normalization.study import _PAIRED_KINDS, _ROUTE_CALLS
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab.contracts import StudyContract, StudyReport
 from open_cake_ir.evidence import RunAudit
@@ -171,14 +172,24 @@ class TaskLaunchTests(unittest.TestCase):
                 local = device["allocation"] == "local_broker"
                 self.assertEqual(study["execution"]["gpu"]["mode"],
                                  "local_serialized" if local else "exclusive")
-                self.assertEqual(policy["paired_timing"]["kind"], PAIRED_METAL_BATCHED_KIND if metal else PAIRED_KIND)
-                self.assertEqual(assay.route_calls_per_cohort, 28 if metal else 42)
+                # Read from the source this backend declares, not from "metal or else":
+                # that two-way branch is what gave a DCU study CUPTI's name and CUPTI's
+                # call count, which is the reason `_PAIRED_KINDS` exists. A third source
+                # made the branch wrong here in exactly the way it was wrong there.
+                timer = device["timing_source"]
+                self.assertEqual(policy["paired_timing"]["kind"], _PAIRED_KINDS[timer])
+                self.assertEqual(assay.route_calls_per_cohort, _ROUTE_CALLS[timer])
                 self.assertEqual((len(assay.pair_order), assay.samples_per_cohort,
                                   assay.maximum_cv, assay.materiality_ratio, assay.required_pair_wins),
                                  (10, 25, 0.05, 1.05, 6))
-                if not metal:
+                if timer == "cupti":
+                    # The frozen template this compares against is the B300 one, so it
+                    # speaks for the CUPTI source only. `not metal` stood in for that
+                    # while CUPTI was the only non-Metal source; it is not the same
+                    # statement once a second one exists.
                     frozen = json.loads((ROOT/'contracts/studies/matched-search-triton-b300-optimization-template.json').read_text())
                     self.assertEqual(policy['paired_timing'], frozen['evaluation_protocol']['paired_timing'])
+                if not metal:
                     self.assertNotIn('dispatches_per_sample', policy['paired_timing'])
                     self.assertNotIn('maximum_relative_iqr', policy['paired_timing'])
                     with self.assertRaisesRegex(ValueError, 'Metal command-buffer'):
@@ -443,7 +454,8 @@ class TaskLaunchTests(unittest.TestCase):
                     "metal-m4": ("apple_gpu_family9", "Apple M4"),
                     "triton-b200": ("sm_100a", "NVIDIA B200"),
                     "triton-b300": ("sm_103a", "NVIDIA B300"),
-                    "triton-dcu": ("gfx938", "BW1101")}
+                    "triton-dcu": ("gfx938", "BW1101"),
+                    "triton-gfx1151": ("gfx1151", "AMD Radeon Graphics")}
         # This family read an Apple-only registry until the task families were given one
         # device registry, so a normalization Workload could be frozen for Metal alone.
         self.assertEqual(set(launch_task.BACKENDS), set(expected))
