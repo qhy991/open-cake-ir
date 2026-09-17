@@ -889,6 +889,6 @@
     "Measure fp32 tl.dot on a BW1101 the way the fp16 and fp8 forms were measured -- what the route emits and whether it is correct elementwise against a torch oracle -- and if it holds, declare the contract it earns, with its analyses and a Corpus case in the same change. That is the act F-2026-09-17-008 exists to insist on. Whether the ISA reaches a matrix unit for fp32 operands or falls back to v_fma is part of what the measurement has to say, because a contract that names a matrix instruction the hardware does not run for this dtype would be worse than none.\n\nUntil then the fp32 contraction tasks on this target are reduction-shaped by necessity, and that is a coverage limitation to report rather than a result to explain. Do not widen a declared contract to cover fp32 by analogy with the fp16 one: the two are different instructions and the only thing that licenses either is a measurement on the device."
   ],
   "decision": "implemented",
-  "implemented_in": "open-cake-ir@pending",
+  "implemented_in": "open-cake-ir@c70dcfcf",
   "verified_by": "the fp32 probe on a BW1101 -- v_mmac_16x16x8_f32 for ieee with max_abs_error 0, v_mmac_f32_16x16x8_tf32 for tf32 at 7.177e-04 relative, no v_fma in either -- and Corpus case gfx938-gemm-bias-mma-fp32-accepted, which lowers to tl.dot(..., input_precision=\"ieee\")"
 }
