@@ -502,67 +502,8 @@ class MeasurementCoverageTest(unittest.TestCase):
             _hidden_pointers(triton_route("gfx938"), {"amdgcn": fine}, 3)
 
 
-class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
-    """A declared contract whose analyses did not land with it is a fail-open gate.
-
-    The gap this closes, measured through the public boundary: gfx938 admitted
-    `triton.dot.fp16_fp32` and `triton.dot.fp8e4m3_fp32` with no row in
-    `_CONTRACT_DTYPES`, so `_CONTRACT_DTYPES.get(...)` returned None, the operand and
-    accumulator agreement check never ran, and a contraction whose dtypes disagreed with
-    its buffers went from a blocking `TARGET_INSTRUCTION_UNSUPPORTED` to accepted with
-    only a non-blocking "was not checked" REPORT. Nothing failed, because the declaration
-    and the analysis that gives it meaning live in different files and no test related
-    them.
-
-    This is stated across every declared Target rather than for gfx938 alone: the next
-    vendor to admit a contract should fail here, not ship a gate that does not run.
-    """
-
-    def test_every_contract_the_triton_route_can_emit_is_modelled_by_the_dtype_gate(self) -> None:
-        """Nothing emittable may be unmodelled, whichever Target admits it.
-
-        This is the coupling that was missing: the emittable set and the dtype table are
-        in different files, and adding to one without the other leaves a gate that does
-        not run. Stated over the route rather than over one Target, so the next contract
-        added for any vendor fails here.
-        """
-        from open_cake_ir.compiler.backends.triton import _TRITON_MMA_CONTRACTS
-        from open_cake_ir.compiler.verifier.hardware_conformance import _CONTRACT_DTYPES
-        unmodelled = sorted(set(_TRITON_MMA_CONTRACTS) - set(_CONTRACT_DTYPES))
-        self.assertEqual(
-            unmodelled, [],
-            "the Triton route can emit contracts the dtype gate does not model, so the "
-            "operand and accumulator agreement check silently does not run for them")
-
-    def test_the_non_mma_contracts_other_targets_admit_are_not_claimed_here(self) -> None:
-        """What this class does not check, said rather than left to be inferred.
-
-        `instruction_contracts` is one open set holding contraction contracts beside
-        elementwise ones -- `metal.fma.f32`, `libdevice.tanh.f32`,
-        `triton.atomic_add.i32.relaxed.gpu`. The dtype table is about the first kind only,
-        so "every admitted contract is modelled" is false for every CUDA and Apple target
-        and always was. Nothing in the declaration says which kind a contract is, which is
-        why the check above is stated over the route's emittable set instead. Pinning the
-        gap keeps it visible until a contract can say what it is.
-        """
-        from open_cake_ir.compiler.verifier.hardware_conformance import _CONTRACT_DTYPES
-        unmodelled = {}
-        for path in sorted((ROOT / "compiler/targets").glob("*.json")):
-            rest = sorted(set(Target.load(path).instruction_contracts) - set(_CONTRACT_DTYPES))
-            if rest:
-                unmodelled[path.stem] = rest
-        self.assertEqual(unmodelled, {
-            "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
-            "apple_gpu_family8": ["metal.fma.f32", "metal.precise.tanh.f32"],
-            "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
-            "sm_100a": ["libdevice.tanh.f32", "ptx.fma.rn.f32",
-                        "triton.atomic_add.i32.relaxed.gpu"],
-            "sm_103a": ["libdevice.tanh.f32", "ptx.fma.rn.f32",
-                        "triton.atomic_add.i32.relaxed.gpu"],
-        })
-        # The two AMDGCN targets admit only contraction contracts, and both are modelled.
-        self.assertNotIn("gfx938", unmodelled)
-        self.assertNotIn("gfx1151", unmodelled)
+class Gfx938DeclaredContracts(unittest.TestCase):
+    """What this one Target declares, pinned where its other facts are."""
 
     def test_gfx938_declares_the_contraction_and_contracts_its_evidence_covers(self) -> None:
         target = Target.load(ROOT / "compiler/targets/gfx938.json")

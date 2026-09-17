@@ -474,6 +474,12 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             if non_target:
                 timing['non_target_dispatches_per_cohort'] = list(non_target)
                 timing['non_target_dispatches'] = sum(non_target)
+        if profile_source is not None and not passed:
+            # Raised before anything is written: `_write_new` opens "xb", so a retry into
+            # the same request root would surface FileExistsError instead of this. The
+            # Metal sibling refuses at the same point for the same reason.
+            raise ValueError(
+                "instrumented dispatch requires the candidate to pass the external oracle")
         correctness_path = authority.request_root / 'correctness-output.json'
         launch_path = authority.request_root / 'launch-receipt.json'
         _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
@@ -484,13 +490,6 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
             'resources': loaded.loaded.resources})
         artifacts = {'correctness_output': correctness_path.name, 'launch_receipt': launch_path.name}
-        if profile_source is not None and not passed:
-            # The receipt for an attribution purpose must carry a profile, so omitting it
-            # here made the Lab refuse with "EvaluationReceipt artifact custody differs"
-            # -- a custody complaint about a candidate that simply failed the oracle. The
-            # Metal sibling raises the accurate one; so does this.
-            raise ValueError(
-                "instrumented dispatch requires the candidate to pass the external oracle")
         if profile_source is not None:
             # One separate instrumented dispatch, after correctness and outside every
             # cohort. It is attribution, not a sample: no device-state reset precedes it
