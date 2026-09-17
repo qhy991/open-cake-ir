@@ -49,6 +49,36 @@ def _admit_measurement_coverage(study) -> None:
             "the device cannot do, not what this Study chose not to do")
 
 
+def _admit_execution_mode(study) -> None:
+    """Check how the Study says its device is reached against the registry that declares it.
+
+    `lab.preflight` admits the closed vocabulary; which of the two values is right for an
+    exact target is a device fact, and `devices.BACKENDS` keeps it in its own column
+    because it is not the lowering route: a DCU lowers through Triton like a B200 and is
+    reached like an Apple part.
+    """
+
+    from .devices import allocation, backend_for_target
+
+    execution = study.document.get("execution")
+    if not isinstance(execution, Mapping):
+        return
+    gpu = execution.get("gpu")
+    declared = gpu.get("mode") if isinstance(gpu, Mapping) else None
+    if declared is None:
+        return
+    backend = backend_for_target(execution.get("target"))
+    if backend is None:
+        raise ValueError(
+            f"Study names target {execution.get('target')!r}, which no registered backend "
+            "admits; how it reaches its device cannot be checked against its owner")
+    expected = ("local_serialized" if allocation(backend) == "local_broker" else "exclusive")
+    if declared != expected:
+        raise ValueError(
+            f"Study reaches {execution.get('target')!r} as {declared!r}, but {backend} "
+            f"declares allocation {allocation(backend)!r}, which is {expected!r}")
+
+
 class TaskLab(PortfolioStudyMixin, Lab):
     def __init__(self, project_root, **kwargs):
         super().__init__(
@@ -68,6 +98,7 @@ class TaskLab(PortfolioStudyMixin, Lab):
                 raise ValueError("empirical selection requires artifact_optimization_only matched search")
             return self._preflight_portfolio(study)
         _admit_measurement_coverage(study)
+        _admit_execution_mode(study)
         return super().preflight(study_path, empirical_cost_model_path=empirical_cost_model_path,
                                  execution_bindings_path=execution_bindings_path)
 
