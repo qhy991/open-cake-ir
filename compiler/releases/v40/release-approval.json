@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "b57fdea8f50375bd7757b5c6774c5d2a1bae19196c7c8fbb3ee56627bca4a58f"
+  },
+  "reviewer": "haiyan",
+  "approval_basis": "Repository-owner approval of final state-store main-integration commit fc5dbc7eb0824684cc04e678cc337baf8f77d065, preserving the exact Compiler-bound projection of proposal 9738561d70eebc08a2aab9b529c3eab86c7cf9d6. The exact Gate b57fdea8f50375bd7757b5c6774c5d2a1bae19196c7c8fbb3ee56627bca4a58f independently rebuilt byte-identically through the existing release authority, matched 68 of 68 Corpus cases, and bound 87 sources. The change reuses ordinary store, Buffer state mode, ProgramMap and AccessMap as single sources of truth; admits caller-owned state updates only under mechanically proven direct single-writer ownership; returns structured Findings for malformed ProgramMap declarations and incomplete store edges; preserves reservation-owned indexed stores; and lowers the positive state store directly to the caller-owned state pointer without replacement output allocation. Relevant integration-tree regressions passed 86 of 86 targeted IR and Verifier tests plus 25 of 25 atomic reservation and indexed-store tests. This approval authorizes only the exact Compiler-side static Gate and release workflow. It establishes no GPU compilation, device correctness, sanitizer, profiler, performance, framework end-to-end, serving, coverage, or training claim."
+}

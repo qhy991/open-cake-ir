@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "d800a63792e3f3197965ff25ecdc663d211bfccf14727bd9168e8976cfa69128"
+  },
+  "reviewer": "Codex technical review under repository-owner delegated authority",
+  "approval_basis": "The repository owner explicitly authorized all operations for this task without further human authorization, then requested merging and continued Open-Cake iteration: 现在授予你全部的权限，不需要任何人为的授权可以完成所有操作. This record is written by Codex under that task-specific delegation; it does not claim a separate human or independent-agent review. It binds the exact v42-draft Gate with 72/72 cases and 91 sources. The only changed Compiler-bound file is compiler/AUTHORING_CONTRACT.md, clarifying independent Finding flags and the existing reservation-owned indexed-store exception. Compiler Python, target definitions, Corpus schedules and expectations are unchanged. The original prepare-gate verification accepted this exact report; all four v41 release authority files were preserved byte-for-byte. The release lifecycle regression verifies absent-local-witness protection, repeated draft preparation, approved successor publication and unchanged-release no-op behavior. Eight historical-task replay and source-guard tests passed before publication. This is a static documentation successor and release-lifecycle correction. It does not create new GPU numerical, timing, profiler-kernel, model, serving, coverage or training evidence, and does not relabel retained v41 runs. The cycle still cannot author its own approval, and this delegated action does not grant standing authority outside the current user task."
+}

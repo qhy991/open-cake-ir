@@ -1,0 +1,43 @@
+{
+ "schema_version": 1,
+ "observed_at": "2026-08-24T04:00:00Z",
+ "purpose": "residency_attribution",
+ "host": "verda-b200x4",
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v4",
+  "revision_sha256": "91728c879d41ecdb3cbd041158dd64d9f9f9100a42a8fcf7ec9faf922ec3d48e"
+ },
+ "schedule": {
+  "path": "corpus/schedules/softmax-b8-smoke.json",
+  "schedule_id": "softmax-b8-smoke-v1",
+  "canonical_sha256": "d2114d96a3e27730520c1a9321a19f74bbaa9542438f2f1e0fc31f2da012ef74"
+ },
+ "lowering": {
+  "entry_point": "cake_softmax_b8_smoke",
+  "source_sha256": "0021939fa4ab5932c92915c355f58157e90facaa1fb92e4ea81ce6b1fb5b7345"
+ },
+ "predicted": {
+  "ctas_per_multiprocessor_upper_bound": 7,
+  "binding_resource": "logical_register_storage",
+  "registers_per_thread_lower_bound": 65
+ },
+ "measured": {
+  "registers_per_thread": 96.0,
+  "occupancy_limits": {
+   "logical_register_storage": 5.0,
+   "shared_memory": 32.0,
+   "blocks": 32.0,
+   "threads": 16.0
+  },
+  "ctas_per_multiprocessor": 5.0,
+  "binding_resource": [
+   "logical_register_storage"
+  ]
+ },
+ "verdict": {
+  "residency_bound_sound": true,
+  "binding_resource_correct": true,
+  "binding_resource_measured_uniquely": true,
+  "register_floor_sound": true
+ }
+}

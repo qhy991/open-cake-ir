@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "1a41be7698c812297055ab121627c17712fcdd8609535b47cce565ddfb17894b"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Schedule ids remain deterministic serialization only; performance-semantic ties now abstain at a pruning boundary."
+}

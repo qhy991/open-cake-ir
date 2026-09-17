@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "6b9ec22391e0c0e69f07532dc67d0484b85ac6bab5185c8a374e96b164465da9"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a074bc-2bb0-7371-8e2e-4d6b66cf016a",
+    "author_session_id": "01a074ae-45d0-7ec2-993a-85551751aae3"
+  },
+  "approval_basis": "Independent exact-Gate review of integrated commit a912ba05ee7066dc568898fdcf1f630673de437c, combining c23e1dd Metal and b9fb146 empirical-cost work. Actual current-turn gpt-6-astra model confirmed from session metadata; reviewer 01a074bc-2bb0-7371-8e2e-4d6b66cf016a differs from author 01a074ae-45d0-7ec2-993a-85551751aae3. Full v50-draft Gate independently reproduced and matched: 82/82,119 sources; no Corpus expectations changed against main. Metal v49 archive matches c23e1dd. All48 empirical-cost/Metal/profile/documentation tests passed on CPU. Independent native Compiler.profile probes confirm same-id different-content refusal and retained legacy-schema1 rejection. Schema2 reuses Assessment Compiler content identity; parsing/profile/collector/fitter and synthetic fixtures updated consistently. Metal retains empty NCU metrics and unknown table placeholders. No new IR semantics, qualified rank, calibration_coverage, GPU execution or migrated model is approved. Old b9 data/models remain historical; full-domain lowering/launch compatibility handoff is not performed or approved by this review. Report: /Users/haiyan-infiniai/Documents/Codex/2026-09-06/open-cake-cost-model/native-cost-model-integration/unified-compiler-review.md."
+}

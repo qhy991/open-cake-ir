@@ -1,0 +1,1214 @@
+{
+  "compiler_revision": {
+    "id": "open-cake-ir-sm100a-v4",
+    "sha256": "87c7a7f39f446f8cc4706e5ff7c7d32098bb2807bff7f37b3ed4ea5e26db2107"
+  },
+  "device": {
+    "multiprocessor_count": 148,
+    "name": "NVIDIA B200"
+  },
+  "l2_flush_bytes": 268435456,
+  "reps": 41,
+  "rows": [
+    {
+      "batch": 60,
+      "ctas": 480,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0272000003606081,
+      "ranked": true
+    },
+    {
+      "batch": 62,
+      "ctas": 496,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03686400130391121,
+      "ranked": true
+    },
+    {
+      "batch": 64,
+      "ctas": 512,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.026528000831604004,
+      "ranked": true
+    },
+    {
+      "batch": 66,
+      "ctas": 528,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.025855999439954758,
+      "ranked": true
+    },
+    {
+      "batch": 68,
+      "ctas": 544,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.02595200017094612,
+      "ranked": true
+    },
+    {
+      "batch": 70,
+      "ctas": 560,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.029632000252604485,
+      "ranked": true
+    },
+    {
+      "batch": 72,
+      "ctas": 576,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.025696000084280968,
+      "ranked": true
+    },
+    {
+      "batch": 74,
+      "ctas": 592,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.025696000084280968,
+      "ranked": true
+    },
+    {
+      "batch": 76,
+      "ctas": 608,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.025439999997615814,
+      "ranked": true
+    },
+    {
+      "batch": 78,
+      "ctas": 624,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.025536000728607178,
+      "ranked": true
+    },
+    {
+      "batch": 80,
+      "ctas": 640,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.02595200017094612,
+      "ranked": true
+    },
+    {
+      "batch": 82,
+      "ctas": 656,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.025407999753952026,
+      "ranked": true
+    },
+    {
+      "batch": 84,
+      "ctas": 672,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.026079999282956123,
+      "ranked": true
+    },
+    {
+      "batch": 86,
+      "ctas": 688,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.025728000327944756,
+      "ranked": true
+    },
+    {
+      "batch": 88,
+      "ctas": 704,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.02630399912595749,
+      "ranked": true
+    },
+    {
+      "batch": 90,
+      "ctas": 720,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.02598400041460991,
+      "ranked": true
+    },
+    {
+      "batch": 92,
+      "ctas": 736,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0261439997702837,
+      "ranked": true
+    },
+    {
+      "batch": 94,
+      "ctas": 752,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.027807999402284622,
+      "ranked": true
+    },
+    {
+      "batch": 96,
+      "ctas": 768,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.02687999978661537,
+      "ranked": true
+    },
+    {
+      "batch": 98,
+      "ctas": 784,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.027488000690937042,
+      "ranked": true
+    },
+    {
+      "batch": 100,
+      "ctas": 800,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.02831999957561493,
+      "ranked": true
+    },
+    {
+      "batch": 102,
+      "ctas": 816,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03190400078892708,
+      "ranked": true
+    },
+    {
+      "batch": 104,
+      "ctas": 832,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.032416000962257385,
+      "ranked": true
+    },
+    {
+      "batch": 106,
+      "ctas": 848,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03187200054526329,
+      "ranked": true
+    },
+    {
+      "batch": 108,
+      "ctas": 864,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03206399828195572,
+      "ranked": true
+    },
+    {
+      "batch": 110,
+      "ctas": 880,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.032575998455286026,
+      "ranked": true
+    },
+    {
+      "batch": 112,
+      "ctas": 896,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03276799991726875,
+      "ranked": true
+    },
+    {
+      "batch": 114,
+      "ctas": 912,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.033215999603271484,
+      "ranked": true
+    },
+    {
+      "batch": 116,
+      "ctas": 928,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.034272000193595886,
+      "ranked": true
+    },
+    {
+      "batch": 118,
+      "ctas": 944,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.030559999868273735,
+      "ranked": true
+    },
+    {
+      "batch": 120,
+      "ctas": 960,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.030271999537944794,
+      "ranked": true
+    },
+    {
+      "batch": 122,
+      "ctas": 976,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.029888000339269638,
+      "ranked": true
+    },
+    {
+      "batch": 124,
+      "ctas": 992,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03017600066959858,
+      "ranked": true
+    },
+    {
+      "batch": 126,
+      "ctas": 1008,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.030208000913262367,
+      "ranked": true
+    },
+    {
+      "batch": 128,
+      "ctas": 1024,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.031039999797940254,
+      "ranked": true
+    },
+    {
+      "batch": 130,
+      "ctas": 1040,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03136000037193298,
+      "ranked": false
+    },
+    {
+      "batch": 132,
+      "ctas": 1056,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.031231999397277832,
+      "ranked": false
+    },
+    {
+      "batch": 134,
+      "ctas": 1072,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.031647998839616776,
+      "ranked": false
+    },
+    {
+      "batch": 136,
+      "ctas": 1088,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03209599852561951,
+      "ranked": false
+    },
+    {
+      "batch": 138,
+      "ctas": 1104,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03251200169324875,
+      "ranked": false
+    },
+    {
+      "batch": 140,
+      "ctas": 1120,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03235200047492981,
+      "ranked": false
+    },
+    {
+      "batch": 142,
+      "ctas": 1136,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03276799991726875,
+      "ranked": false
+    },
+    {
+      "batch": 144,
+      "ctas": 1152,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03302399814128876,
+      "ranked": false
+    },
+    {
+      "batch": 146,
+      "ctas": 1168,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03324799984693527,
+      "ranked": false
+    },
+    {
+      "batch": 148,
+      "ctas": 1184,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03280000016093254,
+      "ranked": false
+    },
+    {
+      "batch": 150,
+      "ctas": 1200,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.033344000577926636,
+      "ranked": false
+    },
+    {
+      "batch": 152,
+      "ctas": 1216,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03311999887228012,
+      "ranked": false
+    },
+    {
+      "batch": 154,
+      "ctas": 1232,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.034304000437259674,
+      "ranked": false
+    },
+    {
+      "batch": 156,
+      "ctas": 1248,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03404799848794937,
+      "ranked": false
+    },
+    {
+      "batch": 158,
+      "ctas": 1264,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03440000116825104,
+      "ranked": false
+    },
+    {
+      "batch": 160,
+      "ctas": 1280,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03446400165557861,
+      "ranked": false
+    },
+    {
+      "batch": 162,
+      "ctas": 1296,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03471999987959862,
+      "ranked": false
+    },
+    {
+      "batch": 164,
+      "ctas": 1312,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03481600061058998,
+      "ranked": false
+    },
+    {
+      "batch": 166,
+      "ctas": 1328,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.034272000193595886,
+      "ranked": false
+    },
+    {
+      "batch": 168,
+      "ctas": 1344,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.033984001725912094,
+      "ranked": false
+    },
+    {
+      "batch": 170,
+      "ctas": 1360,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0342399999499321,
+      "ranked": false
+    },
+    {
+      "batch": 172,
+      "ctas": 1376,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03488000109791756,
+      "ranked": false
+    },
+    {
+      "batch": 174,
+      "ctas": 1392,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03478400036692619,
+      "ranked": false
+    },
+    {
+      "batch": 176,
+      "ctas": 1408,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0350399985909462,
+      "ranked": false
+    },
+    {
+      "batch": 178,
+      "ctas": 1424,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03465599939227104,
+      "ranked": false
+    },
+    {
+      "batch": 180,
+      "ctas": 1440,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.035679999738931656,
+      "ranked": false
+    },
+    {
+      "batch": 182,
+      "ctas": 1456,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.035392001271247864,
+      "ranked": false
+    },
+    {
+      "batch": 184,
+      "ctas": 1472,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.035711999982595444,
+      "ranked": false
+    },
+    {
+      "batch": 186,
+      "ctas": 1488,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.036031998693943024,
+      "ranked": false
+    },
+    {
+      "batch": 188,
+      "ctas": 1504,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03580800071358681,
+      "ranked": false
+    },
+    {
+      "batch": 190,
+      "ctas": 1520,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03606399893760681,
+      "ranked": false
+    },
+    {
+      "batch": 192,
+      "ctas": 1536,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03580800071358681,
+      "ranked": false
+    },
+    {
+      "batch": 194,
+      "ctas": 1552,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.036288000643253326,
+      "ranked": false
+    },
+    {
+      "batch": 196,
+      "ctas": 1568,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0363520011305809,
+      "ranked": false
+    },
+    {
+      "batch": 198,
+      "ctas": 1584,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03680000081658363,
+      "ranked": false
+    },
+    {
+      "batch": 200,
+      "ctas": 1600,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03612799942493439,
+      "ranked": false
+    },
+    {
+      "batch": 202,
+      "ctas": 1616,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.036768000572919846,
+      "ranked": false
+    },
+    {
+      "batch": 204,
+      "ctas": 1632,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03711999952793121,
+      "ranked": false
+    },
+    {
+      "batch": 206,
+      "ctas": 1648,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03673600032925606,
+      "ranked": false
+    },
+    {
+      "batch": 208,
+      "ctas": 1664,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03683200106024742,
+      "ranked": false
+    },
+    {
+      "batch": 210,
+      "ctas": 1680,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.037087999284267426,
+      "ranked": false
+    },
+    {
+      "batch": 212,
+      "ctas": 1696,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03702399879693985,
+      "ranked": false
+    },
+    {
+      "batch": 214,
+      "ctas": 1712,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03734400123357773,
+      "ranked": false
+    },
+    {
+      "batch": 216,
+      "ctas": 1728,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.038975998759269714,
+      "ranked": false
+    },
+    {
+      "batch": 218,
+      "ctas": 1744,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04131200164556503,
+      "ranked": false
+    },
+    {
+      "batch": 220,
+      "ctas": 1760,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.038816001266241074,
+      "ranked": false
+    },
+    {
+      "batch": 222,
+      "ctas": 1776,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03951999917626381,
+      "ranked": false
+    },
+    {
+      "batch": 224,
+      "ctas": 1792,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03888000175356865,
+      "ranked": false
+    },
+    {
+      "batch": 226,
+      "ctas": 1808,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0387520007789135,
+      "ranked": false
+    },
+    {
+      "batch": 228,
+      "ctas": 1824,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.039423998445272446,
+      "ranked": false
+    },
+    {
+      "batch": 230,
+      "ctas": 1840,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.03936000168323517,
+      "ranked": false
+    },
+    {
+      "batch": 232,
+      "ctas": 1856,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.040511999279260635,
+      "ranked": false
+    },
+    {
+      "batch": 234,
+      "ctas": 1872,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0390079990029335,
+      "ranked": false
+    },
+    {
+      "batch": 236,
+      "ctas": 1888,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04028800129890442,
+      "ranked": false
+    },
+    {
+      "batch": 238,
+      "ctas": 1904,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04025600105524063,
+      "ranked": false
+    },
+    {
+      "batch": 240,
+      "ctas": 1920,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04054399952292442,
+      "ranked": false
+    },
+    {
+      "batch": 242,
+      "ctas": 1936,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04041599854826927,
+      "ranked": false
+    },
+    {
+      "batch": 244,
+      "ctas": 1952,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.040800001472234726,
+      "ranked": false
+    },
+    {
+      "batch": 246,
+      "ctas": 1968,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.040863998234272,
+      "ranked": false
+    },
+    {
+      "batch": 248,
+      "ctas": 1984,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.040511999279260635,
+      "ranked": false
+    },
+    {
+      "batch": 250,
+      "ctas": 2000,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04022400081157684,
+      "ranked": false
+    },
+    {
+      "batch": 252,
+      "ctas": 2016,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04057599976658821,
+      "ranked": false
+    },
+    {
+      "batch": 254,
+      "ctas": 2032,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04131200164556503,
+      "ranked": false
+    },
+    {
+      "batch": 256,
+      "ctas": 2048,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04089599847793579,
+      "ranked": false
+    },
+    {
+      "batch": 258,
+      "ctas": 2064,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04105599969625473,
+      "ranked": false
+    },
+    {
+      "batch": 260,
+      "ctas": 2080,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04131200164556503,
+      "ranked": false
+    },
+    {
+      "batch": 262,
+      "ctas": 2096,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.041439998894929886,
+      "ranked": false
+    },
+    {
+      "batch": 264,
+      "ctas": 2112,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04156799986958504,
+      "ranked": false
+    },
+    {
+      "batch": 266,
+      "ctas": 2128,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04179200157523155,
+      "ranked": false
+    },
+    {
+      "batch": 268,
+      "ctas": 2144,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0416640006005764,
+      "ranked": false
+    },
+    {
+      "batch": 270,
+      "ctas": 2160,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.042399998754262924,
+      "ranked": false
+    },
+    {
+      "batch": 272,
+      "ctas": 2176,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.042847998440265656,
+      "ranked": false
+    },
+    {
+      "batch": 274,
+      "ctas": 2192,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0424639992415905,
+      "ranked": false
+    },
+    {
+      "batch": 276,
+      "ctas": 2208,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.042208001017570496,
+      "ranked": false
+    },
+    {
+      "batch": 278,
+      "ctas": 2224,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04281599819660187,
+      "ranked": false
+    },
+    {
+      "batch": 280,
+      "ctas": 2240,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04320000112056732,
+      "ranked": false
+    },
+    {
+      "batch": 282,
+      "ctas": 2256,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04307200014591217,
+      "ranked": false
+    },
+    {
+      "batch": 284,
+      "ctas": 2272,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0432640016078949,
+      "ranked": false
+    },
+    {
+      "batch": 286,
+      "ctas": 2288,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04320000112056732,
+      "ranked": false
+    },
+    {
+      "batch": 288,
+      "ctas": 2304,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04303999990224838,
+      "ranked": false
+    },
+    {
+      "batch": 290,
+      "ctas": 2320,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04355200007557869,
+      "ranked": false
+    },
+    {
+      "batch": 292,
+      "ctas": 2336,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04438399896025658,
+      "ranked": false
+    },
+    {
+      "batch": 294,
+      "ctas": 2352,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04399999976158142,
+      "ranked": false
+    },
+    {
+      "batch": 296,
+      "ctas": 2368,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04435199871659279,
+      "ranked": false
+    },
+    {
+      "batch": 298,
+      "ctas": 2384,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04451199993491173,
+      "ranked": false
+    },
+    {
+      "batch": 300,
+      "ctas": 2400,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.045024000108242035,
+      "ranked": false
+    },
+    {
+      "batch": 302,
+      "ctas": 2416,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04492799937725067,
+      "ranked": false
+    },
+    {
+      "batch": 304,
+      "ctas": 2432,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0451200008392334,
+      "ranked": false
+    },
+    {
+      "batch": 306,
+      "ctas": 2448,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0451200008392334,
+      "ranked": false
+    },
+    {
+      "batch": 308,
+      "ctas": 2464,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04492799937725067,
+      "ranked": false
+    },
+    {
+      "batch": 310,
+      "ctas": 2480,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.044863998889923096,
+      "ranked": false
+    },
+    {
+      "batch": 312,
+      "ctas": 2496,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04543999955058098,
+      "ranked": false
+    },
+    {
+      "batch": 314,
+      "ctas": 2512,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04614400118589401,
+      "ranked": false
+    },
+    {
+      "batch": 316,
+      "ctas": 2528,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04652800038456917,
+      "ranked": false
+    },
+    {
+      "batch": 318,
+      "ctas": 2544,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.046271998435258865,
+      "ranked": false
+    },
+    {
+      "batch": 320,
+      "ctas": 2560,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.045791998505592346,
+      "ranked": false
+    },
+    {
+      "batch": 322,
+      "ctas": 2576,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.046720001846551895,
+      "ranked": false
+    },
+    {
+      "batch": 324,
+      "ctas": 2592,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.046560000628232956,
+      "ranked": false
+    },
+    {
+      "batch": 326,
+      "ctas": 2608,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04678399860858917,
+      "ranked": false
+    },
+    {
+      "batch": 328,
+      "ctas": 2624,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04678399860858917,
+      "ranked": false
+    },
+    {
+      "batch": 330,
+      "ctas": 2640,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.046751998364925385,
+      "ranked": false
+    },
+    {
+      "batch": 332,
+      "ctas": 2656,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.047040000557899475,
+      "ranked": false
+    },
+    {
+      "batch": 334,
+      "ctas": 2672,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04710400104522705,
+      "ranked": false
+    },
+    {
+      "batch": 336,
+      "ctas": 2688,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04726399853825569,
+      "ranked": false
+    },
+    {
+      "batch": 338,
+      "ctas": 2704,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.047648001462221146,
+      "ranked": false
+    },
+    {
+      "batch": 340,
+      "ctas": 2720,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04742399975657463,
+      "ranked": false
+    },
+    {
+      "batch": 342,
+      "ctas": 2736,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04739199951291084,
+      "ranked": false
+    },
+    {
+      "batch": 344,
+      "ctas": 2752,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.047520000487565994,
+      "ranked": false
+    },
+    {
+      "batch": 346,
+      "ctas": 2768,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04745600000023842,
+      "ranked": false
+    },
+    {
+      "batch": 348,
+      "ctas": 2784,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04912000149488449,
+      "ranked": false
+    },
+    {
+      "batch": 350,
+      "ctas": 2800,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04816000163555145,
+      "ranked": false
+    },
+    {
+      "batch": 352,
+      "ctas": 2816,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04854400083422661,
+      "ranked": false
+    },
+    {
+      "batch": 354,
+      "ctas": 2832,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04854400083422661,
+      "ranked": false
+    },
+    {
+      "batch": 356,
+      "ctas": 2848,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.048287998884916306,
+      "ranked": false
+    },
+    {
+      "batch": 358,
+      "ctas": 2864,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04947200044989586,
+      "ranked": false
+    },
+    {
+      "batch": 360,
+      "ctas": 2880,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04934399947524071,
+      "ranked": false
+    },
+    {
+      "batch": 362,
+      "ctas": 2896,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04956800118088722,
+      "ranked": false
+    },
+    {
+      "batch": 364,
+      "ctas": 2912,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04896000027656555,
+      "ranked": false
+    },
+    {
+      "batch": 366,
+      "ctas": 2928,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04956800118088722,
+      "ranked": false
+    },
+    {
+      "batch": 368,
+      "ctas": 2944,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04979199916124344,
+      "ranked": false
+    },
+    {
+      "batch": 370,
+      "ctas": 2960,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04982399940490723,
+      "ranked": false
+    },
+    {
+      "batch": 372,
+      "ctas": 2976,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.04944000020623207,
+      "ranked": false
+    },
+    {
+      "batch": 374,
+      "ctas": 2992,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0504320003092289,
+      "ranked": false
+    },
+    {
+      "batch": 376,
+      "ctas": 3008,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.050303999334573746,
+      "ranked": false
+    },
+    {
+      "batch": 378,
+      "ctas": 3024,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.049984000623226166,
+      "ranked": false
+    },
+    {
+      "batch": 380,
+      "ctas": 3040,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.0506879985332489,
+      "ranked": false
+    },
+    {
+      "batch": 382,
+      "ctas": 3056,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.05084799975156784,
+      "ranked": false
+    },
+    {
+      "batch": 384,
+      "ctas": 3072,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.05104000121355057,
+      "ranked": false
+    },
+    {
+      "batch": 386,
+      "ctas": 3088,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.05100800096988678,
+      "ranked": false
+    },
+    {
+      "batch": 388,
+      "ctas": 3104,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.05142400041222572,
+      "ranked": false
+    },
+    {
+      "batch": 390,
+      "ctas": 3120,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.051263999193906784,
+      "ranked": false
+    },
+    {
+      "batch": 392,
+      "ctas": 3136,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.05161599814891815,
+      "ranked": false
+    },
+    {
+      "batch": 394,
+      "ctas": 3152,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.052000001072883606,
+      "ranked": false
+    },
+    {
+      "batch": 396,
+      "ctas": 3168,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.051872000098228455,
+      "ranked": false
+    },
+    {
+      "batch": 398,
+      "ctas": 3184,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.05158400163054466,
+      "ranked": false
+    },
+    {
+      "batch": 400,
+      "ctas": 3200,
+      "ctas_per_multiprocessor_upper_bound": 7,
+      "median_ms": 0.05190400034189224,
+      "ranked": false
+    }
+  ],
+  "schedule_id": "rmsnorm-b8-smoke-v1",
+  "schema_version": 1,
+  "target": "sm_100a"
+}

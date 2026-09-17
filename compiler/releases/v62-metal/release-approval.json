@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "aaade62325529cc890f27be6b1b2a2aa75c3254c7399d0274fa95033f637cc3f"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a07e19-a29d-79a1-a200-9a4b8bea7683",
+    "author_session_id": "01a07e11-ccdd-7e73-8870-1b7f4271b11e"
+  },
+  "approval_basis": "Independently reviewed exact commit d999ab4 against fa5884d, AGENTS.md, ADR 0052, P1-P8 design, target/parser/backend preflight, Python manifest projection, native exact-device checks, and four RMSNorm DAG authoring plus retained measurement protocol. Actual session metadata identifies reviewer 01a07e19-a29d-79a1-a200-9a4b8bea7683, parent author 01a07e11-ccdd-7e73-8870-1b7f4271b11e, and effective turn model gpt-6-astra. Independently ran all 52 focused Metal contracts, including CPU execution of emitted odd-width RMSNorm bodies, target refusals and benchmark analysis; all passed. Independently rebuilt the complete release Gate through build_gate_report: normalized JSON exactly matches the persisted Gate, 92/92 matched; all 92 case records and Corpus expectations remain unchanged from baseline. Independently exercised native compile-only on actual Apple M1 Pro: Apple7 compiled with safe precise math and 32-lane pipeline, Apple8 refused exact target/device mismatch before compilation. No GPU dispatch was performed by this reviewer. No new primitive or calibrated performance claim is introduced; Apple7 explicitly abstains from cost and residency estimates. Approval permits this isolated Compiler successor and local Metal evaluation after the release cycle verifies it. It does not approve CUDA Executor release, CUDA experiments, main merge, physical performance, final framework acceptance, or a scientific arm comparison. The changed target parser belongs to the prior B200 Executor v62 closure; prior bytes and identities remain in the original checkout/pinned Git. Its successor is blocked by reported remote SSH host-key/authentication failures, with no environment repair. That independent Executor limitation does not block this Compiler-only local Metal release, but must remain explicit and CUDA use/main merge must await its separate successor acceptance. External report and independent receipts reside in open-cake-ir-runs/metal-m1-pro-20260908."
+}

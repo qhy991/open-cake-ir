@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "e2717ecb8907807beaea19a4f782d891602222aeae543f5f8c3e0020cf400965"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "KDA v1 exposes a paper-claimed Top-K vocabulary gap; reviewed 21-case expectations add deterministic indexed selection with a local shape-drift falsifier"
+}

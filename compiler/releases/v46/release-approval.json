@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "5b68d66f92b04cbdf20479610e5972cb0388ad23b5330b33345291ac39e831c0"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a074bc-2bb0-7371-8e2e-4d6b66cf016a",
+    "author_session_id": "01a074ae-45d0-7ec2-993a-85551751aae3"
+  },
+  "approval_basis": "Independent review of 1fca2e60f435e071ca2306a1c9d66f9ac4451660 against b6b7743. Actual current-turn gpt-6-astra model and reviewer session 01a074bc-2bb0-7371-8e2e-4d6b66cf016a verified from rollout metadata, distinct from author 01a074ae-45d0-7ec2-993a-85551751aae3; no credentials accessed. Full canonical v46-draft Gate matches: 77/77 cases, 103 sources, unchanged Corpus expectations. Python 3.14.6: all 35 compiled-resource, profile-model, QSA-feedback and documentation tests passed. Independent no-GPU-import portable replay yields 41 compiled profiles exactly matching retained observations plus 2 explicitly static uncovered backends. Synthetic public Lab builder probe preserves 8 artifact roles and launch metadata; wrong target, auxiliary scratch and multi-CTA cluster are refused. Assessment replay/context binding, resource units, upper-bound semantics and trusted-collector limits reviewed. Existing released-lock qualification was not claimed to pass against draft sources. Remote real compilation is retained author evidence, not a fresh reviewer run. No kernel timing, GPU correctness, NCU validation or ranking calibration qualification. Report: /Users/haiyan-infiniai/Documents/Codex/2026-09-06/open-cake-cost-model/review/review.md."
+}

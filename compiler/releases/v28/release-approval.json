@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "8dc559e9faa3d04505c8f142d522f3900edf8d7958d1f561a33969a290937e94"
+  },
+  "reviewer": "codex_independent_reviewer",
+  "approval_basis": "Independent review outside the release automation of the Compiler Corpus Gate prepared through commit 88dc5f2. The final Gate was rebuilt once through the release module at this approval boundary and matched the retained report: 37 of 37 cases and all 53 bound sources. Corpus adoption is limited to rope-b8-multi-output and rope-b8-fused-subrange; the prior 35 manifest entries retain their semantics. Adversarial public-Compiler probes verified that Schedule.outputs alone owns tuple order in both stateless and stateful wrappers, reversed exports reach the correct kernel arguments, and OUTPUT_DUPLICATE blocks acceptance and lowering. Sub-range review verified canonical prefix, tail, and interior forms; parse-time rejection of explicit zero and explicit null; verifier rejection of redundant tail extents and out-of-bounds ranges; span-based staged-shape derivation for ordinary and runtime-indexed accesses; and Triton emission of distinct range-bearing offset vectors. Backend coverage is fail-closed: CuTe whole-axis access maps remain lowerable, while the otherwise-identical sub-range Schedule remains accepted but is blocked only by CUTE_ACCESS_SUBRANGE_UNSUPPORTED; checked CUDA assets remain governed by their existing SOURCE_ASSET_SEMANTICS_MISMATCH authority. Relevant CPU contracts passed (147 tests and 206 subtests); no GPU work was run. This approves the compiler-side Gate only and makes no GPU correctness or performance claim."
+}

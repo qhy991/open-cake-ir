@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "386a56c89fd387822ec0794e186c043f2bb14cc3429d35cabfa976134e74b353"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Lowering.generated exposes backend emission versus closed asset materialization without changing either source."
+}

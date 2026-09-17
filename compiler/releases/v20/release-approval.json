@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "c8b7441681a7aca1d3cfc78de68bec61929daad6093e8265d0e5b7dec5e83545"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Reviewed the ragged grouped-GEMM composition and 29-case expectations: all prior 27 cases and lowering digests are unchanged; no schema, IR, verifier, or emitter vocabulary changed; contract tests pass; a brokered B200 draft preflight compiled and matched 1,024/1,024 outputs with zero tolerance violations and maximum deviation 1.9073486328125e-06 under the unchanged 1e-5 boundary on 2026-08-25; no performance was measured."
+}

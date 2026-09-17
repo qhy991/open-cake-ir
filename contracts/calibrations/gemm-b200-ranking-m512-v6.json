@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "calibration_id": "gemm-b200-ranking-m512-v6",
+  "state": "frozen",
+  "outcome": "Decide whether device-fill ranking may prune any three eligible candidates in the declared GEMM domain to two without losing a materially faster candidate.",
+  "non_goals": [
+    "profile_wide_calibration_coverage",
+    "latency_prediction",
+    "ranking_term_selection"
+  ],
+  "authority": {
+    "compiler_revision": {
+      "path": "compiler/revision.lock.json",
+      "revision_id": "open-cake-ir-sm100a-v8",
+      "canonical_sha256": "a6afe1362bd02a852c3e5ecb6d07f0175711d138acb182a1a51f4f17e16c681b"
+    },
+    "evaluation_sources": [
+      {
+        "role": "driver",
+        "path": "tools/calibrate_ranking_at_scale.py",
+        "raw_sha256": "9930002fbe495d371baaf34f3bf56682aeab0b403b3a8a50bf7cc1a33b2466d4"
+      },
+      {
+        "role": "oracle",
+        "path": "tools/kernel_cases.py",
+        "raw_sha256": "13f796f4e0a974fe8380b5b5c297b7fc5ead05b60f200a202717a3fac4ad412d"
+      }
+    ],
+    "schedule": {
+      "path": "corpus/schedules/gemm-bias-b1-smoke.json",
+      "profile": "gemm_bias_b1_smoke",
+      "raw_sha256": "b2041fc94ffb44f0f47859f95d29c7b2e646733e021d1afb701abd8e6c90aad3"
+    },
+    "target": {
+      "id": "sm_100a",
+      "device_name": "NVIDIA B200",
+      "multiprocessor_count": 148
+    }
+  },
+  "evaluation_domain": {
+    "extent": {
+      "symbol": "M",
+      "value": 512
+    },
+    "tiles": [
+      32,
+      64,
+      128
+    ],
+    "registers_per_thread": [
+      64,
+      96,
+      128,
+      168,
+      224
+    ],
+    "warps": [
+      4,
+      8
+    ],
+    "candidate_count": 30
+  },
+  "execution": {
+    "broker": "/home/qinhaiyan/agent-gpu-broker/bin/gpu-run",
+    "mode": "exclusive",
+    "gpu_count": 1,
+    "independent_repetitions": 2,
+    "measurement_records": [
+      "evidence/calibration/gemm-b200-ranking-m512-v6-repeat-1.json",
+      "evidence/calibration/gemm-b200-ranking-m512-v6-repeat-2.json"
+    ],
+    "decision_record": "evidence/calibration/gemm-b200-ranking-m512-v6-decision.json"
+  },
+  "protocol": {
+    "input_seed": 0,
+    "correctness_tolerance": 0.002,
+    "warmup_launches": 5,
+    "timing_samples_per_candidate": 41,
+    "l2_flush_bytes_per_sample": 268435456,
+    "summary_statistic": "median_ms"
+  },
+  "decision": {
+    "candidate_set_size": 3,
+    "survivor_count": 2,
+    "maximum_survivor_regret_ratio": 1.05,
+    "evaluation": "every combination of three correct lowering-eligible candidates in the declared domain",
+    "repeat_rule": "every repetition must satisfy the limit and contain no incorrect candidate",
+    "promotion_scope": "exact measured performance semantics only",
+    "on_pass": "A later reviewed Compiler release may expose ranking only when every launchable member of a candidate set belongs to the exact measured domain.",
+    "on_fail": "Retain the measurements as negative evidence and leave released calibration coverage unchanged."
+  }
+}

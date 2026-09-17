@@ -1,0 +1,117 @@
+"""Public common Evaluation Interface."""
+
+from .admission import observe_exclusive_b200
+from .attempts import (
+    BrokerAttempt,
+    LogicalEvaluationAttempt,
+    evaluate_with_admission_recovery,
+    is_resubmittable_admission_failure,
+)
+from .core import (
+    CandidateLauncher,
+    EvaluationProtocol,
+    EvaluationReceipt,
+    LaunchableCandidate,
+    LaunchObservation,
+    evaluate_flash_kmeans,
+)
+from .correctness import CorrectnessObservation, audit_flash_kmeans_assignment
+from .cuda_driver import (
+    CudaDeviceAdmission,
+    CudaDriverLaunchReceipt,
+    CudaLifecycleError,
+    CudaTensorContract,
+    LoadedCudaCandidate,
+    launch_candidate_once,
+    launch_cubin_once,
+)
+from .cuda_manifest import CudaLaunchManifest, parse_cuda_launch_manifest
+from .flash_kmeans import (
+    assignment_raw_sha256,
+    classify_flash_kmeans_output,
+    flash_kmeans_metrics,
+    flash_kmeans_oracle,
+    generate_flash_kmeans_case,
+    tensor_raw_sha256,
+)
+from .legacy_r45 import replay_legacy_r45_result
+from .portfolio import (
+    DispatchReceipt,
+    ExactShapeDispatcher,
+    PortfolioArtifact,
+    PortfolioCaseObservation,
+    PortfolioEntry,
+    PortfolioEvaluationReceipt,
+    SemanticKey,
+    evaluate_portfolio_observations,
+    replay_portfolio_receipt,
+)
+from .portfolio_runtime import CuptiBenchmark, CuptiPortfolioAssay, StrictCuptiBenchmark
+from .timing import (
+    PairedTimingObservation,
+    PairedTimingProtocol,
+    derive_paired_timing,
+    summarize_cohort,
+)
+from .tinygemm import (
+    TinyGemmLauncher,
+    evaluate_tinygemm,
+    generate_tinygemm_case,
+    tinygemm_metrics,
+    tinygemm_oracle,
+)
+from .workload import WorkloadContract
+
+__all__ = [
+    "PairedTimingObservation",
+    "PairedTimingProtocol",
+    "CorrectnessObservation",
+    "CandidateLauncher",
+    "CudaLaunchManifest",
+    "EvaluationProtocol",
+    "EvaluationReceipt",
+    "LaunchableCandidate",
+    "LaunchObservation",
+    "CudaDriverLaunchReceipt",
+    "CudaLifecycleError",
+    "CudaDeviceAdmission",
+    "CudaTensorContract",
+    "LoadedCudaCandidate",
+    "WorkloadContract",
+    "TinyGemmLauncher",
+    "evaluate_tinygemm",
+    "generate_tinygemm_case",
+    "tinygemm_metrics",
+    "tinygemm_oracle",
+    "CuptiBenchmark",
+    "CuptiPortfolioAssay",
+    "StrictCuptiBenchmark",
+    "replay_legacy_r45_result",
+    "observe_exclusive_b200",
+    "DispatchReceipt",
+    "ExactShapeDispatcher",
+    "PortfolioArtifact",
+    "PortfolioEntry",
+    "PortfolioCaseObservation",
+    "PortfolioEvaluationReceipt",
+    "SemanticKey",
+    "evaluate_portfolio_observations",
+    "replay_portfolio_receipt",
+    "BrokerAttempt",
+    "LogicalEvaluationAttempt",
+    "evaluate_with_admission_recovery",
+    "is_resubmittable_admission_failure",
+    "audit_flash_kmeans_assignment",
+    "assignment_raw_sha256",
+    "classify_flash_kmeans_output",
+    "flash_kmeans_metrics",
+    "flash_kmeans_oracle",
+    "generate_flash_kmeans_case",
+    "evaluate_flash_kmeans",
+    "tensor_raw_sha256",
+    "parse_cuda_launch_manifest",
+    "launch_cubin_once",
+    "launch_candidate_once",
+    "derive_paired_timing",
+    "summarize_cohort",
+]

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "736e38a628e1f315d7c5f9a348136e0177368739f84efc076bf9f1d3f77152ea"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Repository-owner review of the v31 NCU-aligned static profile analysis Gate. The exact Gate 736e38a628e1f315d7c5f9a348136e0177368739f84efc076bf9f1d3f77152ea matches 54 of 54 cases across 73 bound sources. The new profile_model source is explicitly included in the Compiler source closure. It maps existing IR, Target, work, residency, and deterministic lowering facts onto NCU metric names using typed exact values, lower bounds, upper bounds, qualitative uncalibrated risks, and explicit unknowns. It does not predict latency, does not invent SM/DRAM/L2 or stall percentages, and does not change Compiler.rank or any acceptance decision. The batch report tool covers every lowerable Corpus Schedule, and the bounded projection is connected to QSA provider feedback while raw evidence remains authoritative. Sixty-five focused analysis, work, utilization, and feedback tests passed. This approval authorizes only the Compiler analysis Revision; numerical NCU ranges and cost-model ranking require later B200 held-out calibration."
+}

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "calibration_id": "gemm-b200-ranking-m512-v7",
+  "state": "frozen",
+  "outcome": "Decide whether the device-fill preorder may prune a decisive three-candidate GEMM set to two without losing a materially faster candidate under drift-controlled measurement.",
+  "non_goals": [
+    "choosing within a performance-semantic tie",
+    "profile-wide calibration coverage",
+    "latency prediction",
+    "ranking-term selection",
+    "reinterpreting the failed v6 calibration"
+  ],
+  "authority": {
+    "compiler_revision": {
+      "path": "compiler/revision.lock.json",
+      "revision_id": "open-cake-ir-sm100a-v11",
+      "canonical_sha256": "7f774e216fbb827d97358bbf4739b9a66ec5a5a79040398b76f8376cd4e36423"
+    },
+    "evaluation_sources": [
+      {
+        "role": "instrument_and_decision",
+        "path": "tools/calibrate_gemm_ranking_interleaved.py",
+        "raw_sha256": "c6bb7ebb92a2607cae813861bda041eecea56f1327b487a7e8965e599d4b2a25"
+      },
+      {
+        "role": "oracle",
+        "path": "tools/kernel_cases.py",
+        "raw_sha256": "13f796f4e0a974fe8380b5b5c297b7fc5ead05b60f200a202717a3fac4ad412d"
+      },
+      {
+        "role": "ranking_model",
+        "path": "src/open_cake_ir/compiler/ranking.py",
+        "raw_sha256": "b7861600ebba93bd758205890ff9fe342e69293286ae59efef558fa78d884e08"
+      }
+    ],
+    "schedule": {
+      "path": "corpus/schedules/gemm-bias-b1-smoke.json",
+      "schedule_id": "gemm-bias-b1-smoke",
+      "profile": "gemm_bias_b1_smoke",
+      "raw_sha256": "b2041fc94ffb44f0f47859f95d29c7b2e646733e021d1afb701abd8e6c90aad3"
+    },
+    "target": {
+      "id": "sm_100a",
+      "device_name": "NVIDIA B200",
+      "multiprocessor_count": 148
+    }
+  },
+  "evaluation_domain": {
+    "extent": {
+      "symbol": "M",
+      "value": 512
+    },
+    "tiles": [
+      32,
+      64,
+      128
+    ],
+    "registers_per_thread": [
+      64,
+      96,
+      128,
+      168,
+      224
+    ],
+    "warps": [
+      4,
+      8
+    ],
+    "candidate_count": 30
+  },
+  "execution": {
+    "broker": "/home/qinhaiyan/agent-gpu-broker/bin/gpu-run",
+    "mode": "exclusive",
+    "gpu_count": 1,
+    "independent_repetitions": 2,
+    "measurement_records": [
+      "evidence/calibration/gemm-b200-ranking-m512-v7-repeat-1.json",
+      "evidence/calibration/gemm-b200-ranking-m512-v7-repeat-2.json"
+    ],
+    "decision_record": "evidence/calibration/gemm-b200-ranking-m512-v7-decision.json"
+  },
+  "protocol": {
+    "input_seed": 0,
+    "correctness_tolerance": 0.002,
+    "warmup_rounds": 5,
+    "timing_rounds": 50,
+    "sampling_order": "cyclic_rotation_of_eligible_domain_order",
+    "l2_flush_bytes_per_sample": 268435456,
+    "summary_statistic": "median_ms"
+  },
+  "decision": {
+    "candidate_set_size": 3,
+    "survivor_count": 2,
+    "maximum_survivor_regret_ratio": 1.05,
+    "evaluation": "classify every combination of three correct lowering-eligible candidates; a set is decisive only when the performance-semantic order differs across the two-survivor boundary",
+    "repeat_rule": "every decisive subset in every repetition must satisfy the limit, every abstention must be reported, and no measured candidate may be incorrect",
+    "promotion_scope": "only exact measured Schedule semantics under this Compiler Revision, and only candidate sets whose requested cut is decisive",
+    "on_pass": "A later reviewed Compiler and Executor successor may expose this exact coverage after representing its finite domain and tie abstention without projecting it to a profile name.",
+    "on_fail": "Retain the measurements as negative evidence and leave released calibration coverage unchanged."
+  }
+}

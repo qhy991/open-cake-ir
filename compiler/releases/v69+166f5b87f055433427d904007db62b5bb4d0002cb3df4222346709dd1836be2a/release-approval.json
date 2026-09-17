@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "3626e0ac416c7db10a1028d9eaa5ce466532296f51d064155534ffee424c87b3"
+  },
+  "reviewer": {
+    "kind": "human",
+    "name": "qhy991"
+  },
+  "review_record": "owner authorization given in the Claude Code session that prepared this change; no separate reviewer record was produced",
+  "approval_basis": "Owner-authorized release widening the closed elementwise vocabulary with exp2 and reciprocal, and emitting both on Metal. This approval was written by the author session at the owner's explicit instruction; no independent reviewer session inspected the change, so it does not carry the independent-review basis of approvals made under ADR 0052 by a distinct session. The change is driven by retained Campaign evidence rather than by preference: a live softmax Run reached for both in consecutive Turns and was refused at the frontend with \"unsupported Schedule operation 'exp2'\" and \"'reciprocal'\", which are the standard levers for the transcendental-bound kernel that Run was measuring. What the author session did verify, with receipts retained in the session: the Corpus Gate was rebuilt from source and matched 124/124 cases over 171 bound sources for draft open-cake-ir-sm100a-v69-draft; all 123 pre-existing corpus expectations are unchanged and one new case was added (metal-softmax-exp2-odd-accepted); and widening the vocabulary exposed a fail-open path in the Triton backend, which raised KeyError out of preflight for an unmapped member instead of returning a Finding, so that backend now refuses with TRITON_ELEMENTWISE_UNSUPPORTED as the CuTe DSL backend already did. Metal emits precise::exp2 and an explicit 1.0f divide, consistent with the precise namespace the other transcendentals use while fast math stays disabled; Metal rounding remains Metal's and no PTX RN equivalence is implied. exp2 is not a rewrite of exp: a Schedule that wants the cheaper primitive must scale its own operand by log2(e) and owns that rounding. No device measurement of either operation was taken, so no performance claim is approved here. This approves the Compiler successor only; it approves no Executor release, no framework acceptance and no scientific arm comparison."
+}

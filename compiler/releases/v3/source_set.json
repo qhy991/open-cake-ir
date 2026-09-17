@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "paths": [
+    "src/open_cake_ir/compiler/__init__.py",
+    "src/open_cake_ir/compiler/core.py",
+    "src/open_cake_ir/compiler/release.py",
+    "compiler/schedule.schema.json",
+    "compiler/AUTHORING_CONTRACT.md",
+    "src/open_cake_ir/compiler/assets/flash_kmeans_b32_smoke.py.tmpl",
+    "src/open_cake_ir/compiler/assets/flash_kmeans_assignment_full.py.tmpl",
+    "src/open_cake_ir/compiler/assets/tinygemm2_stage4_split_k_sm100.cu.tmpl",
+    "compiler/targets/sm_100a.json",
+    "corpus/manifest.json",
+    "corpus/schedules/flash-kmeans-b32-smoke.json",
+    "corpus/schedules/flash-kmeans-b32-smoke-shape-drift.json",
+    "corpus/schedules/flash-kmeans-assignment-full.json",
+    "corpus/schedules/flash-kmeans-assignment-full-shape-drift.json",
+    "corpus/schedules/tinygemm2-stage4-split-k.json",
+    "corpus/schedules/tinygemm2-stage4-split-k-reduction-drift.json"
+  ]
+}

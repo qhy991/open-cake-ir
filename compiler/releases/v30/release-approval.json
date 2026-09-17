@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "6f8478e60aee4a6b05d338b2c5007fe327b87e341597ae9d13a8e5039cd441f7"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Repository-owner review of the v30 compact loop-carried Top-K Compiler Gate. The exact Gate 6f8478e60aee4a6b05d338b2c5007fe327b87e341597ae9d13a8e5039cd441f7 matches 54 of 54 cases across 72 bound sources. The three reviewed corpus expectation changes update only lowering-source identities for generic Top-K, streaming Top-K, and QSA score/Top-K; accepted and lowering-eligible decisions plus finding sets are unchanged. The existing Top-K IR semantics remain k, lowest-index tie break, reject-NaN policy, and explicit across-loop state. The canonical Triton lowering replaces 512 serial value/index selections with one composite uint64 FP32-order/tie key and tl.topk merge, while the verifier newly rejects non-power-of-two resident source extents. B200 CUPTI and NCU evidence diagnosed the prior lowering as correct but 10.35x slower than its fixed direct-CUDA baseline, with 224 registers per thread, one resident CTA per SM, 12.46 percent active warps, and high barrier and long-scoreboard stalls. This approval authorizes only the Compiler Revision; optimized B200 performance, matched-agent, checkpoint, and serving claims still require subsequent evidence."
+}

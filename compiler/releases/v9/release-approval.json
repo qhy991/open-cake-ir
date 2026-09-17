@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "3905600fd42f74c7e52d5743743fbe34f3f718538af8b5034990d8208abc8081"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Scientific matched-search Run open_cake-1 exposed a verifier/emitter contradiction: an emitted MMA without an instruction was marked lowering-eligible; add candidate-actionable pre-lowering evidence while preserving asset profiles"
+}

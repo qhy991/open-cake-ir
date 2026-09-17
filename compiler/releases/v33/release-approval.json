@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "c1a3d15c43027266b0c0b1e59b7c6e04e009812a914739b632643b087c6ae179"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Repository-owner review of the v33 signed-INT32 resident top_k Compiler Gate. The exact Gate c1a3d15c43027266b0c0b1e59b7c6e04e009812a914739b632643b087c6ae179 matches 56 of 56 Corpus cases across 75 bound Compiler sources. The two separately reviewed Corpus additions cover one resident signed-INT32 positive and the deliberate signed-INT32 across_loop rejection; all 54 pre-existing cases match their prior expectations. The canonical top_k now admits FP32 or signed INT32 resident rank-one values, preserves the value dtype, returns INT32 source positions, orders signed INT32 values descending with the existing lowest-source-position tie break, and rejects unsupported signed-INT32 loop-carried state. No QSA-named Compiler branch, sort synonym, integer-cast mode, or layout algebra is introduced. Twenty-nine focused tests with 128 subtests and three Compiler Revision witness tests passed, and the complete Corpus Gate matched. The complete suite will be rerun against the verified successor lock before any GPU campaign. This approval authorizes only the Compiler Revision; it does not authorize an Executor Revision, provider run, GPU campaign, Candidate promotion, checkpoint claim, or serving claim. The repository owner explicitly authorized Codex to write this approved artifact after reviewing the exact Gate report."
+}

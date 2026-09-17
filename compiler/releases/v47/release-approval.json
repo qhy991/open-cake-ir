@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "8b92a2245b024303e3b4e0975337d2322c8cdcf1222065b3e8b2506212b6b4b4"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a07574-d777-7501-a273-3d37988cfb08",
+    "author_session_id": "01a07550-eadc-71a3-bca3-d296706fbb97"
+  },
+  "approval_basis": "Approved exact commit 44574ec927e7236d3a168e553375881c445fd6a3 against main baseline 0d954c5934c60c42ede07f0ad6cba93a6c4f967d. Independence and effective gpt-6-astra execution were verified from selective runtime CODEX_SESSION_ID/CODEX_THREAD_ID, matching session_meta, and turn_context.model metadata; reviewer session and thread are 01a07574-d777-7501-a273-3d37988cfb08, distinct from the verified author session. Read AGENTS.md, ADR 0052, the IR guide acceptance contract and exact diff. Independently rebuilt the complete v47-draft Corpus Gate with compiler.release.build_gate_report outside the checkout and compared canonical JSON once at this frozen approval boundary: exact retained Gate match, 77/77 cases, 109 bound sources. All 81 moved definitions/constants have identical ASTs to the exact baseline. Independent baseline extraction and execution preserve 61 public types, resolved field/method annotations, typed corpus objects, structural Schema, findings, modeled analysis, 43 eligible lowering outputs and static profiles, and the parser/assessment/lowering behavior of 25 malformed inputs. The documented source-location description and owning __module__ changes are intentional. Independently ran tests.contracts.test_ir, test_python_frontend, test_compiled_resources and test_release_approval with the existing Python 3.14.6 interpreter: 62 passed, zero failures/errors/skips. Checked seven IR module bindings, 47 guide links and the matching executable bilingual FMA example. Main v46 resource/profile behavior is retained; archived v46 documents match the baseline, and none of the 45 Executor v46 source paths changed. No blocking findings or new IR semantics, Corpus expectations, Target, Executor or GPU claims. This approval covers the reviewed reorganization and documentation only; torch-dependent wider tests were unavailable and are not counted as passing. No environment repair, package installation, GPU or remote work was performed. Reviewer evidence and the initial probe-assumption correction are retained in /tmp/open-cake-ir-merge-20260906.UTbd62/reviewer-01a07574/. Only the external approval authority is written; release and merge remain for the authorized author workflow."
+}

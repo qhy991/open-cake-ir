@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "53c9ef811be51eab2134974a48240a83b407b075ca3c0fdf24b2367a2ffc18f1"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "KDA v1 FP8 block-scale relation: reviewed 24-case expectations; brokered B200 draft preflight compiled, launched, and matched 2048/2048 outputs at max deviation 1.7881393432617188e-07 under the preregistered 1e-5 tolerance"
+}

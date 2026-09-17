@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "17afce10a8dcd611767bdd43b23340ef394ed5e53431428ae8752b21f3c5ad5f"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a07b5d-92cb-7690-8da9-bb05acb394f9",
+    "author_session_id": "01a07b5d-8b59-7f70-aeb7-3cb9eec5d4ca"
+  },
+  "approval_basis": "Independently reviewed backend worker873553fd721b69d1b3bcf4774e6bff05bcecd9e4, combined source616cb664b76f44544e67d98e83e80b75d0a78787, and exact prepared Gate799ea4db28119bea2a0c20dbca05350457fa8eba. The included accepted main1df61bb7c29311945fbe5fbddcc6452b2ee9b879 changes no member of the reviewed144 Compiler sources. Authorized retired import paths/generic emit have no compatibility shim; common result/error identity, explicit backend ownership, dynamic registries, NativeTriton ABI consumer and asset/source/package declarations are correct. Backend algorithm bodies are unchanged apart from reviewed imports; combined typed facade and accepted3a repair are preserved. Independent evidence:92 complete backend behavior records,52 facade lowerings,273 preflights and74 direct emissions preserved; selected230 tests passed with1 toolchain skip; real vocabulary CLI and source API/resource checks passed. Independent combined18 tests and92 complete case/52 source-map-toolchain records matched accepted3a. Canonical build_gate_report reconstruction normalized with the release canonical JSON exactly matches the persistent cycle-derived v60-draft Gate:92/92 cases and144 bound sources. v59 Gate/lock/approval are preserved and archived source_set follows the released source-path sequence. Actual independent reviewer model/session and max effort verified from runtime metadata. This is a fresh approval of this exact Gate, not reuse of v59 approval. Missing torch modules, deferred historical checks and unavailable wheel build remain explicit; wheel_verified=false. No GPU/provider execution, performance, new Executor device qualification, later architecture changes or final main acceptance is inferred. Evidence is retained under this backend campaign reviewer/backend-873553fd, reviewer/combined-616cb664 and reviewer/gate-799ea4db."
+}

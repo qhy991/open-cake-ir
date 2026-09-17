@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "eb22cc72cf5278b2d52a2edde27818490455cc1a51f1ef482a971bcecba52340"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Repository-owner continuous-iteration and explicit artifact-writing authorization for the v35 FP32-storage, TF32-input-precision, FP32-accumulation MMA Compiler Gate. The exact Gate eb22cc72cf5278b2d52a2edde27818490455cc1a51f1ef482a971bcecba52340 matches 60 of 60 Corpus cases across 79 bound Compiler sources. The two explicitly approved Corpus additions cover one generic positive lowered with input_precision=tf32 and one BF16 operand-drift rejection; all 58 pre-existing cases retain their acceptance, lowering eligibility, Finding sequence, Schedule hash and lowering-source hash. The canonical mma gains only the Target instruction contract triton.dot.fp32_tf32. FP32 Buffers and FP32 accumulation remain unchanged; there is no TF32 DType, implicit cast, precision fallback, QSA Compiler branch or layout abstraction. Verifier typing rejects non-FP32 operands and accumulation, while exact backend-owned instruction sets reject Target-admitted cross-backend contracts before emission. Profile analysis exposes the exact arithmetic contract and keeps throughput unknown without a matching TF32 peak and measured duration; it does not borrow IEEE or BF16 peaks or alter the known dynamic-stop FLOP boundary. One hundred eight focused tests with 60 subtests passed, the complete Corpus Gate matched, and the previous 58 cases were compared field by field with zero drift. Official Triton tl.dot documentation admits explicit TF32 input precision, but exact Triton 3.7.1 compilation and unchanged external-oracle B200 correctness remain mandatory before timing or performance claims. This approval authorizes only this Compiler Revision. It does not authorize a workload, evaluator, oracle, tolerance, timing, materiality or shared-infrastructure change, and it establishes no checkpoint or serving result."
+}

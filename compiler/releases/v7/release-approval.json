@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "416048258dc9188d10fd790203ef7fdeea423fff7cb7ed111c807dd403e1f50b"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "repair revision witness discovery after the v4 identity collision; frozen observations remain unchanged"
+}

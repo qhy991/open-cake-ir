@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "75f29e87205b352ef7dabbd44ee7b7d8d6ebf352d87d2dc4aa2f6df684258106"
+  },
+  "reviewer": "repository_owner",
+  "approval_basis": "Repair the agent authoring schema against all 19 Corpus schedules and admit the KDA-derived tanh SwiGLU slice with an independently failing shape-drift case."
+}

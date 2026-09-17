@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "decision": "approved",
+  "gate_report": {
+    "path": "compiler/corpus-gate-report.json",
+    "canonical_sha256": "e75ea2558c581c54cc18681e9c1b9d911e245609253359fa859763e24d0a66f9"
+  },
+  "reviewer": {
+    "kind": "agent_session",
+    "model": "gpt-6-astra",
+    "session_id": "01a07a80-97f0-78a3-97ac-1c913b769028",
+    "author_session_id": "01a07a6c-fd4e-7753-8a3e-2ba1ee28dd4d"
+  },
+  "approval_basis": "Independent approval of the rebased Compiler source dc3a1e819951ef491aeded3c6af10665f4b4c01f and metadata-only prepared candidate de6546ab5dffd47f93d83d2854bb37c663d9b6c8, derived open-cake-ir-sm100a-v58-draft in the explicitly coordinated Compiler-only window. Canonical build_gate_report reconstruction exactly matches the persistent normalized Gate, with all 102 cases matched and 145 bound sources including all Compiler files. Compiler imports remain independent of tasks, Lab, Evaluation and Evidence. The union retains all 92 pinned-main and 96 accepted-AMD case declarations (86 shared, 6 B300, 10 AMD); no expectation adoption or normalization was used. All both-ref frozen Workloads are preserved. Independent source review passed 46 targeted tests covering task ownership/static loading, B300 target/gather/native/driver boundaries, AMD unit-tile/packed frontend, the single uncalibrated register-budget rule, scratch-name consumer preservation, stale/partial-output refusal and malformed profiler projections. Main common generic Workload/Ralph bodies remain unchanged; no WorkloadContract.load, task forwarding exports or inferred generic AMD target/ABI was restored. Relocated AMD oracle/validator AST and the previously independently checked ROUND/XOR/scratch/profiler/output-invalidation fixes are preserved. Both divergent v53 histories and accepted AMD v57 authority/archive are retained under their original replay identities; this new approval does not relabel those historical records. This approval binds only this exact Compiler Gate. The current historical Executor and full portable/current-runtime fixture cannot qualify changed combined runtime sources; coordinated Executor allocation, complete portable checks and final publication acceptance remain pending. No GPU, provider, live-host, timing, profiler, Search Contract or serving qualification is claimed. Any further Compiler source or Gate change requires new exact review. Evidence: sync/reviews/source-dc3a1e8.md, source-dc3a1e8-focused.receipt.json, source-dc3a1e8-observation.json and gate-de6546a-observation.json. Actual gpt-6-astra/ultra reviewer session is independently verified and distinct from integration author under ADR 0052."
+}

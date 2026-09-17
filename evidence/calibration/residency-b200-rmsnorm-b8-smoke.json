@@ -1,0 +1,43 @@
+{
+ "schema_version": 1,
+ "observed_at": "2026-08-24T04:00:00Z",
+ "purpose": "residency_attribution",
+ "host": "verda-b200x4",
+ "compiler_revision": {
+  "revision_id": "open-cake-ir-sm100a-v4",
+  "revision_sha256": "91728c879d41ecdb3cbd041158dd64d9f9f9100a42a8fcf7ec9faf922ec3d48e"
+ },
+ "schedule": {
+  "path": "corpus/schedules/rmsnorm-b8-smoke.json",
+  "schedule_id": "rmsnorm-b8-smoke-v1",
+  "canonical_sha256": "ccc8cbf2514d7f1124b68560445ff446ce94d152fb61912b4ad041c8389d6f7c"
+ },
+ "lowering": {
+  "entry_point": "cake_rmsnorm_b8_smoke",
+  "source_sha256": "9f0d543fbf4a0e91ff9a07fc45037bf63ec2997b4408958ce872fac6fad7d0a4"
+ },
+ "predicted": {
+  "ctas_per_multiprocessor_upper_bound": 7,
+  "binding_resource": "logical_register_storage",
+  "registers_per_thread_lower_bound": 66
+ },
+ "measured": {
+  "registers_per_thread": 96.0,
+  "occupancy_limits": {
+   "logical_register_storage": 5.0,
+   "shared_memory": 10.0,
+   "blocks": 32.0,
+   "threads": 16.0
+  },
+  "ctas_per_multiprocessor": 5.0,
+  "binding_resource": [
+   "logical_register_storage"
+  ]
+ },
+ "verdict": {
+  "residency_bound_sound": true,
+  "binding_resource_correct": true,
+  "binding_resource_measured_uniquely": true,
+  "register_floor_sound": true
+ }
+}
