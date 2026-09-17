@@ -146,6 +146,8 @@ _TRITON_MMA_CONTRACTS = frozenset(
         "triton.dot.fp32_ieee",
         "triton.dot.fp32_tf32",
         "triton.dot.fp8e4m3_block_scale_fp32",
+        "triton.dot.fp16_fp32",
+        "triton.dot.fp8e4m3_fp32",
     }
 )
 

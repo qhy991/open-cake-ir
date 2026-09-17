@@ -484,7 +484,14 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
             'resources': loaded.loaded.resources})
         artifacts = {'correctness_output': correctness_path.name, 'launch_receipt': launch_path.name}
-        if profile_source is not None and passed:
+        if profile_source is not None and not passed:
+            # The receipt for an attribution purpose must carry a profile, so omitting it
+            # here made the Lab refuse with "EvaluationReceipt artifact custody differs"
+            # -- a custody complaint about a candidate that simply failed the oracle. The
+            # Metal sibling raises the accurate one; so does this.
+            raise ValueError(
+                "instrumented dispatch requires the candidate to pass the external oracle")
+        if profile_source is not None:
             # One separate instrumented dispatch, after correctness and outside every
             # cohort. It is attribution, not a sample: no device-state reset precedes it
             # and the record says so, so nobody compares it to a cohort median.
@@ -1153,12 +1160,25 @@ def main() -> int:
                 )
             if platform.attribution == "inside_evaluate":
                 if args.profile_admission is not None:
-                    raise ValueError("Metal profile admission is provided by its Executor")
+                    # Two platforms take their profile inside evaluate now, so this can no
+                    # longer be phrased as Metal's rule: a DCU caller was refused in
+                    # Metal's words for a mistake of its own.
+                    raise ValueError(
+                        f"{_execution_platform(authority)!r} takes its profile inside "
+                        "evaluate; that admission is supplied by its own Executor")
                 platform.evaluate(authority, result)
-            else:
+            elif platform.attribution == "separate":
                 if args.profile_admission is not None:
                     raise ValueError("profile admission is internal-only")
                 _profile_candidate(authority, request_path, result)
+            else:
+                # Nsight was the fall-through here too. Three sites read this profile and
+                # two were closed; this is the third, and leaving it meant any future
+                # attribution value routed a candidate to CUDA's profiler.
+                raise ValueError(
+                    f"attribution source {platform.attribution!r} is not implemented; a "
+                    "profile is taken inside evaluate or by this platform's own separate "
+                    "profiler, and never on another platform's behalf")
         else:
             _platform(authority).evaluate(authority, result)
     except Exception as error:
