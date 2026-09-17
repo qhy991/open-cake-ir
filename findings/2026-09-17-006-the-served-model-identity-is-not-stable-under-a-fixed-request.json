@@ -6,7 +6,7 @@
   "title": "The experiment service answers a fixed kimi-k3 request under two served identities, so provider qualification fails intermittently on every host",
   "backend": "claude-code harness against https://cloud.infini-ai.com/maas",
   "target": "host-independent; observed from gfx938 and cross-checked against sm_103a evidence",
-  "compiler_revision_id": "open-cake-ir@d87581bc",
+  "compiler_revision_id": "open-cake-ir@b62073ff",
   "executor_revision": "none: the run never reached a device",
   "evidence": {
     "retained": "bw1100 /home/testuser01/oci-dcu-runs/rmsnorm-20260917-160255 and rmsnorm-20260917-161201, both sealed at run task-provider-qualification with protocol_adherence provider_fault; B300-M2 /mnt/b300-shared/home/qinhaiyan/oci-service-runs/rmsnorm-20260916-032057 and silu-20260916-040643 as the passing comparison",
