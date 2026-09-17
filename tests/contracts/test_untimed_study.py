@@ -10,12 +10,14 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
 from open_cake_ir.lab._policies import untimed  # noqa: E402
 from open_cake_ir.tasks.devices import BACKENDS, timing_source  # noqa: E402
+from open_cake_ir.tasks.normalization import study as study_module  # noqa: E402
 from open_cake_ir.tasks.normalization.study import arm_feedback, evaluation_policy  # noqa: E402
 
 
@@ -66,13 +68,31 @@ class _Workload:
 
 
 class PolicyShapeTests(unittest.TestCase):
-    def test_a_target_with_no_timing_source_carries_the_limitation_and_no_paired_assay(self):
-        policy = evaluation_policy(_Workload("gfx1151"))
+    def test_a_backend_with_no_timing_source_carries_the_limitation_and_no_paired_assay(self):
+        """The condition is constructed, not borrowed from whichever row is untimed.
+
+        This named gfx1151 while gfx1151 declared no source. It gained one the day
+        something measured on it, and the test then failed for a reason that had nothing
+        to do with what it checks -- a registry row is not this test's to depend on.
+        """
+
+        with mock.patch.object(study_module, "timing_source", return_value=None):
+            policy = evaluation_policy(_Workload("gfx1151"))
         self.assertTrue(untimed(policy))
         self.assertNotIn("paired_timing", policy)
         self.assertEqual(policy["search_evaluation"], "correctness_only")
         self.assertEqual(policy["attribution_evaluation"], "correctness_only")
         self.assertEqual(arm_feedback(policy), UNTIMED_FEEDBACK)
+
+    def test_every_registered_backend_currently_names_a_source(self):
+        """Not a rule, a record: today no registered backend is untimed.
+
+        If one is added the untimed path gains a live user, and whoever adds it should see
+        that here rather than discover it from a Study that quietly loses its timing.
+        """
+
+        untimed_backends = sorted(name for name in BACKENDS if timing_source(name) is None)
+        self.assertEqual(untimed_backends, [])
 
     def test_a_timed_target_is_untouched_by_the_untimed_branch(self):
         """The regression pin: the shape that was already shipping must not move."""

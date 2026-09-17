@@ -85,15 +85,26 @@ BACKENDS = {
     # lowers through Triton like a B200, which is why those two axes are separate rows.
     # `tanh_contract` is None for the same reason gfx938's is: this Target declares no
     # instruction contracts, and ROCm Triton's `libdevice` resolves to ocml, so the CUDA
-    # spelling would claim NVIDIA numerics for a different function. `timing_source` is
-    # None because nothing in this repository has yet produced a timed assay on it: a
-    # rocprofv3 kernel trace has been measured on this device, but until the evaluation
-    # worker produces one through the pinned projection, naming a source here would put a
-    # profiler's name on evidence this code path never produced.
+    # spelling would claim NVIDIA numerics for a different function.
+    #
+    # `timing_source` was None until something measured on this device. `HipDispatchBenchmark`
+    # was then run here against the gfx1151-rmsnorm-b8-smoke kernel, ROCm 7.2.1, torch
+    # 2.9.1: 25 dispatches with the device reset before each, median 31.858us, min 31.217,
+    # max 36.226, CV 0.038, 23 distinct values out of 25 -- a resolved cohort, not a
+    # quantum. Without the reset the same cohort reads CV 0.52, which is why the assay
+    # takes one. Its misattribution guard was checked too: a cohort it cannot attribute to
+    # the named kernel is refused, not averaged.
+    #
+    # Two device-side sources disagree on this kernel and the difference is recorded rather
+    # than reconciled here: `rocprofv3 --kernel-trace` read 24.224us median for the same
+    # kernel and shape, against this assay's 31.858us. Both reset the device and both
+    # report a device span; the gap is roughly the per-dispatch instrumentation each tool
+    # adds. A ranking taken under one of them is not comparable with a latency taken under
+    # the other, which is what naming the source in the Study is for.
     "triton-gfx1151": {"target": "gfx1151", "device_name": "AMD Radeon Graphics",
                        "provenance_token": "gfx1151", "route": "triton",
                        "allocation": "local_broker",
-                       "tanh_contract": None, "timing_source": None,
+                       "tanh_contract": None, "timing_source": "hip_dispatch",
                        "power_of_two_width": True},
 }
 
