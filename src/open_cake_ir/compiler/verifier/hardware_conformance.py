@@ -54,6 +54,10 @@ _ELEMENTWISE_INSTRUCTIONS = {
     # here no Metal Schedule could reach the emitter's precise::tanh at all.
     "metal.precise.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
     "metal.fma.f32": (ElementwiseOp.FMA, DType.FP32),
+    # AMD's math library, measured on gfx938 at ~1 ulp of fp32 against torch.tanh. Named
+    # for ocml rather than libdevice because that is the library the symbol comes from;
+    # Triton spells the call the same way on both vendors, the ISA does not.
+    "ocml.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
     "ptx.fma.rn.f32": (ElementwiseOp.FMA, DType.FP32),
 }
 

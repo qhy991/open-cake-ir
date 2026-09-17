@@ -70,15 +70,16 @@ BACKENDS = {
                     "allocation": "gpu_run",
                     "tanh_contract": "libdevice.tanh.f32", "timing_source": "cupti",
                     "power_of_two_width": True},
-    # Hygon DCU. `tanh_contract` is None because gfx938 declares no tanh instruction
-    # contract: on ROCm Triton's `libdevice` resolves to ocml, and reusing the CUDA
-    # spelling would claim NVIDIA libdevice numerics for a different function. A task
-    # that needs tanh is refused here by name rather than lowered against a contract
-    # nobody measured -- see docs/dcu-gfx938-design.md.
+    # Hygon DCU. `tanh_contract` was None while gfx938 declared no tanh contract: on ROCm
+    # Triton's `libdevice` resolves to ocml, and reusing the CUDA spelling would have
+    # claimed NVIDIA libdevice numerics for a different function. The device now declares
+    # its own, `ocml.tanh.f32`, measured on a BW1101 at ~1 ulp of fp32 against torch.tanh
+    # across the saturating tails -- so the family is admitted here under the spelling of
+    # the library that actually answers, not borrowed under another vendor's.
     "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
                    "provenance_token": "BW1101", "route": "triton",
                    "allocation": "local_broker",
-                   "tanh_contract": None, "timing_source": "hip_dispatch",
+                   "tanh_contract": "ocml.tanh.f32", "timing_source": "hip_dispatch",
                    "power_of_two_width": True},
     # Strix Halo, an RDNA3.5 iGPU on ROCm 7.2.1. It reaches its device the way the DCU
     # does -- one visible device on one machine, serialized by the local broker -- and

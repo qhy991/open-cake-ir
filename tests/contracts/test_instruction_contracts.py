@@ -74,13 +74,31 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "apple_gpu_family8": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
+            # gfx938's tanh, admitted after this test was written. The assertion fired on
+            # the addition, which is what it is for: every entry here is a contract whose
+            # meaning lives in `_ELEMENTWISE_INSTRUCTIONS` instead, and adding one without
+            # looking is the thing being prevented.
+            "gfx938": ["ocml.tanh.f32"],
             "sm_100a": ["libdevice.tanh.f32", "ptx.fma.rn.f32",
                         "triton.atomic_add.i32.relaxed.gpu"],
             "sm_103a": ["libdevice.tanh.f32", "ptx.fma.rn.f32",
                         "triton.atomic_add.i32.relaxed.gpu"],
         })
-        # The two AMDGCN targets admit only contraction contracts, and both are modelled.
-        self.assertNotIn("gfx938", unmodelled)
+        # Each is modelled by whichever table owns its kind: unmodelled by the dtype gate
+        # is not unmodelled. Three tables in three files own three kinds -- contraction,
+        # elementwise, atomic -- and a contract does not say which it is, which is the
+        # structural gap this class exists to keep visible. Checking the union is the most
+        # this can assert without that.
+        from open_cake_ir.compiler.verifier.hardware_conformance import (
+            _ELEMENTWISE_INSTRUCTIONS)
+        from open_cake_ir.compiler.backends.triton import _ATOMIC_RMW_CONTRACT
+        modelled_elsewhere = set(_ELEMENTWISE_INSTRUCTIONS) | {_ATOMIC_RMW_CONTRACT}
+        for target, contracts in unmodelled.items():
+            with self.subTest(target=target):
+                self.assertEqual(
+                    sorted(set(contracts) - modelled_elsewhere), [],
+                    f"{target} admits a contract no table models")
+        # gfx1151 admits contraction contracts only, and both are modelled.
         self.assertNotIn("gfx1151", unmodelled)
 
 

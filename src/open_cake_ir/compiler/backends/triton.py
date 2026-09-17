@@ -140,6 +140,13 @@ SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
 
 _ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 
+# One Triton call, two libraries underneath. `tl.extra.libdevice.tanh` emits
+# __nv_tanhf on an NVIDIA target and __ocml_tanh_f32 on an AMDGCN one, and a contract
+# names the instruction the hardware runs rather than the source line that reached it --
+# so a Target admits the spelling of the library it actually has. The emitter accepts
+# either and writes the same call; which one a Schedule may use is the Target's to say.
+_TRITON_TANH_CONTRACTS = frozenset({"libdevice.tanh.f32", "ocml.tanh.f32"})
+
 _TRITON_MMA_CONTRACTS = frozenset(
     {
         "triton.dot.bf16_fp32",
@@ -1079,7 +1086,7 @@ class _TritonEmitter:
             operation.kind is OperationKind.ELEMENTWISE
             and operation.parameters.op is ElementwiseOp.TANH
             and operation.parameters.instruction is not None
-            and operation.parameters.instruction.contract == "libdevice.tanh.f32"
+            and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
             for operation in self.schedule.operations
         ):
             self.line("from triton.language.extra import libdevice")
@@ -1432,8 +1439,9 @@ class _TritonEmitter:
             instruction = parameters.instruction
             _require(
                 instruction is not None
-                and instruction.contract == "libdevice.tanh.f32",
-                "the Triton tanh body requires the admitted libdevice.tanh.f32 contract",
+                and instruction.contract in _TRITON_TANH_CONTRACTS,
+                "the Triton tanh body requires one of the admitted tanh contracts: "
+                + ", ".join(sorted(_TRITON_TANH_CONTRACTS)),
             )
             expression = f"libdevice.tanh({operands[0]})"
         else:

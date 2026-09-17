@@ -508,9 +508,24 @@ class Gfx938DeclaredContracts(unittest.TestCase):
     def test_gfx938_declares_the_contraction_and_contracts_its_evidence_covers(self) -> None:
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
         self.assertIn("mma", {kind.value for kind in target.operation_kinds})
+        # Each of these has its own citation in the document, and each was measured on a
+        # BW1101 rather than inferred: the two dot contracts elementwise against a torch
+        # oracle at 64x64x64, the tanh across its saturating tails.
         self.assertEqual(
             sorted(target.instruction_contracts),
-            ["triton.dot.fp16_fp32", "triton.dot.fp8e4m3_fp32"])
+            ["ocml.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.fp8e4m3_fp32"])
+
+    def test_gfx938_admits_no_other_vendors_spelling_of_the_same_function(self) -> None:
+        """Triton writes one call; the libraries underneath are different ones.
+
+        `tl.extra.libdevice.tanh` reaches __nv_tanhf on an NVIDIA target and
+        __ocml_tanh_f32 here, so admitting CUDA's spelling would claim NVIDIA libdevice
+        numerics for a function this device answers with a different implementation.
+        """
+        target = Target.load(ROOT / "compiler/targets/gfx938.json")
+        self.assertNotIn("libdevice.tanh.f32", target.instruction_contracts)
+        self.assertNotIn("metal.precise.tanh.f32", target.instruction_contracts)
+        self.assertIn("ocml.tanh.f32", target.instruction_contracts)
 
     def test_the_two_gfx938_contracts_read_the_dtypes_that_were_measured(self) -> None:
         from open_cake_ir.compiler.verifier.hardware_conformance import _CONTRACT_DTYPES
@@ -524,11 +539,19 @@ class Gfx938DeclaredContracts(unittest.TestCase):
                             "triton.dot.fp8e4m3_block_scale_fp32")
 
     def test_a_triton_target_admits_no_contract_its_route_cannot_emit(self) -> None:
-        """Otherwise the Target admits by name what the only backend then refuses."""
-        from open_cake_ir.compiler.backends.triton import _TRITON_MMA_CONTRACTS
+        """Otherwise the Target admits by name what the only backend then refuses.
+
+        "What the route can emit" spans three sets in one module, one per kind of
+        contract, because a contract does not declare its own kind. This compares against
+        the union; it read only the contraction set until gfx938 admitted a tanh, and
+        then failed -- correctly, on a contract the route could in fact emit.
+        """
+        from open_cake_ir.compiler.backends.triton import (
+            _ATOMIC_RMW_CONTRACT, _TRITON_MMA_CONTRACTS, _TRITON_TANH_CONTRACTS)
+        emittable = set(_TRITON_MMA_CONTRACTS) | set(_TRITON_TANH_CONTRACTS) | {
+            _ATOMIC_RMW_CONTRACT}
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
-        self.assertEqual(
-            sorted(set(target.instruction_contracts) - set(_TRITON_MMA_CONTRACTS)), [])
+        self.assertEqual(sorted(set(target.instruction_contracts) - emittable), [])
 
 
 if __name__ == "__main__":

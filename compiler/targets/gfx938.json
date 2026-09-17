@@ -32,6 +32,7 @@
     }
   },
   "instruction_contracts": [
+    "ocml.tanh.f32",
     "triton.dot.fp16_fp32",
     "triton.dot.fp8e4m3_fp32"
   ],
@@ -82,6 +83,11 @@
       "kind": "device_observation",
       "source": "triton 3.6.0 tl.dot against a torch fp32 oracle at the same reduced input precision, on BW1101",
       "locator": "64x64x64: fp16 max_abs_error 1.14441e-05 (relative 3.457e-07), fp8e4m3 max_abs_error 0, 0 of 4096 elements outside tolerance and all finite in both. Compilation alone would not license this declaration -- the wave64 shuffle defect (F-2026-09-16-008) compiled and returned wrong numbers -- so the contraction was run and checked elementwise; observed 2026-09-17 on bw1100"
+    },
+    {
+      "kind": "device_observation",
+      "source": "triton 3.6.0 tl.extra.libdevice.tanh against torch.tanh, on BW1101",
+      "locator": "Triton's libdevice.tanh lowers to __ocml_tanh_f32 on this target -- AMD's own math library, not CUDA's libdevice, which is why the contract is spelled for ocml -- over v_exp_f32_e32. 1024 inputs spanning [-20, 20] plus a normal sample so the saturating tails are covered: max_abs_error 5.96046e-08, max relative error 1.071e-07, all finite. A composed (e^2x-1)/(e^2x+1) control on the same inputs is 2.181e-06 relative, twenty times worse, which is what distinguishes the library call from a fallback that merely compiles; observed 2026-09-17 on bw1100"
     }
   ]
 }

@@ -2067,6 +2067,35 @@
       }
     },
     {
+      "case_id": "gfx938-swiglu-tanh-accepted",
+      "schedule": "corpus/schedules/gfx938-swiglu-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "0ac35a511f42a829d609e0606ff2925c6020b3ee49cdbb0fb45b79e02dc6c798",
+        "lowering_source_sha256": "4775911c6077be3f0ded59e35f90800de46029b1ce63b4ec96ca0b9fac4a2afa"
+      }
+    },
+    {
+      "case_id": "gfx938-swiglu-foreign-tanh-contract",
+      "schedule": "corpus/schedules/gfx938-swiglu-b8-smoke-foreign-tanh-contract.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TARGET_INSTRUCTION_UNSUPPORTED",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ce4d21974a9333906d258a724d141cfa15b171e5995d068751d95d2a3ab2b198",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "gfx1151-rmsnorm-accepted",
       "schedule": "corpus/schedules/gfx1151-rmsnorm-b8-smoke.json",
       "expected": {
