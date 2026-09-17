@@ -245,8 +245,18 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
     return samples, check
 
 
-def _evaluate_paired_tile(authority, result, helper, admission):
-    """Execute both sealed participants in one allocation, in the frozen order."""
+def _evaluate_paired_tile(authority, result, benchmark_for, admission):
+    """Execute both sealed participants in one allocation, in the frozen order.
+
+    `benchmark_for(role, manifest)` returns the assay that times one arm, because which
+    assay that is belongs to the backend and not to this function -- the same move
+    `_evaluate_tile_candidate` already made. It is a factory rather than one instance
+    because an arm's assay may be bound to the kernel it times: CUPTI is not, and returns
+    the same object for both, while the HIP assay names the dispatch it attributes and so
+    is one per role. Handing a single instance to both arms would have attributed the
+    baseline's dispatches to the candidate's kernel name, and the assay would have refused
+    -- correctly, and one layer too late to say why.
+    """
     evaluation = authority.request['evaluation_protocol']
     protocol = paired_protocol(evaluation)
     all_cases = 'validation_case_ids' in evaluation
@@ -309,11 +319,11 @@ def _evaluate_paired_tile(authority, result, helper, admission):
             correctness(role, 'preflight')
             counters['preflight_calls'] += len(cases)
         if passed:
-            strict_cupti = StrictCuptiBenchmark(helper)
+            assays = {role: benchmark_for(role, manifests[role]) for role in protocol.arms}
             for index, order in enumerate(protocol.pair_order):
                 row = {'pair_index': index, 'order': list(order), 'arms': {}}
                 for position, role in enumerate(order):
-                    samples, check = _fresh_tile_cohort(loaded[(role, authority.case_id)], strict_cupti,
+                    samples, check = _fresh_tile_cohort(loaded[(role, authority.case_id)], assays[role],
                         authority.workload, inputs, expected,
                         samples_per_cohort=protocol.samples_per_cohort,
                         route_calls_per_cohort=protocol.route_calls_per_cohort)
@@ -630,6 +640,13 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     result["job_id"] = admission.broker_job_id
     result["mode"] = "local_serialized"
     result["admitted"] = True
+    if authority.baseline is not None and collect_timing:
+        # A Study with a paired policy sends both participants, and the assay is one per
+        # arm because it attributes by kernel name.
+        _evaluate_paired_tile(
+            authority, result,
+            lambda role, manifest: HipDispatchBenchmark(manifest.kernel_name), admission)
+        return
     benchmark = (HipDispatchBenchmark(authority.manifest.kernel_name)
                  if collect_timing else None)
     _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
@@ -673,7 +690,11 @@ def _evaluate_candidate(
     ):
         raise ValueError("profile child CUDA device differs from parent admission")
     if authority.baseline is not None and collect_timing:
-        _evaluate_paired_tile(authority, result, helper, admission)
+        # CUPTI times whatever the callable dispatches and is not bound to a kernel
+        # name, so both arms share one instance.
+        strict_cupti = StrictCuptiBenchmark(helper)
+        _evaluate_paired_tile(authority, result,
+                              lambda role, manifest: strict_cupti, admission)
         return
     if isinstance(authority.manifest, TensorLaunchManifest):
         _evaluate_tile_candidate(
