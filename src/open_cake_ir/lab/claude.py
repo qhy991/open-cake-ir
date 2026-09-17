@@ -604,8 +604,12 @@ def advertised_options(executable: Path) -> frozenset[str]:
     it rather than assumed to match the build this file was written against.
     """
 
-    completed = subprocess.run([str(executable), "--help"], check=False,
-                               capture_output=True, text=True, timeout=120)
+    try:
+        completed = subprocess.run([str(executable), "--help"], check=False,
+                                   capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as error:
+        raise ValueError(
+            f"Claude executable could not be asked for its options: {error}") from error
     if completed.returncode:
         raise ValueError(
             f"Claude executable did not report its options: --help exited "

@@ -407,6 +407,14 @@ def execute_matched_from_config(
     workspace_root.mkdir(mode=0o750, parents=False, exist_ok=False)
     builders = {}
     task_packages = {}
+    _claude_options: list = []
+
+    def claude_cli_options():
+        """Ask this one executable once; every Run in this Campaign uses the same binary."""
+        if not _claude_options:
+            _claude_options.append(advertised_options(executable))
+        return _claude_options[0]
+
     for run_id in lock.run_order:
         workspace = workspace_root / run_id
         workspace.mkdir(mode=0o750)
@@ -418,7 +426,7 @@ def execute_matched_from_config(
             workspace=workspace, removed_environment=tuple(provider_authority["removed_environment"]))
         if harness == "claude-code":
             builders[run_id] = ClaudeInvocationBuilder(
-                **common_provider, cli_options=advertised_options(executable),
+                **common_provider, cli_options=claude_cli_options(),
                 event_contract=provider_authority["event_contract"])
         else:
             builders[run_id] = CodexInvocationBuilder(**common_provider,
