@@ -42,7 +42,14 @@ from __future__ import annotations
 
 from typing import Callable, Sequence
 
-# Larger than this device's 8 MiB L2, in fp32 elements: 256 MiB.
+# The reset buffer, in fp32 elements: 256 MiB. This said "larger than this device's 8 MiB
+# L2" when one device routed through this assay. Two do now -- gfx938 on a BW1101 and
+# gfx1151 on Strix Halo -- and neither Target document states a cache capacity, so no
+# number here can be justified against the device it runs on. What is stated instead is
+# what this size is for and what it is not: it is large enough that no cache either device
+# is known to have can hold it, chosen once and applied to both, and it is not read from
+# the Target. A Target that declares its cache should size this from that declaration; a
+# caller that knows better passes `flush_elements`.
 _FLUSH_ELEMENTS = 64 * 1024 * 1024
 
 
@@ -58,6 +65,7 @@ class HipDispatchBenchmark:
         self._flush_elements = flush_elements
         self._flush = None
         self.resolution_us: float | None = None
+        self.non_target_dispatches: int | None = None
 
     def _reset_buffer(self):
         import torch
@@ -98,12 +106,35 @@ class HipDispatchBenchmark:
                     reset.zero_()
                 function()
             torch.cuda.synchronize()
-        samples = [
-            float(getattr(event, "device_time", 0.0))
-            for event in session.events()
-            if self.kernel_name in getattr(event, "name", "")
-            and getattr(event, "device_time", 0.0)
-        ]
+        device_events = [event for event in session.events()
+                         if getattr(event, "device_time", 0.0)]
+        samples = [float(getattr(event, "device_time", 0.0)) for event in device_events
+                   if self.kernel_name in getattr(event, "name", "")]
+        # Counted, not silently dropped. A dispatch this assay does not name contributes
+        # no sample and so does not move the count check below -- so a candidate that did
+        # part of its work in a second kernel would have that work vanish and read as
+        # faster. This count is what reaches the receipt so a reader can tell that apart
+        # from a clean cohort; it never widens or narrows a measurement.
+        #
+        # The device reset is the assay's own dispatch and is subtracted by construction
+        # rather than by name: `reset.zero_()` is issued inside the profiled region, once
+        # per timed iteration, so the raw difference is exactly `repeat_iters` on the cold
+        # path and a second kernel would hide inside it. Measured on gfx1151: raw 10 of 10
+        # with the reset, 0 without. Matching on the kernel name torch gives that zeroing
+        # (`vectorized_elementwise_kernel<...>`) would be reading how a mnemonic is spelled;
+        # the assay knows how many resets it issued.
+        own_resets = repeat_iters if cold_l2_cache else 0
+        observed = len(device_events) - len(samples) - own_resets
+        if observed < 0:
+            # One device event per reset is a torch property this assay assumes, not one
+            # it can see. If a future runtime spells `zero_()` as a fill the profiler does
+            # not surface, the subtraction goes negative -- refused here rather than
+            # written into a receipt as a negative count nobody can read.
+            raise ValueError(
+                f"the profiler surfaced {len(device_events)} device events for "
+                f"{repeat_iters} timed dispatches and {own_resets} device resets; this "
+                "assay subtracts one event per reset and cannot account for the remainder")
+        self.non_target_dispatches = observed
         if len(samples) != repeat_iters:
             raise ValueError(
                 f"the profiler attributed {len(samples)} dispatches of "

@@ -95,12 +95,10 @@ BACKENDS = {
     # takes one. Its misattribution guard was checked too: a cohort it cannot attribute to
     # the named kernel is refused, not averaged.
     #
-    # Two device-side sources disagree on this kernel and the difference is recorded rather
-    # than reconciled here: `rocprofv3 --kernel-trace` read 24.224us median for the same
-    # kernel and shape, against this assay's 31.858us. Both reset the device and both
-    # report a device span; the gap is roughly the per-dispatch instrumentation each tool
-    # adds. A ranking taken under one of them is not comparable with a latency taken under
-    # the other, which is what naming the source in the Study is for.
+    # Two device-side sources disagree on this kernel by 31% -- `rocprofv3 --kernel-trace`
+    # read 24.224us against this assay's 31.858us, both with the device reset. Retained,
+    # with what it does and does not bound, in F-2026-09-17-002; a ranking under one source
+    # is unaffected, an absolute latency is not supported, and the two are not comparable.
     "triton-gfx1151": {"target": "gfx1151", "device_name": "AMD Radeon Graphics",
                        "provenance_token": "gfx1151", "route": "triton",
                        "allocation": "local_broker",

@@ -39,7 +39,7 @@ from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
 from open_cake_ir.evaluation.paired import (
-    PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
+    ROUTE_CALLS_PER_COHORT, PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
     candidate_from_identity, validate_pair_candidates,
 )
 
@@ -334,6 +334,12 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
                         'candidate_record_sha256': candidates[role].canonical_sha256,
                         'samples_ms': samples, 'summary': summarize_cohort(samples),
                         'route_calls': check['checked_launches'], 'output_check': check}
+                    # This path produces every paired comparison's evidence, and it was
+                    # dropping what the assay saw beside each arm's samples. An arm that
+                    # timed part of its candidate is only visible here.
+                    seen = getattr(assays[role], 'non_target_dispatches', None)
+                    if seen is not None:
+                        row['arms'][role]['non_target_dispatches'] = seen
                 measurements.append(row)
             for role in protocol.arms:
                 correctness(role, 'postflight')
@@ -381,7 +387,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
 
 
 def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
-                             *, route_calls_per_cohort=42):
+                             *, route_calls_per_cohort):
     """Use the common oracle and one loaded module across correctness and timing.
 
     `benchmark` is the timing source itself, not the host it came from: a callable taking
@@ -407,6 +413,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     protocol = EvaluationProtocol('workload-tensor-worker-correctness', purpose,
         authority.workload.canonical_sha256, authority.case_id, 'none')
     cohorts = []
+    non_target = []
     timed_checks = []
     try:
         preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded)
@@ -422,6 +429,13 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                     inputs, expected, samples_per_cohort=25,
                     route_calls_per_cohort=route_calls_per_cohort)
                 cohorts.append(samples)
+                # Per cohort, because the assay overwrites this on every call. Reading it
+                # once after the loop reported the fifth cohort and dropped four, beside a
+                # `cohort_count: 5` in the same record -- a number that reads as "this run
+                # saw none" when four fifths of the run was not looked at.
+                seen = getattr(benchmark, 'non_target_dispatches', None)
+                if seen is not None:
+                    non_target.append(seen)
                 timed_checks.append(check)
                 passed = passed and check['passed']
                 metrics['output_mismatches'] += check['output_mismatches']
@@ -448,6 +462,13 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                 'pooled_median_ms': statistics.median(v for s in cohorts for v in s),
                 'cohort_count': 5, 'samples_per_cohort': 25,
             }
+            # An assay that can tell a dispatch it did not name from one it did says so
+            # here. A count it keeps to itself is not a report: this is the field a reader
+            # checks to know a cohort timed one kernel and not part of one. CUPTI's assay
+            # does not distinguish them and declares nothing.
+            if non_target:
+                timing['non_target_dispatches_per_cohort'] = list(non_target)
+                timing['non_target_dispatches'] = sum(non_target)
         correctness_path = authority.request_root / 'correctness-output.json'
         launch_path = authority.request_root / 'launch-receipt.json'
         _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
@@ -656,7 +677,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     benchmark = (HipDispatchBenchmark(authority.manifest.kernel_name)
                  if collect_timing else None)
     _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
-                             route_calls_per_cohort=11 + 25)
+                             route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['hip_dispatch'])
 
 
 def _evaluate_candidate(
@@ -706,7 +727,8 @@ def _evaluate_candidate(
         _evaluate_tile_candidate(
             authority, result,
             StrictCuptiBenchmark(helper) if collect_timing else None,
-            admission, collect_timing, route_calls_per_cohort=6 + 11 + 25)
+            admission, collect_timing,
+            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['cupti'])
         return
     case = authority.workload.case(authority.case_id)
     shape = _object(case["shape"], "workload.case.shape")

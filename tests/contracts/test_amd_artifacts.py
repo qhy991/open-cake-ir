@@ -586,6 +586,35 @@ class Rocprofv3TimedAssayTests(unittest.TestCase):
             project_iteration_durations(kernel, foreign, _expectation(),
                                         cohort="search", iterations=1)
 
+    def test_overlapping_iteration_ranges_are_refused_rather_than_double_counted(self):
+        """A dispatch inside two ranges would be charged to both, making each look slower
+        while the pair looks consistent. The refusal was added without a test."""
+
+        kernel = _csv_bytes(HEADER, [_trace_row(dispatch=1, start=1010, end=1_001_010)])
+        overlapping = _marker_rows([
+            (iteration_label("search", 0), 1000, 3_000_000),
+            (iteration_label("search", 1), 2_000_000, 4_000_000),
+        ])
+        with self.assertRaisesRegex(ValueError, "overlap"):
+            project_iteration_durations(kernel, overlapping, _expectation(),
+                                        cohort="search", iterations=2)
+
+    def test_ranges_that_merely_touch_are_not_overlapping(self):
+        """The boundary case the refusal must not swallow: one range ends where the next
+        begins, which is what a back-to-back cohort actually produces."""
+
+        kernel = _csv_bytes(HEADER, [
+            _trace_row(dispatch=1, start=1010, end=1_001_010),
+            _trace_row(dispatch=2, start=2_000_010, end=2_002_010),
+        ])
+        touching = _marker_rows([
+            (iteration_label("search", 0), 1000, 2_000_000),
+            (iteration_label("search", 1), 2_000_000, 3_000_000),
+        ])
+        projection = project_iteration_durations(kernel, touching, _expectation(),
+                                                 cohort="search", iterations=2)
+        self.assertEqual(projection["dispatches_per_iteration"], [1, 1])
+
     def test_the_label_is_closed_over_its_own_separator(self):
         self.assertEqual(iteration_label("search", 2), "OPENCAKE|search|2")
         for cohort, index in (("a|b", 0), ("", 0), ("search", -1)):

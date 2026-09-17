@@ -46,6 +46,20 @@ _PAIRED_BACKENDS = {
     PAIRED_METAL_BATCHED_KIND: 'metal',
     PAIRED_HIP_KIND: 'hip_dispatch',
 }
+# How many times a cohort calls the route, per measurement source. CUPTI's six extra calls
+# are its calibration callbacks; the HIP assay has none. Declared here beside the kinds
+# because it is a property of the assay, and because `tasks.evaluate` kept three separate
+# copies of these sums -- one of them a CUDA default in a shared signature, in a function
+# whose own docstring says the count comes from the caller that knows which source is
+# running. A duplicate is a defect while it still agrees.
+# Metal's is not here: its cohort is the native observer's snapshot, sized against that
+# observer's payload bound, and it lives with the launcher check it must not drift from
+# (`tasks/normalization/study._ROUTE_CALLS_PER_COHORT`, F-2026-09-10-002). Named so a
+# reader of this table does not conclude Metal has no count.
+ROUTE_CALLS_PER_COHORT = {
+    'cupti': 6 + 11 + 25,
+    'hip_dispatch': 11 + 25,
+}
 _BASE_FIELDS = {
     'kind', 'arms', 'pair_order', 'samples_per_cohort', 'route_calls_per_cohort',
     'maximum_cv', 'materiality_ratio', 'required_pair_wins',
@@ -195,6 +209,52 @@ def paired_summary(raw):
         'speedup': observation.speedup, 'classification': observation.classification}
 
 
+def admit_device_identity(raw, launch, participants) -> None:
+    """Check the device and allocation identity the declared assay implies.
+
+    One branch per declared kind, and a kind with no branch refused by name. This was
+    `if Metal ... elif <everything else>`, so an AMDGCN pair went down CUDA's branch and
+    was refused for not being a cubin -- true, and not the point. It is a function so it
+    can be exercised directly: reaching it through `validate_paired_receipt` means
+    constructing every earlier check's state, which is why no test had reached it.
+    """
+
+    if raw['kind'] in METAL_KINDS:
+        from .metal_observations import validate_host
+        host = validate_host(raw.get('host'))
+        if (re.fullmatch(r'metal-[0-9a-f]{12}', raw['job_id']) is None or raw['job_id'] == 'metal-000000000000'
+                or raw.get('allocation_mode') != 'local_serialized' or launch.get('allocation_mode') != 'local_serialized'
+                or raw.get('external_gpu_activity') != 'not_excluded' or launch.get('external_gpu_activity') != 'not_excluded'
+                or launch.get('host') != host or raw.get('device_registry_id') != host['device_registry_id']
+                or host['target'] != participants['candidate']['target']):
+            raise ValueError('paired Metal device/host identity differs')
+    elif raw['kind'] == PAIRED_KIND:
+        if (executable_role(participants['candidate']['target']) != 'cubin'
+                or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
+                or re.fullmatch(r'gpuq-[0-9a-f]{12}', raw['job_id']) is None
+                or raw['job_id'] == 'gpuq-000000000000'
+                or launch.get('gpu_uuid') != raw['gpu_uuid']):
+            raise ValueError('paired CUDA device/host identity differs')
+    elif raw['kind'] == PAIRED_HIP_KIND:
+        # An AMDGCN pair: the hsaco role, a local-broker job, and whatever the runtime
+        # says about a device id. A DTK device reports no UUID and `observe_local_hip`
+        # records that in words rather than inventing one, so the check is that both
+        # records agree on what was said -- not that something UUID-shaped was said.
+        if (executable_role(participants['candidate']['target']) != 'hsaco'
+                or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
+                or re.fullmatch(r'hip-[0-9a-f]{12}', raw['job_id']) is None
+                or raw['job_id'] == 'hip-000000000000'
+                or launch.get('gpu_uuid') != raw['gpu_uuid']):
+            raise ValueError('paired AMDGCN device/host identity differs')
+    else:
+        # Every declared kind is checked by name above. Reaching here means a policy kind
+        # was admitted upstream that nothing here knows how to check, which is not the
+        # same as the evidence being wrong -- and was previously CUDA's branch, so a third
+        # vendor's pair was refused for not being a cubin.
+        raise ValueError(
+            f"paired assay {raw['kind']!r} has no declared device/host identity check")
+
+
 def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=None, baseline=None, candidate=None):
     """Bind both identities, actual order, every oracle check and one job to the lock."""
     if not isinstance(raw, Mapping) or raw.get('kind') not in PAIRED_KINDS:
@@ -238,40 +298,7 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
             f"record's job {raw['job_id']!r}")
     if raw['kind'] != raw['evaluation_protocol']['paired_timing']['kind']:
         raise ValueError('paired raw kind differs from the declared assay')
-    if raw['kind'] in METAL_KINDS:
-        from .metal_observations import validate_host
-        host = validate_host(raw.get('host'))
-        if (re.fullmatch(r'metal-[0-9a-f]{12}', raw['job_id']) is None or raw['job_id'] == 'metal-000000000000'
-                or raw.get('allocation_mode') != 'local_serialized' or launch.get('allocation_mode') != 'local_serialized'
-                or raw.get('external_gpu_activity') != 'not_excluded' or launch.get('external_gpu_activity') != 'not_excluded'
-                or launch.get('host') != host or raw.get('device_registry_id') != host['device_registry_id']
-                or host['target'] != participants['candidate']['target']):
-            raise ValueError('paired Metal device/host identity differs')
-    elif raw['kind'] == PAIRED_KIND:
-        if (executable_role(participants['candidate']['target']) != 'cubin'
-                or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
-                or re.fullmatch(r'gpuq-[0-9a-f]{12}', raw['job_id']) is None
-                or raw['job_id'] == 'gpuq-000000000000'
-                or launch.get('gpu_uuid') != raw['gpu_uuid']):
-            raise ValueError('paired CUDA device/host identity differs')
-    elif raw['kind'] == PAIRED_HIP_KIND:
-        # An AMDGCN pair: the hsaco role, a local-broker job, and whatever the runtime
-        # says about a device id. A DTK device reports no UUID and `observe_local_hip`
-        # records that in words rather than inventing one, so the check is that both
-        # records agree on what was said -- not that something UUID-shaped was said.
-        if (executable_role(participants['candidate']['target']) != 'hsaco'
-                or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
-                or re.fullmatch(r'hip-[0-9a-f]{12}', raw['job_id']) is None
-                or raw['job_id'] == 'hip-000000000000'
-                or launch.get('gpu_uuid') != raw['gpu_uuid']):
-            raise ValueError('paired AMDGCN device/host identity differs')
-    else:
-        # Every declared kind is checked by name above. Reaching here means a policy kind
-        # was admitted upstream that nothing here knows how to check, which is not the
-        # same as the evidence being wrong -- and was previously CUDA's branch, so a third
-        # vendor's pair was refused for not being a cubin.
-        raise ValueError(
-            f"paired assay {raw['kind']!r} has no declared device/host identity check")
+    admit_device_identity(raw, launch, participants)
     if baseline is not None and participants['baseline'] != baseline:
         raise ValueError('paired receipt fixed baseline differs from Campaign Lock')
     if candidate is not None and participants['candidate'] != candidate_identity(candidate):

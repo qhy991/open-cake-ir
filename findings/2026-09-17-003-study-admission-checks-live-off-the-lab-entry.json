@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-003",
+  "kind": "protocol",
+  "date": "2026-09-17",
+  "title": "Two Study admission checks live only on the TaskLab matched path; the exported Lab entry and the portfolio branch reach preflight without them",
+  "backend": "all backends",
+  "target": "all declared targets",
+  "compiler_revision_id": "open-cake-ir@1853e637",
+  "executor_revision": "none: this record is read from source and no device was used",
+  "evidence": {
+    "retained": "source, at the commit named above; no campaign is involved",
+    "sites": [
+      "src/open_cake_ir/lab/preflight.py:342 -- admits the GPU mode vocabulary only",
+      "src/open_cake_ir/tasks/runtime.py:93-102 -- both checks, and the portfolio branch that returns before them",
+      "src/open_cake_ir/lab/__init__.py -- Lab is exported",
+      "src/open_cake_ir/cli.py:177 and tools/launch_task.py:639 -- production callers of TaskLab.preflight, which reaches the portfolio branch for a portfolio Study",
+      "tests/contracts/test_paired_execution.py, tests/contracts/test_b300.py:64 -- in-tree callers of the exported Lab.preflight",
+      "src/open_cake_ir/tasks/flash_kmeans/study.py -- pins target, gpu mode and the whole evaluation protocol to literals"
+    ]
+  },
+  "observation": "The exact GPU-mode check moved out of lab/preflight.py because `lab` may not import the task layer, and the measurement-coverage check was added on the same path. Both run in TaskLab.preflight's matched branch only. Two consequences, and an earlier version of this record got both of them wrong.\n\nThe portfolio branch returns at runtime.py:99 before either check, and it is production -- `cli.py:177` and `tools/launch_task.py:639` reach it for a portfolio Study. But nothing is admitted more loosely there: `tasks/flash_kmeans/study.py` pins `execution.target` to sm_100a, `gpu.mode` to exclusive and the evaluation protocol to exact literals, so the mode gate would compute exclusive and agree, and the coverage gate would return early on a protocol that declares no limitation. Both checks are vacuous on that branch today. What is wrong there is a different rule: those literals are a second owner of a fact `tasks.devices` already declares -- that sm_100a is reached by the cluster allocator -- and a duplicate is a defect while it still agrees.\n\nThe exported `Lab.preflight` is the half that is genuinely more permissive than the same entry was before the checks moved. No production call site constructs `Lab` directly; two test modules do.",
+  "proposed_change": "Decide where a Study-versus-registry check belongs when `lab` cannot read the registry. Two shapes work: `Lab.preflight` takes the checks as an injected policy the task layer supplies, so the seam cannot be reached without them; or the registry fact a Study must agree with is carried into a layer `lab` may read and the check returns to preflight. Separately, and not the same fix: the portfolio Study's pinned target and gpu mode should quote `tasks.devices` rather than restate it, which is what would make running the gates there meaningful rather than vacuous.",
+  "decision": "deferred",
+  "implemented_in": null,
+  "verified_by": null
+}

@@ -270,7 +270,8 @@ class WorkerDispatchTest(unittest.TestCase):
         from open_cake_ir.tasks import evaluate
         with self.assertRaisesRegex(ValueError, "requires its timing source"):
             evaluate._evaluate_tile_candidate(
-                SimpleNamespace(), {}, None, SimpleNamespace(), True)
+                SimpleNamespace(), {}, None, SimpleNamespace(), True,
+                route_calls_per_cohort=evaluate.ROUTE_CALLS_PER_COHORT["hip_dispatch"])
 
 
 class CloseContractTest(unittest.TestCase):
