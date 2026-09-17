@@ -34,6 +34,8 @@
   "instruction_contracts": [
     "ocml.tanh.f32",
     "triton.dot.fp16_fp32",
+    "triton.dot.fp32_ieee",
+    "triton.dot.fp32_tf32",
     "triton.dot.fp8e4m3_fp32"
   ],
   "synchronization_contracts": [],
@@ -88,6 +90,11 @@
       "kind": "device_observation",
       "source": "triton 3.6.0 tl.extra.libdevice.tanh against torch.tanh, on BW1101",
       "locator": "Triton's libdevice.tanh lowers to __ocml_tanh_f32 on this target -- AMD's own math library, not CUDA's libdevice, which is why the contract is spelled for ocml -- over v_exp_f32_e32. 1024 inputs spanning [-20, 20] plus a normal sample so the saturating tails are covered: max_abs_error 5.96046e-08, max relative error 1.071e-07, all finite. A composed (e^2x-1)/(e^2x+1) control on the same inputs is 2.181e-06 relative, twenty times worse, which is what distinguishes the library call from a fallback that merely compiles; observed 2026-09-17 on bw1100"
+    },
+    {
+      "kind": "device_observation",
+      "source": "triton 3.6.0 tl.dot with fp32 operands against torch matmul, on BW1101",
+      "locator": "fp32 operands reach this ISA's matrix unit rather than falling back to v_fma: input_precision=ieee emits v_mmac_16x16x8_f32 and input_precision=tf32 emits v_mmac_f32_16x16x8_tf32, with zero v_fma or v_pk_fma_f32 in either. 64x64x64 against a torch fp32 matmul: ieee max_abs_error 0 exactly, tf32 relative error 7.177e-04, which is the reduced mantissa and is why the two are separate contracts rather than one. Checked because a contract naming a matrix instruction the hardware does not run for this dtype would be worse than none (F-2026-09-17-011); observed 2026-09-18 on bw1100"
     }
   ]
 }

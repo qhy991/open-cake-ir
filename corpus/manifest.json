@@ -2096,6 +2096,20 @@
       }
     },
     {
+      "case_id": "gfx938-gemm-bias-mma-fp32-accepted",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke-fp32.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "5da756c65b9201cf30c71b971e7bdeb1a83066c07904281bf8be46dd0079a579",
+        "lowering_source_sha256": "55e563b78153c1d6a6a2971e1d7e9173dfbb184c89a93451792a1f498ff12647"
+      }
+    },
+    {
       "case_id": "gfx1151-rmsnorm-accepted",
       "schedule": "corpus/schedules/gfx1151-rmsnorm-b8-smoke.json",
       "expected": {

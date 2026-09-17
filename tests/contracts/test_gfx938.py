@@ -513,7 +513,8 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         # oracle at 64x64x64, the tanh across its saturating tails.
         self.assertEqual(
             sorted(target.instruction_contracts),
-            ["ocml.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.fp8e4m3_fp32"])
+            ["ocml.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
+             "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"])
 
     def test_gfx938_admits_no_other_vendors_spelling_of_the_same_function(self) -> None:
         """Triton writes one call; the libraries underneath are different ones.
