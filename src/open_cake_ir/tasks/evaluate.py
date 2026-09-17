@@ -696,6 +696,17 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     result["job_id"] = admission.broker_job_id
     result["mode"] = "local_serialized"
     result["admitted"] = True
+    if authority.request["purpose"] == "attribution":
+        # Attribution is correctness plus one instrumented dispatch. It is neither timed
+        # nor paired: a cohort here would be a second latency taken under different device
+        # state than the assay's, reported beside it and comparable to nothing. Reaching
+        # the paired branch instead refuses inside the tile evaluation, because an
+        # attribution purpose is not a correctness protocol.
+        _evaluate_tile_candidate(
+            authority, result, None, admission, False,
+            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT["hip_dispatch"],
+            profile_source=collect_hip_dispatch_activity)
+        return
     if authority.baseline is not None and collect_timing:
         # A Study with a paired policy sends both participants, and the assay is one per
         # arm because it attributes by kernel name.
