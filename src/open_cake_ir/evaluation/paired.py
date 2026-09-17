@@ -23,16 +23,28 @@ PAIRED_METAL_KIND = 'fixed_baseline_paired_metal_v1'
 # its exact single-dispatch meaning; frozen Studies replay unchanged.
 PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
 METAL_KINDS = {PAIRED_METAL_KIND, PAIRED_METAL_BATCHED_KIND}
-PAIRED_KINDS = {PAIRED_KIND, *METAL_KINDS}
+# One dispatch of one AMDGCN kernel, timed by roctracer through the profiler the admitted
+# torch carries. Named `v1` for the same reason the others are: what the interval includes
+# and what resets the device are part of the policy, and a successor states its own.
+PAIRED_HIP_KIND = 'fixed_baseline_paired_hip_dispatch_v1'
+PAIRED_KINDS = {PAIRED_KIND, PAIRED_HIP_KIND, *METAL_KINDS}
 # Which measurement source each declared policy names, stated rather than reached by an
 # `else`. CUPTI used to be whatever was not Metal, so a third source would have been
-# measured as CUDA under a name nobody chose. There is deliberately no AMD entry: adding
-# a rocprofv3 policy kind before anything produces one would be a measurement name with
-# no measurement behind it.
+# measured as CUDA under a name nobody chose.
+#
+# The AMDGCN entry was withheld until something produced a measurement, which is the rule
+# this table exists to keep: a policy kind here is a name for a measurement, and minting
+# one first would have labelled evidence with a profiler that never produced it. It has
+# one now. `hip_dispatch` is roctracer's per-dispatch device time, read through the
+# profiler the admitted torch already carries, measured on a BW1101 against rocprofv2's
+# own reading of the same kernel and shape (3.071 us against 3.36 us) and shown to
+# attribute the harness's own `hipModuleLaunchKernel` dispatches. See
+# `evaluation/hip_benchmark.py` for what the interval includes and what resets the device.
 _PAIRED_BACKENDS = {
     PAIRED_KIND: 'cupti',
     PAIRED_METAL_KIND: 'metal',
     PAIRED_METAL_BATCHED_KIND: 'metal',
+    PAIRED_HIP_KIND: 'hip_dispatch',
 }
 _BASE_FIELDS = {
     'kind', 'arms', 'pair_order', 'samples_per_cohort', 'route_calls_per_cohort',
@@ -84,6 +96,10 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     # This is the retained helper's existing invocation contract, not another engine.
     if value['kind'] == PAIRED_KIND and protocol.route_calls_per_cohort != 6 + 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from retained CUPTI callback contract')
+    # The HIP benchmark calls the route exactly once per warmup and once per sample; it
+    # has no calibration callbacks of its own, which is where CUPTI's extra six go.
+    if value['kind'] == PAIRED_HIP_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
+        raise ValueError('paired policy differs from the HIP dispatch invocation contract')
     if kind in METAL_KINDS:
         if protocol.route_calls_per_cohort <= protocol.samples_per_cohort:
             raise ValueError('Metal assay requires declared warmup calls before timestamp samples')

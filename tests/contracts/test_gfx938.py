@@ -397,13 +397,37 @@ class MeasurementCoverageTest(unittest.TestCase):
                               harness="claude-code", model="m", effort="high", turns=2,
                               token_budget=12000)
 
-    def test_the_dcu_study_names_no_timer_and_says_so(self) -> None:
+    def test_the_dcu_study_names_its_own_timer_and_its_own_call_count(self) -> None:
+        """Not CUPTI's, which is what falling through produced on a machine without it.
+
+        The source was withheld until something measured the device: roctracer's
+        per-dispatch device time, read against rocprofv2's own reading of the same kernel
+        and shape. The call count travels with it -- CUPTI spends six calls on its
+        calibration callbacks and this source spends none.
+        """
+        from open_cake_ir.evaluation.paired import PAIRED_HIP_KIND, paired_protocol
         policy = self.study("triton-dcu")["evaluation_protocol"]
+        self.assertEqual(policy["paired_timing"]["kind"], PAIRED_HIP_KIND)
+        self.assertEqual(policy["search_evaluation"], "correctness_then_paired_hip_dispatch")
+        self.assertNotIn("cupti", policy["search_evaluation"])
+        self.assertNotIn("measurement_coverage", policy)
+        self.assertEqual(paired_protocol(policy).route_calls_per_cohort, 11 + 25)
+
+    def test_a_backend_with_no_named_timer_still_states_the_limitation(self) -> None:
+        """The behaviour that carried the DCU before it had a source, kept for the next one.
+
+        A timing source is minted by measuring, so a backend arrives without one. What it
+        must not do is inherit another target's timer: it says so, and its Study carries a
+        coverage limitation instead of a paired assay.
+        """
+        from unittest.mock import patch
+        from open_cake_ir.tasks import devices
+        untimed = {**devices.BACKENDS["triton-dcu"], "timing_source": None}
+        with patch.dict(devices.BACKENDS, {"triton-dcu": untimed}):
+            policy = self.study("triton-dcu")["evaluation_protocol"]
         self.assertNotIn("paired_timing", policy)
         self.assertEqual(policy["measurement_coverage"]["timed_assay"], "unavailable")
         self.assertIn("gfx938", policy["measurement_coverage"]["reason"])
-        # Not "correctness_then_paired_cupti", which is what falling through produced on a
-        # machine where CUPTI is not installed.
         for stage in ("search_evaluation", "confirmatory_evaluation"):
             self.assertNotIn("cupti", policy[stage])
             self.assertNotIn("metal", policy[stage])

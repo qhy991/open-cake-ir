@@ -647,16 +647,14 @@ class ClaudeInvocationBuilder:
             raise ValueError(
                 "this Claude build does not accept " + ", ".join(missing)
                 + "; the invocation this Lab builds is not expressible on it")
-        # F-2026-09-10-008 pinned the context window because auto-compaction silently
-        # drops author context mid-turn, "which changes what the author saw and breaks
-        # comparability between arms". A build that does not offer the control cannot be
-        # pinned. That is reported here rather than silently dropped -- but it is not a
-        # refusal, and the reason is structural: `provider_policy.provider_configuration`
-        # admits this harness only under `artifact_optimization_only` with the single
-        # `open_cake` arm, so a Claude run in this repository has no second arm for an
-        # unpinned window to be incomparable with. What it does lose is the guarantee that
-        # one run's author saw an uncompacted context, so `context_window` says which of
-        # the two held, and `launch_task` retains it beside the Campaign it launched.
+        # F-2026-09-10-008 has two halves and only one of them is this flag. The window
+        # was pinned so compaction is reached later; the event contract also refuses
+        # `compact_boundary` and `compacting` by name (`_CONTEXT_MUTATIONS` above), which
+        # is why the finding's own title calls compaction "campaign-fatal at turn 4 on
+        # long-context tasks". A build without the control does not merely leave the
+        # window unpinned: it reaches that refusal sooner, and the run ends there. That is
+        # the consequence `cli_limitations` states, and `tools/qualify_codex_provider.py`
+        # writes beside the receipt it just issued.
         self._autocompact = (CLAUDE_AUTOCOMPACT_WINDOW
                              if CLAUDE_AUTOCOMPACT_OPTION in options
                              else CLAUDE_AUTOCOMPACT_UNSUPPORTED)
@@ -676,21 +674,34 @@ class ClaudeInvocationBuilder:
         Kept out of `configuration`: that map is the declared treatment the Study fixes
         and the qualification receipt pins by digest, and every frozen Study's provider
         block is a closed field set. A property of the installed binary is not a term of
-        the Study, so it is reported separately and retained beside the Campaign.
+        the Study, so it is reported separately, beside the receipt.
         """
 
         unpinned = self._autocompact == CLAUDE_AUTOCOMPACT_UNSUPPORTED
+        if not unpinned:
+            return {
+                "context_window": CLAUDE_AUTOCOMPACT_WINDOW,
+                "finding": "F-2026-09-10-008",
+                "severity": "none",
+                "consequence": "the context window is pinned at the maximum this build accepts",
+            }
         return {
-            "context_window": (CLAUDE_AUTOCOMPACT_UNSUPPORTED if unpinned
-                               else CLAUDE_AUTOCOMPACT_WINDOW),
+            "context_window": CLAUDE_AUTOCOMPACT_UNSUPPORTED,
             "finding": "F-2026-09-10-008",
+            "severity": "campaign_fatal_on_long_context_turns",
             "consequence": (
-                "this build offers no --autocompact, so auto-compaction may drop author "
-                "context mid-turn and no run here can claim an uncompacted author "
-                "context; the finding's arm-comparability harm does not arise, because "
-                "this harness is admitted only for the single-arm "
-                "artifact_optimization_only scope" if unpinned else
-                "the context window is pinned at the maximum this build accepts"),
+                "this build offers no --autocompact, so the compaction boundary sits "
+                "wherever the build puts it. When compaction happens the CLI emits "
+                f"{' or '.join(_CONTEXT_MUTATIONS)}, which this event contract refuses by "
+                "name, and the Run ends there -- the finding this cites calls that "
+                "campaign-fatal at turn 4 on long-context tasks, and nothing here makes "
+                "it less so. A short-turn Campaign may never reach it; a long-context one "
+                "should expect to. Separately, no run on this build can claim its author "
+                "saw an uncompacted context."),
+            "arm_comparability": (
+                "not at stake here: provider_policy admits this harness only under "
+                "artifact_optimization_only with the single open_cake arm, so there is no "
+                "second arm for an unpinned window to be incomparable with"),
         }
 
     def build(self, prompt: str, *, thread_id: str | None) -> ProviderInvocation:

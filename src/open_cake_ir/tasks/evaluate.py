@@ -364,17 +364,24 @@ def _evaluate_paired_tile(authority, result, helper, admission):
             raise cleanup_error
 
 
-def _evaluate_tile_candidate(authority, result, helper, admission, collect_timing):
+def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
+                             *, route_calls_per_cohort=42):
     """Use the common oracle and one loaded module across correctness and timing.
 
-    `helper` is the timing host, required when timing is collected and unused otherwise.
-    It was always supplied, because only the CUDA path reached here, so a correctness-only
-    caller passing None depended on the argument never being touched -- an agreement two
-    functions were keeping without stating it. The CUDA caller still passes its helper on
-    both paths; what is stated here is that a timed run cannot proceed without one.
+    `benchmark` is the timing source itself, not the host it came from: a callable taking
+    the function to run, the untimed and timed counts, and whether the device is reset,
+    and returning one millisecond value per timed call. Each platform builds its own --
+    `StrictCuptiBenchmark` over the Executor's CUPTI helper, `HipDispatchBenchmark` over
+    roctracer -- because the cohort shape is shared and the source is not. Wrapping the
+    argument in CUPTI's strict adapter here made that the only source this path could use.
+
+    `route_calls_per_cohort` belongs to the source for the same reason: CUPTI spends six
+    calls on its own calibration callbacks and the HIP benchmark spends none, so the
+    Study's count and this one have to be the same number, and it comes from the caller
+    that knows which source is running.
     """
-    if collect_timing and helper is None:
-        raise ValueError("timed tile evaluation requires its Executor timing host")
+    if collect_timing and benchmark is None:
+        raise ValueError("a timed tile evaluation requires its timing source")
     inputs = materialize_case(authority.workload, authority.case_id)
     loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
     counters = result['counters']
@@ -393,11 +400,11 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
         timing = None
         correctness_calls = 1
         if collect_timing and passed:
-            strict_cupti = StrictCuptiBenchmark(helper)
             expected = reference_outputs(authority.workload, authority.case_id, inputs)
             for _ in range(5):
-                samples, check = _fresh_tile_cohort(loaded, strict_cupti, authority.workload,
-                    inputs, expected, samples_per_cohort=25, route_calls_per_cohort=42)
+                samples, check = _fresh_tile_cohort(loaded, benchmark, authority.workload,
+                    inputs, expected, samples_per_cohort=25,
+                    route_calls_per_cohort=route_calls_per_cohort)
                 cohorts.append(samples)
                 timed_checks.append(check)
                 passed = passed and check['passed']
@@ -589,22 +596,21 @@ def _evaluate_metal_candidate(authority, result):
 
 
 def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None):
-    """Evaluate one sealed AMDGCN candidate for correctness on its admitted DCU.
+    """Evaluate one sealed AMDGCN candidate on its admitted DCU.
 
-    Timing is deliberately absent, and refused rather than skipped quietly: `triton-dcu`
-    declares no timing source, so its Study carries a `measurement_coverage` limitation
-    instead of a paired assay, and a caller that asks for timing here is asking for a
-    latency under a timer nobody has named. Correctness, the oracle, the cohort shape and
-    the receipts are the same ones every tensor-tile evaluation uses.
+    Correctness, the oracle, the cohort shape and the receipts are the same ones every
+    tensor-tile evaluation uses. Timing is this target's own: `HipDispatchBenchmark` reads
+    roctracer's per-dispatch device time through the profiler the admitted torch carries,
+    which is what made this a named source rather than a coverage limitation.
+
+    Whether timing runs at all is still the Study's statement, not this function's. A
+    target whose Study carries a `measurement_coverage` limitation arrives here with
+    `collect_timing` false and gets correctness alone, and the receipt says `timing` is
+    absent rather than implying none was possible.
     """
+    from open_cake_ir.evaluation.hip_benchmark import HipDispatchBenchmark
     from open_cake_ir.evaluation.triton_hip import observe_local_hip
 
-    if collect_timing:
-        raise ValueError(
-            f"{authority.candidate.target!r} declares no timing source, so this "
-            "evaluation reports correctness only; a timed assay for it is a separate, "
-            "evidence-gated act"
-        )
     if admission is None:
         try:
             admission = observe_local_hip(authority.candidate.target)
@@ -614,7 +620,10 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     result["job_id"] = admission.broker_job_id
     result["mode"] = "local_serialized"
     result["admitted"] = True
-    _evaluate_tile_candidate(authority, result, None, admission, False)
+    benchmark = (HipDispatchBenchmark(authority.manifest.kernel_name)
+                 if collect_timing else None)
+    _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
+                             route_calls_per_cohort=11 + 25)
 
 
 def _evaluate_candidate(
@@ -657,7 +666,10 @@ def _evaluate_candidate(
         _evaluate_paired_tile(authority, result, helper, admission)
         return
     if isinstance(authority.manifest, TensorLaunchManifest):
-        _evaluate_tile_candidate(authority, result, helper, admission, collect_timing)
+        _evaluate_tile_candidate(
+            authority, result,
+            StrictCuptiBenchmark(helper) if collect_timing else None,
+            admission, collect_timing, route_calls_per_cohort=6 + 11 + 25)
         return
     case = authority.workload.case(authority.case_id)
     shape = _object(case["shape"], "workload.case.shape")

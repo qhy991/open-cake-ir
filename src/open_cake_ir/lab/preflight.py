@@ -246,6 +246,26 @@ def preflight(
     # not in the set below, and its arms can be given neither a qualified latency nor a
     # profile. Both halves are admitted here, from the one predicate the policy uses.
     no_timed_assay = untimed(evaluation_protocol)
+    if no_timed_assay:
+        # The Study is asking for a weaker gate on the strength of its own declaration.
+        # Whether a timed assay exists is not the Study's fact: the device registry owns
+        # which backend admits an exact target and what measurement source that backend
+        # may name. Quoting it back is what keeps a Study for a timed target from
+        # declaring the limitation and being admitted without any timing feedback.
+        from open_cake_ir.tasks.devices import backend_for_target, timing_source
+
+        target = _object(study.document.get("execution"), "study.execution").get("target")
+        backend = backend_for_target(target)
+        if backend is None:
+            raise ValueError(
+                f"Study reports no timed assay for target {target!r}, which no registered "
+                "backend admits; the limitation cannot be checked against its owner")
+        declared = timing_source(backend)
+        if declared is not None:
+            raise ValueError(
+                f"Study reports no timed assay, but {backend} declares timing source "
+                f"{declared!r} for {target!r}; a measurement-coverage limitation states "
+                "what the device cannot do, not what this Study chose not to do")
     if attribution_evaluation not in {
         None,
         _LEGACY_ATTRIBUTION_EVALUATION,

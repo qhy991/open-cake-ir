@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-006",
+  "id": "F-2026-09-16-008",
   "kind": "bug",
   "date": "2026-09-16",
   "title": "On wave64 the CUDA warp-32 shuffle semantics shared code assumes are not a refusal but a wrong answer: an independent DCU port measured ~50% matched elements until every shuffle carried an explicit width",

@@ -260,11 +260,17 @@ class WorkerDispatchTest(unittest.TestCase):
         self.assertIn("timed_assay_available: bool = True",
                       __import__("inspect").getsource(evaluate._Authority))
 
-    def test_a_timed_hip_evaluation_is_refused_rather_than_silently_untimed(self) -> None:
+    def test_a_timed_tile_evaluation_refuses_without_a_source(self) -> None:
+        """The source is an argument now, so the absence is caught where it is used.
+
+        `_evaluate_hip_candidate` used to refuse timing outright, because gfx938 had no
+        named timer. It has one; what stays is that a timed run cannot proceed without a
+        source, rather than quietly producing an untimed receipt.
+        """
         from open_cake_ir.tasks import evaluate
-        authority = SimpleNamespace(candidate=SimpleNamespace(target="gfx938"))
-        with self.assertRaisesRegex(ValueError, "no timing source"):
-            evaluate._evaluate_hip_candidate(authority, {}, collect_timing=True)
+        with self.assertRaisesRegex(ValueError, "requires its timing source"):
+            evaluate._evaluate_tile_candidate(
+                SimpleNamespace(), {}, None, SimpleNamespace(), True)
 
 
 class CloseContractTest(unittest.TestCase):

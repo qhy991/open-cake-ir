@@ -6,7 +6,8 @@ from hashlib import sha256
 from pathlib import Path
 
 from open_cake_ir.compiler import frontend
-from open_cake_ir.evaluation.paired import PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol
+from open_cake_ir.evaluation.paired import (
+    PAIRED_HIP_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol)
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
 from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN, untimed
@@ -84,11 +85,11 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
         "confirmatory_evaluation": f"fresh_fixed_candidate_correctness_then_paired_{timer}",
         "attribution_evaluation": "correctness_then_profile_each_search_survivor",
         "paired_timing": {
-            "kind": PAIRED_METAL_BATCHED_KIND if metal else PAIRED_KIND,
+            "kind": _PAIRED_KINDS[timer],
             "arms": ["candidate", "baseline"],
             "pair_order": [["candidate", "baseline"], ["baseline", "candidate"]] * 5,
             "samples_per_cohort": 25,
-            "route_calls_per_cohort": _ROUTE_CALLS_PER_COHORT if metal else 6 + 11 + 25,
+            "route_calls_per_cohort": _ROUTE_CALLS[timer],
             "maximum_cv": maximum_cv, "materiality_ratio": 1.05, "required_pair_wins": required_pair_wins,
         },
     }
@@ -111,6 +112,22 @@ def evaluation_policy(workload, *, searches_per_turn: int = 2, dispatches_per_sa
 # launcher checks this same number against the observer's payload bound before a campaign
 # starts, and the two must not drift (F-2026-09-10-002).
 _ROUTE_CALLS_PER_COHORT = 28
+
+
+# Each timing source names its own policy kind and says how many times a cohort calls the
+# route. CUPTI's six extra calls are its calibration callbacks; the HIP benchmark has none,
+# and Metal's is the observer's snapshot cohort. Reading these off `metal or else` is what
+# gave a DCU study CUPTI's name and CUPTI's call count.
+_PAIRED_KINDS = {
+    "cupti": PAIRED_KIND,
+    "metal": PAIRED_METAL_BATCHED_KIND,
+    "hip_dispatch": PAIRED_HIP_KIND,
+}
+_ROUTE_CALLS = {
+    "cupti": 6 + 11 + 25,
+    "metal": _ROUTE_CALLS_PER_COHORT,
+    "hip_dispatch": 11 + 25,
+}
 
 
 def _allocation_mode(target: object) -> str:

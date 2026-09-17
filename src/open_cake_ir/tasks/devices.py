@@ -75,6 +75,11 @@ BACKENDS = {
     # spelling would claim NVIDIA libdevice numerics for a different function. A task
     # that needs tanh is refused here by name rather than lowered against a contract
     # nobody measured -- see docs/dcu-gfx938-design.md.
+    "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
+                   "provenance_token": "BW1101", "route": "triton",
+                   "allocation": "local_broker",
+                   "tanh_contract": None, "timing_source": "hip_dispatch",
+                   "power_of_two_width": True},
     # Strix Halo, an RDNA3.5 iGPU on ROCm 7.2.1. It reaches its device the way the DCU
     # does -- one visible device on one machine, serialized by the local broker -- and
     # lowers through Triton like a B200, which is why those two axes are separate rows.
@@ -90,11 +95,6 @@ BACKENDS = {
                        "allocation": "local_broker",
                        "tanh_contract": None, "timing_source": None,
                        "power_of_two_width": True},
-    "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
-                   "provenance_token": "BW1101", "route": "triton",
-                   "allocation": "local_broker",
-                   "tanh_contract": None, "timing_source": None,
-                   "power_of_two_width": True},
 }
 
 

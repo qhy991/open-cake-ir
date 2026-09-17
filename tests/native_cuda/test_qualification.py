@@ -123,16 +123,22 @@ class PublicContracts(unittest.TestCase):
                     patch.object(type(self.compiler), "commit",
                                  new_callable=PropertyMock, return_value=None):
                 self.assertIsNone(self.compiler.commit)
-                with self.assertRaises(c.QualificationError):
+                # By name, so the first half cannot pass on some other refusal that
+                # happens to fire first.
+                with self.assertRaisesRegex(c.QualificationError,
+                                            "a released Compiler is required"):
                     e.prepare(root)
             self.assertFalse(root.exists())
-            # And the same call on a committed Compiler is not refused for this reason:
-            # without this half the test would still pass if `revision()` refused
-            # unconditionally.
-            if self.compiler.commit is not None:
-                with patch.object(e.Compiler, "load", return_value=self.compiler):
-                    e.prepare(root)
-                self.assertTrue((root / "manifest.json").exists())
+            # The differential half: the same call on a Compiler that does have a commit
+            # is not refused for this reason. Without it the test would still pass if
+            # `revision()` refused unconditionally -- so it runs always. A commit is
+            # constructed rather than inherited, for the reason the first half is: the
+            # working tree is not this test's to depend on in either direction.
+            with patch.object(e.Compiler, "load", return_value=self.compiler), \
+                    patch.object(type(self.compiler), "commit", new_callable=PropertyMock,
+                                 return_value="0" * 40):
+                e.prepare(root)
+            self.assertTrue((root / "manifest.json").exists())
 
     def test_two_mma_requires_both_contractions_numerically(self):
         row = {"family": "two_mma", "case_id": "tiny"}
