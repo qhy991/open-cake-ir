@@ -417,8 +417,18 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             metrics['output_mismatches'] += postflight.correctness['output_mismatches']
             metrics['max_abs_error'] = max(metrics['max_abs_error'], postflight.correctness['max_abs_error'])
             metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and postflight.correctness['inputs_unchanged']
+            # The bound is the Study's, not this function's. It was the literal 0.05
+            # here while the Study declared its own, so a Study that widened or tightened
+            # the bound was judged against a number it never named -- one fact with two
+            # owners, and the literal winning. The assay owns the threshold; this reports
+            # against it and says which one it used.
+            assay = paired_protocol(authority.request.get('evaluation_protocol') or {})
+            maximum_cv = assay.maximum_cv if assay is not None else 0.05
             timing = {
-                'measurement_quality_passed': all(summarize_cohort(s)['cv'] <= 0.05 for s in cohorts),
+                'measurement_quality_passed': all(
+                    summarize_cohort(s)['cv'] <= maximum_cv for s in cohorts),
+                'maximum_cv': maximum_cv,
+                'observed_maximum_cv': max(summarize_cohort(s)['cv'] for s in cohorts),
                 'pooled_median_ms': statistics.median(v for s in cohorts for v in s),
                 'cohort_count': 5, 'samples_per_cohort': 25,
             }
