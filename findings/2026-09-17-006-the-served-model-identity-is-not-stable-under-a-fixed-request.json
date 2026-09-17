@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-006",
+  "kind": "protocol",
+  "date": "2026-09-17",
+  "title": "The experiment service answers a fixed kimi-k3 request under two served identities, so provider qualification fails intermittently on every host",
+  "backend": "claude-code harness against https://cloud.infini-ai.com/maas",
+  "target": "host-independent; observed from gfx938 and cross-checked against sm_103a evidence",
+  "compiler_revision_id": "open-cake-ir@b62073ff",
+  "executor_revision": "none: the run never reached a device",
+  "evidence": {
+    "retained": "bw1100 /home/testuser01/oci-dcu-runs/rmsnorm-20260917-160255 and rmsnorm-20260917-161201, both sealed at run task-provider-qualification with protocol_adherence provider_fault; B300-M2 /mnt/b300-shared/home/qinhaiyan/oci-service-runs/rmsnorm-20260916-032057 and silu-20260916-040643 as the passing comparison",
+    "sites": [
+      "src/open_cake_ir/lab/claude.py:546 -- the check: one distinct model across the transcript, equal to the init event's model",
+      "rmsnorm-20260917-160255 -- 4 of 4 assistant messages kimi-k3-fireworks; the whole session was served by the other backend",
+      "rmsnorm-20260917-161201 -- 5 of 6 kimi-k3 and 1 kimi-k3-fireworks; the backend changed inside one conversation",
+      "both runs' terminal usage blocks key the turn under kimi-k3 with canonicalModel kimi-k3",
+      "rmsnorm-20260916-032057 and silu-20260916-040643 provider_stdout -- seven and five messages respectively, all kimi-k3, both with a zero-byte qualification.stderr"
+    ]
+  },
+  "observation": "The same request reaches two served identities, and it is decided per request rather than per run. On 2026-09-16 every assistant message in the B300 transcripts read kimi-k3 and both qualifications passed. Two runs on 2026-09-17 from bw1100, both declaring kimi-k3: the first was answered kimi-k3-fireworks on all four of its assistant messages, and the second on one of six, the other five reading kimi-k3. That second run is the one that matters -- the backend changed inside a single conversation. Ten server responses, five under each name.\n\nA one-turn probe minutes earlier returned three consistent kimi-k3 messages, and asking for kimi-k3-fireworks by name was not served at all. A short probe is therefore not evidence that the service is stable; it is evidence that one request can land either way, and a short run has fewer chances to be caught.\n\nThe refusal is correct and should not be widened. S5 fixes the model so a difference is attributable to the environment rather than to model capability, and a transcript whose messages disagree with the model that was asked for cannot support that. What the gate compares is agreement inside one transcript, not agreement with the Study, so declaring the other name in the Study would not satisfy it and asking for the other name does not work anyway.\n\nThe practical consequence is that retrying is not a remedy. A qualification is two turns and already failed twice; an authoring campaign makes many more requests and needs every one of them to land on the same backend. Worth stating for the earlier evidence too -- the nineteen B300 campaigns did not silently mix backends, because a mixed transcript is exactly what this gate refuses. It failed them shut, not open.",
+  "proposed_change": "Nothing in the Compiler or the Lab, and in particular not a retry loop: with the switch happening inside a conversation, retrying buys a lower failure rate rather than a correct run, and it would spend a campaign's budget to do it. This is the service's behaviour to settle. Ask the operator whether kimi-k3 and kimi-k3-fireworks are the same weights behind two serving backends -- that answer decides both whether a mixed transcript would have been comparable at all and whether pinning one backend is available. Until a request can be pinned to one backend, campaigns against this endpoint cannot satisfy the replication rule, and that is a statement about the service, not about the harness. Separately, record the observed served identity in a campaign's own record so a reader is not left inferring it from a transcript.",
+  "decision": "open",
+  "implemented_in": null,
+  "verified_by": null
+}

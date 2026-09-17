@@ -112,13 +112,24 @@ class EveryDeclaredObjectIsARow(unittest.TestCase):
     def test_attribution_is_not_taken_on_another_platforms_behalf(self) -> None:
         """The measured failure: a profile request reached CUDA's device admission.
 
-        `hsaco` has no attribution source, and the row says so rather than leaving the
-        request to fall through to whichever branch follows.
+        `hsaco` used to satisfy this by having no attribution source at all, which was
+        right about Nsight and left a DCU authoring Turn with a latency and nothing to
+        act on. It has its own source now, taken inside evaluate like Metal's. The
+        invariant is unchanged and stronger: no row profiles through another row's
+        profiler, and `profiled_child` -- the separate ncu child process -- stays CUDA's
+        alone.
         """
-        self.assertIsNone(worker._PLATFORMS["hsaco"].attribution)
+        self.assertEqual(worker._PLATFORMS["hsaco"].attribution, "inside_evaluate")
         self.assertFalse(worker._PLATFORMS["hsaco"].profiled_child)
-        # It launches and checks correctness; what it has no source for is a profile.
         self.assertIsNotNone(worker._PLATFORMS["hsaco"].evaluate)
+        # Exactly one row runs the ncu child, and it is the one ncu was written for.
+        self.assertEqual(
+            [name for name, row in worker._PLATFORMS.items() if row.profiled_child],
+            ["cubin"])
+        # No row is left without a stated answer; that absence is what let a request
+        # fall through to whichever branch followed.
+        self.assertTrue(all(row.attribution is not None
+                            for row in worker._PLATFORMS.values()))
 
     def test_each_implemented_platform_states_where_its_profile_comes_from(self) -> None:
         self.assertEqual(worker._PLATFORMS["cubin"].attribution, "separate")

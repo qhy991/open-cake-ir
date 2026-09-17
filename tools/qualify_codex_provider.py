@@ -867,15 +867,17 @@ def main() -> int:
     # is a closed document whose digest every frozen Study pins.
     limitations = getattr(builder, "cli_limitations", None)
     if limitations is not None:
+        # Exclusive-create like the receipt beside it: a report left over from an earlier
+        # qualification would describe a different build than the receipt it now sits next
+        # to, which is worse than having none.
         report = receipt_output.parent / "provider-cli-limitations.json"
-        if not report.exists():
-            with report.open("xb") as stream:
-                stream.write(_canonical_json_bytes({
-                    "schema_version": 1, "harness": args.harness,
-                    "provider_revision": args.provider_revision,
-                    "executable_sha256": receipt.executable_sha256,
-                    **dict(limitations)}) + b"\n")
-            report.chmod(0o644)
+        with report.open("xb") as stream:
+            stream.write(_canonical_json_bytes({
+                "schema_version": 1, "harness": args.harness,
+                "provider_revision": args.provider_revision,
+                "executable_sha256": receipt.executable_sha256,
+                **dict(limitations)}) + b"\n")
+        report.chmod(0o644)
     _write_anchor(
         anchor_output,
         evidence=evidence,

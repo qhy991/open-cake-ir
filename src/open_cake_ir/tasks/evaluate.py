@@ -39,7 +39,7 @@ from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
 from open_cake_ir.evaluation.paired import (
-    PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
+    ROUTE_CALLS_PER_COHORT, PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
     candidate_from_identity, validate_pair_candidates,
 )
 
@@ -245,8 +245,18 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
     return samples, check
 
 
-def _evaluate_paired_tile(authority, result, helper, admission):
-    """Execute both sealed participants in one allocation, in the frozen order."""
+def _evaluate_paired_tile(authority, result, benchmark_for, admission):
+    """Execute both sealed participants in one allocation, in the frozen order.
+
+    `benchmark_for(role, manifest)` returns the assay that times one arm, because which
+    assay that is belongs to the backend and not to this function -- the same move
+    `_evaluate_tile_candidate` already made. It is a factory rather than one instance
+    because an arm's assay may be bound to the kernel it times: CUPTI is not, and returns
+    the same object for both, while the HIP assay names the dispatch it attributes and so
+    is one per role. Handing a single instance to both arms would have attributed the
+    baseline's dispatches to the candidate's kernel name, and the assay would have refused
+    -- correctly, and one layer too late to say why.
+    """
     evaluation = authority.request['evaluation_protocol']
     protocol = paired_protocol(evaluation)
     all_cases = 'validation_case_ids' in evaluation
@@ -309,11 +319,11 @@ def _evaluate_paired_tile(authority, result, helper, admission):
             correctness(role, 'preflight')
             counters['preflight_calls'] += len(cases)
         if passed:
-            strict_cupti = StrictCuptiBenchmark(helper)
+            assays = {role: benchmark_for(role, manifests[role]) for role in protocol.arms}
             for index, order in enumerate(protocol.pair_order):
                 row = {'pair_index': index, 'order': list(order), 'arms': {}}
                 for position, role in enumerate(order):
-                    samples, check = _fresh_tile_cohort(loaded[(role, authority.case_id)], strict_cupti,
+                    samples, check = _fresh_tile_cohort(loaded[(role, authority.case_id)], assays[role],
                         authority.workload, inputs, expected,
                         samples_per_cohort=protocol.samples_per_cohort,
                         route_calls_per_cohort=protocol.route_calls_per_cohort)
@@ -324,11 +334,23 @@ def _evaluate_paired_tile(authority, result, helper, admission):
                         'candidate_record_sha256': candidates[role].canonical_sha256,
                         'samples_ms': samples, 'summary': summarize_cohort(samples),
                         'route_calls': check['checked_launches'], 'output_check': check}
+                    # This path produces every paired comparison's evidence, and it was
+                    # dropping what the assay saw beside each arm's samples. An arm that
+                    # timed part of its candidate is only visible here.
+                    seen = getattr(assays[role], 'non_target_dispatches', None)
+                    if seen is not None:
+                        row['arms'][role]['non_target_dispatches'] = seen
                 measurements.append(row)
             for role in protocol.arms:
                 correctness(role, 'postflight')
         identities = {role: candidate_identity(item) for role, item in candidates.items()}
-        raw = {'kind': PAIRED_KIND, 'evaluation_protocol': authority.request['evaluation_protocol'],
+        # The assay the Study declared, not the one this producer was written against.
+        # It read PAIRED_KIND, which was true while CUPTI was the only source a tensor
+        # pair could be timed by; the Metal producer below already reads the declaration,
+        # and the receipt validator compares the two, so a third source turned a
+        # hardcoded name into 'paired raw kind differs from the declared assay'.
+        raw = {'kind': evaluation['paired_timing']['kind'],
+            'evaluation_protocol': authority.request['evaluation_protocol'],
             'participants': identities, 'workload_sha256': authority.workload.canonical_sha256,
             'case_id': authority.case_id, 'purpose': authority.request['purpose'],
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
@@ -364,17 +386,29 @@ def _evaluate_paired_tile(authority, result, helper, admission):
             raise cleanup_error
 
 
-def _evaluate_tile_candidate(authority, result, helper, admission, collect_timing):
+def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
+                             *, route_calls_per_cohort, profile_source=None):
     """Use the common oracle and one loaded module across correctness and timing.
 
-    `helper` is the timing host, required when timing is collected and unused otherwise.
-    It was always supplied, because only the CUDA path reached here, so a correctness-only
-    caller passing None depended on the argument never being touched -- an agreement two
-    functions were keeping without stating it. The CUDA caller still passes its helper on
-    both paths; what is stated here is that a timed run cannot proceed without one.
+    `benchmark` is the timing source itself, not the host it came from: a callable taking
+    the function to run, the untimed and timed counts, and whether the device is reset,
+    and returning one millisecond value per timed call. Each platform builds its own --
+    `StrictCuptiBenchmark` over the Executor's CUPTI helper, `HipDispatchBenchmark` over
+    roctracer -- because the cohort shape is shared and the source is not. Wrapping the
+    argument in CUPTI's strict adapter here made that the only source this path could use.
+
+    `route_calls_per_cohort` belongs to the source for the same reason: CUPTI spends six
+    calls on its own calibration callbacks and the HIP benchmark spends none, so the
+    Study's count and this one have to be the same number, and it comes from the caller
+    that knows which source is running.
+
+    `profile_source` is the attribution source, passed for the same reason and never
+    inferred: a platform with one supplies it, a platform without one passes None and its
+    receipt carries no profile rather than an empty one. It takes the single-dispatch
+    launch and the kernel name, and returns the raw activity its own profiler saw.
     """
-    if collect_timing and helper is None:
-        raise ValueError("timed tile evaluation requires its Executor timing host")
+    if collect_timing and benchmark is None:
+        raise ValueError("a timed tile evaluation requires its timing source")
     inputs = materialize_case(authority.workload, authority.case_id)
     loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
     counters = result['counters']
@@ -384,6 +418,7 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
     protocol = EvaluationProtocol('workload-tensor-worker-correctness', purpose,
         authority.workload.canonical_sha256, authority.case_id, 'none')
     cohorts = []
+    non_target = []
     timed_checks = []
     try:
         preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded)
@@ -393,12 +428,19 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
         timing = None
         correctness_calls = 1
         if collect_timing and passed:
-            strict_cupti = StrictCuptiBenchmark(helper)
             expected = reference_outputs(authority.workload, authority.case_id, inputs)
             for _ in range(5):
-                samples, check = _fresh_tile_cohort(loaded, strict_cupti, authority.workload,
-                    inputs, expected, samples_per_cohort=25, route_calls_per_cohort=42)
+                samples, check = _fresh_tile_cohort(loaded, benchmark, authority.workload,
+                    inputs, expected, samples_per_cohort=25,
+                    route_calls_per_cohort=route_calls_per_cohort)
                 cohorts.append(samples)
+                # Per cohort, because the assay overwrites this on every call. Reading it
+                # once after the loop reported the fifth cohort and dropped four, beside a
+                # `cohort_count: 5` in the same record -- a number that reads as "this run
+                # saw none" when four fifths of the run was not looked at.
+                seen = getattr(benchmark, 'non_target_dispatches', None)
+                if seen is not None:
+                    non_target.append(seen)
                 timed_checks.append(check)
                 passed = passed and check['passed']
                 metrics['output_mismatches'] += check['output_mismatches']
@@ -410,11 +452,34 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
             metrics['output_mismatches'] += postflight.correctness['output_mismatches']
             metrics['max_abs_error'] = max(metrics['max_abs_error'], postflight.correctness['max_abs_error'])
             metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and postflight.correctness['inputs_unchanged']
+            # The bound is the Study's, not this function's. It was the literal 0.05
+            # here while the Study declared its own, so a Study that widened or tightened
+            # the bound was judged against a number it never named -- one fact with two
+            # owners, and the literal winning. The assay owns the threshold; this reports
+            # against it and says which one it used.
+            assay = paired_protocol(authority.request.get('evaluation_protocol') or {})
+            maximum_cv = assay.maximum_cv if assay is not None else 0.05
             timing = {
-                'measurement_quality_passed': all(summarize_cohort(s)['cv'] <= 0.05 for s in cohorts),
+                'measurement_quality_passed': all(
+                    summarize_cohort(s)['cv'] <= maximum_cv for s in cohorts),
+                'maximum_cv': maximum_cv,
+                'observed_maximum_cv': max(summarize_cohort(s)['cv'] for s in cohorts),
                 'pooled_median_ms': statistics.median(v for s in cohorts for v in s),
                 'cohort_count': 5, 'samples_per_cohort': 25,
             }
+            # An assay that can tell a dispatch it did not name from one it did says so
+            # here. A count it keeps to itself is not a report: this is the field a reader
+            # checks to know a cohort timed one kernel and not part of one. CUPTI's assay
+            # does not distinguish them and declares nothing.
+            if non_target:
+                timing['non_target_dispatches_per_cohort'] = list(non_target)
+                timing['non_target_dispatches'] = sum(non_target)
+        if profile_source is not None and not passed:
+            # Raised before anything is written: `_write_new` opens "xb", so a retry into
+            # the same request root would surface FileExistsError instead of this. The
+            # Metal sibling refuses at the same point for the same reason.
+            raise ValueError(
+                "instrumented dispatch requires the candidate to pass the external oracle")
         correctness_path = authority.request_root / 'correctness-output.json'
         launch_path = authority.request_root / 'launch-receipt.json'
         _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
@@ -425,6 +490,29 @@ def _evaluate_tile_candidate(authority, result, helper, admission, collect_timin
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
             'resources': loaded.loaded.resources})
         artifacts = {'correctness_output': correctness_path.name, 'launch_receipt': launch_path.name}
+        if profile_source is not None:
+            # One separate instrumented dispatch, after correctness and outside every
+            # cohort. It is attribution, not a sample: no device-state reset precedes it
+            # and the record says so, so nobody compares it to a cohort median.
+            from open_cake_ir.evaluation.hip_observations import (
+                HIP_PROFILE_KIND, hip_profile_summary)
+            instrumented = loaded.fresh_argument_sets(1)[0]
+            raw = profile_source(lambda: loaded.launch(instrumented),
+                                 authority.manifest.kernel_name)
+            profile_path = authority.request_root / 'profile.json'
+            _write_new(profile_path, {
+                'kind': HIP_PROFILE_KIND,
+                'candidate_sha256': authority.candidate.candidate_sha256,
+                'case_id': authority.case_id,
+                'kernel_name': authority.manifest.kernel_name,
+                'job_id': admission.broker_job_id,
+                'gpu_uuid': admission.gpu_uuid,
+                'allocation_mode': 'local_serialized',
+                'external_gpu_activity': 'not_excluded',
+                'separate_instrumented_launch': True,
+                'evaluation_protocol': authority.request['evaluation_protocol'],
+                'raw': raw, 'summary': hip_profile_summary(raw)})
+            artifacts['profile'] = profile_path.name
         if collect_timing:
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
@@ -589,22 +677,22 @@ def _evaluate_metal_candidate(authority, result):
 
 
 def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None):
-    """Evaluate one sealed AMDGCN candidate for correctness on its admitted DCU.
+    """Evaluate one sealed AMDGCN candidate on its admitted DCU.
 
-    Timing is deliberately absent, and refused rather than skipped quietly: `triton-dcu`
-    declares no timing source, so its Study carries a `measurement_coverage` limitation
-    instead of a paired assay, and a caller that asks for timing here is asking for a
-    latency under a timer nobody has named. Correctness, the oracle, the cohort shape and
-    the receipts are the same ones every tensor-tile evaluation uses.
+    Correctness, the oracle, the cohort shape and the receipts are the same ones every
+    tensor-tile evaluation uses. Timing is this target's own: `HipDispatchBenchmark` reads
+    roctracer's per-dispatch device time through the profiler the admitted torch carries,
+    which is what made this a named source rather than a coverage limitation.
+
+    Whether timing runs at all is still the Study's statement, not this function's. A
+    target whose Study carries a `measurement_coverage` limitation arrives here with
+    `collect_timing` false and gets correctness alone, and the receipt says `timing` is
+    absent rather than implying none was possible.
     """
+    from open_cake_ir.evaluation.hip_benchmark import HipDispatchBenchmark
+    from open_cake_ir.evaluation.hip_observations import collect_hip_dispatch_activity
     from open_cake_ir.evaluation.triton_hip import observe_local_hip
 
-    if collect_timing:
-        raise ValueError(
-            f"{authority.candidate.target!r} declares no timing source, so this "
-            "evaluation reports correctness only; a timed assay for it is a separate, "
-            "evidence-gated act"
-        )
     if admission is None:
         try:
             admission = observe_local_hip(authority.candidate.target)
@@ -614,7 +702,28 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     result["job_id"] = admission.broker_job_id
     result["mode"] = "local_serialized"
     result["admitted"] = True
-    _evaluate_tile_candidate(authority, result, None, admission, False)
+    if authority.request["purpose"] == "attribution":
+        # Attribution is correctness plus one instrumented dispatch. It is neither timed
+        # nor paired: a cohort here would be a second latency taken under different device
+        # state than the assay's, reported beside it and comparable to nothing. Reaching
+        # the paired branch instead refuses inside the tile evaluation, because an
+        # attribution purpose is not a correctness protocol.
+        _evaluate_tile_candidate(
+            authority, result, None, admission, False,
+            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT["hip_dispatch"],
+            profile_source=collect_hip_dispatch_activity)
+        return
+    if authority.baseline is not None and collect_timing:
+        # A Study with a paired policy sends both participants, and the assay is one per
+        # arm because it attributes by kernel name.
+        _evaluate_paired_tile(
+            authority, result,
+            lambda role, manifest: HipDispatchBenchmark(manifest.kernel_name), admission)
+        return
+    benchmark = (HipDispatchBenchmark(authority.manifest.kernel_name)
+                 if collect_timing else None)
+    _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
+                             route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['hip_dispatch'])
 
 
 def _evaluate_candidate(
@@ -654,10 +763,18 @@ def _evaluate_candidate(
     ):
         raise ValueError("profile child CUDA device differs from parent admission")
     if authority.baseline is not None and collect_timing:
-        _evaluate_paired_tile(authority, result, helper, admission)
+        # CUPTI times whatever the callable dispatches and is not bound to a kernel
+        # name, so both arms share one instance.
+        strict_cupti = StrictCuptiBenchmark(helper)
+        _evaluate_paired_tile(authority, result,
+                              lambda role, manifest: strict_cupti, admission)
         return
     if isinstance(authority.manifest, TensorLaunchManifest):
-        _evaluate_tile_candidate(authority, result, helper, admission, collect_timing)
+        _evaluate_tile_candidate(
+            authority, result,
+            StrictCuptiBenchmark(helper) if collect_timing else None,
+            admission, collect_timing,
+            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['cupti'])
         return
     case = authority.workload.case(authority.case_id)
     shape = _object(case["shape"], "workload.case.shape")
@@ -950,13 +1067,14 @@ _PLATFORMS = {
         attribution="inside_evaluate",
     ),
     # The AMDGCN half admits a device, loads a candidate and launches it, verified on a
-    # DCU (F-2026-09-15-003). It reports correctness and no latency: gfx938 declares no
-    # timing source. `attribution` stays None because Nsight Compute is CUDA's profiler
-    # and a profile is not taken on another platform's behalf.
+    # DCU (F-2026-09-15-003). Whether it is timed is the Study's statement, as above.
+    # `attribution` is this platform's own roctracer activity, taken inside evaluate like
+    # Metal's: Nsight Compute is CUDA's profiler and is still not borrowed here, but that
+    # was a reason to name a different source rather than to have none.
     "hsaco": _ExecutionPlatform(
         evaluate=lambda authority, result: _evaluate_hip_candidate(
             authority, result, collect_timing=authority.timed_assay_available),
-        attribution=None,
+        attribution="inside_evaluate",
     ),
 }
 
@@ -1041,12 +1159,25 @@ def main() -> int:
                 )
             if platform.attribution == "inside_evaluate":
                 if args.profile_admission is not None:
-                    raise ValueError("Metal profile admission is provided by its Executor")
+                    # Two platforms take their profile inside evaluate now, so this can no
+                    # longer be phrased as Metal's rule: a DCU caller was refused in
+                    # Metal's words for a mistake of its own.
+                    raise ValueError(
+                        f"{_execution_platform(authority)!r} takes its profile inside "
+                        "evaluate; that admission is supplied by its own Executor")
                 platform.evaluate(authority, result)
-            else:
+            elif platform.attribution == "separate":
                 if args.profile_admission is not None:
                     raise ValueError("profile admission is internal-only")
                 _profile_candidate(authority, request_path, result)
+            else:
+                # Nsight was the fall-through here too. Three sites read this profile and
+                # two were closed; this is the third, and leaving it meant any future
+                # attribution value routed a candidate to CUDA's profiler.
+                raise ValueError(
+                    f"attribution source {platform.attribution!r} is not implemented; a "
+                    "profile is taken inside evaluate or by this platform's own separate "
+                    "profiler, and never on another platform's behalf")
         else:
             _platform(authority).evaluate(authority, result)
     except Exception as error:

@@ -75,26 +75,35 @@ BACKENDS = {
     # spelling would claim NVIDIA libdevice numerics for a different function. A task
     # that needs tanh is refused here by name rather than lowered against a contract
     # nobody measured -- see docs/dcu-gfx938-design.md.
+    "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
+                   "provenance_token": "BW1101", "route": "triton",
+                   "allocation": "local_broker",
+                   "tanh_contract": None, "timing_source": "hip_dispatch",
+                   "power_of_two_width": True},
     # Strix Halo, an RDNA3.5 iGPU on ROCm 7.2.1. It reaches its device the way the DCU
     # does -- one visible device on one machine, serialized by the local broker -- and
     # lowers through Triton like a B200, which is why those two axes are separate rows.
     # `tanh_contract` is None for the same reason gfx938's is: this Target declares no
     # instruction contracts, and ROCm Triton's `libdevice` resolves to ocml, so the CUDA
-    # spelling would claim NVIDIA numerics for a different function. `timing_source` is
-    # None because nothing in this repository has yet produced a timed assay on it: a
-    # rocprofv3 kernel trace has been measured on this device, but until the evaluation
-    # worker produces one through the pinned projection, naming a source here would put a
-    # profiler's name on evidence this code path never produced.
+    # spelling would claim NVIDIA numerics for a different function.
+    #
+    # `timing_source` was None until something measured on this device. `HipDispatchBenchmark`
+    # was then run here against the gfx1151-rmsnorm-b8-smoke kernel, ROCm 7.2.1, torch
+    # 2.9.1: 25 dispatches with the device reset before each, median 31.858us, min 31.217,
+    # max 36.226, CV 0.038, 23 distinct values out of 25 -- a resolved cohort, not a
+    # quantum. Without the reset the same cohort reads CV 0.52, which is why the assay
+    # takes one. Its misattribution guard was checked too: a cohort it cannot attribute to
+    # the named kernel is refused, not averaged.
+    #
+    # Two device-side sources disagree on this kernel by 31% -- `rocprofv3 --kernel-trace`
+    # read 24.224us against this assay's 31.858us, both with the device reset. Retained,
+    # with what it does and does not bound, in F-2026-09-17-002; a ranking under one source
+    # is unaffected, an absolute latency is not supported, and the two are not comparable.
     "triton-gfx1151": {"target": "gfx1151", "device_name": "AMD Radeon Graphics",
                        "provenance_token": "gfx1151", "route": "triton",
                        "allocation": "local_broker",
-                       "tanh_contract": None, "timing_source": None,
+                       "tanh_contract": None, "timing_source": "hip_dispatch",
                        "power_of_two_width": True},
-    "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
-                   "provenance_token": "BW1101", "route": "triton",
-                   "allocation": "local_broker",
-                   "tanh_contract": None, "timing_source": None,
-                   "power_of_two_width": True},
 }
 
 

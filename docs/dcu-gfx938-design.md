@@ -438,6 +438,38 @@ gfx1151 result needs a gfx1151 toolchain and device.
    reports it, and the device-state reset is the 256 MiB `zero_()` L2 flush, which costs
    244-251 us a sample and changes the answer only below about 4 MiB of working set.
 
+   **The source is wired, and the quality gate refuses the cohorts it produces.** Measured
+   on a 128x1024 fp32 rmsnorm, which touches 1.00 MiB against an 8 MiB L2 -- inside the
+   region where the flush changes the answer:
+
+   | cohorts | CV | median | distinct values |
+   | --- | --- | --- | --- |
+   | warm, no reset | 0.031-0.043 | 2.879-3.039 us | 3-4 of 25 |
+   | cold, 256 MiB zeroed first | 0.044-0.063 | 5.279-5.439 us | 5-7 of 25 |
+
+   So the spread is the reset's, not the kernel's, and the reset is not optional at this
+   size: without it the kernel reads its input from L2 and the number is not a cold
+   dispatch. The timer's own quantum is exactly 0.160 us -- confirmed as the smallest
+   non-zero step between samples -- which is 3% of a cold median, while the observed range
+   spans about sixteen quanta. Quantisation contributes and does not explain it.
+
+   A full evaluation therefore returns `correctness_passed` true with
+   `measurement_quality_passed` **false** at the declared 0.05 bound, which is the gate
+   doing its job: these cohorts are not tight enough to declare a winner on.
+
+   **The bound is not being widened to make that go away.** A per-target CV bound is a
+   calibration, and AGENTS.md gates calibration on that target's own evidence: ten cohorts
+   at one shape on one device is a measurement, not a calibration, and a bound tuned until
+   the run it judges passes is the state it then reports. What the ten cohorts do settle is
+   that the number to calibrate against is the cold one, and that a bound for this source
+   has to be stated per reset mechanism rather than inherited.
+
+   One defect found on the way, in shared code rather than here:
+   `measurement_quality_passed` compared against the literal `0.05` while the Study
+   declared its own `maximum_cv`, so a Study that widened or tightened the bound was
+   judged against a number it never named. It reads the declared bound now, and reports
+   both that bound and the worst CV observed.
+
    What is left is the wiring, not the evidence: a benchmark with `StrictCuptiBenchmark`'s
    call shape, a paired policy kind beside `cupti` and `metal`, and a `timing_source` on
    the DCU's registry row. *(next)*

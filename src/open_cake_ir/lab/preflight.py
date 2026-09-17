@@ -245,6 +245,10 @@ def preflight(
     # no such Study reached a Campaign: its attribution is `correctness_only`, which was
     # not in the set below, and its arms can be given neither a qualified latency nor a
     # profile. Both halves are admitted here, from the one predicate the policy uses.
+    # Whether the Study's coverage claim is true of the device is not checked here: the
+    # registry that owns which backend admits a target and what source it may name lives
+    # in the task layer, and `lab` does not import it (tests/contracts/test_task_boundaries.py).
+    # `TaskLab.preflight` checks the claim against that owner before delegating here.
     no_timed_assay = untimed(evaluation_protocol)
     if attribution_evaluation not in {
         None,
@@ -325,8 +329,17 @@ def preflight(
         raise ValueError("Study target is not declared by the Compiler")
     _, target_path = _project_path(project_root, target_relative, "compiler.target")
     target = Target.load(target_path)
+    # The mode is checked against its closed vocabulary here and against the device that
+    # owns it in the task layer. It used to be read as `local_serialized if metal else
+    # exclusive`, which infers how a run reaches its device from the route it lowers
+    # through -- the two axes `tasks.devices` keeps as separate columns precisely because
+    # "a DCU lowers through Triton like a B200 and is reached like an Apple device", and
+    # inferring one from the other is what refused every DCU launch once already. `lab`
+    # cannot read that registry (tests/contracts/test_task_boundaries.py), so
+    # `TaskLab.preflight` checks which of the two is right for this target.
     if (set(gpu) != {'name', 'count', 'mode'} or gpu.get('name') not in target.device_names
-        or type(gpu.get('count')) is not int or gpu['count'] != 1 or gpu.get('mode') != ('local_serialized' if route['backend'] == 'metal' else 'exclusive')):
+        or type(gpu.get('count')) is not int or gpu['count'] != 1
+        or gpu.get('mode') not in {'local_serialized', 'exclusive'}):
         raise ValueError("Study Contract GPU admission differs")
     analysis = _object(study.document.get("analysis_plan"), "study.analysis_plan")
     performance_reporting_policy(analysis, claim_scope)

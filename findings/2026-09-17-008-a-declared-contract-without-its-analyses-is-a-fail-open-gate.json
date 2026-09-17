@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-008",
+  "kind": "bug",
+  "date": "2026-09-17",
+  "title": "Two instruction contracts were admitted on gfx938 without the dtype table and route entries that give them meaning, turning a by-name refusal into acceptance with the operand check absent",
+  "backend": "triton",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@5151954e",
+  "executor_revision": "none: found by an independent reviewer reading source and measuring through the public boundary",
+  "evidence": {
+    "retained": "source at the two commits named below; no campaign is involved. The measurement is corpus/schedules/gemm-bias-b1-smoke.json, whose buffers are bf16, retargeted to gfx938 with contract triton.dot.fp16_fp32",
+    "sites": [
+      "compiler/targets/gfx938.json -- admits triton.dot.fp16_fp32 and triton.dot.fp8e4m3_fp32",
+      "src/open_cake_ir/compiler/verifier/hardware_conformance.py:31 -- _CONTRACT_DTYPES, whose own comment says adding a contract adds a row here",
+      "src/open_cake_ir/compiler/verifier/hardware_conformance.py:354 -- the .get() whose None result skips the operand and accumulator agreement check",
+      "src/open_cake_ir/compiler/backends/triton.py:143 -- _TRITON_MMA_CONTRACTS, the set the route can emit",
+      "tests/contracts/test_gfx938.py -- AdmittedContractsHaveTheirAnalyses, added with the fix"
+    ]
+  },
+  "observation": "At open-cake-ir@33376d60 the retargeted schedule was refused: blocking TARGET_OPERATION_UNSUPPORTED and TARGET_INSTRUCTION_UNSUPPORTED, accepted=False. At open-cake-ir@59fd55be it was accepted=True with lowering_eligible=False, and the dtype disagreement -- an fp16 contract over bf16 buffers -- drew only the non-blocking MMA_CONTRACT_DTYPES_UNMODELED report saying it had not been checked.\n\nSo the whole observable effect of declaring the contracts was to move a contraction from a clean refusal that named the class it owned to acceptance with the gate silently absent, on a contract the only backend for that target could not emit anyway. AGENTS.md names this exact default a line at a time -- a fail-open `.get()` is worse than a refusal -- and P7 says the analyses evolve with the data model in the same change. The declaration was evidence-gated and the evidence was real; what was missing is that a fact declared in a Target document has meaning only where a shared rule reads it, and those live in two other files that no test related to the document.\n\nThat nothing failed is the point. Every target that had admitted a contraction contract before also had its rows, so the coupling held by habit. The Corpus Gate passed 151 of 151 and the suite was green, because no corpus case exercises mma on gfx938 and no test read the document's contract set.\n\nThis is the second declaration of its shape while F-2026-09-17-004 is open against gfx1151's undemonstrated `cast`. The two are not the same defect -- that one is a declaration no case exercises, this one was a declaration no analysis implemented -- but they share a cause worth stating once: a Target document can declare a fact that nothing downstream is obliged to honour, and neither the Gate nor the suite notices.",
+  "proposed_change": "Implemented here: the two rows in _CONTRACT_DTYPES, the two entries in _TRITON_MMA_CONTRACTS, and a test pinning that nothing the Triton route can emit is unmodelled -- stated over the route rather than over one Target, so the next contract added for any vendor fails there. The same test pins, as a known gap, the non-contraction contracts every CUDA and Apple target admits that the dtype table does not model: `instruction_contracts` is one open set holding both kinds and nothing in a declaration says which kind a contract is, which is why the invariant cannot yet be stated over a Target's admitted set. Giving a contract a declared kind would let it be.\n\nStill open, and now tracked by its own id rather than by prose inside a closed record: F-2026-09-17-009 carries the absent gfx938 `mma` Corpus case.",
+  "decision": "implemented",
+  "implemented_in": "open-cake-ir@f986af14",
+  "verified_by": "tests/contracts/test_gfx938.py::AdmittedContractsHaveTheirAnalyses, and the reviewer's public-boundary measurement replayed at the successor"
+}

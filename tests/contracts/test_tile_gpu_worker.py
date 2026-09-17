@@ -70,6 +70,11 @@ class TileGpuWorkerTests(unittest.TestCase):
                 self.closed = True
 
         calls = []
+        # An assay that can tell a dispatch it did not name from one it did carries the
+        # count; `_evaluate_tile_candidate` reads it off whatever assay it was handed, so
+        # the double carries one and the receipt below is asserted to hold it. The test
+        # that claimed this before asserted two string literals against the source text of
+        # evaluate.py, which is satisfied by a file that never runs.
         def measure(function, **options):
             calls.append(options)
             if timing_error:
@@ -78,6 +83,9 @@ class TileGpuWorkerTests(unittest.TestCase):
                 raise RuntimeError('fixture CUPTI failure')
             for _ in range(6 + options['dry_run_iters'] + options['repeat_iters']):
                 function()
+            # A different count per cohort: reading the attribute once after the loop
+            # reported only the last, beside a `cohort_count` of five.
+            measure.non_target_dispatches = len(calls)
             return [1.0] * options['repeat_iters']
 
         with tempfile.TemporaryDirectory() as directory:
@@ -85,18 +93,40 @@ class TileGpuWorkerTests(unittest.TestCase):
             authority = SimpleNamespace(workload=workload, case_id='tiny', candidate=self.candidate,
                 manifest=self.manifest, request={'purpose': 'confirmatory'}, request_root=root)
             result = worker._base_result(self.admission.broker_job_id)
-            with mock.patch.object(worker, 'LoadedTorchTensorCandidate', Loaded), \
-                 mock.patch.object(worker, 'StrictCuptiBenchmark', return_value=measure):
+            # The benchmark is the caller's now, not something this function constructs,
+            # so the double is handed in rather than patched over a constructor that is
+            # no longer called.
+            with mock.patch.object(worker, 'LoadedTorchTensorCandidate', Loaded):
                 if timing_error:
                     with self.assertRaisesRegex(RuntimeError, 'CUPTI failure'):
-                        worker._evaluate_tile_candidate(authority, result, object(), self.admission, True)
+                        worker._evaluate_tile_candidate(
+                            authority, result, measure, self.admission, True,
+                            route_calls_per_cohort=worker.ROUTE_CALLS_PER_COHORT['cupti'])
                     self.assertTrue(instances[0].closed)
                     self.assertEqual(result['counters']['kernel_calls'], 3)
                     self.assertEqual(result['counters']['timing_samples'], 0)
                     self.assertIsNone(result['receipt'])
                     return
-                worker._evaluate_tile_candidate(authority, result, object(), self.admission, True)
+                worker._evaluate_tile_candidate(
+                            authority, result, measure, self.admission, True,
+                            route_calls_per_cohort=worker.ROUTE_CALLS_PER_COHORT['cupti'])
             raw = result['receipt']
+            # The count the assay computed has to be in the receipt, which is what is
+            # retained and hashed. Removing the surfacing leaves this failing; a source
+            # grep did not. Both branches are stated rather than one skipped: a run whose
+            # preflight failed has no timed cohort, and so has no count to carry.
+            if raw['timing'] is None:
+                self.assertTrue(fail_preflight)
+            else:
+                # Per cohort and summed, not whichever cohort ran last. The double
+                # reports a different count each call, so a reader of these two fields
+                # can tell which cohort saw what -- and this assertion fails if the
+                # aggregation goes back to a single overwritten read.
+                self.assertEqual(raw['timing']['non_target_dispatches_per_cohort'],
+                                 [1, 2, 3, 4, 5])
+                self.assertEqual(raw['timing']['non_target_dispatches'], 15)
+                self.assertEqual(len(raw['timing']['non_target_dispatches_per_cohort']),
+                                 raw['timing']['cohort_count'])
             artifacts = {role: (root / path).read_bytes() for role, path in raw['artifacts'].items()}
             receipt = EvaluationReceipt(self.candidate.candidate_sha256, workload.canonical_sha256,
                 'b' * 64, 'confirmatory', 'tiny', raw['correctness_passed'], raw['correctness'],

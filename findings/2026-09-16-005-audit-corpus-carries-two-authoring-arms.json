@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-003",
+  "id": "F-2026-09-16-005",
   "kind": "protocol",
   "date": "2026-09-16",
   "title": "The FlashInfer-Bench workflow audit carries two authoring arms in one table: ten of twenty-six tasks stage only half their baseline, and its single-file packer is why copying the other half would not fix it",

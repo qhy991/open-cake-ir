@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-007",
+  "id": "F-2026-09-16-009",
   "kind": "protocol",
   "date": "2026-09-16",
   "title": "The external DCU port's 26 speedups are timed with torch.cuda.Event, the timer this project measured at an 8.48 us empty interval on that same host and rejected; the ratios are usable, the latencies are not",

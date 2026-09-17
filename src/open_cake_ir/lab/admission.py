@@ -322,7 +322,15 @@ def validate_evaluation(
             expected_source = native_source(baseline_lowering.source.encode(), requirements)
             observed_source = native_source(source, requirements)
             source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
-            grid, block = requirements['grid'], tuple(native_block(requirements))
+            # The width comes from the Target that declares it. Reading a shared 32 here
+            # refused every wave64 baseline, and said the Compiler kernel differed.
+            from open_cake_ir.compiler.target import Target
+            _, target_path = source_reference_path(
+                project_root, f"compiler/targets/{workload.target}.json",
+                'paired baseline target')
+            grid = requirements['grid']
+            block = tuple(native_block(
+                requirements, warp_size=Target.load(target_path).warp_size))
             # How many pointers the kernel takes beyond its tensors is the kernel's own
             # fact, not a per-backend constant. For AMDGCN it is in the sealed assembly's
             # `.amdgpu_metadata`; the table's 2 was right for every Triton target there

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-008",
+  "id": "F-2026-09-16-010",
   "kind": "behavior",
   "date": "2026-09-16",
   "title": "On gfx938 the MoE routing reference is itself nondeterministic: torch.topk flips its tie-break between calls, and the mask fill value and sigmoid spelling each move which expert a tied token selects",

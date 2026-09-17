@@ -490,6 +490,9 @@ __all__ = [
     "parse_kernel_trace_csv",
     "parse_results_json",
     "validate_cross_output_agreement",
+    "iteration_label",
+    "find_marker_trace_csv",
+    "project_iteration_durations",
 ]
 
 
@@ -571,6 +574,7 @@ def project_iteration_durations(
     if type(iterations) is not int or iterations <= 0:
         raise ValueError("rocprofv3 timed cohort needs a positive iteration count")
     dispatches = []
+    other_dispatches = []
     try:
         source = kernel_payload.decode("utf-8")
     except UnicodeDecodeError as error:
@@ -582,18 +586,27 @@ def project_iteration_durations(
     for row in reader:
         if row.get("Kind") != "KERNEL_DISPATCH":
             raise ValueError("rocprofv3 trace contains a non-kernel-dispatch row")
-        if row.get("Kernel_Name") != expectation.kernel_name:
-            continue
         start = _integer(row, "Start_Timestamp")
         end = _integer(row, "End_Timestamp")
         if end < start:
             raise ValueError("rocprofv3 dispatch timestamps differ")
-        dispatches.append((start, end))
+        if row.get("Kernel_Name") == expectation.kernel_name:
+            dispatches.append((start, end))
+        else:
+            other_dispatches.append((start, end))
     dispatches.sort()
+    other_dispatches.sort()
 
+    ordered = _marker_ranges(marker_payload)
+    for (first_start, first_end, first), (next_start, _, second) in zip(ordered, ordered[1:]):
+        if next_start < first_end:
+            raise ValueError(
+                f"rocprofv3 iteration ranges {first!r} and {second!r} overlap; a dispatch "
+                "lying inside both would be counted in both")
     wanted = {iteration_label(cohort, index): index for index in range(iterations)}
     per_iteration: dict[int, tuple[int, int]] = {}
-    for start, end, label in _marker_ranges(marker_payload):
+    ranged: dict[int, tuple[int, int]] = {}
+    for start, end, label in ordered:
         index = wanted.get(label)
         if index is None:
             continue
@@ -603,6 +616,7 @@ def project_iteration_durations(
                     if begin >= start and stop <= end)
         count = sum(1 for begin, stop in dispatches if begin >= start and stop <= end)
         per_iteration[index] = (total, count)
+        ranged[index] = (start, end)
     missing = sorted(set(range(iterations)) - set(per_iteration))
     if missing:
         raise ValueError(
@@ -613,6 +627,14 @@ def project_iteration_durations(
         raise ValueError(
             f"rocprofv3 iteration(s) {empty[:8]} of cohort {cohort!r} contain no dispatch "
             f"of {expectation.kernel_name!r}; an unmeasured iteration is not a zero")
+    # The kernel-name filter is the most consequential exclusion this projection makes,
+    # so it is counted rather than left silent. A candidate that splits its work across a
+    # second kernel has that work dropped here and reads as faster than it is -- the same
+    # ranking hazard the empty-iteration refusal above exists for, arriving by a different
+    # route. The sibling projection reports `non_target_dispatch_count` for this reason.
+    foreign = [sum(1 for begin, stop in other_dispatches
+                   if begin >= start and stop <= end)
+               for start, end in (ranged[index] for index in range(iterations))]
     samples = [per_iteration[index][0] / 1e6 for index in range(iterations)]
     return {
         "schema_version": 1,
@@ -621,11 +643,15 @@ def project_iteration_durations(
         "cohort": cohort,
         "iterations": iterations,
         "dispatches_per_iteration": [per_iteration[i][1] for i in range(iterations)],
+        "non_target_dispatches_per_iteration": foreign,
+        "non_target_dispatch_count": sum(foreign),
         "samples_ms": samples,
         "interval": (
-            "sum of KERNEL_DISPATCH device spans whose whole span lies inside one roctx "
-            "iteration range; host launch gaps between dispatches, and any dispatch "
-            "outside every range, are excluded"),
+            "sum of the device spans of KERNEL_DISPATCH rows naming this kernel, whose "
+            "whole span lies inside one roctx iteration range. Excluded: host launch gaps "
+            "between dispatches; any dispatch outside every range; and every dispatch of "
+            "any other kernel, counted in non_target_dispatches_per_iteration -- work a "
+            "candidate does in a second kernel is not in this number"),
         "timestamps_projected": True,
         "duration_used_for_timing_or_promotion": True,
     }

@@ -53,6 +53,11 @@
       "kind": "device_observation",
       "source": "open-cake-ir Triton route on AMD Radeon Graphics gfx1151, ROCm 7.2.1, torch 2.9.1",
       "locator": "This Target admitted only load/elementwise/reduce/store, the same four every non-NVIDIA Target here declares, and refused TARGET_OPERATION_UNSUPPORTED for a bf16 RMSNorm whose reduction is fp32 -- the standard LLM norm shape, where the dtype of storage and the dtype of arithmetic differ and a cast is what states the difference. Admitted after measuring the lowered kernel on the device against the SoL-ExecBench rmsnorm_h4096 reference: see the run recorded under tasks/025_rmsnorm_h4096 in the FlashInfer/SoL pack, observed 2026-09-16. No other Target is changed by this: gfx938 and the Apple families declare the same four kinds and no device was reached for them here."
+    },
+    {
+      "kind": "corpus_observation",
+      "source": "corpus/manifest.json and corpus/schedules, at the commit that added `cast` here",
+      "locator": "`cast` is declared here and exercised by no gfx1151 Corpus case. This Target has one case, `gfx1151-rmsnorm-accepted`, whose schedule contains load, elementwise, reduce and store only. The Corpus does exercise `cast` in six cases -- `cast-b8-accepted`, `cast-b8-result-drift`, `python-cast`, `qsa-score-topk-t32768-accepted`, `residency-register-cap-drift` and `store-access-rank-drift`, found by reading schedule content rather than case-id spelling -- and all six are sm_100a. A passing 151/151 Gate therefore says nothing about this declaration, and the Gate report carries nothing from this document, so a reader of the Gate does not meet this note: it is recorded in F-2026-09-17-004 as well. Recorded rather than closed by minting a case, which AGENTS.md asks for. The device evidence for the declaration is the SoL rmsnorm_h4096 run cited above, outside this repository and unverified by any reviewer here."
     }
   ]
 }

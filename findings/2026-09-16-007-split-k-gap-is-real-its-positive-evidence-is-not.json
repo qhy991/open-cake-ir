@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-16-005",
+  "id": "F-2026-09-16-007",
   "kind": "capacity",
   "date": "2026-09-16",
   "title": "Intra-CTA split-K with warp-specialized TMA producers is expressible today; what is not is a cross-CTA partial plus a declared merge, and the corpus I offered as evidence has no contrast for it",

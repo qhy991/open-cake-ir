@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-001",
+  "kind": "capacity",
+  "date": "2026-09-17",
+  "title": "A non-power-of-two row width closes every lowering route for RMSNorm on sm_103a: the whole row is refused by Triton's arange rule, the tiled two-pass is refused by its loop-nest rule, and native_cuda declares no reduce at all",
+  "backend": "triton",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@777c6c2b73bf86d5c671265ba3c5bea5a4eed8d6",
+  "executor_revision": "none -- no device was used",
+  "evidence": [
+    {
+      "workspace": "source_probe_no_campaign",
+      "run": "none",
+      "event": 0,
+      "note": "No campaign and no device. Compiler.assess probes at this commit, plus a model-driven rewrite of 75 harvested candidates across 15 FlashInfer-Bench tasks whose ledgers live outside the checkout at open-cake-ir-experiments/fib-extraction/ledgers/. Only the probes below are load-bearing; the rewrite is what pointed at this task."
+    },
+    {
+      "workspace": "open-cake-ir-experiments/fib-extraction/ledgers/003_fused_add_rmsnorm_h7168.jsonl",
+      "run": "none",
+      "event": 1,
+      "note": "All five candidates for hidden size 7168 end in a backend refusal, while 001 (h2048) and 002 (h4096) produce eight accepted and lowering-eligible Schedules between them. The operator, the ABI and the authoring path are identical across the three tasks; the row width is the only difference, and 7168 is the only one of the three that is not a power of two."
+    },
+    {
+      "workspace": "src/open_cake_ir/compiler/backends/triton.py",
+      "run": "none",
+      "event": 2,
+      "note": "Two rules close the two ways to write it, and they are not the same kind of rule. Lines 271-280 refuse a whole-row tile: TRITON_ARANGE_RANGE_UNSUPPORTED, 'a positive power-of-two span'. That one is faithful -- tl.arange genuinely requires it. Lines 476-486 refuse the tiled two-pass: when tile_loops > 1 the route requires exactly two loops at depths [0, 1], a nest. RMSNorm's two passes are siblings at depth [0, 0] -- accumulate the sum of squares over tiles, then re-read and normalize -- and the second cannot nest inside the first because normalization needs the completed sum. Triton itself writes two sequential for loops without difficulty; this bound is the emitter's shape, not the language's."
+    },
+    {
+      "workspace": "src/open_cake_ir/compiler/backends/native_cuda.py",
+      "run": "none",
+      "event": 3,
+      "note": "Line 23: SUPPORTED_OPERATION_KINDS is {cast, elementwise, load, mma, reduce_argmin, store}. It carries reduce_argmin and not reduce, so the route that has no arange rule and no loop-nest rule cannot express the reduction this operator is. Measured through the boundary: BACKEND_OPERATION_UNEMITTABLE, \"backend 'native_cuda' has no body for operation kind 'reduce'\". triton, metal and cutedsl all declare reduce; native_cuda is the exception."
+    },
+    {
+      "workspace": "scratchpad/h7168_tiled.py",
+      "run": "none",
+      "event": 4,
+      "note": "Both spellings written by hand and put through Compiler.assess at this commit, so the corner is walked rather than inferred. The tiled form reaches accepted=True with lowering_eligible=False and exactly one finding, TRITON_LOOP_NEST_UNSUPPORTED -- the Schedule is well-formed and the IR admits an arbitrary number of tile_loops; only the emitter refuses. Two diagnostics cost a repair round each on the way and are worth their own note: lm.range rejects an 'axis' keyword without saying it wants dimension and tile, and lm.reduce(across_loop=True) is refused as 'the historical omitted spelling' without saying that omitting it is the fix. Both name the violated contract; neither names the satisfying form."
+    }
+  ],
+  "observation": "This is a lowering gap, not a vocabulary gap, and the distinction decides who owns it. The IR says the program fine: tile_loops is a list, a sibling pair parses, and the Schedule is accepted. What refuses is a backend's implemented shape in one case and a backend's declared capability set in the other. It also shows why a single task cannot find this. Read alone, 003's five refusals look like five candidates that failed; read beside 001 and 002 -- same operator, same ABI, eight accepted Schedules -- the row width is the only variable, and a shape-triggered route limit becomes visible. The corpus's value here was to put three widths of one operator side by side, not to supply a kernel worth copying.",
+  "proposed_change": "Two separable changes, and the arange rule is not among them -- it is correct and must stay. (a) Widen the Triton emitter to admit sibling tile loops at the same depth, which is a slice shape it does not currently generate rather than a Triton limitation; the guard at backends/triton.py:476-486 encodes 'one outer with one inner' as the only multi-loop form. (b) Or declare and implement reduce in native_cuda's SUPPORTED_OPERATION_KINDS, which removes the arange constraint from the path entirely. Either one alone unblocks the operator; (a) is the narrower change and (b) closes a capability asymmetry that reduce_argmin's presence makes odd. Both are P7 changes: the emitter or the capability set moves together with the analyses that read it, and the Corpus Gate runs on the commit. Separately and smaller: give the two diagnostics above their satisfying form, since a refusal that does not say what would be accepted costs the author a round each time.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

@@ -67,10 +67,23 @@ def _raw_reference_path(
 
 
 def _admit_executor(root: Path, lock: CampaignLock) -> tuple[ExecutorRevision, object]:
+    """Admit the Executor's host through the admission that host's kind declares.
+
+    `admit_host` covers CUDA and Metal and refuses a HIP capture by name, pointing at
+    `admit_hip_host` -- which carries the executor id into the admission and returns the
+    ROCm facts the build jail needs. This dispatched to neither: it called `admit_host`
+    for every capture, so a HIP Campaign died at composition on a refusal that was telling
+    it which door to use. The kind is read from the capture that declares it rather than
+    inferred from anything else.
+    """
+
     execution = _object(lock.document["execution"], "campaign_lock.execution")
     revision = ExecutorRevision.load_reference(
         root, execution["executor_revision"], "execution.executor_revision"
     )
+    host = _object(revision.document["host_environment"], "executor.host_environment")
+    if host.get("kind") == "hip":
+        return revision, revision.admit_hip_host()
     return revision, revision.admit_host()
 
 
@@ -407,6 +420,14 @@ def execute_matched_from_config(
     workspace_root.mkdir(mode=0o750, parents=False, exist_ok=False)
     builders = {}
     task_packages = {}
+    _claude_options: list = []
+
+    def claude_cli_options():
+        """Ask this one executable once; every Run in this Campaign uses the same binary."""
+        if not _claude_options:
+            _claude_options.append(advertised_options(executable))
+        return _claude_options[0]
+
     for run_id in lock.run_order:
         workspace = workspace_root / run_id
         workspace.mkdir(mode=0o750)
@@ -418,7 +439,7 @@ def execute_matched_from_config(
             workspace=workspace, removed_environment=tuple(provider_authority["removed_environment"]))
         if harness == "claude-code":
             builders[run_id] = ClaudeInvocationBuilder(
-                **common_provider, cli_options=advertised_options(executable),
+                **common_provider, cli_options=claude_cli_options(),
                 event_contract=provider_authority["event_contract"])
         else:
             builders[run_id] = CodexInvocationBuilder(**common_provider,
