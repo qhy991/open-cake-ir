@@ -247,6 +247,20 @@ class EvaluationReceipt:
                             or launch_raw.get("host") != profile["host"] or launch_raw.get("job_id") != profile["job_id"]
                             or launch_raw.get("instrumented_command") != profile["raw"]["command_buffer"]):
                         raise ValueError("Metal attribution launch differs from instrumented profile")
+                elif profile_document.get("kind") == "hip_dispatch_activity_v1":
+                    from .hip_observations import load_hip_profile
+                    profile = load_hip_profile(self.artifact_payloads["profile"],
+                        expected_candidate_sha256=self.candidate_sha256,
+                        expected_case_id=self.case_id,
+                        expected_protocol_sha256=self.evaluation_protocol_sha256)
+                    if (launch_raw.get("job_id") != profile["job_id"]
+                            or launch_raw.get("gpu_uuid") != profile["gpu_uuid"]):
+                        raise ValueError(
+                            "HIP attribution launch differs from instrumented profile")
+                elif profile_document.get("kind") != "ncu_kernel_attribution":
+                    raise ValueError(
+                        "no attribution source declares profile kind "
+                        f"{profile_document.get('kind')!r}")
                 else:
                     load_ncu_attribution_profile(
                         self.artifact_payloads["profile"],
