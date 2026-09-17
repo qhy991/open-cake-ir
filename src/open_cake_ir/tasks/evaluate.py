@@ -387,7 +387,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
 
 
 def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
-                             *, route_calls_per_cohort):
+                             *, route_calls_per_cohort, profile_source=None):
     """Use the common oracle and one loaded module across correctness and timing.
 
     `benchmark` is the timing source itself, not the host it came from: a callable taking
@@ -401,6 +401,11 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     calls on its own calibration callbacks and the HIP benchmark spends none, so the
     Study's count and this one have to be the same number, and it comes from the caller
     that knows which source is running.
+
+    `profile_source` is the attribution source, passed for the same reason and never
+    inferred: a platform with one supplies it, a platform without one passes None and its
+    receipt carries no profile rather than an empty one. It takes the single-dispatch
+    launch and the kernel name, and returns the raw activity its own profiler saw.
     """
     if collect_timing and benchmark is None:
         raise ValueError("a timed tile evaluation requires its timing source")
@@ -479,6 +484,29 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
             'resources': loaded.loaded.resources})
         artifacts = {'correctness_output': correctness_path.name, 'launch_receipt': launch_path.name}
+        if profile_source is not None and passed:
+            # One separate instrumented dispatch, after correctness and outside every
+            # cohort. It is attribution, not a sample: no device-state reset precedes it
+            # and the record says so, so nobody compares it to a cohort median.
+            from open_cake_ir.evaluation.hip_observations import (
+                HIP_PROFILE_KIND, hip_profile_summary)
+            instrumented = loaded.fresh_argument_sets(1)[0]
+            raw = profile_source(lambda: loaded.launch(instrumented),
+                                 authority.manifest.kernel_name)
+            profile_path = authority.request_root / 'profile.json'
+            _write_new(profile_path, {
+                'kind': HIP_PROFILE_KIND,
+                'candidate_sha256': authority.candidate.candidate_sha256,
+                'case_id': authority.case_id,
+                'kernel_name': authority.manifest.kernel_name,
+                'job_id': admission.broker_job_id,
+                'gpu_uuid': admission.gpu_uuid,
+                'allocation_mode': 'local_serialized',
+                'external_gpu_activity': 'not_excluded',
+                'separate_instrumented_launch': True,
+                'evaluation_protocol': authority.request['evaluation_protocol'],
+                'raw': raw, 'summary': hip_profile_summary(raw)})
+            artifacts['profile'] = profile_path.name
         if collect_timing:
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
@@ -656,6 +684,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     absent rather than implying none was possible.
     """
     from open_cake_ir.evaluation.hip_benchmark import HipDispatchBenchmark
+    from open_cake_ir.evaluation.hip_observations import collect_hip_dispatch_activity
     from open_cake_ir.evaluation.triton_hip import observe_local_hip
 
     if admission is None:
@@ -1021,13 +1050,14 @@ _PLATFORMS = {
         attribution="inside_evaluate",
     ),
     # The AMDGCN half admits a device, loads a candidate and launches it, verified on a
-    # DCU (F-2026-09-15-003). It reports correctness and no latency: gfx938 declares no
-    # timing source. `attribution` stays None because Nsight Compute is CUDA's profiler
-    # and a profile is not taken on another platform's behalf.
+    # DCU (F-2026-09-15-003). Whether it is timed is the Study's statement, as above.
+    # `attribution` is this platform's own roctracer activity, taken inside evaluate like
+    # Metal's: Nsight Compute is CUDA's profiler and is still not borrowed here, but that
+    # was a reason to name a different source rather than to have none.
     "hsaco": _ExecutionPlatform(
         evaluate=lambda authority, result: _evaluate_hip_candidate(
             authority, result, collect_timing=authority.timed_assay_available),
-        attribution=None,
+        attribution="inside_evaluate",
     ),
 }
 

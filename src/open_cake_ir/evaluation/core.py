@@ -364,12 +364,28 @@ class EvaluationReceipt:
 
         if self.purpose != "attribution" or not self.artifact_payloads:
             return None
-        if json.loads(self.artifact_payloads["profile"]).get("kind") == "metal_compute_stage_timestamps_v1":
+        # Each source is decided by the kind it declares. Nsight used to be the
+        # fall-through, which read as "whatever is not Metal is CUDA" -- the shape that
+        # made a third source arrive as an unexplained NCU parse failure rather than as a
+        # refusal naming it. A kind nobody declares is now named in the refusal.
+        kind = json.loads(self.artifact_payloads["profile"]).get("kind")
+        if kind == "metal_compute_stage_timestamps_v1":
             from .metal_observations import load_metal_profile
             profile = load_metal_profile(self.artifact_payloads["profile"],
                 expected_candidate_sha256=self.candidate_sha256, expected_case_id=self.case_id,
                 expected_protocol_sha256=self.evaluation_protocol_sha256)
             return {"kind": profile["kind"], **profile["summary"]}
+        if kind == "hip_dispatch_activity_v1":
+            from .hip_observations import load_hip_profile, hip_attribution_feedback
+            return hip_attribution_feedback(load_hip_profile(
+                self.artifact_payloads["profile"],
+                expected_candidate_sha256=self.candidate_sha256,
+                expected_case_id=self.case_id,
+                expected_protocol_sha256=self.evaluation_protocol_sha256))
+        if kind != "ncu_kernel_attribution":
+            raise ValueError(
+                f"no attribution source declares profile kind {kind!r}; this reader knows "
+                "Nsight Compute, Metal compute-stage timestamps and roctracer activity")
         profile = load_ncu_attribution_profile(
             self.artifact_payloads["profile"],
             expected_candidate_sha256=self.candidate_sha256,
