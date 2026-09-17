@@ -247,11 +247,31 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
                 or launch.get('host') != host or raw.get('device_registry_id') != host['device_registry_id']
                 or host['target'] != participants['candidate']['target']):
             raise ValueError('paired Metal device/host identity differs')
-    elif (executable_role(participants['candidate']['target']) != 'cubin'
-          or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
-          or re.fullmatch(r'gpuq-[0-9a-f]{12}', raw['job_id']) is None
-          or raw['job_id'] == 'gpuq-000000000000' or launch.get('gpu_uuid') != raw['gpu_uuid']):
-        raise ValueError('paired receipt participant or allocation identity differs')
+    elif raw['kind'] == PAIRED_KIND:
+        if (executable_role(participants['candidate']['target']) != 'cubin'
+                or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
+                or re.fullmatch(r'gpuq-[0-9a-f]{12}', raw['job_id']) is None
+                or raw['job_id'] == 'gpuq-000000000000'
+                or launch.get('gpu_uuid') != raw['gpu_uuid']):
+            raise ValueError('paired CUDA device/host identity differs')
+    elif raw['kind'] == PAIRED_HIP_KIND:
+        # An AMDGCN pair: the hsaco role, a local-broker job, and whatever the runtime
+        # says about a device id. A DTK device reports no UUID and `observe_local_hip`
+        # records that in words rather than inventing one, so the check is that both
+        # records agree on what was said -- not that something UUID-shaped was said.
+        if (executable_role(participants['candidate']['target']) != 'hsaco'
+                or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
+                or re.fullmatch(r'hip-[0-9a-f]{12}', raw['job_id']) is None
+                or raw['job_id'] == 'hip-000000000000'
+                or launch.get('gpu_uuid') != raw['gpu_uuid']):
+            raise ValueError('paired AMDGCN device/host identity differs')
+    else:
+        # Every declared kind is checked by name above. Reaching here means a policy kind
+        # was admitted upstream that nothing here knows how to check, which is not the
+        # same as the evidence being wrong -- and was previously CUDA's branch, so a third
+        # vendor's pair was refused for not being a cubin.
+        raise ValueError(
+            f"paired assay {raw['kind']!r} has no declared device/host identity check")
     if baseline is not None and participants['baseline'] != baseline:
         raise ValueError('paired receipt fixed baseline differs from Campaign Lock')
     if candidate is not None and participants['candidate'] != candidate_identity(candidate):
