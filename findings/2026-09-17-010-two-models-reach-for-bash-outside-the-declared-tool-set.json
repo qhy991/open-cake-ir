@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-010",
+  "kind": "behavior",
+  "date": "2026-09-17",
+  "title": "Two different models on two targets reach for Bash, a tool the authoring environment does not offer, and the run is correctly refused",
+  "backend": "claude-code harness, triton-dcu and triton-b300",
+  "target": "gfx938 and sm_103a",
+  "compiler_revision_id": "open-cake-ir@0970a36e",
+  "executor_revision": "runs on two Executors; the refusal is the Lab's, not a device's",
+  "evidence": {
+    "retained": "bw1100 /home/testuser01/oci-dcu-runs/layernorm-20260917-182542 (campaign, turn 1) and gelu_tanh-20260917-210609 (qualification); B300-M2 evidence cited by F-2026-09-16-003 for the kimi-k3 instance",
+    "sites": [
+      "src/open_cake_ir/lab/claude.py:479 -- the refusal, 'Claude tool invocation differs'",
+      "the qualification authority's tools list: Edit, Glob, Grep, Read, StructuredOutput, Write",
+      "layernorm-20260917-182542 provider_stdout -- Bash, Glob, Read, StructuredOutput, Write",
+      "gelu_tanh-20260917-210609 provider_stdout -- Bash, Read, StructuredOutput, Write"
+    ]
+  },
+  "observation": "The authoring environment offers six tools and Bash is not among them. Three instances now, across two models and two targets: kimi-k3 on a B300 task (F-2026-09-16-003), and deepseek-v4-flash twice on gfx938 -- once inside a campaign turn and once during provider qualification, which is the cheaper of the two places to lose a run.\n\nTwo models reaching for the same absent tool is what makes this worth its own record rather than a line in a campaign report. It is not one model's quirk; it is what a general coding agent does when asked to write and check a kernel, and the environment that withholds Bash is the unusual one.\n\nThe refusal is correct and must not be relaxed. Reference access is declared per arm and the tool set is part of that declaration: a Bash the author could run would let it inspect and execute things the arm does not permit, and a clean-start arm that shelled out is no longer a clean start. Widening the set to stop losing runs would trade the comparison for the throughput.\n\nObserved rate, small and worth stating as such: 2 of 13 DCU attempts across two sweeps on 2026-09-17, and 1 of 13 in the B300 service run. Whether it is a fixed hazard per run or concentrates on particular tasks is not established -- layernorm and gelu_tanh are both tasks whose reference implementation is a composition the model may have wanted to check numerically.",
+  "proposed_change": "No Compiler, Lab or harness change. The refusal is the contract working, and the cost is a lost run rather than a wrong result, which is the right direction for this to fail.\n\nTwo things that would reduce the cost without touching the contract, both outside this record's scope to decide: the task statement could say plainly that no shell exists and that numerical checking happens through the harness, since the model is reaching for Bash to do something the loop already does for it; and a qualification that fails this way is cheap to retry, unlike one that fails inside a campaign turn after the provider has spent its budget. If a retry is ever added it belongs in the launcher where it can be counted and reported, never in the parser -- the same place F-2026-09-17-006 says a retry does not belong.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
