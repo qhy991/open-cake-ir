@@ -33,6 +33,16 @@ from open_cake_ir.lab.archive import _validate_receipt_authority, _archive_evalu
 from open_cake_ir.lab.pairing import bind_baseline
 from open_cake_ir.lab.runtime import CommandBrokerSubmitter
 from tests.contracts.test_native_triton_pairing import DraftCompilerFixture
+
+
+def _declared_warp_size(target_id: str) -> int:
+    """The width the Target declares, read rather than restated.
+
+    A fixture that writes 32 here would agree with the CUDA targets and disagree with
+    every wave64 one, which is the defect this argument exists to stop.
+    """
+    from open_cake_ir.compiler.target import Target
+    return Target.load(ROOT / f"compiler/targets/{target_id}.json").warp_size
 from open_cake_ir.tasks import evaluate as worker
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,6 +69,54 @@ def sealed(workload, role, *, case_id='tiny'):
     return LaunchableCandidate(sha256(role.encode()).hexdigest(), 'sm_103a', role,
         {key: sha256(value).hexdigest() for key, value in payloads.items()},
         manifest.canonical_sha256, payloads), manifest
+
+
+class NativeBlockWidthTests(unittest.TestCase):
+    """The expected block width is the Target's declared fact, not a shared constant.
+
+    The gap this closes: `native_block` multiplied `num_warps` by a literal 32, so the
+    fixed-baseline admission gate computed a 32-thread block for a gfx938 baseline that
+    had launched 64 and refused it with "fixed baseline differs from the frozen Compiler
+    kernel or launch commitments". Nothing failed, because every target the function was
+    ever called for was 32 wide. A test that writes 32 into its own fixture reproduces
+    that exactly, so these read the width from the documents.
+    """
+
+    REQUIREMENTS = {'compiler': 'triton', 'grid': [128, 1, 1],
+                    'compile_options': {'num_warps': 1}}
+
+    def test_one_role_slot_is_as_many_threads_as_the_target_declares(self):
+        from open_cake_ir.lab.pairing import native_block
+        for target_id in ('sm_103a', 'gfx938'):
+            with self.subTest(target=target_id):
+                width = _declared_warp_size(target_id)
+                self.assertEqual(
+                    native_block(self.REQUIREMENTS, warp_size=width), [width, 1, 1])
+
+    def test_the_two_declared_widths_do_not_agree(self):
+        # Without this the test above passes against a constant, because it would be
+        # asserting the same number twice.
+        self.assertNotEqual(_declared_warp_size('sm_103a'), _declared_warp_size('gfx938'))
+
+    def test_a_wave64_target_is_not_computed_at_the_cuda_width(self):
+        from open_cake_ir.lab.pairing import native_block
+        observed = native_block(self.REQUIREMENTS, warp_size=_declared_warp_size('gfx938'))
+        self.assertEqual(observed, [64, 1, 1])
+        self.assertNotEqual(observed, [32, 1, 1])
+
+    def test_more_slots_scale_at_the_declared_width(self):
+        from open_cake_ir.lab.pairing import native_block
+        requirements = dict(self.REQUIREMENTS, compile_options={'num_warps': 4})
+        self.assertEqual(native_block(requirements, warp_size=64), [256, 1, 1])
+        self.assertEqual(native_block(requirements, warp_size=32), [128, 1, 1])
+
+    def test_an_absent_or_unusable_width_is_refused_not_substituted(self):
+        from open_cake_ir.lab.pairing import native_block
+        with self.assertRaises(TypeError):
+            native_block(self.REQUIREMENTS)
+        for width in (0, -64, 32.0, True, None, '64'):
+            with self.subTest(width=width), self.assertRaises(ValueError):
+                native_block(self.REQUIREMENTS, warp_size=width)
 
 
 class PairedExecutionTests(unittest.TestCase):
@@ -551,7 +609,7 @@ class PairedExecutionTests(unittest.TestCase):
         requirements = lowering.toolchain_requirements
         manifest = TensorLaunchManifest.for_workload(workload, 'primary', target='sm_103a',
             kernel_name=requirements['kernel_entry_point'], grid=requirements['grid'],
-            block=native_block(requirements),
+            block=native_block(requirements, warp_size=_declared_warp_size('sm_103a')),
             dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=policy.hidden_null_pointer_parameters)
         payloads = {'cubin': b'CPU-baseline-fixture', 'lowered_source': lowering.source.encode(),
                     'launch_manifest': encoded(manifest.as_dict())}
