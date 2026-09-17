@@ -212,12 +212,30 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
         raise ValueError('paired receipt partner is missing')
     for role in protocol.arms:
         candidate_from_identity(participants[role])
-    if (participants['candidate']['candidate_sha256'] != receipt.candidate_sha256
-        or participants['candidate']['target'] != participants['baseline']['target']
-        or launch.get('participants') != participants
-        or not isinstance(raw.get('job_id'), str) or not raw['job_id']
-        or launch.get('job_id') != raw['job_id']):
-        raise ValueError('paired receipt participant or allocation identity differs')
+    # Five distinct facts, each said by name. As one condition this reported that
+    # something about the participants or the allocation differed and left the reader to
+    # find which, from a worker whose artifacts are gone by the time anyone reads it.
+    if participants['candidate']['candidate_sha256'] != receipt.candidate_sha256:
+        raise ValueError(
+            f"paired receipt candidate {participants['candidate']['candidate_sha256'][:12]} "
+            f"is not the evaluated candidate {receipt.candidate_sha256[:12]}")
+    if participants['candidate']['target'] != participants['baseline']['target']:
+        raise ValueError(
+            f"paired arms target different devices: candidate "
+            f"{participants['candidate']['target']!r}, baseline "
+            f"{participants['baseline']['target']!r}")
+    if launch.get('participants') != participants:
+        differing = sorted(
+            role for role in set(participants) | set(launch.get('participants') or {})
+            if (launch.get('participants') or {}).get(role) != participants.get(role))
+        raise ValueError(
+            f"paired launch receipt and timing record disagree on {', '.join(differing)}")
+    if not isinstance(raw.get('job_id'), str) or not raw['job_id']:
+        raise ValueError('paired timing record names no broker job')
+    if launch.get('job_id') != raw['job_id']:
+        raise ValueError(
+            f"paired launch receipt job {launch.get('job_id')!r} is not the timing "
+            f"record's job {raw['job_id']!r}")
     if raw['kind'] != raw['evaluation_protocol']['paired_timing']['kind']:
         raise ValueError('paired raw kind differs from the declared assay')
     if raw['kind'] in METAL_KINDS:
