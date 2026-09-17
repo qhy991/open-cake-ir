@@ -2039,6 +2039,34 @@
       }
     },
     {
+      "case_id": "gfx938-gemm-bias-mma-accepted",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "1983668386d1c88b807736fc85caecbc862045c4f104aefbad46fdb2087a53d6",
+        "lowering_source_sha256": "8c549d672887b3b5fa8c93ba1bdfdfa9231f9c7bb1868f12648772cf9dcdc22b"
+      }
+    },
+    {
+      "case_id": "gfx938-gemm-bias-mma-operand-dtype-drift",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke-operand-dtype-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ec19411c138248942609f1536f6e6cb83b0bc80e08e79dadb25b799f7a3a7085",
+        "lowering_source_sha256": null
+      }
+    },
+    {
       "case_id": "gfx1151-rmsnorm-accepted",
       "schedule": "corpus/schedules/gfx1151-rmsnorm-b8-smoke.json",
       "expected": {
