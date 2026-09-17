@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-002",
+  "kind": "behavior",
+  "date": "2026-09-17",
+  "title": "Two device-side timers disagree by 31% on the same gfx1151 kernel, and the measurement that licensed this target's timing source was retained only as prose",
+  "backend": "triton-gfx1151",
+  "target": "gfx1151",
+  "compiler_revision_id": "open-cake-ir@a1481406",
+  "executor_revision": "gfx1151@a1481406",
+  "evidence": {
+    "retained": "no campaign workspace: both measurements were taken by an authoring session against the device directly, not through a Campaign, so there is no run id or event sequence to cite. Re-running now to mint one would be a repair placed just before the check it satisfies. This record is the retention, and what it holds is stated in full below so a successor can compare rather than trust.",
+    "host": "infplane, AMD Radeon Graphics (gfx1151, Strix Halo), ROCm 7.2.1, torch 2.9.1",
+    "kernel": "_cake_gfx1151_rmsnorm_b8_smoke_kernel, from corpus/schedules/gfx1151-rmsnorm-b8-smoke.json",
+    "hip_dispatch": {
+      "assay": "evaluation/hip_benchmark.HipDispatchBenchmark (roctracer via torch.profiler)",
+      "samples": 25,
+      "device_reset": "256 MiB buffer zeroed before each timed dispatch",
+      "median_us": 31.858,
+      "min_us": 31.217,
+      "max_us": 36.226,
+      "cv": 0.038,
+      "distinct_values": 23,
+      "without_reset": {
+        "median_us": 15.708,
+        "cv": 0.5234
+      }
+    },
+    "rocprofv3": {
+      "assay": "evaluation/rocprofv3.project_iteration_durations (--kernel-trace --marker-trace)",
+      "iterations": 30,
+      "device_reset": "L2 flushed and synchronised before each roctx range opens",
+      "median_us": 24.224,
+      "min_us": 23.603,
+      "max_us": 35.345,
+      "cv": 0.082,
+      "dispatches_per_iteration": 1
+    }
+  },
+  "observation": "The same kernel at the same shape reads 31.858us under the roctracer assay and 24.224us under a rocprofv3 kernel trace, a 31% gap, with both resetting the device and both reporting a device span. The most likely account is the per-dispatch instrumentation each tool adds, but nothing here measures that, so it is an account and not a finding. Neither number was retained anywhere when the timing source was declared: `tasks/devices.py` carried them as a comment and the rest lived in a commit message, which is the shape ADR 0065 names -- a declaration resting on the author session's own reported measurement. An independent reviewer could not re-run either and recorded them as unchecked.",
+  "proposed_change": "Retain this record as the evidence the gfx1151 `timing_source` declaration rests on, and treat the gap as bounding what may be claimed: a ranking of two arms timed by one source under one policy is unaffected, because a fixed per-dispatch cost is common-mode and the sealed manifest declares one kernel per candidate. An absolute latency for gfx1151 is not supported by either number alone, and a latency taken under one source is not comparable with one taken under the other. Closing this properly means measuring the instrumentation cost rather than assuming it -- an empty-kernel cohort under both assays would do it.",
+  "decision": "accepted",
+  "implemented_in": null,
+  "verified_by": null
+}

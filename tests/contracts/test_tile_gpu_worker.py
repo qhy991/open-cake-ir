@@ -70,6 +70,11 @@ class TileGpuWorkerTests(unittest.TestCase):
                 self.closed = True
 
         calls = []
+        # An assay that can tell a dispatch it did not name from one it did carries the
+        # count; `_evaluate_tile_candidate` reads it off whatever assay it was handed, so
+        # the double carries one and the receipt below is asserted to hold it. The test
+        # that claimed this before asserted two string literals against the source text of
+        # evaluate.py, which is satisfied by a file that never runs.
         def measure(function, **options):
             calls.append(options)
             if timing_error:
@@ -78,6 +83,7 @@ class TileGpuWorkerTests(unittest.TestCase):
                 raise RuntimeError('fixture CUPTI failure')
             for _ in range(6 + options['dry_run_iters'] + options['repeat_iters']):
                 function()
+            measure.non_target_dispatches = 2
             return [1.0] * options['repeat_iters']
 
         with tempfile.TemporaryDirectory() as directory:
@@ -91,14 +97,26 @@ class TileGpuWorkerTests(unittest.TestCase):
             with mock.patch.object(worker, 'LoadedTorchTensorCandidate', Loaded):
                 if timing_error:
                     with self.assertRaisesRegex(RuntimeError, 'CUPTI failure'):
-                        worker._evaluate_tile_candidate(authority, result, measure, self.admission, True)
+                        worker._evaluate_tile_candidate(
+                            authority, result, measure, self.admission, True,
+                            route_calls_per_cohort=worker.ROUTE_CALLS_PER_COHORT['cupti'])
                     self.assertTrue(instances[0].closed)
                     self.assertEqual(result['counters']['kernel_calls'], 3)
                     self.assertEqual(result['counters']['timing_samples'], 0)
                     self.assertIsNone(result['receipt'])
                     return
-                worker._evaluate_tile_candidate(authority, result, measure, self.admission, True)
+                worker._evaluate_tile_candidate(
+                            authority, result, measure, self.admission, True,
+                            route_calls_per_cohort=worker.ROUTE_CALLS_PER_COHORT['cupti'])
             raw = result['receipt']
+            # The count the assay computed has to be in the receipt, which is what is
+            # retained and hashed. Removing the surfacing leaves this failing; a source
+            # grep did not. Both branches are stated rather than one skipped: a run whose
+            # preflight failed has no timed cohort, and so has no count to carry.
+            if raw['timing'] is None:
+                self.assertTrue(fail_preflight)
+            else:
+                self.assertEqual(raw['timing']['non_target_dispatches'], 2)
             artifacts = {role: (root / path).read_bytes() for role, path in raw['artifacts'].items()}
             receipt = EvaluationReceipt(self.candidate.candidate_sha256, workload.canonical_sha256,
                 'b' * 64, 'confirmatory', 'tiny', raw['correctness_passed'], raw['correctness'],

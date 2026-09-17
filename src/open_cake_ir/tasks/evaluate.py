@@ -39,7 +39,7 @@ from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
 from open_cake_ir.evaluation.paired import (
-    PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
+    ROUTE_CALLS_PER_COHORT, PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
     candidate_from_identity, validate_pair_candidates,
 )
 
@@ -381,7 +381,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
 
 
 def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
-                             *, route_calls_per_cohort=42):
+                             *, route_calls_per_cohort):
     """Use the common oracle and one loaded module across correctness and timing.
 
     `benchmark` is the timing source itself, not the host it came from: a callable taking
@@ -448,6 +448,13 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                 'pooled_median_ms': statistics.median(v for s in cohorts for v in s),
                 'cohort_count': 5, 'samples_per_cohort': 25,
             }
+            # An assay that can tell a dispatch it did not name from one it did says so
+            # here. A count it keeps to itself is not a report: this is the field a reader
+            # checks to know a cohort timed one kernel and not part of one. CUPTI's assay
+            # does not distinguish them and declares nothing.
+            observed = getattr(benchmark, 'non_target_dispatches', None)
+            if observed is not None:
+                timing['non_target_dispatches'] = observed
         correctness_path = authority.request_root / 'correctness-output.json'
         launch_path = authority.request_root / 'launch-receipt.json'
         _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
@@ -656,7 +663,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     benchmark = (HipDispatchBenchmark(authority.manifest.kernel_name)
                  if collect_timing else None)
     _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
-                             route_calls_per_cohort=11 + 25)
+                             route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['hip_dispatch'])
 
 
 def _evaluate_candidate(
@@ -706,7 +713,8 @@ def _evaluate_candidate(
         _evaluate_tile_candidate(
             authority, result,
             StrictCuptiBenchmark(helper) if collect_timing else None,
-            admission, collect_timing, route_calls_per_cohort=6 + 11 + 25)
+            admission, collect_timing,
+            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['cupti'])
         return
     case = authority.workload.case(authority.case_id)
     shape = _object(case["shape"], "workload.case.shape")

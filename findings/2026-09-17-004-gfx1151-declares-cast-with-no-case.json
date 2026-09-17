@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-17-004",
+  "kind": "capacity",
+  "date": "2026-09-17",
+  "title": "gfx1151 declares `cast` and no gfx1151 Corpus case exercises it, so a passing Gate says nothing about it",
+  "backend": "triton-gfx1151",
+  "target": "gfx1151",
+  "compiler_revision_id": "open-cake-ir@1853e637",
+  "executor_revision": "none: this record is read from the Corpus and no device was used",
+  "evidence": {
+    "retained": "corpus/manifest.json and corpus/schedules at the commit named above",
+    "gfx1151_cases": [
+      "gfx1151-rmsnorm-accepted"
+    ],
+    "gfx1151_operation_kinds_exercised": [
+      "load",
+      "elementwise",
+      "reduce",
+      "store"
+    ],
+    "cast_cases": [
+      "cast-b8-accepted",
+      "cast-b8-result-drift",
+      "python-cast",
+      "qsa-score-topk-t32768-accepted",
+      "residency-register-cap-drift",
+      "store-access-rank-drift"
+    ],
+    "cast_case_targets": [
+      "sm_100a"
+    ],
+    "gate": "151/151 at open-cake-ir@c30ceb89",
+    "cast_cases_derived_from": "schedule content -- every manifest case whose schedule declares an operation of kind `cast`, or whose restricted-Python source calls `lm.cast`. An earlier version of this record listed three, taken from how case ids are spelled, and missed the three whose names say nothing about casting."
+  },
+  "observation": "`compiler/targets/gfx1151.json` declares operation kinds load, cast, elementwise, reduce and store. The Corpus holds one gfx1151 case and it uses four of the five. The six cases that do exercise `cast` are all sm_100a, so the Gate's 151/151 carries no statement about `cast` on this Target. The declaration's evidence is a device run in an external task pack, which no reviewer here could reach. This is the shape AGENTS.md describes for the Gate generally -- it reports a count and names no targets -- narrowed to one declaration.",
+  "proposed_change": "Either add a gfx1151 case whose schedule casts, which would make the Gate speak for the declaration, or withdraw `cast` from the Target until one exists. Adding the case is a separate act: it needs `tools/refresh_corpus_expectations.py --write` and a stated reason, and AGENTS.md forbids regenerating expectations to make a gate pass, so the reason has to be the new case and nothing else.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

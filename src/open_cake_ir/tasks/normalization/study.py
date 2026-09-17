@@ -7,7 +7,8 @@ from pathlib import Path
 
 from open_cake_ir.compiler import frontend
 from open_cake_ir.evaluation.paired import (
-    PAIRED_HIP_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol)
+    ROUTE_CALLS_PER_COHORT, PAIRED_HIP_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND,
+    paired_protocol)
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
 from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN, untimed
@@ -124,9 +125,9 @@ _PAIRED_KINDS = {
     "hip_dispatch": PAIRED_HIP_KIND,
 }
 _ROUTE_CALLS = {
-    "cupti": 6 + 11 + 25,
+    "cupti": ROUTE_CALLS_PER_COHORT["cupti"],
     "metal": _ROUTE_CALLS_PER_COHORT,
-    "hip_dispatch": 11 + 25,
+    "hip_dispatch": ROUTE_CALLS_PER_COHORT["hip_dispatch"],
 }
 
 
