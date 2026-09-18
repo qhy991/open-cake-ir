@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="open-cake-ir（Agent 驱动的编译器与 GPU Kernel 协同进化）的结构、硬件目标与 2026 年 9 月技术报告的案例、数据和边界。快照绑定 main@c75ee4b3（2026-09-17）。">
+<title>open-cake-ir 导览</title>
+<style>:root{color-scheme:light dark} img{max-width:100%} [hidden]{display:none!important}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#F5F7F8; --panel:#EBF0F2; --plate:#FFFFFF;
+  --ink:#17293A; --ink-2:#4E6274; --ink-3:#7C8D9C;
+  --rule:#D3DCE2; --rule-soft:#E4EAEE;
+  --teal:#0E8577; --teal-ink:#0B6C61; --teal-soft:#DCEEEB;
+  --mark-dim:#9DAEBC;
+  --amber:#A8690F; --amber-soft:#F5ECDA;
+  --code-bg:#EDF1F3; --code-ink:#22384B; --code-kw:#0B6C61; --code-str:#8A4A0B; --code-cm:#7C8D9C;
+  --shadow:0 1px 0 rgba(23,41,58,.06);
+  --serif:"Noto Serif SC","Songti SC","STSong","SimSun",Georgia,serif;
+  --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0F1A22; --panel:#16232D; --plate:#FFFFFF;
+    --ink:#E3EAEF; --ink-2:#AEBDCA; --ink-3:#7F92A2;
+    --rule:#26394A; --rule-soft:#1D2E3C;
+    --teal:#34B8A7; --teal-ink:#5CCDBE; --teal-soft:#163B38;
+    --mark-dim:#56697B;
+    --amber:#D9A24A; --amber-soft:#33291A;
+    --code-bg:#13202A; --code-ink:#D7E1E8; --code-kw:#5CCDBE; --code-str:#E2B36B; --code-cm:#7F92A2;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1A22; --panel:#16232D; --plate:#FFFFFF;
+  --ink:#E3EAEF; --ink-2:#AEBDCA; --ink-3:#7F92A2;
+  --rule:#26394A; --rule-soft:#1D2E3C;
+  --teal:#34B8A7; --teal-ink:#5CCDBE; --teal-soft:#163B38;
+  --mark-dim:#56697B;
+  --amber:#D9A24A; --amber-soft:#33291A;
+  --code-bg:#13202A; --code-ink:#D7E1E8; --code-kw:#5CCDBE; --code-str:#E2B36B; --code-cm:#7F92A2;
+  --shadow:none;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:16px; line-height:1.75;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--teal-ink); text-decoration:none; border-bottom:1px solid color-mix(in srgb,var(--teal) 40%,transparent)}
+a:hover{border-bottom-color:var(--teal)}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--teal); outline-offset:3px; border-radius:2px}
+code,kbd,pre{font-family:var(--mono)}
+code{font-size:.86em; background:var(--code-bg); color:var(--code-ink); padding:.08em .4em; border-radius:4px}
+pre{background:var(--code-bg); color:var(--code-ink); padding:18px 20px; border-radius:6px; overflow-x:auto; font-size:13.5px; line-height:1.6; margin:0}
+pre code{background:none; padding:0; font-size:inherit; color:inherit}
+.kw{color:var(--code-kw)} .str{color:var(--code-str)} .cm{color:var(--code-cm)}
+h1,h2,h3{font-family:var(--serif); font-weight:700; line-height:1.25; text-wrap:balance; margin:0}
+h2{font-size:1.75rem; letter-spacing:.005em}
+h3{font-size:1.15rem; margin-top:2.2rem; margin-bottom:.6rem}
+p{margin:0 0 1.05em}
+.eyebrow{font-family:var(--sans); font-size:.74rem; font-weight:500; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3)}
+.muted{color:var(--ink-2)}
+.small{font-size:.9rem}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- shell ---------- */
+.shell{max-width:1180px; margin:0 auto; padding-inline:clamp(16px,4vw,40px); padding-block:0 96px}
+.grid{display:grid; grid-template-columns:1fr; gap:0 48px}
+@media (min-width:1000px){ .grid{grid-template-columns:216px minmax(0,1fr)} }
+main{min-width:0; max-width:820px}
+.prose{max-width:66ch}
+
+/* ---------- hero ---------- */
+header.hero{padding-block:64px 40px; border-bottom:1px solid var(--rule)}
+header.hero h1{font-size:clamp(2.4rem,6vw,4rem); letter-spacing:-.01em; font-weight:700}
+header.hero .thesis{font-family:var(--serif); font-size:clamp(1.15rem,2.4vw,1.5rem); font-weight:600; color:var(--ink); margin:14px 0 22px; max-width:30ch; line-height:1.4}
+header.hero .lede{max-width:62ch; color:var(--ink-2); font-size:1.02rem}
+.coords{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); margin-top:30px; max-width:920px}
+.coords div{background:var(--panel); padding:12px 14px}
+.coords .k{font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); font-weight:500}
+.coords .v{font-family:var(--mono); font-size:.82rem; color:var(--ink); margin-top:4px; word-break:break-word}
+
+/* ---------- rail ---------- */
+.rail{display:none}
+@media (min-width:1000px){
+  .rail{display:block; position:sticky; top:calc(env(safe-area-inset-top,0px) + 24px); align-self:start; padding-top:56px}
+  .rail ol{list-style:none; margin:0; padding:0; border-left:1px solid var(--rule)}
+  .rail li a{display:block; padding:5px 0 5px 14px; margin-left:-1px; font-size:.86rem; color:var(--ink-2); border-left:2px solid transparent; border-bottom:none; line-height:1.45}
+  .rail li a:hover{color:var(--ink)}
+  .rail li a.active{color:var(--teal-ink); border-left-color:var(--teal)}
+  .rail .rail-note{margin-top:22px; font-size:.76rem; color:var(--ink-3); line-height:1.6; padding-left:14px}
+}
+.chips{display:flex; flex-wrap:wrap; gap:8px; padding-block:18px 4px}
+.chips a{font-size:.82rem; padding:5px 11px; border:1px solid var(--rule); border-radius:999px; color:var(--ink-2); background:var(--panel)}
+@media (min-width:1000px){ .chips{display:none} }
+
+/* ---------- sections ---------- */
+section.sec{padding-block:56px 8px; border-bottom:1px solid var(--rule-soft)}
+section.sec:last-of-type{border-bottom:none}
+.sec-head{margin-bottom:22px}
+.sec-head .eyebrow{margin-bottom:8px}
+.sec-head .dek{color:var(--ink-2); max-width:60ch; margin-top:8px; font-size:1.02rem}
+
+/* ---------- objects ---------- */
+figure{margin:28px 0}
+figure img{display:block; width:100%; height:auto; max-width:100%}
+.plate{background:var(--plate); border:1px solid var(--rule); border-radius:6px; padding:10px}
+figcaption{font-size:.86rem; color:var(--ink-2); margin-top:10px; line-height:1.6; max-width:70ch}
+figcaption b{color:var(--ink); font-weight:600}
+
+.table-wrap{overflow-x:auto; margin:22px 0; border:1px solid var(--rule); border-radius:6px}
+table{border-collapse:collapse; width:100%; font-size:.9rem; min-width:560px}
+th,td{text-align:left; vertical-align:top; padding:10px 12px; border-bottom:1px solid var(--rule-soft)}
+th{font-weight:500; color:var(--ink-2); background:var(--panel); font-size:.78rem; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap}
+tbody tr:last-child td{border-bottom:none}
+td.mono,th.mono{font-family:var(--mono); font-size:.82rem}
+td.r{text-align:right}
+.tag{display:inline-block; font-size:.72rem; font-weight:500; letter-spacing:.04em; padding:1px 8px; border-radius:999px; border:1px solid var(--rule); color:var(--ink-2); white-space:nowrap; vertical-align:middle}
+.tag.ok{border-color:color-mix(in srgb,var(--teal) 50%,transparent); color:var(--teal-ink); background:var(--teal-soft)}
+.tag.warn{border-color:color-mix(in srgb,var(--amber) 55%,transparent); color:var(--amber); background:var(--amber-soft)}
+
+.cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin:22px 0}
+.card{background:var(--panel); border-radius:6px; padding:18px 18px 14px}
+.card h4{margin:0 0 6px; font-family:var(--sans); font-size:.98rem; font-weight:700}
+.card p{font-size:.92rem; color:var(--ink-2); margin:0}
+.card .lbl{font-size:.72rem; letter-spacing:.1em; text-transform:uppercase; color:var(--teal-ink); font-weight:500; margin-bottom:8px}
+
+.three{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0; border:1px solid var(--rule); border-radius:6px; overflow:hidden; margin:22px 0}
+.three > div{padding:16px 18px; border-bottom:1px solid var(--rule)}
+@media (min-width:700px){ .three > div{border-bottom:none; border-right:1px solid var(--rule)} .three > div:last-child{border-right:none} }
+.three .q{font-family:var(--serif); font-weight:700; font-size:1.05rem; margin-bottom:6px}
+.three .a{font-size:.9rem; color:var(--ink-2)}
+
+.callout{border-left:3px solid var(--teal); background:var(--teal-soft); padding:14px 18px; border-radius:0 6px 6px 0; margin:22px 0; font-size:.95rem}
+.callout.caveat{border-left-color:var(--amber); background:var(--amber-soft)}
+.callout b{font-weight:700}
+.callout ul{margin:6px 0 0; padding-left:1.2em}
+.callout li{margin:.25em 0}
+
+dl.kv{display:grid; grid-template-columns:max-content 1fr; gap:6px 18px; margin:16px 0; font-size:.92rem}
+dl.kv dt{color:var(--ink-3); font-size:.8rem; letter-spacing:.04em; padding-top:2px}
+dl.kv dd{margin:0}
+@media (max-width:520px){ dl.kv{grid-template-columns:1fr} dl.kv dt{padding-top:6px} }
+
+ol.chapters{list-style:none; counter-reset:ch; padding:0; margin:18px 0; border-top:1px solid var(--rule)}
+ol.chapters li{display:grid; grid-template-columns:44px 1fr; gap:10px; padding:10px 0; border-bottom:1px solid var(--rule-soft); font-size:.94rem}
+ol.chapters li .n{font-family:var(--mono); font-size:.8rem; color:var(--ink-3); padding-top:3px}
+ol.chapters li .t{font-weight:500}
+ol.chapters li .s{display:block; color:var(--ink-2); font-size:.86rem; margin-top:2px}
+
+/* ---------- charts ---------- */
+.chart{margin:24px 0}
+.chart .ttl{font-weight:700; font-size:1rem; margin-bottom:2px}
+.chart .sub{font-size:.84rem; color:var(--ink-2); margin-bottom:8px}
+.chart svg{width:100%; height:auto; display:block; font-family:var(--sans)}
+.chart .axis line,.chart .grid line{stroke:var(--rule); stroke-width:1}
+.chart .axis text,.chart .lab{fill:var(--ink-2); font-size:11.5px}
+.chart .cat{fill:var(--ink); font-size:12.5px}
+.chart .val{fill:var(--ink); font-size:12px; font-weight:500}
+.chart .val.dim{fill:var(--ink-2); font-weight:400}
+.chart .bar{fill:var(--teal)} .chart .bar.dim{fill:var(--mark-dim)} .chart .bar.hollow{fill:none; stroke:var(--teal); stroke-width:1.5; stroke-dasharray:4 3}
+.chart .dot{fill:var(--teal); stroke:var(--paper); stroke-width:2} .chart .dot.dim{fill:var(--mark-dim)}
+.chart .range{stroke:var(--teal); stroke-width:2; stroke-linecap:round} .chart .range.dim{stroke:var(--mark-dim)}
+.chart .median{stroke:var(--teal); stroke-width:2.5} .chart .median.dim{stroke:var(--mark-dim)}
+.chart .hit{fill:transparent; cursor:default}
+.chart .hit:hover + .bar, .chart .hit:focus + .bar{filter:brightness(.92)}
+.legend{display:flex; flex-wrap:wrap; gap:14px; font-size:.82rem; color:var(--ink-2); margin-top:4px}
+.legend span::before{content:""; display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:-1px; background:var(--teal)}
+.legend span.dim::before{background:var(--mark-dim)}
+.legend span.hollow::before{background:none; border:1.5px dashed var(--teal)}
+details.tbl{margin-top:8px; font-size:.86rem}
+details.tbl summary{cursor:pointer; color:var(--ink-2); font-size:.82rem}
+details.tbl table{min-width:0; margin-top:8px; font-size:.84rem}
+details.tbl .table-wrap{margin:8px 0 0}
+
+/* ---------- roadmap ---------- */
+.roadmap{display:grid; gap:10px; margin:22px 0}
+.rm{display:grid; grid-template-columns:52px 1fr; gap:14px; padding:14px 16px; background:var(--panel); border-radius:6px}
+.rm .m{font-family:var(--mono); font-weight:500; color:var(--teal-ink); font-size:.9rem; padding-top:2px}
+.rm h4{margin:0 0 4px; font-size:.98rem; font-family:var(--sans)}
+.rm p{margin:0; font-size:.9rem; color:var(--ink-2)}
+
+/* ---------- stats ---------- */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:6px; overflow:hidden; margin:22px 0}
+.stats div{background:var(--panel); padding:14px 16px}
+.stats .v{font-size:1.7rem; font-weight:700; line-height:1.1; letter-spacing:-.01em}
+.stats .k{font-size:.8rem; color:var(--ink-2); margin-top:4px; line-height:1.4}
+
+footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule); font-size:.86rem; color:var(--ink-2)}
+footer p{margin:.3em 0}
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="hero">
+  <div class="eyebrow">研究系统 · 源码研究预览 · Apache-2.0</div>
+  <h1>open-cake-ir</h1>
+  <p class="thesis">Agent 驱动的编译器与 GPU Kernel 协同进化。</p>
+  <p class="lede">Agent 设计、生成、验证和优化 Kernel，并在真实任务暴露出程序表示、检查规则、代码生成或性能分析的不足时改进编译器；新的编译能力再用于后续 Kernel。中间是一份可检查的<b>执行计划（Schedule）</b>——比机器代码好读，又比“把矩阵乘快一点”明确。本页介绍项目的结构，以及 2026 年 9 月发布的中文技术报告说了什么、没说什么。</p>
+  <div class="coords" aria-label="引用坐标">
+    <div><div class="k">源码身份（本检出）</div><div class="v">open-cake-ir@c75ee4b3 · main · 2026-09-17</div></div>
+    <div><div class="k">已声明精确目标</div><div class="v">sm_100a · sm_103a · apple_gpu_family7/8/9 · gfx938 · gfx1151</div></div>
+    <div><div class="k">技术报告</div><div class="v">2026-W36.1 · 绑定快照 0d954c5（Compiler / Executor v46）</div></div>
+    <div><div class="k">首个公开预览</div><div class="v">research-preview-2026-09-06</div></div>
+  </div>
+  <nav class="chips" aria-label="页面目录">
+    <a href="#what">这是什么</a><a href="#loop">一条完整路径</a><a href="#schedule">执行计划与前端</a><a href="#feedback">三层反馈</a><a href="#targets">硬件目标</a><a href="#report">技术报告</a><a href="#govern">治理与节奏</a><a href="#roadmap">路线图</a><a href="#status">当前数字</a><a href="#cite">引用</a>
+  </nav>
+</header>
+
+<div class="grid">
+<aside class="rail" aria-label="页面目录">
+  <ol>
+    <li><a href="#what">这是什么</a></li>
+    <li><a href="#loop">一条完整路径</a></li>
+    <li><a href="#schedule">执行计划与 Python 前端</a></li>
+    <li><a href="#feedback">三层反馈</a></li>
+    <li><a href="#targets">硬件目标与测量</a></li>
+    <li><a href="#report">技术报告（2026-09）</a></li>
+    <li><a href="#govern">治理与节奏</a></li>
+    <li><a href="#roadmap">路线图 M1–M6</a></li>
+    <li><a href="#status">当前数字</a></li>
+    <li><a href="#cite">引用与链接</a></li>
+  </ol>
+  <div class="rail-note">数字与措辞取自仓库 <code>main@c75ee4b3</code>（2026-09-17）与报告压缩包；每个测量都带着它自己的目标、快照与限制。</div>
+</aside>
+
+<main>
+
+<!-- ============ 1 ============ -->
+<section class="sec" id="what">
+  <div class="sec-head">
+    <div class="eyebrow">01 · 这是什么</div>
+    <h2>把“更快”拆成三个能各自找到记录的结论</h2>
+    <p class="dek">open-cake-ir 独立重建了 <a href="https://arxiv.org/abs/2608.12629v1">CAKE 论文</a>（Compiler-Agent Co-Design for Frontier Kernel Evolution，arXiv:2608.12629v1）中的部分思路，不是论文未公开实现的复制品，与论文作者也无官方实现或背书关系。</p>
+  </div>
+  <div class="prose">
+    <p>比如把一张表的每行求和，数学很简单，GPU 上却有多种做法：一组线程处理一行，还是分成几块？数据读一次后能否复用？两组线程会不会同时改一个答案？只说“更快”没有给出这些选择；直接看最终机器代码，又很难发现改动的原因。项目在两者中间放一份<b>执行计划</b>，把数据、分工、顺序和资源写出来。编译器据此检查并生成代码；真实机器上的测量决定它到底对不对、快不快。</p>
+    <p>它的研究价值在于能复查的过程：哪项选择变了，为什么被接受或拒绝，哪个结果支持改进。项目规模、AI 忙了多久、写了多少代码，都不是性能证据。</p>
+  </div>
+  <div class="three" aria-label="三个不同的结论">
+    <div><div class="q">计划通过检查</div><div class="a">Compiler 的 Assessment：类型、依赖、地址、资源和硬件规则都成立，允许生成源码。它不证明 GPU 上的答案。</div></div>
+    <div><div class="q">GPU 答案正确</div><div class="a">Evaluation 对外部参考（oracle）的逐元素比较，覆盖多组形状与输入分布，含状态更新。</div></div>
+    <div><div class="q">速度提高</div><div class="a">目标自己声明的计时器、测量区间与设备复位下的配对测量。无法声明这三项的目标只报告正确性。</div></div>
+  </div>
+  <p class="small muted">这三个结论分属不同层，每一个都应能找到对应记录；见仓库文档 <code>docs/wiki/results.md</code>。</p>
+</section>
+
+<!-- ============ 2 ============ -->
+<section class="sec" id="loop">
+  <div class="sec-head">
+    <div class="eyebrow">02 · 一条完整路径</div>
+    <h2>Kernel 演化与编译器演化，由同一个 Agent 推动</h2>
+    <p class="dek">Kernel 生产暴露对编译器的新要求；编译器改进再回到 Kernel 生成和优化中。两类改动分别验证：一次受控的 Kernel 比较使用固定编译器，新编译能力在验证后才用于后续任务。</p>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 760 320" role="img" aria-labelledby="loop-title" xmlns="http://www.w3.org/2000/svg">
+      <title id="loop-title">Agent 驱动的编译器与 Kernel 协同进化：Agent 同时推动 Kernel 演化与编译器演化，两者都进入评测与验证，结果反馈回 Agent</title>
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--ink-3)"/></marker>
+        <marker id="arr-t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="var(--teal)"/></marker>
+      </defs>
+      <g font-family="var(--sans)">
+        <!-- Agent -->
+        <rect x="16" y="96" width="176" height="128" rx="6" fill="var(--panel)" stroke="var(--teal)" stroke-width="1.5"/>
+        <text x="34" y="124" fill="var(--teal-ink)" font-size="15" font-weight="700">Agent</text>
+        <text x="34" y="150" fill="var(--ink-2)" font-size="12">理解算子目标与约束</text>
+        <text x="34" y="170" fill="var(--ink-2)" font-size="12">生成与优化 Kernel</text>
+        <text x="34" y="190" fill="var(--ink-2)" font-size="12">定位并改进编译器问题</text>
+        <text x="34" y="210" fill="var(--ink-2)" font-size="12">根据验证继续迭代</text>
+        <!-- Kernel evolution -->
+        <rect x="270" y="30" width="224" height="104" rx="6" fill="var(--panel)" stroke="var(--ink)" stroke-width="1.5"/>
+        <text x="288" y="58" fill="var(--ink)" font-size="15" font-weight="700">Kernel 演化</text>
+        <text x="288" y="84" fill="var(--ink-2)" font-size="12">算法、分块、存储与同步</text>
+        <text x="288" y="104" fill="var(--ink-2)" font-size="12">生成、修复与性能优化</text>
+        <!-- Compiler evolution -->
+        <rect x="270" y="188" width="224" height="104" rx="6" fill="var(--panel)" stroke="var(--teal)" stroke-width="1.5"/>
+        <text x="288" y="216" fill="var(--teal-ink)" font-size="15" font-weight="700">编译器演化</text>
+        <text x="288" y="242" fill="var(--ink-2)" font-size="12">IR 表达、检查与代码生成</text>
+        <text x="288" y="262" fill="var(--ink-2)" font-size="12">分析模型与反馈能力</text>
+        <!-- Evaluation -->
+        <rect x="570" y="96" width="176" height="128" rx="6" fill="var(--panel)" stroke="var(--ink)" stroke-width="1.5"/>
+        <text x="588" y="124" fill="var(--ink)" font-size="15" font-weight="700">评测与验证</text>
+        <text x="588" y="150" fill="var(--ink-2)" font-size="12">Kernel 的正确性与性能</text>
+        <text x="588" y="170" fill="var(--ink-2)" font-size="12">编译器的规则与生成行为</text>
+        <text x="588" y="190" fill="var(--ink-2)" font-size="12">改进对实际任务的作用</text>
+        <!-- arrows -->
+        <path d="M192 128 L268 92" stroke="var(--ink-3)" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+        <path d="M192 192 L268 228" stroke="var(--ink-3)" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+        <path d="M494 92 L568 128" stroke="var(--ink-3)" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+        <path d="M494 228 L568 192" stroke="var(--ink-3)" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+        <path d="M352 134 L352 186" stroke="var(--ink-3)" stroke-width="1.5" fill="none" marker-end="url(#arr)"/>
+        <text x="342" y="165" fill="var(--ink-2)" font-size="11.5" text-anchor="end">问题与需求</text>
+        <path d="M412 188 L412 136" stroke="var(--teal)" stroke-width="1.5" fill="none" marker-end="url(#arr-t)"/>
+        <text x="422" y="165" fill="var(--teal-ink)" font-size="11.5">新的编译能力</text>
+        <path d="M658 224 L658 300 L104 300 L104 226" stroke="var(--teal)" stroke-width="1.5" fill="none" marker-end="url(#arr-t)"/>
+        <text x="380" y="292" fill="var(--teal-ink)" font-size="11.5" text-anchor="middle">Kernel 生产提出具体问题；编译器改进回到后续 Kernel 中接受检验</text>
+      </g>
+    </svg>
+    <figcaption><b>协同进化的两条路径。</b>重绘自技术报告图 1。新增规则或原语需要解释它解决了什么生产问题；Kernel 的失败和性能变化也应能反馈到相关的编译机制。</figcaption>
+  </figure>
+
+  <h3>四个部分各做一件事</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>部分</th><th>用普通话说</th><th>输入与输出</th></tr></thead>
+      <tbody>
+        <tr><td><b>Compiler</b> 编译器</td><td>读懂并检查执行计划，再翻译成源码。能独立工作，不反过来依赖 AI、实验或报告。</td><td class="mono">Schedule → Assessment → Lowering</td></tr>
+        <tr><td><b>Research Lab</b> 实验系统</td><td>按约定安排 AI 修改候选、分配预算、决定何时停止。</td><td class="mono">Workload + Study → 一次实验</td></tr>
+        <tr><td><b>Evaluation</b> 评测</td><td>先核对答案，再按相同规则计时和分析瓶颈。</td><td class="mono">固定候选 → 检查与测量记录</td></tr>
+        <tr><td><b>Evidence</b> 证据存储</td><td>保存事实，让别人从记录重建结论；追加写入。</td><td class="mono">原始产物 → 审计 → 报告</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="prose">
+    <p>依赖方向是单向的：Lab 引用一个不可变的 Compiler 版本；Lab 控制执行，Evaluation 施加共同的检验，Evidence 保存观察。Compiler 不 import Lab、provider、workload、campaign、evidence 或 claim 代码——这是仓库第一条设计决策（ADR 0001），至今未变。</p>
+    <p>三份说明也不能混为一份：<b>Workload</b> 约定要算什么、怎样判对、容许多少误差；<b>Schedule</b> 写哪组线程处理哪一行、数据放哪、先做什么；<b>Study</b> 约定比较哪些编写环境、每组运行几次、预算多少、怎样解释结果。数学任务可以不变而执行计划改变；实验约定必须预先固定。preflight 把 Workload、Study、Compiler 版本、作者环境字节、预算和执行目标一次性解析成一份不可变的 <b>CampaignLock</b>，Campaign 在它之上运行、从不改写它。</p>
+    <p><b>Evidence 长什么样。</b>每次 Run 是一条内容寻址、只追加、带 hash 链的事件账本：<code>run_started → provider_turn_completed → candidate_set_filtered / candidate_rejected → launchable_candidate_sealed → evaluation_attempt_started / completed → candidate_evaluated → diagnosis_routed → candidate_selected → checkpoints_projected → run_terminal</code>，共 13 种封闭事件。检出里保留的 7 个历史 B200 Campaign 是冻结的验收夹具；新的 Campaign 证据一律写在检出之外。审计返回两个正交事实：<code>archive_integrity</code> 与 <code>filesystem_custody_verified</code>——一份完整但权限宽松的 git 检出可以重放，却支持不了任何晋升或估计。</p>
+  </div>
+</section>
+
+<!-- ============ 3 ============ -->
+<section class="sec" id="schedule">
+  <div class="sec-head">
+    <div class="eyebrow">03 · 执行计划与 Python 前端</div>
+    <h2>Agent 修改的是选择，编译器检查的是一致性</h2>
+    <p class="dek">一份 Schedule 把计算、数据依赖、存储位置、线程角色与同步关系写成明确结构。Agent 能构造它，工具能检查它，反馈能指回它的具体位置。能交给编译器推导的地址计算和阶段展开，则由工具处理。</p>
+  </div>
+
+  <h3>一份完整的 Softmax 执行计划</h3>
+  <div class="prose"><p>按行的稳定 Softmax：<i>m</i> = max<sub>j</sub> x<sub>j</sub>，w<sub>j</sub> = exp(x<sub>j</sub> − m)，y<sub>j</sub> = w<sub>j</sub> / Σw。数学固定后，Agent 还要选择怎样在 GPU 上完成它——下面每个程序实例处理一个批次中的 64 行、每行 128 个元素，用四个线程束完成。这是仓库 <code>examples/python/softmax.py</code> 的原文，也是技术报告 §3.1 的示例。</p></div>
+<pre><code><span class="kw">from</span> open_cake_ir.compiler <span class="kw">import</span> frontend <span class="kw">as</span> cake
+
+
+<span class="kw">@cake.schedule</span>(name=<span class="str">"softmax-b8-smoke"</span>, target=<span class="str">"sm_100a"</span>, backend=<span class="str">"triton"</span>,
+               entry_point=<span class="str">"cake_softmax_b8_smoke"</span>,
+               residency={<span class="str">"ctas_per_multiprocessor"</span>: 4, <span class="str">"registers_per_thread"</span>: 96})
+<span class="kw">def</span> softmax(lm, x: cake.Tensor((8, 512, 128), <span class="str">"fp32"</span>),
+            y: cake.Tensor((8, 512, 128), <span class="str">"fp32"</span>, mode=<span class="str">"output"</span>)):
+    compute = lm.role(warps=[0, 1, 2, 3])
+    row_block = lm.program(x, axis=0, dimension=1, tile=64)
+    batch = lm.program(x, axis=1, dimension=0, tile=1)
+    <span class="kw">with</span> compute:
+        x_tile = lm.load(x[batch, row_block, :], reuse=<span class="str">"reused"</span>, id=<span class="str">"load_x"</span>)
+        rowmax = lm.reduce(x_tile, op=<span class="str">"max"</span>, axis=1, scope=<span class="str">"cta"</span>, id=<span class="str">"row_max"</span>)
+        shifted = lm.sub(x_tile, lm.broadcast(rowmax, axis=0), id=<span class="str">"shift"</span>)
+        weights = lm.exp(shifted, id=<span class="str">"exponentiate"</span>)
+        rowsum = lm.reduce(weights, op=<span class="str">"sum"</span>, axis=1, scope=<span class="str">"cta"</span>, id=<span class="str">"row_sum"</span>)
+        y_tile = lm.div(weights, lm.broadcast(rowsum, axis=0), id=<span class="str">"normalize"</span>)
+        lm.store(y[batch, row_block, :], y_tile, id=<span class="str">"store_y"</span>)</code></pre>
+  <div class="prose">
+    <p><code>@cake.schedule</code> 声明目标、代码生成路线和入口；<code>cake.Tensor</code> 声明参数形状、类型及输入输出角色；<code>lm.program</code> 指定实例如何切分工作，<code>lm.role</code> 与 <code>with compute</code> 指定操作所属的线程角色。读取、归约、广播和写回形成可检查的数据依赖。调整 <code>tile=64</code> 就是在改变每个实例处理的行数；改角色的线程束集合就是在改工作分配——改完仍由编译器检查合法性、由实机评测判断收益。示例中的 <code>residency</code> 字段是调度约束或请求，不是已测得的驻留数和寄存器分配。</p>
+    <p>同一前端也接受算术表达式 <code>a * b + c</code> 和显式的 <code>lm.fma(a, b, c)</code>——二者保留不同的舍入语义。多角色与流水线通过 <code>lm.smem</code>、<code>lm.tmem</code>、<code>lm.pipeline</code>、<code>lm.barrier</code> 和 <code>lm.range</code> 声明存储、交接与符号循环（见 <code>examples/python/kmeans_pipeline.py</code>）。</p>
+  </div>
+
+  <figure>
+    <div class="plate"><img src="figures/programming_model.png" alt="执行计划是 Agent 能够生成、检查和修改的候选：一个批次 512 行 × 128 列的输入，每个程序实例负责一个 64 行的行块；Agent 的选择包括分块、分工（4 个线程束）、数据（读取、归约、广播、写回）与精度；右侧是读取行块、逐行求最大值、减去最大值再取指数、逐行求和、除以行和写回的步骤" width="1920" height="855"></div>
+    <figcaption><b>报告图 2：Agent 的选择被保存在执行计划中。</b>它可以提交不同分块或资源安排的候选，系统检查并测量它们。相同行坐标用于读取与写回，行归约结果需要广播到列维度。</figcaption>
+  </figure>
+
+  <h3>Python 怎样进入检查与代码生成</h3>
+  <div class="prose"><p>前端从受限的 Python 语法树构造规范 Schedule；JSON 输入进入同一语义模型；源码位置作为伴随信息保留，供诊断指回给 Agent。接收候选的 AST 入口不执行任意宿主 Python 代码。以下是报告给出的实际连接方式：</p></div>
+<pre><code><span class="kw">from</span> open_cake_ir.compiler <span class="kw">import</span> Compiler
+<span class="kw">from</span> open_cake_ir.compiler.frontend <span class="kw">import</span> read_schedule
+
+compiler = Compiler.load(<span class="str">"."</span>, <span class="str">"compiler/revision.json"</span>)   <span class="cm"># 报告快照里叫 revision.lock.json</span>
+authored = read_schedule(<span class="str">"examples/python/softmax.py"</span>)
+assessment = compiler.assess(authored.document)
+
+<span class="kw">for</span> finding <span class="kw">in</span> assessment.findings:
+    print(finding.code, authored.location_for(finding.path), finding.message)
+
+<span class="kw">if</span> assessment.lowering_eligible:
+    generated = compiler.lower(assessment)
+    print(generated.source)   <span class="cm"># 目标源码；编译为 GPU 产物与数值/性能验证沿用后续工具链</span></code></pre>
+
+  <h3>不需要 GPU 的三步</h3>
+  <div class="prose"><p>安装后得到 <code>open-cake-ir</code> 命令行入口，三个子命令都不接触 GPU：<code>compiler assess</code>（结构检查）、<code>compiler lower</code>（生成源码）、<code>compiler check-corpus</code>（跑整套语料）。下面是在本检出上对 16 行的 <code>examples/python/fma.py</code> 实际跑出的文本：</p></div>
+<pre><code>$ open-cake-ir compiler assess --format text --revision compiler/revision.json examples/python/fma.py
+执行计划：fma-b8-smoke
+编译器：open-cake-ir@c75ee4b3d7f15bd26c94a26ba23f77993084c4c8
+目标：sm_100a
+结构检查：通过
+生成代码：允许
+生成方式：triton
+诊断：1 条
+- [提示] RESIDENCY_BOUND | examples/python/fma.py:9:15 | roles | hardware_conformance | report
+这一步未运行 GPU；诊断原文和完整分析可用默认 JSON 输出查看。
+
+$ open-cake-ir compiler assess ... corpus/schedules/fma-b8-smoke-arity-drift.json   <span class="cm"># 一个反例</span>
+执行计划：fma-b8-smoke-arity-drift
+结构检查：未通过
+生成代码：不允许
+诊断：2 条
+- [阻止接受] ELEMENTWISE_ARITY | operations[3].reads | data_consistency | blocking
+- [提示] RESIDENCY_BOUND | roles | hardware_conformance | report
+
+$ open-cake-ir compiler check-corpus --format text --revision compiler/revision.json
+语料检查：151/151 项符合预期   <span class="cm"># 109 项预期接受 + 42 项预期拒绝；这不是 GPU 正确性检查</span></code></pre>
+  <div class="prose"><p>生成的 Triton 源码里，FMA 落成一条 <code>tl.inline_asm_elementwise("fma.rn.f32 $0, $1, $2, $3;", …)</code>——因为 Schedule 显式命名了指令合同 <code>ptx.fma.rn.f32</code>，单次舍入的语义没有交给后端猜。仓库反复要求：不要把“源码已生成”写成“GPU 测试已通过”。</p></div>
+
+  <h3>同一份计划走到 B200 为止</h3>
+  <div class="prose"><p>仓库里只有一条链让同一份 Schedule 从教程一直走到真实设备记录，就是上面这份 <code>fma-b8-smoke</code>。把它按“三个结论”摆开：</p></div>
+  <ol class="chapters">
+    <li><span class="n">任务</span><span><span class="t">y = a × b + c，FP32，8 行 × 128 列</span><span class="s">三份输入不被修改；融合乘加只舍入一次（<code>docs/GETTING_STARTED.md</code> §2）。</span></span></li>
+    <li><span class="n">计划</span><span><span class="t"><code>corpus/schedules/fma-b8-smoke.json</code></span><span class="s">target <code>sm_100a</code>；一个角色 <code>compute</code> 占 warps [0,1,2,3]；四个 global buffer 与四个 register tile；5 个操作 load_a / load_b / load_c → fma（<code>instruction.contract = ptx.fma.rn.f32</code>）→ store_y；program_map 以 a 的第 0 维为 batch 轴、tile 1，即每个程序处理一行；lowering <code>triton</code>，入口 <code>cake_fma_b8_smoke</code>。Python 写法就是上面 16 行。</span></span></li>
+    <li><span class="n">检查</span><span><span class="t">结论一：计划通过检查 <span class="tag ok">有记录</span></span><span class="s">在 <code>c75ee4b3</code> 上 assess：接受、允许生成，1 条 report 级 <code>RESIDENCY_BOUND</code>——它同时声明“this Schedule declares no shared_memory or tensor_memory … a backend may still allocate some”，即分析说出了自己检查的域。反例 <code>fma-b8-smoke-arity-drift.json</code> 被 <code>ELEMENTWISE_ARITY</code> 在 <code>operations[3].reads</code> 以 data_consistency 类别阻塞。</span></span></li>
+    <li><span class="n">生成</span><span><span class="t">96 行 Triton，grid (8,1,1)，num_warps 4，maxnreg 64</span><span class="s">CLI 结尾明说：已写出源码；尚未编译成 GPU 二进制，也未运行 GPU。</span></span></li>
+    <li><span class="n">设备</span><span><span class="t">结论二：GPU 答案正确 <span class="tag ok">有记录</span></span><span class="s">2026-09-04，Compiler v41（源提交 <code>ee32b768</code>），<code>examples/gpu/fma_b200_correctness/prepare.py</code> 直接读取这份 JSON 经 assess、lowering 后封装成任务，在 NVIDIA B200 上完成 correctness、memcheck、racecheck 三阶段：六个确定性输入族，整数精确 oracle 单次 RN-even 舍入，独立复算 36,864 个输出元素通过（30,333 位精确 + 6,531 quiet-NaN 类别）。记录在 <code>docs/data/fma-v41-b200-correctness-20260904/</code>。</span></span></li>
+    <li><span class="n">计时</span><span><span class="t">结论三：速度提高 <span class="tag warn">没有记录</span></span><span class="s"><code>performance_measured: false</code>。这条链在这里停住——三个结论里它只满足两个，而这正是仓库要求分开记录它们的原因。带计时的第三段要换到另一条链（M1 Pro 的 gemm_silu，见 §05），而那条链的候选 Schedule 与收据在检出之外。</span></span></li>
+  </ol>
+  <figure>
+    <div class="plate"><img src="figures/python_frontend.png" alt="Python 前端：Python 源文件（装饰器与张量参数、角色分块与计算）→ Python 前端（解析受限语法树、构造规范执行计划、保留源码位置映射）→ 规范 Schedule（类型、操作与资源；读写和同步关系；统一的 IR 数据模型，JSON 执行计划也进入这里）→ 检查与代码生成（类型与语义检查、资源分析与后端生成、Triton / CuTe 等源码）；诊断关联到源码位置供 Agent 定位并继续修改" width="2000" height="873"></div>
+    <figcaption><b>报告图 3：Python 负责表达，规范 IR 连接检查、分析与生成。</b>Python 与 JSON 共享 IR、检查规则和后端；Python 源文件本身不是 GPU 可执行产物。</figcaption>
+  </figure>
+
+  <h3>编译器里有什么</h3>
+  <div class="prose"><p><code>src/open_cake_ir/compiler/</code> 是 43 个文件、18,783 行 Python，零运行时依赖：<code>ir/</code>（数据模型与词汇）、<code>verifier/</code>（四类规则）、<code>backends/</code>（四条路线）、<code>performance/</code>（工作量、驻留、剖析、编译资源、排序与利用率分析）。</p></div>
+  <div class="cards">
+    <div class="card"><div class="lbl">IR 词汇</div><h4>13 种操作，一种规范写法</h4><p><code>load</code> · <code>store</code> · <code>elementwise</code>（square、rsqrt、exp、exp2、reciprocal、relu、tanh、add、sub、mul、div、fma 共 12 个）· <code>cast</code> · <code>mma</code>（秩二收缩，显式指令合同）· <code>epilogue</code> · <code>reduce</code>（sum/max）· <code>reduce_argmin</code> · <code>top_k</code> · <code>scan</code> · <code>index_expand</code> · <code>online_softmax</code> · <code>atomic_rmw</code>。归约是“一种 kind 带一个算子”，而不是每个算子一种 kind。</p></div>
+    <div class="card"><div class="lbl">Lowering 路线</div><h4>四个后端，一个静态清单</h4><p><code>triton</code>（Python/Triton；NVIDIA，以及 AMD 与海光经 Triton 的 AMDGCN 分支产出 hsaco）· <code>cutlass_cute_dsl</code>（Blackwell tcgen05 / TMEM / TMA / mbarrier）· <code>native_cuda</code>（CUDA C++ / PTX，nvcc）· <code>metal</code>（MSL，FP32，load / elementwise / reduce / store）。每个后端实现 <code>requirements</code>、<code>preflight</code>、<code>emit</code>；Schedule 自己声明路线与入口，没有按算子查表的 profile，也没有独立的 HIP 后端。</p></div>
+    <div class="card"><div class="lbl">Verifier 四类合同</div><h4>只在四类里阻塞</h4><p>schedule_semantics（24 个诊断码，如 <code>LOOP_NEST_CYCLE</code>、<code>ROLE_WARP_OVERLAP</code>）· hardware_conformance（约 48 个，如 <code>TARGET_OPERATION_UNSUPPORTED</code>、<code>TARGET_REGISTER_CAP_UNMODELED</code>）· data_consistency（165 个，如 <code>LOAD_ACCESS_SHAPE_MISMATCH</code>）· program_safety（23 个，如 <code>OP_CROSS_ROLE_RACE</code>、<code>STATE_STORE_PROGRAM_OWNER</code>）。三档严重度 blocking / report / hint；后端专属限制由后端报告，不把可表达的计划误判为结构错误。</p></div>
+    <div class="card"><div class="lbl">Target 文档</div><h4>硬件事实只声明一次</h4><p><code>compiler/targets/*.json</code> 声明 warp/wave 宽度、存储空间、操作与指令合同、同步合同、代码对象（cubin / metal_binary_archive / hsaco）。未声明的事实报告为“未建模”，不替换、不继承别的目标的常数。</p></div>
+    <div class="card"><div class="lbl">Corpus Gate</div><h4>151 项语料，逐项对照预期</h4><p>109 项预期接受、42 项预期被指定规则拒绝。改编译器必须过完整 Gate，并在合并到 <code>main</code> 时由作者之外的会话评审一次；期望值从不为了让 Gate 通过而重生成。Gate 报告它没检查的目标（当前 apple_gpu_family7、family9），不为凑数造案例。</p></div>
+  </div>
+  <div class="callout"><b>布局不是一等抽象。</b>Schedule 记录的是具体的存储与访问承诺——在 sm_100a 上是一个 SMEM 视图偏移、一个操作数字节偏移、一段 TMEM 列范围；在别的目标上是它自己的存储、用它自己的词——编译器验证它们彼此一致。Agent 不需要另学一套布局代数。</div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section class="sec" id="feedback">
+  <div class="sec-head">
+    <div class="eyebrow">04 · 三层反馈</div>
+    <h2>用反馈判断该改 Kernel 还是改编译器</h2>
+    <p class="dek">Agent 需要的不只是“失败”或一个延迟值。有效的反馈说明失败发生在什么阶段、涉及哪一处候选、哪些事实已经得到确认。项目把计划分析、编译资源与实机结果关联到同一候选，让 Agent 能区分实现错误、能力缺口和分析失准。</p>
+  </div>
+  <div class="cards">
+    <div class="card"><div class="lbl">① 执行计划反馈</div><h4>修正实现关系</h4><p>类型、地址域、读写效果、角色同步与目标指令约束被检查。诊断带类别和位置，并区分“计划不成立”与“后端暂不支持”。Agent 可以只改某次读取、广播或同步关系，而不是重写整个程序。</p></div>
+    <div class="card"><div class="lbl">② 编译资源反馈</div><h4>分析候选代价</h4><p>后端会引入临时变量与隐式存储，逻辑缓冲区数量不等于物理分配。系统从编译产物与启动配置中读取寄存器、共享内存、栈与局部存储；采集需要对应工具链但无需执行内核，已有报告可在无 CUDA 的机器上复用。</p></div>
+    <div class="card"><div class="lbl">③ 实机评测反馈</div><h4>判断修复与优化是否有效</h4><p>外部参考检查输出及状态变化，计时比较候选表现，性能剖析定位瓶颈。是否达标由评测结果确认，不能以 Agent 自述替代。</p></div>
+  </div>
+  <div class="prose"><p>三层各有范围：资源分配可以收紧驻留上界，却不能换算成运行时间；性能估算只有在对应目标和适用域存在校准依据时才能用于排序（本检出<b>没有已发布的校准</b>，所以成本模型不参与排序）。把未知保留下来，也帮助 Agent 避免把未经验证的假设当成优化事实。</p></div>
+  <figure>
+    <div class="plate"><img src="figures/feedback_layers.png" alt="将工具结果转化为 Agent 下一步可采取的行动：执行计划反馈（类型、值形状与地址域；存储归属与跨角色同步；明确的资源和指令约束）→ 编译资源反馈（实际分配的物理寄存器；显式与后端隐式共享内存；栈和局部存储分配）→ 实机评测反馈（与参考结果的数值差异；实际延迟与吞吐表现；缓存、停顿及运行行为）" width="1920" height="800"></div>
+    <figcaption><b>报告图 4：从工具观察定位改进对象。</b>失败本身不是诊断，Agent 需要结合任务语义与具体反例判断；图示不表示工具自动推导出了唯一修改方案。</figcaption>
+  </figure>
+  <div class="prose"><p>Agent 先定位问题所在：已有原语能组合出计算时，继续改实现；需要多内核协作时，表达中间缓冲区与程序依赖；反复出现且确实无法表达的需求，才有理由扩展 IR。若合法计划被错误拒绝、非法计划被放行，或代码生成没有保留语义，则改对应的检查与生成机制。编译器改进由 Agent 准备，经独立审查与回归验证后才用于后续 Kernel；新原语必须同时具备类型、效果、合法性、分析和生成规则。</p></div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section class="sec" id="targets">
+  <div class="sec-head">
+    <div class="eyebrow">05 · 硬件目标与测量</div>
+    <h2>编译器要求精确目标匹配，从不把计划降级到另一架构</h2>
+    <p class="dek">三个架构家族是平等的对手：NVIDIA、Apple GPU、AMD（海光 DCU 作为独立 vendor 与 AMD 共享 <code>amdgcn-amd-amdhsa--</code> 代码对象）。每台主机按精确目标采集一次为 <code>runtime/hosts/&lt;target&gt;.json</code>；没有采集的目标报告为“没有”，不用别的主机顶替。</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>精确目标</th><th>设备与主机采集</th><th>宽度 / 代码对象</th><th>编写路线</th><th>语料</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">sm_100a</td><td>NVIDIA B200（CC 10.0，148 SM）。历史证据所在；本检出无 host 采集</td><td class="mono">warp 32 · cubin</td><td>Triton · CuTeDSL · 原生 CUDA</td><td class="num r">102</td></tr>
+        <tr><td class="mono">sm_103a</td><td>NVIDIA B300（CC 10.3）。主机：Python 3.12.13、CUPTI 13.0.1、Nsight Compute 2025.4.1、torch 2.11.0、Triton 3.6.0</td><td class="mono">warp 32 · cubin</td><td>Triton · CuTeDSL（GEMM）· 原生 CUDA</td><td class="num r">29</td></tr>
+        <tr><td class="mono">apple_gpu_family7</td><td>Apple M1 Pro（macOS 26.0，Swift 6.0.3）</td><td class="mono">32 lane · metal_binary_archive</td><td>Metal <code>simd_program_tile</code></td><td class="num r">0 <span class="tag warn">未检查</span></td></tr>
+        <tr><td class="mono">apple_gpu_family8</td><td>Apple M2（macOS 15.7.3，Swift 6.1.2）</td><td class="mono">32 lane · metal_binary_archive</td><td>Metal <code>simd_program_tile</code></td><td class="num r">15</td></tr>
+        <tr><td class="mono">apple_gpu_family9</td><td>Apple M4（macOS 26.6.2，Swift 6.4）</td><td class="mono">32 lane · metal_binary_archive</td><td>Metal <code>simd_program_tile</code></td><td class="num r">0 <span class="tag warn">未检查</span></td></tr>
+        <tr><td class="mono">gfx938</td><td>海光 DCU BW1101（vendor hygon，64 CU，64 KiB LDS）。主机：DTK，dcc 25.10，Triton 3.6.0+dtk，Python 3.10.12</td><td class="mono">wave 64 · hsaco</td><td>Triton 路线（AMDGCN）→ HSACO，<code>evaluation/hip_driver.py</code> 装载</td><td class="num r">3</td></tr>
+        <tr><td class="mono">gfx1151</td><td>AMD Radeon Graphics（RDNA 3.5）。主机：ROCm 7.2.1，HIP 7.2，Triton 3.5.1</td><td class="mono">wave 32 · hsaco</td><td>Triton 路线（AMDGCN）</td><td class="num r">1</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted">“语料”列是当前 Corpus Gate 检查到的每目标案例数（合计 151/151 符合预期）；<code>apple_gpu_family10</code> 另有 1 例只用于拒绝检查。语料数量说明检查覆盖，不说明性能。Gate 也不触及 gfx938 声明的 mma / dot 合同和 gfx1151 声明的 cast（F-2026-09-17-004 / -009 已记录）。</p>
+
+  <h3>每个目标自己的计时器</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>目标</th><th>计时来源</th><th>测得区间</th><th>每个样本前的复位与采样</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">sm_100a · sm_103a</td><td>CUPTI（<code>bench_gpu_time_with_cupti</code>）</td><td>kernel 的 GPU 时间</td><td>刷新 L2（cold L2）；11 次 dry run，每个 cohort 25 个样本，配对采样</td><td><span class="tag ok">延迟</span></td></tr>
+        <tr><td class="mono">apple_gpu_family7/8/9</td><td>Metal <code>MTLCommandBuffer.GPUStartTime / GPUEndTime</code></td><td>整个已完成的 command buffer（v2 协议按 64 次 dispatch 均摊）</td><td>warm，无显式 flush；3 次预热 + 25 个样本；10 组候选/基线交替配对，材料性比 1.05，需 6 组胜出，相对 IQR 门 0.05</td><td><span class="tag ok">延迟</span> 不是纯 kernel 延迟，不继承 CUPTI / L2 flush 语义，也不排除其他 GPU 客户端</td></tr>
+        <tr><td class="mono">gfx938 · gfx1151</td><td><code>hip_dispatch</code>（torch.profiler / roctracer 的按 dispatch 设备时间；2026-09-17 命名）</td><td>一次 dispatch 的 begin → end</td><td>清零一块 256 MiB 缓冲；25 个样本</td><td><span class="tag warn">无合格延迟</span> gfx938：十个 cohort 在声明的 CV 上界 0.05 下 <code>measurement_quality_passed: false</code>（冷 CV 0.044–0.063，计时量子 0.160 µs），上界不放宽；gfx1151：两个设备侧计时器相差 31%（31.858 vs 24.224 µs），绝对延迟不被支持为结论，也没有 Executor</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout"><b>2026-09-16 · 海光 DCU 成为第三个可运行目标。</b>一个 Triton 降级的 kernel 在 DTK 容器里编译成 HSACO，在 BW1101 上 launch，对外部 CPU oracle 检查通过：<code>output_mismatches: 0</code>，<code>max_abs_error: 4.77e-07</code>。这条路径与 NVIDIA、Apple 并列，不是从它们任何一条降级而来。那份收据里 <code>timing: null</code>。次日（09-17）设备注册表为它命名了 <code>hip_dispatch</code> 计时来源，但测出的 cohort 没有一个过质量门——所以截至 2026-09-18，gfx938 有命名的计时源、没有合格的延迟结论，优化 campaign 仍被阻塞。计时来源要靠测出来，不是加一行表。</div>
+
+  <h3>通过稳定性门的已保留测量</h3>
+  <div class="prose"><p>这些数字转录自 <code>findings/</code> 里引用的确认事件，每一条都是<b>一个目标、一个形状、一次配对确认</b>，带着它自己的 Compiler / Executor 版本；原始收据在各主机的证据根，不在 git 树内。Executor 的历史命名前缀 <code>b200-vN</code> 只是软件版本号，不指硬件。它们不构成 portfolio，也不构成框架级结论。</p></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>目标 · 任务</th><th class="r">候选 ms</th><th class="r">基线 ms</th><th class="r">配对加速</th><th>门</th><th>来源与边界</th></tr></thead>
+      <tbody>
+        <tr><td>M1 Pro · <code>gemm_silu</code> FP32 128×256×32</td><td class="r num">0.079588</td><td class="r num">1.878596</td><td class="r num"><b>23.60×</b></td><td>10/10 胜，质量通过，max abs err 4.196e-05</td><td>F-2026-09-11-004（Executor v98 / Compiler v73；形状见 <code>docs/PERFORMANCE_SCORING.md</code>）。输出列特化机制：每个程序只载入一列 B[:,col]、归约到一个标量，已落为 Compiler pass <code>specialize_output_columns</code>（v79）。“exact to one M1 Pro shape”；后继 v115/v80 上的合格终点是一个八段 K-split 行形式，0.1366 ms = 14.19×，基线在 v73→v80 间持平。该 Finding 尚未关闭：<code>verified_by</code> 为空，M4 leg 仍欠</td></tr>
+        <tr><td>M4 · <code>channel_absmax_scale</code></td><td class="r num">0.000712</td><td class="r num">0.000788</td><td class="r num"><b>1.107×</b></td><td>9 胜 1 负，质量通过</td><td>F-2026-09-12-001（Executor v104 / Compiler v74）。精确 R=2 的行归约标量化；该 campaign 同时做了除以 448 的强度削减，没有单独隔离机制贡献</td></tr>
+        <tr><td>M4 · <code>bias_gradient_reduction</code></td><td class="r num">0.000678</td><td class="r num">0.000772</td><td class="r num"><b>1.138×</b></td><td>质量通过，max abs err 2.384e-07</td><td>同一 Finding 的后继 M4 campaign（Executor v113 / Compiler v78）；产物被晋升为该 M4 任务格的第零代 incumbent</td></tr>
+        <tr><td>B300 · <code>rmsnorm_input_gradient</code> FP32 128×1024</td><td class="r num">0.002497</td><td class="r num">0.003104</td><td class="r num"><b>1.243×</b></td><td>10/10 胜</td><td rowspan="4">F-2026-09-15-005（Compiler v85 / Executor v126；CUPTI 冷 L2 配对，CV 上界 0.15；v85 的 lock 位于 <code>compiler/releases/v84+…/</code> 目录内）。调用方显式选择 CTA 宽度的候选改写（rmsnorm 梯度与 cosine 选 8 warps，swiglu 与 softmax 反向选 16）。“No universal optimal-width rule follows”；宽度 1 的地板与旧基线持平，各比值只对各自确认的基线成立，且只在 FP32 128×1024、sm_103a 上</td></tr>
+        <tr><td>B300 · <code>swiglu</code></td><td class="r num">0.002208</td><td class="r num">0.003648</td><td class="r num"><b>1.652×</b></td><td>10/10 胜</td></tr>
+        <tr><td>B300 · <code>softmax_backward</code></td><td class="r num">0.002560</td><td class="r num">0.002928</td><td class="r num"><b>1.144×</b></td><td>10/10 胜</td></tr>
+        <tr><td>B300 · <code>cosine_similarity</code></td><td class="r num">0.002528</td><td class="r num">0.002976</td><td class="r num"><b>1.177×</b></td><td>10/10 胜</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout caveat"><b>没有过门的也保留着。</b>M2 上普通 GEMM 的三个候选测到 6–7× 的中位数差距，但全部 <code>measurement_quality_failed</code>（设备争用）；M1 Pro 后继 leg 上 33.9× 的搜索读数被每 cohort 的相对 IQR 门拒绝——同一颗 SoC 上另一个会话在跑 pytest。B200 上保留的三份记录（FMA v41、affine v43、state-store v40）全部是固定实例正确性，没有计时。</div>
+
+  <div class="prose">
+    <p><b>任务面。</b>Lab 有一套 24 个可移植 Workload 的任务集（activation 8 · rowwise 5 · reductions 4 · optimizers 3 · contraction 4；默认冻结形状 128×1024，contraction 为 1024×128×64），加上 <code>contracts/workloads/</code> 下 29 份冻结合同（Tile 三算子、Flash-KMeans、TinyGEMM2、DSA、QSA、KDA、AKA、DeepSeek-V4、SoL-ExecBench RMSNorm）。启动器 <code>tools/launch_task.py</code> 当前暴露 35 个任务（4 个归一化任务 + 24 任务集 + 6 个 SoL-ExecBench 导入 + gemm_bias）。列出的是合同，不是“已接通 Lab、通过 GPU 或达到最佳性能”的排行榜。</p>
+    <p><b>Apple 上的内置任务。</b><code>rmsnorm</code>、<code>layernorm</code>（带仿射参数）与 <code>residual_rmsnorm</code>，通过 TaskLab / Ralph 在固定预算下生成候选并调用公共评测；每个 Workload 只覆盖一个形状，含 primary、零值、近零值、交替符号与混合幅度五类必测输入，全部通过后才测量 primary。</p>
+  </div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section class="sec" id="report">
+  <div class="sec-head">
+    <div class="eyebrow">06 · 技术报告（2026 年 9 月）</div>
+    <h2>报告说了什么，以及它自己划定的边界</h2>
+    <p class="dek">《open-cake-ir：Agent 驱动的编译器与 Kernel 协同进化》随 <a href="https://github.com/qhy991/open-cake-ir/releases/tag/research-preview-2026-09-06">research-preview-2026-09-06</a> 发布，压缩包 1.06 MB。报告版本 2026-W36.1，绑定源码快照 <code>0d954c5</code>（Compiler 与 Executor 均为 v46）。这次叙事重写<b>没有新增</b>实机编译、正确性或性能测量。</p>
+  </div>
+
+  <dl class="kv">
+    <dt>正文</dt><dd><code>TECHNICAL_REPORT.zh-CN.md</code> — 摘要 + 7 节</dd>
+    <dt>附录</dt><dd><code>TECHNICAL_APPENDIX.zh-CN.md</code> — 实现来源（快照内 15 个文件的对照表）、QSA 案例、Flash-KMeans 案例、其他正确性来源、图表复现</dd>
+    <dt>示例</dt><dd><code>examples/python/softmax.py</code>、<code>fma.py</code>、<code>kmeans_pipeline.py</code>（与仓库示例一致）</dd>
+    <dt>图与数据</dt><dd>5 组主图（PNG + SVG）、<code>data/report-data.json</code>（派生投影，无发布或晋级权限）、<code>qsa-r23-confirmation-samples.json</code>（两臂各 125 个原始样本）、绘图脚本</dd>
+  </dl>
+
+  <h3>章节地图</h3>
+  <ol class="chapters">
+    <li><span class="n">§1</span><span><span class="t">在算子生产中共同改进 Kernel 与编译器</span><span class="s">生产一个算子是一连串相互依赖的工作；Agent 承担这条链，并在过程中改进它所用的编译能力。</span></span></li>
+    <li><span class="n">§2</span><span><span class="t">Agent 怎样组织持续的生产与改进</span><span class="s">任务输入固定语义、形状、参考、容差、预算与停止条件；候选提交自动接编译与评测；同一会话多回合继续，预算耗尽是明确的结束状态。Agent 不能通过改问题、放宽容差或替换参考让自己通过。</span></span></li>
+    <li><span class="n">§3</span><span><span class="t">Python 前端与 IR：Agent 怎样表达 Kernel</span><span class="s">完整 Softmax 执行计划；Python → 规范 IR → 检查与生成；把容易出错的关系（地址域与值形状、跨角色交接、FMA 与 TF32 的数值语义）交给编译器检查。</span></span></li>
+    <li><span class="n">§4</span><span><span class="t">用反馈判断该改 Kernel 还是编译器</span><span class="s">执行计划反馈、编译资源反馈、实机反馈；三层各有范围。</span></span></li>
+    <li><span class="n">§5</span><span><span class="t">让两条演化路径在具体任务中闭合</span><span class="s">生成、筛选、评测与确认；交付包含实现及其使用依据；编译器改进回到 Kernel 生产中验证——QSA 推动了循环携带的 Top-k 状态与在线 Softmax，FMA 父任务推动了单次舍入语义的原语、检查与生成路径。</span></span></li>
+    <li><span class="n">§6</span><span><span class="t">已有案例与协同进化的评价</span><span class="s">配对搜索（Flash-KMeans）与复杂程序（QSA）两类证据；评价协同进化需要同时看两个方向，已有数据尚未系统覆盖任务完成率、生产成本与人工介入等指标。</span></span></li>
+    <li><span class="n">§7</span><span><span class="t">当前范围与后续方向</span><span class="s">跨任意任务自动诊断编译器缺口、完成修改并持续验证收益，仍需要更完整的自动化与评估。</span></span></li>
+  </ol>
+
+  <figure>
+    <div class="plate"><img src="figures/agent_production.png" alt="报告图 1 原图：Agent 驱动编译器与 Kernel 的协同进化" width="2058" height="1075"></div>
+    <figcaption><b>报告图 1 原图。</b>报告的五组机制图是根据当时实现重新绘制的示意图，没有复制参考论文的图片。</figcaption>
+  </figure>
+
+  <h3>案例一 · QSA：一个多阶段完整程序</h3>
+  <div class="prose"><p>QSA 程序包含池化、归一化、评分与 Top-k 选择、索引展开和选定位置的注意力计算，需要在遍历数据块时保留选择与归约状态。在长度 T = 32,768 的固定 B200 工作负载上（<code>qsa-prefill-t32768-task-geometry-v1</code>），已确认候选的完整程序延迟约 <b>127.8 ms</b>，同次测量的固定 CUDA 黑盒参考约 <b>676.4 ms</b>，比值 <b>5.29</b>。报告数据文件还保留了到达这个终点之前的搜索轨迹：</p></div>
+
+  <div class="chart" id="chart-qsa">
+    <div class="ttl">QSA 完整程序的 GPU 延迟</div>
+    <div class="sub">NVIDIA B200 · T = 32,768 · CUPTI 计时、冷 L2 · 单位 ms，越低越好 · 数据：报告 <code>data/report-data.json</code></div>
+    <svg viewBox="0 0 660 262" role="img" aria-labelledby="qsa-t qsa-d">
+      <title id="qsa-t">QSA 完整程序延迟：固定 CUDA 参考 676.4 ms；搜索候选 R8 tile64 523.5、R8 tile128 399.2、R8 tile256 288.2；已确认前沿 R23 半选择 127.8；未晋级的 R29 124.7</title>
+      <desc id="qsa-d">横向条形图，x 轴 0 到 800 毫秒。</desc>
+      <g class="grid">
+        <line x1="170" y1="14" x2="170" y2="222"/><line x1="285" y1="14" x2="285" y2="222"/><line x1="400" y1="14" x2="400" y2="222"/><line x1="515" y1="14" x2="515" y2="222"/><line x1="630" y1="14" x2="630" y2="222"/>
+      </g>
+      <g class="axis">
+        <line x1="170" y1="222" x2="630" y2="222"/>
+        <text x="170" y="240" text-anchor="middle">0</text><text x="285" y="240" text-anchor="middle">200</text><text x="400" y="240" text-anchor="middle">400</text><text x="515" y="240" text-anchor="middle">600</text><text x="630" y="240" text-anchor="middle">800 ms</text>
+      </g>
+      <!-- reference -->
+      <text class="cat" x="160" y="36" text-anchor="end">固定 CUDA 参考</text>
+      <rect class="hit" x="170" y="14" width="460" height="34"><title>固定 CUDA 参考：676.423598 ms（R23 同次测量）</title></rect>
+      <path class="bar dim" d="M170 22 H554.9 Q558.9 22 558.9 26 V40 Q558.9 44 554.9 44 H170 Z"/>
+      <text class="val dim" x="566" y="37">676.4</text>
+      <!-- R8 tile64 -->
+      <text class="cat" x="160" y="70" text-anchor="end">R8 · tile 64</text>
+      <rect class="hit" x="170" y="48" width="460" height="34"><title>R8 tile64：523.540744 ms（search，Compiler v31 / Executor v36）</title></rect>
+      <path class="bar" d="M170 56 H467 Q471 56 471 60 V74 Q471 78 467 78 H170 Z"/>
+      <text class="val" x="478" y="71">523.5</text>
+      <!-- R8 tile128 -->
+      <text class="cat" x="160" y="104" text-anchor="end">R8 · tile 128</text>
+      <rect class="hit" x="170" y="82" width="460" height="34"><title>R8 tile128：399.234581 ms（search）</title></rect>
+      <path class="bar" d="M170 90 H395.6 Q399.6 90 399.6 94 V108 Q399.6 112 395.6 112 H170 Z"/>
+      <text class="val" x="407" y="105">399.2</text>
+      <!-- R8 tile256 -->
+      <text class="cat" x="160" y="138" text-anchor="end">R8 · tile 256</text>
+      <rect class="hit" x="170" y="116" width="460" height="34"><title>R8 tile256：288.209971 ms（confirmed）</title></rect>
+      <path class="bar" d="M170 124 H331.7 Q335.7 124 335.7 128 V142 Q335.7 146 331.7 146 H170 Z"/>
+      <text class="val" x="343" y="139">288.2 <tspan class="lab">已确认</tspan></text>
+      <!-- R23 -->
+      <text class="cat" x="160" y="172" text-anchor="end" font-weight="700">R23 · 半选择</text>
+      <rect class="hit" x="170" y="150" width="460" height="34"><title>R23 半选择：127.821446 ms（confirmed_frontier，Compiler v37 / Executor v39，run open-cake-qsa-prefill-t32768-seed-component-v1-722fbc815bc7）</title></rect>
+      <path class="bar" d="M170 158 H239.5 Q243.5 158 243.5 162 V176 Q243.5 180 239.5 180 H170 Z"/>
+      <text class="val" x="251" y="173">127.8 <tspan class="lab">已确认前沿 · 5.29×</tspan></text>
+      <!-- R29 -->
+      <text class="cat" x="160" y="206" text-anchor="end">R29 · 注意力阶段 4</text>
+      <rect class="hit" x="170" y="184" width="460" height="34"><title>R29 attention stage4：124.673001 ms（not_promoted：改进 2.5% 低于 5% 晋级阈值）</title></rect>
+      <path class="bar hollow" d="M170.75 192.75 H237.7 Q241.7 192.75 241.7 196.75 V209.25 Q241.7 213.25 237.7 213.25 H170.75 Z"/>
+      <text class="val dim" x="251" y="207">124.7 <tspan class="lab">未晋级：改进 2.5% &lt; 5% 阈值</tspan></text>
+    </svg>
+    <div class="legend"><span>Open-Cake 候选</span><span class="dim">固定 CUDA 黑盒参考</span><span class="hollow">未满足晋级标准</span></div>
+    <details class="tbl"><summary>表格视图</summary>
+      <div class="table-wrap"><table>
+        <thead><tr><th>候选</th><th class="r">延迟 ms</th><th class="r">参考 ms</th><th class="r">比值</th><th>处置</th><th>Compiler / Executor</th></tr></thead>
+        <tbody>
+          <tr><td>R8 tile64</td><td class="r num">523.540744</td><td class="r num">676.402811</td><td class="r num">1.29</td><td>search</td><td class="mono">v31 / v36</td></tr>
+          <tr><td>R8 tile128</td><td class="r num">399.234581</td><td class="r num">676.395184</td><td class="r num">1.69</td><td>search</td><td class="mono">v31 / v36</td></tr>
+          <tr><td>R8 tile256</td><td class="r num">288.209971</td><td class="r num">676.407137</td><td class="r num">2.35</td><td>confirmed</td><td class="mono">v31 / v36</td></tr>
+          <tr><td>R23 half-selection</td><td class="r num">127.821446</td><td class="r num">676.423598</td><td class="r num">5.29</td><td>confirmed_frontier</td><td class="mono">v37 / v39</td></tr>
+          <tr><td>R29 attention stage4</td><td class="r num">124.673001</td><td class="r num">676.447188</td><td class="r num">5.43</td><td>not_promoted</td><td class="mono">v39 / v39</td></tr>
+        </tbody>
+      </table></div>
+    </details>
+  </div>
+  <dl class="kv">
+    <dt>计时边界</dt><dd>完整 Program 的 GPU 计时，CUPTI，冷 L2；不含 Python 可调用函数墙钟开销</dd>
+    <dt>原始样本</dt><dd>两臂各 125 个；正确性匹配比例 1.0</dd>
+    <dt>R23 剖析</dt><dd>224 寄存器/线程、每 SM 驻留 1 个 CTA、绑定资源为共享内存；SM 吞吐 14.89%、活跃 warp 6.22%。收益归因于更少的精确选择网络工作，而非新的占用率区间。分量：score/top-k 58.48 ms，attention 69.10 ms</dd>
+    <dt>不是什么</dt><dd>参考是任务固定的 CUDA 实现。此案例不构成 Open-Cake 与全部 CUDA 库的比较，也不是固定模型、预算后的 Agent 作者环境对照实验；它只说明程序表示能承载有效的调度与选择算法优化</dd>
+  </dl>
+
+  <h3>案例二 · Flash-KMeans：配对搜索的终点</h3>
+  <div class="prose"><p>在相同模型（<code>gpt-5.6-sol</code>，reasoning effort max）、相同预算（每次独立搜索 150,000 provider tokens）和相同工作负载（<code>flash-kmeans-assign-independent-v2 / headline_b32</code>，B=32、N=65536、K=1024、D=128，BF16，B200）下，比较 Agent 提交 Open-Cake 执行计划与直接写 CUDA 的搜索终点。每组三次预定运行，比较的是各次搜索中<b>已确认</b>的终点。</p></div>
+
+  <div class="chart" id="chart-fk">
+    <div class="ttl">Flash-KMeans 独立搜索的已确认终点</div>
+    <div class="sub">每个点是一次搜索的终点 · 竖线为中位数 · 横线为观察范围（不是置信区间）· 单位 ms，越低越好</div>
+    <svg viewBox="0 0 660 190" role="img" aria-labelledby="fk-t fk-d">
+      <title id="fk-t">Flash-KMeans：Open-Cake 搜索三次终点 1.19、1.51、1.51 ms，中位数 1.512；直接 CUDA 搜索三次终点 3.90、5.34、7.13 ms，中位数 5.342</title>
+      <desc id="fk-d">点图，x 轴 0 到 8 毫秒。</desc>
+      <g class="grid">
+        <line x1="170" y1="14" x2="170" y2="150"/><line x1="227.5" y1="14" x2="227.5" y2="150"/><line x1="285" y1="14" x2="285" y2="150"/><line x1="342.5" y1="14" x2="342.5" y2="150"/><line x1="400" y1="14" x2="400" y2="150"/><line x1="457.5" y1="14" x2="457.5" y2="150"/><line x1="515" y1="14" x2="515" y2="150"/><line x1="572.5" y1="14" x2="572.5" y2="150"/><line x1="630" y1="14" x2="630" y2="150"/>
+      </g>
+      <g class="axis">
+        <line x1="170" y1="150" x2="630" y2="150"/>
+        <text x="170" y="168" text-anchor="middle">0</text><text x="227.5" y="168" text-anchor="middle">1</text><text x="285" y="168" text-anchor="middle">2</text><text x="342.5" y="168" text-anchor="middle">3</text><text x="400" y="168" text-anchor="middle">4</text><text x="457.5" y="168" text-anchor="middle">5</text><text x="515" y="168" text-anchor="middle">6</text><text x="572.5" y="168" text-anchor="middle">7</text><text x="630" y="168" text-anchor="middle">8 ms</text>
+      </g>
+      <!-- Open-Cake row y=58 -->
+      <text class="cat" x="160" y="62" text-anchor="end" font-weight="700">Open-Cake 搜索</text>
+      <line class="range" x1="238.5" y1="58" x2="256.9" y2="58"/>
+      <line class="median" x1="256.9" y1="42" x2="256.9" y2="74"/>
+      <circle class="dot" cx="238.5" cy="58" r="5"><title>Open-Cake 第 1 次：1.191845 ms（直接 CUDA 第 1 次 3.898164）</title></circle>
+      <circle class="dot" cx="256.9" cy="58" r="5"><title>Open-Cake 第 2 次：1.511927 ms（直接 CUDA 第 2 次 7.130795）</title></circle>
+      <circle class="dot" cx="256.9" cy="58" r="5" transform="translate(0,-9)"><title>Open-Cake 第 3 次：1.512163 ms（直接 CUDA 第 3 次 5.342292）</title></circle>
+      <text class="val" x="268" y="36">中位数 1.512 ms</text>
+      <!-- Direct CUDA row y=118 -->
+      <text class="cat" x="160" y="122" text-anchor="end">直接 CUDA 搜索</text>
+      <line class="range dim" x1="394.1" y1="118" x2="580" y2="118"/>
+      <line class="median dim" x1="477.2" y1="102" x2="477.2" y2="134"/>
+      <circle class="dot dim" cx="394.1" cy="118" r="5"><title>直接 CUDA 第 1 次：3.898164 ms</title></circle>
+      <circle class="dot dim" cx="477.2" cy="118" r="5"><title>直接 CUDA 第 3 次：5.342292 ms（中位数）</title></circle>
+      <circle class="dot dim" cx="580" cy="118" r="5"><title>直接 CUDA 第 2 次：7.130795 ms</title></circle>
+      <text class="val dim" x="488" y="96">中位数 5.342 ms</text>
+    </svg>
+    <div class="legend"><span>Open-Cake 执行计划</span><span class="dim">直接 CUDA 程序</span></div>
+    <details class="tbl"><summary>表格视图</summary>
+      <div class="table-wrap"><table>
+        <thead><tr><th>配对</th><th class="r">Open-Cake 已确认延迟 ms</th><th class="r">直接 CUDA 已确认延迟 ms</th><th class="r">比值</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td class="r num">1.191845</td><td class="r num">3.898164</td><td class="r num">3.27</td></tr>
+          <tr><td>2</td><td class="r num">1.511927</td><td class="r num">7.130795</td><td class="r num">4.72</td></tr>
+          <tr><td>3</td><td class="r num">1.512163</td><td class="r num">5.342292</td><td class="r num">3.53</td></tr>
+          <tr><td><b>中位数</b></td><td class="r num"><b>1.511927</b></td><td class="r num"><b>5.342292</b></td><td class="r num"><b>3.53</b></td></tr>
+        </tbody>
+      </table></div>
+    </details>
+  </div>
+  <dl class="kv">
+    <dt>历史软件</dt><dd>Compiler v28、Executor v29、B200 独占（身份取自 <code>runtime/v28-rope-r1.campaign.lock.json</code>，报告 JSON 本身不带）；六次终点均记为 qualified（两臂资格率各 1.0）；这是检出内的冻结验收夹具，<code>archive_integrity</code> 与 <code>filesystem_custody_verified</code> 均为 true</dd>
+    <dt>命名勘误</dt><dd>文件与研究协议名中保留了 <code>v28-rope-r1</code>，但六条冻结 authority 指定 Flash-KMeans，三个获胜 Schedule 的入口均为 <code>cake_flash_kmeans_assign</code>；旧周报的 RoPE 命名有误，历史标识不被改写</dd>
+    <dt>核验级别</dt><dd>历史报告加当前 authority、Schedule 与远端终态检查；没有重新跑 GPU，也没有重做完整 custody audit</dd>
+    <dt>不是什么</dt><dd>它为“Agent 可以通过这套表示与反馈环境完成有效优化”提供一个具体案例，但不能把收益分别归因于 IR、反馈或搜索策略，也不能外推到所有算子和预算。CAKE 论文在同一 Flash-KMeans 形状上报告的 1.144× 与 0.928×（80M token 预算）是 <code>paper_reported</code>，本项目不与之比较——预算口径不同</dd>
+  </dl>
+
+  <h3>报告引用的其他正确性来源</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>来源</th><th>范围</th><th>结果</th><th>性能</th></tr></thead>
+      <tbody>
+        <tr><td>FMA 独立参考与 B200 检查</td><td>Compiler v41；形状 [8, 128]；2 个 kernel × 6 类输入家族（cancellation、overflow、seeded-bits、signed-zero、special-values、subnormals，各含 nested 与 ordinary）</td><td>36 个产物通过 correctness、memcheck、racecheck；重算 36,864 个输出元素</td><td><span class="tag warn">未测量</span></td></tr>
+        <tr><td>状态原地更新</td><td>Compiler v40，任务 v4；4 个用例、每例 1,024 个状态元素</td><td>运行 completed / valid</td><td><span class="tag warn">未测量</span></td></tr>
+        <tr><td>AKA 选定实例的 IR 审查</td><td>677 条 qualified 记录：accepted 439、rejected 237；IR gap 326 例（202 个语义簇）</td><td>465 个完整输出产物，重算 21,008,724 个输出元素与 144 个可变状态元素</td><td><span class="tag warn">未测量</span></td></tr>
+        <tr><td>Affine parent 金丝雀</td><td>Compiler v43；形状 [2, 2, 2]</td><td>8 个元素、0 处不匹配、0 次输入被改写</td><td><span class="tag warn">未测量</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout caveat"><b>报告自己不主张的事。</b>
+    <ul>
+      <li>单个加速比不能分解两条演化路径各自的贡献；已有数据尚未系统覆盖给定预算下的任务完成率、生产成本与人工介入。</li>
+      <li>Softmax 示例用来解释候选结构，没有被描述成一段新执行的 Agent 轨迹。</li>
+      <li>没有把它描述成已经覆盖任意任务的完全自动编译器演化控制器。</li>
+      <li>历史测量绑定附录列出的快照与工作负载（Compiler v28 – v46），不随当前 <code>main</code> 移动；数据文件是报告缓存，原工作负载和节点记录仍拥有实验事实。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 7 ============ -->
+<section class="sec" id="govern">
+  <div class="sec-head">
+    <div class="eyebrow">07 · 治理与节奏</div>
+    <h2>Campaign 只在冻结代码上跑；改编译器是另一拍</h2>
+    <p class="dek">这个仓库由多个 Agent 会话同时工作。让结论可审计的不是某个人的记忆，而是三种追加写入的记录：ADR 回答“为什么这样设计”，Finding 把一次 campaign 的证据提炼成一个可被下一次改动引用的结论，Evidence 保存原始事实。</p>
+  </div>
+  <div class="stats">
+    <div><div class="v num">69</div><div class="k">ADR（0001–0066，其中三个编号各有两份）</div></div>
+    <div><div class="v num">66</div><div class="k">Finding（2026-09-10 至 09-17）：protocol 25 · capacity 19 · bug 11 · behavior 11</div></div>
+    <div><div class="v num">34</div><div class="k">已关闭的 Finding：<code>implemented_in</code> 与 <code>verified_by</code> 都已命名</div></div>
+  </div>
+  <h3>Tick-tock</h3>
+  <div class="prose">
+    <p><b>Tock</b>：Campaign 只在冻结代码上运行。<b>Tick</b>：编译器或执行器的改动作为提交落在分支上，合并后才到达 Campaign，所以一个 Campaign 钉住的提交从不在它脚下变化（ADR 0065）。节奏由 Finding 触发而非日历驱动：扫任务直到覆盖或阻塞性 Finding 积累，然后 tick、验证、继续扫。Bug 与协议类 tick 通过重放引用的失败证据验证；能力类 tick 通过在后继版本上的新 Campaign 验证。跨版本比较锚定每个任务的固定基线包，所以一次 tick 分开报告两件事：基线移动（编译器地板）和候选减基线（provider 余量）。</p>
+    <p><b>源码身份就是提交。</b>Compiler 身份是 <code>open-cake-ir@&lt;commit&gt;</code>，Executor 身份是 <code>&lt;target&gt;@&lt;commit&gt;</code>；两者都不由手工选择；Executor 身份还要求该目标已提交的主机采集。带未提交或未跟踪改动的检出没有身份——Compiler 仍会检查与生成，但报告占位符 <code>open-cake-ir@uncommitted</code>，Executor 则直接拒绝构造。此前 24 天里累积过 84 个 Compiler release 目录和 129 个 Executor 描述符，某一天 19 个提交中有 9 个是发布簿记——ADR 0065 用“提交即身份”取代了按改动铸造 release 的机制，历史发布身份保留、不复用。</p>
+  </div>
+  <h3>经验晋升：一次性失败不是规则</h3>
+  <div class="prose"><p>一次有界的 Kernel 优化或反复失败调查结束时，检查保留的证据里是否有可复用的机制，并把处置写进已有结果——“不晋升”是合法结论。教训路由给它的所有者：确定性的 Schedule 改写归 Compiler pass；何时用、用什么参数归 Lab 的 recipe 或选择策略；缺失的合法性检查归 verifier；缺失的表达能力归 IR 或 lowering；估算误差归目标专属校准。晋升一个 pass 需要真实的第二次使用或稳定的结构不变量；判断机制看后续 Kernel 在匹配预算下的验证结果、避免的尝试次数和负迁移，不看积累了多少 pass。</p></div>
+  <h3>几条能解释设计哲学的 ADR</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th class="mono">ADR</th><th>决定</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">0001</td><td>编译器是产品核心，Lab 是依赖它的应用；依赖永久单向。</td></tr>
+        <tr><td class="mono">0022</td><td><code>tanh</code> 必须显式命名目标实现合同（sm100 上是 <code>libdevice.tanh.f32</code>），后端不得在 Schedule 背后隐式选择——起因是 <code>tanh.approx.f32</code> 在 524,288 个元素中有 2,304 个偏差超过 1e-5。</td></tr>
+        <tr><td class="mono">0031</td><td>Evidence 审计返回两个正交事实：<code>archive_integrity</code> 与 <code>filesystem_custody_verified</code>。一份完整但权限宽松的 git 检出可以重放，却支持不了晋升或估计；不许为了让 custody 检查通过而恢复权限位。</td></tr>
+        <tr><td class="mono">0051</td><td>读取的值跟随访问域：读单个地址不能靠声明一个向量结果就得到多个元素。</td></tr>
+        <tr><td class="mono">0052</td><td>允许一个与作者不同的独立 Agent 会话（允许的模型集合由 <code>release.py</code> 唯一拥有）评审编译器变更；自动估计仍不授权一个 Revision。</td></tr>
+        <tr><td class="mono">0062</td><td>每个配对搜索臂声明且仅声明一种参考访问：clean_start、known_kernel_reproduction 或 direct_low_level；访问由语义工件角色而非文件扩展名决定。</td></tr>
+        <tr><td class="mono">0065</td><td>源码身份是干净的 git 提交；CI 按提交跑 Corpus Gate，合并到 <code>main</code> 携带一次评审；取代 0030/0049/0050/0052 的机制但保留其不变量。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>IR 变更受八条原则约束（论文附录 B.1）</h3>
+  <div class="cards">
+    <div class="card"><h4>P1 符合直觉 · P2 性能透明</h4><p>编辑模型对 NumPy/PyTorch 用户熟悉，不做多余的目的地传递或网格簿记；性能相关的硬件决策可见、lowering 行为可检视。</p></div>
+    <div class="card"><h4>P3 规范 · P4 静态类型检查</h4><p>每个操作一种规范写法；用类型规则约束 lowering，在构造时而非发射时拒绝病态程序。</p></div>
+    <div class="card"><h4>P5 便于分析 · P7 分析一致</h4><p>暴露静态分析需要的信息；数据模型的改动与对应分析在同一次变更中落地——一个声明了合同却没有分析的目标，就是 fail-open 的门（F-2026-09-17-008）。</p></div>
+    <div class="card"><h4>P6 测试把关 · P8 硬件落地</h4><p>IR 变更以 kernel 矩阵测试评估；每个操作记录它意图的硬件行为。</p></div>
+  </div>
+</section>
+
+<!-- ============ 8 ============ -->
+<section class="sec" id="roadmap">
+  <div class="sec-head">
+    <div class="eyebrow">08 · 路线图</div>
+    <h2>从可复现的开放平台到端到端验证</h2>
+    <p class="dek">长期目标是一个开放、可复现、能跨硬件演进的 Kernel–Compiler 协同设计平台，逐步帮助 Agent 发现优化手段、设计高性能 Megakernel，并在真实模型与应用中验证端到端收益。下表是后续目标与验收条件，不表示这些能力已经完成。</p>
+  </div>
+  <div class="roadmap">
+    <div class="rm"><div class="m">M1</div><div><h4>可复现的开放平台</h4><p>开放编译器、Agent 接口、评测流程与完整案例。验收：外部使用者能以明确环境和有限预算，复现一次 Kernel 优化和一次编译能力变化的效果；保留成功、失败和能力边界。</p></div></div>
+    <div class="rm"><div class="m">M2</div><div><h4>可复现的跨架构迁移</h4><p>从现有非 NVIDIA 后端中选一个，整理完整迁移案例与可重复步骤：可复用的语义、必须重做的硬件决策、Agent 与人工的工作及成本；在目标设备上验证正确性并对合理基线测性能。第二个迁移目标检验方法的可复用性。</p></div></div>
+    <div class="rm"><div class="m">M3</div><div><h4>首个 Agent 设计的多阶段融合计划</h4><p>为一个真实子图提供融合边界、数据驻留与调度的设计支持。限定单 GPU、固定子图、静态依赖与有界调度；对比多 Kernel 基线，以性能剖析解释收益和失败条件。</p></div></div>
+    <div class="rm"><div class="m">M4</div><div><h4>优化机制发现与复用</h4><p>从 Kernel 与 Megakernel 实验中提炼机制，可复用部分落为变换、选择策略或编译能力，用于第二个不同任务。保留单一机制的前后程序、适用条件与反例；记录负收益、能力开发和审查成本。</p></div></div>
+    <div class="rm"><div class="m">M5</div><div><h4>跨后端优化传递与 Megakernel 迁移</h4><p>把已验证的优化方法传递到另一个后端或架构：区分可复用的原理、必须重做的实现与不支持的机制；比较有无迁移经验的搜索结果与成本，验证负迁移。各目标用自己的基线、测量协议和校准。</p></div></div>
+    <div class="rm"><div class="m">M6</div><div><h4>端到端接入与加速验证</h4><p>把已验证的产物接入真实模型、推理框架或应用。固定模型与精度、输入、硬件、框架配置和请求负载；分开报告 Kernel 时间、子图区间、模型及服务时间；局部加速不自动代表端到端加速。</p></div></div>
+  </div>
+  <p class="small muted">每阶段固定一个核心问题、主要工作负载和主要硬件目标，并约定投入上限。M1–M2 先形成公开平台、迁移报告与论文材料；M3–M4 再形成 Megakernel 的核心研究结果；M5、M6 在前置产物通过验证后按需求安排。</p>
+</section>
+
+<!-- ============ 9 ============ -->
+<section class="sec" id="status">
+  <div class="sec-head">
+    <div class="eyebrow">09 · 当前数字</div>
+    <h2>检出 <code>main@c75ee4b3</code> 上能数出来的事</h2>
+    <p class="dek">检查通过不代表新的 GPU 实验、性能结果或运行授权。项目尚无统一的已验收 Study Report 索引，不能从任何一页生成全项目成绩榜；算子与程序的结果仍以各自绑定的实验报告与原始证据为准。</p>
+  </div>
+  <div class="stats">
+    <div><div class="v num">151 / 151</div><div class="k">Corpus Gate 语料项符合预期</div></div>
+    <div><div class="v num">7</div><div class="k">已声明精确目标；6 份主机采集（sm_100a 无）</div></div>
+    <div><div class="v num">0</div><div class="k">已发布校准：成本模型不参与排序</div></div>
+    <div><div class="v num">1,059</div><div class="k">提交，2026-08-23 至 2026-09-17</div></div>
+    <div><div class="v num">53.8 k</div><div class="k">行 <code>src/</code> Python（204 个文件；编译器 18.8 k）</div></div>
+    <div><div class="v num">2,064</div><div class="k">测试函数，180 个测试文件</div></div>
+    <div><div class="v num">29 · 46 · 22</div><div class="k">冻结的 Workload · Study · Provider 合同</div></div>
+    <div><div class="v num">87</div><div class="k">历史 Compiler release 目录（身份保留，不复用）</div></div>
+    <div><div class="v num">185</div><div class="k">历史 Executor 描述符</div></div>
+  </div>
+  <div class="prose">
+    <p>安装：Python 3.10 或更新版本，从源码 <code>pip install -e '.[test]'</code>（包版本 <code>0.1.0.dev0</code>）。无 GPU 的检查与源码生成可以直接运行；GPU 编译、运行和历史实验重放需要各自声明的环境。当前尚未提供脱离源码工作区的独立 Compiler 发行包。</p>
+    <p>长跑测试套件应在自己的 worktree、在一个提交上运行：源码身份是干净的提交，一个被追踪的文件在跑到一半时改动会让每个需要 Compiler 或 Executor 的测试同时变红——这条经验是在共享检出里花 40 分钟测出来的。</p>
+  </div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section class="sec" id="cite">
+  <div class="sec-head">
+    <div class="eyebrow">10 · 引用与链接</div>
+    <h2>请连同提交、精确目标与工作负载一起引用</h2>
+    <p class="dek">一个数字脱离这三者是不可复查的。引用测量结果时，一并说明该目标的计时来源与它声明的覆盖范围：不同目标用不同的计时器，有的目标（当前的 gfx938）只报告正确性并明确声明没有延迟。</p>
+  </div>
+<pre><code>@software{qin_open_cake_ir,
+  author  = {Qin, Haiyan},
+  title   = {{open-cake-ir}: Agent-driven compiler and kernel co-evolution},
+  url     = {https://github.com/qhy991/open-cake-ir},
+  license = {Apache-2.0},
+  note    = {Cite the commit the work was run at, with its target and workload}
+}</code></pre>
+  <dl class="kv">
+    <dt>仓库</dt><dd><a href="https://github.com/qhy991/open-cake-ir">github.com/qhy991/open-cake-ir</a></dd>
+    <dt>技术报告</dt><dd><a href="https://github.com/qhy991/open-cake-ir/releases/download/research-preview-2026-09-06/open-cake-ir-technical-report-zh-CN.zip">open-cake-ir-technical-report-zh-CN.zip</a>（Release research-preview-2026-09-06）</dd>
+    <dt>入门</dt><dd><code>docs/GETTING_STARTED.md</code>（不需要 GPU）· <code>docs/PYTHON_FRONTEND.md</code> · <code>docs/metal.zh-CN.md</code> · <code>docs/zh-CN/PAIRED_CUTE.md</code>（B300 CuTeDSL）</dd>
+    <dt>全貌</dt><dd><code>docs/ARCHITECTURE.md</code> · <code>docs/wiki/</code> · <code>docs/GLOSSARY.md</code> · <code>docs/adr/</code> · <code>findings/</code> · <code>reports/current/STATUS.md</code>（自动生成）</dd>
+    <dt>论文源</dt><dd><a href="https://arxiv.org/abs/2608.12629v1">CAKE: Compiler-Agent Co-Design for Frontier Kernel Evolution</a>，arXiv:2608.12629v1；本项目只引用 v1，论文数值统一标为 <code>paper_reported</code>，与本地 <code>local_observed</code>、<code>independent_reconstruction</code> 分开标注</dd>
+    <dt>联系</dt><dd>Haiyan Qin · haiyanq@buaa.edu.cn · 北京航空航天大学</dd>
+    <dt>许可</dt><dd>项目自有代码与文档 Apache License 2.0；第三方组件及引用材料保留原许可（NOTICE、THIRD_PARTY_NOTICES.md）</dd>
+  </dl>
+  <footer>
+    <p>本页由仓库 <code>main@c75ee4b3</code>（2026-09-17）与报告压缩包（2026-W36.1）中的文字与数据整理而成；报告图 1–4 为原图，两张案例图按报告数据文件重绘；Apple 与 B300 的测量转录自 <code>findings/</code>，无 GPU 的命令输出在同一提交上实跑。</p>
+    <p>整理日期 2026-09-18。数字随提交变化，以 <code>reports/current/STATUS.md</code> 为准。</p>
+  </footer>
+</section>
+
+</main>
+</div>
+</div>
+
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll('.rail a'));
+  if(!links.length || !('IntersectionObserver' in window)) return;
+  var map = {};
+  links.forEach(function(a){ map[a.getAttribute('href').slice(1)] = a; });
+  var current = null;
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){
+      if(e.isIntersecting){
+        if(current) current.classList.remove('active');
+        current = map[e.target.id]; if(current) current.classList.add('active');
+      }
+    });
+  }, {rootMargin:'-20% 0px -70% 0px', threshold:0});
+  document.querySelectorAll('section.sec[id]').forEach(function(s){ io.observe(s); });
+})();
+</script>
+</body>
+</html>
