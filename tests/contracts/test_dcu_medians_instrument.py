@@ -114,8 +114,13 @@ class TheInstrument(unittest.TestCase):
         self.assertEqual(sorted(table["generated_fields"]), sorted(document))
         self.assertTrue(set(document) <= set(table))
         for field in sorted(set(table) - set(document)):
-            self.assertIsInstance(table[field], str)
+            # Prose, or a hand-kept record of evidence the tool cannot reach: the footprint
+            # sweep needs the device, and the file says so where it states its provenance.
+            self.assertIsInstance(table[field], (str, dict))
             self.assertIn(field, table["collected"])
+            if isinstance(table[field], dict):
+                self.assertIn("TRANSCRIBED", table[field]["source"])
+                self.assertFalse(table[field]["is_campaign_evidence"])
 
     def test_it_refuses_evidence_that_names_two_compiler_revisions(self) -> None:
         """A run has one. Reporting the first would put a wrong stamp in a record, which is

@@ -64,9 +64,8 @@ DECLARED = {
     # F-2026-09-18-003's validation error bounds for gemm_silu, from its own receipts.
     0.5, 100.8,
 }
-#: The sweep as it was measured, in order. Swapping two of its numbers is caught here.
-FOOTPRINT_SWEEP = ((0.25, 2.399), (0.50, 2.399), (1.00, 2.559), (1.50, 2.719),
-                   (8.00, 6.719), (256, 153.759))
+#: The sweep now lives in the data file with its instrument named, so this file no longer
+#: keeps a second copy of it to compare against the first.
 #: Words marking a sentence as narrating a retracted claim. A retracted count is admitted
 #: only inside one of these; an earlier version admitted them anywhere, which let a live
 #: count be wrong whenever its value happened to be 3, 7, 10, 11, 12 or 26.
@@ -231,7 +230,14 @@ class DcuMedianCounts(unittest.TestCase):
                                          f"{where} the table gives")
             # "A and B are X and Y" -- the one shape the nearest-name rule gets wrong,
             # and the one a reviewer used to swap two ratios without failing anything.
-            for match in re.finditer(r"move (?P<a>\d\.\d{3}) and (?P<b>\d\.\d{3}) MiB",
+            for match in re.finditer(r"(?P<m1>\d+\.\d{2}) MiB and (?P<m2>\d+\.\d{2}) MiB",
+                                     text):
+                covered.update((match.span("m1"), match.span("m2")))
+                with self.subTest(record=label, phrase=match.group(0)):
+                    for group in ("m1", "m2"):
+                        self.assertIn(float(match.group(group)), dict(self._sweep()),
+                                      "not a size this sweep sampled")
+            for match in re.finditer(r"(?:move|at) (?P<a>\d\.\d{3}) and (?P<b>\d\.\d{3}) MiB",
                                      text):
                 covered.update((match.span("a"), match.span("b")))
                 with self.subTest(record=label, phrase=match.group(0)):
@@ -252,6 +258,57 @@ class DcuMedianCounts(unittest.TestCase):
                                 round(self.rows[task]["baseline"]
                                       / self.rows[task]["candidate"], 3),
                                 f"{label}: {match.group(0)!r} pairs them the wrong way")
+            # Sweep readings quoted away from the sweep site, each against the recorded
+            # curve, and the grid step the record derives from the medians.
+            sweep = dict(self._sweep())
+            quantum_us = self.data["timer_quantum_ns"] / 1000
+            for pattern, order in (
+                (r"(?P<mib>\d+\.\d+) MiB reads (?P<us>\d+\.\d+) us", None),
+                (r"(?P<us>\d+\.\d+) us at (?P<mib>\d+\.\d+) MiB", None),
+            ):
+                for match in re.finditer(pattern, text):
+                    covered.update((match.span("mib"), match.span("us")))
+                    with self.subTest(record=label, phrase=match.group(0)):
+                        self.assertIn(float(match.group("mib")), sweep)
+                        self.assertEqual(sweep[float(match.group("mib"))],
+                                         float(match.group("us")),
+                                         "that is not what the sweep read at that size")
+            for pattern in (r"(?P<a>\d+\.\d+) us against (?P<b>\d+\.\d+) us",):
+                for match in re.finditer(pattern, text):
+                    covered.update((match.span("a"), match.span("b")))
+                    with self.subTest(record=label, phrase=match.group(0)):
+                        for group in ("a", "b"):
+                            self.assertIn(float(match.group(group)), set(sweep.values()),
+                                          "not a reading this sweep took")
+            for match in re.finditer(r"which is (?P<n>\d+) grid steps", text):
+                covered.add(match.span("n"))
+                step = self.data["timer_quantum_ns"]
+                residue = round(self.floor * 1e6) % step
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(int(match.group("n")),
+                                     (round(self.floor * 1e6) - residue) // step,
+                                     "that is not where the floor sits on the grid")
+            for match in re.finditer(r"(?P<a2>\d+\.\d+) us against (?P<b2>\d+\.\d+) us, "
+                                     r"(?P<n>[\w-]+) steps", text):
+                step = self.data["timer_quantum_ns"]
+                spread = round((float(match.group("b2")) - float(match.group("a2"))) * 1000)
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(NUMBER[match.group("n").lower()], spread // step,
+                                     "that is not how many steps apart those readings are")
+            for pattern in (r"these kernels cost (?P<v>\d+\.\d+) us",):
+                for match in re.finditer(pattern, text):
+                    covered.add(match.span("v"))
+                    with self.subTest(record=label, phrase=match.group(0)):
+                        self.assertEqual(float(match.group("v")), self.floor * 1000,
+                                         "that is not the floor this table holds")
+            for pattern in (r"a difference of (?P<v>\d+\.\d+) us",
+                            r"that pair is (?P<v>\d+\.\d+) us",
+                            r"differ by (?P<v>\d+\.\d+) us"):
+                for match in re.finditer(pattern, text):
+                    covered.add(match.span("v"))
+                    with self.subTest(record=label, phrase=match.group(0)):
+                        self.assertEqual(float(match.group("v")), quantum_us,
+                                         "the record's own grid step is this")
             # The footprint sweep site: its numbers are checked in order by their own
             # test, so they are covered here rather than judged by nearest task name.
             for sweep in re.finditer(r"the footprint sweep on the same device:[^\n]*", text):
@@ -333,13 +390,24 @@ class DcuMedianCounts(unittest.TestCase):
                 with self.subTest(record=label, phrase=match.group(0)):
                     self.assertEqual(set(re.findall(r"[0-9a-f]{8}", match.group(1))), rows)
 
+    #: Spans a numeric construction above already judged, so the completeness rules do not
+    #: report them as unchecked. Kept beside those constructions deliberately: adding one
+    #: without adding it here makes the completeness rule fail, not pass.
+    STEP_PHRASES = (r"which is (\d+) grid steps",
+                    r"us, ([\w-]+) steps",
+                    r"the ([\w-]+) at the floor are all")
+
+    def _step_spans(self, text: str) -> set[tuple[int, int]]:
+        return {match.span(1) for pattern in self.STEP_PHRASES
+                for match in re.finditer(pattern, text)}
+
     def test_no_group_sized_digit_goes_unchecked(self) -> None:
         """Counts written as digits rather than words. Inserting "Only 9 of the 13 were
         checked twice" into F-2026-09-18-002 passed every other rule here."""
         nouns = tuple(self._noun_groups())
         allowed = set(self._counts().values()) | set(RETRACTED_COUNTS) | {1, 2, 4, 5, 6, 8}
         for label, text in self.prose.items():
-            covered = set()
+            covered = self._step_spans(text)
             for noun in nouns:
                 for match in re.finditer(rf"((?:[\w-]+\s+){{0,3}}){noun}\b", text):
                     start = match.start(1)
@@ -351,15 +419,49 @@ class DcuMedianCounts(unittest.TestCase):
                 self.fail(f"{label} states the bare number {match.group()!r} where nothing "
                           f"checks it: ...{text[max(0, match.start() - 60):match.end() + 30]!r}")
 
+    def _sweep(self):
+        return [(float(a), float(b))
+                for a, b in self.data["footprint_sweep"]["pairs_mib_us"]]
+
     def test_the_footprint_sweep_is_quoted_in_the_order_it_was_measured(self) -> None:
         sweep = [s for s in self.two["evidence"]["sites"] if "footprint sweep" in s]
         self.assertEqual(len(sweep), 1)
         numbers = [float(n) for n in re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?![\w])", sweep[0])]
-        for mib, us in FOOTPRINT_SWEEP:
+        for mib, us in self._sweep():
             with self.subTest(mib=mib):
                 self.assertIn(mib, numbers)
                 self.assertIn(us, numbers)
                 self.assertLess(numbers.index(mib), numbers.index(us) + 1)
+
+    def test_the_sweep_is_named_as_a_probe_and_not_as_campaign_evidence(self) -> None:
+        """It backs part of F-2026-09-18-002's argument and is the one quantity here that
+        no sealed workspace holds, so the record must not read it as a task measurement."""
+        sweep = self.data["footprint_sweep"]
+        self.assertFalse(sweep["is_campaign_evidence"])
+        self.assertTrue((ROOT / "tools/probe_dcu_shape_floor.py").is_file())
+        self.assertIn("tools/probe_dcu_shape_floor.py", sweep["source"])
+        self.assertIn("TRANSCRIBED", sweep["source"])
+
+    def test_the_timer_grid_is_what_the_medians_say_it_is(self) -> None:
+        """Every distinct median is an exact multiple of one step, offset by a constant.
+        The step is what decides whether a shape can be measured at all, and this record
+        argued from bytes for three versions without it."""
+        from math import gcd
+        values = sorted({round(r[k] * 1e6) for r in self.rows.values()
+                         for k in ("candidate", "baseline")})
+        step = 0
+        for a in values:
+            for b in values:
+                step = gcd(step, abs(a - b))
+        self.assertEqual(step, self.data["timer_quantum_ns"])
+        self.assertEqual(len({v % step for v in values}), 1,
+                         "the medians do not share one residue, so this is not a grid")
+        text = _text(self.two)
+        self.assertIn(f"{step} ns", text,
+                      "F-2026-09-18-002 does not state the grid its medians lie on")
+        # The pair the withdrawn argument rested on is one step apart in the sweep.
+        sweep = dict(self._sweep())
+        self.assertAlmostEqual(round((sweep[1.5] - sweep[1.0]) * 1000), step, places=6)
 
     def test_the_quoted_footprints_are_the_ones_their_contracts_give(self) -> None:
         """Derived from each task's own Workload Contract, not transcribed: tensors,
@@ -429,6 +531,7 @@ class DcuMedianCounts(unittest.TestCase):
     #: Quantity phrases carrying no noun, each naming the group it refers to.
     BARE = (
         (r"the count is ([\w-]+)", "floor"),
+        (r"the ([\w-]+) at the floor are all", "floor"),
         (r"for those ([\w-]+) the comparison", "floor"),
         (r"six of the ([\w-]+)[:,]", "floor"),
         (r"to ([\w-]+) over all", "floor"),
@@ -469,7 +572,7 @@ class DcuMedianCounts(unittest.TestCase):
     def test_no_group_sized_number_goes_unchecked(self) -> None:
         nouns = tuple(self._noun_groups())
         for label, text in self.prose.items():
-            covered = set()
+            covered = self._step_spans(text)
             for pattern, _ in self.BARE:
                 for match in re.finditer(pattern, text, re.I):
                     covered.add(match.span(1))
@@ -680,7 +783,8 @@ class DcuMedianCounts(unittest.TestCase):
         owned = set(self.data["generated_fields"])
         self.assertIn("generated_fields", owned, "the list must include itself")
         prose = sorted(set(self.data) - owned)
-        self.assertEqual(prose, ["collected", "receipt_paths", "row_selection", "what"])
+        self.assertEqual(prose, ["collected", "footprint_sweep", "receipt_paths",
+                                 "row_selection", "what"])
         for field in prose:
             self.assertIn(field, self.data["collected"],
                           "collected must name every field the tool does not regenerate")
