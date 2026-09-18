@@ -9,6 +9,13 @@ them, so the next edit that changes a number without the data behind it fails he
 
 The medians themselves cannot be re-measured without the device; what this guards is the
 arithmetic done on them, which is where every one of those errors was.
+
+What it catches, checked by mutation rather than asserted: moving a median off the floor
+(3 failures), adding a task to the data (2), changing a count word in a record (1),
+reintroducing a retracted phrase (1), and changing a winner's ratio (1). What it does not
+catch, deliberately: changing a separated task's median without changing which group it
+falls in -- that is a claim about the measurement, and no test here can check a number the
+device produced.
 """
 
 from __future__ import annotations
