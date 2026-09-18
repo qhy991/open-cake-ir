@@ -2110,6 +2110,33 @@
       }
     },
     {
+      "case_id": "gfx938-gemm-bias-mma-tf32-accepted",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke-tf32.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "fe8422e1780cfe0f6eab5e83197499c0e31b1f56f0edc55b12a24712b0f8dfc6",
+        "lowering_source_sha256": "402d46a915c6a159598d54930510021a1cc513ee232b5adad27772ff1f44530a"
+      }
+    },
+    {
+      "case_id": "gfx938-gemm-bias-mma-fp8-accepted",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke-fp8.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "10c9549dce63fb773ccc290b141476af85aac6132095b69fb2dd3683127d90a4",
+        "lowering_source_sha256": "0dbb4430557eb20afee821184e8f30c3f85764fbe5d9689eb12909330a03ebc4"
+      }
+    },
+    {
       "case_id": "gfx1151-rmsnorm-accepted",
       "schedule": "corpus/schedules/gfx1151-rmsnorm-b8-smoke.json",
       "expected": {

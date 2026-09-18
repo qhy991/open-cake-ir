@@ -539,6 +539,34 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         self.assertNotEqual("triton.dot.fp8e4m3_fp32",
                             "triton.dot.fp8e4m3_block_scale_fp32")
 
+    def test_every_declared_contract_is_reached_by_a_corpus_case(self) -> None:
+        """A declaration no case exercises is one the Gate cannot speak for.
+
+        F-2026-09-17-009 is that defect, and it recurred inside the change that closed
+        it: triton.dot.fp32_tf32 and triton.dot.fp8e4m3_fp32 were both declared with
+        device evidence and neither was reached, so removing either left the Gate passing.
+        Measured by deleting each contract from the Target and re-running check_corpus;
+        this test is the cheap standing form of that, matching contracts to the schedules
+        the manifest lists for this target.
+        """
+        import json
+        manifest = json.loads((ROOT / "corpus/manifest.json").read_text())
+        declared = set(Target.load(ROOT / "compiler/targets/gfx938.json").instruction_contracts)
+        used = set()
+        for case in manifest["cases"]:
+            path = ROOT / case["schedule"]
+            document = json.loads(path.read_text())
+            if document.get("target") != "gfx938":
+                continue
+            for operation in document["operations"]:
+                instruction = (operation.get("parameters") or {}).get("instruction") or {}
+                if instruction.get("contract"):
+                    used.add(instruction["contract"])
+        self.assertEqual(
+            sorted(declared - used), [],
+            "gfx938 declares contracts no Corpus case exercises, so the Gate passes "
+            "whether or not they are true")
+
     def test_a_triton_target_admits_no_contract_its_route_cannot_emit(self) -> None:
         """Otherwise the Target admits by name what the only backend then refuses.
 

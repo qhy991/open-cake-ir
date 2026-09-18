@@ -143,6 +143,43 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
                 self.assertEqual(op["parameters"].get("scalar"), float(leading.split()[0]))
                 self.assertEqual(len(op["reads"]), 1)
 
+    def test_the_call_spelling_canonicalises_the_same_way_as_the_operator(self):
+        """`lm.mul(2.0, x)` and `2.0 * x` are one operation, so they parse to one document.
+
+        The gap this closes: the canonicalisation first lived in the `BinOp` branch only,
+        and the call path builds its operands separately, so `2.0 * x` parsed while
+        `lm.mul(2.0, x)` was refused -- two spellings of one operation that disagreed,
+        which is the P3 defect the change was meant to remove rather than relocate.
+        """
+        for call, operator in (("lm.mul(2.0, values)", "2.0 * values"),
+                               ("lm.add(1.5, values)", "1.5 + values")):
+            with self.subTest(expression=call):
+                first = parse(self.scalar_source(call)).document
+                second = parse(self.scalar_source(operator)).document
+                op = next(o for o in first["operations"] if o["id"] == "result")
+                self.assertEqual(op["reads"], ["values"])
+                self.assertEqual(op["parameters"].get("scalar"),
+                                 float(call.split("(")[1].split(",")[0]))
+                other = next(o for o in second["operations"] if o["id"] == "result")
+                self.assertEqual(op["parameters"], other["parameters"])
+
+    def test_the_refusal_names_every_clause_of_the_rule(self):
+        """A message that names one clause tells an author a spelling works when it does not.
+
+        An earlier version ended "as the first only for add and mul", which was produced
+        for inputs whose operator *is* mul and for a literal that is already second. The
+        message has to hold for every input that reaches it.
+        """
+        for expression in ("2.0 - values", "lm.sub(2.0, values)", "2.0 * 3.0 * values"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(FrontendError) as caught:
+                    parse(self.scalar_source(expression))
+                message = str(caught.exception)
+                self.assertIn("admitted once", message)
+                self.assertIn("second operand", message)
+                self.assertIn("other than fma", message)
+                self.assertIn("add and mul also admit it first", message)
+
     def test_a_leading_literal_stays_refused_where_the_order_is_meaning(self):
         """`2.0 - x` is not `x - 2.0`, so swapping it would compute something else."""
         for expression in ("2.0 - values", "2.0 / values"):
@@ -151,7 +188,7 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
                     parse(self.scalar_source(expression))
                 # The refusal names which operators admit it, because a reader told only
                 # a position cannot tell why `values - 2.0` was the form that worked.
-                self.assertIn("as the first only for add and mul", str(caught.exception))
+                self.assertIn("add and mul also admit it first", str(caught.exception))
 
     def test_canonicalising_a_literal_does_not_reorder_buffer_operands(self):
         """Only a Python literal moves; two loaded buffers keep the order written.

@@ -98,8 +98,12 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
                 self.assertEqual(
                     sorted(set(contracts) - modelled_elsewhere), [],
                     f"{target} admits a contract no table models")
-        # gfx1151 admits contraction contracts only, and both are modelled.
-        self.assertNotIn("gfx1151", unmodelled)
+        # gfx1151 admits no contracts at all, so its absence from the dict above says
+        # nothing about modelling. Asserted as the empty set it is, because the line this
+        # replaced read as though two contracts had been checked.
+        self.assertEqual(
+            sorted(Target.load(ROOT / "compiler/targets/gfx1151.json").instruction_contracts),
+            [])
 
 
 

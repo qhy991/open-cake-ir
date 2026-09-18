@@ -337,17 +337,9 @@ class _Builder:
         if isinstance(node, ast.Subscript):
             return self.access(node)
         if isinstance(node, ast.BinOp) and type(node.op) in _BINARY:
-            op = _BINARY[type(node.op)]
-            operands = [self.value(node.left), self.value(node.right)]
-            # `2.0 * x` is how this is written in NumPy and in PyTorch, and for a
-            # commutative operator it denotes what `x * 2.0` denotes. Admitting only one
-            # spelling of one computation is what P3 asks to avoid, and refusing the
-            # familiar one is what P1 asks to avoid; canonicalising here gives both,
-            # because everything downstream still sees the literal at position 1.
-            if (op in _COMMUTATIVE and type(operands[0]) in (int, float)
-                    and type(operands[1]) not in (int, float)):
-                operands.reverse()
-            return self.operation("elementwise", operands, {"op": op}, {}, target, node)
+            return self.operation("elementwise",
+                                  [self.value(node.left), self.value(node.right)],
+                                  {"op": _BINARY[type(node.op)]}, {}, target, node)
         if isinstance(node, ast.Call):
             return self.call(node, target)
         return self.literal(node)
@@ -441,6 +433,20 @@ class _Builder:
     def operation(self, kind, values, parameters, controls, target, node):
         if self.role is None:
             self.fail(node, "operations require a with-role scope")
+        # `2.0 * x` is how this is written in NumPy and in PyTorch, and for a commutative
+        # operator it denotes what `x * 2.0` denotes. Admitting one spelling of one
+        # computation is what P3 asks for; refusing the familiar one is what P1 asks to
+        # avoid. Canonicalising gives both, because everything downstream still sees the
+        # literal at position 1.
+        #
+        # It lives here rather than in the `BinOp` branch because `lm.mul(2.0, x)` reaches
+        # this function by the call path instead, and doing it in one branch left the two
+        # spellings disagreeing -- the P3 defect the change was meant to remove.
+        if (kind == "elementwise" and len(values) == 2
+                and parameters.get("op") in _COMMUTATIVE
+                and type(values[0]) in (int, float)
+                and type(values[1]) not in (int, float)):
+            values = [values[1], values[0]]
         reads, accesses = [], []
         for position, value in enumerate(values):
             if isinstance(value, _Broadcast):
@@ -449,12 +455,14 @@ class _Builder:
                 parameters["broadcast_axis"], value = value.axis, value.buffer
             if type(value) in (int, float):
                 if kind != "elementwise" or position != 1 or len(values) != 2 or parameters["op"] == "fma" or "scalar" in parameters:
-                    # Reached now only where the position carries meaning, so the refusal
-                    # says which operators exchange their operands rather than stating a
-                    # position an author cannot act on.
-                    self.fail(node, "a literal is supported as the second binary arithmetic "
-                                    "operand, and as the first only for "
-                                    + " and ".join(sorted(_COMMUTATIVE)))
+                    # Every clause of the rule, because a message that names only one of
+                    # them tells an author a spelling works when it does not. An earlier
+                    # version said "as the first only for add and mul" and was produced
+                    # for `lm.fma(values, 2.0, ...)`, whose literal is already second.
+                    self.fail(node, "a literal is admitted once, as the second operand of "
+                                    "a two-operand elementwise arithmetic other than fma; "
+                                    + " and ".join(sorted(_COMMUTATIVE))
+                                    + " also admit it first and canonicalise it")
                 parameters["scalar"] = value
                 continue
             ref = self.reference(value.buffer if isinstance(value, _Access) else value, node)
