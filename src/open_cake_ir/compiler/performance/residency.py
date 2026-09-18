@@ -369,10 +369,11 @@ def residency_upper_bound(
         )
 
     # Tensor memory is not shared between resident CTAs on this Target, so an
-    # allocation that fills it admits one CTA and nothing else changes that.
+    # allocation that fills it admits one CTA and nothing else changes that. A Target
+    # without the space declares no capacity, and no Schedule can allocate it there.
     tensor = allocation_bytes(schedule, MemorySpace.TENSOR)
-    if tensor:
-        capacity = target.resource_limits.maximum_tensor_memory_bytes
+    capacity = target.resource_limits.capacity(MemorySpace.TENSOR)
+    if tensor and capacity is not None:
         bounds.append(
             ResidencyBound("tensor_memory", tensor, capacity, capacity // tensor)
         )

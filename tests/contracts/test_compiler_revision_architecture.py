@@ -67,8 +67,10 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.assertIsInstance(next(iter(target.memory_spaces)), MemorySpace)
         self.assertIsInstance(next(iter(target.operation_kinds)), OperationKind)
         self.assertEqual(target, Target.from_dict(self.target))
-        self.assertEqual(target.source.document, self.target)
-        self.assertEqual(target.source.citations, tuple(self.target["citations"]))
+        # Provenance is bytes plus their digest; nothing projects a live document back
+        # out of them, so the typed facts are the only hardware representation.
+        self.assertEqual(json.loads(target.source.document_bytes), self.target)
+        self.assertFalse(hasattr(target.source, "document"))
         self.assertEqual(target.source.canonical_sha256, sha256(_canonical(self.target)).hexdigest())
         self.assertEqual(revision.project_root, self.root)
         self.assertEqual(revision.corpus_path, self.root / "corpus.json")
@@ -80,8 +82,6 @@ class RevisionAdmissionTests(unittest.TestCase):
             revision.targets["other"] = target
         with self.assertRaises(dataclasses.FrozenInstanceError):
             target.resource_limits.maximum_threads_per_cta = 1
-        target.source.document["resource_limits"]["maximum_threads_per_cta"] = 1
-        self.assertEqual(target.source.document, self.target)
         self.assertEqual(target.resource_limits.maximum_threads_per_cta,
                          self.target["resource_limits"]["maximum_threads_per_cta"])
 
@@ -89,9 +89,9 @@ class RevisionAdmissionTests(unittest.TestCase):
         target = self.load().targets["sm_100a"]
         self.assertEqual(target.peak.memory_bandwidth.value, 8e12)
         self.assertFalse(target.peak.arithmetic)
-        self.assertEqual(target.source.document["peak"], self.target["peak"])
+        self.assertEqual(json.loads(target.source.document_bytes)["peak"], self.target["peak"])
 
-    def test_current_manifest_retains_all_exact_targets_and_zero_tmem(self):
+    def test_current_manifest_retains_all_exact_targets_and_unmodeled_tmem(self):
         """The exact declared set, updated only by a deliberate data addition.
 
         AGENTS.md keeps this pin so a sixth target is a decision rather than an accident;
@@ -112,7 +112,8 @@ class RevisionAdmissionTests(unittest.TestCase):
                 self.assertEqual(target.device_names, (device,))
                 self.assertIsNone(target.compute_capability)
                 self.assertIsNone(target.warps_per_warpgroup)
-                self.assertEqual(target.resource_limits.maximum_tensor_memory_bytes, 0)
+                # No tensor space, so no tensor limit: unmodeled, not zero.
+                self.assertIsNone(target.resource_limits.maximum_tensor_memory_bytes)
                 self.assertNotIn(MemorySpace.TENSOR, target.memory_spaces)
         self.assertEqual(revision.targets["sm_103a"].compute_capability, (10, 3))
 

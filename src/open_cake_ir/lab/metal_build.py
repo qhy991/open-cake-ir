@@ -184,6 +184,8 @@ class MetalToolchainBuilder:
         block = requirements.get("threads_per_threadgroup")
         shared = requirements.get("threadgroup_memory_bytes")
         threads = block[0] if isinstance(block, list) and len(block) == 3 and type(block[0]) is int else 0
+        # One SIMD group is the Target's declared width, not a literal this builder keeps.
+        width = self.target.warp_size
         expected = {"source_language": "metal", "compiler": "MTLDevice.makeLibrary", "target": self.workload.target,
             "language_standard": "metal2.3", "fast_math_enabled": False,
             "execution_model": "simd_program_tile", "active_threads_per_threadgroup": threads,
@@ -199,8 +201,8 @@ class MetalToolchainBuilder:
                 # may not: a purely elementwise kernel crosses no group boundary and
                 # truthfully declares none (F-2026-09-10-001), so this is an implication
                 # rather than the XOR it used to be.
-                or (threads == 32 and shared != 0)
-                or threads % 32 or not 32 <= threads <= self.target.resource_limits.maximum_threads_per_cta
+                or (threads == width and shared != 0)
+                or threads % width or not width <= threads <= self.target.resource_limits.maximum_threads_per_cta
                 or request.target != self.workload.target or request.source_role != "lowered_source"):
             raise ValueError("Metal builder requires the exact admitted Compiler lowering and Workload ABI")
         return MetalTensorLaunchManifest.for_workload(self.workload, self.case_id, target=request.target,

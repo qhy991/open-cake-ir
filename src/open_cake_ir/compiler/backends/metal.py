@@ -1,8 +1,9 @@
 """Compositional SIMD Metal lowering over canonical Schedule coordinates.
 
-Flattened private value i belongs to lane i % 32, slot i // 32. All 32 lanes
-execute every collective round; padded lanes hold initialized values and contribute
-reduction identities. Reduction order is ascending local slots followed by the Metal
+Flattened private value i belongs to lane i % width, slot i // width, where width is
+the SIMD-group width the Target declares as `warp_size`. Every lane executes every
+collective round; padded lanes hold initialized values and contribute reduction
+identities. Reduction order is ascending local slots followed by the Metal
 SIMD collective, whose cross-lane addition order is not a serial or PTX RN contract.
 Logical lane storage is derived from these slots and IR lifetimes, not Apple occupancy.
 """
@@ -18,11 +19,12 @@ from ..ir import (
     AccessIndexKind, BufferMode, DType, ElementwiseOp, LoadMovement,
     LoweringBackend, MemorySpace, OperationKind, ReduceOp, ReductionScope, Schedule,
 )
-from ..target import Target
+from ..target import CodeObject, Target
 from ..diagnostics import Finding, FindingCategory, FindingSeverity
 from ..verifier import verify
 
 SUPPORTED_DTYPES = frozenset({DType.FP32})
+CODE_OBJECTS = frozenset({CodeObject.METAL_BINARY_ARCHIVE})
 SUPPORTED_OPERATION_KINDS = frozenset({
     OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.REDUCE, OperationKind.STORE,
 })
@@ -60,21 +62,18 @@ _METAL_TANH_CONTRACT = "metal.precise.tanh.f32"
 _METAL_FMA_CONTRACT = "metal.fma.f32"
 
 
-SIMD_WIDTH = 32
-MAXIMUM_SIMD_GROUPS = 32
-
-
-def lane_width(schedule: Schedule) -> int:
+def lane_width(schedule: Schedule, target: Target) -> int:
     """Threads per threadgroup this schedule's single role occupies.
 
     One SIMD group keeps the original route exactly. More groups widen the stripe,
-    which is the only way a fixed reduction width can own fewer values per lane.
+    which is the only way a fixed reduction width can own fewer values per lane. The
+    group width is the Target's `warp_size`; this backend keeps no copy of it.
     """
     warps = schedule.roles[0].warps if schedule.roles else (0,)
-    return SIMD_WIDTH * len(warps)
+    return target.warp_size * len(warps)
 
 
-def _share_slots(schedule: Schedule, lanes: int) -> int:
+def _share_slots(schedule: Schedule, lanes: int, width: int) -> int:
     """Threadgroup floats needed to combine SIMD groups and publish scalars.
 
     Two emitted constructs read `share`: a reduction folding one SIMD group's result into
@@ -85,7 +84,7 @@ def _share_slots(schedule: Schedule, lanes: int) -> int:
     the Lab then faults a candidate that was correct all along (F-2026-09-10-001). The
     declaration became truthful here rather than the check becoming looser.
     """
-    if lanes == SIMD_WIDTH:
+    if lanes == width:
         return 0
     scalars = max((sum(1 for read in operation.reads
                        if operation.kind is OperationKind.ELEMENTWISE
@@ -95,7 +94,7 @@ def _share_slots(schedule: Schedule, lanes: int) -> int:
     combined = any(operation.kind is OperationKind.REDUCE for operation in schedule.operations)
     if not combined and not scalars:
         return 0
-    return max(lanes // SIMD_WIDTH, scalars, 1)
+    return max(lanes // width, scalars, 1)
 
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
@@ -118,36 +117,34 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
         if not condition:
             findings.append(refusal(code, path, message))
 
+    # Which targets this backend serves is decided by the code object they declare,
+    # held against CODE_OBJECTS by the Compiler before preflight; the Schedule must
+    # still name the Target it is being checked against.
     check(schedule.lowering.backend is LoweringBackend.METAL
-          and schedule.target == target.target_id
-          and (target.target_id, target.architecture, target.device_names) in {
-              ("apple_gpu_family7", "apple7", ("Apple M1 Pro",)),
-              ("apple_gpu_family8", "apple8", ("Apple M2",)),
-              ("apple_gpu_family9", "apple9", ("Apple M4",)),
-          },
+          and schedule.target == target.target_id,
           "METAL_TARGET_UNSUPPORTED", "target",
-          "Metal requires the exact Apple M1 Pro / apple_gpu_family7, Apple M2 / "
-          "apple_gpu_family8 or Apple M4 / apple_gpu_family9 target")
+          "Metal preflight requires the Schedule's own target and lowering route")
     check(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", schedule.lowering.entry_point)
           and "CAKE_KERNEL_END" not in schedule.lowering.entry_point
           and "__SCHEDULE_SHA256__" not in schedule.lowering.entry_point
           and schedule.lowering.entry_point not in _RESERVED
           and not re.fullmatch(r"(?:bool|char|uchar|short|ushort|int|uint|long|ulong|half|float)(?:[234](?:x[234])?)", schedule.lowering.entry_point),
           "METAL_ENTRY_POINT_UNSUPPORTED", "lowering.entry_point", "Metal requires a non-reserved function identifier")
+    maximum_groups = target.resource_limits.maximum_warps_per_cta
     check(len(schedule.roles) == 1
           and schedule.roles[0].warps == tuple(range(len(schedule.roles[0].warps)))
-          and 1 <= len(schedule.roles[0].warps) <= MAXIMUM_SIMD_GROUPS,
+          and 1 <= len(schedule.roles[0].warps) <= maximum_groups,
           "METAL_ROLE_UNSUPPORTED", "roles",
           "SIMD program tiles require one role occupying consecutive SIMD groups from [0], "
-          f"at most {MAXIMUM_SIMD_GROUPS}")
+          f"at most {maximum_groups}")
     for index, role in enumerate(schedule.roles):
         check(role.registers_per_thread is None, "METAL_REGISTER_CAP_UNSUPPORTED",
               f"roles[{index}].registers_per_thread", "Metal has no CUDA warpgroup register redistribution")
     for field in ("allocations", "pipelines", "barriers", "tile_loops"):
         check(not getattr(schedule, field), "METAL_DECLARATION_UNSUPPORTED", field,
               f"SIMD Metal lowering does not implement {field}")
-    lanes = lane_width(schedule)
-    if lanes > SIMD_WIDTH:
+    lanes = lane_width(schedule, target)
+    if lanes > target.warp_size:
         # Widening the stripe replaces every SIMD collective with a threadgroup one.
         # Reduce and scalar broadcast are implemented; the cross-lane exchange that
         # serves a narrower non-scalar operand is not, and is refused rather than
@@ -175,7 +172,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                   f"program_map.axes[{index}].tile", "this Metal route requires scalar program indices (tile=1); dimension extents may be odd")
     globals_ = [buffer for buffer in schedule.buffers if buffer.space is MemorySpace.GLOBAL]
     check(len(globals_) <= 31, "METAL_BUFFER_ARGUMENT_LIMIT", "buffers", "Metal admits at most 31 global buffer arguments")
-    private_values = private_values_per_thread(schedule, lane_width(schedule))
+    private_values = private_values_per_thread(schedule, lanes)
     check(private_values <= 1024, "METAL_PRIVATE_STORAGE_LIMIT", "buffers",
           "Metal supports at most 1024 simultaneously live lane-owned FP32 values; "
           "this backend limit is not an Apple register capacity or occupancy estimate")
@@ -300,7 +297,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     if not findings:
         findings.append(Finding(
             "METAL_SIMD_EXECUTION", "lowering",
-            f"Metal stripes flattened values over {lane_width(schedule)} lanes with uniform SIMD "
+            f"Metal stripes flattened values over {lanes} lanes with uniform SIMD "
             "collectives and uniquely owned stores. Peak live lane-owned Buffer "
             f"storage: {private_values} FP32 values; "
             "temporary registers and spills are unmodeled. No occupancy, cost or "
@@ -341,9 +338,10 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     grid = [1, 1, 1]
     for axis in axes.values():
         grid[axis.axis] = buffers[axis.buffer].shape[axis.dimension]
-    lanes = lane_width(schedule)
-    groups = lanes // SIMD_WIDTH
-    share_slots = _share_slots(schedule, lanes)
+    width = target.warp_size
+    lanes = lane_width(schedule, target)
+    groups = lanes // width
+    share_slots = _share_slots(schedule, lanes, width)
     lines = ["#include <metal_stdlib>", "using namespace metal;", "#pragma METAL fp contract(off)",
              f"// SIMD program tile: i belongs to lane i % {lanes}, private slot i / {lanes}.",
              "// Every collective has uniform participation, including padded tail lanes.",
@@ -459,13 +457,13 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
                     start = parameters.broadcast_axis
                     subscript = _flat(coordinates[start:start + len(buffer.shape)], buffer.shape)
                     # A lane may request a value from a different private slot than
-                    # its source lane. Visit slots uniformly; shuffling src[index/32]
+                    # its source lane. Visit slots uniformly; shuffling src[index/width]
                     # directly would select the requesting lane's slot at the source.
                     lines += [f"            uint index{position} = uint({subscript});",
                               f"            float operand{position} = 0.0f;",
                               f"            for (uint k = 0u; k < {_slots(buffer, lanes)}u; ++k) {{",
-                              f"                float exchanged = simd_shuffle({names[read]}[k], ushort(index{position} % 32u));",
-                              f"                if (k == index{position} / 32u) operand{position} = exchanged;",
+                              f"                float exchanged = simd_shuffle({names[read]}[k], ushort(index{position} % {width}u));",
+                              f"                if (k == index{position} / {width}u) operand{position} = exchanged;",
                               "            }"]
                     operands.append(f"operand{position}")
             if parameters.scalar is not None:

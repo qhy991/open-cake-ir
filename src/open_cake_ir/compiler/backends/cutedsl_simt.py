@@ -48,11 +48,12 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     def check(condition, code, path, message):
         if not condition:
             findings.append(refusal(code, path, message))
+    # The code object decides which targets this route serves, held against the
+    # backend's CODE_OBJECTS by the Compiler before preflight; only the identity of the
+    # Target being checked is this route's to confirm.
     check(schedule.lowering.backend is LoweringBackend.CUTLASS_CUTE_DSL
-          and schedule.target == target.target_id
-          and target.target_id in {'sm_100a','sm_103a'}
-          and target.compute_capability == {'sm_100a': (10,0), 'sm_103a': (10,3)}.get(target.target_id),
-          'CUTE_SIMT_TARGET', 'target', 'CuTe SIMT requires the exact SM100a or SM103a Target.')
+          and schedule.target == target.target_id,
+          'CUTE_SIMT_TARGET', 'target', 'CuTe SIMT preflight requires the Schedule\'s own target and lowering route.')
     check(len(schedule.roles)==1 and schedule.roles[0].warps==(0,), 'CUTE_SIMT_ROLE','roles',
           'CuTe SIMT currently assigns one role to one complete warp, warps=[0].')
     check(schedule.residency is None and all(r.registers_per_thread is None for r in schedule.roles),
@@ -63,7 +64,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     pm=schedule.program_map
     check(pm is not None and not pm.persistent and all(a.tile==1 for a in pm.axes),
           'CUTE_SIMT_PROGRAM_MAP','program_map','CuTe SIMT uses scalar nonpersistent program indices.')
-    pressure=private_values_per_thread(schedule)
+    pressure=private_values_per_thread(schedule, target.warp_size)
     check(pressure<=1024,'CUTE_SIMT_PRIVATE_STORAGE','buffers',
           f'CuTe SIMT supports at most 1024 live declared-value slots per lane, got {pressure}; this is an implementation limit, not physical register capacity.')
     for index,b in enumerate(schedule.buffers):
@@ -259,4 +260,6 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None=None) ->
     return Emission('\n'.join(lines)+'\n',entry,{}, {'compiler':'cutlass_cute_dsl','source_language':'python',
         'target':target.target_id,'kernel_entry_point':entry,
         'signature':[{'name':b.name,'dtype':b.dtype.value} for b in globals_],
-        'grid':grid,'block':[32,1,1],'dynamic_shared_memory_bytes':0})
+        'grid':grid,'block':[target.warp_size,1,1],'dynamic_shared_memory_bytes':0,
+        'code_object':target.code_object.value,
+        'compute_capability':list(target.compute_capability or ())})

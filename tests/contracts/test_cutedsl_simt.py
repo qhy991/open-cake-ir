@@ -7,9 +7,8 @@ import unittest
 
 from open_cake_ir.compiler import Compiler,CompilerError,frontend
 from open_cake_ir.compiler.backends import cutedsl
-from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.ir import Schedule
-from open_cake_ir.compiler.target import Target
+from open_cake_ir.compiler.target import CodeObject, Target
 from open_cake_ir.compiler.cute_toolchain import validate_cute_kernel
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.evaluation.core import compare_tile_outputs
@@ -108,7 +107,11 @@ class CuTeSimtTests(unittest.TestCase):
         findings=cutedsl.preflight(Schedule.from_dict(s),Target.load(ROOT/'compiler/targets/sm_103a.json'))
         self.assertIn('CUTE_SIMT_PROGRAM_MAP',[f.code for f in findings])
 
-    def test_non_cuda_targets_are_refused_by_the_exact_target_owner(self):
+    def test_non_cuda_targets_are_refused_by_the_code_object_owner(self):
+        # The backend keeps no table of the targets it admits: it declares the cubin it
+        # emits, the Target declares the object it runs, and the Compiler refuses the
+        # pair by name. A mismatch skips this backend's preflight, so no CuTe rule
+        # speaks for a target it never emits for.
         _,s=task('silu','activation')
         for name in ('apple_gpu_family7','apple_gpu_family8'):
             with self.subTest(target=name):
@@ -117,10 +120,12 @@ class CuTeSimtTests(unittest.TestCase):
                 a=self.compiler.assess(s)
                 self.assertTrue(a.accepted,a.findings)
                 self.assertFalse(a.lowering_eligible)
-                self.assertIn('CUTE_SIMT_TARGET',[f.code for f in a.findings])
+                self.assertEqual([f.code for f in a.findings],['BACKEND_TARGET_UNSUPPORTED'])
+                self.assertEqual(a.findings[0].message,
+                    f"the cutlass_cute_dsl backend emits ['cubin'] and the '{name}' target runs 'metal_binary_archive'")
                 with self.assertRaises(CompilerError):self.compiler.lower(a)
-                self.assertIn('CUTE_SIMT_TARGET',[f.code for f in cutedsl.preflight(Schedule.from_dict(s),target)])
-                with self.assertRaises(EmitError):cutedsl.emit(Schedule.from_dict(s),target)
+                self.assertNotIn('CUTE_SIMT_TARGET',[f.code for f in cutedsl.preflight(Schedule.from_dict(s),target)])
+                self.assertEqual(cutedsl.CODE_OBJECTS,{CodeObject.CUBIN})
 
     def test_cross_lane_slots_and_partial_final_warp(self):
         # 33 columns forces multiple per-lane slots and a partial last stripe;

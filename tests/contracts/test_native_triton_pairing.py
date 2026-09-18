@@ -65,7 +65,7 @@ class CompilationFixture:
             'source': b'# fixture-expanded\n' + source, 'ttir': b'fixture ttir',
             'ttgir': b'fixture ttgir', 'llir': b'fixture llir', 'ptx': b'.target sm_100a\n',
             'cubin': b'\x7fELFfixture_not_launchable_on_GPU',
-        }, requirements['compile_options']['num_warps'] * 32, 0, 'fixture')
+        }, requirements['compile_options']['num_warps'] * 32, 0, 'fixture', 'cubin')
 
 
 def baseline(workload, case='primary'):
@@ -269,7 +269,8 @@ class NativePairingContractTests(unittest.TestCase):
                 commands.append((argv, kwargs))
                 Path(kwargs['cwd'], 'compilation.json').write_text(json.dumps({
                     'target': 'sm_100a', 'entry_point': 'fixture', 'artifacts': {'cubin': 'eA=='},
-                    'threads_per_cta': 128, 'dynamic_shared_bytes': 0, 'compiler_version': 'fixture'}))
+                    'threads_per_cta': 128, 'dynamic_shared_bytes': 0, 'compiler_version': 'fixture',
+                    'code_object': 'cubin'}))
                 return subprocess.CompletedProcess(argv, 0, b'', b'')
             with mock.patch('open_cake_ir.lab.triton_build.run_supervised', side_effect=supervise):
                 compiler.compile(self.native['kernel_source'].encode(), self.lowering.toolchain_requirements)

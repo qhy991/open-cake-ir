@@ -334,13 +334,15 @@ def validate_evaluation(
             # How many pointers the kernel takes beyond its tensors is the kernel's own
             # fact, not a per-backend constant. For AMDGCN it is in the sealed assembly's
             # `.amdgpu_metadata`; the table's 2 was right for every Triton target there
-            # was when it was written, and is still the CUDA route's.
+            # was when it was written, and is still the CUDA route's. The route is read
+            # from the frozen Compiler kernel's own compile contract, which carries the
+            # code object, architecture and lane width of the Target it was lowered for.
             from open_cake_ir.compiler.toolchain import triton_route
             from open_cake_ir.lab.build import _hidden_pointers
 
             if route["backend"] == "triton":
                 expected_hidden = _hidden_pointers(
-                    triton_route(workload.target), sealed_baseline.artifact_payloads,
+                    triton_route(requirements), sealed_baseline.artifact_payloads,
                     len(workload.tensor_abi(str(evaluation['case_id']))))
             else:
                 expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters

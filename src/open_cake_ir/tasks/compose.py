@@ -365,8 +365,11 @@ def execute_matched_from_config(
                 authority_document=direct_arm, workload=workload_contract, case_id=str(protocol["case_id"]))
     else:
         builder = FlashTritonToolchainBuilder()
+        # The historical flash_kmeans builder refuses any target but the one it was
+        # written for; the contract still names the Campaign's own Workload target
+        # rather than restating that builder's literal here.
         direct_environment = DirectCudaEnvironment(toolchain,
-            toolchain_requirements={"compiler": "nvcc", "target": "sm_100a"}, authority_document=direct_arm)
+            toolchain_requirements={"compiler": "nvcc", "target": workload_contract.target}, authority_document=direct_arm)
     environments = {
         "open_cake": OpenCakeEnvironment(
             compiler,

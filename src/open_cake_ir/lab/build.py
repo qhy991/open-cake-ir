@@ -97,7 +97,9 @@ class TritonToolchainBuilder:
             raise ValueError("Triton build target differs from the Workload")
         if self._isolated is None:
             raise RunProtocolFault("harness_fault", "paired Triton requires filesystem-isolated compilation")
-        route = triton_route(request.target)
+        # The route rides the contract the Compiler produced from the Target it held;
+        # nothing here decodes the id.
+        route = triton_route(requirements)
         kernel_source = (project_triton_kernel(request.source, requirements)
                          if request.source_role == "lowered_source" else request.source)
         validate_triton_kernel(kernel_source, requirements)

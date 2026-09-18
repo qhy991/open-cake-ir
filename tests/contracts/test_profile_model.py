@@ -94,7 +94,7 @@ class ProfileModelTest(unittest.TestCase):
         self.assertEqual((barrier["estimate_kind"], barrier["value"]), ("uncalibrated_risk", "high"))
         sm = _metric(profile, "sm__throughput.avg.pct_of_peak_sustained_elapsed")
         self.assertEqual((sm["estimate_kind"], sm["value"]), ("unknown", None))
-        self.assertIn("B200 NCU calibration", barrier["missing"])
+        self.assertIn("NVIDIA B200 NCU calibration", barrier["missing"])
 
     def test_tf32_contract_does_not_borrow_ieee_or_bf16_peak_coverage(self) -> None:
         tf32 = "triton.dot.fp32_tf32"

@@ -7,10 +7,9 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Callable, Mapping, Protocol, Sequence, cast
 
-from open_cake_ir.compiler.target import cuda_architecture, cuda_target
+from open_cake_ir.compiler.target import CodeObject, Target, declared_target
 
 from .core import LaunchableCandidate
-from .cuda_manifest import MAX_DYNAMIC_SHARED_MEMORY_BYTES
 
 _ATTRIBUTES = (
     "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES",
@@ -22,6 +21,28 @@ _ATTRIBUTES = (
     "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH",
 )
 _DYNAMIC_SHARED_OPT_IN_THRESHOLD = 49_152
+
+
+def _cubin_target(target_id: str) -> Target:
+    """The declared Target a CUDA Driver launch is checked against.
+
+    A launch here loads a cubin, so a Target that produces another object is refused by
+    that object's name rather than admitted to a check written for a compute capability
+    it does not declare.
+    """
+    target = declared_target(target_id)
+    if target.code_object is not CodeObject.CUBIN:
+        raise ValueError(
+            f"CUDA Driver launch requires a cubin target; {target_id!r} declares "
+            f"{target.code_object.value}"
+        )
+    return target
+
+
+def _binary_version(target: Target) -> int:
+    """CU_FUNC_ATTRIBUTE_BINARY_VERSION as the declared capability pair encodes it."""
+    major, minor = cast(tuple[int, int], target.compute_capability)
+    return major * 10 + minor
 
 
 class CudaLifecycleError(RuntimeError):
@@ -230,15 +251,16 @@ def _function_resources(
     function: object,
     manifest: LaunchManifest,
 ) -> dict[str, int]:
+    target = _cubin_target(manifest.target)
     resources = {name: _attribute(api, name, function) for name in _ATTRIBUTES}
-    if resources["CU_FUNC_ATTRIBUTE_BINARY_VERSION"] != cuda_architecture(manifest.target):
+    if resources["CU_FUNC_ATTRIBUTE_BINARY_VERSION"] != _binary_version(target):
         raise ValueError("CUDA Driver function binary version differs")
     if manifest.block_threads > resources["CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK"]:
         raise ValueError("CUDA Driver manifest block exceeds function maximum")
     if (
         resources["CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES"]
         + manifest.dynamic_shared_memory_bytes
-        > cuda_target(manifest.target).resource_limits.maximum_shared_memory_bytes
+        > target.resource_limits.maximum_shared_memory_bytes
     ):
         raise ValueError("CUDA Driver static plus dynamic shared memory exceeds Target limit")
     cluster_names = (
@@ -300,7 +322,7 @@ class CudaDeviceAdmission:
         if (not isinstance(self.compute_capability, tuple) or len(self.compute_capability) != 2
             or any(type(value) is not int for value in self.compute_capability)):
             raise ValueError("CUDA device compute capability differs")
-        target = cuda_target(self.target)
+        target = _cubin_target(self.target)
         if (
             self.device_name not in target.device_names
             or self.compute_capability != target.compute_capability
@@ -475,38 +497,10 @@ def launch_cubin_once(
         if sha256(cubin).hexdigest() != before:
             raise ValueError("CUDA Driver CUBIN SHA256 changed after load")
         function = modules.function(module, manifest.kernel_name)
-        resources = {name: _attribute(api, name, function) for name in _ATTRIBUTES}
-        if resources["CU_FUNC_ATTRIBUTE_BINARY_VERSION"] != 100:
-            raise ValueError("CUDA Driver function binary version differs")
-        if manifest.block_threads > resources["CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK"]:
-            raise ValueError("CUDA Driver manifest block exceeds function maximum")
-        if (
-            resources["CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES"]
-            + manifest.dynamic_shared_memory_bytes
-            > MAX_DYNAMIC_SHARED_MEMORY_BYTES
-        ):
-            raise ValueError("CUDA Driver static plus dynamic shared memory exceeds B200 limit")
-        cluster_names = (
-            "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET",
-            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH",
-            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT",
-            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH",
-        )
-        if any(resources[name] != 0 for name in cluster_names):
-            raise ValueError("CUDA Driver function requires a forbidden cluster launch")
-        if manifest.dynamic_shared_memory_bytes > _DYNAMIC_SHARED_OPT_IN_THRESHOLD:
-            enum_value = getattr(
-                getattr(api, "CUfunction_attribute"),
-                "CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES",
-            )
-            _driver_call(
-                api,
-                "cuFuncSetAttribute",
-                function,
-                enum_value,
-                manifest.dynamic_shared_memory_bytes,
-                outputs=0,
-            )
+        # The same admission the persistent path runs, against the manifest's declared
+        # Target; this chain used to transcribe a B200 binary version and shared-memory
+        # limit of its own (F-2026-09-18-001).
+        resources = _function_resources(api, function, manifest)
 
         argument_values = [ctypes.c_void_p(pointer) for pointer in pointers] + [
             ctypes.c_void_p(0)

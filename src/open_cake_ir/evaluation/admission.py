@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from .cuda_driver import CudaDeviceAdmission
-from open_cake_ir.compiler.target import cuda_target
+from open_cake_ir.compiler.target import CodeObject, declared_target
 
 
 def observe_exclusive_b200() -> CudaDeviceAdmission:
@@ -18,7 +18,14 @@ def observe_exclusive_b200() -> CudaDeviceAdmission:
 def observe_exclusive_cuda(target_id: str) -> CudaDeviceAdmission:
     """Reject the r41 clean-card race before compile, module load or launch."""
 
-    target = cuda_target(target_id)
+    target = declared_target(target_id)
+    # This observes a CUDA device through nvidia-smi and torch.cuda, which a Target
+    # producing another object has nothing to say to.
+    if target.code_object is not CodeObject.CUBIN:
+        raise ValueError(
+            f"CUDA device admission observes a cubin target; {target_id!r} declares "
+            f"{target.code_object.value}"
+        )
 
     visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     job_id = os.environ.get("GPUQ_JOB_ID")

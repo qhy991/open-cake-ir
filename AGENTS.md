@@ -6,73 +6,100 @@ Paths below are relative to `src/open_cake_ir/` unless they start with `tests/`,
 ## Targets are peers, and the shared layers are vendor-neutral
 
 Four vendors are declared as peers -- NVIDIA, Apple, AMD and Hygon, the closed `Vendor`
-set at `compiler/target.py:26` -- across seven declared targets. Where this section
+set in `compiler/target.py` -- across seven declared targets. Where this section
 conflicts with another rule in this file, this section wins. It adds no portability: the
 exact target match, a refusal that never steps a Schedule down, and the absence of a layout
-algebra all stand. Each invariant names the code that holds it and the test that pins it;
-a measured defect belongs in `findings/`, not here.
+algebra all stand. Each invariant names the code that holds it and the test that pins it,
+by symbol rather than by line so the citation survives an edit; a measured defect belongs
+in `findings/`, not here.
 
-- **A hardware fact is declared by the Target that owns it, once.** `warp_size` is read
-  from the document at `compiler/target.py:443` and an undeclared width is refused;
-  `tests/contracts/test_declared_warp_size.py:63` fails if a shared constant returns.
-- **Vendor identity is declared; no vendor lives in the `else`.** `Vendor` and `CodeObject`
-  are closed enums (`compiler/target.py:26`, `:51`); shared rules read `target.vendor`
-  (`compiler/performance/profile.py:405`, `compiler/backends/cutedsl.py:157`).
-  `tests/contracts/test_vendor_neutrality.py:212` fails on a rule that reads the presence
-  of a CUDA field as identity; the rest of that file holds the shared layers against a
-  synthetic third-vendor fixture bound by no Revision.
-- **An undeclared fact is reported, never substituted and never dereferenced.** A limit the
-  Target does not state is a REPORT-level "not checked": `TARGET_REGISTER_CAP_UNMODELED`
-  at `compiler/verifier/hardware_conformance.py:705`, `MMA_CONTRACT_DTYPES_UNMODELED` at
-  `:368`; Corpus case `gfx938-register-budget-unenforceable` and
-  `tests/contracts/test_instruction_contracts.py:34` pin them. A fail-open default is
-  worse than a refusal.
-- **A shared rule quotes the Target's declared sets; it never restates them.**
-  `compiler/verifier/hardware_conformance.py:213` intersects `synchronization_contracts`
-  with the `BarrierMechanism` vocabulary;
-  `tests/contracts/test_barrier_mechanism_ownership.py:85` fails if either verifier file
-  keeps its own copy of the pair. Instruction *typing* stays with the instruction
-  (ADR 0022).
+- **A same-vendor target is a document.** `tests/contracts/test_target_documents.py::
+  SameVendorTargetIsADocumentTest` loads a synthetic `sm_120a` and a synthetic
+  `apple_gpu_family10` beside the seven declared documents, lowers one through Triton and
+  one through Metal with no shared-code edit, routes the Triton emission offline, and
+  checks that `sm_120a` refuses what it does not declare. A new vendor is that plus its
+  own platform package and a `Vendor` member.
+- **A hardware fact is declared by the Target that owns it, once.** `Target.from_dict`
+  reads `warp_size` from the document and refuses an undeclared width; the slot budget
+  `ResourceLimits.maximum_warps_per_cta` is derived from it, never declared beside it;
+  `maximum_tensor_memory_bytes` is declared exactly by documents that declare the
+  `tensor` space and is `None`, not zero, elsewhere. Pinned by
+  `test_declared_warp_size.py::DeclaredWarpSize` and
+  `test_target_documents.py::DeclaredDocumentsTest`.
+- **Vendor identity is declared; no vendor lives in the `else`.** `Vendor` and
+  `CodeObject` are closed enums (D2). Field admission in the parser keys on the code
+  object, not the vendor: `compute_capability` and `warps_per_warpgroup` exist exactly on
+  `cubin` documents. `test_vendor_neutrality.py::NoVendorInTheElseTest` fails on a shared
+  rule that reads the presence of a CUDA field as identity, and the rest of that file
+  holds the shared layers against a synthetic third-vendor fixture bound by no Revision.
+- **An undeclared fact is reported, never substituted and never dereferenced.** A limit
+  the Target does not state is a REPORT-level "not checked": `TARGET_REGISTER_CAP_UNMODELED`
+  and `TARGET_WARPGROUP_WIDTH_UNMODELED` in `compiler/verifier/hardware_conformance.py`;
+  Corpus case `gfx938-register-budget-unenforceable` pins the first. A fail-open default
+  is worse than a refusal.
+- **An instruction contract has one owner.** `compiler/ir/instruction_contracts.py` is
+  the registry of every name a Target may declare (kind, operand and accumulator dtypes,
+  placement, realized barrier mechanism); `revision._load_target` refuses a document that
+  names a contract no record owns; the verifier reads the record and refuses an unowned
+  name with `INSTRUCTION_CONTRACT_UNKNOWN`; a backend keeps only its emission spelling.
+  Pinned by `test_instruction_contracts.py::AdmittedContractsHaveTheirAnalyses` and
+  `test_barrier_mechanism_ownership.py::BarrierMechanismOwnership` (neither verifier file
+  keeps its own copy of the barrier pair). Typing stays with the instruction (ADR 0022).
 - **Construction admits structure; an ISA range is a hardware-conformance Finding.**
-  `Schedule.from_dict` resolves no Target, so `compiler/ir/resources.py:80` parses a
-  register budget unbounded and the backend that encodes the instruction owns its range;
-  `tests/contracts/test_register_split_ownership.py:42` pins it.
+  `Schedule.from_dict` resolves no Target, so `Role.from_dict` parses a register budget
+  unbounded and the backend that encodes the instruction owns its range;
+  `test_register_split_ownership.py` pins it.
+- **Route facts ride the emission, and the offline jail opens no document (D3).**
+  `backends.triton.target_route_facts(target)` writes `code_object`, `triton_arch` and
+  `warp_size` into the toolchain requirements; `toolchain.triton_route(requirements)`
+  derives everything else from the code object and refuses a missing key. No backend or
+  toolchain module keeps a table of target ids, a compute-capability pair, or a lane
+  width the document already declares. `test_vendor_neutrality.py::
+  OfflineRouteMatchesEveryDeclaredDocumentTest` routes every declared document by its
+  own facts.
+- **A backend declares the code objects it emits, and the Compiler refuses the mismatch
+  by name.** Every backend module carries `CODE_OBJECTS`; `Compiler.assess` emits
+  `BACKEND_TARGET_UNSUPPORTED` when the Schedule's backend does not emit the Target's
+  object, and skips that backend's preflight. The two remaining per-target gates are
+  declared evidence sets, not capability tables: `backends/cutedsl.py::_TMEM_ROUTE_EVIDENCE`
+  and `backends/cutedsl_register.py::REGISTER_ROUTE_EVIDENCE` (ADR 0070, a
+  qualification act), `compiler/passes.py::_WARP_SPECIALIZATION_EVIDENCE` (bounded
+  NVIDIA Triton evidence). Widening any of them is a reviewed act.
 - **A refusal names the class it owns, and no vendor the caller did not name.**
-  `executable_role` (`evaluation/artifacts.py:23`) reads the declared `code_object`
-  instead of partitioning target ids by hand; `tests/contracts/test_declared_code_object.py:65`,
-  `tests/contracts/test_execution_platform.py:101` and
-  `tests/contracts/test_vendor_neutrality.py:149` hold the wording.
-- **The target match is exact; nothing steps down.** `declared_target`
-  (`compiler/target.py:74`) refuses an id no document declares, the CUDA launch checks the
-  binary version against the manifest's own target (`evaluation/cuda_driver.py:234`), and
-  the AMDGCN route table (`compiler/backends/triton.py:209`) refuses an unlisted target
-  rather than stepping it to a listed one.
-- **A backend is an emission mechanism, not a vendor.** `LoweringBackend`
-  (`compiler/ir/vocabulary.py:78`) has four members, and the Triton route serves sm_100a,
-  sm_103a, gfx938 and gfx1151 from one of them. A new vendor reaching an existing emitter
-  adds a Target document and, where needed, that backend's own preflight, calibration and
-  tests -- no `LoweringBackend` member. `tests/contracts/test_backend_boundaries.py:78`
-  holds the registry equal to the enum.
-- **A Target addition is a reviewed decision, not a data drop.** The declared set is pinned
-  at `tests/contracts/test_compiler_revision_architecture.py:103-106` and the
-  admitted-contract snapshot at `tests/contracts/test_instruction_contracts.py:56`; a new
-  Target edits both, on purpose; the contract and capability sets a document declares are
-  otherwise open and refused by name.
-- **A gate report names the targets it examined.** `compiler/corpus.py:68` reports
-  `unexamined_targets` beside examined ones; `tests/contracts/test_corpus_target_coverage.py:68`
-  holds that absence is reported and never blocks the Gate. Do not mint cases to satisfy
-  a count: `apple_gpu_family7` and `apple_gpu_family9` are reported unexamined today.
-- **One vendor word is not the neutral word.** `Role.warps` (`compiler/ir/resources.py:31`)
-  is the only accepted spelling for a role's execution slots and `compiler/core.py:272`
-  reports `total_warps` for every target. The rename is authorized (D4): `calibration_coverage`
-  has been empty in every commit of `compiler/revision.json` and every retired lock, so it
-  voids no binding, and it lands as its own hash-only tick because `semantic_sha256` covers
-  the whole Schedule document.
+  `evaluation/artifacts.py::executable_role` reads the declared `code_object` instead of
+  partitioning target ids by hand; `test_declared_code_object.py`,
+  `test_execution_platform.py::EveryDeclaredObjectIsARow` and
+  `test_vendor_neutrality.py::RefusalOwnershipTest` hold the wording.
+- **The target match is exact; nothing steps down.** `declared_target` refuses an id no
+  document declares; the CUDA launch checks the binary version against the manifest's
+  own declared compute capability (`evaluation/cuda_driver.py`); an id no document
+  declares has no route (`test_vendor_neutrality.py::
+  test_an_unlisted_target_is_refused_not_stepped_down`).
+- **A backend is an emission mechanism, not a vendor.** `LoweringBackend` has four
+  members, and the Triton route serves sm_100a, sm_103a, gfx938 and gfx1151 from one of
+  them. A new vendor reaching an existing emitter adds a Target document and, where
+  needed, that backend's own preflight, calibration and tests -- no `LoweringBackend`
+  member. `test_backend_boundaries.py` holds the registry equal to the enum and every
+  backend's `CODE_OBJECTS` declared.
+- **A Target addition is a reviewed decision, not a data drop (D2).** The declared set is
+  pinned in `test_compiler_revision_architecture.py` and the admitted-contract snapshot
+  in `test_instruction_contracts.py`; a new Target edits both, on purpose; the contract
+  and capability sets a document declares are otherwise open and refused by name.
+- **A gate report names the targets it examined.** `CorpusGateReport.unexamined_targets`
+  reports absence beside coverage; `test_corpus_target_coverage.py` holds that absence is
+  reported and never blocks the Gate (D10). Do not mint cases to satisfy a count:
+  `apple_gpu_family7` and `apple_gpu_family9` are reported unexamined today.
+- **One vendor word is not the neutral word.** `Role.warps` (`compiler/ir/resources.py`)
+  is the only accepted spelling for a role's execution slots and `Compiler.assess`
+  reports `total_warps` for every target. The rename is authorized (D4):
+  `calibration_coverage` has been empty in every commit of `compiler/revision.json` and
+  every retired lock, so it voids no binding, and it lands as its own hash-only tick
+  because `semantic_sha256` covers the whole Schedule document.
 
-What this section still knows to be open is one finding, F-2026-09-18-001: the
-`launch_cubin_once` literals, the `environment_kind` refusal wording, the `warps` rename,
-two NVIDIA mnemonics in `PLACED_CONTRACTS`, and warp-width literals in the Metal and
-native CUDA emitters.
+What this section still knows to be open is F-2026-09-18-001; of its five items, the
+`launch_cubin_once` literals and the Metal/native-CUDA warp-width literals closed with
+the Phase 1 commit that introduced the registry, and the `warps` rename, the
+`environment_kind` wording and `PLACED_CONTRACTS` mnemonics (now registry-derived) remain.
 
 ## Cake IR design principles (arXiv:2608.12629v1, Appendix B.1)
 

@@ -15,7 +15,6 @@ handling from the operation, and the host-side contract from the global buffers.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import MappingProxyType
 
 from .triton_selection import top_k_selection_structure
 from .common import emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
@@ -38,7 +37,8 @@ from ..ir import (
     Schedule,
     TileLoop,
 )
-from ..target import Target, Vendor
+from ..ir.instruction_contracts import ContractKind, contracts_of
+from ..target import CodeObject, Target
 from ..diagnostics import Finding
 
 _TL_DTYPE = {
@@ -138,23 +138,55 @@ SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
     INSIDE_LOOP_EMITTERS
 )
 
+# The emitter's own spellings. What each contract means is the registry's; which of
+# them `tl.dot` realizes is this backend's, read off the registry by the route's prefix
+# so a contract declared for this route cannot be modelled and unemittable at once.
 _ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 
 _TRITON_MMA_CONTRACTS = frozenset(
-    {
-        "triton.dot.bf16_fp32",
-        "triton.dot.fp32_ieee",
-        "triton.dot.fp32_tf32",
-        "triton.dot.fp8e4m3_block_scale_fp32",
-        "triton.dot.fp16_fp32",
-        "triton.dot.fp8e4m3_fp32",
-    }
+    name for name in contracts_of(ContractKind.MMA) if name.startswith("triton.dot.")
 )
 
 _TRITON_DOT_INPUT_PRECISION = {
     "triton.dot.fp32_ieee": "ieee",
     "triton.dot.fp32_tf32": "tf32",
 }
+
+# The selected-K dot has bounded evidence: measured on B200 and B300 only. An
+# applicability set, not a capability the Target declares; widening it is a
+# qualification act. Pinned by corpus case triton-k-ranges-selected-size.
+_K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
+
+# What this backend emits: Triton compiles the same kernel to a cubin or an hsaco,
+# and the Compiler refuses a Target whose code object is neither before preflight.
+CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO})
+
+
+def target_route_facts(target: Target) -> dict[str, object]:
+    """The three route facts the compile contract carries for `toolchain.triton_route`.
+
+    Offline compilation never opens a Target document in its jail, so the emitter
+    writes here what the toolchain would otherwise have to decode from the id: which
+    code object, the architecture Triton's `GPUTarget` takes -- the integer capability
+    for CUDA, the bare ISA name for AMDGPU -- and the lane width the analyses derived
+    thread counts from.
+    """
+    if target.code_object is CodeObject.CUBIN:
+        if target.compute_capability is None:
+            raise EmitError(f"Target {target.target_id!r} declares no compute capability")
+        major, minor = target.compute_capability
+        architecture: object = major * 10 + minor
+    elif target.code_object is CodeObject.HSACO:
+        architecture = target.target_id
+    else:
+        raise EmitError(
+            f"the Triton backend emits no {target.code_object.value!r} code object"
+        )
+    return {
+        "code_object": target.code_object.value,
+        "triton_arch": architecture,
+        "warp_size": target.warp_size,
+    }
 
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
@@ -196,26 +228,6 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     return tuple(findings)
 
 
-# The exact AMDGCN-code-object targets this backend emits for, each pinned to the
-# architecture and role-slot width its Target document declares. The set spans vendors:
-# gfx1151 is AMD hardware and gfx938 is Hygon's, and what they share is the code object
-# Triton emits, not a manufacturer. The lowering mechanism is Triton for every
-# target here -- one emitter, one emitted language, one `LoweringBackend` member -- so this
-# is the backend module owning which targets it admits, not a second member spelling the
-# same mechanism twice. An unlisted AMD target is refused, never stepped down to a listed
-# one. Whether a vendor reaching an existing mechanism should instead mint its own
-# `LoweringBackend` member is a reading of AGENTS.md's registration rule that belongs to
-# the reviewer, not to this comment.
-_AMDGCN_TARGETS = MappingProxyType({
-    "gfx938": ("c3000", 64),
-    # A wave32 AMD target, which is what keeps this route's arithmetic honest: it shares
-    # a vendor with gfx938 and not a lane width, so nothing here can be a wave64 constant
-    # wearing a vendor's name. Its hardware facts are retained observations from an
-    # earlier delivery and no device check exists for it in this repository.
-    "gfx1151": ("rdna3_5", 32),
-})
-
-
 def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) -> tuple[Finding, ...]:
     """Return the constructor's backend-owned lowering requirements.
 
@@ -232,15 +244,10 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         if not condition:
             findings.append(refusal(code, path, message))
 
-    amdgcn = _AMDGCN_TARGETS.get(target.target_id)
-    amdgcn_vendor = target.vendor in (Vendor.AMD, Vendor.HYGON)
-    add(
-        target.vendor is Vendor.NVIDIA
-        or (amdgcn_vendor and amdgcn == (target.architecture, target.warp_size)),
-        "BACKEND_TARGET_UNSUPPORTED", "target",
-        "the Triton backend emits for exact NVIDIA targets and for the listed AMDGCN ones",
-    )
-    if amdgcn is not None and amdgcn_vendor:
+    # Which code objects this backend emits is declared in CODE_OBJECTS and refused by
+    # the Compiler before preflight; nothing here re-admits a target by its id. What
+    # varies below is a fact of the code object, read from the Target that declares it.
+    if target.code_object is CodeObject.HSACO:
         # Triton's HIPOptions carries no maxnreg field and its option parser drops an
         # unknown key without raising, so the cap the emitter attaches for CUDA would be
         # accepted here and never applied. A budget that is silently not enforced is worse
@@ -425,7 +432,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             if operation.parameters.k_ranges is not None:
                 p = operation.parameters
                 supported = (
-                    schedule.target == target.target_id and target.target_id in {"sm_100a", "sm_103a"}
+                    schedule.target == target.target_id and target.target_id in _K_RANGES_EVIDENCE
                     and instruction is not None and instruction.contract == "triton.dot.bf16_fp32"
                     and instruction.shape is None and instruction.cta_group is None
                     and instruction.operand_source is None and instruction.operand_major is None
@@ -1065,6 +1072,7 @@ class _TritonEmitter:
                 ),
             },
             "grid": list(self.grid()),
+            **target_route_facts(self.target),
         }
 
     def _emit_header(self) -> None:

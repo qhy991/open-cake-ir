@@ -35,7 +35,9 @@ def requirements():
         "kernel_entry_point": "fixture", "signature": [
             {"name": name, "dtype": dtype} for name, dtype in
             (("a", "bf16"), ("b", "bf16"), ("bias", "fp32"), ("c", "fp32"))],
-        "grid": [32, 32, 1], "block": [32, 1, 1], "dynamic_shared_memory_bytes": 0}
+        "grid": [32, 32, 1], "block": [32, 1, 1], "dynamic_shared_memory_bytes": 0,
+        # The worker opens no Target document; the cubin's route facts ride the contract.
+        "code_object": "cubin", "compute_capability": [10, 3]}
 
 
 NAME = "kernel_cutlass_fixture_ptrbf16gmem_ptrbf16gmem_ptrf32gmem_ptrf32gmem_0"
@@ -65,7 +67,7 @@ def compilation_fixture(source=SOURCE, request=None):
     report = {"compiler_version": "4.5.2", "target": "sm_103a", "entry_point": NAME,
         "resources": {"registers_per_thread": 14, "stack_bytes": 0, "static_shared_bytes": 0, "local_bytes": 0},
         "resource_report": resource, "elf_report": elf,
-        "device_parameters": _cubin_parameters(elf, NAME, requirements()["signature"]),
+        "device_parameters": _cubin_parameters(elf, NAME, requirements()["signature"], target="sm_103a"),
         "denied_cuda_calls": ["cuda.bindings.driver.cuInit"], "jit_engine_created": False}
     return CuTeCompilation(source, "sm_103a", NAME, {
         "source": _launcher_source(source, request), "ptx": ptx_fixture(),
@@ -98,10 +100,15 @@ class CuTeSourceAdmissionTests(unittest.TestCase):
     def test_closed_requirements_refuse_scalar_arguments_targets_and_launch_options(self):
         mutations = {"target": "sm_100a", "compiler": "cutedsl", "block": [64, 1, 1],
                      "grid": [True, 1, 1], "dynamic_shared_memory_bytes": True,
-                     "signature": {"a": "bf16"}}
+                     "signature": {"a": "bf16"},
+                     # A foreign or malformed route fact is a differing contract.
+                     "code_object": "hsaco", "compute_capability": [10], }
         for key, value in mutations.items():
             with self.subTest(key=key), self.assertRaises(ValueError):
                 validate_cute_requirements({**requirements(), key: value})
+        for missing in ("code_object", "compute_capability"):
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "fields"):
+                validate_cute_requirements({k: v for k, v in requirements().items() if k != missing})
         with self.assertRaisesRegex(ValueError, "fields"):
             validate_cute_requirements({**requirements(), "options": "--enable-tvm-ffi"})
         request = requirements(); request["signature"][0]["dtype"] = "fp32"
@@ -175,7 +182,10 @@ class CuTeArtifactTests(unittest.TestCase):
 
     def test_ptx_and_cubin_prove_ordered_four_pointer_abi_and_one_warp(self):
         self.assertEqual(_ptx_entry(ptx_fixture(), requirements()), NAME)
-        self.assertEqual([row["offset"] for row in _cubin_parameters(elf_fixture(), NAME, requirements()["signature"])], [0, 8, 16, 24])
+        self.assertEqual([row["offset"] for row in _cubin_parameters(elf_fixture(), NAME, requirements()["signature"], target="sm_103a")], [0, 8, 16, 24])
+        # The target is read from the contract, never defaulted to one architecture.
+        with self.assertRaisesRegex(ValueError, "CUBIN target differs"):
+            _cubin_parameters(elf_fixture(), NAME, requirements()["signature"], target="sm_100a")
         validate_cute_compilation(compilation_fixture(), SOURCE, requirements())
 
     def test_ptx_rejects_scalar_hidden_target_entry_and_block_mismatches(self):
@@ -197,7 +207,7 @@ class CuTeArtifactTests(unittest.TestCase):
                elf.replace('Value: 0x20\n', 'Value: 0x28\n'), elf + '\n.nv.info.extra\n\tValue: 1\n']
         for value in bad:
             with self.subTest(elf=value[:80]), self.assertRaises(ValueError):
-                _cubin_parameters(value, NAME, requirements()["signature"])
+                _cubin_parameters(value, NAME, requirements()["signature"], target="sm_103a")
 
     def test_receipt_checks_both_code_and_observed_resource_evidence(self):
         compilation = compilation_fixture()

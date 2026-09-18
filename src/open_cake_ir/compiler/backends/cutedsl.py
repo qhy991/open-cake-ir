@@ -36,7 +36,7 @@ from ..ir import (
     Swizzle,
     TileLoop,
 )
-from ..target import Target, Vendor
+from ..target import CodeObject, Target
 from ..diagnostics import Finding
 from . import cutedsl_register, cutedsl_simt
 
@@ -54,6 +54,17 @@ _CUTLASS_DTYPE = {
 # and not the other is a Schedule that lowers until it reaches a host tensor, which is a
 # KeyError rather than a refusal.
 SUPPORTED_DTYPES = frozenset(_CUTLASS_DTYPE) & frozenset(TORCH_DTYPES)
+
+# Every CuTe-DSL route here compiles to a cubin; the Compiler refuses any other declared
+# code object before preflight.
+CODE_OBJECTS = frozenset({CodeObject.CUBIN})
+
+# The TMEM route's qualification evidence (ADR 0070): the tcgen05 pipeline emitted below
+# has been measured on B200 only. sm_103a declares the same instruction contracts, so
+# declared capability alone would admit it; this set is what keeps that a separate
+# qualification act. Pinned by corpus case b300-cute-target-refusal. Do not widen it
+# without B300 device evidence for this route.
+_TMEM_ROUTE_EVIDENCE = frozenset({"sm_100a"})
 
 # Total over PipelineKind by contract, unlike the operation and dtype tables above: a
 # pipeline kind with no class is a Schedule the IR admits and this backend cannot name,
@@ -154,14 +165,11 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             findings.append(refusal(code, path, message))
 
     add(
-        target.vendor is Vendor.NVIDIA,
-        "BACKEND_TARGET_UNSUPPORTED", "target",
-        "the current CuTe-DSL backend emits CUDA kernels and admits only NVIDIA targets",
-    )
-    add(
-        target.target_id != "sm_103a",
+        target.target_id in _TMEM_ROUTE_EVIDENCE,
         "CUTE_TARGET_UNSUPPORTED", "target",
-        "the B300 successor currently admits the Triton backend only",
+        "the CuTe-DSL TMEM route has been qualified on "
+        f"{', '.join(sorted(_TMEM_ROUTE_EVIDENCE))} only; {target.target_id!r} needs its "
+        "own qualification before this route emits for it",
     )
     # `_emit_role_body` is the only place in this Compiler that emits the
     # redistribution, so the legal immediates are this backend's constant to hold. The
@@ -672,9 +680,9 @@ class _Emitter:
         self.line("    tmem_sync = pipeline.NamedBarrier(")
         self.line("        barrier_id=1,")
         self.line(
-            f"        num_threads=(len({self.role_constant(owner)}) + 1) * 32,"
+            f"        num_threads=(len({self.role_constant(owner)}) + 1) * {self.target.warp_size},"
             if len(owner.warps) > 1
-            else "        num_threads=2 * 32,"
+            else f"        num_threads=2 * {self.target.warp_size},"
         )
         self.line("    )")
         self.line("    tmem = utils.TmemAllocator(")
@@ -1015,10 +1023,11 @@ class _Emitter:
         if source is None or len(source.shape) != 2:
             raise EmitError(f"argmin {operation.op_id!r} needs a rank-2 source")
         rows, columns = source.shape
-        groups = rows // 32
+        width = self.target.warp_size
+        groups = rows // width
         self.line(f"{pad}lane = cute.arch.lane_idx()")
         self.line(f"{pad}for group in cutlass.range({groups}, unroll_full=True):")
-        self.line(f"{pad}    row = lane + group * 32")
+        self.line(f"{pad}    row = lane + group * {width}")
         self.line(f"{pad}    best_value = {source.name}[row, 0]")
         self.line(f"{pad}    best_index = cutlass.Int32(0)", declares=operation.writes)
         self.line(

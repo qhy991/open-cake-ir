@@ -70,8 +70,8 @@ def _launch_target(target_id: object) -> Target:
     every Target document declares and none of which is CUDA's; routing them through that
     decode refused a gfx938 manifest as an "unsupported exact CUDA target" -- a vendor's
     words for a caller that named no vendor, and the defect AGENTS.md names for
-    `executable_role` in this same layer. The capability check still belongs to
-    `cuda_target`, and the CUDA paths that need it still call it.
+    `executable_role` in this same layer. The capability check belongs to the CUDA Driver
+    launch, which reads it from the declared Target (`cuda_driver._cubin_target`).
     """
     if not isinstance(target_id, str) or _TARGET_ID.fullmatch(target_id) is None:
         raise TargetParseError("exact launch target identity differs")

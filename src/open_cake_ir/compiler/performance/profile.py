@@ -32,7 +32,7 @@ from ..ir import (
     Schedule,
     TopKParameters,
 )
-from ..target import Target, Vendor
+from ..target import CodeObject, Target
 from .work import WorkBound, work_bound
 
 _ESTIMATE_KINDS = {
@@ -394,7 +394,8 @@ def profile_envelope(
 ) -> ProfileEnvelope:
     """Derive one NCU-aligned report without inventing measured percentages."""
 
-    target_label = "B200" if target.target_id == "sm_100a" else target.target_id
+    # The Target declares its own device name; nothing here knows one vendor's marketing.
+    target_label = target.device_names[0]
 
     if lowering is not None:
         if lowered_source is not None:
@@ -402,10 +403,13 @@ def profile_envelope(
         if lowering.schedule_id != schedule.schedule_id or lowering.target != target.target_id:
             raise ValueError("profile lowering context differs from Schedule or Target")
         lowered_source = lowering.source
-    if target.vendor is not Vendor.NVIDIA:
+    # Compiled-resource feedback is what ptxas reports about a cubin, so it is keyed on
+    # the code object the Target produces rather than on who built the part.
+    if target.code_object is not CodeObject.CUBIN:
         if compiled_resources is not None:
             raise ValueError(
-                f"CUDA compiled-resource feedback does not describe a {target.vendor.value} kernel"
+                "CUDA compiled-resource feedback does not describe a "
+                f"{target.code_object.value} kernel"
             )
         structures = {index: top_k_merge_structure(schedule, operation)
                       for index, operation in enumerate(schedule.operations)

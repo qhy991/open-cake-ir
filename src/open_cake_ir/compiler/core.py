@@ -252,12 +252,29 @@ class Compiler:
         route = typed_schedule.lowering
         backend = BACKENDS.get(route.backend)
         semantic_sha256 = _semantic_schedule_sha256(schedule)
+        # A backend declares the code objects it emits and a Target declares the one it
+        # runs; the Compiler holds the two against each other here, by name, so no
+        # backend keeps a table of the target ids it admits. A mismatched pair skips
+        # that backend's preflight -- its rules presume its own code object -- and
+        # keeps the shared verification, which presumes nothing about the route.
+        emits_code_object = (
+            backend is None or target_definition is None
+            or target_definition.code_object in backend.module.CODE_OBJECTS
+        )
+        if not emits_code_object:
+            findings.append(Finding(
+                "BACKEND_TARGET_UNSUPPORTED", "target",
+                f"the {route.backend.value} backend emits "
+                f"{sorted(item.value for item in backend.module.CODE_OBJECTS)} and the "
+                f"{target!r} target runs {target_definition.code_object.value!r}",
+                FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+            ))
         if backend is not None:
             findings.extend(backend.module.requirements(typed_schedule))
 
         if target_definition is not None:
             findings.extend(verify_contracts(typed_schedule, target_definition))
-        if (backend is not None and target_definition is not None
+        if (backend is not None and target_definition is not None and emits_code_object
                 and not any(finding.blocks_lowering for finding in findings)):
             findings.extend(backend.module.preflight(typed_schedule, target_definition))
 

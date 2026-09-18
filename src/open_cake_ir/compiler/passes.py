@@ -61,6 +61,12 @@ def _whole_dimension(index, dimension: int) -> bool:
             and index.offset == 0 and index.extent is None)
 
 
+# Where the launch-width rewrite has been measured: B200 and B300 under the Triton
+# route. An applicability set the pass declares, not a capability the Target does;
+# widening it is a qualification act on the added target.
+_WARP_SPECIALIZATION_EVIDENCE = frozenset({'sm_100a', 'sm_103a'})
+
+
 def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
                              num_warps: int, schedule_id: str,
                              entry_point: str) -> SpecializationResult:
@@ -85,7 +91,7 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
         s = Schedule.from_dict(copied)
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
         return refused('input_refused', str(error))
-    if s.lowering.backend is not LoweringBackend.TRITON or s.target not in {'sm_100a', 'sm_103a'}:
+    if s.lowering.backend is not LoweringBackend.TRITON or s.target not in _WARP_SPECIALIZATION_EVIDENCE:
         return refused('target_route', 'This specialization has bounded NVIDIA Triton evidence only.')
     maximum = compiler._revision.targets[s.target].resource_limits.maximum_warps_per_cta
     if num_warps > maximum:

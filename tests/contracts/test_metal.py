@@ -278,9 +278,14 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
         wrong = make_document()
         self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), target)])
         wrong["target"] = "apple_gpu_family7"
+        # The backend restates no Apple document: it reads the Target it is handed, so a
+        # drifted device name or architecture is followed rather than caught here. Only
+        # the Schedule's own identity is checked; the code object is the Compiler's.
         from dataclasses import replace
         for changed in (replace(target, device_names=("Apple M1",)), replace(target, architecture="apple8")):
-            self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), changed)])
+            self.assertNotIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), changed)])
+        self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(
+            Schedule.from_dict(wrong), replace(target, target_id="apple_gpu_family8"))])
 
     def test_m1_pro_rmsnorm_formulas_execute_odd_width_on_cpu(self):
         from tools.metal import rmsnorm
@@ -594,7 +599,8 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
                 self.assertEqual(lowering.source.count("threadgroup_barrier(mem_flags::mem_threadgroup);"), 4)
                 self.assertIn(f"uint i = s * {threads}u + lane;", lowering.source)
                 widths[groups] = metal.private_values_per_thread(
-                    Schedule.from_dict(document), metal.lane_width(Schedule.from_dict(document)))
+                    Schedule.from_dict(document),
+                    metal.lane_width(Schedule.from_dict(document), self.target))
         # A fixed 1024-wide reduction owns fewer values per lane as the stripe widens.
         # Scalars keep their single slot at every width, so the fall is not proportional.
         self.assertEqual(widths, {2: 49, 4: 25, 8: 13})
@@ -829,7 +835,8 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         assessment, _ = self.lower(make_document())
         self.assertIsNone(self.target.compute_capability)
         self.assertIsNone(self.target.warps_per_warpgroup)
-        self.assertEqual(self.target.resource_limits.maximum_tensor_memory_bytes, 0)
+        # No tensor space is declared, so its limit is unmodeled rather than zero.
+        self.assertIsNone(self.target.resource_limits.maximum_tensor_memory_bytes)
         self.assertIsNone(self.target.occupancy)
         self.assertIsNone(self.target.peak)
         self.assertIsNone(residency_upper_bound(Schedule.from_dict(make_document()), self.target))

@@ -73,18 +73,12 @@ class LoadParameters:
 
 
 # Whether an instruction places its own operands is a fact about the contract, so the
-# contract vocabulary owns it. The Verifier reads it to decide which declarations are
+# contract record owns it (`InstructionContract.places_operands`) and `PLACED_CONTRACTS`
+# is that registry's projection. The Verifier reads it to decide which declarations are
 # legal; the authoring Schema projects the same fact so an agent cannot spend a Turn
-# discovering it. Two spellings of this list would be the defect it exists to prevent.
-# Named, not spelled. Deciding this by mnemonic prefix put three NVIDIA spellings in
-# the vendor-neutral IR and turned the authoring Schema into a refusal of any other
-# vendor's atom placement: an atom that places its operands could not say so unless its
-# name happened to start the right way. A contract that places them is a row here, so a
-# further vendor's atom is a data addition rather than a spelling to match.
-PLACED_CONTRACTS = frozenset({
-    "tcgen05.mma.cta_group::1.kind::f16",
-    "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
-})
+# discovering it. A second spelling of the set here was the defect the registry exists
+# to prevent. Which declarations placement carries stays beside the operation that
+# parses them.
 PLACEMENT_FIELDS = ("shape", "cta_group", "operand_source", "operand_major")
 
 

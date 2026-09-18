@@ -146,7 +146,8 @@ class IsolatedTritonCompiler:
                 raise RunProtocolFault('harness_fault', 'isolated Triton runtime version differs')
             return TritonCompilation(source, record['target'], record['entry_point'],
                 {k: base64.b64decode(v, validate=True) for k, v in record['artifacts'].items()},
-                record['threads_per_cta'], record['dynamic_shared_bytes'], record['compiler_version'])
+                record['threads_per_cta'], record['dynamic_shared_bytes'], record['compiler_version'],
+                record['code_object'])
 
 
 def _compile_failure(error: Exception) -> tuple[bool, str]:
@@ -202,7 +203,7 @@ def _worker(path: str) -> int:
         'target': result.target, 'entry_point': result.entry_point,
         'artifacts': {k: base64.b64encode(v).decode() for k, v in result.artifacts.items()},
         'threads_per_cta': result.threads_per_cta, 'dynamic_shared_bytes': result.dynamic_shared_bytes,
-        'compiler_version': result.compiler_version,
+        'compiler_version': result.compiler_version, 'code_object': result.code_object,
     }))
     return 0
 

@@ -159,13 +159,16 @@ def hip_admission_requirements(target_id: str) -> dict[str, object]:
 
     `admit_exact_hip` takes the lowering requirements a build was compiled under. An
     evaluation worker is handed a sealed candidate and not those requirements, and the
-    answer is not to add a field carrying them: the route is already the owner of which
-    backend, ISA and lane width this target compiles and runs under, and reading it here
-    is reading the same fact the build read, not a second copy of it.
+    answer is not to add a field carrying them: the Target document declares which code
+    object, ISA and lane width this target compiles and runs under, and the route facts
+    are read from it here exactly as the emitter wrote them into the build's contract.
+    This layer is outside the compile jail and may open the document.
     """
+    from open_cake_ir.compiler.backends.triton import target_route_facts
+    from open_cake_ir.compiler.target import declared_target
     from open_cake_ir.compiler.toolchain import triton_route
 
-    route = triton_route(target_id)
+    route = triton_route({"target": target_id, **target_route_facts(declared_target(target_id))})
     if route.gpu_backend != "hip":
         raise ValueError(f"{target_id!r} does not lower through the HIP backend")
     return {

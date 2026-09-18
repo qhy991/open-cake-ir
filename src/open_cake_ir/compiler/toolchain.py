@@ -19,6 +19,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from .performance.compiled_resources import CompiledResources
+from .target import CodeObject
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,9 @@ class TritonCompilation:
     threads_per_cta: int
     dynamic_shared_bytes: int
     compiler_version: str
+    # Which code object the artifacts are, carried from the compile contract so the
+    # post-compile inspectors read it here instead of decoding the target id.
+    code_object: str
 
 
 # This is a source admission boundary, not a Python sandbox. Compilation of native
@@ -57,9 +61,13 @@ def _infinity_literal(node: ast.AST) -> bool:
             and isinstance(node.args[0].value, str) and node.args[0].value in {"inf", "-inf"})
 
 
-def _fp32_fma_call(node: ast.AST, target: object) -> bool:
-    """Admit the emitter's exact rounding contract, not a general assembly escape."""
-    if (target not in ("sm_100a", "sm_103a") or not isinstance(node, ast.Call)
+def _fp32_fma_call(node: ast.AST, requirements: Mapping[str, object]) -> bool:
+    """Admit the emitter's exact rounding contract, not a general assembly escape.
+
+    PTX inline assembly is a fact of the cubin route, so the contract is admitted by the
+    code object the compile contract names and not by which target id names it.
+    """
+    if (requirements.get("code_object") != CodeObject.CUBIN.value or not isinstance(node, ast.Call)
         or len(node.args) != 1 or not isinstance(node.args[0], ast.Constant)
         or node.args[0].value != "fma.rn.f32 $0, $1, $2, $3;"):
         return False
@@ -159,7 +167,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                     if node.attr == "inline_asm_elementwise":
                         call = parents.get(node)
                         allowed = (isinstance(call, ast.Call) and call.func is node
-                                   and _fp32_fma_call(call, requirements.get("target")))
+                                   and _fp32_fma_call(call, requirements))
                         if not allowed:
                             raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract at line {node.lineno}")
                 elif isinstance(node.value, ast.Name) and node.value.id == "libdevice":
@@ -182,7 +190,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                         raise ValueError(f"native Triton float requires a direct infinity literal at line {node.lineno}")
                 if (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
                     and fn.value.id == "tl" and fn.attr == "inline_asm_elementwise"):
-                    allowed = _fp32_fma_call(node, requirements.get("target"))
+                    allowed = _fp32_fma_call(node, requirements)
                     if not allowed:
                         raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract at line {node.lineno}")
                 if not allowed or any(kw.arg is None for kw in node.keywords):
@@ -220,15 +228,80 @@ def project_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> 
 
 
 @dataclass(frozen=True)
-class TritonRoute:
-    """One exact code-generation target and the artifacts its Triton backend produces.
+class CodeObjectRoute:
+    """What Triton's backend for one code object produces, and what its metadata names.
 
     Triton reaches every vendor through the same `GPUTarget`, but nothing else about a
     compilation is shared: the artifact roles differ, the text that names the emitted
-    target differs, and the metadata object carries different scratch fields. Routing
-    those on the declared target keeps each commitment visible instead of leaving three
-    CUDA assumptions buried in one function.
+    target differs, and the metadata object carries different scratch fields. Keying
+    those on the code object keeps each commitment visible instead of leaving three
+    CUDA assumptions buried in one function, and keys them on the fact that decides
+    them rather than on which target id happens to run that object.
     """
+
+    gpu_backend: str
+    artifact_roles: tuple[str, ...]
+    binary_role: str
+    text_role: str
+    scratch_fields: tuple[str, ...]
+
+    def target_pattern(self, target: str) -> bytes:
+        """The line in the text artifact that names the exact target it was built for."""
+        if self.text_role == "amdgcn":
+            # `amdhsa.target` adds the feature flags the toolchain selected, which are
+            # not the same string the device reports (a BW1101 reports
+            # `gfx938:sramecc+:xnack-` and this toolchain emits `gfx938:xnack-`), so the
+            # ISA is pinned exactly and only well-formed feature suffixes are admitted
+            # after it. The quotes are the emitter's YAML, not part of the target:
+            # `gfx938:xnack-` contains a colon so it is quoted, and a bare `gfx1151`
+            # with no feature flags is not. Anchoring the end of the line is what keeps
+            # `gfx938` from matching a `gfx9380` this toolchain might one day name.
+            return (rb"^\s*amdhsa\.target:\s*'?amdgcn-amd-amdhsa--"
+                    + target.encode("ascii") + rb"(?::[a-z0-9]+[+-])*'?\s*$")
+        return rb"^\.target\s+" + target.encode("ascii") + rb"(?:\s|,|$)"
+
+
+# One row per code object Triton can emit. Closed on purpose: a new code object is a
+# decision (CodeObject is a closed enum), and it lands here as one row beside the
+# enum member, never as a target id. Offline compilation never opens a Target
+# document in its jail; every fact that varies by target -- which object, which
+# architecture string, which lane width -- rides the compile contract the emitter
+# produced from the Target it held.
+_CODE_OBJECT_ROUTES: Mapping[CodeObject, CodeObjectRoute] = MappingProxyType({
+    CodeObject.CUBIN: CodeObjectRoute(
+        gpu_backend="cuda",
+        artifact_roles=("source", "ttir", "ttgir", "llir", "ptx", "cubin"),
+        binary_role="cubin",
+        text_role="ptx",
+        scratch_fields=("global_scratch_size", "profile_scratch_size"),
+    ),
+    CodeObject.HSACO: CodeObjectRoute(
+        gpu_backend="hip",
+        artifact_roles=("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco"),
+        binary_role="hsaco",
+        text_role="amdgcn",
+        # HIPOptions carries no global scratch field at all, so there is nothing to
+        # read; `profile_scratch_size` is present and is checked like the CUDA route.
+        scratch_fields=("profile_scratch_size",),
+    ),
+})
+
+
+def route_for_code_object(code_object: CodeObject | str) -> CodeObjectRoute:
+    """The Triton route for one declared code object, or a refusal naming it."""
+    try:
+        code_object = CodeObject(code_object)
+    except ValueError:
+        raise ValueError(f"Triton compiles no {code_object!r} code object") from None
+    route = _CODE_OBJECT_ROUTES.get(code_object)
+    if route is None:
+        raise ValueError(f"Triton compiles no {code_object.value!r} code object")
+    return route
+
+
+@dataclass(frozen=True)
+class TritonRoute:
+    """One exact compilation: the code-object route plus the target's own three facts."""
 
     gpu_backend: str
     architecture: object
@@ -238,65 +311,52 @@ class TritonRoute:
     text_role: str
     target_pattern: bytes
     scratch_fields: tuple[str, ...]
+    code_object: CodeObject
 
 
-# Exact AMDGCN targets, named here and not read from a Target document: offline
-# compilation never opens that data in its jail, which is the same reason
-# `cuda_architecture` decodes sm_100a and sm_103a by itself. The gfx938 contract test
-# holds this table against the document so the two cannot drift apart.
-#
-# `arch` is the bare ISA name Triton passes to the AMDGPU backend;
-# the emitted `amdhsa.target` adds the feature flags the toolchain selected, which are
-# not the same string the device reports (a BW1101 reports `gfx938:sramecc+:xnack-` and
-# this toolchain emits `gfx938:xnack-`). The pattern below therefore pins the ISA exactly
-# and admits only well-formed feature suffixes after it, rather than pretending the two
-# strings are one fact.
-_AMDGCN_TRITON_TARGETS = MappingProxyType({"gfx938": 64, "gfx1151": 32})
+def triton_route(requirements: Mapping[str, object]) -> TritonRoute:
+    """Read the route the compile contract declares, or refuse it; nothing is defaulted.
 
-
-def triton_route(target: object) -> TritonRoute:
-    """Decode the one exact target this compilation is for, or refuse it."""
-
-    from .target import cuda_architecture
-
-    if isinstance(target, str) and target in _AMDGCN_TRITON_TARGETS:
-        return TritonRoute(
-            gpu_backend="hip",
-            architecture=target,
-            warp_size=_AMDGCN_TRITON_TARGETS[target],
-            artifact_roles=("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco"),
-            binary_role="hsaco",
-            text_role="amdgcn",
-            # The quotes are the emitter's YAML, not part of the target: `gfx938:xnack-`
-            # contains a colon so it is quoted, and a bare `gfx1151` with no feature flags
-            # is not. Anchoring the end of the line is what keeps `gfx938` from matching a
-            # `gfx9380` this toolchain might one day name.
-            target_pattern=(
-                rb"^\s*amdhsa\.target:\s*'?amdgcn-amd-amdhsa--"
-                + target.encode("ascii")
-                + rb"(?::[a-z0-9]+[+-])*'?\s*$"
-            ),
-            # HIPOptions carries no global scratch field at all, so there is nothing to
-            # read; `profile_scratch_size` is present and is checked like the CUDA route.
-            scratch_fields=("profile_scratch_size",),
-        )
-    architecture = cuda_architecture(target)
+    `code_object`, `triton_arch` and `warp_size` are written by the emitter from the
+    Target it held (`backends/triton.py`). A missing key is a contract that differs,
+    not a CUDA compilation: reading 32 or `cuda` for a contract that never said so is
+    the silent answer these keys exist to stop.
+    """
+    if not isinstance(requirements, Mapping):
+        raise ValueError("Triton compile contract differs")
+    target = requirements.get("target")
+    code_object = requirements.get("code_object")
+    architecture = requirements.get("triton_arch")
+    warp_size = requirements.get("warp_size")
+    if (not isinstance(target, str) or not target or not isinstance(code_object, str)
+            or type(warp_size) is not int or warp_size <= 0):
+        raise ValueError("Triton compile contract differs")
+    route = route_for_code_object(code_object)
+    # The architecture Triton's `GPUTarget` takes is an integer capability for CUDA
+    # and the bare ISA name for AMDGPU; either shape on the wrong route is a differing
+    # contract, not something to coerce.
+    if route.gpu_backend == "cuda":
+        if type(architecture) is not int or architecture <= 0:
+            raise ValueError("Triton compile contract differs")
+    elif not isinstance(architecture, str) or not architecture:
+        raise ValueError("Triton compile contract differs")
     return TritonRoute(
-        gpu_backend="cuda",
+        gpu_backend=route.gpu_backend,
         architecture=architecture,
-        warp_size=32,
-        artifact_roles=("source", "ttir", "ttgir", "llir", "ptx", "cubin"),
-        binary_role="cubin",
-        text_role="ptx",
-        target_pattern=rb"^\.target\s+" + target.encode("ascii") + rb"(?:\s|,|$)",
-        scratch_fields=("global_scratch_size", "profile_scratch_size"),
+        warp_size=warp_size,
+        artifact_roles=route.artifact_roles,
+        binary_role=route.binary_role,
+        text_role=route.text_role,
+        target_pattern=route.target_pattern(target),
+        scratch_fields=route.scratch_fields,
+        code_object=CodeObject(code_object),
     )
 
 
 def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonCompilation:
     """Compile a complete emitted source; never launch it or initialize GPU handles."""
-    target = requirements.get("target")
-    route = triton_route(target)
+    route = triton_route(requirements)
+    target = requirements["target"]
     if (
         requirements.get("compiler") != "triton"
         or requirements.get("source_language") != "python"
@@ -363,7 +423,7 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         return TritonCompilation(
             source, target, name, MappingProxyType(artifacts),
             int(metadata.num_warps) * route.warp_size, int(metadata.shared),
-            importlib.metadata.version("triton"),
+            importlib.metadata.version("triton"), route.code_object.value,
         )
 
 
@@ -416,7 +476,7 @@ def inspect_amdgcn_resources(compilation: TritonCompilation) -> CompiledResource
     the Hygon DTK image, and it needs none: the allocation facts are already in the
     assembly Triton returned, so the inspector here is the compiler that produced them.
     """
-    route = triton_route(compilation.target)
+    route = route_for_code_object(compilation.code_object)
     if route.text_role != "amdgcn":
         raise ValueError(f"target {compilation.target!r} does not produce AMDGCN assembly")
     return CompiledResources(
@@ -460,7 +520,7 @@ def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Pa
     """Inspect compiler output using NVIDIA's binary utility, with no GPU runtime."""
     # An AMDGCN compilation has no CUBIN for this utility to read. Say that, rather
     # than failing on a missing artifact key several frames further in.
-    if triton_route(compilation.target).text_role != "ptx":
+    if route_for_code_object(compilation.code_object).text_role != "ptx":
         raise ValueError(
             f"target {compilation.target!r} produces no CUBIN; use inspect_amdgcn_resources"
         )

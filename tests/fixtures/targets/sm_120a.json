@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "target_id": "sm_120a",
+  "architecture": "blackwell_geforce",
+  "device_names": [
+    "NVIDIA RTX PRO 6000 Blackwell"
+  ],
+  "vendor": "nvidia",
+  "code_object": "cubin",
+  "compute_capability": [
+    12,
+    0
+  ],
+  "memory_spaces": [
+    "global",
+    "shared",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "mma",
+    "reduce_argmin",
+    "reduce",
+    "top_k",
+    "index_expand",
+    "online_softmax",
+    "atomic_rmw",
+    "cast",
+    "elementwise",
+    "scan",
+    "store"
+  ],
+  "warp_size": 32,
+  "resource_limits": {
+    "maximum_threads_per_cta": 1024,
+    "maximum_shared_memory_bytes": 101376,
+    "grid": {
+      "x": 2147483647,
+      "y": 65535,
+      "z": 65535
+    },
+    "maximum_registers_per_thread": 255
+  },
+  "instruction_contracts": [
+    "triton.dot.bf16_fp32",
+    "triton.dot.fp32_ieee",
+    "triton.dot.fp32_tf32",
+    "triton.dot.fp8e4m3_block_scale_fp32",
+    "triton.atomic_add.i32.relaxed.gpu",
+    "libdevice.tanh.f32"
+  ],
+  "synchronization_contracts": [
+    "triton_program_order"
+  ],
+  "citations": [
+    {
+      "kind": "device_specification",
+      "source": "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html",
+      "locator": "Synthetic acceptance fixture for the Phase 1 integrate slice: compute capability 12.0, warp size 32, 1024 threads per block, 99 KiB opt-in shared memory per block, no tensor memory space; not a declared Target of this checkout"
+    }
+  ]
+}

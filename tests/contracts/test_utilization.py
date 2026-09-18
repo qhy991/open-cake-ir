@@ -92,15 +92,31 @@ class TargetReferenceTest(unittest.TestCase):
                 self.assertIsNone(target.peak.for_contract(DOT))
         self.assertIsNone(Target.load(TARGET_PATH.with_name("apple_gpu_family8.json")).peak)
 
-    def test_apple_specification_does_not_admit_unverified_calibration(self) -> None:
-        for peak in (
-            {"memory_bandwidth": _rate(200e9, "bytes_per_second")},
-            {"arithmetic": {"metal.precise.tanh.f32": _rate(1e12, "flops_per_second", "device_specification")}},
+    def test_a_peak_is_admitted_by_the_same_rule_for_every_vendor(self) -> None:
+        """The parser keeps no vendor-keyed peak rule.
+
+        An Apple document used to be refused any peak but device-specification bandwidth
+        by a rule that read the vendor. That rule is gone: what a document may declare is
+        what its citations evidence, held by review, and the one structural rule -- an
+        arithmetic key names a declared contract -- reads the document, not the vendor.
+        """
+        for peak, check in (
+            ({"memory_bandwidth": _rate(200e9, "bytes_per_second")},
+             lambda target: self.assertIs(target.peak.memory_bandwidth.source,
+                                          PeakSource.MICROBENCHMARK)),
+            ({"arithmetic": {"metal.precise.tanh.f32":
+                             _rate(1e12, "flops_per_second", "device_specification")}},
+             lambda target: self.assertEqual(
+                 target.peak.for_contract("metal.precise.tanh.f32").value, 1e12)),
         ):
             document = json.loads(TARGET_PATH.with_name("apple_gpu_family7.json").read_text())
             document["peak"] = peak
-            with self.assertRaisesRegex(TargetParseError, "only device-specification memory bandwidth"):
-                Target.from_dict(document)
+            with self.subTest(peak=sorted(peak)):
+                check(Target.from_dict(document))
+        document = json.loads(TARGET_PATH.with_name("apple_gpu_family7.json").read_text())
+        document["peak"] = {"arithmetic": {DOT: _rate(1e12, "flops_per_second")}}
+        with self.assertRaises(TargetParseError):
+            Target.from_dict(document)
 
     def test_loading_a_second_target_does_not_inherit_the_first_peak(self) -> None:
         first = Target.load(TARGET_PATH.with_name("apple_gpu_family7.json"))

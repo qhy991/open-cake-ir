@@ -48,6 +48,15 @@ from .vocabulary import (
     TMEM_WORD_BYTES,
 )
 
+from .instruction_contracts import (
+    CONTRACTS,
+    ContractKind,
+    InstructionContract,
+    PLACED_CONTRACTS,
+    contract,
+    contracts_of,
+)
+
 from .resources import (
     Allocation,
     Barrier,
@@ -84,7 +93,6 @@ from .operations import (
     OnlineSoftmaxParameters,
     Operation,
     OperationParameters,
-    PLACED_CONTRACTS,
     PLACEMENT_FIELDS,
     ReduceArgminParameters,
     ReduceParameters,

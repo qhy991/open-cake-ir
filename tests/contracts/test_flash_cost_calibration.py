@@ -107,7 +107,7 @@ class FlashCalibrationTest(unittest.TestCase):
         payloads = {role: f"SYNTHETIC NON-EXECUTABLE {role}".encode() for role in ("source", "ttir", "ttgir", "llir", "ptx", "cubin")}
         payloads["source"] = source + b"\n# SYNTHETIC compiler expansion, not executable evidence\n"
         payloads["cubin"] = b"\x7fELF SYNTHETIC NON-EXECUTABLE " + repr(requirements).encode()
-        return TritonCompilation(source, "sm_100a", requirements["kernel_entry_point"], payloads, requirements["compile_options"]["num_warps"] * 32, 0, "SYNTHETIC")
+        return TritonCompilation(source, "sm_100a", requirements["kernel_entry_point"], payloads, requirements["compile_options"]["num_warps"] * 32, 0, "SYNTHETIC", "cubin")
 
     def _fake_evaluator(self, command, **kwargs):
         # This stands in for the evaluator child only. Compiler identity reads the

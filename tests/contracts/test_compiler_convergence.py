@@ -67,8 +67,8 @@ class CompilerConvergenceContractTests(unittest.TestCase):
         target = compiler._revision.targets[document["target"]]
         with (
             mock.patch.object(public.Target, "from_dict", side_effect=AssertionError("Target reparsed")),
-            mock.patch.object(TargetSource, "document", new_callable=mock.PropertyMock,
-                              side_effect=AssertionError("provenance used as hardware")),
+            # Provenance cannot be read as hardware: TargetSource projects no document.
+            mock.patch.object(json, "loads", wraps=json.loads) as reparse,
             mock.patch.object(core, "verify_contracts", wraps=core.verify_contracts) as verify_call,
             mock.patch.object(backend_triton, "preflight", wraps=backend_triton.preflight) as preflight,
             mock.patch.object(backend_triton, "emit", wraps=backend_triton.emit) as emit,
@@ -79,6 +79,9 @@ class CompilerConvergenceContractTests(unittest.TestCase):
             self.assertTrue(compiler.lower(assessment).source)
             compiler.profile(assessment)
             compiler.rank([assessment])
+        self.assertFalse(hasattr(TargetSource, "document"))
+        for call in reparse.call_args_list:
+            self.assertIsNot(call.args[0], target.source.document_bytes)
         for calls in (verify_call, preflight, emit, rank):
             self.assertTrue(calls.call_args_list)
             for call in calls.call_args_list:
