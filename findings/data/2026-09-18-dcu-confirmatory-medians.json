@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "finding": "F-2026-09-18-002",
+  "what": "Confirmatory pooled medians, in milliseconds, for each DCU campaign that reached a qualified endpoint and whose receipt was collected. Retained so the counts in F-2026-09-18-002 and F-2026-09-18-005 are derived from data rather than restated from a previous sentence: those counts were wrong three times, each time by editing prose instead of recounting.",
+  "target": "gfx938",
+  "collected": "2026-09-18, from the campaign-evidence confirmatory receipts of the sweeps F-2026-09-18-003 cites",
+  "floor_ms": 0.005439,
+  "absent": {
+    "softsign": "qualified; its medians were not in the collection, and bw1100 was unreachable when this file was written"
+  },
+  "medians_ms": {
+    "absmax_rescale": {"candidate": 0.005439, "baseline": 0.005439},
+    "adadelta": {"candidate": 0.006719, "baseline": 0.006719},
+    "adamw": {"candidate": 0.007839, "baseline": 0.007839},
+    "attention_decode": {"candidate": 0.219519, "baseline": 0.138559},
+    "bias_gradient_reduction": {"candidate": 0.010399, "baseline": 0.010079},
+    "channel_absmax_scale": {"candidate": 0.009599, "baseline": 0.009599},
+    "cosine_similarity": {"candidate": 0.005439, "baseline": 0.005439},
+    "gelu_tanh": {"candidate": 0.006239, "baseline": 0.006399},
+    "gelu_tanh_backward": {"candidate": 0.012639, "baseline": 0.006719},
+    "gemm": {"candidate": 0.409279, "baseline": 0.305599},
+    "layernorm": {"candidate": 0.005439, "baseline": 0.005439},
+    "layernorm_backward_input": {"candidate": 0.005439, "baseline": 0.005439},
+    "layernorm_gamma_beta_backward": {"candidate": 0.015199, "baseline": 0.014879},
+    "momentum_sgd": {"candidate": 0.005599, "baseline": 0.005919},
+    "pairwise_sqdist": {"candidate": 0.023679, "baseline": 0.024959},
+    "per_channel_moments": {"candidate": 0.006719, "baseline": 0.009439},
+    "prelu": {"candidate": 0.009759, "baseline": 0.005439},
+    "residual_rmsnorm": {"candidate": 0.005439, "baseline": 0.005439},
+    "rmsnorm": {"candidate": 0.005439, "baseline": 0.005439},
+    "rmsnorm_input_gradient": {"candidate": 0.005439, "baseline": 0.005439},
+    "selu": {"candidate": 0.005439, "baseline": 0.005439},
+    "silu": {"candidate": 0.005439, "baseline": 0.005439},
+    "softmax": {"candidate": 0.005439, "baseline": 0.005439},
+    "softmax_backward": {"candidate": 0.005439, "baseline": 0.005439},
+    "softplus_gradient": {"candidate": 0.005439, "baseline": 0.005439},
+    "swiglu": {"candidate": 0.005439, "baseline": 0.005599}
+  },
+  "materiality_ratio": 1.05
+}
