@@ -145,6 +145,81 @@ class DcuMedianCounts(unittest.TestCase):
             "revisions": {revisions},
         }
 
+    #: Quantity phrases that carry no noun, because the noun is two sentences back. Each
+    #: names the group it refers to, so the number is still checked against the table; what
+    #: the list adds is that a NEW bare phrase fails until it is classified here. Three of
+    #: these -- "the count is X", "for those X", "six of the X" -- are mutations a reviewer
+    #: used to change the floor count in prose while every other check passed.
+    BARE = (
+        (r"the count is ([\w-]+)", "floor"),
+        (r"for those ([\w-]+) the comparison", "floor"),
+        (r"six of the ([\w-]+)[:,]", "floor"),
+        (r"to ([\w-]+) over all", "floor"),
+        (r"all ([\w-]+) passed their", "floor"),
+        (r"([\w-]+) is the fourth value", "floor"),
+        (r"seven, eleven, twelve, ([\w-]+), which is what git shows", "floor"),
+        (r"gives ([\w-]+) separated", "separated"),
+        (r"named in the ([\w-]+)\.", "separated"),
+        (r"over all ([\w-]+)", "tasks"),
+    )
+    #: The one construction that states the partition, checked as a whole.
+    PARTITION = r"([\w-]+) plus ([\w-]+) is that ([\w-]+)"
+
+    def _quantities(self) -> dict[str, int]:
+        return {"floor": len(self._at_floor()), "separated": len(self._separated()),
+                "tasks": len(self.rows), "runs": self.data["qualified_runs"]}
+
+    def test_every_bare_quantity_phrase_names_the_count_the_table_gives(self) -> None:
+        quantities = self._quantities()
+        for label, text in (("002", self.two_text), ("005", self.five_text)):
+            for pattern, group in self.BARE:
+                for match in re.finditer(pattern, text, re.I):
+                    word = match.group(1).lower()
+                    with self.subTest(record=label, phrase=match.group(0)):
+                        self.assertIn(word, NUMBER, "not a count word")
+                        self.assertEqual(NUMBER[word], quantities[group],
+                                         f"{label} says {match.group(0)!r}; the table "
+                                         f"gives {quantities[group]} for the {group} group")
+            for match in re.finditer(self.PARTITION, text, re.I):
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(
+                        [NUMBER[w.lower()] for w in match.groups()],
+                        [quantities["floor"], quantities["separated"], quantities["tasks"]],
+                        f"{label}'s partition sentence does not add up to the table")
+
+    #: Words that could name one of these groups. Every occurrence of one of these in either
+    #: record must be accounted for by a checked phrase or be a value the record retracts --
+    #: otherwise it is a quantity nothing looks at, which is how this record went wrong three
+    #: times. Smaller words are left out: they are overwhelmingly ordinary prose ("one more",
+    #: "two operands"), and the live counts they do carry are checked by noun above.
+    GROUP_WORDS = ("nine", "eleven", "twelve", "thirteen", "fourteen", "twenty-six",
+                   "twenty-seven", "thirty")
+
+    def test_no_group_sized_number_goes_unchecked(self) -> None:
+        """The completeness half. Without it the two checks above are chosen sites again:
+        a reviewer moved the floor count in four sentences none of them looked at."""
+        nouns = tuple(self._noun_groups())
+        for label, text in (("002", self.two_text), ("005", self.five_text)):
+            covered = set()
+            for pattern, _ in self.BARE:
+                for match in re.finditer(pattern, text, re.I):
+                    covered.add(match.span(1))
+            for match in re.finditer(self.PARTITION, text, re.I):
+                covered.update(match.span(i) for i in (1, 2, 3))
+            for noun in nouns:
+                for match in re.finditer(rf"((?:[\w-]+\s+){{0,2}}){noun}\b", text):
+                    start = match.start(1)
+                    for token in re.finditer(r"[\w-]+", match.group(1)):
+                        covered.add((start + token.start(), start + token.end()))
+            for word in self.GROUP_WORDS:
+                for match in re.finditer(rf"\b{word}\b", text, re.I):
+                    if match.span() in covered or NUMBER[word] in RETRACTED_COUNTS:
+                        continue
+                    self.fail(
+                        f"{label} states {word!r} where nothing checks it: "
+                        f"...{text[max(0, match.start() - 60):match.end() + 30]!r}... "
+                        "Give it a noun this file counts, or add its construction to BARE.")
+
     def test_every_counted_noun_names_a_quantity_derived_for_that_noun(self) -> None:
         groups = self._noun_groups()
         for label, text in (("002", self.two_text), ("005", self.five_text)):
