@@ -1,42 +1,17 @@
 {
  "schema_version": 1,
  "finding": "F-2026-09-18-002",
- "what": "Confirmatory pooled medians, in milliseconds, for every DCU campaign that reached a qualified endpoint, one row per task. Retained so the counts in F-2026-09-18-002 and F-2026-09-18-005 are derived from data rather than restated from a previous sentence: the floor count was asserted in prose twice before it was right, and a second count in the same record -- how many runs rose above the floor -- was wrong as well.",
  "target": "gfx938",
- "collected": "2026-09-18 from bw1100, read out of each run's own campaign-evidence confirmatory receipt by the extractor in this commit's message; every row carries the workspace and the receipt's content-addressed relative path within it, so a reader with the host can check any single row rather than the file as a whole. An earlier version of this file said the rows came from 'the sweeps F-2026-09-18-003 cites', which was false -- those two sweeps cover eight tasks and this table has twenty-seven, drawn from eleven sweeps between 2026-09-17 and 2026-09-18.",
- "row_selection": "Three tasks qualified twice, so thirty qualified runs produce twenty-seven rows and the choice of run had to be made. Each row is the task's FIRST qualified run by workspace timestamp. The rule is stated because it is not neutral: gelu_tanh's later run reads better than the one kept (see excluded_reruns), so taking the first is the conservative direction, not the flattering one. The previous version of this file made the same choice silently. Each row also carries the Compiler revision its campaign actually ran at, read from the run's own evidence. These twenty-seven campaigns ran at three different revisions, so no single commit is the source of this table and a record that cites it cannot claim one.",
- "excluded_reruns": {
-  "gelu_tanh": [
-   {
-    "workspace": "gelu_tanh-20260918-104531",
-    "receipt": "objects/sha256/94/94f0cc691770709577e02094c39a51b1dd6aea7abf62d53bf818f9d6aa546d02",
-    "candidate": 0.005439,
-    "baseline": 0.006399,
-    "classification": "first_arm_faster",
-    "compiler_revision": "open-cake-ir@a8a4885d"
-   }
-  ],
-  "gemm": [
-   {
-    "workspace": "gemm-20260918-042832",
-    "receipt": "objects/sha256/59/59cf80cd04c6e9a6d4f4d3f11f2a5a037566b4174a5627c6b21305a207c1483a",
-    "candidate": 0.409279,
-    "baseline": 0.305759,
-    "classification": "second_arm_faster",
-    "compiler_revision": "open-cake-ir@4278caf2"
-   }
-  ],
-  "rmsnorm": [
-   {
-    "workspace": "rmsnorm-20260917-181121",
-    "receipt": "objects/sha256/6b/6b31786a9cc813648dc1e386c47bd25656cd536e93dab084b1554a22dde3f9d7",
-    "candidate": 0.005439,
-    "baseline": 0.005439,
-    "classification": "close_null",
-    "compiler_revision": "open-cake-ir@5151954e"
-   }
-  ]
- },
+ "what": "Confirmatory pooled medians, in milliseconds, for every DCU campaign that reached a qualified endpoint, one row per task. Retained so the counts in F-2026-09-18-002 and F-2026-09-18-005 are derived from data rather than restated from a previous sentence: the floor count was asserted in prose twice before it was right, and a second count in the same record -- how many runs rose above the floor -- was wrong as well.",
+ "generated_by": "tools/read_dcu_confirmatory_medians.py",
+ "collected": "2026-09-18 from bw1100, by running tools/read_dcu_confirmatory_medians.py over the campaign workspaces under /home/testuser01/oci-dcu-runs inside the DTK image, which is where they are readable. That tool is in this commit and regenerates every field below, so the table can be renewed rather than edited. Two earlier versions of this field described a source that could not produce it -- first 'the sweeps F-2026-09-18-003 cites', which cover eight tasks against this table's twenty-seven, then 'the extractor in this commit's message', which named a script that existed in no commit and no file.",
+ "row_selection": "Three tasks qualified more than once, so thirty qualified runs produce twenty-seven rows and the choice of run had to be made. Each row is the task's FIRST qualified run by workspace timestamp. The rule is stated because it is not neutral: gelu_tanh's later run reads better than the one kept, so taking the first is the conservative direction rather than the flattering one. Each row also carries the Compiler revision its campaign actually ran at, read from that run's own evidence; these campaigns ran at three revisions, so no single commit is the source of this table and a record citing it cannot claim one.",
+ "qualified_runs": 30,
+ "qualified_tasks": 27,
+ "sweep_days": [
+  "20260917",
+  "20260918"
+ ],
  "floor_ms": 0.005439,
  "materiality_ratio": 1.05,
  "medians_ms": {
@@ -256,5 +231,37 @@
    "receipt": "objects/sha256/54/5491c5924ad5437ee20ec11f63cf3d88452252db9e0c8990b469c1e437889045",
    "compiler_revision": "open-cake-ir@5151954e"
   }
+ },
+ "excluded_reruns": {
+  "gelu_tanh": [
+   {
+    "candidate": 0.005439,
+    "baseline": 0.006399,
+    "classification": "first_arm_faster",
+    "workspace": "gelu_tanh-20260918-104531",
+    "receipt": "objects/sha256/94/94f0cc691770709577e02094c39a51b1dd6aea7abf62d53bf818f9d6aa546d02",
+    "compiler_revision": "open-cake-ir@a8a4885d"
+   }
+  ],
+  "gemm": [
+   {
+    "candidate": 0.409279,
+    "baseline": 0.305759,
+    "classification": "second_arm_faster",
+    "workspace": "gemm-20260918-042832",
+    "receipt": "objects/sha256/59/59cf80cd04c6e9a6d4f4d3f11f2a5a037566b4174a5627c6b21305a207c1483a",
+    "compiler_revision": "open-cake-ir@4278caf2"
+   }
+  ],
+  "rmsnorm": [
+   {
+    "candidate": 0.005439,
+    "baseline": 0.005439,
+    "classification": "close_null",
+    "workspace": "rmsnorm-20260917-181121",
+    "receipt": "objects/sha256/6b/6b31786a9cc813648dc1e386c47bd25656cd536e93dab084b1554a22dde3f9d7",
+    "compiler_revision": "open-cake-ir@5151954e"
+   }
+  ]
  }
 }
