@@ -49,6 +49,30 @@ def _read(path):
         return ""
 
 
+def read_revision(workspace):
+    """The Compiler revision one campaign ran at, receipt or no receipt.
+
+    A run that qualified nothing still ran at a commit, and records about turn budget
+    cite exactly those runs, so this must not be gated on a confirmatory receipt.
+    """
+    root = os.path.join(workspace, "campaign-evidence")
+    if not os.path.isdir(root):
+        return None
+    revisions = set()
+    for path in sorted(glob.glob(os.path.join(root, "**", "*.json"), recursive=True)):
+        blob = _read(path)
+        for pattern in REVISION:
+            for hit in pattern.finditer(blob):
+                revisions.add(hit.group(1).split("@")[-1][:8])
+    if not revisions:
+        return None
+    if len(revisions) != 1:
+        raise SystemExit(f"{os.path.basename(workspace)}: evidence names "
+                         f"{len(revisions)} Compiler revisions {sorted(revisions)}; "
+                         "a run has exactly one")
+    return "open-cake-ir@" + revisions.pop()
+
+
 def read_workspace(workspace):
     """Return this run's endpoint, confirmatory medians and Compiler revision, or None."""
     root = os.path.join(workspace, "campaign-evidence")
@@ -114,11 +138,22 @@ def read_workspace(workspace):
 
 
 def collect(runs_directory):
-    """Group every qualified run by task, ordered as they ran."""
+    """Group every qualified run by task, and record what every campaign ran at.
+
+    The second half matters because records cite runs this table has no row for.
+    F-2026-09-18-003 is about turn budget, so it cites each task's runs at two, four and
+    six turns including the ones that qualified nothing -- and its Compiler stamp has to
+    be supported by those runs, not by the qualified subset. Reading the revision for
+    every workspace costs nothing extra here and leaves nothing for prose to assert.
+    """
     by_task = defaultdict(list)
+    revisions = {}
     for workspace in sorted(glob.glob(os.path.join(runs_directory, "*"))):
         if not os.path.isdir(workspace):
             continue
+        revision = read_revision(workspace)
+        if revision is not None:
+            revisions[os.path.basename(workspace)] = revision
         found = read_workspace(workspace)
         if found is None:
             continue
@@ -126,10 +161,10 @@ def collect(runs_directory):
             by_task[found["task"]].append(found)
     for runs in by_task.values():
         runs.sort(key=lambda run: run["started"])
-    return by_task
+    return by_task, revisions
 
 
-def table(by_task, *, floor_ms, materiality_ratio):
+def table(by_task, revisions, *, floor_ms, materiality_ratio):
     def row(run, *, kept):
         fields = ["candidate", "baseline", "classification", "workspace", "receipt",
                   "compiler_revision"]
@@ -139,18 +174,28 @@ def table(by_task, *, floor_ms, materiality_ratio):
     dropped = {task: [row(run, kept=False) for run in runs[1:]]
                for task, runs in sorted(by_task.items()) if len(runs) > 1}
     qualified_runs = sum(len(runs) for runs in by_task.values())
-    return {
+    document = {
         "schema_version": 1,
         "finding": "F-2026-09-18-002",
         "target": "gfx938",
         "generated_by": "tools/read_dcu_confirmatory_medians.py",
+        # Exactly the fields this tool owns. The rest of the file is prose written by the
+        # author, and saying which is which is the point: an earlier version of the file
+        # claimed the tool "regenerates every field below" while it emitted ten keys of
+        # fifteen, so running it with --out would have deleted five.
+        "generated_fields": None,
         "qualified_runs": qualified_runs,
         "qualified_tasks": len(kept),
         "floor_ms": floor_ms,
         "materiality_ratio": materiality_ratio,
+        "sweep_days": sorted({name.rsplit("-", 2)[1] for name in revisions}),
         "medians_ms": kept,
         "excluded_reruns": dropped,
+        "campaign_revisions": dict(sorted(revisions.items())),
     }
+    # Derived from the document rather than listed beside it, so the two cannot disagree.
+    document["generated_fields"] = sorted(document)
+    return document
 
 
 def main(argv=None):
@@ -163,7 +208,8 @@ def main(argv=None):
     parser.add_argument("--materiality-ratio", type=float, default=1.05,
                         help="the Study's declared materiality ratio")
     arguments = parser.parse_args(argv)
-    document = table(collect(arguments.runs), floor_ms=arguments.floor_ms,
+    by_task, revisions = collect(arguments.runs)
+    document = table(by_task, revisions, floor_ms=arguments.floor_ms,
                      materiality_ratio=arguments.materiality_ratio)
     rendered = json.dumps(document, indent=1) + "\n"
     if arguments.out:
