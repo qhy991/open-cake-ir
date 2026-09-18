@@ -471,9 +471,9 @@ class _Builder:
                     self.fail(node, "a literal is admitted once, as the second operand of "
                                     "a two-operand elementwise arithmetic other than fma; "
                                     + " and ".join(sorted(_COMMUTATIVE))
-                                    + " also admit it first and canonicalise it, unless "
-                                    "the other operand is a broadcast, which keeps the "
-                                    "second position for itself")
+                                    + " also admit it first and canonicalise it. A "
+                                    "broadcast takes the second operand, so no spelling "
+                                    "puts a literal beside one")
                 parameters["scalar"] = value
                 continue
             ref = self.reference(value.buffer if isinstance(value, _Access) else value, node)

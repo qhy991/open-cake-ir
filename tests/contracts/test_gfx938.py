@@ -528,13 +528,19 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         self.assertNotIn("metal.precise.tanh.f32", target.instruction_contracts)
         self.assertIn("ocml.tanh.f32", target.instruction_contracts)
 
-    def test_the_two_gfx938_contracts_read_the_dtypes_that_were_measured(self) -> None:
+    def test_the_gfx938_dot_contracts_read_the_dtypes_that_were_measured(self) -> None:
         from open_cake_ir.compiler.verifier.hardware_conformance import _CONTRACT_DTYPES
         from open_cake_ir.compiler.verifier.hardware_conformance import DType
         self.assertEqual(_CONTRACT_DTYPES["triton.dot.fp16_fp32"],
                          ({DType.FP16}, DType.FP32))
         self.assertEqual(_CONTRACT_DTYPES["triton.dot.fp8e4m3_fp32"],
                          ({DType.FP8_E4M3}, DType.FP32))
+        # The two fp32 forms were added later and are separate instructions: ieee is
+        # exact on this device and tf32 carries the reduced mantissa.
+        self.assertEqual(_CONTRACT_DTYPES["triton.dot.fp32_ieee"],
+                         ({DType.FP32}, DType.FP32))
+        self.assertEqual(_CONTRACT_DTYPES["triton.dot.fp32_tf32"],
+                         ({DType.FP32}, DType.FP32))
         # The block-scaled sibling is a different instruction and stays distinct.
         self.assertNotEqual("triton.dot.fp8e4m3_fp32",
                             "triton.dot.fp8e4m3_block_scale_fp32")

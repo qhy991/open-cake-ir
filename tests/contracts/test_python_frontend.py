@@ -197,8 +197,18 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
                     parse(self.scalar_source(expression))
                 message = str(caught.exception)
                 self.assertIn("a literal is admitted once", message)
-                self.assertIn("broadcast", message)
+                # It must not imply another spelling works: no spelling puts a literal
+                # beside a broadcast, and `lm.broadcast(...) * 2.0` is refused too.
+                self.assertIn("no spelling puts a literal beside one", message)
                 self.assertNotIn("broadcast applies once", message)
+
+    def test_no_spelling_puts_a_literal_beside_a_broadcast(self):
+        """Both orders are refused, so the message must not point at the other one."""
+        for expression in ("lm.mul(2.0, lm.broadcast(scale, axis=0))",
+                           "lm.broadcast(scale, axis=0) * 2.0"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(FrontendError):
+                    parse(self.scalar_source(expression))
 
     def test_a_broadcast_written_second_still_parses(self):
         """The swap changes nothing for the spelling that already worked."""

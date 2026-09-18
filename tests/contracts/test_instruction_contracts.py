@@ -111,50 +111,80 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
     """Which declared contracts no Corpus case reaches, stated per target.
 
     F-2026-09-17-009 is the defect: a Target can declare a contract with device evidence
-    and the Gate will pass whether or not it is true, because no case exercises it. It was
-    closed for gfx938 and recurred there twice, so gfx938 is pinned at zero by
-    `test_gfx938.py::test_every_declared_contract_is_reached_by_a_corpus_case`.
+    and the Gate will pass whether or not it is true, because no case exercises it.
 
-    Every other target still has unreached declarations, and this pins them as a count
-    rather than asserting the invariant they do not satisfy. A gate report names the
-    targets it examined; a test that read as general while checking one target would be
-    the same omission in test form.
+    The measurement that owns this question is a deletion sweep -- remove a contract from
+    its Target document, re-run `check_corpus`, see whether it still passes -- and that is
+    too slow for a suite at roughly two dozen Gate runs. So this derives the same answer
+    cheaply, and the derivation has to match the sweep rather than approximate it. A first
+    version did not: it scanned `operations[].parameters.instruction.contract` across JSON
+    schedules only, which missed two things and produced nine where the sweep measures
+    eleven.
+
+    Both misses are handled here. Python schedules under `examples/` declare their target
+    and contracts in a decorator, so they are parsed rather than skipped -- one of them,
+    `metal_fma.py`, is the only case reaching `metal.fma.f32` on apple_gpu_family8. And an
+    `atomic_rmw` operation binds its contract without naming it in the document, which is
+    why sm_100a's atomic looked unreached when it is not.
     """
 
-    def test_the_unreached_declarations_are_the_ones_recorded(self) -> None:
+    #: Contracts an operation kind binds without naming them in its document.
+    IMPLICIT = {"atomic_rmw": "triton.atomic_add.i32.relaxed.gpu"}
+
+    def _reached(self) -> dict[str, set[str]]:
         import json
+        from open_cake_ir.compiler import frontend as cake
         manifest = json.loads((ROOT / "corpus/manifest.json").read_text())
         reached: dict[str, set[str]] = {}
         for case in manifest["cases"]:
             path = ROOT / case["schedule"]
-            if path.suffix != ".json":
-                continue
-            document = json.loads(path.read_text())
+            if path.suffix == ".json":
+                document = json.loads(path.read_text())
+            else:
+                document = cake.parse(path.read_text()).document
             target = case.get("target") or document.get("target")
             for operation in document["operations"]:
                 instruction = (operation.get("parameters") or {}).get("instruction") or {}
-                if instruction.get("contract"):
-                    reached.setdefault(target, set()).add(instruction["contract"])
+                contract = instruction.get("contract") or self.IMPLICIT.get(operation["kind"])
+                if contract:
+                    reached.setdefault(target, set()).add(contract)
+        return reached
+
+    def test_the_unreached_declarations_are_the_ones_recorded(self) -> None:
+        reached = self._reached()
         unreached = {}
         for path in sorted((ROOT / "compiler/targets").glob("*.json")):
             gap = sorted(set(Target.load(path).instruction_contracts)
                          - reached.get(path.stem, set()))
             if gap:
                 unreached[path.stem] = gap
+        # Measured by deletion sweep at open-cake-ir@a8a4885d: eleven, not the nine an
+        # earlier derivation produced. apple_gpu_family8 keeps only its tanh because
+        # metal_fma.py reaches its fma, and sm_100a has none because its atomic is bound
+        # implicitly.
         self.assertEqual(unreached, {
             "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
-            "apple_gpu_family8": ["metal.fma.f32", "metal.precise.tanh.f32"],
+            "apple_gpu_family8": ["metal.precise.tanh.f32"],
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
-            "sm_100a": ["triton.atomic_add.i32.relaxed.gpu"],
             "sm_103a": ["libdevice.tanh.f32", "ptx.fma.rn.f32",
                         "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp32_ieee",
                         "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_block_scale_fp32"],
         })
-        # The two AMDGCN targets are absent because gfx938 reaches all five of its
-        # declarations and gfx1151 declares none. Asserted so a regression there shows up
-        # here as well as in the gfx938 pin.
-        self.assertNotIn("gfx938", unreached)
-        self.assertNotIn("gfx1151", unreached)
+        self.assertEqual(sum(len(v) for v in unreached.values()), 11)
+        # The two AMDGCN targets and sm_100a are absent because every declaration they
+        # carry is reached. Asserted so a regression shows up here too.
+        for target in ("gfx938", "gfx1151", "sm_100a"):
+            self.assertNotIn(target, unreached)
+
+    def test_a_python_schedule_is_read_rather_than_skipped(self) -> None:
+        """The miss that produced the wrong count, pinned as its own fact."""
+        reached = self._reached()
+        self.assertIn("metal.fma.f32", reached["apple_gpu_family8"])
+
+    def test_an_implicitly_bound_contract_counts_as_reached(self) -> None:
+        """The other miss: an atomic_rmw never names the contract it binds."""
+        reached = self._reached()
+        self.assertIn("triton.atomic_add.i32.relaxed.gpu", reached["sm_100a"])
 
 
 if __name__ == "__main__":

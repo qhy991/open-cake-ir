@@ -191,7 +191,7 @@ devices:
 | check | question it asks | example refusal |
 | --- | --- | --- |
 | `admit_width` | can this route tile this row width? | `triton-b200 tiles a row with tl.arange, which requires a positive power-of-two span` |
-| `tanh_contract` | does this Target admit a tanh instruction contract? | `triton-dcu has no admitted tanh instruction contract` |
+| `tanh_contract` | does this Target admit a tanh instruction contract? | `triton-gfx1151 has no admitted tanh instruction contract` -- `triton-dcu` produced this until gfx938 declared `ocml.tanh.f32`, and gfx1151 is now the only backend that does |
 | `admit_dtype` | can this route name this dtype? | `metal-m4 lowers through metal, which cannot name dtype 'bf16'` |
 | `admit_operations` | does this Target admit this body's operation kinds? | `triton-dcu targets gfx938, which does not admit operation kind 'cast'` |
 
@@ -200,8 +200,8 @@ combinations that produced a document before produce byte-identical bytes after,
 20 that changed were refusals becoming available -- the five formerly Metal-only tasks on
 the two CUDA Triton backends.
 
-**Every launcher task now reaches a lowering-eligible Schedule on gfx938.** Until
-2026-09-18 two did not -- `gelu_tanh` and `gelu_tanh_backward`, refused by name because
+**Every launcher task now reaches a lowering-eligible Schedule on gfx938**, measured by
+`tools/launch_task_matrix.py` over the 29 declared tasks. Until 2026-09-18 two did not -- `gelu_tanh` and `gelu_tanh_backward`, refused by name because
 gfx938 declared no tanh contract. On ROCm, Triton's `libdevice` resolves to ocml, so
 reusing the CUDA spelling `libdevice.tanh.f32` would have claimed NVIDIA libdevice
 numerics for a different function; the row declared `None` and the tasks were refused
@@ -215,13 +215,20 @@ spelling of the library that answers -- `ocml.tanh.f32`, not CUDA's -- and a gfx
 Schedule naming the CUDA spelling is still refused `TARGET_INSTRUCTION_UNSUPPORTED`,
 which `gfx938-swiglu-foreign-tanh-contract` pins as a Corpus case.
 
-In a Lab sweep both tasks now reach a qualified endpoint.
+Both tasks reach a qualified endpoint in a Lab sweep: `gelu_tanh` and
+`gelu_tanh_backward` in `sweep-20260917-210609` and `sweep-20260918-032731` on bw1100,
+the second at `best_confirmed_latency_ms` 0.006719.
 
-Lowering is stage one of four. Nothing above evaluates anything -- see
-[F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json) for
-the Evaluation half that does not exist yet. `--backend triton-dcu` reaches
-`no current Executor is published for exact target 'gfx938'`, which is the correct place
-to stop.
+Lowering was stage one of four when this section was written, and the sentence that
+followed it -- that `--backend triton-dcu` stops at `no current Executor is published for
+exact target 'gfx938'` -- has been false since 2026-09-15. The Evaluation half
+[F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json)
+called missing now exists: gfx938 descriptors are published under `runtime/executors/`,
+the AMDGCN evaluator launches and times through `hip_dispatch`, and attribution runs
+through roctracer. 27 of the 29 tasks reach a qualified endpoint; what the remaining two
+fail on is recorded in
+[F-2026-09-18-004](../findings/2026-09-18-004-the-gemm-bias-baseline-fails-its-own-validation-case.json)
+and in the sweep ledgers it cites.
 
 ## Measurement: per-dispatch timing and L2
 
