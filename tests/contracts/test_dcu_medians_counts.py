@@ -49,7 +49,8 @@ FINDINGS = ROOT / "findings"
 WORDS = {0: "no", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six",
          7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve",
          13: "thirteen", 14: "fourteen", 15: "fifteen", 26: "twenty-six",
-         27: "twenty-seven", 30: "thirty"}
+         27: "twenty-seven", 28: "twenty-eight", 29: "twenty-nine", 30: "thirty",
+         67: "sixty-seven"}
 NUMBER = {word: value for value, word in WORDS.items()}
 BYTES_PER = {"fp32": 4, "fp16": 2, "bf16": 2, "fp8e4m3": 1, "i32": 4, "int32": 4, "i64": 8}
 
@@ -69,9 +70,11 @@ DECLARED = {
 #: Words marking a sentence as narrating a retracted claim. A retracted count is admitted
 #: only inside one of these; an earlier version admitted them anywhere, which let a live
 #: count be wrong whenever its value happened to be 3, 7, 10, 11, 12 or 26.
-RETRACTION = ("said", "asserted as", "an earlier", "earlier version", "stood at",
-              "has been wrong", "have been wrong", "was wrong", "were wrong", "retract",
-              "moved the count", "has taken", "until it was read", "would have meant")
+RETRACTION = ("it said", "record said", "version said", "version of this record",
+              "an earlier reading", "asserted as", "stood at", "has been wrong",
+              "have been wrong", "was wrong", "were wrong", "which was false", "retract",
+              "moved the count", "has taken", "until it was read", "would have meant",
+              "is withdrawn", "argued from bytes")
 RETRACTED_COUNTS = {3, 7, 10, 11, 12, 26}
 #: Tasks whose footprint F-2026-09-18-002 quotes, derived from their Workload Contracts.
 FOOTPRINT_TASKS = ("silu", "selu", "rmsnorm", "layernorm", "softmax_backward",
@@ -87,6 +90,10 @@ def _text(value) -> str:
     if isinstance(value, (list, tuple)):
         return "\n".join(_text(v) for v in value)
     return ""
+
+
+#: Every spelling a count can take here, longest first so "twenty-seven" beats "seven".
+_NUMBER_WORDS = "|".join(sorted(WORDS.values(), key=len, reverse=True))
 
 
 def _record(stem: str) -> dict:
@@ -200,6 +207,7 @@ class DcuMedianCounts(unittest.TestCase):
             (r"both report (?P<v>\d\.\d{6}), and", "floor"),
             (r"are above (?P<v>\d\.\d{6}), the value", "floor"),
             (r"this floor is (?P<v>\d\.\d{6}) ms", "floor"),
+            (r"in the group reads (?P<v>\d\.\d{6}) ms", "floor"),
             (r"speedup (?P<v>\d\.\d{3}), classification close_null", "unit_ratio"),
             (r"declared (?P<v>\d\.\d+) materiality", "materiality"),
             (r"materiality_ratio is (?P<v>\d\.\d+)", "materiality"),
@@ -317,6 +325,13 @@ class DcuMedianCounts(unittest.TestCase):
                                  sweep.start() + number.end()))
             for pattern in self._PAIRS:
                 for match in pattern.finditer(text):
+                    # Only a pair that actually names a task in the table is exempt here,
+                    # because only then does the pair rule below check it. Exempting every
+                    # match let "that run reads 0.006719 against 0.006399" through: the
+                    # captured word was "reads", the pair rule skipped it as not-a-task,
+                    # and these spans were already marked covered.
+                    if match.group("task") not in self.rows:
+                        continue
                     for group in ("c", "b", "r"):
                         if match.groupdict().get(group):
                             covered.add(match.span(group))
@@ -333,12 +348,62 @@ class DcuMedianCounts(unittest.TestCase):
                         holders,
                         f"{label} states {match.group()}, which is not a median, a ratio, "
                         "a derived footprint or a listed constant. Nothing checks it.")
-                    if len(holders) == 1:
-                        owner = next(iter(holders))
-                        self.assertEqual(
-                            self._nearest_task(text, match.start()), owner,
-                            f"{label}: {match.group()} belongs to {owner}, but the task "
-                            "named beside it is not that task")
+                    # Association, for shared values as well as unique ones. Checking only
+                    # the unique ones left the floor -- sixteen tasks hold it -- admissible
+                    # anywhere, so a wholly invented sentence quoting it passed.
+                    nearest = self._nearest_task(text, match.start())
+                    self.assertIsNotNone(
+                        nearest,
+                        f"{label} states {match.group()} with no task named near it and no "
+                        "construction covering it, so nothing says whose number it is")
+                    self.assertIn(
+                        nearest, holders,
+                        f"{label}: {match.group()} belongs to {sorted(holders)}, but the "
+                        f"task named beside it is {nearest}")
+
+    def test_a_count_scoped_to_one_revision_is_that_revisions_count(self) -> None:
+        """Not "a number the campaigns group is allowed": the count of rows at 4278caf2 is
+        nine, at 0970a36e twelve, at 5151954e six, and a union of the three let any one
+        stand for any other."""
+        for label, text in self.prose.items():
+            for match in re.finditer(r"the (?P<n>[\w-]+) campaigns at (?P<rev>[0-9a-f]{8})",
+                                     text):
+                revision = "open-cake-ir@" + match.group("rev")
+                expected = sum(1 for row in self.rows.values()
+                               if row["compiler_revision"] == revision)
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertIn(revision, set(self.data["campaign_revisions"].values()),
+                                  "no campaign ran at that commit")
+                    self.assertEqual(NUMBER[match.group("n").lower()], expected,
+                                     f"{expected} rows carry {revision}")
+
+    def _three_tasks(self) -> set[str]:
+        """F-2026-09-18-003's eight tasks, read from the record rather than kept here.
+        Two earlier copies of this set were hand-written in this file, which is the
+        defect the file exists for."""
+        retained = self.three["evidence"]["retained"]
+        listed = retained.split("per-task logs:")[1].split("at four turns")[0]
+        tasks = {name for name in re.findall(r"[a-z_]+", listed)
+                 if name in self.data["campaign_revisions"]
+                 or name in {w.rsplit("-", 2)[0]
+                             for w in self.data["campaign_revisions"]}}
+        self.assertEqual(len(tasks), 8, f"F-003 names {sorted(tasks)}, not eight tasks")
+        return tasks
+
+    def test_f003s_eight_tasks_ran_on_the_day_its_sweeps_ran(self) -> None:
+        """Being a real task is not enough: swapping attention_decode for prelu kept the
+        list eight names long and every name a task this host ran. Both of F-003's sweeps
+        are on 2026-09-18, and prelu has campaigns only on the 17th."""
+        campaigns = self.data["campaign_revisions"]
+        days = set(re.findall(r"sweep-(\d{8})-", self.three["evidence"]["retained"]))
+        self.assertTrue(days, "F-003 names no sweep this check can date")
+        for task in self._three_tasks():
+            ran_on = {w.split("-")[-2] for w in campaigns if w.rsplit("-", 2)[0] == task}
+            with self.subTest(task=task):
+                self.assertTrue(
+                    ran_on & days,
+                    f"F-003 lists {task} among the tasks its sweeps ran, but this host ran "
+                    f"it only on {sorted(ran_on)}, not {sorted(days)}")
 
     def test_f003_claims_about_this_table_are_the_tables(self) -> None:
         """F-2026-09-18-003 is scoped: its turn-budget counts come from its own sweep
@@ -352,6 +417,9 @@ class DcuMedianCounts(unittest.TestCase):
                 (r"(\d+) at six", "tasks"),
                 (r"twenty-five at four, ([\w-]+) at six", "tasks"),
                 (r"can qualify, ([\w-]+) do", "tasks"),
+                (rf"out of ({_NUMBER_WORDS})\b", "campaign_tasks"),
+                (r"out of (\d+)\b", "campaign_tasks"),
+                (r"of ([\w-]+) tasks that can qualify", "can_qualify"),
             ):
                 for match in re.finditer(pattern, text, re.I):
                     token = match.group(1).lower()
@@ -360,10 +428,8 @@ class DcuMedianCounts(unittest.TestCase):
                         self.assertEqual(value, counts[group],
                                          f"{label} says {match.group(0)!r}; the table "
                                          f"gives {counts[group]} for {group}")
-        expected = self._campaign_revisions(
-            {"softsign", "per_channel_moments", "softmax", "gemm_silu", "gemm_bias",
-             "layernorm_gamma_beta_backward", "channel_absmax_scale", "attention_decode"})
-        self.assertTrue(expected, "no campaign revision found for F-003's tasks")
+        self.assertTrue(self._campaign_revisions(self._three_tasks()),
+                        "no campaign revision found for F-003's tasks")
 
     def test_a_quoted_start_time_is_the_workspace_it_names(self) -> None:
         """F-2026-09-18-005 dates its campaigns to argue about a stamp. The times are in
@@ -395,11 +461,19 @@ class DcuMedianCounts(unittest.TestCase):
     #: without adding it here makes the completeness rule fail, not pass.
     STEP_PHRASES = (r"which is (\d+) grid steps",
                     r"us, ([\w-]+) steps",
-                    r"the ([\w-]+) at the floor are all")
+                    r"the ([\w-]+) at the floor are all",
+                    r"the ([\w-]+) campaigns at [0-9a-f]{8}")
 
     def _step_spans(self, text: str) -> set[tuple[int, int]]:
-        return {match.span(1) for pattern in self.STEP_PHRASES
-                for match in re.finditer(pattern, text)}
+        """Every span a construction above already judged. The noun rule and the two
+        completeness rules all consult this, so a quantity checked against a narrower group
+        than its noun's is not re-judged against the wider one, and a quantity no
+        construction claims is still reported as unchecked."""
+        spans = {match.span(1) for pattern in self.STEP_PHRASES
+                 for match in re.finditer(pattern, text)}
+        spans |= {match.span(1) for pattern, _ in self.BARE
+                  for match in re.finditer(pattern, text, re.I)}
+        return spans
 
     def test_no_group_sized_digit_goes_unchecked(self) -> None:
         """Counts written as digits rather than words. Inserting "Only 9 of the 13 were
@@ -422,6 +496,18 @@ class DcuMedianCounts(unittest.TestCase):
     def _sweep(self):
         return [(float(a), float(b))
                 for a, b in self.data["footprint_sweep"]["pairs_mib_us"]]
+
+    def test_f003s_six_turn_workspaces_are_workspaces_this_host_holds(self) -> None:
+        """Its six-turn site names three runs by timestamp; the table holds every campaign
+        on the host, so the names are read against it rather than believed."""
+        for match in re.finditer(r"(?P<task>[a-z_]+) (?:qualified )?at (?P<stamp>\d{6})\b",
+                                 self.three_text):
+            task, stamp = match.group("task"), match.group("stamp")
+            if task not in {w.rsplit("-", 2)[0] for w in self.data["campaign_revisions"]}:
+                continue
+            with self.subTest(phrase=match.group(0)):
+                self.assertIn(f"{task}-20260918-{stamp}", self.data["campaign_revisions"],
+                              f"no campaign {task}-20260918-{stamp} on this host")
 
     def test_the_footprint_sweep_is_quoted_in_the_order_it_was_measured(self) -> None:
         sweep = [s for s in self.two["evidence"]["sites"] if "footprint sweep" in s]
@@ -487,7 +573,7 @@ class DcuMedianCounts(unittest.TestCase):
         return {
             "operators": {floor}, "results": {floor, material},
             "candidates": {material, ahead, ahead - material},
-            "campaigns": {tasks, material, revisions, *per_revision},
+            "campaigns": {tasks, material, revisions},
             "tasks": {floor, tasks, len(self.reruns)},
             "runs": {floor, separated, runs},
             "rows": {tasks}, "revisions": {revisions},
@@ -505,8 +591,16 @@ class DcuMedianCounts(unittest.TestCase):
     def test_every_counted_noun_names_a_quantity_derived_for_that_noun(self) -> None:
         groups = self._noun_groups()
         for label, text in self.prose.items():
+            judged = self._step_spans(text)
             for noun, allowed in groups.items():
                 for match in re.finditer(rf"((?:[\w-]+\s+){{0,3}}){noun}\b", text):
+                    # A count a construction above already judged against a narrower group
+                    # than this noun's -- a per-revision count, say -- is not re-judged here
+                    # against the union, which is what let one group's size stand for
+                    # another's.
+                    if any(start >= match.start(1) and end <= match.end(1)
+                           for start, end in judged):
+                        continue
                     tokens = match.group(1).lower().split()
                     named = [t for t in tokens
                              if (t in NUMBER and t != "one") or t == "hundred"
@@ -532,6 +626,17 @@ class DcuMedianCounts(unittest.TestCase):
     BARE = (
         (r"the count is ([\w-]+)", "floor"),
         (r"the ([\w-]+) at the floor are all", "floor"),
+        (r"those ([\w-]+) runs:", "floor"),
+        (r"aggregates ([\w-]+) campaigns", "tasks"),
+        (r"([\w-]+) results out of", "material"),
+        (r"([\w-]+) are ahead by enough", "material"),
+        (r"([\w-]+) of them across", "campaigns"),
+        (r"across ([\w-]+) tasks", "campaign_tasks"),
+        (r"the ([\w-]+) tasks that ran", "campaign_tasks"),
+        (r"tasks and ([\w-]+) revisions", "all_revisions"),
+        (r"so ([\w-]+) revisions in it are used by no row", "unused_revisions"),
+        (r"the ([\w-]+) that qualified, the", "tasks"),
+        (r"the ([\w-]+) that never did", "never_qualified"),
         (r"for those ([\w-]+) the comparison", "floor"),
         (r"six of the ([\w-]+)[:,]", "floor"),
         (r"to ([\w-]+) over all", "floor"),
@@ -545,8 +650,22 @@ class DcuMedianCounts(unittest.TestCase):
     PARTITION = r"([\w-]+) plus ([\w-]+) is that ([\w-]+)"
 
     def _counts(self) -> dict[str, int]:
+        campaigns = self.data["campaign_revisions"]
+        row_revisions = self._revisions(self.rows)
         return {"floor": len(self._at_floor()), "separated": len(self._separated()),
-                "tasks": len(self.rows), "runs": self.data["qualified_runs"]}
+                "tasks": len(self.rows), "runs": self.data["qualified_runs"],
+                "material": len(self._material()),
+                # Everything the host ran, which is wider than the rows and is what a
+                # record citing unqualified runs has to be checked against.
+                "campaigns": len(campaigns),
+                "campaign_tasks": len({w.rsplit("-", 2)[0] for w in campaigns}),
+                "all_revisions": len(set(campaigns.values())),
+                "unused_revisions": len(set(campaigns.values()) - row_revisions),
+                "never_qualified": len({w.rsplit("-", 2)[0] for w in campaigns}
+                                       - set(self.rows)),
+                # Every task that ran except the one blocked by a tolerance no budget
+                # reaches (gemm_bias, F-2026-09-18-004).
+                "can_qualify": len({w.rsplit("-", 2)[0] for w in campaigns}) - 1}
 
     def test_every_bare_quantity_phrase_names_the_count_the_table_gives(self) -> None:
         counts = self._counts()
@@ -567,7 +686,7 @@ class DcuMedianCounts(unittest.TestCase):
                         f"{label}'s partition sentence does not add up to the table")
 
     GROUP_WORDS = ("nine", "eleven", "twelve", "thirteen", "fourteen", "twenty-six",
-                   "twenty-seven", "thirty")
+                   "twenty-seven", "twenty-eight", "twenty-nine", "thirty", "sixty-seven")
 
     def test_no_group_sized_number_goes_unchecked(self) -> None:
         nouns = tuple(self._noun_groups())
@@ -584,7 +703,7 @@ class DcuMedianCounts(unittest.TestCase):
                     for token in re.finditer(r"[\w-]+", match.group(1)):
                         covered.add((start + token.start(), start + token.end()))
             for word in self.GROUP_WORDS:
-                for match in re.finditer(rf"\b{word}\b", text, re.I):
+                for match in re.finditer(rf"(?<![\w-]){word}(?![\w-])", text, re.I):
                     if match.span() in covered:
                         continue
                     if (NUMBER[word] in RETRACTED_COUNTS
@@ -740,10 +859,8 @@ class DcuMedianCounts(unittest.TestCase):
              self._revisions({"per_channel_moments", "momentum_sgd", "pairwise_sqdist"})),
             # -003 is about turn budget, so it cites each task's runs at two, four and six
             # turns -- including those that qualified nothing and so have no row here.
-            ("F-2026-09-18-003", self.three, self._campaign_revisions(
-                {"softsign", "per_channel_moments", "softmax", "gemm_silu", "gemm_bias",
-                 "layernorm_gamma_beta_backward", "channel_absmax_scale",
-                 "attention_decode"})),
+            ("F-2026-09-18-003", self.three,
+             self._campaign_revisions(self._three_tasks())),
         ):
             stamped = set(re.findall(r"open-cake-ir@[0-9a-f]{8}",
                                      record["compiler_revision_id"]))
@@ -755,6 +872,65 @@ class DcuMedianCounts(unittest.TestCase):
                                            record["executor_revision"]))
                 self.assertEqual(executors, {r.split("@")[1] for r in expected},
                                  f"{label}'s executor_revision is not the same set")
+
+    #: Commits these records name while narrating a stamp they retract. Each was a live
+    #: stamp on some record; none may be presented as a commit a campaign ran at.
+    RETRACTED_STAMPS = ("3fa16b8f", "2e901f53", "f91a862a", "2ab897a5", "9b51e3cd",
+                        "e0682e1b")
+
+    def _commit_time(self, sha: str) -> str:
+        import subprocess
+        out = subprocess.run(["git", "log", "-1", "--format=%ad",
+                              "--date=format:%H:%M", sha],
+                             cwd=ROOT, capture_output=True, text=True)
+        return out.stdout.strip() if out.returncode == 0 else ""
+
+    def test_every_commit_named_in_prose_is_one_these_records_can_name(self) -> None:
+        """The stamp fields are derived, but the prose repeats commits beside them and
+        nothing read those: swapping the commit in "a commit no campaign in the table ran
+        at" for one that nine rows carry passed, leaving the sentence self-contradicting."""
+        ran_at = {r.split("@")[1] for r in self.data["campaign_revisions"].values()}
+        for label, text in dict(self.prose, **{"003": self.three_text}).items():
+            for match in re.finditer(r"(?<![\w])(?P<sha>[0-9a-f]{8})(?![\w])", text):
+                sha = match.group("sha")
+                if sha.isdigit():          # a date, not a commit: 20260918 is eight hex
+                    continue
+                with self.subTest(record=label, sha=sha,
+                                  near=text[max(0, match.start() - 60):match.end() + 40]):
+                    self.assertTrue(
+                        sha in ran_at or sha in self.RETRACTED_STAMPS,
+                        f"{label} names commit {sha}, which no campaign ran at and which "
+                        "is not one of the stamps these records retract")
+            for match in re.finditer(r"open-cake-ir@(?P<sha>[0-9a-f]{8}), a commit no "
+                                     r"campaign in the table ran at", text):
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertNotIn(match.group("sha"), ran_at,
+                                     "that commit is one campaigns did run at")
+
+    def test_a_commit_time_quoted_in_prose_is_the_time_git_gives(self) -> None:
+        """The stamp arguments rest on these times and nothing read them: `2ab897a5 is
+        07:30` could become `08:30`, and `2e901f53 is 08:10` could become `09:10`."""
+        for label, text in dict(self.prose, **{"003": self.three_text}).items():
+            for match in re.finditer(r"(?P<sha>[0-9a-f]{8}) is (?P<t>\d{2}:\d{2})", text):
+                actual = self._commit_time(match.group("sha"))
+                if not actual:
+                    continue
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(match.group("t"), actual,
+                                     f"git says {match.group('sha')} is {actual}")
+
+    def test_a_campaign_named_with_a_revision_is_the_one_the_table_records(self) -> None:
+        """F-2026-09-18-005 names each campaign's commit in prose. The table holds that
+        mapping per workspace, so the prose is read against it rather than believed."""
+        revisions = self.data["campaign_revisions"]
+        for label, text in dict(self.prose, **{"003": self.three_text}).items():
+            for match in re.finditer(r"(?P<ws>[a-z_]+-\d{8}-\d{6}) at "
+                                     r"(?P<rev>open-cake-ir@[0-9a-f]{8})", text):
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertIn(match.group("ws"), revisions,
+                                  "no such campaign on this host")
+                    self.assertEqual(revisions[match.group("ws")], match.group("rev"),
+                                     "that campaign ran at a different commit")
 
     def test_every_row_names_the_run_receipt_and_revision_it_came_from(self) -> None:
         for task, row in self.rows.items():
@@ -789,6 +965,70 @@ class DcuMedianCounts(unittest.TestCase):
             self.assertIn(field, self.data["collected"],
                           "collected must name every field the tool does not regenerate")
         self.assertNotIn("regenerates every field", self.data["collected"])
+
+    def test_every_campaign_revision_entry_is_shaped_like_what_it_claims(self) -> None:
+        """Only entries that were also a row's workspace were checked, so the rest -- the
+        majority -- could be deleted or given a made-up commit and nothing noticed. They
+        are what a record citing an unqualified run is read against."""
+        campaigns = self.data["campaign_revisions"]
+        self.assertGreater(len(campaigns), len(self.rows),
+                           "this table is meant to be wider than the rows")
+        for workspace, revision in campaigns.items():
+            with self.subTest(workspace=workspace):
+                self.assertRegex(workspace, r"^[a-z_]+-\d{8}-\d{6}$")
+                self.assertRegex(revision, r"^open-cake-ir@[0-9a-f]{8}$")
+        for row in self.rows.values():
+            with self.subTest(workspace=row["workspace"]):
+                self.assertEqual(campaigns.get(row["workspace"]), row["compiler_revision"],
+                                 "a row and the campaign table disagree about its commit")
+        for runs in self.data["excluded_reruns"].values():
+            for run in runs:
+                with self.subTest(workspace=run["workspace"]):
+                    self.assertEqual(campaigns.get(run["workspace"]),
+                                     run["compiler_revision"])
+
+    def test_every_campaign_ran_at_a_commit_that_exists_and_predates_it(self) -> None:
+        """Shape alone admits any eight hex characters -- `deadbeef` passed. A commit a
+        campaign ran at has to exist in this repository and has to be older than the run,
+        which is the whole point of ADR 0065's stamp: retained evidence replays against the
+        tools that produced it, and tools from the future did not produce anything."""
+        import subprocess
+        campaigns = self.data["campaign_revisions"]
+        committed = {}
+        for revision in sorted(set(campaigns.values())):
+            sha = revision.split("@")[1]
+            result = subprocess.run(["git", "log", "-1", "--format=%ct", sha],
+                                    cwd=ROOT, capture_output=True, text=True)
+            with self.subTest(revision=revision):
+                self.assertEqual(result.returncode, 0,
+                                 f"{revision} is not a commit in this repository")
+                committed[revision] = int(result.stdout.strip())
+        import datetime
+        for workspace, revision in sorted(campaigns.items()):
+            stamp = datetime.datetime.strptime(workspace.split("-", 1)[1],
+                                               "%Y%m%d-%H%M%S").timestamp()
+            with self.subTest(workspace=workspace):
+                self.assertGreaterEqual(
+                    stamp, committed[revision],
+                    f"{workspace} started before {revision} existed")
+
+    def test_the_sweep_days_are_the_days_these_campaigns_ran(self) -> None:
+        self.assertEqual(sorted(self.data["sweep_days"]),
+                         sorted({w.split("-")[-2] for w in self.data["campaign_revisions"]}))
+
+    def test_the_prose_describing_the_row_rule_is_the_rule_enforced(self) -> None:
+        """`row_selection` can be inverted to say LAST while the behaviour stays FIRST, and
+        the two live in different files, so nothing made them agree."""
+        prose = self.data["row_selection"]
+        self.assertIn("FIRST qualified run", prose)
+        self.assertNotIn("LAST qualified run", prose)
+        for task, runs in self.data["excluded_reruns"].items():
+            kept = self.rows[task]["workspace"]
+            for run in runs:
+                with self.subTest(task=task):
+                    self.assertLess(kept, run["workspace"],
+                                    "the kept row is not the earliest qualified run, so "
+                                    "the prose and the table disagree")
 
     def test_the_two_groups_partition_the_collection(self) -> None:
         self.assertEqual(len(self._at_floor()) + len(self._separated()), len(self.rows))

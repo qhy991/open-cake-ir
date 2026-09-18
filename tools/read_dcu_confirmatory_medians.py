@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Read the DCU confirmatory medians out of retained campaign evidence.
 
-`findings/data/2026-09-18-dcu-confirmatory-medians.json` is the table F-2026-09-18-002 and
-F-2026-09-18-005 derive their counts from. Until this existed the table had no instrument:
+`findings/data/2026-09-18-dcu-confirmatory-medians.json` is the table F-2026-09-18-002,
+F-2026-09-18-003 and F-2026-09-18-005 derive their counts from. Until this existed the table had no instrument:
 it was produced by a script that lived in a scratch directory on the host, so the numbers
 could be read but not reproduced, and the file's own `collected` field named a source that
 did not exist in the repository. That is the failure mode `tools/observe_lowered_kernel.py`
@@ -19,6 +19,11 @@ receipts they point at, so it can run anywhere the evidence is readable -- in pr
 inside the DTK image, because the workspaces are written by root in that container.
 
     python3 tools/read_dcu_confirmatory_medians.py --runs /runs --out medians.json
+
+`--out` writes only the fields this tool derives. The committed table also carries
+hand-kept ones it cannot produce -- what, collected, row_selection, receipt_paths and
+the transcribed footprint_sweep -- so merge into the committed file rather than
+replacing it; the table's `generated_fields` names exactly the half this tool owns.
 """
 
 from __future__ import annotations
@@ -166,13 +171,13 @@ def collect(runs_directory):
 
 
 def table(by_task, revisions, *, floor_ms, materiality_ratio):
-    def row(run, *, kept):
+    def row(run):
         fields = ["candidate", "baseline", "classification", "workspace", "receipt",
                   "compiler_revision"]
         return {name: run[name] for name in fields}
 
-    kept = {task: row(runs[0], kept=True) for task, runs in sorted(by_task.items())}
-    dropped = {task: [row(run, kept=False) for run in runs[1:]]
+    kept = {task: row(runs[0]) for task, runs in sorted(by_task.items())}
+    dropped = {task: [row(run) for run in runs[1:]]
                for task, runs in sorted(by_task.items()) if len(runs) > 1}
     qualified_runs = sum(len(runs) for runs in by_task.values())
     # The grid every reported median lies on. hip_benchmark reports resolution_us per
