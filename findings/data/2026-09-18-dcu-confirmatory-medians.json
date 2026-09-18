@@ -1,40 +1,260 @@
 {
-  "schema_version": 1,
-  "finding": "F-2026-09-18-002",
-  "what": "Confirmatory pooled medians, in milliseconds, for each DCU campaign that reached a qualified endpoint and whose receipt was collected. Retained so the counts in F-2026-09-18-002 and F-2026-09-18-005 are derived from data rather than restated from a previous sentence: those counts were wrong three times, each time by editing prose instead of recounting.",
-  "target": "gfx938",
-  "collected": "2026-09-18, from the campaign-evidence confirmatory receipts of the sweeps F-2026-09-18-003 cites",
-  "floor_ms": 0.005439,
-  "absent": {
-    "softsign": "qualified; its medians were not in the collection, and bw1100 was unreachable when this file was written"
+ "schema_version": 1,
+ "finding": "F-2026-09-18-002",
+ "what": "Confirmatory pooled medians, in milliseconds, for every DCU campaign that reached a qualified endpoint, one row per task. Retained so the counts in F-2026-09-18-002 and F-2026-09-18-005 are derived from data rather than restated from a previous sentence: the floor count was asserted in prose twice before it was right, and a second count in the same record -- how many runs rose above the floor -- was wrong as well.",
+ "target": "gfx938",
+ "collected": "2026-09-18 from bw1100, read out of each run's own campaign-evidence confirmatory receipt by the extractor in this commit's message; every row carries the workspace and the receipt's content-addressed relative path within it, so a reader with the host can check any single row rather than the file as a whole. An earlier version of this file said the rows came from 'the sweeps F-2026-09-18-003 cites', which was false -- those two sweeps cover eight tasks and this table has twenty-seven, drawn from eleven sweeps between 2026-09-17 and 2026-09-18.",
+ "row_selection": "Three tasks qualified twice, so thirty qualified runs produce twenty-seven rows and the choice of run had to be made. Each row is the task's FIRST qualified run by workspace timestamp. The rule is stated because it is not neutral: gelu_tanh's later run reads better than the one kept (see excluded_reruns), so taking the first is the conservative direction, not the flattering one. The previous version of this file made the same choice silently. Each row also carries the Compiler revision its campaign actually ran at, read from the run's own evidence. These twenty-seven campaigns ran at three different revisions, so no single commit is the source of this table and a record that cites it cannot claim one.",
+ "excluded_reruns": {
+  "gelu_tanh": [
+   {
+    "workspace": "gelu_tanh-20260918-104531",
+    "receipt": "objects/sha256/94/94f0cc691770709577e02094c39a51b1dd6aea7abf62d53bf818f9d6aa546d02",
+    "candidate": 0.005439,
+    "baseline": 0.006399,
+    "classification": "first_arm_faster",
+    "compiler_revision": "open-cake-ir@a8a4885d"
+   }
+  ],
+  "gemm": [
+   {
+    "workspace": "gemm-20260918-042832",
+    "receipt": "objects/sha256/59/59cf80cd04c6e9a6d4f4d3f11f2a5a037566b4174a5627c6b21305a207c1483a",
+    "candidate": 0.409279,
+    "baseline": 0.305759,
+    "classification": "second_arm_faster",
+    "compiler_revision": "open-cake-ir@4278caf2"
+   }
+  ],
+  "rmsnorm": [
+   {
+    "workspace": "rmsnorm-20260917-181121",
+    "receipt": "objects/sha256/6b/6b31786a9cc813648dc1e386c47bd25656cd536e93dab084b1554a22dde3f9d7",
+    "candidate": 0.005439,
+    "baseline": 0.005439,
+    "classification": "close_null",
+    "compiler_revision": "open-cake-ir@5151954e"
+   }
+  ]
+ },
+ "floor_ms": 0.005439,
+ "materiality_ratio": 1.05,
+ "medians_ms": {
+  "absmax_rescale": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "absmax_rescale-20260918-002242",
+   "receipt": "objects/sha256/93/936ba860b59b2716f843de288526fa8659f6915fdb121d537108108d9d0cca66",
+   "compiler_revision": "open-cake-ir@0970a36e"
   },
-  "medians_ms": {
-    "absmax_rescale": {"candidate": 0.005439, "baseline": 0.005439},
-    "adadelta": {"candidate": 0.006719, "baseline": 0.006719},
-    "adamw": {"candidate": 0.007839, "baseline": 0.007839},
-    "attention_decode": {"candidate": 0.219519, "baseline": 0.138559},
-    "bias_gradient_reduction": {"candidate": 0.010399, "baseline": 0.010079},
-    "channel_absmax_scale": {"candidate": 0.009599, "baseline": 0.009599},
-    "cosine_similarity": {"candidate": 0.005439, "baseline": 0.005439},
-    "gelu_tanh": {"candidate": 0.006239, "baseline": 0.006399},
-    "gelu_tanh_backward": {"candidate": 0.012639, "baseline": 0.006719},
-    "gemm": {"candidate": 0.409279, "baseline": 0.305599},
-    "layernorm": {"candidate": 0.005439, "baseline": 0.005439},
-    "layernorm_backward_input": {"candidate": 0.005439, "baseline": 0.005439},
-    "layernorm_gamma_beta_backward": {"candidate": 0.015199, "baseline": 0.014879},
-    "momentum_sgd": {"candidate": 0.005599, "baseline": 0.005919},
-    "pairwise_sqdist": {"candidate": 0.023679, "baseline": 0.024959},
-    "per_channel_moments": {"candidate": 0.006719, "baseline": 0.009439},
-    "prelu": {"candidate": 0.009759, "baseline": 0.005439},
-    "residual_rmsnorm": {"candidate": 0.005439, "baseline": 0.005439},
-    "rmsnorm": {"candidate": 0.005439, "baseline": 0.005439},
-    "rmsnorm_input_gradient": {"candidate": 0.005439, "baseline": 0.005439},
-    "selu": {"candidate": 0.005439, "baseline": 0.005439},
-    "silu": {"candidate": 0.005439, "baseline": 0.005439},
-    "softmax": {"candidate": 0.005439, "baseline": 0.005439},
-    "softmax_backward": {"candidate": 0.005439, "baseline": 0.005439},
-    "softplus_gradient": {"candidate": 0.005439, "baseline": 0.005439},
-    "swiglu": {"candidate": 0.005439, "baseline": 0.005599}
+  "adadelta": {
+   "candidate": 0.006719,
+   "baseline": 0.006719,
+   "classification": "close_null",
+   "workspace": "adadelta-20260918-015416",
+   "receipt": "objects/sha256/5a/5a8ca7e823848cd2623dde3178f95d9da3e7198fdb68d6433107a40debeab742",
+   "compiler_revision": "open-cake-ir@0970a36e"
   },
-  "materiality_ratio": 1.05
+  "adamw": {
+   "candidate": 0.007839,
+   "baseline": 0.007839,
+   "classification": "close_null",
+   "workspace": "adamw-20260917-195709",
+   "receipt": "objects/sha256/de/de177a4c4a0ae0866d2a63ab2117d09142ebf2f57f43287a9bd9e1bae2eef9e4",
+   "compiler_revision": "open-cake-ir@5151954e"
+  },
+  "attention_decode": {
+   "candidate": 0.219519,
+   "baseline": 0.138559,
+   "classification": "second_arm_faster",
+   "workspace": "attention_decode-20260918-070030",
+   "receipt": "objects/sha256/40/4098e094b242916b4edcadb7f8cf096e3bbbed5d765673eb35a02667f0b4bb0a",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "bias_gradient_reduction": {
+   "candidate": 0.010399,
+   "baseline": 0.010079,
+   "classification": "close_null",
+   "workspace": "bias_gradient_reduction-20260918-011329",
+   "receipt": "objects/sha256/60/60268d83cf58bc39f68d44f68c6cd850331fd9ee7f11418c1fa212b45d9e1121",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "channel_absmax_scale": {
+   "candidate": 0.009599,
+   "baseline": 0.009599,
+   "classification": "close_null",
+   "workspace": "channel_absmax_scale-20260918-074053",
+   "receipt": "objects/sha256/39/39e552743464224b12d914af1d2a716bfb5ac468d4d763248be0e961b26f7942",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "cosine_similarity": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "cosine_similarity-20260918-052136",
+   "receipt": "objects/sha256/73/73a5efe324e6974474d66691f18458010d973221f007a12c076f3a40b0afda51",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "gelu_tanh": {
+   "candidate": 0.006239,
+   "baseline": 0.006399,
+   "classification": "close_null",
+   "workspace": "gelu_tanh-20260917-224115",
+   "receipt": "objects/sha256/87/87033d2251a648103290097aeea51f78b07166b7185804835eb3be2a557ef252",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "gelu_tanh_backward": {
+   "candidate": 0.012639,
+   "baseline": 0.006719,
+   "classification": "second_arm_faster",
+   "workspace": "gelu_tanh_backward-20260917-213519",
+   "receipt": "objects/sha256/fd/fddc68b73a893a3135d7cbab7d78752217011d5fdd9f4f039169fc975526b901",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "gemm": {
+   "candidate": 0.409279,
+   "baseline": 0.305599,
+   "classification": "second_arm_faster",
+   "workspace": "gemm-20260917-225918",
+   "receipt": "objects/sha256/29/293418506b77308dd35947557b6bc7899846a2714bba71af1c2a2f83aca12aaa",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "layernorm": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "layernorm-20260917-222113",
+   "receipt": "objects/sha256/52/529ff05598a641f3a4719abbdc9146f0848e5d3d7e1830eea33275653a6373cb",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "layernorm_backward_input": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "layernorm_backward_input-20260918-005411",
+   "receipt": "objects/sha256/a9/a965a96d2f1fed63a12cf28e045845bb53e16c884103cb9b0ec0281966314aad",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "layernorm_gamma_beta_backward": {
+   "candidate": 0.015199,
+   "baseline": 0.014879,
+   "classification": "close_null",
+   "workspace": "layernorm_gamma_beta_backward-20260918-062624",
+   "receipt": "objects/sha256/9c/9ce5553d9c030a548d4b0d7759be7d83bbe67275edfc94b7138f20df567b2226",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "momentum_sgd": {
+   "candidate": 0.005599,
+   "baseline": 0.005919,
+   "classification": "first_arm_faster",
+   "workspace": "momentum_sgd-20260918-022953",
+   "receipt": "objects/sha256/cb/cb1ad30f1dc8eaf56071d45203d0c57dbea7c6b8c695e75846c3e8e2d496526c",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "pairwise_sqdist": {
+   "candidate": 0.023679,
+   "baseline": 0.024959,
+   "classification": "first_arm_faster",
+   "workspace": "pairwise_sqdist-20260918-045643",
+   "receipt": "objects/sha256/26/264e9c4a30b4183bf6494aff778434daee991b233cd4918a748ccbaabf18d1c9",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "per_channel_moments": {
+   "candidate": 0.006719,
+   "baseline": 0.009439,
+   "classification": "first_arm_faster",
+   "workspace": "per_channel_moments-20260918-060857",
+   "receipt": "objects/sha256/12/122489d13e79061e068d709b428a80e7ac039f7efeaa5a2c9242dfac13c133ef",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "prelu": {
+   "candidate": 0.009759,
+   "baseline": 0.005439,
+   "classification": "second_arm_faster",
+   "workspace": "prelu-20260917-232247",
+   "receipt": "objects/sha256/10/10d7db433322f8dfa54c0d66aa1d81a207832ae8092358be9319ed2320a58404",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "residual_rmsnorm": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "residual_rmsnorm-20260918-053055",
+   "receipt": "objects/sha256/5e/5e0889655e4306927b8f750728613fb933806170899e8220a0cf0715f975d506",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "rmsnorm": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "rmsnorm-20260917-174616",
+   "receipt": "objects/sha256/2b/2b07b39b143778658c71feb364c710b0b460647a5d2970d5dbd5745e34f66818",
+   "compiler_revision": "open-cake-ir@5151954e"
+  },
+  "rmsnorm_input_gradient": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "rmsnorm_input_gradient-20260917-192819",
+   "receipt": "objects/sha256/78/78b89806977d0387aadcff006ae95a538254240f20750322f8616bbea774d8ed",
+   "compiler_revision": "open-cake-ir@5151954e"
+  },
+  "selu": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "selu-20260917-234230",
+   "receipt": "objects/sha256/74/74e244f32261efc0b57817644eccc5f3b2f89d8674de7be6f03f86993e2be98f",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "silu": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "silu-20260917-184123",
+   "receipt": "objects/sha256/25/25a10f330efbf8bd169e8ad1415198b9108b4ba5b33586fff3bdf790ca5fbd91",
+   "compiler_revision": "open-cake-ir@5151954e"
+  },
+  "softmax": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "softmax-20260918-073121",
+   "receipt": "objects/sha256/09/09a45892d4a2d420ebd999610cc41cc9df9c973e4ffc0423646bee19fd72109a",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "softmax_backward": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "softmax_backward-20260917-191303",
+   "receipt": "objects/sha256/68/68dbdcaba2946f42d631f862943f467f2e1eb9b1732ed04447eeaec9103fd425",
+   "compiler_revision": "open-cake-ir@5151954e"
+  },
+  "softplus_gradient": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "softplus_gradient-20260917-235820",
+   "receipt": "objects/sha256/84/846fbbfc6d668811b686158d772ef05a2cbfc5b2855fbad8cd8a8955dd831e57",
+   "compiler_revision": "open-cake-ir@0970a36e"
+  },
+  "softsign": {
+   "candidate": 0.005439,
+   "baseline": 0.005439,
+   "classification": "close_null",
+   "workspace": "softsign-20260918-054910",
+   "receipt": "objects/sha256/4a/4a332cf3b614046addbcea3e8258cde774b690d195112db039a687e5d8d5f913",
+   "compiler_revision": "open-cake-ir@4278caf2"
+  },
+  "swiglu": {
+   "candidate": 0.005439,
+   "baseline": 0.005599,
+   "classification": "close_null",
+   "workspace": "swiglu-20260917-185702",
+   "receipt": "objects/sha256/54/5491c5924ad5437ee20ec11f63cf3d88452252db9e0c8990b469c1e437889045",
+   "compiler_revision": "open-cake-ir@5151954e"
+  }
+ }
 }
