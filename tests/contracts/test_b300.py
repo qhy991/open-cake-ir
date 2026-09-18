@@ -202,20 +202,20 @@ class B300ContractTests(unittest.TestCase):
             dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=2)
         candidate = LaunchableCandidate('a' * 64, 'sm_103a', 'kernel',
             {'cubin': sha256(CUBIN).hexdigest()}, manifest.canonical_sha256)
-        admission = CudaDeviceAdmission('NVIDIA B300 SXM6 AC', (10, 3), 'GPU-fixture', 'gpuq-fixture', 'exclusive')
+        admission = CudaDeviceAdmission('NVIDIA B300 SXM6 AC', (10, 3), 'GPU-fixture', 'gpuq-000000000001', 'exclusive')
         return manifest, candidate, admission
 
     def test_mixed_device_admission_refused_before_module_load(self):
         manifest, candidate, _ = self._launch_authority()
         driver = FakeDriver()
-        admission = CudaDeviceAdmission('NVIDIA B200', (10, 0), 'GPU-fixture', 'gpuq-fixture', 'exclusive')
+        admission = CudaDeviceAdmission('NVIDIA B200', (10, 0), 'GPU-fixture', 'gpuq-000000000001', 'exclusive')
         with self.assertRaisesRegex(ValueError, 'launch authority'):
             LoadedCudaCandidate.load(candidate, CUBIN, manifest, admission, driver=driver)
         self.assertEqual(driver.calls, [])
         for name, cc in (('NVIDIA B200', (10, 3)), ('NVIDIA B300 SXM6 AC', (10, 0)),
                          ('NVIDIA B300 SXM6 AC', (10, True))):
             with self.subTest(name=name, cc=cc), self.assertRaises(ValueError):
-                CudaDeviceAdmission(name, cc, 'GPU-fixture', 'gpuq-fixture', 'exclusive')
+                CudaDeviceAdmission(name, cc, 'GPU-fixture', 'gpuq-000000000001', 'exclusive')
 
     def test_actual_binary_version_must_match_b300_and_failure_unloads(self):
         manifest, candidate, admission = self._launch_authority()

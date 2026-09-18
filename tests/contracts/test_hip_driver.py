@@ -303,11 +303,12 @@ class WorkerDispatchTest(unittest.TestCase):
         named timer. It has one; what stays is that a timed run cannot proceed without a
         source, rather than quietly producing an untimed receipt.
         """
+        from open_cake_ir.evaluation.paired import ROUTE_CALLS_PER_COHORT
         from open_cake_ir.tasks import evaluate
         with self.assertRaisesRegex(ValueError, "requires its timing source"):
             evaluate._evaluate_tile_candidate(
                 SimpleNamespace(), {}, None, SimpleNamespace(), True,
-                route_calls_per_cohort=evaluate.ROUTE_CALLS_PER_COHORT["hip_dispatch"])
+                route_calls_per_cohort=ROUTE_CALLS_PER_COHORT["hip_dispatch"])
 
 
 class CloseContractTest(unittest.TestCase):

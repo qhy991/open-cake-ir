@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Mapping, cast
+from typing import Callable, Mapping, cast
 
 from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
 from open_cake_ir.source_identity import SourceIdentityError, checkout_commit
@@ -333,8 +333,9 @@ class ExecutorRevision:
             raise ValueError("Executor host capture fields, schema or target differ")
         host = cast(Mapping[str, object], document["host_environment"])
         cls._validate_host_document(host)
-        if host.get("kind") == "metal" and cast(Mapping[str, object], host["host"])["target"] != target:
-            raise ValueError("Metal host capture describes another target")
+        captured = _host_kind(host).captured_target(host)
+        if captured is not None and captured != target:
+            raise ValueError(f"{host['kind']} host capture describes another target")
         try:
             commit = checkout_commit(root)
         except SourceIdentityError as error:
@@ -366,21 +367,17 @@ class ExecutorRevision:
     def _validate_host_document(host: Mapping[str, object]) -> None:
         """Validate one captured host by the kind it declares.
 
-        A host declaring no kind is the explicitly named pre-kind CUDA form, never a
-        fall-through for a kind this module does not know.
+        A host declaring no kind is the explicitly named pre-kind CUDA form: the None
+        row of `_HOST_VALIDATORS`, never a fall-through for a kind this module does not
+        know.
         """
         if not isinstance(host, Mapping):
             raise ValueError("Executor host environment fields differ")
-        kind = host.get("kind")
-        if kind == "hip":
-            ExecutorRevision._validate_hip_host_document(host)
-            return
-        if kind == "metal":
-            from .metal_host import validate_metal_host
-            validate_metal_host(host)
-            return
-        if kind is not None:
-            raise ValueError(f"Executor host kind {kind!r} is not admitted")
+        _host_kind(host).validate(host)
+
+    @staticmethod
+    def _validate_cuda_host_document(host: Mapping[str, object]) -> None:
+        """The pre-kind CUDA form; runtime/hosts/sm_103a.json still carries it (D10)."""
         legacy_fields = {
             "python",
             "packages",
@@ -554,18 +551,19 @@ class ExecutorRevision:
         )
 
     def admit_host(self) -> object:
-        """Verify the captured CUDA or Metal host and return its admission."""
+        """Verify the captured host and return its admission, for the kinds that admit here."""
 
         host = cast(Mapping[str, object], self.document["host_environment"])
-        if host.get("kind") == "hip":
-            raise ValueError("a HIP host is admitted through admit_hip_host")
+        row = _host_kind(host)
+        if row.admits_through != "admit_host":
+            raise ValueError(f"a {host['kind']} host is admitted through {row.admits_through}")
         return admit_host_environment(host)
 
     def admit_hip_host(self) -> HipHostAdmission:
         """Admit the captured software host; exact device admission follows lowering."""
 
         host = cast(Mapping[str, object], self.document["host_environment"])
-        if host.get("kind") != "hip":
+        if _host_kind(host).admits_through != "admit_hip_host":
             raise ValueError("HIP host admission requires a HIP host capture")
         return cast(HipHostAdmission, admit_host_environment(host, executor_id=self.executor_id))
 
@@ -597,22 +595,18 @@ def _admit_python_and_packages(host: Mapping[str, object]) -> None:
 def admit_host_environment(
     host: Mapping[str, object], *, executor_id: str = "",
 ) -> object:
-    """Validate and admit one Metal, CUDA or HIP software host through the boundary."""
+    """Validate and admit one captured software host through the boundary, by its kind."""
 
     if not isinstance(host, Mapping):
         raise ValueError("Executor host environment fields differ")
     ExecutorRevision._validate_host_document(host)
-    if host.get("kind") == "metal":
-        # A Metal host owns its whole admission, including a package map that is
-        # legitimately empty -- v110 and v112 both carry `"packages": {}`. The shared
-        # Python-and-packages check below is the CUDA and HIP one and requires a
-        # non-empty map, so routing Metal through it refuses a released Executor.
-        from .metal_host import admit_metal_host
-        return admit_metal_host(host)
-    _admit_python_and_packages(host)
-    if host.get("kind") == "hip":
-        return _admit_hip_environment(host, executor_id=executor_id)
+    return _host_kind(host).admit(host, executor_id=executor_id)
 
+
+def _admit_cuda_environment(host: Mapping[str, object], *, executor_id: str = "") -> object:
+    """Admit the pre-kind CUDA host: interpreter, packages, CUPTI and the timing helper."""
+
+    _admit_python_and_packages(host)
     cupti = cast(Mapping[str, object], host["cupti_python"])
     site = Path(str(cupti["site_packages_path"])).resolve(strict=True)
     if not site.is_dir() or site.is_symlink():
@@ -669,12 +663,21 @@ def admit_profiler_environment(host: Mapping[str, object]) -> Mapping[str, objec
     Each host kind names its own observer: Metal's native observer executable, CUDA's
     Nsight Compute. Falling through to the NCU branch reports a Metal host as one that
     "does not pin Nsight Compute", which is a refusal in a vendor the caller never named.
+    A kind whose row names no separately admitted profiler takes attribution inside
+    evaluation (its platform row says so) and is refused as that kind.
     """
 
-    if host.get("kind") == "metal":
-        from .metal_host import admit_metal_executable, validate_metal_host
-        validate_metal_host(host)
-        return admit_metal_executable(host["observer_executable"], "Metal observer")
+    row = _host_kind(host)
+    if row.admit_profiler is None:
+        raise ValueError(
+            f"Executor host kind {host.get('kind')!r} takes attribution inside evaluation "
+            "and names no separately admitted profiler; the Executor Revision does not "
+            "pin Nsight Compute"
+        )
+    return row.admit_profiler(host)
+
+
+def _admit_cuda_profiler(host: Mapping[str, object]) -> Mapping[str, object]:
     if "nsight_compute" not in host:
         raise ValueError("Executor Revision does not pin Nsight Compute")
     profiler = cast(Mapping[str, object], host["nsight_compute"])
@@ -695,6 +698,7 @@ def _admit_hip_environment(
 ) -> HipHostAdmission:
     """Verify HIP software facts without querying or initializing a device."""
 
+    _admit_python_and_packages(host)
     expected_platform = cast(Mapping[str, object], host["platform"])
     observed_platform = {
         "system": platform.system(),
@@ -753,3 +757,95 @@ def _admit_hip_environment(
         build_tools=build_tools,
         runtime_libraries=runtime_libraries,
     )
+
+
+# metal_host imports this module's record helpers, so its callables are reached lazily
+# here rather than named in the table at import time.
+def _validate_metal_host_document(host: Mapping[str, object]) -> None:
+    from .metal_host import validate_metal_host
+    validate_metal_host(host)
+
+
+def _admit_metal_environment(host: Mapping[str, object], *, executor_id: str = "") -> object:
+    # A Metal host owns its whole admission, including a package map that is
+    # legitimately empty -- v110 and v112 both carry `"packages": {}`. The shared
+    # Python-and-packages check is the CUDA and HIP one and requires a non-empty map,
+    # so routing Metal through it refuses a released Executor.
+    from .metal_host import admit_metal_host
+    return admit_metal_host(host)
+
+
+def _admit_metal_profiler(host: Mapping[str, object]) -> Mapping[str, object]:
+    from .metal_host import admit_metal_executable, validate_metal_host
+    validate_metal_host(host)
+    return admit_metal_executable(host["observer_executable"], "Metal observer")
+
+
+def _metal_captured_target(host: Mapping[str, object]) -> str:
+    return cast(str, cast(Mapping[str, object], host["host"])["target"])
+
+
+def _no_captured_target(host: Mapping[str, object]) -> None:
+    return None
+
+
+@dataclass(frozen=True)
+class HostKind:
+    """What one declared host kind owns at the Executor boundary.
+
+    The `kind` a capture declares selects this row; `evaluation.platforms` declares the
+    same kinds per code object, and the two sets are held equal by
+    `declared_host_kinds()` rather than by either restating the other.
+    """
+
+    validate: Callable[[Mapping[str, object]], None]
+    # (host, *, executor_id) -> the admission the kind returns.
+    admit: Callable[..., object]
+    # None: the platform takes attribution inside evaluation (its platform row's
+    # `attribution`), so there is no separately admitted profiler to return.
+    admit_profiler: Callable[[Mapping[str, object]], Mapping[str, object]] | None
+    # The ExecutorRevision method that returns this kind's admission. HIP's carries the
+    # executor id into a HipHostAdmission, so it has its own entry.
+    admits_through: str
+    # The exact target a capture of this kind names inside itself, when it does.
+    captured_target: Callable[[Mapping[str, object]], str | None]
+
+
+_HOST_VALIDATORS: Mapping[str | None, HostKind] = MappingProxyType({
+    # The pre-kind CUDA form. runtime/hosts/sm_103a.json carries it and is not recaptured
+    # until a B300 session exists (D10); it is a row, not a fall-through.
+    None: HostKind(
+        validate=ExecutorRevision._validate_cuda_host_document,
+        admit=_admit_cuda_environment,
+        admit_profiler=_admit_cuda_profiler,
+        admits_through="admit_host",
+        captured_target=_no_captured_target,
+    ),
+    "hip": HostKind(
+        validate=ExecutorRevision._validate_hip_host_document,
+        admit=_admit_hip_environment,
+        admit_profiler=None,
+        admits_through="admit_hip_host",
+        captured_target=_no_captured_target,
+    ),
+    "metal": HostKind(
+        validate=_validate_metal_host_document,
+        admit=_admit_metal_environment,
+        admit_profiler=_admit_metal_profiler,
+        admits_through="admit_host",
+        captured_target=_metal_captured_target,
+    ),
+})
+
+
+def _host_kind(host: Mapping[str, object]) -> HostKind:
+    """The row for the kind a host declares; a kind with no row is refused by name."""
+    kind = host.get("kind")
+    if not isinstance(kind, (str, type(None))) or kind not in _HOST_VALIDATORS:
+        raise ValueError(f"Executor host kind {kind!r} is not admitted")
+    return _HOST_VALIDATORS[kind]
+
+
+def declared_host_kinds() -> frozenset[str | None]:
+    """Every host kind this boundary validates; equal to the platform rows' host kinds."""
+    return frozenset(_HOST_VALIDATORS)

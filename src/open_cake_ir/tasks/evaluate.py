@@ -29,9 +29,10 @@ from open_cake_ir.tasks.flash_kmeans.cuda import CudaTensorContract
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.tasks.flash_kmeans.workload import assignment_raw_sha256, classify_flash_kmeans_output, flash_kmeans_oracle, generate_flash_kmeans_case
 from open_cake_ir.lab.executor import ExecutorRevision
-from open_cake_ir.evaluation.admission import observe_exclusive_cuda
-from open_cake_ir.evaluation.artifacts import executable_role
-from open_cake_ir.evaluation.local_broker import LOCAL_KINDS
+from open_cake_ir.compiler.target import CodeObject
+from open_cake_ir.evaluation.admission import observe_exclusive_cuda, observe_local_cuda
+from open_cake_ir.evaluation.attempts import job_mode
+from open_cake_ir.evaluation.platforms import ExecutionPlatform, PLATFORMS, platform_for, platform_for_paired_kind
 from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case
 from open_cake_ir.tasks.launch import parse_launch_manifest
@@ -39,9 +40,10 @@ from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
 from open_cake_ir.evaluation.paired import (
-    ROUTE_CALLS_PER_COHORT, PAIRED_KIND, PAIRED_METAL_KIND, METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
+    METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
     candidate_from_identity, validate_pair_candidates,
 )
+from open_cake_ir.tasks.devices import allocation_mode
 
 
 
@@ -73,10 +75,12 @@ def _write_new(path: Path, value: object) -> None:
 
 
 def _base_result(job_id: str) -> dict[str, object]:
+    # The prefix names the allocator that issued the job, and each allocator has one
+    # mode; the placeholder the worker starts with is the cluster allocator's.
     return {
         "schema_version": 1,
         "job_id": job_id,
-        "mode": "exclusive",
+        "mode": job_mode(job_id),
         "admitted": False,
         "error": None,
         "failure_class": None,
@@ -105,6 +109,11 @@ class _Authority:
     baseline: LaunchableCandidate | None = None
     # What the Study says about whether a latency can be reported for this run.
     timed_assay_available: bool = True
+    # How the Study's device is reached, as the device registry row the Study was admitted
+    # against declares it: the cluster allocator's exclusive lease or the local broker.
+    # The worker admits under that allocator and no other (D6); an authority that states
+    # none is refused at admission rather than admitted under a default.
+    allocation_mode: str | None = None
 
 
 def _load_authority(request_path: Path) -> _Authority:
@@ -161,7 +170,9 @@ def _load_authority(request_path: Path) -> _Authority:
         if isinstance(coverage, Mapping) and coverage.get('timed_assay') == 'unavailable':
             timed_assay_available = False
         if paired_protocol(evaluation) is not None:
-            if isinstance(manifest, MetalTensorLaunchManifest) != (evaluation['paired_timing']['kind'] in METAL_KINDS):
+            # The assay the Study declares belongs to one platform row, and so does the
+            # candidate's target; a pair timed under another row's assay is refused here.
+            if platform_for_paired_kind(evaluation['paired_timing']['kind']) is not platform_for(candidate.target):
                 raise ValueError('paired assay backend differs from sealed manifest')
             partner = _object(request.get('baseline'), 'request.baseline')
             paths = _object(partner.get('artifact_paths'), 'request.baseline.artifact_paths')
@@ -192,10 +203,11 @@ def _load_authority(request_path: Path) -> _Authority:
         case_id,
         baseline,
         timed_assay_available=timed_assay_available,
+        allocation_mode=allocation_mode(candidate.target),
     )
 
 
-def _execution_platform(authority: _Authority) -> str:
+def _execution_platform(authority: _Authority) -> CodeObject:
     """The declared object that selects how this candidate is executed.
 
     A Target declares what its toolchain produces, so the execution path follows that
@@ -206,14 +218,38 @@ def _execution_platform(authority: _Authority) -> str:
     The manifest and the declaration must agree. Either alone would be a second owner of
     the same fact, and a mismatched pair is a sealed candidate nobody can launch.
     """
-    platform = executable_role(authority.candidate.target)
+    row = platform_for(authority.candidate.target)
     metal_manifest = isinstance(authority.manifest, MetalTensorLaunchManifest)
-    if metal_manifest != (platform == "metal_binary_archive"):
+    if metal_manifest != (row.code_object is CodeObject.METAL_BINARY_ARCHIVE):
         raise ValueError(
             "launch manifest and declared execution platform differ: "
-            f"{authority.candidate.target!r} declares {platform!r}"
+            f"{authority.candidate.target!r} declares {row.code_object.value!r}"
         )
-    return platform
+    return row.code_object
+
+
+def _route_calls_per_cohort(authority: _Authority) -> int:
+    """The cohort's route-call count the candidate's platform row declares."""
+    row = platform_for(authority.candidate.target)
+    if row.route_calls_per_cohort is None:
+        raise ValueError(
+            f"{row.code_object.value!r} declares no route-call count for a tensor-tile "
+            "cohort; its cohort is shaped by its own observer")
+    return row.route_calls_per_cohort
+
+
+def _observe_cuda(authority: _Authority):
+    """Admit the CUDA device through the allocator the Study's row declares (D6).
+
+    A local-broker admission supports a correctness check; the paired CUPTI receipt still
+    requires the cluster lease and `paired.admit_device_identity` refuses a local job.
+    """
+    observers = {"exclusive": observe_exclusive_cuda, "local_serialized": observe_local_cuda}
+    observe = observers.get(authority.allocation_mode)
+    if observe is None:
+        raise ValueError(
+            f"allocation mode {authority.allocation_mode!r} names no CUDA device admission")
+    return observe(authority.candidate.target)
 
 
 def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
@@ -542,14 +578,16 @@ def _evaluate_metal_candidate(authority, result):
     if (cases != authority.workload.case_ids or authority.workload.document['validation'].get('all_cases_required') is not True
             or authority.case_id != authority.workload.document['validation'].get('primary_case')):
         raise ValueError('Metal evaluation case projection differs from Workload validation')
+    row = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE]
     job_id = os.environ.get('METAL_JOB_ID', '')
-    if re.fullmatch(r'metal-[0-9a-f]{12}', job_id) is None or job_id == 'metal-000000000000':
+    if (re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', job_id) is None
+            or job_id == f'{row.local_job_prefix}-000000000000'):
         raise ValueError('Metal worker requires a real broker job allocation')
     from open_cake_ir.evaluation.local_broker import observe_local_metal_job
     if observe_local_metal_job() != job_id:
         raise ValueError('Metal broker lock identity differs')
     admission = authority.executor.admit_host()
-    if not isinstance(admission, Mapping) or admission.get('kind') != 'metal':
+    if not isinstance(admission, Mapping) or admission.get('kind') != row.host_kind:
         raise ValueError('Metal worker requires an admitted Metal Executor')
     result['job_id'] = job_id
     result['mode'] = 'local_serialized'
@@ -710,7 +748,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
         # attribution purpose is not a correctness protocol.
         _evaluate_tile_candidate(
             authority, result, None, admission, False,
-            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT["hip_dispatch"],
+            route_calls_per_cohort=_route_calls_per_cohort(authority),
             profile_source=collect_hip_dispatch_activity)
         return
     if authority.baseline is not None and collect_timing:
@@ -723,7 +761,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     benchmark = (HipDispatchBenchmark(authority.manifest.kernel_name)
                  if collect_timing else None)
     _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
-                             route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['hip_dispatch'])
+                             route_calls_per_cohort=_route_calls_per_cohort(authority))
 
 
 def _evaluate_candidate(
@@ -734,20 +772,18 @@ def _evaluate_candidate(
     admission: CudaDeviceAdmission | None = None,
 ) -> None:
     platform = _execution_platform(authority)
-    if platform == "metal_binary_archive":
-        _evaluate_metal_candidate(authority, result)
-        return
-    if platform != "cubin":
+    if platform is not CodeObject.CUBIN:
         # This is the cubin row's own evaluate, reached again by the profile child. Named,
-        # not fallen through, and never stepped down onto another platform's path.
+        # not fallen through, and never stepped down onto another platform's path: every
+        # other row's evaluate is reached through its own `_PLATFORMS` entry.
         raise ValueError(
-            f"{platform!r} does not launch through this path: the hsaco row launches its "
-            "own, and a Metal binary archive is observed rather than launched"
+            f"{platform.value!r} does not launch through this path: the hsaco row launches "
+            "its own, and a Metal binary archive is observed rather than launched"
         )
     helper = authority.executor.admit_host()
     if admission is None:
         try:
-            admission = observe_exclusive_cuda(authority.candidate.target)
+            admission = _observe_cuda(authority)
         except ValueError:
             result["error"] = "gpu_admission_differs"
             return
@@ -774,7 +810,7 @@ def _evaluate_candidate(
             authority, result,
             StrictCuptiBenchmark(helper) if collect_timing else None,
             admission, collect_timing,
-            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['cupti'])
+            route_calls_per_cohort=_route_calls_per_cohort(authority))
         return
     case = authority.workload.case(authority.case_id)
     shape = _object(case["shape"], "workload.case.shape")
@@ -918,7 +954,7 @@ def _profile_candidate(
 ) -> None:
     profiler = authority.executor.admit_profiler()
     try:
-        admission = observe_exclusive_cuda(authority.candidate.target)
+        admission = _observe_cuda(authority)
     except ValueError:
         result["error"] = "gpu_admission_differs"
         return
@@ -1034,47 +1070,49 @@ def _profile_candidate(
 
 @dataclass(frozen=True)
 class _ExecutionPlatform:
-    """How one declared code object is evaluated, attributed and profiled.
+    """The evaluate callable this worker registers on one execution platform row.
 
-    A platform is a row here rather than a branch in `main`, so a code object nothing
-    implements is refused by name instead of reaching whichever branch it happens to
-    fall into. That was not hypothetical: attribution had no platform test at all, so a
-    candidate built for an AMDGCN target asking for a profile reached CUDA's exclusive
-    device admission and was refused by nvidia-smi.
-
-    `attribution` names where a profile comes from, because the two implementations do
-    not have the same shape: CUDA profiles through a separate NCU-supervised entry, and
-    Metal's own evaluation writes the profile its Executor already admitted.
+    The registry (`evaluation.platforms`) states how a declared code object is attributed
+    and whether its profile comes from a separate supervised child; it cannot hold the
+    callable, because the callable imports task code the Evaluation layer may not (ADR
+    0055). So the row is held here beside its worker function, and the facts are read
+    off the row rather than restated. A code object nothing implements is refused by
+    name instead of reaching whichever branch it happens to fall into -- that was not
+    hypothetical: a candidate built for an AMDGCN target asking for a profile reached
+    CUDA's exclusive device admission and was refused by nvidia-smi.
     """
 
     evaluate: Callable[[_Authority, dict], None] | None
-    attribution: str | None
-    profiled_child: bool = False
+    platform: ExecutionPlatform | None = None
+
+    @property
+    def attribution(self) -> str | None:
+        return None if self.platform is None else self.platform.attribution
+
+    @property
+    def profiled_child(self) -> bool:
+        return self.platform is not None and self.platform.profiled_child
 
 
 _PLATFORMS = {
-    "cubin": _ExecutionPlatform(
+    CodeObject.CUBIN: _ExecutionPlatform(
         # Whether a run is timed is the Study's statement, not this table's: a Study for
         # a target with no named timer carries a measurement-coverage limitation instead
         # of a paired assay, and this was an unconditional True.
         evaluate=lambda authority, result: _evaluate_candidate(
             authority, result, collect_timing=authority.timed_assay_available),
-        attribution="separate",
-        profiled_child=True,
+        platform=PLATFORMS[CodeObject.CUBIN],
     ),
-    "metal_binary_archive": _ExecutionPlatform(
+    CodeObject.METAL_BINARY_ARCHIVE: _ExecutionPlatform(
         evaluate=_evaluate_metal_candidate,
-        attribution="inside_evaluate",
+        platform=PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE],
     ),
     # The AMDGCN half admits a device, loads a candidate and launches it, verified on a
     # DCU (F-2026-09-15-003). Whether it is timed is the Study's statement, as above.
-    # `attribution` is this platform's own roctracer activity, taken inside evaluate like
-    # Metal's: Nsight Compute is CUDA's profiler and is still not borrowed here, but that
-    # was a reason to name a different source rather than to have none.
-    "hsaco": _ExecutionPlatform(
+    CodeObject.HSACO: _ExecutionPlatform(
         evaluate=lambda authority, result: _evaluate_hip_candidate(
             authority, result, collect_timing=authority.timed_assay_available),
-        attribution="inside_evaluate",
+        platform=PLATFORMS[CodeObject.HSACO],
     ),
 }
 
@@ -1085,8 +1123,8 @@ def _platform(authority: _Authority) -> _ExecutionPlatform:
     platform = _PLATFORMS.get(name)
     if platform is None or platform.evaluate is None:
         raise ValueError(
-            f"no execution platform implements {name!r}: this worker launches and times "
-            "a cubin, launches an hsaco, and observes a Metal binary archive"
+            f"no execution platform implements {name.value!r}: this worker launches and "
+            "times a cubin, launches an hsaco, and observes a Metal binary archive"
         )
     return platform
 
@@ -1100,10 +1138,11 @@ def main() -> int:
     parser.add_argument("--profile-admission", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     request_path = args.request.resolve(strict=True)
-    result = _base_result(os.environ.get("METAL_JOB_ID", os.environ.get("GPUQ_JOB_ID", "gpuq-000000000000")))
-    # Both local allocations issue their own prefix; the mode they share is the mode.
-    if str(result["job_id"]).split("-")[0] in LOCAL_KINDS:
-        result["mode"] = "local_serialized"
+    # The allocator that admitted this process names its job in its own variable: the
+    # local broker in METAL_JOB_ID under the family's prefix, the cluster allocator in
+    # GPUQ_JOB_ID. Before either, the worker carries the cluster placeholder.
+    result = _base_result(os.environ.get("METAL_JOB_ID", os.environ.get(
+        "GPUQ_JOB_ID", f"{PLATFORMS[CodeObject.CUBIN].exclusive_job_prefix}-000000000000")))
     try:
         authority = _load_authority(request_path)
         purpose = str(authority.request["purpose"])
@@ -1112,7 +1151,7 @@ def main() -> int:
                 raise ValueError("profile child requires attribution purpose")
             if not _platform(authority).profiled_child:
                 raise ValueError(
-                    f"{_execution_platform(authority)!r} has no profiled child launch"
+                    f"{_execution_platform(authority).value!r} has no profiled child launch"
                 )
             admission_path = _input_path(
                 authority.request_root,
@@ -1154,7 +1193,7 @@ def main() -> int:
             platform = _platform(authority)
             if platform.attribution is None:
                 raise ValueError(
-                    f"{_execution_platform(authority)!r} has no attribution source; a "
+                    f"{_execution_platform(authority).value!r} has no attribution source; a "
                     "profile is not taken on another platform's behalf"
                 )
             if platform.attribution == "inside_evaluate":
@@ -1163,7 +1202,7 @@ def main() -> int:
                     # longer be phrased as Metal's rule: a DCU caller was refused in
                     # Metal's words for a mistake of its own.
                     raise ValueError(
-                        f"{_execution_platform(authority)!r} takes its profile inside "
+                        f"{_execution_platform(authority).value!r} takes its profile inside "
                         "evaluate; that admission is supplied by its own Executor")
                 platform.evaluate(authority, result)
             elif platform.attribution == "separate":

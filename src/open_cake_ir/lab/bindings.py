@@ -139,7 +139,8 @@ def resolve_execution_bindings(
     """Return resolved runtime leaves and the Executor already validated for them."""
     from .runtime_config import broker_execution_sha256, load_runtime_config
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
-    from .pairing import comparison_arm, native_backend, backend_policy
+    from .pairing import comparison_arm, native_backend
+    from .toolchains import single_environment_toolchain, toolchain_for
 
     document = json.loads(canonical(study.document))
     arms = document['arms']
@@ -180,12 +181,12 @@ def resolve_execution_bindings(
     anchor = json.loads(anchor_path.read_bytes())
     if single:
         route = arms["open_cake"].get("lowering_route")
-        if not isinstance(route, Mapping) or route.get("backend") not in {"metal", "triton"}:
+        if not isinstance(route, Mapping) or "backend" not in route:
             raise ValueError("single-environment lowering route differs")
-        backend = route["backend"]
+        row = single_environment_toolchain(route["backend"])
     else:
-        backend = policy.backend
-    config = load_runtime_config(runtime_path, toolchain_kind=backend)
+        row = toolchain_for(policy.backend)
+    config = load_runtime_config(runtime_path, toolchain_kind=row.runtime_kind)
     executable = Path(config['provider']['executable']).resolve(strict=True)
     if sha256(executable.read_bytes()).hexdigest() != receipt.executable_sha256:
         raise ValueError('runtime provider executable differs from qualification')
@@ -201,12 +202,8 @@ def resolve_execution_bindings(
     executor = resolve_executor(Path(project_root), execution['executor_revision'],
         'study.execution', template=True, target=execution['target'])
     executor_reference = dict(executor.reference)
-    if backend == "metal":
-        from .metal_build import MetalArchiveHost
-        toolchain = MetalArchiveHost.from_executor(executor)
-    else:
-        toolchain = backend_policy(backend).isolated_compiler(config['toolchain'])
-        toolchain.check_executor(executor, author_workspace=config['provider']['workspace_root'])
+    toolchain = row.bind(config['toolchain'], executor,
+                         author_workspace=config['provider']['workspace_root'])
     for arm in arms.values():
         arm['toolchain_sha256'] = toolchain.canonical_sha256
     broker = config['broker']

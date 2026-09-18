@@ -324,7 +324,10 @@ class PairedExecutionTests(unittest.TestCase):
     def test_profile_child_bootstraps_the_exact_source_without_ambient_python_path(self):
         admission = SimpleNamespace(device_name='NVIDIA B300 SXM6 AC', compute_capability=(10,3),
             gpu_uuid='GPU-test-only', broker_job_id='gpuq-123456789abc', mode='exclusive')
+        # The worker selects the cluster or the local CUDA admission by the allocation the
+        # Study was admitted against; this profile child runs under the cluster lease.
         authority = SimpleNamespace(request_root=self.output, candidate=self.candidate,
+            allocation_mode='exclusive',
             executor=SimpleNamespace(admit_profiler=lambda: {'path':'/not-invoked/ncu'}))
         with patch.object(worker,'observe_exclusive_cuda',return_value=admission), \
              patch('open_cake_ir.lab.ncu_process.run_ncu',side_effect=RuntimeError('stop before NCU')) as run:

@@ -30,6 +30,7 @@ from .contracts import CampaignLock, StudyContract
 from .pairing import native_backend, comparison_arm, native_baseline, matched_run_arms
 from .selection import _EMPIRICAL_SELECTION
 from .task_package import TaskPackage, render_task_package
+from .toolchains import single_environment_backends
 
 from .python_reference import read_skeleton
 from .reference_access import validate_reference_handoff
@@ -151,8 +152,12 @@ def preflight(
     ) != comparison:
         raise ValueError("Study Contract Authoring Environment kinds differ")
     route = open_cake.get("lowering_route")
+    # The one arm of an artifact-optimization Study lowers through a backend whose
+    # toolchain row admits it alone; a two-arm Study lowers through the comparison arm's.
+    admitted_routes = (single_environment_backends() if single_environment
+                       else {policy.backend if policy is not None else "triton"})
     if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
-        or route.get("backend") not in ({"metal", "triton"} if single_environment else {policy.backend if policy is not None else "triton"}) or not isinstance(route.get("entry_point"), str)
+        or route.get("backend") not in admitted_routes or not isinstance(route.get("entry_point"), str)
         or not route["entry_point"].isidentifier()):
         raise ValueError("Study Contract Open Cake lowering route differs")
     schedule_skeleton = _object(

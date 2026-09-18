@@ -3,10 +3,13 @@
 This is process admission only. It does not evaluate a candidate, own a Ralph loop,
 or promise exclusive physical GPU access against WindowServer or unrelated apps.
 
-The allocation, not the API: an Apple GPU and a Hygon DCU are both one visible device on
-one machine, and both are reached this way. Each kind keeps its own lock and its own job
-prefix, so a DCU job is not recorded as a Metal one -- the same mislabelling as a DCU
-latency recorded as CUPTI, arriving through the allocator instead of the timer.
+The allocation, not the API: an Apple GPU, a Hygon DCU and a CUDA device outside the
+cluster allocator are each one visible device on one machine, and all are reached this
+way. Each kind keeps its own lock and its own job prefix, so a DCU job is not recorded
+as a Metal one -- the same mislabelling as a DCU latency recorded as CUPTI, arriving
+through the allocator instead of the timer. The kinds are the local prefixes the
+execution platform rows declare; a CUDA job issued here is admitted for correctness and
+never for the paired CUPTI assay, which requires the exclusive cluster lease.
 """
 from __future__ import annotations
 
@@ -22,9 +25,11 @@ import tempfile
 import uuid
 
 from .attempts import valid_job_mode
+from .platforms import PLATFORMS
 
 
-LOCAL_KINDS = ("metal", "hip")
+LOCAL_KINDS = tuple(
+    row.local_job_prefix for row in PLATFORMS.values() if row.local_job_prefix is not None)
 
 
 def _lock_path(kind: str = "metal") -> Path:

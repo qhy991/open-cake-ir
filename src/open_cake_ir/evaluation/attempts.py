@@ -7,15 +7,28 @@ from dataclasses import dataclass, field
 from typing import Callable, Mapping
 
 from .core import EvaluationReceipt, LaunchableCandidate
+from .platforms import PLATFORMS
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 # A job id names the allocator that issued it, not the API the candidate uses. `gpuq` is
-# the cluster allocator and `metal` was the only local one; a DCU is reached the same way
-# an Apple device is and issues `hip` ids, because a DCU job recorded as a Metal one would
-# be the same mislabelling as a DCU latency recorded as CUPTI.
-_LOCAL_PREFIXES = ("metal", "hip")
-_JOB_ID = re.compile(r"^(gpuq|metal|hip)-[0-9a-f]{12}$")
-_JOB_MODES = {"gpuq": "exclusive", "metal": "local_serialized", "hip": "local_serialized"}
+# the cluster allocator; every local device family is reached through the local broker
+# under its own prefix, because a DCU job recorded as a Metal one would be the same
+# mislabelling as a DCU latency recorded as CUPTI. Each platform row declares which
+# prefixes its allocators issue, so the grammar here is a view over those rows.
+_LOCAL_PREFIXES = tuple(
+    row.local_job_prefix for row in PLATFORMS.values() if row.local_job_prefix is not None)
+_JOB_MODES = {
+    **{row.exclusive_job_prefix: "exclusive" for row in PLATFORMS.values()
+       if row.exclusive_job_prefix is not None},
+    **{prefix: "local_serialized" for prefix in _LOCAL_PREFIXES},
+}
+_JOB_ID = re.compile(rf"^({'|'.join(_JOB_MODES)})-[0-9a-f]{{12}}$")
+
+
+def job_mode(job_id: object) -> str | None:
+    """The mode the allocator that issued this job id runs under, or None for no allocator."""
+    match = _JOB_ID.fullmatch(job_id) if isinstance(job_id, str) else None
+    return _JOB_MODES[match[1]] if match else None
 
 
 def valid_job_mode(job_id: str, mode: str) -> bool:

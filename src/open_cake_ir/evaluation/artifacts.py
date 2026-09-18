@@ -1,23 +1,25 @@
-"""Backend build products; authoring-arm policy remains in the Lab."""
+"""Backend build products; authoring-arm policy remains in the Lab.
 
-from open_cake_ir.compiler.target import CodeObject, Target, TargetParseError, declared_target
+Every answer here is read off the execution platform row the Target's declared code
+object selects. This module used to keep its own build-role sets keyed by backend name
+and a CUDA role set reached by falling past the other two objects; now the row states
+both, and a target no document declares is refused in this layer's words.
+"""
 
-_BUILD_ROLES = {
-    "metal": frozenset({"metal_binary_archive", "metal_build_report", "launch_manifest"}),
-    "triton": frozenset({"compiler_expanded_source", "ptx", "cubin", "launch_manifest"}),
-    "cuda": frozenset({"ptx", "cubin", "sass", "launch_manifest"}),
-    # Triton on AMDGCN emits its own roles: assembly and an ELF HSACO where the CUDA
-    # route has PTX and a CUBIN. evaluation/triton_hip.ARTIFACT_ROLES is the producer.
-    "triton_amdgcn": frozenset({"compiler_expanded_source", "amdgcn", "hsaco",
-                                "launch_manifest"}),
-}
-_CUDA_ALLOWED = frozenset({"authored_source", "lowered_source", "compiler_expanded_source",
-    "ttir", "ttgir", "llir", "ptx", "cubin", "sass", "toolchain_resource_report", "launch_manifest"})
+from open_cake_ir.compiler.target import CodeObject
+
+from .platforms import ExecutionPlatform, platform_for
 
 
-def _declared(target: object) -> Target:
-    """Resolve an exact target id, or accept a Target the caller already holds."""
-    return target if isinstance(target, Target) else declared_target(target)
+def _platform(target: object) -> ExecutionPlatform:
+    """The row for an exact target id, a Target the caller holds, or a code object."""
+    try:
+        return platform_for(target)
+    except ValueError as error:
+        raise ValueError(
+            f"target {target!r} has no executable role in this Evaluation layer; each "
+            "declared Target document names the object its toolchain produces"
+        ) from error
 
 
 def executable_role(target: object) -> str:
@@ -28,13 +30,7 @@ def executable_role(target: object) -> str:
     document, not an edit here (F-2026-09-15-004). It still refuses in the class it owns
     -- a target no document declares gets this layer's words, never a vendor's.
     """
-    try:
-        return _declared(target).code_object.value
-    except (TargetParseError, ValueError) as error:
-        raise ValueError(
-            f"target {target!r} has no executable role in this Evaluation layer; each "
-            "declared Target document names the object its toolchain produces"
-        ) from error
+    return _platform(target).code_object.value
 
 
 def builds_metal_archive(target: object) -> bool:
@@ -45,32 +41,22 @@ def builds_metal_archive(target: object) -> bool:
     fact; a target no document declares is simply not one of them.
     """
     try:
-        return _declared(target).code_object is CodeObject.METAL_BINARY_ARCHIVE
-    except (TargetParseError, ValueError):
+        return _platform(target).code_object is CodeObject.METAL_BINARY_ARCHIVE
+    except ValueError:
         return False
 
 
-def required_build_roles(backend: str) -> frozenset[str]:
-    """Complete build products, excluding the arm-owned source provenance role."""
-    try:
-        return _BUILD_ROLES[backend]
-    except KeyError as error:
-        raise ValueError(f"unsupported build backend: {backend}") from error
+def required_build_roles(target: object) -> frozenset[str]:
+    """Complete build products for one target's object, excluding the arm-owned source role."""
+    return _platform(target).build_roles
 
 
 def allowed_artifact_roles(target: object) -> frozenset[str]:
     """The roles a candidate for this target may carry, keyed by its declared object.
 
-    Every branch must admit the target's own executable: `LaunchableCandidate` requires
-    the executable role to be present and every carried role to be allowed, so an AMDGCN
+    Every row admits the target's own executable: `LaunchableCandidate` requires the
+    executable role to be present and every carried role to be allowed, so an AMDGCN
     candidate whose roles were read from the CUDA set would be refused for carrying the
     hsaco its own route emits.
     """
-    role = executable_role(target)
-    if role == "metal_binary_archive":
-        return _BUILD_ROLES["metal"] | {"authored_source", "lowered_source"}
-    if role == "hsaco":
-        return _BUILD_ROLES["triton_amdgcn"] | {"authored_source", "lowered_source",
-                                                "ttir", "ttgir", "llir",
-                                                "toolchain_resource_report"}
-    return _CUDA_ALLOWED
+    return _platform(target).allowed_artifact_roles

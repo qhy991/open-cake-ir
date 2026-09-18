@@ -23,11 +23,11 @@ Two deliberate absences:
 from __future__ import annotations
 
 import ctypes
-from hashlib import sha256
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
 from .core import LaunchableCandidate
+from .loaders import LifecycleError, check_launch_authority
 
 # hipError_t 0. Every other value is reported with its number and, when the runtime can
 # name it, its string -- never mapped onto a CUDA error here.
@@ -41,19 +41,8 @@ _REQUIRED_SYMBOLS = (
 )
 
 
-class HipLifecycleError(RuntimeError):
-    """Preserve the primary failure and every failure encountered during teardown."""
-
-    def __init__(
-        self, primary: BaseException, teardown: BaseException, *remaining: BaseException
-    ) -> None:
-        self.primary = primary
-        self.teardown = teardown
-        self.teardown_errors = (teardown, *remaining)
-        super().__init__(
-            f"HIP lifecycle failed in {type(primary).__name__}: {primary}; teardown: "
-            + "; ".join(f"{type(error).__name__}: {error}" for error in self.teardown_errors)
-        )
+# The shared lifecycle exception under the name every retained test still raises it by.
+HipLifecycleError = LifecycleError
 
 
 def _exports_every_symbol(library: object) -> bool:
@@ -174,7 +163,7 @@ class HipModules:
                 failures.append(error)
         self._modules.clear()
         if failures:
-            raise HipLifecycleError(failures[0], *failures[1:]) if len(failures) > 1 else failures[0]
+            raise LifecycleError(failures[0], *failures[1:]) if len(failures) > 1 else failures[0]
 
 
 class LoadedHipModuleCandidate:
@@ -206,14 +195,7 @@ class LoadedHipModuleCandidate:
         """Validate all immutable authority before retaining one loaded module."""
         from .triton_hip import amdgcn_resource_record, device_arch_matches
 
-        if (
-            not hsaco.startswith(b"\x7fELF")
-            or candidate.target != manifest.target
-            or candidate.entry_point != manifest.kernel_name
-            or candidate.launch_spec_sha256 != manifest.canonical_sha256
-            or candidate.artifact_roles.get("hsaco") != sha256(hsaco).hexdigest()
-        ):
-            raise ValueError("persistent candidate launch authority differs")
+        check_launch_authority(candidate, hsaco, "hsaco", manifest)
         if not device_arch_matches(device_arch, candidate.target):
             raise ValueError(
                 f"admitted device reports {device_arch!r}, which is not the "
@@ -235,7 +217,7 @@ class LoadedHipModuleCandidate:
             try:
                 modules.close()
             except BaseException as teardown:
-                raise HipLifecycleError(primary, teardown) from primary
+                raise LifecycleError(primary, teardown) from primary
             raise
         return cls(candidate=candidate, hsaco=hsaco, manifest=manifest, modules=modules,
                    function=function, resources=resources)
@@ -302,4 +284,4 @@ class LoadedHipModuleCandidate:
         if len(failures) == 1:
             raise failures[0]
         if failures:
-            raise HipLifecycleError(failures[0], *failures[1:])
+            raise LifecycleError(failures[0], *failures[1:])

@@ -30,6 +30,8 @@ Lab 保留 `Lab.preflight/execute/audit` 公开入口。内部按职责分工，
 | 初次与恢复调用的命令及 host 绑定 | `provider_invocation.py` |
 | Provider 进程执行与 adapter；兼容的公开导出 | `providers.py` |
 | Authoring Environment 与构建输入/输出接口 | `environments.py`、`build.py` |
+| 按 LoweringBackend 键入的工具链表（runtime 字段集、comparison arm、单环境准入、绑定方式） | `toolchains.py` |
+| 隔离编译的公共 jail 脚手架（bubblewrap、request.json 交接、仅挂载 src） | `isolated_build.py` |
 | Triton 内核编译（Linux 文件系统 jail 下监督执行） | `triton_build.py` |
 | CuTe 工具链（文件系统隔离，汇入公共 CUBIN 启动边界） | `cute_build.py` |
 | Metal 二进制归档构建（BuildRequest 接缝处） | `metal_build.py` |

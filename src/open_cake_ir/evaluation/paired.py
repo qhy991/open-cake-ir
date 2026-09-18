@@ -13,52 +13,47 @@ import re
 from hashlib import sha256
 from typing import Mapping
 
+from open_cake_ir.compiler.target import CodeObject
+
 from .timing import PairedTimingProtocol, derive_paired_timing
 from .artifacts import executable_role
+from .platforms import PLATFORMS, platform_for, platform_for_paired_kind
 
+# The declared assay names, kept as constants for the readers that spell them. Which
+# measurement source each names, how many times its cohort calls the route and which
+# object it times are the execution platform row's facts; everything below is a view
+# over those rows, so a kind no row declares is refused by name rather than measured as
+# whichever source an `else` reached. CUPTI used to be whatever was not Metal.
+#
+# The AMDGCN kind was withheld until something produced a measurement, which is the rule
+# the rows keep: a policy kind is a name for a measurement, and minting one first would
+# have labelled evidence with a profiler that never produced it. `hip_dispatch` is
+# roctracer's per-dispatch device time, read through the profiler the admitted torch
+# already carries, measured on a BW1101 against rocprofv2's own reading of the same
+# kernel and shape (3.071 us against 3.36 us) and shown to attribute the harness's own
+# `hipModuleLaunchKernel` dispatches. See `evaluation/hip_benchmark.py` for what the
+# interval includes and what resets the device.
 PAIRED_KIND = 'fixed_baseline_paired_cupti_v1'
 PAIRED_METAL_KIND = 'fixed_baseline_paired_metal_v1'
 # The successor declares how many dispatches each timed command buffer encodes, so a
 # kernel shorter than the fixed command overhead is not measured through it. v1 keeps
 # its exact single-dispatch meaning; frozen Studies replay unchanged.
 PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
-METAL_KINDS = {PAIRED_METAL_KIND, PAIRED_METAL_BATCHED_KIND}
-# One dispatch of one AMDGCN kernel, timed by roctracer through the profiler the admitted
-# torch carries. Named `v1` for the same reason the others are: what the interval includes
-# and what resets the device are part of the policy, and a successor states its own.
+# One dispatch of one AMDGCN kernel, timed by roctracer. Named `v1` for the same reason
+# the others are: what the interval includes and what resets the device are part of the
+# policy, and a successor states its own.
 PAIRED_HIP_KIND = 'fixed_baseline_paired_hip_dispatch_v1'
-PAIRED_KINDS = {PAIRED_KIND, PAIRED_HIP_KIND, *METAL_KINDS}
-# Which measurement source each declared policy names, stated rather than reached by an
-# `else`. CUPTI used to be whatever was not Metal, so a third source would have been
-# measured as CUDA under a name nobody chose.
-#
-# The AMDGCN entry was withheld until something produced a measurement, which is the rule
-# this table exists to keep: a policy kind here is a name for a measurement, and minting
-# one first would have labelled evidence with a profiler that never produced it. It has
-# one now. `hip_dispatch` is roctracer's per-dispatch device time, read through the
-# profiler the admitted torch already carries, measured on a BW1101 against rocprofv2's
-# own reading of the same kernel and shape (3.071 us against 3.36 us) and shown to
-# attribute the harness's own `hipModuleLaunchKernel` dispatches. See
-# `evaluation/hip_benchmark.py` for what the interval includes and what resets the device.
-_PAIRED_BACKENDS = {
-    PAIRED_KIND: 'cupti',
-    PAIRED_METAL_KIND: 'metal',
-    PAIRED_METAL_BATCHED_KIND: 'metal',
-    PAIRED_HIP_KIND: 'hip_dispatch',
-}
-# How many times a cohort calls the route, per measurement source. CUPTI's six extra calls
-# are its calibration callbacks; the HIP assay has none. Declared here beside the kinds
-# because it is a property of the assay, and because `tasks.evaluate` kept three separate
-# copies of these sums -- one of them a CUDA default in a shared signature, in a function
-# whose own docstring says the count comes from the caller that knows which source is
-# running. A duplicate is a defect while it still agrees.
+METAL_KINDS = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].paired_kinds
+PAIRED_KINDS = frozenset().union(*(row.paired_kinds for row in PLATFORMS.values()))
+# How many times a cohort calls the route, per measurement source that declares it on its
+# row. CUPTI's six extra calls are its calibration callbacks; the HIP assay has none.
 # Metal's is not here: its cohort is the native observer's snapshot, sized against that
 # observer's payload bound, and it lives with the launcher check it must not drift from
 # (`tasks/normalization/study._ROUTE_CALLS_PER_COHORT`, F-2026-09-10-002). Named so a
 # reader of this table does not conclude Metal has no count.
 ROUTE_CALLS_PER_COHORT = {
-    'cupti': 6 + 11 + 25,
-    'hip_dispatch': 11 + 25,
+    row.measurement_source: row.route_calls_per_cohort
+    for row in PLATFORMS.values() if row.route_calls_per_cohort is not None
 }
 _BASE_FIELDS = {
     'kind', 'arms', 'pair_order', 'samples_per_cohort', 'route_calls_per_cohort',
@@ -91,7 +86,7 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     if (not isinstance(value, Mapping) or set(value) != expected_fields
             or kind not in PAIRED_KINDS or value.get('arms') != ['candidate', 'baseline']):
         raise ValueError('fixed-baseline paired policy fields or roles differ')
-    backend = _PAIRED_BACKENDS[kind]
+    backend = platform_for_paired_kind(kind).measurement_source
     if (evaluation.get('search_evaluation') != f'correctness_then_paired_{backend}'
         or evaluation.get('confirmatory_evaluation') != f'fresh_fixed_candidate_correctness_then_paired_{backend}'):
         raise ValueError('paired policy requires search and fresh confirmation')
@@ -152,20 +147,26 @@ def candidate_from_identity(value, payloads=None):
     return candidate
 
 
-def validate_pair_candidates(candidate, baseline, workload, case_id):
+def _manifest_spellings():
+    """The Workload tensor manifest class per `abi`, from the two spellings that exist."""
     from .core import TensorLaunchManifest
+    from .metal_manifest import MetalTensorLaunchManifest
+    return {cls.abi: cls for cls in (TensorLaunchManifest, MetalTensorLaunchManifest)}
+
+
+def validate_pair_candidates(candidate, baseline, workload, case_id):
+    spellings = _manifest_spellings()
     manifests = {}
     for role, item in [('candidate', candidate), ('baseline', baseline)]:
         if not item.artifact_payloads or 'launch_manifest' not in item.artifact_payloads:
             raise ValueError('paired participant has no sealed launch manifest')
         document = json.loads(item.artifact_payloads['launch_manifest'])
-        if not isinstance(document, Mapping) or document.get('abi') not in {'workload_tensors_v1', 'metal_workload_tensors_v1'}:
+        # The row for the participant's target says which spelling it seals; a manifest
+        # in another spelling is not this participant's, whatever else it parses as.
+        if (not isinstance(document, Mapping)
+                or document.get('abi') != platform_for(item.target).launch_abi):
             raise ValueError('paired policy requires the explicit Workload tensor ABI')
-        if document['abi'] == 'metal_workload_tensors_v1':
-            from .metal_manifest import MetalTensorLaunchManifest
-            manifest = MetalTensorLaunchManifest.from_dict(document)
-        else:
-            manifest = TensorLaunchManifest.from_dict(document)
+        manifest = spellings[document['abi']].from_dict(document)
         manifest.check_workload(workload, case_id)
         if (item.target != manifest.target or item.entry_point != manifest.kernel_name
             or item.launch_spec_sha256 != manifest.canonical_sha256):
@@ -222,17 +223,22 @@ def admit_device_identity(raw, launch, participants) -> None:
     if raw['kind'] in METAL_KINDS:
         from .metal_observations import validate_host
         host = validate_host(raw.get('host'))
-        if (re.fullmatch(r'metal-[0-9a-f]{12}', raw['job_id']) is None or raw['job_id'] == 'metal-000000000000'
+        prefix = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].local_job_prefix
+        if (re.fullmatch(rf'{prefix}-[0-9a-f]{{12}}', raw['job_id']) is None or raw['job_id'] == f'{prefix}-000000000000'
                 or raw.get('allocation_mode') != 'local_serialized' or launch.get('allocation_mode') != 'local_serialized'
                 or raw.get('external_gpu_activity') != 'not_excluded' or launch.get('external_gpu_activity') != 'not_excluded'
                 or launch.get('host') != host or raw.get('device_registry_id') != host['device_registry_id']
                 or host['target'] != participants['candidate']['target']):
             raise ValueError('paired Metal device/host identity differs')
     elif raw['kind'] == PAIRED_KIND:
-        if (executable_role(participants['candidate']['target']) != 'cubin'
+        # CUPTI timing evidence is taken under the exclusive cluster lease (ADR 0011,
+        # 0056), so the job is the one the row's exclusive allocator issued; a
+        # local-broker `cuda` job admits a correctness check and never this receipt.
+        row = platform_for_paired_kind(PAIRED_KIND)
+        if (executable_role(participants['candidate']['target']) != row.code_object.value
                 or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
-                or re.fullmatch(r'gpuq-[0-9a-f]{12}', raw['job_id']) is None
-                or raw['job_id'] == 'gpuq-000000000000'
+                or re.fullmatch(rf'{row.exclusive_job_prefix}-[0-9a-f]{{12}}', raw['job_id']) is None
+                or raw['job_id'] == f'{row.exclusive_job_prefix}-000000000000'
                 or launch.get('gpu_uuid') != raw['gpu_uuid']):
             raise ValueError('paired CUDA device/host identity differs')
     elif raw['kind'] == PAIRED_HIP_KIND:
@@ -240,10 +246,11 @@ def admit_device_identity(raw, launch, participants) -> None:
         # says about a device id. A DTK device reports no UUID and `observe_local_hip`
         # records that in words rather than inventing one, so the check is that both
         # records agree on what was said -- not that something UUID-shaped was said.
-        if (executable_role(participants['candidate']['target']) != 'hsaco'
+        row = platform_for_paired_kind(PAIRED_HIP_KIND)
+        if (executable_role(participants['candidate']['target']) != row.code_object.value
                 or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
-                or re.fullmatch(r'hip-[0-9a-f]{12}', raw['job_id']) is None
-                or raw['job_id'] == 'hip-000000000000'
+                or re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', raw['job_id']) is None
+                or raw['job_id'] == f'{row.local_job_prefix}-000000000000'
                 or launch.get('gpu_uuid') != raw['gpu_uuid']):
             raise ValueError('paired AMDGCN device/host identity differs')
     else:
@@ -448,6 +455,8 @@ def validate_paired_broker(receipt, job_id, counters):
         'kernel_calls': correctness_calls + cohorts * protocol.route_calls_per_cohort,
         'timing_samples': cohorts * protocol.samples_per_cohort, 'fallback_calls': 0}
     launch = json.loads(receipt.artifact_payloads['launch_receipt'])
-    if (raw['job_id'] != job_id or job_id == 'gpuq-000000000000'
+    # No allocator's zero placeholder is a job: the worker writes one before any broker
+    # admits it, under whichever prefix its environment carried.
+    if (raw['job_id'] != job_id or not isinstance(job_id, str) or job_id.endswith('-000000000000')
         or dict(counters) != expected or launch.get('correctness_launches') != correctness_calls):
         raise ValueError('paired receipt broker job or work counters differ')

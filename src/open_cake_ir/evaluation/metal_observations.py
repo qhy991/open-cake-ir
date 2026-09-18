@@ -1,14 +1,13 @@
 """Pure validation of observed Metal timestamps; no runtime or task dependency."""
 from __future__ import annotations
 
-from open_cake_ir.serialization import canonical_json_bytes
+from open_cake_ir.compiler.target import CodeObject
 
-from hashlib import sha256
-import json
 import math
-import re
 from typing import Mapping
 from .artifacts import builds_metal_archive
+from .attribution import load_instrumented_profile
+from .platforms import PLATFORMS
 
 METAL_TIMER = "MTLCommandBuffer.GPUStartTime/GPUEndTime"
 METAL_CACHE = "warm_no_explicit_flush"
@@ -113,27 +112,16 @@ def metal_profile_summary(raw: Mapping) -> dict:
 
 
 def load_metal_profile(payload: bytes, *, expected_candidate_sha256: str, expected_case_id: str, expected_protocol_sha256: str | None = None) -> dict:
-    document = json.loads(payload)
-    if (not isinstance(document, dict) or document.get("kind") != METAL_PROFILE_KIND
-            or document.get("candidate_sha256") != expected_candidate_sha256
-            or document.get("case_id") != expected_case_id
-            or not isinstance(document.get("kernel_name"), str) or not document["kernel_name"].isidentifier()
-            or not isinstance(document.get("job_id"), str) or re.fullmatch(r"metal-[0-9a-f]{12}", document["job_id"]) is None
-            or document["job_id"] == "metal-000000000000"
-            or document.get("allocation_mode") != "local_serialized" or document.get("external_gpu_activity") != "not_excluded"
-            or document.get("separate_instrumented_launch") is not True
-            or document.get("archive_miss_policy") != "failOnBinaryArchiveMiss"):
-        raise ValueError("Metal attribution profile identity differs")
     from .paired import paired_protocol, validation_case_ids, METAL_KINDS
-    evaluation = document.get("evaluation_protocol")
-    if (paired_protocol(evaluation) is None or evaluation["paired_timing"]["kind"] not in METAL_KINDS
-            or evaluation.get("case_id") != expected_case_id
-            or evaluation.get("attribution_evaluation") not in {"correctness_then_profile", "correctness_then_profile_each_search_survivor"}):
-        raise ValueError("Metal attribution Evaluation policy differs")
-    validation_case_ids(evaluation)
-    if expected_protocol_sha256 is not None and sha256(canonical_json_bytes(evaluation)).hexdigest() != expected_protocol_sha256:
-        raise ValueError("Metal attribution Evaluation identity differs")
+    document = load_instrumented_profile(
+        payload, kind=METAL_PROFILE_KIND,
+        job_prefix=PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].local_job_prefix, label="Metal",
+        summary=metal_profile_summary, raw_name="timestamp samples",
+        expected_candidate_sha256=expected_candidate_sha256, expected_case_id=expected_case_id,
+        expected_protocol_sha256=expected_protocol_sha256,
+        identity=lambda document: document.get("archive_miss_policy") == "failOnBinaryArchiveMiss",
+        policy=lambda evaluation: (paired_protocol(evaluation) is not None
+                                   and evaluation["paired_timing"]["kind"] in METAL_KINDS))
+    validation_case_ids(document["evaluation_protocol"])
     validate_host(document.get("host"))
-    if document.get("summary") != metal_profile_summary(document.get("raw")):
-        raise ValueError("Metal profile summary differs from raw timestamp samples")
     return document

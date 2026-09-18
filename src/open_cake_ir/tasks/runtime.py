@@ -58,7 +58,7 @@ def _admit_execution_mode(study) -> None:
     reached like an Apple part.
     """
 
-    from .devices import allocation, backend_for_target
+    from .devices import allocation, allocation_mode, backend_for_target
 
     execution = study.document.get("execution")
     if not isinstance(execution, Mapping):
@@ -72,7 +72,7 @@ def _admit_execution_mode(study) -> None:
         raise ValueError(
             f"Study names target {execution.get('target')!r}, which no registered backend "
             "admits; how it reaches its device cannot be checked against its owner")
-    expected = ("local_serialized" if allocation(backend) == "local_broker" else "exclusive")
+    expected = allocation_mode(execution.get("target"))
     if declared != expected:
         raise ValueError(
             f"Study reaches {execution.get('target')!r} as {declared!r}, but {backend} "

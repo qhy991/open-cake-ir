@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import Mock
 
 from open_cake_ir.compiler import Compiler, frontend
-from open_cake_ir.compiler.target import Target
+from open_cake_ir.compiler.target import CodeObject, Target
 from open_cake_ir.evaluation.artifacts import (
     builds_metal_archive, executable_role, required_build_roles)
 
@@ -96,9 +96,12 @@ class MetalArtifactContracts(unittest.TestCase):
         self.assertEqual(executable_role("sm_103a"), "cubin")
         self.assertEqual(executable_role("apple_gpu_family7"), "metal_binary_archive")
         self.assertEqual(executable_role("apple_gpu_family9"), "metal_binary_archive")
-        self.assertEqual(required_build_roles("metal"), {"metal_binary_archive", "metal_build_report", "launch_manifest"})
-        self.assertNotIn("lowered_source", required_build_roles("metal"))
-        self.assertEqual(required_build_roles("triton"), {"compiler_expanded_source", "ptx", "cubin", "launch_manifest"})
+        self.assertEqual(required_build_roles("apple_gpu_family7"), {"metal_binary_archive", "metal_build_report", "launch_manifest"})
+        self.assertNotIn("lowered_source", required_build_roles("apple_gpu_family7"))
+        self.assertEqual(required_build_roles(CodeObject.CUBIN), {"compiler_expanded_source", "ptx", "cubin", "launch_manifest"})
+        # Build roles are keyed by the object a Target declares; a backend name is not one.
+        with self.assertRaisesRegex(ValueError, "no executable role in this Evaluation layer"):
+            required_build_roles("triton")
         with self.assertRaises(ValueError):
             executable_role("apple_gpu_family10")
 
@@ -202,7 +205,7 @@ class MetalArtifactContracts(unittest.TestCase):
         workload, request = abi_fixture(target), request_fixture(target)
         builder = MetalToolchainBuilder(compiler_reference=compiler_reference(ROOT), workload=workload, case_id="odd", output_root=self.directory, host=host)
         candidate = builder.build(request)
-        self.assertEqual(set(candidate.artifact_roles), required_build_roles("metal") | {"lowered_source"})
+        self.assertEqual(set(candidate.artifact_roles), required_build_roles(target) | {"lowered_source"})
         manifest = MetalTensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads["launch_manifest"]))
         report = json.loads(candidate.artifact_payloads["metal_build_report"])
         self.assertEqual(candidate.launch_spec_sha256, manifest.canonical_sha256)

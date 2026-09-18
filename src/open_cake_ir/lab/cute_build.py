@@ -11,45 +11,37 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 from typing import Mapping
 
 from open_cake_ir.compiler.cute_toolchain import (
     CuTeCompilation, compile_cute, validate_cute_kernel, validate_cute_compilation,
 )
-from .faults import CandidateCompileRejected, RunProtocolFault
-from .process import run_supervised, SupervisedProcessTimeout, SupervisedProcessOutputLimit
+from .faults import RunProtocolFault
+from .isolated_build import IsolatedCompiler
+from .process import run_supervised
 
 
-class IsolatedCuTeCompiler:
+class IsolatedCuTeCompiler(IsolatedCompiler):
     """Pinned SDK 4.5.2 under bubblewrap; no coordinator candidate imports or fallback."""
+
+    label = "CuTe"
+    worker_module = "open_cake_ir.lab.cute_build"
 
     def __init__(self, *, python: str, bubblewrap: str, runtime_roots: list[str],
                  cuobjdump: str, cutlass_version: str, timeout_seconds: int = 600):
-        if sys.platform != "linux":
-            raise ValueError("native CuTe build requires Linux bubblewrap filesystem isolation")
-        self.python = Path(os.path.abspath(python))
-        self.bubblewrap = Path(bubblewrap).resolve(strict=True)
         self.cuobjdump = Path(os.path.abspath(cuobjdump))
-        destinations = tuple(Path(os.path.abspath(path)) for path in runtime_roots)
-        self._runtime_mounts = tuple((path.resolve(strict=True), path) for path in destinations)
-        home = Path.home().resolve(strict=True)
-        checkout = Path(__file__).resolve().parents[3]
-        if (not self.python.is_file() or not self.bubblewrap.is_file() or not self.cuobjdump.is_file()
-            or cutlass_version != "4.5.2" or type(timeout_seconds) is not int or timeout_seconds <= 0
-            or not self._runtime_mounts
-            or any(not source.is_dir() or home.is_relative_to(source) or checkout.is_relative_to(source)
-                   or source.is_relative_to('/dev') or destination.is_relative_to('/dev')
-                   for source, destination in self._runtime_mounts)
-            or any(not any(path.is_relative_to(root) for root in self.runtime_roots)
-                   for path in (self.python, self.cuobjdump))):
+        super().__init__(python=python, bubblewrap=bubblewrap, runtime_roots=runtime_roots,
+                         timeout_seconds=timeout_seconds, executables=(self.cuobjdump,))
+        if cutlass_version != "4.5.2":
             raise ValueError("isolated CuTe runtime mount contract differs")
         self.cutlass_version = cutlass_version
-        self.timeout_seconds = timeout_seconds
 
-    @property
-    def runtime_roots(self) -> tuple[Path, ...]:
-        return tuple(destination for _, destination in self._runtime_mounts)
+    def _mount_refused(self, source: Path, destination: Path) -> bool:
+        # The CuTe jail refuses the checkout and /dev as runtime roots at construction;
+        # the Triton jail checks the checkout against the Executor's workspace instead.
+        checkout = Path(__file__).resolve().parents[3]
+        return (checkout.is_relative_to(source)
+                or source.is_relative_to('/dev') or destination.is_relative_to('/dev'))
 
     def check_executor(self, executor, *, author_workspace: str | Path) -> None:
         host = executor.document["host_environment"]
@@ -65,72 +57,50 @@ class IsolatedCuTeCompiler:
     def identity(self) -> dict[str, object]:
         return {"kind": "bubblewrap_cute_kernel_v1", "python": str(self.python),
                 "bubblewrap": str(self.bubblewrap),
-                "bubblewrap_sha256": sha256(self.bubblewrap.read_bytes()).hexdigest(),
-                "runtime_roots": [{"source": str(source), "destination": str(destination)}
-                                  for source, destination in self._runtime_mounts],
+                "bubblewrap_sha256": self._bubblewrap_sha256(),
+                "runtime_roots": self._runtime_mount_identity(),
                 "cuobjdump": str(self.cuobjdump), "cutlass_version": self.cutlass_version,
                 "timeout_seconds": self.timeout_seconds}
 
-    @property
-    def canonical_sha256(self) -> str:
-        return sha256(canonical_json_bytes(self.identity)).hexdigest()
+    def _request(self, source: bytes, requirements: Mapping[str, object]) -> dict[str, object]:
+        return {"source": source.decode(), "requirements": dict(requirements),
+                "cutlass_version": self.cutlass_version, "cuobjdump": str(self.cuobjdump)}
+
+    def _jail_environment(self, requirements: Mapping[str, object]) -> list[tuple[str, str]]:
+        return [("CUDA_VISIBLE_DEVICES", ""), ("CUTE_DSL_ARCH", requirements['target']),
+                ("CUTE_DSL_DISABLE_FILE_CACHING", "1"), ("CUTE_DSL_CACHE_DIR", "/tmp/cute-cache")]
+
+    def _supervise(self, argv, *, cwd, environment, timeout_seconds):
+        return run_supervised(argv, cwd=cwd, environment=environment, timeout_seconds=timeout_seconds)
+
+    def _streams(self, root: Path, result) -> dict[str, bytes]:
+        streams = super()._streams(root, result)
+        guard_path = root / "artifacts" / "cuda_call_guard.json"
+        if guard_path.is_file():
+            streams["toolchain_cuda_call_guard"] = guard_path.read_bytes()
+        return streams
+
+    def _receipt(self, root: Path, source: bytes, requirements: Mapping[str, object],
+                 streams: dict[str, bytes]) -> CuTeCompilation:
+        try:
+            record = json.loads((root / "compilation.json").read_text())
+            if (not isinstance(record, dict) or set(record) != {"target", "entry_point", "artifacts", "threads_per_cta",
+                              "dynamic_shared_bytes", "compiler_version"}
+                or not isinstance(record["artifacts"], dict)):
+                raise ValueError("CuTe compilation receipt fields differ")
+            artifacts = {key: base64.b64decode(value, validate=True)
+                         for key, value in record["artifacts"].items()}
+            compilation = CuTeCompilation(source, record["target"], record["entry_point"], artifacts,
+                record["threads_per_cta"], record["dynamic_shared_bytes"], record["compiler_version"])
+            validate_cute_compilation(compilation, source, requirements)
+            return compilation
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            raise RunProtocolFault("harness_fault", "invalid CuTe compilation receipt: " + str(error),
+                                   artifact_payloads=streams) from error
 
     def compile(self, source: bytes, requirements: Mapping[str, object]) -> CuTeCompilation:
         validate_cute_kernel(source, requirements)
-        package_root = Path(__file__).resolve().parents[2]
-        with tempfile.TemporaryDirectory(prefix="open-cake-isolated-cute-") as directory:
-            root = Path(directory)
-            (root / "request.json").write_text(json.dumps({"source": source.decode(),
-                "requirements": dict(requirements), "cutlass_version": self.cutlass_version,
-                "cuobjdump": str(self.cuobjdump)}))
-            argv = [str(self.bubblewrap), '--die-with-parent', '--new-session', '--unshare-all',
-                    '--clearenv', '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
-                    '--dir', '/home', '--dir', '/home/build']
-            for source_path, destination in self._runtime_mounts:
-                argv += ['--ro-bind', str(source_path), str(destination)]
-            argv += ['--ro-bind', str(package_root), '/compiler-src',
-                     '--bind', str(root), '/build', '--chdir', '/build',
-                     '--setenv', 'HOME', '/home/build', '--setenv', 'PATH', '/usr/bin:/bin',
-                     '--setenv', 'PYTHONPATH', '/compiler-src',
-                     '--setenv', 'PYTHONDONTWRITEBYTECODE', '1',
-                     '--setenv', 'CUDA_VISIBLE_DEVICES', '',
-                     '--setenv', 'CUTE_DSL_ARCH', requirements['target'],
-                     '--setenv', 'CUTE_DSL_DISABLE_FILE_CACHING', '1',
-                     '--setenv', 'CUTE_DSL_CACHE_DIR', '/tmp/cute-cache',
-                     str(self.python), '-s', '-m', 'open_cake_ir.lab.cute_build', '/build/request.json']
-            try:
-                result = run_supervised(argv, cwd=root, environment={}, timeout_seconds=self.timeout_seconds)
-            except (SupervisedProcessTimeout, SupervisedProcessOutputLimit) as error:
-                raise RunProtocolFault("harness_fault", str(error), artifact_payloads={
-                    "toolchain_stdout": error.stdout, "toolchain_stderr": error.stderr}) from error
-            except OSError as error:
-                raise RunProtocolFault("harness_fault", str(error), artifact_payloads={
-                    "toolchain_stderr": f"{type(error).__name__}: {error}".encode()}) from error
-            streams = {"toolchain_stdout": result.stdout, "toolchain_stderr": result.stderr}
-            guard_path = root / "artifacts" / "cuda_call_guard.json"
-            if guard_path.is_file():
-                streams["toolchain_cuda_call_guard"] = guard_path.read_bytes()
-            if result.returncode:
-                message = (result.stderr or result.stdout).decode(errors="replace")[-4096:]
-                if result.returncode == 2:
-                    raise CandidateCompileRejected(message, artifact_payloads=streams)
-                raise RunProtocolFault("harness_fault", "isolated CuTe build unavailable: " + message,
-                                       artifact_payloads=streams)
-            try:
-                record = json.loads((root / "compilation.json").read_text())
-                if (not isinstance(record, dict) or set(record) != {"target", "entry_point", "artifacts", "threads_per_cta",
-                                  "dynamic_shared_bytes", "compiler_version"}
-                    or not isinstance(record["artifacts"], dict)):
-                    raise ValueError("CuTe compilation receipt fields differ")
-                artifacts = {key: base64.b64decode(value, validate=True)
-                             for key, value in record["artifacts"].items()}
-                compilation = CuTeCompilation(source, record["target"], record["entry_point"], artifacts,
-                    record["threads_per_cta"], record["dynamic_shared_bytes"], record["compiler_version"])
-                validate_cute_compilation(compilation, source, requirements)
-                return compilation
-            except (OSError, ValueError, TypeError, KeyError) as error:
-                raise RunProtocolFault("harness_fault", "invalid CuTe compilation receipt: " + str(error),
-                                       artifact_payloads=streams) from error
+        return self._compile_in_jail(source, requirements)
 
 
 class CuTeToolchainBuilder:

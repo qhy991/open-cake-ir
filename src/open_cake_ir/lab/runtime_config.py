@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Mapping
 
 from ._documents import _canonical_json_bytes
+from .toolchains import toolchain_for
 
 
 def _runtime_string(value: object, context: str) -> str:
@@ -43,17 +44,9 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
         or set(value) != {"schema_version", "provider", "toolchain", "broker"}
         or type(value["schema_version"]) is not int or value["schema_version"] != 1):
         raise ValueError("runtime configuration fields differ")
-    if toolchain_kind == "triton":
-        toolchain_fields = {"python", "bubblewrap", "runtime_roots", "build_environment",
-                            "triton_version", "timeout_seconds"}
-    elif toolchain_kind == "cutlass_cute_dsl":
-        toolchain_fields = {"python", "bubblewrap", "runtime_roots", "cuobjdump", "cutlass_version", "timeout_seconds"}
-    elif toolchain_kind == "metal":
-        toolchain_fields = {"output_root"}
-    elif toolchain_kind == "nvcc":
-        toolchain_fields = {"nvcc", "cuobjdump"}
-    else:
-        raise ValueError("runtime toolchain kind is unsupported")
+    # The field set is the toolchain row's; `toolchain_kind` keeps accepting the spelling
+    # the runtime documents under runtime/ and their callers already use.
+    toolchain_fields = set(toolchain_for(toolchain_kind).runtime_fields)
     sections = {}
     for name, expected in (
         ("provider", {"executable", "workspace_root"}),

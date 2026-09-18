@@ -14,7 +14,7 @@ from typing import Mapping, cast
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
 from open_cake_ir.tasks.flash_kmeans.portfolio_runtime import CuptiPortfolioAssay
-from open_cake_ir.evaluation import LoadedCudaCandidate, WorkloadContract, observe_exclusive_b200
+from open_cake_ir.evaluation import LoadedCudaCandidate, WorkloadContract, observe_exclusive_cuda
 from open_cake_ir.tasks.flash_kmeans.portfolio import PortfolioArtifact, PortfolioEvaluationReceipt
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 
@@ -27,10 +27,14 @@ from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 from open_cake_ir.lab.providers import CANDIDATE_SET_ENVELOPE_V1, CodexInvocationBuilder, CodexProviderAdapter, CodexRunProvider, ProviderQualificationReceipt, required_live_provider_qualification_scope
-from open_cake_ir.lab.pairing import comparison_arm, bind_baseline, native_backend, backend_policy
+from open_cake_ir.lab.pairing import comparison_arm, bind_baseline, native_backend
+from open_cake_ir.lab.toolchains import single_environment_toolchain, toolchain_for_arm
+from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.claude import ClaudeInvocationBuilder, advertised_options, ClaudeProviderAdapter, ClaudeRunProvider
 from open_cake_ir.lab.provider_policy import provider_harness
-from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
+# MetalArchiveHost is bound through the Lab toolchain table; it stays named here because
+# the composition tests patch `compose.MetalArchiveHost.from_executor`.
+from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder  # noqa: F401
 from open_cake_ir.lab.runtime import BoundedBrokerEvaluator, CommandBrokerSubmitter, broker_execution_sha256, load_runtime_config
 from open_cake_ir.lab.task_package import materialize_task_package
 from open_cake_ir.lab.bindings import qualification_path, load_baseline_bundle, external_file
@@ -125,7 +129,9 @@ class _LivePortfolioAssay:
         retained: dict[str, bytes] = {}
         loaded: dict[str, LoadedCudaCandidate] = {}
         try:
-            admission = observe_exclusive_b200()
+            # The Portfolio assay times under CUPTI, so it is admitted on the exclusive
+            # cluster lease for the Workload's own target rather than a target named here.
+            admission = observe_exclusive_cuda(self._workload.target)
             if self._observer is not None:
                 self._observer(
                     "gpu_admitted",
@@ -261,13 +267,14 @@ def execute_matched_from_config(
     arms = _object(resolved["arm_environments"], "arm_environments")
     comparison = comparison_arm(arms)
     policy = native_backend(comparison)
-    if comparison is None and arms["open_cake"]["lowering_route"]["backend"] not in {"metal", "triton"}:
-        raise ValueError("single-environment live composition requires a supported Metal or Triton route")
-    metal = comparison is None and arms["open_cake"]["lowering_route"]["backend"] == "metal"
-    tensor_policy = (backend_policy(arms["open_cake"]["lowering_route"]["backend"])
-                     if comparison is None and not metal else policy)
-    config = load_runtime_config(runtime_config_path,
-                                 toolchain_kind="metal" if metal else tensor_policy.backend if tensor_policy is not None else "nvcc")
+    # One toolchain row: the comparison arm's, or the single arm's own route. The row
+    # says which runtime fields to parse, which native policy applies and how the
+    # identity-bearing toolchain is bound; a route with no row is refused by name.
+    row = (single_environment_toolchain(arms["open_cake"]["lowering_route"]["backend"])
+           if comparison is None else toolchain_for_arm(comparison))
+    metal = row.backend is LoweringBackend.METAL
+    tensor_policy = row.native
+    config = load_runtime_config(runtime_config_path, toolchain_kind=row.runtime_kind)
     provider_config, toolchain_config, broker_config = (config[name] for name in ("provider", "toolchain", "broker"))
     open_arm = _object(arms["open_cake"], "arm_environments.open_cake")
     direct_arm = _object(arms[comparison], f"arm_environments.{comparison}") if comparison is not None else {}
@@ -295,13 +302,14 @@ def execute_matched_from_config(
         protocol = _object(lock.document["evaluation_protocol"], "evaluation_protocol")
         toolchain = MetalToolchainBuilder(workload=workload_contract, case_id=str(protocol["case_id"]),
             output_root=Path(toolchain_config["output_root"]),
-            host=MetalArchiveHost.from_executor(executor), project_root=root,
-            compiler_reference=lock.document["compiler_revision"])
+            host=row.bind(toolchain_config, executor, author_workspace=provider_config["workspace_root"]),
+            project_root=root, compiler_reference=lock.document["compiler_revision"])
+    elif row.bind_toolchain is not None:
+        toolchain = row.bind(toolchain_config, executor, author_workspace=provider_config["workspace_root"])
     else:
-        toolchain = (tensor_policy.isolated_compiler(toolchain_config) if tensor_policy is not None else
-                     NvccToolchainBuilder(nvcc=toolchain_config["nvcc"], cuobjdump=toolchain_config["cuobjdump"]))
-    if tensor_policy is not None:
-        toolchain.check_executor(executor, author_workspace=provider_config["workspace_root"])
+        # D12: the direct_cuda arm binds its own nvcc builder under tasks/flash_kmeans;
+        # the Lab table names the row and leaves this binding to the layer that owns it.
+        toolchain = NvccToolchainBuilder(nvcc=toolchain_config["nvcc"], cuobjdump=toolchain_config["cuobjdump"])
     toolchain_authority = open_arm if comparison is None else direct_arm
     if toolchain.canonical_sha256 != toolchain_authority["toolchain_sha256"] or (
         policy is not None and open_arm["toolchain_sha256"] != direct_arm["toolchain_sha256"]):

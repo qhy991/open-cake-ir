@@ -29,10 +29,24 @@ ROOT = Path(__file__).resolve().parents[1]
 # import the project must still produce a report rather than a traceback.
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-# A host declaring no `kind` is the explicitly named pre-`kind` CUDA form, not a
-# fall-through; a kind this tool cannot examine must say so rather than be assumed CUDA.
-HOST_KINDS = {"metal": "metal", "cuda": None}
+# The doctor's public kinds name the code object whose platform row declares the `kind`
+# a host capture must carry; `amd` is the public name for the HSACO/HIP host. The cubin
+# row's host kind is None -- the explicitly named pre-`kind` CUDA form -- not a
+# fall-through, and it is read from the row rather than restated here.
+DOCTOR_KINDS = {"metal": "metal_binary_archive", "cuda": "cubin", "amd": "hsaco"}
 AMD_TOKENS = ("rocm", "hip", "gfx", "amd")
+
+
+def expected_host_kind(kind: str) -> tuple[object, str | None]:
+    """The host kind the platform row declares for this doctor kind, or why it is unreadable."""
+    try:
+        from open_cake_ir.evaluation.platforms import platform_for
+    except ImportError as error:
+        return None, f"the platform rows could not be imported: {error}"
+    try:
+        return platform_for(DOCTOR_KINDS[kind]).host_kind, None
+    except ValueError as error:
+        return None, str(error)
 
 
 @dataclass
@@ -187,10 +201,30 @@ def amd_checks() -> list[Check]:
             for name, location, found in observed]
 
 
+def metal_checks(target: str | None) -> list[Check]:
+    checks = check_metal_toolchain()
+    checks += check_metal_device(target) if target else []
+    checks.append(check_optional("mlx", "check_correctness.py --host mlx and its live tests",
+                                 "pip install -e '.[metal-host]'"))
+    return checks
+
+
+def cuda_checks(target: str | None) -> list[Check]:
+    checks = check_cuda_toolchain()
+    # torch is declared by no extra; the CUDA Executor closure pins the version that counts.
+    checks.append(check_optional("torch", "tests/native_cuda/test_qualification.py",
+                                 "install the torch version the current CUDA Executor pins; without it "
+                                 "those tests error rather than skip"))
+    return checks
+
+
+# What each doctor kind probes on this host beyond the committed capture.
+TOOLCHAIN_CHECKS = {"metal": metal_checks, "cuda": cuda_checks,
+                    "amd": lambda target: amd_checks()}
+
+
 def run(kind: str, target: str | None) -> list[Check]:
     checks = [Check("platform", "ok", f"{platform.system()} {platform.machine()}", "any")]
-    if kind == "amd":
-        return checks + amd_checks()
     if target is not None:
         released = current_executor(target)
         if released is None:
@@ -200,22 +234,17 @@ def run(kind: str, target: str | None) -> list[Check]:
         else:
             executor_id, host = released
             checks.append(Check("host capture", "ok", executor_id, "committed"))
-            if host.get("kind") != HOST_KINDS[kind]:
+            expected, unreadable = expected_host_kind(kind)
+            if unreadable is not None:
+                checks.append(Check("host capture kind", "unchecked", unreadable,
+                                    f"the host kind the {DOCTOR_KINDS[kind]} platform row declares",
+                                    "pip install -e . so the doctor can read the platform rows"))
+            elif host.get("kind") != expected:
                 checks.append(Check("host capture kind", "failed", str(host.get("kind")),
-                                    str(HOST_KINDS[kind]), f"the {target} host capture is not a {kind} host"))
+                                    str(expected), f"the {target} host capture is not a {kind} host"))
             else:
                 checks += check_interpreter(host, executor_id) + check_packages(host)
-    if kind == "metal":
-        checks += check_metal_toolchain()
-        checks += check_metal_device(target) if target else []
-        checks.append(check_optional("mlx", "check_correctness.py --host mlx and its live tests",
-                                     "pip install -e '.[metal-host]'"))
-    else:
-        checks += check_cuda_toolchain()
-        # torch is declared by no extra; the CUDA Executor closure pins the version that counts.
-        checks.append(check_optional("torch", "tests/native_cuda/test_qualification.py",
-                                     "install the torch version the current CUDA Executor pins; without it "
-                                     "those tests error rather than skip"))
+    checks += TOOLCHAIN_CHECKS[kind](target)
     checks.append(check_optional("numpy", "tests/contracts/test_mma_k_ranges.py", "pip install -e '.[test]'"))
     return checks
 

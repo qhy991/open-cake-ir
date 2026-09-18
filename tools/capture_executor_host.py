@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import csv
+from dataclasses import dataclass
 import importlib
 import importlib.metadata
 import json
@@ -17,7 +18,10 @@ import sys
 import tempfile
 from hashlib import sha256
 from pathlib import Path
+from typing import Callable
 
+from open_cake_ir.compiler.target import Target
+from open_cake_ir.evaluation.platforms import platform_for
 from open_cake_ir.lab.executor import (
     ExecutorRevision, HIP_PACKAGES, HIP_BUILD_TOOLS, HIP_DEVICE_MONITORS,
     HIP_PROFILERS, HIP_RUNTIME_LIBRARIES,
@@ -197,11 +201,9 @@ def _capture_build_environment(entries: list[list[str]]) -> dict[str, str]:
     return admitted
 
 
-def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
-    if arguments.host_kind == "hip" and set(arguments.package) != HIP_PACKAGES:
-        raise ValueError("Executor HIP package set differs")
+def _capture_python_and_packages(arguments: argparse.Namespace) -> dict[str, object]:
     python = Path(sys.executable).absolute()
-    common = {
+    return {
         "python": {
             "invocation_path": str(python),
             "version": sys.version.split()[0],
@@ -209,54 +211,63 @@ def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
         },
         "packages": {name: importlib.metadata.version(name) for name in sorted(set(arguments.package))},
     }
-    if arguments.host_kind == "hip":
-        torch = importlib.import_module("torch")
-        version = getattr(torch, "version", None)
-        hip = getattr(version, "hip", None)
-        if not isinstance(hip, str) or not hip or getattr(version, "cuda", None) is not None:
-            raise ValueError("Executor HIP runtime differs")
-        return {
-            **common,
-            "kind": "hip",
-            "platform": {
-                "system": platform.system(), "machine": platform.machine(),
-                "kernel_release": platform.release(),
-            },
-            # This is the required topology. Exact device observation is owned by
-            # admit_exact_hip and requires the Compiler's lowering requirements.
-            # `build_environment` is what this host's toolchain needs inside the
-            # isolated build jail, which runs --clearenv. On the Hygon DTK host that is
-            # LD_LIBRARY_PATH, without which libgalaxyhip.so.5 is mounted and unfindable
-            # because ldconfig does not know /opt/dtk, and ROCM_PATH, without which
-            # clang-18 reports "cannot find ROCm device library". Both live only in
-            # /opt/dtk/env.sh, which the jail correctly discards. A CUDA host declares
-            # none and keeps the empty environment it has always had.
-            "runtime": {"backend": "hip", "torch_hip_version": hip, "visible_device_count": 1,
-                        "build_environment": _capture_build_environment(
-                            arguments.hip_build_environment)},
-            "tools": {
-                "device_monitor": _capture_hip_tool(
-                    arguments.device_monitor[0], Path(arguments.device_monitor[1])
-                ),
-                "build_tools": [
-                    _capture_hip_tool(kind, Path(path))
-                    for kind, path in arguments.hip_build_tool
-                ],
-                "profilers": [
-                    _capture_hip_tool(kind, Path(path))
-                    for kind, path in arguments.hip_profiler
-                ],
-            },
-            "runtime_libraries": [
-                _capture_hip_library(soname, Path(path))
-                for soname, path in arguments.hip_runtime_library
-            ],
-        }
+
+
+def _capture_host(arguments: argparse.Namespace) -> dict[str, object]:
+    """The pre-kind CUDA form: no `kind` field, which D10 keeps until the B300 host is recaptured."""
     return {
-        **common,
+        **_capture_python_and_packages(arguments),
         "cupti_python": _capture_cupti(arguments.cupti_distribution),
         "flashinfer_helper": _capture_flashinfer(arguments.flashinfer_distribution),
         "nsight_compute": _capture_profiler(arguments.ncu),
+    }
+
+
+def _capture_hip_host(arguments: argparse.Namespace) -> dict[str, object]:
+    if set(arguments.package) != HIP_PACKAGES:
+        raise ValueError("Executor HIP package set differs")
+    common = _capture_python_and_packages(arguments)
+    torch = importlib.import_module("torch")
+    version = getattr(torch, "version", None)
+    hip = getattr(version, "hip", None)
+    if not isinstance(hip, str) or not hip or getattr(version, "cuda", None) is not None:
+        raise ValueError("Executor HIP runtime differs")
+    return {
+        **common,
+        "kind": "hip",
+        "platform": {
+            "system": platform.system(), "machine": platform.machine(),
+            "kernel_release": platform.release(),
+        },
+        # This is the required topology. Exact device observation is owned by
+        # admit_exact_hip and requires the Compiler's lowering requirements.
+        # `build_environment` is what this host's toolchain needs inside the
+        # isolated build jail, which runs --clearenv. On the Hygon DTK host that is
+        # LD_LIBRARY_PATH, without which libgalaxyhip.so.5 is mounted and unfindable
+        # because ldconfig does not know /opt/dtk, and ROCM_PATH, without which
+        # clang-18 reports "cannot find ROCm device library". Both live only in
+        # /opt/dtk/env.sh, which the jail correctly discards. A CUDA host declares
+        # none and keeps the empty environment it has always had.
+        "runtime": {"backend": "hip", "torch_hip_version": hip, "visible_device_count": 1,
+                    "build_environment": _capture_build_environment(
+                        arguments.hip_build_environment)},
+        "tools": {
+            "device_monitor": _capture_hip_tool(
+                arguments.device_monitor[0], Path(arguments.device_monitor[1])
+            ),
+            "build_tools": [
+                _capture_hip_tool(kind, Path(path))
+                for kind, path in arguments.hip_build_tool
+            ],
+            "profilers": [
+                _capture_hip_tool(kind, Path(path))
+                for kind, path in arguments.hip_profiler
+            ],
+        },
+        "runtime_libraries": [
+            _capture_hip_library(soname, Path(path))
+            for soname, path in arguments.hip_runtime_library
+        ],
     }
 
 
@@ -291,6 +302,71 @@ def _capture_metal_host(arguments: argparse.Namespace) -> dict[str, object]:
     return host
 
 
+def _cuda_arguments(arguments: argparse.Namespace) -> tuple:
+    return (arguments.cupti_distribution, arguments.flashinfer_distribution, arguments.ncu)
+
+
+def _hip_arguments(arguments: argparse.Namespace) -> tuple:
+    return (arguments.device_monitor, arguments.hip_build_tool, arguments.hip_runtime_library)
+
+
+def _metal_arguments(arguments: argparse.Namespace) -> tuple:
+    return (arguments.swiftc, arguments.archive_executable, arguments.observer_executable)
+
+
+def _check_cuda_arguments(arguments: argparse.Namespace) -> None:
+    if not arguments.package or not all(_cuda_arguments(arguments)) or any(_hip_arguments(arguments)) \
+            or arguments.hip_profiler \
+            or any(value is not None for value in _metal_arguments(arguments)):
+        raise ValueError(
+            "CUDA capture requires packages and its CUPTI, FlashInfer and NCU inputs only")
+
+
+def _check_hip_arguments(arguments: argparse.Namespace) -> None:
+    if not all(_hip_arguments(arguments)) or any(_cuda_arguments(arguments)) \
+            or any(value is not None for value in _metal_arguments(arguments)):
+        raise ValueError("HIP capture requires its monitor, build tools and libraries only")
+
+
+def _check_metal_arguments(arguments: argparse.Namespace) -> None:
+    # _capture_metal_host owns the refusal of inherited CUDA fields and names them;
+    # only the HIP inputs it has never heard of are refused here.
+    if any(_hip_arguments(arguments)) or arguments.hip_profiler:
+        raise ValueError("Metal capture must not receive HIP host fields")
+
+
+@dataclass(frozen=True)
+class HostCapture:
+    """One capture chain per host kind the platform rows declare."""
+
+    # The public `--kind` spelling; `amd` is an alias for the HIP/DCU host.
+    public_name: str
+    check_arguments: Callable[[argparse.Namespace], None]
+    capture: Callable[[argparse.Namespace], dict[str, object]]
+    # Whether the attribution profiler is admitted as its own step after the host.
+    # Metal's observer is admitted inside admit_host_environment; HIP's profilers are
+    # admitted with its host and take attribution inside evaluation.
+    admits_profiler_separately: bool
+    profiler_admitted: Callable[[argparse.Namespace], bool]
+
+
+# Keyed by the `kind` a capture declares, which the Target's platform row selects
+# (`evaluation.platforms.platform_for(target).host_kind`). The cubin row's host kind is
+# None today: the pre-kind CUDA form is what runtime/hosts/sm_103a.json carries, and
+# D10 keeps it until the B300 host is recaptured. There is no default row.
+_CAPTURES = {
+    # The capture callables are reached by name at call time so a test can stand a
+    # fixture capture in for one of them.
+    None: HostCapture("cuda", _check_cuda_arguments, lambda arguments: _capture_host(arguments),
+                      True, lambda arguments: True),
+    "hip": HostCapture("hip", _check_hip_arguments, lambda arguments: _capture_hip_host(arguments),
+                       False, lambda arguments: bool(arguments.hip_profiler)),
+    "metal": HostCapture("metal", _check_metal_arguments,
+                         lambda arguments: _capture_metal_host(arguments),
+                         False, lambda arguments: True),
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     # Not required at the parser: a Metal host's package map is legitimately empty, and
@@ -298,8 +374,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--package", action="append", default=[],
                         help="installed distribution to bind; repeat for each runtime dependency")
     parser.add_argument("--kind", "--runtime-kind", dest="host_kind",
-                        choices=("cuda", "hip", "amd", "metal"), default="cuda",
-                        help="host runtime kind; amd is the public name for the HIP/DCU host")
+                        choices=("cuda", "hip", "amd", "metal"), default=None,
+                        help="host runtime kind, as a cross-check only: the Target's declared "
+                             "code object selects the capture; amd is the public name for the "
+                             "HIP/DCU host")
     parser.add_argument("--cupti-distribution")
     parser.add_argument("--flashinfer-distribution")
     parser.add_argument("--ncu", type=Path)
@@ -331,35 +409,31 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--inspection-directory", type=Path,
                         help="absolute external directory keeping the Metal inspection request and result")
     arguments = parser.parse_args(argv)
-    if arguments.host_kind == "amd":
-        arguments.host_kind = "hip"
-    cuda_arguments = (arguments.cupti_distribution, arguments.flashinfer_distribution, arguments.ncu)
-    hip_arguments = (arguments.device_monitor, arguments.hip_build_tool,
-                     arguments.hip_runtime_library)
-    metal_arguments = (arguments.swiftc, arguments.archive_executable,
-                       arguments.observer_executable)
-    if arguments.host_kind == "cuda":
-        if not arguments.package or not all(cuda_arguments) or any(hip_arguments) \
-                or arguments.hip_profiler \
-                or any(value is not None for value in metal_arguments):
-            raise ValueError(
-                "CUDA capture requires packages and its CUPTI, FlashInfer and NCU inputs only")
-    elif arguments.host_kind == "metal":
-        # _capture_metal_host owns the refusal of inherited CUDA fields and names them;
-        # only the HIP inputs it has never heard of are refused here.
-        if any(hip_arguments) or arguments.hip_profiler:
-            raise ValueError("Metal capture must not receive HIP host fields")
-    elif not all(hip_arguments) or any(cuda_arguments) \
-            or any(value is not None for value in metal_arguments):
-        raise ValueError("HIP capture requires its monitor, build tools and libraries only")
     # The capture belongs to the checkout: it is committed, and the commit plus this
     # document is the Executor identity (ADR 0065).
     project_root = arguments.project_root.resolve(strict=True)
-    if not (project_root / "compiler/targets" / f"{arguments.target}.json").is_file():
+    declared = project_root / "compiler/targets" / f"{arguments.target}.json"
+    if not declared.is_file():
         raise ValueError(
             f"{arguments.target!r} is not a Target this checkout declares; "
             "capture a host only for a declared exact target"
         )
+    # The Target's declared code object selects the capture chain; `--kind` may only
+    # agree with it.
+    platform_row = platform_for(Target.load(declared))
+    row = _CAPTURES.get(platform_row.host_kind)
+    if row is None:
+        raise ValueError(
+            f"no host-capture chain exists for the {platform_row.code_object.value!r} platform; "
+            "add one beside the others in this tool"
+        )
+    requested = "hip" if arguments.host_kind == "amd" else arguments.host_kind
+    if requested is not None and requested != row.public_name:
+        raise ValueError(
+            f"--kind {arguments.host_kind!r} differs from the {platform_row.code_object.value!r} "
+            f"platform {arguments.target!r} declares, whose host kind is {row.public_name!r}"
+        )
+    row.check_arguments(arguments)
     output = project_root / "runtime/hosts" / f"{arguments.target}.json"
     if output.exists() and not arguments.replace:
         raise FileExistsError(
@@ -367,22 +441,16 @@ def main(argv: list[str] | None = None) -> int:
         )
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    host = (_capture_metal_host(arguments) if arguments.host_kind == "metal"
-            else _capture_host(arguments))
+    host = row.capture(arguments)
     ExecutorRevision._validate_host_document(host)
     admit_host_environment(host)
-    if arguments.host_kind == "cuda":
+    if row.admits_profiler_separately:
         admit_profiler_environment(host)
     document = {"schema_version": 1, "target": arguments.target, "host_environment": host}
     payload = json.dumps(document, indent=2, sort_keys=True, allow_nan=False, ensure_ascii=False) + "\n"
     output.write_text(payload, encoding="utf-8")
-    # Metal's observer is admitted inside admit_host_environment, not as a separate
-    # profiler step, so its capture reports the same admitted observation the CUDA
-    # NCU step does.
-    profiler_admitted = (arguments.host_kind in ("cuda", "metal")
-                         or bool(arguments.hip_profiler))
     print(json.dumps({"output": str(output), "target": arguments.target,
-                      "host_admitted": True, "profiler_admitted": profiler_admitted}))
+                      "host_admitted": True, "profiler_admitted": row.profiler_admitted(arguments)}))
     return 0
 
 

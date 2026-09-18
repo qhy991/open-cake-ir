@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.evaluation import CudaDeviceAdmission, LaunchableCandidate, LoadedCudaCandidate, launch_candidate_once, launch_cubin_once
+from open_cake_ir.evaluation import CudaDeviceAdmission, LaunchableCandidate, LoadedCudaCandidate
 from open_cake_ir.evaluation.cuda_driver import CudaLifecycleError
 from open_cake_ir.tasks.flash_kmeans.cuda import CudaTensorContract
 from open_cake_ir.tasks.flash_kmeans.cuda_manifest import parse_cuda_launch_manifest
@@ -211,50 +211,32 @@ class CudaDriverContractTests(unittest.TestCase):
         self.assertIn("cuFuncSetAttribute", [call[0] for call in driver.calls])
 
     def test_host_owns_one_exact_launch_and_unloads_after_sync(self) -> None:
-        manifest = parse_cuda_launch_manifest(
-            (ROOT / "contracts/scaffolds/direct-cuda-headline-v1.cu").read_bytes()
-        )
+        # The one-shot launcher is gone; the loaded module is the only launch path, and
+        # it still owns exactly one launch, synchronizes, then unloads last.
         driver = FakeDriver()
         synchronized: list[bool] = []
+        loaded = self._load(driver)
 
-        receipt = launch_cubin_once(
-            CUBIN,
-            sha256(CUBIN).hexdigest(),
-            manifest,
+        loaded.launch(
             tensors(),
             tensor_contract=CudaTensorContract(32, 65_536, 1_024, 128),
             stream=99,
-            synchronize=lambda: synchronized.append(True),
-            driver=driver,
         )
+        loaded.close(synchronize=lambda: synchronized.append(True))
 
         names = [call[0] for call in driver.calls]
         self.assertEqual(names.count("cuLaunchKernel"), 1)
         self.assertEqual(names[-1], "cuModuleUnload")
         self.assertEqual(synchronized, [True])
-        self.assertEqual(receipt.kernel_calls, 1)
-        self.assertTrue(receipt.same_cubin)
-        self.assertTrue(receipt.module_unloaded)
-        self.assertEqual(receipt.fallback_calls, 0)
+        self.assertEqual(loaded.launch_calls, 1)
+        self.assertTrue(loaded.closed)
 
     def test_resource_failure_unloads_without_launching(self) -> None:
-        manifest = parse_cuda_launch_manifest(
-            (ROOT / "contracts/scaffolds/direct-cuda-headline-v1.cu").read_bytes()
-        )
         driver = FakeDriver()
         driver.attributes[6] = 90
 
         with self.assertRaisesRegex(ValueError, "binary version"):
-            launch_cubin_once(
-                CUBIN,
-                sha256(CUBIN).hexdigest(),
-                manifest,
-                tensors(),
-                tensor_contract=CudaTensorContract(32, 65_536, 1_024, 128),
-                stream=99,
-                synchronize=lambda: None,
-                driver=driver,
-            )
+            self._load(driver)
 
         names = [call[0] for call in driver.calls]
         self.assertNotIn("cuLaunchKernel", names)
@@ -283,18 +265,17 @@ class CudaDriverContractTests(unittest.TestCase):
             launch_spec_sha256=manifest.canonical_sha256,
         )
 
-        receipt = launch_candidate_once(
-            candidate,
-            CUBIN,
-            manifest,
+        admission = CudaDeviceAdmission(
+            "NVIDIA B200", (10, 0), "GPU-fixture", "gpuq-000000000001", "exclusive"
+        )
+        loaded = LoadedCudaCandidate.load(candidate, CUBIN, manifest, admission, driver=driver)
+        loaded.launch(
             tensors(tokens=512),
             tensor_contract=CudaTensorContract(32, 512, 1_024, 128),
             stream=99,
-            synchronize=lambda: None,
-            driver=driver,
         )
+        loaded.close(synchronize=lambda: None)
 
-        self.assertEqual(receipt.tensor_contract["tokens"]["shape"], [32, 512, 128])
         self.assertEqual(
             [call[0] for call in driver.calls].count("cuLaunchKernel"),
             1,
@@ -309,16 +290,7 @@ class CudaDriverContractTests(unittest.TestCase):
         )
         calls_before = len(driver.calls)
         with self.assertRaisesRegex(ValueError, "authority"):
-            launch_candidate_once(
-                wrong_entry,
-                CUBIN,
-                manifest,
-                tensors(tokens=512),
-                tensor_contract=CudaTensorContract(32, 512, 1_024, 128),
-                stream=99,
-                synchronize=lambda: None,
-                driver=driver,
-            )
+            LoadedCudaCandidate.load(wrong_entry, CUBIN, manifest, admission, driver=driver)
         self.assertEqual(len(driver.calls), calls_before)
 
 
@@ -401,43 +373,19 @@ class CudaDriverContractTests(unittest.TestCase):
         driver.context = 41
         loaded.close(synchronize=lambda: None)
 
-    def test_one_shot_sync_and_unload_failures_preserve_both(self) -> None:
+    def test_sync_context_change_never_unloads_in_the_wrong_context(self) -> None:
+        # A context swap during synchronize leaves the handle owned: no module belongs
+        # to the replacement context, so close re-checks after synchronizing.
         driver = FakeDriver()
-        manifest = parse_cuda_launch_manifest(
-            (ROOT / "contracts/scaffolds/direct-cuda-headline-v1.cu").read_bytes()
-        )
-        primary, teardown = RuntimeError("sync failed"), RuntimeError("unload failed")
-        driver.unload_error = teardown
-
-        def synchronize():
-            raise primary
-
-        with self.assertRaises(CudaLifecycleError) as caught:
-            launch_cubin_once(
-                CUBIN, sha256(CUBIN).hexdigest(), manifest, tensors(),
-                tensor_contract=CudaTensorContract(32, 65_536, 1_024, 128),
-                stream=0, synchronize=synchronize, driver=driver,
-            )
-        self.assertIs(caught.exception.primary, primary)
-        self.assertIs(caught.exception.teardown, teardown)
-        self.assertEqual([call[0] for call in driver.calls].count("cuModuleUnload"), 1)
-
-    def test_one_shot_sync_context_change_never_unloads_in_the_wrong_context(self) -> None:
-        driver = FakeDriver()
-        manifest = parse_cuda_launch_manifest(
-            (ROOT / "contracts/scaffolds/direct-cuda-headline-v1.cu").read_bytes()
-        )
+        loaded = self._load(driver)
 
         def synchronize():
             driver.context = 99
 
         with self.assertRaisesRegex(ValueError, "CUDA context changed"):
-            launch_cubin_once(
-                CUBIN, sha256(CUBIN).hexdigest(), manifest, tensors(),
-                tensor_contract=CudaTensorContract(32, 65_536, 1_024, 128),
-                stream=0, synchronize=synchronize, driver=driver,
-            )
+            loaded.close(synchronize=synchronize)
         self.assertNotIn("cuModuleUnload", [call[0] for call in driver.calls])
+        self.assertFalse(loaded.closed)
 
 
 if __name__ == "__main__":

@@ -290,42 +290,17 @@ ASSEMBLY = b"""
 
 
 class HipArtifactContractTests(unittest.TestCase):
-    def payloads(self) -> dict[str, bytes]:
-        return {
-            **{role: b"intermediate" for role in hip.ARTIFACT_ROLES},
-            "amdgcn": ASSEMBLY, "hsaco": b"\x7fELFfixture",
-        }
-
-    def test_all_six_roles_preserve_binary_bytes_and_resource_domain(self) -> None:
-        payloads = self.payloads()
-        compiled = SimpleNamespace(asm={**payloads, "ttir": "intermediate"})
-        self.assertEqual(hip.extract_artifacts(compiled), payloads)
-        records = hip.artifact_records(payloads)
-        self.assertEqual(set(records), set(hip.ARTIFACT_ROLES))
-        resources = hip.amdgcn_resource_record(payloads["amdgcn"])
+    # extract_artifacts/artifact_records are gone with the module-level HIP loader; the
+    # hsaco ELF check now lives in loaders.check_launch_authority, exercised through
+    # LoadedHipModuleCandidate.load in test_hip_driver. What stays here is the AMDGCN
+    # resource domain this module still reads.
+    def test_the_resource_record_reads_the_amdgcn_domain(self) -> None:
+        resources = hip.amdgcn_resource_record(ASSEMBLY)
         self.assertEqual(resources["vgpr_count"], 117)
         self.assertEqual(resources["lds_bytes_per_workgroup"], 256)
         self.assertEqual(resources["scratch_bytes_per_workitem"], 64)
         self.assertEqual(resources["wave_size"], 32)
         self.assertIs(resources["occupancy_derived"], False)
-
-    def test_missing_mixed_empty_or_wrong_binary_roles_are_refused(self) -> None:
-        for label, mutate in (
-            ("missing", lambda p: p.pop("amdgcn")),
-            ("cuda", lambda p: p.__setitem__("cubin", b"cuda")),
-            ("empty", lambda p: p.__setitem__("ttir", b"")),
-            ("text_binary", lambda p: p.__setitem__("hsaco", "\x7fELF")),
-            ("invalid_binary", lambda p: p.__setitem__("hsaco", b"not ELF")),
-            ("wrong_type", lambda p: p.__setitem__("source", None)),
-        ):
-            payloads = self.payloads()
-            mutate(payloads)
-            with self.subTest(label=label), self.assertRaises((ValueError, RuntimeError)):
-                hip.extract_artifacts(SimpleNamespace(asm=payloads))
-        with self.assertRaises(ValueError):
-            hip.extract_artifacts(SimpleNamespace(asm=None))
-        with self.assertRaises(ValueError):
-            hip.artifact_records({"hsaco": b"\x7fELFfixture"})
 
     def test_the_declared_wave_mode_is_read_not_assumed(self) -> None:
         """wavefront_size32 selects a mode; it does not gate the reader.

@@ -121,11 +121,10 @@ _PAIRED_KINDS = {
     "metal": PAIRED_METAL_BATCHED_KIND,
     "hip_dispatch": PAIRED_HIP_KIND,
 }
-_ROUTE_CALLS = {
-    "cupti": ROUTE_CALLS_PER_COHORT["cupti"],
-    "metal": _ROUTE_CALLS_PER_COHORT,
-    "hip_dispatch": ROUTE_CALLS_PER_COHORT["hip_dispatch"],
-}
+# Every source whose row declares its count, read from the rows; Metal's is contributed
+# here because this module owns it (above), not because the row was consulted and found
+# empty.
+_ROUTE_CALLS = {**ROUTE_CALLS_PER_COHORT, "metal": _ROUTE_CALLS_PER_COHORT}
 
 
 def _allocation_mode(target: object) -> str:

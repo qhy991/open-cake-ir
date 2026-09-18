@@ -206,11 +206,19 @@ class TaskLaunchTests(unittest.TestCase):
         executor = SimpleNamespace(document={"host_environment": {
             "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
             "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]}}})
+        # The job kind is the DCU target's platform row, not an inference from the route:
+        # a Triton route on a local CUDA device (D6) is a `cuda` job, not a `hip` one.
+        local_kind = launch_task._local_kind_of('triton-dcu')
+        self.assertEqual(local_kind, 'hip')
         with patch.object(launch_task, '_triton_runtime_roots', return_value=['/unit-test', '/usr']), \
              patch.object(launch_task.shutil, 'which', return_value=None):
             runtime = launch_task._runtime_config(
                 self.workspace, executor, Path('/unit-test/provider'), 'triton',
-                allocation='local_broker')
+                allocation='local_broker', local_kind=local_kind)
+            with self.assertRaisesRegex(ValueError, 'local job kind'):
+                launch_task._runtime_config(
+                    self.workspace, executor, Path('/unit-test/provider'), 'triton',
+                    allocation='local_broker')
         command = runtime['broker']['command']
         self.assertIn('open_cake_ir.evaluation.local_broker', command)
         self.assertNotIn('gpu-run', ' '.join(command))
@@ -222,7 +230,8 @@ class TaskLaunchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'gpu_run allocation'):
             launch_task._runtime_config(
                 self.workspace, executor, Path('/unit-test/provider'), 'triton',
-                allocation='local_broker', gpu_run=Path('/unit-test/gpu-run'))
+                allocation='local_broker', local_kind=local_kind,
+                gpu_run=Path('/unit-test/gpu-run'))
 
     def test_the_jail_is_found_on_this_host_and_refused_by_name_when_absent(self):
         """`/usr/bin/bwrap` was a constant; it is a fact about a host, not about bwrap.

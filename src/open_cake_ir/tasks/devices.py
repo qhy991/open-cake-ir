@@ -152,6 +152,23 @@ def allocation(backend: str) -> str:
     return value
 
 
+# The broker job mode each allocation admits a run under: the cluster allocator issues an
+# exclusive lease, the local broker serializes one machine's device. Stated as a table so
+# the Study check and the worker read the same fact, and a third allocation is a row here
+# rather than an `else` in either.
+_JOB_MODES = {"gpu_run": "exclusive", "local_broker": "local_serialized"}
+
+
+def allocation_mode(target: object) -> str:
+    """The job mode a run on this target's backend is admitted under, as the row declares."""
+    backend = backend_for_target(target)
+    if backend is None:
+        raise ValueError(
+            f"target {target!r} is admitted by no registered backend; how it reaches its "
+            "device cannot be read from its owner")
+    return _JOB_MODES[allocation(backend)]
+
+
 def admit_dtype(backend: str, dtype: str) -> None:
     """Refuse a Workload dtype the backend's lowering route cannot name.
 

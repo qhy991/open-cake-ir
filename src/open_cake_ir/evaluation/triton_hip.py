@@ -3,20 +3,11 @@
 from __future__ import annotations
 
 import importlib
-import importlib.util
 import re
-import subprocess
-import tempfile
-from types import MappingProxyType
-from dataclasses import dataclass, field
-from hashlib import sha256
-from pathlib import Path
+from dataclasses import dataclass
 from typing import Mapping, cast
 
-from open_cake_ir.serialization import canonical_json_bytes
 
-
-ARTIFACT_ROLES = ("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco")
 _AMDHSA_KERNEL = re.compile(r"^\s*\.amdhsa_kernel\s+(\S+)\s*$", re.MULTILINE)
 _AMDHSA_FIELD = re.compile(
     r"^\s*\.amdhsa_(?P<name>[a-z0-9_]+)\s+(?P<value>[0-9]+)\s*$",
@@ -28,38 +19,6 @@ def require_object(value: object, context: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping):
         raise ValueError(f"{context} must be an object")
     return cast(Mapping[str, object], value)
-
-
-def artifact_bytes(value: object, role: str) -> bytes:
-    if role not in ARTIFACT_ROLES:
-        raise ValueError(f"Triton artifact role {role!r} differs")
-    if isinstance(value, bytes) and value:
-        return value
-    if role != "hsaco" and isinstance(value, str) and value:
-        return value.encode()
-    raise ValueError(f"Triton artifact {role!r} has unsupported bytes")
-
-
-def git_state(project_root: Path) -> dict[str, object]:
-    revision = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=project_root,
-        check=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    ).stdout.strip()
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=project_root,
-        check=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    ).stdout
-    return {"revision": revision, "tree_clean": not bool(status)}
 
 
 _DEVICE_ARCH_FEATURES = re.compile(r"(?::[a-z0-9]+[+-])*")
@@ -206,53 +165,6 @@ def observe_local_hip(target_id: str) -> HipDeviceAdmission:
         # leaving the reader to guess what an empty string meant.
         gpu_uuid=str(uuid) if uuid else "not_reported_by_this_runtime",
     )
-
-
-def load_generated_module(
-    lowering: object,
-) -> tuple[object, tempfile.TemporaryDirectory[str]]:
-    """Load one generated module without placing source or bytecode in the checkout."""
-
-    directory = tempfile.TemporaryDirectory(prefix="open-cake-amdgcn-")
-    source_path = Path(directory.name) / "generated.py"
-    source_path.write_text(lowering.source, encoding="utf-8")
-    specification = importlib.util.spec_from_file_location(
-        f"open_cake_amdgcn_{lowering.source_sha256[:16]}", source_path
-    )
-    if specification is None or specification.loader is None:
-        directory.cleanup()
-        raise RuntimeError("generated AMD module specification failed")
-    module = importlib.util.module_from_spec(specification)
-    try:
-        specification.loader.exec_module(module)
-    except BaseException:
-        directory.cleanup()
-        raise
-    return module, directory
-
-
-def extract_artifacts(compiled: object) -> dict[str, bytes]:
-    assembly = require_object(getattr(compiled, "asm", None), "Triton artifacts")
-    if not set(ARTIFACT_ROLES).issubset(assembly) or {"cubin", "ptx"}.intersection(assembly):
-        raise ValueError("Triton HIP artifact roles differ")
-    payloads = {role: artifact_bytes(assembly[role], role) for role in ARTIFACT_ROLES}
-    if not payloads["hsaco"].startswith(b"\x7fELF"):
-        raise RuntimeError("Triton did not produce an ELF HSACO")
-    return payloads
-
-
-def artifact_records(payloads: Mapping[str, bytes]) -> dict[str, dict[str, object]]:
-    if not isinstance(payloads, Mapping) or set(payloads) != set(ARTIFACT_ROLES):
-        raise ValueError("Triton HIP artifact record roles differ")
-    for role, payload in payloads.items():
-        if not isinstance(payload, bytes) or not payload:
-            raise ValueError(f"Triton artifact {role!r} has unsupported bytes")
-    if not payloads["hsaco"].startswith(b"\x7fELF"):
-        raise ValueError("Triton HIP artifact record is not ELF HSACO")
-    return {
-        role: {"sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)}
-        for role, payload in sorted(payloads.items())
-    }
 
 
 _AMDGPU_METADATA = re.compile(
@@ -416,129 +328,3 @@ def amdgcn_resource_record(payload: bytes) -> dict[str, object]:
         # was first written against.
         "occupancy_limit": "target_facts_unavailable",
     }
-
-
-def resolve_new_external_directory(project_root: Path, value: Path) -> Path:
-    """Resolve, but do not create, a new evidence directory outside the checkout."""
-
-    candidate = value.absolute()
-    path = candidate.parent.resolve(strict=True) / candidate.name
-    if path.exists() or path.is_symlink():
-        raise ValueError("evidence directory must be a new path")
-    if path == project_root or project_root in path.parents:
-        raise ValueError("evidence directory must be outside the checkout")
-    return path
-
-
-def write_new_json(path: Path, value: object) -> None:
-    with path.open("xb") as stream:
-        stream.write(canonical_json_bytes(value) + b"\n")
-
-
-@dataclass(frozen=True)
-class LoadedHipCandidate:
-    """One sealed AMDGCN candidate, admitted and loaded, before common Evaluation.
-
-    This is the seam the CUDA path reaches through `LoadedCudaCandidate`: an arm's output
-    becomes a thing that can be launched, with its artifacts and its declared resource
-    allocation recorded beside it. The two are not built alike and should not be. CUDA
-    loads a CUBIN through the driver API and launches the function itself; here Triton
-    owns the module and its own launch, so what this adds is the admission, the exact
-    artifact set, the AMDGCN resource record and one entry point -- not a second launcher.
-
-    It holds no device handle and no GPU state of its own. `close()` removes the
-    generated source that backs the loaded module, and nothing else.
-    """
-
-    target: str
-    entry_point: str
-    source_sha256: str
-    artifacts: Mapping[str, dict[str, object]]
-    resources: Mapping[str, object]
-    device_arch: str
-    warp_size: int
-    entry: object
-    _payloads: Mapping[str, bytes] = field(repr=False, default_factory=dict)
-    _directory: object = field(repr=False, default=None)
-
-    def payload(self, role: str) -> bytes:
-        """The exact bytes of one admitted artifact role."""
-        if role not in self._payloads:
-            raise ValueError(f"AMDGCN candidate has no artifact role {role!r}")
-        return self._payloads[role]
-
-    def close(self) -> None:
-        if self._directory is not None:
-            self._directory.cleanup()
-
-
-def load_hip_candidate(
-    lowering: object, requirements: Mapping[str, object],
-) -> LoadedHipCandidate:
-    """Admit the exact device, compile the lowering, and return its launchable entry.
-
-    Every refusal here belongs to this route and names it. The device is admitted before
-    anything is compiled, the artifact roles are the AMDGCN ones and the absence of a
-    `ptx` or `cubin` role is part of that check, and the entry point named by the lowering
-    has to exist in the module the generated source defines.
-
-    No timing happens here and none can: this returns something launchable, and what a
-    launch is worth is a measurement this route does not yet have a source for.
-    """
-    requirements = require_object(requirements, "lowering requirements")
-    _, triton, properties = admit_exact_hip(requirements)
-    entry_point = requirements.get("host_entry_point") or getattr(lowering, "entry_point", None)
-    if not isinstance(entry_point, str) or not entry_point:
-        raise ValueError("AMDGCN candidate requires its host entry point")
-
-    module, directory = load_generated_module(lowering)
-    try:
-        entry = getattr(module, entry_point, None)
-        if entry is None or not callable(entry):
-            raise ValueError(
-                f"generated AMDGCN module defines no callable entry {entry_point!r}"
-            )
-        compiled = _compile_through_the_module(module, requirements, triton)
-        payloads = extract_artifacts(compiled)
-        records = artifact_records(payloads)
-        resources = amdgcn_resource_record(payloads["amdgcn"])
-    except BaseException:
-        directory.cleanup()
-        raise
-    return LoadedHipCandidate(
-        target=str(requirements["target"]),
-        entry_point=entry_point,
-        source_sha256=str(lowering.source_sha256),
-        artifacts=MappingProxyType(records),
-        resources=MappingProxyType(dict(resources)),
-        device_arch=str(getattr(properties, "gcnArchName", "")),
-        warp_size=int(getattr(properties, "warp_size")),
-        entry=entry,
-        _payloads=MappingProxyType(dict(payloads)),
-        _directory=directory,
-    )
-
-
-def _compile_through_the_module(
-    module: object, requirements: Mapping[str, object], triton: object,
-) -> object:
-    """Compile the kernel the generated module defines, for its declared Target."""
-
-    kernel_name = requirements.get("kernel_entry_point")
-    signature = requirements.get("signature")
-    constants = requirements.get("compile_constants")
-    options = requirements.get("compile_options")
-    if (not isinstance(kernel_name, str) or not kernel_name
-            or any(not isinstance(item, Mapping) for item in (signature, constants, options))):
-        raise ValueError("AMDGCN compile contract differs")
-    kernel = getattr(module, kernel_name, None)
-    if kernel is None:
-        raise ValueError(f"generated AMDGCN module defines no kernel {kernel_name!r}")
-    target = require_object(requirements["triton_target"], "triton_target")
-    gpu_target = importlib.import_module("triton.backends.compiler").GPUTarget
-    compiler = importlib.import_module("triton.compiler")
-    return compiler.compile(
-        compiler.ASTSource(kernel, dict(signature), dict(constants)),
-        target=gpu_target(target["backend"], target["arch"], target["warp_size"]),
-        options=dict(options),
-    )
