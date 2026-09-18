@@ -56,9 +56,11 @@ BYTES_PER = {"fp32": 4, "fp16": 2, "bf16": 2, "fp8e4m3": 1, "i32": 4, "int32": 4
 #: Decimals from evidence this table does not hold, each with the record that owns it.
 #: A value here is exempt from association, so the list is kept short and specific.
 DECLARED = {
-    # F-2026-09-18-002's footprint sweep: a synthetic kernel at sizes no task runs at.
-    # Checked as ordered (MiB, us) pairs by FOOTPRINT_SWEEP below, not just membership.
-    0.25, 0.5, 1.0, 1.5, 8.0, 2.399, 2.559, 2.719, 6.719, 153.759, 2.4,
+    # The sweep's plateau, quoted in F-2026-09-18-002's observation. The sweep's own
+    # numbers are NOT listed here: they are covered where they are written, as ordered
+    # pairs, because exempting their values everywhere also exempted the 1.000 and 1.500
+    # MiB footprints and let the pair carrying this record's argument be swapped.
+    2.4,
     # F-2026-09-18-003's validation error bounds for gemm_silu, from its own receipts.
     0.5, 100.8,
 }
@@ -229,6 +231,15 @@ class DcuMedianCounts(unittest.TestCase):
                                          f"{where} the table gives")
             # "A and B are X and Y" -- the one shape the nearest-name rule gets wrong,
             # and the one a reviewer used to swap two ratios without failing anything.
+            for match in re.finditer(r"move (?P<a>\d\.\d{3}) and (?P<b>\d\.\d{3}) MiB",
+                                     text):
+                covered.update((match.span("a"), match.span("b")))
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(
+                        [float(match.group("a")), float(match.group("b"))],
+                        [round(_footprint_mib("silu"), 3),
+                         round(_footprint_mib("softmax_backward"), 3)],
+                        "the bracketing pair is silu against softmax_backward")
             for match in re.finditer(r"(?P<a>[a-z_]+) and (?P<b>[a-z_]+) are "
                                      r"(?P<x>\d\.\d{3}) and (?P<y>\d\.\d{3})", text):
                 covered.update((match.span("x"), match.span("y")))
@@ -241,6 +252,12 @@ class DcuMedianCounts(unittest.TestCase):
                                 round(self.rows[task]["baseline"]
                                       / self.rows[task]["candidate"], 3),
                                 f"{label}: {match.group(0)!r} pairs them the wrong way")
+            # The footprint sweep site: its numbers are checked in order by their own
+            # test, so they are covered here rather than judged by nearest task name.
+            for sweep in re.finditer(r"the footprint sweep on the same device:[^\n]*", text):
+                for number in re.finditer(r"(?<![\w.:])\d+\.\d+(?![\w])", sweep.group()):
+                    covered.add((sweep.start() + number.start(),
+                                 sweep.start() + number.end()))
             for pattern in self._PAIRS:
                 for match in pattern.finditer(text):
                     for group in ("c", "b", "r"):
@@ -290,6 +307,49 @@ class DcuMedianCounts(unittest.TestCase):
             {"softsign", "per_channel_moments", "softmax", "gemm_silu", "gemm_bias",
              "layernorm_gamma_beta_backward", "channel_absmax_scale", "attention_decode"})
         self.assertTrue(expected, "no campaign revision found for F-003's tasks")
+
+    def test_a_quoted_start_time_is_the_workspace_it_names(self) -> None:
+        """F-2026-09-18-005 dates its campaigns to argue about a stamp. The times are in
+        the workspace names the table already holds, so they are read from there."""
+        for label in ("002", "005"):
+            for match in re.finditer(r"(?P<task>[a-z_]+) at (?P<h>\d{2}):(?P<m>\d{2})\b",
+                                     self.prose[label]):
+                task = match.group("task")
+                if task not in self.rows:
+                    continue
+                started = self.rows[task]["workspace"].rsplit("-", 1)[-1]
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(match.group("h") + match.group("m"), started[:4],
+                                     f"{task} started at {started[:2]}:{started[2:4]}")
+
+    def test_a_revision_listed_in_prose_is_the_set_the_rows_carry(self) -> None:
+        """The stamp fields are derived, but the prose repeats the commits beside them and
+        nothing looked at those: swapping one for a retracted stamp passed."""
+        rows = {r["compiler_revision"].split("@")[1] for r in self.rows.values()}
+        for label in ("002", "005", "003"):
+            text = self.prose.get(label) or self.three_text
+            for match in re.finditer(r"ran at three revisions -- ([0-9a-f]{8}, [0-9a-f]{8} "
+                                     r"and [0-9a-f]{8})", text):
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(set(re.findall(r"[0-9a-f]{8}", match.group(1))), rows)
+
+    def test_no_group_sized_digit_goes_unchecked(self) -> None:
+        """Counts written as digits rather than words. Inserting "Only 9 of the 13 were
+        checked twice" into F-2026-09-18-002 passed every other rule here."""
+        nouns = tuple(self._noun_groups())
+        allowed = set(self._counts().values()) | set(RETRACTED_COUNTS) | {1, 2, 4, 5, 6, 8}
+        for label, text in self.prose.items():
+            covered = set()
+            for noun in nouns:
+                for match in re.finditer(rf"((?:[\w-]+\s+){{0,3}}){noun}\b", text):
+                    start = match.start(1)
+                    for token in re.finditer(r"[\w-]+", match.group(1)):
+                        covered.add((start + token.start(), start + token.end()))
+            for match in re.finditer(r"(?<![\w.:@-])\d{1,2}(?![\w.:@-])", text):
+                if match.span() in covered or int(match.group()) in allowed:
+                    continue
+                self.fail(f"{label} states the bare number {match.group()!r} where nothing "
+                          f"checks it: ...{text[max(0, match.start() - 60):match.end() + 30]!r}")
 
     def test_the_footprint_sweep_is_quoted_in_the_order_it_was_measured(self) -> None:
         sweep = [s for s in self.two["evidence"]["sites"] if "footprint sweep" in s]
@@ -344,10 +404,11 @@ class DcuMedianCounts(unittest.TestCase):
         groups = self._noun_groups()
         for label, text in self.prose.items():
             for noun, allowed in groups.items():
-                for match in re.finditer(rf"((?:[\w-]+\s+){{0,2}}){noun}\b", text):
+                for match in re.finditer(rf"((?:[\w-]+\s+){{0,3}}){noun}\b", text):
                     tokens = match.group(1).lower().split()
                     named = [t for t in tokens
-                             if t in NUMBER or t == "hundred" or t.isdigit()]
+                             if (t in NUMBER and t != "one") or t == "hundred"
+                             or t.isdigit()]
                     if not named:
                         continue
                     token = named[-1]
@@ -415,7 +476,7 @@ class DcuMedianCounts(unittest.TestCase):
             for match in re.finditer(self.PARTITION, text, re.I):
                 covered.update(match.span(i) for i in (1, 2, 3))
             for noun in nouns:
-                for match in re.finditer(rf"((?:[\w-]+\s+){{0,2}}){noun}\b", text):
+                for match in re.finditer(rf"((?:[\w-]+\s+){{0,3}}){noun}\b", text):
                     start = match.start(1)
                     for token in re.finditer(r"[\w-]+", match.group(1)):
                         covered.add((start + token.start(), start + token.end()))
