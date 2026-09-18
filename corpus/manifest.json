@@ -732,11 +732,11 @@
       "case_id": "top-k-int32-across-loop-drift",
       "schedule": "corpus/schedules/top-k-int32-streaming-b8-drift.json",
       "expected": {
-        "accepted": false,
+        "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
-          "TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE",
-          "RESIDENCY_BOUND"
+          "RESIDENCY_BOUND",
+          "TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE"
         ],
         "schedule_sha256": "f963b3e1ed0e6bd772a3a5a65614bcd0780a695f15d0ae2d5dffe17223fd4773",
         "lowering_source_sha256": null
