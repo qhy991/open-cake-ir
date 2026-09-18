@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-18-005",
+  "kind": "behavior",
+  "date": "2026-09-18",
+  "title": "Three DCU campaigns confirmed a candidate faster than its fixed baseline, one by 1.405, and all three are above the dispatch floor that makes the other results uninformative",
+  "backend": "triton-dcu",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@2e901f53",
+  "executor_revision": "gfx938@2e901f53",
+  "evidence": {
+    "retained": "bw1100 campaign evidence for per_channel_moments, momentum_sgd and pairwise_sqdist, each adhered with a qualified endpoint and a confirmatory receipt carrying both arms' pooled medians",
+    "sites": [
+      "per_channel_moments: candidate 0.006719 ms, baseline 0.009439, speedup 1.405, classification first_arm_faster",
+      "momentum_sgd: candidate 0.005599, baseline 0.005919, speedup 1.057, first_arm_faster",
+      "pairwise_sqdist: candidate 0.023679, baseline 0.024959, speedup 1.054, first_arm_faster",
+      "all six of those medians are above 0.005439, the value eleven other tasks report for both arms (F-2026-09-18-002)",
+      "the Study's declared materiality_ratio is 1.05"
+    ]
+  },
+  "observation": "Until these ran, every DCU campaign whose measurement could discriminate showed the authored candidate losing to its starter reference -- gelu_tanh_backward at 0.532, prelu at 0.557, gemm at 0.747 -- and the rest sat on a dispatch floor where neither arm could be told from the other. An earlier reading of this evidence said so in general terms. That reading is now wrong, and the correction is the finding.\n\nThree campaigns confirmed a candidate faster than its baseline. per_channel_moments is the one worth attention: 0.006719 against 0.009439, a ratio of 1.405, with both arms above the floor so the comparison means something, and above the Study's declared materiality ratio of 1.05 rather than inside it. momentum_sgd and pairwise_sqdist are 1.057 and 1.054, which clear materiality narrowly.\n\nWhat this is and is not. It is candidate against fixed baseline inside one task, case, target and assay, under a claim scope of artifact_optimization_only -- not an arm comparison, and not a speedup against any external reference. The baseline is the starter the task ships with, so 1.405 says the author found something better than a naive reference, not that it approached what the hardware can do; nothing here measures that. Three results out of twenty-seven qualified campaigns is also a small number to generalise from, and two of the three clear materiality by less than a tenth.",
+  "proposed_change": "Nothing to change. This is recorded because the negative reading it corrects was written down first, and because it is the only evidence so far that the loop on this target produces improvement rather than parity or regression.\n\nWhat would make it more than an anecdote: the shapes that produce it. All three sit above the dispatch floor, and F-2026-09-18-002 shows the floor is where most of these tasks run at the default footprint -- so a sweep at a footprint above the floor would say whether 1.405 is a property of per_channel_moments or of finally being able to measure. That is the same experiment F-2026-09-18-002 already proposes, and this record is a second reason to run it.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
