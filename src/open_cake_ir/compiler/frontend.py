@@ -442,10 +442,19 @@ class _Builder:
         # It lives here rather than in the `BinOp` branch because `lm.mul(2.0, x)` reaches
         # this function by the call path instead, and doing it in one branch left the two
         # spellings disagreeing -- the P3 defect the change was meant to remove.
+        #
+        # A `_Broadcast` is excluded from the swap deliberately. It has its own
+        # position rule immediately below, and moving one into position 0 made that rule
+        # refuse `lm.mul(2.0, lm.broadcast(scale, axis=0))` with "broadcast applies once
+        # to the second arithmetic operand" -- which the author had written it as. A
+        # refusal naming a position the input already satisfies is the borrowed-block
+        # shape: the rule that owns the input is the literal rule below, and it can only
+        # speak if the broadcast is left where it was put.
         if (kind == "elementwise" and len(values) == 2
                 and parameters.get("op") in _COMMUTATIVE
                 and type(values[0]) in (int, float)
-                and type(values[1]) not in (int, float)):
+                and type(values[1]) not in (int, float)
+                and not isinstance(values[1], _Broadcast)):
             values = [values[1], values[0]]
         reads, accesses = [], []
         for position, value in enumerate(values):
@@ -462,7 +471,9 @@ class _Builder:
                     self.fail(node, "a literal is admitted once, as the second operand of "
                                     "a two-operand elementwise arithmetic other than fma; "
                                     + " and ".join(sorted(_COMMUTATIVE))
-                                    + " also admit it first and canonicalise it")
+                                    + " also admit it first and canonicalise it, unless "
+                                    "the other operand is a broadcast, which keeps the "
+                                    "second position for itself")
                 parameters["scalar"] = value
                 continue
             ref = self.reference(value.buffer if isinstance(value, _Access) else value, node)

@@ -107,5 +107,55 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
 
 
 
+class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
+    """Which declared contracts no Corpus case reaches, stated per target.
+
+    F-2026-09-17-009 is the defect: a Target can declare a contract with device evidence
+    and the Gate will pass whether or not it is true, because no case exercises it. It was
+    closed for gfx938 and recurred there twice, so gfx938 is pinned at zero by
+    `test_gfx938.py::test_every_declared_contract_is_reached_by_a_corpus_case`.
+
+    Every other target still has unreached declarations, and this pins them as a count
+    rather than asserting the invariant they do not satisfy. A gate report names the
+    targets it examined; a test that read as general while checking one target would be
+    the same omission in test form.
+    """
+
+    def test_the_unreached_declarations_are_the_ones_recorded(self) -> None:
+        import json
+        manifest = json.loads((ROOT / "corpus/manifest.json").read_text())
+        reached: dict[str, set[str]] = {}
+        for case in manifest["cases"]:
+            path = ROOT / case["schedule"]
+            if path.suffix != ".json":
+                continue
+            document = json.loads(path.read_text())
+            target = case.get("target") or document.get("target")
+            for operation in document["operations"]:
+                instruction = (operation.get("parameters") or {}).get("instruction") or {}
+                if instruction.get("contract"):
+                    reached.setdefault(target, set()).add(instruction["contract"])
+        unreached = {}
+        for path in sorted((ROOT / "compiler/targets").glob("*.json")):
+            gap = sorted(set(Target.load(path).instruction_contracts)
+                         - reached.get(path.stem, set()))
+            if gap:
+                unreached[path.stem] = gap
+        self.assertEqual(unreached, {
+            "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
+            "apple_gpu_family8": ["metal.fma.f32", "metal.precise.tanh.f32"],
+            "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
+            "sm_100a": ["triton.atomic_add.i32.relaxed.gpu"],
+            "sm_103a": ["libdevice.tanh.f32", "ptx.fma.rn.f32",
+                        "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp32_ieee",
+                        "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_block_scale_fp32"],
+        })
+        # The two AMDGCN targets are absent because gfx938 reaches all five of its
+        # declarations and gfx1151 declares none. Asserted so a regression there shows up
+        # here as well as in the gfx938 pin.
+        self.assertNotIn("gfx938", unreached)
+        self.assertNotIn("gfx1151", unreached)
+
+
 if __name__ == "__main__":
     unittest.main()

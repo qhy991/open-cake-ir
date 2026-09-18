@@ -75,7 +75,10 @@ BACKENDS = {
     # claimed NVIDIA libdevice numerics for a different function. The device now declares
     # its own, `ocml.tanh.f32`, measured on a BW1101 at ~1 ulp of fp32 against torch.tanh
     # across the saturating tails -- so the family is admitted here under the spelling of
-    # the library that actually answers, not borrowed under another vendor's.
+    # the library that actually answers, not borrowed under another vendor's. The
+    # measurement and what it replaced are in docs/dcu-gfx938-design.md; the pointer was
+    # dropped once while that document still said the opposite, which is worse than a
+    # stale reference because nothing then leads a reader to the page that needs fixing.
     "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
                    "provenance_token": "BW1101", "route": "triton",
                    "allocation": "local_broker",

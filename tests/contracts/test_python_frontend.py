@@ -180,6 +180,34 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
                 self.assertIn("other than fma", message)
                 self.assertIn("add and mul also admit it first", message)
 
+    def test_a_broadcast_keeps_the_second_position_and_the_literal_rule_speaks(self):
+        """The swap must not move a broadcast, and the refusal must own the input.
+
+        The gap this closes: the canonicalisation ran before the broadcast position
+        check, so `lm.mul(2.0, lm.broadcast(scale, axis=0))` had its broadcast moved to
+        position 0 and was refused with "broadcast applies once to the second arithmetic
+        operand" -- which is where the author had written it. A rule refusing an input
+        that already satisfies it is the borrowed-block shape; the literal rule owns this
+        one, and can only speak if the broadcast stays where it was put.
+        """
+        for expression in ("lm.mul(2.0, lm.broadcast(scale, axis=0))",
+                           "2.0 * lm.broadcast(scale, axis=0)"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(FrontendError) as caught:
+                    parse(self.scalar_source(expression))
+                message = str(caught.exception)
+                self.assertIn("a literal is admitted once", message)
+                self.assertIn("broadcast", message)
+                self.assertNotIn("broadcast applies once", message)
+
+    def test_a_broadcast_written_second_still_parses(self):
+        """The swap changes nothing for the spelling that already worked."""
+        document = parse(self.scalar_source(
+            "values * lm.broadcast(scale, axis=0)")).document
+        op = next(o for o in document["operations"] if o["id"] == "result")
+        self.assertEqual(op["parameters"].get("broadcast_axis"), 0)
+        self.assertEqual(op["parameters"]["op"], "mul")
+
     def test_a_leading_literal_stays_refused_where_the_order_is_meaning(self):
         """`2.0 - x` is not `x - 2.0`, so swapping it would compute something else."""
         for expression in ("2.0 - values", "2.0 / values"):

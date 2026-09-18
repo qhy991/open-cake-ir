@@ -548,6 +548,11 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         Measured by deleting each contract from the Target and re-running check_corpus;
         this test is the cheap standing form of that, matching contracts to the schedules
         the manifest lists for this target.
+
+        It examines gfx938 and no other target, which is the whole of what it claims. The
+        other five declared targets still have unreached contracts, counted per target by
+        test_instruction_contracts.py::DeclaredContractsTheGateCannotSpeakFor rather than
+        left to be inferred from this one's silence.
         """
         import json
         manifest = json.loads((ROOT / "corpus/manifest.json").read_text())
