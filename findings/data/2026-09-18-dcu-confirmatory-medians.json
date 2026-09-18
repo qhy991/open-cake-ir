@@ -263,5 +263,6 @@
     "compiler_revision": "open-cake-ir@5151954e"
    }
   ]
- }
+ },
+ "receipt_paths": "Each row's `receipt` is a path inside its workspace's content-addressed object store, which is why it looks like a digest. AGENTS.md says findings cite workspaces and runs by path and do not copy digests, because the ledger's own hash chain settles byte identity -- and that rule is kept here: none of these is a digest of a finding, a release or an artifact recorded to prove identity. In that store the digest IS the path, and it is the only way to name the one receipt a row was read from. Dropping it would leave a reader with the workspace and no way to find the row inside it, which is the falsifiability this file exists for. Nothing re-hashes them, and no test asserts they match anything."
 }

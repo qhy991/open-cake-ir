@@ -546,7 +546,7 @@ def _operation_parameters(
             # spelling was "historical", which tells an author that what they wrote is
             # wrong and not what is right: two of the eleven DCU campaigns pooled on
             # 2026-09-17 lost a candidate here (F-2026-09-18-001), and each had to guess
-            # from it. Counted over both days it is eleven campaigns, once each.
+            # from it.
             raise ScheduleParseError(
                 f"{context}.across_loop=true is the default; omit the field. State it "
                 "only as false, which folds within one tile instead of across the loop"

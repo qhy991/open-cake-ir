@@ -349,8 +349,7 @@ class ReduceAcrossLoopSpelling(unittest.TestCase):
     spelling of one fact. The message said only that what the author wrote was
     "historical", which does not say what is current: two of the eleven DCU campaigns
     pooled on 2026-09-17 lost a candidate to it and each had to guess (F-2026-09-18-001).
-    Over 2026-09-17 and 2026-09-18 together eleven campaigns hit it, one candidate each --
-    the count said "three of roughly twenty" until it was read off the rejections.
+    The count said "three of roughly twenty" until it was read off the rejection events.
 
     The two neighbouring kinds spell the same field with opposite defaults -- reduce
     defaults True, reduce_argmin defaults False -- which is why omitting it is worth
