@@ -162,6 +162,11 @@ _K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
 CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO})
 
 
+def _power_of_two(value: int) -> bool:
+    """What `tl.arange` and `tl.topk` require of an extent: a positive power of two."""
+    return value > 0 and value & (value - 1) == 0
+
+
 def target_route_facts(target: Target) -> dict[str, object]:
     """The three route facts the compile contract carries for `toolchain.triton_route`.
 
@@ -350,6 +355,19 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "roles",
         "the Triton backend requires exactly one role",
     )
+    # One role ordered by program order is the whole synchronization this emitter
+    # writes: it has no body for a barrier object, so a declared handshake -- whatever
+    # mechanism the Target's contracts realize for it -- would not reach the source.
+    # Measured before this refusal: an mbarrier the common Verifier admitted (MMA
+    # producer) was dropped from the emitted Triton with no finding.
+    for index, barrier in enumerate(schedule.barriers):
+        mechanism = barrier.mechanism.value if barrier.mechanism is not None else "undeclared"
+        findings.append(refusal(
+            "TRITON_BARRIER_UNSUPPORTED",
+            f"barriers[{index}]",
+            f"the Triton backend emits no barrier handshake; barrier {barrier.name!r} "
+            f"(mechanism {mechanism}) would be dropped from the source rather than realized",
+        ))
     if len(schedule.roles) == 1:
         warp_count = len(schedule.roles[0].warps)
         add(
@@ -481,6 +499,61 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 f"Target {target.target_id!r} does not admit "
                 f"{_ATOMIC_RMW_CONTRACT!r}",
             )
+        # The shapes this emitter's selection and expansion bodies can take. Each is a
+        # fact of the emitted `tl.arange`/`tl.topk` program, not of the operation, which
+        # the common Verifier types without them; the codes keep the spelling they had
+        # when the Verifier carried them, so their consumers still find them.
+        if operation.kind is OperationKind.TOP_K and len(operation.reads) == 1:
+            source = schedule.buffer(operation.reads[0])
+            k = operation.parameters.k
+            if source is not None and len(source.shape) == 1:
+                add(
+                    _power_of_two(source.shape[0]),
+                    "TOP_K_SOURCE_UNLOWERABLE", f"operations[{index}].reads",
+                    "the Triton top_k merge uses power-of-two resident vectors, but "
+                    f"{source.name!r} has extent {source.shape[0]}",
+                )
+            add(
+                source is None or source.dtype is not DType.INT32
+                or not operation.parameters.across_loop,
+                "TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE",
+                f"operations[{index}].parameters.across_loop",
+                "the Triton signed-int32 top_k lowering orders one resident tile; "
+                "loop-carried int32 state is not implemented",
+            )
+            add(
+                _power_of_two(k),
+                "TOP_K_K_UNLOWERABLE", f"operations[{index}].parameters.k",
+                f"the Triton top_k lowering requires power-of-two k, but k is {k}",
+            )
+        if operation.kind is OperationKind.INDEX_EXPAND and len(operation.reads) == 1:
+            source = schedule.buffer(operation.reads[0])
+            add(
+                source is None or len(source.shape) != 1 or _power_of_two(source.shape[0]),
+                "INDEX_EXPAND_SOURCE_UNLOWERABLE", f"operations[{index}].reads",
+                "the Triton index_expand input extent must be a power of two",
+            )
+            add(
+                _power_of_two(operation.parameters.extent),
+                "INDEX_EXPAND_EXTENT_UNLOWERABLE", f"operations[{index}].parameters.extent",
+                "the Triton index_expand extent must be a power of two",
+            )
+
+    # The one valid-extent subset `_emit_load` lowers: the extent buffer is indexed by
+    # exactly one axis, and that axis is a scalar program coordinate of the access.
+    for index, access in enumerate(schedule.access_maps):
+        buffer = schedule.buffer(access.buffer)
+        relation = buffer.valid_extent if buffer is not None else None
+        if relation is None or not relation.indexed_by:
+            continue
+        add(
+            len(relation.indexed_by) == 1
+            and relation.indexed_by[0] < len(access.indices)
+            and access.indices[relation.indexed_by[0]].source is AccessIndexKind.PROGRAM,
+            "VALID_EXTENT_ACCESS_UNLOWERABLE", f"access_maps[{index}]",
+            "the Triton valid-extent lowering requires one extent axis indexed by one "
+            "scalar program axis",
+        )
 
     nested = len(schedule.tile_loops) > 1
     if nested:

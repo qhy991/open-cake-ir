@@ -17,6 +17,8 @@ import json
 import unittest
 from pathlib import Path
 
+from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.backends import triton
 from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.verifier import (
@@ -316,16 +318,23 @@ class ScheduleSemanticsTest(unittest.TestCase):
 
 
 class HardwareConformanceTest(unittest.TestCase):
+    # A power-of-two extent is what `tl.topk`/`tl.arange` require of the emitted
+    # program, not what the operation means, so the Triton route refuses it and the
+    # common Verifier no longer carries the rule: the code, category and localized path
+    # are unchanged, but the finding blocks lowering without blocking acceptance.
     def test_current_top_k_lowering_refuses_non_power_of_two_k(self) -> None:
         schedule = _mutated(
             TOP_K,
             lambda d: _op(d, "select_experts")["parameters"].update(k=7),
         )
         finding = next(
-            f for f in verify(schedule, TARGET) if f.code == "TOP_K_K_UNLOWERABLE"
+            f for f in triton.preflight(schedule, TARGET)
+            if f.code == "TOP_K_K_UNLOWERABLE"
         )
         self.assertIs(finding.category, FindingCategory.HARDWARE_CONFORMANCE)
         self.assertEqual(finding.path, "operations[1].parameters.k")
+        self.assertFalse(finding.blocks_acceptance)
+        self.assertNotIn(finding.code, _codes(verify(schedule, TARGET)))
 
     def test_current_top_k_lowering_refuses_non_power_of_two_source(self) -> None:
         def change(document) -> None:
@@ -338,10 +347,80 @@ class HardwareConformanceTest(unittest.TestCase):
 
         schedule = _mutated(TOP_K, change)
         finding = next(
-            f for f in verify(schedule, TARGET) if f.code == "TOP_K_SOURCE_UNLOWERABLE"
+            f for f in triton.preflight(schedule, TARGET)
+            if f.code == "TOP_K_SOURCE_UNLOWERABLE"
         )
         self.assertIs(finding.category, FindingCategory.HARDWARE_CONFORMANCE)
         self.assertEqual(finding.path, "operations[1].reads")
+        self.assertFalse(finding.blocks_acceptance)
+        self.assertNotIn(finding.code, _codes(verify(schedule, TARGET)))
+
+    def test_route_lowerability_is_refused_by_the_route_not_the_gate(self) -> None:
+        """The six rules moved from the Verifier to the Triton route keep their codes
+        and paths but change disposition: a Schedule the route cannot lower is accepted,
+        not lowering-eligible, and the refusal names the route that owns the limit."""
+
+        def document(name: str) -> dict:
+            return json.loads(
+                (ROOT / "corpus" / "schedules" / name).read_text(encoding="utf-8")
+            )
+
+        def buffer(document: dict, name: str) -> dict:
+            return next(b for b in document["buffers"] if b["name"] == name)
+
+        top_k_k = document("top-k-b8-smoke.json")
+        _op(top_k_k, "select_experts")["parameters"]["k"] = 6
+        for name, shape in (("top_values", [6]), ("top_indices", [6]), ("indices", [8, 6])):
+            buffer(top_k_k, name)["shape"] = shape
+        top_k_source = document("top-k-b8-smoke.json")
+        buffer(top_k_source, "scores")["shape"] = [8, 192]
+        buffer(top_k_source, "score_row")["shape"] = [192]
+        expand_extent = document("index-expand-b8-smoke.json")
+        _op(expand_extent, "expand_tokens")["parameters"].update(scale=3, extent=3)
+        buffer(expand_extent, "token_tile")["shape"] = [24]
+        buffer(expand_extent, "token_indices")["shape"] = [8, 24]
+        expand_source = document("index-expand-b8-smoke.json")
+        buffer(expand_source, "block_indices")["shape"] = [8, 6]
+        buffer(expand_source, "block_tile")["shape"] = [6]
+        buffer(expand_source, "token_tile")["shape"] = [24]
+        buffer(expand_source, "token_indices")["shape"] = [8, 24]
+        ragged = document("ragged-zero-pad-b1-smoke.json")
+        ragged["buffers"][0]["valid_extent"]["indexed_by"] = [0, 2]
+        ragged["buffers"][1]["shape"] = [4, 16]
+        moved = {
+            "TOP_K_K_UNLOWERABLE": (top_k_k, "operations[1].parameters.k"),
+            "TOP_K_SOURCE_UNLOWERABLE": (top_k_source, "operations[1].reads"),
+            "TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE": (
+                document("top-k-int32-streaming-b8-drift.json"),
+                "operations[1].parameters.across_loop",
+            ),
+            "INDEX_EXPAND_EXTENT_UNLOWERABLE": (
+                expand_extent, "operations[1].parameters.extent",
+            ),
+            "INDEX_EXPAND_SOURCE_UNLOWERABLE": (expand_source, "operations[1].reads"),
+            "VALID_EXTENT_ACCESS_UNLOWERABLE": (ragged, "access_maps[0]"),
+        }
+
+        compiler = Compiler.load(ROOT, ROOT / "compiler" / "revision.json")
+        for code, (mutated, path) in moved.items():
+            with self.subTest(code=code):
+                schedule = Schedule.from_dict(mutated)
+                self.assertFalse(
+                    {f.code for f in verify(schedule, TARGET) if f.blocks_acceptance}
+                )
+                self.assertNotIn(code, _codes(verify(schedule, TARGET)))
+                refusal = next(
+                    f for f in triton.preflight(schedule, TARGET) if f.code == code
+                )
+                self.assertIs(refusal.category, FindingCategory.HARDWARE_CONFORMANCE)
+                self.assertEqual(refusal.path, path)
+                self.assertTrue(refusal.blocks_lowering)
+                self.assertFalse(refusal.blocks_acceptance)
+                self.assertIn("Triton", refusal.message)
+                assessment = compiler.assess(mutated)
+                self.assertTrue(assessment.accepted)
+                self.assertFalse(assessment.lowering_eligible)
+                self.assertIn(code, [f.code for f in assessment.findings])
 
     def test_warp_index_beyond_the_target_range_is_reported(self) -> None:
         """`len(warps)` treats a warp id as a count; the range check does not."""

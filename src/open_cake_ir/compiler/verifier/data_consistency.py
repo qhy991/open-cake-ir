@@ -69,6 +69,30 @@ _ARITY = {
 }
 
 
+def _require_register_resident(
+    buffer,
+    code: str,
+    path: str,
+    message: str,
+    out: _Collector,
+    category: FindingCategory = FindingCategory.HARDWARE_CONFORMANCE,
+) -> None:
+    """One rule for the operands an arithmetic or selection body reads as values.
+
+    Each site keeps its own code and wording so the finding still names the operation
+    and the edge; what they share is the condition. It was written thirteen times.
+    """
+
+    if buffer.space is not MemorySpace.REGISTER:
+        out.add(code, path, message, category)
+
+
+def _fits_int32(value: int) -> bool:
+    """The signed 32-bit range every int32 parameter must fit."""
+
+    return -(1 << 31) <= value < (1 << 31)
+
+
 def _verify_scale_relations(schedule: Schedule, buffers, out: _Collector) -> None:
     """Hold scale storage to the FP8 tensor relation that gives it meaning."""
 
@@ -808,7 +832,7 @@ def _verify_block_scaled_mma(operation, path: str, buffers, out: _Collector) -> 
         out.add(
             "MMA_BLOCK_SCALE_UNLOWERABLE",
             f"{path}.parameters",
-            "the Triton block-scale lowering requires rank-2 staged A/B, A "
+            "the admitted block-scale contract requires rank-2 staged A/B, A "
             "granularity [1, block_k] stored [K-block, M], B granularity "
             "[N, block_k] stored [N-block, K-block], equal divisible K blocks, "
             "exactly two K blocks, and a tile equal to the staged contraction",
@@ -894,16 +918,13 @@ def _verify_operation_shape(
                         "an identity cast is a second spelling of the unchanged tile",
                         category,
                     )
-                if (
-                    source.space is not MemorySpace.REGISTER
-                    or output.space is not MemorySpace.REGISTER
-                ):
-                    out.add(
-                        "CAST_SPACE",
-                        path,
-                        "cast operands must be resident in registers",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
+                # One finding for the pair: the misplaced operand, or the output when
+                # both are in registers and there is nothing to report.
+                _require_register_resident(
+                    source if source.space is not MemorySpace.REGISTER else output,
+                    "CAST_SPACE", path,
+                    "cast operands must be resident in registers", out,
+                )
     if operation.kind is OperationKind.INDEX_EXPAND:
         if len(operation.reads) != 1 or len(operation.writes) != 1:
             out.add(
@@ -930,20 +951,10 @@ def _verify_operation_shape(
                         f"index_expand input must be int32, got {source.dtype.value}",
                         category,
                     )
-                if source.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "INDEX_EXPAND_SPACE",
-                        f"{path}.reads",
-                        "index_expand input must be resident in registers",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-                if len(source.shape) == 1 and source.shape[0] & (source.shape[0] - 1):
-                    out.add(
-                        "INDEX_EXPAND_SOURCE_UNLOWERABLE",
-                        f"{path}.reads",
-                        "the Triton index_expand input extent must be a power of two",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
+                _require_register_resident(
+                    source, "INDEX_EXPAND_SPACE", f"{path}.reads",
+                    "index_expand input must be resident in registers", out,
+                )
             if output is not None:
                 expected = (
                     source.shape[0] * operation.parameters.extent
@@ -964,22 +975,11 @@ def _verify_operation_shape(
                         f"index_expand output must be int32, got {output.dtype.value}",
                         category,
                     )
-                if output.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "INDEX_EXPAND_SPACE",
-                        f"{path}.writes",
-                        "index_expand output must stay in registers before store",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-            extent = operation.parameters.extent
-            if extent & (extent - 1):
-                out.add(
-                    "INDEX_EXPAND_EXTENT_UNLOWERABLE",
-                    f"{path}.parameters.extent",
-                    "the Triton index_expand extent must be a power of two",
-                    FindingCategory.HARDWARE_CONFORMANCE,
+                _require_register_resident(
+                    output, "INDEX_EXPAND_SPACE", f"{path}.writes",
+                    "index_expand output must stay in registers before store", out,
                 )
-            if not -(1 << 31) <= operation.parameters.sentinel < (1 << 31):
+            if not _fits_int32(operation.parameters.sentinel):
                 out.add(
                     "INDEX_EXPAND_SENTINEL_RANGE",
                     f"{path}.parameters.sentinel",
@@ -1023,13 +1023,10 @@ def _verify_operation_shape(
                         f"online_softmax logits must be fp32, got {logits.dtype.value}",
                         category,
                     )
-                if logits.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "ONLINE_SOFTMAX_SPACE",
-                        f"{path}.reads",
-                        "online_softmax logits must be resident in registers",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
+                _require_register_resident(
+                    logits, "ONLINE_SOFTMAX_SPACE", f"{path}.reads",
+                    "online_softmax logits must be resident in registers", out,
+                )
             if values is not None:
                 if len(values.shape) != 2:
                     out.add(
@@ -1045,13 +1042,10 @@ def _verify_operation_shape(
                         f"online_softmax values must be floating, got {values.dtype.value}",
                         category,
                     )
-                if values.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "ONLINE_SOFTMAX_SPACE",
-                        f"{path}.reads",
-                        "online_softmax values must be resident in registers",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
+                _require_register_resident(
+                    values, "ONLINE_SOFTMAX_SPACE", f"{path}.reads",
+                    "online_softmax values must be resident in registers", out,
+                )
             if len(operation.reads) == 3:
                 if operation.parameters.sentinel is None:
                     out.add(
@@ -1081,13 +1075,10 @@ def _verify_operation_shape(
                             f"validity indices must be int32, got {validity.dtype.value}",
                             category,
                         )
-                    if validity.space is not MemorySpace.REGISTER:
-                        out.add(
-                            "ONLINE_SOFTMAX_SPACE",
-                            f"{path}.reads",
-                            "validity indices must be resident in registers",
-                            FindingCategory.HARDWARE_CONFORMANCE,
-                        )
+                    _require_register_resident(
+                        validity, "ONLINE_SOFTMAX_SPACE", f"{path}.reads",
+                        "validity indices must be resident in registers", out,
+                    )
             elif operation.parameters.sentinel is not None:
                 out.add(
                     "ONLINE_SOFTMAX_SENTINEL_UNUSED",
@@ -1095,8 +1086,8 @@ def _verify_operation_shape(
                     "online_softmax sentinel has no validity-index input",
                     category,
                 )
-            if operation.parameters.sentinel is not None and not (
-                -(1 << 31) <= operation.parameters.sentinel < (1 << 31)
+            if operation.parameters.sentinel is not None and not _fits_int32(
+                operation.parameters.sentinel
             ):
                 out.add(
                     "ONLINE_SOFTMAX_SENTINEL_RANGE",
@@ -1145,13 +1136,10 @@ def _verify_operation_shape(
                         f"online_softmax {label} must be fp32, got {buffer.dtype.value}",
                         category,
                     )
-                if buffer.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "ONLINE_SOFTMAX_SPACE",
-                        f"{path}.writes",
-                        f"online_softmax {label} must stay in registers",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
+                _require_register_resident(
+                    buffer, "ONLINE_SOFTMAX_SPACE", f"{path}.writes",
+                    f"online_softmax {label} must stay in registers", out,
+                )
     if operation.kind is OperationKind.TOP_K:
         if (
             operation.parameters.source_tiles_per_merge == 2
@@ -1195,23 +1183,11 @@ def _verify_operation_shape(
                         f"{source.shape[0]}",
                         category,
                     )
-                if len(source.shape) == 1 and source.shape[0] & (source.shape[0] - 1):
-                    out.add(
-                        "TOP_K_SOURCE_UNLOWERABLE",
-                        f"{path}.reads",
-                        "the admitted SM100 Triton top_k merge uses power-of-two "
-                        f"resident vectors, but {source.name!r} has extent "
-                        f"{source.shape[0]}",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-                if source.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "TOP_K_SOURCE_SPACE",
-                        f"{path}.reads",
-                        f"top_k reduces a resident register tile, but {source.name!r} "
-                        f"is in {source.space.value}",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
+                _require_register_resident(
+                    source, "TOP_K_SOURCE_SPACE", f"{path}.reads",
+                    f"top_k reduces a resident register tile, but {source.name!r} "
+                    f"is in {source.space.value}", out,
+                )
                 if source.dtype not in {DType.FP32, DType.INT32}:
                     out.add(
                         "TOP_K_VALUE_DTYPE",
@@ -1219,17 +1195,6 @@ def _verify_operation_shape(
                         f"the admitted top_k lowering orders fp32 or int32 values, but "
                         f"{source.name!r} is {source.dtype.value}",
                         category,
-                    )
-                if (
-                    source.dtype is DType.INT32
-                    and operation.parameters.across_loop
-                ):
-                    out.add(
-                        "TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE",
-                        f"{path}.parameters.across_loop",
-                        "the admitted signed-int32 top_k lowering orders one resident "
-                        "tile; loop-carried int32 state is not implemented",
-                        FindingCategory.HARDWARE_CONFORMANCE,
                     )
             if values is not None:
                 if values.shape != (k,):
@@ -1248,14 +1213,11 @@ def _verify_operation_shape(
                         f"dtype, but {values.name!r} is {values.dtype.value}",
                         category,
                     )
-                if values.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "TOP_K_RESULT_SPACE",
-                        f"{path}.writes",
-                        f"top_k values stay in registers before an explicit store, but "
-                        f"{values.name!r} is in {values.space.value}",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
+                _require_register_resident(
+                    values, "TOP_K_RESULT_SPACE", f"{path}.writes",
+                    f"top_k values stay in registers before an explicit store, but "
+                    f"{values.name!r} is in {values.space.value}", out,
+                )
             if indices is not None:
                 if indices.shape != (k,):
                     out.add(
@@ -1273,21 +1235,10 @@ def _verify_operation_shape(
                         f"{indices.dtype.value}",
                         category,
                     )
-                if indices.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "TOP_K_RESULT_SPACE",
-                        f"{path}.writes",
-                        f"top_k indices stay in registers before an explicit store, but "
-                        f"{indices.name!r} is in {indices.space.value}",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
-            if k & (k - 1):
-                out.add(
-                    "TOP_K_K_UNLOWERABLE",
-                    f"{path}.parameters.k",
-                    f"the admitted SM100 Triton top_k lowering requires power-of-two k, "
-                    f"but k is {k}",
-                    FindingCategory.HARDWARE_CONFORMANCE,
+                _require_register_resident(
+                    indices, "TOP_K_RESULT_SPACE", f"{path}.writes",
+                    f"top_k indices stay in registers before an explicit store, but "
+                    f"{indices.name!r} is in {indices.space.value}", out,
                 )
     if operation.kind is OperationKind.SCAN and operation.reads and operation.writes:
         source = buffers.get(operation.reads[0])
@@ -1367,7 +1318,7 @@ def _verify_operation_shape(
                     "tmem load requires an explicit 32x32b power-of-two repetition in [1,128]",
                     FindingCategory.HARDWARE_CONFORMANCE)
     if operation.kind is OperationKind.ATOMIC_RMW:
-        if not -(1 << 31) <= operation.parameters.value < (1 << 31):
+        if not _fits_int32(operation.parameters.value):
             out.add(
                 "ATOMIC_VALUE_RANGE",
                 f"{path}.parameters.value",
@@ -1409,14 +1360,11 @@ def _verify_operation_shape(
                         category,
                     )
             if result is not None:
-                if result.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "ATOMIC_RESULT_SPACE",
-                        f"{path}.writes",
-                        f"atomic old values stay in registers before an explicit store, "
-                        f"but {result.name!r} is in {result.space.value}",
-                        FindingCategory.HARDWARE_CONFORMANCE,
-                    )
+                _require_register_resident(
+                    result, "ATOMIC_RESULT_SPACE", f"{path}.writes",
+                    f"atomic old values stay in registers before an explicit store, "
+                    f"but {result.name!r} is in {result.space.value}", out,
+                )
                 if result.dtype is not DType.INT32:
                     out.add(
                         "ATOMIC_RESULT_DTYPE",
@@ -1493,6 +1441,15 @@ def _verify_operation_shape(
                 "one contraction writes exactly one explicit result", category,
             )
         tile = operation.parameters.tile_shape
+        # Borrowed block, recorded rather than closed (AGENTS.md, "A block from an
+        # unrelated rule is on loan"). The premise holds for every route that stages the
+        # full input tile, and reading the route here is a Target-less shared rule
+        # branching on a backend name. Measured at Phase 2: dropping the gate adds this
+        # finding to the cutedsl case mma-tile-n-drift, and moving the rule into the
+        # backends' preflights (both already carry it as TRITON_MMA_TILE_DOMAIN and
+        # NATIVE_MMA_TILE_DOMAIN) flips native-k-ranges-input-domain from refused to
+        # accepted-but-unlowerable. Either is a second Corpus expectation change, so
+        # the gate stays until that refresh is reviewed on its own.
         if tile is not None and backend is not None and backend.value in {"native_cuda", "triton"}:
             operands = [buffers.get(name) for name in operation.reads[:2]]
             if (len(operands) != 2
@@ -1518,11 +1475,10 @@ def _verify_operation_shape(
                 )
             for name in (*operation.reads, *operation.writes):
                 buffer = buffers.get(name)
-                if buffer is not None and buffer.space is not MemorySpace.REGISTER:
-                    out.add(
-                        "ELEMENTWISE_FMA_SPACE", path,
-                        f"fma operand/result {name!r} must be register-resident",
-                        FindingCategory.HARDWARE_CONFORMANCE,
+                if buffer is not None:
+                    _require_register_resident(
+                        buffer, "ELEMENTWISE_FMA_SPACE", path,
+                        f"fma operand/result {name!r} must be register-resident", out,
                     )
         supplied = len(operation.reads) + (parameters.scalar is not None)
         if supplied != parameters.arity_needed:
@@ -1794,14 +1750,12 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         category,
                     )
                 else:
-                    if index_buffer.space is not MemorySpace.REGISTER:
-                        out.add(
-                            "ACCESS_INDEX_BUFFER_SPACE",
-                            component_path,
-                            f"runtime index buffer {component.name!r} is in "
-                            f"{index_buffer.space.value}, not registers",
-                            category,
-                        )
+                    _require_register_resident(
+                        index_buffer, "ACCESS_INDEX_BUFFER_SPACE", component_path,
+                        f"runtime index buffer {component.name!r} is in "
+                        f"{index_buffer.space.value}, not registers", out,
+                        category,
+                    )
                     if index_buffer.dtype is not DType.INT32:
                         out.add(
                             "ACCESS_INDEX_BUFFER_DTYPE",
@@ -2103,9 +2057,9 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                     )
 
             # The local value has the zipped index domain once, plus every independent
-            # tile/full-dimension domain in access order. That is the exact shape the
-            # Triton address branch emits for a load result, atomic result or store
-            # value.
+            # tile/full-dimension domain in access order. That is the exact shape a
+            # runtime-indexed address computes for a load result, atomic result or
+            # store value.
             result_name = None
             if operation.kind is OperationKind.LOAD and len(operation.writes) == 1:
                 result_name = operation.writes[0]
@@ -2171,23 +2125,6 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                             f"{staged.name!r} has shape {list(staged.shape)}",
                             category,
                         )
-
-        relation = buffer.valid_extent
-        if relation is not None and relation.indexed_by:
-            supported = (
-                len(relation.indexed_by) == 1
-                and relation.indexed_by[0] < len(access.indices)
-                and access.indices[relation.indexed_by[0]].source
-                is AccessIndexKind.PROGRAM
-            )
-            if not supported:
-                out.add(
-                    "VALID_EXTENT_ACCESS_UNLOWERABLE",
-                    path,
-                    "the Triton valid-extent lowering requires one extent axis "
-                    "indexed by one scalar program axis",
-                    FindingCategory.HARDWARE_CONFORMANCE,
-                )
 
     # A tile axis produces a staged extent. If the axis says 128 and the buffer it
     # stages into says 256, the two disagree about the same tile and one of them is

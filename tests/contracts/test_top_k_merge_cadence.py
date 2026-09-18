@@ -141,9 +141,12 @@ class LegalityTest(unittest.TestCase):
 
     def test_existing_int32_carried_state_exclusion_remains_the_owner(self) -> None:
         schedule = Schedule.from_dict(_two_tile_document(INT32_STREAMING))
+        # The int32 loop-carried exclusion is the Triton route's own refusal now; the
+        # cadence rule still does not fire beside it.
+        route_codes = {item.code for item in triton.preflight(schedule, TARGET)}
         codes = {item.code for item in verify(schedule, TARGET)}
 
-        self.assertIn("TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE", codes)
+        self.assertIn("TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE", route_codes)
         self.assertNotIn("TOP_K_MERGE_CADENCE_REQUIRES_ACROSS_LOOP", codes)
 
     def test_supported_fp32_cadence_has_no_new_blocking_finding(self) -> None:

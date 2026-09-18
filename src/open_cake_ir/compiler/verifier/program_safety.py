@@ -11,10 +11,26 @@ from ..ir import (
     Operation,
     OperationKind,
     Schedule,
+    contract,
 )
 from ..diagnostics import FindingCategory, FindingSeverity
+from ..target import Target
 from ._collector import _Collector
 
+
+def declared_barrier_mechanisms(target: Target) -> frozenset[BarrierMechanism]:
+    """The mechanisms the Target's declared synchronization contracts realize.
+
+    Read off the contract registry, so a Target that declares a contract under its own
+    name still reports the mechanism that contract realizes, and a contract that is an
+    ordering guarantee with no barrier object realizes none.
+    """
+
+    return frozenset(
+        record.realizes
+        for name in target.synchronization_contracts
+        if (record := contract(name)) is not None and record.realizes is not None
+    )
 
 
 def _verify_state_store_ownership(schedule: Schedule, out: _Collector) -> None:
@@ -124,10 +140,11 @@ def _verify_state_store_ownership(schedule: Schedule, out: _Collector) -> None:
                 )
 
 
-def verify(schedule: Schedule, out: _Collector) -> None:
+def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
     category = FindingCategory.PROGRAM_SAFETY
 
     buffers = {buffer.name: buffer for buffer in schedule.buffers}
+    mechanisms = declared_barrier_mechanisms(target)
     roles = {role.name for role in schedule.roles}
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
     barriers = {barrier.name: barrier for barrier in schedule.barriers}
@@ -194,12 +211,15 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
         if barrier.mechanism is None:
+            # Advisory: the hardware-conformance rule already refuses barriers on a
+            # Target whose contracts realize no mechanism, so this quotes what the
+            # Target declares rather than restating the vocabulary.
+            admitted = ", ".join(sorted(m.value for m in mechanisms)) or "none"
             out.add(
                 "BARRIER_MECHANISM_UNDECLARED",
                 f"{path}.mechanism",
-                f"barrier {barrier.name!r} does not say how it is realized; the Target "
-                f"admits {', '.join(sorted(m.value for m in BarrierMechanism))} "
-                "and the backend chooses",
+                f"barrier {barrier.name!r} does not say how it is realized; Target "
+                f"{target.target_id!r} admits {admitted} and the backend chooses",
                 category,
                 FindingSeverity.HINT,
             )

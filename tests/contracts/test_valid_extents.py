@@ -8,7 +8,7 @@ from pathlib import Path
 
 import jsonschema
 
-from open_cake_ir.compiler.backends.triton import emit
+from open_cake_ir.compiler.backends.triton import emit, preflight
 from open_cake_ir.compiler.ir import Schedule, ScheduleParseError
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.target import Target
@@ -76,7 +76,13 @@ class ValidExtentContractTest(unittest.TestCase):
         document = _document()
         document["buffers"][0]["valid_extent"]["indexed_by"] = [0, 2]
         document["buffers"][1]["shape"] = [4, 16]
-        self.assertIn("VALID_EXTENT_ACCESS_UNLOWERABLE", _codes(document))
+        # The relation is well-formed and the Verifier says so; the one-axis subset is
+        # the Triton emitter's, so its refusal comes from the route.
+        self.assertFalse({code for code in _codes(document) if code.startswith("VALID_EXTENT_")})
+        route_codes = {
+            finding.code for finding in preflight(Schedule.from_dict(document), TARGET)
+        }
+        self.assertIn("VALID_EXTENT_ACCESS_UNLOWERABLE", route_codes)
 
     def test_emission_derives_the_extent_load_and_row_predicate(self) -> None:
         source = emit(Schedule.load(POSITIVE), TARGET).source
