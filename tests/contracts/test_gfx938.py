@@ -555,6 +555,11 @@ class Gfx938DeclaredContracts(unittest.TestCase):
         used = set()
         for case in manifest["cases"]:
             path = ROOT / case["schedule"]
+            # Twelve manifest entries are Python schedules under examples/; they declare
+            # their target in the decorator rather than in a readable document, and none
+            # of them is a gfx938 case.
+            if path.suffix != ".json":
+                continue
             document = json.loads(path.read_text())
             if document.get("target") != "gfx938":
                 continue
