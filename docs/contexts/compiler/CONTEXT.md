@@ -49,3 +49,10 @@ the Glossary.
 
 “Target `sm_100a` accepts this instruction contract” does not mean that a physical B200 is
 available or that another architecture inherits the same calibration.
+
+## Backend input policies
+
+A backend registration may bind a raw-input contract checked after typed construction
+and before canonicalization. Each Python emitter declares its PythonNamespace; shared
+code applies the lexical and collision checks without owning another emitter's symbols.
+See [ADR 0072](../../adr/0072-backend-owned-input-and-native-adapters.md).

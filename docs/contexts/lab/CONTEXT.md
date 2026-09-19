@@ -96,3 +96,10 @@ Concrete portfolio dispatch remains in `TaskLab` and its task-owned implementati
 Import internal helpers from their owner; the stable public imports remain
 `open_cake_ir.lab`. Runtime source changes require an Executor successor, not a Compiler
 release or changes to historical records.
+
+## Native pairing implementation
+
+Each NativeBackend row binds a NativeAdapter: its factories, source admission, launch
+block and baseline projection. Pairing delegates through that interface without selecting
+a default implementation. Dependencies are resolved at call time. See
+[ADR 0072](../../adr/0072-backend-owned-input-and-native-adapters.md).
