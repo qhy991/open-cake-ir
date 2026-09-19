@@ -18,7 +18,14 @@
   "proposed_change": "Opt the scaffold call into existing external_file custody checks, retaining frozen-byte verification. Keep other raw references source-only. Exercise the real CUDA and Metal composition seam plus external alias, traversal, source-checkout and changed-byte counterexamples.",
   "decision": "accepted",
   "implemented_in": "0bd562c1b16430fd645e7b7154e099ae4d13f5c6",
-  "verified_by": null,
+  "verified_by": {
+    "source_commit": "0bd562c1b16430fd645e7b7154e099ae4d13f5c6",
+    "original_replay": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/scaffold-replay-20260920.json",
+    "result": "Original Campaign Lock scaffold resolves with frozen bytes and external custody intact under the successor. Original failed launch remains unchanged.",
+    "tests_passed": 55,
+    "corpus": "unchanged Corpus Gate passed",
+    "scope": "External scaffold composition refusal repaired; does not claim completion of the successor optimization campaign."
+  },
   "partial_verification": {
     "commit": "0bd562c1b16430fd645e7b7154e099ae4d13f5c6",
     "tests_passed": 55,
