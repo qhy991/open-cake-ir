@@ -518,6 +518,9 @@ def _operation_parameters(
             optional={"across_loop"},
             context=context,
         )
+        # The opposite default to REDUCE, so here true is the one worth stating and
+        # omitting means false. Said out loud because the two neighbouring kinds spell
+        # the same field with opposite defaults, and nothing in the field name says so.
         return ReduceArgminParameters(
             _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
             _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
@@ -532,8 +535,14 @@ def _operation_parameters(
             context=context,
         )
         if obj.get("across_loop") is True:
+            # True is what omitting the field already means, so writing it is refused to
+            # keep one spelling of one fact (P3). The message used to say only that the
+            # spelling was "historical", which tells an author that what they wrote is
+            # wrong and not what is right: three of roughly twenty DCU campaigns on
+            # 2026-09-17 lost a candidate here, and each had to guess from it.
             raise ScheduleParseError(
-                f"{context}.across_loop=true is the historical omitted spelling"
+                f"{context}.across_loop=true is the default; omit the field. State it "
+                "only as false, which folds within one tile instead of across the loop"
             )
         return ReduceParameters(
             _enum(ReduceOp, obj["op"], f"{context}.op"),

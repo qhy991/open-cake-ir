@@ -2039,6 +2039,104 @@
       }
     },
     {
+      "case_id": "gfx938-gemm-bias-mma-accepted",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "1983668386d1c88b807736fc85caecbc862045c4f104aefbad46fdb2087a53d6",
+        "lowering_source_sha256": "8c549d672887b3b5fa8c93ba1bdfdfa9231f9c7bb1868f12648772cf9dcdc22b"
+      }
+    },
+    {
+      "case_id": "gfx938-gemm-bias-mma-operand-dtype-drift",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke-operand-dtype-drift.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ec19411c138248942609f1536f6e6cb83b0bc80e08e79dadb25b799f7a3a7085",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "gfx938-swiglu-tanh-accepted",
+      "schedule": "corpus/schedules/gfx938-swiglu-b8-smoke.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "0ac35a511f42a829d609e0606ff2925c6020b3ee49cdbb0fb45b79e02dc6c798",
+        "lowering_source_sha256": "4775911c6077be3f0ded59e35f90800de46029b1ce63b4ec96ca0b9fac4a2afa"
+      }
+    },
+    {
+      "case_id": "gfx938-swiglu-foreign-tanh-contract",
+      "schedule": "corpus/schedules/gfx938-swiglu-b8-smoke-foreign-tanh-contract.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TARGET_INSTRUCTION_UNSUPPORTED",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ce4d21974a9333906d258a724d141cfa15b171e5995d068751d95d2a3ab2b198",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "gfx938-gemm-bias-mma-fp32-accepted",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke-fp32.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "5da756c65b9201cf30c71b971e7bdeb1a83066c07904281bf8be46dd0079a579",
+        "lowering_source_sha256": "55e563b78153c1d6a6a2971e1d7e9173dfbb184c89a93451792a1f498ff12647"
+      }
+    },
+    {
+      "case_id": "gfx938-gemm-bias-mma-tf32-accepted",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke-tf32.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "fe8422e1780cfe0f6eab5e83197499c0e31b1f56f0edc55b12a24712b0f8dfc6",
+        "lowering_source_sha256": "402d46a915c6a159598d54930510021a1cc513ee232b5adad27772ff1f44530a"
+      }
+    },
+    {
+      "case_id": "gfx938-gemm-bias-mma-fp8-accepted",
+      "schedule": "corpus/schedules/gfx938-gemm-bias-b1-smoke-fp8.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "10c9549dce63fb773ccc290b141476af85aac6132095b69fb2dd3683127d90a4",
+        "lowering_source_sha256": "0dbb4430557eb20afee821184e8f30c3f85764fbe5d9689eb12909330a03ebc4"
+      }
+    },
+    {
       "case_id": "gfx1151-rmsnorm-accepted",
       "schedule": "corpus/schedules/gfx1151-rmsnorm-b8-smoke.json",
       "expected": {

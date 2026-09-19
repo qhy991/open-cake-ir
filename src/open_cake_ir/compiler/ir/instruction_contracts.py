@@ -78,6 +78,7 @@ _RECORDS = (
     _mma("triton.dot.fp16_fp32", {DType.FP16}),
     _mma("triton.dot.fp8e4m3_fp32", {DType.FP8_E4M3}),
     InstructionContract("triton.atomic_add.i32.relaxed.gpu", ContractKind.ATOMIC),
+    _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     # Metal's own named-precision spelling; the fast:: namespace is a different function.
     _elementwise("metal.precise.tanh.f32", ElementwiseOp.TANH, DType.FP32),

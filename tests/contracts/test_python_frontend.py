@@ -122,6 +122,129 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
                 direct = triton.emit(Schedule.from_dict(document), Target.load(ROOT / "compiler/targets/sm_100a.json"))
                 self.assertIn("scale = tl.load(", direct.source)
 
+    def test_a_leading_literal_is_canonicalised_on_the_commutative_operators(self):
+        """`2.0 * x` and `x * 2.0` are the same computation, so they parse to one document.
+
+        The gap this closes, measured: two of eleven DCU campaigns on 2026-09-17 lost a
+        candidate to writing the scalar on the left (F-2026-09-18-001). The refusal
+        applied to every operator, though only `sub` and `div` carry meaning in the
+        order, and `2.0 * x` is how it is written in NumPy and in PyTorch.
+        """
+        for leading, trailing in (("2.0 * values", "values * 2.0"),
+                                  ("1.5 + values", "values + 1.5"),
+                                  ("2 * values", "values * 2")):
+            with self.subTest(expression=leading):
+                first = parse(self.scalar_source(leading)).document
+                second = parse(self.scalar_source(trailing)).document
+                # Identical, not merely both accepted: the literal is canonicalised into
+                # the second position, so nothing downstream sees two spellings.
+                self.assertEqual(first, second)
+                op = next(op for op in first["operations"] if op["id"] == "result")
+                self.assertEqual(op["parameters"].get("scalar"), float(leading.split()[0]))
+                self.assertEqual(len(op["reads"]), 1)
+
+    def test_the_call_spelling_canonicalises_the_same_way_as_the_operator(self):
+        """`lm.mul(2.0, x)` and `2.0 * x` are one operation, so they parse to one document.
+
+        The gap this closes: the canonicalisation first lived in the `BinOp` branch only,
+        and the call path builds its operands separately, so `2.0 * x` parsed while
+        `lm.mul(2.0, x)` was refused -- two spellings of one operation that disagreed,
+        which is the P3 defect the change was meant to remove rather than relocate.
+        """
+        for call, operator in (("lm.mul(2.0, values)", "2.0 * values"),
+                               ("lm.add(1.5, values)", "1.5 + values")):
+            with self.subTest(expression=call):
+                first = parse(self.scalar_source(call)).document
+                second = parse(self.scalar_source(operator)).document
+                op = next(o for o in first["operations"] if o["id"] == "result")
+                self.assertEqual(op["reads"], ["values"])
+                self.assertEqual(op["parameters"].get("scalar"),
+                                 float(call.split("(")[1].split(",")[0]))
+                other = next(o for o in second["operations"] if o["id"] == "result")
+                self.assertEqual(op["parameters"], other["parameters"])
+
+    def test_the_refusal_names_every_clause_of_the_rule(self):
+        """A message that names one clause tells an author a spelling works when it does not.
+
+        An earlier version ended "as the first only for add and mul", which was produced
+        for inputs whose operator *is* mul and for a literal that is already second. The
+        message has to hold for every input that reaches it.
+        """
+        for expression in ("2.0 - values", "lm.sub(2.0, values)", "2.0 * 3.0 * values"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(FrontendError) as caught:
+                    parse(self.scalar_source(expression))
+                message = str(caught.exception)
+                self.assertIn("admitted once", message)
+                self.assertIn("second operand", message)
+                self.assertIn("other than fma", message)
+                self.assertIn("add and mul also admit it first", message)
+
+    def test_a_broadcast_keeps_the_second_position_and_the_literal_rule_speaks(self):
+        """The swap must not move a broadcast, and the refusal must own the input.
+
+        The gap this closes: the canonicalisation ran before the broadcast position
+        check, so `lm.mul(2.0, lm.broadcast(scale, axis=0))` had its broadcast moved to
+        position 0 and was refused with "broadcast applies once to the second arithmetic
+        operand" -- which is where the author had written it. A rule refusing an input
+        that already satisfies it is the borrowed-block shape; the literal rule owns this
+        one, and can only speak if the broadcast stays where it was put.
+        """
+        for expression in ("lm.mul(2.0, lm.broadcast(scale, axis=0))",
+                           "2.0 * lm.broadcast(scale, axis=0)"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(FrontendError) as caught:
+                    parse(self.scalar_source(expression))
+                message = str(caught.exception)
+                self.assertIn("a literal is admitted once", message)
+                # It must not imply another spelling works: no spelling puts a literal
+                # beside a broadcast, and `lm.broadcast(...) * 2.0` is refused too.
+                self.assertIn("no spelling puts a literal beside one", message)
+                self.assertNotIn("broadcast applies once", message)
+
+    def test_no_spelling_puts_a_literal_beside_a_broadcast(self):
+        """Both orders are refused, so the message must not point at the other one."""
+        for expression in ("lm.mul(2.0, lm.broadcast(scale, axis=0))",
+                           "lm.broadcast(scale, axis=0) * 2.0"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(FrontendError):
+                    parse(self.scalar_source(expression))
+
+    def test_a_broadcast_written_second_still_parses(self):
+        """The swap changes nothing for the spelling that already worked."""
+        document = parse(self.scalar_source(
+            "values * lm.broadcast(scale, axis=0)")).document
+        op = next(o for o in document["operations"] if o["id"] == "result")
+        self.assertEqual(op["parameters"].get("broadcast_axis"), 0)
+        self.assertEqual(op["parameters"]["op"], "mul")
+
+    def test_a_leading_literal_stays_refused_where_the_order_is_meaning(self):
+        """`2.0 - x` is not `x - 2.0`, so swapping it would compute something else."""
+        for expression in ("2.0 - values", "2.0 / values"):
+            with self.subTest(expression=expression):
+                with self.assertRaises(FrontendError) as caught:
+                    parse(self.scalar_source(expression))
+                # The refusal names which operators admit it, because a reader told only
+                # a position cannot tell why `values - 2.0` was the form that worked.
+                self.assertIn("add and mul also admit it first", str(caught.exception))
+
+    def test_canonicalising_a_literal_does_not_reorder_buffer_operands(self):
+        """Only a Python literal moves; two loaded buffers keep the order written.
+
+        `scale * values` and `values * scale` are both legal and both have two reads, and
+        reordering them would change which buffer the emitter treats as the broadcast
+        operand -- the property the neighbouring non-reordering test pins for sub and div.
+        """
+        for expression, reads in (("scale * values", ["scale", "values"]),
+                                  ("values * scale", ["values", "scale"]),
+                                  ("scale + values", ["scale", "values"]),
+                                  ("values + scale", ["values", "scale"])):
+            with self.subTest(expression=expression):
+                document = parse(self.scalar_source(expression)).document
+                op = next(op for op in document["operations"] if op["id"] == "result")
+                self.assertEqual(op["reads"], reads)
+                self.assertNotIn("scalar", op["parameters"])
+
     def test_triton_refuses_direct_global_scalar_values_with_complete_access_maps(self):
         for expression, position in (("values / scalar[unit]", 1), ("scalar[unit] / values", 0)):
             source = self.scalar_source(expression)

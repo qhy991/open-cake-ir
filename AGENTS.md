@@ -96,7 +96,7 @@ in `findings/`, not here.
   every retired lock, so it voids no binding, and it lands as its own hash-only tick
   because `semantic_sha256` covers the whole Schedule document.
 
-What this section still knows to be open is F-2026-09-18-001; of its five items, the
+What this section still knows to be open is F-2026-09-18-006; of its five items, the
 `launch_cubin_once` literals and the Metal/native-CUDA warp-width literals closed with
 the Phase 1 commit that introduced the registry, and the `warps` rename, the
 `environment_kind` wording and `PLACED_CONTRACTS` mnemonics (now registry-derived) remain.

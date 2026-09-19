@@ -6,6 +6,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+
+from open_cake_ir.tasks import devices
 from unittest.mock import patch
 
 from tools import launch_task_matrix as matrix
@@ -140,16 +142,32 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         self.assertNotIn('--dispatches-per-sample', command)
 
     def test_unsupported_requested_factory_fails_before_workspace_or_provider(self):
-        # rmsnorm on triton-b300 used to be the unsupported pair here, because the
-        # normalization family read an Apple-only registry. It is supported now, so
-        # this case is carried by a pair still refused for a stated capability
-        # reason: gelu_tanh names a tanh instruction contract and gfx938 admits none.
+        # This case needs one pair the matrix still refuses for a stated capability
+        # reason, and it has now moved twice because the reason stopped being true:
+        # first rmsnorm on triton-b300, when the normalization family read an
+        # Apple-only registry; then gelu_tanh on triton-dcu, until gfx938 measured and
+        # declared ocml.tanh.f32. It is gfx1151 that admits no tanh contract today.
+        #
+        # The pair is named rather than searched for because a search would pass
+        # vacuously on the day none is left. When this moves a third time, check
+        # whether any refused pair remains before rewriting it: if none does, this test
+        # has nothing left to assert and should say so instead of being re-aimed.
+        self.assertIsNone(devices.BACKENDS['triton-gfx1151']['tanh_contract'])
         args = self.args('silu','gelu_tanh')
-        args[args.index('--backend')+1] = 'triton-dcu'
+        args[args.index('--backend')+1] = 'triton-gfx1151'
         with self.assertRaises(SystemExit),patch.object(matrix.subprocess,'run') as run:
             matrix.main(args)
         run.assert_not_called()
         self.assertFalse(self.root.exists())
+
+    def test_the_pair_this_case_used_to_rest_on_is_supported_now(self):
+        """gelu_tanh on triton-dcu is admitted, so it cannot carry the refusal case.
+
+        Stated as its own assertion so the change that admitted it is visible here,
+        rather than the previous case silently being re-aimed at a different target.
+        """
+        self.assertEqual(
+            devices.BACKENDS['triton-dcu']['tanh_contract'], 'ocml.tanh.f32')
 
 
 if __name__ == "__main__":

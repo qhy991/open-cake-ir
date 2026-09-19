@@ -342,6 +342,48 @@ class CompilerIssueContracts(unittest.TestCase):
         self.assertIn('BACKEND_OPERATION_UNEMITTABLE',codes)
 
 
+class ReduceAcrossLoopSpelling(unittest.TestCase):
+    """The refusal names the spelling that works, not only the one that does not.
+
+    `across_loop` defaults to True on a reduce, so writing it is refused to keep one
+    spelling of one fact. The message said only that what the author wrote was
+    "historical", which does not say what is current: three of roughly twenty DCU
+    campaigns on 2026-09-17 lost a candidate to it and each had to guess.
+
+    The two neighbouring kinds spell the same field with opposite defaults -- reduce
+    defaults True, reduce_argmin defaults False -- which is why omitting it is worth
+    asserting for both rather than assumed from the name.
+    """
+
+    def _reduce(self, **extra):
+        from open_cake_ir.compiler.ir.operations import _operation_parameters, OperationKind
+        return _operation_parameters(
+            OperationKind.REDUCE,
+            {"op": "sum", "axis": 0, "scope": "cta", **extra}, "op.parameters")
+
+    def test_writing_the_default_is_refused_and_the_message_says_what_to_write(self):
+        from open_cake_ir.compiler.ir import ScheduleParseError
+        with self.assertRaises(ScheduleParseError) as caught:
+            self._reduce(across_loop=True)
+        message = str(caught.exception)
+        self.assertIn("omit the field", message)
+        self.assertIn("false", message)
+
+    def test_omitting_it_means_across_the_loop_and_false_means_within_one_tile(self):
+        self.assertIs(self._reduce().across_loop, True)
+        self.assertIs(self._reduce(across_loop=False).across_loop, False)
+
+    def test_reduce_argmin_spells_the_same_field_with_the_opposite_default(self):
+        from open_cake_ir.compiler.ir.operations import _operation_parameters, OperationKind
+        def argmin(**extra):
+            return _operation_parameters(
+                OperationKind.REDUCE_ARGMIN,
+                {"tie_break": "lowest_index", "nan_policy": "reject_input", **extra},
+                "op.parameters")
+        self.assertIs(argmin().across_loop, False)
+        self.assertIs(argmin(across_loop=True).across_loop, True)
+
+
 class FrontendIssueContracts(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
