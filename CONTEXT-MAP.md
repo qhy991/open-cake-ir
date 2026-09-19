@@ -6,6 +6,10 @@ This is the navigation authority for repository documentation. Canonical term de
 live in [`docs/GLOSSARY.md`](docs/GLOSSARY.md); this file says which document owns each kind
 of information and where new material belongs.
 
+The [reading entry](docs/README.md) gives the short route, the [catalog](docs/catalog.md)
+retains detailed and historical reading links, and the [ADR index](docs/adr/README.md)
+is the single complete decision list. Language gateways link to these owners.
+
 ## Documentation lifecycle
 
 | Class | Contains | Update rule | Location |

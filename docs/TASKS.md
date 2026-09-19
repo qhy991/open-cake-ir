@@ -1,8 +1,5 @@
 # 任务代码与通用实验引擎
 
-Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
-
-
 [English](en/TASKS.md)
 
 `lab/` 负责如何迭代，`evaluation/` 负责通用评测记录和执行边界。
@@ -43,8 +40,8 @@ QSA 反馈入口现在是 `python -m open_cake_ir.tasks.qsa.project_feedback`，
 `compiler` 和 `evaluation`。旧的 `qsa_next_turn_request` 和 `turn` 子命令已移除；
 Ralph 控制器是下一轮 StateCard 和 TurnRequest 的唯一生成路径。
 
-K-means 的 portfolio 是该任务的验证流程，其固定 B/N/K/D 形状、seed、dispatcher、
-旧结果解析和运行组合都在该任务目录中。通用层没有为它保留特例实现。
+K-means 的独立 portfolio artifact 工具负责固定 B/N/K/D 形状、seed、dispatcher 和验证。
+Portfolio Study 生命周期已退役；历史运行使用原提交回放，当前 TaskLab 不再提供该运行分支。
 
 LLM 推理任务的后续设计见 [Projection、MLP 与 Attention 任务设计](LLM_INFERENCE_TASK_DESIGN.md)。
 该设计是提案，不表示任务已注册或通过 GPU 资格验证。

@@ -1,8 +1,5 @@
 # Task implementations and the common Lab
 
-Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
-
-
 [中文](../TASKS.md)
 
 `lab/` owns Ralph iteration, budgets, candidate submission and common evidence replay.
@@ -13,7 +10,9 @@ Operator-specific contracts, input materialization, oracles, preparation and dia
 live under `src/open_cake_ir/tasks/`: `qsa`, `flash_kmeans`, `tinygemm`, `tiles`, `dsa`, `kda`.
 The three tensor tasks share the existing `tiles` implementation instead of duplicating it.
 QSA Program execution and feedback belong to QSA. Fixed B/N/K/D portfolio specialization,
-dispatch, assay and historical result interpretation belong to Flash-KMeans.
+dispatch, assay and historical result interpretation belong to Flash-KMeans standalone
+artifact utilities. The Portfolio Study lifecycle is retired; TaskLab has no portfolio
+execution branch. Historical campaigns replay at their original commit.
 
 `tasks.runtime.TaskLab` binds the built-in task functions to the common Lab constructor.
 `tasks.compose` is the live composition boundary used by the CLI. The engine receives
