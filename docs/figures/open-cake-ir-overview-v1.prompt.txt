@@ -1,0 +1,27 @@
+Redesign the reference into an EXTREMELY SIMPLE conceptual overview figure for a top-tier systems research paper. The user rejected the prior diagram because it still had far too much detail. Reduce it to ONLY FOUR concepts and FIVE directed connections. This is a conceptual overview, not an execution pipeline.
+
+Pure white background, landscape 3:2 or 4:3, high-resolution flat 2D vector-like academic artwork. Generous negative space. Thin consistent strokes, restrained scientific typography, elegant alignment. No title, panel headings, subtitles, legends, stage numbers, version numbers, icons, locks, gradients, shadows, decorative graphics, or explanatory text.
+
+Only four short labels may appear, each exactly once:
+"Agent"
+"Kernel"
+"Evaluation"
+"Compiler"
+
+Arrange the four nodes in a spacious balanced diamond:
+Agent at the top center;
+Kernel at the middle right;
+Evaluation at the bottom center;
+Compiler at the middle left.
+Use modest, equally weighted rounded rectangles with near-white fills and dark charcoal labels. Do not make giant heavy boxes or oversized bold type.
+
+Draw exactly these FIVE directed arrows with clear arrowheads:
+1. Agent → Kernel, smooth blue curve along upper-right diamond side.
+2. Kernel → Evaluation, smooth blue curve along lower-right side.
+3. Evaluation → Agent, a straight thin blue vertical arrow UP through the empty center. This shared spine makes the kernel feedback cycle visible.
+4. Evaluation → Compiler, smooth muted orange DASHED curve along lower-left side.
+5. Compiler → Agent, smooth muted orange DASHED curve along upper-left side.
+
+The right blue loop expresses automated agent-driven kernel iteration. The left dashed orange path expresses evidence-guided compiler evolution through the maintenance workflow; dashed lines are essential to avoid depicting it as the same automatic loop. Their exact meaning will be explained OUTSIDE the figure in the report caption, so add NO labels on arrows. This is not model-weight training.
+
+Make the composition feel light, refined and intentional: white space, precise geometry, visually balanced two-loop silhouette, large enough readable labels, calm blue #0072B2 and muted orange #BD6D35. Use color on arrows and only subtle matching node outlines if useful; the Agent and Evaluation nodes can be neutral charcoal outlines. All arrows must go from the specified source node to the specified destination node and must not pass through any node or text. No other nodes, symbols or text. Do NOT retain any part of the old detailed workflow. No image title, no figure number, no watermark.
