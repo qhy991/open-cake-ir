@@ -485,9 +485,9 @@ class StrictStructureTest(unittest.TestCase):
         neither = self._reject(_mutated(B32, lambda d: d.pop("program_map")))
         self.assertIn("exactly one of grid or program_map", neither)
 
-    def test_role_warps_must_be_distinct_and_non_negative(self) -> None:
+    def test_role_execution_groups_must_be_distinct_and_non_negative(self) -> None:
         self.assertIn(
-            "repeats a warp index",
+            "repeats an execution-group index",
             self._reject(_mutated(B32, lambda d: d["roles"][0].update(execution_groups=[0, 1, 1]))),
         )
         self.assertIn(

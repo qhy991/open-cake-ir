@@ -89,12 +89,11 @@ in `findings/`, not here.
   reports absence beside coverage; `test_corpus_target_coverage.py` holds that absence is
   reported and never blocks the Gate (D10). Do not mint cases to satisfy a count:
   `apple_gpu_family7` and `apple_gpu_family9` are reported unexamined today.
-- **One vendor word is not the neutral word.** `Role.warps` (`compiler/ir/resources.py`)
-  is the only accepted spelling for a role's execution slots and `Compiler.assess`
-  reports `total_warps` for every target. The rename is authorized (D4):
-  `calibration_coverage` has been empty in every commit of `compiler/revision.json` and
-  every retired lock, so it voids no binding, and it lands as its own hash-only tick
-  because `semantic_sha256` covers the whole Schedule document.
+- **Shared roles use execution groups.** Schedule v2 declares `Role.execution_groups`,
+  and assessments report `total_execution_groups`. The Target owns each group's lane
+  width. Native ISA and toolchain names remain in backend diagnostics and emitted source.
+  Version 1 is replayed at its pinned commit; it is not silently translated at admission.
+
 
 What this section still knows to be open is F-2026-09-18-006; of its five items, the
 `launch_cubin_once` literals and the Metal/native-CUDA warp-width literals closed with
