@@ -87,7 +87,7 @@ class ReferenceAccessTests(unittest.TestCase):
             self.assertEqual(delivered["agents_markdown"], package.agents_markdown)
             self.assertIn("Write only `candidate-set.json`", delivered["agents_markdown"])
         external.write_text("Changed after preflight")
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, "scaffold content differs from CampaignLock"):
             self.lab.task_package(lock, "open_cake-1")
 
     def test_reproduction_rules_cannot_be_injected_into_clean_start(self):
