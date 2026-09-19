@@ -3,11 +3,12 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.backends.triton import emit
-from tests.contracts.test_triton_loop_scopes import _gemm, _execute, TARGET
+from tests.contracts.test_triton_loop_scopes import _gemm, _execute, _TL, TARGET
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -29,11 +30,12 @@ def cast_gemm(*, nested=False, chained=False):
         source = name
         for index in range(2 if chained else 1):
             destination = f'{name}_cast_{index}'
+            dtype = 'fp16' if chained and index == 0 else 'fp32'
             buffer = deepcopy(next(b for b in document['buffers'] if b['name'] == name))
-            buffer.update(name=destination, dtype='fp32')
+            buffer.update(name=destination, dtype=dtype)
             document['buffers'].append(buffer)
             operation = {'id':destination, 'kind':'cast', 'role':dot['role'],
-                'reads':[source], 'writes':[destination], 'parameters':{'to':'fp32'}}
+                'reads':[source], 'writes':[destination], 'parameters':{'to':dtype}}
             document['operations'].insert(document['operations'].index(dot), operation)
             body = document['tile_loops'][0]['body']
             body.insert(body.index('dot'), destination)
@@ -59,7 +61,10 @@ class CastContractionProvenanceTests(unittest.TestCase):
                 b = [(j+t*2)%5-2 for j in range(n) for t in range(k)]
                 bias = [j-2 for j in range(n)]
                 memories = {'a':a, 'b':b, 'bias':bias, 'c':[None]*(m*n)}
-                execution = _execute(emission, memories)
+                # Small integer inputs are exact in every cast dtype here; the
+                # adapter checks accumulation/control flow, not GPU rounding.
+                with patch.object(_TL, 'float16', object(), create=True):
+                    execution = _execute(emission, memories)
                 expected = [sum(a[i*k+t]*b[j*k+t] for t in range(k))+bias[j]
                             for i in range(m) for j in range(n)]
                 self.assertEqual(memories['c'], expected)
