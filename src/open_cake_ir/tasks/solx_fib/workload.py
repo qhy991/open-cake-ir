@@ -140,14 +140,25 @@ def default_rows(task_name: str) -> int:
     return max(admitted)
 
 
+def row_spans(width: int) -> tuple[tuple[int, int], ...]:
+    """Partition one row into exact contiguous power-of-two spans, without padding."""
+    if type(width) is not int or width <= 0:
+        raise ValueError("row width must be a positive integer")
+    spans = []
+    start = 0
+    while start < width:
+        size = 1 << ((width - start).bit_length() - 1)
+        spans.append((start, start + size))
+        start += size
+    return tuple(spans)
+
+
 @lru_cache(maxsize=None)
 def admitting_backends(task_name: str) -> tuple[str, ...]:
     """Name every registered backend that can express this task, possibly none.
 
-    None is a real answer: three of these upstream tasks have a hidden size that is not a
-    power of two, which the Triton route cannot tile, and no registered backend lowers
-    this family any other way today. Reporting that is the point; a task list filtered to
-    hide it would say the pack is smaller than it is.
+    Availability is checked against the concrete spans used by the starter. A row
+    need not itself be a power of two when existing static slices cover it exactly.
     """
     admitted = []
     for backend in BACKENDS:
@@ -180,7 +191,8 @@ def workload_document(task_name: str, *, rows: int, columns: int,
     device = BACKENDS[backend]
     admit_dtype(backend, "bf16")
     admit_operations(backend, OPERATION_KINDS)
-    admit_width(backend, columns)
+    for start, stop in row_spans(columns):
+        admit_width(backend, stop - start)
     operator, revision = TASKS[task_name]
     residual = spec["residual"]
     tensors = {"x": {"shape": ["R", "C"], "max_abs": 256.0}}

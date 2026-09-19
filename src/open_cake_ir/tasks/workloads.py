@@ -28,6 +28,7 @@ from .contraction import workload as contraction_math
 from .contraction.authoring import starter_source as contraction_starter_source
 from .aka_v3 import workload as aka_v3_math
 from .deepseek_v4 import workload as deepseek_v4_math
+from .solx_fib import gemm as solx_fib_gemm
 from .solx_fib import workload as solx_fib_math
 from .solx_fib.authoring import starter_source as solx_fib_starter_source
 
@@ -62,6 +63,8 @@ _TASKS = {
        for operator, _ in contraction_math.TASKS.values()},
     # SoL-ExecBench, FlashInfer-Bench definitions. The `solx_fib_` prefix is the upstream
     # authority; the SOL-ExecBench L1 subset registers separately under `solx_l1_`.
+    **{operator: (solx_fib_gemm.validate_contract, WorkloadContract)
+       for operator, _ in solx_fib_gemm.TASKS.values()},
     **{operator: (solx_fib_math.validate_solx_fib_contract, WorkloadContract)
        for operator, _ in solx_fib_math.TASKS.values()},
 }
@@ -118,6 +121,8 @@ def _tensor_math(workload: WorkloadContract):
         return aka_v3_math
     if operator in {name for name, _ in deepseek_v4_math.TASKS.values()}:
         return deepseek_v4_math
+    if operator in {name for name, _ in solx_fib_gemm.TASKS.values()}:
+        return solx_fib_gemm
     if operator in {name for name, _ in solx_fib_math.TASKS.values()}:
         return solx_fib_math
     if operator in {"rmsnorm_fp32", "gemm_bias_bf16_fp32", "indexed_gather_bf16"}:
@@ -144,6 +149,10 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
     of which case is selected for authoring; all five have the same tensor ABI. GEMM
     owns a third extent because its output column count is unrolled by the Schedule.
     """
+    if task_name in solx_fib_gemm.TASKS:
+        document = solx_fib_gemm.workload_document(task_name, rows=rows, columns=columns,
+                                                  depth=depth, backend=backend)
+        return document, solx_fib_gemm.starter_source(WorkloadContract(document), case_id)
     if task_name == add_rmsnorm.TASK:
         if depth is not None:
             raise ValueError("add-RMSNorm does not declare K")

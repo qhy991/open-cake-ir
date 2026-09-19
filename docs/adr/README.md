@@ -80,3 +80,4 @@ ADR 保存设计理由，当前实现以代码和[当前状态](../../reports/cu
 - [0071: Retire structural ranking and the Portfolio Study path](0071-retire-uncalibrated-ranking-and-portfolio-study.md)
 - [0072: Backend-owned input policies and native adapters](0072-backend-owned-input-and-native-adapters.md)
 - [0073: One Study parse and one reading index per responsibility](0073-single-study-admission-and-reading-owners.md)
+- [0074: FlashInfer fixed-shape starters](0074-flashinfer-fixed-shape-starters.md)

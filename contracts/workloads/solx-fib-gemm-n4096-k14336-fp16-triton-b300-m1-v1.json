@@ -1,0 +1,195 @@
+{
+  "cases": [
+    {
+      "case_id": "primary",
+      "mode": "primary",
+      "seed": 2701,
+      "shape": {
+        "K": 14336,
+        "M": 1,
+        "N": 4096
+      }
+    },
+    {
+      "case_id": "zeros",
+      "mode": "zeros",
+      "seed": 2702,
+      "shape": {
+        "K": 14336,
+        "M": 1,
+        "N": 4096
+      }
+    },
+    {
+      "case_id": "near_zero",
+      "mode": "near_zero",
+      "seed": 2703,
+      "shape": {
+        "K": 14336,
+        "M": 1,
+        "N": 4096
+      }
+    },
+    {
+      "case_id": "alternating",
+      "mode": "alternating",
+      "seed": 2704,
+      "shape": {
+        "K": 14336,
+        "M": 1,
+        "N": 4096
+      }
+    },
+    {
+      "case_id": "mixed_magnitude",
+      "mode": "mixed_magnitude",
+      "seed": 2705,
+      "shape": {
+        "K": 14336,
+        "M": 1,
+        "N": 4096
+      }
+    }
+  ],
+  "operator": "solx_fib_gemm_n4096_k14336_fp16",
+  "oracle": {
+    "callable": "open_cake_ir.tasks.solx_fib.gemm.reference_outputs",
+    "implementation": "independent_standard_library_math_no_compiler_or_candidate",
+    "kind": "real_gemm_fsum_then_fp16",
+    "output_rounding": "round_to_nearest_ties_to_even"
+  },
+  "provenance": [
+    {
+      "kind": "solx_pack_task",
+      "path": "flashinfer-bench-tasks/tasks/008_gemm_n4096_k14336",
+      "scope": "semantic_definition_only_no_candidate_or_timing_import",
+      "upstream": "flashinfer-bench"
+    },
+    {
+      "kind": "upstream_definition",
+      "path": "flashinfer_trace/definitions/gemm/gemm_n4096_k14336.json",
+      "scope": "FP16_A_MK_times_transposed_B_NK"
+    },
+    {
+      "kind": "restricted_artifact",
+      "path": "flashinfer-bench-tasks/tasks/008_gemm_n4096_k14336/baseline/",
+      "scope": "complete_target_implementation"
+    }
+  ],
+  "revision": "1",
+  "schema_version": 1,
+  "semantics": {
+    "arithmetic": {
+      "accumulator": "fp32",
+      "operands": "fp16",
+      "output": "fp16"
+    },
+    "candidate_abi": {
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "outputs": [
+        "out"
+      ]
+    },
+    "definition": "out[m,n] = round_fp16(sum_k(a[m,k] * b[n,k]))",
+    "exclusions": [
+      "one_declared_M_only",
+      "no_upstream_random_generator_equivalence",
+      "no_device_or_performance_qualification"
+    ],
+    "input_effects": "unchanged",
+    "materialization": "seed_plus_10000_times_input_index; uniform[-2,2]; zeros; uniform[-1e-3,1e-3]; alternating +/-0.5; signed powers two [-8,1]; round_fp16",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "target": "sm_103a",
+    "upstream_batches": [
+      1,
+      2,
+      4,
+      7,
+      8,
+      15,
+      16,
+      24,
+      32,
+      35,
+      40,
+      48,
+      56,
+      64,
+      70,
+      72,
+      80,
+      88,
+      96,
+      104,
+      112,
+      120,
+      128,
+      136,
+      144,
+      152,
+      160,
+      168,
+      176,
+      184,
+      192,
+      200,
+      208,
+      216,
+      224,
+      232,
+      240,
+      248,
+      256,
+      972,
+      2053,
+      2379,
+      8192
+    ]
+  },
+  "state": "frozen",
+  "tensors": {
+    "a": {
+      "dtype": "fp16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 2.0,
+      "shape": [
+        "M",
+        "K"
+      ]
+    },
+    "b": {
+      "dtype": "fp16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 2.0,
+      "shape": [
+        "N",
+        "K"
+      ]
+    },
+    "out": {
+      "dtype": "fp16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "shape": [
+        "M",
+        "N"
+      ]
+    }
+  },
+  "validation": {
+    "all_cases_required": true,
+    "atol": 0.01,
+    "comparison": "elementwise_atol_rtol",
+    "equal_nan": false,
+    "primary_case": "primary",
+    "qualification": "all_elements_all_five_cases_at_one_M; device_validation_pending",
+    "rtol": 0.01,
+    "tolerance_rationale": "Uses the pack numerical tolerance with every element required, not matched_ratio 0.99; FP32 accumulation order may differ from fsum before FP16 rounding."
+  },
+  "workload_id": "solx-fib-gemm-n4096-k14336-fp16-triton-b300-m1-v1"
+}

@@ -130,8 +130,10 @@ def validate_tile_contract(document: Mapping[str, object]) -> None:
 
 
 def _round(value: float, dtype: str) -> float:
-    """IEEE FP32 and BF16 round-to-nearest, ties-to-even, without tensor libraries."""
+    """IEEE FP16, FP32 and BF16 round-to-nearest, ties-to-even, without tensor libraries."""
 
+    if dtype == "fp16":
+        return struct.unpack("<e", struct.pack("<e", value))[0]
     raw = struct.pack("<f", value)
     if dtype == "bf16":
         bits = struct.unpack("<I", raw)[0]

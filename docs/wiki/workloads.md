@@ -133,9 +133,24 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 | [Fused add+RMSNorm h2048 BF16](../../contracts/workloads/solx-fib-fused-add-rmsnorm-h2048-bf16-triton-b300-r79-v1.json) | 残差在 FP32 相加后再归一化；epsilon `1e-6`，batch 79。 |
 | [Fused add+RMSNorm h4096 BF16](../../contracts/workloads/solx-fib-fused-add-rmsnorm-h4096-bf16-triton-b300-r170-v1.json) | 同上；epsilon `1e-5`，batch 170。 |
 
-上游同一家族还有三个 capture（`fused_add_rmsnorm_h7168`、`rmsnorm_h1536`、`rmsnorm_h7168`）的 hidden size 不是 2 的幂，
-Triton 路线用 `tl.arange` 铺不了。它们在 `src/open_cake_ir/tasks/solx_fib/workload.py` 里注册，
-`admitting_backends` 返回空集合，因此没有合同文件 —— 是被报告出来，不是被省略。
+非 2 的幂长度的三项现已通过精确分段归约接入；所有片段共用整行均方根，输出由同一个分块循环写入。
+
+| 新增合同 | 计算与输出 |
+| --- | --- |
+| [solx_fib_fused_add_rmsnorm_h7168_bf16](../../contracts/workloads/solx-fib-fused-add-rmsnorm-h7168-bf16-triton-b300-r64-v1.json) | 固定形状 `{'C': 7168, 'R': 64}`；设备验证待完成。 |
+| [solx_fib_gemm_n128_k2048_fp16](../../contracts/workloads/solx-fib-gemm-n128-k2048-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 2048, 'M': 1, 'N': 128}`；设备验证待完成。 |
+| [solx_fib_gemm_n2048_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n2048-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 2048}`；设备验证待完成。 |
+| [solx_fib_gemm_n256_k7168_fp16](../../contracts/workloads/solx-fib-gemm-n256-k7168-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 7168, 'M': 1, 'N': 256}`；设备验证待完成。 |
+| [solx_fib_gemm_n28672_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n28672-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 28672}`；设备验证待完成。 |
+| [solx_fib_gemm_n4096_k14336_fp16](../../contracts/workloads/solx-fib-gemm-n4096-k14336-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 14336, 'M': 1, 'N': 4096}`；设备验证待完成。 |
+| [solx_fib_gemm_n4096_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n4096-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 4096}`；设备验证待完成。 |
+| [solx_fib_gemm_n5120_k2048_fp16](../../contracts/workloads/solx-fib-gemm-n5120-k2048-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 2048, 'M': 1, 'N': 5120}`；设备验证待完成。 |
+| [solx_fib_gemm_n6144_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n6144-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 6144}`；设备验证待完成。 |
+| [solx_fib_rmsnorm_h1536_bf16](../../contracts/workloads/solx-fib-rmsnorm-h1536-bf16-triton-b300-r539-v1.json) | 固定形状 `{'C': 1536, 'R': 539}`；设备验证待完成。 |
+| [solx_fib_rmsnorm_h7168_bf16](../../contracts/workloads/solx-fib-rmsnorm-h7168-bf16-triton-b300-r64-v1.json) | 固定形状 `{'C': 7168, 'R': 64}`；设备验证待完成。 |
+
+GEMM 保留 FP16 的 A[M,K] 与 B[N,K] 转置语义，当前 starter 以归约保证正确性，不声称性能。
+完整 26 项中的 GQA、MLA 与 FP8 MoE 仍待接入；离线清单由 `tools/check_flashinfer_tasks.py` 输出。
 
 ## 为什么有些示例不在这张合同表里
 

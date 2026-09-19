@@ -15,7 +15,7 @@ from open_cake_ir.tasks.solx_fib.authoring import starter_source
 from open_cake_ir.tasks.solx_fib.workload import (
     ATOL, CASES, RTOL, SEED_ELEMENT_CAP, SPECS, TASKS,
     admitting_backends, default_rows, launchable_tasks, materialize_case,
-    reference_outputs, validate_solx_fib_contract, workload_document,
+    reference_outputs, row_spans, validate_solx_fib_contract, workload_document,
 )
 from open_cake_ir.tasks.tiles.workload import _round
 from open_cake_ir.tasks.workloads import create_task, load_workload
@@ -23,7 +23,7 @@ from open_cake_ir.tasks.workloads import create_task, load_workload
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "contracts/workloads"
 # The three captures whose hidden size is not a power of two.
-WIDTH_BLOCKED = ("fib_fused_add_rmsnorm_h7168", "fib_rmsnorm_h1536", "fib_rmsnorm_h7168")
+PARTITIONED_TASKS = ("fib_fused_add_rmsnorm_h7168", "fib_rmsnorm_h1536", "fib_rmsnorm_h7168")
 
 
 def _contract_path(task):
@@ -75,25 +75,21 @@ class FamilyRegistrationTests(unittest.TestCase):
             _, document = _contract_path(task)
             self.assertEqual(document["semantics"]["epsilon"], SPECS[task]["epsilon"], task)
 
-    def test_a_width_no_registered_route_can_tile_is_reported_not_hidden(self):
-        for task in WIDTH_BLOCKED:
-            self.assertIn(task, TASKS, task)
-            self.assertNotIn(task, launchable_tasks(), task)
-            self.assertEqual(admitting_backends(task), (), task)
-            hidden = SPECS[task]["hidden"]
-            self.assertNotEqual(hidden & (hidden - 1), 0, task)
-            # The refusal is the route's tiling rule, not the dtype or the Target.
-            with self.assertRaisesRegex(ValueError, "positive power-of-two span"):
-                workload_document(task, rows=8, columns=hidden, backend="triton-b300")
-
-    def test_the_launchable_set_is_exactly_the_remaining_captures(self):
-        self.assertEqual(set(launchable_tasks()), set(TASKS) - set(WIDTH_BLOCKED))
+    def test_all_nine_tasks_have_an_admitted_route(self):
+        self.assertEqual(set(launchable_tasks()), set(TASKS))
         for task in launchable_tasks():
-            # Declaration order, so a registered backend that can express the task is
-            # listed the moment the registry gains it -- which is the point of asking the
-            # registry instead of naming the devices that could when this was written.
             self.assertEqual(admitting_backends(task),
                              ("triton-b200", "triton-b300", "triton-gfx1151"), task)
+
+    def test_partitioned_rows_cover_each_element_exactly_once(self):
+        for task in PARTITIONED_TASKS:
+            width = SPECS[task]["hidden"]
+            spans = row_spans(width)
+            self.assertGreater(len(spans), 1)
+            self.assertEqual([i for start, stop in spans for i in range(start, stop)],
+                             list(range(width)))
+            self.assertTrue(all((stop - start) & (stop - start - 1) == 0
+                                for start, stop in spans))
 
     def test_the_seed_extent_is_the_largest_upstream_batch_the_oracle_can_serve(self):
         for task, spec in SPECS.items():
@@ -106,7 +102,7 @@ class FamilyRegistrationTests(unittest.TestCase):
 
 class FrozenContractTests(unittest.TestCase):
     def test_one_committed_contract_per_launchable_task_and_no_others(self):
-        committed = sorted(path.name for path in CONTRACTS.glob("solx-fib-*.json"))
+        committed = sorted(path.name for path in CONTRACTS.glob("solx-fib-*rmsnorm-*.json"))
         expected = sorted(_contract_path(task)[0].name for task in launchable_tasks())
         self.assertEqual(committed, expected)
 
@@ -287,6 +283,22 @@ class StarterTests(unittest.TestCase):
                             (task, [finding.code for finding in assessment.findings]))
             self.assertEqual(assessment.findings, (), task)
 
+    def test_partitioned_starters_lower_with_one_writer_and_full_output_loop(self):
+        for task in PARTITIONED_TASKS:
+            width = SPECS[task]["hidden"]
+            _, source = create_task(task, backend="triton-b300", rows=2, columns=width)
+            document = parse(source, filename="starter.py").document
+            stores = [op for op in document["operations"] if op["kind"] == "store"]
+            self.assertEqual(len(stores), 1, task)
+            assessment = self.compiler.assess(document)
+            self.assertEqual(assessment.findings, (), task)
+            lowered = self.compiler.lower(assessment)
+            self.assertEqual(lowered.target, "sm_103a")
+            self.assertIn(f'mean_square = square_sum / {float(width)!r}', source)
+            self.assertIn(f'tile={width & -width}', source)
+            self.assertIn('square_sum = ' + ' + '.join(
+                f'sum_{i}' for i in range(len(row_spans(width)))), source)
+
     def test_the_starter_keeps_the_bf16_abi_and_widens_only_in_between(self):
         for task in launchable_tasks():
             workload = _tiny(task, rows=8)
@@ -294,11 +306,11 @@ class StarterTests(unittest.TestCase):
             dtypes = {buffer["name"]: buffer["dtype"] for buffer in schedule["buffers"]}
             self.assertEqual((dtypes["x"], dtypes["weight"], dtypes["out"]),
                              ("bf16", "bf16", "bf16"), task)
-            self.assertEqual(dtypes["values"], "fp32", task)
+            self.assertEqual(dtypes["values_0" if task in PARTITIONED_TASKS else "values"], "fp32", task)
             self.assertEqual(dtypes["narrowed"], "bf16", task)
             casts = [op["parameters"]["to"] for op in schedule["operations"] if op["kind"] == "cast"]
-            self.assertEqual(casts, ["fp32", "fp32", "fp32", "bf16"] if SPECS[task]["residual"]
-                             else ["fp32", "fp32", "bf16"], task)
+            self.assertEqual(casts[-1], "bf16", task)
+            self.assertTrue(all(dtype == "fp32" for dtype in casts[:-1]), task)
 
     def test_the_starter_uses_the_task_s_own_epsilon(self):
         for task in launchable_tasks():

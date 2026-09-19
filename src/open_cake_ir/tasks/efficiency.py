@@ -16,7 +16,7 @@ from open_cake_ir.lab.bindings import source_reference_path
 from .workloads import load_workload
 
 POLICY = "task_efficiency_v1"
-_WIDTHS = {"fp32": 4, "bf16": 2, "int32": 4}
+_WIDTHS = {"fp32": 4, "bf16": 2, "fp16": 2, "int32": 4}
 
 
 def task_work(workload, case_id: str) -> dict:
