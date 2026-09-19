@@ -33,6 +33,26 @@ def selected_tasks(path: Path) -> list[str]:
     return tasks
 
 
+def probe_arguments(root: Path, tasks: list[str]) -> list[str]:
+    path = root / 'probe.json'
+    if not path.exists():
+        return []
+    if path.is_symlink() or not path.is_file() or len(tasks) != 1:
+        raise ValueError('a probe requires one task and regular probe.json')
+    config = json.loads(path.read_text())
+    if not isinstance(config, dict) or set(config) not in ({'kind', 'rows'}, {'kind', 'variant'}):
+        raise ValueError('probe fields differ')
+    if config.get('kind') == 'source' and set(config) == {'kind', 'rows'}:
+        if type(config['rows']) is not int or config['rows'] <= 0:
+            raise ValueError('probe rows must be positive')
+        return ['--candidate-source', str(root / 'candidate.py'), '--rows', str(config['rows'])]
+    if config.get('kind') == 'plan' and set(config) == {'kind', 'variant'}:
+        if config['variant'] not in ('captured', 'boundary'):
+            raise ValueError('unknown probe variant')
+        return ['--candidate-plan', str(root / 'plan.json'), '--variant', config['variant']]
+    raise ValueError('probe kind differs')
+
+
 def main() -> int:
     stage = Path(os.environ["KERNELINFRA_STAGE_DIR"])
     destination = Path(os.environ["KERNELINFRA_RESULT"])
@@ -42,12 +62,14 @@ def main() -> int:
         commit = checkout_commit(ROOT)
         admit_judge_source(commit, json.loads(Path(os.environ["KERNELINFRA_TASK"]).read_text()),
                            os.environ["KERNELINFRA_STAGE_ID"])
-        tasks = selected_tasks(Path(os.environ["KERNELINFRA_CANDIDATE_DIR"]) / "tasks.json")
+        candidate = Path(os.environ["KERNELINFRA_CANDIDATE_DIR"])
+        tasks = selected_tasks(candidate / "tasks.json")
+        probe = probe_arguments(candidate, tasks)
         gate = Compiler.load(ROOT, ROOT / "compiler/revision.json").check_corpus()
         if not gate.passed:
             raise ValueError("Corpus Gate failed before GPU execution")
         output = stage / "checks"
-        arguments = ["test_flashinfer_b300.py", "--output", str(output)]
+        arguments = ["test_flashinfer_b300.py", "--output", str(output), *probe]
         for task in tasks:
             arguments.extend(("--task", task))
         original = sys.argv

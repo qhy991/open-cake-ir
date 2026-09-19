@@ -32,6 +32,8 @@ from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda, _observe_cuda_device
 from open_cake_ir.compiler.target import declared_target
+from open_cake_ir.lab.pairing import bind_baseline
+from open_cake_ir.evaluation.launch_plan import LaunchPlan
 
 
 def _broker_request(path: Path, request: dict) -> dict:
@@ -82,17 +84,22 @@ def _admit_receipt(socket_path: Path, receipt_path: Path):
     return _observe_cuda_device(declared_target('sm_103a'), visible, job_id, 'exclusive')
 
 
-def _test_launch_plan(owner, task_id, task, compiler, output, torch, timing_requested):
+def _test_launch_plan(owner, task_id, task, compiler, output, torch, timing_requested,
+                      *, variant=None, candidate_plan=None):
     """Compile every stage through Cake, then check the complete ordered candidate."""
     row = {'task_id': task_id, 'route': 'cake_launch_plan', 'cases': [], 'variants': [],
            'timing': 'whole_plan_interval_unqualified' if timing_requested else 'not_requested'}
     types = {'fp16':torch.float16, 'bf16':torch.bfloat16, 'fp32':torch.float32,
              'int32':torch.int32, 'fp8_e4m3':torch.float8_e4m3fn}
-    for variant in owner.VARIANTS:
+    variants = owner.VARIANTS if variant is None else (variant,)
+    if any(value not in owner.VARIANTS for value in variants):
+        raise ValueError('unknown task variant')
+    for variant in variants:
         document = owner.workload_document(task, variant=variant)
         workload = WorkloadContract(document)
-        author = owner.author_plan(workload)
-        plan = author.finish()
+        author = owner.author_plan(workload) if candidate_plan is None else None
+        plan = author.finish() if author is not None else LaunchPlan.from_dict(json.loads(candidate_plan.read_text()))
+        admit_plan_workload(plan, workload)
         compiled = plan.compile(compiler)
         directory = output/task_id/variant
         directory.mkdir(parents=True)
@@ -100,7 +107,8 @@ def _test_launch_plan(owner, task_id, task, compiler, output, torch, timing_requ
         (directory/'launch-plan.json').write_bytes(plan.document_bytes)
         entries = {}
         for stage, lowering in zip(plan.stages, compiled.lowerings, strict=True):
-            (directory/(stage.name+'.cake.py')).write_text(author.sources[stage.name])
+            if author is not None:
+                (directory/(stage.name+'.cake.py')).write_text(author.sources[stage.name])
             path = directory/(stage.name+'.triton.py')
             path.write_text(lowering.source)
             module_spec = importlib.util.spec_from_file_location('fib_'+task_id+'_'+variant+'_'+stage.name,path)
@@ -152,6 +160,19 @@ def _test_launch_plan(owner, task_id, task, compiler, output, torch, timing_requ
     return row
 
 
+def admit_plan_workload(plan, workload):
+    """An authored plan must preserve the public task ABI and exact target."""
+    abi = workload.tensor_abi(workload.case_ids[0])
+    inputs = {a.name for a in abi if a.mode == 'input'}
+    outputs = {a.name for a in abi if a.mode == 'output'}
+    if plan.target != workload.target or set(plan.inputs) != inputs or set(plan.outputs) != outputs:
+        raise ValueError('candidate plan target or public tensor names differ from Workload')
+    for argument in abi:
+        tensor = plan.tensors[argument.name]
+        if tensor.shape != argument.shape or tensor.dtype.value != argument.dtype:
+            raise ValueError('candidate plan public tensor ABI differs from Workload')
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
@@ -159,9 +180,19 @@ def main() -> int:
     parser.add_argument('--timing', action='store_true', help='CUPTI cold-L2 timing after all cases pass')
     parser.add_argument('--broker-socket', type=Path)
     parser.add_argument('--admission-receipt', type=Path)
+    parser.add_argument('--candidate-source', type=Path)
+    parser.add_argument('--candidate-plan', type=Path)
+    parser.add_argument('--rows', type=int)
+    parser.add_argument('--variant')
     args = parser.parse_args()
     if bool(args.broker_socket) != bool(args.admission_receipt):
         parser.error('broker socket and admission receipt must be supplied together')
+    if args.candidate_source or args.candidate_plan or args.rows or args.variant:
+        if not args.task or len(args.task) != 1 or (args.candidate_source and args.candidate_plan):
+            parser.error('an authored probe requires exactly one task and one candidate kind')
+    for path in (args.candidate_source, args.candidate_plan):
+        if path is not None and (path.is_symlink() or not path.is_file()):
+            parser.error('candidate input must be a regular file')
     commit = checkout_commit(ROOT)
     output = args.output.resolve()
     if any((parent / '.git').exists() for parent in (output, *output.parents)):
@@ -195,16 +226,26 @@ def main() -> int:
             continue
         try:
             if hasattr(owner, 'author_plan'):
-                row = _test_launch_plan(owner, task_id, task, compiler, output, torch, args.timing)
+                if args.candidate_source or args.rows:
+                    raise ValueError('launch-plan task requires a plan and declared variant')
+                row = _test_launch_plan(owner, task_id, task, compiler, output, torch, args.timing,
+                                       variant=args.variant, candidate_plan=args.candidate_plan)
                 summary['tasks'].append(row)
                 (output/'progress.json').write_text(json.dumps(summary,indent=2)+'\n')
                 continue
             spec = owner.SPECS[task]
+            if args.candidate_plan or args.variant:
+                raise ValueError('single-Schedule task does not accept plan variants')
             rows = owner.default_rows(task) if hasattr(owner, 'default_rows') else min(spec['batches'])
+            if args.rows is not None:
+                rows = args.rows
             columns = spec['hidden'] if 'hidden' in spec else spec['N']
             document, source = create_task(task, backend='triton-b300', rows=rows, columns=columns)
             workload = WorkloadContract(document)
-            assessment = compiler.assess(parse(source).document)
+            if args.candidate_source:
+                source = args.candidate_source.read_text()
+            schedule = bind_baseline(parse(source).document, workload, 'primary', backend='triton')
+            assessment = compiler.assess(schedule)
             lowering = compiler.lower(assessment)
             directory = output/task_id
             directory.mkdir()
