@@ -67,10 +67,18 @@ def _input_path(root: Path, value: object, context: str) -> Path:
 
 
 _PROFILE_OUTPUT_OWNER: tuple[int, int] | None = None
+_BROKER_ALLOCATION: dict | None = None
 
 
 def _write_new(path: Path, value: object) -> None:
     from open_cake_ir.lab.ncu_process import write_new
+    # Attach allocation provenance to device observations, not to the closed
+    # worker result envelope. Legacy local-broker evidence remains unchanged.
+    if (_BROKER_ALLOCATION is not None and isinstance(value, dict)
+            and value.get("job_id") == _BROKER_ALLOCATION["job_id"] and "counters" not in value):
+        value = {**value, "broker_allocation": _BROKER_ALLOCATION}
+        if "allocation_mode" in value:
+            value["allocation_mode"] = "exclusive"
     write_new(path, _canonical_json_bytes(value), _PROFILE_OUTPUT_OWNER)
 
 
@@ -580,17 +588,20 @@ def _evaluate_metal_candidate(authority, result):
         raise ValueError('Metal evaluation case projection differs from Workload validation')
     row = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE]
     job_id = os.environ.get('METAL_JOB_ID', '')
-    if (re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', job_id) is None
+    if os.environ.get('GPUQ_JOB_ID'):
+        from open_cake_ir.evaluation.gpuq import observe_allocation
+        job_id = observe_allocation(authority.candidate.target)['job_id']
+    elif (re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', job_id) is None
             or job_id == f'{row.local_job_prefix}-000000000000'):
         raise ValueError('Metal worker requires a real broker job allocation')
     from open_cake_ir.evaluation.local_broker import observe_local_metal_job
-    if observe_local_metal_job() != job_id:
+    if not os.environ.get('GPUQ_JOB_ID') and observe_local_metal_job() != job_id:
         raise ValueError('Metal broker lock identity differs')
     admission = authority.executor.admit_host()
     if not isinstance(admission, Mapping) or admission.get('kind') != row.host_kind:
         raise ValueError('Metal worker requires an admitted Metal Executor')
     result['job_id'] = job_id
-    result['mode'] = 'local_serialized'
+    result['mode'] = job_mode(job_id)
     result['admitted'] = True
     profile = authority.request['purpose'] == 'attribution'
     candidates = {'candidate': authority.candidate}
@@ -738,7 +749,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
             result["error"] = "gpu_admission_differs"
             return
     result["job_id"] = admission.broker_job_id
-    result["mode"] = "local_serialized"
+    result["mode"] = job_mode(admission.broker_job_id)
     result["admitted"] = True
     if authority.request["purpose"] == "attribution":
         # Attribution is correctness plus one instrumented dispatch. It is neither timed
@@ -1130,7 +1141,8 @@ def _platform(authority: _Authority) -> _ExecutionPlatform:
 
 
 def main() -> int:
-    global _PROFILE_OUTPUT_OWNER
+    global _PROFILE_OUTPUT_OWNER, _BROKER_ALLOCATION
+    _BROKER_ALLOCATION = None
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -1145,6 +1157,9 @@ def main() -> int:
         "GPUQ_JOB_ID", f"{PLATFORMS[CodeObject.CUBIN].exclusive_job_prefix}-000000000000")))
     try:
         authority = _load_authority(request_path)
+        if os.environ.get("GPUQ_BACKEND"):
+            from open_cake_ir.evaluation.gpuq import observe_allocation
+            _BROKER_ALLOCATION = observe_allocation(authority.candidate.target)
         purpose = str(authority.request["purpose"])
         if args.profile_child:
             if purpose != "attribution" or args.profile_admission is None:

@@ -69,6 +69,10 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
     for flag, value in (("--gpu-run", args.gpu_run), ("--broker-socket", args.broker_socket)):
         if value is not None:
             command.extend((flag, str(value)))
+    for field in ("agents_md", "kernelctl", "infra_socket"):
+        value = getattr(args, field, None)
+        if value is not None:
+            command.extend(("--" + field.replace("_", "-"), str(value)))
     for flag, value in (("--rows", args.rows), ("--columns", args.columns)):
         if value is not None:
             command.extend((flag, str(value)))
@@ -97,6 +101,9 @@ def main(argv=None) -> int:
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
     parser.add_argument("--workspace-root", type=Path, required=True)
+    parser.add_argument("--agents-md", type=Path)
+    parser.add_argument("--kernelctl", type=Path)
+    parser.add_argument("--infra-socket", type=Path)
     parser.add_argument("--provider-executable", type=Path)
     parser.add_argument("--provider-revision")
     parser.add_argument(

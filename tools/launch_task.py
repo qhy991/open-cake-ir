@@ -321,7 +321,8 @@ def _admit_allocator(runtime) -> None:
 
 
 def _runtime_config(workspace, executor, executable, route, *, allocation,
-                    local_kind=None, gpu_run=None, broker_socket=None):
+                    local_kind=None, gpu_run=None, broker_socket=None,
+                    kernelctl=None, infra_socket=None):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -331,7 +332,19 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     """
     from open_cake_ir.evaluation.source_bootstrap import module_command
     python = executor.document["host_environment"]["python"]["invocation_path"]
-    if allocation == "local_broker":
+    if kernelctl is not None:
+        if gpu_run is not None or broker_socket is not None or infra_socket is None:
+            raise ValueError("GPU Infra requires its socket and cannot wrap another allocator")
+        discovered = shutil.which(str(kernelctl))
+        if discovered is None:
+            raise ValueError("GPU Infra kernelctl is unavailable")
+        command = module_command(python, "open_cake_ir.lab.gpu_infra", "submit",
+            "--kernelctl", str(Path(discovered).resolve(strict=True)),
+            "--socket", str(infra_socket), "--evidence-root", str(workspace / "infra-evaluations"),
+            "--worker-module", "open_cake_ir.tasks.evaluate", "--timeout", "1800")
+        toolchain = _launch_toolchain(route).runtime_section(workspace, executor)
+        timeout = 3690
+    elif allocation == "local_broker":
         if gpu_run is not None or broker_socket is not None:
             raise ValueError("CUDA broker options require the gpu_run allocation")
         toolchain = _launch_toolchain(route).runtime_section(workspace, executor)
@@ -498,6 +511,10 @@ def main(argv=None) -> int:
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
     parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--agents-md", type=Path,
+                        help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
+    parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
     parser.add_argument("--depth", type=int,
@@ -535,6 +552,12 @@ def main(argv=None) -> int:
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
     parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Campaign preflight")
     args = parser.parse_args(argv)
+    if (args.kernelctl is None) != (args.infra_socket is None):
+        parser.error("--kernelctl and --infra-socket must be supplied together")
+    if args.kernelctl is not None and (args.gpu_run is not None or args.broker_socket is not None):
+        parser.error("GPU Infra cannot be combined with another allocator")
+    if args.infra_socket is not None and not args.infra_socket.is_absolute():
+        parser.error("--infra-socket must be absolute")
     if sum(value is not None for value in (
         args.fixed_baseline_bundle, args.incumbent_registry, args.prepared_baseline,
     )) > 1:
@@ -556,6 +579,9 @@ def main(argv=None) -> int:
     _write(workload_path, canonical(document))
     _write(source_path, source.encode())
     workload = load_workload(workload_path)
+    if args.kernelctl is not None:
+        from open_cake_ir.lab.gpu_infra import preflight
+        _write(workspace / "infra-node.json", canonical(preflight(str(args.kernelctl), args.infra_socket, workload.target)))
     route = _route_of(args.backend)
     # F-2026-09-10-002: the Metal observer refuses an oversized snapshot cohort before it
     # dispatches anything, so a shape that exceeds the bound dies at the first evaluation
@@ -567,7 +593,8 @@ def main(argv=None) -> int:
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
-        maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins)
+        maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
+        agents_md=args.agents_md)
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
@@ -578,7 +605,8 @@ def main(argv=None) -> int:
                _runtime_config(workspace, executor, executable, route,
                                allocation=_allocation_of(args.backend),
                                local_kind=_local_kind_of(args.backend),
-                               gpu_run=args.gpu_run, broker_socket=args.broker_socket))
+                               gpu_run=args.gpu_run, broker_socket=args.broker_socket,
+                               kernelctl=args.kernelctl, infra_socket=args.infra_socket))
     if runtime is not None:
         _admit_allocator(runtime)
     baseline_selection: dict[str, object]

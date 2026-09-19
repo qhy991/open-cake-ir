@@ -39,3 +39,11 @@ resolution → `CampaignLock`.
 The public facade remains stable. Parse each Study once, admit task-specific constraints before
 resolving execution bindings, and keep replay independent of live writers. A new source commit
 changes the identity of future execution; it does not rewrite historical evidence.
+
+## Agent-led reproduction
+
+For reference-kernel reproduction, bind the reusable
+[AGENTS.md](../../../contracts/scaffolds/kernel-reproduction/AGENTS.md) as the arm's
+scaffold. The launcher accepts `--agents-md`; the bound instructions are delivered in
+the generated `AGENTS.md` on every provider turn. See the
+[workflow and input guide](../../../docs/KERNEL_REPRODUCTION.md).

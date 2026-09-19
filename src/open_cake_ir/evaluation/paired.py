@@ -220,12 +220,22 @@ def admit_device_identity(raw, launch, participants) -> None:
     constructing every earlier check's state, which is why no test had reached it.
     """
 
+    broker_pair = (str(raw.get('job_id', '')).startswith('gpuq-')
+                   and raw.get('broker_allocation') is not None)
+    if broker_pair:
+        from .gpuq import validate_allocation
+        validate_allocation(raw.get('broker_allocation'),
+                            target=participants['candidate']['target'], job_id=raw['job_id'])
+        if (launch.get('job_id') != raw['job_id']
+                or launch.get('broker_allocation') != raw['broker_allocation']):
+            raise ValueError('paired broker allocation evidence differs')
     if raw['kind'] in METAL_KINDS:
         from .metal_observations import validate_host
         host = validate_host(raw.get('host'))
         prefix = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].local_job_prefix
-        if (re.fullmatch(rf'{prefix}-[0-9a-f]{{12}}', raw['job_id']) is None or raw['job_id'] == f'{prefix}-000000000000'
-                or raw.get('allocation_mode') != 'local_serialized' or launch.get('allocation_mode') != 'local_serialized'
+        mode = 'exclusive' if broker_pair else 'local_serialized'
+        if ((not broker_pair and (re.fullmatch(rf'{prefix}-[0-9a-f]{{12}}', raw['job_id']) is None or raw['job_id'] == f'{prefix}-000000000000'))
+                or raw.get('allocation_mode') != mode or launch.get('allocation_mode') != mode
                 or raw.get('external_gpu_activity') != 'not_excluded' or launch.get('external_gpu_activity') != 'not_excluded'
                 or launch.get('host') != host or raw.get('device_registry_id') != host['device_registry_id']
                 or host['target'] != participants['candidate']['target']):
@@ -249,8 +259,8 @@ def admit_device_identity(raw, launch, participants) -> None:
         row = platform_for_paired_kind(PAIRED_HIP_KIND)
         if (executable_role(participants['candidate']['target']) != row.code_object.value
                 or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
-                or re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', raw['job_id']) is None
-                or raw['job_id'] == f'{row.local_job_prefix}-000000000000'
+                or (not broker_pair and (re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', raw['job_id']) is None
+                or raw['job_id'] == f'{row.local_job_prefix}-000000000000'))
                 or launch.get('gpu_uuid') != raw['gpu_uuid']):
             raise ValueError('paired AMDGCN device/host identity differs')
     else:

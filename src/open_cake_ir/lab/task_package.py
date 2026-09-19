@@ -97,6 +97,12 @@ def build_run_reference_documents(
     if not any(arm == value for value in assigned_arms.values()):
         raise ValueError("task package Authoring Environment differs from the frozen arm")
     validate_reference_handoff(root, assigned_arms)
+    # External task instructions may change after preflight. Verify the actual
+    # payload once at delivery, against the existing frozen reference, and reuse
+    # those bytes below rather than reopening the file after the check.
+    scaffold_bytes = _read_relative(root, scaffold["path"], "scaffold")
+    if sha256(scaffold_bytes).hexdigest() != scaffold.get("sha256"):
+        raise ValueError("task scaffold content differs from CampaignLock")
     access = reference_access(arm, "arm")
     authoring_environment = arm
     if "candidate_selection" in arm:
@@ -127,7 +133,7 @@ def build_run_reference_documents(
         "run-authority.json": _canonical_json(run_authority).encode(),
         "workload.json": _read_relative(root, workload["path"], "workload"),
         "target.json": _read_relative(root, target_relative, "target"),
-        "scaffold.md": _read_relative(root, scaffold["path"], "scaffold"),
+        "scaffold.md": scaffold_bytes,
     }
     environment_kind = arm.get("environment_kind")
     if environment_kind == "open_cake":
@@ -370,10 +376,13 @@ model-forward or serving result. Infrastructure `unknown` is not a Candidate fai
 
 ## Complete frozen authority
 
-The following sections are the complete read-only task authority. They are projections of
-the machine Contracts bound by the CampaignLock; do not edit them or infer newer state.
+The following sections and the bound instructions in `AGENTS.md` are the complete
+read-only task authority. They are projections of the machine Contracts bound by the
+CampaignLock; do not edit them or infer newer state.
 
-Declared reference access: `{reference_access(authority, "arm")}`.\n\n{_document_sections(documents, access=reference_access(authority, "arm"))}
+Declared reference access: `{reference_access(authority, "arm")}`.
+The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
+\n{_document_sections({name: payload for name, payload in documents.items() if name != 'scaffold.md'}, access=reference_access(authority, "arm"))}
 """
     if "schedule-starter.py" in documents:
         task = task.replace("Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:",
@@ -419,6 +428,13 @@ Declared reference access: `{reference_access(authority, "arm")}`.\n\n{_document
 
 - Report only the Candidate and hypothesis you produced. Do not declare a scientific or
   serving result; the external Audit decides what the retained Evidence supports.
+
+## Task-specific authoring instructions
+
+The following is the exact scaffold bound by this arm. It does not expand the Run's
+write surface, reference access, tool permissions, budget, or acceptance authority.
+
+{_document_sections({'scaffold.md': documents['scaffold.md']}, access=reference_access(authority, 'arm'))}
 """
     return TaskPackage(run_id, arm, task, agents)
 

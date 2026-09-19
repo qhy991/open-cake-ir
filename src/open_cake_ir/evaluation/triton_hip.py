@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import re
 from dataclasses import dataclass
 from typing import Mapping, cast
@@ -151,7 +152,11 @@ def observe_local_hip(target_id: str) -> HipDeviceAdmission:
     from .local_broker import observe_local_job
 
     requirements = hip_admission_requirements(target_id)
-    job = observe_local_job("hip")
+    if os.environ.get("GPUQ_JOB_ID"):
+        from .gpuq import observe_allocation
+        job = observe_allocation(target_id)["job_id"]
+    else:
+        job = observe_local_job("hip")
     torch, _triton, properties = admit_exact_hip(requirements)
     target = require_object(requirements["triton_target"], "triton_target")
     uuid = getattr(properties, "uuid", None)
