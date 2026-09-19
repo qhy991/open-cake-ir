@@ -26,7 +26,12 @@ class MetalTaskCompositionTests(unittest.TestCase):
     def test_cuda_claude_composes_one_triton_environment_with_the_existing_builder(self):
         self.check_composition('triton-b300')
 
-    def check_composition(self, backend):
+    def test_external_scaffold_reaches_cuda_and_metal_composition(self):
+        for backend in ('triton-b300', 'metal-m1-pro'):
+            with self.subTest(backend=backend):
+                self.check_composition(backend, external_scaffold=True)
+
+    def check_composition(self, backend, external_scaffold=False):
         metal = backend.startswith('metal-')
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary).resolve()
@@ -61,6 +66,10 @@ class MetalTaskCompositionTests(unittest.TestCase):
                                                                        "entry_point":"cake_task"},
                 "scaffold":{"path":SCAFFOLD,"sha256":sha256((ROOT/SCAFFOLD).read_bytes()).hexdigest()},
                 "toolchain_sha256":"metal-toolchain-fixture"}
+            if external_scaffold:
+                scaffold = directory / 'AGENTS.md'
+                scaffold.write_bytes((ROOT / SCAFFOLD).read_bytes())
+                open_arm['scaffold']['path'] = str(scaffold)
             runtime = {"schema_version":1,
                 "provider":{"executable":str(executable),"workspace_root":str(directory/'actors')},
                 "toolchain":{"output_root":str(directory/'builds')},
