@@ -17,6 +17,12 @@
   "observation": "Study admission and TaskPackage rendering admit canonical external scaffold files. The runtime composer applies its older source-only raw-reference resolver and refuses before any authoring turn. This is a Lab ownership mismatch, not an IR or GPU failure.",
   "proposed_change": "Opt the scaffold call into existing external_file custody checks, retaining frozen-byte verification. Keep other raw references source-only. Exercise the real CUDA and Metal composition seam plus external alias, traversal, source-checkout and changed-byte counterexamples.",
   "decision": "accepted",
-  "implemented_in": null,
-  "verified_by": null
+  "implemented_in": "0bd562c1b16430fd645e7b7154e099ae4d13f5c6",
+  "verified_by": null,
+  "partial_verification": {
+    "commit": "0bd562c1b16430fd645e7b7154e099ae4d13f5c6",
+    "tests_passed": 55,
+    "corpus": "unchanged Corpus Gate passed",
+    "remaining": "Read-only replay of original remote scaffold under the successor and new live launch."
+  }
 }
