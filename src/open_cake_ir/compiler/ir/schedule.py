@@ -303,9 +303,28 @@ class Schedule:
         not index at all -- loaded once outside it -- answers None.
         """
 
-        producer = next((op for op in self.operations if operand in op.writes), None)
-        if producer is None:
-            return None
+        # A cast changes representation, not coordinates. Trace only a unique,
+        # shape-preserving chain; malformed graphs must terminate without proof.
+        # Verifier carry admission and backend accumulator placement both consume
+        # this query, so neither may independently guess through a cast.
+        seen: set[str] = set()
+        while True:
+            if operand in seen:
+                return None
+            seen.add(operand)
+            producers = [op for op in self.operations if operand in op.writes]
+            if len(producers) != 1:
+                return None
+            producer = producers[0]
+            if producer.kind is not OperationKind.CAST:
+                break
+            if len(producer.reads) != 1 or producer.writes != (operand,):
+                return None
+            source = self.buffer(producer.reads[0])
+            result = self.buffer(operand)
+            if source is None or result is None or source.shape != result.shape:
+                return None
+            operand = source.name
         access = next(
             (m for m in self.access_maps if m.operation == producer.op_id), None
         )

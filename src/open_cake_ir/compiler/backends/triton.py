@@ -650,8 +650,8 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                     ),
                     "TRITON_NESTED_MMA_OPERAND",
                     f"operations[{index}].reads",
-                    "nested MMA currently requires two directly loaded operands so "
-                    "the existing access-map query proves its accumulation axis",
+                    "the bounded nested MMA backend requires two directly loaded operands; "
+                    "casted operands remain outside this nested emission slice",
                 )
                 add(
                     not any(schedule.mma_accumulates_over(operation, loop) for loop in chain[:-1]),

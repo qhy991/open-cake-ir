@@ -600,19 +600,17 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                 continue
             escaping = sorted(set(readers.get(name, ())) - body)
             if escaping:
-                # A contraction accumulated across the loop is the case an author is
-                # most likely to expect to work, because that is what a GEMM is. Saying
-                # only "a reduction result" sends them looking for a rule they broke
-                # rather than telling them a register accumulator is not one -- an
-                # accumulator that outlives its loop has to live in a space that does.
+                # Register MMA results do carry across a proven K loop. Reaching
+                # this branch means that proof is absent (for example the loop
+                # walks output tiles), not that register accumulators never carry.
                 contraction = any(
                     (op := schedule.operation(op_id)) is not None
                     and op.kind is OperationKind.MMA
                     for op_id in producers
                 )
                 reason = (
-                    "a contraction accumulated across a loop needs an accumulator in a "
-                    "space that outlives it, and a register buffer does not"
+                    "the contraction is not proven to accumulate over this loop's K-axis; "
+                    "a fresh per-iteration register result cannot escape the loop"
                     if contraction
                     else "only a reduction result is carried out of a loop"
                 )

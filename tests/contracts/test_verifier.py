@@ -1136,19 +1136,7 @@ class RoleRegisterSplitTest(unittest.TestCase):
 
 
 class ContractionAccumulatorDiagnosticTest(unittest.TestCase):
-    """The refusal a GEMM author would hit, and what it has to tell them.
-
-    The Triton backend cannot accumulate a contraction across a loop -- `_emit_mma`
-    assigns a `tl.dot` -- and nothing states that. What prevents the wrong answer is a
-    rule about register buffers escaping loops, which is a different rule that happens to
-    cover it. The CuTe-DSL backend does accumulate across its `k_loop`, because its
-    accumulator lives in tensor memory and the rule exempts spaces that outlive a loop.
-
-    So the same Schedule shape is correct on one backend and refused on the other, and the
-    refusal has to say which constraint it is. The paper asks for localized diagnostics;
-    "only a reduction result is carried out of a loop" is true and sends a GEMM author
-    looking for a rule they broke.
-    """
+    """A fresh output-tile result cannot escape; proven K-loop carries can."""
 
     def test_an_escaping_contraction_names_the_constraint_it_hits(self) -> None:
         document = json.loads(
@@ -1169,7 +1157,7 @@ class ContractionAccumulatorDiagnosticTest(unittest.TestCase):
             if finding.code == "BUFFER_ESCAPES_LOOP"
         }
 
-        self.assertIn("accumulator in a space that outlives it", messages["cross"])
+        self.assertIn("not proven to accumulate over this loop's K-axis", messages["cross"])
         # A staged load that escapes is a different mistake and keeps the general reason.
         self.assertIn("only a reduction result", messages["norm_tile"])
 
