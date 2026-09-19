@@ -670,6 +670,22 @@ class ProviderContractTests(unittest.TestCase):
                 parse_codex_turn_events(b"\n".join(json.dumps(e).encode() for e in values),
                     expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1")
 
+    def test_reconnect_projection_is_ordered_and_rejects_ambiguous_json(self):
+        terminal, events = self._notice_bracketed_events(Path('/cpu-fixture/candidate-set.json'))
+        message = "Reconnecting... 2/5 (stream disconnected before completion: unexpected EOF)"
+        events.insert(6, {"type":"error", "message":message})
+        raw = b"\n".join(json.dumps(e).encode() for e in events)
+        parsed = parse_codex_turn_events(raw, expected_terminal_message=terminal,
+                                        event_contract="tool_rich_candidate_v1")
+        kinds = [a.item_type for a in parsed.tool_activity]
+        self.assertLess(kinds.index("command_execution"), kinds.index("transport_reconnect"))
+        self.assertLess(kinds.index("transport_reconnect"), kinds.index("file_change"))
+        lines = raw.splitlines()
+        lines[6] = ('{"type":"error","message":"fatal","message":'+json.dumps(message)+'}').encode()
+        with self.assertRaisesRegex(ValueError, "not JSONL"):
+            parse_codex_turn_events(b"\n".join(lines), expected_terminal_message=terminal,
+                                   event_contract="tool_rich_candidate_v1")
+
     def test_passive_notices_cannot_replace_or_hide_functional_lifecycles(self):
         from copy import deepcopy
         terminal, original = self._notice_bracketed_events(Path("/cpu-fixture/candidate-set.json"))
