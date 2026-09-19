@@ -146,6 +146,47 @@ class InfraTransportTests(unittest.TestCase):
         worker.assert_not_called()
         self.assertEqual(json.loads((stage_dir / "result.json").read_bytes())["validity"], "unknown")
 
+    def test_stage_keeps_worker_inputs_in_stage_and_does_not_promote_timing(self):
+        stage_dir = self.root / "stage"
+        stage_dir.mkdir()
+        env = {**environment(), "KERNELINFRA_RESULT": str(stage_dir / "result.json"),
+            "KERNELINFRA_STAGE_DIR": str(stage_dir), "KERNELINFRA_CANDIDATE_DIR": str(self.input)}
+        def evaluate(argv, **kwargs):
+            request_path = Path(argv[argv.index("--request") + 1])
+            request = json.loads(request_path.read_bytes())
+            self.assertEqual(request_path.parent, stage_dir / "worker")
+            self.assertEqual(Path(request["workload_path"]).read_bytes(), b"{}")
+            self.assertEqual((request_path.parent / "artifact").read_bytes(), b"sealed candidate")
+            Path(argv[argv.index("--output") + 1]).write_text(json.dumps({
+                "job_id": JOB, "mode": "exclusive", "admitted": True, "error": None,
+                "receipt": {"correctness_passed": True, "timing": {"pooled_median_ms": 1.0}}}))
+            return SimpleNamespace(returncode=0)
+        with patch.dict(os.environ, env, clear=True), patch.object(infra, "checkout_commit", return_value=COMMIT), \
+             patch.object(infra.subprocess, "run", side_effect=evaluate):
+            self.assertEqual(infra.stage(SimpleNamespace(commit=COMMIT, target="gfx1151", worker_module="open_cake_ir.tasks.evaluate")), 0)
+        result = json.loads((stage_dir / "result.json").read_bytes())
+        self.assertEqual(result["validity"], "valid")
+        self.assertNotIn("workloads", result)
+        self.assertNotIn("timing", result)
+        self.assertEqual(json.loads((self.input / "request.json").read_bytes()), self.request)
+
+    def test_unknown_observation_never_resubmits_or_returns_success(self):
+        actions = []
+        def invoke(client, argv, **kwargs):
+            actions.append(argv[0])
+            payload = json.dumps(self.node()) if argv[0] == "node-status" else (
+                "cake-gfx1151-abcdef123456" if argv[0] == "submit" else "")
+            return SimpleNamespace(returncode=1 if argv[0] == "wait" else 0, stdout=payload, stderr="offline")
+        args = SimpleNamespace(kernelctl="kernelctl", socket=Path("/socket"),
+            evidence_root=self.root / "evidence", request=self.input / "request.json",
+            output=self.input / "result.json", worker_module="open_cake_ir.tasks.evaluate", timeout=30)
+        with patch.object(infra, "invoke", side_effect=invoke), patch.object(infra, "checkout_commit", return_value=COMMIT):
+            with self.assertRaisesRegex(ValueError, "observation unknown"):
+                infra.submit(args)
+        self.assertEqual(actions.count("submit"), 1)
+        self.assertNotIn("cancel", actions)
+        self.assertFalse(args.output.exists())
+
 
 class ExperimentInputTests(unittest.TestCase):
     def setUp(self):

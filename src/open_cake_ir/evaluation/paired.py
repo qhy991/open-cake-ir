@@ -220,8 +220,8 @@ def admit_device_identity(raw, launch, participants) -> None:
     constructing every earlier check's state, which is why no test had reached it.
     """
 
-    broker_pair = str(raw.get('job_id', '')).startswith('gpuq-') and (
-        raw['kind'] != PAIRED_KIND or raw.get('broker_allocation') is not None)
+    broker_pair = (str(raw.get('job_id', '')).startswith('gpuq-')
+                   and raw.get('broker_allocation') is not None)
     if broker_pair:
         from .gpuq import validate_allocation
         validate_allocation(raw.get('broker_allocation'),
