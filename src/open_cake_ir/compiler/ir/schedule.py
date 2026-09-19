@@ -439,10 +439,10 @@ class Schedule:
         )
 
     @property
-    def total_warp_extent(self) -> int:
+    def total_execution_group_extent(self) -> int:
         """One past the highest warp index used by any role."""
 
-        return max((role.warp_extent for role in self.roles), default=0)
+        return max((role.execution_group_extent for role in self.roles), default=0)
 
     # ---- parsing --------------------------------------------------------------
 
@@ -458,8 +458,8 @@ class Schedule:
             optional=_SCHEDULE_OPTIONAL,
             context="schedule",
         )
-        if obj["schema_version"] != 1:
-            raise ScheduleParseError("schedule.schema_version must be 1")
+        if type(obj["schema_version"]) is not int or obj["schema_version"] != 2:
+            raise ScheduleParseError("schedule.schema_version must be 2")
 
         has_grid = "grid" in obj
         has_program_map = "program_map" in obj
@@ -489,7 +489,7 @@ class Schedule:
             )
 
         return cls(
-            schema_version=1,
+            schema_version=2,
             schedule_id=_string(obj["schedule_id"], "schedule.schedule_id"),
             target=_string(obj["target"], "schedule.target"),
             lowering=LoweringRoute.from_dict(obj["lowering"]),

@@ -353,13 +353,13 @@
  "roles": [
   {
    "name": "compute",
-   "warps": [
+   "execution_groups": [
     1
    ]
   }
  ],
  "schedule_id": "metal-rmsnorm-simd-group-drift",
- "schema_version": 1,
+ "schema_version": 2,
  "target": "apple_gpu_family8",
  "tile_loops": []
 }

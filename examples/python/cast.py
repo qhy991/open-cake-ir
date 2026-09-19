@@ -6,7 +6,7 @@ from open_cake_ir.compiler import frontend as cake
                metadata={"workload_contract_sha256": "0000000000000000000000000000000000000000000000000000000000000000"},
                residency={"ctas_per_multiprocessor": 4, "registers_per_thread": 64})
 def cast(lm, x: cake.Tensor((8, 128), "bf16"), y: cake.Tensor((8, 128), "fp32", mode="output")):
-    compute = lm.role(warps=[0, 1, 2, 3])
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
     batch = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         x_tile = lm.load(x[batch, :], reuse="streamed", id="load_x")

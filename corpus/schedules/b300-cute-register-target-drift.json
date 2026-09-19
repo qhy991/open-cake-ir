@@ -1,11 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "b300-cute-register-target-drift",
   "target": "sm_100a",
   "roles": [
     {
       "name": "compute",
-      "warps": [
+      "execution_groups": [
         0
       ]
     }

@@ -1,11 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "fma-b8-smoke-arity-drift",
   "target": "sm_100a",
   "roles": [
     {
       "name": "compute",
-      "warps": [
+      "execution_groups": [
         0,
         1,
         2,

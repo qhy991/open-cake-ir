@@ -136,7 +136,7 @@ class Wave64ArithmeticTest(unittest.TestCase):
         self.assertTrue(assessment.lowering_eligible)
         schedule = Schedule.from_dict(document)
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
-        self.assertEqual(schedule.total_warp_extent * target.warp_size, 256)
+        self.assertEqual(schedule.total_execution_group_extent * target.warp_size, 256)
         # The residency report counts those 256 threads, not 128.
         self.assertTrue(
             any("256 of 2560 threads" in finding.message for finding in assessment.findings),

@@ -270,10 +270,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         dst = buffers[op.writes[0]]
         role = roles[op.role]
         asynchronous = op.kind is OperationKind.MMA or (op.kind is OperationKind.LOAD and dst.space is MemorySpace.SHARED)
-        check(len(role.warps) == (1 if asynchronous else 4), 'NATIVE_ROLE_WIDTH', path+'.role',
+        check(len(role.execution_groups) == (1 if asynchronous else 4), 'NATIVE_ROLE_WIDTH', path+'.role',
               'TMA/MMA roles use one warp; row-owned arithmetic/transfer/store roles use four')
         if not asynchronous:
-            check(role.warps[0] % 4 == 0, 'NATIVE_ROLE_ALIGNMENT', path+'.role',
+            check(role.execution_groups[0] % 4 == 0, 'NATIVE_ROLE_ALIGNMENT', path+'.role',
                   'TMEM row ownership requires an aligned group of four physical warps')
             check(op.pipeline is None and not op.signals, 'NATIVE_OPERATION_SYNC', path,
                   'register operations do not produce asynchronous stage signals')
@@ -456,9 +456,9 @@ class _Emitter:
         self.indent -= 1; self.line('}')
     def role_condition(self, name):
         r = self.roles[name]
-        return f'warp >= {r.warps[0]} && warp <= {r.warps[-1]}'
+        return f'warp >= {r.execution_groups[0]} && warp <= {r.execution_groups[-1]}'
     def row(self, op):
-        return f'(int(threadIdx.x) - {self.roles[op.role].warps[0]*self.target.warp_size})'
+        return f'(int(threadIdx.x) - {self.roles[op.role].execution_groups[0]*self.target.warp_size})'
     def b(self, name):
         return self.s.buffer(name)
     def trip(self, loop):
@@ -519,7 +519,7 @@ class _Emitter:
             else:
                 name = self.tmemvars[a.name]
                 self.line(f'uint32_t* {name} = reinterpret_cast<uint32_t*>(smem + {self.offsets["tmem:"+a.name]});')
-                self.begin(f'if (warp == {self.roles[a.allocating_role].warps[0]})')
+                self.begin(f'if (warp == {self.roles[a.allocating_role].execution_groups[0]})')
                 self.line(f'asm volatile("tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;" :: "r"(cake_smem({name})), "n"({a.tensor_columns}) : "memory");')
                 self.end()
         self.line('__syncthreads();')
@@ -534,11 +534,11 @@ class _Emitter:
         self.invalidate_completions(None)
         for a in self.s.allocations:
             if a.space is MemorySpace.TENSOR:
-                self.begin(f'if (warp == {self.roles[a.allocating_role].warps[0]})')
+                self.begin(f'if (warp == {self.roles[a.allocating_role].execution_groups[0]})')
                 self.line(f'asm volatile("tcgen05.dealloc.cta_group::1.sync.aligned.b32 %0, %1;" :: "r"(*{self.tmemvars[a.name]}), "n"({a.tensor_columns}) : "memory");')
                 self.end()
         for owner in sorted({a.allocating_role for a in self.s.allocations if a.space is MemorySpace.TENSOR}):
-            self.begin(f'if (warp == {self.roles[owner].warps[0]})')
+            self.begin(f'if (warp == {self.roles[owner].execution_groups[0]})')
             self.line('asm volatile("tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;" ::: "memory");')
             self.end()
         self.end(); self.line('// CAKE_KERNEL_END')
@@ -548,7 +548,7 @@ class _Emitter:
             for axis in self.s.program_map.axes:
                 dims[axis.axis] = axis.tile_count(self.b(axis.buffer).shape[axis.dimension])
         flags = ['-std=c++17',f'--gpu-architecture={self.s.target.replace("sm_","compute_")}',f'--gpu-code={self.s.target}','-O3','--fmad=false','-lineinfo','-Xptxas=-v']
-        metadata = {'kernel_entry_point':self.entry+'_kernel', 'threads_per_cta':self.s.total_warp_extent*self.target.warp_size,
+        metadata = {'kernel_entry_point':self.entry+'_kernel', 'threads_per_cta':self.s.total_execution_group_extent*self.target.warp_size,
                     'dynamic_shared_bytes':self.shared_bytes, 'grid':dims, 'nvcc_flags':flags,
                     'argument_order':[b.name for b in self.globals],
                     'arguments':[{'name':b.name,'dtype':b.dtype.value,'shape':list(b.shape),'mode':b.mode.value} for b in self.globals],
@@ -556,7 +556,7 @@ class _Emitter:
                     'link_libraries':['cuda','cudart'], 'target_device_names':list(self.target.device_names),
                     'register_mapping':'one thread per row; replicated vector operands',
                     'source_language':'cuda_cpp', 'signature':{b.name:'*'+b.dtype.value for b in self.globals},
-                    'block':[self.s.total_warp_extent*self.target.warp_size,1,1]}
+                    'block':[self.s.total_execution_group_extent*self.target.warp_size,1,1]}
         return Emission('\n'.join(self.lines)+'\n',self.entry,{'shared_bytes':self.shared_bytes},metadata)
 
     def sequence(self, scope):
@@ -803,7 +803,7 @@ class _Emitter:
             for axis in self.s.program_map.axes:
                 dims[axis.axis]=axis.tile_count(self.b(axis.buffer).shape[axis.dimension])
         args=[f'h->{self.names[b.name]}' for b in self.globals]+[f'h->{self.mapnames[op.op_id]}' for op in self.loads]
-        self.line(f'{self.entry}_kernel<<<dim3({dims[0]},{dims[1]},{dims[2]}), {self.s.total_warp_extent*self.target.warp_size}, {self.shared_bytes}, reinterpret_cast<cudaStream_t>(stream)>>>('+', '.join(args)+');')
+        self.line(f'{self.entry}_kernel<<<dim3({dims[0]},{dims[1]},{dims[2]}), {self.s.total_execution_group_extent*self.target.warp_size}, {self.shared_bytes}, reinterpret_cast<cudaStream_t>(stream)>>>('+', '.join(args)+');')
         self.line('return int(cudaGetLastError());');self.end()
         self.begin(f'extern "C" int {self.entry}_destroy(void* handle)')
         self.line(f'delete static_cast<{handle}*>(handle); return 0;');self.end()

@@ -5,7 +5,7 @@ from open_cake_ir.compiler import frontend as cake
                entry_point="cake_mixed_dtype")
 def mixed(lm, x: cake.Tensor((8, 128), "bf16"), bias: cake.Tensor((128,), "fp32"),
           y: cake.Tensor((8, 128), "fp32", mode="output")):
-    compute = lm.role(warps=[0, 1, 2, 3])
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
     batch = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         x_tile = lm.load(x[batch, :])

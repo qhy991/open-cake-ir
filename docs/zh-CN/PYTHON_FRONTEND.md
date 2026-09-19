@@ -23,7 +23,7 @@ from open_cake_ir.compiler import frontend as cake
                residency={"ctas_per_multiprocessor": 4, "registers_per_thread": 64})
 def fma(lm, a: cake.Tensor((8, 128), "fp32"), b: cake.Tensor((8, 128), "fp32"),
         c: cake.Tensor((8, 128), "fp32"), y: cake.Tensor((8, 128), "fp32", mode="output")):
-    compute = lm.role(warps=[0, 1, 2, 3])
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
     batch = lm.program(a, axis=0, dimension=0, tile=1)
     with compute:
         a_tile = lm.load(a[batch, :], reuse="streamed", id="load_a")

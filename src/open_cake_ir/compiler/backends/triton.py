@@ -376,10 +376,10 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             f"(mechanism {mechanism}) would be dropped from the source rather than realized",
         ))
     if len(schedule.roles) == 1:
-        warp_count = len(schedule.roles[0].warps)
+        warp_count = len(schedule.roles[0].execution_groups)
         add(
             warp_count > 0 and warp_count & (warp_count - 1) == 0,
-            "TRITON_NUM_WARPS_UNSUPPORTED", "roles[0].warps",
+            "TRITON_NUM_WARPS_UNSUPPORTED", "roles[0].execution_groups",
             f"Triton compile option num_warps requires a positive power of two; "
             f"the declared role has {warp_count} warps. Choose the role explicitly; "
             "the Compiler does not round the launch size.",
@@ -806,7 +806,7 @@ class _TritonEmitter:
             values[self._tile(loop.name)] = loop.tile
         if len(self.schedule.tile_loops) == 1:
             values["NUM_STAGES"] = self.schedule.tile_loops[0].range_options.num_stages
-        values["NUM_WARPS"] = len(self.role.warps)
+        values["NUM_WARPS"] = len(self.role.execution_groups)
         if self.schedule.program_map is not None and self.schedule.program_map.persistent:
             values["TOTAL_TILES"] = self.total_tiles()
             values["NUM_CTAS"] = self.grid()[0]

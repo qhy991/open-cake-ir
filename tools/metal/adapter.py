@@ -98,7 +98,7 @@ def _project(schedule: Schedule, source: str, tc: dict, inputs: Mapping[str, byt
     grid = _size(tc["threadgroups_per_grid"], "threadgroups_per_grid")
     threads = _size(tc["threads_per_threadgroup"], "threads_per_threadgroup")
     _require(threads == [32, 1, 1] and len(schedule.roles) == 1 and
-             schedule.roles[0].warps == (0,), "unsupported Metal role/launch mapping")
+             schedule.roles[0].execution_groups == (0,), "unsupported Metal role/launch mapping")
     if schedule.grid is not None:
         expected_grid = list(schedule.grid)
     else:

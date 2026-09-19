@@ -203,7 +203,7 @@
   "roles": [
     {
       "name": "compute",
-      "warps": [
+      "execution_groups": [
         0,
         1,
         2,
@@ -212,7 +212,7 @@
     }
   ],
   "schedule_id": "b300-indexed-tile-reuse-refusal",
-  "schema_version": 1,
+  "schema_version": 2,
   "target": "sm_103a",
   "tile_loops": []
 }

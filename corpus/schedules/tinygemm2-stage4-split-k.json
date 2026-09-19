@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "tinygemm2-stage4-split-k-explicit-sm100a-v1",
   "target": "sm_100a",
   "grid": [
@@ -10,7 +10,7 @@
   "roles": [
     {
       "name": "compute",
-      "warps": [
+      "execution_groups": [
         0,
         1,
         2,
@@ -19,7 +19,7 @@
     },
     {
       "name": "load_weight",
-      "warps": [
+      "execution_groups": [
         4,
         5,
         6,
@@ -28,7 +28,7 @@
     },
     {
       "name": "load_activation",
-      "warps": [
+      "execution_groups": [
         8,
         9,
         10,

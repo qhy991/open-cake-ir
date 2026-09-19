@@ -145,7 +145,7 @@ class RetainedScheduleTest(unittest.TestCase):
                     self.assertEqual(f"{finding.path} {finding.message}", str(refusal.exception))
                     continue
                 schedule = Schedule.from_dict(document)
-                self.assertEqual(schedule.schema_version, 1)
+                self.assertEqual(schedule.schema_version, 2)
                 self.assertEqual(schedule.target, document["target"])
                 self.assertTrue(schedule.operations)
                 self.assertTrue(
@@ -393,7 +393,7 @@ class UnifiedVocabularyTest(unittest.TestCase):
             [role.name for role in schedule.roles],
             ["epilogue", "mma", "tma", "reduce"],
         )
-        self.assertEqual(schedule.total_warp_extent, 7)
+        self.assertEqual(schedule.total_execution_group_extent, 7)
         self.assertEqual([pipeline.name for pipeline in schedule.pipelines], ["main"])
         tiles_ready = next(b for b in schedule.barriers if b.name == "tiles_ready")
         self.assertEqual(tiles_ready.producers, ("tma",))
@@ -436,15 +436,15 @@ class DerivedViewTest(unittest.TestCase):
                 stop - start, buffer.elements * buffer.dtype.itemsize * buffer.stages
             )
 
-    def test_warp_extent_uses_the_highest_index_not_the_count(self) -> None:
+    def test_execution_group_extent_uses_the_highest_index_not_the_count(self) -> None:
         """A contiguous role can still begin beyond the Target's warp range."""
 
         document = _mutated(
-            B32, lambda d: d["roles"][0].update(warps=[4096, 4097, 4098, 4099])
+            B32, lambda d: d["roles"][0].update(execution_groups=[4096, 4097, 4098, 4099])
         )
         schedule = Schedule.from_dict(document)
-        self.assertEqual(len(schedule.roles[0].warps), 4)
-        self.assertEqual(schedule.total_warp_extent, 4100)
+        self.assertEqual(len(schedule.roles[0].execution_groups), 4)
+        self.assertEqual(schedule.total_execution_group_extent, 4100)
 
     def test_dtype_itemsize(self) -> None:
         self.assertEqual(DType.BF16.itemsize, 2)
@@ -460,9 +460,9 @@ class StrictStructureTest(unittest.TestCase):
 
     def test_role_warps_have_one_canonical_interval_form(self) -> None:
         for warps in ([0, 2, 4, 6], [3, 2, 1, 0]):
-            with self.subTest(warps=warps):
+            with self.subTest(execution_groups=warps):
                 message = self._reject(
-                    _mutated(B32, lambda d: d["roles"][0].update(warps=warps))
+                    _mutated(B32, lambda d: d["roles"][0].update(execution_groups=warps))
                 )
                 self.assertIn("must be one ascending contiguous interval", message)
 
@@ -488,17 +488,17 @@ class StrictStructureTest(unittest.TestCase):
     def test_role_warps_must_be_distinct_and_non_negative(self) -> None:
         self.assertIn(
             "repeats a warp index",
-            self._reject(_mutated(B32, lambda d: d["roles"][0].update(warps=[0, 1, 1]))),
+            self._reject(_mutated(B32, lambda d: d["roles"][0].update(execution_groups=[0, 1, 1]))),
         )
         self.assertIn(
             "non-negative integer",
-            self._reject(_mutated(B32, lambda d: d["roles"][0].update(warps=[0, -1]))),
+            self._reject(_mutated(B32, lambda d: d["roles"][0].update(execution_groups=[0, -1]))),
         )
 
     def test_schema_version_is_pinned(self) -> None:
         self.assertIn(
             "schema_version",
-            self._reject(_mutated(B32, lambda d: d.update(schema_version=2))),
+            self._reject(_mutated(B32, lambda d: d.update(schema_version=1))),
         )
 
 

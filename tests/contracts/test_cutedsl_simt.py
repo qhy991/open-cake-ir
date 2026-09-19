@@ -42,7 +42,7 @@ def reduction_tile(shape,axis,op):
                backend="cutlass_cute_dsl", entry_point="tile_reduce")
 def candidate(lm, x: cake.Tensor({(1,*shape)!r}, "fp32"),
               out: cake.Tensor({(1,*output)!r}, "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     batch = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[{read}])
@@ -90,7 +90,7 @@ class CuTeSimtTests(unittest.TestCase):
     def test_controls_and_effects_are_refused_before_lowering(self):
         _,base=task('silu','activation')
         variants=[]
-        s=deepcopy(base);s['roles'][0]['warps']=[0,1];variants.append((s,'CUTE_SIMT_ROLE'))
+        s=deepcopy(base);s['roles'][0]['execution_groups']=[0,1];variants.append((s,'CUTE_SIMT_ROLE'))
         s=deepcopy(base);s['residency']={'registers_per_thread':32};variants.append((s,'CUTE_SIMT_RESIDENCY'))
         s=deepcopy(base);s['operations'][-1]['parameters']['coalesced']=True;variants.append((s,'CUTE_SIMT_STORE'))
         s=deepcopy(base);s['operations'][0]['parameters']['reuse']='streamed';variants.append((s,'CUTE_SIMT_LOAD'))

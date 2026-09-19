@@ -221,7 +221,7 @@ class Compiler:
 
         missing = _REQUIRED_TOP_LEVEL_FIELDS - schedule.keys()
         extra = schedule.keys() - _REQUIRED_TOP_LEVEL_FIELDS - _OPTIONAL_TOP_LEVEL_FIELDS
-        if missing or extra or schedule.get("schema_version") != 1:
+        if missing or extra or schedule.get("schema_version") != 2:
             raise CompilerError("schedule root fields or schema_version differ")
         if ("grid" in schedule) == ("program_map" in schedule):
             raise CompilerError("schedule must define exactly one of grid or program_map")
@@ -281,7 +281,7 @@ class Compiler:
                 operation.kind.value for operation in typed_schedule.operations
             ).items())),
             "role_count": len(typed_schedule.roles),
-            "total_warps": len({warp for role in typed_schedule.roles for warp in role.warps}),
+            "total_execution_groups": len({warp for role in typed_schedule.roles for warp in role.execution_groups}),
             "semantic_sha256": semantic_sha256,
         })
         return Assessment(

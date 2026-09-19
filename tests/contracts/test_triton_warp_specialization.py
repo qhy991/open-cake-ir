@@ -35,7 +35,7 @@ class WarpSpecializationTests(unittest.TestCase):
                     candidate = result.schedule
                     for field in original.keys() - {'roles', 'schedule_id', 'lowering'}:
                         self.assertEqual(candidate[field], original[field], field)
-                    self.assertEqual(candidate['roles'][0]['warps'], list(range(16)))
+                    self.assertEqual(candidate['roles'][0]['execution_groups'], list(range(16)))
                     before = self.compiler.lower(self.compiler.assess(document))
                     after = self.compiler.lower(result.assessment)
                     self.assertEqual(after.toolchain_requirements['compile_options']['num_warps'], 16)
@@ -46,8 +46,8 @@ class WarpSpecializationTests(unittest.TestCase):
                         node.name = 'same_kernel'
                         return ast.dump(node)
                     self.assertEqual(kernel(before), kernel(after))
-                    candidate['roles'][0]['warps'].clear()
-                    self.assertEqual(result.schedule['roles'][0]['warps'], list(range(16)))
+                    candidate['roles'][0]['execution_groups'].clear()
+                    self.assertEqual(result.schedule['roles'][0]['execution_groups'], list(range(16)))
 
     def test_invalid_and_noop_choices_do_not_generate_candidates(self):
         document = self.document()
@@ -56,20 +56,20 @@ class WarpSpecializationTests(unittest.TestCase):
                 result = self.apply(document, value)
                 self.assertFalse(result.applied)
                 self.assertEqual(result.reason, 'warp_count')
-        result = self.apply(document, len(document['roles'][0]['warps']))
+        result = self.apply(document, len(document['roles'][0]['execution_groups']))
         self.assertEqual(result.reason, 'unchanged')
         for value in (64, 2**80):
             self.assertEqual(self.apply(document, value).reason, 'warp_count')
 
     def test_bad_input_rejected_by_backend_without_silent_repair(self):
         document = self.document()
-        document['roles'][0]['warps'] = list(range(6))
+        document['roles'][0]['execution_groups'] = list(range(6))
         Schedule.from_dict(document)
         assessment = self.compiler.assess(document)
         self.assertFalse(assessment.lowering_eligible)
         self.assertIn('TRITON_NUM_WARPS_UNSUPPORTED', [f.code for f in assessment.findings])
         self.assertEqual(self.apply(document).reason, 'input_refused')
-        self.assertEqual(document['roles'][0]['warps'], list(range(6)))
+        self.assertEqual(document['roles'][0]['execution_groups'], list(range(6)))
 
     def test_valid_explicit_resource_commitment_is_ineligible(self):
         document = self.document()

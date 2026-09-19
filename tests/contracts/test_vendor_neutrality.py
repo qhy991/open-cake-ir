@@ -147,7 +147,7 @@ class SharedArithmeticTest(unittest.TestCase):
         document = json.loads(json.dumps(self.base))
         document["target"] = self.target.target_id
         document.pop("residency", None)
-        document["roles"] = [{"name": "compute", "warps": list(range(slots))}]
+        document["roles"] = [{"name": "compute", "execution_groups": list(range(slots))}]
         return {finding.code for finding in verify(Schedule.from_dict(document), self.target)}
 
     def test_sixteen_slots_fill_the_cta_and_thirty_two_overrun_it(self) -> None:
@@ -162,7 +162,7 @@ class SharedArithmeticTest(unittest.TestCase):
         cuda = Target.load(ROOT / "compiler/targets/sm_100a.json")
         document = json.loads(json.dumps(self.base))
         document.pop("residency", None)
-        document["roles"] = [{"name": "compute", "warps": list(range(32))}]
+        document["roles"] = [{"name": "compute", "execution_groups": list(range(32))}]
         codes = {finding.code for finding in verify(Schedule.from_dict(document), cuda)}
         self.assertNotIn("TARGET_THREAD_LIMIT", codes)
 

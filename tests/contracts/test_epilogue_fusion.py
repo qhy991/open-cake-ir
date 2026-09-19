@@ -132,7 +132,7 @@ class EpilogueFusionTests(unittest.TestCase):
 
     def test_target_and_execution_controls_are_not_silently_changed(self):
         self.assert_refused_valid_pair(stage('producer'),stage('consumer',target='sm_103a'),'target_route')
-        e=stage('consumer');e['roles'][0]['warps']=[0]
+        e=stage('consumer');e['roles'][0]['execution_groups']=[0]
         self.assert_refused_valid_pair(stage('producer'),e,'execution_controls')
         e=stage('consumer');e['residency']={'registers_per_thread':64}
         self.assert_refused_valid_pair(stage('producer'),e,'execution_controls')

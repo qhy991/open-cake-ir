@@ -115,7 +115,7 @@ class ReservationOwnedIndexedStoreContractTest(unittest.TestCase):
     def test_barrier_cannot_make_an_atomic_register_visible_to_another_role(self) -> None:
         document = _document()
         document["roles"].append(
-            {"name": "store_role", "warps": [4, 5, 6, 7]}
+            {"name": "store_role", "execution_groups": [4, 5, 6, 7]}
         )
         reservation = _operation(document, "reserve_positions")
         store = _operation(document, "store_dispatched")

@@ -87,8 +87,8 @@ def _plan(schedule: Schedule, target: Target) -> tuple[_Plan | None, tuple[Findi
           "CUTE_REGISTER_TARGET", "target",
           "the CuTe-DSL register route has been qualified on "
           f"{', '.join(sorted(REGISTER_ROUTE_EVIDENCE))} only")
-    check(len(schedule.roles) == 1 and schedule.roles[0].warps == (0,),
-          "CUTE_REGISTER_ROLE", "roles", "register CuTe lowering requires one role with warps=[0]")
+    check(len(schedule.roles) == 1 and schedule.roles[0].execution_groups == (0,),
+          "CUTE_REGISTER_ROLE", "roles", "register CuTe lowering requires one role with execution_groups=[0]")
     check(schedule.residency is None and all(r.registers_per_thread is None for r in schedule.roles),
           "CUTE_REGISTER_RESIDENCY", "residency", "register CuTe lowering does not implement register or residency caps")
     for name in ("allocations", "pipelines", "barriers"):

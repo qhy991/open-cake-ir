@@ -488,7 +488,7 @@ def profile_envelope(
             100.0,
             100.0
             * occupancy_ctas
-            * schedule.total_warp_extent
+            * schedule.total_execution_group_extent
             / maximum_warps,
         )
 

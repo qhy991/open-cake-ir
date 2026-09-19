@@ -30,7 +30,7 @@ Ordered by how often the surveyed work exercised each axis.
 | 3 | CTAs per SM, persistent grid size | YES | `residency.ctas_per_multiprocessor`, and `ProgramMap.persistent` sized from it |
 | 4 | Software-pipeline depth | ~ | one `Pipeline.stages`; real work tunes mainloop, accumulator and scheduler pipelines separately |
 | 5 | Register / TMEM / shared budget | YES | `residency.registers_per_thread` reaches the backend as `maxnreg`; physical allocation/spill is compiled evidence, while explicit TMEM/shared declarations retain static capacity gates |
-| 6 | Tile geometry, thread-to-output mapping | YES | `MmaInstruction.shape`, `cta_group`, `tile`, `Role.warps` |
+| 6 | Tile geometry, thread-to-output mapping | YES | `MmaInstruction.shape`, `cta_group`, `tile`, `Role.execution_groups` |
 | 7 | Global load width and cache policy | ~ | `LoadParameters.reuse` states the intent; width left out, Triton derives it |
 | 8 | Buffer ownership, intermediate-copy elision | NO | buffers are input/output/scratch; no caller-provided destination |
 | 9 | On-chip staging and bank swizzle | ~ | `Buffer.swizzle` covers four CUTLASS modes, not a hand-derived layout |

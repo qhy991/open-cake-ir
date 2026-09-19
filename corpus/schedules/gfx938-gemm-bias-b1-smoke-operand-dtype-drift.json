@@ -1,11 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "gfx938-gemm-bias-b1-smoke-operand-dtype-drift",
   "target": "gfx938",
   "roles": [
     {
       "name": "compute",
-      "warps": [
+      "execution_groups": [
         0,
         1,
         2,

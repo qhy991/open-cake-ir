@@ -70,7 +70,7 @@ class BackendBoundaryTests(unittest.TestCase):
         self.assertIn("MMA_OPERAND_SOURCE_MISMATCH", [f.code for f in assessment.findings])
         self.assertFalse(assessment.lowering_eligible)
         self.assertEqual(assessment.analysis["grid"], (64, 1, 1))
-        self.assertEqual(assessment.analysis["total_warps"], 12)
+        self.assertEqual(assessment.analysis["total_execution_groups"], 12)
         self.assertEqual(assessment.analysis["operation_counts"],
                          {"epilogue": 1, "load": 3, "mma": 1, "reduce": 1})
 

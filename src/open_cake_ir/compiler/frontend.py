@@ -151,7 +151,7 @@ class _Builder:
         self.temporary = 0
         self.lm = "lm"
         self.document: dict[str, Any] = dict(
-            schema_version=1, roles=[], allocations=[], buffers=[], pipelines=[],
+            schema_version=2, roles=[], allocations=[], buffers=[], pipelines=[],
             barriers=[], tile_loops=[], access_maps=[], operations=[], outputs=[], metadata={},
         )
 

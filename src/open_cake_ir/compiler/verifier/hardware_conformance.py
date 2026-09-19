@@ -75,11 +75,11 @@ def verify(
         return
 
     for index, role in enumerate(schedule.roles):
-        for position, warp in enumerate(role.warps):
+        for position, warp in enumerate(role.execution_groups):
             if warp >= limits.maximum_warps_per_cta:
                 out.add(
                     "ROLE_WARP_RANGE",
-                    f"roles[{index}].warps[{position}]",
+                    f"roles[{index}].execution_groups[{position}]",
                     f"warp index {warp} is outside the Target CTA range "
                     f"[0, {limits.maximum_warps_per_cta})",
                     category,
@@ -87,7 +87,7 @@ def verify(
 
     # A role interval may begin above zero, so the budget is bounded by the highest
     # warp index in use rather than by how many warps were declared.
-    extent = schedule.total_warp_extent
+    extent = schedule.total_execution_group_extent
     if extent > limits.maximum_warps_per_cta:
         out.add(
             "TARGET_WARP_LIMIT",
@@ -713,12 +713,12 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
         for index, role in enumerate(schedule.roles):
             if role.registers_per_thread is None:
                 continue
-            first, count = role.warps[0], len(role.warps)
+            first, count = role.execution_groups[0], len(role.execution_groups)
             if first % warps_per_group or count % warps_per_group:
                 out.add(
                     "ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED",
                     f"roles[{index}].registers_per_thread",
-                    f"role {role.name!r} holds warps {list(role.warps)}; a register budget "
+                    f"role {role.name!r} holds warps {list(role.execution_groups)}; a register budget "
                     f"is issued per warpgroup, so it must start on and span whole groups "
                     f"of {warps_per_group}",
                     category,
@@ -747,9 +747,9 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
         )
         return
 
-    threads = schedule.total_warp_extent * target.warp_size
+    threads = schedule.total_execution_group_extent * target.warp_size
     distributed = sum(
-        len(role.warps) * target.warp_size * role.registers_per_thread
+        len(role.execution_groups) * target.warp_size * role.registers_per_thread
         for role in schedule.roles
     )
     if distributed != total * threads:
@@ -850,7 +850,7 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
     facts = target.occupancy
     proxy_ctas = (
         facts.registers_per_multiprocessor
-        // (per_thread * schedule.total_warp_extent * target.warp_size)
+        // (per_thread * schedule.total_execution_group_extent * target.warp_size)
         if per_thread and facts is not None
         else None
     )

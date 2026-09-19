@@ -426,7 +426,7 @@ class _Emitter:
 
     def role_constant(self, role: Role) -> str:
         upper = role.name.upper()
-        return f"{upper}_WARP" if len(role.warps) == 1 else f"{upper}_WARPS"
+        return f"{upper}_WARP" if len(role.execution_groups) == 1 else f"{upper}_WARPS"
 
     def constants(self) -> dict[str, object]:
         values: dict[str, object] = {
@@ -435,16 +435,16 @@ class _Emitter:
             "MMA_INSTRUCTION_SHAPE": tuple(self.atom.shape),
             "MMA_TILE": tuple(self.tile),
             "PIPELINE_STAGES": self.pipeline.stages,
-            "THREADS_PER_CTA": self.schedule.total_warp_extent * self.target.warp_size,
+            "THREADS_PER_CTA": self.schedule.total_execution_group_extent * self.target.warp_size,
         }
         for loop in self.nest:
             values[f"NUM_{loop.name.upper()}_TRIPS"] = self._trip_count(loop)
         for role in self.schedule.roles:
             name = self.role_constant(role)
-            values[name] = role.warps[0] if len(role.warps) == 1 else tuple(role.warps)
-            if len(role.warps) > 1:
+            values[name] = role.execution_groups[0] if len(role.execution_groups) == 1 else tuple(role.execution_groups)
+            if len(role.execution_groups) > 1:
                 values[f"{role.name.upper()}_THREADS"] = (
-                    len(role.warps) * self.target.warp_size
+                    len(role.execution_groups) * self.target.warp_size
                 )
         allocation = next(
             (a for a in self.schedule.allocations if a.space is MemorySpace.TENSOR), None
@@ -681,7 +681,7 @@ class _Emitter:
         self.line("        barrier_id=1,")
         self.line(
             f"        num_threads=(len({self.role_constant(owner)}) + 1) * {self.target.warp_size},"
-            if len(owner.warps) > 1
+            if len(owner.execution_groups) > 1
             else f"        num_threads=2 * {self.target.warp_size},"
         )
         self.line("    )")
@@ -690,7 +690,7 @@ class _Emitter:
         self.line("        barrier_for_retrieve=tmem_sync,")
         self.line(
             f"        allocator_warp_id={self.role_constant(owner)}[0],"
-            if len(owner.warps) > 1
+            if len(owner.execution_groups) > 1
             else f"        allocator_warp_id={self.role_constant(owner)},"
         )
         self.line("    )")
@@ -708,7 +708,7 @@ class _Emitter:
             self.line(f"        num_stages={stages},")
             self.line("        producer_group=pipeline.CooperativeGroup(pipeline.Agent.Thread),")
             consumer_role = self.roles[barrier.consumers[0]]
-            if klass == "PipelineUmmaAsync" and len(consumer_role.warps) > 1:
+            if klass == "PipelineUmmaAsync" and len(consumer_role.execution_groups) > 1:
                 self.line("        consumer_group=pipeline.CooperativeGroup(")
                 self.line(
                     f"            pipeline.Agent.Thread, size={consumer_role.name.upper()}_THREADS"
@@ -768,7 +768,7 @@ class _Emitter:
 
         active = [
             role
-            for role in sorted(self.schedule.roles, key=lambda r: r.warps[0])
+            for role in sorted(self.schedule.roles, key=lambda r: r.execution_groups[0])
             if any(op.role == role.name for op in self.schedule.operations)
         ]
         deferred: dict[str, Barrier] = {}
@@ -797,10 +797,10 @@ class _Emitter:
             for role in roles:
                 keyword = "if" if first else "elif"
                 first = False
-                if len(role.warps) == 1:
+                if len(role.execution_groups) == 1:
                     condition = f"warp_idx == {self.role_constant(role)}"
                 else:
-                    low, high = min(role.warps), max(role.warps)
+                    low, high = min(role.execution_groups), max(role.execution_groups)
                     condition = f"{low} <= warp_idx <= {high}"
                 self.line(f"    {keyword} {condition}:")
                 self._emit_role_body(role, indent=8)

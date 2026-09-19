@@ -26,7 +26,7 @@ def _synthetic_flash_model(workload, compiler_ref, context, durations=(20.0, 10.
     curves = []
     for warps, duration in zip((4, 8), durations):
         schedule = _headline_schedule(workload)
-        schedule["roles"][0]["warps"] = list(range(warps))
+        schedule["roles"][0]["execution_groups"] = list(range(warps))
         curves.append({
             "template": schedule,
             "varying_dimensions": [{"buffer": name, "dimension": 1} for name in ("tokens", "assignments")],

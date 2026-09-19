@@ -5,7 +5,7 @@ from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="epilogue_consumer", target="sm_100a", backend="triton",
                entry_point="epilogue_consumer")
 def candidate(lm, mid: cake.Tensor((2, 8), "bf16"), out: cake.Tensor((2, 8), "bf16", mode="output")):
-    compute = lm.role(warps=[0, 1, 2, 3])
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
     row = lm.program(mid, axis=0, dimension=0, tile=1)
     with compute:
         rounded = lm.load(mid[row, :], id="load_mid")

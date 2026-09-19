@@ -1,9 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "triton-bf16-two-k64-mma-loop-b1-smoke-second-contract-drift-v1",
   "target": "sm_100a",
   "roles": [
-    {"name": "compute", "warps": [0, 1, 2, 3]}
+    {"name": "compute", "execution_groups": [0, 1, 2, 3]}
   ],
   "allocations": [],
   "pipelines": [],

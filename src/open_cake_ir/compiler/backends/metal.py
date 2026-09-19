@@ -69,8 +69,8 @@ def lane_width(schedule: Schedule, target: Target) -> int:
     which is the only way a fixed reduction width can own fewer values per lane. The
     group width is the Target's `warp_size`; this backend keeps no copy of it.
     """
-    warps = schedule.roles[0].warps if schedule.roles else (0,)
-    return target.warp_size * len(warps)
+    execution_groups = schedule.roles[0].execution_groups if schedule.roles else (0,)
+    return target.warp_size * len(execution_groups)
 
 
 def _share_slots(schedule: Schedule, lanes: int, width: int) -> int:
@@ -132,8 +132,8 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
           "METAL_ENTRY_POINT_UNSUPPORTED", "lowering.entry_point", "Metal requires a non-reserved function identifier")
     maximum_groups = target.resource_limits.maximum_warps_per_cta
     check(len(schedule.roles) == 1
-          and schedule.roles[0].warps == tuple(range(len(schedule.roles[0].warps)))
-          and 1 <= len(schedule.roles[0].warps) <= maximum_groups,
+          and schedule.roles[0].execution_groups == tuple(range(len(schedule.roles[0].execution_groups)))
+          and 1 <= len(schedule.roles[0].execution_groups) <= maximum_groups,
           "METAL_ROLE_UNSUPPORTED", "roles",
           "SIMD program tiles require one role occupying consecutive SIMD groups from [0], "
           f"at most {maximum_groups}")

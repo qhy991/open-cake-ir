@@ -160,8 +160,8 @@ class FlashCalibrationTest(unittest.TestCase):
         candidate = run / "candidate"
         write(candidate / "plan.json", plan)
         for spec, choices in zip(plan["pool"], ((128, 64, 4), (256, 64, 4), (256, 128, 8), (128, 128, 8))):
-            bn, bk, warps = choices
-            seed = replace(self.seed, block_n=bn, block_k=bk, num_warps=warps, num_stages=3)
+            bn, bk, execution_groups = choices
+            seed = replace(self.seed, block_n=bn, block_k=bk, num_warps=execution_groups, num_stages=3)
             schedule = seed.schedule_for(plan["case_id"], ExactShape.from_mapping(self.workload.case(plan["case_id"])["shape"]))
             schedule["schedule_id"] = spec["id"]
             # The historical seed's base metadata predates Workload v2. Bind only

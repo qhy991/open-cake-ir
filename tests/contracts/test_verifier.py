@@ -281,7 +281,7 @@ class QuietOnValidScheduleTest(unittest.TestCase):
     def test_findings_are_deterministically_ordered(self) -> None:
         schedule = _mutated(
             B32,
-            lambda d: d["roles"][0].update(warps=[4096, 4097, 4098, 4099]),
+            lambda d: d["roles"][0].update(execution_groups=[4096, 4097, 4098, 4099]),
         )
         first = verify(schedule, TARGET)
         self.assertEqual(first, verify(schedule, TARGET))
@@ -305,7 +305,7 @@ class ScheduleSemanticsTest(unittest.TestCase):
         findings = verify(
             _mutated(
                 ASSIGNMENT_FULL,
-                lambda d: d["roles"][1].update(warps=[3]),
+                lambda d: d["roles"][1].update(execution_groups=[3]),
             ),
             TARGET,
         )
@@ -313,7 +313,7 @@ class ScheduleSemanticsTest(unittest.TestCase):
         overlaps = [f for f in findings if f.code == "ROLE_WARP_OVERLAP"]
         self.assertEqual(len(overlaps), 1)
         self.assertEqual(overlaps[0].category, FindingCategory.SCHEDULE_SEMANTICS)
-        self.assertEqual(overlaps[0].path, "roles[1].warps")
+        self.assertEqual(overlaps[0].path, "roles[1].execution_groups")
         self.assertIn("both role 'epilogue' and role 'mma'", overlaps[0].message)
 
 
@@ -429,7 +429,7 @@ class HardwareConformanceTest(unittest.TestCase):
             _mutated(
                 B32,
                 lambda d: d["roles"][0].update(
-                    warps=[4096, 4097, 4098, 4099]
+                    execution_groups=[4096, 4097, 4098, 4099]
                 ),
             ),
             TARGET,
@@ -441,10 +441,10 @@ class HardwareConformanceTest(unittest.TestCase):
         self.assertEqual(
             [f.path for f in ranged],
             [
-                "roles[0].warps[0]",
-                "roles[0].warps[1]",
-                "roles[0].warps[2]",
-                "roles[0].warps[3]",
+                "roles[0].execution_groups[0]",
+                "roles[0].execution_groups[1]",
+                "roles[0].execution_groups[2]",
+                "roles[0].execution_groups[3]",
             ],
         )
         self.assertIn("outside the Target CTA range [0, 32)", ranged[0].message)
@@ -730,7 +730,7 @@ class CategoryCoverageTest(unittest.TestCase):
     def test_all_four_paper_contract_classes_are_reachable(self) -> None:
         observed = set()
         cases = [
-            (B32, lambda d: d["roles"][0].update(warps=[4096, 4097])),
+            (B32, lambda d: d["roles"][0].update(execution_groups=[4096, 4097])),
             (B32, lambda d: _op(d, "load_tokens").update(writes=["token_tile", "centroids"])),
             (ASSIGNMENT_FULL, ProgramSafetyTest._desynchronized),
             (B32, lambda d: d["roles"].append(dict(d["roles"][0]))),
@@ -1026,16 +1026,16 @@ class RoleRegisterSplitTest(unittest.TestCase):
             (ROOT / "corpus/schedules/rmsnorm-b8-smoke.json").read_text(encoding="utf-8")
         )
         document["roles"] = [
-            {"name": "load", "warps": [0, 1, 2, 3], "registers_per_thread": 64},
-            {"name": "compute", "warps": [4, 5, 6, 7], "registers_per_thread": 192},
+            {"name": "load", "execution_groups": [0, 1, 2, 3], "registers_per_thread": 64},
+            {"name": "compute", "execution_groups": [4, 5, 6, 7], "registers_per_thread": 192},
         ]
         for operation in document["operations"]:
             operation["role"] = "load" if operation["kind"] == "load" else "compute"
         document["residency"] = {"registers_per_thread": 128}
         for key, value in changes.items():
-            if key == "warps":
+            if key == "execution_groups":
                 for role, warps in zip(document["roles"], value):
-                    role["warps"] = warps
+                    role["execution_groups"] = warps
             elif key == "budgets":
                 for role, budget in zip(document["roles"], value):
                     if budget is None:
@@ -1083,7 +1083,7 @@ class RoleRegisterSplitTest(unittest.TestCase):
         instruction warpgroup-aligned without exception.
         """
 
-        codes = self._codes(self._split(warps=([0, 1], [2, 3, 4, 5, 6, 7])))
+        codes = self._codes(self._split(execution_groups=([0, 1], [2, 3, 4, 5, 6, 7])))
         self.assertIn("ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED", codes)
 
     def test_a_target_without_a_warpgroup_width_reports_the_alignment_unchecked(self) -> None:

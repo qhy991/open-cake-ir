@@ -80,7 +80,7 @@ def python_rms(workload):
                residency={"ctas_per_multiprocessor": 4, "registers_per_thread": 96})
 def rms(lm, x: cake.Tensor((8,512,128), "fp32"), gamma: cake.Tensor((128,), "fp32"),
         y: cake.Tensor((8,512,128), "fp32", mode="output")):
-    compute = lm.role(warps=[0,1,2,3])
+    compute = lm.role(execution_groups=[0,1,2,3])
     row_block = lm.program(x, axis=0, dimension=1, tile=64)
     batch = lm.program(x, axis=1, dimension=0, tile=1)
     with compute:

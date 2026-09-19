@@ -83,7 +83,7 @@ class PythonGatherTests(unittest.TestCase):
 @cake.schedule(name="repeat-domain", target="sm_103a", backend="triton", entry_point="repeat_domain")
 def f(lm, data: cake.Tensor((8,8,8), "fp32"), ids: cake.Tensor((4,), "int32"),
       output: cake.Tensor((8,4), "fp32", mode="output")):
-    compute = lm.role(warps=[0,1,2,3])
+    compute = lm.role(execution_groups=[0,1,2,3])
     p = lm.program(data, axis=0, dimension=0, tile=4)
     with compute:
         idx = lm.load(ids[:], id="load_ids")

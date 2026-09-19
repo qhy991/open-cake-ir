@@ -1,11 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "indexed-gather-b8-smoke-v1",
   "target": "sm_100a",
   "roles": [
     {
       "name": "compute",
-      "warps": [0, 1, 2, 3]
+      "execution_groups": [0, 1, 2, 3]
     }
   ],
   "allocations": [],

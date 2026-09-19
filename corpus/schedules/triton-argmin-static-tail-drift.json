@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "triton-argmin-static-tail-drift",
   "target": "sm_103a",
   "lowering": {
@@ -10,7 +10,7 @@
   "roles": [
     {
       "name": "compute",
-      "warps": [
+      "execution_groups": [
         0,
         1,
         2,

@@ -54,8 +54,8 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     check(schedule.lowering.backend is LoweringBackend.CUTLASS_CUTE_DSL
           and schedule.target == target.target_id,
           'CUTE_SIMT_TARGET', 'target', 'CuTe SIMT preflight requires the Schedule\'s own target and lowering route.')
-    check(len(schedule.roles)==1 and schedule.roles[0].warps==(0,), 'CUTE_SIMT_ROLE','roles',
-          'CuTe SIMT currently assigns one role to one complete warp, warps=[0].')
+    check(len(schedule.roles)==1 and schedule.roles[0].execution_groups==(0,), 'CUTE_SIMT_ROLE','roles',
+          'CuTe SIMT currently assigns one role to one complete warp, execution_groups=[0].')
     check(schedule.residency is None and all(r.registers_per_thread is None for r in schedule.roles),
           'CUTE_SIMT_RESIDENCY','residency','CuTe SIMT does not implement residency/register caps.')
     for field in ('allocations','pipelines','barriers','tile_loops'):

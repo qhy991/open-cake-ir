@@ -1,11 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "chunk-cumsum-reverse-b8-smoke-v1",
   "target": "sm_100a",
   "roles": [
     {
       "name": "compute",
-      "warps": [
+      "execution_groups": [
         0,
         1,
         2,

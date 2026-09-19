@@ -22,7 +22,7 @@ def register_schedule(*, shape=(33, 19, 21), tile=(16, 16, 16)) -> dict:
     document = json.loads((ROOT / "corpus/schedules/gemm-bias-b1-smoke.json").read_text())
     document["target"] = "sm_103a"
     document["lowering"] = {"backend": "cutlass_cute_dsl", "entry_point": "warp_matmul"}
-    document["roles"][0]["warps"] = [0]
+    document["roles"][0]["execution_groups"] = [0]
     document.pop("residency")
     m, n, k = shape
     bm, bn, bk = tile
@@ -235,7 +235,7 @@ class RegisterCuTeTests(unittest.TestCase):
             (lambda d: d["buffers"][4].__setitem__("stages", 2), "CUTE_REGISTER_BUFFER_OPTIONS"),
             (lambda d: d["buffers"][0].__setitem__("byte_offset", 2), "CUTE_REGISTER_BUFFER_OPTIONS"),
             (lambda d: d["buffers"][2].__setitem__("mode", "state"), "CUTE_STATE_UNSUPPORTED"),
-            (lambda d: d["roles"][0].__setitem__("warps", [0, 1]), "CUTE_REGISTER_ROLE"),
+            (lambda d: d["roles"][0].__setitem__("execution_groups", [0, 1]), "CUTE_REGISTER_ROLE"),
             (lambda d: d.__setitem__("residency", {"registers_per_thread": 128}), "CUTE_REGISTER_RESIDENCY"),
             (lambda d: d["access_maps"].pop(), "CUTE_REGISTER_ACCESS"),
             (lambda d: d["access_maps"][1]["indices"][0].__setitem__("name", "m_block"), "CUTE_REGISTER_ACCESS"),

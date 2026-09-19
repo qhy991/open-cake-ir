@@ -99,7 +99,7 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
     if (not isinstance(schedule_id, str) or not schedule_id or schedule_id == s.schedule_id
         or not isinstance(entry_point, str) or not entry_point.isidentifier()):
         return refused('result_identity', 'A distinct Schedule id and valid entry point are required.')
-    if (len(s.roles) != 1 or s.roles[0].warps != tuple(range(len(s.roles[0].warps)))
+    if (len(s.roles) != 1 or s.roles[0].execution_groups != tuple(range(len(s.roles[0].execution_groups)))
         or s.roles[0].registers_per_thread is not None or s.residency is not None
         or s.allocations or s.pipelines or s.barriers or s.tile_loops
         or s.program_map is None or s.program_map.persistent
@@ -111,11 +111,11 @@ def specialize_triton_warps(compiler: Compiler, schedule: Mapping, *,
     if any(op.kind not in {OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.CAST,
                           OperationKind.REDUCE, OperationKind.STORE} for op in s.operations):
         return refused('operation_domain', 'Only pure tensor arithmetic, CTA reductions and ordinary loads/stores are admitted.')
-    if num_warps == len(s.roles[0].warps):
+    if num_warps == len(s.roles[0].execution_groups):
         return refused('unchanged', 'The requested width is already declared.')
     copied['schedule_id'] = schedule_id
     copied['lowering']['entry_point'] = entry_point
-    copied['roles'][0]['warps'] = list(range(num_warps))
+    copied['roles'][0]['execution_groups'] = list(range(num_warps))
     try:
         result = compiler.assess(copied)
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
@@ -188,7 +188,7 @@ def fuse_pointwise_epilogue(compiler: Compiler, producer: Mapping, epilogue: Map
                        or b.mode is BufferMode.STATE or b.allocation is not None or b.byte_offset
                        or b.stages != 1 or b.swizzle or b.scale_of or b.valid_extent for b in s.buffers)):
             return _refuse('unsupported_effects', f'{label}: require one role and ordinary nonaliasing buffers without state, loops or synchronization.')
-    if (p.roles[0].warps != e.roles[0].warps
+    if (p.roles[0].execution_groups != e.roles[0].execution_groups
             or p.roles[0].registers_per_thread != e.roles[0].registers_per_thread
             or p.residency != e.residency):
         return _refuse('execution_controls', 'Warp ownership and residency commitments must match.')

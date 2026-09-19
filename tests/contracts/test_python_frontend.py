@@ -93,7 +93,7 @@ class PythonFrontendTests(unittest.TestCase):
         return f"""from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="scalar-arithmetic", target="sm_100a", backend="triton", entry_point="cake_scalar")
 def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_shape}, "fp32"), out: cake.Tensor({output_shape}, "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[row,:])
@@ -332,7 +332,7 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
 
     def test_supported_input_errors_have_locations_instead_of_python_exceptions(self):
         replacements = [
-            ('warps=[0, 1, 2, 3]', 'warps="bad"'),
+            ('execution_groups=[0, 1, 2, 3]', 'execution_groups="bad"'),
             ('tile=1)', 'tile="bad")'),
             ('a[batch, :]', 'a[0, :]'),
             ('a[batch, :]', 'a[batch, ::2]'),
@@ -392,7 +392,7 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
 
     def test_structural_errors_reuse_the_canonical_parser_and_source_path(self):
         with self.assertRaises(FrontendError) as caught:
-            parse(FMA.replace('warps=[0, 1, 2, 3]', 'warps=[0, 1, 2, 3], imaginary=True'), filename="fma.py")
+            parse(FMA.replace('execution_groups=[0, 1, 2, 3]', 'execution_groups=[0, 1, 2, 3], imaginary=True'), filename="fma.py")
         self.assertEqual(caught.exception.code, "SCHEDULE_STRUCTURE")
         self.assertEqual(caught.exception.canonical_path, "schedule.roles[0]")
         self.assertIn("compute", str(caught.exception))
@@ -480,7 +480,7 @@ def candidate(lm, x: cake.Tensor((2,32), "fp32"), scalar: cake.Tensor({scalar_sh
             self.assertIn(str(path) + ":", stdout)
 
     def test_cli_lower_does_not_write_when_python_candidate_is_not_lowerable(self):
-        source = FMA.replace('    batch =', '    extra = lm.role(warps=[4])\n    batch =')
+        source = FMA.replace('    batch =', '    extra = lm.role(execution_groups=[4])\n    batch =')
         with tempfile.TemporaryDirectory() as directory:
             path, output = Path(directory) / "bad.py", Path(directory) / "output.py"
             path.write_text(source)

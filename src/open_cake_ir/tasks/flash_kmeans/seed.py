@@ -170,7 +170,7 @@ class KernelSeed:
         schedule = cast(dict[str, object], json.loads(_canonical_json_bytes(self._base_schedule)))
         schedule["schedule_id"] = f"{self.seed_id}-{case_id}"
         roles = cast(list[dict[str, object]], schedule["roles"])
-        roles[0]["warps"] = list(range(self.num_warps))
+        roles[0]["execution_groups"] = list(range(self.num_warps))
         axes = cast(list[dict[str, object]], cast(dict[str, object], schedule["program_map"])["axes"])
         for axis in axes:
             if axis["name"] == "token_block":

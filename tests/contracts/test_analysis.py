@@ -44,7 +44,7 @@ def _merge2_qsa(tile: int = 128) -> Schedule:
     )
     operation["parameters"]["source_tiles_per_merge"] = 2
     if tile != 128:
-        document["roles"][0]["warps"] = [0, 1, 2, 3]
+        document["roles"][0]["execution_groups"] = [0, 1, 2, 3]
         buffers = {item["name"]: item for item in document["buffers"]}
         buffers["key_tile"]["shape"] = [tile, 128]
         for name in ("head_scores", "positive_scores"):
