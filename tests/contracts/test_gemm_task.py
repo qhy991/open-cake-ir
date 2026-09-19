@@ -110,7 +110,6 @@ class GemmTaskTests(unittest.TestCase):
                 lowering = self.compiler.lower(assessment)
                 self.assertEqual(lowering.toolchain_requirements["target"], workload.target)
                 self.assertEqual(lowering.toolchain_requirements["threadgroups_per_grid"], [rows, 1, 1])
-                self.assertFalse(assessment.calibration_available)
 
 
 if __name__ == "__main__":

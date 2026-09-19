@@ -42,8 +42,7 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.path = self.root / "revision.json"
         self.target = json.loads((ROOT / "compiler/targets/sm_100a.json").read_text())
         self.draft = {
-            "schema_version": 2, "corpus_manifest": "corpus.json",
-            "calibration_coverage": [],
+            "schema_version": 3, "corpus_manifest": "corpus.json",
         }
         (self.root / "compiler/targets").mkdir(parents=True)
         _write(self.root / "corpus.json", {"fixture": True})

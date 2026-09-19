@@ -247,7 +247,6 @@ class NormalizationTaskTests(unittest.TestCase):
                         self.assertTrue(assessment.lowering_eligible, assessment.findings)
                         lowering = self.compiler.lower(assessment)
                         self.assertEqual(lowering.toolchain_requirements["target"], workload.target)
-                        self.assertFalse(assessment.calibration_available)
                         route = normalization.BACKENDS[backend]["route"]
                         lowered.setdefault(route, []).append(
                             (dict(lowering.toolchain_requirements), lowering.source))

@@ -107,7 +107,6 @@ class PythonTaskReferenceTests(unittest.TestCase):
         self.assertEqual(len(observed), 1)
         self.assertEqual(observed[0].target, "apple_gpu_family7")
         self.assertEqual(observed[0].source_role, "lowered_source")
-        self.assertIsNone(result.cost)
 
     def test_common_reference_builder_publishes_python_with_bound_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:

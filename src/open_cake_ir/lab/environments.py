@@ -12,7 +12,6 @@ from typing import Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Assessment, Compiler, CompilerError, LoweringRefusedError
 from open_cake_ir.compiler.frontend import FrontendError, parse as parse_python_schedule
-from open_cake_ir.compiler.performance.ranking import Cost
 from open_cake_ir.compiler.toolchain import validate_triton_kernel
 from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
@@ -53,27 +52,18 @@ class EnvironmentResult:
     launchable: LaunchableCandidate | None
     feedback: Mapping[str, object]
     artifact_payloads: Mapping[str, bytes] = field(default_factory=dict)
-    cost: Cost | None = None
-    """What the pre-GPU filter can say about this candidate's order, if anything.
-
-    Supplied by the environment because the environment owns the Compiler; the Lab only
-    sorts by it. The Lab applies costs only when every launchable member of the set has
-    one. If the environment has no cost model, or the model declines any member, the
-    whole launchable set retains the order it was written -- unknown is not slower.
-    """
-
     semantic_sha256: str | None = None
     """This candidate's identity as a program rather than as bytes, if known.
 
     The paper's first stage asks for *structurally distinct* candidates. Two Schedules
     that differ only in a name or in the order of independent declarations are one kernel
     with two spellings, and searching both spends a second measurement to learn what the
-    first already said. Supplied by the environment for the same reason `cost` is: the
+    first already said. Supplied by the environment because the
     environment owns the Compiler, and this is the Compiler's own semantic digest.
     """
 
     empirical_cost: Mapping[str, object] | None = None
-    """Conditional point estimate, separate from calibrated Compiler ranking."""
+    """Conditional point estimate supplied explicitly for this authoring environment."""
 
     def __post_init__(self) -> None:
         if self.disposition not in {"launchable", "rejected"}:
@@ -289,7 +279,6 @@ class OpenCakeEnvironment:
                     {
                         "stage": "assessment",
                         "findings": self._finding_rows(assessment, source),
-                        "calibration_available": assessment.calibration_available,
                     }
                 ),
             )
@@ -329,7 +318,6 @@ class OpenCakeEnvironment:
             MappingProxyType(
                 {"stage": "built", "findings": self._finding_rows(assessment, source)}
             ),
-            cost=next(iter(self._compiler.rank([assessment])[0]), None),
             semantic_sha256=(
                 digest
                 if isinstance(digest := assessment.analysis.get("semantic_sha256"), str)
