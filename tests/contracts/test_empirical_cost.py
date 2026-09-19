@@ -41,7 +41,7 @@ class EmpiricalCostTest(unittest.TestCase):
                            "extent_multiple": extents[0],
                            "points": [{"extent": extent, "kernel_us": duration} for extent, duration in zip(extents, [10, 18, 34])],
                            "relative_error_envelope": .1})
-        return {"schema_version": 2, "model_id": "synthetic-api-contract-fixture",
+        return {"schema_version": 3, "model_id": "synthetic-api-contract-fixture",
                 "compiler_revision_id": self.revision_id,  "target": "sm_100a",
                 "context": {"timer": "synthetic; no measurement", "cache_protocol": "synthetic",
                             "runtime": {"compiler_version": "synthetic"}, "input_scope": "unit fixture only"},

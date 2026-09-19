@@ -1269,7 +1269,7 @@ class LabContractTests(SemanticLabTestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "study.json"
             path.write_text(json.dumps(study))
-            with self.assertRaisesRegex(ValueError, "Compiler Revision differs"):
+            with self.assertRaisesRegex(ValueError, "Compiler Revision reference fields differ"):
                 TaskLab(ROOT).preflight(path)
 
     def test_preflight_rejects_an_unsupported_analysis_plan(self) -> None:
@@ -2128,7 +2128,7 @@ class EmpiricalFeedbackRepairTests(SemanticLabTestCase):
         assessment = fixture.compiler.assess(schedule)
         fixture.compiler_ref = {"revision_id": assessment.compiler_revision_id}
         fixture.model = {
-            "schema_version": 2, "model_id": "synthetic-feedback-repair",
+            "schema_version": 3, "model_id": "synthetic-feedback-repair",
             "compiler_revision_id": fixture.compiler_ref["revision_id"],
 
             "target": "sm_100a",
@@ -3012,10 +3012,9 @@ class StructurallyDistinctCandidatesTest(SemanticLabTestCase):
                     return store.read_object(reference)
 
             if same_program:
-                with self.assertRaisesRegex(
-                    ValueError, "diagnosis_routed is not derived"
-                ):
-                    lab._replay_matched_run(ChangedDiagnosisReplay(), audit, lock)
+                result = lab._replay_matched_run(ChangedDiagnosisReplay(), audit, lock)
+                self.assertFalse(result)
+                self.assertIn("diagnosis_routed", str(result.refusals[0]))
                 changed_diagnosis_rejected = True
             else:
                 changed_diagnosis_rejected = not lab._replay_matched_run(

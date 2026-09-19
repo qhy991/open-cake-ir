@@ -49,7 +49,7 @@ class ProfileReportTest(unittest.TestCase):
     def _model(self) -> dict[str, object]:
         assessment = self.compiler.assess_file(self._schedule("fma-b8-smoke.json"))
         return {
-            "schema_version": 2,
+            "schema_version": 3,
             "model_id": "synthetic-report-fixture",
             "compiler_revision_id": assessment.compiler_revision_id,
 

@@ -56,7 +56,7 @@ class CoverageDerivationContracts(unittest.TestCase):
         """A case naming an undeclared Target exercises the refusal, not the Target."""
 
         report = CorpusGateReport(
-            "fixture", "fixture", "not-live", True,
+            "fixture", "fixture", True,
             (_case("a", "alpha"), _case("refusal", "delta")),
             ("alpha", "beta"),
         )
@@ -73,13 +73,13 @@ class CoverageDerivationContracts(unittest.TestCase):
         """
 
         report = CorpusGateReport(
-            "fixture", "fixture", "not-live", True, (_case("a", "alpha"),), ("alpha", "beta"),
+            "fixture", "fixture", True, (_case("a", "alpha"),), ("alpha", "beta"),
         )
         self.assertTrue(report.passed)
         self.assertEqual(report.unexamined_targets, ("beta",))
 
     def test_a_gate_built_without_declared_targets_claims_no_coverage(self):
-        report = CorpusGateReport("fixture", "fixture", "not-live", True, (_case("a", "alpha"),))
+        report = CorpusGateReport("fixture", "fixture", True, (_case("a", "alpha"),))
         self.assertEqual(dict(report.examined_targets), {})
         self.assertEqual(report.unexamined_targets, ())
         self.assertEqual(dict(report.undeclared_case_targets), {"alpha": 1})

@@ -52,7 +52,6 @@ def _summary(project_root: Path, schedule_bytes: bytes) -> dict[str, object]:
         "status": "rejected",
         "compiler_revision": {
             "revision_id": assessment.compiler_revision_id,
-            "canonical_sha256": assessment.compiler_revision_sha256,
         },
         "assessment": {
             "schedule_id": assessment.schedule_id,
@@ -163,7 +162,6 @@ def _run_gpu(
     executor.admit_host()
     summary["executor_revision"] = {
         "executor_id": executor.executor_id,
-        "canonical_sha256": executor.canonical_sha256,
         "path": executor.relative_path,
     }
     admission = observe_exclusive_cuda("sm_100a")

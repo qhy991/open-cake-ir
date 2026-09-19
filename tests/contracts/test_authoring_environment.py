@@ -35,7 +35,7 @@ def _synthetic_flash_model(workload, compiler_ref, context, durations=(20.0, 10.
             "relative_error_envelope": 0.1,
         })
     return {
-        "schema_version": 2, "model_id": "synthetic-flash-selection-contract",
+        "schema_version": 3, "model_id": "synthetic-flash-selection-contract",
         "compiler_revision_id": compiler_ref["revision_id"],
          "target": "sm_100a",
         "context": context, "reported_evidence": {"kind": "synthetic software fixture; no measurements"},

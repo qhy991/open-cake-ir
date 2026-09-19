@@ -63,7 +63,7 @@ class CompilerDependencyTests(unittest.TestCase):
             path = Path(temporary) / "task.json"
             for value in (reference, {**reference, "revision_id": "other"}):
                 path.write_text(json.dumps({"stages": [{"id": "correctness", "judge": {
-                    "identity": "CPU-fixture@" + "e" * 64,
+                    "identity": "CPU-fixture",
                     "command": ["python", "--compiler-reference", json.dumps(value)]}}]}))
                 with patch.object(qsa, "resolve_executor", return_value=executor), \
                      patch.dict("os.environ", {"KERNELINFRA_TASK": str(path), "KERNELINFRA_STAGE_ID": "correctness"}):

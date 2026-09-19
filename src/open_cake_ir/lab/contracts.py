@@ -49,7 +49,6 @@ def _analysis_estimand(
     The Study carries the plan and the Lock copies it, so both documents are checked
     here rather than once each; `lock` only selects the document's name in the message.
     """
-    performance_reporting_policy(analysis, claim_scope)
     document = "Campaign Lock " if lock else ""
     if claim_scope == "system_qualification_only":
         if analysis_without_endpoint_policy(analysis) != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
@@ -495,11 +494,10 @@ class StudyContract:
         )
         for field in object_fields:
             _object(document.get(field), f"study.{field}")
+        performance_reporting_policy(document["analysis_plan"], claim_scope)
         run_order: tuple[str, ...] = ()
         if kind == "matched_search":
             run_order = _matched_study_shape(document)
-        else:
-            performance_reporting_policy(document["analysis_plan"], claim_scope)
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
         return cls(
             document=detached,
@@ -587,6 +585,8 @@ class CampaignLock:
             raise ValueError("Campaign Lock run_order contains duplicates")
         study_kind = _name(study.get("kind"), "campaign_lock.study.kind")
         claim_scope = _name(study.get("claim_scope"), "campaign_lock.study.claim_scope")
+        analysis = _object(document.get("analysis_plan"), "campaign_lock.analysis_plan")
+        performance_reporting_policy(analysis, claim_scope)
         if study_kind == "matched_search":
             if claim_scope not in _MATCHED_CLAIM_SCOPES:
                 raise differs(
@@ -786,7 +786,6 @@ class CampaignLock:
                     'paired Campaign baseline target',
                     expected=execution['target'], observed=bound_baseline.target,
                 )
-        analysis = _object(document.get("analysis_plan"), "campaign_lock.analysis_plan")
         analysis_sha = sha256(_canonical_json_bytes(analysis)).hexdigest()
         if document.get("analysis_plan_sha256") != analysis_sha:
             raise differs(
