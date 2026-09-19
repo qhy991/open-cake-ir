@@ -93,3 +93,5 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 - [0070: B300 is an exact target on the existing Triton path](../../adr/0070-b300-is-an-exact-target.md) (was 0053)
 
 - [ADR 0071: retire structural ranking and Portfolio Study](../../adr/0071-retire-uncalibrated-ranking-and-portfolio-study.md)
+
+- [ADR 0072: backend-owned input policies and native adapters](../../adr/0072-backend-owned-input-and-native-adapters.md)

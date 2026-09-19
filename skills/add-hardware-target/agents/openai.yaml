@@ -1,0 +1,4 @@
+interface:
+  display_name: "新硬件接入"
+  short_description: "区分现有厂商新型号与新增厂商，规划并验证 open-cake-ir 硬件接入"
+  default_prompt: "使用 $add-hardware-target 检查目标硬件的接入类型、当前缺口、所需修改与验证计划。"

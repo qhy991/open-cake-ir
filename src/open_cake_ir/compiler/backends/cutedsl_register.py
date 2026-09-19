@@ -8,6 +8,8 @@ are promised. This domain is selected by register MMA, never by an operator name
 
 from __future__ import annotations
 
+from .cutedsl_names import REGISTER_NAMESPACE
+
 from dataclasses import dataclass
 
 from .common import python_name_findings, safe_python_identifier, Emission, EmitError, refusal, vocabulary_findings
@@ -56,7 +58,7 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
         )
         for index, operation in enumerate(schedule.operations)
         if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
-    ) + python_name_findings(schedule, register_route=True)
+    ) + python_name_findings(schedule, REGISTER_NAMESPACE)
 
 
 @dataclass(frozen=True)
@@ -254,7 +256,7 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     globals_ = tuple(buf for mode in (BufferMode.INPUT, BufferMode.OUTPUT)
                      for buf in schedule.buffers if buf.space is MemorySpace.GLOBAL and buf.mode is mode)
     for name in (entry, *(buf.name for buf in globals_)):
-        if not safe_python_identifier(name, register_route=True):
+        if not safe_python_identifier(name, REGISTER_NAMESPACE):
             raise EmitError(f"CuTe kernel symbol {name!r} conflicts with Python syntax or the fixed DSL imports")
     if any(buf.name == entry for buf in globals_):
         raise EmitError("CuTe pointer arguments cannot shadow the kernel entry point")

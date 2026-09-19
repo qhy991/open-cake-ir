@@ -15,9 +15,10 @@ handling from the operation, and the host-side contract from the global buffers.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
 
 from .triton_selection import top_k_selection_structure
-from .common import emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
+from .common import PythonNamespace, emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
     LoadReuse,
@@ -166,6 +167,25 @@ _K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
 
 # What this backend emits: Triton compiles the same kernel to a cubin or an hsaco,
 # and the Compiler refuses a Target whose code object is neither before preflight.
+PYTHON_NAMESPACE = PythonNamespace(
+    reserved_names=frozenset({"tl", "torch", "triton"}),
+    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work"),
+)
+
+
+def validate_input(document: Mapping[str, object]) -> None:
+    """The Triton Mapping API requires concrete lists at loop-body references.
+
+    IR construction has already checked the elements. This only preserves the
+    emitter's raw-container contract before canonicalization erases that distinction.
+    """
+    loops = document.get("tile_loops", [])
+    if isinstance(loops, list):
+        for index, loop in enumerate(loops):
+            if isinstance(loop, Mapping) and not isinstance(loop.get("body"), list):
+                raise EmitError(f"tile_loops[{index}].body must be a list of non-empty strings")
+
+
 CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO})
 
 
@@ -204,7 +224,7 @@ def target_route_facts(target: Target) -> dict[str, object]:
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent requirements shared by Compiler and direct emission."""
     findings = list(vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS))
-    findings.extend(python_name_findings(schedule))
+    findings.extend(python_name_findings(schedule, PYTHON_NAMESPACE))
     for index, loop in enumerate(schedule.tile_loops):
         if loop.range_options.warp_specialize and any(
             (operation := schedule.operation(operation_id)) is not None
@@ -729,7 +749,7 @@ class _TritonEmitter:
         # The route owns the external symbol; the emitter derives its signature from
         # global Buffers rather than consulting an operator-named profile.
         self.entry_point = entry_point or schedule.lowering.entry_point
-        _require(safe_python_identifier(self.entry_point), "unsafe Python entry point")
+        _require(safe_python_identifier(self.entry_point, PYTHON_NAMESPACE), "unsafe Python entry point")
 
         failures = preflight(schedule, target, _namespace=False)
         if failures:

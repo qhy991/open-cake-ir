@@ -110,13 +110,6 @@ def _input_container_error(document: Mapping[str, object]) -> _InputError | None
                             f"operations[{index}].{field} must be a list of non-empty strings")
     if not isinstance(document.get("outputs"), list):
         return ((2, 0, 0), "outputs must be a list of non-empty strings")
-    route = document.get("lowering")
-    loops = document.get("tile_loops", [])
-    if isinstance(route, Mapping) and route.get("backend") == LoweringBackend.TRITON.value and isinstance(loops, list):
-        for index, loop in enumerate(loops):
-            if isinstance(loop, Mapping) and not isinstance(loop.get("body"), list):
-                return ((3, index, 0),
-                        f"tile_loops[{index}].body must be a list of non-empty strings")
     return None
 
 
@@ -227,6 +220,12 @@ class Compiler:
         except ScheduleParseError as error:
             return self._structural_rejection(schedule, error)
         _check_input_boundary(typed_schedule, input_error)
+        backend = BACKENDS.get(typed_schedule.lowering.backend)
+        if backend is not None and backend.validate_input is not None:
+            try:
+                backend.validate_input(schedule)
+            except EmitError as error:
+                raise CompilerError(str(error)) from error
         schedule = typed_schedule.canonical_document(schedule)
 
         target = typed_schedule.target
@@ -240,7 +239,6 @@ class Compiler:
             ))
 
         route = typed_schedule.lowering
-        backend = BACKENDS.get(route.backend)
         semantic_sha256 = _semantic_schedule_sha256(schedule)
         # A backend declares the code objects it emits and a Target declares the one it
         # runs; the Compiler holds the two against each other here, by name, so no

@@ -3,9 +3,21 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Protocol
 
-from open_cake_ir.compiler.toolchain import project_triton_kernel
+from .native_triton_adapter import TritonNativeAdapter
+from .native_cute_adapter import CuTeNativeAdapter
+
+
+class NativeAdapter(Protocol):
+    """Backend-owned build factories and projection of its native candidate format."""
+
+    def isolated_compiler(self, config: Mapping[str, object]) -> object: ...
+    def builder(self, *, workload: object, case_id: str, isolated_compiler: object) -> object: ...
+    def environment(self, builder: object, **kwargs: object) -> object: ...
+    def source(self, source: bytes, requirements: Mapping[str, object]) -> bytes: ...
+    def block(self, requirements: Mapping[str, object], *, warp_size: int) -> list[int]: ...
+    def baseline(self, source: str, requirements: Mapping[str, object]) -> dict: ...
 
 
 @dataclass(frozen=True)
@@ -21,6 +33,7 @@ class NativeBackend:
     baseline_file: str
     analysis_version: str
     hidden_null_pointer_parameters: int
+    adapter: NativeAdapter
     candidate_schema: str | None = None
 
     @property
@@ -28,34 +41,23 @@ class NativeBackend:
         return self.document.lower().removesuffix(".md").replace("_", "-") + "-authoring.md"
 
     def isolated_compiler(self, config):
-        if self.backend == "triton":
-            from .triton_build import IsolatedTritonCompiler
-            return IsolatedTritonCompiler(**config)
-        from .cute_build import IsolatedCuTeCompiler
-        return IsolatedCuTeCompiler(**config)
+        return self.adapter.isolated_compiler(config)
 
     def builder(self, *, workload, case_id, isolated_compiler):
-        if self.backend == "triton":
-            from .environments import TritonToolchainBuilder
-            cls = TritonToolchainBuilder
-        else:
-            from .cute_build import CuTeToolchainBuilder
-            cls = CuTeToolchainBuilder
-        return cls(workload=workload, case_id=case_id, isolated_compiler=isolated_compiler)
+        return self.adapter.builder(workload=workload, case_id=case_id,
+                                    isolated_compiler=isolated_compiler)
 
     def environment(self, builder, **kwargs):
-        from .environments import NativeCuTeEnvironment, NativeTritonEnvironment
-        cls = NativeTritonEnvironment if self.backend == "triton" else NativeCuTeEnvironment
-        return cls(builder, **kwargs)
+        return self.adapter.environment(builder, **kwargs)
 
 
 _NATIVE_BACKENDS = (
     NativeBackend("triton", "native_triton", "Triton", "application/vnd.open-cake.triton+json",
                   "submit_triton_kernel", "PAIRED_TRITON.md", "candidate-baseline.triton.json",
-                  "triton_optimization_v1", 2),
+                  "triton_optimization_v1", 2, TritonNativeAdapter()),
     NativeBackend("cutlass_cute_dsl", "native_cute_dsl", "CuTeDSL", "application/vnd.open-cake.cute+json",
                   "submit_cute_kernel", "PAIRED_CUTE.md", "candidate-baseline.cute.json",
-                  "cute_optimization_v1", 0, "contracts/providers/native-cute-candidate-v1.schema.json"),
+                  "cute_optimization_v1", 0, CuTeNativeAdapter(), "contracts/providers/native-cute-candidate-v1.schema.json"),
 )
 
 
@@ -78,11 +80,7 @@ def native_backend(comparison: str | None) -> NativeBackend | None:
 def native_source(source: bytes, requirements: Mapping[str, object]) -> bytes:
     """Project/admit the exact kernel under the frozen backend's source contract."""
     policy = backend_policy(requirements.get("compiler"))
-    if policy.backend == "triton":
-        return project_triton_kernel(source, requirements)
-    from open_cake_ir.compiler.cute_toolchain import validate_cute_kernel
-    validate_cute_kernel(source, requirements)
-    return source
+    return policy.adapter.source(source, requirements)
 
 
 def native_block(requirements: Mapping[str, object], *, warp_size: int) -> list[int]:
@@ -99,8 +97,7 @@ def native_block(requirements: Mapping[str, object], *, warp_size: int) -> list[
     if not isinstance(warp_size, int) or isinstance(warp_size, bool) or warp_size <= 0:
         raise ValueError("a block width needs the target's declared role-slot width")
     policy = backend_policy(requirements.get("compiler"))
-    return ([requirements["compile_options"]["num_warps"] * warp_size, 1, 1]
-            if policy.backend == "triton" else list(requirements["block"]))
+    return policy.adapter.block(requirements, warp_size=warp_size)
 
 
 def comparison_arm(arms: Mapping[str, object]) -> str | None:
@@ -137,12 +134,7 @@ def native_baseline(lowering) -> dict:
     requirements = lowering.toolchain_requirements
     policy = backend_policy(requirements.get("compiler"))
     source = native_source(lowering.source.encode(), requirements).decode()
-    if policy.backend == "triton":
-        return {'kernel_source': source, 'compile_constants': dict(requirements['compile_constants']),
-                'compile_options': dict(requirements['compile_options']), 'grid': list(requirements['grid'])}
-    return {'kernel_source': source, 'grid': list(requirements['grid']),
-            'block': list(requirements['block']),
-            'dynamic_shared_memory_bytes': requirements['dynamic_shared_memory_bytes']}
+    return policy.adapter.baseline(source, requirements)
 
 
 def native_optimization_analysis_plan(comparison: str) -> dict:

@@ -18,6 +18,8 @@ reproducing them would mean hardcoding the thing this module exists to compute.
 
 from __future__ import annotations
 
+from .cutedsl_names import PYTHON_NAMESPACE
+
 from .common import emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 
 from ..ir import (
@@ -144,8 +146,8 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
         if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
     )
     if common:
-        return state + common + python_name_findings(schedule)
-    return state + python_name_findings(schedule) + vocabulary_findings(
+        return state + common + python_name_findings(schedule, PYTHON_NAMESPACE)
+    return state + python_name_findings(schedule, PYTHON_NAMESPACE) + vocabulary_findings(
         schedule, SUPPORTED_DTYPES, frozenset(BODY_EMITTERS))
 
 
@@ -359,7 +361,7 @@ class _Emitter:
         # The route owns the external symbol; the emitter derives its signature from
         # global Buffers rather than consulting an operator-named profile.
         self.entry_point = entry_point or schedule.lowering.entry_point
-        _require(safe_python_identifier(self.entry_point), "unsafe Python entry point")
+        _require(safe_python_identifier(self.entry_point, PYTHON_NAMESPACE), "unsafe Python entry point")
 
         failures = preflight(schedule, target, _namespace=False)
         if failures:

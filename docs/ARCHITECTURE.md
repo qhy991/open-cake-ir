@@ -74,8 +74,8 @@ Schedule 留作结构拒绝用例，旧固定源码结果只能在绑定的历�
 
 - `core.py` 只连接公开接口；`revision.py` 负责加载版本，`corpus.py` 负责逐项对照预期。
 - `diagnostics.py` 拥有诊断类型；`verifier/` 拥有四类通用规则。后端专属限制由后端报告，阻止生成，不把可表达的计划误判为结构错误。
-- [backends](../src/open_cake_ir/compiler/backends/__init__.py) 的 `BACKENDS` 是唯一静态后端清单。每个后端实现 `requirements`、`preflight`、`emit`；Triton 的 `pointer_type(DType)` 负责指针类型拼写。
-- [performance](../src/open_cake_ir/compiler/performance/__init__.py) 归集工作量、驻留、profile、编译资源、经验成本、排序和利用率。同一输入的分析结果计算一次并显式传递，不另设全局缓存。
+- [backends](../src/open_cake_ir/compiler/backends/__init__.py) 的 `BACKENDS` 是唯一静态后端清单。每个后端实现 `requirements`、`preflight`、`emit`，注册项可声明原始输入检查；Triton 的 `pointer_type(DType)` 负责指针类型拼写。
+- [performance](../src/open_cake_ir/compiler/performance/__init__.py) 归集工作量、驻留、profile、编译资源、经验成本和利用率。同一输入的分析结果计算一次并显式传递，不另设全局缓存。
 
 新增后端时，先定义目标、输入、拒绝条件及上述三个方法，再在唯一清单登记。
 给支持与拒绝的真实组合补测试；CLI 词汇表直接读取同一清单。
@@ -147,3 +147,5 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 第一次作者调用失败时，回放先处理该故障，不提前加载任务包或经验模型。
 只有执行权限和输入检查通过后，才创建 Evidence。报告按需调用回放，不提前执行它。
 具体任务接线仍留在 `TaskLab`；公共导入仍使用 `open_cake_ir.lab`。
+
+各 Python 后端声明自己的命名空间，公共检查器只实现检查算法。原生比较环境通过 `NativeAdapter` 绑定工厂、源码准入与启动参数投影；新增实现无需修改 Triton/CuTe 二选一分支。见 [ADR 0072](adr/0072-backend-owned-input-and-native-adapters.md)。
