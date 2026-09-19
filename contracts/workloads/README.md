@@ -87,8 +87,8 @@ The GEMM starter uses scalar-output reductions and makes no performance claim.
 The full 26-task inventory is in `tasks/solx_fib/catalog.py`. GQA (six), MLA (two),
 and FP8 MoE (one) use typed ordered Cake launch plans (ADR 0075). `tools/check_flashinfer_tasks.py` reports
 all tasks including missing paths and performs offline source generation only.
-B300 device compilation, correctness, timing, profiler and framework validation
-remain pending. See [ADR 0074](../../docs/adr/0074-flashinfer-fixed-shape-starters.md).
+Scoped B300 development compilation/correctness is recorded in ADR 0075. Whole-plan
+timing/profiling and formal Campaign qualification remain separate. See [ADR 0074](../../docs/adr/0074-flashinfer-fixed-shape-starters.md).
 
 Each normalization contract retains one batch extent within the CPU oracle cap and
 five input distributions. Upstream larger extents are provenance, not coverage.

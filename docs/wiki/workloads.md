@@ -122,7 +122,7 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 每个合同绑定一个 batch extent —— CPU oracle 逐元素跑得动的最大上游取值，**为 oracle 覆盖选的，不是为跑满带宽选的**，
 上游更大的取值记在 provenance 里但不声称检查过。epsilon 按 capture 走，不是家族常量。
 上游的 `matched_ratio` 0.99 门槛换成了全元素比较（`atol` 2⁻¹⁶，`rtol` 2⁻⁷），这是更严的门、不是同一个门。
-上游的 baseline 目录声明为 `restricted_artifact`。B300 的设备编译、正确性、计时、profiler 与框架评估均待办。
+上游的 baseline 目录声明为 `restricted_artifact`。B300 开发验证的范围见 [ADR 0075](../adr/0075-runtime-index-values-and-ordered-launches.md)；不据此声称性能或正式 Campaign 资格。
 
 | 合同 | 计算与输出 |
 | --- | --- |
@@ -137,17 +137,17 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 
 | 新增合同 | 计算与输出 |
 | --- | --- |
-| [solx_fib_fused_add_rmsnorm_h7168_bf16](../../contracts/workloads/solx-fib-fused-add-rmsnorm-h7168-bf16-triton-b300-r64-v1.json) | 固定形状 `{'C': 7168, 'R': 64}`；设备验证待完成。 |
-| [solx_fib_gemm_n128_k2048_fp16](../../contracts/workloads/solx-fib-gemm-n128-k2048-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 2048, 'M': 1, 'N': 128}`；设备验证待完成。 |
-| [solx_fib_gemm_n2048_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n2048-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 2048}`；设备验证待完成。 |
-| [solx_fib_gemm_n256_k7168_fp16](../../contracts/workloads/solx-fib-gemm-n256-k7168-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 7168, 'M': 1, 'N': 256}`；设备验证待完成。 |
-| [solx_fib_gemm_n28672_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n28672-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 28672}`；设备验证待完成。 |
-| [solx_fib_gemm_n4096_k14336_fp16](../../contracts/workloads/solx-fib-gemm-n4096-k14336-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 14336, 'M': 1, 'N': 4096}`；设备验证待完成。 |
-| [solx_fib_gemm_n4096_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n4096-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 4096}`；设备验证待完成。 |
-| [solx_fib_gemm_n5120_k2048_fp16](../../contracts/workloads/solx-fib-gemm-n5120-k2048-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 2048, 'M': 1, 'N': 5120}`；设备验证待完成。 |
-| [solx_fib_gemm_n6144_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n6144-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 6144}`；设备验证待完成。 |
-| [solx_fib_rmsnorm_h1536_bf16](../../contracts/workloads/solx-fib-rmsnorm-h1536-bf16-triton-b300-r539-v1.json) | 固定形状 `{'C': 1536, 'R': 539}`；设备验证待完成。 |
-| [solx_fib_rmsnorm_h7168_bf16](../../contracts/workloads/solx-fib-rmsnorm-h7168-bf16-triton-b300-r64-v1.json) | 固定形状 `{'C': 7168, 'R': 64}`；设备验证待完成。 |
+| [solx_fib_fused_add_rmsnorm_h7168_bf16](../../contracts/workloads/solx-fib-fused-add-rmsnorm-h7168-bf16-triton-b300-r64-v1.json) | 固定形状 `{'C': 7168, 'R': 64}`；输入与验证规则见该合同。 |
+| [solx_fib_gemm_n128_k2048_fp16](../../contracts/workloads/solx-fib-gemm-n128-k2048-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 2048, 'M': 1, 'N': 128}`；输入与验证规则见该合同。 |
+| [solx_fib_gemm_n2048_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n2048-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 2048}`；输入与验证规则见该合同。 |
+| [solx_fib_gemm_n256_k7168_fp16](../../contracts/workloads/solx-fib-gemm-n256-k7168-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 7168, 'M': 1, 'N': 256}`；输入与验证规则见该合同。 |
+| [solx_fib_gemm_n28672_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n28672-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 28672}`；输入与验证规则见该合同。 |
+| [solx_fib_gemm_n4096_k14336_fp16](../../contracts/workloads/solx-fib-gemm-n4096-k14336-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 14336, 'M': 1, 'N': 4096}`；输入与验证规则见该合同。 |
+| [solx_fib_gemm_n4096_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n4096-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 4096}`；输入与验证规则见该合同。 |
+| [solx_fib_gemm_n5120_k2048_fp16](../../contracts/workloads/solx-fib-gemm-n5120-k2048-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 2048, 'M': 1, 'N': 5120}`；输入与验证规则见该合同。 |
+| [solx_fib_gemm_n6144_k4096_fp16](../../contracts/workloads/solx-fib-gemm-n6144-k4096-fp16-triton-b300-m1-v1.json) | 固定形状 `{'K': 4096, 'M': 1, 'N': 6144}`；输入与验证规则见该合同。 |
+| [solx_fib_rmsnorm_h1536_bf16](../../contracts/workloads/solx-fib-rmsnorm-h1536-bf16-triton-b300-r539-v1.json) | 固定形状 `{'C': 1536, 'R': 539}`；输入与验证规则见该合同。 |
+| [solx_fib_rmsnorm_h7168_bf16](../../contracts/workloads/solx-fib-rmsnorm-h7168-bf16-triton-b300-r64-v1.json) | 固定形状 `{'C': 7168, 'R': 64}`；输入与验证规则见该合同。 |
 
 GEMM 保留 FP16 的 A[M,K] 与 B[N,K] 转置语义，当前 starter 以归约保证正确性，不声称性能。
 完整 26 项的离线清单由 `tools/check_flashinfer_tasks.py` 输出；其中 9 项采用下面的顺序 Cake 计划。
