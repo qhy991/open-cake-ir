@@ -1,0 +1,117 @@
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+// SIMD program tile: i belongs to lane i % 128, private slot i / 128.
+// Every collective has uniform participation, including padded tail lanes.
+// FP32 local-slot accumulation then SIMD sum/max; precise rsqrt; fast math disabled.
+// 4 SIMD groups: each collective completes in threadgroup memory under uniform barriers.
+// Peak live lane-owned Buffer values: 25 FP32; temporaries/spills unmodeled.
+kernel void cake_rmsnorm(
+    device const float* v0 [[buffer(0)]],
+    device const float* v1 [[buffer(1)]],
+    device float* v2 [[buffer(2)]],
+    uint3 program [[threadgroup_position_in_grid]],
+    uint3 thread_position [[thread_position_in_threadgroup]],
+    uint simd_lane [[thread_index_in_simdgroup]],
+    uint simd_group [[simdgroup_index_in_threadgroup]]) {
+    uint lane = thread_position.x;
+    threadgroup float share[4];
+    float v3[8] = {};
+    float v4[8] = {};
+    float v5[8] = {};
+    float v6[1] = {};
+    float v7[1] = {};
+    float v8[1] = {};
+    float v9[1] = {};
+    float v10[8] = {};
+    float v11[8] = {};
+    // CAKE_OP: load_x
+    {
+        for (uint s = 0u; s < 8u; ++s) {
+            uint i = s * 128u + lane;
+            v3[s] = i < 1024u ? v0[(ulong(program.x)) * 1024ul + ((ulong(((i / 1u) % 1024u)) + 0ul)) * 1ul] : 0.0f;
+        }
+    }
+    // CAKE_OP: load_weight
+    {
+        for (uint s = 0u; s < 8u; ++s) {
+            uint i = s * 128u + lane;
+            v4[s] = i < 1024u ? v1[((ulong(((i / 1u) % 1024u)) + 0ul)) * 1ul] : 0.0f;
+        }
+    }
+    // CAKE_OP: square
+    {
+        for (uint s = 0u; s < 8u; ++s) {
+            uint i = s * 128u + lane;
+            v5[s] = i < 1024u ? (v3[s] * v3[s]) : 0.0f;
+        }
+    }
+    // CAKE_OP: sum
+    {
+        for (uint output = 0u; output < 1u; ++output) {
+            float partial = 0.0f;
+            uint begin = (output / 1u) * 1024u;
+            uint end = begin + 1024u;
+            for (uint s = begin / 128u; s < (end + 127u) / 128u; ++s) {
+                uint i = s * 128u + lane;
+                if (i >= begin && i < end && i % 1u == output % 1u) {
+                    partial = partial + v5[s];
+                }
+            }
+            float grouped = simd_sum(partial);
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if (simd_lane == 0u) share[simd_group] = grouped;
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            float reduced = 0.0f;
+            for (uint g = 0u; g < 4u; ++g) { reduced = reduced + share[g]; }
+            if (lane == output % 128u) v6[output / 128u] = reduced;
+        }
+    }
+    // CAKE_OP: mean
+    {
+        for (uint s = 0u; s < 1u; ++s) {
+            uint i = s * 128u + lane;
+            v7[s] = i < 1u ? (v6[s] / 1024.0f) : 0.0f;
+        }
+    }
+    // CAKE_OP: variance
+    {
+        for (uint s = 0u; s < 1u; ++s) {
+            uint i = s * 128u + lane;
+            v8[s] = i < 1u ? (v7[s] + 1e-05f) : 0.0f;
+        }
+    }
+    // CAKE_OP: rsqrt
+    {
+        for (uint s = 0u; s < 1u; ++s) {
+            uint i = s * 128u + lane;
+            v9[s] = i < 1u ? precise::rsqrt(v8[s]) : 0.0f;
+        }
+    }
+    // CAKE_OP: normalized
+    {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if (lane == 0u) share[0] = v9[0];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        float scalar1 = share[0];
+        for (uint s = 0u; s < 8u; ++s) {
+            uint i = s * 128u + lane;
+            v10[s] = i < 1024u ? (v3[s] * scalar1) : 0.0f;
+        }
+    }
+    // CAKE_OP: result
+    {
+        for (uint s = 0u; s < 8u; ++s) {
+            uint i = s * 128u + lane;
+            v11[s] = i < 1024u ? (v10[s] * v4[s]) : 0.0f;
+        }
+    }
+    // CAKE_OP: store_out
+    {
+        for (uint s = 0u; s < 8u; ++s) {
+            uint i = s * 128u + lane;
+            if (i < 1024u) v2[(ulong(program.x)) * 1024ul + ((ulong(((i / 1u) % 1024u)) + 0ul)) * 1ul] = v11[s];
+        }
+    }
+    // CAKE_KERNEL_END
+}

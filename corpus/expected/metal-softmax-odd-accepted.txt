@@ -1,0 +1,89 @@
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+// SIMD program tile: i belongs to lane i % 32, private slot i / 32.
+// Every collective has uniform participation, including padded tail lanes.
+// FP32 local-slot accumulation then SIMD sum/max; precise rsqrt; fast math disabled.
+// Peak live lane-owned Buffer values: 5 FP32; temporaries/spills unmodeled.
+kernel void cake_softmax_fp32(
+    device const float* v0 [[buffer(0)]],
+    device float* v1 [[buffer(1)]],
+    uint3 program [[threadgroup_position_in_grid]],
+    uint lane [[thread_index_in_simdgroup]]) {
+    float v2[2] = {};
+    float v3[1] = {};
+    float v4[2] = {};
+    float v5[2] = {};
+    float v6[1] = {};
+    float v7[2] = {};
+    // CAKE_OP: load_x
+    {
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            v2[s] = i < 37u ? v0[(ulong(program.x)) * 37ul + ((ulong(((i / 1u) % 37u)) + 0ul)) * 1ul] : 0.0f;
+        }
+    }
+    // CAKE_OP: max_x
+    {
+        for (uint output = 0u; output < 1u; ++output) {
+            float partial = -INFINITY;
+            uint begin = (output / 1u) * 37u;
+            uint end = begin + 37u;
+            for (uint s = begin / 32u; s < (end + 31u) / 32u; ++s) {
+                uint i = s * 32u + lane;
+                if (i >= begin && i < end && i % 1u == output % 1u) {
+                    partial = max(partial, v2[s]);
+                }
+            }
+            float reduced = simd_max(partial);
+            if (lane == output % 32u) v3[output / 32u] = reduced;
+        }
+    }
+    // CAKE_OP: shifted
+    {
+        float scalar1 = simd_broadcast(v3[0], 0u);
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            v4[s] = i < 37u ? (v2[s] - scalar1) : 0.0f;
+        }
+    }
+    // CAKE_OP: exp
+    {
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            v5[s] = i < 37u ? precise::exp(v4[s]) : 0.0f;
+        }
+    }
+    // CAKE_OP: sum_exp
+    {
+        for (uint output = 0u; output < 1u; ++output) {
+            float partial = 0.0f;
+            uint begin = (output / 1u) * 37u;
+            uint end = begin + 37u;
+            for (uint s = begin / 32u; s < (end + 31u) / 32u; ++s) {
+                uint i = s * 32u + lane;
+                if (i >= begin && i < end && i % 1u == output % 1u) {
+                    partial = partial + v5[s];
+                }
+            }
+            float reduced = simd_sum(partial);
+            if (lane == output % 32u) v6[output / 32u] = reduced;
+        }
+    }
+    // CAKE_OP: elementwise_temporary_0
+    {
+        float scalar1 = simd_broadcast(v6[0], 0u);
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            v7[s] = i < 37u ? (v5[s] / scalar1) : 0.0f;
+        }
+    }
+    // CAKE_OP: store_out
+    {
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            if (i < 37u) v1[(ulong(program.x)) * 37ul + ((ulong(((i / 1u) % 37u)) + 0ul)) * 1ul] = v7[s];
+        }
+    }
+    // CAKE_KERNEL_END
+}

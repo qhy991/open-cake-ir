@@ -1,0 +1,46 @@
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+// SIMD program tile: i belongs to lane i % 32, private slot i / 32.
+// Every collective has uniform participation, including padded tail lanes.
+// FP32 local-slot accumulation then SIMD sum/max; precise rsqrt; fast math disabled.
+// Peak live lane-owned Buffer values: 4 FP32; temporaries/spills unmodeled.
+kernel void cake_row_sum(
+    device const float* v0 [[buffer(0)]],
+    device float* v1 [[buffer(1)]],
+    uint3 program [[threadgroup_position_in_grid]],
+    uint lane [[thread_index_in_simdgroup]]) {
+    float v2[3] = {};
+    float v3[1] = {};
+    // CAKE_OP: load_x
+    {
+        for (uint s = 0u; s < 3u; ++s) {
+            uint i = s * 32u + lane;
+            v2[s] = i < 65u ? v0[(ulong(program.x)) * 65ul + ((ulong(((i / 1u) % 65u)) + 0ul)) * 1ul] : 0.0f;
+        }
+    }
+    // CAKE_OP: row_sum
+    {
+        for (uint output = 0u; output < 1u; ++output) {
+            float partial = 0.0f;
+            uint begin = (output / 1u) * 65u;
+            uint end = begin + 65u;
+            for (uint s = begin / 32u; s < (end + 31u) / 32u; ++s) {
+                uint i = s * 32u + lane;
+                if (i >= begin && i < end && i % 1u == output % 1u) {
+                    partial = partial + v2[s];
+                }
+            }
+            float reduced = simd_sum(partial);
+            if (lane == output % 32u) v3[output / 32u] = reduced;
+        }
+    }
+    // CAKE_OP: store_out
+    {
+        for (uint s = 0u; s < 1u; ++s) {
+            uint i = s * 32u + lane;
+            if (i < 1u) v1[(ulong(program.x)) * 1ul] = v3[s];
+        }
+    }
+    // CAKE_KERNEL_END
+}

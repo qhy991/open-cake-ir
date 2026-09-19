@@ -1,0 +1,54 @@
+#include <metal_stdlib>
+using namespace metal;
+#pragma METAL fp contract(off)
+// SIMD program tile: i belongs to lane i % 32, private slot i / 32.
+// Every collective has uniform participation, including padded tail lanes.
+// FP32 local-slot accumulation then SIMD sum/max; precise rsqrt; fast math disabled.
+// Peak live lane-owned Buffer values: 6 FP32; temporaries/spills unmodeled.
+kernel void cake_elementwise(
+    device const float* v0 [[buffer(0)]],
+    device const float* v1 [[buffer(1)]],
+    device float* v2 [[buffer(2)]],
+    uint3 program [[threadgroup_position_in_grid]],
+    uint lane [[thread_index_in_simdgroup]]) {
+    float v3[2] = {};
+    float v4[2] = {};
+    float v5[2] = {};
+    float v6[2] = {};
+    // CAKE_OP: load_x
+    {
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            v3[s] = i < 37u ? v0[(ulong(program.x)) * 37ul + ((ulong(((i / 1u) % 37u)) + 0ul)) * 1ul] : 0.0f;
+        }
+    }
+    // CAKE_OP: load_y
+    {
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            v4[s] = i < 37u ? v1[(ulong(program.x)) * 37ul + ((ulong(((i / 1u) % 37u)) + 0ul)) * 1ul] : 0.0f;
+        }
+    }
+    // CAKE_OP: elementwise_temporary_0
+    {
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            v5[s] = i < 37u ? (v3[s] + v4[s]) : 0.0f;
+        }
+    }
+    // CAKE_OP: result
+    {
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            v6[s] = i < 37u ? (v5[s] * 2.0f) : 0.0f;
+        }
+    }
+    // CAKE_OP: store_out
+    {
+        for (uint s = 0u; s < 2u; ++s) {
+            uint i = s * 32u + lane;
+            if (i < 37u) v2[(ulong(program.x)) * 37ul + ((ulong(((i / 1u) % 37u)) + 0ul)) * 1ul] = v6[s];
+        }
+    }
+    // CAKE_KERNEL_END
+}
