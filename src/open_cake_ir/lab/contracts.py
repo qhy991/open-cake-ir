@@ -659,7 +659,7 @@ class CampaignLock:
             )
         for field in ("evaluation_protocol", "execution"):
             _object(document.get(field), f"campaign_lock.{field}")
-        if study_kind == "matched_search" and comparison is None and paired_protocol(document['evaluation_protocol']) is None:
+        if comparison is None and paired_protocol(document['evaluation_protocol']) is None:
             raise ValueError("single-environment Campaign requires a fixed-baseline paired assay")
         if paired_protocol(document['evaluation_protocol']) is not None:
             execution = document['execution']
@@ -670,7 +670,7 @@ class CampaignLock:
                     'paired Campaign execution fields differ',
                     expected=sorted(paired_fields), observed=sorted(execution),
                 )
-            if study_kind != 'matched_search' or (comparison is not None and native_backend(comparison) is None):
+            if comparison is not None and native_backend(comparison) is None:
                 raise ValueError('paired Campaign requires a same-backend native comparison')
             _digest(execution['broker_execution_sha256'], 'execution.broker_execution_sha256')
             executor = _object(execution['executor_revision'], 'execution.executor_revision')
@@ -740,7 +740,7 @@ class CampaignLock:
             )
         estimand = _analysis_estimand(
             analysis, claim_scope=claim_scope,
-            comparison=comparison if study_kind == "matched_search" else None,
+            comparison=comparison,
             context="campaign_lock", lock=True,
         )
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))

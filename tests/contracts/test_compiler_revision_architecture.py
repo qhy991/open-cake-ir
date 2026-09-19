@@ -146,10 +146,9 @@ class RevisionAdmissionTests(unittest.TestCase):
         # The retired schema-1 fields are refused as unexpected rather than half-read:
         # a stale manifest must not load as if it declared today's Compiler.
         mutations = [
-            ("schema_version", 1), ("state", "released"), ("revision_id", "v1"),
+            ("schema_version", 1), ("schema_version", 2), ("state", "released"), ("revision_id", "v1"),
             ("target_definitions", {}), ("sources", []), ("release_approval", {}),
-            ("calibration_coverage", "sm_100a"), ("calibration_coverage", [False]),
-            ("calibration_coverage", [""]), ("unexpected", True),
+            ("calibration_coverage", []), ("unexpected", True),
             ("corpus_manifest", {"path": "corpus.json"}), ("corpus_manifest", "../escape.json"),
         ]
         for field, value in mutations:

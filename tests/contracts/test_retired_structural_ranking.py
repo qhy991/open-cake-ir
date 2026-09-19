@@ -21,7 +21,7 @@ class DefaultCandidateOrderingTests(unittest.TestCase):
             self.assertEqual((row['submitted'], row['launchable']), (3, 2))
         ledger.append.side_effect = append
         built, order, applied, rows, summary = _build_filter_candidates(
-            empirical_enabled=False, environment=SimpleNamespace(media_type='text/plain', build=build),
+            empirical_enabled=False, environment=SimpleNamespace(media_type='text/x-cuda', build=build),
             ledger=ledger, provider_turn=SimpleNamespace(candidates=payloads), turn_number=1)
         self.assertEqual([built[i][0].payload for i in order], [b'first', b'last', b'rejected'])
         self.assertFalse(applied)

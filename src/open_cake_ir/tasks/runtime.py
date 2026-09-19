@@ -5,6 +5,7 @@ from dataclasses import replace
 from typing import Mapping
 
 from open_cake_ir.lab.core import Lab
+from open_cake_ir.lab.contracts import StudyContract
 from open_cake_ir.lab.efficiency_policy import performance_reporting_policy
 from .workloads import load_workload
 from .authoring import prepare_schedule, validate_authoring
@@ -90,6 +91,9 @@ class TaskLab(Lab):
 
     def preflight(self, study_path, *, empirical_cost_model_path=None,
                   execution_bindings_path=None):
+        study = StudyContract.load(study_path)
+        _admit_measurement_coverage(study)
+        _admit_execution_mode(study)
         return super().preflight(study_path, empirical_cost_model_path=empirical_cost_model_path,
                                  execution_bindings_path=execution_bindings_path)
 
