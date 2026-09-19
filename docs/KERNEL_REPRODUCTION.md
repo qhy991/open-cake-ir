@@ -36,6 +36,8 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
 可添加 `metal-m1-pro`、`triton-dcu`、`triton-gfx1151` 等已声明且该任务支持的 cell。
 本机节点使用 `transport: local` 并省略 `host`。源 commit 必须已存在于节点仓库，节点
 Python 和 host capture 必须满足对应 Executor；不自动把任务改投另一架构。
+`node.provider_executable` 可指定 provider 的绝对路径，避免非交互 SSH 的 PATH 差异。
+Codex 可直接绑定已安装的原生二进制及其同目录 code-mode host，无需调用 Node.js wrapper。
 如果已有外部参考的 sealed baseline bundle，可在 cell 中提供节点上的绝对路径
 `fixed_baseline_bundle`。否则仍使用注册任务的 starter，不能据此宣称外部实现性能复现。
 

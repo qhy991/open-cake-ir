@@ -209,6 +209,7 @@ class ExperimentInputTests(unittest.TestCase):
         second = deepcopy(self.config["cells"][0])
         second.update(id="b300", backend="triton-b300")
         second["node"].update(transport="ssh", host="B300-M2", workspace="/tmp/cake-b300-fixture")
+        second["node"]["provider_executable"] = "/opt/codex/bin/codex"
         self.config["cells"].append(second)
         config_path = self.root / "config.json"
         config_path.write_text(json.dumps(self.config))
@@ -225,10 +226,27 @@ class ExperimentInputTests(unittest.TestCase):
             argv = launch.call_args.args[0]
             self.assertEqual(argv[0], "ssh")
             self.assertIn("B300-M2", argv)
+            payload = json.loads(launch.call_args.kwargs["input"])
+            self.assertEqual(payload["cell"]["node"]["provider_executable"], "/opt/codex/bin/codex")
             with self.assertRaises(FileExistsError):
                 kernel_experiment.run_cell(output, "b300")
         receipt = json.loads((output / "launches/b300/transport.json").read_bytes())
         self.assertEqual(receipt["observation"], "failed_or_unknown_no_retry")
+
+    def test_node_bootstrap_passes_explicit_native_provider(self):
+        node = deepcopy(self.config["cells"][0]["node"])
+        node["provider_executable"] = "/opt/codex/bin/codex"
+        payload = {"cell": {**self.config["cells"][0], "node": node},
+            "source_commit": COMMIT, "scaffold": "rules", "provider": self.config["provider"],
+            "budget": self.config["budget"]}
+        import io
+        with patch("sys.stdin", io.StringIO(json.dumps(payload))), \
+             patch("subprocess.run", return_value=SimpleNamespace(returncode=0)) as execute:
+            with self.assertRaises(SystemExit) as result:
+                exec(kernel_experiment._NODE, {})
+        self.assertEqual(result.exception.code, 0)
+        command = execute.call_args.args[0]
+        self.assertEqual(command[command.index("--provider-executable") + 1], "/opt/codex/bin/codex")
 
     def test_duplicate_workspace_and_undeclared_target_refuse(self):
         for mutation in ("workspace", "backend"):

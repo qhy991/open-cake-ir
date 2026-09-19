@@ -75,7 +75,9 @@ def validate(config):
         create_task(cell["task"], backend=cell["backend"], rows=cell["rows"],
                     columns=cell["columns"], depth=cell.get("depth"))
         node = cell["node"]
-        object_fields(node, {"transport", "project_root", "python", "kernelctl", "socket", "workspace"}, {"host"})
+        object_fields(node, {"transport", "project_root", "python", "kernelctl", "socket", "workspace"}, {"host", "provider_executable"})
+        if "provider_executable" in node:
+            absolute(node["provider_executable"])
         if node["transport"] not in {"local", "ssh"}:
             raise ValueError("node transport must be local or ssh")
         if node["transport"] == "ssh":
@@ -149,6 +151,8 @@ inputs.mkdir(parents=True, exist_ok=False)
 subprocess.run(["git", "-C", n["project_root"], "worktree", "add", "--detach", str(source), p["source_commit"]], check=True)
 args = [n["python"], str(source / "tools/launch_task.py"), "--workspace", str(w),
         "--kernelctl", n["kernelctl"], "--infra-socket", n["socket"], "--agents-md", str(inputs / "AGENTS.md")]
+if "provider_executable" in n:
+    args += ["--provider-executable", n["provider_executable"]]
 for name in ("task", "backend", "rows", "columns", "depth", "fixed_baseline_bundle"):
     if name in p["cell"]:
         args += ["--" + name.replace("_", "-"), str(p["cell"][name])]
