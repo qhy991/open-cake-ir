@@ -25,6 +25,7 @@ from open_cake_ir.evaluation.paired import paired_protocol, paired_summary
 from open_cake_ir.evaluation.timing import summarize_cohort
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.source_identity import checkout_commit
+from open_cake_ir.lab.pairing import bind_baseline
 from open_cake_ir.tasks.evaluate import _fresh_tile_cohort
 from open_cake_ir.tasks.normalization.study import evaluation_policy
 from open_cake_ir.tasks.workloads import create_task, materialize_case, reference_outputs
@@ -56,6 +57,16 @@ def input_spec(root):
         if not path.is_file() or path.is_symlink():
             raise ValueError("reference requires regular submission.py and kernel.py")
     return document
+
+
+def cake_candidate(root, workload, default_source):
+    """Admit an optional authored Cake candidate through the existing ABI owner."""
+    path = root / "candidate.py"
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise ValueError("Cake candidate must be a regular source file")
+    source = path.read_text(encoding="utf-8") if path.is_file() else default_source
+    schedule = bind_baseline(frontend.parse(source).document, workload, "primary", backend="triton")
+    return source, schedule, "authored Cake candidate" if path.is_file() else "generated Cake starter"
 
 
 class LoadedCallable:
@@ -117,9 +128,12 @@ def main():
         gate = compiler.check_corpus()
         if not gate.passed:
             raise ValueError("Corpus Gate failed; no candidate launch")
-        lowering = compiler.lower(compiler.assess(frontend.parse(source).document))
+        source, schedule, role = cake_candidate(inputs_root, workload, source)
+        report["roles"]["candidate"] = role
+        lowering = compiler.lower(compiler.assess(schedule))
         write(output / "workload.json", document)
-        (output / "starter.py").write_text(source)
+        (output / "candidate.cake.py").write_text(source)
+        write(output / "schedule.json", schedule)
         (output / "lowered.py").write_text(lowering.source)
         cake = getattr(load_module("cake_comparison", output / "lowered.py"), lowering.route.entry_point)
         sys.path.insert(0, str(inputs_root))

@@ -9,6 +9,13 @@ new Workload is needed. The immutable input snapshot contains the unchanged
 {"task":"fib_rmsnorm_h2048","rows":79,"columns":2048,"target":"sm_103a"}
 ```
 
+An optional `candidate.py` in the same snapshot replaces the generated Cake
+starter with an authored Cake program. The existing `bind_baseline` owner
+checks its exact target, ordered tensor ABI and lowering route; the Compiler
+then assesses and lowers it. Both the author source and bound Schedule are
+retained. This permits reference-derived row-packing candidates to be tested
+without modifying the external implementation or introducing a new Workload.
+
 Run the tool as an exclusive `judge` stage with its pinned checkout as cwd and
 the admitted Executor Python. The existing task oracle checks both outputs and
 input preservation for all five distributions before and after timing. The
