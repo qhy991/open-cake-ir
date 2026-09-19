@@ -84,7 +84,6 @@ def released_compiler(receipt: Path, target_id: str = "apple_gpu_family8") -> tu
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     gate = compiler.check_corpus()
     identity = {"revision_id": gate.compiler_revision_id,
-                "canonical_sha256": gate.compiler_revision_sha256,
                 "case_count": gate.case_count,
                 "matched_case_count": sum(case.matched for case in gate.cases)}
     (receipt / "compiler-gate.json").write_text(json.dumps(identity, indent=2, sort_keys=True) + "\n")

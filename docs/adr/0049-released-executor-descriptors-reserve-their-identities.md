@@ -1,7 +1,9 @@
 # ADR 0049: released Executor descriptors reserve their identities
 
-Status: accepted, 2026-09-06. Supersedes witness-based reclamation for Executor
-Revisions only; Compiler release and approval rules are unchanged.
+Status: superseded by [ADR 0065](0065-source-identity-is-the-commit.md) and [ADR 0067](0067-retired-release-outputs-live-on-the-history-branch.md), 2026-09-18 (accepted 2026-09-06). Executor
+descriptors are no longer released; the identities this record reserved stay reserved
+in `docs/history/identities.json`, and the descriptors live on the `history` branch.
+Originally: supersedes witness-based reclamation for Executor Revisions only.
 
 The branch review found different released bytes under the same Executor v41 and v42
 identities: main at `7fdac036` bound 45 sources, while the Kimi-K3 clone at `0a0528d0`

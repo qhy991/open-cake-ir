@@ -1,9 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "block-scaled-gemm-b1-smoke-scale-drift-v1",
   "target": "sm_100a",
   "roles": [
-    {"name": "compute", "warps": [0, 1, 2, 3]}
+    {"name": "compute", "execution_groups": [0, 1, 2, 3]}
   ],
   "allocations": [],
   "pipelines": [],

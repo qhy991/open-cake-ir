@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 import grp
 import json
 import os
@@ -13,13 +13,14 @@ import pwd
 import shutil
 import subprocess
 import sys
-from typing import Mapping
+from typing import Callable, Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.cli import _json_projection
 from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.incumbents import TaskIncumbentRegistry, admit_baseline_selection
@@ -129,6 +130,12 @@ def _allocation_of(backend: str) -> str:
     return DEVICE_BACKENDS[backend]["allocation"]
 
 
+def _local_kind_of(backend: str) -> str | None:
+    """The local broker's job kind for this backend's target, as its platform row declares."""
+    from open_cake_ir.evaluation.platforms import platform_for
+    return platform_for(DEVICE_BACKENDS[backend]["target"]).local_job_prefix
+
+
 def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal"):
     compiler = Compiler.load(root, root / "compiler/revision.json")
     gate = compiler.check_corpus()
@@ -154,7 +161,7 @@ def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal")
                              f"{target!r}; no other Apple GPU is substituted")
         host = MetalArchiveHost.from_executor(executor)
     return compiler, executor, host, {"path": "compiler/revision.json",
-        "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
+        "revision_id": gate.compiler_revision_id}
 
 
 def _triton_runtime_roots(interpreter: Path, declared_paths: tuple[str, ...] = ()) -> list[str]:
@@ -245,6 +252,45 @@ def _triton_builder(executor, workload):
         isolated_compiler=IsolatedTritonCompiler(**_triton_toolchain_config(executor)))
 
 
+def _metal_baseline_builder(root, workspace, executor, host, workload, compiler_reference):
+    return MetalToolchainBuilder(workload=workload, case_id="primary",
+                                 output_root=workspace / "builds", host=host, project_root=root,
+                                 compiler_reference=compiler_reference)
+
+
+def _triton_baseline_builder(root, workspace, executor, host, workload, compiler_reference):
+    return _triton_builder(executor, workload)
+
+
+@dataclass(frozen=True)
+class _LaunchToolchain:
+    """What this launcher writes and binds per route, keyed the way the Lab's table is."""
+
+    # The runtime document's `toolchain` section for this route; the Lab's
+    # `toolchains.TOOLCHAINS[backend].runtime_fields` is what it must parse as.
+    runtime_section: Callable[[Path, object], dict]
+    # Binds the builder that prepares the fixed baseline.
+    baseline_builder: Callable[..., object]
+
+
+_LAUNCH_TOOLCHAINS = {
+    LoweringBackend.METAL: _LaunchToolchain(
+        lambda workspace, executor: {"output_root": str(workspace / "builds")},
+        _metal_baseline_builder),
+    LoweringBackend.TRITON: _LaunchToolchain(
+        lambda workspace, executor: _triton_toolchain_config(executor),
+        _triton_baseline_builder),
+}
+
+
+def _launch_toolchain(route: str) -> _LaunchToolchain:
+    """The launcher's row for one route; a route with no row is refused by name."""
+    try:
+        return _LAUNCH_TOOLCHAINS[LoweringBackend(route)]
+    except (ValueError, KeyError) as error:
+        raise ValueError(f"the launcher binds no toolchain for the {route!r} route") from error
+
+
 def _admit_allocator(runtime) -> None:
     """Take one trivial lease before any authoring token is spent.
 
@@ -275,7 +321,7 @@ def _admit_allocator(runtime) -> None:
 
 
 def _runtime_config(workspace, executor, executable, route, *, allocation,
-                    gpu_run=None, broker_socket=None):
+                    local_kind=None, gpu_run=None, broker_socket=None):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -288,14 +334,18 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     if allocation == "local_broker":
         if gpu_run is not None or broker_socket is not None:
             raise ValueError("CUDA broker options require the gpu_run allocation")
-        toolchain = ({"output_root": str(workspace / "builds")} if route == "metal"
-                     else _triton_toolchain_config(executor))
+        toolchain = _launch_toolchain(route).runtime_section(workspace, executor)
         # The local broker serializes one machine's single device, and each device family
         # keeps its own lock and job prefix. A DCU job recorded under a `metal-` id would
         # misattribute the run the way a DCU latency recorded as CUPTI misattributes the
-        # measurement, so the kind is passed rather than defaulted.
+        # measurement, so the kind is the one the target's execution platform row
+        # declares (`_local_kind_of`), never read off the lowering route.
+        if local_kind is None:
+            raise ValueError(
+                "the local_broker allocation requires the local job kind the target's "
+                "execution platform declares")
         command = module_command(python, "open_cake_ir.evaluation.local_broker",
-                                 "--kind", "metal" if route == "metal" else "hip",
+                                 "--kind", local_kind,
                                  "--worker-module", "open_cake_ir.tasks.evaluate")
         timeout = 1800
     elif allocation == "gpu_run":
@@ -314,7 +364,7 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
                         "--gpu-count", "1", "--cwd", str(ROOT), "--estimate", "unknown",
                         "--queue-timeout", f"{queue_seconds}s", "--run-timeout", f"{run_seconds}s", "--"))
         command.extend(module_command(python, "open_cake_ir.tasks.evaluate"))
-        toolchain = _triton_toolchain_config(executor)
+        toolchain = _launch_toolchain(route).runtime_section(workspace, executor)
         timeout = queue_seconds + run_seconds + 60
     else:
         raise ValueError(f"task execution allocation {allocation!r} is unsupported")
@@ -328,10 +378,8 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
 
 def _prepare_baseline(root, workspace, compiler, executor, host, workload, study, source,
                       compiler_reference, route="metal"):
-    builder = (MetalToolchainBuilder(workload=workload, case_id="primary",
-                                     output_root=workspace / "builds", host=host, project_root=root,
-                                     compiler_reference=compiler_reference)
-               if route == "metal" else _triton_builder(executor, workload))
+    builder = _launch_toolchain(route).baseline_builder(
+        root, workspace, executor, host, workload, compiler_reference)
     environment = TaskOpenCakeEnvironment(compiler, builder, authority_document=study["arms"]["open_cake"],
                                          workload=workload, case_id="primary", executor=executor)
     submission = CandidateSubmission.seal(environment.media_type, canonical({"python_source": source}))
@@ -527,6 +575,7 @@ def main(argv=None) -> int:
     runtime = (None if args.baseline_only else
                _runtime_config(workspace, executor, executable, route,
                                allocation=_allocation_of(args.backend),
+                               local_kind=_local_kind_of(args.backend),
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket))
     if runtime is not None:
         _admit_allocator(runtime)

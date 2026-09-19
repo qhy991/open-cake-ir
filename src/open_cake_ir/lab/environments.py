@@ -17,6 +17,7 @@ from open_cake_ir.compiler.toolchain import validate_triton_kernel
 from open_cake_ir.evaluation import LaunchableCandidate, WorkloadContract
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
 
+from ._documents import differs
 from .pairing import backend_policy
 from . import selection
 from .executor import ExecutorRevision
@@ -34,8 +35,13 @@ class CandidateSubmission:
 
     @classmethod
     def seal(cls, media_type: str, payload: bytes) -> "CandidateSubmission":
-        if media_type not in {"application/vnd.open-cake.schedule+json", "text/x-cuda", "application/vnd.open-cake.triton+json", "application/vnd.open-cake.cute+json"} or not payload:
-            raise ValueError("candidate submission media type or bytes differ")
+        media_types = {"application/vnd.open-cake.schedule+json", "text/x-cuda", "application/vnd.open-cake.triton+json", "application/vnd.open-cake.cute+json"}
+        if media_type not in media_types or not payload:
+            raise differs(
+                "candidate submission media type or bytes differ",
+                expected={"media_type": sorted(media_types), "payload": "<non-empty>"},
+                observed={"media_type": media_type, "payload_bytes": len(payload) if isinstance(payload, bytes) else payload},
+            )
         return cls(media_type, payload, sha256(payload).hexdigest())
 
 @dataclass(frozen=True)
@@ -71,16 +77,20 @@ class EnvironmentResult:
 
     def __post_init__(self) -> None:
         if self.disposition not in {"launchable", "rejected"}:
-            raise ValueError("Authoring Environment disposition differs")
+            raise differs("Authoring Environment disposition", expected=["launchable", "rejected"], observed=self.disposition)
         if (self.disposition == "launchable") != (self.launchable is not None):
-            raise ValueError("Authoring Environment launchable boundary differs")
+            raise differs(
+                "Authoring Environment launchable boundary",
+                expected={"disposition": self.disposition, "launchable": "present" if self.disposition == "launchable" else None},
+                observed={"disposition": self.disposition, "launchable": "present" if self.launchable is not None else None},
+            )
         if self.launchable is not None and self.launchable.candidate_sha256 != self.submission_sha256:
             raise ValueError("Authoring Environment replaced the sealed submission")
         if self.semantic_sha256 is not None and (
             len(self.semantic_sha256) != 64
             or any(character not in "0123456789abcdef" for character in self.semantic_sha256)
         ):
-            raise ValueError("Authoring Environment semantic identity differs")
+            raise differs("Authoring Environment semantic identity", expected="<64 lowercase hex characters>", observed=self.semantic_sha256)
 
 class AuthoringEnvironment(Protocol):
     """Complete assigned treatment from candidate bytes to launchable seam."""
@@ -121,7 +131,10 @@ class OpenCakeEnvironment:
         if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
             or not isinstance(route["entry_point"], str)
             or not route["entry_point"].isidentifier()):
-            raise ValueError("Open Cake Authoring Environment lowering route differs")
+            raise differs(
+                "Open Cake Authoring Environment lowering route",
+                expected={"backend": "<name>", "entry_point": "<identifier>"}, observed=route,
+            )
         if route["backend"] != "metal":
             backend_policy(route["backend"])
         self._route = dict(route)
@@ -145,7 +158,6 @@ class OpenCakeEnvironment:
                     executor, workload_sha256=workload.canonical_sha256, case_id=case_id,
                 ),
                 compiler_revision_id=compiler_ref["revision_id"],
-                compiler_revision_sha256=compiler_ref["canonical_sha256"],
                 target=self._target,
             )
 
@@ -174,7 +186,7 @@ class OpenCakeEnvironment:
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         if submission.media_type != self.media_type:
-            raise ValueError("Open Cake candidate media type differs")
+            raise differs("Open Cake candidate media type", expected=self.media_type, observed=submission.media_type)
         source = None
         try:
             parsed = json.loads(submission.payload)
@@ -207,16 +219,28 @@ class OpenCakeEnvironment:
                 or metadata.get("workload_contract_sha256") != self._workload_sha256
                 or not isinstance(buffers, list)
             ):
-                raise ValueError("Schedule Workload binding differs")
+                raise differs(
+                    "Schedule Workload binding",
+                    expected={"target": self._target, "metadata.workload_contract_sha256": self._workload_sha256,
+                              "buffers": "<list>"},
+                    observed={"target": parsed.get('target'),
+                              "metadata.workload_contract_sha256": (metadata.get("workload_contract_sha256")
+                                                                    if isinstance(metadata, Mapping) else metadata),
+                              "buffers": type(buffers).__name__},
+                )
             by_name = {
                 item.get("name"): item
                 for item in buffers
                 if isinstance(item, Mapping) and isinstance(item.get("name"), str)
             }
             expected = self._expected
-            if self._explicit_abi and [item.get("name") for item in buffers
-                    if isinstance(item, Mapping) and item.get("space") == "global"] != list(expected):
-                raise ValueError("Schedule external tensor order differs from the Workload ABI")
+            global_names = [item.get("name") for item in buffers
+                            if isinstance(item, Mapping) and item.get("space") == "global"]
+            if self._explicit_abi and global_names != list(expected):
+                raise differs(
+                    "Schedule external tensor order differs from the Workload ABI",
+                    expected=list(expected), observed=global_names,
+                )
             if any(
                 name not in by_name
                 or (
@@ -228,14 +252,25 @@ class OpenCakeEnvironment:
                 != contract
                 for name, contract in expected.items()
             ):
-                raise ValueError("Schedule external tensor contract differs from the Workload")
+                raise differs(
+                    "Schedule external tensor contract differs from the Workload",
+                    expected=expected,
+                    observed={name: ((by_name[name].get("space"), by_name[name].get("dtype"),
+                                      by_name[name].get("shape"), by_name[name].get("mode"))
+                                     if name in by_name else None) for name in expected},
+                )
             assessment = self._compiler.assess(cast(Mapping[str, object], parsed))
             if self._empirical_selection is not None and (
                 assessment.compiler_revision_id != self._empirical_selection._compiler_revision_id
-                or assessment.compiler_revision_sha256 != self._empirical_selection._compiler_revision_sha256
                 or assessment.target != self._empirical_selection._target
             ):
-                raise ValueError("assessment Compiler Revision or target differs from the bound Environment")
+                raise differs(
+                    "assessment Compiler Revision or target (revision_id, target) bound to"
+                    " the Environment",
+                    expected=(self._empirical_selection._compiler_revision_id,
+                              self._empirical_selection._target),
+                    observed=(assessment.compiler_revision_id, assessment.target),
+                )
         except (UnicodeError, json.JSONDecodeError, CompilerError, ValueError) as error:
             return EnvironmentResult(
                 "rejected",
@@ -325,14 +360,19 @@ class NativeTritonEnvironment:
         signature = self._requirements.get('signature')
         if (self._requirements.get('compiler') != 'triton' or self._requirements.get('target') != self._target
             or signature != expected_signature):
-            raise ValueError('native Triton signature differs from the Workload ABI')
+            raise differs(
+                'native Triton signature differs from the Workload ABI',
+                expected={'compiler': 'triton', 'target': self._target, 'signature': expected_signature},
+                observed={'compiler': self._requirements.get('compiler'),
+                          'target': self._requirements.get('target'), 'signature': signature},
+            )
         self._requirements['signature'] = expected_signature
         self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
         self.canonical_sha256 = sha256(canonical_json_bytes(self.authority_document)).hexdigest()
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         if submission.media_type != self.media_type:
-            raise ValueError('native Triton candidate media type differs')
+            raise differs('native Triton candidate media type', expected=self.media_type, observed=submission.media_type)
         try:
             document = json.loads(submission.payload)
             if not isinstance(document, Mapping) or set(document) != {'kernel_source', 'compile_constants', 'compile_options', 'grid'}:
@@ -351,7 +391,15 @@ class NativeTritonEnvironment:
                 or any(type(value) is not int or value <= 0 for value in options.values())
                 or not isinstance(grid, list) or len(grid) != 3
                 or any(type(value) is not int or value <= 0 for value in grid)):
-                raise ValueError('native Triton compile constants/options/grid differ from the declared interface')
+                raise differs(
+                    'native Triton compile constants/options/grid differ from the declared interface',
+                    expected={'compile_constants': sorted(requirements['compile_constants']),
+                              'compile_options': sorted(requirements['compile_options']),
+                              'grid': '<three positive ints>'},
+                    observed={'compile_constants': sorted(constants) if isinstance(constants, Mapping) else constants,
+                              'compile_options': sorted(options) if isinstance(options, Mapping) else options,
+                              'grid': grid},
+                )
             # Use the existing structural launch checker before any target compilation.
             CudaKernelSpec.from_dict({
                 'target': self._target, 'kernel_name': requirements['kernel_entry_point'], 'grid': grid,
@@ -360,8 +408,12 @@ class NativeTritonEnvironment:
             source = document['kernel_source'].encode()
             validate_triton_kernel(source, requirements)
             kernel = ast.parse(source).body[-1]
-            if [arg.arg for arg in kernel.args.args[:len(self._abi)]] != [arg.name for arg in self._abi]:
-                raise ValueError('native Triton tensor argument order differs from the Workload ABI')
+            leading_arguments = [arg.arg for arg in kernel.args.args[:len(self._abi)]]
+            if leading_arguments != [arg.name for arg in self._abi]:
+                raise differs(
+                    'native Triton tensor argument order differs from the Workload ABI',
+                    expected=[arg.name for arg in self._abi], observed=leading_arguments,
+                )
         except (UnicodeError, json.JSONDecodeError, ValueError) as error:
             return EnvironmentResult('rejected', submission.sha256, None, {'stage': 'source_admission', 'error': str(error)})
         digest = sha256(source).hexdigest()
@@ -392,14 +444,18 @@ class NativeCuTeEnvironment:
         expected = [{'name': arg.name, 'dtype': arg.dtype} for arg in workload.tensor_abi(case_id)]
         validate_cute_requirements(self._requirements)
         if self._requirements['target'] != self._target or self._requirements['signature'] != expected:
-            raise ValueError('native CuTe signature differs from the Workload ABI')
+            raise differs(
+                'native CuTe signature differs from the Workload ABI',
+                expected={'target': self._target, 'signature': expected},
+                observed={'target': self._requirements['target'], 'signature': self._requirements['signature']},
+            )
         self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
         self.canonical_sha256 = sha256(canonical_json_bytes(self.authority_document)).hexdigest()
 
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         from open_cake_ir.compiler.cute_toolchain import validate_cute_kernel
         if submission.media_type != self.media_type:
-            raise ValueError('native CuTe candidate media type differs')
+            raise differs('native CuTe candidate media type', expected=self.media_type, observed=submission.media_type)
         try:
             document = json.loads(submission.payload)
             fields = {'kernel_source', 'grid', 'block', 'dynamic_shared_memory_bytes'}

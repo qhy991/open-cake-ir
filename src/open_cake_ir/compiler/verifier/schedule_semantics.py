@@ -89,12 +89,12 @@ def verify(schedule: Schedule, out: _Collector) -> None:
 
     owner_by_warp: dict[int, str] = {}
     for index, role in enumerate(schedule.roles):
-        for warp in role.warps:
+        for warp in role.execution_groups:
             previous = owner_by_warp.get(warp)
             if previous is not None:
                 out.add(
                     "ROLE_WARP_OVERLAP",
-                    f"roles[{index}].warps",
+                    f"roles[{index}].execution_groups",
                     f"warp {warp} belongs to both role {previous!r} and "
                     f"role {role.name!r}",
                     category,

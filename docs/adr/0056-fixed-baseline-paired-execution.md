@@ -1,6 +1,8 @@
 # ADR 0056 — One fixed-baseline paired assay per candidate
 
-Status: proposed Executor successor; requires independent review and release.
+Status: proposed, 2026-09-07. The independent review and Executor-successor release it
+awaited were replaced by [ADR 0065](0065-source-identity-is-the-commit.md); `src/open_cake_ir/evaluation/paired.py` and the B300 Study
+templates' `paired_timing` carry the implementation.
 
 A Study's old `paired_cupti` wording did not drive paired GPU execution. The
 worker measured one candidate, and both receipt and Lab could accept that single

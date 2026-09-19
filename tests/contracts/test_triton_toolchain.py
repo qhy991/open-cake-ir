@@ -34,7 +34,7 @@ class TritonToolchainAdmissionTests(unittest.TestCase):
             source = f'''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="fma-admission", target="{target}", backend="triton", entry_point="kernel")
 def candidate(lm, x: cake.Tensor((2, 8), "fp32"), out: cake.Tensor((2, 8), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[row, :], id="load")
@@ -60,7 +60,9 @@ def candidate(lm, x: cake.Tensor((2, 8), "fp32"), out: cake.Tensor((2, 8), "fp32
         expression = ('tl.inline_asm_elementwise("fma.rn.f32 $0, $1, $2, $3;", '
                       'constraints="=f,f,f,f", args=[x, x, x], dtype=tl.float32, is_pure=True, pack=1)')
         source = SOURCE.replace(LIBDEVICE_IMPORT, "").replace("libdevice.tanh(x)", expression)
-        requirements = {**REQUIREMENTS, "target": "sm_103a"}
+        # PTX inline assembly is a fact of the cubin route: the contract is admitted by
+        # the code object the compile contract names, not by which id names it.
+        requirements = {**REQUIREMENTS, "target": "sm_103a", "code_object": "cubin"}
         validate_triton_kernel(source.encode(), requirements)
         changes = (
             ("fma.rn.f32", "fma.rn.ftz.f32"),
@@ -80,10 +82,14 @@ def candidate(lm, x: cake.Tensor((2, 8), "fp32"), out: cake.Tensor((2, 8), "fp32
             with self.subTest(change=new):
                 with self.assertRaisesRegex(ValueError, "exact FP32 FMA contract"):
                     validate_triton_kernel(source.replace(old, new).encode(), requirements)
-        for target in (None, "apple_gpu_family8", "sm_90a"):
-            with self.subTest(target=target):
+        for code_object in (None, "hsaco", "metal_binary_archive", "CUBIN"):
+            with self.subTest(code_object=code_object):
                 with self.assertRaisesRegex(ValueError, "exact FP32 FMA contract"):
-                    validate_triton_kernel(source.encode(), {**requirements, "target": target})
+                    validate_triton_kernel(
+                        source.encode(), {**requirements, "code_object": code_object})
+        with self.assertRaisesRegex(ValueError, "exact FP32 FMA contract"):
+            validate_triton_kernel(
+                source.encode(), {k: v for k, v in requirements.items() if k != "code_object"})
         for value in ("tl.inline_asm_elementwise", "[tl.inline_asm_elementwise]",
                       "tl.inline_asm_elementwise.to(x)"):
             with self.subTest(escape=value):

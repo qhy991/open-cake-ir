@@ -26,10 +26,10 @@ FROZEN_QSA_LOWERING = "d530fcac401ef45e69e77b951209836db12a59579c6b63984d5ee8985
 
 def _two_k_slice_document() -> dict:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "schedule_id": "triton-fp32-two-k-slice-mma-v1",
         "target": "sm_100a",
-        "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+        "roles": [{"name": "compute", "execution_groups": [0, 1, 2, 3]}],
         "allocations": [],
         "pipelines": [],
         "barriers": [],

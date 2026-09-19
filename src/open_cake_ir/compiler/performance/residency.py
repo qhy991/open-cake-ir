@@ -334,7 +334,7 @@ def residency_upper_bound(
         raise ValueError("compiled resource target differs from residency Target")
     threads = (
         compiled_resources.threads_per_cta if compiled_resources is not None
-        else schedule.total_warp_extent * target.warp_size
+        else schedule.total_execution_group_extent * target.warp_size
     )
     bounds: list[ResidencyBound] = []
 
@@ -369,10 +369,11 @@ def residency_upper_bound(
         )
 
     # Tensor memory is not shared between resident CTAs on this Target, so an
-    # allocation that fills it admits one CTA and nothing else changes that.
+    # allocation that fills it admits one CTA and nothing else changes that. A Target
+    # without the space declares no capacity, and no Schedule can allocate it there.
     tensor = allocation_bytes(schedule, MemorySpace.TENSOR)
-    if tensor:
-        capacity = target.resource_limits.maximum_tensor_memory_bytes
+    capacity = target.resource_limits.capacity(MemorySpace.TENSOR)
+    if tensor and capacity is not None:
         bounds.append(
             ResidencyBound("tensor_memory", tensor, capacity, capacity // tensor)
         )
@@ -391,7 +392,7 @@ def logical_register_pressure_per_thread(
     evidence includes both proxy-below-measurement and proxy-above-measurement cases.
     """
 
-    threads = schedule.total_warp_extent * target.warp_size
+    threads = schedule.total_execution_group_extent * target.warp_size
     if not threads:
         return None
     registers = _logical_register_pressure_bytes(schedule, top_k_structures) // REGISTER_BYTES

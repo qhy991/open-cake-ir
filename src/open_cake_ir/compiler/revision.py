@@ -10,66 +10,35 @@ refuses to run a Campaign without it.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
-from hashlib import sha256
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, cast
 
-from ..source_identity import checkout_commit_or_none
+from ..source_identity import checkout_commit_or_none, untracked_paths
 from .errors import CompilerError
 from .ir import ScheduleParseError
-from .target import Target, TargetParseError, TargetSource
+from .ir.instruction_contracts import CONTRACTS, ContractKind
+from .target import Target, TargetParseError
 
 TARGETS_DIRECTORY = "compiler/targets"
-
-_TARGET_REQUIRED_FIELDS = frozenset({
-    "schema_version",
-    "target_id",
-    "architecture",
-    "device_names",
-    "memory_spaces",
-    "operation_kinds",
-    # The role-slot width is required, not optional: a Target without one would leave a
-    # fact for shared code to invent.
-    "warp_size",
-    # Vendor is required for the same reason: shared code used to infer it from the
-    # presence of a CUDA field.
-    "vendor",
-    # And the code object for the same reason again: the Evaluation layer used to hold
-    # three frozensets of target ids that no Target document could state.
-    "code_object",
-    "resource_limits",
-    "instruction_contracts",
-    "synchronization_contracts",
-    "citations",
-})
-_TARGET_OPTIONAL_FIELDS = frozenset({
-    "occupancy", "compute_capability", "peak", "warps_per_warpgroup",
-})
 
 
 @dataclass(frozen=True)
 class CompilerRevision:
-    """Declared Targets, Corpus and calibration coverage at one source identity."""
+    """Declared Targets, Corpus and calibration coverage at one source identity.
+
+    The identity is the clean commit alone: `revision_id` is `open-cake-ir@<commit>`, and
+    every document this loader read is a tracked file at that commit, so a second digest
+    over those documents could only restate it.
+    """
 
     project_root: Path
     revision_id: str
-    canonical_sha256: str
     commit: str | None
     targets: Mapping[str, Target]
     corpus_path: Path
     calibration_coverage: frozenset[str]
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _object(value: object, path: str) -> Mapping[str, object]:
@@ -113,10 +82,40 @@ def _project_path(root: Path, value: object, context: str) -> tuple[str, Path]:
     parsed = PurePosixPath(relative)
     if parsed.is_absolute() or ".." in parsed.parts or "\\" in relative:
         raise CompilerError(f"{context} is unsafe")
-    path = (root / relative).resolve(strict=True)
+    unresolved = root
+    for part in parsed.parts:
+        unresolved /= part
+        if unresolved.is_symlink():
+            raise CompilerError(f"{context} file custody differs: symlink {unresolved}")
+    path = unresolved.resolve(strict=True)
     if root not in path.parents:
         raise CompilerError(f"{context} escapes project root")
     return relative, path
+
+
+def _declared_contracts(target: Target) -> None:
+    """Refuse a declared contract name that no record owns, or one of the wrong kind.
+
+    The document's shape is `Target.from_dict`'s; this is membership in the registry,
+    which the parser does not open. A name outside it would reach the verifier as a
+    string it cannot type.
+    """
+    for label, names, synchronization in (
+        ("instruction", target.instruction_contracts, False),
+        ("synchronization", target.synchronization_contracts, True),
+    ):
+        for name in sorted(names):
+            record = CONTRACTS.get(name)
+            if record is None:
+                raise CompilerError(
+                    f"target definition {target.target_id!r} declares {label} contract "
+                    f"{name!r} that no contract record owns"
+                )
+            if (record.kind is ContractKind.SYNCHRONIZATION) is not synchronization:
+                raise CompilerError(
+                    f"target definition {target.target_id!r} declares {label} contract "
+                    f"{name!r} whose record is of kind {record.kind.value}"
+                )
 
 
 def _load_target(target_path: Path) -> Target:
@@ -125,39 +124,17 @@ def _load_target(target_path: Path) -> Target:
         json.loads(target_path.read_text(encoding="utf-8")),
         f"target_definition.{target_id}",
     )
-    if (
-        not _TARGET_REQUIRED_FIELDS <= set(document)
-        <= _TARGET_REQUIRED_FIELDS | _TARGET_OPTIONAL_FIELDS
-        or document.get("schema_version") != 1
-    ):
-        raise CompilerError(f"target definition {target_id!r} fields differ")
     if document.get("target_id") != target_id:
         raise CompilerError(f"target definition {target_id!r} identity differs from its file name")
     try:
         typed_target = Target.from_dict(document)
     except (TargetParseError, ScheduleParseError) as error:
         raise CompilerError(f"target definition {target_id!r}: {error}") from error
-    limits = _object(document.get("resource_limits"), f"target_definition.{target_id}.resource_limits")
-    required_limits = {
-        "maximum_threads_per_cta",
-        "maximum_warps_per_cta",
-        "maximum_shared_memory_bytes",
-        "maximum_tensor_memory_bytes",
-        "grid",
-    }
-    if not required_limits <= set(limits) <= required_limits | {"maximum_registers_per_thread"}:
-        raise CompilerError(f"target definition {target_id!r} resource limits differ")
     citations = _objects(document.get("citations"), f"target_definition.{target_id}.citations")
     if not citations:
         raise CompilerError(f"target definition {target_id!r} requires citations")
-    document_bytes = _canonical_json_bytes(document)
-    return replace(
-        typed_target,
-        source=TargetSource(
-            canonical_sha256=sha256(document_bytes).hexdigest(),
-            document_bytes=document_bytes,
-        ),
-    )
+    _declared_contracts(typed_target)
+    return typed_target
 
 
 def load_revision(project_root: str | Path, revision_path: str | Path) -> CompilerRevision:
@@ -165,11 +142,13 @@ def load_revision(project_root: str | Path, revision_path: str | Path) -> Compil
 
     root = Path(project_root).resolve(strict=True)
     path = Path(revision_path).resolve(strict=True)
+    if root not in path.parents:
+        raise CompilerError(f"compiler revision {path} is outside the project root {root}")
     revision = _object(json.loads(path.read_text(encoding="utf-8")), "compiler_revision")
     if (set(revision) != {"schema_version", "corpus_manifest", "calibration_coverage"}
             or revision.get("schema_version") != 2):
         raise CompilerError("compiler revision fields differ")
-    _, corpus_path = _project_path(
+    corpus_relative, corpus_path = _project_path(
         root, revision.get("corpus_manifest"), "compiler_revision.corpus_manifest"
     )
     calibration = revision.get("calibration_coverage")
@@ -186,21 +165,26 @@ def load_revision(project_root: str | Path, revision_path: str | Path) -> Compil
         if target_path.is_symlink() or not target_path.is_file():
             raise CompilerError(f"target definition {target_path.name!r} custody differs")
         targets[target_path.stem] = _load_target(target_path)
-    corpus_document = json.loads(corpus_path.read_text(encoding="utf-8"))
+    json.loads(corpus_path.read_text(encoding="utf-8"))
     commit = checkout_commit_or_none(root)
-    identity = {
-        "commit": commit,
-        "revision": revision,
-        "targets": {
-            target_id: cast(TargetSource, targets[target_id].source).canonical_sha256
-            for target_id in sorted(targets)
-        },
-        "corpus_manifest": sha256(_canonical_json_bytes(corpus_document)).hexdigest(),
-    }
+    if commit is not None:
+        # The commit is the identity, so it must cover every document read above. A
+        # clean tree can still hold a file that `git status` does not show (an excludes
+        # entry); naming it here is the refusal that used to be an implicit
+        # `open-cake-ir@uncommitted`.
+        untracked = untracked_paths(root, (
+            path.relative_to(root).as_posix(),
+            corpus_relative,
+            *(target_path.relative_to(root).as_posix() for target_path in target_paths),
+        ))
+        if untracked:
+            raise CompilerError(
+                f"compiler revision at commit {commit} reads documents the commit does not "
+                f"track: {', '.join(untracked)}"
+            )
     return CompilerRevision(
         project_root=root,
         revision_id=f"open-cake-ir@{commit or 'uncommitted'}",
-        canonical_sha256=sha256(_canonical_json_bytes(identity)).hexdigest(),
         commit=commit,
         targets=MappingProxyType(targets),
         corpus_path=corpus_path,

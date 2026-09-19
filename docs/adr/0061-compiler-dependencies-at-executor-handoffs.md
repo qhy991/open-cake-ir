@@ -1,6 +1,6 @@
 # ADR 0061: Compiler dependencies at Executor handoffs
 
-Status: proposed successor Executor boundary.
+Status: proposed, 2026-09-09. The Executor successor this named as its release path was replaced by [ADR 0065](0065-source-identity-is-the-commit.md).
 
 ## Decision
 

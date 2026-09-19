@@ -11,7 +11,7 @@ import unittest
 
 from open_cake_ir.compiler import Compiler, Schedule, profile_envelope
 from open_cake_ir.compiler.frontend import parse, FrontendError
-from open_cake_ir.compiler.target import cuda_architecture, cuda_target
+from open_cake_ir.compiler.target import CodeObject, TargetParseError, declared_target
 from open_cake_ir.evaluation import CudaDeviceAdmission, LaunchableCandidate, LoadedCudaCandidate, WorkloadContract
 from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
@@ -99,12 +99,23 @@ class B300ContractTests(unittest.TestCase):
                 self.assertEqual(authored.source.splitlines()[2:], baseline.source.splitlines()[2:])
 
     def test_target_identity_is_exact_and_calibration_is_not_inherited(self):
-        self.assertEqual(cuda_architecture('sm_100a'), 100)
-        self.assertEqual(cuda_architecture('sm_103a'), 103)
+        # No id is decoded: the capability a cubin encodes is what its own Target
+        # document declares, and the CUDA Driver reads its binary version from that.
+        from open_cake_ir.evaluation.cuda_driver import _binary_version, _cubin_target
+        for target_id, version in (('sm_100a', 100), ('sm_103a', 103)):
+            with self.subTest(target=target_id):
+                target = declared_target(target_id)
+                self.assertIs(target.code_object, CodeObject.CUBIN)
+                self.assertEqual(divmod(version, 10), target.compute_capability)
+                self.assertEqual(_binary_version(_cubin_target(target_id)), version)
+        # An id no document declares is refused as undeclared, never by a regex; a
+        # declared non-cubin Target is refused by the launch as the object it declares.
         for value in ('sm_103', 'sm_100f', 'sm_103f', 'sm_104a', '../sm_103a', None, 103):
-            with self.subTest(target=value), self.assertRaises(ValueError):
-                cuda_architecture(value)
-        target = cuda_target('sm_103a')
+            with self.subTest(target=value), self.assertRaises(TargetParseError):
+                declared_target(value)
+        with self.assertRaisesRegex(ValueError, "requires a cubin target; 'apple_gpu_family9' declares metal_binary_archive"):
+            _cubin_target('apple_gpu_family9')
+        target = declared_target('sm_103a')
         self.assertIsNone(target.occupancy)
         self.assertEqual(target.peak.memory_bandwidth.value, 8e12)
         self.assertFalse(target.peak.arithmetic)
@@ -191,20 +202,20 @@ class B300ContractTests(unittest.TestCase):
             dynamic_shared_memory_bytes=0, hidden_null_pointer_parameters=2)
         candidate = LaunchableCandidate('a' * 64, 'sm_103a', 'kernel',
             {'cubin': sha256(CUBIN).hexdigest()}, manifest.canonical_sha256)
-        admission = CudaDeviceAdmission('NVIDIA B300 SXM6 AC', (10, 3), 'GPU-fixture', 'gpuq-fixture', 'exclusive')
+        admission = CudaDeviceAdmission('NVIDIA B300 SXM6 AC', (10, 3), 'GPU-fixture', 'gpuq-000000000001', 'exclusive')
         return manifest, candidate, admission
 
     def test_mixed_device_admission_refused_before_module_load(self):
         manifest, candidate, _ = self._launch_authority()
         driver = FakeDriver()
-        admission = CudaDeviceAdmission('NVIDIA B200', (10, 0), 'GPU-fixture', 'gpuq-fixture', 'exclusive')
+        admission = CudaDeviceAdmission('NVIDIA B200', (10, 0), 'GPU-fixture', 'gpuq-000000000001', 'exclusive')
         with self.assertRaisesRegex(ValueError, 'launch authority'):
             LoadedCudaCandidate.load(candidate, CUBIN, manifest, admission, driver=driver)
         self.assertEqual(driver.calls, [])
         for name, cc in (('NVIDIA B200', (10, 3)), ('NVIDIA B300 SXM6 AC', (10, 0)),
                          ('NVIDIA B300 SXM6 AC', (10, True))):
             with self.subTest(name=name, cc=cc), self.assertRaises(ValueError):
-                CudaDeviceAdmission(name, cc, 'GPU-fixture', 'gpuq-fixture', 'exclusive')
+                CudaDeviceAdmission(name, cc, 'GPU-fixture', 'gpuq-000000000001', 'exclusive')
 
     def test_actual_binary_version_must_match_b300_and_failure_unloads(self):
         manifest, candidate, admission = self._launch_authority()

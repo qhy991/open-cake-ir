@@ -4,7 +4,7 @@
 
 ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭编号认定已实现、已发布或 GPU 通过。中文页保留原文状态并提示有关后继；实际版本查[发布状态](../../../reports/current/STATUS.md)。
 
-目录中有两个 0038、两个 0039 和两个 0053，主题不同，使用完整文件名区分，保留历史编号。
+2026-09-18 之前 0038、0039、0053 各被两份记录共用；每对中后加入的一份已改编号为 0068、0069、0070，正文首行记录原编号。
 
 初学者先读 0001（职责分开）、0029（路线与题目）、0047（文档职责）、0048（AI 流程）和 0051（读取形状）。其余遇到具体问题再查。
 
@@ -47,10 +47,8 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 | 0035 | [用调用者状态和原子加法分配唯一位置](0035-atomic-slot-reservation-is-state-plus-rmw.md) | [atomic slot reservation is state plus RMW](../../adr/0035-atomic-slot-reservation-is-state-plus-rmw.md) |
 | 0036 | [只有从原子分配推得唯一位置，才允许普通索引写入](0036-atomic-reservation-proves-indexed-store-ownership.md) | [atomic reservation proves indexed-store ownership](../../adr/0036-atomic-reservation-proves-indexed-store-ownership.md) |
 | 0037 | [前缀和要保留每一步，不能冒充总和](0037-a-prefix-scan-is-not-a-fold-with-a-flag.md) | [A prefix scan is not a fold with a flag](../../adr/0037-a-prefix-scan-is-not-a-fold-with-a-flag.md) |
-| 0038 | [AKA 是发现问题的外部题库，不是正式验收语料](0038-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) | [AKA is a challenge corpus, not a Compiler Corpus](../../adr/0038-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) |
 | 0038 | [QSA 需要跨块选择状态和多次启动组合](0038-qsa-needs-stateful-selection-and-launch-composition.md) | [QSA needs stateful selection and launch composition](../../adr/0038-qsa-needs-stateful-selection-and-launch-composition.md) |
 | 0039 | [逻辑寄存器压力不能当成真实寄存器下界](0039-logical-register-pressure-is-not-a-physical-bound.md) | [Logical register pressure is not a physical bound](../../adr/0039-logical-register-pressure-is-not-a-physical-bound.md) |
-| 0039 | [单写入者的原地更新使用已有 store](0039-single-writer-state-store-is-a-store-effect.md) | [a single-writer state update is a proven store effect](../../adr/0039-single-writer-state-store-is-a-store-effect.md) |
 | 0040 | [QSA 利用率看完整程序，并说明分母来自哪里](0040-qsa-utilization-and-component-attribution.md) | [QSA utilization is a whole-Program roofline claim](../../adr/0040-qsa-utilization-and-component-attribution.md) |
 | 0041 | [驻留 top-k 可以按有符号 INT32 排序](0041-resident-top-k-supports-signed-int32.md) | [Resident top-k supports signed INT32 values](../../adr/0041-resident-top-k-supports-signed-int32.md) |
 | 0042 | [跨循环 top-k 可以每两个来源块合并一次](0042-loop-carried-top-k-may-batch-two-source-tiles.md) | [Loop-carried top-k may batch two source tiles](../../adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md) |
@@ -71,7 +69,6 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 
 ## 原始决策补充索引 / Additional original decisions
 
-- [ADR 0053: B300 is an exact target on the existing Triton path](../../adr/0053-b300-is-an-exact-target.md)
 - [ADR 0053: Study-bound external advisory candidate order](../../adr/0053-study-bound-advisory-cost-selection.md)
 - [ADR 0057: Metal and CLI harnesses use the existing Lab](../../adr/0057-metal-and-harnesses-use-the-existing-lab.md)
 
@@ -91,3 +88,7 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 
 - [0065：源码身份就是提交，主机采集单独成文](../../adr/0065-source-identity-is-the-commit.md)
 - [0066：SoL-ExecBench 任务导入的命名空间与门槛换算](../../adr/0066-sol-execbench-task-import.md)
+- [0067：退役的发布产物保存在 `history` 分支](../../adr/0067-retired-release-outputs-live-on-the-history-branch.md)
+- [0068：AKA 是发现问题的外部题库，不是正式验收语料](0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)（原 0038；[English original](../../adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)）
+- [0069：单写入者的原地更新使用已有 store](0069-single-writer-state-store-is-a-store-effect.md)（原 0039；[English original](../../adr/0069-single-writer-state-store-is-a-store-effect.md)）
+- [0070: B300 is an exact target on the existing Triton path](../../adr/0070-b300-is-an-exact-target.md)（原 0053）

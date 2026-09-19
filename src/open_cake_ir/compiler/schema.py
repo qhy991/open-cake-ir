@@ -334,8 +334,8 @@ def schedule_schema() -> dict[str, Any]:
 
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://open-cake-ir.local/schema/schedule-v1",
-        "title": "Open Cake Schedule v1",
+        "$id": "https://open-cake-ir.local/schema/schedule-v2",
+        "title": "Open Cake Schedule v2",
         "description": (
             "Generated from open_cake_ir.compiler.ir by "
             "open_cake_ir.compiler.schema.schedule_schema_bytes()."
@@ -361,7 +361,7 @@ def schedule_schema() -> dict[str, Any]:
             {"required": ["program_map"], "not": {"required": ["grid"]}},
         ],
         "properties": {
-            "schema_version": {"const": 1},
+            "schema_version": {"const": 2},
             "schedule_id": {"type": "string", "minLength": 1},
             "target": {"type": "string", "minLength": 1},
             "lowering": _object(
@@ -410,7 +410,7 @@ def schedule_schema() -> dict[str, Any]:
                 "items": _object(
                     {
                         "name": _NAME,
-                        "warps": {
+                        "execution_groups": {
                             "type": "array",
                             "minItems": 1,
                             "uniqueItems": True,

@@ -1,5 +1,7 @@
 # ADR 0011: calibrate the decision the Lab actually makes
 
+Status: accepted, 2026-08-24.
+
 ## Outcome and non-goals
 
 Ranking calibration decides whether the current Lab may reduce three launchable

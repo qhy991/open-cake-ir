@@ -11,6 +11,7 @@ from typing import Mapping
 
 from .bindings import source_reference_path
 from .python_reference import read_skeleton
+from .pairing import native_backend
 
 REFERENCE_ACCESS = frozenset({"clean_start", "known_kernel_reproduction", "direct_low_level"})
 VETTED_REFERENCE_ASSETS = (
@@ -44,11 +45,19 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object]) -> None:
     validate_declarations(arms)
     for name, arm in arms.items():
         access = reference_access(arm, f"arms.{name}")
-        if access == "known_kernel_reproduction":
-            continue
         prefix = f"arms.{name}.reference_access={access}"
         kind = arm.get("environment_kind")
-        if kind not in {"open_cake", "direct_cuda"}:
+        native = False
+        if kind not in ("open_cake", "direct_cuda"):
+            try:
+                native = isinstance(kind, str) and native_backend(kind) is not None
+            except ValueError:
+                native = False
+            if not native:
+                raise ValueError(f"{prefix}: unsupported Authoring Environment kind {kind!r}")
+        if access == "known_kernel_reproduction":
+            continue
+        if native:
             raise ValueError(f"{prefix}: inherited target_implementation requires known_kernel_reproduction")
         scaffold = arm.get("scaffold")
         if not isinstance(scaffold, Mapping):

@@ -29,22 +29,21 @@ class ProgramContractTest(unittest.TestCase):
                          "compiler_validation_only_not_clean_start_authority")
 
     def test_current_compiler_does_not_rebind_the_frozen_program_v2(self) -> None:
-        with self.assertRaisesRegex(ValueError, "program node 'score_topk' lowering differs"):
+        with self.assertRaisesRegex(ValueError, "program node 'pool' Schedule differs"):
             ProgramContract.load(ROOT, self.path, self.compiler)
 
     def test_current_program_successor_preserves_the_frozen_workload_and_composition(self) -> None:
-        path = ROOT / "contracts/programs/qsa-prefill-t32768-v3.json"
+        path = ROOT / "contracts/programs/qsa-prefill-t32768-v4.json"
         program = ProgramContract.load(ROOT, path, self.compiler)
         previous = json.loads(self.path.read_text())
         successor = json.loads(path.read_text())
         self.assertEqual(program.program_id, successor["program_id"])
         self.assertNotEqual(successor["program_id"], previous["program_id"])
         successor["program_id"] = previous["program_id"]
-        old_topk = previous["nodes"][2]
-        new_topk = successor["nodes"][2]
-        self.assertEqual(new_topk["id"], "score_topk")
-        self.assertNotEqual(new_topk["lowering_source_sha256"], old_topk["lowering_source_sha256"])
-        new_topk["lowering_source_sha256"] = old_topk["lowering_source_sha256"]
+        for old_node, new_node in zip(previous["nodes"], successor["nodes"]):
+            for field in ("schedule_sha256", "lowering_source_sha256"):
+                self.assertNotEqual(new_node[field], old_node[field])
+                new_node[field] = old_node[field]
         self.assertEqual(successor, previous)
 
     def test_schedule_identity_and_dataflow_drift_fail_closed(self) -> None:

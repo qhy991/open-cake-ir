@@ -15,7 +15,6 @@ handling from the operation, and the host-side contract from the global buffers.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from types import MappingProxyType
 
 from .triton_selection import top_k_selection_structure
 from .common import emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
@@ -38,7 +37,8 @@ from ..ir import (
     Schedule,
     TileLoop,
 )
-from ..target import Target, Vendor
+from ..ir.instruction_contracts import ContractKind, contracts_of
+from ..target import CodeObject, Target
 from ..diagnostics import Finding
 
 _TL_DTYPE = {
@@ -138,23 +138,67 @@ SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
     INSIDE_LOOP_EMITTERS
 )
 
+# The emitter's own spellings. What each contract means is the registry's; which of
+# them `tl.dot` realizes is this backend's, read off the registry by the route's prefix
+# so a contract declared for this route cannot be modelled and unemittable at once.
 _ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 
+# One Triton call, two libraries underneath. `tl.extra.libdevice.tanh` emits
+# __nv_tanhf on an NVIDIA target and __ocml_tanh_f32 on an AMDGCN one, and a contract
+# names the instruction the hardware runs rather than the source line that reached it --
+# so a Target admits the spelling of the library it actually has. The emitter accepts
+# either and writes the same call; which one a Schedule may use is the Target's to say.
+_TRITON_TANH_CONTRACTS = frozenset({"libdevice.tanh.f32", "ocml.tanh.f32"})
+
 _TRITON_MMA_CONTRACTS = frozenset(
-    {
-        "triton.dot.bf16_fp32",
-        "triton.dot.fp32_ieee",
-        "triton.dot.fp32_tf32",
-        "triton.dot.fp8e4m3_block_scale_fp32",
-        "triton.dot.fp16_fp32",
-        "triton.dot.fp8e4m3_fp32",
-    }
+    name for name in contracts_of(ContractKind.MMA) if name.startswith("triton.dot.")
 )
 
 _TRITON_DOT_INPUT_PRECISION = {
     "triton.dot.fp32_ieee": "ieee",
     "triton.dot.fp32_tf32": "tf32",
 }
+
+# The selected-K dot has bounded evidence: measured on B200 and B300 only. An
+# applicability set, not a capability the Target declares; widening it is a
+# qualification act. Pinned by corpus case triton-k-ranges-selected-size.
+_K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
+
+# What this backend emits: Triton compiles the same kernel to a cubin or an hsaco,
+# and the Compiler refuses a Target whose code object is neither before preflight.
+CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO})
+
+
+def _power_of_two(value: int) -> bool:
+    """What `tl.arange` and `tl.topk` require of an extent: a positive power of two."""
+    return value > 0 and value & (value - 1) == 0
+
+
+def target_route_facts(target: Target) -> dict[str, object]:
+    """The three route facts the compile contract carries for `toolchain.triton_route`.
+
+    Offline compilation never opens a Target document in its jail, so the emitter
+    writes here what the toolchain would otherwise have to decode from the id: which
+    code object, the architecture Triton's `GPUTarget` takes -- the integer capability
+    for CUDA, the bare ISA name for AMDGPU -- and the lane width the analyses derived
+    thread counts from.
+    """
+    if target.code_object is CodeObject.CUBIN:
+        if target.compute_capability is None:
+            raise EmitError(f"Target {target.target_id!r} declares no compute capability")
+        major, minor = target.compute_capability
+        architecture: object = major * 10 + minor
+    elif target.code_object is CodeObject.HSACO:
+        architecture = target.target_id
+    else:
+        raise EmitError(
+            f"the Triton backend emits no {target.code_object.value!r} code object"
+        )
+    return {
+        "code_object": target.code_object.value,
+        "triton_arch": architecture,
+        "warp_size": target.warp_size,
+    }
 
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
@@ -196,26 +240,6 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     return tuple(findings)
 
 
-# The exact AMDGCN-code-object targets this backend emits for, each pinned to the
-# architecture and role-slot width its Target document declares. The set spans vendors:
-# gfx1151 is AMD hardware and gfx938 is Hygon's, and what they share is the code object
-# Triton emits, not a manufacturer. The lowering mechanism is Triton for every
-# target here -- one emitter, one emitted language, one `LoweringBackend` member -- so this
-# is the backend module owning which targets it admits, not a second member spelling the
-# same mechanism twice. An unlisted AMD target is refused, never stepped down to a listed
-# one. Whether a vendor reaching an existing mechanism should instead mint its own
-# `LoweringBackend` member is a reading of AGENTS.md's registration rule that belongs to
-# the reviewer, not to this comment.
-_AMDGCN_TARGETS = MappingProxyType({
-    "gfx938": ("c3000", 64),
-    # A wave32 AMD target, which is what keeps this route's arithmetic honest: it shares
-    # a vendor with gfx938 and not a lane width, so nothing here can be a wave64 constant
-    # wearing a vendor's name. Its hardware facts are retained observations from an
-    # earlier delivery and no device check exists for it in this repository.
-    "gfx1151": ("rdna3_5", 32),
-})
-
-
 def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) -> tuple[Finding, ...]:
     """Return the constructor's backend-owned lowering requirements.
 
@@ -232,15 +256,10 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         if not condition:
             findings.append(refusal(code, path, message))
 
-    amdgcn = _AMDGCN_TARGETS.get(target.target_id)
-    amdgcn_vendor = target.vendor in (Vendor.AMD, Vendor.HYGON)
-    add(
-        target.vendor is Vendor.NVIDIA
-        or (amdgcn_vendor and amdgcn == (target.architecture, target.warp_size)),
-        "BACKEND_TARGET_UNSUPPORTED", "target",
-        "the Triton backend emits for exact NVIDIA targets and for the listed AMDGCN ones",
-    )
-    if amdgcn is not None and amdgcn_vendor:
+    # Which code objects this backend emits is declared in CODE_OBJECTS and refused by
+    # the Compiler before preflight; nothing here re-admits a target by its id. What
+    # varies below is a fact of the code object, read from the Target that declares it.
+    if target.code_object is CodeObject.HSACO:
         # Triton's HIPOptions carries no maxnreg field and its option parser drops an
         # unknown key without raising, so the cap the emitter attaches for CUDA would be
         # accepted here and never applied. A budget that is silently not enforced is worse
@@ -343,11 +362,24 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "roles",
         "the Triton backend requires exactly one role",
     )
+    # One role ordered by program order is the whole synchronization this emitter
+    # writes: it has no body for a barrier object, so a declared handshake -- whatever
+    # mechanism the Target's contracts realize for it -- would not reach the source.
+    # Measured before this refusal: an mbarrier the common Verifier admitted (MMA
+    # producer) was dropped from the emitted Triton with no finding.
+    for index, barrier in enumerate(schedule.barriers):
+        mechanism = barrier.mechanism.value if barrier.mechanism is not None else "undeclared"
+        findings.append(refusal(
+            "TRITON_BARRIER_UNSUPPORTED",
+            f"barriers[{index}]",
+            f"the Triton backend emits no barrier handshake; barrier {barrier.name!r} "
+            f"(mechanism {mechanism}) would be dropped from the source rather than realized",
+        ))
     if len(schedule.roles) == 1:
-        warp_count = len(schedule.roles[0].warps)
+        warp_count = len(schedule.roles[0].execution_groups)
         add(
             warp_count > 0 and warp_count & (warp_count - 1) == 0,
-            "TRITON_NUM_WARPS_UNSUPPORTED", "roles[0].warps",
+            "TRITON_NUM_WARPS_UNSUPPORTED", "roles[0].execution_groups",
             f"Triton compile option num_warps requires a positive power of two; "
             f"the declared role has {warp_count} warps. Choose the role explicitly; "
             "the Compiler does not round the launch size.",
@@ -425,7 +457,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             if operation.parameters.k_ranges is not None:
                 p = operation.parameters
                 supported = (
-                    schedule.target == target.target_id and target.target_id in {"sm_100a", "sm_103a"}
+                    schedule.target == target.target_id and target.target_id in _K_RANGES_EVIDENCE
                     and instruction is not None and instruction.contract == "triton.dot.bf16_fp32"
                     and instruction.shape is None and instruction.cta_group is None
                     and instruction.operand_source is None and instruction.operand_major is None
@@ -474,6 +506,61 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 f"Target {target.target_id!r} does not admit "
                 f"{_ATOMIC_RMW_CONTRACT!r}",
             )
+        # The shapes this emitter's selection and expansion bodies can take. Each is a
+        # fact of the emitted `tl.arange`/`tl.topk` program, not of the operation, which
+        # the common Verifier types without them; the codes keep the spelling they had
+        # when the Verifier carried them, so their consumers still find them.
+        if operation.kind is OperationKind.TOP_K and len(operation.reads) == 1:
+            source = schedule.buffer(operation.reads[0])
+            k = operation.parameters.k
+            if source is not None and len(source.shape) == 1:
+                add(
+                    _power_of_two(source.shape[0]),
+                    "TOP_K_SOURCE_UNLOWERABLE", f"operations[{index}].reads",
+                    "the Triton top_k merge uses power-of-two resident vectors, but "
+                    f"{source.name!r} has extent {source.shape[0]}",
+                )
+            add(
+                source is None or source.dtype is not DType.INT32
+                or not operation.parameters.across_loop,
+                "TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE",
+                f"operations[{index}].parameters.across_loop",
+                "the Triton signed-int32 top_k lowering orders one resident tile; "
+                "loop-carried int32 state is not implemented",
+            )
+            add(
+                _power_of_two(k),
+                "TOP_K_K_UNLOWERABLE", f"operations[{index}].parameters.k",
+                f"the Triton top_k lowering requires power-of-two k, but k is {k}",
+            )
+        if operation.kind is OperationKind.INDEX_EXPAND and len(operation.reads) == 1:
+            source = schedule.buffer(operation.reads[0])
+            add(
+                source is None or len(source.shape) != 1 or _power_of_two(source.shape[0]),
+                "INDEX_EXPAND_SOURCE_UNLOWERABLE", f"operations[{index}].reads",
+                "the Triton index_expand input extent must be a power of two",
+            )
+            add(
+                _power_of_two(operation.parameters.extent),
+                "INDEX_EXPAND_EXTENT_UNLOWERABLE", f"operations[{index}].parameters.extent",
+                "the Triton index_expand extent must be a power of two",
+            )
+
+    # The one valid-extent subset `_emit_load` lowers: the extent buffer is indexed by
+    # exactly one axis, and that axis is a scalar program coordinate of the access.
+    for index, access in enumerate(schedule.access_maps):
+        buffer = schedule.buffer(access.buffer)
+        relation = buffer.valid_extent if buffer is not None else None
+        if relation is None or not relation.indexed_by:
+            continue
+        add(
+            len(relation.indexed_by) == 1
+            and relation.indexed_by[0] < len(access.indices)
+            and access.indices[relation.indexed_by[0]].source is AccessIndexKind.PROGRAM,
+            "VALID_EXTENT_ACCESS_UNLOWERABLE", f"access_maps[{index}]",
+            "the Triton valid-extent lowering requires one extent axis indexed by one "
+            "scalar program axis",
+        )
 
     nested = len(schedule.tile_loops) > 1
     if nested:
@@ -719,7 +806,7 @@ class _TritonEmitter:
             values[self._tile(loop.name)] = loop.tile
         if len(self.schedule.tile_loops) == 1:
             values["NUM_STAGES"] = self.schedule.tile_loops[0].range_options.num_stages
-        values["NUM_WARPS"] = len(self.role.warps)
+        values["NUM_WARPS"] = len(self.role.execution_groups)
         if self.schedule.program_map is not None and self.schedule.program_map.persistent:
             values["TOTAL_TILES"] = self.total_tiles()
             values["NUM_CTAS"] = self.grid()[0]
@@ -1065,6 +1152,7 @@ class _TritonEmitter:
                 ),
             },
             "grid": list(self.grid()),
+            **target_route_facts(self.target),
         }
 
     def _emit_header(self) -> None:
@@ -1079,7 +1167,7 @@ class _TritonEmitter:
             operation.kind is OperationKind.ELEMENTWISE
             and operation.parameters.op is ElementwiseOp.TANH
             and operation.parameters.instruction is not None
-            and operation.parameters.instruction.contract == "libdevice.tanh.f32"
+            and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
             for operation in self.schedule.operations
         ):
             self.line("from triton.language.extra import libdevice")
@@ -1432,8 +1520,9 @@ class _TritonEmitter:
             instruction = parameters.instruction
             _require(
                 instruction is not None
-                and instruction.contract == "libdevice.tanh.f32",
-                "the Triton tanh body requires the admitted libdevice.tanh.f32 contract",
+                and instruction.contract in _TRITON_TANH_CONTRACTS,
+                "the Triton tanh body requires one of the admitted tanh contracts: "
+                + ", ".join(sorted(_TRITON_TANH_CONTRACTS)),
             )
             expression = f"libdevice.tanh({operands[0]})"
         else:

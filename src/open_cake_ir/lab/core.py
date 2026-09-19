@@ -99,7 +99,7 @@ class Lab:
         evidence: EvidenceStore,
         audit: RunAudit,
         lock: contracts.CampaignLock,
-    ) -> bool:
+    ) -> replay.ReplayResult:
         return replay.replay_matched_run(
             evidence,
             audit,

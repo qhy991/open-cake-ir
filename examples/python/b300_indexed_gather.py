@@ -9,7 +9,7 @@ def indexed_gather(lm, expert_rows: cake.Tensor((4, 8, 16), "bf16"),
                    expert_ids: cake.Tensor((8, 8), "int32"),
                    row_ids: cake.Tensor((8, 8), "int32"),
                    gathered_rows: cake.Tensor((8, 8, 16), "bf16", mode="output")):
-    compute = lm.role(warps=[0, 1, 2, 3])
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
     token = lm.program(expert_ids, axis=0, dimension=0, tile=1)
     with compute:
         expert_id_tile = lm.load(expert_ids[token, :], reuse="streamed", id="load_expert_ids")

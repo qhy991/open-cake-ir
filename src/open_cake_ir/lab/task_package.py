@@ -17,6 +17,7 @@ from .reference_access import document_role, reference_access, validate_referenc
 from open_cake_ir.compiler import frontend
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
+from open_cake_ir.serialization import canonical_json_bytes
 
 
 TASK_AGENTS_RALPH_V1 = "task_agents_ralph_v1"
@@ -37,13 +38,7 @@ def _object(value: object, context: str) -> Mapping[str, object]:
 
 
 def _canonical_json(value: object) -> str:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    )
+    return canonical_json_bytes(value).decode("utf-8")
 
 
 def _pretty_json(value: object) -> str:
@@ -119,7 +114,7 @@ def build_run_reference_documents(
             "candidate_selection": {
                 "kind": selection["kind"],
                 "model": {key: model[key] for key in (
-                    "model_id", "compiler_revision_id", "compiler_revision_sha256", "target",
+                    "model_id", "compiler_revision_id", "target",
                 )},
             },
         }

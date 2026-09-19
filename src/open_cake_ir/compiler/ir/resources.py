@@ -28,7 +28,7 @@ from .vocabulary import (
 @dataclass(frozen=True)
 class Role:
     name: str
-    warps: tuple[int, ...]
+    execution_groups: tuple[int, ...]
     registers_per_thread: int | None
     """What this role's threads hold, when the roles divide the CTA's budget.
 
@@ -45,34 +45,34 @@ class Role:
     """
 
     @property
-    def warp_extent(self) -> int:
-        """One past the highest declared warp index.
+    def execution_group_extent(self) -> int:
+        """One past the highest declared execution-group index.
 
-        This is the quantity a CTA warp budget must bound. Legacy resource checks
-        compared `len(warps)`, which admits sparse or out-of-range warp ids.
+        This is the quantity a CTA execution-group budget must bound. Legacy resource checks
+        compared `len(execution_groups)`, which admits sparse or out-of-range group ids.
         """
 
-        return max(self.warps) + 1
+        return max(self.execution_groups) + 1
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "Role":
         obj = _strict_object(
             value,
-            required={"name", "warps"},
+            required={"name", "execution_groups"},
             optional={"registers_per_thread"},
             context=context,
         )
-        warps = _object_list(obj["warps"], f"{context}.warps", allow_empty=False)
+        execution_groups = _object_list(obj["execution_groups"], f"{context}.execution_groups", allow_empty=False)
         parsed = tuple(
-            _nonnegative_int(warp, f"{context}.warps[{index}]")
-            for index, warp in enumerate(warps)
+            _nonnegative_int(warp, f"{context}.execution_groups[{index}]")
+            for index, warp in enumerate(execution_groups)
         )
         if len(set(parsed)) != len(parsed):
-            raise ScheduleParseError(f"{context}.warps repeats a warp index")
+            raise ScheduleParseError(f"{context}.execution_groups repeats an execution-group index")
         expected = tuple(range(parsed[0], parsed[0] + len(parsed)))
         if parsed != expected:
             raise ScheduleParseError(
-                f"{context}.warps must be one ascending contiguous interval; "
+                f"{context}.execution_groups must be one ascending contiguous interval; "
                 f"got {list(parsed)}"
             )
         registers = obj.get("registers_per_thread")

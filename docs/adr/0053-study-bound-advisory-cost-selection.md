@@ -1,6 +1,7 @@
 # ADR 0053: Study-bound external advisory candidate order
 
-Status: accepted software contract; model compatibility and GPU benefit require their own evidence.
+Status: accepted, 2026-09-06, as a software contract; model compatibility and GPU benefit
+require their own evidence.
 
 The Lab's candidate-set path builds and seals every submission before spending GPU
 time on a bounded search subset. Released `Compiler.rank` requires calibration

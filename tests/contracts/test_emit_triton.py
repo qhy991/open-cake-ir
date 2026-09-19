@@ -44,7 +44,7 @@ def _variant(**changes) -> dict:
     loop["range_options"].update(
         {k: v for k, v in changes.items() if k in loop["range_options"]}
     )
-    document["roles"][0]["warps"] = list(range(changes.get("warps", 4)))
+    document["roles"][0]["execution_groups"] = list(range(changes.get("execution_groups", 4)))
     buffers["token_tile"]["shape"] = [block_n, 128]
     buffers["centroid_tile"]["shape"] = [block_k, 128]
     buffers["distance_tile"]["shape"] = [block_n, block_k]
@@ -72,8 +72,8 @@ class ArgminDomainTest(unittest.TestCase):
             return dict(name=name, space=space, dtype=dtype, shape=shape, mode=mode)
         coordinate = dict(source="loop_tile" if carried else "program_tile", name="columns")
         document = dict(
-            schema_version=1, schedule_id="row-minimum", target="sm_100a",
-            roles=[dict(name="compute", warps=[0, 1, 2, 3])], allocations=[], pipelines=[], barriers=[],
+            schema_version=2, schedule_id="row-minimum", target="sm_100a",
+            roles=[dict(name="compute", execution_groups=[0, 1, 2, 3])], allocations=[], pipelines=[], barriers=[],
             buffers=[buffer("scores", "global", "fp32", [3, k], "input"),
                      buffer("indices", "global", "int32", [3], "output"),
                      buffer("tile", "register", "fp32", [2, 64], "scratch"),
@@ -321,7 +321,7 @@ class OpenSpaceTest(unittest.TestCase):
             (64, 128, 256), (32, 64, 128), (1, 2, 3, 4), (4, 8)
         ):
             assessment = self.compiler.assess(
-                _variant(block_n=block_n, block_k=block_k, num_stages=stages, warps=warps)
+                _variant(block_n=block_n, block_k=block_k, num_stages=stages, execution_groups=warps)
             )
             admitted += assessment.lowering_eligible
         self.assertEqual(admitted, 72)
@@ -373,10 +373,10 @@ class UnderSpecificationTest(unittest.TestCase):
 
 
 ROW_SUM_SCHEDULE = {
-    "schema_version": 1,
+    "schema_version": 2,
     "schedule_id": "row-sum-contract-v1",
     "target": "sm_100a",
-    "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+    "roles": [{"name": "compute", "execution_groups": [0, 1, 2, 3]}],
     "allocations": [],
     "pipelines": [],
     "barriers": [],
@@ -495,8 +495,8 @@ class ComposedArithmeticTest(unittest.TestCase):
             "shape": shape, "mode": "scratch",
         }
         return {
-            "schema_version": 1, "schedule_id": "rmsnorm-contract-v1", "target": "sm_100a",
-            "roles": [{"name": "compute", "warps": [0, 1, 2, 3]}],
+            "schema_version": 2, "schedule_id": "rmsnorm-contract-v1", "target": "sm_100a",
+            "roles": [{"name": "compute", "execution_groups": [0, 1, 2, 3]}],
             "allocations": [], "pipelines": [], "barriers": [],
             "buffers": [
                 {"name": "x", "space": "global", "dtype": "fp32",

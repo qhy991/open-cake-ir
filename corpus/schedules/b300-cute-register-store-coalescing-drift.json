@@ -1,11 +1,11 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "b300-cute-register-store-coalescing-drift",
   "target": "sm_103a",
   "roles": [
     {
       "name": "compute",
-      "warps": [
+      "execution_groups": [
         0
       ]
     }

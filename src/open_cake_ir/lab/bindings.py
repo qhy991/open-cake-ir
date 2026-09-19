@@ -13,9 +13,13 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping
 
 from open_cake_ir.evaluation.paired import candidate_from_identity, candidate_identity
-from .executor import ExecutorRevision
+from .executor import ExecutorRevision, _relative_file
 from open_cake_ir.compiler import Compiler, CorpusGateReport
-from ._documents import _object, _digest, _project_path
+from open_cake_ir.compiler.revision import load_revision
+from ._documents import _object, _project_path, differs
+from .pairing import comparison_arm, native_backend
+from .runtime_config import broker_execution_sha256, load_runtime_config
+from .toolchains import single_environment_toolchain, toolchain_for
 
 CAMPAIGN_BINDING = {'binding': 'campaign_lock'}
 CURRENT_RELEASE_BINDING = {'binding': 'current_release'}
@@ -52,7 +56,6 @@ def source_reference_path(project_root, value, context):
     if isinstance(value, str) and Path(value).is_absolute():
         path = external_file(project_root, value, context)
         return str(path), path
-    from .executor import _relative_file
     return _relative_file(Path(project_root), value, context)
 
 
@@ -61,7 +64,6 @@ def qualification_path(project_root, value, context):
     if isinstance(value, str) and Path(value).is_absolute():
         path = external_file(project_root, value, context)
         return str(path), path
-    from .executor import _relative_file
     return _relative_file(Path(project_root), value, context)
 
 
@@ -79,11 +81,11 @@ def load_baseline_bundle(project_root, bundle_path):
         identity = {key: document.get(key) for key in fields}
     paths = document.get('artifact_paths')
     if not isinstance(paths, Mapping):
-        raise ValueError('baseline bundle artifact paths differ')
+        raise differs('baseline bundle artifact paths differ', expected='<object>', observed=paths)
     payloads = {}
     for role, value in paths.items():
         if not isinstance(value, str) or not value or '\\' in value:
-            raise ValueError('baseline artifact path differs')
+            raise differs(f'baseline artifact path for role {role!r}', expected='<non-empty posix path>', observed=value)
         relative = PurePosixPath(value)
         if relative.is_absolute() or '..' in relative.parts:
             raise ValueError('baseline artifact path is unsafe')
@@ -104,11 +106,20 @@ def load_prepared_baseline(project_root: Path, path: str | Path):
         'schema_version', 'fixed_baseline_bundle_path', 'fixed_baseline_candidate',
         'fixed_baseline_selection',
     } or type(document.get('schema_version')) is not int or document['schema_version'] != 1):
-        raise ValueError('prepared baseline fields differ')
+        raise differs(
+            'prepared baseline fields differ',
+            expected={'schema_version': 1, 'fields': ['fixed_baseline_bundle_path', 'fixed_baseline_candidate',
+                                                     'fixed_baseline_selection', 'schema_version']},
+            observed={'schema_version': document.get('schema_version') if isinstance(document, Mapping) else None,
+                      'fields': sorted(document) if isinstance(document, Mapping) else document},
+        )
     bundle = external_file(project_root, document['fixed_baseline_bundle_path'], 'prepared baseline bundle')
     baseline = load_baseline_bundle(project_root, bundle)
     if candidate_identity(baseline) != document['fixed_baseline_candidate']:
-        raise ValueError('prepared baseline candidate differs from its sealed selection')
+        raise differs(
+            'prepared baseline candidate differs from its sealed selection',
+            expected=document['fixed_baseline_candidate'], observed=candidate_identity(baseline),
+        )
     return bundle, baseline, validate_baseline_selection(document['fixed_baseline_selection'])
 
 
@@ -126,7 +137,7 @@ def resolve_executor(
         raise ValueError(f"{context}.executor_revision must be an object")
     if template:
         if value != CURRENT_RELEASE_BINDING:
-            raise ValueError("Study template Executor binding differs")
+            raise differs("Study template Executor binding", expected=CURRENT_RELEASE_BINDING, observed=value)
         return ExecutorRevision.for_target(root, target)
     if value == CURRENT_RELEASE_BINDING:
         raise ValueError("frozen Study cannot follow the current Executor")
@@ -137,9 +148,9 @@ def resolve_execution_bindings(
     project_root: str | Path, study, bindings_path: str | Path | None
 ) -> tuple[dict[str, object], ExecutorRevision | None]:
     """Return resolved runtime leaves and the Executor already validated for them."""
-    from .runtime_config import broker_execution_sha256, load_runtime_config
+    # providers and provider_policy reach this module through task_package and
+    # reference_access, so they stay function-local.
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
-    from .pairing import comparison_arm, native_backend, backend_policy
 
     document = json.loads(canonical(study.document))
     arms = document['arms']
@@ -172,7 +183,12 @@ def resolve_execution_bindings(
     } | ({'fixed_baseline_selection'} if version == 2 else set())
     if (not isinstance(bindings, Mapping) or set(bindings) != expected
             or type(version) is not int or version not in {1, 2}):
-        raise ValueError('external execution binding fields differ')
+        raise differs(
+            'external execution binding fields differ',
+            expected={'schema_version': [1, 2], 'fields': sorted(expected)},
+            observed={'schema_version': version,
+                      'fields': sorted(bindings) if isinstance(bindings, Mapping) else bindings},
+        )
     receipt_path = external_file(project_root, bindings['qualification_path'], 'qualification')
     anchor_path = external_file(project_root, bindings['qualification_anchor_path'], 'qualification anchor')
     runtime_path = external_file(project_root, bindings['runtime_config_path'], 'runtime configuration')
@@ -180,15 +196,19 @@ def resolve_execution_bindings(
     anchor = json.loads(anchor_path.read_bytes())
     if single:
         route = arms["open_cake"].get("lowering_route")
-        if not isinstance(route, Mapping) or route.get("backend") not in {"metal", "triton"}:
-            raise ValueError("single-environment lowering route differs")
-        backend = route["backend"]
+        if not isinstance(route, Mapping) or "backend" not in route:
+            raise differs("single-environment lowering route", expected={"backend": "<name>"}, observed=route)
+        row = single_environment_toolchain(route["backend"])
     else:
-        backend = policy.backend
-    config = load_runtime_config(runtime_path, toolchain_kind=backend)
+        row = toolchain_for(policy.backend)
+    config = load_runtime_config(runtime_path, toolchain_kind=row.runtime_kind)
     executable = Path(config['provider']['executable']).resolve(strict=True)
-    if sha256(executable.read_bytes()).hexdigest() != receipt.executable_sha256:
-        raise ValueError('runtime provider executable differs from qualification')
+    observed_executable_sha256 = sha256(executable.read_bytes()).hexdigest()
+    if observed_executable_sha256 != receipt.executable_sha256:
+        raise differs(
+            'runtime provider executable differs from qualification',
+            expected=receipt.executable_sha256, observed=observed_executable_sha256,
+        )
     code_mode_host = resolve_codex_code_mode_host(executable) if harness == "codex" else None
     for arm in arms.values():
         provider = arm['provider']
@@ -201,12 +221,8 @@ def resolve_execution_bindings(
     executor = resolve_executor(Path(project_root), execution['executor_revision'],
         'study.execution', template=True, target=execution['target'])
     executor_reference = dict(executor.reference)
-    if backend == "metal":
-        from .metal_build import MetalArchiveHost
-        toolchain = MetalArchiveHost.from_executor(executor)
-    else:
-        toolchain = backend_policy(backend).isolated_compiler(config['toolchain'])
-        toolchain.check_executor(executor, author_workspace=config['provider']['workspace_root'])
+    toolchain = row.bind(config['toolchain'], executor,
+                         author_workspace=config['provider']['workspace_root'])
     for arm in arms.values():
         arm['toolchain_sha256'] = toolchain.canonical_sha256
     broker = config['broker']
@@ -239,17 +255,17 @@ def _resolve_compiler_reference(
     reference = _object(value, context)
     if template:
         if reference != CURRENT_RELEASE_BINDING:
-            raise ValueError("Study template Compiler binding differs")
+            raise differs("Study template Compiler binding", expected=CURRENT_RELEASE_BINDING, observed=reference)
         relative = COMPILER_REVISION_PATH
         path = (root / relative).resolve(strict=True)
     else:
         if reference == CURRENT_RELEASE_BINDING:
             raise ValueError("frozen Study cannot follow the current Compiler")
-        if set(reference) not in (
-            {"path", "canonical_sha256"},
-            {"path", "canonical_sha256", "revision_id"},
-        ):
-            raise ValueError("Compiler Revision reference fields differ")
+        if set(reference) != {"path", "revision_id"}:
+            raise differs(
+                "Compiler Revision reference fields differ",
+                expected=["path", "revision_id"], observed=sorted(reference),
+            )
         relative, path = _project_path(root, reference["path"], f"{context}.path")
 
     compiler = Compiler.load(root, path)
@@ -258,20 +274,12 @@ def _resolve_compiler_reference(
     gate = compiler.check_corpus()
     if not gate.passed:
         raise ValueError("Study Contract requires a Compiler whose full Corpus Gate passes")
-    if not template and (
-        gate.compiler_revision_sha256
-        != _digest(reference["canonical_sha256"], f"{context}.canonical_sha256")
-        or (
-            "revision_id" in reference
-            and reference["revision_id"] != gate.compiler_revision_id
+    if not template and reference["revision_id"] != gate.compiler_revision_id:
+        raise differs(
+            "Study Contract Compiler Revision",
+            expected=reference["revision_id"], observed=gate.compiler_revision_id,
         )
-    ):
-        raise ValueError("Study Contract Compiler Revision differs")
-    exact = {
-        "revision_id": gate.compiler_revision_id,
-        "path": relative,
-        "canonical_sha256": gate.compiler_revision_sha256,
-    }
+    exact = {"revision_id": gate.compiler_revision_id, "path": relative}
     return gate, relative, exact
 
 
@@ -282,16 +290,17 @@ def load_compiler_reference(root: Path, value: object, context: str):
     checks that the checkout is clean at the pinned commit and that the manifest and
     declared Targets are the ones the Campaign bound.
     """
-    from open_cake_ir.compiler.revision import load_revision
     reference = _object(value, context)
-    if set(reference) != {"path", "canonical_sha256", "revision_id"}:
-        raise ValueError(f"{context} Compiler reference fields differ")
+    if set(reference) != {"path", "revision_id"}:
+        raise differs(
+            f"{context} Compiler reference fields differ",
+            expected=["path", "revision_id"], observed=sorted(reference),
+        )
     _, path = _project_path(root, reference["path"], f"{context}.path")
     revision = load_revision(root, path)
     if revision.commit is None:
         raise ValueError(f"{context} requires a clean committed checkout")
-    if (revision.revision_id != reference["revision_id"]
-            or revision.canonical_sha256 != _digest(reference["canonical_sha256"], context)):
+    if revision.revision_id != reference["revision_id"]:
         raise ValueError(
             f"{context} Compiler Revision differs: the reference pins "
             f"{reference['revision_id']!r} and this checkout provides {revision.revision_id!r}"

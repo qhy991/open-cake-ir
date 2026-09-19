@@ -26,7 +26,7 @@ from open_cake_ir.lab import ExecutorRevision
 from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
 
 _RUNTIME_PATH = ROOT / "runtime/qsa-seed-gpu-infra-verda-v1.json"
-_PROGRAM_PATH = ROOT / "contracts/programs/qsa-prefill-t32768-v3.json"
+_PROGRAM_PATH = ROOT / "contracts/programs/qsa-prefill-t32768-v4.json"
 _WORKLOAD_PATH = ROOT / "contracts/workloads/qsa-prefill-t32768-v1.json"
 _DIRECT_SOURCE = ROOT / "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu"
 _DIRECT_MANIFEST = ROOT / "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json"
@@ -71,7 +71,7 @@ def _preflight_authorities() -> tuple[ExecutorRevision, ProgramContract, dict[st
     if program.workload.canonical_sha256 != workload.canonical_sha256:
         raise ValueError("QSA Program and Workload differ")
     return _current_executor(), program, {"path": "compiler/revision.json",
-        "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
+        "revision_id": gate.compiler_revision_id}
 
 
 def _materialize_candidates(root: Path, program: ProgramContract) -> tuple[Path, Path]:
@@ -195,7 +195,7 @@ def _task(
         if protocol != "profile":
             raise ValueError("QSA profile-kernel selection requires the profile protocol")
         command.extend(("--profile-kernel", profile_kernel))
-    identity = f"{executor.executor_id}@{executor.canonical_sha256}"
+    identity = executor.executor_id
     stages: list[dict[str, object]] = [
         {
             "id": "compile",

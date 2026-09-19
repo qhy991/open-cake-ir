@@ -47,7 +47,7 @@ def make_source(rows=3, width=37, operation="elementwise"):
     return f'''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="metal-{operation}", target="apple_gpu_family8", backend="metal", entry_point="cake_metal")
 def candidate(lm, {arguments}):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         {body}
@@ -63,7 +63,7 @@ def make_rms_source(rows=2, width=65):
     return f"""from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="weighted-rms", target="apple_gpu_family8", backend="metal", entry_point="cake_rms")
 def candidate(lm, x: cake.Tensor(({rows},{width}), "fp32"), weight: cake.Tensor(({width},), "fp32"), out: cake.Tensor(({rows},{width}), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[row,:])
@@ -278,9 +278,14 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
         wrong = make_document()
         self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), target)])
         wrong["target"] = "apple_gpu_family7"
+        # The backend restates no Apple document: it reads the Target it is handed, so a
+        # drifted device name or architecture is followed rather than caught here. Only
+        # the Schedule's own identity is checked; the code object is the Compiler's.
         from dataclasses import replace
         for changed in (replace(target, device_names=("Apple M1",)), replace(target, architecture="apple8")):
-            self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), changed)])
+            self.assertNotIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(Schedule.from_dict(wrong), changed)])
+        self.assertIn("METAL_TARGET_UNSUPPORTED", [f.code for f in metal.preflight(
+            Schedule.from_dict(wrong), replace(target, target_id="apple_gpu_family8"))])
 
     def test_m1_pro_rmsnorm_formulas_execute_odd_width_on_cpu(self):
         from tools.metal import rmsnorm
@@ -364,7 +369,7 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
             source = f'''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="unary-{op.value}", target="apple_gpu_family8", backend="metal", entry_point="cake_unary")
 def candidate(lm, x: cake.Tensor((2, 4), "fp32"), out: cake.Tensor((2, 4), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[row, :], id="load_x")
@@ -403,7 +408,7 @@ def candidate(lm, x: cake.Tensor((2, 4), "fp32"), out: cake.Tensor((2, 4), "fp32
         source = '''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="composition", target="apple_gpu_family8", backend="metal", entry_point="cake_composition")
 def candidate(lm, x: cake.Tensor((2,3,5), "fp32"), out: cake.Tensor((2,3,5), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     batch = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[batch,:,:])
@@ -424,7 +429,7 @@ def candidate(lm, x: cake.Tensor((2,3,5), "fp32"), out: cake.Tensor((2,3,5), "fp
         source = """from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="first-axis", target="apple_gpu_family8", backend="metal", entry_point="cake_axes")
 def candidate(lm, x: cake.Tensor((2,3,5), "fp32"), out: cake.Tensor((2,5), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     batch = lm.program(x, axis=1, dimension=0, tile=1)
     with compute:
         values = lm.load(x[batch,:,:])
@@ -471,7 +476,7 @@ def candidate(lm, x: cake.Tensor((2,3,5), "fp32"), out: cake.Tensor((2,5), "fp32
             source = f"""from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="broadcast-and-reduce", target="apple_gpu_family8", backend="metal", entry_point="cake_compose")
 def candidate(lm, x: cake.Tensor((1,3,33,5), "fp32"), weight: cake.Tensor(({extent},), "fp32"), out: cake.Tensor((1,3,33,5), "fp32", mode="output"), reduced: cake.Tensor((1,{output_shape[0]},{output_shape[1]}), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     batch = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[batch,:,:,:])
@@ -496,7 +501,7 @@ def candidate(lm, x: cake.Tensor((1,3,33,5), "fp32"), weight: cake.Tensor(({exte
         source = """from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="ordered-scalars", target="apple_gpu_family8", backend="metal", entry_point="cake_order")
 def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32"), a: cake.Tensor((2,7), "fp32", mode="output"), b: cake.Tensor((2,7), "fp32", mode="output"), c: cake.Tensor((2,7), "fp32", mode="output"), d: cake.Tensor((2,7), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[row,:])
@@ -549,7 +554,7 @@ def candidate(lm, x: cake.Tensor((2,7), "fp32"), scalar: cake.Tensor((1,), "fp32
         source = '''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="wide-elementwise", target="apple_gpu_family8", backend="metal", entry_point="cake_wide")
 def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024), "fp32", mode="output")):
-    compute = lm.role(warps=[0, 1, 2, 3])
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[row, :], id="load_x")
@@ -564,7 +569,7 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         # A reduction in the same multi-group shape still declares what it uses, so the
         # change narrowed the declaration rather than removing it.
         reducing = frontend.parse(make_rms_source(rows=2, width=1024)).document
-        reducing["roles"][0]["warps"] = [0, 1, 2, 3]
+        reducing["roles"][0]["execution_groups"] = [0, 1, 2, 3]
         _, reduced = self.lower(reducing)
         self.assertEqual(reduced.toolchain_requirements["threadgroup_memory_bytes"], 16)
         self.assertIn("threadgroup float share[4];", reduced.source)
@@ -579,7 +584,7 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         widths = {}
         for groups in (2, 4, 8):
             document = json.loads(json.dumps(single))
-            document["roles"][0]["warps"] = list(range(groups))
+            document["roles"][0]["execution_groups"] = list(range(groups))
             with self.subTest(groups=groups):
                 _, lowering = self.lower(document)
                 threads = 32 * groups
@@ -594,7 +599,8 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
                 self.assertEqual(lowering.source.count("threadgroup_barrier(mem_flags::mem_threadgroup);"), 4)
                 self.assertIn(f"uint i = s * {threads}u + lane;", lowering.source)
                 widths[groups] = metal.private_values_per_thread(
-                    Schedule.from_dict(document), metal.lane_width(Schedule.from_dict(document)))
+                    Schedule.from_dict(document),
+                    metal.lane_width(Schedule.from_dict(document), self.target))
         # A fixed 1024-wide reduction owns fewer values per lane as the stripe widens.
         # Scalars keep their single slot at every width, so the fall is not proportional.
         self.assertEqual(widths, {2: 49, 4: 25, 8: 13})
@@ -611,7 +617,7 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
             if operation["kind"] == "elementwise" and set(operation["reads"]) == {"a", "b"}:
                 operation["parameters"]["broadcast_axis"] = 1
         single = self.compiler.assess(json.loads(json.dumps(document)))
-        document["roles"][0]["warps"] = [0, 1]
+        document["roles"][0]["execution_groups"] = [0, 1]
         widened = self.compiler.assess(document)
         codes = {finding.code for finding in widened.findings if finding.blocks_lowering}
         if single.lowering_eligible:
@@ -623,7 +629,7 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         mutations = [
             (lambda d: d["operations"][-1]["parameters"].update(coalesced=True), "METAL_COALESCING_UNSUPPORTED", "operations[4].parameters.coalesced"),
             (lambda d: d["operations"][0]["parameters"].update(reuse="streamed"), "METAL_LOAD_UNSUPPORTED", "operations[0].parameters"),
-            (lambda d: d["roles"][0].update(warps=[1]), "METAL_ROLE_UNSUPPORTED", "roles"),
+            (lambda d: d["roles"][0].update(execution_groups=[1]), "METAL_ROLE_UNSUPPORTED", "roles"),
             (lambda d: d.update(residency={"registers_per_thread": 64}), "METAL_RESIDENCY_UNSUPPORTED", "residency"),
             (lambda d: d["operations"][3]["parameters"].update(scalar=1e100), "METAL_SCALAR_RANGE_UNSUPPORTED", "operations[3].parameters.scalar"),
             (lambda d: d["operations"][3].update(id="bad\nmarker"), "METAL_OPERATION_ID_UNSUPPORTED", None),
@@ -829,7 +835,8 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         assessment, _ = self.lower(make_document())
         self.assertIsNone(self.target.compute_capability)
         self.assertIsNone(self.target.warps_per_warpgroup)
-        self.assertEqual(self.target.resource_limits.maximum_tensor_memory_bytes, 0)
+        # No tensor space is declared, so its limit is unmodeled rather than zero.
+        self.assertIsNone(self.target.resource_limits.maximum_tensor_memory_bytes)
         self.assertIsNone(self.target.occupancy)
         self.assertIsNone(self.target.peak)
         self.assertIsNone(residency_upper_bound(Schedule.from_dict(make_document()), self.target))

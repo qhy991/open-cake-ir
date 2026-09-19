@@ -1,8 +1,6 @@
 # ADR 0042: Loop-carried top-k may batch two source tiles
 
-## Status
-
-Proposed. It authorizes implementation and Corpus Gate preparation, not expectation
+Status: proposed. It authorizes implementation and Corpus Gate preparation, not expectation
 adoption, a Compiler Revision, provider run, GPU campaign, or Candidate promotion. The
 existing external repository-owner gates remain unchanged.
 

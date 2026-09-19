@@ -1,8 +1,6 @@
 # ADR 0046: Dynamic loop stop owns whole-grid work
 
-## Status
-
-Proposed for the user-authorized Compiler successor. Promotion still requires the exact
+Status: proposed for the user-authorized Compiler successor. Promotion still requires the exact
 full Corpus Gate and its repository-owner approval. This changes no Workload, Program,
 evaluator, oracle, tolerance, timing boundary, materiality threshold, Target, Executor,
 IR syntax, legality, or lowering.

@@ -6,10 +6,10 @@ from open_cake_ir.compiler import frontend as cake
 def kmeans(lm, tokens: cake.Tensor((128, 128), "bf16"),
            centroids: cake.Tensor((1024, 128), "bf16"),
            centroid_sq: cake.Tensor((1024,), "fp32")):
-    epilogue = lm.role(warps=[0, 1, 2, 3])
-    mma = lm.role(warps=[4])
-    tma = lm.role(warps=[5])
-    reduce = lm.role(warps=[6])
+    epilogue = lm.role(execution_groups=[0, 1, 2, 3])
+    mma = lm.role(execution_groups=[4])
+    tma = lm.role(execution_groups=[5])
+    reduce = lm.role(execution_groups=[6])
     smem_operands = lm.smem(98304)
     tmem_accumulator = lm.tmem(131072, tensor_columns=256, allocating_role=epilogue)
     main = lm.pipeline(stages=2)

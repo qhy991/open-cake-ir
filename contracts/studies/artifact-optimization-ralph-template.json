@@ -125,7 +125,7 @@
         "entry_point": "cake_flash_kmeans_assign"
       },
       "schedule_skeleton": {
-        "canonical_sha256": "2ed70904bbca9d83346ef4280cef610717ae8aebd28a88e3f245c2ceb9524787",
+        "canonical_sha256": "63f1a27649d7fd875a0d87dd88bede0aa10fb887f293f4343f585571a7d150c4",
         "path": "corpus/schedules/flash-kmeans-b32-smoke-v2.json"
       },
       "tool_surface": [

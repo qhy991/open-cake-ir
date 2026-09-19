@@ -131,7 +131,12 @@ class AccessValueShapeTests(unittest.TestCase):
             if row["terminal_status"] not in {"candidate_lowered_compiled", "candidate_semantic_review_rejected"}:
                 continue
             with self.subTest(case=row["case_id"]):
-                assessment, findings = self.decisive(json.loads(row["schedule_json"]))
+                # Transfer the structural counterexample to v2; retained evidence stays unchanged.
+                document = json.loads(row["schedule_json"])
+                document["schema_version"] = 2
+                for role in document["roles"]:
+                    role["execution_groups"] = role.pop("warps")
+                assessment, findings = self.decisive(document)
                 if row["terminal_status"] == "candidate_lowered_compiled":
                     self.assertTrue(assessment.accepted)
                     self.assertTrue(assessment.lowering_eligible)

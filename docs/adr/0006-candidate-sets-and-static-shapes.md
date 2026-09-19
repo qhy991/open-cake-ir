@@ -1,5 +1,7 @@
 # ADR 0006: candidate sets, and a Schedule stays statically shaped
 
+Status: accepted, 2026-08-23.
+
 Two decisions the surveys left open. Both are settled against the paper's stated design
 rather than against convenience, and both have consequences worth writing down.
 

@@ -18,6 +18,10 @@ from open_cake_ir.tasks.tiles.workload import _round
 ROOT = Path(__file__).resolve().parents[2]
 
 
+# Requirements keys that are one Target's own facts riding the contract (which code
+# object, which architecture, which lane width), not the route's.
+OWN = frozenset({"target", "code_object", "triton_arch", "warp_size"})
+
 class NormalizationTaskTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -263,9 +267,11 @@ class NormalizationTaskTests(unittest.TestCase):
                     for requirements, source in rest:
                         with self.subTest(task=name, width=width, route=route):
                             self.assertEqual(body(source), body(first[1]))
+                            # The route facts ride the contract as the Target's own
+                            # facts, so they differ with the Target and nothing else does.
                             self.assertEqual(
-                                {k: v for k, v in requirements.items() if k != "target"},
-                                {k: v for k, v in first[0].items() if k != "target"})
+                                {k: v for k, v in requirements.items() if k not in OWN},
+                                {k: v for k, v in first[0].items() if k not in OWN})
 
     def test_generated_starters_match_all_input_case_oracles_on_cpu(self):
         from tests.contracts import test_metal as cpu_contracts

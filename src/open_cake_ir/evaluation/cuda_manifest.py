@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import asdict, dataclass
 from hashlib import sha256
@@ -24,16 +23,6 @@ _BASE_FIELDS = {
 }
 _FIELDS_WITH_HIDDEN = _BASE_FIELDS | {"hidden_null_pointer_parameters"}
 _KERNEL_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:
@@ -81,8 +70,8 @@ def _launch_target(target_id: object) -> Target:
     every Target document declares and none of which is CUDA's; routing them through that
     decode refused a gfx938 manifest as an "unsupported exact CUDA target" -- a vendor's
     words for a caller that named no vendor, and the defect AGENTS.md names for
-    `executable_role` in this same layer. The capability check still belongs to
-    `cuda_target`, and the CUDA paths that need it still call it.
+    `executable_role` in this same layer. The capability check belongs to the CUDA Driver
+    launch, which reads it from the declared Target (`cuda_driver._cubin_target`).
     """
     if not isinstance(target_id, str) or _TARGET_ID.fullmatch(target_id) is None:
         raise TargetParseError("exact launch target identity differs")

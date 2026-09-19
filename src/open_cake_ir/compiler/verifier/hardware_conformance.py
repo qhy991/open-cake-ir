@@ -7,13 +7,14 @@ from ..ir import (
     PLACEMENT_FIELDS,
     TMEM_COLUMN_BYTES,
     BarrierMechanism,
+    ContractKind,
     OperandSource,
     LoadMovement,
     MemorySpace,
     DType,
-    ElementwiseOp,
     OperationKind,
     Schedule,
+    contract,
 )
 from ..performance.residency import (
     logical_register_pressure_per_thread,
@@ -26,36 +27,12 @@ from ..diagnostics import FindingCategory, FindingSeverity
 from ._collector import _Collector
 
 
-# What each admitted instruction contract reads and accumulates in. The Target names the
-# contracts it admits; this is what those names mean, and it is here rather than in the
-# Target because a Target describes hardware and this is a property of the instruction.
-_CONTRACT_DTYPES = {
-    "tcgen05.mma.cta_group::1.kind::f16": ({DType.BF16, DType.FP16}, DType.FP32),
-    "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32": ({DType.BF16}, DType.FP32),
-    "triton.dot.bf16_fp32": ({DType.BF16}, DType.FP32),
-    "triton.dot.fp32_ieee": ({DType.FP32}, DType.FP32),
-    "triton.dot.fp32_tf32": ({DType.FP32}, DType.FP32),
-    "triton.dot.fp8e4m3_block_scale_fp32": ({DType.FP8_E4M3}, DType.FP32),
-    # gfx938's two, measured on a BW1101 at 64x64x64 against a torch oracle at matched
-    # input precision: fp16 max_abs_error 1.14441e-05, fp8e4m3 exactly 0, 0 of 4096
-    # elements outside tolerance. Both accumulate in fp32, which is what tl.dot's
-    # accumulator is on that route. Unlike the block-scaled sibling above, neither
-    # carries a scale operand.
-    "triton.dot.fp16_fp32": ({DType.FP16}, DType.FP32),
-    "triton.dot.fp8e4m3_fp32": ({DType.FP8_E4M3}, DType.FP32),
-}
-
+# What a contract reads, accumulates in or realizes is a property of the instruction,
+# so `ir.instruction_contracts` owns it and this module only reads records. These two
+# names are rule keys, not typing rows: each names the one contract whose extra rule
+# (fp32 scale operands; register-fragment operands) this verifier applies.
 _BLOCK_SCALE_MMA_CONTRACT = "triton.dot.fp8e4m3_block_scale_fp32"
 _REGISTER_MMA_CONTRACT = "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"
-
-_ELEMENTWISE_INSTRUCTIONS = {
-    "libdevice.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
-    # Metal's own named-precision spelling. tanh requires a contract, so without one
-    # here no Metal Schedule could reach the emitter's precise::tanh at all.
-    "metal.precise.tanh.f32": (ElementwiseOp.TANH, DType.FP32),
-    "metal.fma.f32": (ElementwiseOp.FMA, DType.FP32),
-    "ptx.fma.rn.f32": (ElementwiseOp.FMA, DType.FP32),
-}
 
 
 def resolve_grid(schedule: Schedule) -> tuple[int, int, int]:
@@ -98,11 +75,11 @@ def verify(
         return
 
     for index, role in enumerate(schedule.roles):
-        for position, warp in enumerate(role.warps):
+        for position, warp in enumerate(role.execution_groups):
             if warp >= limits.maximum_warps_per_cta:
                 out.add(
                     "ROLE_WARP_RANGE",
-                    f"roles[{index}].warps[{position}]",
+                    f"roles[{index}].execution_groups[{position}]",
                     f"warp index {warp} is outside the Target CTA range "
                     f"[0, {limits.maximum_warps_per_cta})",
                     category,
@@ -110,7 +87,7 @@ def verify(
 
     # A role interval may begin above zero, so the budget is bounded by the highest
     # warp index in use rather than by how many warps were declared.
-    extent = schedule.total_warp_extent
+    extent = schedule.total_execution_group_extent
     if extent > limits.maximum_warps_per_cta:
         out.add(
             "TARGET_WARP_LIMIT",
@@ -273,6 +250,10 @@ def _verify_tensor_columns(allocation, index: int, limits, out: _Collector) -> N
         out.add("ALLOCATION_TENSOR_COLUMNS_ILLEGAL", f"{path}.tensor_columns",
             "tcgen05 allocation requires a power-of-two column count in [32, 512]", category)
 
+    if limits.maximum_tensor_memory_bytes is None:
+        # No tensor memory declared: TARGET_MEMORY_SPACE_UNSUPPORTED already refused
+        # this allocation above, so there is no column limit to hold it to.
+        return
     capacity = limits.maximum_tensor_memory_bytes // TMEM_COLUMN_BYTES
     if allocation.tensor_columns > capacity:
         out.add(
@@ -293,10 +274,11 @@ def _verify_instruction_commitments(
     for index, operation in enumerate(schedule.operations):
         path = f"operations[{index}].parameters"
         instruction = getattr(operation.parameters, "instruction", None)
-        if (
+        admitted = (
             instruction is not None
-            and instruction.contract not in target.instruction_contracts
-        ):
+            and instruction.contract in target.instruction_contracts
+        )
+        if instruction is not None and not admitted:
             out.add(
                 "TARGET_INSTRUCTION_UNSUPPORTED",
                 f"{path}.instruction.contract",
@@ -304,19 +286,25 @@ def _verify_instruction_commitments(
                 f"{target.target_id!r}",
                 category,
             )
+        # The Target admits a contract by name; the registry says what the name means.
+        # A name the Target admits that has no record is refused the same way on every
+        # path below: the checks that follow read the record, so without one they would
+        # either skip silently or invent a meaning. A name the Target does not admit is
+        # already owned by TARGET_INSTRUCTION_UNSUPPORTED.
+        record = contract(instruction.contract) if instruction is not None else None
+        if admitted and record is None:
+            out.add(
+                "INSTRUCTION_CONTRACT_UNKNOWN",
+                f"{path}.instruction.contract",
+                f"instruction contract {instruction.contract!r} has no contract record; "
+                f"Target {target.target_id!r} admits it but this Compiler cannot say "
+                "what it reads, accumulates in or realizes",
+                category,
+            )
 
         if operation.kind is OperationKind.ELEMENTWISE:
-            contract_semantics = _ELEMENTWISE_INSTRUCTIONS.get(
-                instruction.contract if instruction is not None else ""
-            )
-            if (
-                instruction is not None
-                and instruction.contract in target.instruction_contracts
-                and (
-                    contract_semantics is None
-                    or contract_semantics[0] is not operation.parameters.op
-                )
-            ):
+            realized = record.elementwise_op if record is not None else None
+            if admitted and record is not None and realized is not operation.parameters.op:
                 out.add(
                     "ELEMENTWISE_INSTRUCTION_KIND_DIFFERS",
                     f"{path}.instruction.contract",
@@ -324,8 +312,8 @@ def _verify_instruction_commitments(
                     f"does not implement elementwise {operation.parameters.op.value}",
                     category,
                 )
-            elif contract_semantics is not None:
-                expected = contract_semantics[1]
+            elif realized is not None:
+                expected = record.elementwise_dtype
                 for name in (*operation.reads, *operation.writes):
                     buffer = buffers.get(name)
                     if buffer is not None and buffer.dtype is not expected:
@@ -357,24 +345,19 @@ def _verify_instruction_commitments(
             # Target admits contracts by name and nothing checked the name against the
             # operands, so a Schedule could declare a bf16 contract over fp32 buffers:
             # accepted, lowered, and 0.06 off on a B200, because `tl.dot` quietly picks
-            # TF32 for fp32 inputs. Adding a contract adds a row here.
-            admitted = _CONTRACT_DTYPES.get(instruction.contract)
-            if admitted is None:
-                # A contract this table does not model reached here, so the operand
-                # agreement below never ran. Saying so beats returning silence: a reader
-                # who sees no dtype Finding would otherwise take it for a check that
-                # passed, which is the generous reading absence always gets.
+            # TF32 for fp32 inputs. The record says what the contract reads; a record of
+            # another kind reads no MMA operands at all, which is its own refusal rather
+            # than an empty operand set to compare against.
+            if admitted and record is not None and record.kind is not ContractKind.MMA:
                 out.add(
-                    "MMA_CONTRACT_DTYPES_UNMODELED",
+                    "MMA_INSTRUCTION_KIND_DIFFERS",
                     f"{path}.instruction.contract",
                     f"contract {instruction.contract!r} is admitted by the Target but "
-                    "this Compiler models no operand or accumulator dtypes for it; "
-                    "their agreement was not checked",
+                    f"is a {record.kind.value} contract, not an MMA",
                     category,
-                    FindingSeverity.REPORT,
                 )
-            if admitted is not None:
-                operands, accumulate = admitted
+            if record is not None and record.kind is ContractKind.MMA:
+                operands, accumulate = record.operand_dtypes, record.accumulator
                 data_reads = operation.reads[:2]
                 for name in data_reads:
                     buffer = buffers.get(name)
@@ -730,12 +713,12 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
         for index, role in enumerate(schedule.roles):
             if role.registers_per_thread is None:
                 continue
-            first, count = role.warps[0], len(role.warps)
+            first, count = role.execution_groups[0], len(role.execution_groups)
             if first % warps_per_group or count % warps_per_group:
                 out.add(
                     "ROLE_REGISTERS_NOT_WARPGROUP_ALIGNED",
                     f"roles[{index}].registers_per_thread",
-                    f"role {role.name!r} holds warps {list(role.warps)}; a register budget "
+                    f"role {role.name!r} holds warps {list(role.execution_groups)}; a register budget "
                     f"is issued per warpgroup, so it must start on and span whole groups "
                     f"of {warps_per_group}",
                     category,
@@ -764,9 +747,9 @@ def _verify_role_register_split(schedule: Schedule, target: Target, out: _Collec
         )
         return
 
-    threads = schedule.total_warp_extent * target.warp_size
+    threads = schedule.total_execution_group_extent * target.warp_size
     distributed = sum(
-        len(role.warps) * target.warp_size * role.registers_per_thread
+        len(role.execution_groups) * target.warp_size * role.registers_per_thread
         for role in schedule.roles
     )
     if distributed != total * threads:
@@ -867,7 +850,7 @@ def _report_residency(schedule: Schedule, target: Target, out: _Collector) -> No
     facts = target.occupancy
     proxy_ctas = (
         facts.registers_per_multiprocessor
-        // (per_thread * schedule.total_warp_extent * target.warp_size)
+        // (per_thread * schedule.total_execution_group_extent * target.warp_size)
         if per_thread and facts is not None
         else None
     )

@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "program_id": "qsa-prefill-t32768-cake-port-v4",
+  "state": "frozen",
+  "workload": {
+    "path": "contracts/workloads/qsa-prefill-t32768-v1.json",
+    "canonical_sha256": "7aa909104a8b03d6c64a36ded10f293375022b00a94ae40b182bb961a84ba3bf"
+  },
+  "abi": "qsa_prefill_task_geometry_v1",
+  "public_inputs": [
+    "q",
+    "k",
+    "v",
+    "index_q",
+    "index_k",
+    "k_norm_weight"
+  ],
+  "public_outputs": [
+    "output"
+  ],
+  "intermediates": {
+    "pooled": {
+      "dtype": "fp32",
+      "shape": [
+        8192,
+        128
+      ]
+    },
+    "normalized_keys": {
+      "dtype": "fp32",
+      "shape": [
+        8192,
+        128
+      ]
+    },
+    "block_indices": {
+      "dtype": "int32",
+      "shape": [
+        32768,
+        512
+      ]
+    },
+    "token_indices": {
+      "dtype": "int32",
+      "shape": [
+        32768,
+        2048
+      ]
+    }
+  },
+  "nodes": [
+    {
+      "id": "pool",
+      "schedule": "corpus/schedules/qsa-pool-t32768.json",
+      "schedule_sha256": "b6965abdc894e5ee3d325da0e30b23046b30ae7b5233065ba380fd532c52a6fd",
+      "lowering_source_sha256": "369e0881849e403b252580d13bec743533a1651292ea351fbe51b1659adc73c9",
+      "inputs": [
+        "index_k"
+      ],
+      "outputs": [
+        "pooled"
+      ],
+      "views": {
+        "index_k": "squeeze_batch_and_singleton_head",
+        "pooled": "identity"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "layernorm",
+      "schedule": "corpus/schedules/qsa-layernorm-t32768.json",
+      "schedule_sha256": "97fda810be376fabaea19796fa7db935650b49bcddc8a90254995a610e35f56a",
+      "lowering_source_sha256": "9a7365565b43391b2f2eaf912b35b8a449125c284d9901948e8fc2a02cd26de3",
+      "inputs": [
+        "pooled",
+        "k_norm_weight"
+      ],
+      "outputs": [
+        "normalized_keys"
+      ],
+      "views": {
+        "pooled": "identity",
+        "k_norm_weight": "identity",
+        "normalized_keys": "identity"
+      },
+      "depends_on": [
+        "pool"
+      ]
+    },
+    {
+      "id": "score_topk",
+      "schedule": "corpus/schedules/qsa-score-topk-t32768.json",
+      "schedule_sha256": "262141fcf326e7f417a3ff8d55d2ae41cf27d5099207e8f0f5a05310312124a6",
+      "lowering_source_sha256": "cda622f35bfb7d74bbc9d1e8dbac015156cb53e006d26d112e839c3dd20a01ca",
+      "inputs": [
+        "index_q",
+        "normalized_keys"
+      ],
+      "outputs": [
+        "block_indices"
+      ],
+      "views": {
+        "index_q": "squeeze_batch",
+        "normalized_keys": "identity",
+        "block_indices": "identity"
+      },
+      "depends_on": [
+        "layernorm"
+      ]
+    },
+    {
+      "id": "expand",
+      "schedule": "corpus/schedules/qsa-expand-t32768.json",
+      "schedule_sha256": "4de7c886f1e63b2b024b4c50bc2b00453be9823653ebb2e3659f092510d9cc19",
+      "lowering_source_sha256": "c66ddaf30c85b1b0aa861dba55af94f2a38b9b6addfce27f9f8867aafcf8e40c",
+      "inputs": [
+        "block_indices"
+      ],
+      "outputs": [
+        "token_indices"
+      ],
+      "views": {
+        "block_indices": "identity",
+        "token_indices": "identity"
+      },
+      "depends_on": [
+        "score_topk"
+      ]
+    },
+    {
+      "id": "attention",
+      "schedule": "corpus/schedules/qsa-selected-attention-t32768.json",
+      "schedule_sha256": "0d073dd928781e4fd0ca4e6d25e01be010242b16a406da5939c01ca7c08c6bc8",
+      "lowering_source_sha256": "febab34c691055de5e4d4f3c3febc28111753baf33f1dca1240ce5df275fe93a",
+      "inputs": [
+        "q",
+        "k",
+        "v",
+        "token_indices"
+      ],
+      "outputs": [
+        "output"
+      ],
+      "views": {
+        "q": "squeeze_batch",
+        "k": "squeeze_batch",
+        "v": "squeeze_batch",
+        "token_indices": "identity",
+        "output": "unsqueeze_batch"
+      },
+      "depends_on": [
+        "expand"
+      ]
+    }
+  ],
+  "reference_visibility": "compiler_validation_only_not_clean_start_authority"
+}

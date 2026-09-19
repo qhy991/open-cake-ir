@@ -105,7 +105,6 @@ def _compiler(args: argparse.Namespace) -> int:
         _emit_compiler(
             {
                 "compiler_revision_id": assessment.compiler_revision_id,
-                "compiler_revision_sha256": assessment.compiler_revision_sha256,
                 "schedule_id": assessment.schedule_id,
                 "schedule_sha256": assessment.schedule_sha256,
                 "target": assessment.target,
@@ -132,7 +131,6 @@ def _compiler(args: argparse.Namespace) -> int:
             {
                 "corpus_id": report.corpus_id,
                 "compiler_revision_id": report.compiler_revision_id,
-                "compiler_revision_sha256": report.compiler_revision_sha256,
                 "passed": report.passed,
                 "case_count": report.case_count,
                 "cases": [asdict(case) for case in report.cases],

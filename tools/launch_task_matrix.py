@@ -19,7 +19,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "src"))
 from tools import launch_task  # noqa: E402
+from open_cake_ir.serialization import canonical_json_bytes  # noqa: E402
 ALL_TASKS = (
     "rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
     *launch_task.ACTIVATION_TASKS, *launch_task.ROWWISE_TASKS,
@@ -40,8 +42,7 @@ def _write(path: Path, payload: bytes) -> None:
 
 def _append(path: Path, value: dict[str, object]) -> None:
     with path.open("ab") as stream:
-        stream.write(json.dumps(value, sort_keys=True, separators=(",", ":"),
-                                ensure_ascii=False, allow_nan=False).encode() + b"\n")
+        stream.write(canonical_json_bytes(value) + b"\n")
 
 
 def _tasks(values: list[str] | None) -> tuple[str, ...]:

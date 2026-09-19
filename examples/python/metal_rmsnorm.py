@@ -7,7 +7,7 @@ from open_cake_ir.compiler import frontend as cake
 def rmsnorm(lm, x: cake.Tensor((128, 1024), "fp32"),
             weight: cake.Tensor((1024,), "fp32"),
             out: cake.Tensor((128, 1024), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         values = lm.load(x[row, :], id="load_x")

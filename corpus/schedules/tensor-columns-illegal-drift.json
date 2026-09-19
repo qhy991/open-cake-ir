@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "tensor-columns-illegal-drift",
   "target": "sm_100a",
   "grid": [
@@ -10,7 +10,7 @@
   "roles": [
     {
       "name": "epilogue",
-      "warps": [
+      "execution_groups": [
         0,
         1,
         2,
@@ -19,19 +19,19 @@
     },
     {
       "name": "mma",
-      "warps": [
+      "execution_groups": [
         4
       ]
     },
     {
       "name": "tma",
-      "warps": [
+      "execution_groups": [
         5
       ]
     },
     {
       "name": "reduce",
-      "warps": [
+      "execution_groups": [
         6
       ]
     }

@@ -190,8 +190,8 @@ class NativeCudaContracts(unittest.TestCase):
 
     def test_tile_and_aligned_role_variants_change_emission(self):
         d=document()
-        d['roles'][0]['warps']=[4,5,6,7]
-        d['roles'][1]['warps']=[8];d['roles'][2]['warps']=[9]
+        d['roles'][0]['execution_groups']=[4,5,6,7]
+        d['roles'][1]['execution_groups']=[8];d['roles'][2]['execution_groups']=[9]
         d['allocations'][0]['size_bytes']=(128+128)*32*2*2
         d['allocations'][1].update(size_bytes=128*512,tensor_columns=128)
         for b in d['buffers']:
@@ -241,7 +241,7 @@ class NativeCudaContracts(unittest.TestCase):
         self.refuses(d,'TMEM_LOAD_CONTRACT')
 
     def test_tmem_physical_warp_alignment_is_required(self):
-        d=document();d['roles'][0]['warps']=[1,2,3,4];d['roles'][1]['warps']=[5];d['roles'][2]['warps']=[6]
+        d=document();d['roles'][0]['execution_groups']=[1,2,3,4];d['roles'][1]['execution_groups']=[5];d['roles'][2]['execution_groups']=[6]
         self.refuses(d,'NATIVE_ROLE_ALIGNMENT')
 
     def test_noncoalesced_mapping_must_be_explicit(self):
@@ -272,7 +272,7 @@ class NativeCudaContracts(unittest.TestCase):
         self.refuses(d,'NATIVE_MMA_CONTRACT')
 
     def test_multiple_mma_issuers_cannot_share_a_release(self):
-        d=document('two-mma');d['roles'].append({'name':'second','warps':[6]})
+        d=document('two-mma');d['roles'].append({'name':'second','execution_groups':[6]})
         d['operations'][3]['role']='second'
         d['barriers'][0]['consumers'].append('second');d['barriers'][2]['producers']=['second']
         self.refuses(d,'NATIVE_PIPELINE_ROLES')
@@ -284,7 +284,7 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertFalse(self.compiler.assess(d).lowering_eligible)
 
     def test_register_values_do_not_cross_roles(self):
-        d=document();d['roles'].append({'name':'other','warps':[8,9,10,11]});d['operations'][-1]['role']='other'
+        d=document();d['roles'].append({'name':'other','execution_groups':[8,9,10,11]});d['operations'][-1]['role']='other'
         self.assertFalse(self.compiler.assess(d).lowering_eligible)
         s=Schedule.from_dict(d);t=Target.load(ROOT/'compiler/targets/sm_100a.json')
         self.assertIn('NATIVE_REGISTER_ROLE_OWNERSHIP',[f.code for f in preflight(s,t)])

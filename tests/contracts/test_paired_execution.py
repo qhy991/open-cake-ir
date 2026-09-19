@@ -324,7 +324,10 @@ class PairedExecutionTests(unittest.TestCase):
     def test_profile_child_bootstraps_the_exact_source_without_ambient_python_path(self):
         admission = SimpleNamespace(device_name='NVIDIA B300 SXM6 AC', compute_capability=(10,3),
             gpu_uuid='GPU-test-only', broker_job_id='gpuq-123456789abc', mode='exclusive')
+        # The worker selects the cluster or the local CUDA admission by the allocation the
+        # Study was admitted against; this profile child runs under the cluster lease.
         authority = SimpleNamespace(request_root=self.output, candidate=self.candidate,
+            allocation_mode='exclusive',
             executor=SimpleNamespace(admit_profiler=lambda: {'path':'/not-invoked/ncu'}))
         with patch.object(worker,'observe_exclusive_cuda',return_value=admission), \
              patch('open_cake_ir.lab.ncu_process.run_ncu',side_effect=RuntimeError('stop before NCU')) as run:
@@ -366,8 +369,8 @@ class PairedExecutionTests(unittest.TestCase):
     def test_submitter_transports_both_sealed_bundles_to_worker_and_checks_actual_job(self):
         retained = self.execute()
         executor_reference = {'path':'runtime/executors/CPU-fixture.json',
-                              'canonical_sha256':'a'*64, 'executor_id':'CPU-fixture'}
-        executor = SimpleNamespace(reference=executor_reference, canonical_sha256='a'*64, executor_id='CPU-fixture', project_root=ROOT)
+                               'executor_id':'CPU-fixture'}
+        executor = SimpleNamespace(reference=executor_reference,  executor_id='CPU-fixture', project_root=ROOT)
         requests = []
         def command(argv, **kwargs):
             request_path = Path(argv[argv.index('--request') + 1])
@@ -662,8 +665,8 @@ class PairedExecutionTests(unittest.TestCase):
                     'runtime_config_path':str(rp), 'fixed_baseline_bundle_path':str(bundle),
                     'fixed_baseline_selection':baseline_selection}
         bp = self.output / 'bindings.json'; bp.write_bytes(encoded(bindings))
-        gate = SimpleNamespace(compiler_revision_id='fixture',compiler_revision_sha256='a'*64,passed=True)
-        compiler_ref = {'revision_id':'fixture','path':'compiler/revision.json','canonical_sha256':'a'*64}
+        gate = SimpleNamespace(compiler_revision_id='fixture',passed=True)
+        compiler_ref = {'revision_id':'fixture','path':'compiler/revision.json'}
         with ExitStack() as stack:
             stack.enter_context(patch('open_cake_ir.lab.preflight._resolve_compiler_reference',
                 return_value=(gate, compiler_ref['path'], compiler_ref)))
@@ -680,7 +683,7 @@ class PairedExecutionTests(unittest.TestCase):
             stack.enter_context(patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
             toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler' if comparison == 'native_triton' else 'open_cake_ir.lab.cute_build.IsolatedCuTeCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
-            stack.enter_context(patch('open_cake_ir.lab.runtime_config.broker_execution_sha256', return_value='c'*64))
+            stack.enter_context(patch('open_cake_ir.lab.bindings.broker_execution_sha256', return_value='c'*64))
             lock = Lab(project).preflight(template, execution_bindings_path=bp)
             resolver.assert_called_once_with(project, {'binding': 'current_release'},
                 'study.execution', template=True, target='sm_103a')

@@ -4,7 +4,7 @@ Author one complete Schedule as JSON or the restricted Python surface documented
 `docs/PYTHON_FRONTEND.md`. Python elaborates to the same JSON document conforming to
 `schedule.schema.json`; it does not widen the semantic or backend contract. The Compiler—not the prompt—owns semantic
 acceptance. Names are unique within each declaration list; operation dependencies refer only backward; every output
-must be written; buffer allocation extents and role warps must fit the exact Target. `program_map` and `grid` are
+must be written; buffer allocation extents and role execution groups must fit the exact Target. `program_map` and `grid` are
 mutually exclusive. Each role owns one ascending contiguous warp interval, and no warp belongs to two roles.
 Findings carry a stable code and path. Each Finding independently declares whether it
 blocks acceptance or lowering. A non-blocking Finding reports what the Schedule implies,
@@ -149,7 +149,7 @@ Workload from a route or hard-code its tensor shapes.
 
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
-that skeleton. A Schedule may change admitted block sizes, warps and stages, but must preserve its route, external
+that skeleton. A Schedule may change admitted block sizes, execution groups and stages, but must preserve its route, external
 tensor shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.
 
 Native CUDA/PTX (`native_cuda`) consumes the same typed operations and exact Target.
@@ -198,3 +198,12 @@ valid. Missing Target cap coverage is reported, not treated as an unlimited reso
 The current CUDA Target capacity follows the [Blackwell hardware specification](https://docs.nvidia.com/cuda/blackwell-tuning-guide/index.html#occupancy),
 while [.maxnreg](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#performance-tuning-directives-maxnreg)
 and `setmaxnreg` retain their separate meanings.
+
+## Schedule version 2
+
+Roles declare `execution_groups`, the contiguous group indices assigned to that role.
+The Target declares the lane width. Python authors use `lm.role(execution_groups=[0])`;
+the assessment reports `total_execution_groups`. Backend ISA names and Triton
+`num_warps` remain native toolchain terms. Version 1 and the `warps` field are refused;
+historical records replay at their pinned commit. This schema migration changes document
+identity, not the assigned groups, target, or lowering decisions.

@@ -73,18 +73,12 @@ class LoadParameters:
 
 
 # Whether an instruction places its own operands is a fact about the contract, so the
-# contract vocabulary owns it. The Verifier reads it to decide which declarations are
+# contract record owns it (`InstructionContract.places_operands`) and `PLACED_CONTRACTS`
+# is that registry's projection. The Verifier reads it to decide which declarations are
 # legal; the authoring Schema projects the same fact so an agent cannot spend a Turn
-# discovering it. Two spellings of this list would be the defect it exists to prevent.
-# Named, not spelled. Deciding this by mnemonic prefix put three NVIDIA spellings in
-# the vendor-neutral IR and turned the authoring Schema into a refusal of any other
-# vendor's atom placement: an atom that places its operands could not say so unless its
-# name happened to start the right way. A contract that places them is a row here, so a
-# further vendor's atom is a data addition rather than a spelling to match.
-PLACED_CONTRACTS = frozenset({
-    "tcgen05.mma.cta_group::1.kind::f16",
-    "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
-})
+# discovering it. A second spelling of the set here was the defect the registry exists
+# to prevent. Which declarations placement carries stays beside the operation that
+# parses them.
 PLACEMENT_FIELDS = ("shape", "cta_group", "operand_source", "operand_major")
 
 
@@ -524,6 +518,9 @@ def _operation_parameters(
             optional={"across_loop"},
             context=context,
         )
+        # The opposite default to REDUCE, so here true is the one worth stating and
+        # omitting means false. Said out loud because the two neighbouring kinds spell
+        # the same field with opposite defaults, and nothing in the field name says so.
         return ReduceArgminParameters(
             _enum(IndexTieBreak, obj["tie_break"], f"{context}.tie_break"),
             _enum(NaNPolicy, obj["nan_policy"], f"{context}.nan_policy"),
@@ -538,8 +535,14 @@ def _operation_parameters(
             context=context,
         )
         if obj.get("across_loop") is True:
+            # True is what omitting the field already means, so writing it is refused to
+            # keep one spelling of one fact (P3). The message used to say only that the
+            # spelling was "historical", which tells an author that what they wrote is
+            # wrong and not what is right: three of roughly twenty DCU campaigns on
+            # 2026-09-17 lost a candidate here, and each had to guess from it.
             raise ScheduleParseError(
-                f"{context}.across_loop=true is the historical omitted spelling"
+                f"{context}.across_loop=true is the default; omit the field. State it "
+                "only as false, which folds within one tile instead of across the loop"
             )
         return ReduceParameters(
             _enum(ReduceOp, obj["op"], f"{context}.op"),

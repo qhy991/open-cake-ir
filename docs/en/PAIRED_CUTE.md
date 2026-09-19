@@ -99,7 +99,7 @@ reciprocal/tanh, explicit broadcasts and single-tile sum/max reductions, with mu
 inputs and outputs on exact `sm_100a` or `sm_103a`. The BF16 register-MMA study above
 continues to use its own Workload and Study contracts.
 
-Declare one role with `warps=[0]`, nonpersistent scalar (tile=1) ProgramMap axes, global
+Declare one role with `execution_groups=[0]`, nonpersistent scalar (tile=1) ProgramMap axes, global
 inputs/outputs, register intermediates and PROGRAM/DIMENSION AccessMaps. Element i is
 owned by lane i%32, slot i//32. For reduction axis `axis`, let `inner` be the product
 of the following dimensions. When `inner` is divisible by 32, every contributor is

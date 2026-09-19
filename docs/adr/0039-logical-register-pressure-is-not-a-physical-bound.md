@@ -1,8 +1,6 @@
 # ADR 0039: Logical register pressure is not a physical bound
 
-## Status
-
-Proposed. It authorizes implementation and Corpus expectation review, not a Compiler
+Status: proposed. It authorizes implementation and Corpus expectation review, not a Compiler
 Revision, Executor Revision, provider run, GPU campaign, or Candidate promotion. Those
 remain behind their existing human gates.
 

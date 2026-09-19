@@ -1,8 +1,6 @@
 # ADR 0043: FP32 MMA may explicitly request TF32 input precision
 
-## Status
-
-Proposed. This records the generic instruction contract and Target capability needed for
+Status: proposed. This records the generic instruction contract and Target capability needed for
 implementation review. It does not authorize a Compiler Revision, Corpus expectation
 adoption, provider run, GPU campaign, or Candidate promotion. Release remains behind the
 external repository-owner approval gate.

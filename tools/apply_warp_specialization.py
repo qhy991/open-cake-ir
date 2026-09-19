@@ -21,7 +21,7 @@ def main():
     out = args.output.absolute()
     if out != out.resolve() or out.exists() or any((p / '.git').exists() for p in out.parents):
         parser.error('output must be a new canonical directory outside Git checkouts')
-    compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.lock.json')
+    compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
     result = compiler.specialize_triton_warps(frontend.read_schedule(args.schedule).document,
         num_warps=args.num_warps, schedule_id=args.schedule_id, entry_point=args.entry_point)
     out.mkdir(parents=True)

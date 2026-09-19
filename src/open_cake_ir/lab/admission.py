@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from hashlib import sha256
 from typing import Mapping, cast
 
-from open_cake_ir.evaluation.paired import paired_protocol, METAL_KINDS, validation_case_ids
+from open_cake_ir.compiler.target import Target
+from open_cake_ir.compiler.toolchain import triton_route
+from open_cake_ir.evaluation.paired import (
+    METAL_KINDS, candidate_identity, paired_protocol, validate_pair_candidates, validation_case_ids,
+)
 
-from ._documents import _canonical_json_bytes, _digest, _name, _object
-from ._policies import _ATTRIBUTION_EVALUATION, _ONE_RUN_PER_ARM_SCOPES
+from ._documents import _canonical_json_bytes, _digest, _name, _object, differs
+from ._policies import _ATTRIBUTION_EVALUATION
 from .bindings import load_baseline_bundle, qualification_path as _qualification_path, source_reference_path
+from .build import _hidden_pointers
+from .incumbents import admit_baseline_selection
 from .providers import (
     ProviderQualificationReceipt,
     required_live_provider_qualification_scope,
 )
-from .pairing import native_source, native_block, matched_run_arms, backend_policy
-from .ralph import RalphBudget
+from .pairing import native_source, native_block, backend_policy
 
 from .provider_policy import provider_configuration, provider_harness
 
@@ -35,30 +41,53 @@ def validate_provider(*, open_cake, policy, project_root, study):
         "study.arms.provider.qualification",
     )
     if set(qualification_ref) != {"path", "canonical_sha256"}:
-        raise ValueError("provider qualification reference fields differ")
+        raise differs(
+            "provider qualification reference fields differ",
+            expected=["canonical_sha256", "path"], observed=sorted(qualification_ref),
+        )
     _, qualification_path = _qualification_path(
         project_root,
         qualification_ref.get("path"),
         "study.arms.provider.qualification.path",
     )
     qualification = ProviderQualificationReceipt.load(qualification_path)
+    expected_configuration_sha256 = sha256(
+        _canonical_json_bytes(expected_provider_configuration)).hexdigest()
+    admitted_scopes = {
+        "zero_gpu_contract_fixture_only",
+        required_live_provider_qualification_scope(claim_scope),
+    }
+    expected_qualification = {
+        "provider_revision": provider_revision, "executable_sha256": executable_sha256,
+        "configuration_sha256": expected_configuration_sha256,
+        "initial_and_resume_equivalent": True, "file_lifecycle_observed": True,
+        "usage_observed": True, "qualified": True, "scope": sorted(admitted_scopes),
+        "canonical_sha256": qualification_ref.get("canonical_sha256"),
+    }
+    observed_qualification = {
+        "provider_revision": qualification.provider_revision,
+        "executable_sha256": qualification.executable_sha256,
+        "configuration_sha256": qualification.configuration_sha256,
+        "initial_and_resume_equivalent": qualification.initial_and_resume_equivalent,
+        "file_lifecycle_observed": qualification.file_lifecycle_observed,
+        "usage_observed": qualification.usage_observed, "qualified": qualification.qualified,
+        "scope": qualification.scope, "canonical_sha256": qualification.canonical_sha256,
+    }
     if (
         qualification.provider_revision != provider_revision
         or qualification.executable_sha256 != executable_sha256
-        or qualification.configuration_sha256 != sha256(
-            _canonical_json_bytes(expected_provider_configuration)).hexdigest()
+        or qualification.configuration_sha256 != expected_configuration_sha256
         or not qualification.initial_and_resume_equivalent
         or not qualification.file_lifecycle_observed
         or not qualification.usage_observed
         or not qualification.qualified
-        or qualification.scope
-        not in {
-            "zero_gpu_contract_fixture_only",
-            required_live_provider_qualification_scope(claim_scope),
-        }
+        or qualification.scope not in admitted_scopes
         or qualification_ref.get("canonical_sha256") != qualification.canonical_sha256
     ):
-        raise ValueError("provider qualification bytes or capability differs")
+        raise differs(
+            "provider qualification bytes or capability",
+            expected=expected_qualification, observed=observed_qualification,
+        )
     if (policy is not None and qualification.scope != 'zero_gpu_contract_fixture_only'
         and paired_protocol(study.document['evaluation_protocol']) is None):
         raise ValueError('new live native Campaign requires explicit fixed-baseline paired policy')
@@ -72,7 +101,10 @@ def validate_provider(*, open_cake, policy, project_root, study):
             "study.arms.provider.qualification_anchor",
         )
         if set(anchor_reference) != {"path", "canonical_sha256"}:
-            raise ValueError("provider qualification anchor reference differs")
+            raise differs(
+                "provider qualification anchor reference",
+                expected=["canonical_sha256", "path"], observed=sorted(anchor_reference),
+            )
         _, anchor_path = _qualification_path(
             project_root,
             anchor_reference.get("path"),
@@ -82,17 +114,15 @@ def validate_provider(*, open_cake, policy, project_root, study):
             json.loads(anchor_path.read_text(encoding="utf-8")),
             "study.arms.provider.qualification_anchor.document",
         )
-        if set(anchor) != {
-            "schema_version",
-            "kind",
-            "run_id",
-            "evidence_root",
-            "authority_sha256",
-            "qualification_receipt_sha256",
-            "immediate_audit_integrity",
-            "terminal_seal_sha256",
-        }:
-            raise ValueError("provider qualification anchor fields differ")
+        anchor_fields = {
+            "schema_version", "kind", "run_id", "evidence_root", "authority_sha256",
+            "qualification_receipt_sha256", "immediate_audit_integrity", "terminal_seal_sha256",
+        }
+        if set(anchor) != anchor_fields:
+            raise differs(
+                "provider qualification anchor fields differ",
+                expected=sorted(anchor_fields), observed=sorted(anchor),
+            )
         if (
             anchor.get("schema_version") != 1
             or anchor.get("kind")
@@ -124,103 +154,45 @@ def validate_provider(*, open_cake, policy, project_root, study):
     for field in (("output_schema",) if provider_harness(provider) == "codex" else ()):
         reference = _object(provider.get(field), f"study.arms.provider.{field}")
         if set(reference) != {"path", "sha256"}:
-            raise ValueError(f"Study Contract provider {field} reference differs")
+            raise differs(
+                f"Study Contract provider {field} reference",
+                expected=["path", "sha256"], observed=sorted(reference),
+            )
         _, path = source_reference_path(
             project_root, reference.get("path"), f"study.arms.provider.{field}.path"
         )
-        if _digest(reference.get("sha256"), f"study.arms.provider.{field}.sha256") != sha256(
-            path.read_bytes()
-        ).hexdigest():
-            raise ValueError(f"Study Contract provider {field} bytes differ")
+        expected_sha256 = _digest(reference.get("sha256"), f"study.arms.provider.{field}.sha256")
+        observed_sha256 = sha256(path.read_bytes()).hexdigest()
+        if expected_sha256 != observed_sha256:
+            raise differs(
+                f"Study Contract provider {field} bytes differ",
+                expected=expected_sha256, observed=observed_sha256,
+            )
     return claim_scope
-
-
-def validate_run_plan(*, claim_scope, comparison, study):
-    """Validate allocation order, finite budgets and run protocol."""
-    allocation = _object(study.document.get("allocation"), "study.allocation")
-    order = allocation.get("order")
-    if allocation.get("method") != "predeclared_balanced_blocks" or not isinstance(order, list):
-        raise ValueError("Study Contract allocation differs")
-    run_order = tuple(_name(value, "study.allocation.order[]") for value in order)
-    expected_arms = matched_run_arms(study.document["arms"], claim_scope)
-    if len(run_order) != len(set(run_order)) or sorted(
-        name.rsplit("-", 1)[0] for name in run_order
-    ) != expected_arms:
-        required = "one" if claim_scope in _ONE_RUN_PER_ARM_SCOPES else "three"
-        raise ValueError(
-            f"Study Contract must predeclare {required} independent Run(s) per arm"
-        )
-
-    budget = _object(study.document.get("budget"), "study.budget")
-    checkpoints = budget.get("checkpoints")
-    limit = budget.get("limit")
-    maximum_turns = budget.get("maximum_turns")
-    maximum_candidates_per_turn = budget.get("maximum_candidates_per_turn", 1)
-    budget_fields = {"unit", "limit", "checkpoints", "maximum_turns"}
-    budget_fields.add("maximum_candidates_per_turn")
-    budget_fields.update(
-        {
-            "wall_time_seconds",
-            "active_authoring_time_seconds",
-            "evaluation_limits",
-        }
-    )
-    if (
-        set(budget) != budget_fields
-        or
-        budget.get("unit") != "provider_tokens"
-        or not isinstance(limit, int)
-        or isinstance(limit, bool)
-        or limit <= 0
-        or not isinstance(checkpoints, list)
-        or not checkpoints
-        or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in checkpoints)
-        or checkpoints != sorted(set(checkpoints))
-        or checkpoints[-1] != limit
-        or not isinstance(maximum_turns, int)
-        or isinstance(maximum_turns, bool)
-        or maximum_turns <= 0
-        or not isinstance(maximum_candidates_per_turn, int)
-        or isinstance(maximum_candidates_per_turn, bool)
-        or maximum_candidates_per_turn <= 0
-    ):
-        raise ValueError("Study Contract budget grid differs")
-    RalphBudget.from_mapping(budget)
-    run_protocol = _object(study.document.get("run_protocol"), "study.run_protocol")
-    expected_workspace = (
-        run_protocol.get("workspace_seed") == "task_agents_only"
-    )
-    if (
-        run_protocol.get("independent_thread") is not True
-        or not expected_workspace
-        or run_protocol.get("automatic_retries") != 0
-        or run_protocol.get("replacement_runs") != 0
-    ):
-        raise ValueError("Study Contract Run Protocol differs")
-    return budget, maximum_candidates_per_turn, run_order, run_protocol
 
 
 def validate_evaluation(
     *,
     attribution_evaluation,
     baseline_lowering,
-    budget,
     manifest_parser,
-    maximum_candidates_per_turn,
     policy,
     project_root,
     skeleton_document,
     study,
     workload,
 ):
-    """Validate the numerical assay and its execution admission contract."""
-    evaluation = _object(
-        study.document.get("evaluation_protocol"), "study.evaluation_protocol"
-    )
+    """Validate the numerical assay against the Workload and its execution admission.
+
+    What the assay says by its own bytes (searches, materiality, Ralph limits) is
+    `StudyContract.load`'s; this is the half that needs the Workload, the sealed
+    baseline and the checkout.
+    """
+    evaluation = study.evaluation_protocol
     workload.case(_name(evaluation.get("case_id"), "study.evaluation_protocol.case_id"))
     assay = paired_protocol(evaluation)
-    single_environment = set(study.document["arms"]) == {"open_cake"}
-    route = study.document["arms"]["open_cake"]["lowering_route"]
+    single_environment = study.comparison is None
+    route = study.arms["open_cake"]["lowering_route"]
     if assay is not None and policy is None and not single_environment:
         raise ValueError('fixed-baseline assay requires the same-backend native Study')
     if single_environment and assay is None:
@@ -249,67 +221,33 @@ def validate_evaluation(
           or single_environment and workload.document["validation"].get("all_cases_required") is True):
         if (validation_case_ids(evaluation) != tuple(workload.case_ids)
                 or workload.document["validation"].get("all_cases_required") is not True):
-            raise ValueError("CUDA validation case projection differs from Workload validation")
-    # How many candidates a Turn search-evaluates. Checked here because a Study that
-    # asks for none, or for a word, would otherwise fault partway through a run --
-    # and a run that faults has already spent the GPU time this Lab exists to gate.
-    searches = evaluation.get("searches_per_turn", 1)
-    if not isinstance(searches, int) or isinstance(searches, bool) or searches < 1:
-        raise ValueError("Study Contract searches_per_turn differs")
-    if searches > maximum_candidates_per_turn:
-        raise ValueError(
-            "Study Contract searches_per_turn exceeds maximum_candidates_per_turn"
-        )
-    ralph_limits = _object(
-        budget.get("evaluation_limits"), "study.budget.evaluation_limits"
-    )
-    required_attribution = searches if attribution_evaluation == _ATTRIBUTION_EVALUATION else 0
-    if (
-        int(ralph_limits.get("search", 0)) < searches
-        or int(ralph_limits.get("confirmatory", 0)) < 1
-        or int(ralph_limits.get("attribution", 0)) < required_attribution
-    ):
-        raise ValueError("Ralph budget cannot admit one complete Turn")
-    # How much faster the measurement has to be before the order counts as wrong.
-    # A Study that searches more than one candidate has to say, because without it
-    # every inversion inside the noise would be routed to the cost model as a defect
-    # -- and the loss surface is a plateau, so most inversions are inside the noise
-    # (`docs/ANALYSIS_CALIBRATION.md`).
-    materiality = evaluation.get("search_materiality_ratio")
-    if searches > 1:
-        if (
-            not isinstance(materiality, float)
-            or not 1.0 < materiality < 100.0
-        ):
-            raise ValueError(
-                "a Study searching more than one candidate declares "
-                "search_materiality_ratio"
+            raise differs(
+                "CUDA validation case projection differs from Workload validation",
+                expected={"validation_case_ids": tuple(workload.case_ids), "all_cases_required": True},
+                observed={"validation_case_ids": validation_case_ids(evaluation),
+                          "all_cases_required": workload.document["validation"].get("all_cases_required")},
             )
-    elif materiality is not None:
-        # No second candidate to compare against, so a ratio here would state a
-        # threshold nothing can cross.
-        raise ValueError("search_materiality_ratio without searches_per_turn above one")
-    execution = _object(study.document.get("execution"), "study.execution")
+    execution = study.execution
     expected_execution_fields = {'target', 'executor_revision', 'broker_execution_sha256', 'gpu', 'sandbox'}
     if assay is not None:
         expected_execution_fields.update({'fixed_baseline', 'runtime_config'})
     if set(execution) != expected_execution_fields:
-        raise ValueError("Study Contract execution fields differ")
+        raise differs(
+            "Study Contract execution fields differ",
+            expected=sorted(expected_execution_fields), observed=sorted(execution),
+        )
     if assay is not None:
-        from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates
         fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
         sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
         validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
         selection = fixed.get('selection')
         incumbent_baseline = False
         if selection is not None:
-            from .incumbents import admit_baseline_selection
             incumbent_baseline = admit_baseline_selection(
                 selection, candidate=fixed['candidate'], workload=workload,
                 case_id=str(evaluation['case_id']), backend=str(route['backend']),
                 evaluation_protocol=evaluation,
             )
-        import ast
         requirements = baseline_lowering.toolchain_requirements
         source = sealed_baseline.artifact_payloads.get('lowered_source')
         if source is None:
@@ -324,7 +262,6 @@ def validate_evaluation(
             source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
             # The width comes from the Target that declares it. Reading a shared 32 here
             # refused every wave64 baseline, and said the Compiler kernel differed.
-            from open_cake_ir.compiler.target import Target
             _, target_path = source_reference_path(
                 project_root, f"compiler/targets/{workload.target}.json",
                 'paired baseline target')
@@ -334,29 +271,45 @@ def validate_evaluation(
             # How many pointers the kernel takes beyond its tensors is the kernel's own
             # fact, not a per-backend constant. For AMDGCN it is in the sealed assembly's
             # `.amdgpu_metadata`; the table's 2 was right for every Triton target there
-            # was when it was written, and is still the CUDA route's.
-            from open_cake_ir.compiler.toolchain import triton_route
-            from open_cake_ir.lab.build import _hidden_pointers
-
+            # was when it was written, and is still the CUDA route's. The route is read
+            # from the frozen Compiler kernel's own compile contract, which carries the
+            # code object, architecture and lane width of the Target it was lowered for.
             if route["backend"] == "triton":
                 expected_hidden = _hidden_pointers(
-                    triton_route(workload.target), sealed_baseline.artifact_payloads,
+                    triton_route(requirements), sealed_baseline.artifact_payloads,
                     len(workload.tensor_abi(str(evaluation['case_id']))))
             else:
                 expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
             if manifest.hidden_null_pointer_parameters != expected_hidden:
-                raise ValueError('fixed baseline hidden pointer commitments differ')
+                raise differs(
+                    'fixed baseline hidden pointer commitments differ',
+                    expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters,
+                )
         reference_differs = (not source_matches or list(manifest.grid) != list(grid)
                              or manifest.block != block)
         if (fixed['candidate'] != candidate_identity(sealed_baseline)
                 or (not incumbent_baseline and reference_differs)):
-            raise ValueError('fixed baseline differs from the frozen Compiler kernel or launch commitments')
+            raise differs(
+                'fixed baseline differs from the frozen Compiler kernel or launch commitments',
+                expected={'candidate': fixed['candidate'], 'source_matches': True,
+                          'grid': list(grid), 'block': block},
+                observed={'candidate': candidate_identity(sealed_baseline), 'source_matches': source_matches,
+                          'grid': list(manifest.grid), 'block': manifest.block},
+            )
+    provider_sandbox = study.arms["open_cake"]["provider"].get("sandbox")
     if (
         execution.get("target") != workload.target
         or execution.get("target") != skeleton_document.get("target")
-        or execution.get("sandbox") != study.document["arms"]["open_cake"]["provider"].get("sandbox")
+        or execution.get("sandbox") != provider_sandbox
     ):
-        raise ValueError("Study Contract execution authority differs")
+        raise differs(
+            "Study Contract execution authority",
+            expected={"target": workload.target, "skeleton_target": workload.target,
+                      "sandbox": provider_sandbox},
+            observed={"target": execution.get("target"),
+                      "skeleton_target": skeleton_document.get("target"),
+                      "sandbox": execution.get("sandbox")},
+        )
     _digest(
         execution.get("broker_execution_sha256"),
         "study.execution.broker_execution_sha256",

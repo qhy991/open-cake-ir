@@ -58,12 +58,12 @@ class CompilerDependencyTests(unittest.TestCase):
         from types import SimpleNamespace
         from open_cake_ir.tasks.qsa import evaluate as qsa
         reference = compiler_reference(ROOT)
-        executor = SimpleNamespace(executor_id="CPU-fixture", canonical_sha256="e" * 64)
+        executor = SimpleNamespace(executor_id="CPU-fixture")
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "task.json"
             for value in (reference, {**reference, "revision_id": "other"}):
                 path.write_text(json.dumps({"stages": [{"id": "correctness", "judge": {
-                    "identity": "CPU-fixture@" + "e" * 64,
+                    "identity": "CPU-fixture",
                     "command": ["python", "--compiler-reference", json.dumps(value)]}}]}))
                 with patch.object(qsa, "resolve_executor", return_value=executor), \
                      patch.dict("os.environ", {"KERNELINFRA_TASK": str(path), "KERNELINFRA_STAGE_ID": "correctness"}):

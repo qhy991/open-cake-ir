@@ -128,7 +128,8 @@ class ExecutorReferenceTests(unittest.TestCase):
         self.assertEqual(self.executor.executor_id, f"fixture-target@{self.commit}")
         self.assertEqual(self.reference["path"], f"{HOSTS_DIRECTORY}/fixture-target.json")
         loaded = ExecutorRevision.load_reference(self.root, self.reference, "fixture")
-        self.assertEqual(loaded.canonical_sha256, self.executor.canonical_sha256)
+        self.assertEqual(loaded.executor_id, self.executor.executor_id)
+        self.assertEqual(set(self.reference), {"path", "executor_id"})
 
     def test_current_and_frozen_binding_return_the_verified_object(self):
         from open_cake_ir.lab.bindings import resolve_executor

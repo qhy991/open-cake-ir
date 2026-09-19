@@ -1,6 +1,7 @@
 # ADR 0065: Source identity is the commit, and a host capture is its own document
 
-Status: accepted, 2026-09-16. Supersedes the per-file closure and per-release approval
+Status: accepted, 2026-09-16. Its "History stays where it is" clause is superseded by
+[ADR 0067](0067-retired-release-outputs-live-on-the-history-branch.md). Supersedes the per-file closure and per-release approval
 mechanisms of [ADR 0030](0030-compiler-release-approval-is-external.md),
 [ADR 0049](0049-released-executor-descriptors-reserve-their-identities.md),
 [ADR 0050](0050-released-compiler-locks-reserve-their-identities.md) and

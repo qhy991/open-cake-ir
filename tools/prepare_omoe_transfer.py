@@ -12,6 +12,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.compiler import Compiler, frontend
+from open_cake_ir.serialization import canonical_json_bytes as canonical
 from open_cake_ir.tasks.workloads import create_task
 
 # Selection belongs here; original facts remain in OMOE at the requested Git commit.
@@ -106,8 +107,6 @@ def prepare(*, omoe_root: Path, omoe_ref: str, output: Path, task: str,
     (output/'lowered.py').write_text(lowered.source)
     (output/'scaffold.md').write_text(scaffold)
     # Establish the existing Lab reference boundary once, for these newly produced bytes.
-    canonical = lambda value: json.dumps(value, sort_keys=True, separators=(',', ':'),
-                                          ensure_ascii=False, allow_nan=False).encode()
     references = {'workload': {'path': str(output/'workload.json'),
                                'canonical_sha256': sha256(canonical(document)).hexdigest()},
                   'arm': {'reference_access': 'known_kernel_reproduction',

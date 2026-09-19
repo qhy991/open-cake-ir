@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "schedule_id": "native-gemm-bias",
   "target": "sm_100a",
   "lowering": {
@@ -10,7 +10,7 @@
   "roles": [
     {
       "name": "epilogue",
-      "warps": [
+      "execution_groups": [
         1,
         2,
         3,
@@ -19,13 +19,13 @@
     },
     {
       "name": "mma",
-      "warps": [
+      "execution_groups": [
         5
       ]
     },
     {
       "name": "copy",
-      "warps": [
+      "execution_groups": [
         6
       ]
     }

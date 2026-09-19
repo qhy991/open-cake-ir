@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from hashlib import sha256
-import json
 import re
 from typing import Mapping
 
 from .artifacts import builds_metal_archive
+from .launch_manifest import WorkloadTensorManifest, tensor_abi_rows
 from .workload import WorkloadContract
 
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
@@ -32,17 +31,13 @@ def _triple(value, name):
 
 
 @dataclass(frozen=True)
-class MetalTensorLaunchManifest:
-    workload_sha256: str
-    case_id: str
-    tensor_abi: tuple[tuple[str, tuple[int, ...], str, str], ...]
-    target: str
-    kernel_name: str
-    grid: tuple[int, int, int]
-    block: tuple[int, int, int]
+class MetalTensorLaunchManifest(WorkloadTensorManifest):
     # A single SIMD group needs no threadgroup storage and declares none, so every
     # manifest written before consecutive groups existed reads back unchanged.
     threadgroup_memory_bytes: int = 0
+
+    abi = "metal_workload_tensors_v1"
+    workload_mismatch = "Metal launch ABI differs from selected Workload"
 
     @classmethod
     def from_dict(cls, document: object) -> "MetalTensorLaunchManifest":
@@ -50,7 +45,7 @@ class MetalTensorLaunchManifest:
                   "kernel_name", "grid", "block", "threadgroup_memory_bytes", "execution_model",
                   "active_threads_per_threadgroup", "compile_options", "archive_miss_policy"}
         if (not isinstance(document, Mapping) or set(document) != fields or
-                type(document.get("schema_version")) is not int or document.get("schema_version") != 1 or document.get("abi") != "metal_workload_tensors_v1"):
+                type(document.get("schema_version")) is not int or document.get("schema_version") != 1 or document.get("abi") != cls.abi):
             raise ValueError("Metal tensor launch manifest fields differ")
         if (not isinstance(document["target"], str) or not builds_metal_archive(document["target"]) or not isinstance(document["workload_sha256"], str)
                 or not _DIGEST.fullmatch(document["workload_sha256"])
@@ -80,27 +75,17 @@ class MetalTensorLaunchManifest:
         rows = document["tensor_abi"]
         if not isinstance(rows, list) or not 2 <= len(rows) <= 31:
             raise ValueError("Metal manifest tensor ABI count differs")
-        abi = []
-        for row in rows:
-            if (not isinstance(row, Mapping) or set(row) != {"name", "shape", "dtype", "mode"}
-                    or not isinstance(row["name"], str) or not row["name"].isascii() or not row["name"].isidentifier()
-                    or row["dtype"] != "fp32" or row["mode"] not in {"input", "output"}
-                    or not isinstance(row["shape"], list) or not row["shape"]
-                    or any(type(v) is not int or v <= 0 for v in row["shape"])):
-                raise ValueError("Metal manifest tensor ABI differs")
-            abi.append((row["name"], tuple(row["shape"]), row["dtype"], row["mode"]))
-        modes = [row[3] for row in abi]
-        if (len({row[0] for row in abi}) != len(abi) or "input" not in modes or "output" not in modes
-                or modes != sorted(modes)):
-            raise ValueError("Metal manifest tensor ABI order differs")
-        return cls(document["workload_sha256"], document["case_id"], tuple(abi),
+        abi = tensor_abi_rows(rows, dtypes=frozenset({"fp32"}), ascii_names=True,
+                              row_error="Metal manifest tensor ABI differs",
+                              order_error="Metal manifest tensor ABI order differs")
+        return cls(document["workload_sha256"], document["case_id"], abi,
                    document["target"], document["kernel_name"], grid, block, shared)
 
     @classmethod
     def for_workload(cls, workload: WorkloadContract, case_id: str, *, target: str,
                      kernel_name: str, grid: list[int], block: list[int],
                      threadgroup_memory_bytes: int = 0) -> "MetalTensorLaunchManifest":
-        manifest = cls.from_dict({"schema_version": 1, "abi": "metal_workload_tensors_v1",
+        manifest = cls.from_dict({"schema_version": 1, "abi": cls.abi,
             "workload_sha256": workload.canonical_sha256, "case_id": case_id,
             "tensor_abi": [{**asdict(arg), "shape": list(arg.shape)} for arg in workload.tensor_abi(case_id)],
             "target": target, "kernel_name": kernel_name, "grid": grid, "block": block,
@@ -110,25 +95,11 @@ class MetalTensorLaunchManifest:
         manifest.check_workload(workload, case_id)
         return manifest
 
-    def check_workload(self, workload: WorkloadContract, case_id: str) -> None:
-        expected = tuple((arg.name, arg.shape, arg.dtype, arg.mode) for arg in workload.tensor_abi(case_id))
-        if (self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id
-                or self.target != workload.target or self.tensor_abi != expected):
-            raise ValueError("Metal launch ABI differs from selected Workload")
-
     def as_dict(self) -> dict:
-        return {"schema_version": 1, "abi": "metal_workload_tensors_v1",
+        return {"schema_version": 1, "abi": self.abi,
             "workload_sha256": self.workload_sha256, "case_id": self.case_id,
             "tensor_abi": [dict(name=n, shape=list(s), dtype=d, mode=m) for n, s, d, m in self.tensor_abi],
             "target": self.target, "kernel_name": self.kernel_name, "grid": list(self.grid), "block": list(self.block),
             "threadgroup_memory_bytes": self.threadgroup_memory_bytes,
             "execution_model": "simd_program_tile", "active_threads_per_threadgroup": self.block[0],
             "compile_options": compile_options(), "archive_miss_policy": "failOnBinaryArchiveMiss"}
-
-    @property
-    def canonical_sha256(self) -> str:
-        return sha256(json.dumps(self.as_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
-
-    @property
-    def block_threads(self) -> int:
-        return self.block[0]

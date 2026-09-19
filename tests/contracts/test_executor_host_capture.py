@@ -15,6 +15,45 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from tools import capture_executor_host as capture  # noqa: E402
 
+# The host_environment of the released pre-kind CUDA descriptor
+# `git show history:runtime/executors/open-cake-ir-b200-v6.json`, with the CUPTI file
+# list cut to its first record. Retired descriptors resolve through
+# docs/history/identities.json; this copy exists only to give the Python-runtime refusal
+# a CUDA-shaped subject.
+RELEASED_PRE_KIND_CUDA_HOST = """{
+    "cupti_python": {
+        "distribution": "cupti-python",
+        "files": [
+            {
+                "path": "cupti/__init__.py",
+                "sha256": "a0833b8fd41566149fdcdabd3e59461488709e1ecb39def32a4a0b86c02a38b7",
+                "size_bytes": 100
+            }
+        ],
+        "site_packages_path": "/home/qinhaiyan/sol-execbench-main/.venv/lib/python3.12/site-packages",
+        "version": "13.0.1"
+    },
+    "flashinfer_helper": {
+        "distribution": "flashinfer-python",
+        "path": "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/lib/python3.12/site-packages/flashinfer/testing/utils.py",
+        "sha256": "3a7515a237a3c6531ffa15829a5d46e3d399b3c23f7d3dba853f9e6be46da490",
+        "size_bytes": 67087,
+        "version": "0.6.16.post2"
+    },
+    "packages": {
+        "cuda-bindings": "13.3.1",
+        "flashinfer-python": "0.6.16.post2",
+        "numpy": "2.5.1",
+        "torch": "2.13.0+cu130",
+        "triton": "3.7.1"
+    },
+    "python": {
+        "invocation_path": "/home/qinhaiyan/megakernel-exp/.venv-flashinfer/bin/python",
+        "resolved_sha256": "1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118",
+        "version": "3.12.3"
+    }
+}"""
+
 
 def declare_target(root: Path, target: str) -> None:
     """A capture belongs to a checkout that declares the target it describes."""
@@ -261,15 +300,12 @@ class ExecutorHostCaptureContractTests(unittest.TestCase):
     def test_canonical_host_rejection_produces_no_capture(self) -> None:
         # A CUDA capture needs a CUDA-shaped host. Taking whichever descriptor happens to
         # be current stopped working the moment a HIP host was one, and refused for the
-        # kind rather than for the Python mismatch this case is about.
-        hosts = []
-        for path in sorted((ROOT / "runtime/executors").glob("*.json")):
-            document = json.loads(path.read_text())
-            environment = document.get("host_environment", {})
-            if document.get("state") == "released" and environment.get("kind") is None:
-                hosts.append(environment)
-        self.assertTrue(hosts, "no released pre-kind CUDA host to exercise this refusal")
-        host = hosts[-1]
+        # kind rather than for the Python mismatch this case is about. The released
+        # pre-kind descriptors left the tree for the `history` branch, so the subject is
+        # the released `open-cake-ir-b200-v6` host_environment inlined from
+        # `git show history:runtime/executors/open-cake-ir-b200-v6.json`, with its CUPTI
+        # file list cut to the one record the validator's non-empty check needs.
+        host = json.loads(RELEASED_PRE_KIND_CUDA_HOST)
         host["python"]["invocation_path"] = sys.executable
         host["python"]["version"] = "not-the-running-python-version"
         with tempfile.TemporaryDirectory() as directory:

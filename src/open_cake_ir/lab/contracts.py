@@ -16,10 +16,14 @@ from open_cake_ir.evidence import RunAudit
 
 from .endpoints import analysis_without_endpoint_policy
 from .efficiency_policy import analysis_without_performance_policy, performance_reporting_policy
-from ._documents import _canonical_json_bytes, _digest, _name, _object
+from ._documents import _canonical_json_bytes, _digest, _name, _object, differs
 from ._policies import (
+    untimed,
     _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN,
+    _ATTRIBUTION_EVALUATION,
+    _LEGACY_ATTRIBUTION_EVALUATION,
     _MATCHED_CLAIM_SCOPES,
+    _MATCHED_RALPH_EVENT_VOCABULARY_V1,
     _ONE_RUN_PER_ARM_SCOPES,
     _PORTFOLIO_STUDY_FIELDS,
     _RALPH_STUDY_FIELDS,
@@ -33,11 +37,338 @@ from .reference_access import validate_declarations
 from .ralph import RalphBudget
 from .selection import _EMPIRICAL_SELECTION
 from .task_package import TASK_AGENTS_RALPH_V1
+from .toolchains import single_environment_backends
+
+
+def _analysis_estimand(
+    analysis: Mapping[str, object], *, claim_scope: str, study_kind: str,
+    comparison: str | None, context: str, lock: bool,
+) -> str | None:
+    """The one rule for which Analysis Plan a claim scope admits, and its estimand.
+
+    The Study carries the plan and the Lock copies it, so both documents are checked
+    here rather than once each; `lock` only selects the document's name in the message.
+    """
+    document = "Campaign Lock " if lock else ""
+    if claim_scope == "system_qualification_only":
+        if analysis_without_endpoint_policy(analysis) != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
+            raise differs(
+                f"system qualification {document}Analysis Plan",
+                expected=_SYSTEM_QUALIFICATION_ANALYSIS_PLAN,
+                observed=analysis_without_endpoint_policy(analysis),
+            )
+        return None
+    if claim_scope == "artifact_optimization_only":
+        observed = analysis_without_endpoint_policy(
+            analysis_without_performance_policy(analysis, claim_scope)
+        )
+        if observed != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
+            raise differs(
+                f"artifact optimization {document}Analysis Plan",
+                expected=_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN, observed=observed,
+            )
+        return None
+    if study_kind == "matched_search":
+        version = _scientific_analysis_plan_version(analysis, f"{context}.analysis_plan")
+        policy = native_backend(comparison)
+        expected = policy.analysis_version if policy is not None else "two_part_v2"
+        if version != expected:
+            raise differs(
+                "Campaign Lock treatment and analysis arms" if lock
+                else "scientific treatment and analysis arm assignment",
+                expected=expected, observed=version,
+            )
+    return _name(analysis.get("estimand"), f"{context}.analysis_plan.estimand")
+
+
+def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
+    """Every rule a matched-search Study document satisfies by its own bytes.
+
+    A binding marker (`{"binding": "campaign_lock"}`) and a resolved leaf both pass
+    here; byte identity of referenced files, the frozen Compiler and Executor, and
+    anything that needs the Workload are preflight's, because they need the checkout.
+    Returns the predeclared run order.
+    """
+    claim_scope = cast(str, document["claim_scope"])
+    arms = _object(document.get("arms"), "study.arms")
+    comparison = comparison_arm(arms)
+    policy = native_backend(comparison)
+    single_environment = comparison is None
+    matched_run_arms(arms, claim_scope)
+    open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
+    comparison_arm_document = (
+        _object(arms[comparison], f"study.arms.{comparison}") if comparison is not None else {}
+    )
+    validate_declarations(arms)
+    has_empirical_policy = "candidate_selection" in open_cake
+    budget = _object(document.get("budget"), "study.budget")
+    if has_empirical_policy and (
+        claim_scope != "artifact_optimization_only"
+        or open_cake.get("candidate_selection") != {"kind": _EMPIRICAL_SELECTION}
+        or "maximum_candidates_per_turn" not in budget
+    ):
+        raise ValueError("empirical selection requires artifact_optimization_only candidate-set policy and an explicit model")
+    open_cake_fields = {
+        "environment_kind", "reference_access", "provider", "scaffold", "compiler_revision",
+        "lowering_route", "schedule_skeleton", "tool_surface", "feedback",
+    }
+    if has_empirical_policy:
+        open_cake_fields.add("candidate_selection")
+    comparison_fields = {
+        "environment_kind", "reference_access", "provider", "scaffold", "launch_contract",
+        "candidate_skeleton", "toolchain_sha256", "tool_surface", "feedback",
+    }
+    if single_environment:
+        comparison_fields = set()
+        open_cake_fields.update({"input_format", "toolchain_sha256"})
+        if open_cake.get("input_format") != "schedule_or_python_v1":
+            raise ValueError("single-environment optimization requires the Python-enabled authoring contract")
+    if policy is not None:
+        open_cake_fields.update({"input_format", "toolchain_sha256"})
+        comparison_fields -= {"launch_contract", "candidate_skeleton"}
+        comparison_fields.add("baseline")
+        if (open_cake.get("input_format") != "schedule_or_python_v1"
+            or comparison_arm_document.get("baseline") != {"binding": "open_cake_lowering"}
+            or open_cake.get("toolchain_sha256") != comparison_arm_document.get("toolchain_sha256")):
+            raise differs(
+                "same-backend native input, baseline or common toolchain binding",
+                expected={"input_format": "schedule_or_python_v1",
+                          "baseline": {"binding": "open_cake_lowering"},
+                          "toolchain_sha256": open_cake.get("toolchain_sha256")},
+                observed={"input_format": open_cake.get("input_format"),
+                          "baseline": comparison_arm_document.get("baseline"),
+                          "toolchain_sha256": comparison_arm_document.get("toolchain_sha256")},
+            )
+    if set(open_cake) != open_cake_fields or set(comparison_arm_document) != comparison_fields:
+        raise differs(
+            "Study Contract Authoring Environment fields differ",
+            expected={"open_cake": sorted(open_cake_fields), comparison: sorted(comparison_fields)},
+            observed={"open_cake": sorted(open_cake), comparison: sorted(comparison_arm_document)},
+        )
+    if (open_cake.get("environment_kind") != "open_cake"
+            or comparison_arm_document.get("environment_kind") != comparison):
+        raise differs(
+            "Study Contract Authoring Environment kinds differ",
+            expected={"open_cake": "open_cake", comparison: comparison},
+            observed={"open_cake": open_cake.get("environment_kind"),
+                      comparison: comparison_arm_document.get("environment_kind")},
+        )
+    route = open_cake.get("lowering_route")
+    # The one arm of an artifact-optimization Study lowers through a backend whose
+    # toolchain row admits it alone; a two-arm Study lowers through the comparison arm's.
+    admitted_routes = (single_environment_backends() if single_environment
+                       else {policy.backend if policy is not None else "triton"})
+    if (not isinstance(route, Mapping) or set(route) != {"backend", "entry_point"}
+        or route.get("backend") not in admitted_routes or not isinstance(route.get("entry_point"), str)
+        or not route["entry_point"].isidentifier()):
+        raise differs(
+            "Study Contract Open Cake lowering route",
+            expected={"backend": sorted(admitted_routes), "entry_point": "<identifier>"},
+            observed=route,
+        )
+    for owner, field, keys in (
+        ("open_cake", "schedule_skeleton", {"path", "canonical_sha256"}),
+        ("open_cake", "scaffold", {"path", "sha256"}),
+        *(
+            (("direct_cuda", "launch_contract", {"path", "sha256"}),
+             ("direct_cuda", "candidate_skeleton", {"path", "sha256"}))
+            if comparison == "direct_cuda" else ()
+        ),
+    ):
+        reference = _object(arms[owner].get(field), f"study.arms.{owner}.{field}")
+        if set(reference) != keys:
+            noun = {"schedule_skeleton": "Schedule skeleton reference", "scaffold": "scaffold reference",
+                    "launch_contract": "direct launch contract reference",
+                    "candidate_skeleton": "direct candidate skeleton reference"}[field]
+            raise differs(f"Study Contract {noun}", expected=sorted(keys), observed=sorted(reference))
+    if comparison is not None and (
+            open_cake.get("provider") != comparison_arm_document.get("provider")
+            or open_cake.get("scaffold") != comparison_arm_document.get("scaffold")):
+        raise differs(
+            "matched Authoring Environments differ in provider or scaffold",
+            expected={"provider": comparison_arm_document.get("provider"),
+                      "scaffold": comparison_arm_document.get("scaffold")},
+            observed={"provider": open_cake.get("provider"), "scaffold": open_cake.get("scaffold")},
+        )
+    expected_open_cake_tools = (["submit_schedule_or_python"] if policy is not None or single_environment
+                                else ["submit_schedule"])
+    expected_comparison_tools = (None if comparison is None
+                                 else [policy.submit_tool] if policy is not None else ["submit_cuda"])
+    if (open_cake.get("tool_surface") != expected_open_cake_tools
+            or (comparison is not None
+                and comparison_arm_document.get("tool_surface") != expected_comparison_tools)):
+        raise differs(
+            "Study Contract Authoring Environment tool surfaces differ",
+            expected={"open_cake": expected_open_cake_tools, comparison: expected_comparison_tools},
+            observed={"open_cake": open_cake.get("tool_surface"),
+                      comparison: comparison_arm_document.get("tool_surface")},
+        )
+    evaluation = _object(document.get("evaluation_protocol"), "study.evaluation_protocol")
+    attribution_evaluation = evaluation.get("attribution_evaluation")
+    # A Study for a target whose backend names no timing source carries a
+    # measurement-coverage limitation instead of a paired assay. `evaluation_policy` has
+    # written that shape since the DCU was admitted, and this gate never accepted it, so
+    # no such Study reached a Campaign: its attribution is `correctness_only`, which was
+    # not in the set below, and its arms can be given neither a qualified latency nor a
+    # profile. Both halves are admitted here, from the one predicate the policy uses.
+    # Whether the Study's coverage claim is true of the device is not checked here: the
+    # registry that owns which backend admits a target and what source it may name lives
+    # in the task layer, and `lab` does not import it (tests/contracts/test_task_boundaries.py).
+    # `TaskLab.preflight` checks the claim against that owner before delegating here.
+    no_timed_assay = untimed(evaluation)
+    admitted_attribution = {
+        None, _LEGACY_ATTRIBUTION_EVALUATION, _ATTRIBUTION_EVALUATION,
+        *(("correctness_only",) if no_timed_assay else ()),
+    }
+    if attribution_evaluation not in admitted_attribution:
+        raise differs(
+            "Study Contract attribution Evaluation",
+            expected=sorted(admitted_attribution, key=str), observed=attribution_evaluation,
+        )
+    if no_timed_assay:
+        timed_feedback, profile_feedback = [], []
+    else:
+        timed_feedback = ["qualified_timing"]
+        profile_feedback = ["profile"] if attribution_evaluation is not None else []
+    expected_open_cake_feedback = ["findings", "correctness", *timed_feedback, *profile_feedback]
+    expected_comparison_feedback = (
+        None if comparison is None else ["compile", "correctness", *timed_feedback, *profile_feedback]
+    )
+    if open_cake.get("feedback") != expected_open_cake_feedback or (
+            comparison is not None
+            and comparison_arm_document.get("feedback") != expected_comparison_feedback):
+        raise differs(
+            "Study Contract Authoring Environment feedback",
+            expected={"open_cake": expected_open_cake_feedback, comparison: expected_comparison_feedback},
+            observed={"open_cake": open_cake.get("feedback"),
+                      comparison: comparison_arm_document.get("feedback")},
+        )
+    # Allocation order, finite budgets and run protocol.
+    allocation = _object(document.get("allocation"), "study.allocation")
+    order = allocation.get("order")
+    if allocation.get("method") != "predeclared_balanced_blocks" or not isinstance(order, list):
+        raise differs(
+            "Study Contract allocation",
+            expected={"method": "predeclared_balanced_blocks", "order": "<list>"},
+            observed={"method": allocation.get("method"), "order": order},
+        )
+    run_order = tuple(_name(value, "study.allocation.order[]") for value in order)
+    expected_arms = matched_run_arms(arms, claim_scope)
+    if len(run_order) != len(set(run_order)) or sorted(
+        name.rsplit("-", 1)[0] for name in run_order
+    ) != expected_arms:
+        required = "one" if claim_scope in _ONE_RUN_PER_ARM_SCOPES else "three"
+        raise ValueError(
+            f"Study Contract must predeclare {required} independent Run(s) per arm: "
+            f"expected arms {expected_arms!r}, observed order {list(run_order)!r}"
+        )
+    checkpoints = budget.get("checkpoints")
+    limit = budget.get("limit")
+    maximum_turns = budget.get("maximum_turns")
+    maximum_candidates_per_turn = budget.get("maximum_candidates_per_turn", 1)
+    budget_fields = {
+        "unit", "limit", "checkpoints", "maximum_turns", "maximum_candidates_per_turn",
+        "wall_time_seconds", "active_authoring_time_seconds", "evaluation_limits",
+    }
+    if (
+        set(budget) != budget_fields
+        or budget.get("unit") != "provider_tokens"
+        or not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or limit <= 0
+        or not isinstance(checkpoints, list)
+        or not checkpoints
+        or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in checkpoints)
+        or checkpoints != sorted(set(checkpoints))
+        or checkpoints[-1] != limit
+        or not isinstance(maximum_turns, int)
+        or isinstance(maximum_turns, bool)
+        or maximum_turns <= 0
+        or not isinstance(maximum_candidates_per_turn, int)
+        or isinstance(maximum_candidates_per_turn, bool)
+        or maximum_candidates_per_turn <= 0
+    ):
+        raise differs(
+            "Study Contract budget grid",
+            expected={"fields": sorted(budget_fields), "unit": "provider_tokens",
+                      "limit": "positive int", "checkpoints": "sorted positive ints ending at limit",
+                      "maximum_turns": "positive int", "maximum_candidates_per_turn": "positive int"},
+            observed={key: budget.get(key) for key in sorted(set(budget) | budget_fields)},
+        )
+    RalphBudget.from_mapping(budget)
+    run_protocol = _object(document.get("run_protocol"), "study.run_protocol")
+    expected_run_protocol = {"independent_thread": True, "workspace_seed": "task_agents_only",
+                             "automatic_retries": 0, "replacement_runs": 0}
+    if any(run_protocol.get(key) != value for key, value in expected_run_protocol.items()):
+        raise differs(
+            "Study Contract Run Protocol", expected=expected_run_protocol,
+            observed={key: run_protocol.get(key) for key in expected_run_protocol},
+        )
+    # How many candidates a Turn search-evaluates. Checked here because a Study that
+    # asks for none, or for a word, would otherwise fault partway through a run --
+    # and a run that faults has already spent the GPU time this Lab exists to gate.
+    searches = evaluation.get("searches_per_turn", 1)
+    if not isinstance(searches, int) or isinstance(searches, bool) or searches < 1:
+        raise differs("Study Contract searches_per_turn", expected="int >= 1", observed=searches)
+    if searches > maximum_candidates_per_turn:
+        raise ValueError(
+            "Study Contract searches_per_turn exceeds maximum_candidates_per_turn: "
+            f"{searches} > {maximum_candidates_per_turn}"
+        )
+    ralph_limits = _object(budget.get("evaluation_limits"), "study.budget.evaluation_limits")
+    required_attribution = searches if attribution_evaluation == _ATTRIBUTION_EVALUATION else 0
+    if (
+        int(ralph_limits.get("search", 0)) < searches
+        or int(ralph_limits.get("confirmatory", 0)) < 1
+        or int(ralph_limits.get("attribution", 0)) < required_attribution
+    ):
+        raise ValueError(
+            "Ralph budget cannot admit one complete Turn: needs search >= "
+            f"{searches}, confirmatory >= 1, attribution >= {required_attribution}; "
+            f"evaluation_limits {dict(ralph_limits)!r}"
+        )
+    # How much faster the measurement has to be before the order counts as wrong.
+    # A Study that searches more than one candidate has to say, because without it
+    # every inversion inside the noise would be routed to the cost model as a defect
+    # -- and the loss surface is a plateau, so most inversions are inside the noise
+    # (`docs/ANALYSIS_CALIBRATION.md`).
+    materiality = evaluation.get("search_materiality_ratio")
+    if searches > 1:
+        if not isinstance(materiality, float) or not 1.0 < materiality < 100.0:
+            raise ValueError(
+                "a Study searching more than one candidate declares "
+                f"search_materiality_ratio: expected a float in (1.0, 100.0), observed {materiality!r}"
+            )
+    elif materiality is not None:
+        # No second candidate to compare against, so a ratio here would state a
+        # threshold nothing can cross.
+        raise ValueError(
+            f"search_materiality_ratio without searches_per_turn above one: {materiality!r}"
+        )
+    _analysis_estimand(
+        _object(document.get("analysis_plan"), "study.analysis_plan"),
+        claim_scope=claim_scope, study_kind="matched_search", comparison=comparison,
+        context="study", lock=False,
+    )
+    evidence_version = _matched_evidence_policy_version(
+        _object(document.get("evidence"), "study.evidence"), "study.evidence"
+    )
+    if evidence_version != _MATCHED_RALPH_EVENT_VOCABULARY_V1:
+        raise differs(
+            "Study agent interface and Evidence policy",
+            expected=_MATCHED_RALPH_EVENT_VOCABULARY_V1, observed=evidence_version,
+        )
+    return run_order
 
 
 @dataclass(frozen=True)
 class StudyContract:
-    """Frozen matched-search or Portfolio execution and data-use authority."""
+    """Frozen matched-search or Portfolio execution and data-use authority.
+
+    `load` is the one place a Study document's shape is decided. The typed projections
+    below read the document, so `dataclasses.replace(study, document=...)` with resolved
+    binding leaves keeps them current.
+    """
 
     document: Mapping[str, object]
     source_path: Path
@@ -45,6 +376,49 @@ class StudyContract:
     schema_version: int
     state: str
     canonical_sha256: str
+    # Predeclared, for a matched-search Study; empty for a Portfolio one.
+    run_order: tuple[str, ...] = ()
+
+    @property
+    def kind(self) -> str:
+        return cast(str, self.document["kind"])
+
+    @property
+    def claim_scope(self) -> str:
+        return cast(str, self.document["claim_scope"])
+
+    @property
+    def arms(self) -> Mapping[str, Mapping[str, object]]:
+        return cast(Mapping[str, Mapping[str, object]], self.document["arms"])
+
+    @property
+    def comparison(self) -> str | None:
+        """The declared comparison arm, or None for a single-environment Study."""
+        return comparison_arm(self.arms)
+
+    @property
+    def budget(self) -> Mapping[str, object]:
+        return cast(Mapping[str, object], self.document["budget"])
+
+    @property
+    def run_protocol(self) -> Mapping[str, object]:
+        return cast(Mapping[str, object], self.document["run_protocol"])
+
+    @property
+    def evaluation_protocol(self) -> Mapping[str, object]:
+        return cast(Mapping[str, object], self.document["evaluation_protocol"])
+
+    @property
+    def execution(self) -> Mapping[str, object]:
+        return cast(Mapping[str, object], self.document["execution"])
+
+    @property
+    def analysis_plan(self) -> Mapping[str, object]:
+        return cast(Mapping[str, object], self.document["analysis_plan"])
+
+    @property
+    def evidence_policy(self) -> Mapping[str, object]:
+        return cast(Mapping[str, object], self.document["evidence"])
 
     @classmethod
     def load(cls, path: str | Path) -> "StudyContract":
@@ -62,21 +436,36 @@ class StudyContract:
             else set()
         )
         if set(document) != fields:
-            raise ValueError("study root fields or schema_version differ")
+            raise differs(
+                "study root fields or schema_version",
+                expected={"matched_search": (2, sorted(_RALPH_STUDY_FIELDS)),
+                          "portfolio": (1, sorted(_PORTFOLIO_STUDY_FIELDS))},
+                observed={"kind": kind, "schema_version": schema_version, "fields": sorted(document)},
+            )
         state = document.get("state")
         if state not in {"template", "frozen"} or kind not in {
             "matched_search",
             "portfolio",
         }:
-            raise ValueError("Study state or kind differs")
+            raise differs(
+                "Study state or kind",
+                expected={"state": ["frozen", "template"], "kind": ["matched_search", "portfolio"]},
+                observed={"state": state, "kind": kind},
+            )
         study_id = _name(document.get("study_id"), "study.study_id")
         if schema_version == 2:
             interface = _object(document.get("agent_interface"), "study.agent_interface")
             if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
-                raise ValueError("Study Ralph agent interface differs")
+                raise differs(
+                    "Study Ralph agent interface",
+                    expected={"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}, observed=interface,
+                )
         claim_scope = _name(document.get("claim_scope"), "study.claim_scope")
         if kind == "matched_search" and claim_scope not in _MATCHED_CLAIM_SCOPES:
-            raise ValueError("matched Study Contract claim scope differs")
+            raise differs(
+                "matched Study Contract claim scope",
+                expected=sorted(_MATCHED_CLAIM_SCOPES), observed=claim_scope,
+            )
         object_fields = (
             (
                 "workload",
@@ -106,8 +495,9 @@ class StudyContract:
         for field in object_fields:
             _object(document.get(field), f"study.{field}")
         performance_reporting_policy(document["analysis_plan"], claim_scope)
+        run_order: tuple[str, ...] = ()
         if kind == "matched_search":
-            validate_declarations(document["arms"])
+            run_order = _matched_study_shape(document)
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
         return cls(
             document=detached,
@@ -116,6 +506,7 @@ class StudyContract:
             schema_version=cast(int, schema_version),
             state=cast(str, state),
             canonical_sha256=sha256(_canonical_json_bytes(document)).hexdigest(),
+            run_order=run_order,
         )
 
 
@@ -154,7 +545,11 @@ class CampaignLock:
             "analysis_plan_sha256",
         }
         if set(document) != fields or document.get("schema_version") != 1:
-            raise ValueError("Campaign Lock fields or schema_version differ")
+            raise differs(
+                "Campaign Lock fields or schema_version differ",
+                expected={"schema_version": 1, "fields": sorted(fields)},
+                observed={"schema_version": document.get("schema_version"), "fields": sorted(document)},
+            )
         study = _object(document.get("study"), "campaign_lock.study")
         workload = _object(document.get("workload"), "campaign_lock.workload")
         compiler = _object(
@@ -162,15 +557,23 @@ class CampaignLock:
         )
         resolved = _object(document.get("resolved_inputs"), "campaign_lock.resolved_inputs")
         if set(study) != {"study_id", "kind", "claim_scope", "canonical_sha256"}:
-            raise ValueError("Campaign Lock study fields differ")
+            raise differs(
+                "Campaign Lock study fields differ",
+                expected=["canonical_sha256", "claim_scope", "kind", "study_id"], observed=sorted(study),
+            )
         if set(workload) != {"workload_id", "path", "canonical_sha256"}:
-            raise ValueError("Campaign Lock workload fields differ")
-        if set(compiler) != {"revision_id", "path", "canonical_sha256"}:
-            raise ValueError("Campaign Lock Compiler Revision fields differ")
+            raise differs(
+                "Campaign Lock workload fields differ",
+                expected=["canonical_sha256", "path", "workload_id"], observed=sorted(workload),
+            )
+        if set(compiler) != {"revision_id", "path"}:
+            raise differs(
+                "Campaign Lock Compiler Revision fields differ",
+                expected=["path", "revision_id"], observed=sorted(compiler),
+            )
         for context, digest in (
             ("study", study.get("canonical_sha256")),
             ("workload", workload.get("canonical_sha256")),
-            ("compiler", compiler.get("canonical_sha256")),
             ("analysis_plan", document.get("analysis_plan_sha256")),
         ):
             _digest(digest, f"campaign_lock.{context}.sha256")
@@ -182,12 +585,14 @@ class CampaignLock:
             raise ValueError("Campaign Lock run_order contains duplicates")
         study_kind = _name(study.get("kind"), "campaign_lock.study.kind")
         claim_scope = _name(study.get("claim_scope"), "campaign_lock.study.claim_scope")
-        performance_reporting_policy(
-            _object(document.get("analysis_plan"), "campaign_lock.analysis_plan"), claim_scope
-        )
+        analysis = _object(document.get("analysis_plan"), "campaign_lock.analysis_plan")
+        performance_reporting_policy(analysis, claim_scope)
         if study_kind == "matched_search":
             if claim_scope not in _MATCHED_CLAIM_SCOPES:
-                raise ValueError("matched Campaign Lock claim scope differs")
+                raise differs(
+                    "matched Campaign Lock claim scope",
+                    expected=sorted(_MATCHED_CLAIM_SCOPES), observed=claim_scope,
+                )
             if set(resolved) != {
                 "arm_environments", "arm_environment_sha256", "budget",
                 "run_protocol", "evidence_policy", "agent_interface",
@@ -195,7 +600,10 @@ class CampaignLock:
                 raise ValueError("matched Campaign Lock requires the Ralph interface")
             interface = _object(resolved["agent_interface"], "campaign_lock.agent_interface")
             if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
-                raise ValueError("Campaign Lock Ralph agent interface differs")
+                raise differs(
+                    "Campaign Lock Ralph agent interface",
+                    expected={"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}, observed=interface,
+                )
             agent_interface = TASK_AGENTS_RALPH_V1
             RalphBudget.from_mapping(_object(resolved["budget"], "campaign_lock.budget"))
             arms = _object(
@@ -209,7 +617,10 @@ class CampaignLock:
             validate_declarations(arms)
             comparison = comparison_arm(arms)
             if set(arm_hashes) != set(arms):
-                raise ValueError("Campaign Lock Authoring Environment set differs")
+                raise differs(
+                    "Campaign Lock Authoring Environment set",
+                    expected=sorted(arms), observed=sorted(arm_hashes),
+                )
             for arm_name in arms:
                 environment = _object(
                     arms.get(arm_name),
@@ -221,8 +632,12 @@ class CampaignLock:
                     arm_hashes.get(arm_name),
                     f"campaign_lock.resolved_inputs.{arm_name}.sha256",
                 )
-                if digest != sha256(_canonical_json_bytes(environment)).hexdigest():
-                    raise ValueError(f"Campaign Lock {arm_name} environment bytes differ")
+                observed_digest = sha256(_canonical_json_bytes(environment)).hexdigest()
+                if digest != observed_digest:
+                    raise differs(
+                        f"Campaign Lock {arm_name} environment bytes differ",
+                        expected=digest, observed=observed_digest,
+                    )
             budget = _object(
                 resolved.get("budget"), "campaign_lock.resolved_inputs.budget"
             )
@@ -242,7 +657,18 @@ class CampaignLock:
                     or set(selection) != {"kind", "model"}
                     or selection.get("kind") != _EMPIRICAL_SELECTION
                 ):
-                    raise ValueError("Campaign Lock empirical selection policy differs")
+                    raise differs(
+                        "Campaign Lock empirical selection policy",
+                        expected={"claim_scope": "artifact_optimization_only",
+                                  "budget.maximum_candidates_per_turn": "declared",
+                                  "candidate_selection": {"kind": _EMPIRICAL_SELECTION, "model": "<object>"}},
+                        observed={"claim_scope": claim_scope,
+                                  "budget.maximum_candidates_per_turn": budget.get("maximum_candidates_per_turn"),
+                                  "candidate_selection": (
+                                      {key: (selection[key] if key == "kind" else "<object>")
+                                       for key in selection}
+                                      if isinstance(selection, Mapping) else selection)},
+                    )
                 EmpiricalCostModel(selection["model"])
             _object(resolved.get("run_protocol"), "campaign_lock.resolved_inputs.run_protocol")
             evidence_policy = _object(
@@ -255,22 +681,32 @@ class CampaignLock:
             )
             expected_arms = matched_run_arms(arms, claim_scope)
             if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
-                raise ValueError("matched Campaign Lock Run allocation differs")
+                raise differs(
+                    "matched Campaign Lock Run allocation",
+                    expected=expected_arms, observed=list(run_order),
+                )
         elif study_kind == "portfolio":
             agent_interface = "portfolio_v1"
             if claim_scope != "bounded_local_b200_reconstruction":
-                raise ValueError("portfolio Campaign Lock claim scope differs")
-            if set(resolved) != {
-                "kernel_seed",
-                "case_roles",
-                "specialization_policy",
-                "dispatch_policy",
+                raise differs(
+                    "portfolio Campaign Lock claim scope",
+                    expected="bounded_local_b200_reconstruction", observed=claim_scope,
+                )
+            portfolio_inputs = {
+                "kernel_seed", "case_roles", "specialization_policy", "dispatch_policy",
                 "evidence_policy",
-            }:
-                raise ValueError("portfolio Campaign Lock inputs differ")
+            }
+            if set(resolved) != portfolio_inputs:
+                raise differs(
+                    "portfolio Campaign Lock inputs differ",
+                    expected=sorted(portfolio_inputs), observed=sorted(resolved),
+                )
             seed = _object(resolved.get("kernel_seed"), "campaign_lock.resolved_inputs.kernel_seed")
             if set(seed) != {"seed_id", "path", "canonical_sha256"}:
-                raise ValueError("portfolio Kernel Seed reference differs")
+                raise differs(
+                    "portfolio Kernel Seed reference",
+                    expected=["canonical_sha256", "path", "seed_id"], observed=sorted(seed),
+                )
             _digest(seed.get("canonical_sha256"), "campaign_lock.kernel_seed.sha256")
             _object(resolved.get("case_roles"), "campaign_lock.resolved_inputs.case_roles")
             _object(
@@ -290,20 +726,31 @@ class CampaignLock:
             raise ValueError("single-environment Campaign requires a fixed-baseline paired assay")
         if paired_protocol(document['evaluation_protocol']) is not None:
             execution = document['execution']
-            if set(execution) != {'target', 'executor_revision', 'broker_execution_sha256',
-                                  'gpu', 'sandbox', 'fixed_baseline', 'runtime_config'}:
-                raise ValueError('paired Campaign execution fields differ')
+            paired_fields = {'target', 'executor_revision', 'broker_execution_sha256',
+                             'gpu', 'sandbox', 'fixed_baseline', 'runtime_config'}
+            if set(execution) != paired_fields:
+                raise differs(
+                    'paired Campaign execution fields differ',
+                    expected=sorted(paired_fields), observed=sorted(execution),
+                )
             if study_kind != 'matched_search' or (comparison is not None and native_backend(comparison) is None):
                 raise ValueError('paired Campaign requires a same-backend native comparison')
             _digest(execution['broker_execution_sha256'], 'execution.broker_execution_sha256')
             executor = _object(execution['executor_revision'], 'execution.executor_revision')
-            if set(executor) != {'executor_id', 'path', 'canonical_sha256'}:
-                raise ValueError('paired Campaign Executor must be resolved')
-            _digest(executor['canonical_sha256'], 'execution.executor_revision.canonical_sha256')
+            if set(executor) != {'executor_id', 'path'}:
+                raise differs(
+                    'paired Campaign Executor must be resolved: reference fields differ',
+                    expected=['executor_id', 'path'], observed=sorted(executor),
+                )
+            _name(executor['executor_id'], 'execution.executor_revision.executor_id')
             runtime = _object(execution['runtime_config'], 'execution.runtime_config')
             if (set(runtime) != {'path', 'sha256'} or not isinstance(runtime['path'], str)
                 or not Path(runtime['path']).is_absolute() or '..' in Path(runtime['path']).parts):
-                raise ValueError('paired Campaign runtime binding differs')
+                raise differs(
+                    'paired Campaign runtime binding',
+                    expected={'fields': ['path', 'sha256'], 'path': '<absolute, no ..>'},
+                    observed={'fields': sorted(runtime), 'path': runtime.get('path')},
+                )
             _digest(runtime['sha256'], 'runtime_config.sha256')
             for arm in arms.values():
                 provider = arm['provider']
@@ -313,47 +760,52 @@ class CampaignLock:
                 for field in ('qualification', 'qualification_anchor'):
                     reference = _object(provider[field], f'provider.{field}')
                     if set(reference) != {'path', 'canonical_sha256'} or not Path(str(reference['path'])).is_absolute():
-                        raise ValueError('paired Campaign qualification binding differs')
+                        raise differs(
+                            f'paired Campaign qualification binding provider.{field}',
+                            expected={'fields': ['canonical_sha256', 'path'], 'path': '<absolute>'},
+                            observed={'fields': sorted(reference), 'path': reference.get('path')},
+                        )
                     _digest(reference['canonical_sha256'], f'provider.{field}.canonical_sha256')
             fixed = _object(document['execution'].get('fixed_baseline'), 'execution.fixed_baseline')
             if set(fixed) not in (
                 {'bundle_path', 'candidate'},
                 {'bundle_path', 'candidate', 'selection'},
             ) or not Path(str(fixed['bundle_path'])).is_absolute():
-                raise ValueError('paired Campaign fixed baseline binding differs')
+                raise differs(
+                    'paired Campaign fixed baseline binding',
+                    expected={'fields': [['bundle_path', 'candidate'], ['bundle_path', 'candidate', 'selection']],
+                              'bundle_path': '<absolute>'},
+                    observed={'fields': sorted(fixed), 'bundle_path': fixed.get('bundle_path')},
+                )
             if 'selection' in fixed:
                 from .incumbents import validate_baseline_selection
                 validate_baseline_selection(fixed['selection'])
             bound_baseline = candidate_from_identity(fixed['candidate'])
             if bound_baseline.target != execution['target']:
-                raise ValueError('paired Campaign baseline target differs')
-        analysis = _object(document.get("analysis_plan"), "campaign_lock.analysis_plan")
+                raise differs(
+                    'paired Campaign baseline target',
+                    expected=execution['target'], observed=bound_baseline.target,
+                )
         analysis_sha = sha256(_canonical_json_bytes(analysis)).hexdigest()
         if document.get("analysis_plan_sha256") != analysis_sha:
-            raise ValueError("Campaign Lock Analysis Plan bytes differ")
+            raise differs(
+                "Campaign Lock Analysis Plan bytes differ",
+                expected=analysis_sha, observed=document.get("analysis_plan_sha256"),
+            )
         experimental_unit = _name(
             analysis.get("experimental_unit"), "campaign_lock.analysis_plan.experimental_unit"
         )
         expected_unit = "run" if study_kind == "matched_search" else "case_route"
         if experimental_unit != expected_unit:
-            raise ValueError("Campaign Lock experimental unit differs from Study kind")
-        raw_estimand = analysis.get("estimand")
-        if claim_scope == "system_qualification_only":
-            if analysis_without_endpoint_policy(analysis) != _SYSTEM_QUALIFICATION_ANALYSIS_PLAN:
-                raise ValueError("system qualification Campaign Lock Analysis Plan differs")
-            estimand = None
-        elif claim_scope == "artifact_optimization_only":
-            if analysis_without_endpoint_policy(analysis_without_performance_policy(analysis, claim_scope)) != _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN:
-                raise ValueError("artifact optimization Campaign Lock Analysis Plan differs")
-            estimand = None
-        elif study_kind == "matched_search":
-            version = _scientific_analysis_plan_version(analysis, "campaign_lock.analysis_plan")
-            policy = native_backend(comparison)
-            if version != (policy.analysis_version if policy is not None else "two_part_v2"):
-                raise ValueError("Campaign Lock treatment and analysis arms differ")
-            estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
-        else:
-            estimand = _name(raw_estimand, "campaign_lock.analysis_plan.estimand")
+            raise differs(
+                "Campaign Lock experimental unit differs from Study kind",
+                expected=expected_unit, observed=experimental_unit,
+            )
+        estimand = _analysis_estimand(
+            analysis, claim_scope=claim_scope, study_kind=study_kind,
+            comparison=comparison if study_kind == "matched_search" else None,
+            context="campaign_lock", lock=True,
+        )
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
         return cls(
             document=detached,

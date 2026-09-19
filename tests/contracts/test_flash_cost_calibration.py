@@ -61,7 +61,7 @@ class FlashCalibrationTest(unittest.TestCase):
                      for path in (ROOT / "compiler/targets").glob("*.json"))
         paths.update({"compiler/revision.json", manifest["corpus_manifest"],
                       "contracts/workloads/flash-kmeans-assign-v2.json",
-                      "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
+                      "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json"})
         # The child-process supervision probes need the actual Python runtime code.
         shutil.copytree(ROOT / "src", cls.project / "src", ignore=shutil.ignore_patterns("__pycache__"))
         for relative in paths:
@@ -83,7 +83,7 @@ class FlashCalibrationTest(unittest.TestCase):
             {"path": "src/open_cake_ir/tasks/evaluate.py"},
         ]})
         cls.workload = load_workload(cls.project / "contracts/workloads/flash-kmeans-assign-v2.json")
-        cls.seed = KernelSeed.load(cls.project, cls.project / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json")
+        cls.seed = KernelSeed.load(cls.project, cls.project / "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json")
 
     def setUp(self):
         self.local = tempfile.TemporaryDirectory(prefix="run-", dir=self.root)
@@ -107,7 +107,7 @@ class FlashCalibrationTest(unittest.TestCase):
         payloads = {role: f"SYNTHETIC NON-EXECUTABLE {role}".encode() for role in ("source", "ttir", "ttgir", "llir", "ptx", "cubin")}
         payloads["source"] = source + b"\n# SYNTHETIC compiler expansion, not executable evidence\n"
         payloads["cubin"] = b"\x7fELF SYNTHETIC NON-EXECUTABLE " + repr(requirements).encode()
-        return TritonCompilation(source, "sm_100a", requirements["kernel_entry_point"], payloads, requirements["compile_options"]["num_warps"] * 32, 0, "SYNTHETIC")
+        return TritonCompilation(source, "sm_100a", requirements["kernel_entry_point"], payloads, requirements["compile_options"]["num_warps"] * 32, 0, "SYNTHETIC", "cubin")
 
     def _fake_evaluator(self, command, **kwargs):
         # This stands in for the evaluator child only. Compiler identity reads the
@@ -160,15 +160,15 @@ class FlashCalibrationTest(unittest.TestCase):
         candidate = run / "candidate"
         write(candidate / "plan.json", plan)
         for spec, choices in zip(plan["pool"], ((128, 64, 4), (256, 64, 4), (256, 128, 8), (128, 128, 8))):
-            bn, bk, warps = choices
-            seed = replace(self.seed, block_n=bn, block_k=bk, num_warps=warps, num_stages=3)
+            bn, bk, execution_groups = choices
+            seed = replace(self.seed, block_n=bn, block_k=bk, num_warps=execution_groups, num_stages=3)
             schedule = seed.schedule_for(plan["case_id"], ExactShape.from_mapping(self.workload.case(plan["case_id"])["shape"]))
             schedule["schedule_id"] = spec["id"]
             # The historical seed's base metadata predates Workload v2. Bind only
             # this new derived Schedule; never edit or relabel the frozen seed.
             schedule["metadata"]["workload_contract_sha256"] = self.workload.canonical_sha256
             write(candidate / spec["schedule"], schedule)
-        judge = {"identity": f"{self.executor.executor_id}@{self.executor.canonical_sha256}", "cwd": str(self.project), "command": [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "src/open_cake_ir/tasks/flash_kmeans/calibrate.py"), "collect"]}
+        judge = {"identity": self.executor.executor_id, "cwd": str(self.project), "command": [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "src/open_cake_ir/tasks/flash_kmeans/calibrate.py"), "collect"]}
         task = {"schema": "kernelinfra.task.v1", "task_id": "SYNTHETIC-no-GPU-task", "workloads": [self.workload.workload_id], "comparison": {"primary_workloads": [self.workload.workload_id], "relative_noise_floor": .05}, "stages": [{"id": "compile", "kind": "compile", "execution": "local", "judge": judge}, {"id": "collection", "kind": "judge", "resources": {"mode": "exclusive", "gpu_count": 1, "run_timeout_s": 3600}, "judge": judge}]}
         write(run / "task.json", task)
         principal = {"pid": 200, "parent_pid": 100, "uid": 321, "gid": 654, "broker_peer": [100, 321, 654], "broker_socket": "/SYNTHETIC/no-broker.sock", "job_id": None, "visible_device": "7", "run_id": "SYNTHETIC-NOT-A-GPU-RUN"}
@@ -215,7 +215,7 @@ class FlashCalibrationTest(unittest.TestCase):
         for buffer in schedule["buffers"]:
             if buffer["name"] in {"tokens", "assignments"}:
                 buffer["shape"][1] += 128
-        prediction = model.estimate(schedule, compiler_revision_id=self.compiler_ref["revision_id"], compiler_revision_sha256=self.compiler_ref["canonical_sha256"], target="sm_100a")
+        prediction = model.estimate(schedule, compiler_revision_id=self.compiler_ref["revision_id"],  target="sm_100a")
         self.assertFalse(prediction["covered"])
         judge = instrument._read(run / "stages/collection/result.json")
         self.assertFalse(any("candidate_ms" in row or "baseline_ms" in row for row in judge["workloads"]))

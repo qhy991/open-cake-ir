@@ -22,7 +22,7 @@ def register_schedule(*, shape=(33, 19, 21), tile=(16, 16, 16)) -> dict:
     document = json.loads((ROOT / "corpus/schedules/gemm-bias-b1-smoke.json").read_text())
     document["target"] = "sm_103a"
     document["lowering"] = {"backend": "cutlass_cute_dsl", "entry_point": "warp_matmul"}
-    document["roles"][0]["warps"] = [0]
+    document["roles"][0]["execution_groups"] = [0]
     document.pop("residency")
     m, n, k = shape
     bm, bn, bk = tile
@@ -113,6 +113,9 @@ class RegisterCuTeTests(unittest.TestCase):
                             ("a", "bf16"), ("b", "bf16"), ("bias", "fp32"), ("c", "fp32"))],
                         "grid": [(shape[0] + 15) // 16, (shape[1] + tile[1] - 1) // tile[1], 1],
                         "block": [32, 1, 1], "dynamic_shared_memory_bytes": 0,
+                        # The CuTe worker opens no Target document, so the facts its
+                        # cubin needs ride the contract the emitter wrote from the Target.
+                        "code_object": "cubin", "compute_capability": [10, 3],
                     })
                     module = ast.parse(lowering.source)
                     functions = [node for node in module.body if isinstance(node, ast.FunctionDef)]
@@ -232,7 +235,7 @@ class RegisterCuTeTests(unittest.TestCase):
             (lambda d: d["buffers"][4].__setitem__("stages", 2), "CUTE_REGISTER_BUFFER_OPTIONS"),
             (lambda d: d["buffers"][0].__setitem__("byte_offset", 2), "CUTE_REGISTER_BUFFER_OPTIONS"),
             (lambda d: d["buffers"][2].__setitem__("mode", "state"), "CUTE_STATE_UNSUPPORTED"),
-            (lambda d: d["roles"][0].__setitem__("warps", [0, 1]), "CUTE_REGISTER_ROLE"),
+            (lambda d: d["roles"][0].__setitem__("execution_groups", [0, 1]), "CUTE_REGISTER_ROLE"),
             (lambda d: d.__setitem__("residency", {"registers_per_thread": 128}), "CUTE_REGISTER_RESIDENCY"),
             (lambda d: d["access_maps"].pop(), "CUTE_REGISTER_ACCESS"),
             (lambda d: d["access_maps"][1]["indices"][0].__setitem__("name", "m_block"), "CUTE_REGISTER_ACCESS"),
@@ -305,6 +308,27 @@ class RegisterCuTeTests(unittest.TestCase):
         self.assertEqual(cutedsl.SUPPORTED_OPERATION_KINDS,
                          frozenset(cutedsl.BODY_EMITTERS) | cutedsl_register.SUPPORTED_OPERATION_KINDS | cutedsl_simt.SUPPORTED_OPERATION_KINDS)
         self.assertIn(OperationKind.ELEMENTWISE, cutedsl.SUPPORTED_OPERATION_KINDS)
+
+    def test_the_two_route_gates_are_named_applicability_sets(self) -> None:
+        """Each CuTe route is qualified on the targets its evidence names, as a declared
+        set rather than an exclusion of one id; the refusal quotes that set back."""
+        self.assertEqual(cutedsl._TMEM_ROUTE_EVIDENCE, frozenset({"sm_100a"}))
+        self.assertEqual(cutedsl_register.REGISTER_ROUTE_EVIDENCE, frozenset({"sm_103a"}))
+        document = json.loads((ROOT / "corpus/schedules/flash-kmeans-assignment-full.json").read_text())
+        document["target"] = "sm_103a"
+        findings = cutedsl.preflight(Schedule.from_dict(document),
+                                     Target.load(ROOT / "compiler/targets/sm_103a.json"))
+        self.assertEqual(
+            [f.message for f in findings if f.code == "CUTE_TARGET_UNSUPPORTED"],
+            ["the CuTe-DSL TMEM route has been qualified on sm_100a only; 'sm_103a' needs "
+             "its own qualification before this route emits for it"])
+        document = register_schedule()
+        document["target"] = "sm_100a"
+        findings = cutedsl.preflight(Schedule.from_dict(document),
+                                     Target.load(ROOT / "compiler/targets/sm_100a.json"))
+        self.assertEqual(
+            [f.message for f in findings if f.code == "CUTE_REGISTER_TARGET"],
+            ["the CuTe-DSL register route has been qualified on sm_103a only"])
 
 
 if __name__ == "__main__":

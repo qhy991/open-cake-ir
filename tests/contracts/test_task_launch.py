@@ -206,11 +206,19 @@ class TaskLaunchTests(unittest.TestCase):
         executor = SimpleNamespace(document={"host_environment": {
             "python": {"invocation_path": "/unit-test/python"}, "packages": {"triton": "3.6.0"},
             "tools": {"build_tools": [{"kind": "bwrap", "path": "/usr/bin/true"}]}}})
+        # The job kind is the DCU target's platform row, not an inference from the route:
+        # a Triton route on a local CUDA device (D6) is a `cuda` job, not a `hip` one.
+        local_kind = launch_task._local_kind_of('triton-dcu')
+        self.assertEqual(local_kind, 'hip')
         with patch.object(launch_task, '_triton_runtime_roots', return_value=['/unit-test', '/usr']), \
              patch.object(launch_task.shutil, 'which', return_value=None):
             runtime = launch_task._runtime_config(
                 self.workspace, executor, Path('/unit-test/provider'), 'triton',
-                allocation='local_broker')
+                allocation='local_broker', local_kind=local_kind)
+            with self.assertRaisesRegex(ValueError, 'local job kind'):
+                launch_task._runtime_config(
+                    self.workspace, executor, Path('/unit-test/provider'), 'triton',
+                    allocation='local_broker')
         command = runtime['broker']['command']
         self.assertIn('open_cake_ir.evaluation.local_broker', command)
         self.assertNotIn('gpu-run', ' '.join(command))
@@ -222,7 +230,8 @@ class TaskLaunchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'gpu_run allocation'):
             launch_task._runtime_config(
                 self.workspace, executor, Path('/unit-test/provider'), 'triton',
-                allocation='local_broker', gpu_run=Path('/unit-test/gpu-run'))
+                allocation='local_broker', local_kind=local_kind,
+                gpu_run=Path('/unit-test/gpu-run'))
 
     def test_the_jail_is_found_on_this_host_and_refused_by_name_when_absent(self):
         """`/usr/bin/bwrap` was a constant; it is a fact about a host, not about bwrap.
@@ -358,7 +367,7 @@ class TaskLaunchTests(unittest.TestCase):
 
     def test_failed_full_gate_prevents_executor_and_provider_work(self):
         self.workspace.mkdir()
-        gate = CorpusGateReport("unit-fixture", "fixture", "not-live", False, ())
+        gate = CorpusGateReport("unit-fixture", "fixture", False, ())
         compiler = SimpleNamespace(commit="0" * 40, check_corpus=lambda: gate)
         with patch.object(launch_task.Compiler, "load", return_value=compiler), \
              patch.object(launch_task, "resolve_executor") as executor:
@@ -369,7 +378,7 @@ class TaskLaunchTests(unittest.TestCase):
 
     def test_nonmetal_executor_is_refused_before_archive_helper_admission(self):
         self.workspace.mkdir()
-        gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
+        gate = CorpusGateReport("unit-fixture", "fixture", True, ())
         compiler = SimpleNamespace(commit="0" * 40, check_corpus=lambda: gate)
         executor = SimpleNamespace(document={"host_environment":{"kind":"cuda"}})
         with patch.object(launch_task.Compiler,"load",return_value=compiler), \
@@ -386,7 +395,7 @@ class TaskLaunchTests(unittest.TestCase):
         the host names itself Metal rather than by a marker each one owns. Both refusals
         land before any host helper is touched.
         """
-        gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
+        gate = CorpusGateReport("unit-fixture", "fixture", True, ())
         compiler = SimpleNamespace(commit="0" * 40, check_corpus=lambda: gate)
         metal = SimpleNamespace(document={"host_environment": {"kind": "metal"}})
         # Each admission writes its own gate report, so give each one a fresh workspace.
@@ -415,7 +424,7 @@ class TaskLaunchTests(unittest.TestCase):
 
     def test_stale_executor_refusal_names_the_required_host_capture(self):
         self.workspace.mkdir()
-        gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
+        gate = CorpusGateReport("unit-fixture", "fixture", True, ())
         compiler = SimpleNamespace(commit="0" * 40, check_corpus=lambda: gate)
         with patch.object(launch_task.Compiler, "load", return_value=compiler), \
              patch.object(launch_task, "resolve_executor", side_effect=ValueError("source differs")), \
@@ -437,7 +446,7 @@ class TaskLaunchTests(unittest.TestCase):
 
     def test_executor_for_another_apple_gpu_is_refused_before_archive_helper_admission(self):
         self.workspace.mkdir()
-        gate = CorpusGateReport("unit-fixture", "fixture", "not-live", True, ())
+        gate = CorpusGateReport("unit-fixture", "fixture", True, ())
         compiler = SimpleNamespace(commit="0" * 40, check_corpus=lambda: gate)
         executor = SimpleNamespace(document={"host_environment": {"kind": "metal",
                                                                  "host": {"target": "apple_gpu_family7"}}})

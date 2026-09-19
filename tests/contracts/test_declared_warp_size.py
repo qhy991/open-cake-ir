@@ -40,11 +40,18 @@ class DeclaredWarpSize(unittest.TestCase):
             with self.subTest(target=name), self.assertRaisesRegex(TargetParseError, "target.warp_size"):
                 Target.from_dict(value)
 
-    def test_a_width_its_own_limits_cannot_hold_is_refused_naming_both(self):
+    def test_the_slot_budget_is_derived_from_the_width_not_declared_beside_it(self):
+        """A declared slot count could disagree with the width; a derived one cannot.
+
+        1024 threads is 32 slots at 32 lanes and 16 at 64, and a document that writes the
+        count a second time is refused as a field the schema does not have.
+        """
         value = document("sm_100a")
-        # 32 slots of 64 threads cannot fit in the 1024 threads the same document declares.
+        self.assertEqual(Target.from_dict(value).resource_limits.maximum_warps_per_cta, 32)
         value["warp_size"] = 64
-        with self.assertRaisesRegex(TargetParseError, "warp_size disagrees with"):
+        self.assertEqual(Target.from_dict(value).resource_limits.maximum_warps_per_cta, 16)
+        value["resource_limits"] = dict(value["resource_limits"], maximum_warps_per_cta=16)
+        with self.assertRaisesRegex(TargetParseError, "resource_limits fields differ"):
             Target.from_dict(value)
 
     def test_a_declared_width_reaches_the_shared_residency_computation(self):
@@ -53,7 +60,6 @@ class DeclaredWarpSize(unittest.TestCase):
         narrow = Target.from_dict(document("sm_100a"))
         wide = document("sm_100a")
         wide["warp_size"] = 64
-        wide["resource_limits"] = dict(wide["resource_limits"], maximum_warps_per_cta=16)
         wide = Target.from_dict(wide)
         threads = {bound.resource: bound for bound in residency_upper_bound(schedule, narrow).bounds}
         doubled = {bound.resource: bound for bound in residency_upper_bound(schedule, wide).bounds}

@@ -197,17 +197,22 @@ runpy.run_path('tools/report_schedule_profile.py',run_name='__main__')
         modules["triton.backends.compiler"].GPUTarget = lambda *args: args
         modules["triton.compiler"].ASTSource = lambda *args: args
         modules["triton.compiler"].compile = fake_compile
+        # The route facts ride the contract the emitter wrote; the jail opens no Target.
         requirements = {"compiler": "triton", "source_language": "python", "target": "sm_100a",
                         "kernel_entry_point": "kernel", "signature": {}, "compile_constants": {},
-                        "compile_options": {"num_warps": 4}}
+                        "compile_options": {"num_warps": 4},
+                        "code_object": "cubin", "triton_arch": 100, "warp_size": 32}
         with patch.dict(sys.modules, modules), patch("importlib.metadata.version", return_value="fixture"):
             compilation = compile_triton(b"def kernel(): pass\n", requirements)
         self.assertEqual(seen["target"], ("cuda", 100, 32))
         self.assertEqual(compilation.threads_per_cta, 128)
         self.assertEqual(compilation.dynamic_shared_bytes, 32)
         self.assertEqual(compilation.artifacts["cubin"], Compiled.asm["cubin"])
+        self.assertEqual(compilation.code_object, "cubin")
+        # A contract without its route facts is refused rather than compiled as CUDA.
         with self.assertRaises(ValueError):
-            compile_triton(b"source", {**requirements, "target": "sm_90a"})
+            compile_triton(b"source", {k: v for k, v in requirements.items()
+                                       if k not in ("code_object", "triton_arch", "warp_size")})
 
 
 if __name__ == "__main__":

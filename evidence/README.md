@@ -9,13 +9,14 @@ evidence root outside the Git checkout. The checkout retains only explicitly rev
 later revision. Reports remain deletable projections; terminal archives and their external anchors remain the
 authority. No process may dual-write a Run into the legacy repository and this repository.
 
-`executors/open-cake-ir-b200-v1-5bdc9106/` is the complete 30-source Executor closure used by G8 r6, while
-`executors/open-cake-ir-b200-v2-4be390bf/` preserves the first Git-anchored migration baseline. Verify either through
-the current `ExecutorRevision` loader with its directory as `project_root`.
-`executors/open-cake-ir-b200-v3-1c18cbfb/` preserves the tool-rich cutover baseline.
-`executors/open-cake-ir-b200-v4-203b2d8f/` preserves the first GPU teaching-smoke runner.
-`executors/open-cake-ir-b200-v5-7f437598/` preserves the last pre-custody runtime closure.
-`runtime/executors/open-cake-ir-b200-v6.json` is the distinct current Revision and must never be substituted into a
+The retired Executor descriptors (`runtime/executors/*.json`) and the vendored source closures that preceded them
+(`evidence/executors/open-cake-ir-b200-v1-5bdc9106/` for G8 r6, `-v2-4be390bf/` for the first Git-anchored
+migration baseline, `-v3-1c18cbfb/` for the tool-rich cutover baseline, `-v4-203b2d8f/` for the first GPU
+teaching-smoke runner and `-v5-7f437598/` for the last pre-custody runtime closure) no longer live in the working
+tree. They are on the `history` branch, byte-identical at their original paths, and `docs/history/identities.json`
+maps every retired Compiler Revision and Executor id to the commit that produced it and the path that
+`git show history:<path>` resolves. They replay at their own commits with the tools of that commit, never against
+today's tree or through today's `ExecutorRevision` loader (ADR 0065); a retired identity is never substituted into a
 historical Campaign Lock.
 
 The unversioned `open_cake_turn.md` and `direct_cuda_turn.md` prompt bytes are likewise retained for historical G8

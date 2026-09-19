@@ -258,13 +258,13 @@
  "roles": [
   {
    "name": "compute",
-   "warps": [
+   "execution_groups": [
     0
    ]
   }
  ],
  "schedule_id": "metal-softmax",
- "schema_version": 1,
+ "schema_version": 2,
  "target": "apple_gpu_family8",
  "tile_loops": []
 }

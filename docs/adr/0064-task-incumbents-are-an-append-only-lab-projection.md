@@ -1,6 +1,7 @@
 # ADR 0064: Task incumbents are an append-only Lab projection
 
-Status: accepted; requires successor Executors before live use.
+Status: accepted, 2026-09-12. The successor Executors this required before live use were
+replaced by [ADR 0065](0065-source-identity-is-the-commit.md).
 
 ## Decision
 

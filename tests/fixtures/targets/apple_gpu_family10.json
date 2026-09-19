@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "target_id": "apple_gpu_family10",
+  "architecture": "apple10",
+  "device_names": [
+    "Apple M3"
+  ],
+  "vendor": "apple",
+  "code_object": "metal_binary_archive",
+  "memory_spaces": [
+    "global",
+    "shared",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "elementwise",
+    "reduce",
+    "store"
+  ],
+  "warp_size": 32,
+  "resource_limits": {
+    "maximum_threads_per_cta": 1024,
+    "maximum_shared_memory_bytes": 32768,
+    "grid": {
+      "x": 4294967295,
+      "y": 4294967295,
+      "z": 4294967295
+    }
+  },
+  "instruction_contracts": [
+    "metal.fma.f32",
+    "metal.precise.tanh.f32"
+  ],
+  "synchronization_contracts": [],
+  "citations": [
+    {
+      "kind": "device_specification",
+      "source": "https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf",
+      "locator": "Synthetic acceptance fixture for the Phase 1 integrate slice: the family-8 shape carried to Apple family 10 (M3); 1024 threads per threadgroup, 32 KiB threadgroup memory, no tensor memory space; not a declared Target of this checkout"
+    }
+  ]
+}

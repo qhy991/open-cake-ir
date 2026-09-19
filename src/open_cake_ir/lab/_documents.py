@@ -13,6 +13,21 @@ from typing import Mapping, cast
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 
+_VERB = re.compile(r"\bdiffers?\b")
+
+
+def differs(context: str, *, expected: object, observed: object) -> ValueError:
+    """The refusal for a comparison that failed: it says both sides.
+
+    `context` is the leading text of the message and stays the words a reader searches
+    for; the two values follow it, so the reader learns what the document carried and
+    what the rule wanted without re-running the check. A context that already carries
+    its verb ("Executor Nsight Compute bytes differ", "X differs from Y") is kept
+    byte-identical; otherwise " differs" is appended. The error is returned, not
+    raised, so a call site reads `raise differs(...)`.
+    """
+    message = context if _VERB.search(context) else f"{context} differs"
+    return ValueError(f"{message}: expected {expected!r}, observed {observed!r}")
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:

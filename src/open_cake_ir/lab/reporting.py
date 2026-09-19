@@ -120,13 +120,19 @@ def audit_campaign(
         audit.filesystem_custody_verified for audit in audits
     )
     semantic_replay_by_run = {run_id: False for run_id in campaign.lock.run_order}
+    replay_refusals_by_run: dict[str, object] = {}
     evaluation_receipt_counts: dict[str, int] = {}
     terminal_observations: dict[str, object] = {}
     for audit in audits:
         if not audit.archive_integrity or audit.authority_sha256 != campaign.lock.canonical_sha256:
             continue
         try:
-            if not replay_run(evidence, audit, campaign.lock):
+            replay_result = replay_run(evidence, audit, campaign.lock)
+            if hasattr(replay_result, "refusals"):
+                replay_refusals_by_run[audit.run_id] = [
+                    dict(refusal.document) for refusal in replay_result.refusals
+                ]
+            if not replay_result:
                 continue
             events = evidence.replay_events(audit.run_id)
             semantic_replay_by_run[audit.run_id] = True
@@ -150,6 +156,7 @@ def audit_campaign(
     semantic_replay_passed = campaign_complete and all(semantic_replay_by_run.values())
     shared_descriptive = {
         "semantic_replay_by_run": semantic_replay_by_run,
+        "replay_refusals_by_run": replay_refusals_by_run,
         "evaluation_receipt_counts": evaluation_receipt_counts,
         "terminal_observations": terminal_observations,
         "reference_access_by_arm": {

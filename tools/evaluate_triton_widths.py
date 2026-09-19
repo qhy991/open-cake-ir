@@ -76,7 +76,7 @@ def main():
         study = json.loads((old / 'study.json').read_text())
         protocol = study['evaluation_protocol']
         document = frontend.read_schedule(old / 'starter.py').document
-        if document['roles'][0]['warps'] != [0]:
+        if document['roles'][0]['execution_groups'] != [0]:
             raise ValueError('planned width-1 floor differs from retained starter')
         compiler, executor, _, compiler_ref = _admit_stack(source, task_root, workload.target, 'triton')
         executor.admit_host()

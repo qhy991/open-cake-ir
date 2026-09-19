@@ -1,8 +1,6 @@
----
-status: accepted
----
-
 # Make the compiler the product core and the research lab a dependent application
+
+Status: accepted, 2026-08-23.
 
 `open-cake-ir` will expose a standalone Cake-like Compiler, while a separate Research Lab freezes a Compiler
 Revision and evaluates complete Open Cake versus direct CUDA Authoring Environments. We rejected a compiler-only

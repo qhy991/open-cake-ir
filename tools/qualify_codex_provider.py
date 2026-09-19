@@ -15,6 +15,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.evidence import EvidenceObject, EvidenceStore  # noqa: E402
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes  # noqa: E402
 from open_cake_ir.lab.pairing import comparison_arm
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
@@ -37,16 +38,6 @@ from open_cake_ir.lab.task_package import (  # noqa: E402
     render_task_request,
     verify_task_package,
 )
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _terminal_message(turn: int, event_contract: str, *, arm: str = "open_cake") -> str:

@@ -39,7 +39,7 @@ class HarnessQualificationTests(unittest.TestCase):
         self.source.write_text('from open_cake_ir.compiler import frontend as cake\n'
                                '@cake.schedule(name="qualification", target="apple_gpu_family7", backend="metal", entry_point="copy")\n'
                                'def candidate(lm, x: cake.Tensor((1, 7), "fp32"), out: cake.Tensor((1, 7), "fp32", mode="output")):\n'
-                               '    compute = lm.role(warps=[0])\n'
+                               '    compute = lm.role(execution_groups=[0])\n'
                                '    row = lm.program(x, axis=0, dimension=0, tile=1)\n'
                                '    with compute:\n'
                                '        values = lm.load(x[row, :])\n'

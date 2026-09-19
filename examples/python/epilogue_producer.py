@@ -6,7 +6,7 @@ from open_cake_ir.compiler import frontend as cake
                entry_point="epilogue_producer")
 def candidate(lm, a: cake.Tensor((2, 8), "bf16"), b: cake.Tensor((8, 8), "bf16"),
               bias: cake.Tensor((8,), "fp32"), mid: cake.Tensor((2, 8), "bf16", mode="output")):
-    compute = lm.role(warps=[0, 1, 2, 3])
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
     row = lm.program(a, axis=0, dimension=0, tile=1)
     with compute:
         ar = lm.load(a[row, :], id="load_a")

@@ -71,7 +71,7 @@ reciprocal/tanh、显式广播和单 tile sum/max reduction。目标必须精确
 `sm_100a` 或 `sm_103a`。这条路线可表达多输入和多输出；已有 BF16 register-MMA
 GEMM+bias 的研究合同仍由上文的 Workload 和 Study 管理。
 
-Schedule 使用一个 `warps=[0]` role、tile=1 的非 persistent ProgramMap、global
+Schedule 使用一个 `execution_groups=[0]` role、tile=1 的非 persistent ProgramMap、global
 输入/输出和 register 中间值，以及 PROGRAM/DIMENSION AccessMap。元素 i 放在
 lane i%32、slot i//32。设归约轴之后各维度的乘积为 `inner`。当 `inner` 是 32
 的倍数时，每个归约项已与对应输出处在同一 lane。后端生成按输出 slot 和归约长度

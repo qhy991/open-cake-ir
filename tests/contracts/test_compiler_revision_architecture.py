@@ -60,16 +60,13 @@ class RevisionAdmissionTests(unittest.TestCase):
             _write(self.path, document)
         return load_revision(self.root, self.path)
 
-    def test_manifest_holds_typed_targets_and_preserves_source_provenance(self):
+    def test_manifest_holds_typed_targets_at_one_commit(self):
         revision = self.load()
         target = revision.targets["sm_100a"]
         self.assertIsInstance(target, Target)
         self.assertIsInstance(next(iter(target.memory_spaces)), MemorySpace)
         self.assertIsInstance(next(iter(target.operation_kinds)), OperationKind)
         self.assertEqual(target, Target.from_dict(self.target))
-        self.assertEqual(target.source.document, self.target)
-        self.assertEqual(target.source.citations, tuple(self.target["citations"]))
-        self.assertEqual(target.source.canonical_sha256, sha256(_canonical(self.target)).hexdigest())
         self.assertEqual(revision.project_root, self.root)
         self.assertEqual(revision.corpus_path, self.root / "corpus.json")
         # The fixture root is no checkout, so it has no commit to be identified by;
@@ -80,18 +77,47 @@ class RevisionAdmissionTests(unittest.TestCase):
             revision.targets["other"] = target
         with self.assertRaises(dataclasses.FrozenInstanceError):
             target.resource_limits.maximum_threads_per_cta = 1
-        target.source.document["resource_limits"]["maximum_threads_per_cta"] = 1
-        self.assertEqual(target.source.document, self.target)
         self.assertEqual(target.resource_limits.maximum_threads_per_cta,
                          self.target["resource_limits"]["maximum_threads_per_cta"])
+
+    def test_ignored_target_cannot_borrow_a_clean_commit(self):
+        from tests.contracts.test_source_identity import _git
+        _git(self.root, "init", "-q")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-q", "-m", "fixture")
+        extra = copy.deepcopy(self.target)
+        extra["target_id"] = "synthetic-ignored"
+        target_path = self.root / "compiler/targets/synthetic-ignored.json"
+        _write(target_path, extra)
+        (self.root / ".git/info/exclude").write_text("compiler/targets/synthetic-ignored.json\n")
+        with self.assertRaisesRegex(CompilerError, "does not track.*synthetic-ignored"):
+            self.load()
+
+    def test_corpus_symlink_cannot_borrow_a_clean_commit(self):
+        from tests.contracts.test_source_identity import _git
+        corpus = self.root / "corpus.json"
+        corpus.rename(self.root / "local-corpus.json")
+        corpus.symlink_to("local-corpus.json")
+        (self.root / ".gitignore").write_text("local-corpus.json\n")
+        _git(self.root, "init", "-q")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-q", "-m", "fixture")
+        with self.assertRaisesRegex(CompilerError, "corpus_manifest.*symlink"):
+            self.load()
+
+    def test_revision_outside_root_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "revision.json"
+            _write(path, self.draft)
+            with self.assertRaisesRegex(CompilerError, "outside the project root"):
+                load_revision(self.root, path)
 
     def test_bound_target_admits_specification_peak_without_arithmetic_coverage(self):
         target = self.load().targets["sm_100a"]
         self.assertEqual(target.peak.memory_bandwidth.value, 8e12)
         self.assertFalse(target.peak.arithmetic)
-        self.assertEqual(target.source.document["peak"], self.target["peak"])
 
-    def test_current_manifest_retains_all_exact_targets_and_zero_tmem(self):
+    def test_current_manifest_retains_all_exact_targets_and_unmodeled_tmem(self):
         """The exact declared set, updated only by a deliberate data addition.
 
         AGENTS.md keeps this pin so a sixth target is a decision rather than an accident;
@@ -112,7 +138,8 @@ class RevisionAdmissionTests(unittest.TestCase):
                 self.assertEqual(target.device_names, (device,))
                 self.assertIsNone(target.compute_capability)
                 self.assertIsNone(target.warps_per_warpgroup)
-                self.assertEqual(target.resource_limits.maximum_tensor_memory_bytes, 0)
+                # No tensor space, so no tensor limit: unmodeled, not zero.
+                self.assertIsNone(target.resource_limits.maximum_tensor_memory_bytes)
                 self.assertNotIn(MemorySpace.TENSOR, target.memory_spaces)
         self.assertEqual(revision.targets["sm_103a"].compute_capability, (10, 3))
 
@@ -207,7 +234,7 @@ class CorpusOwnershipTests(unittest.TestCase):
             schedule_sha256="1" * 64, target="fixture_target",
         )
         self.compiler = SimpleNamespace(
-            _revision=SimpleNamespace(project_root=self.root, revision_id="fixture", canonical_sha256="3" * 64,
+            _revision=SimpleNamespace(project_root=self.root, revision_id="fixture",
                                       targets={"fixture_target": object(), "unexamined_target": object()}),
             assess_file=Mock(return_value=self.assessment),
             lower=Mock(return_value=SimpleNamespace(source_sha256="2" * 64)),

@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+from open_cake_ir.lab.replay_refusals import ReplayRefusal
 
 from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.lab.faults import ReportedProviderUsage, RunProtocolFault, ProviderBoundaryDeclarationFault
@@ -65,10 +66,12 @@ class ReportedProviderUsageTests(unittest.TestCase):
                    "objects": [{"role": "provider_stdout"}]}
         evidence = SimpleNamespace(read_object=lambda _: raw)
         self.assertEqual(replay_fault_usage(payload=payload, evidence=evidence, provider=provider), 205)
-        self.assertIsNone(replay_fault_usage(payload=payload, evidence=evidence,
-                          provider={**provider, "model": "another-model"}))
-        self.assertIsNone(replay_fault_usage(payload=payload, evidence=evidence, provider=provider,
-                          expected_thread_id="00000000-0000-0000-0000-000000000001"))
+        with self.assertRaisesRegex(ReplayRefusal, "run_fault"):
+            replay_fault_usage(payload=payload, evidence=evidence,
+                          provider={**provider, "model": "another-model"})
+        with self.assertRaisesRegex(ReplayRefusal, "run_fault"):
+            replay_fault_usage(payload=payload, evidence=evidence, provider=provider,
+                          expected_thread_id="00000000-0000-0000-0000-000000000001")
 
     def test_claude_fault_quota_attribution_is_rederived_from_retained_stdout(self):
         from open_cake_ir.lab.replay_provider import replay_fault_usage
@@ -100,13 +103,15 @@ class ReportedProviderUsageTests(unittest.TestCase):
                          {"rateLimitType": "five_hour"}, {"surpassedThreshold": 0.9},
                          {"utilization": 0.99, "fabricated": 1}):
             with self.subTest(tamper=tampered):
-                self.assertIsNone(replay_fault_usage(
+                with self.assertRaisesRegex(ReplayRefusal, "run_fault"):
+                    replay_fault_usage(
                     payload={**base, "observed_quota": {**quota, **tampered}},
-                    evidence=evidence, provider=provider))
+                    evidence=evidence, provider=provider)
         # An attribution with no notice behind it in the stream is fabricated.
         bare = fixture.raw(fixture.events())
-        self.assertIsNone(replay_fault_usage(payload={**base, "observed_quota": quota},
-            evidence=SimpleNamespace(read_object=lambda _: bare), provider=provider))
+        with self.assertRaisesRegex(ReplayRefusal, "run_fault"):
+            replay_fault_usage(payload={**base, "observed_quota": quota},
+            evidence=SimpleNamespace(read_object=lambda _: bare), provider=provider)
         # The observed wall: the last notice is the rejection that killed the process,
         # and an attribution naming the earlier warning instead is refused.
         events[2:2] = [{"type": "rate_limit_event", "uuid": "11111111-2222-3333-4444-555555555555",
@@ -119,8 +124,9 @@ class ReportedProviderUsageTests(unittest.TestCase):
         evidence_died = SimpleNamespace(read_object=lambda _: died)
         self.assertEqual(replay_fault_usage(payload={**base, "observed_quota": rejected},
             evidence=evidence_died, provider=provider), 205)
-        self.assertIsNone(replay_fault_usage(payload={**base, "observed_quota": quota},
-            evidence=evidence_died, provider=provider))
+        with self.assertRaisesRegex(ReplayRefusal, "run_fault"):
+            replay_fault_usage(payload={**base, "observed_quota": quota},
+            evidence=evidence_died, provider=provider)
 
     def test_absent_notice_at_a_claude_fault_is_the_recorded_observation(self):
         """F-2026-09-16-001: gateway-transport deaths carry no rate-limit notice at all.
@@ -160,11 +166,13 @@ class ReportedProviderUsageTests(unittest.TestCase):
         # The marker cannot ride a stream that does carry a notice, and a notice
         # cannot masquerade as the recorded absence.
         evidence_noticed = SimpleNamespace(read_object=lambda _: fixture.raw(noticed))
-        self.assertIsNone(replay_fault_usage(
+        with self.assertRaisesRegex(ReplayRefusal, "run_fault"):
+            replay_fault_usage(
             payload={**base, "observed_quota": {"observed": "no_notice"}},
-            evidence=evidence_noticed, provider=provider))
-        self.assertIsNone(replay_fault_usage(payload={**base, "observed_quota": quota},
-            evidence=bare_evidence, provider=provider))
+            evidence=evidence_noticed, provider=provider)
+        with self.assertRaisesRegex(ReplayRefusal, "run_fault"):
+            replay_fault_usage(payload={**base, "observed_quota": quota},
+            evidence=bare_evidence, provider=provider)
 
     def test_replayed_usage_refuses_boolean_and_float_token_witnesses(self):
         from open_cake_ir.lab.replay_provider import replay_fault_usage
@@ -174,9 +182,10 @@ class ReportedProviderUsageTests(unittest.TestCase):
                 "event_contract": CONTRACT, "thread_id": THREAD, "provider_tokens": claimed_tokens},
                 "objects": [{"role": "provider_stdout"}]}
             with self.subTest(native=native_tokens, claimed=claimed_tokens):
-                self.assertIsNone(replay_fault_usage(payload=payload,
+                with self.assertRaisesRegex(ReplayRefusal, "run_fault"):
+                    replay_fault_usage(payload=payload,
                     evidence=SimpleNamespace(read_object=lambda _: raw),
-                    provider={"event_contract": CONTRACT}))
+                    provider={"event_contract": CONTRACT})
 
     def test_codex_adapter_retains_known_usage_on_format_and_process_failures(self):
         from open_cake_ir.lab.providers import CodexProviderAdapter, ProviderInvocation

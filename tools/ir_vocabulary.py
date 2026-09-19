@@ -27,7 +27,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import ir  # noqa: E402
+from open_cake_ir.compiler import frontend, ir  # noqa: E402
 from open_cake_ir.compiler.backends import BACKENDS  # noqa: E402
 
 
@@ -60,10 +60,12 @@ def _used_members() -> set[Enum]:
 
     manifest = json.loads((ROOT / "corpus/manifest.json").read_text(encoding="utf-8"))
     for case in manifest["cases"]:
-        document = json.loads((ROOT / case["schedule"]).read_text(encoding="utf-8"))
         try:
+            # The Compiler's own reader: JSON as is, a Python case elaborated without
+            # executing it, exactly as ``Compiler.assess_file`` reads the same case.
+            document = frontend.read_schedule(ROOT / case["schedule"]).document
             schedule = ir.Schedule.from_dict(document)
-        except ir.ScheduleParseError:
+        except (frontend.FrontendError, ir.ScheduleParseError):
             continue  # a case whose whole point is that it does not parse
         visit(schedule, set())
     return used

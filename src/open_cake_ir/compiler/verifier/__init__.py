@@ -28,5 +28,5 @@ def verify(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     schedule_semantics.verify(schedule, out)
     hardware_conformance.verify(schedule, target, out)
     data_consistency.verify(schedule, out)
-    program_safety.verify(schedule, out)
+    program_safety.verify(schedule, target, out)
     return out.result()

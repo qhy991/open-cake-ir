@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from open_cake_ir.compiler.target import CodeObject
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
+from open_cake_ir.evaluation.platforms import PLATFORMS
 from open_cake_ir.tasks import evaluate as worker
 
 
@@ -72,12 +74,20 @@ class ExecutionPlatformSelection(unittest.TestCase):
             admission.assert_not_called()
 
     def test_a_metal_candidate_still_reaches_the_metal_path(self) -> None:
+        # The cubin path no longer routes Metal on its behalf: `_evaluate_candidate` is the
+        # cubin row's evaluate and refuses every other object by name, and a Metal
+        # candidate reaches its own row through `_platform`.
         result: dict[str, object] = {}
         authority = _authority("apple_gpu_family7", metal_manifest=True)
         with patch.object(worker, "observe_exclusive_cuda") as admission, \
-             patch.object(worker, "_evaluate_metal_candidate") as metal:
-            worker._evaluate_candidate(authority, result, collect_timing=True)
-            metal.assert_called_once_with(authority, result)
+             patch.dict(worker._PLATFORMS, {
+                 "metal_binary_archive": worker._ExecutionPlatform(
+                     evaluate=Mock(), platform=PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE])}):
+            row = worker._platform(authority)
+            row.evaluate(authority, result)
+            row.evaluate.assert_called_once_with(authority, result)
+            with self.assertRaisesRegex(ValueError, "does not launch through this path"):
+                worker._evaluate_candidate(authority, result, collect_timing=True)
             admission.assert_not_called()
 
 
@@ -104,8 +114,7 @@ class EveryDeclaredObjectIsARow(unittest.TestCase):
         The point of the row table is that an eighth Target cannot land without one; what
         that costs when it happens is a refusal naming the object, not a fall-through.
         """
-        with patch.dict(worker._PLATFORMS, {"hsaco": worker._ExecutionPlatform(
-                evaluate=None, attribution=None)}):
+        with patch.dict(worker._PLATFORMS, {"hsaco": worker._ExecutionPlatform(evaluate=None)}):
             with self.assertRaisesRegex(ValueError, "no execution platform implements 'hsaco'"):
                 worker._platform(_authority("gfx938"))
 

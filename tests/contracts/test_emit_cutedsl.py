@@ -120,11 +120,11 @@ class StructureTest(unittest.TestCase):
     def test_warp_dispatch_comes_from_the_roles(self) -> None:
         for role in self.schedule.roles:
             with self.subTest(role=role.name):
-                if len(role.warps) == 1:
+                if len(role.execution_groups) == 1:
                     self.assertIn(f"warp_idx == {role.name.upper()}_WARP", self.source)
                 else:
-                    low, high = min(role.warps), max(role.warps)
-                    self.assertEqual(role.warps, tuple(range(low, high + 1)))
+                    low, high = min(role.execution_groups), max(role.execution_groups)
+                    self.assertEqual(role.execution_groups, tuple(range(low, high + 1)))
                     self.assertIn(f"{low} <= warp_idx <= {high}", self.source)
 
     def test_every_operation_is_marked(self) -> None:
@@ -291,7 +291,7 @@ class BackendCoverageTest(unittest.TestCase):
         triton_document = json.loads(
             (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text()
         )
-        triton_document["roles"].append({"name": "unused", "warps": [4]})
+        triton_document["roles"].append({"name": "unused", "execution_groups": [4]})
         triton_failures = triton.preflight(
             Schedule.from_dict(triton_document), TARGET
         )

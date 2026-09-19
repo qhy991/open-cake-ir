@@ -18,6 +18,8 @@ import subprocess
 from types import MappingProxyType
 from typing import Mapping
 
+from .backends.cutedsl_register import REGISTER_ROUTE_EVIDENCE
+from .target import CodeObject
 from .toolchain import _parse_cuobjdump_resources
 
 
@@ -65,12 +67,20 @@ def _attribute_path(node: ast.AST) -> str | None:
 def validate_cute_requirements(requirements: Mapping[str, object]) -> None:
     """One closed ordered-pointer compile contract; options are host-owned."""
     fields = {"compiler", "source_language", "target", "kernel_entry_point", "signature",
-              "grid", "block", "dynamic_shared_memory_bytes"}
+              "grid", "block", "dynamic_shared_memory_bytes", "code_object", "compute_capability"}
     if not isinstance(requirements, Mapping) or set(requirements) != fields:
         raise ValueError("CuTe compile requirement fields differ")
+    # The route facts ride the contract the emitter wrote from the Target it held; this
+    # jail never opens a Target document, so it reads the code object and capability
+    # here rather than decoding them from the id.
+    capability = requirements["compute_capability"]
     if (requirements["compiler"] != "cutlass_cute_dsl"
-        or requirements["source_language"] != "python" or requirements["target"] not in {"sm_100a", "sm_103a"}):
-        raise ValueError("CuTe compilation requires an exact supported CUDA target and backend")
+        or requirements["source_language"] != "python"
+        or not isinstance(requirements["target"], str) or not requirements["target"]
+        or requirements["code_object"] != CodeObject.CUBIN.value
+        or not isinstance(capability, list) or len(capability) != 2
+        or any(type(value) is not int or value < 0 for value in capability)):
+        raise ValueError("CuTe compilation requires an exact cubin target contract and backend")
     name = requirements["kernel_entry_point"]
     if (not isinstance(name, str) or not name.isidentifier() or "__" in name
         or name in _RESERVED or name == "open_cake_cute_launch"):
@@ -88,7 +98,7 @@ def validate_cute_requirements(requirements: Mapping[str, object]) -> None:
             raise ValueError("CuTe pointer signature row differs")
         names.append(row["name"])
     simt = all(row["dtype"] == "fp32" for row in signature)
-    register = (requirements["target"] == "sm_103a" and len(signature) == 4
+    register = (requirements["target"] in REGISTER_ROUTE_EVIDENCE and len(signature) == 4
                 and sorted(row["dtype"] for row in signature[:3]) == ["bf16", "bf16", "fp32"]
                 and signature[-1]["dtype"] == "fp32")
     if len(set(names)) != len(names) or not (simt or register):
@@ -241,7 +251,7 @@ def _ptx_entry(ptx: bytes, requirements: Mapping[str, object]) -> str:
     return name
 
 
-def _cubin_parameters(report: str, entry_point: str, signature: list[Mapping[str, str]], *, target: str = "sm_103a") -> list[dict[str, int]]:
+def _cubin_parameters(report: str, entry_point: str, signature: list[Mapping[str, str]], *, target: str) -> list[dict[str, int]]:
     """Read the actual device ABI from cuobjdump's primary .nv.info section."""
     if re.findall(r"(?m)^64-bit ELF:.*?\bsm=([^,\s]+)", report) != [target.removeprefix("sm_")]:
         raise ValueError("CuTe CUBIN target differs")

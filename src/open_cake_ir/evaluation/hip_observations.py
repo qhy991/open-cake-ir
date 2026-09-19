@@ -25,12 +25,12 @@ sample, so it is not comparable to a cohort median and `timing_use` says so in t
 
 from __future__ import annotations
 
-import json
-import re
-from hashlib import sha256
 from typing import Mapping
 
-from open_cake_ir.serialization import canonical_json_bytes
+from open_cake_ir.compiler.target import CodeObject
+
+from .attribution import load_instrumented_profile
+from .platforms import PLATFORMS
 
 HIP_PROFILE_KIND = "hip_dispatch_activity_v1"
 
@@ -99,30 +99,11 @@ def load_hip_profile(payload: bytes, *, expected_candidate_sha256: str, expected
                      expected_protocol_sha256: str | None = None) -> dict:
     """Read a retained HIP profile, checking it is this candidate's and this case's."""
 
-    document = json.loads(payload)
-    if (not isinstance(document, dict) or document.get("kind") != HIP_PROFILE_KIND
-            or document.get("candidate_sha256") != expected_candidate_sha256
-            or document.get("case_id") != expected_case_id
-            or not isinstance(document.get("kernel_name"), str)
-            or not document["kernel_name"].isidentifier()
-            or not isinstance(document.get("job_id"), str)
-            or re.fullmatch(r"hip-[0-9a-f]{12}", document["job_id"]) is None
-            or document["job_id"] == "hip-000000000000"
-            or document.get("allocation_mode") != "local_serialized"
-            or document.get("external_gpu_activity") != "not_excluded"
-            or document.get("separate_instrumented_launch") is not True):
-        raise ValueError("HIP attribution profile identity differs")
-    evaluation = document.get("evaluation_protocol")
-    if (not isinstance(evaluation, Mapping) or evaluation.get("case_id") != expected_case_id
-            or evaluation.get("attribution_evaluation") not in {
-                "correctness_then_profile", "correctness_then_profile_each_search_survivor"}):
-        raise ValueError("HIP attribution Evaluation policy differs")
-    if (expected_protocol_sha256 is not None
-            and sha256(canonical_json_bytes(evaluation)).hexdigest() != expected_protocol_sha256):
-        raise ValueError("HIP attribution Evaluation identity differs")
-    if document.get("summary") != hip_profile_summary(document.get("raw")):
-        raise ValueError("HIP profile summary differs from raw activity")
-    return document
+    return load_instrumented_profile(
+        payload, kind=HIP_PROFILE_KIND, job_prefix=PLATFORMS[CodeObject.HSACO].local_job_prefix,
+        label="HIP", summary=hip_profile_summary, raw_name="activity",
+        expected_candidate_sha256=expected_candidate_sha256, expected_case_id=expected_case_id,
+        expected_protocol_sha256=expected_protocol_sha256)
 
 
 def hip_attribution_feedback(profile: Mapping[str, object]) -> Mapping[str, object]:

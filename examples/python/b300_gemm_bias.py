@@ -8,7 +8,7 @@ from open_cake_ir.compiler import frontend as cake
 def gemm_bias(lm, a: cake.Tensor((512, 256), "bf16"),
               b: cake.Tensor((256, 256), "bf16"), bias: cake.Tensor((256,), "fp32"),
               c: cake.Tensor((512, 256), "fp32", mode="output")):
-    compute = lm.role(warps=[0, 1, 2, 3])
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
     m_block = lm.program(a, axis=0, dimension=0, tile=64)
     n_block = lm.program(b, axis=1, dimension=0, tile=64)
     for k in lm.range(a, name="k_loop", dimension=1, tile=64, num_stages=2,

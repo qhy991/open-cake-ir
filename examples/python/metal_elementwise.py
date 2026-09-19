@@ -7,7 +7,7 @@ from open_cake_ir.compiler import frontend as cake
 def elementwise(lm, x: cake.Tensor((3, 37), "fp32"),
                 y: cake.Tensor((3, 37), "fp32"),
                 out: cake.Tensor((3, 37), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
         a = lm.load(x[row, :], id="load_x")

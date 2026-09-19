@@ -6,7 +6,6 @@ import grp
 import json
 import os
 import pwd
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.tasks.workloads import load_workload
 from tests.contracts._contexts import enter_context
-from tests.contracts._executor_fixture import commit_project, compiler_reference
+from tests.contracts._executor_fixture import commit_project, compiler_reference, copy_project
 
 from open_cake_ir.evaluation import (  # noqa: E402
     BrokerAttempt,
@@ -560,8 +559,8 @@ class LabContractTests(SemanticLabTestCase):
             current = dict(SemanticExecutorFixture().revision(ROOT).reference)
             self.assertEqual(executor["executor_id"], current["executor_id"], name)
             self.assertEqual(
-                executor["canonical_sha256"],
-                current["canonical_sha256"],
+                executor["path"],
+                current["path"],
                 name,
             )
             compiler = lock.document["compiler_revision"]
@@ -1270,7 +1269,7 @@ class LabContractTests(SemanticLabTestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "study.json"
             path.write_text(json.dumps(study))
-            with self.assertRaisesRegex(ValueError, "Compiler Revision differs"):
+            with self.assertRaisesRegex(ValueError, "Compiler Revision reference fields differ"):
                 TaskLab(ROOT).preflight(path)
 
     def test_preflight_rejects_an_unsupported_analysis_plan(self) -> None:
@@ -1568,6 +1567,10 @@ class LabContractTests(SemanticLabTestCase):
 
         self.assertTrue(report.archive_integrity_passed)
         self.assertFalse(report.semantic_replay_passed)
+        refusals = report.descriptive["replay_refusals_by_run"]
+        self.assertTrue(any(refusals.values()))
+        self.assertTrue(all(item["location"] != "unlocated"
+                            for items in refusals.values() for item in items))
         self.assertFalse(report.estimand_available)
 
     def test_semantic_replay_rejects_an_extra_archived_provider_item(self) -> None:
@@ -1949,7 +1952,7 @@ class LabContractTests(SemanticLabTestCase):
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json"
         )
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         cases = {
@@ -2123,12 +2126,11 @@ class EmpiricalFeedbackRepairTests(SemanticLabTestCase):
             fixture.workload, "headline_b32",
         )
         assessment = fixture.compiler.assess(schedule)
-        fixture.compiler_ref = {"revision_id": assessment.compiler_revision_id,
-                                "canonical_sha256": assessment.compiler_revision_sha256}
+        fixture.compiler_ref = {"revision_id": assessment.compiler_revision_id}
         fixture.model = {
-            "schema_version": 2, "model_id": "synthetic-feedback-repair",
+            "schema_version": 3, "model_id": "synthetic-feedback-repair",
             "compiler_revision_id": fixture.compiler_ref["revision_id"],
-            "compiler_revision_sha256": fixture.compiler_ref["canonical_sha256"],
+
             "target": "sm_100a",
             "context": _empirical_context(fixture.executor,
                 workload_sha256=fixture.workload.canonical_sha256, case_id="headline_b32"),
@@ -3010,10 +3012,9 @@ class StructurallyDistinctCandidatesTest(SemanticLabTestCase):
                     return store.read_object(reference)
 
             if same_program:
-                with self.assertRaisesRegex(
-                    ValueError, "diagnosis_routed is not derived"
-                ):
-                    lab._replay_matched_run(ChangedDiagnosisReplay(), audit, lock)
+                result = lab._replay_matched_run(ChangedDiagnosisReplay(), audit, lock)
+                self.assertFalse(result)
+                self.assertIn("diagnosis_routed", str(result.refusals[0]))
                 changed_diagnosis_rejected = True
             else:
                 changed_diagnosis_rejected = not lab._replay_matched_run(
@@ -3870,7 +3871,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
         cls.temporary = tempfile.TemporaryDirectory(prefix="empirical-selection-contract-")
         cls.parent = Path(cls.temporary.name).resolve()
         cls.root = cls.parent / "prospective-project"
-        shutil.copytree(ROOT, cls.root, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        copy_project(ROOT, cls.root)
         commit_project(cls.root)
         from tests.contracts._executor_fixture import SemanticExecutorFixture
         cls.executor_fixture = SemanticExecutorFixture()
@@ -3886,7 +3887,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
         for arm in cls.study["arms"].values():
             arm["feedback"].remove("profile")
         assessment = cls.compiler.assess(_headline_schedule(cls.workload))
-        cls.compiler_ref = {"revision_id": assessment.compiler_revision_id, "canonical_sha256": assessment.compiler_revision_sha256}
+        cls.compiler_ref = {"revision_id": assessment.compiler_revision_id}
         cls.context = _empirical_context(cls.executor, workload_sha256=cls.workload.canonical_sha256, case_id="headline_b32")
         cls.model = _synthetic_flash_model(cls.workload, cls.compiler_ref, cls.context)
 
@@ -3939,7 +3940,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
         mutations = [
             ("timer", "different timer"), ("cache_protocol", "different cache"),
             ("input_scope", "different workload or case"),
-            ("runtime", {"compiler_version": "different", "executor_revision": self.executor.canonical_sha256}),
+            ("runtime", {"compiler_version": "different", "executor_revision": self.executor.executor_id}),
             ("runtime", {"compiler_version": self.context["runtime"]["compiler_version"]}),
             ("runtime", {**self.context["runtime"], "unmapped": "runtime"}),
             ("runtime", {**self.context["runtime"], "executor_revision": "b" * 64}),
@@ -3948,13 +3949,13 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
             model = json.loads(json.dumps(self.model))
             model["context"][field] = value
             with self.subTest(context=field, value=value):
-                selection = _EmpiricalSelection({"kind": "external_empirical_advisory_v1", "model": model}, context=self.context, compiler_revision_id=self.compiler_ref["revision_id"], compiler_revision_sha256=self.compiler_ref["canonical_sha256"], target="sm_100a")
+                selection = _EmpiricalSelection({"kind": "external_empirical_advisory_v1", "model": model}, context=self.context, compiler_revision_id=self.compiler_ref["revision_id"],  target="sm_100a")
                 result = selection.estimate(model["curves"][0]["template"])
                 self.assertFalse(result["covered"])
                 self.assertIsNone(result["predicted_kernel_us"])
                 self.assertIn("context differs", result["reason"])
-        for field, value in (("compiler_revision_id", "different"), ("compiler_revision_sha256", "0" * 64), ("target", "different")):
-            arguments = {"compiler_revision_id": self.compiler_ref["revision_id"], "compiler_revision_sha256": self.compiler_ref["canonical_sha256"], "target": "sm_100a", field: value}
+        for field, value in (("compiler_revision_id", "different"), ("target", "different")):
+            arguments = {"compiler_revision_id": self.compiler_ref["revision_id"],  "target": "sm_100a", field: value}
             selection = _EmpiricalSelection({"kind": "external_empirical_advisory_v1", "model": self.model}, context=self.context, **arguments)
             self.assertFalse(selection.estimate(self.model["curves"][0]["template"])["covered"])
 
@@ -3964,6 +3965,8 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
 
         paired = json.loads((self.root / "contracts/studies/matched-search-triton-optimization-template.json").read_text())
         paired["claim_scope"] = "artifact_optimization_only"
+        paired["allocation"]["order"] = ["open_cake-1", "native_triton-1"]
+        paired["analysis_plan"] = json.loads(json.dumps(self.study["analysis_plan"]))
         paired["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
         with self.assertRaisesRegex(ValueError, "Flash/direct-CUDA assay"):
             self.preflight(study=paired)
@@ -4020,7 +4023,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
                 self.assertEqual(projected, {
                     "kind": "external_empirical_advisory_v1",
                     "model": {key: model[key] for key in (
-                        "model_id", "compiler_revision_id", "compiler_revision_sha256", "target",
+                        "model_id", "compiler_revision_id", "target",
                     )},
                 })
                 self.assertLess(len(documents["run-authority.json"]), 10000)

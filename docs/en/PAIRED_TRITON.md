@@ -106,7 +106,7 @@ boundary. A `workload_tensors_v1` launch manifest projects the Workload ABI and 
 launch resources. The candidate envelope and kernel source retain separate custody.
 
 `evaluate_tile_workload` uses C's `materialize_case` and `reference_outputs`, then compares
-every output and verifies inputs remain unchanged. `TorchTensorLauncher` allocates from
+every output and verifies inputs remain unchanged. `LoadedTorchTensorCandidate` allocates from
 the ABI and calls the existing admitted CUDA Driver module/launch/unload lifecycle. It never
 executes candidate host wrappers. Outputs begin with poison values so an unwritten output
 cannot pass merely because allocation returned zeros. The existing evaluator command at

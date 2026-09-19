@@ -16,11 +16,12 @@ import unittest
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.backends import triton
 from open_cake_ir.compiler.ir import Schedule
-from open_cake_ir.compiler.target import Target, TargetParseError, Vendor
+from open_cake_ir.compiler.target import CodeObject, Target, TargetParseError, Vendor
 from open_cake_ir.compiler.toolchain import (
     TritonCompilation,
     _parse_amdgcn_resources,
     inspect_triton_resources,
+    route_for_code_object,
     triton_route,
 )
 
@@ -29,6 +30,17 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _document(name: str) -> dict:
     return json.loads((ROOT / "corpus/schedules" / f"{name}.json").read_text(encoding="utf-8"))
+
+
+def _route(target_id: str):
+    """The route from the compile contract the emitter writes for one declared Target.
+
+    Offline compilation never opens a Target document, so `triton_route` reads the
+    code object, architecture and lane width the emitter carried over from the Target
+    it held; this is that contract for a Target of this checkout.
+    """
+    target = Target.load(ROOT / "compiler/targets" / f"{target_id}.json")
+    return triton_route({"target": target_id, **triton.target_route_facts(target)})
 
 
 class TargetDocumentTest(unittest.TestCase):
@@ -58,7 +70,8 @@ class TargetDocumentTest(unittest.TestCase):
             limits.maximum_threads_per_cta,
         )
         self.assertEqual(limits.maximum_shared_memory_bytes, 65536)
-        self.assertEqual(limits.maximum_tensor_memory_bytes, 0)
+        # No tensor memory space is declared, so the limit is unmodeled rather than zero.
+        self.assertIsNone(limits.maximum_tensor_memory_bytes)
 
     def test_the_per_multiprocessor_facts_were_read_from_a_device(self) -> None:
         kinds = {citation["kind"] for citation in self.document["citations"]}
@@ -123,7 +136,7 @@ class Wave64ArithmeticTest(unittest.TestCase):
         self.assertTrue(assessment.lowering_eligible)
         schedule = Schedule.from_dict(document)
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
-        self.assertEqual(schedule.total_warp_extent * target.warp_size, 256)
+        self.assertEqual(schedule.total_execution_group_extent * target.warp_size, 256)
         # The residency report counts those 256 threads, not 128.
         self.assertTrue(
             any("256 of 2560 threads" in finding.message for finding in assessment.findings),
@@ -151,35 +164,50 @@ class TritonAdmissionTest(unittest.TestCase):
             {finding.code for finding in cuda.findings},
         )
 
-    def test_the_backend_admits_the_exact_target_and_still_refuses_metal(self) -> None:
-        schedule = Schedule.from_dict(_document("gfx938-rmsnorm-b8-smoke"))
-        self.assertEqual(triton.preflight(schedule, self.target), ())
-        apple = Target.load(ROOT / "compiler/targets/apple_gpu_family9.json")
-        codes = {finding.code for finding in triton.preflight(schedule, apple)}
-        self.assertIn("BACKEND_TARGET_UNSUPPORTED", codes)
+    def test_the_backend_admits_the_exact_target_and_the_compiler_refuses_metal(self) -> None:
+        """The backend declares the objects it emits; the Compiler holds that against
+        the object the Target declares it runs. Neither keeps a table of target ids."""
+        document = _document("gfx938-rmsnorm-b8-smoke")
+        self.assertEqual(triton.preflight(Schedule.from_dict(document), self.target), ())
+        self.assertEqual(triton.CODE_OBJECTS, {CodeObject.CUBIN, CodeObject.HSACO})
+        assessment = self.compiler.assess({**document, "target": "apple_gpu_family9"})
+        refusals = [f for f in assessment.findings if f.code == "BACKEND_TARGET_UNSUPPORTED"]
+        self.assertEqual(len(refusals), 1, [f.code for f in assessment.findings])
+        self.assertEqual(
+            refusals[0].message,
+            "the triton backend emits ['cubin', 'hsaco'] and the 'apple_gpu_family9' "
+            "target runs 'metal_binary_archive'")
+        self.assertFalse(assessment.lowering_eligible)
 
-    def test_a_target_whose_identity_drifted_is_not_admitted(self) -> None:
-        """The route is pinned to an id, an architecture and a lane width together.
+    def test_the_route_reads_the_document_it_is_handed_and_keeps_no_copy(self) -> None:
+        """A drifted document is followed, not caught: the backend has no second table
+        of ids, architectures or widths that could disagree with the Target.
 
         Built with `replace` rather than a document, because a document naming an
         unknown architecture is refused by the parser first and would prove nothing
-        about what the backend admits.
+        about what the backend reads.
         """
         schedule = Schedule.from_dict(_document("gfx938-rmsnorm-b8-smoke"))
-        for field, value in (("target_id", "gfx942"), ("architecture", "c4000"),
-                             ("warp_size", 32)):
+        for field, value, key in (("target_id", "gfx942", "triton_arch"),
+                                  ("warp_size", 32, "warp_size")):
             with self.subTest(field=field):
                 drifted = replace(self.target, **{field: value})
-                codes = {f.code for f in triton.preflight(schedule, drifted)}
-                self.assertIn("BACKEND_TARGET_UNSUPPORTED", codes)
+                self.assertEqual(triton.preflight(schedule, drifted), ())
+                self.assertEqual(triton.target_route_facts(drifted)[key], value)
+        # Only the code object decides admission, and the emitter refuses a foreign one
+        # by its name rather than by the vendor or architecture beside it.
+        foreign = replace(self.target, code_object=CodeObject.METAL_BINARY_ARCHIVE)
+        with self.assertRaisesRegex(Exception, "emits no 'metal_binary_archive' code object"):
+            triton.target_route_facts(foreign)
 
 
 class TritonRouteTest(unittest.TestCase):
     """Neither vendor's artifact names, target text nor scratch fields are assumed."""
 
     def test_the_amdgcn_route_names_its_own_artifacts(self) -> None:
-        route = triton_route("gfx938")
+        route = _route("gfx938")
         self.assertEqual(route.gpu_backend, "hip")
+        self.assertIs(route.code_object, CodeObject.HSACO)
         self.assertEqual(route.architecture, "gfx938")
         self.assertEqual(route.warp_size, 64)
         self.assertEqual(route.binary_role, "hsaco")
@@ -190,17 +218,20 @@ class TritonRouteTest(unittest.TestCase):
         self.assertEqual(route.scratch_fields, ("profile_scratch_size",))
 
     def test_the_route_and_the_target_document_cannot_drift(self) -> None:
-        """Offline compilation never opens a Target document, so the two are checked."""
+        """Offline compilation never opens a Target document, so the facts it needs ride
+        the compile contract the emitter wrote from the Target; there is no second copy."""
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
-        route = triton_route(target.target_id)
+        route = _route(target.target_id)
         self.assertEqual(route.warp_size, target.warp_size)
         self.assertEqual(route.architecture, target.target_id)
+        self.assertEqual(route.code_object.value, target.code_object.value)
 
     def test_the_cuda_route_is_unchanged(self) -> None:
         for target, architecture in (("sm_100a", 100), ("sm_103a", 103)):
             with self.subTest(target=target):
-                route = triton_route(target)
+                route = _route(target)
                 self.assertEqual(route.gpu_backend, "cuda")
+                self.assertIs(route.code_object, CodeObject.CUBIN)
                 self.assertEqual(route.architecture, architecture)
                 self.assertEqual(route.warp_size, 32)
                 self.assertEqual(route.binary_role, "cubin")
@@ -215,21 +246,38 @@ class TritonRouteTest(unittest.TestCase):
             source=b"# lowered\n", target="gfx938", entry_point="k",
             artifacts={"amdgcn": b"", "hsaco": b""},
             threads_per_cta=256, dynamic_shared_bytes=0, compiler_version="3.6.0",
+            code_object="hsaco",
         )
         with self.assertRaises(ValueError) as raised:
             inspect_triton_resources(compilation, "/nonexistent/cuobjdump")
         self.assertIn("inspect_amdgcn_resources", str(raised.exception))
 
-    def test_an_unlisted_target_is_refused_not_stepped_down(self) -> None:
-        for target in ("gfx942", "gfx936", "gfx9380", "apple_gpu_family9", "", None):
-            with self.subTest(target=target):
-                with self.assertRaises(TargetParseError):
-                    triton_route(target)
+    def test_a_contract_that_names_no_route_is_refused_not_stepped_down(self) -> None:
+        """No key is defaulted: a contract without the object, the architecture or the
+        width is a differing contract, never a CUDA compilation at 32 lanes."""
+        complete = {"target": "gfx938", **triton.target_route_facts(
+            Target.load(ROOT / "compiler/targets/gfx938.json"))}
+        self.assertEqual(triton_route(complete).architecture, "gfx938")
+        for missing in ("target", "code_object", "triton_arch", "warp_size"):
+            with self.subTest(missing=missing):
+                with self.assertRaisesRegex(ValueError, "Triton compile contract differs"):
+                    triton_route({k: v for k, v in complete.items() if k != missing})
+        for changed in ({"target": ""}, {"target": None}, {"warp_size": 0},
+                        {"warp_size": "64"}, {"triton_arch": 938},
+                        {"code_object": "cubin", "triton_arch": "gfx938"}):
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(ValueError, "Triton compile contract differs"):
+                    triton_route({**complete, **changed})
+        # A declared object Triton does not emit is refused by its name.
+        with self.assertRaisesRegex(ValueError, "no 'metal_binary_archive' code object"):
+            route_for_code_object("metal_binary_archive")
+        with self.assertRaisesRegex(ValueError, "no 'elf' code object"):
+            route_for_code_object("elf")
 
     def test_the_emitted_target_line_must_name_the_exact_isa(self) -> None:
         import re
 
-        pattern = triton_route("gfx938").target_pattern
+        pattern = _route("gfx938").target_pattern
         for line in (
             b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:xnack-'",
             b"amdhsa.target:   'amdgcn-amd-amdhsa--gfx938:sramecc+:xnack-'",
@@ -449,7 +497,6 @@ class MeasurementCoverageTest(unittest.TestCase):
         """
         from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
         from open_cake_ir.lab.build import _hidden_pointers
-        from open_cake_ir.compiler.toolchain import triton_route
 
         def metadata(pointers: int, segment: int | None = None) -> bytes:
             """The shape this emitter writes, including the duplicate it writes twice."""
@@ -472,17 +519,15 @@ class MeasurementCoverageTest(unittest.TestCase):
         # Three tensors and five declared pointers means two hidden, not the one the
         # route's single scratch field would have given.
         self.assertEqual(
-            _hidden_pointers(triton_route("gfx938"), {"amdgcn": metadata(5)}, 3), 2)
+            _hidden_pointers(_route("gfx938"), {"amdgcn": metadata(5)}, 3), 2)
         self.assertEqual(
-            _hidden_pointers(triton_route("gfx1151"), {"amdgcn": metadata(4)}, 2), 2)
+            _hidden_pointers(_route("gfx1151"), {"amdgcn": metadata(4)}, 2), 2)
         # The CUDA route keeps the literal every retained CUDA manifest replays through.
-        self.assertEqual(_hidden_pointers(triton_route("sm_103a"), {}, 3), 2)
+        self.assertEqual(_hidden_pointers(_route("sm_103a"), {}, 3), 2)
 
     def test_a_kernel_that_is_not_pointers_alone_is_refused_rather_than_counted(self) -> None:
-        from open_cake_ir.compiler.target import TargetParseError  # noqa: F401
         from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
         from open_cake_ir.lab.build import _hidden_pointers
-        from open_cake_ir.compiler.toolchain import triton_route
 
         mixed = ("\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n"
                  "      - .address_space: global\n        .offset:         0\n"
@@ -499,7 +544,7 @@ class MeasurementCoverageTest(unittest.TestCase):
                 "        .size:           8\n        .value_kind:     global_buffer\n"
                 "    .kernarg_segment_size: 8\n...\n\t.end_amdgpu_metadata\n").encode()
         with self.assertRaisesRegex(ValueError, "fewer than"):
-            _hidden_pointers(triton_route("gfx938"), {"amdgcn": fine}, 3)
+            _hidden_pointers(_route("gfx938"), {"amdgcn": fine}, 3)
 
 
 class Gfx938DeclaredContracts(unittest.TestCase):
@@ -508,27 +553,93 @@ class Gfx938DeclaredContracts(unittest.TestCase):
     def test_gfx938_declares_the_contraction_and_contracts_its_evidence_covers(self) -> None:
         target = Target.load(ROOT / "compiler/targets/gfx938.json")
         self.assertIn("mma", {kind.value for kind in target.operation_kinds})
+        # Each of these has its own citation in the document, and each was measured on a
+        # BW1101 rather than inferred: the two dot contracts elementwise against a torch
+        # oracle at 64x64x64, the tanh across its saturating tails.
         self.assertEqual(
             sorted(target.instruction_contracts),
-            ["triton.dot.fp16_fp32", "triton.dot.fp8e4m3_fp32"])
+            ["ocml.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
+             "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"])
+
+    def test_gfx938_admits_no_other_vendors_spelling_of_the_same_function(self) -> None:
+        """Triton writes one call; the libraries underneath are different ones.
+
+        `tl.extra.libdevice.tanh` reaches __nv_tanhf on an NVIDIA target and
+        __ocml_tanh_f32 here, so admitting CUDA's spelling would claim NVIDIA libdevice
+        numerics for a function this device answers with a different implementation.
+        """
+        target = Target.load(ROOT / "compiler/targets/gfx938.json")
+        self.assertNotIn("libdevice.tanh.f32", target.instruction_contracts)
+        self.assertNotIn("metal.precise.tanh.f32", target.instruction_contracts)
+        self.assertIn("ocml.tanh.f32", target.instruction_contracts)
 
     def test_the_two_gfx938_contracts_read_the_dtypes_that_were_measured(self) -> None:
-        from open_cake_ir.compiler.verifier.hardware_conformance import _CONTRACT_DTYPES
-        from open_cake_ir.compiler.verifier.hardware_conformance import DType
-        self.assertEqual(_CONTRACT_DTYPES["triton.dot.fp16_fp32"],
-                         ({DType.FP16}, DType.FP32))
-        self.assertEqual(_CONTRACT_DTYPES["triton.dot.fp8e4m3_fp32"],
-                         ({DType.FP8_E4M3}, DType.FP32))
+        from open_cake_ir.compiler.ir import ContractKind, DType, contract
+        for name, operand in (("triton.dot.fp16_fp32", DType.FP16),
+                              ("triton.dot.fp8e4m3_fp32", DType.FP8_E4M3),
+                              ("triton.dot.fp32_ieee", DType.FP32),
+                              ("triton.dot.fp32_tf32", DType.FP32)):
+            with self.subTest(contract=name):
+                record = contract(name)
+                self.assertIs(record.kind, ContractKind.MMA)
+                self.assertEqual(record.operand_dtypes, frozenset({operand}))
+                self.assertIs(record.accumulator, DType.FP32)
         # The block-scaled sibling is a different instruction and stays distinct.
         self.assertNotEqual("triton.dot.fp8e4m3_fp32",
                             "triton.dot.fp8e4m3_block_scale_fp32")
 
-    def test_a_triton_target_admits_no_contract_its_route_cannot_emit(self) -> None:
-        """Otherwise the Target admits by name what the only backend then refuses."""
-        from open_cake_ir.compiler.backends.triton import _TRITON_MMA_CONTRACTS
-        target = Target.load(ROOT / "compiler/targets/gfx938.json")
+    def test_every_declared_contract_is_reached_by_a_corpus_case(self) -> None:
+        """A declaration no case exercises is one the Gate cannot speak for.
+
+        F-2026-09-17-009 is that defect, and it recurred inside the change that closed
+        it: triton.dot.fp32_tf32 and triton.dot.fp8e4m3_fp32 were both declared with
+        device evidence and neither was reached, so removing either left the Gate passing.
+        Measured by deleting each contract from the Target and re-running check_corpus;
+        this test is the cheap standing form of that, matching contracts to the schedules
+        the manifest lists for this target.
+
+        It examines gfx938 and no other target, which is the whole of what it claims. The
+        other five declared targets still have unreached contracts, counted per target by
+        test_instruction_contracts.py::DeclaredContractsTheGateCannotSpeakFor rather than
+        left to be inferred from this one's silence.
+        """
+        import json
+        manifest = json.loads((ROOT / "corpus/manifest.json").read_text())
+        declared = set(Target.load(ROOT / "compiler/targets/gfx938.json").instruction_contracts)
+        used = set()
+        for case in manifest["cases"]:
+            path = ROOT / case["schedule"]
+            # Twelve manifest entries are Python schedules under examples/; they declare
+            # their target in the decorator rather than in a readable document, and none
+            # of them is a gfx938 case.
+            if path.suffix != ".json":
+                continue
+            document = json.loads(path.read_text())
+            if document.get("target") != "gfx938":
+                continue
+            for operation in document["operations"]:
+                instruction = (operation.get("parameters") or {}).get("instruction") or {}
+                if instruction.get("contract"):
+                    used.add(instruction["contract"])
         self.assertEqual(
-            sorted(set(target.instruction_contracts) - set(_TRITON_MMA_CONTRACTS)), [])
+            sorted(declared - used), [],
+            "gfx938 declares contracts no Corpus case exercises, so the Gate passes "
+            "whether or not they are true")
+
+    def test_a_triton_target_admits_no_contract_its_route_cannot_emit(self) -> None:
+        """Otherwise the Target admits by name what the only backend then refuses.
+
+        "What the route can emit" spans three sets in one module, one per kind of
+        contract, because a contract does not declare its own kind. This compares against
+        the union; it read only the contraction set until gfx938 admitted a tanh, and
+        then failed -- correctly, on a contract the route could in fact emit.
+        """
+        from open_cake_ir.compiler.backends.triton import (
+            _ATOMIC_RMW_CONTRACT, _TRITON_MMA_CONTRACTS, _TRITON_TANH_CONTRACTS)
+        emittable = set(_TRITON_MMA_CONTRACTS) | set(_TRITON_TANH_CONTRACTS) | {
+            _ATOMIC_RMW_CONTRACT}
+        target = Target.load(ROOT / "compiler/targets/gfx938.json")
+        self.assertEqual(sorted(set(target.instruction_contracts) - emittable), [])
 
 
 if __name__ == "__main__":

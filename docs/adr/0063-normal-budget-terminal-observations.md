@@ -1,6 +1,7 @@
 # ADR 0063: Normal budget terminal observations
 
-Status: accepted design, 2026-09-09; implementation and release acceptance pending.
+Status: accepted, 2026-09-09; implementation pending. The release acceptance it awaited was
+replaced by [ADR 0065](0065-source-identity-is-the-commit.md).
 Related: ADR 0048 and issue #69.
 
 ## Decision

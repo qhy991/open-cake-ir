@@ -11,6 +11,7 @@ from open_cake_ir.evaluation.core import EvaluationProtocol, EvaluationReceipt, 
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
 from open_cake_ir.tasks.tiles.workload import materialize_case, reference_outputs
 from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.evaluation.paired import ROUTE_CALLS_PER_COHORT
 from tests.contracts.test_native_triton_pairing import encoded
 from open_cake_ir.tasks import evaluate as worker
 from hashlib import sha256
@@ -101,7 +102,7 @@ class TileGpuWorkerTests(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'CUPTI failure'):
                         worker._evaluate_tile_candidate(
                             authority, result, measure, self.admission, True,
-                            route_calls_per_cohort=worker.ROUTE_CALLS_PER_COHORT['cupti'])
+                            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['cupti'])
                     self.assertTrue(instances[0].closed)
                     self.assertEqual(result['counters']['kernel_calls'], 3)
                     self.assertEqual(result['counters']['timing_samples'], 0)
@@ -109,7 +110,7 @@ class TileGpuWorkerTests(unittest.TestCase):
                     return
                 worker._evaluate_tile_candidate(
                             authority, result, measure, self.admission, True,
-                            route_calls_per_cohort=worker.ROUTE_CALLS_PER_COHORT['cupti'])
+                            route_calls_per_cohort=ROUTE_CALLS_PER_COHORT['cupti'])
             raw = result['receipt']
             # The count the assay computed has to be in the receipt, which is what is
             # retained and hashed. Removing the surfacing leaves this failing; a source

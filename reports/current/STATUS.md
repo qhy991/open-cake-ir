@@ -8,8 +8,8 @@
 ## Compiler
 
 - 声明的目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, gfx1151, gfx938, sm_100a, sm_103a`
-- 语料检查： `151/151` 项符合预期
-- 语料覆盖： 检查了 `apple_gpu_family8`（15）、`gfx1151`（1）、`gfx938`（3）、`sm_100a`（102）、`sm_103a`（29）
+- 语料检查： `158/158` 项符合预期
+- 语料覆盖： 检查了 `apple_gpu_family8`（15）、`gfx1151`（1）、`gfx938`（10）、`sm_100a`（102）、`sm_103a`（29）
 - 未检查的已声明目标： `apple_gpu_family7, apple_gpu_family9`（上面的通过数不涵盖这些目标）
 - 只用于拒绝检查的未声明目标： `apple_gpu_family10`（1）
 - 已发布校准： `无`
@@ -61,6 +61,6 @@
 算子、完整 Program、模型和服务的结果，仍以各自绑定的实验报告与原始证据为准。
 本页不复制这些实验结论。
 
-历史发布记录保留在 [`compiler/releases/`](../../compiler/releases)、
-[`runtime/executors/`](../../runtime/executors) 和 [`inventory/`](../../inventory)，
-它们只在各自的原提交上用当时的工具重放。
+历史发布记录保留在 `history` 分支的原路径上，
+由 [`docs/history/identities.json`](../../docs/history/identities.json) 索引到各自的产生提交；
+[`inventory/`](../../inventory) 只是阅读投影。它们只在各自的原提交上用当时的工具重放。

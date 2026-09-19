@@ -1,5 +1,7 @@
 # ADR 0007: candidate evidence has one identity, and every frozen reference is a witness
 
+Status: accepted, 2026-08-24.
+
 ## Outcome and non-goals
 
 A Turn may submit several candidates, but every candidate must remain attributable from

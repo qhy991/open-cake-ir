@@ -147,8 +147,16 @@ residency report reading only the static directive would say "unconstrained" and
 
 ### What the target admits
 
-`gfx938` declares `load`, `elementwise`, `reduce` and `store`, the `global`, `shared` and
-`register` spaces, and **no instruction contracts**. That is deliberate. The FP16
+`gfx938` declares `load`, `elementwise`, `mma`, `reduce` and `store`, the `global`,
+`shared` and `register` spaces, and five instruction contracts: `triton.dot.fp16_fp32`,
+`triton.dot.fp8e4m3_fp32`, `triton.dot.fp32_ieee`, `triton.dot.fp32_tf32` and
+`ocml.tanh.f32`. Each arrived with a measurement on a BW1101 recorded in the Target
+document's own citations, and each is exercised by a Corpus case -- removing any one of
+the five fails the Gate.
+
+Until 2026-09-18 it declared **no instruction contracts** at all, and that was the right
+state while nothing had been measured: an undeclared fact is reported, never substituted.
+What the contracts are spelled for is the reason they could not be borrowed. The FP16
 `tl.dot` this device supports lowers to `v_mmac_f32_16x16x16_f16` -- not `v_mfma_*` --
 and the `hcu` backend metadata carries `enable_v_mmac_cluster`, `mmac_layout_force` and
 `empty_arrive_after_mmac`. This is not a relabelled CDNA part, so its matrix contracts
@@ -164,7 +172,7 @@ The 29 tasks the launcher exposes reach gfx938 through one device registry row:
 ```
 "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
                "provenance_token": "BW1101", "route": "triton",
-               "tanh_contract": None, "power_of_two_width": True}
+               "tanh_contract": "ocml.tanh.f32", "power_of_two_width": True}
 ```
 
 Adding the row was not enough, because five of the 29 were not portable to begin with.
@@ -183,7 +191,7 @@ devices:
 | check | question it asks | example refusal |
 | --- | --- | --- |
 | `admit_width` | can this route tile this row width? | `triton-b200 tiles a row with tl.arange, which requires a positive power-of-two span` |
-| `tanh_contract` | does this Target admit a tanh instruction contract? | `triton-dcu has no admitted tanh instruction contract` |
+| `tanh_contract` | does this Target admit a tanh instruction contract? | `triton-gfx1151 has no admitted tanh instruction contract` -- `triton-dcu` produced this until gfx938 declared `ocml.tanh.f32`, and gfx1151 is now the only backend that does |
 | `admit_dtype` | can this route name this dtype? | `metal-m4 lowers through metal, which cannot name dtype 'bf16'` |
 | `admit_operations` | does this Target admit this body's operation kinds? | `triton-dcu targets gfx938, which does not admit operation kind 'cast'` |
 
@@ -192,18 +200,35 @@ combinations that produced a document before produce byte-identical bytes after,
 20 that changed were refusals becoming available -- the five formerly Metal-only tasks on
 the two CUDA Triton backends.
 
-**27 of the 29 launcher tasks reach a lowering-eligible Schedule on gfx938.** The two
-that do not are `gelu_tanh` and `gelu_tanh_backward`, refused by name because gfx938
-declares no tanh contract. On ROCm, Triton's `libdevice` resolves to ocml; reusing the
-CUDA spelling `libdevice.tanh.f32` would claim NVIDIA libdevice numerics for a different
-function, so the row declares `None` and the task is refused rather than lowered against
-numerics nobody measured here. Admitting one is a Target change with its own evidence.
+**Every launcher task now reaches a lowering-eligible Schedule on gfx938**, measured by
+`tools/launch_task_matrix.py` over the 29 declared tasks. Until 2026-09-18 two did not -- `gelu_tanh` and `gelu_tanh_backward`, refused by name because
+gfx938 declared no tanh contract. On ROCm, Triton's `libdevice` resolves to ocml, so
+reusing the CUDA spelling `libdevice.tanh.f32` would have claimed NVIDIA libdevice
+numerics for a different function; the row declared `None` and the tasks were refused
+rather than lowered against numerics nobody had measured here.
 
-Lowering is stage one of four. Nothing above evaluates anything -- see
-[F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json) for
-the Evaluation half that does not exist yet. `--backend triton-dcu` reaches
-`no current Executor is published for exact target 'gfx938'`, which is the correct place
-to stop.
+They were measured: `libdevice.tanh` on this device resolves to `__ocml_tanh_f32` over
+`v_exp_f32_e32`, and across 1024 inputs spanning the saturating tails it departs from
+`torch.tanh` by 1.071e-07 relative, against 2.181e-06 for a composed
+`(e^2x-1)/(e^2x+1)` control on the same inputs. So the contract is declared under the
+spelling of the library that answers -- `ocml.tanh.f32`, not CUDA's -- and a gfx938
+Schedule naming the CUDA spelling is still refused `TARGET_INSTRUCTION_UNSUPPORTED`,
+which `gfx938-swiglu-foreign-tanh-contract` pins as a Corpus case.
+
+Both tasks reach a qualified endpoint in a Lab sweep: `gelu_tanh` and
+`gelu_tanh_backward` in `sweep-20260917-210609` and `sweep-20260918-032731` on bw1100,
+the second at `best_confirmed_latency_ms` 0.006719.
+
+Lowering was stage one of four when this section was written, and the sentence that
+followed it -- that `--backend triton-dcu` stops at `no current Executor is published for
+exact target 'gfx938'` -- has been false since 2026-09-15. The Evaluation half
+[F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json)
+called missing now exists: gfx938 descriptors are published under `runtime/executors/`,
+the AMDGCN evaluator launches and times through `hip_dispatch`, and attribution runs
+through roctracer. 27 of the 29 tasks reach a qualified endpoint; what the remaining two
+fail on is recorded in
+[F-2026-09-18-004](../findings/2026-09-18-004-the-gemm-bias-baseline-fails-its-own-validation-case.json)
+and in the sweep ledgers it cites.
 
 ## Measurement: per-dispatch timing and L2
 

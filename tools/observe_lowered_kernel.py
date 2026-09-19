@@ -166,10 +166,7 @@ def main() -> int:
             "cutlass": getattr(cutlass, "__version__", "?"),
             "torch": torch.__version__,
         },
-        "compiler_revision": {
-            "revision_id": assessment.compiler_revision_id,
-            "revision_sha256": assessment.compiler_revision_sha256,
-        },
+        "compiler_revision": {"revision_id": assessment.compiler_revision_id},
         "schedule": {
             "path": arguments.schedule,
             "schedule_id": assessment.schedule_id,

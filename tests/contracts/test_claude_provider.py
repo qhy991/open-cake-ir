@@ -9,6 +9,7 @@ import subprocess
 import shutil
 import tempfile
 import unittest
+from open_cake_ir.lab.replay_refusals import ReplayRefusal
 from unittest.mock import patch
 
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
@@ -156,8 +157,9 @@ class ClaudeProviderContracts(unittest.TestCase):
                 provider_authority={**authority, "event_contract": CLAUDE_LEGACY_EVENT_CONTRACT})
         payload["auxiliary_activity"] = [a for a in payload["auxiliary_activity"]
                                          if a["item_type"] != "context_compaction"]
-        self.assertIsNone(_replay_provider_turns(**arguments, event_contract=CLAUDE_EVENT_CONTRACT,
-                                               provider_authority=authority))
+        with self.assertRaisesRegex(ReplayRefusal, "provider_turn_completed"):
+            _replay_provider_turns(**arguments, event_contract=CLAUDE_EVENT_CONTRACT,
+                                               provider_authority=authority)
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()

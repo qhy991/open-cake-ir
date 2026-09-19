@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 from types import MappingProxyType, SimpleNamespace
 import unittest
+from open_cake_ir.lab.replay_refusals import ReplayRefusal
 from unittest.mock import patch
 
 from open_cake_ir.evidence import EvidenceStore
@@ -229,7 +230,8 @@ class RubricContractTests(unittest.TestCase):
                     # Re-seal the replacement through CAS: rejection must come from semantic replay.
                     replacement = evidence.put(json.dumps(bundle, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(), media_type="application/json")
                     references[references.index(original)] = replacement.reference("provider_reference_bundle")
-                    self.assertIsNone(replay(changed))
+                    with self.assertRaisesRegex(ReplayRefusal, "provider_turn_completed"):
+                        replay(changed)
 
 
 if __name__ == "__main__":

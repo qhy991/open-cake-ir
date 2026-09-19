@@ -295,9 +295,9 @@ class QsaFeedbackTest(unittest.TestCase):
         for covered in (True, False):
             with self.subTest(covered=covered):
                 document = {
-                    "schema_version": 2, "model_id": "synthetic-feedback-transport-only",
+                    "schema_version": 3, "model_id": "synthetic-feedback-transport-only",
                     "compiler_revision_id": assessment.compiler_revision_id if covered else "other-revision",
-                    "compiler_revision_sha256": assessment.compiler_revision_sha256,
+
                     "target": "sm_100a",
                     "context": {
                         "timer": "synthetic; no measurement", "cache_protocol": "synthetic",

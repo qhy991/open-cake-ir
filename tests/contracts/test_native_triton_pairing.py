@@ -65,7 +65,7 @@ class CompilationFixture:
             'source': b'# fixture-expanded\n' + source, 'ttir': b'fixture ttir',
             'ttgir': b'fixture ttgir', 'llir': b'fixture llir', 'ptx': b'.target sm_100a\n',
             'cubin': b'\x7fELFfixture_not_launchable_on_GPU',
-        }, requirements['compile_options']['num_warps'] * 32, 0, 'fixture')
+        }, requirements['compile_options']['num_warps'] * 32, 0, 'fixture', 'cubin')
 
 
 def baseline(workload, case='primary'):
@@ -80,7 +80,7 @@ def python_rms(workload):
                residency={"ctas_per_multiprocessor": 4, "registers_per_thread": 96})
 def rms(lm, x: cake.Tensor((8,512,128), "fp32"), gamma: cake.Tensor((128,), "fp32"),
         y: cake.Tensor((8,512,128), "fp32", mode="output")):
-    compute = lm.role(warps=[0,1,2,3])
+    compute = lm.role(execution_groups=[0,1,2,3])
     row_block = lm.program(x, axis=0, dimension=1, tile=64)
     batch = lm.program(x, axis=1, dimension=0, tile=1)
     with compute:
@@ -269,7 +269,8 @@ class NativePairingContractTests(unittest.TestCase):
                 commands.append((argv, kwargs))
                 Path(kwargs['cwd'], 'compilation.json').write_text(json.dumps({
                     'target': 'sm_100a', 'entry_point': 'fixture', 'artifacts': {'cubin': 'eA=='},
-                    'threads_per_cta': 128, 'dynamic_shared_bytes': 0, 'compiler_version': 'fixture'}))
+                    'threads_per_cta': 128, 'dynamic_shared_bytes': 0, 'compiler_version': 'fixture',
+                    'code_object': 'cubin'}))
                 return subprocess.CompletedProcess(argv, 0, b'', b'')
             with mock.patch('open_cake_ir.lab.triton_build.run_supervised', side_effect=supervise):
                 compiler.compile(self.native['kernel_source'].encode(), self.lowering.toolchain_requirements)
@@ -535,9 +536,9 @@ class PairedLabFixtureTests(unittest.TestCase):
                 value['provider']['qualification'] = {'path':'contracts/providers/native-fixture.json', 'canonical_sha256':sha256(encoded(qualification)).hexdigest()}
                 value['feedback'] = (['findings'] if arm == 'open_cake' else ['compile']) + ['correctness','qualified_timing']
             study = root / 'fixture-study.json'; study.write_bytes(encoded(document))
-            gate = SimpleNamespace(compiler_revision_id='compiler-fixture', compiler_revision_sha256='a'*64, passed=True)
-            reference = {'revision_id':'compiler-fixture','path':'compiler/revision.json','canonical_sha256':'a'*64}
-            executor = {'executor_id':'open-cake-ir-b200-v9000','path':'runtime/executors/fixture.json','canonical_sha256':'e'*64}
+            gate = SimpleNamespace(compiler_revision_id='compiler-fixture',  passed=True)
+            reference = {'revision_id':'compiler-fixture','path':'compiler/revision.json'}
+            executor = {'executor_id':'open-cake-ir-b200-v9000','path':'runtime/executors/fixture.json'}
             stack.enter_context(mock.patch('open_cake_ir.lab.preflight._resolve_compiler_reference', return_value=(gate, reference['path'], reference)))
             bound_executor = SimpleNamespace(reference=executor)
             stack.enter_context(mock.patch('open_cake_ir.lab.preflight.resolve_executor', return_value=bound_executor))
@@ -549,7 +550,7 @@ class PairedLabFixtureTests(unittest.TestCase):
             def admit_fixture_compiler(project_root, value, context):
                 self.assertEqual(Path(project_root).resolve(), root.resolve())
                 self.assertEqual(value, reference, context)
-                return SimpleNamespace(revision_id=reference['revision_id'], canonical_sha256=reference['canonical_sha256'])
+                return SimpleNamespace(revision_id=reference['revision_id'])
             stack.enter_context(mock.patch('open_cake_ir.lab.bindings.load_compiler_reference', side_effect=admit_fixture_compiler))
             lab = TaskLab(root)
             lock = lab.preflight(study)

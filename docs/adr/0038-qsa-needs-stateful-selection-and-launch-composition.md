@@ -1,8 +1,6 @@
 # ADR 0038: QSA needs stateful selection and launch composition
 
-## Status
-
-Proposed.  It authorizes implementation and corpus-gate preparation, not a Compiler Revision,
+Status: proposed.  It authorizes implementation and corpus-gate preparation, not a Compiler Revision,
 provider run, GPU campaign, or scientific comparison.  Those remain behind the existing human
 release gate and a separately frozen matched Study Contract.
 

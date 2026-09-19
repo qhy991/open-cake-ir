@@ -16,7 +16,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir import compiler as public
 from open_cake_ir.compiler import core, corpus, diagnostics, errors, verifier
-from open_cake_ir.compiler.target import TargetSource
 
 
 class CompilerConvergenceContractTests(unittest.TestCase):
@@ -45,7 +44,6 @@ class CompilerConvergenceContractTests(unittest.TestCase):
         compiler = public.Compiler(
             project_root=revision.project_root,
             revision_id=revision.revision_id,
-            revision_sha256=revision.canonical_sha256,
             commit=revision.commit,
             target_definitions=targets,
             corpus_path=revision.corpus_path,
@@ -58,17 +56,14 @@ class CompilerConvergenceContractTests(unittest.TestCase):
     def test_assess_lower_profile_and_rank_reuse_the_admitted_target(self) -> None:
         document = self.document()
         initial = self.compiler.assess(document)
-        proposal = json.loads((ROOT / "compiler/revision.json").read_text())
-        proposal["calibration_coverage"] = [initial.analysis["semantic_sha256"]]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "draft.json"
-            path.write_text(json.dumps(proposal))
-            compiler = public.Compiler.load(ROOT, path)
+        compiler = copy.copy(self.compiler)
+        compiler._revision = replace(
+            self.compiler._revision,
+            calibration_coverage=frozenset({initial.analysis["semantic_sha256"]}),
+        )
         target = compiler._revision.targets[document["target"]]
         with (
             mock.patch.object(public.Target, "from_dict", side_effect=AssertionError("Target reparsed")),
-            mock.patch.object(TargetSource, "document", new_callable=mock.PropertyMock,
-                              side_effect=AssertionError("provenance used as hardware")),
             mock.patch.object(core, "verify_contracts", wraps=core.verify_contracts) as verify_call,
             mock.patch.object(backend_triton, "preflight", wraps=backend_triton.preflight) as preflight,
             mock.patch.object(backend_triton, "emit", wraps=backend_triton.emit) as emit,

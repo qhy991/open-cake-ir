@@ -76,8 +76,7 @@ class MetalPreflightTests(unittest.TestCase):
                     'launch_manifest':canonical(manifest.as_dict())}
         candidate = LaunchableCandidate(lowering.schedule_sha256, workload.target, lowering.route.entry_point,
             {key:sha256(value).hexdigest() for key,value in payloads.items()}, manifest.canonical_sha256, payloads)
-        executor = SimpleNamespace(reference={'executor_id':'cpu-test-double','path':'runtime/not-released.json',
-                                              'canonical_sha256':'f'*64})
+        executor = SimpleNamespace(reference={'executor_id':'cpu-test-double','path':'runtime/not-released.json'})
         study['arms']['open_cake']['toolchain_sha256']='1'*64
         study['execution'].update(executor_revision=executor.reference, broker_execution_sha256='2'*64,
             fixed_baseline={'bundle_path':str(directory/'baseline-double.json'),'candidate':candidate_identity(candidate)},
@@ -119,7 +118,7 @@ class MetalPreflightTests(unittest.TestCase):
                 self.assertEqual(study['arms']['open_cake']['scaffold']['path'],
                                  'contracts/scaffolds/python-artifact-optimization-v2.md')
                 self.assertIn((ROOT/SCAFFOLD).read_text().strip(), package.task_markdown)
-                self.assertIn('warps=[0]', package.task_markdown)
+                self.assertIn('execution_groups=[0]', package.task_markdown)
                 self.assertIn('tile=1', package.task_markdown)
                 self.assertIn('coalesced=False', package.task_markdown)
                 self.assertFalse((directory/'campaign-lock.json').exists())

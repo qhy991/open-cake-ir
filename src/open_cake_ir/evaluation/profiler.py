@@ -15,6 +15,8 @@ import re
 from types import MappingProxyType
 from typing import Mapping, cast
 
+from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
+
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 NCU_ATTRIBUTION_METRICS = (
@@ -48,16 +50,6 @@ _SIGNALS = {
     ),
     "smsp__warp_issue_stalled_barrier_per_warp_active.pct": "barrier_stall_pct",
 }
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode()
 
 
 def _object(value: object, context: str) -> Mapping[str, object]:

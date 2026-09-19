@@ -5,46 +5,34 @@ The read-only mounts are runtime dependencies, not the author's workspace or HOM
 """
 from __future__ import annotations
 
-from open_cake_ir.serialization import canonical_json_bytes
-
 import base64
 import json
-from hashlib import sha256
 import os
 from pathlib import Path
 import sys
 import subprocess
-import tempfile
 from typing import Mapping
 
 from open_cake_ir.compiler.toolchain import (
     TritonCompilation, compile_triton, validate_triton_kernel,
 )
-from .faults import CandidateCompileRejected, RunProtocolFault
-from .process import run_supervised, SupervisedProcessTimeout, SupervisedProcessOutputLimit
+from .faults import RunProtocolFault
+from .isolated_build import IsolatedCompiler
+from .process import run_supervised
 
 
-class IsolatedTritonCompiler:
+class IsolatedTritonCompiler(IsolatedCompiler):
     """One explicitly pinned Python/Triton runtime under bubblewrap, CPU compilation only."""
+
+    label = "Triton"
+    worker_module = "open_cake_ir.lab.triton_build"
 
     def __init__(self, *, python: str, bubblewrap: str, runtime_roots: list[str],
                  triton_version: str, timeout_seconds: int = 600,
                  build_environment: Mapping[str, str] | None = None):
-        if sys.platform != "linux":
-            raise ValueError("native Triton build requires Linux bubblewrap filesystem isolation")
-        self.python = Path(os.path.abspath(python))
-        self.bubblewrap = Path(bubblewrap).resolve(strict=True)
-        # ELF interpreters and shared libraries name guest paths such as /lib64.
-        # Resolving those aliases here would mount only /usr/lib64 in the jail.
-        destinations = tuple(Path(os.path.abspath(p)) for p in runtime_roots)
-        self._runtime_mounts = tuple((p.resolve(strict=True), p) for p in destinations)
-        host_home = Path.home().resolve(strict=True)
-        if (not self.python.is_file() or not self.bubblewrap.is_file() or not triton_version
-            or not isinstance(timeout_seconds, int) or isinstance(timeout_seconds, bool)
-            or timeout_seconds <= 0 or not self.runtime_roots
-            or any(not source.is_dir() or host_home.is_relative_to(source)
-                   for source, _ in self._runtime_mounts)
-            or not any(self.python.is_relative_to(p) for p in self.runtime_roots)):
+        super().__init__(python=python, bubblewrap=bubblewrap, runtime_roots=runtime_roots,
+                         timeout_seconds=timeout_seconds)
+        if not triton_version:
             raise ValueError("isolated Triton runtime mount contract differs")
         # The jail runs --clearenv, so a fact that lives only in the invoking shell's
         # environment does not survive it. That is correct and costs a CUDA host nothing.
@@ -63,12 +51,6 @@ class IsolatedTritonCompiler:
                for part in declared_paths):
             raise ValueError("isolated Triton build environment names a path outside every mount")
         self.triton_version = triton_version
-        self.timeout_seconds = timeout_seconds
-
-    @property
-    def runtime_roots(self) -> tuple[Path, ...]:
-        """Declared guest destinations; checked host sources are fixed separately."""
-        return tuple(destination for _, destination in self._runtime_mounts)
 
     def check_executor(self, executor, *, author_workspace: str | Path) -> None:
         """Bind the isolated invocation to the already-admitted runtime owner."""
@@ -88,65 +70,34 @@ class IsolatedTritonCompiler:
         # Exact runtime package/source identity is owned by the frozen Executor.
         return {"kind": "bubblewrap_triton_kernel_v1", "python": str(self.python),
                 "bubblewrap": str(self.bubblewrap),
-                "bubblewrap_sha256": sha256(self.bubblewrap.read_bytes()).hexdigest(),
-                "runtime_roots": [{'source': str(source), 'destination': str(destination)}
-                                  for source, destination in self._runtime_mounts],
+                "bubblewrap_sha256": self._bubblewrap_sha256(),
+                "runtime_roots": self._runtime_mount_identity(),
                 "build_environment": dict(sorted(self.build_environment.items())),
                 "triton_version": self.triton_version, "timeout_seconds": self.timeout_seconds}
 
-    @property
-    def canonical_sha256(self) -> str:
-        return sha256(canonical_json_bytes(self.identity)).hexdigest()
+    def _request(self, source: bytes, requirements: Mapping[str, object]) -> dict[str, object]:
+        return {"source": source.decode(), "requirements": dict(requirements),
+                "triton_version": self.triton_version}
+
+    def _jail_environment(self, requirements: Mapping[str, object]) -> list[tuple[str, str]]:
+        return [("TRITON_CACHE_DIR", "/tmp/triton-cache"), *sorted(self.build_environment.items())]
+
+    def _supervise(self, argv, *, cwd, environment, timeout_seconds):
+        return run_supervised(argv, cwd=cwd, environment=environment, timeout_seconds=timeout_seconds)
+
+    def _receipt(self, root: Path, source: bytes, requirements: Mapping[str, object],
+                 streams: dict[str, bytes]) -> TritonCompilation:
+        record = json.loads((root / 'compilation.json').read_text())
+        if record['compiler_version'] != self.triton_version:
+            raise RunProtocolFault('harness_fault', 'isolated Triton runtime version differs')
+        return TritonCompilation(source, record['target'], record['entry_point'],
+            {k: base64.b64decode(v, validate=True) for k, v in record['artifacts'].items()},
+            record['threads_per_cta'], record['dynamic_shared_bytes'], record['compiler_version'],
+            record['code_object'])
 
     def compile(self, source: bytes, requirements: Mapping[str, object]) -> TritonCompilation:
         validate_triton_kernel(source, requirements)
-        package_root = Path(__file__).resolve().parents[2]
-        with tempfile.TemporaryDirectory(prefix="open-cake-isolated-triton-") as directory:
-            root = Path(directory)
-            (root / 'request.json').write_text(json.dumps({
-                "source": source.decode(), "requirements": dict(requirements),
-                "triton_version": self.triton_version,
-            }))
-            argv = [str(self.bubblewrap), '--die-with-parent', '--new-session',
-                    '--unshare-all', '--clearenv', '--proc', '/proc', '--dev', '/dev',
-                    '--tmpfs', '/tmp', '--dir', '/home', '--dir', '/home/build']
-            for source_path, destination in self._runtime_mounts:
-                argv += ['--ro-bind', str(source_path), str(destination)]
-            argv += ['--ro-bind', str(package_root), '/compiler-src',
-                     '--bind', str(root), '/build', '--chdir', '/build',
-                     '--setenv', 'HOME', '/home/build', '--setenv', 'PATH', '/usr/bin:/bin',
-                     '--setenv', 'PYTHONPATH', '/compiler-src',
-                     '--setenv', 'PYTHONDONTWRITEBYTECODE', '1',
-                     '--setenv', 'TRITON_CACHE_DIR', '/tmp/triton-cache']
-            for name, value in sorted(self.build_environment.items()):
-                argv += ['--setenv', name, value]
-            argv += [
-                     str(self.python), '-s', '-m', 'open_cake_ir.lab.triton_build', '/build/request.json']
-            try:
-                result = run_supervised(argv, cwd=root, environment={},
-                                        timeout_seconds=self.timeout_seconds)
-            except (SupervisedProcessTimeout, SupervisedProcessOutputLimit) as error:
-                raise RunProtocolFault('harness_fault', str(error), artifact_payloads={
-                    'toolchain_stdout': error.stdout, 'toolchain_stderr': error.stderr,
-                }) from error
-            except OSError as error:
-                diagnostic = f'{type(error).__name__}: {error}'
-                raise RunProtocolFault('harness_fault', diagnostic, artifact_payloads={
-                    'toolchain_stderr': diagnostic.encode(),
-                }) from error
-            if result.returncode:
-                diagnostic = (result.stderr or result.stdout).decode(errors='replace')[-4096:]
-                artifacts = {'toolchain_stdout': result.stdout, 'toolchain_stderr': result.stderr}
-                if result.returncode != 2:
-                    raise RunProtocolFault('harness_fault', 'isolated Triton build unavailable: ' + diagnostic,
-                                           artifact_payloads=artifacts)
-                raise CandidateCompileRejected(diagnostic, artifact_payloads=artifacts)
-            record = json.loads((root / 'compilation.json').read_text())
-            if record['compiler_version'] != self.triton_version:
-                raise RunProtocolFault('harness_fault', 'isolated Triton runtime version differs')
-            return TritonCompilation(source, record['target'], record['entry_point'],
-                {k: base64.b64decode(v, validate=True) for k, v in record['artifacts'].items()},
-                record['threads_per_cta'], record['dynamic_shared_bytes'], record['compiler_version'])
+        return self._compile_in_jail(source, requirements)
 
 
 def _compile_failure(error: Exception) -> tuple[bool, str]:
@@ -202,7 +153,7 @@ def _worker(path: str) -> int:
         'target': result.target, 'entry_point': result.entry_point,
         'artifacts': {k: base64.b64encode(v).decode() for k, v in result.artifacts.items()},
         'threads_per_cta': result.threads_per_cta, 'dynamic_shared_bytes': result.dynamic_shared_bytes,
-        'compiler_version': result.compiler_version,
+        'compiler_version': result.compiler_version, 'code_object': result.code_object,
     }))
     return 0
 

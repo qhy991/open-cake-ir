@@ -18,11 +18,12 @@ from pathlib import Path
 import re
 import unittest
 
-from open_cake_ir.compiler.backends import cutedsl, triton
+from open_cake_ir.compiler.backends import triton
 from open_cake_ir.compiler.ir import Schedule
-from open_cake_ir.compiler.target import Target, TargetParseError, Vendor
+from open_cake_ir.compiler.target import CodeObject, Target, TargetParseError, Vendor
 from open_cake_ir.compiler.toolchain import triton_route
 from open_cake_ir.evaluation.artifacts import executable_role
+from tests.contracts._synthetic_revision import synthetic_compiler
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/fixtures/targets/neutrality_third_vendor.json"
@@ -64,13 +65,25 @@ class DeclaredVendorTest(unittest.TestCase):
                 with self.assertRaises(TargetParseError):
                     Target.from_dict(document)
 
-    def test_a_declared_width_must_fit_the_declared_cta_budget(self) -> None:
+    def test_the_slot_budget_is_derived_from_the_declared_width(self) -> None:
+        """16 slots of 64 lanes is the 1024-thread CTA; nothing declares the 16 twice."""
+        target = Target.from_dict(_document())
+        self.assertEqual(target.resource_limits.maximum_warps_per_cta, 16)
         document = _document()
         document["resource_limits"] = {**document["resource_limits"],
-                                       "maximum_warps_per_cta": 32}
-        with self.assertRaises(TargetParseError) as raised:
+                                       "maximum_warps_per_cta": 16}
+        with self.assertRaisesRegex(TargetParseError, "resource_limits fields differ"):
             Target.from_dict(document)
-        self.assertIn("warp_size", str(raised.exception))
+
+    def test_a_limit_for_a_space_the_target_does_not_declare_is_unmodeled(self) -> None:
+        """A zero written for tensor memory that does not exist is a substituted fact."""
+        target = Target.from_dict(_document())
+        self.assertIsNone(target.resource_limits.maximum_tensor_memory_bytes)
+        document = _document()
+        document["resource_limits"] = {**document["resource_limits"],
+                                       "maximum_tensor_memory_bytes": 0}
+        with self.assertRaisesRegex(TargetParseError, "declares no tensor memory space"):
+            Target.from_dict(document)
 
 
 class VendorsAreNotFoldedTogetherTest(unittest.TestCase):
@@ -101,13 +114,21 @@ class VendorsAreNotFoldedTogetherTest(unittest.TestCase):
                 self.assertEqual(
                     [f.code for f in triton.preflight(schedule, target)
                      if f.code == "BACKEND_TARGET_UNSUPPORTED"], [])
-        # Swapping one vendor's declaration onto the other's document is refused: the
-        # route is pinned to the architecture and width each Target declares.
+                # The route facts the emitter writes are each document's own.
+                self.assertEqual(triton.target_route_facts(target),
+                                 {"code_object": "hsaco", "triton_arch": name,
+                                  "warp_size": width})
+        # The vendor is not what the route reads: a document that says Apple but still
+        # declares an hsaco is emitted for as an hsaco, and the one fact that decides
+        # admission is the code object, refused by its own name.
         borrowed = Target.load(ROOT / "compiler/targets/gfx938.json")
-        drifted = replace(borrowed, vendor=Vendor.APPLE)
         schedule = Schedule.from_dict({**document, "target": "gfx938"})
-        self.assertIn("BACKEND_TARGET_UNSUPPORTED",
-                      {f.code for f in triton.preflight(schedule, drifted)})
+        self.assertEqual(
+            [f.code for f in triton.preflight(schedule, replace(borrowed, vendor=Vendor.APPLE))
+             if f.code == "BACKEND_TARGET_UNSUPPORTED"], [])
+        with self.assertRaisesRegex(Exception, "emits no 'metal_binary_archive' code object"):
+            triton.target_route_facts(
+                replace(borrowed, code_object=CodeObject.METAL_BINARY_ARCHIVE))
 
 
 class SharedArithmeticTest(unittest.TestCase):
@@ -126,7 +147,7 @@ class SharedArithmeticTest(unittest.TestCase):
         document = json.loads(json.dumps(self.base))
         document["target"] = self.target.target_id
         document.pop("residency", None)
-        document["roles"] = [{"name": "compute", "warps": list(range(slots))}]
+        document["roles"] = [{"name": "compute", "execution_groups": list(range(slots))}]
         return {finding.code for finding in verify(Schedule.from_dict(document), self.target)}
 
     def test_sixteen_slots_fill_the_cta_and_thirty_two_overrun_it(self) -> None:
@@ -141,7 +162,7 @@ class SharedArithmeticTest(unittest.TestCase):
         cuda = Target.load(ROOT / "compiler/targets/sm_100a.json")
         document = json.loads(json.dumps(self.base))
         document.pop("residency", None)
-        document["roles"] = [{"name": "compute", "warps": list(range(32))}]
+        document["roles"] = [{"name": "compute", "execution_groups": list(range(32))}]
         codes = {finding.code for finding in verify(Schedule.from_dict(document), cuda)}
         self.assertNotIn("TARGET_THREAD_LIMIT", codes)
 
@@ -150,7 +171,7 @@ class RefusalOwnershipTest(unittest.TestCase):
     """A refusal names the class it owns, and no vendor the caller did not name."""
 
     def test_the_evaluation_layer_refuses_in_its_own_words(self) -> None:
-        for target in ("synthetic_third_vendor", "sm_120a", "apple_gpu_family10"):
+        for target in ("synthetic_third_vendor", "zz_undeclared_target_for_test"):
             with self.subTest(target=target):
                 with self.assertRaises(ValueError) as raised:
                     executable_role(target)
@@ -158,55 +179,76 @@ class RefusalOwnershipTest(unittest.TestCase):
                 self.assertIn("no executable role in this Evaluation layer", message)
                 self.assertNotIn("CUDA", message)
 
-    def test_the_cuda_backends_refuse_by_the_declared_field(self) -> None:
-        target = Target.from_dict(_document())
+    def test_the_compiler_refuses_a_backend_by_the_declared_code_object(self) -> None:
+        """No backend keeps a table of target ids: each declares the objects it emits,
+        the Target declares the one it runs, and the Compiler holds the two together."""
         document = json.loads(
             (ROOT / "corpus/schedules/rmsnorm-b8-smoke.json").read_text(encoding="utf-8")
         )
-        document["target"] = target.target_id
-        schedule = Schedule.from_dict(document)
-        for module, code in ((triton, "BACKEND_TARGET_UNSUPPORTED"),
-                             # CuTe-DSL routes this shape to its SIMT path, whose own
-                             # exact-target refusal owns the class first.
-                             (cutedsl, "CUTE_SIMT_TARGET")):
-            with self.subTest(backend=module.__name__):
-                findings = module.preflight(schedule, target)
-                self.assertIn(code, {f.code for f in findings})
-                # The caller named no Apple device, so no refusal here may either.
-                for finding in findings:
-                    self.assertNotIn("Metal", finding.message)
+        document["target"] = "synthetic_third_vendor"
+        with synthetic_compiler(FIXTURE) as compiler:
+            admitted = compiler.assess(document)
+            self.assertNotIn("BACKEND_TARGET_UNSUPPORTED", {f.code for f in admitted.findings})
+            cute = compiler.assess(
+                {**document, "lowering": {**document["lowering"], "backend": "cutlass_cute_dsl"}})
+        refusals = [f for f in cute.findings if f.code == "BACKEND_TARGET_UNSUPPORTED"]
+        self.assertEqual(
+            [f.message for f in refusals],
+            ["the cutlass_cute_dsl backend emits ['cubin'] and the "
+             "'synthetic_third_vendor' target runs 'hsaco'"])
+        self.assertFalse(cute.lowering_eligible)
+        # The mismatch skips that backend's own preflight, so no CuTe rule speaks for a
+        # target it never emits for, and the caller named no Apple device, so no
+        # refusal here may either.
+        for finding in cute.findings:
+            self.assertFalse(finding.code.startswith("CUTE_"), finding.code)
+            self.assertNotIn("Metal", finding.message)
 
 
 class OfflineRouteMatchesEveryDeclaredDocumentTest(unittest.TestCase):
-    """The one duplication the offline jail is allowed to keep, held verified.
+    """The offline jail keeps no table of targets at all.
 
     `compile_triton` must not open a Target document -- offline compilation never reads
-    that data in its jail -- so it carries its own table of exact AMDGCN targets. That
-    makes the lane width two owners' fact, which F-2026-09-15-004 proposes to end by
-    having the emitter pass the width it already holds. Until then the duplication is at
-    least checked: a target added to the Revision without the table fails here rather
-    than compiling at a width nobody declared.
+    that data in its jail -- so the facts it needs (which code object, which architecture
+    string, which lane width) ride the compile contract the emitter wrote from the Target
+    it held (F-2026-09-15-004). What is held here is that the contract for every declared
+    document is the document's own facts, and that the route it selects is keyed on the
+    declared code object rather than on the id or the vendor.
     """
 
-    def test_every_declared_amdgcn_target_matches_the_offline_route(self) -> None:
-        checked = 0
+    def test_every_declared_document_routes_by_its_own_facts(self) -> None:
+        checked = set()
         for path in sorted((ROOT / "compiler/targets").glob("*.json")):
-            target_id = path.stem
             target = Target.load(path)
-            if target.vendor not in (Vendor.AMD, Vendor.HYGON):
-                with self.subTest(target=target_id):
-                    # A non-AMDGCN target must not be decoded by the AMDGCN branch.
-                    route = triton_route(target_id) if target.vendor is Vendor.NVIDIA else None
-                    if route is not None:
-                        self.assertEqual(route.text_role, "ptx")
-                continue
-            with self.subTest(target=target_id):
-                route = triton_route(target_id)
+            with self.subTest(target=target.target_id):
+                if target.code_object is CodeObject.METAL_BINARY_ARCHIVE:
+                    with self.assertRaisesRegex(Exception, "emits no"):
+                        triton.target_route_facts(target)
+                    continue
+                route = triton_route(
+                    {"target": target.target_id, **triton.target_route_facts(target)})
                 self.assertEqual(route.warp_size, target.warp_size)
-                self.assertEqual(route.architecture, target.target_id)
-                self.assertEqual(route.text_role, "amdgcn")
-                checked += 1
-        self.assertTrue(checked, "no AMDGCN target was declared to check")
+                self.assertIs(route.code_object, target.code_object)
+                if target.code_object is CodeObject.HSACO:
+                    self.assertEqual(route.architecture, target.target_id)
+                    self.assertEqual(route.text_role, "amdgcn")
+                else:
+                    major, minor = target.compute_capability
+                    self.assertEqual(route.architecture, major * 10 + minor)
+                    self.assertEqual(route.text_role, "ptx")
+                checked.add(target.code_object)
+        self.assertEqual(checked, {CodeObject.CUBIN, CodeObject.HSACO})
+
+    def test_an_unlisted_target_is_refused_not_stepped_down(self) -> None:
+        """A contract missing a route fact is refused; nothing reads 32 or cuda for it."""
+        for requirements in ({"target": "gfx942"}, {"target": "sm_120a", "warp_size": 32},
+                             {"target": "apple_gpu_family9", "code_object": "cubin"}):
+            with self.subTest(requirements=requirements):
+                with self.assertRaisesRegex(ValueError, "Triton compile contract differs"):
+                    triton_route(requirements)
+        with self.assertRaisesRegex(ValueError, "no 'metal_binary_archive' code object"):
+            triton_route({"target": "apple_gpu_family9", "code_object": "metal_binary_archive",
+                          "triton_arch": "apple9", "warp_size": 32})
 
 
 class NoVendorInTheElseTest(unittest.TestCase):

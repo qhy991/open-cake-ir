@@ -22,6 +22,12 @@ from ..target import Target
 
 MMA_CONTRACT = "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"
 SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP32})
+# The register route's qualification evidence (ADR 0070): the single-warp mma.sync
+# lowering below was measured on B300 only, and admitting it elsewhere is a
+# qualification act rather than a capability the Target declares. Pinned by corpus case
+# b300-cute-register-target-drift. `cute_toolchain` reads this same set. Do not widen it
+# without device evidence for this route on the added target.
+REGISTER_ROUTE_EVIDENCE = frozenset({"sm_103a"})
 SUPPORTED_OPERATION_KINDS = frozenset({
     OperationKind.LOAD, OperationKind.MMA, OperationKind.ELEMENTWISE, OperationKind.STORE,
 })
@@ -77,10 +83,12 @@ def _plan(schedule: Schedule, target: Target) -> tuple[_Plan | None, tuple[Findi
         if not condition:
             findings.append(refusal(code, path, message))
 
-    check(schedule.target == target.target_id == "sm_103a", "CUTE_REGISTER_TARGET",
-          "target", "register CuTe lowering requires the exact sm_103a target")
-    check(len(schedule.roles) == 1 and schedule.roles[0].warps == (0,),
-          "CUTE_REGISTER_ROLE", "roles", "register CuTe lowering requires one role with warps=[0]")
+    check(schedule.target == target.target_id and target.target_id in REGISTER_ROUTE_EVIDENCE,
+          "CUTE_REGISTER_TARGET", "target",
+          "the CuTe-DSL register route has been qualified on "
+          f"{', '.join(sorted(REGISTER_ROUTE_EVIDENCE))} only")
+    check(len(schedule.roles) == 1 and schedule.roles[0].execution_groups == (0,),
+          "CUTE_REGISTER_ROLE", "roles", "register CuTe lowering requires one role with execution_groups=[0]")
     check(schedule.residency is None and all(r.registers_per_thread is None for r in schedule.roles),
           "CUTE_REGISTER_RESIDENCY", "residency", "register CuTe lowering does not implement register or residency caps")
     for name in ("allocations", "pipelines", "barriers"):
@@ -333,6 +341,8 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     toolchain = {"source_language": "python", "compiler": "cutlass_cute_dsl", "target": target.target_id,
                  "kernel_entry_point": entry,
                  "signature": [{"name": buf.name, "dtype": buf.dtype.value} for buf in globals_],
-                 "grid": grid, "block": [32, 1, 1], "dynamic_shared_memory_bytes": 0}
+                 "grid": grid, "block": [target.warp_size, 1, 1], "dynamic_shared_memory_bytes": 0,
+                 "code_object": target.code_object.value,
+                 "compute_capability": list(target.compute_capability or ())}
     return Emission("\n".join(lines) + "\n", entry,
                     {"MMA_TILE": tile, "MMA_INSTRUCTION_SHAPE": (16, 8, 16)}, toolchain)

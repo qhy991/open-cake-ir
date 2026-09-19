@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import json
 import math
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
@@ -64,19 +63,12 @@ class CodeObject(str, Enum):
     HSACO = "hsaco"
 
 
-def cuda_architecture(target_id: str) -> int:
-    """Decode the two admitted exact CUDA code-generation targets."""
-    if not isinstance(target_id, str) or re.fullmatch(r"sm_(100|103)a", target_id) is None:
-        raise TargetParseError("unsupported exact CUDA target")
-    return int(target_id[3:-1])
-
-
 def declared_target(target_id: str) -> "Target":
     """Read the Target document this checkout declares for one exact id.
 
     The Evaluation layer resolves declared hardware facts through here. Offline
-    compilation does not and must not: it never opens a Target document inside its jail,
-    which is why `cuda_architecture` and the AMDGCN route table decode their own targets.
+    compilation does not and must not: it never opens a Target document inside its jail;
+    the route facts it needs ride the toolchain requirements the Compiler composes.
     """
     if not isinstance(target_id, str) or not target_id:
         raise TargetParseError("an exact target id is required")
@@ -89,23 +81,9 @@ def declared_target(target_id: str) -> "Target":
     return target
 
 
-def cuda_target(target_id: str) -> "Target":
-    """Read the canonical hardware facts bound by the Compiler and Executor.
-
-    Runtime consumers pin these same files in their Executor closure. Offline
-    compilation needs only cuda_architecture and never opens this data in its jail.
-    """
-    architecture = cuda_architecture(target_id)
-    path = Path(__file__).resolve().parents[3] / "compiler" / "targets" / f"{target_id}.json"
-    target = Target.load(path)
-    if target.target_id != target_id or target.compute_capability != divmod(architecture, 10):
-        raise TargetParseError("CUDA target identity and compute capability differ")
-    return target
-
-
-def _int_field(value: Any, context: str, *, allow_zero: bool = False) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value < (0 if allow_zero else 1):
-        raise TargetParseError(f"{context} must be a {'nonnegative' if allow_zero else 'positive'} integer")
+def _int_field(value: Any, context: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise TargetParseError(f"{context} must be a positive integer")
     return value
 
 
@@ -234,21 +212,56 @@ class Peak:
         return cls(bandwidth, MappingProxyType(arithmetic))
 
 
+_LIMIT_FIELDS = frozenset({"maximum_threads_per_cta", "maximum_shared_memory_bytes", "grid"})
+_OPTIONAL_LIMIT_FIELDS = frozenset({"maximum_registers_per_thread"})
+
+# The document's own shape has one owner, this parser. `citations` is required here and
+# read by the Revision loader, which is where non-emptiness is checked; the typed Target
+# carries no citation.
+_TARGET_FIELDS = frozenset({
+    "schema_version",
+    "target_id",
+    "architecture",
+    "device_names",
+    "vendor",
+    "code_object",
+    "memory_spaces",
+    "operation_kinds",
+    "warp_size",
+    "resource_limits",
+    "instruction_contracts",
+    "synchronization_contracts",
+    "citations",
+})
+# `compute_capability` and `warps_per_warpgroup` are admitted by code object below.
+_OPTIONAL_TARGET_FIELDS = frozenset({
+    "occupancy", "peak", "compute_capability", "warps_per_warpgroup",
+})
+
+
 @dataclass(frozen=True)
 class ResourceLimits:
     maximum_threads_per_cta: int
-    maximum_warps_per_cta: int
+    # The Target's role-slot width, carried here so the slot budget below is derived
+    # from the thread budget instead of being declared a second time beside it.
+    warp_size: int
     maximum_shared_memory_bytes: int
-    maximum_tensor_memory_bytes: int
+    # None when the Target declares no tensor memory space: a limit it never modeled,
+    # reported as such rather than written down as zero.
+    maximum_tensor_memory_bytes: int | None
     maximum_grid: tuple[int, int, int]
     maximum_registers_per_thread: int | None = None
+
+    @property
+    def maximum_warps_per_cta(self) -> int:
+        return self.maximum_threads_per_cta // self.warp_size
 
     def capacity(self, space: MemorySpace) -> int | None:
         """Byte budget for one CTA in `space`, or None when the space is unbudgeted.
 
-        `global` is not CTA-scoped and `register` has no declared budget on any
-        current Target -- see `Verifier` for why the latter is reported rather than
-        assumed unlimited.
+        `global` is not CTA-scoped, `register` has no declared budget on any current
+        Target -- see `Verifier` for why the latter is reported rather than assumed
+        unlimited -- and `tensor` is unmodeled on a Target without that space.
         """
 
         if space is MemorySpace.SHARED:
@@ -258,24 +271,33 @@ class ResourceLimits:
         return None
 
     @classmethod
-    def from_dict(cls, value: Any, context: str) -> "ResourceLimits":
+    def from_dict(
+        cls, value: Any, context: str, *, warp_size: int, tensor_memory: bool
+    ) -> "ResourceLimits":
         if not isinstance(value, Mapping):
             raise TargetParseError(f"{context} must be an object")
+        # The tensor limit is admitted exactly when the Target declares the space it
+        # bounds; a zero written for a space that does not exist is a substituted fact.
+        if not tensor_memory and "maximum_tensor_memory_bytes" in value:
+            raise TargetParseError(
+                "the target declares no tensor memory space; "
+                f"{context}.maximum_tensor_memory_bytes must be omitted"
+            )
+        admitted = _LIMIT_FIELDS | _OPTIONAL_LIMIT_FIELDS | {"maximum_tensor_memory_bytes"}
+        if not set(value) <= admitted:
+            raise TargetParseError(f"{context} fields differ")
         grid = value.get("grid")
         if not isinstance(grid, Mapping) or set(grid) != {"x", "y", "z"}:
             raise TargetParseError(f"{context}.grid must declare x, y and z")
         return cls(
             _int_field(value.get("maximum_threads_per_cta"), f"{context}.maximum_threads_per_cta"),
-            _int_field(value.get("maximum_warps_per_cta"), f"{context}.maximum_warps_per_cta"),
+            warp_size,
             _int_field(
-                value.get("maximum_shared_memory_bytes"),
-                f"{context}.maximum_shared_memory_bytes",
+                value.get("maximum_shared_memory_bytes"), f"{context}.maximum_shared_memory_bytes"
             ),
             _int_field(
-                value.get("maximum_tensor_memory_bytes"),
-                f"{context}.maximum_tensor_memory_bytes",
-                allow_zero=True,
-            ),
+                value.get("maximum_tensor_memory_bytes"), f"{context}.maximum_tensor_memory_bytes"
+            ) if tensor_memory else None,
             (
                 _int_field(grid["x"], f"{context}.grid.x"),
                 _int_field(grid["y"], f"{context}.grid.y"),
@@ -315,26 +337,6 @@ class Occupancy:
 
 
 @dataclass(frozen=True)
-class TargetSource:
-    """Revision-checked identity and source bytes retained for provenance.
-
-    The document is a fresh projection on each access. It cannot mutate the typed
-    hardware facts or become a second live hardware representation.
-    """
-
-    canonical_sha256: str
-    document_bytes: bytes
-
-    @property
-    def document(self) -> Mapping[str, object]:
-        return MappingProxyType(json.loads(self.document_bytes))
-
-    @property
-    def citations(self) -> tuple[Mapping[str, object], ...]:
-        return tuple(MappingProxyType(item) for item in json.loads(self.document_bytes)["citations"])
-
-
-@dataclass(frozen=True)
 class Target:
     target_id: str
     architecture: str
@@ -361,7 +363,6 @@ class Target:
     # a role's slot range rather than a preference. Declared beside its citation like
     # `warp_size`, and absent -- not zero, not a borrowed four -- on an ISA without it.
     warps_per_warpgroup: int | None = None
-    source: TargetSource | None = field(default=None, repr=False, compare=False)
 
     @classmethod
     def load(cls, path: str | Path) -> "Target":
@@ -371,8 +372,14 @@ class Target:
     def from_dict(cls, value: Any) -> "Target":
         if not isinstance(value, Mapping):
             raise TargetParseError("target must be an object")
+        # An unknown key is refused here; a missing one is refused by name below, by
+        # the parser of that field.
+        if not set(value) <= _TARGET_FIELDS | _OPTIONAL_TARGET_FIELDS:
+            raise TargetParseError("target fields differ")
         if value.get("schema_version") != 1:
             raise TargetParseError("target.schema_version must be 1")
+        if "citations" not in value:
+            raise TargetParseError("target.citations is required")
 
         def string_tuple(field: str, *, allow_empty: bool = False) -> tuple[str, ...]:
             items = value.get(field)
@@ -394,20 +401,24 @@ class Target:
                 "target.code_object must be one of "
                 + ", ".join(sorted(item.value for item in CodeObject))
             ) from error
+        # The CUDA-only fields are keyed on the code object, not the vendor: a compute
+        # capability and a warpgroup are facts about what a cubin encodes, and a document
+        # that produces another object is refused for them by that object's name.
+        cubin = code_object is CodeObject.CUBIN
         capability = value.get("compute_capability")
+        if cubin and capability is None:
+            raise TargetParseError("target.compute_capability is required for cubin targets")
+        if not cubin and "compute_capability" in value:
+            raise TargetParseError(
+                f"{code_object.value} targets have no CUDA compute capability"
+            )
         if capability is not None and (
             not isinstance(capability, list) or len(capability) != 2
             or any(type(item) is not int or item < 0 for item in capability)
         ):
             raise TargetParseError("target.compute_capability must be a nonnegative integer pair")
-        # Keyed on the declared vendor, so a non-NVIDIA document is refused for the reason
-        # that applies to it instead of for a field its ISA does not have.
-        if vendor is Vendor.NVIDIA and capability is None:
-            raise TargetParseError("target.compute_capability is required for NVIDIA targets")
-        if vendor is not Vendor.NVIDIA and "compute_capability" in value:
-            raise TargetParseError(
-                f"{vendor.value} targets have no CUDA compute capability"
-            )
+        if not cubin and "warps_per_warpgroup" in value:
+            raise TargetParseError(f"{code_object.value} targets have no warps_per_warpgroup")
 
         try:
             spaces = frozenset(
@@ -421,36 +432,21 @@ class Target:
         except ScheduleParseError as error:
             raise TargetParseError(str(error)) from error
 
-        if vendor is Vendor.APPLE and "occupancy" in value:
-            raise TargetParseError("Apple GPU targets have no admitted occupancy calibration")
-
         instruction_contracts = frozenset(string_tuple("instruction_contracts", allow_empty=True))
         peak = (
             Peak.from_dict(value["peak"], instruction_contracts, "target.peak")
             if "peak" in value else None
         )
-        if vendor is Vendor.APPLE and peak is not None and (
-            peak.arithmetic
-            or peak.memory_bandwidth is None
-            or peak.memory_bandwidth.source is not PeakSource.DEVICE_SPECIFICATION
-        ):
-            raise TargetParseError(
-                "Apple GPU peaks admit only device-specification memory bandwidth; "
-                "arithmetic and microbenchmark calibration remain unavailable"
-            )
         # An undeclared width is refused, never substituted: reading 32 for a target that
         # never said 32 is exactly the silent answer this field exists to stop.
         warp_size = _int_field(value.get("warp_size"), "target.warp_size")
         warpgroup = value.get("warps_per_warpgroup")
         if warpgroup is not None:
             warpgroup = _int_field(warpgroup, "target.warps_per_warpgroup")
-        limits = ResourceLimits.from_dict(value.get("resource_limits"), "target.resource_limits")
-        if limits.maximum_warps_per_cta * warp_size > limits.maximum_threads_per_cta:
-            raise TargetParseError(
-                "target.warp_size disagrees with target.resource_limits: "
-                f"{limits.maximum_warps_per_cta} slots of {warp_size} threads exceed "
-                f"{limits.maximum_threads_per_cta} threads per CTA"
-            )
+        limits = ResourceLimits.from_dict(
+            value.get("resource_limits"), "target.resource_limits",
+            warp_size=warp_size, tensor_memory=MemorySpace.TENSOR in spaces,
+        )
         return cls(
             target_id=_string(value.get("target_id"), "target.target_id"),
             architecture=_string(value.get("architecture"), "target.architecture"),

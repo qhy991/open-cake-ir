@@ -11,6 +11,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping, Sequence, cast
 
+from ..serialization import canonical_json_bytes as _canonical_json_bytes
 from .backends import BACKENDS, Backend
 from .frontend import read_schedule
 from .passes import (FusionResult, SpecializationResult, fuse_pointwise_epilogue,
@@ -44,7 +45,6 @@ class Assessment:
     """
 
     compiler_revision_id: str
-    compiler_revision_sha256: str
     schedule_id: str
     schedule_sha256: str
     target: str
@@ -69,7 +69,6 @@ class Lowering:
     """
 
     compiler_revision_id: str
-    compiler_revision_sha256: str
     schedule_id: str
     schedule_sha256: str
     target: str
@@ -85,16 +84,6 @@ class Lowering:
 # parsed cleanly and was then rejected as an unknown root field by this check.
 _REQUIRED_TOP_LEVEL_FIELDS = set(_SCHEDULE_REQUIRED)
 _OPTIONAL_TOP_LEVEL_FIELDS = set(_SCHEDULE_OPTIONAL)
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
 
 
 def _object(value: object, path: str) -> Mapping[str, object]:
@@ -164,7 +153,6 @@ class Compiler:
         *,
         project_root: Path,
         revision_id: str,
-        revision_sha256: str,
         commit: str | None,
         target_definitions: Mapping[str, Target],
         corpus_path: Path,
@@ -173,7 +161,6 @@ class Compiler:
         self._revision = CompilerRevision(
             project_root=project_root,
             revision_id=revision_id,
-            canonical_sha256=revision_sha256,
             commit=commit,
             targets=MappingProxyType(dict(target_definitions)),
             corpus_path=corpus_path,
@@ -194,7 +181,6 @@ class Compiler:
         return cls(
             project_root=revision.project_root,
             revision_id=revision.revision_id,
-            revision_sha256=revision.canonical_sha256,
             commit=revision.commit,
             target_definitions=revision.targets,
             corpus_path=revision.corpus_path,
@@ -235,7 +221,7 @@ class Compiler:
 
         missing = _REQUIRED_TOP_LEVEL_FIELDS - schedule.keys()
         extra = schedule.keys() - _REQUIRED_TOP_LEVEL_FIELDS - _OPTIONAL_TOP_LEVEL_FIELDS
-        if missing or extra or schedule.get("schema_version") != 1:
+        if missing or extra or schedule.get("schema_version") != 2:
             raise CompilerError("schedule root fields or schema_version differ")
         if ("grid" in schedule) == ("program_map" in schedule):
             raise CompilerError("schedule must define exactly one of grid or program_map")
@@ -261,12 +247,29 @@ class Compiler:
         route = typed_schedule.lowering
         backend = BACKENDS.get(route.backend)
         semantic_sha256 = _semantic_schedule_sha256(schedule)
+        # A backend declares the code objects it emits and a Target declares the one it
+        # runs; the Compiler holds the two against each other here, by name, so no
+        # backend keeps a table of the target ids it admits. A mismatched pair skips
+        # that backend's preflight -- its rules presume its own code object -- and
+        # keeps the shared verification, which presumes nothing about the route.
+        emits_code_object = (
+            backend is None or target_definition is None
+            or target_definition.code_object in backend.module.CODE_OBJECTS
+        )
+        if not emits_code_object:
+            findings.append(Finding(
+                "BACKEND_TARGET_UNSUPPORTED", "target",
+                f"the {route.backend.value} backend emits "
+                f"{sorted(item.value for item in backend.module.CODE_OBJECTS)} and the "
+                f"{target!r} target runs {target_definition.code_object.value!r}",
+                FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+            ))
         if backend is not None:
             findings.extend(backend.module.requirements(typed_schedule))
 
         if target_definition is not None:
             findings.extend(verify_contracts(typed_schedule, target_definition))
-        if (backend is not None and target_definition is not None
+        if (backend is not None and target_definition is not None and emits_code_object
                 and not any(finding.blocks_lowering for finding in findings)):
             findings.extend(backend.module.preflight(typed_schedule, target_definition))
 
@@ -278,12 +281,11 @@ class Compiler:
                 operation.kind.value for operation in typed_schedule.operations
             ).items())),
             "role_count": len(typed_schedule.roles),
-            "total_warps": len({warp for role in typed_schedule.roles for warp in role.warps}),
+            "total_execution_groups": len({warp for role in typed_schedule.roles for warp in role.execution_groups}),
             "semantic_sha256": semantic_sha256,
         })
         return Assessment(
             compiler_revision_id=self._revision.revision_id,
-            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=typed_schedule.schedule_id,
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target,
@@ -314,7 +316,6 @@ class Compiler:
         target = schedule.get("target")
         return Assessment(
             compiler_revision_id=self._revision.revision_id,
-            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=schedule_id if isinstance(schedule_id, str) else "",
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target if isinstance(target, str) else "",
@@ -354,7 +355,6 @@ class Compiler:
         source = emission.source.replace("__SCHEDULE_SHA256__", assessment.schedule_sha256)
         return Lowering(
             compiler_revision_id=self._revision.revision_id,
-            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=assessment.schedule_id,
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
@@ -395,7 +395,6 @@ class Compiler:
             from dataclasses import replace
             profile = replace(profile, empirical_cost=cost_model.estimate(
                 json.loads(assessment.schedule_bytes), compiler_revision_id=self._revision.revision_id,
-                compiler_revision_sha256=self._revision.canonical_sha256,
                 target=assessment.target,
                 compiled_compiler_version=compiled_resources.compiler_version if compiled_resources else None,
             ))
@@ -422,10 +421,7 @@ class Compiler:
         eligible: list[Schedule] = []
         withheld: list[str] = []
         for assessment in assessments:
-            if (
-                assessment.compiler_revision_id != self._revision.revision_id
-                or assessment.compiler_revision_sha256 != self._revision.canonical_sha256
-            ):
+            if assessment.compiler_revision_id != self._revision.revision_id:
                 raise CompilerError("assessment belongs to a different Compiler Revision")
             replayed = self.assess(
                 _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
@@ -458,10 +454,7 @@ class Compiler:
     def lower(self, assessment: Assessment) -> Lowering:
         """Lower an eligible Assessment to deterministic inspectable target source."""
 
-        if (
-            assessment.compiler_revision_id != self._revision.revision_id
-            or assessment.compiler_revision_sha256 != self._revision.canonical_sha256
-        ):
+        if assessment.compiler_revision_id != self._revision.revision_id:
             raise CompilerError("assessment belongs to a different Compiler Revision")
         replayed = self.assess(
             _object(json.loads(assessment.schedule_bytes), "assessment.schedule")

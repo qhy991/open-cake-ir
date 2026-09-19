@@ -26,7 +26,7 @@ ROWS, WIDTH, COLUMNS = 4, 6, 5
 _HEADER = '''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="{name}", target="apple_gpu_family7", backend="metal", entry_point="{entry}"{metadata})
 def candidate(lm, a: cake.Tensor(({rows}, {width}), "fp32"), b: cake.Tensor(({width}, {columns}), "fp32"), bias: cake.Tensor(({columns},), "fp32"), out: cake.Tensor(({rows}, {columns}), "fp32", mode="output"){extra_args}):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(a, axis=0, dimension=0, tile=1)
 {axes}    with compute:
         a_row = lm.load(a[row, :], id="load_a")
@@ -85,7 +85,7 @@ def column_programmed_document():
     text = '''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="already-columns", target="apple_gpu_family7", backend="metal", entry_point="cake_columns")
 def candidate(lm, a: cake.Tensor((4, 6), "fp32"), b: cake.Tensor((6, 5), "fp32"), bias: cake.Tensor((5,), "fp32"), out: cake.Tensor((4, 5), "fp32", mode="output")):
-    compute = lm.role(warps=[0])
+    compute = lm.role(execution_groups=[0])
     row = lm.program(a, axis=0, dimension=0, tile=1)
     col = lm.program(b, axis=1, dimension=1, tile=1)
     with compute:

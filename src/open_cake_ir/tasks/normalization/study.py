@@ -15,16 +15,13 @@ from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN, unt
 from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
 from open_cake_ir.lab.efficiency_policy import TASK_EFFICIENCY_V1
 from open_cake_ir.lab.ralph import RalphBudget
+from open_cake_ir.serialization import canonical_json_bytes as canonical
 # The portable registry, so a Study can name an NVIDIA device as readily as an
 # Apple one; open_cake_ir.tasks.apple covers only the latter.
 from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, timing_source, device_name
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
 SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"
-
-
-def canonical(document) -> bytes:
-    return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
 
 
 def arm_feedback(evaluation) -> list[str]:
@@ -124,11 +121,10 @@ _PAIRED_KINDS = {
     "metal": PAIRED_METAL_BATCHED_KIND,
     "hip_dispatch": PAIRED_HIP_KIND,
 }
-_ROUTE_CALLS = {
-    "cupti": ROUTE_CALLS_PER_COHORT["cupti"],
-    "metal": _ROUTE_CALLS_PER_COHORT,
-    "hip_dispatch": ROUTE_CALLS_PER_COHORT["hip_dispatch"],
-}
+# Every source whose row declares its count, read from the rows; Metal's is contributed
+# here because this module owns it (above), not because the row was consulted and found
+# empty.
+_ROUTE_CALLS = {**ROUTE_CALLS_PER_COHORT, "metal": _ROUTE_CALLS_PER_COHORT}
 
 
 def _allocation_mode(target: object) -> str:

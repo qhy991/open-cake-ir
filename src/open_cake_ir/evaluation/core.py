@@ -13,14 +13,20 @@ from hashlib import sha256
 from types import MappingProxyType
 from typing import Mapping, Protocol, cast
 
-from .artifacts import allowed_artifact_roles, executable_role
+from open_cake_ir.compiler.target import CodeObject
 
+from .artifacts import allowed_artifact_roles, executable_role
+from .launch_manifest import WorkloadTensorManifest, tensor_abi_rows
+from .platforms import PLATFORMS, platform_for
 from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
-
-
+# The timing an assay may declare: none, or the paired assay of a platform that names a
+# timer. Read off the rows so a platform whose timer exists can declare it -- the HIP
+# row's `paired_hip` had no spelling here while the assay itself was already measured.
+_TIMINGS = frozenset({"none"}) | frozenset(
+    row.protocol_timing for row in PLATFORMS.values() if row.protocol_timing is not None)
 
 
 def _plain_json(value: object) -> object:
@@ -132,7 +138,7 @@ class EvaluationProtocol:
             or self.purpose not in {"search", "confirmatory", "attribution"}
             or _DIGEST.fullmatch(self.workload_sha256) is None
             or not self.case_id
-            or self.timing not in {"none", "paired_cupti", "paired_metal"}
+            or self.timing not in _TIMINGS
             # A profiler serialises kernels and inflates every span it observes, so an
             # attribution assay cannot also be a timing source. Making that structural
             # rather than a note means a profiled run has no latency to be mistaken for
@@ -433,18 +439,14 @@ class EvaluationReceipt:
 
 
 @dataclass(frozen=True)
-class TensorLaunchManifest:
-    """Explicit Workload tensor ABI for the existing sealed CUBIN launch boundary."""
+class TensorLaunchManifest(WorkloadTensorManifest):
+    """Explicit Workload tensor ABI for a module the host launches itself (a cubin or an hsaco)."""
 
-    workload_sha256: str
-    case_id: str
-    tensor_abi: tuple[tuple[str, tuple[int, ...], str, str], ...]
-    target: str
-    kernel_name: str
-    grid: tuple[int, int, int]
-    block: tuple[int, int, int]
     dynamic_shared_memory_bytes: int
     hidden_null_pointer_parameters: int
+
+    abi = 'workload_tensors_v1'
+    workload_mismatch = 'sealed launch ABI differs from the selected Workload'
 
     @classmethod
     def from_dict(cls, document: object) -> 'TensorLaunchManifest':
@@ -453,7 +455,7 @@ class TensorLaunchManifest:
             'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi',
             'target', 'kernel_name', 'grid', 'block', 'dynamic_shared_memory_bytes',
             'hidden_null_pointer_parameters',
-        } or document.get('schema_version') != 1 or document.get('abi') != 'workload_tensors_v1':
+        } or document.get('schema_version') != 1 or document.get('abi') != cls.abi:
             raise ValueError('Workload tensor launch manifest fields differ')
         launch = CudaKernelSpec.from_dict({
             key: value for key, value in document.items()
@@ -465,39 +467,23 @@ class TensorLaunchManifest:
             or not isinstance(document['case_id'], str) or not document['case_id']
             or not isinstance(rows, list) or not rows):
             raise ValueError('Workload tensor launch identity differs')
-        abi = []
-        for row in rows:
-            if (not isinstance(row, Mapping) or set(row) != {'name', 'shape', 'dtype', 'mode'}
-                or not isinstance(row['name'], str) or not row['name'].isidentifier()
-                or not isinstance(row['dtype'], str) or row['dtype'] not in {'fp32', 'bf16', 'fp16', 'int32'}
-                or not isinstance(row['mode'], str) or row['mode'] not in {'input', 'output'}
-                or not isinstance(row['shape'], list) or not row['shape']
-                or any(type(v) is not int or v <= 0 for v in row['shape'])):
-                raise ValueError('Workload tensor launch ABI differs')
-            abi.append((row['name'], tuple(row['shape']), row['dtype'], row['mode']))
-        modes = [row[3] for row in abi]
-        if len({r[0] for r in abi}) != len(abi) or 'input' not in modes or 'output' not in modes or modes != sorted(modes):
-            raise ValueError('Workload tensor launch ABI order differs')
-        return cls(document['workload_sha256'], document['case_id'], tuple(abi),
+        abi = tensor_abi_rows(rows, dtypes=frozenset({'fp32', 'bf16', 'fp16', 'int32'}),
+                              ascii_names=False,
+                              row_error='Workload tensor launch ABI differs',
+                              order_error='Workload tensor launch ABI order differs')
+        return cls(document['workload_sha256'], document['case_id'], abi,
                    launch.target, launch.kernel_name, launch.grid, launch.block,
                    launch.dynamic_shared_memory_bytes, launch.hidden_null_pointer_parameters)
 
     @classmethod
     def for_workload(cls, workload: WorkloadContract, case_id: str, **launch: object) -> 'TensorLaunchManifest':
         from dataclasses import asdict
-        manifest = cls.from_dict({'schema_version': 1, 'abi': 'workload_tensors_v1',
+        manifest = cls.from_dict({'schema_version': 1, 'abi': cls.abi,
             'workload_sha256': workload.canonical_sha256, 'case_id': case_id,
             'tensor_abi': [{**asdict(t), 'shape': list(t.shape)} for t in workload.tensor_abi(case_id)],
             **launch})
         manifest.check_workload(workload, case_id)
         return manifest
-
-    def check_workload(self, workload: WorkloadContract, case_id: str) -> None:
-        expected = tuple((t.name, t.shape, t.dtype, t.mode) for t in workload.tensor_abi(case_id))
-        if (self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id
-            or self.tensor_abi != expected
-            or self.target != workload.document['semantics'].get('target')):
-            raise ValueError('sealed launch ABI differs from the selected Workload')
 
     def check_validation_case(self, workload: WorkloadContract, case_id: str) -> None:
         """Admit another required input distribution without changing the primary seal."""
@@ -511,25 +497,17 @@ class TensorLaunchManifest:
             raise ValueError('validation case must preserve the sealed primary Workload tensor ABI')
 
     @property
-    def block_threads(self) -> int:
-        return math.prod(self.block)
-
-    @property
     def tensors(self) -> tuple[tuple[str, tuple[int, ...], str], ...]:
         dtypes = {'fp32': 'torch.float32', 'bf16': 'torch.bfloat16', 'fp16': 'torch.float16', 'int32': 'torch.int32'}
         return tuple((name, shape, dtypes[dtype]) for name, shape, dtype, _ in self.tensor_abi)
 
     def as_dict(self) -> dict[str, object]:
-        return {'schema_version': 1, 'abi': 'workload_tensors_v1',
+        return {'schema_version': 1, 'abi': self.abi,
             'workload_sha256': self.workload_sha256, 'case_id': self.case_id,
             'tensor_abi': [dict(name=n, shape=list(s), dtype=d, mode=m) for n, s, d, m in self.tensor_abi],
             'target': self.target, 'kernel_name': self.kernel_name, 'grid': list(self.grid),
             'block': list(self.block), 'dynamic_shared_memory_bytes': self.dynamic_shared_memory_bytes,
             'hidden_null_pointer_parameters': self.hidden_null_pointer_parameters}
-
-    @property
-    def canonical_sha256(self) -> str:
-        return sha256(_canonical_json_bytes(self.as_dict())).hexdigest()
 
 
 def compare_tile_outputs(workload, before, expected, observed, after):
@@ -579,11 +557,31 @@ def compare_tile_outputs(workload, before, expected, observed, after):
     return mismatch == 0 and unchanged, metrics
 
 
+def _load_cubin(candidate, manifest, admission):
+    from .cuda_driver import LoadedCudaCandidate
+    return LoadedCudaCandidate.load(
+        candidate, candidate.artifact_payloads['cubin'], manifest, admission)
+
+
+def _load_hsaco(candidate, manifest, admission):
+    from .hip_driver import LoadedHipModuleCandidate
+    return LoadedHipModuleCandidate.load(
+        candidate, candidate.artifact_payloads['hsaco'], manifest, admission.device_arch)
+
+
+# The driver that retains a module for the tensor-tile path, per declared object. A row
+# with no loader is refused by the object's name: a Metal binary archive is observed by
+# its native observer rather than launched here.
+_MODULE_LOADERS = {
+    CodeObject.CUBIN: _load_cubin,
+    CodeObject.HSACO: _load_hsaco,
+}
+
+
 class LoadedTorchTensorCandidate:
-    """One Workload-shaped argument set and admitted CUBIN for preflight/timing/postflight."""
+    """One Workload-shaped argument set and admitted module for preflight/timing/postflight."""
 
     def __init__(self, candidate, manifest, inputs, admission):
-        from .artifacts import executable_role
         import torch
         self.candidate = candidate
         self.manifest = manifest
@@ -604,20 +602,13 @@ class LoadedTorchTensorCandidate:
         # named the CUBIN one directly, so the whole tensor-tile evaluation path -- the
         # oracle, the cohorts, the receipts, none of which is CUDA's -- could only ever
         # run a CUDA candidate.
-        executable = executable_role(candidate.target)
-        if executable == 'cubin':
-            from .cuda_driver import LoadedCudaCandidate
-            self.loaded = LoadedCudaCandidate.load(
-                candidate, candidate.artifact_payloads['cubin'], manifest, admission)
-        elif executable == 'hsaco':
-            from .hip_driver import LoadedHipModuleCandidate
-            self.loaded = LoadedHipModuleCandidate.load(
-                candidate, candidate.artifact_payloads['hsaco'], manifest,
-                admission.device_arch)
-        else:
+        executable = platform_for(candidate.target).code_object
+        loader = _MODULE_LOADERS.get(executable)
+        if loader is None:
             raise ValueError(
-                f'{candidate.target!r} builds a {executable!r}, which this tensor-tile '
-                'path has no driver for')
+                f'{candidate.target!r} builds a {executable.value!r}, which this '
+                'tensor-tile path has no driver for')
+        self.loaded = loader(candidate, manifest, admission)
 
     def fresh_argument_sets(self, count):
         """Prepare non-reusable outputs and finish their initialization outside timing."""
@@ -664,19 +655,3 @@ class LoadedTorchTensorCandidate:
     def close(self):
         import torch
         self.loaded.close(synchronize=torch.cuda.synchronize)
-
-
-class TorchTensorLauncher:
-    """Single-launch convenience over the shared loaded-tensor lifecycle."""
-
-    def __init__(self, admission):
-        self.admission = admission
-
-    def launch_tensors(self, candidate, manifest, inputs):
-        loaded = LoadedTorchTensorCandidate(candidate, manifest, inputs, self.admission)
-        try:
-            observed, after, receipt = loaded.launch_tensors(candidate, manifest, inputs)
-        finally:
-            loaded.close()
-        receipt['module_unloaded'] = loaded.loaded.closed
-        return observed, after, receipt

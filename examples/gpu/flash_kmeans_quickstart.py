@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, cast
@@ -20,7 +19,7 @@ from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
 from open_cake_ir.tasks.flash_kmeans.cuda import CudaTensorContract
-from open_cake_ir.evaluation import EvaluationProtocol, LaunchableCandidate, LaunchObservation, WorkloadContract, launch_candidate_once, observe_exclusive_b200
+from open_cake_ir.evaluation import CudaDeviceAdmission, EvaluationProtocol, LaunchableCandidate, LaunchObservation, LoadedCudaCandidate, WorkloadContract, observe_exclusive_cuda
 from open_cake_ir.tasks.flash_kmeans.evaluation import evaluate_flash_kmeans
 from open_cake_ir.lab import CandidateSubmission, ExecutorRevision, TritonToolchainBuilder
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
@@ -53,7 +52,6 @@ def _summary(project_root: Path, schedule_bytes: bytes) -> dict[str, object]:
         "status": "rejected",
         "compiler_revision": {
             "revision_id": assessment.compiler_revision_id,
-            "canonical_sha256": assessment.compiler_revision_sha256,
         },
         "assessment": {
             "schedule_id": assessment.schedule_id,
@@ -101,10 +99,12 @@ class _QuickstartLauncher:
         cubin: bytes,
         manifest: CudaLaunchManifest,
         tensor_contract: CudaTensorContract,
+        admission: CudaDeviceAdmission,
     ) -> None:
         self._cubin = cubin
         self._manifest = manifest
         self._tensor_contract = tensor_contract
+        self._admission = admission
         self.launch_receipt: dict[str, object] | None = None
 
     def launch(
@@ -120,16 +120,26 @@ class _QuickstartLauncher:
             dtype=torch.int32,
             device="cuda",
         )
-        receipt = launch_candidate_once(
-            candidate,
-            self._cubin,
-            self._manifest,
-            (tokens, centroids, centroid_sq, output),
-            tensor_contract=self._tensor_contract,
-            stream=torch.cuda.current_stream().cuda_stream,
-            synchronize=torch.cuda.synchronize,
+        # One admitted module: load, launch exactly once, synchronize, unload.
+        loaded = LoadedCudaCandidate.load(
+            candidate, self._cubin, self._manifest, self._admission
         )
-        self.launch_receipt = asdict(receipt)
+        try:
+            loaded.launch(
+                (tokens, centroids, centroid_sq, output),
+                tensor_contract=self._tensor_contract,
+                stream=torch.cuda.current_stream().cuda_stream,
+            )
+        finally:
+            loaded.close(synchronize=torch.cuda.synchronize)
+        self.launch_receipt = {
+            "cubin_sha256": candidate.artifact_roles["cubin"],
+            "manifest_sha256": self._manifest.canonical_sha256,
+            "kernel_calls": loaded.launch_calls,
+            "fallback_calls": 0,
+            "module_unloaded": loaded.closed,
+            "resources": dict(loaded.resources),
+        }
         receipt_bytes = json.dumps(
             self.launch_receipt,
             sort_keys=True,
@@ -137,8 +147,8 @@ class _QuickstartLauncher:
         ).encode()
         return LaunchObservation(
             output=output,
-            kernel_calls=receipt.kernel_calls,
-            fallback_calls=receipt.fallback_calls,
+            kernel_calls=loaded.launch_calls,
+            fallback_calls=0,
             launch_receipt_sha256=sha256(receipt_bytes).hexdigest(),
         )
 
@@ -152,10 +162,9 @@ def _run_gpu(
     executor.admit_host()
     summary["executor_revision"] = {
         "executor_id": executor.executor_id,
-        "canonical_sha256": executor.canonical_sha256,
         "path": executor.relative_path,
     }
-    admission = observe_exclusive_b200()
+    admission = observe_exclusive_cuda("sm_100a")
     compiler = Compiler.load(project_root, project_root / "compiler/revision.json")
     workload = load_workload(
         project_root / "contracts/workloads/flash-kmeans-assign-v2.json"
@@ -198,6 +207,7 @@ def _run_gpu(
         candidate.artifact_payloads["cubin"],
         manifest,
         tensor_contract,
+        admission,
     )
     protocol = EvaluationProtocol(
         protocol_id="open-cake-ir-b200-teaching-smoke-v1",

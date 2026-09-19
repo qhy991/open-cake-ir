@@ -28,9 +28,13 @@ jobs:
         run: python -m pip install -e '.[test]'
       - name: Verify released corpus
         run: python -m open_cake_ir.cli compiler check-corpus --revision compiler/revision.json
+      - name: Check reviewable Corpus sources
+        run: python tools/check_corpus_sources.py
       - name: Check undefined names
         run: python -m ruff check --select F821 src tools tests
       - name: Scan tracked files for credential shapes
         run: python tools/check_tracked_secrets.py
+      - name: Check findings against their record contract
+        run: python tools/check_findings.py
       - name: Discover and run all contract tests
         run: python -m pytest tests/contracts -ra

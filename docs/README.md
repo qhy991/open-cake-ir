@@ -98,10 +98,8 @@ Reading companions explain the material in simpler language. Detailed tables and
 | ADR 0035：用调用者状态和原子加法分配唯一位置 | [阅读](zh-CN/adr/0035-atomic-slot-reservation-is-state-plus-rmw.md) | [Read](adr/0035-atomic-slot-reservation-is-state-plus-rmw.md) |
 | ADR 0036：只有从原子分配推得唯一位置，才允许普通索引写入 | [阅读](zh-CN/adr/0036-atomic-reservation-proves-indexed-store-ownership.md) | [Read](adr/0036-atomic-reservation-proves-indexed-store-ownership.md) |
 | ADR 0037：前缀和要保留每一步，不能冒充总和 | [阅读](zh-CN/adr/0037-a-prefix-scan-is-not-a-fold-with-a-flag.md) | [Read](adr/0037-a-prefix-scan-is-not-a-fold-with-a-flag.md) |
-| ADR 0038：AKA 是发现问题的外部题库，不是正式验收语料 | [阅读](zh-CN/adr/0038-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) | [Read](adr/0038-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) |
 | ADR 0038：QSA 需要跨块选择状态和多次启动组合 | [阅读](zh-CN/adr/0038-qsa-needs-stateful-selection-and-launch-composition.md) | [Read](adr/0038-qsa-needs-stateful-selection-and-launch-composition.md) |
 | ADR 0039：逻辑寄存器压力不能当成真实寄存器下界 | [阅读](zh-CN/adr/0039-logical-register-pressure-is-not-a-physical-bound.md) | [Read](adr/0039-logical-register-pressure-is-not-a-physical-bound.md) |
-| ADR 0039：单写入者的原地更新使用已有 store | [阅读](zh-CN/adr/0039-single-writer-state-store-is-a-store-effect.md) | [Read](adr/0039-single-writer-state-store-is-a-store-effect.md) |
 | ADR 0040：QSA 利用率看完整程序，并说明分母来自哪里 | [阅读](zh-CN/adr/0040-qsa-utilization-and-component-attribution.md) | [Read](adr/0040-qsa-utilization-and-component-attribution.md) |
 | ADR 0041：驻留 top-k 可以按有符号 INT32 排序 | [阅读](zh-CN/adr/0041-resident-top-k-supports-signed-int32.md) | [Read](adr/0041-resident-top-k-supports-signed-int32.md) |
 | ADR 0042：跨循环 top-k 可以每两个来源块合并一次 | [阅读](zh-CN/adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md) | [Read](adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md) |
@@ -159,7 +157,6 @@ Reading companions explain the material in simpler language. Detailed tables and
 
 ## 原始决策补充索引 / Additional original decisions
 
-- [ADR 0053: B300 is an exact target on the existing Triton path](adr/0053-b300-is-an-exact-target.md)
 - [ADR 0053: Study-bound external advisory candidate order](adr/0053-study-bound-advisory-cost-selection.md)
 - [ADR 0054: Lab uses only Ralph](adr/0054-lab-uses-only-ralph.md)
 - [ADR 0055: Task implementations live outside the common Lab](adr/0055-task-implementations-live-outside-the-common-lab.md)
@@ -184,3 +181,7 @@ Reading companions explain the material in simpler language. Detailed tables and
 
 - [0065: Source identity is the commit, and a host capture is its own document](adr/0065-source-identity-is-the-commit.md)
 - [0066: SoL-ExecBench task import, namespace and gate translation](adr/0066-sol-execbench-task-import.md)
+- [0067: Retired release outputs live on the `history` branch](adr/0067-retired-release-outputs-live-on-the-history-branch.md)
+- [ADR 0068 (was 0038): AKA is a challenge corpus, not a Compiler Corpus](adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) · [阅读](zh-CN/adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)
+- [ADR 0069 (was 0039): a single-writer state update is a proven store effect](adr/0069-single-writer-state-store-is-a-store-effect.md) · [阅读](zh-CN/adr/0069-single-writer-state-store-is-a-store-effect.md)
+- [ADR 0070 (was 0053): B300 is an exact target on the existing Triton path](adr/0070-b300-is-an-exact-target.md)

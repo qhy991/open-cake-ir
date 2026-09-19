@@ -121,8 +121,7 @@ class DiagnosisRunTests(unittest.TestCase):
         # Exact interface fixture binds the same declared input at preflight/replay;
         # it neither writes a release nor represents a successful Corpus Gate.
         reference = compiler_reference(ROOT)
-        gate = SimpleNamespace(compiler_revision_id=reference["revision_id"],
-                               compiler_revision_sha256=reference["canonical_sha256"])
+        gate = SimpleNamespace(compiler_revision_id=reference["revision_id"])
         def resolve(root, value, context, *, template):
             if value != ({"binding": "current_release"} if template else reference):
                 raise ValueError("diagnosis fixture Compiler reference differs")
@@ -211,7 +210,7 @@ class DiagnosisSummaryTests(unittest.TestCase):
                 for index in range(2):
                     store = EvidenceStore.create(root / f"evidence-{index}")
                     authority = {"campaign_id": f"fixture-{index}", "execution": {
-                        "executor_revision": {"executor_id": f"fixture-executor-{index}", "canonical_sha256": str(index) * 64}},
+                        "executor_revision": {"executor_id": f"fixture-executor-{index}"}},
                         "resolved_inputs": {"evidence_policy": {"event_vocabulary": f"fixture-{index}"}}}
                     run = store.start_run("direct_cuda-1", authority=authority,
                         authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
