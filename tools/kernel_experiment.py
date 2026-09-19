@@ -13,6 +13,7 @@ import re
 import shlex
 import subprocess
 import sys
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -75,9 +76,15 @@ def validate(config):
         create_task(cell["task"], backend=cell["backend"], rows=cell["rows"],
                     columns=cell["columns"], depth=cell.get("depth"))
         node = cell["node"]
-        object_fields(node, {"transport", "project_root", "python", "kernelctl", "socket", "workspace"}, {"host", "provider_executable"})
+        object_fields(node, {"transport", "project_root", "python", "kernelctl", "socket", "workspace"}, {"host", "provider_executable", "http_proxy"})
         if "provider_executable" in node:
             absolute(node["provider_executable"])
+        if "http_proxy" in node:
+            proxy = urlsplit(node["http_proxy"])
+            if (proxy.scheme not in {"http", "https"} or not proxy.hostname or proxy.port is None
+                    or proxy.username is not None or proxy.password is not None
+                    or proxy.path not in {"", "/"} or proxy.query or proxy.fragment):
+                raise ValueError("node.http_proxy requires an HTTP(S) host:port without credentials")
         if node["transport"] not in {"local", "ssh"}:
             raise ValueError("node transport must be local or ssh")
         if node["transport"] == "ssh":
@@ -136,7 +143,7 @@ def prepare(config_path: Path, output: Path) -> None:
 
 # Executed on the explicitly selected node. It creates an isolated checkout at
 # the pinned commit, never edits a shared source tree or chooses a GPU itself.
-_NODE = '''import json, pathlib, subprocess, sys
+_NODE = '''import json, os, pathlib, subprocess, sys
 p = json.load(sys.stdin)
 n = p["cell"]["node"]
 w = pathlib.Path(n["workspace"])
@@ -159,7 +166,11 @@ for name in ("task", "backend", "rows", "columns", "depth", "fixed_baseline_bund
 for group in (p["provider"], p["budget"]):
     for name, value in group.items():
         args += ["--" + name.replace("_", "-"), str(value)]
-sys.exit(subprocess.run(args, cwd=source).returncode)
+environment = dict(os.environ)
+if "http_proxy" in n:
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        environment[name] = n["http_proxy"]
+sys.exit(subprocess.run(args, cwd=source, env=environment).returncode)
 '''
 
 

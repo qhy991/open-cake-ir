@@ -236,6 +236,7 @@ class ExperimentInputTests(unittest.TestCase):
     def test_node_bootstrap_passes_explicit_native_provider(self):
         node = deepcopy(self.config["cells"][0]["node"])
         node["provider_executable"] = "/opt/codex/bin/codex"
+        node["http_proxy"] = "http://127.0.0.1:17990"
         payload = {"cell": {**self.config["cells"][0], "node": node},
             "source_commit": COMMIT, "scaffold": "rules", "provider": self.config["provider"],
             "budget": self.config["budget"]}
@@ -247,6 +248,15 @@ class ExperimentInputTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 0)
         command = execute.call_args.args[0]
         self.assertEqual(command[command.index("--provider-executable") + 1], "/opt/codex/bin/codex")
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+            self.assertEqual(execute.call_args.kwargs["env"][key], node["http_proxy"])
+
+    def test_proxy_credentials_and_non_http_routes_are_not_task_metadata(self):
+        for proxy in ("http://user:secret@host:7890", "file:///tmp/proxy", "http://host", "http://host:7890/path"):
+            config = deepcopy(self.config)
+            config["cells"][0]["node"]["http_proxy"] = proxy
+            with self.assertRaises(ValueError):
+                kernel_experiment.validate(config)
 
     def test_duplicate_workspace_and_undeclared_target_refuse(self):
         for mutation in ("workspace", "backend"):

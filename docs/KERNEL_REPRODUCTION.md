@@ -38,6 +38,9 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
 Python 和 host capture 必须满足对应 Executor；不自动把任务改投另一架构。
 `node.provider_executable` 可指定 provider 的绝对路径，避免非交互 SSH 的 PATH 差异。
 Codex 可直接绑定已安装的原生二进制及其同目录 code-mode host，无需调用 Node.js wrapper。
+节点访问模型服务需要代理时，可显式设置 `node.http_proxy`（例如
+`http://127.0.0.1:17990`）。入口只对该 cell 的启动进程设置 HTTP/HTTPS 代理，记录在
+实验输入中，不修改用户全局环境；不接受含凭证的代理 URL。代理转发必须在运行期间可用。
 如果已有外部参考的 sealed baseline bundle，可在 cell 中提供节点上的绝对路径
 `fixed_baseline_bundle`。否则仍使用注册任务的 starter，不能据此宣称外部实现性能复现。
 
