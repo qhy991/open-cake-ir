@@ -66,7 +66,6 @@ def render() -> str:
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     report = compiler.check_corpus()
     revision = json.loads((ROOT / "compiler/revision.json").read_text(encoding="utf-8"))
-    calibration = revision.get("calibration_coverage", [])
     targets = ", ".join(sorted(report.declared_targets)) or "none"
     matched = sum(case.matched for case in report.cases)
 
@@ -84,7 +83,7 @@ def render() -> str:
             f"- 声明的目标： `{targets}`",
             f"- 语料检查： `{matched}/{report.case_count}` 项符合预期",
             *_coverage_lines(report),
-            f"- 已发布校准： `{', '.join(calibration) if calibration else '无'}`",
+            "- 结构排序： 已退役；显式经验模型仍独立提供条件估计",
             "- 负责记录： [`compiler/revision.json`](../../compiler/revision.json) 与 "
             "[`compiler/targets/`](../../compiler/targets)",
             "",

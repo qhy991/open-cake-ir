@@ -121,10 +121,9 @@ def prepare_case(compiler, document, inputs, oracles, directory, device_names, c
     if not assessment.accepted or not assessment.lowering_eligible:
         (directory / "assessment.json").write_text(json.dumps(case, indent=2) + "\n")
         raise ValueError("Compiler refused the candidate; see assessment findings")
-    ranked, unranked = compiler.rank([assessment])
     case["pre_gpu_cost_ranking"] = {
-        "ranked_count": len(ranked), "unranked_schedule_ids": list(unranked),
-        "coverage": "unavailable" if unranked else "calibrated",
+        "ranked_count": 0, "unranked_schedule_ids": [assessment.schedule_id],
+        "coverage": "unavailable",
         "domain": "no Apple occupancy, physical registers, spill, bandwidth or latency estimate",
     }
     lowering = compiler.lower(assessment)

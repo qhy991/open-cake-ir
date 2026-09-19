@@ -39,7 +39,7 @@ The dedicated `checked_cuda_asset` route is retired. Its original TinyGEMM2 Sche
 
 Lab prepares TASK.md for the problem and AGENTS.md for tool rules. An external Ralph controller supplies evidence-derived state and enforces budgets. AI submits candidates; the evaluator independently checks them. Earlier immutable candidates survive later edits.
 
-`matched_search` handles fixed-task search. A separate `portfolio` Study combines qualified specialists through the same Lab path. Artifact-only optimization is a claim scope, not a third runtime. Serving needs later integration and evaluation.
+`matched_search` handles fixed-task search. The former `portfolio` Study is retired under ADR 0071; historical replay uses its original commit. Artifact-only optimization is a claim scope, not a third runtime. Serving needs later integration and evaluation.
 
 Correctness, measurement stability, and application benefit are different facts. Faster operator code does not by itself make a model or service faster. Compiler changes happen between frozen Campaigns and update types, verification, analysis, and lowering together, followed by the full Corpus and independent review. Executor fixes a different closure: Lab, evaluation, evidence tools, and environment. Read the [Glossary](GLOSSARY.md) and [maintenance guide](wiki/maintaining.md) for exact ownership.
 
@@ -66,4 +66,4 @@ Execution records observations; replay independently checks their raw support. S
 pure calculations do not replace either trust boundary. A first-provider fault returns
 before task-package or empirical-model resolution. Authority checks precede Evidence
 creation, and reporting invokes replay callbacks only when needed. Concrete tasks and
-portfolio dispatch remain in `TaskLab`; public imports remain `open_cake_ir.lab`.
+task wiring remains in `TaskLab`; public imports remain `open_cake_ir.lab`.

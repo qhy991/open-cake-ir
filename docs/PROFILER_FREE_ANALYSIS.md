@@ -129,8 +129,7 @@ QSA evaluator 为已通过 Compiler 检查的节点保留局部 Finding，包括
 ## 显式传入经验耗时模型
 
 `Compiler.profile` 现在可以通过同一入口接收外部经验模型。模型查询只使用 CPU，
-不会加载 GPU 库或隐式采样，也不会修改已发布的 `calibration_coverage` 或
-`Compiler.rank`。静态资源、编译资源和条件耗时预测可以在同一份反馈中查看：
+不会加载 GPU 库或隐式采样，结构排序已按 ADR 0071 退役。静态资源、编译资源和条件耗时预测可以在同一份反馈中查看：
 
 ```bash
 python3 tools/report_schedule_profile.py --json \

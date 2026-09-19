@@ -127,7 +127,6 @@ class CompilerContractTests(unittest.TestCase):
 
         self.assertFalse(assessment.accepted)
         self.assertIn("TARGET_UNSUPPORTED", [item.code for item in assessment.findings])
-        self.assertFalse(assessment.calibration_available)
 
     def test_lower_rejects_a_forged_assessment_projection(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
@@ -744,74 +743,3 @@ class CompilerContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class CandidateRankingTest(unittest.TestCase):
-    """The pre-GPU filter stage, and the boundary it must not cross.
-
-    The paper's loop ranks a set of candidates before spending GPU time. What matters as
-    much as the order is that ranking happens *after* the gates and never argues with them:
-    a candidate the verifier refused has no score, because a good score for a rejected
-    Schedule would put the cost model in a position to overrule a hard gate.
-    """
-
-    def _variant(self, block_n: int, schedule_id: str) -> dict:
-        document = json.loads(
-            (ROOT / "corpus/schedules/flash-kmeans-b32-smoke-v2.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        buffers = {item["name"]: item for item in document["buffers"]}
-        document["schedule_id"] = schedule_id
-        for axis in document["program_map"]["axes"]:
-            if axis["name"] == "token_block":
-                axis["tile"] = block_n
-        buffers["token_tile"]["shape"] = [block_n, 128]
-        buffers["best_index_tile"]["shape"] = [block_n]
-        for name in ("distance_tile", "cross", "scaled_cross"):
-            buffers[name]["shape"] = [block_n, 64]
-        for operation in document["operations"]:
-            if operation["kind"] == "mma" and "tile_shape" in operation["parameters"]:
-                operation["parameters"]["tile_shape"] = [block_n, 64, 128]
-        return document
-
-    def test_uncalibrated_and_refused_candidates_are_withheld(self) -> None:
-        compiler = Compiler.load(ROOT, REVISION_PATH)
-        refused = self._variant(64, "unsupported-instruction")
-        next(
-            operation
-            for operation in refused["operations"]
-            if operation["kind"] == "mma"
-        )["parameters"]["instruction"]["contract"] = "triton.dot.fp8"
-        assessments = [
-            compiler.assess(self._variant(64, "fits-a")),
-            compiler.assess(self._variant(128, "fits-b")),
-            compiler.assess(refused),
-        ]
-        self.assertFalse(assessments[2].lowering_eligible)
-        self.assertIn(
-            "TARGET_INSTRUCTION_UNSUPPORTED",
-            {finding.code for finding in assessments[2].findings},
-        )
-
-        scored, withheld = compiler.rank(assessments)
-
-        self.assertEqual(scored, ())
-        self.assertEqual(
-            withheld,
-            ("fits-a", "fits-b", "unsupported-instruction"),
-        )
-
-    def test_ranking_rejects_forged_calibration_coverage(self) -> None:
-        compiler = Compiler.load(ROOT, REVISION_PATH)
-        assessment = compiler.assess(self._variant(64, "fits-a"))
-
-        with self.assertRaisesRegex(CompilerError, "canonical Schedule replay"):
-            compiler.rank([dataclasses.replace(assessment, calibration_available=True)])
-
-    def test_ranking_refuses_an_assessment_from_another_revision(self) -> None:
-        compiler = Compiler.load(ROOT, REVISION_PATH)
-        assessment = compiler.assess(self._variant(64, "fits-a"))
-        foreign = dataclasses.replace(assessment, compiler_revision_id="other-revision")
-        with self.assertRaisesRegex(CompilerError, "different Compiler Revision"):
-            compiler.rank([foreign])

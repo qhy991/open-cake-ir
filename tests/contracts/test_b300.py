@@ -79,7 +79,6 @@ class B300ContractTests(unittest.TestCase):
                     assessment = self.compiler.assess(baseline_schedule(new, case))
                     self.assertTrue(assessment.accepted)
                     self.assertTrue(assessment.lowering_eligible)
-                    self.assertFalse(assessment.calibration_available)
                     lowering = self.compiler.lower(assessment)
                     self.assertEqual(lowering.target, 'sm_103a')
                     self.assertEqual(lowering.toolchain_requirements['target'], 'sm_103a')

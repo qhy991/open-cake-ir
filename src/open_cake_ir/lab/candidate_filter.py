@@ -34,22 +34,8 @@ def _build_filter_candidates(
         for index, (_, result) in enumerate(built)
         if result.disposition == "launchable"
     ]
-    # A partial order is not an order over the candidate set. If the
-    # model declines any launchable member, moving that unknown behind
-    # scored members would let `searches_per_turn` silently reject it as
-    # slower. Apply the cost order only when it covers the whole
-    # launchable set; otherwise every member keeps provider order.
-    cost_order_applied = bool(launchable_first) and all(
-        built[index][1].cost is not None
-        for index in launchable_first
-    )
-    if cost_order_applied and not empirical_enabled:
-        def complete_cost_order(index: int) -> tuple[tuple, int]:
-            cost = built[index][1].cost
-            assert cost is not None
-            return cost.order, index
-
-        launchable_first.sort(key=complete_cost_order)
+    # Without an explicit empirical model, preserve provider order among survivors.
+    cost_order_applied = False
     launchable_first.extend(
         index
         for index, (_, result) in enumerate(built)
@@ -59,18 +45,7 @@ def _build_filter_candidates(
         {
             "candidate_sha256": built[index][0].sha256,
             "disposition": built[index][1].disposition,
-            "cost": (
-                {
-                    "device_fill": round(
-                        built[index][1].cost.device_fill, 6
-                    ),
-                    "binding_resource": built[
-                        index
-                    ][1].cost.binding_resource,
-                }
-                if built[index][1].cost is not None
-                else None
-            ),
+            "cost": None,  # Retained event vocabulary; structural ranking is retired.
             "semantic_sha256": built[index][1].semantic_sha256,
             **({"empirical_cost": (
                 dict(built[index][1].empirical_cost)

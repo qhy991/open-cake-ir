@@ -1,5 +1,8 @@
 # 任务代码与通用实验引擎
 
+Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
+
+
 [English](en/TASKS.md)
 
 `lab/` 负责如何迭代，`evaluation/` 负责通用评测记录和执行边界。

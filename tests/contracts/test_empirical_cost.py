@@ -93,7 +93,6 @@ class EmpiricalCostTest(unittest.TestCase):
         del modeled["empirical_cost"]
         self.assertEqual(modeled, base)
         assessment = self.compiler.assess(schedule)
-        self.assertEqual(self.compiler.rank([assessment]), ((), (assessment.schedule_id,)))
 
     def test_mma_canonical_ranges_match_but_partial_work_never_inherits_a_full_curve(self):
         query = self.schedule('gemm-bias-b1-smoke.json')

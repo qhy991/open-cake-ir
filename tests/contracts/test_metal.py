@@ -26,7 +26,6 @@ from open_cake_ir.compiler.backends import metal
 from open_cake_ir.compiler.performance.residency import residency_upper_bound
 from open_cake_ir.compiler.core import _canonical_json_bytes
 from open_cake_ir.compiler.ir import Schedule
-from open_cake_ir.compiler.performance.ranking import cost
 from open_cake_ir.compiler.target import Target, TargetParseError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -266,10 +265,7 @@ extern "C" int cpu_dispatch({arguments}, uint3 program) {{
             assessment, lowering = self.lower(document)
             self.assertEqual(lowering.toolchain_requirements["target"], "apple_gpu_family7")
             self.assertEqual(lowering.toolchain_requirements["threads_per_threadgroup"], [32, 1, 1])
-            self.assertFalse(assessment.calibration_available)
-            self.assertEqual(self.compiler.rank([assessment]), ((), (assessment.schedule_id,)))
             self.assertIsNone(residency_upper_bound(Schedule.from_dict(document), target))
-            self.assertIsNone(cost(Schedule.from_dict(document), target))
             profile = self.compiler.profile(assessment).as_dict()
             self.assertEqual(profile["ncu_metrics"], [])
             self.assertIsNone(profile["residency"])
@@ -840,9 +836,6 @@ def candidate(lm, x: cake.Tensor((2, 1024), "fp32"), out: cake.Tensor((2, 1024),
         self.assertIsNone(self.target.occupancy)
         self.assertIsNone(self.target.peak)
         self.assertIsNone(residency_upper_bound(Schedule.from_dict(make_document()), self.target))
-        self.assertIsNone(cost(Schedule.from_dict(make_document()), self.target))
-        self.assertFalse(assessment.calibration_available)
-        self.assertEqual(self.compiler.rank([assessment]), ((), (assessment.schedule_id,)))
         profile = self.compiler.profile(assessment).as_dict()
         self.assertEqual(profile["ncu_metrics"], [])
         self.assertIsNone(profile["residency"])

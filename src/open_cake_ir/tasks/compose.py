@@ -12,20 +12,12 @@ from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
 from open_cake_ir.compiler import Compiler
-from open_cake_ir.tasks.flash_kmeans.cuda_manifest import CudaLaunchManifest
-from open_cake_ir.tasks.flash_kmeans.portfolio_runtime import CuptiPortfolioAssay
-from open_cake_ir.evaluation import LoadedCudaCandidate, WorkloadContract, observe_exclusive_cuda
-from open_cake_ir.tasks.flash_kmeans.portfolio import PortfolioArtifact, PortfolioEvaluationReceipt
-from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 
 from open_cake_ir.lab.contracts import CampaignLock, CampaignRef
 from open_cake_ir.tasks.runtime import TaskLab
-from open_cake_ir.lab.environments import BuildRequest
 from open_cake_ir.tasks.flash_kmeans.environment import DirectCudaEnvironment, NvccToolchainBuilder
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment as OpenCakeEnvironment
 from open_cake_ir.lab.executor import ExecutorRevision
-from open_cake_ir.lab.faults import RunProtocolFault
-from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
 from open_cake_ir.lab.providers import CANDIDATE_SET_ENVELOPE_V1, CodexInvocationBuilder, CodexProviderAdapter, CodexRunProvider, ProviderQualificationReceipt, required_live_provider_qualification_scope
 from open_cake_ir.lab.pairing import comparison_arm, bind_baseline, native_backend
 from open_cake_ir.lab.toolchains import single_environment_toolchain, toolchain_for_arm
@@ -91,154 +83,6 @@ def _admit_executor(root: Path, lock: CampaignLock) -> tuple[ExecutorRevision, o
     return revision, revision.admit_host()
 
 
-class _LivePortfolioAssay:
-    """Delay compile/load until Lab has opened the Portfolio Terminal Archive."""
-
-    def __init__(
-        self,
-        *,
-        compiler: Compiler,
-        seed: KernelSeed,
-        workload: WorkloadContract,
-        case_ids: list[str],
-        evaluation_protocol: Mapping[str, object],
-        device: str,
-        synchronize: object,
-        torch_module: object,
-        cupti_helper: object,
-    ) -> None:
-        self._compiler = compiler
-        self._seed = seed
-        self._workload = workload
-        self._case_ids = case_ids
-        self._protocol = dict(evaluation_protocol)
-        self.protocol_sha256 = sha256(
-            canonical_json_bytes(self._protocol)
-        ).hexdigest()
-        self._device = device
-        self._synchronize = synchronize
-        self._torch = torch_module
-        self._cupti_helper = cupti_helper
-        self._observer = None
-        self._delegate: CuptiPortfolioAssay | None = None
-
-    def set_observer(self, observer: object) -> None:
-        self._observer = observer
-
-    def prepare(self, _campaign_lock: CampaignLock) -> PortfolioArtifact:
-        retained: dict[str, bytes] = {}
-        loaded: dict[str, LoadedCudaCandidate] = {}
-        try:
-            # The Portfolio assay times under CUPTI, so it is admitted on the exclusive
-            # cluster lease for the Workload's own target rather than a target named here.
-            admission = observe_exclusive_cuda(self._workload.target)
-            if self._observer is not None:
-                self._observer(
-                    "gpu_admitted",
-                    {
-                        "device_name": admission.device_name,
-                        "compute_capability": list(admission.compute_capability),
-                        "gpu_uuid": admission.gpu_uuid,
-                        "broker_job_id": admission.broker_job_id,
-                        "mode": admission.mode,
-                    },
-                )
-            stream = self._torch.cuda.current_stream().cuda_stream
-            cases = {
-                case_id: self._workload.case(case_id)["shape"]
-                for case_id in self._case_ids
-            }
-            lowered = lower_specialists(self._compiler, self._seed, cases)
-            toolchain = FlashTritonToolchainBuilder()
-            candidates = {}
-            for item in lowered:
-                request = BuildRequest(
-                    candidate_sha256=item.lowering.schedule_sha256,
-                    source=item.lowering.source.encode(),
-                    source_role="lowered_source",
-                    source_sha256=item.lowering.source_sha256,
-                    target=item.lowering.target,
-                    entry_point=item.lowering.route.entry_point,
-                    toolchain_requirements=item.lowering.toolchain_requirements,
-                )
-                candidate = toolchain.build(request)
-                candidates[item.case_id] = candidate
-                retained.update(
-                    {
-                        f"{item.case_id}_{role}": payload
-                        for role, payload in candidate.artifact_payloads.items()
-                    }
-                )
-                if self._observer is not None:
-                    self._observer(
-                        "specialist_compiled",
-                        {
-                            "case_id": item.case_id,
-                            "candidate_record_sha256": candidate.canonical_sha256,
-                            "artifact_roles": dict(candidate.artifact_roles),
-                        },
-                    )
-            artifact = PortfolioArtifact.build(
-                self._workload, self._seed.canonical_sha256, candidates
-            )
-            for entry in artifact.entries:
-                loaded[entry.case_id] = LoadedCudaCandidate.load(
-                    entry.candidate,
-                    entry.candidate.artifact_payloads["cubin"],
-                    CudaLaunchManifest.from_dict(
-                        json.loads(entry.candidate.artifact_payloads["launch_manifest"])
-                    ),
-                    admission,
-                )
-                if self._observer is not None:
-                    self._observer(
-                        "specialist_loaded",
-                        {
-                            "case_id": entry.case_id,
-                            "candidate_record_sha256": entry.candidate.canonical_sha256,
-                            "cubin_sha256": entry.candidate.artifact_roles["cubin"],
-                        },
-                    )
-            flush_buffer = self._torch.empty(
-                int(self._protocol["l2_flush_bytes"]),
-                dtype=self._torch.uint8,
-                device=self._device,
-            )
-
-            def flush_l2() -> None:
-                flush_buffer.add_(1)
-
-            self._delegate = CuptiPortfolioAssay(
-                artifact=artifact,
-                workload=self._workload,
-                evaluation_protocol=self._protocol,
-                loaded_candidates=loaded,
-                cupti_benchmark=StrictCuptiBenchmark(self._cupti_helper),
-                synchronize=self._synchronize,
-                flush_l2=flush_l2,
-                stream=stream,
-                device=self._device,
-            )
-            if self._observer is not None:
-                self._delegate.set_observer(self._observer)
-            return artifact
-        except Exception as error:
-            for candidate in loaded.values():
-                if not candidate.closed:
-                    try:
-                        candidate.close(synchronize=self._synchronize)
-                    except BaseException:
-                        pass
-            raise RunProtocolFault(
-                "harness_fault",
-                "portfolio preparation failed",
-                artifact_payloads=retained,
-            ) from error
-
-    def evaluate(self, campaign_lock: CampaignLock) -> PortfolioEvaluationReceipt:
-        if self._delegate is None:
-            raise ValueError("Portfolio Assay was not prepared")
-        return self._delegate.evaluate(campaign_lock)
 
 
 def _load_workload_binding(root: Path, lock: CampaignLock):
@@ -476,57 +320,4 @@ def execute_matched_from_config(
         provider=provider,
         environments=environments,
         evaluator=evaluator,
-    )
-
-
-def execute_portfolio_from_config(
-    project_root: str | Path,
-    lock: CampaignLock,
-    runtime_config_path: str | Path,
-    evidence_root: str | Path,
-) -> CampaignRef:
-    """Compile, persistently load and evaluate the frozen Portfolio on one B200."""
-
-    if lock.study_kind != "portfolio":
-        raise ValueError("portfolio composition requires a Portfolio Campaign Lock")
-    root = Path(project_root).resolve(strict=True)
-    _, cupti_helper = _admit_executor(root, lock)
-    config = _object(
-        json.loads(Path(runtime_config_path).read_text(encoding="utf-8")),
-        "runtime_config",
-    )
-    if set(config) != {"schema_version", "portfolio"} or config.get("schema_version") != 1:
-        raise ValueError("portfolio runtime configuration fields differ")
-    portfolio_config = _object(config["portfolio"], "runtime_config.portfolio")
-    if set(portfolio_config) != {"device"}:
-        raise ValueError("portfolio runtime configuration section differs")
-    torch = __import__("torch")
-    compiler_ref = _object(lock.document["compiler_revision"], "compiler_revision")
-    compiler = Compiler.load(root, root / str(compiler_ref["path"]))
-    resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
-    seed_ref = _object(resolved["kernel_seed"], "resolved_inputs.kernel_seed")
-    seed = KernelSeed.load(root, root / str(seed_ref["path"]))
-    workload_ref = _object(lock.document["workload"], "workload")
-    workload = load_workload(root / str(workload_ref["path"]))
-    case_roles = _object(resolved["case_roles"], "resolved_inputs.case_roles")
-    case_ids = cast(list[str], case_roles["anchor"]) + cast(
-        list[str], case_roles["held_out"]
-    )
-    assay = _LivePortfolioAssay(
-        compiler=compiler,
-        seed=seed,
-        workload=workload,
-        case_ids=case_ids,
-        evaluation_protocol=_object(
-            lock.document["evaluation_protocol"], "evaluation_protocol"
-        ),
-        synchronize=torch.cuda.synchronize,
-        device=str(portfolio_config["device"]),
-        torch_module=torch,
-        cupti_helper=cupti_helper,
-    )
-    return TaskLab(root).execute_portfolio(
-        lock,
-        evidence_root,
-        assay=assay,
     )

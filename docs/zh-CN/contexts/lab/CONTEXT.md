@@ -1,5 +1,8 @@
 # Research Lab：组织一次有规则的实验
 
+Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
+
+
 [中文目录](../../README.md) · [英文原文](../../../contexts/lab/CONTEXT.md) · [统一术语](../../../GLOSSARY.md#workload-and-research-lab-terms)
 
 Lab 像考试组织者：分配题目和工具、控制时间、收作业，再按事先规定的方法分析成绩。它把 Workload、Compiler 和 Executor 的固定版本当作输入。

@@ -1020,8 +1020,7 @@ def main(argv: list[str] | None = None) -> int:
                     cuobjdump=arguments.cuobjdump.resolve(strict=True),
                     compiler=Compiler(project_root=root, revision_id=dependency.revision_id,
                         commit=dependency.commit,
-                        target_definitions=dependency.targets, corpus_path=dependency.corpus_path,
-                        calibration_coverage=dependency.calibration_coverage),
+                        target_definitions=dependency.targets, corpus_path=dependency.corpus_path),
                     target=dependency.targets["sm_100a"],
                 )
             except _BaselineCompileError as error:

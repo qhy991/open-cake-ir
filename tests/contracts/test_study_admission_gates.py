@@ -30,9 +30,7 @@ def _study(target, *, evaluation=None, mode=None):
     if mode is not None:
         execution["gpu"] = {"name": "device", "count": 1, "mode": mode}
     return SimpleNamespace(document={
-        # Not portfolio: `TaskLab.preflight` routes that shape elsewhere, before either
-        # gate -- which is itself worth knowing and is why the reachability test below
-        # pins the matched path.
+        # Typed matched-search fixture for task-specific admission, after shape parsing.
         "kind": "matched_search",
         "execution": execution,
         **({"evaluation_protocol": evaluation} if evaluation is not None else {}),
@@ -119,6 +117,19 @@ class GatesAreReachedTests(unittest.TestCase):
     Testing the functions alone would pass even if `TaskLab.preflight` stopped calling
     them, which is the shape of the gap these tests were written to close.
     """
+
+    def test_invalid_device_claims_do_not_reach_common_preflight(self):
+        specimens = (
+            _study(_target_of(_timed_backend()), evaluation=UNTIMED),
+            _study("gfx1151", mode="exclusive"),
+        )
+        for study in specimens:
+            with self.subTest(study=study), \
+                 mock.patch.object(runtime.StudyContract, "load", return_value=study), \
+                 mock.patch.object(runtime.Lab, "preflight") as delegated:
+                with self.assertRaises(ValueError):
+                    runtime.TaskLab(ROOT).preflight(Path("unused.json"))
+                delegated.assert_not_called()
 
     def test_task_lab_preflight_calls_both_before_delegating(self):
         called = []

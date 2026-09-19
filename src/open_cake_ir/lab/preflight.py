@@ -56,10 +56,6 @@ def preflight(
     """Resolve one Study Contract without provider, GPU or evidence side effects."""
 
     study = StudyContract.load(study_path)
-    if study.kind == "portfolio":
-        if empirical_cost_model_path is not None or execution_bindings_path is not None:
-            raise ValueError("empirical selection requires artifact_optimization_only matched search")
-        raise ValueError("portfolio preflight belongs to its task entrypoint")
     resolved_document, bound_executor = resolve_execution_bindings(
         project_root, study, execution_bindings_path
     )

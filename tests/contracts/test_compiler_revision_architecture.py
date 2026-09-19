@@ -42,8 +42,7 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.path = self.root / "revision.json"
         self.target = json.loads((ROOT / "compiler/targets/sm_100a.json").read_text())
         self.draft = {
-            "schema_version": 2, "corpus_manifest": "corpus.json",
-            "calibration_coverage": [],
+            "schema_version": 3, "corpus_manifest": "corpus.json",
         }
         (self.root / "compiler/targets").mkdir(parents=True)
         _write(self.root / "corpus.json", {"fixture": True})
@@ -147,10 +146,9 @@ class RevisionAdmissionTests(unittest.TestCase):
         # The retired schema-1 fields are refused as unexpected rather than half-read:
         # a stale manifest must not load as if it declared today's Compiler.
         mutations = [
-            ("schema_version", 1), ("state", "released"), ("revision_id", "v1"),
+            ("schema_version", 1), ("schema_version", 2), ("state", "released"), ("revision_id", "v1"),
             ("target_definitions", {}), ("sources", []), ("release_approval", {}),
-            ("calibration_coverage", "sm_100a"), ("calibration_coverage", [False]),
-            ("calibration_coverage", [""]), ("unexpected", True),
+            ("calibration_coverage", []), ("unexpected", True),
             ("corpus_manifest", {"path": "corpus.json"}), ("corpus_manifest", "../escape.json"),
         ]
         for field, value in mutations:

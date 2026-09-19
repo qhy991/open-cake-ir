@@ -135,7 +135,7 @@ def _table(rows: list[dict[str, object]]) -> str:
                 detail = "uncovered: " + cost["reason"]
             lines.append(f"  conditional estimate {cost['model_id']}: {detail}")
     if has_cost:
-        lines.append("* Conditional external empirical estimate; context and reported evidence are in JSON. Not a measured counter or qualified Compiler.rank.")
+        lines.append("* Conditional external empirical estimate; context and reported evidence are in JSON. Not an on-device measurement.")
     return "\n".join(lines)
 
 

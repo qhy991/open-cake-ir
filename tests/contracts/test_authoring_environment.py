@@ -110,8 +110,6 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertEqual(result.disposition, "launchable")
         self.assertTrue(result.empirical_cost["covered"])
         self.assertEqual(result.empirical_cost["predicted_kernel_us"], 20.0)
-        self.assertIsNone(result.cost)
-        self.assertFalse(compiler.rank([assessment])[0])
         invalid = json.loads(json.dumps(schedule))
         invalid["buffers"][0]["dtype"] = "fp32"
         rejected = environment.build(submit(invalid))

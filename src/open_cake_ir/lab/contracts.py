@@ -25,7 +25,6 @@ from ._policies import (
     _MATCHED_CLAIM_SCOPES,
     _MATCHED_RALPH_EVENT_VOCABULARY_V1,
     _ONE_RUN_PER_ARM_SCOPES,
-    _PORTFOLIO_STUDY_FIELDS,
     _RALPH_STUDY_FIELDS,
     _SYSTEM_QUALIFICATION_ANALYSIS_PLAN,
     _matched_evidence_policy_version,
@@ -40,8 +39,14 @@ from .task_package import TASK_AGENTS_RALPH_V1
 from .toolchains import single_environment_backends
 
 
+def _live_study_kind(kind: object, context: str) -> None:
+    if kind != "matched_search":
+        state = "retired" if kind == "portfolio" else "unsupported"
+        raise ValueError(f"{context} kind {kind!r} is {state}; supported kind: 'matched_search'")
+
+
 def _analysis_estimand(
-    analysis: Mapping[str, object], *, claim_scope: str, study_kind: str,
+    analysis: Mapping[str, object], *, claim_scope: str,
     comparison: str | None, context: str, lock: bool,
 ) -> str | None:
     """The one rule for which Analysis Plan a claim scope admits, and its estimand.
@@ -68,16 +73,15 @@ def _analysis_estimand(
                 expected=_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN, observed=observed,
             )
         return None
-    if study_kind == "matched_search":
-        version = _scientific_analysis_plan_version(analysis, f"{context}.analysis_plan")
-        policy = native_backend(comparison)
-        expected = policy.analysis_version if policy is not None else "two_part_v2"
-        if version != expected:
-            raise differs(
-                "Campaign Lock treatment and analysis arms" if lock
-                else "scientific treatment and analysis arm assignment",
-                expected=expected, observed=version,
-            )
+    version = _scientific_analysis_plan_version(analysis, f"{context}.analysis_plan")
+    policy = native_backend(comparison)
+    expected = policy.analysis_version if policy is not None else "two_part_v2"
+    if version != expected:
+        raise differs(
+            "Campaign Lock treatment and analysis arms" if lock
+            else "scientific treatment and analysis arm assignment",
+            expected=expected, observed=version,
+        )
     return _name(analysis.get("estimand"), f"{context}.analysis_plan.estimand")
 
 
@@ -347,7 +351,7 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
         )
     _analysis_estimand(
         _object(document.get("analysis_plan"), "study.analysis_plan"),
-        claim_scope=claim_scope, study_kind="matched_search", comparison=comparison,
+        claim_scope=claim_scope, comparison=comparison,
         context="study", lock=False,
     )
     evidence_version = _matched_evidence_policy_version(
@@ -363,7 +367,7 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class StudyContract:
-    """Frozen matched-search or Portfolio execution and data-use authority.
+    """Matched-search execution and data-use authority.
 
     `load` is the one place a Study document's shape is decided. The typed projections
     below read the document, so `dataclasses.replace(study, document=...)` with resolved
@@ -376,7 +380,7 @@ class StudyContract:
     schema_version: int
     state: str
     canonical_sha256: str
-    # Predeclared, for a matched-search Study; empty for a Portfolio one.
+    # Predeclared Run order.
     run_order: tuple[str, ...] = ()
 
     @property
@@ -428,28 +432,19 @@ class StudyContract:
         document = _object(json.loads(source.read_text(encoding="utf-8")), "study")
         kind = document.get("kind")
         schema_version = document.get("schema_version")
-        fields = (
-            _RALPH_STUDY_FIELDS
-            if kind == "matched_search" and schema_version == 2
-            else _PORTFOLIO_STUDY_FIELDS
-            if kind == "portfolio" and schema_version == 1
-            else set()
-        )
+        _live_study_kind(kind, "Study")
+        fields = _RALPH_STUDY_FIELDS if schema_version == 2 else set()
         if set(document) != fields:
             raise differs(
                 "study root fields or schema_version",
-                expected={"matched_search": (2, sorted(_RALPH_STUDY_FIELDS)),
-                          "portfolio": (1, sorted(_PORTFOLIO_STUDY_FIELDS))},
+                expected={"matched_search": (2, sorted(_RALPH_STUDY_FIELDS))},
                 observed={"kind": kind, "schema_version": schema_version, "fields": sorted(document)},
             )
         state = document.get("state")
-        if state not in {"template", "frozen"} or kind not in {
-            "matched_search",
-            "portfolio",
-        }:
+        if state not in {"template", "frozen"}:
             raise differs(
                 "Study state or kind",
-                expected={"state": ["frozen", "template"], "kind": ["matched_search", "portfolio"]},
+                expected={"state": ["frozen", "template"], "kind": ["matched_search"]},
                 observed={"state": state, "kind": kind},
             )
         study_id = _name(document.get("study_id"), "study.study_id")
@@ -461,43 +456,20 @@ class StudyContract:
                     expected={"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}, observed=interface,
                 )
         claim_scope = _name(document.get("claim_scope"), "study.claim_scope")
-        if kind == "matched_search" and claim_scope not in _MATCHED_CLAIM_SCOPES:
+        if claim_scope not in _MATCHED_CLAIM_SCOPES:
             raise differs(
                 "matched Study Contract claim scope",
                 expected=sorted(_MATCHED_CLAIM_SCOPES), observed=claim_scope,
             )
         object_fields = (
-            (
-                "workload",
-                "arms",
-                "allocation",
-                "budget",
-                "run_protocol",
-                "evaluation_protocol",
-                "execution",
-                "analysis_plan",
-                "evidence",
-            )
-            if kind == "matched_search"
-            else (
-                "workload",
-                "compiler_revision",
-                "kernel_seed",
-                "case_roles",
-                "specialization_policy",
-                "dispatch_policy",
-                "evaluation_protocol",
-                "execution",
-                "analysis_plan",
-                "evidence",
-            )
+            "workload", "arms", "allocation", "budget", "run_protocol",
+            "evaluation_protocol", "execution", "analysis_plan", "evidence",
         )
         for field in object_fields:
             _object(document.get(field), f"study.{field}")
         performance_reporting_policy(document["analysis_plan"], claim_scope)
         run_order: tuple[str, ...] = ()
-        if kind == "matched_search":
-            run_order = _matched_study_shape(document)
+        run_order = _matched_study_shape(document)
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))
         return cls(
             document=detached,
@@ -551,6 +523,7 @@ class CampaignLock:
                 observed={"schema_version": document.get("schema_version"), "fields": sorted(document)},
             )
         study = _object(document.get("study"), "campaign_lock.study")
+        _live_study_kind(study.get("kind"), "Campaign Lock Study")
         workload = _object(document.get("workload"), "campaign_lock.workload")
         compiler = _object(
             document.get("compiler_revision"), "campaign_lock.compiler_revision"
@@ -587,142 +560,106 @@ class CampaignLock:
         claim_scope = _name(study.get("claim_scope"), "campaign_lock.study.claim_scope")
         analysis = _object(document.get("analysis_plan"), "campaign_lock.analysis_plan")
         performance_reporting_policy(analysis, claim_scope)
-        if study_kind == "matched_search":
-            if claim_scope not in _MATCHED_CLAIM_SCOPES:
-                raise differs(
-                    "matched Campaign Lock claim scope",
-                    expected=sorted(_MATCHED_CLAIM_SCOPES), observed=claim_scope,
-                )
-            if set(resolved) != {
-                "arm_environments", "arm_environment_sha256", "budget",
-                "run_protocol", "evidence_policy", "agent_interface",
-            }:
-                raise ValueError("matched Campaign Lock requires the Ralph interface")
-            interface = _object(resolved["agent_interface"], "campaign_lock.agent_interface")
-            if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
-                raise differs(
-                    "Campaign Lock Ralph agent interface",
-                    expected={"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}, observed=interface,
-                )
-            agent_interface = TASK_AGENTS_RALPH_V1
-            RalphBudget.from_mapping(_object(resolved["budget"], "campaign_lock.budget"))
-            arms = _object(
-                resolved.get("arm_environments"),
-                "campaign_lock.resolved_inputs.arm_environments",
+        if claim_scope not in _MATCHED_CLAIM_SCOPES:
+            raise differs(
+                "matched Campaign Lock claim scope",
+                expected=sorted(_MATCHED_CLAIM_SCOPES), observed=claim_scope,
             )
-            arm_hashes = _object(
-                resolved.get("arm_environment_sha256"),
-                "campaign_lock.resolved_inputs.arm_environment_sha256",
+        if set(resolved) != {
+            "arm_environments", "arm_environment_sha256", "budget",
+            "run_protocol", "evidence_policy", "agent_interface",
+        }:
+            raise ValueError("matched Campaign Lock requires the Ralph interface")
+        interface = _object(resolved["agent_interface"], "campaign_lock.agent_interface")
+        if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
+            raise differs(
+                "Campaign Lock Ralph agent interface",
+                expected={"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}, observed=interface,
             )
-            validate_declarations(arms)
-            comparison = comparison_arm(arms)
-            if set(arm_hashes) != set(arms):
+        agent_interface = TASK_AGENTS_RALPH_V1
+        RalphBudget.from_mapping(_object(resolved["budget"], "campaign_lock.budget"))
+        arms = _object(
+            resolved.get("arm_environments"),
+            "campaign_lock.resolved_inputs.arm_environments",
+        )
+        arm_hashes = _object(
+            resolved.get("arm_environment_sha256"),
+            "campaign_lock.resolved_inputs.arm_environment_sha256",
+        )
+        validate_declarations(arms)
+        comparison = comparison_arm(arms)
+        if set(arm_hashes) != set(arms):
+            raise differs(
+                "Campaign Lock Authoring Environment set",
+                expected=sorted(arms), observed=sorted(arm_hashes),
+            )
+        for arm_name in arms:
+            environment = _object(
+                arms.get(arm_name),
+                f"campaign_lock.resolved_inputs.arm_environments.{arm_name}",
+            )
+            if "prompt_template" in environment:
+                raise ValueError("Ralph arms cannot contain prompt_template")
+            digest = _digest(
+                arm_hashes.get(arm_name),
+                f"campaign_lock.resolved_inputs.{arm_name}.sha256",
+            )
+            observed_digest = sha256(_canonical_json_bytes(environment)).hexdigest()
+            if digest != observed_digest:
                 raise differs(
-                    "Campaign Lock Authoring Environment set",
-                    expected=sorted(arms), observed=sorted(arm_hashes),
+                    f"Campaign Lock {arm_name} environment bytes differ",
+                    expected=digest, observed=observed_digest,
                 )
-            for arm_name in arms:
-                environment = _object(
-                    arms.get(arm_name),
-                    f"campaign_lock.resolved_inputs.arm_environments.{arm_name}",
-                )
-                if "prompt_template" in environment:
-                    raise ValueError("Ralph arms cannot contain prompt_template")
-                digest = _digest(
-                    arm_hashes.get(arm_name),
-                    f"campaign_lock.resolved_inputs.{arm_name}.sha256",
-                )
-                observed_digest = sha256(_canonical_json_bytes(environment)).hexdigest()
-                if digest != observed_digest:
-                    raise differs(
-                        f"Campaign Lock {arm_name} environment bytes differ",
-                        expected=digest, observed=observed_digest,
-                    )
-            budget = _object(
-                resolved.get("budget"), "campaign_lock.resolved_inputs.budget"
-            )
-            selection = arms["open_cake"].get("candidate_selection")
-            if comparison is not None and "candidate_selection" in arms[comparison]:
-                raise ValueError(f"{comparison} empirical selection is unsupported")
-            if "candidate_selection" in arms["open_cake"]:
-                if (
-                    comparison != "direct_cuda"
-                    or "input_format" in arms["open_cake"]
-                ):
-                    raise ValueError("empirical selection requires the complete-Schedule/direct-CUDA assay")
-                if (
-                    claim_scope != "artifact_optimization_only"
-                    or "maximum_candidates_per_turn" not in budget
-                    or not isinstance(selection, Mapping)
-                    or set(selection) != {"kind", "model"}
-                    or selection.get("kind") != _EMPIRICAL_SELECTION
-                ):
-                    raise differs(
-                        "Campaign Lock empirical selection policy",
-                        expected={"claim_scope": "artifact_optimization_only",
-                                  "budget.maximum_candidates_per_turn": "declared",
-                                  "candidate_selection": {"kind": _EMPIRICAL_SELECTION, "model": "<object>"}},
-                        observed={"claim_scope": claim_scope,
-                                  "budget.maximum_candidates_per_turn": budget.get("maximum_candidates_per_turn"),
-                                  "candidate_selection": (
-                                      {key: (selection[key] if key == "kind" else "<object>")
-                                       for key in selection}
-                                      if isinstance(selection, Mapping) else selection)},
-                    )
-                EmpiricalCostModel(selection["model"])
-            _object(resolved.get("run_protocol"), "campaign_lock.resolved_inputs.run_protocol")
-            evidence_policy = _object(
-                resolved.get("evidence_policy"),
-                "campaign_lock.resolved_inputs.evidence_policy",
-            )
-            _matched_evidence_policy_version(
-                evidence_policy,
-                "campaign_lock.resolved_inputs.evidence_policy",
-            )
-            expected_arms = matched_run_arms(arms, claim_scope)
-            if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
+        budget = _object(
+            resolved.get("budget"), "campaign_lock.resolved_inputs.budget"
+        )
+        selection = arms["open_cake"].get("candidate_selection")
+        if comparison is not None and "candidate_selection" in arms[comparison]:
+            raise ValueError(f"{comparison} empirical selection is unsupported")
+        if "candidate_selection" in arms["open_cake"]:
+            if (
+                comparison != "direct_cuda"
+                or "input_format" in arms["open_cake"]
+            ):
+                raise ValueError("empirical selection requires the complete-Schedule/direct-CUDA assay")
+            if (
+                claim_scope != "artifact_optimization_only"
+                or "maximum_candidates_per_turn" not in budget
+                or not isinstance(selection, Mapping)
+                or set(selection) != {"kind", "model"}
+                or selection.get("kind") != _EMPIRICAL_SELECTION
+            ):
                 raise differs(
-                    "matched Campaign Lock Run allocation",
-                    expected=expected_arms, observed=list(run_order),
+                    "Campaign Lock empirical selection policy",
+                    expected={"claim_scope": "artifact_optimization_only",
+                              "budget.maximum_candidates_per_turn": "declared",
+                              "candidate_selection": {"kind": _EMPIRICAL_SELECTION, "model": "<object>"}},
+                    observed={"claim_scope": claim_scope,
+                              "budget.maximum_candidates_per_turn": budget.get("maximum_candidates_per_turn"),
+                              "candidate_selection": (
+                                  {key: (selection[key] if key == "kind" else "<object>")
+                                   for key in selection}
+                                  if isinstance(selection, Mapping) else selection)},
                 )
-        elif study_kind == "portfolio":
-            agent_interface = "portfolio_v1"
-            if claim_scope != "bounded_local_b200_reconstruction":
-                raise differs(
-                    "portfolio Campaign Lock claim scope",
-                    expected="bounded_local_b200_reconstruction", observed=claim_scope,
-                )
-            portfolio_inputs = {
-                "kernel_seed", "case_roles", "specialization_policy", "dispatch_policy",
-                "evidence_policy",
-            }
-            if set(resolved) != portfolio_inputs:
-                raise differs(
-                    "portfolio Campaign Lock inputs differ",
-                    expected=sorted(portfolio_inputs), observed=sorted(resolved),
-                )
-            seed = _object(resolved.get("kernel_seed"), "campaign_lock.resolved_inputs.kernel_seed")
-            if set(seed) != {"seed_id", "path", "canonical_sha256"}:
-                raise differs(
-                    "portfolio Kernel Seed reference",
-                    expected=["canonical_sha256", "path", "seed_id"], observed=sorted(seed),
-                )
-            _digest(seed.get("canonical_sha256"), "campaign_lock.kernel_seed.sha256")
-            _object(resolved.get("case_roles"), "campaign_lock.resolved_inputs.case_roles")
-            _object(
-                resolved.get("specialization_policy"),
-                "campaign_lock.resolved_inputs.specialization_policy",
+            EmpiricalCostModel(selection["model"])
+        _object(resolved.get("run_protocol"), "campaign_lock.resolved_inputs.run_protocol")
+        evidence_policy = _object(
+            resolved.get("evidence_policy"),
+            "campaign_lock.resolved_inputs.evidence_policy",
+        )
+        _matched_evidence_policy_version(
+            evidence_policy,
+            "campaign_lock.resolved_inputs.evidence_policy",
+        )
+        expected_arms = matched_run_arms(arms, claim_scope)
+        if sorted(name.rsplit("-", 1)[0] for name in run_order) != expected_arms:
+            raise differs(
+                "matched Campaign Lock Run allocation",
+                expected=expected_arms, observed=list(run_order),
             )
-            _object(resolved.get("dispatch_policy"), "campaign_lock.resolved_inputs.dispatch_policy")
-            _object(
-                resolved.get("evidence_policy"),
-                "campaign_lock.resolved_inputs.evidence_policy",
-            )
-        else:
-            raise ValueError("Campaign Lock Study kind is unsupported")
         for field in ("evaluation_protocol", "execution"):
             _object(document.get(field), f"campaign_lock.{field}")
-        if study_kind == "matched_search" and comparison is None and paired_protocol(document['evaluation_protocol']) is None:
+        if comparison is None and paired_protocol(document['evaluation_protocol']) is None:
             raise ValueError("single-environment Campaign requires a fixed-baseline paired assay")
         if paired_protocol(document['evaluation_protocol']) is not None:
             execution = document['execution']
@@ -733,7 +670,7 @@ class CampaignLock:
                     'paired Campaign execution fields differ',
                     expected=sorted(paired_fields), observed=sorted(execution),
                 )
-            if study_kind != 'matched_search' or (comparison is not None and native_backend(comparison) is None):
+            if comparison is not None and native_backend(comparison) is None:
                 raise ValueError('paired Campaign requires a same-backend native comparison')
             _digest(execution['broker_execution_sha256'], 'execution.broker_execution_sha256')
             executor = _object(execution['executor_revision'], 'execution.executor_revision')
@@ -795,15 +732,15 @@ class CampaignLock:
         experimental_unit = _name(
             analysis.get("experimental_unit"), "campaign_lock.analysis_plan.experimental_unit"
         )
-        expected_unit = "run" if study_kind == "matched_search" else "case_route"
+        expected_unit = "run"
         if experimental_unit != expected_unit:
             raise differs(
                 "Campaign Lock experimental unit differs from Study kind",
                 expected=expected_unit, observed=experimental_unit,
             )
         estimand = _analysis_estimand(
-            analysis, claim_scope=claim_scope, study_kind=study_kind,
-            comparison=comparison if study_kind == "matched_search" else None,
+            analysis, claim_scope=claim_scope,
+            comparison=comparison,
             context="campaign_lock", lock=True,
         )
         detached = cast(Mapping[str, object], json.loads(_canonical_json_bytes(document)))

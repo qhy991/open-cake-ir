@@ -38,7 +38,6 @@ class CompilerRevision:
     commit: str | None
     targets: Mapping[str, Target]
     corpus_path: Path
-    calibration_coverage: frozenset[str]
 
 
 def _object(value: object, path: str) -> Mapping[str, object]:
@@ -145,17 +144,12 @@ def load_revision(project_root: str | Path, revision_path: str | Path) -> Compil
     if root not in path.parents:
         raise CompilerError(f"compiler revision {path} is outside the project root {root}")
     revision = _object(json.loads(path.read_text(encoding="utf-8")), "compiler_revision")
-    if (set(revision) != {"schema_version", "corpus_manifest", "calibration_coverage"}
-            or revision.get("schema_version") != 2):
+    if (set(revision) != {"schema_version", "corpus_manifest"}
+            or revision.get("schema_version") != 3):
         raise CompilerError("compiler revision fields differ")
     corpus_relative, corpus_path = _project_path(
         root, revision.get("corpus_manifest"), "compiler_revision.corpus_manifest"
     )
-    calibration = revision.get("calibration_coverage")
-    if not isinstance(calibration, list) or any(
-        not isinstance(item, str) or not item for item in calibration
-    ):
-        raise CompilerError("compiler revision calibration_coverage must be a list")
     directory = root / TARGETS_DIRECTORY
     target_paths = sorted(directory.glob("*.json")) if directory.is_dir() else []
     if not target_paths:
@@ -188,5 +182,4 @@ def load_revision(project_root: str | Path, revision_path: str | Path) -> Compil
         commit=commit,
         targets=MappingProxyType(targets),
         corpus_path=corpus_path,
-        calibration_coverage=frozenset(cast(list[str], calibration)),
     )

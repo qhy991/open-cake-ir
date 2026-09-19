@@ -23,7 +23,7 @@ def host_fixture():
                   schedule_id=schedule.schedule_id, schedule_sha256="fixture-schedule",
                   target=schedule.target, route=schedule.lowering)
     assessment = Assessment(**common, accepted=True, lowering_eligible=True, findings=(),
-                            analysis={}, lowering_parameters={}, calibration_available=False,
+                            analysis={}, lowering_parameters={},
                             schedule_bytes=source.schedule_bytes)
     lowering = Lowering(**common, generated=True, source="// host protocol fixture\n",
                         source_sha256="fixture-source", source_map={}, toolchain_requirements={

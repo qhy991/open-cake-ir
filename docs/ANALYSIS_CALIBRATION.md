@@ -3,7 +3,7 @@
 > **Historical analysis record through 2026-08-28.** The observations and later QSA
 > counterexample are retained together because they explain the withdrawn bound. Future
 > calibrations produce new contracts, Evidence, and reports; they do not silently update
-> these rows. Released calibration coverage is read from the current Compiler Revision.
+> these rows. The structural-ranking mechanism is retired by ADR 0071; these are historical measurements.
 >
 > **Where the instruments went (2026-09-18).** The three calibration plans
 > (`contracts/calibrations/*.json`), their measurements (`evidence/calibration/`) and the
@@ -11,8 +11,7 @@
 > and `tools/calibrate_ranking_at_scale.py` now live on the `history` branch at their
 > original paths (`git show history:<path>`); the Compiler Revisions they were bound to are
 > indexed by `docs/history/identities.json`. No further ranking calibration is planned and
-> the Compiler's ranking (`Compiler.rank`, `compiler/performance/ranking.py`) is scheduled
-> for removal, so the paths below are historical references, not current entry points. The
+> the Compiler's ranking and `tools/calibrate_wave_term.py` now live on `history`, so the paths below are historical references, not current entry points. The
 > analysis itself is kept as written.
 
 The paper's harness reports a performance analysis as a *report*, and says plainly that

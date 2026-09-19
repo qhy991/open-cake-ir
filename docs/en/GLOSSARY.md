@@ -1,5 +1,8 @@
 # Glossary: code names in plain English
 
+Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
+
+
 [中文定义原文](../GLOSSARY.md) · [English home](README.md)
 
 This is the English translation of the canonical Chinese glossary. The source page owns prose definitions; machine spellings remain owned by code and contracts. Use it as a lookup, not a list to memorize.
@@ -164,7 +167,7 @@ An observation at a specified budget: not reached, reached without a qualified c
 
 ### KernelSeed
 
-A candidate qualified under a frozen narrow confirmatory scope that may enter a later portfolio Study. Owned by Lab; it is not automatically a general production operator.
+A candidate qualified under a frozen narrow confirmatory scope that may support later explicit specialization. Owned by Lab; it is not automatically a general production operator.
 
 ## Evaluation terms
 

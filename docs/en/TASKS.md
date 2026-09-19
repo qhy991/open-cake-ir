@@ -1,5 +1,8 @@
 # Task implementations and the common Lab
 
+Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
+
+
 [中文](../TASKS.md)
 
 `lab/` owns Ralph iteration, budgets, candidate submission and common evidence replay.

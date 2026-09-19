@@ -12,7 +12,7 @@
 - 语料覆盖： 检查了 `apple_gpu_family8`（15）、`gfx1151`（1）、`gfx938`（10）、`sm_100a`（102）、`sm_103a`（29）
 - 未检查的已声明目标： `apple_gpu_family7, apple_gpu_family9`（上面的通过数不涵盖这些目标）
 - 只用于拒绝检查的未声明目标： `apple_gpu_family10`（1）
-- 已发布校准： `无`
+- 结构排序： 已退役；显式经验模型仍独立提供条件估计
 - 负责记录： [`compiler/revision.json`](../../compiler/revision.json) 与 [`compiler/targets/`](../../compiler/targets)
 
 ## 主机采集（按精确目标）

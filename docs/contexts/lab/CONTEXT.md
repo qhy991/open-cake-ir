@@ -1,5 +1,8 @@
 # Research Lab context
 
+Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
+
+
 [中文阅读](../../zh-CN/contexts/lab/CONTEXT.md) · [Bilingual catalog](../../README.md)
 
 The Research Lab owns Study design and execution while treating Workload, Compiler, and

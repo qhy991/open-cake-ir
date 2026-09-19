@@ -29,25 +29,6 @@ _RALPH_STUDY_FIELDS = {
 }
 
 
-_PORTFOLIO_STUDY_FIELDS = {
-    "schema_version",
-    "study_id",
-    "state",
-    "kind",
-    "claim_scope",
-    "workload",
-    "compiler_revision",
-    "kernel_seed",
-    "case_roles",
-    "specialization_policy",
-    "dispatch_policy",
-    "evaluation_protocol",
-    "execution",
-    "analysis_plan",
-    "evidence",
-}
-
-
 _SYSTEM_QUALIFICATION_ANALYSIS_PLAN = {
     "experimental_unit": "run",
     "estimand": None,

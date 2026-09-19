@@ -445,7 +445,6 @@ class ActivationTaskTests(unittest.TestCase):
                         self.assertTrue(assessment.lowering_eligible, assessment.findings)
                         lowering = self.compiler.lower(assessment)
                         self.assertEqual(lowering.toolchain_requirements["target"], workload.target)
-                        self.assertFalse(assessment.calibration_available)
                         route = activation.BACKENDS[backend]["route"]
                         if route == "metal":
                             # Whatever the task's own kernel is, no SIMD exchange belongs in it.

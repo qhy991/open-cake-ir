@@ -47,34 +47,26 @@ class CompilerConvergenceContractTests(unittest.TestCase):
             commit=revision.commit,
             target_definitions=targets,
             corpus_path=revision.corpus_path,
-            calibration_coverage=revision.calibration_coverage,
         )
         targets.clear()
         self.assertEqual(compiler.commit, self.compiler.commit)
         self.assertEqual(compiler.assess(self.document()), self.compiler.assess(self.document()))
 
-    def test_assess_lower_profile_and_rank_reuse_the_admitted_target(self) -> None:
+    def test_assess_lower_and_profile_reuse_the_admitted_target(self) -> None:
         document = self.document()
-        initial = self.compiler.assess(document)
-        compiler = copy.copy(self.compiler)
-        compiler._revision = replace(
-            self.compiler._revision,
-            calibration_coverage=frozenset({initial.analysis["semantic_sha256"]}),
-        )
+        compiler = self.compiler
         target = compiler._revision.targets[document["target"]]
         with (
             mock.patch.object(public.Target, "from_dict", side_effect=AssertionError("Target reparsed")),
             mock.patch.object(core, "verify_contracts", wraps=core.verify_contracts) as verify_call,
             mock.patch.object(backend_triton, "preflight", wraps=backend_triton.preflight) as preflight,
             mock.patch.object(backend_triton, "emit", wraps=backend_triton.emit) as emit,
-            mock.patch.object(core, "rank_candidates", wraps=core.rank_candidates) as rank,
         ):
             assessment = compiler.assess(document)
             self.assertTrue(assessment.lowering_eligible)
             self.assertTrue(compiler.lower(assessment).source)
             compiler.profile(assessment)
-            compiler.rank([assessment])
-        for calls in (verify_call, preflight, emit, rank):
+        for calls in (verify_call, preflight, emit):
             self.assertTrue(calls.call_args_list)
             for call in calls.call_args_list:
                 self.assertIs(call.args[1], target)
@@ -85,8 +77,7 @@ class CompilerConvergenceContractTests(unittest.TestCase):
             (replace(assessment, compiler_revision_id="different-revision"), "different Compiler Revision"),
             (replace(assessment, accepted=False), "canonical Schedule replay"),
         ):
-            for consume in (self.compiler.lower, self.compiler.profile,
-                            lambda item: self.compiler.rank([item])):
+            for consume in (self.compiler.lower, self.compiler.profile):
                 with self.subTest(changed=message, consume=consume):
                     with self.assertRaisesRegex(public.CompilerError, message):
                         consume(changed)

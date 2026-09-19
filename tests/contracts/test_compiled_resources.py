@@ -79,7 +79,6 @@ class CompiledResourceTests(unittest.TestCase):
         self.assertEqual(metrics["smsp__warp_issue_stalled_barrier_per_warp_active.pct"]["estimate_kind"], "uncalibrated_risk")
         self.assertEqual(after["compiled_resources"]["stack_bytes"], 376)
         self.assertNotIn("spill_bytes", after["compiled_resources"])
-        self.assertEqual(self.compiler.rank([self.assessment])[0], ())
 
     def test_stale_source_target_entry_and_launch_observations_are_refused(self) -> None:
         for changes in (

@@ -29,7 +29,6 @@ from .corpus import CorpusCaseReport, CorpusGateReport, check_corpus
 from .errors import CompilerError, LoweringRefusedError
 from .revision import CompilerRevision, load_revision
 from .target import Target
-from .performance.ranking import Cost, rank as rank_candidates
 from .performance.compiled_resources import CompiledResources
 from .performance.empirical_cost import EmpiricalCostModel
 from .diagnostics import Finding, FindingCategory, FindingSeverity
@@ -54,7 +53,6 @@ class Assessment:
     findings: tuple[Finding, ...]
     analysis: Mapping[str, object]
     lowering_parameters: Mapping[str, int]
-    calibration_available: bool
     schedule_bytes: bytes
     guidance: tuple[Finding, ...] = ()
 
@@ -156,7 +154,6 @@ class Compiler:
         commit: str | None,
         target_definitions: Mapping[str, Target],
         corpus_path: Path,
-        calibration_coverage: frozenset[str],
     ) -> None:
         self._revision = CompilerRevision(
             project_root=project_root,
@@ -164,7 +161,6 @@ class Compiler:
             commit=commit,
             targets=MappingProxyType(dict(target_definitions)),
             corpus_path=corpus_path,
-            calibration_coverage=calibration_coverage,
         )
 
     @property
@@ -184,7 +180,6 @@ class Compiler:
             commit=revision.commit,
             target_definitions=revision.targets,
             corpus_path=revision.corpus_path,
-            calibration_coverage=revision.calibration_coverage,
         )
 
     def check_corpus(self) -> CorpusGateReport:
@@ -295,7 +290,6 @@ class Compiler:
             findings=tuple(finding for finding in findings if finding.severity is not FindingSeverity.HINT),
             analysis=analysis,
             lowering_parameters=MappingProxyType({}),
-            calibration_available=semantic_sha256 in self._revision.calibration_coverage,
             schedule_bytes=_canonical_json_bytes(schedule),
             guidance=tuple(finding for finding in findings if finding.severity is FindingSeverity.HINT),
         )
@@ -328,7 +322,6 @@ class Compiler:
             ),
             analysis=MappingProxyType({}),
             lowering_parameters=MappingProxyType({}),
-            calibration_available=False,
             schedule_bytes=_canonical_json_bytes(schedule),
         )
 
@@ -400,56 +393,6 @@ class Compiler:
             ))
         return profile
 
-    def rank(
-        self, assessments: Sequence[Assessment]
-    ) -> tuple[tuple["Cost", ...], tuple[str, ...]]:
-        """Order calibrated eligible candidates before any of them reaches a GPU.
-
-        This is the paper's pre-GPU filter stage, and the boundary it keeps is the point:
-        an Assessment that the gates refused is not ranked at all. Ranking a rejected
-        candidate would let a good score argue against a hard gate, and the gates are what
-        the harness is for. Rejected and unscorable candidates come back named rather than
-        dropped, so a caller cannot mistake the order for a complete view of its set.
-
-        The released Revision owns calibration coverage. An eligible candidate from an
-        uncovered semantic domain is returned as withheld rather than being assigned precision
-        that the Revision does not claim. The order carries no predicted time;
-        `compiler/performance/ranking.py` defines the dormant structural primitive and
-        `docs/ANALYSIS_CALIBRATION.md` records the measurements required to activate it.
-        """
-
-        eligible: list[Schedule] = []
-        withheld: list[str] = []
-        for assessment in assessments:
-            if assessment.compiler_revision_id != self._revision.revision_id:
-                raise CompilerError("assessment belongs to a different Compiler Revision")
-            replayed = self.assess(
-                _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
-            )
-            if assessment != replayed:
-                raise CompilerError(
-                    "assessment fields differ from canonical Schedule replay"
-                )
-            if not assessment.lowering_eligible:
-                withheld.append(assessment.schedule_id)
-                continue
-            if not assessment.calibration_available:
-                withheld.append(assessment.schedule_id)
-                continue
-            definition = self._revision.targets.get(assessment.target)
-            if definition is None:
-                withheld.append(assessment.schedule_id)
-                continue
-            eligible.append(
-                Schedule.from_dict(
-                    _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
-                )
-            )
-        if not eligible:
-            return (), tuple(withheld)
-        target = self._revision.targets[assessments[0].target]
-        scored, unscored = rank_candidates(eligible, target)
-        return scored, tuple(withheld) + unscored
 
     def lower(self, assessment: Assessment) -> Lowering:
         """Lower an eligible Assessment to deterministic inspectable target source."""
