@@ -64,6 +64,7 @@ class CompletePackPlanTests(unittest.TestCase):
                                    ([-float('inf')],[0.0],False),
                                    ([-float('inf')],[float('inf')],False),
                                    ([float('nan')],[float('nan')],True),
+                                   ([float('nan')],[12345.0],False),
                                    ([0.0],[float('nan')],False)]:
             passed,_=compare_tile_outputs(Workload(),{}, {'lse':expected},{'lse':actual},{})
             self.assertEqual(passed,ok)

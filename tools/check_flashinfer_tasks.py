@@ -29,6 +29,8 @@ def check(backend: str) -> dict:
             row.update(status="not_integrated", reason="no_task_contract_oracle_or_starter")
         elif hasattr(owner, 'author_plan'):
             try:
+                if backend != 'triton-b300':
+                    raise ValueError('these launch-plan contracts declare exact target sm_103a on triton-b300')
                 variants = []
                 for variant in owner.VARIANTS:
                     workload = WorkloadContract(owner.workload_document(task, variant=variant))

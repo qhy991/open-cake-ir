@@ -114,7 +114,8 @@ def _test_launch_plan(owner, task_id, task, compiler, output, torch, timing_requ
             inputs = {name:value.to(device='cuda:0') for name,value in cpu_inputs.items()}
             snapshots = {name:value.clone() for name,value in inputs.items()}
             def allocate(name,spec):
-                poison = -(2**31) if spec.dtype.value=='int32' else float('nan')
+                poison = (-(2**31) if spec.dtype.value=='int32' else
+                          torch.finfo(types[spec.dtype.value]).max if name in plan.outputs else float('nan'))
                 return torch.full(spec.shape,poison,dtype=types[spec.dtype.value],device='cuda:0')
             def check_tensor(value,spec):
                 if (tuple(value.shape)!=spec.shape or value.dtype!=types[spec.dtype.value]
