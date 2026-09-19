@@ -17,7 +17,16 @@
   "observation": "Schedule._staged_axis_filled_by only looks for an access map on the immediate producer. A cast has no access map, so inserting shape-preserving casts between loads and MMA makes mma_accumulates_over return false. Both the register-lifetime verifier and emitter consume that query. Removing the lifetime guard alone would be wrong: the emitter would also lose the carry. Eight task probes share this same cause; they are not eight independent performance observations.",
   "proposed_change": "Trace a unique, shape-preserving cast chain back to its producer before querying the existing access map. Refuse to prove cyclic, ambiguous or shape-changing chains. Preserve the output-axis distinction. Check CPU execution of the emitted K-loop with tails and cast chains; retain all target admission gates and Corpus expectations. The bounded nested backend gate remains a separate capability limit.",
   "principles": "P1/P3: no new syntax or accumulate flag. P2/P8: explicit casts retain their semantics and only preserve coordinates. P4/P5/P7: construction and dtype checks stay with their owners, while the shared provenance query updates verifier and emitter together. P6: regression tests and unchanged Corpus Gate.",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null
+  "decision": "accepted",
+  "implemented_in": "5b452470047a923933d1077c39ea2c3ea7274728",
+  "verified_by": {
+    "source_commit": "9696fc3408d11e7aad8231a29c79b6c6af17c89b",
+    "kind": "CPU contracts, emitted-source execution and replay of original static probes",
+    "targeted_contracts_passed": 154,
+    "corpus_cases": 164,
+    "corpus_expectations_changed": false,
+    "replayed_evidence": "/Users/haiyan/Documents/cake-experiments/collection-audit-b4948b61/gemm-dot-probes/after-cast-provenance-fix.json",
+    "outcome": "All eight explicit FP16-to-FP32 tf32-dot candidates now lower; all eight direct FP16-dot candidates still refuse TARGET_INSTRUCTION_UNSUPPORTED. CPU emitted-source tests sum every K tile including tails and nonidentity cast chains; output-axis, cyclic, shape-changing and ambiguous producer checks remain bounded.",
+    "scope": "Software verification only. No GPU correctness, tensor-core qualification or performance claim."
+  }
 }
