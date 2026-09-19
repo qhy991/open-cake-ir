@@ -3965,6 +3965,8 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
 
         paired = json.loads((self.root / "contracts/studies/matched-search-triton-optimization-template.json").read_text())
         paired["claim_scope"] = "artifact_optimization_only"
+        paired["allocation"]["order"] = ["open_cake-1", "native_triton-1"]
+        paired["analysis_plan"] = json.loads(json.dumps(self.study["analysis_plan"]))
         paired["arms"]["open_cake"]["candidate_selection"] = {"kind": "external_empirical_advisory_v1"}
         with self.assertRaisesRegex(ValueError, "Flash/direct-CUDA assay"):
             self.preflight(study=paired)
