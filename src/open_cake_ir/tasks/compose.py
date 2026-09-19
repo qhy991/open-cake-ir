@@ -40,7 +40,7 @@ def _object(value: object, context: str) -> Mapping[str, object]:
 
 
 def _raw_reference_path(
-    root: Path, value: object, context: str
+    root: Path, value: object, context: str, *, allow_external: bool = False
 ) -> Path:
     reference = _object(value, context)
     if set(reference) != {"path", "sha256"}:
@@ -48,6 +48,13 @@ def _raw_reference_path(
     raw_path = reference["path"]
     if not isinstance(raw_path, str) or not raw_path:
         raise ValueError(f"{context}.path differs")
+    if allow_external and Path(raw_path).is_absolute():
+        # Scaffolds already admit canonical external publications at Study admission
+        # and TaskPackage rendering. Retain that same custody rule at execution.
+        path = external_file(root, raw_path, context)
+        if sha256(path.read_bytes()).hexdigest() != reference["sha256"]:
+            raise ValueError(f"{context} bytes differ")
+        return path
     relative = PurePosixPath(raw_path)
     if relative.is_absolute() or ".." in relative.parts or "\\" in raw_path:
         raise ValueError(f"{context}.path is unsafe")
@@ -179,7 +186,7 @@ def execute_matched_from_config(
 
     output_schema_path = (_raw_reference_path(root, output_schema, "arm_environments.provider.output_schema")
                           if output_schema is not None else None)
-    _raw_reference_path(root, open_arm["scaffold"], "arm_environments.scaffold")
+    _raw_reference_path(root, open_arm["scaffold"], "arm_environments.scaffold", allow_external=True)
     if comparison == "direct_cuda":
         _raw_reference_path(
             root, direct_arm["launch_contract"], "arm_environments.direct_cuda.launch_contract"

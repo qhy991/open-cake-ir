@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-20-003 — live composition rejects a canonical external AGENTS.md already admitted by the Study; scaffold custody must use the same external-file rule at execution (protocol, accepted; replay and successor pending).
+
 - F-2026-09-20-002 — a recovered Codex stream emits a top-level reconnect error before completing successfully; the Lab rejects the event vocabulary even though first-turn candidate output matches. The bounded recovered-notice path retains full turn/candidate checks and diagnostics (protocol, implemented at 0e3c0f87; closed at 1b51db28 by exact original-stream replay and fresh two-turn live qualification, alongside 103 CPU contracts and 164 unchanged Corpus cases; no network-reliability claim).
 
 - F-2026-09-20-001 — shape-preserving casts hide a loaded operand's K axis from MMA carry analysis; eight FP16-to-FP32 GEMM probes are refused by BUFFER_ESCAPES_LOOP. The query is shared by lifetime verification and emission, so both need the same coordinate proof (bug, software fix 5b452470 verified at 9696fc34 by 154 CPU contracts, 164 unchanged Corpus cases and replay of the eight probes; no GPU or performance claim).

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-20-003",
+  "kind": "protocol",
+  "date": "2026-09-20",
+  "title": "Live composition refuses a canonical external scaffold admitted by the Study",
+  "backend": "Lab runtime composition",
+  "target": "sm_103a observed; shared composition rule",
+  "compiler_revision_id": "open-cake-ir@1b51db289ab2ac7387874619295e598721b8e377",
+  "executor_revision": "sm_103a@1b51db289ab2ac7387874619295e598721b8e377",
+  "evidence": {
+    "workspace": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/rmsnorm-h2048-successor-20260920",
+    "artifact": "campaign-lock.json resolved_inputs.arm_environments.open_cake.scaffold",
+    "failure_log": "../rmsnorm-h2048-successor-20260920.stderr.log",
+    "reproduction": "At 4ca03582, test_external_scaffold_reaches_cuda_and_metal_composition fails at the real execute_matched_from_config call with arm_environments.scaffold.path is unsafe. Read-only remote probe confirms source_reference_path admits the exact file and its frozen bytes match."
+  },
+  "observation": "Study admission and TaskPackage rendering admit canonical external scaffold files. The runtime composer applies its older source-only raw-reference resolver and refuses before any authoring turn. This is a Lab ownership mismatch, not an IR or GPU failure.",
+  "proposed_change": "Opt the scaffold call into existing external_file custody checks, retaining frozen-byte verification. Keep other raw references source-only. Exercise the real CUDA and Metal composition seam plus external alias, traversal, source-checkout and changed-byte counterexamples.",
+  "decision": "accepted",
+  "implemented_in": null,
+  "verified_by": null
+}

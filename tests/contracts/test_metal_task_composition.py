@@ -20,6 +20,28 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class MetalTaskCompositionTests(unittest.TestCase):
+    def test_external_scaffold_keeps_custody_and_frozen_bytes_checks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            root = directory / 'checkout'
+            root.mkdir()
+            (root / '.git').mkdir()
+            target = directory / 'AGENTS.md'
+            target.write_text('frozen instructions')
+            digest = sha256(target.read_bytes()).hexdigest()
+            alias = directory / 'alias.md'
+            alias.symlink_to(target)
+            internal = root / 'AGENTS.md'
+            internal.write_bytes(target.read_bytes())
+            for path in (alias, internal, directory / 'checkout' / '..' / 'AGENTS.md'):
+                with self.subTest(path=path), self.assertRaises(ValueError):
+                    compose._raw_reference_path(root, {'path': str(path), 'sha256': digest},
+                                                'scaffold', allow_external=True)
+            target.write_text('changed instructions')
+            with self.assertRaisesRegex(ValueError, 'bytes differ'):
+                compose._raw_reference_path(root, {'path': str(target), 'sha256': digest},
+                                            'scaffold', allow_external=True)
+
     def test_metal_claude_composes_existing_broker_and_persistent_actor_workspace(self):
         self.check_composition('metal-m1-pro')
 
