@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping, Protocol, cast
 
 from open_cake_ir.compiler import Compiler
+from ._documents import _object
 from .rubrics import derive_rubric
 from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
 from .python_reference import bind_python_reference
@@ -29,12 +30,6 @@ class CampaignLockLike(Protocol):
     study_kind: str
     claim_scope: str
     run_order: tuple[str, ...]
-
-
-def _object(value: object, context: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{context} must be an object")
-    return cast(Mapping[str, object], value)
 
 
 def _canonical_json(value: object) -> str:

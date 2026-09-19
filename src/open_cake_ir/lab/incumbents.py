@@ -28,26 +28,14 @@ from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.evidence.custody import external_path
 from open_cake_ir.serialization import canonical_json_bytes
 
+from ._documents import _object, _digest
 from .contracts import CampaignLock, CampaignRef, StudyReport
 from .executor import ExecutorRevision
 
 
-_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _RUN = re.compile(r"^incumbent-([0-9a-f]{64})-([0-9]{12})$")
 _PROMOTION_KIND = "task_incumbent_promoted_v1"
 _KEY_KIND = "task_incumbent_key_v1"
-
-
-def _object(value: object, context: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping):
-        raise ValueError(f"{context} must be an object")
-    return cast(Mapping[str, object], value)
-
-
-def _digest(value: object, context: str) -> str:
-    if not isinstance(value, str) or _DIGEST.fullmatch(value) is None:
-        raise ValueError(f"{context} must be a lowercase SHA256 digest")
-    return value
 
 
 @dataclass(frozen=True)

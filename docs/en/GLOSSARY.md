@@ -1,8 +1,5 @@
 # Glossary: code names in plain English
 
-Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
-
-
 [中文定义原文](../GLOSSARY.md) · [English home](README.md)
 
 This is the English translation of the canonical Chinese glossary. The source page owns prose definitions; machine spellings remain owned by code and contracts. Use it as a lookup, not a list to memorize.
@@ -73,11 +70,11 @@ The result of checking one Schedule under an exact target and revision. Structur
 
 ### Lowering
 
-Deterministically generated target source and mapping information, or selection of an admitted fixed source asset. Owned by the Compiler Revision; it has not yet been toolchain-compiled or executed.
+Deterministically generated target source and mapping information. Owned by the Compiler Revision; it has not yet been toolchain-compiled or executed.
 
 ### Compiler Revision
 
-The compiler at one clean commit: the commit binds semantics, checking, analysis and generation, `compiler/revision.json` binds the Corpus and calibration coverage, and every document under `compiler/targets/` is a declared Target. Its identity is `open-cake-ir@<commit>`; a checkout carrying modified or untracked files has none (ADR 0065).
+The compiler at one clean commit: the commit binds semantics, checking, analysis and generation, `compiler/revision.json` binds the Corpus, and every document under `compiler/targets/` is a declared Target. Its identity is `open-cake-ir@<commit>`; a checkout carrying modified or untracked files has none (ADR 0065).
 
 ### Executor Revision
 
@@ -103,7 +100,7 @@ The problem definition: mathematics, input domain and generation, external refer
 
 ### Study Contract
 
-The experimental design: authoring environments, allocation, budget, references, and analysis. It is not mutable configuration for one execution.
+The experimental design: authoring environments, allocation, budget, references, and analysis. `matched_search` is the sole live Study kind; the Portfolio Study lifecycle is retired (ADR 0071). It is not mutable configuration for one execution.
 
 ### Claim Scope
 

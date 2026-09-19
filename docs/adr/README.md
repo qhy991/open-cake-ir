@@ -1,103 +1,82 @@
-# 设计决策目录
+# 设计决策 / Architecture decisions
 
-[中文首页](../zh-CN/README.md) · [English](../en/adr/README.md) · [中英文对照](../README.md)
+ADR 保存设计理由，当前实现以代码和[当前状态](../../reports/current/STATUS.md)为准。
+新决策说明取代哪条旧决定；历史正文和既有译文保留。
+状态：proposed 为提案，accepted 为已采纳，superseded 为被后继取代，rejected 为已拒绝。
 
-ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../reports/current/STATUS.md)，一次实验的成绩看它自己的报告。
-新决策写新记录，并说明取代哪条旧决定；不改写历史证据。
+按编号查阅；旧 Portfolio Study 和结构排序见 0071，源码身份见 0065，历史迁移见 0067。
+0038、0039、0053 曾有重复编号，后加入的记录已编号为 0068、0069、0070。
 
-| 想了解什么 | 主要记录 |
-| --- | --- |
-| 为什么以编译器为核心 | [0001](../zh-CN/adr/0001-compiler-first-with-dependent-lab.md) |
-| 为什么单独区分 portfolio | [0002](../zh-CN/adr/0002-portfolio-as-second-study-variant.md) |
-| 代码与运行产物放在哪里 | [0005](../zh-CN/adr/0005-forward-compatible-lifecycle-layout.md) |
-| 为什么估算需要校准 | [0008](../zh-CN/adr/0008-calibration-coverage-gates-ranking.md) |
-| 生成源码与固定源码有什么区别 | [0019](../zh-CN/adr/0019-lowering-generation-is-observable.md) |
-| 为什么 Corpus 与 Workload 不同 | [0029](../zh-CN/adr/0029-lowering-route-is-not-a-workload-profile.md)、[0068](../zh-CN/adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) |
-| 发布如何使用独立人类或模型会话的批准 | [0052](../zh-CN/adr/0052-independent-agent-release-review.md)，背景：[0030](../zh-CN/adr/0030-compiler-release-approval-is-external.md)；两者已被 [0065](0065-source-identity-is-the-commit.md) 取代 |
-| 为什么完整文件不等于可信的权限历史 | [0031](../zh-CN/adr/0031-archive-integrity-is-not-filesystem-custody.md) |
-| 文档怎样避免重复维护事实 | [0047](../zh-CN/adr/0047-documentation-separates-stable-history-and-current-views.md) |
-| AI 怎样读取任务并受预算约束 | [0048](../zh-CN/adr/0048-agent-runs-use-task-agents-and-ralph-control.md) |
-| 已发布身份怎样保留 | [Executor：0049](../zh-CN/adr/0049-released-executor-descriptors-reserve-their-identities.md)、[Compiler：0050](../zh-CN/adr/0050-released-compiler-locks-reserve-their-identities.md)；机制由 [0065](0065-source-identity-is-the-commit.md) 取代，身份表见 [0067](0067-retired-release-outputs-live-on-the-history-branch.md) |
-| 源码身份为什么是提交，退役的发布产物在哪里 | [0065](0065-source-identity-is-the-commit.md)、[0067](0067-retired-release-outputs-live-on-the-history-branch.md) |
-| 为什么读取不能隐式复制成一组数 | [0051](../zh-CN/adr/0051-load-values-follow-the-access-domain.md) |
-| Study 怎样显式使用外部模型给候选排序 | [0053](0053-study-bound-advisory-cost-selection.md) |
-
-[中文设计记录目录](../zh-CN/adr/README.md)逐条对应英文原文。2026-09-18 之前有三对记录共用编号（0038、0039、0053）；每对中后加入的一份已改为 0068、0069、0070，正文首行记录原编号。状态含义：
-
-- **proposed：** 提案，可按授权范围实现和审查，不代表已发布或 GPU 通过。
-- **accepted：** 决策已被接受；具体权限范围仍看该记录和当前任务授权。
-- **superseded：** 后继记录负责当前决定，旧记录保留背景。
-- **rejected：** 保留被拒绝的方案及理由，不据此实施。
-
-- [0054: Lab uses only Ralph](0054-lab-uses-only-ralph.md)
-- [0055: Task implementations live outside the common Lab](0055-task-implementations-live-outside-the-common-lab.md)
-- [0056: One fixed-baseline paired assay per candidate](0056-fixed-baseline-paired-execution.md)
-
-## 原始决策补充索引 / Additional original decisions
-
-- [ADR 0003: Consider Rust only as a Corpus-equivalent v4 shadow engine](0003-rust-shadow-engine-after-v3.md)
-- [ADR 0004: Restore provider-default features only for artifact optimization](0004-tool-rich-artifact-optimization.md)
-- [ADR 0006: candidate sets, and a Schedule stays statically shaped](0006-candidate-sets-and-static-shapes.md)
-- [ADR 0007: candidate evidence has one identity, and every frozen reference is a witness](0007-candidate-evidence-and-revision-witnesses.md)
-- [ADR 0009: live candidate sets use one sealed envelope](0009-live-candidate-set-envelope.md)
-- [ADR 0010: Establish feedback before adding agent orchestration](0010-feedback-before-agent-orchestration.md)
-- [ADR 0011: calibrate the decision the Lab actually makes](0011-finite-domain-ranking-calibration.md)
-- [ADR 0012: Profile each correctness-qualified search survivor](0012-profile-each-correct-search-survivor.md)
-- [ADR 0013: Keep candidate failure separate from missing scientific data](0013-two-part-scientific-estimand.md)
-- [ADR 0014: Close the matched Run semantic event vocabulary](0014-close-matched-event-vocabulary.md)
-- [ADR 0015: Reasoning effort is an explicit treatment factor](0015-reasoning-effort-is-treatment.md)
-- [ADR 0016: Clean-start references carry contract, not implementation](0016-clean-start-references-carry-contract-not-implementation.md)
-- [ADR 0017: Retain the exact provider reference bundle](0017-retain-the-exact-provider-reference-bundle.md)
-- [ADR 0018: ranking is a preorder and calibration controls drift](0018-ranking-is-a-preorder-and-calibration-controls-drift.md)
-- [ADR 0020: KDA deltas are an external expressibility corpus](0020-kda-deltas-are-an-external-expressibility-corpus.md)
-- [ADR 0021: top-k is a deterministic indexed-selection primitive](0021-top-k-is-a-deterministic-indexed-selection-primitive.md)
-- [ADR 0022: tanh names its target implementation contract](0022-tanh-names-its-target-implementation-contract.md)
-- [ADR 0023: block scales are axis relations](0023-block-scales-are-axis-relations.md)
-- [ADR 0024: runtime-valid extents are buffer relations](0024-runtime-valid-extents-are-buffer-relations.md)
-- [ADR 0025: ragged grouped GEMM is primitive composition](0025-ragged-grouped-gemm-is-primitive-composition.md)
-- [ADR 0026: runtime-indexed loads are AccessMap composition](0026-runtime-indexed-loads-are-access-map-composition.md)
-- [ADR 0027: Backend preconditions are Assessment Findings](0027-backend-preconditions-are-assessment-findings.md)
-- [ADR 0028: Study templates defer revision binding to CampaignLock](0028-study-templates-defer-revision-binding-to-campaign-lock.md)
-- [ADR 0032: access boundaries use the accessed Buffer](0032-access-boundaries-use-the-accessed-buffer.md)
-- [ADR 0033: Workload materialization owns TinyGEMM2 input bytes](0033-workload-materialization-owns-tinygemm2-input-bytes.md)
-- [ADR 0034: KDA weighted combine is primitive composition](0034-kda-weighted-combine-is-primitive-composition.md)
-- [ADR 0035: atomic slot reservation is state plus RMW](0035-atomic-slot-reservation-is-state-plus-rmw.md)
-- [ADR 0036: atomic reservation proves indexed-store ownership](0036-atomic-reservation-proves-indexed-store-ownership.md)
-- [ADR 0037: A prefix scan is not a fold with a flag](0037-a-prefix-scan-is-not-a-fold-with-a-flag.md)
-- [ADR 0038: QSA needs stateful selection and launch composition](0038-qsa-needs-stateful-selection-and-launch-composition.md)
-- [ADR 0039: Logical register pressure is not a physical bound](0039-logical-register-pressure-is-not-a-physical-bound.md)
-- [ADR 0040: QSA utilization is a whole-Program roofline claim](0040-qsa-utilization-and-component-attribution.md)
-- [ADR 0041: Resident top-k supports signed INT32 values](0041-resident-top-k-supports-signed-int32.md)
-- [ADR 0042: Loop-carried top-k may batch two source tiles](0042-loop-carried-top-k-may-batch-two-source-tiles.md)
-- [ADR 0043: FP32 MMA may explicitly request TF32 input precision](0043-fp32-mma-may-explicitly-request-tf32.md)
-- [ADR 0044: Loop-carried top-k canonical lowering may use exact half-selection](0044-loop-carried-top-k-canonical-lowering-may-use-exact-half-selection.md)
-- [ADR 0045: Triton lowering admits multiple explicit MMA DAG nodes](0045-triton-lowering-admits-multiple-explicit-mma-dag-nodes.md)
-- [ADR 0046: Dynamic loop stop owns whole-grid work](0046-dynamic-loop-stop-owns-whole-grid-work.md)
-- [ADR 0057: Metal and CLI harnesses use the existing Lab](0057-metal-and-harnesses-use-the-existing-lab.md)
-
-- [0060: Release review provenance and historical exceptions](0060-release-review-provenance-and-historical-exceptions.md)
-
-- [0058: External writer custody anchors](0058-external-writer-custody-anchors.md)
-
+- [0001: Make the compiler the product core and the research lab a dependent application](0001-compiler-first-with-dependent-lab.md) · [中文](../zh-CN/adr/0001-compiler-first-with-dependent-lab.md)
+- [0002: Portfolio is the second closed Study variant](0002-portfolio-as-second-study-variant.md) · [中文](../zh-CN/adr/0002-portfolio-as-second-study-variant.md)
+- [0003: Consider Rust only as a Corpus-equivalent v4 shadow engine](0003-rust-shadow-engine-after-v3.md) · [中文](../zh-CN/adr/0003-rust-shadow-engine-after-v3.md)
+- [0004: Restore provider-default features only for artifact optimization](0004-tool-rich-artifact-optimization.md) · [中文](../zh-CN/adr/0004-tool-rich-artifact-optimization.md)
+- [0005: Adopt lifecycle-first repository governance without moving history](0005-forward-compatible-lifecycle-layout.md) · [中文](../zh-CN/adr/0005-forward-compatible-lifecycle-layout.md)
+- [0006: candidate sets, and a Schedule stays statically shaped](0006-candidate-sets-and-static-shapes.md) · [中文](../zh-CN/adr/0006-candidate-sets-and-static-shapes.md)
+- [0007: candidate evidence has one identity, and every frozen reference is a witness](0007-candidate-evidence-and-revision-witnesses.md) · [中文](../zh-CN/adr/0007-candidate-evidence-and-revision-witnesses.md)
+- [0008: calibration coverage gates public ranking](0008-calibration-coverage-gates-ranking.md) · [中文](../zh-CN/adr/0008-calibration-coverage-gates-ranking.md)
+- [0009: live candidate sets use one sealed envelope](0009-live-candidate-set-envelope.md) · [中文](../zh-CN/adr/0009-live-candidate-set-envelope.md)
+- [0010: Establish feedback before adding agent orchestration](0010-feedback-before-agent-orchestration.md) · [中文](../zh-CN/adr/0010-feedback-before-agent-orchestration.md)
+- [0011: calibrate the decision the Lab actually makes](0011-finite-domain-ranking-calibration.md) · [中文](../zh-CN/adr/0011-finite-domain-ranking-calibration.md)
+- [0012: Profile each correctness-qualified search survivor](0012-profile-each-correct-search-survivor.md) · [中文](../zh-CN/adr/0012-profile-each-correct-search-survivor.md)
+- [0013: Keep candidate failure separate from missing scientific data](0013-two-part-scientific-estimand.md) · [中文](../zh-CN/adr/0013-two-part-scientific-estimand.md)
+- [0014: Close the matched Run semantic event vocabulary](0014-close-matched-event-vocabulary.md) · [中文](../zh-CN/adr/0014-close-matched-event-vocabulary.md)
+- [0015: Reasoning effort is an explicit treatment factor](0015-reasoning-effort-is-treatment.md) · [中文](../zh-CN/adr/0015-reasoning-effort-is-treatment.md)
+- [0016: Clean-start references carry contract, not implementation](0016-clean-start-references-carry-contract-not-implementation.md) · [中文](../zh-CN/adr/0016-clean-start-references-carry-contract-not-implementation.md)
+- [0017: Retain the exact provider reference bundle](0017-retain-the-exact-provider-reference-bundle.md) · [中文](../zh-CN/adr/0017-retain-the-exact-provider-reference-bundle.md)
+- [0018: ranking is a preorder and calibration controls drift](0018-ranking-is-a-preorder-and-calibration-controls-drift.md) · [中文](../zh-CN/adr/0018-ranking-is-a-preorder-and-calibration-controls-drift.md)
+- [0019: Lowering generation is observable](0019-lowering-generation-is-observable.md) · [中文](../zh-CN/adr/0019-lowering-generation-is-observable.md)
+- [0020: KDA deltas are an external expressibility corpus](0020-kda-deltas-are-an-external-expressibility-corpus.md) · [中文](../zh-CN/adr/0020-kda-deltas-are-an-external-expressibility-corpus.md)
+- [0021: top-k is a deterministic indexed-selection primitive](0021-top-k-is-a-deterministic-indexed-selection-primitive.md) · [中文](../zh-CN/adr/0021-top-k-is-a-deterministic-indexed-selection-primitive.md)
+- [0022: tanh names its target implementation contract](0022-tanh-names-its-target-implementation-contract.md) · [中文](../zh-CN/adr/0022-tanh-names-its-target-implementation-contract.md)
+- [0023: block scales are axis relations](0023-block-scales-are-axis-relations.md) · [中文](../zh-CN/adr/0023-block-scales-are-axis-relations.md)
+- [0024: runtime-valid extents are buffer relations](0024-runtime-valid-extents-are-buffer-relations.md) · [中文](../zh-CN/adr/0024-runtime-valid-extents-are-buffer-relations.md)
+- [0025: ragged grouped GEMM is primitive composition](0025-ragged-grouped-gemm-is-primitive-composition.md) · [中文](../zh-CN/adr/0025-ragged-grouped-gemm-is-primitive-composition.md)
+- [0026: runtime-indexed loads are AccessMap composition](0026-runtime-indexed-loads-are-access-map-composition.md) · [中文](../zh-CN/adr/0026-runtime-indexed-loads-are-access-map-composition.md)
+- [0027: Backend preconditions are Assessment Findings](0027-backend-preconditions-are-assessment-findings.md) · [中文](../zh-CN/adr/0027-backend-preconditions-are-assessment-findings.md)
+- [0028: Study templates defer revision binding to CampaignLock](0028-study-templates-defer-revision-binding-to-campaign-lock.md) · [中文](../zh-CN/adr/0028-study-templates-defer-revision-binding-to-campaign-lock.md)
+- [0029: Lowering route is not a workload profile](0029-lowering-route-is-not-a-workload-profile.md) · [中文](../zh-CN/adr/0029-lowering-route-is-not-a-workload-profile.md)
+- [0030: Compiler release approval is external to the release cycle](0030-compiler-release-approval-is-external.md) · [中文](../zh-CN/adr/0030-compiler-release-approval-is-external.md)
+- [0031: Archive integrity is not filesystem custody](0031-archive-integrity-is-not-filesystem-custody.md) · [中文](../zh-CN/adr/0031-archive-integrity-is-not-filesystem-custody.md)
+- [0032: access boundaries use the accessed Buffer](0032-access-boundaries-use-the-accessed-buffer.md) · [中文](../zh-CN/adr/0032-access-boundaries-use-the-accessed-buffer.md)
+- [0033: Workload materialization owns TinyGEMM2 input bytes](0033-workload-materialization-owns-tinygemm2-input-bytes.md) · [中文](../zh-CN/adr/0033-workload-materialization-owns-tinygemm2-input-bytes.md)
+- [0034: KDA weighted combine is primitive composition](0034-kda-weighted-combine-is-primitive-composition.md) · [中文](../zh-CN/adr/0034-kda-weighted-combine-is-primitive-composition.md)
+- [0035: atomic slot reservation is state plus RMW](0035-atomic-slot-reservation-is-state-plus-rmw.md) · [中文](../zh-CN/adr/0035-atomic-slot-reservation-is-state-plus-rmw.md)
+- [0036: atomic reservation proves indexed-store ownership](0036-atomic-reservation-proves-indexed-store-ownership.md) · [中文](../zh-CN/adr/0036-atomic-reservation-proves-indexed-store-ownership.md)
+- [0037: A prefix scan is not a fold with a flag](0037-a-prefix-scan-is-not-a-fold-with-a-flag.md) · [中文](../zh-CN/adr/0037-a-prefix-scan-is-not-a-fold-with-a-flag.md)
+- [0038: QSA needs stateful selection and launch composition](0038-qsa-needs-stateful-selection-and-launch-composition.md) · [中文](../zh-CN/adr/0038-qsa-needs-stateful-selection-and-launch-composition.md)
+- [0039: Logical register pressure is not a physical bound](0039-logical-register-pressure-is-not-a-physical-bound.md) · [中文](../zh-CN/adr/0039-logical-register-pressure-is-not-a-physical-bound.md)
+- [0040: QSA utilization is a whole-Program roofline claim](0040-qsa-utilization-and-component-attribution.md) · [中文](../zh-CN/adr/0040-qsa-utilization-and-component-attribution.md)
+- [0041: Resident top-k supports signed INT32 values](0041-resident-top-k-supports-signed-int32.md) · [中文](../zh-CN/adr/0041-resident-top-k-supports-signed-int32.md)
+- [0042: Loop-carried top-k may batch two source tiles](0042-loop-carried-top-k-may-batch-two-source-tiles.md) · [中文](../zh-CN/adr/0042-loop-carried-top-k-may-batch-two-source-tiles.md)
+- [0043: FP32 MMA may explicitly request TF32 input precision](0043-fp32-mma-may-explicitly-request-tf32.md) · [中文](../zh-CN/adr/0043-fp32-mma-may-explicitly-request-tf32.md)
+- [0044: Loop-carried top-k canonical lowering may use exact half-selection](0044-loop-carried-top-k-canonical-lowering-may-use-exact-half-selection.md) · [中文](../zh-CN/adr/0044-loop-carried-top-k-canonical-lowering-may-use-exact-half-selection.md)
+- [0045: Triton lowering admits multiple explicit MMA DAG nodes](0045-triton-lowering-admits-multiple-explicit-mma-dag-nodes.md) · [中文](../zh-CN/adr/0045-triton-lowering-admits-multiple-explicit-mma-dag-nodes.md)
+- [0046: Dynamic loop stop owns whole-grid work](0046-dynamic-loop-stop-owns-whole-grid-work.md) · [中文](../zh-CN/adr/0046-dynamic-loop-stop-owns-whole-grid-work.md)
+- [0047: Documentation separates stable rules, history, and current views](0047-documentation-separates-stable-history-and-current-views.md) · [中文](../zh-CN/adr/0047-documentation-separates-stable-history-and-current-views.md)
+- [0048: Agent Runs use TASK.md, AGENTS.md, and external Ralph control](0048-agent-runs-use-task-agents-and-ralph-control.md) · [中文](../zh-CN/adr/0048-agent-runs-use-task-agents-and-ralph-control.md)
+- [0049: released Executor descriptors reserve their identities](0049-released-executor-descriptors-reserve-their-identities.md) · [中文](../zh-CN/adr/0049-released-executor-descriptors-reserve-their-identities.md)
+- [0050: a released Compiler lock reserves its identity](0050-released-compiler-locks-reserve-their-identities.md) · [中文](../zh-CN/adr/0050-released-compiler-locks-reserve-their-identities.md)
+- [0051: load values follow the access domain](0051-load-values-follow-the-access-domain.md) · [中文](../zh-CN/adr/0051-load-values-follow-the-access-domain.md)
+- [0052: Independent agent sessions may review Compiler releases](0052-independent-agent-release-review.md) · [中文](../zh-CN/adr/0052-independent-agent-release-review.md)
+- [0053: Study-bound external advisory candidate order](0053-study-bound-advisory-cost-selection.md)
+- [0054: Lab uses only Ralph](0054-lab-uses-only-ralph.md) · [中文](../zh-CN/adr/0054-lab-uses-only-ralph.md)
+- [0055: Task implementations live outside the common Lab](0055-task-implementations-live-outside-the-common-lab.md) · [中文](../zh-CN/adr/0055-task-implementations-live-outside-the-common-lab.md)
+- [0056: One fixed-baseline paired assay per candidate](0056-fixed-baseline-paired-execution.md) · [中文](../zh-CN/adr/0056-fixed-baseline-paired-execution.md)
+- [0057: Metal and CLI harnesses use the existing Lab](0057-metal-and-harnesses-use-the-existing-lab.md)
+- [0058: External writer-origin custody anchors](0058-external-writer-custody-anchors.md)
 - [0059: Final release identities bind complete authority](0059-final-release-identities-bind-complete-authority.md)
-
+- [0060: Release review provenance and historical exceptions](0060-release-review-provenance-and-historical-exceptions.md)
 - [0061: Compiler dependencies at Executor handoffs](0061-compiler-dependencies-at-executor-handoffs.md)
-
-- [0062: Explicit reference access by authoring arm](0062-explicit-reference-access-treatment.md)
-
+- [0062: Explicit per-arm reference access treatment](0062-explicit-reference-access-treatment.md)
 - [0063: Normal budget terminal observations](0063-normal-budget-terminal-observations.md)
-
 - [0064: Task incumbents are an append-only Lab projection](0064-task-incumbents-are-an-append-only-lab-projection.md)
-
 - [0065: Source identity is the commit, and a host capture is its own document](0065-source-identity-is-the-commit.md)
 - [0066: SoL-ExecBench task import, namespace and gate translation](0066-sol-execbench-task-import.md)
 - [0067: Retired release outputs live on the `history` branch](0067-retired-release-outputs-live-on-the-history-branch.md)
-- [0068: AKA is a challenge corpus, not a Compiler Corpus](0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)（原 0038）
-- [0069: a single-writer state update is a proven store effect](0069-single-writer-state-store-is-a-store-effect.md)（原 0039）
-- [0070: B300 is an exact target on the existing Triton path](0070-b300-is-an-exact-target.md)（原 0053）
-
-- [ADR 0071: retire structural ranking and Portfolio Study](0071-retire-uncalibrated-ranking-and-portfolio-study.md)
-
-- [ADR 0072: backend-owned input policies and native adapters](0072-backend-owned-input-and-native-adapters.md)
-
-- [ADR 0073: one Study admission and canonical reading owners](0073-single-study-admission-and-reading-owners.md)
+- [0068: AKA is a challenge corpus, not a Compiler Corpus](0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) · [中文](../zh-CN/adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)
+- [0069: a single-writer state update is a proven store effect](0069-single-writer-state-store-is-a-store-effect.md) · [中文](../zh-CN/adr/0069-single-writer-state-store-is-a-store-effect.md)
+- [0070: B300 is an exact target on the existing Triton path](0070-b300-is-an-exact-target.md)
+- [0071: Retire structural ranking and the Portfolio Study path](0071-retire-uncalibrated-ranking-and-portfolio-study.md)
+- [0072: Backend-owned input policies and native adapters](0072-backend-owned-input-and-native-adapters.md)
+- [0073: One Study parse and one reading index per responsibility](0073-single-study-admission-and-reading-owners.md)

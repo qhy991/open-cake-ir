@@ -57,9 +57,9 @@ Failure changes the owning Compiler implementation, not a campaign runner.
 reviewed Schedule expectation.
 
 Require accepted and rejected cases, deterministic observations, exact Target definitions,
-the complete source closure, a full Corpus Gate diff, and approval written outside the
-release automation. A missing, malformed, or stale approval blocks release. Expectations
-must never be regenerated merely to make the proposal pass.
+a clean source commit and a full Corpus Gate diff. Independent review is recommended;
+per-release approval files are retired (ADR 0065). Expectations must never be regenerated
+merely to make the proposal pass.
 
 Failure returns to Schedule, Target, verifier, analysis, or lowering design; the proposed
 revision is not released.

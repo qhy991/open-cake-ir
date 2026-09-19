@@ -30,11 +30,11 @@ from .process import (
     run_supervised,
     sanitized_environment,
 )
+from open_cake_ir.serialization import canonical_json_bytes
+from ._documents import _name
 from .runtime_config import (
-    _canonical_json_bytes,
     _runtime_command,
     _runtime_positive_int,
-    _runtime_string,
     load_runtime_config,
     broker_execution_sha256,
 )
@@ -90,8 +90,8 @@ class BoundedBrokerEvaluator:
         protocol: Mapping[str, object],
         submitter: BrokerSubmitter,
     ) -> None:
-        self.protocol = json.loads(_canonical_json_bytes(protocol))
-        self.protocol_sha256 = sha256(_canonical_json_bytes(protocol)).hexdigest()
+        self.protocol = json.loads(canonical_json_bytes(protocol))
+        self.protocol_sha256 = sha256(canonical_json_bytes(protocol)).hexdigest()
         self._submitter = submitter
 
     def evaluate(
@@ -144,26 +144,26 @@ class CommandBrokerSubmitter:
     ) -> None:
         self._command = _runtime_command(command)
         _runtime_positive_int(timeout_seconds, "runtime_config.broker.timeout_seconds")
-        _runtime_string(service_user, "runtime_config.broker.service_user")
-        _runtime_string(service_group, "runtime_config.broker.service_group")
+        _name(service_user, "runtime_config.broker.service_user")
+        _name(service_group, "runtime_config.broker.service_group")
         self._workload_path = Path(workload_path).resolve(strict=True)
         self._workload_sha256 = workload_sha256
         self._protocol_sha256 = protocol_sha256
         self._cwd = Path(cwd).resolve(strict=True)
         from .bindings import load_compiler_reference
         load_compiler_reference(executor.project_root, compiler_reference, "broker.compiler_revision")
-        self._compiler_reference = json.loads(_canonical_json_bytes(compiler_reference))
+        self._compiler_reference = json.loads(canonical_json_bytes(compiler_reference))
         self._executor = executor
         self._service_uid = pwd.getpwnam(service_user).pw_uid
         self._service_gid = grp.getgrnam(service_group).gr_gid
         self._timeout = timeout_seconds
-        self._protocol = json.loads(_canonical_json_bytes(evaluation_protocol)) if evaluation_protocol is not None else None
+        self._protocol = json.loads(canonical_json_bytes(evaluation_protocol)) if evaluation_protocol is not None else None
         self._baseline = baseline
         self._load_workload = workload_loader
         if baseline is not None and not callable(workload_loader):
             raise ValueError('paired broker requires the task Workload loader')
         if self._protocol is not None:
-            if sha256(_canonical_json_bytes(self._protocol)).hexdigest() != protocol_sha256:
+            if sha256(canonical_json_bytes(self._protocol)).hexdigest() != protocol_sha256:
                 raise ValueError('broker evaluation protocol differs')
             if (paired_protocol(self._protocol) is not None) != (baseline is not None):
                 raise ValueError('broker paired policy and fixed baseline differ')
@@ -265,7 +265,7 @@ class CommandBrokerSubmitter:
                 }
             request_path = root / "request.json"
             result_path = root / "result.json"
-            request_path.write_bytes(_canonical_json_bytes(evaluator_arguments))
+            request_path.write_bytes(canonical_json_bytes(evaluator_arguments))
             os.chown(request_path, -1, self._service_gid)
             request_path.chmod(0o640)
             command = [
@@ -288,7 +288,7 @@ class CommandBrokerSubmitter:
                     "broker_fault",
                     str(error),
                     artifact_payloads={
-                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
+                        "evaluator_request": canonical_json_bytes(evaluator_arguments),
                         "broker_stdout": error.stdout,
                         "broker_stderr": error.stderr,
                     },
@@ -298,7 +298,7 @@ class CommandBrokerSubmitter:
                     "broker_fault",
                     f"evaluator command exited {completed.returncode} without a result",
                     artifact_payloads={
-                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
+                        "evaluator_request": canonical_json_bytes(evaluator_arguments),
                         "broker_stdout": completed.stdout,
                         "broker_stderr": completed.stderr,
                     },
@@ -320,7 +320,7 @@ class CommandBrokerSubmitter:
                     f"links={metadata.st_nlink} uid={metadata.st_uid} gid={metadata.st_gid} "
                     f"size={metadata.st_size}",
                     artifact_payloads={
-                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
+                        "evaluator_request": canonical_json_bytes(evaluator_arguments),
                         "broker_stdout": completed.stdout,
                         "broker_stderr": completed.stderr,
                     },
@@ -331,7 +331,7 @@ class CommandBrokerSubmitter:
                     "broker_fault",
                     f"evaluator result changed during read: {metadata.st_size} then {len(worker_result_bytes)} bytes",
                     artifact_payloads={
-                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
+                        "evaluator_request": canonical_json_bytes(evaluator_arguments),
                         "broker_stdout": completed.stdout,
                         "broker_stderr": completed.stderr,
                     },
@@ -341,7 +341,7 @@ class CommandBrokerSubmitter:
                     "broker_fault",
                     f"evaluator/broker command exited {completed.returncode}",
                     artifact_payloads={
-                        "evaluator_request": _canonical_json_bytes(evaluator_arguments),
+                        "evaluator_request": canonical_json_bytes(evaluator_arguments),
                         "broker_stdout": completed.stdout,
                         "broker_stderr": completed.stderr,
                         "broker_result": worker_result_bytes,
@@ -368,7 +368,7 @@ class CommandBrokerSubmitter:
                 raise ValueError("worker and broker job identities differ")
             result = dict(result)
             result["job_id"] = observed_job_id
-            result_bytes = _canonical_json_bytes(result)
+            result_bytes = canonical_json_bytes(result)
             counters = result["counters"]
             if not isinstance(counters, Mapping) or set(counters) != {
                 "compiler_invocations",
@@ -435,7 +435,7 @@ class CommandBrokerSubmitter:
             evaluator_authority = dict(evaluator_arguments)
             evaluator_authority.pop("attempt")
             evaluator_arguments_sha256 = sha256(
-                _canonical_json_bytes(evaluator_authority)
+                canonical_json_bytes(evaluator_authority)
             ).hexdigest()
             return BrokerAttempt(
                 job_id=str(result["job_id"]),
@@ -454,7 +454,7 @@ class CommandBrokerSubmitter:
                 fallback_calls=int(counters["fallback_calls"]),
                 receipt=receipt,
                 artifact_payloads={
-                    "evaluator_request": _canonical_json_bytes(evaluator_arguments),
+                    "evaluator_request": canonical_json_bytes(evaluator_arguments),
                     "broker_record": result_bytes,
                     "evaluator_result": worker_result_bytes,
                     "stdout": completed.stdout,

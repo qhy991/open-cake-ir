@@ -9,14 +9,8 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Mapping
 
-from ._documents import _canonical_json_bytes
+from ._documents import _name
 from .toolchains import toolchain_for
-
-
-def _runtime_string(value: object, context: str) -> str:
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{context} must be a non-empty string")
-    return value
 
 
 def _runtime_positive_int(value: object, context: str) -> int:
@@ -30,7 +24,7 @@ def _runtime_command(value: object) -> tuple[str, ...]:
         value = shlex.split(value)
     if not isinstance(value, (list, tuple)) or not value:
         raise ValueError("runtime_config.broker.command must be a non-empty command")
-    return tuple(_runtime_string(item, "runtime_config.broker.command[]") for item in value)
+    return tuple(_name(item, "runtime_config.broker.command[]") for item in value)
 
 
 def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, object]:
@@ -59,7 +53,7 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
         sections[name] = dict(section)
     provider, toolchain, broker = (sections[name] for name in ("provider", "toolchain", "broker"))
     for name, item in provider.items():
-        _runtime_string(item, f"runtime_config.provider.{name}")
+        _name(item, f"runtime_config.provider.{name}")
     for name, item in toolchain.items():
         context = f"runtime_config.toolchain.{name}"
         if name == "timeout_seconds":
@@ -69,20 +63,20 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
             if not isinstance(item, list):
                 raise ValueError(f"{context} must be a list")
             for root in item:
-                _runtime_string(root, f"{context}[]")
+                _name(root, f"{context}[]")
         elif name == "build_environment":
             # A CUDA host declares none, so empty is valid here and not in runtime_roots.
             if not isinstance(item, Mapping):
                 raise ValueError(f"{context} must be an object")
             for variable, value in item.items():
-                _runtime_string(variable, f"{context} name")
-                _runtime_string(value, f"{context}.{variable}")
+                _name(variable, f"{context} name")
+                _name(value, f"{context}.{variable}")
         else:
-            _runtime_string(item, context)
+            _name(item, context)
     broker["command"] = _runtime_command(broker["command"])
     _runtime_positive_int(broker["timeout_seconds"], "runtime_config.broker.timeout_seconds")
     for name in ("cwd", "service_user", "service_group"):
-        _runtime_string(broker[name], f"runtime_config.broker.{name}")
+        _name(broker[name], f"runtime_config.broker.{name}")
     return {"schema_version": 1, **sections}
 
 
@@ -97,8 +91,8 @@ def broker_execution_sha256(
 ) -> str:
     command = _runtime_command(command)
     _runtime_positive_int(timeout_seconds, "runtime_config.broker.timeout_seconds")
-    _runtime_string(service_user, "runtime_config.broker.service_user")
-    _runtime_string(service_group, "runtime_config.broker.service_group")
+    _name(service_user, "runtime_config.broker.service_user")
+    _name(service_group, "runtime_config.broker.service_group")
     if cwd.resolve(strict=True) != project_root:
         raise ValueError("broker cwd policy or timeout differs")
     executable = shutil.which(command[0])

@@ -1,8 +1,5 @@
 # 术语表：英文名与普通话解释
 
-Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
-
-
 [中文首页](zh-CN/README.md) · [English](en/GLOSSARY.md) · [中英文对照](README.md)
 
 代码、合同和诊断使用下列英文名；这里是它们的统一文字定义。先读 [中文 Wiki](wiki/README.md)，遇到词再查，不必一次背完。
@@ -73,11 +70,11 @@ CAKE 指论文中的系统与研究思路。项目只引用其已公开说明，
 
 ### Lowering
 
-按确定规则生成目标源码和映射信息，或选择已核验的固定源码。负责者是 Compiler Revision；它还没有经过工具链编译或 GPU 执行。
+按确定规则生成目标源码和映射信息。负责者是 Compiler Revision；它还没有经过工具链编译或 GPU 执行。
 
 ### Compiler Revision
 
-某个干净提交上的编译器：提交绑定语义、检查、分析和源码生成，`compiler/revision.json` 绑定语料与校准覆盖，`compiler/targets/` 里的每份文档是一个已声明目标。身份写作 `open-cake-ir@<commit>`；带未提交或未跟踪改动的检出没有这个身份（ADR 0065）。
+某个干净提交上的编译器：提交绑定语义、检查、分析和源码生成，`compiler/revision.json` 绑定语料，`compiler/targets/` 里的每份文档是一个已声明目标。身份写作 `open-cake-ir@<commit>`；带未提交或未跟踪改动的检出没有这个身份（ADR 0065）。
 
 ### Executor Revision
 
@@ -104,7 +101,7 @@ CAKE 指论文中的系统与研究思路。项目只引用其已公开说明，
 
 ### Study Contract
 
-实验约定：比较哪些写程序的环境，如何分配尝试，预算多少，读什么参考，怎样汇总结果。它定义实验设计，不是一次实际执行的可变配置。
+实验约定：比较哪些写程序的环境，如何分配尝试，预算多少，读什么参考，怎样汇总结果。当前只有 `matched_search` 一种 Study；Portfolio Study 生命周期已退役（ADR 0071）。它定义实验设计，不是一次实际执行的可变配置。
 
 ### Claim Scope
 
