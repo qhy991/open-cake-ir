@@ -8,6 +8,8 @@ No tensor-core acceleration or physical register residency is implied.
 """
 from __future__ import annotations
 
+from .cutedsl_names import REGISTER_NAMESPACE
+
 import math
 
 from .common import Emission, EmitError, python_name_findings, refusal, vocabulary_findings
@@ -38,7 +40,7 @@ def applies(schedule: Schedule) -> bool:
 
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
-    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + python_name_findings(schedule, register_route=True)
+    return vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS) + python_name_findings(schedule, REGISTER_NAMESPACE)
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:

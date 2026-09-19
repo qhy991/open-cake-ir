@@ -49,7 +49,8 @@ class CompilerIssueContracts(unittest.TestCase):
                               (cutedsl, document('flash-kmeans-assignment-full')),
                               (cutedsl_register, register_schedule())):
             first = next(b['name'] for b in base['buffers'] if b['space'] == 'global' and b['mode'] == 'input')
-            for name in ('in', 'out', 'tl', 'torch', 'cutlass', 'cute', 'N_FAKE', 'D_X_0', 'BLOCK_X', '_work_id', '__debug__'):
+            imports = ('tl', 'triton') if backend is triton else ('cutlass', 'cute')
+            for name in ('in', 'out', 'torch', 'N_FAKE', 'D_X_0', 'BLOCK_X', '_work_id', '__debug__', *imports):
                 with self.subTest(route=backend.__name__, name=name):
                     changed = rename(base, first, name)
                     code = 'CUTE_REGISTER_IDENTIFIER' if backend is cutedsl_register else 'BACKEND_IDENTIFIER_UNSAFE'

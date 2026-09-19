@@ -73,22 +73,29 @@ def vocabulary_findings(
     return tuple(findings)
 
 
-_PYTHON_IMPORT_NAMES = frozenset({"tl", "torch", "triton", "cutlass", "cute", "__debug__"})
-_GENERATED_PREFIXES = ("N_", "D_", "BLOCK_", "NUM_WARPS", "_work")
+@dataclass(frozen=True)
+class PythonNamespace:
+    """Names owned by one Python emitter; common code only applies the policy."""
+
+    reserved_names: frozenset[str]
+    generated_prefixes: tuple[str, ...] = ()
+    forbidden_fragments: tuple[str, ...] = ()
+    identifier_code: str = "BACKEND_IDENTIFIER_UNSAFE"
+    check_source_id: bool = True
 
 
-def safe_python_identifier(name: str, *, register_route: bool = False) -> bool:
-    """One lexical/namespace rule for Python-emitting backend symbols."""
+def safe_python_identifier(name: str, namespace: PythonNamespace) -> bool:
     return (isinstance(name, str) and name.isascii() and name.isidentifier()
-            and not keyword.iskeyword(name) and name not in _PYTHON_IMPORT_NAMES
-            and not name.startswith(_GENERATED_PREFIXES)
-            and (not register_route or ("__" not in name and name not in {"warp", "open_cake_cute_launch"})))
+            and not keyword.iskeyword(name) and name != "__debug__"
+            and name not in namespace.reserved_names
+            and not name.startswith(namespace.generated_prefixes)
+            and not any(fragment in name for fragment in namespace.forbidden_fragments))
 
 
-def python_name_findings(schedule: Schedule, *, register_route: bool = False) -> tuple[Finding, ...]:
+def python_name_findings(schedule: Schedule, namespace: PythonNamespace) -> tuple[Finding, ...]:
     """Keep IR labels expressive while refusing unsafe Python source commitments."""
     findings = []
-    code = "CUTE_REGISTER_IDENTIFIER" if register_route else "BACKEND_IDENTIFIER_UNSAFE"
+    code = namespace.identifier_code
     symbols = [("lowering.entry_point", schedule.lowering.entry_point)]
     symbols.extend((f"buffers[{i}].name", value.name) for i, value in enumerate(schedule.buffers))
     for field in ("roles", "allocations", "pipelines", "barriers", "tile_loops"):
@@ -98,10 +105,10 @@ def python_name_findings(schedule: Schedule, *, register_route: bool = False) ->
         symbols.extend((f"program_map.axes[{i}].name", value.name) for i, value in enumerate(schedule.program_map.axes))
     symbols.extend((f"operations[{i}].id", value.op_id) for i, value in enumerate(schedule.operations))
     for path, name in symbols:
-        if not safe_python_identifier(name, register_route=register_route):
+        if not safe_python_identifier(name, namespace):
             findings.append(refusal(code, path,
                 "Python lowering requires ASCII identifiers outside keywords, imports and generated namespaces"))
-    if not register_route and (any(ord(char) < 32 or ord(char) == 127 for char in schedule.schedule_id)
+    if namespace.check_source_id and (any(ord(char) < 32 or ord(char) == 127 for char in schedule.schedule_id)
             or schedule.schedule_id.splitlines() != [schedule.schedule_id]):
         findings.append(refusal("BACKEND_SOURCE_ID_UNSAFE", "schedule_id",
             "generated source comments require a Schedule id without control characters"))

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Protocol
+from typing import Callable, Mapping, Protocol
 
 from ..diagnostics import Finding
 from ..ir import DType, LoweringBackend, OperationKind, Schedule
@@ -31,11 +31,14 @@ class Backend:
     module: BackendModule
     source_language: str
     compiler: str
+    # Optional constraints on raw containers, checked after IR construction and before
+    # canonicalization. None explicitly declares no additional input restriction.
+    validate_input: Callable[[Mapping[str, object]], None] | None = None
 
 
 BACKENDS = MappingProxyType({
     LoweringBackend.NATIVE_CUDA: Backend(native_cuda, "cuda_cpp", "nvcc"),
     LoweringBackend.METAL: Backend(metal, "metal", "MTLDevice.makeLibrary"),
-    LoweringBackend.TRITON: Backend(triton, "python", "triton"),
+    LoweringBackend.TRITON: Backend(triton, "python", "triton", validate_input=triton.validate_input),
     LoweringBackend.CUTLASS_CUTE_DSL: Backend(cutedsl, "python", "cutlass_cute_dsl"),
 })
