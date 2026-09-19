@@ -1,8 +1,5 @@
 # Research Lab：组织一次有规则的实验
 
-Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
-
-
 [中文目录](../../README.md) · [英文原文](../../../contexts/lab/CONTEXT.md) · [统一术语](../../../GLOSSARY.md#workload-and-research-lab-terms)
 
 Lab 像考试组织者：分配题目和工具、控制时间、收作业，再按事先规定的方法分析成绩。它把 Workload、Compiler 和 Executor 的固定版本当作输入。
@@ -23,7 +20,9 @@ Study 引用一个 Workload，并规定每个 Run 使用哪个环境。Campaign 
 
 Run 中包含有顺序的 Turn，可以提交多个不可变 Candidate。同一个 Candidate 可以分别有搜索、确认、profiler 评测记录。科学 Study 预先声明 Estimand；系统资格和工程优化没有组间效果估计。
 
-合格的 KernelSeed 可以进入另一个 portfolio Study，但不能据此宣布支持任意形状或完整服务。
+KernelSeed 和独立 portfolio artifact 工具仍保留，但没有 Portfolio Study 生命周期。单个种子不能证明任意形状或完整服务能力。
+
+Study 在 preflight 中只解析一次；任务层先检查该对象的计时覆盖和执行模式，再解析依赖。模块归属见[实现导航](../../../../src/open_cake_ir/lab/README.md)。
 
 ## 两种没得到好结果的情况
 

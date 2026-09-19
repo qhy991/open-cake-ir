@@ -29,7 +29,7 @@ flowchart LR
 ```
 
 检查失败的候选不会进入后续计时。编译器可先过滤不合法方案；
-只有具备匹配的校准证据时，才可把估算用于对应范围的排序。估算不能替代真实测量。
+显式绑定匹配的经验模型时才进行成本排序，否则保留作者顺序。估算不能替代真实测量。
 
 AI 看到 `TASK.md` 中的题目和预算，以及 `AGENTS.md` 中的工具与行为规则。
 它提交候选后，外部评测器核对答案；Ralph 控制器记录剩余时间、token 和尝试次数。
@@ -41,8 +41,8 @@ AI 看到 `TASK.md` 中的题目和预算，以及 `AGENTS.md` 中的工具与�
 | --- | --- |
 | 输入、数学、输出、容差与测试行 | Workload Contract |
 | 比较的环境、重复次数、预算、停止规则 | Study Contract |
-| 当前 Compiler 与完整语料 | 发布 lock 和 Corpus Gate |
-| Lab、评测代码和主机环境 | Executor descriptor |
+| 当前 Compiler 与完整语料 | clean commit、`compiler/revision.json` 与 Corpus Gate |
+| Lab、评测代码和主机环境 | 源码提交与对应 Target 的 host capture |
 | 实际 AI 程序与能力是否符合本次设计 | Provider qualification |
 | 一次运行具体使用哪些固定版本 | preflight 生成的 CampaignLock |
 | GPU 分配与新输出目录 | 受控运行配置和本次外部证据根 |
@@ -51,7 +51,7 @@ AI 看到 `TASK.md` 中的题目和预算，以及 `AGENTS.md` 中的工具与�
 
 ```bash
 .venv/bin/python tools/render_current_status.py --check
-.venv/bin/open-cake-ir compiler check-corpus --format text \
+PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler check-corpus \
   --revision compiler/revision.json
 ```
 

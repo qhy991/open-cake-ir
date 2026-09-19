@@ -1,8 +1,5 @@
 # Research Lab context
 
-Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
-
-
 [中文阅读](../../zh-CN/contexts/lab/CONTEXT.md) · [Bilingual catalog](../../README.md)
 
 The Research Lab owns Study design and execution while treating Workload, Compiler, and
@@ -58,8 +55,8 @@ Evaluator's Receipt, or turn system qualification into a scientific comparison.
   Receipts.
 - A scientific Study declares an Estimand before execution. A system-qualification or
   artifact-optimization Claim Scope structurally has no treatment estimate.
-- A KernelSeed may enter a separate portfolio Study; it does not imply arbitrary-shape or
-  serving generalization.
+- KernelSeed and standalone portfolio artifact utilities remain available; there is no
+  Portfolio Study lifecycle. A seed does not establish arbitrary-shape or serving generalization.
 
 ## Boundary examples
 
@@ -78,24 +75,10 @@ Concrete task code and the TaskLab composition root live outside the common engi
 workload loader, schedule preparation, authoring validation and manifest parser.
 Phase functions receive those dependencies explicitly; there is no second context object.
 
-| Owner | Responsibility |
-| --- | --- |
-| `contracts.py`, `_policies.py` | Public records and existing persisted grammar/policy |
-| `bindings.py`, `preflight.py` | Exact revision selection and side-effect-free Study preparation |
-| `execution.py` | Live authoring, filtering, evaluation, budget and terminal orchestration |
-| `replay.py` | Independently rebuild provider, candidate, selection and terminal facts |
-| `archive.py` | Separate writers and raw-evidence readers for objects and receipts |
-| `selection.py` | Pure ordering, empirical context and qualification decisions |
-| `reporting.py` | Audited claim, missingness and descriptive threshold projections |
-| `_documents.py` | Narrow Lab JSON, name, digest and project-path primitives |
-
-Replay never substitutes the writer's decision for raw evidence. A first-provider fault
-returns before task-package or empirical-model resolution. Execution creates Evidence
-only after its authority checks; reporting receives lazy replay/audit callbacks.
-Concrete portfolio dispatch remains in `TaskLab` and its task-owned implementation.
-Import internal helpers from their owner; the stable public imports remain
-`open_cake_ir.lab`. Runtime source changes require an Executor successor, not a Compiler
-release or changes to historical records.
+Study parsing occurs once in preflight. The task-specific admission hook checks that parsed
+object before dependency resolution. See the [implementation map](../../../src/open_cake_ir/lab/README.md)
+for module ownership and the independent replay package. Historical campaigns replay at their
+pinned source commit; a refactor never rewrites their records.
 
 ## Native pairing implementation
 

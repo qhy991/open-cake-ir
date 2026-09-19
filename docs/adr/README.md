@@ -99,3 +99,5 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [ADR 0071: retire structural ranking and Portfolio Study](0071-retire-uncalibrated-ranking-and-portfolio-study.md)
 
 - [ADR 0072: backend-owned input policies and native adapters](0072-backend-owned-input-and-native-adapters.md)
+
+- [ADR 0073: one Study admission and canonical reading owners](0073-single-study-admission-and-reading-owners.md)

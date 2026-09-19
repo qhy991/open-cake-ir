@@ -38,7 +38,7 @@ representation, verification, lowering, or analysis gaps. The current distributi
 - **想知道系统有什么用：** [系统全貌](docs/ARCHITECTURE.md)。
 - **想看算子怎么算：** [算子图解](docs/wiki/operators.md)和 [IR 基本操作](docs/wiki/primitives.md)。
 - **想看现在发布了什么：** [自动生成的当前状态](reports/current/STATUS.md)。
-- **想了解 Agent、编译器与 Kernel 怎样协同进化：** [中文技术报告与完整 Python 示例](https://github.com/qhy991/open-cake-ir/releases/download/research-preview-2026-09-06/open-cake-ir-technical-report-zh-CN.zip)。
+- **想了解 Agent、编译器与 Kernel 怎样协同进化：** [历史技术报告（2026-09-06）与 Python 示例](https://github.com/qhy991/open-cake-ir/releases/download/research-preview-2026-09-06/open-cake-ir-technical-report-zh-CN.zip)。
 
 Metal 使用 `simd_program_tile`，由线程组的 32 个 lane 协同处理 tile；任务通过现有 TaskLab/Ralph 生成候选并调用公共评测。
 测量分别记录主机构建、热调用和 GPU 命令缓冲区时间；加速结论以通过噪声控制的实际收据为准。

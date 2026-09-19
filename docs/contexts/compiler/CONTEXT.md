@@ -26,7 +26,7 @@ relationships only.
   program safety, and backend lowering preconditions.
 - Report modeled analysis coverage without presenting estimates as GPU truth.
 - Deterministically lower eligible Schedules to inspectable source for a current backend.
-- Change semantics only through the full Corpus Gate and one review at the merge to `main`.
+- Gate semantic changes with the full Corpus; independent review is recommended before `main`.
 
 The Compiler does not own Workload semantics, input materialization, correctness oracles,
 providers, Campaigns, GPU allocation, Evaluation, Evidence, or claims.
@@ -37,8 +37,8 @@ providers, Campaigns, GPU allocation, Evaluation, Evidence, or claims.
 - An Assessment contains zero or more Findings and separately records acceptance and
   lowering eligibility.
 - A Compiler Revision at one clean commit binds one complete Corpus expectation set.
-- Calibration belongs to one Compiler Revision and Target domain and never transfers
-  implicitly.
+- Explicit empirical models are scoped to their declared Target and measurement context;
+  they never transfer implicitly. Structural cost ranking is retired (ADR 0071).
 - The Lab may consume a Compiler Revision at a clean commit; the Compiler never imports the Lab.
 
 ## Boundary examples

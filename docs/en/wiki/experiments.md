@@ -10,7 +10,7 @@ Freeze the problem and judging rules first, let AI revise candidates, then retai
 
 Candidate evolution changes tiling, roles, or composition for the same problem under one frozen Compiler. Compiler evolution fixes an expressibility or checking gap, updating types, rules, analysis, and lowering before a successor release. Changing the question, compiler, and timing together loses attribution.
 
-A search fixes task and budget, obtains candidates, checks and compiles, compares complete required outputs, measures under the frozen protocol, preserves diagnostics, and either continues within budget or audits a terminal Run. Invalid candidates never proceed to timing. Cost ranking needs matching released calibration; it cannot replace measurement.
+A search fixes task and budget, obtains candidates, checks and compiles, compares complete required outputs, measures under the frozen protocol, preserves diagnostics, and either continues within budget or audits a terminal Run. Invalid candidates never proceed to timing. Cost ranking requires an explicitly bound empirical model with matching context; otherwise author order is retained. Estimates cannot replace measurement.
 
 AI reads TASK.md and AGENTS.md and submits candidates. External Evaluation judges; Ralph tracks time, tokens, and attempt limits. Budget exhaustion can be a normal end.
 
@@ -20,8 +20,8 @@ AI reads TASK.md and AGENTS.md and submits candidates. External Evaluation judge
 | --- | --- |
 | Inputs, mathematics, outputs, tolerance, cases | Workload Contract |
 | Environments, repetitions, budget, stopping | Study Contract |
-| Compiler and full Corpus | Released lock and Gate |
-| Lab, evaluator, and host closure | Executor descriptor |
+| Compiler and full Corpus | Clean commit, `compiler/revision.json`, and Corpus Gate |
+| Lab, evaluator, and host closure | Source commit and exact-target host capture |
 | Actual AI binary and frozen capabilities | Provider qualification |
 | Exact versions for this execution | CampaignLock produced by preflight |
 | GPU admission and new outputs | Controlled runtime configuration and external Evidence root |
@@ -30,7 +30,7 @@ Read [current release status](../../../reports/current/STATUS.md). The two no-GP
 
 ```bash
 .venv/bin/python tools/render_current_status.py --check
-.venv/bin/open-cake-ir compiler check-corpus --format text \
+PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler check-corpus \
   --revision compiler/revision.json
 ```
 

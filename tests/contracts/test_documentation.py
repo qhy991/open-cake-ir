@@ -28,13 +28,14 @@ STABLE_ENTRY_DOCUMENTS = (
 
 
 class DocumentationContractTests(unittest.TestCase):
-    def test_each_adr_is_linked_by_its_full_filename_in_every_index(self) -> None:
-        for index in ("docs/adr/README.md", "docs/en/adr/README.md",
-                      "docs/zh-CN/adr/README.md", "docs/README.md"):
-            text = (ROOT / index).read_text(encoding="utf-8")
-            for record in (ROOT / "docs/adr").glob("[0-9][0-9][0-9][0-9]-*.md"):
-                with self.subTest(index=index, record=record.name):
-                    self.assertIn(record.name, text)
+    def test_canonical_adr_index_links_every_record(self) -> None:
+        text = (ROOT / "docs/adr/README.md").read_text(encoding="utf-8")
+        for record in (ROOT / "docs/adr").glob("[0-9][0-9][0-9][0-9]-*.md"):
+            with self.subTest(record=record.name):
+                self.assertIn(record.name, text)
+        for language in ("en", "zh-CN"):
+            gateway = (ROOT / f"docs/{language}/adr/README.md").read_text()
+            self.assertIn("](../../adr/README.md)", gateway)
 
     def test_wiki_documents_each_ir_operation_and_workload_contract(self) -> None:
         sys.path.insert(0, str(ROOT / "src"))
@@ -97,6 +98,10 @@ class DocumentationContractTests(unittest.TestCase):
         markdown_link = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
         paths = (
             *STABLE_ENTRY_DOCUMENTS,
+            ROOT / "docs/README.md",
+            ROOT / "docs/catalog.md",
+            ROOT / "docs/en/adr/README.md",
+            ROOT / "docs/zh-CN/adr/README.md",
             ROOT / "docs" / "GLOSSARY.md",
             ROOT / "docs" / "adr" / "README.md",
             ROOT
