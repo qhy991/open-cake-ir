@@ -624,6 +624,52 @@ class ProviderContractTests(unittest.TestCase):
                 parse_codex_turn_events(raw, expected_terminal_message=terminal,
                     event_contract="closed_file_change_v1")
 
+    def test_recovered_stream_notice_is_retained_without_replacing_turn_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate-set.json"
+            self._write_schedule_set(candidate, 1)
+            terminal, events = self._notice_bracketed_events(candidate)
+            notice = {"type": "error", "message": "Reconnecting... 2/5 (stream disconnected before completion: IO error: peer closed connection without sending TLS close_notify)"}
+            events.insert(6, notice)
+            raw = b"\n".join(json.dumps(event).encode() for event in events)
+            turn = normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
+                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+            self.assertEqual(turn.raw_events, raw)
+            self.assertEqual(turn.candidates, (b'{"schedule":1}',))
+            self.assertEqual(turn.provider_tokens, 120)
+            self.assertEqual(turn.normalization, "duplicate_exact_bracketed")
+            notices = [a for a in turn.tool_activity if a.item_type == "transport_reconnect"]
+            self.assertEqual([(a.item_id, a.status) for a in notices], [("jsonl:6", "recovered")])
+            with self.assertRaises(ValueError):
+                parse_codex_turn_events(raw, expected_terminal_message=terminal,
+                    event_contract="closed_file_change_v1")
+            candidate.write_text('{"schema_version":1,"arm":"open_cake","candidates":[]}')
+            with self.assertRaises(ValueError):
+                normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
+                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+
+    def test_reconnect_notice_cannot_hide_fatal_or_incomplete_turns(self):
+        from copy import deepcopy
+        terminal, original = self._notice_bracketed_events(Path('/cpu-fixture/candidate-set.json'))
+        notice = {"type": "error", "message": "Reconnecting... 2/5 (stream disconnected before completion: unexpected EOF)"}
+        for message in ("Authentication failed", "Reconnecting... 0/5 (stream disconnected before completion: EOF)",
+                        "Reconnecting... 6/5 (stream disconnected before completion: EOF)",
+                        "Reconnecting... 2/9 (stream disconnected before completion: EOF)",
+                        "Reconnecting... 2/5 (rate limit exceeded)", None):
+            events = deepcopy(original); events.insert(6, {**notice, "message": message})
+            with self.subTest(message=message), self.assertRaises(ValueError):
+                parse_codex_turn_events(b"\n".join(json.dumps(e).encode() for e in events),
+                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1")
+        events = deepcopy(original); events.insert(6, notice)
+        malformed = deepcopy(events); malformed[6]["severity"] = "fatal"
+        variants = [events[:-1], events + [notice], malformed,
+                    events[:-1] + [{"type":"turn.failed", "error":{"message":"failed"}}, events[-1]],
+                    events[:7] + events[8:]]  # missing file start
+        for values in variants:
+            with self.assertRaises(ValueError):
+                parse_codex_turn_events(b"\n".join(json.dumps(e).encode() for e in values),
+                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1")
+
     def test_passive_notices_cannot_replace_or_hide_functional_lifecycles(self):
         from copy import deepcopy
         terminal, original = self._notice_bracketed_events(Path("/cpu-fixture/candidate-set.json"))

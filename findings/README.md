@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-20-002 — a recovered Codex stream emits a top-level reconnect error before completing successfully; the Lab rejects the event vocabulary even though first-turn candidate output matches. A narrow recovered-notice path needs full turn/candidate checks and retained diagnostics (protocol, proposed; original remote replay remains pending while SSH is unavailable).
+
 - F-2026-09-20-001 — shape-preserving casts hide a loaded operand's K axis from MMA carry analysis; eight FP16-to-FP32 GEMM probes are refused by BUFFER_ESCAPES_LOOP. The query is shared by lifetime verification and emission, so both need the same coordinate proof (bug, software fix 5b452470 verified at 9696fc34 by 154 CPU contracts, 164 unchanged Corpus cases and replay of the eight probes; no GPU or performance claim).
 
 - F-2026-09-17-001 — a non-power-of-two row width closes every lowering route for RMSNorm on sm_103a: the whole row hits Triton's arange power-of-two rule, the tiled two-pass hits its loop-nest rule (siblings at depth [0,0] where it requires a [0,1] nest), and native_cuda declares reduce_argmin but not reduce; h2048 and h4096 produce eight accepted Schedules and h7168 produces five refusals (capacity, proposed; a lowering gap, not a vocabulary one -- the arange rule is faithful and stays)
