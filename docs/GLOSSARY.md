@@ -1,5 +1,8 @@
 # 术语表：英文名与普通话解释
 
+Current scope (ADR 0071): the Portfolio Study lifecycle is retired. KernelSeed and standalone portfolio artifact utilities remain; historical campaigns replay at their pinned commit.
+
+
 [中文首页](zh-CN/README.md) · [English](en/GLOSSARY.md) · [中英文对照](README.md)
 
 代码、合同和诊断使用下列英文名；这里是它们的统一文字定义。先读 [中文 Wiki](wiki/README.md)，遇到词再查，不必一次背完。
@@ -165,7 +168,7 @@ Study 预先指定、按 Run 观察的结果，如预算结束时是否已有合
 
 ### KernelSeed
 
-通过固定小范围确认性检查、可进入后续 portfolio Study 的候选种子。负责者是 Lab；它不自动成为通用生产算子。
+通过固定小范围确认性检查、可用于后续显式专门化 的候选种子。负责者是 Lab；它不自动成为通用生产算子。
 
 ## Evaluation terms
 

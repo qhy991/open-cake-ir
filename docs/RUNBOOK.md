@@ -95,7 +95,7 @@ Choose by question, not by historical sequence number:
 | What is the best confirmed artifact through the two-file Ralph loop? | `artifact-optimization-ralph-template.json` |
 | Does an implementation-free matched reference boundary hold? | `matched-search-clean-start-reference-template.json` |
 | Can Cake and native Triton optimize the same B300 baseline through Ralph? | `matched-search-triton-b300-optimization-template.json` |
-| Does a frozen exact-shape specialist set generalize to its declared cases? | `portfolio` Study |
+| Does a frozen exact-shape specialist set generalize to its declared cases? | Historical replay at its pinned commit (ADR 0071) |
 
 Template names are discovery aids; the content-bound Study Contract is the authority.
 Preflight writes a new CampaignLock outside the checkout:
@@ -282,16 +282,10 @@ For profiler attribution, every correctness-qualified searched survivor receives
 separate no-timing profiler Evaluation. Raw profiler output is retained and replayed; its
 duration is never Candidate latency.
 
-## 6. Execute the exact-shape portfolio
+## 6. Historical Portfolio replay
 
-Run the portfolio CLI as one admitted GPU job using a runtime configuration derived from
-`examples/runtime/portfolio-live.example.json`. The Study owns the exact semantic keys,
-specialists, dispatcher policy, unsupported-key probe, correctness assays, timing cohorts,
-and Measurement Quality rule. An incorrect or slow seed returns to fixed-shape search; it
-is never hidden behind a dispatcher predicate.
-
-Portfolio success is bounded to its declared cases. It is not arbitrary-shape, model, or
-serving generalization.
+The Portfolio Study CLI is retired (ADR 0071). Replay old campaigns at their pinned
+source commit. The template and runtime example are preserved on `history`.
 
 ## 7. Audit offline
 

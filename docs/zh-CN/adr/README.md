@@ -92,3 +92,5 @@ ADR 保存为什么作出某个决定。它记录当时的状态，不能仅凭�
 - [0068：AKA 是发现问题的外部题库，不是正式验收语料](0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)（原 0038；[English original](../../adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)）
 - [0069：单写入者的原地更新使用已有 store](0069-single-writer-state-store-is-a-store-effect.md)（原 0039；[English original](../../adr/0069-single-writer-state-store-is-a-store-effect.md)）
 - [0070: B300 is an exact target on the existing Triton path](../../adr/0070-b300-is-an-exact-target.md)（原 0053）
+
+- [ADR 0071: retire structural ranking and Portfolio Study](../../adr/0071-retire-uncalibrated-ranking-and-portfolio-study.md)

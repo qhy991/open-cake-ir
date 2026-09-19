@@ -158,7 +158,7 @@ def _compiler(args: argparse.Namespace) -> int:
 def _lab(args: argparse.Namespace) -> int:
     from open_cake_ir.lab import CampaignLock
     from open_cake_ir.tasks.runtime import TaskLab
-    from open_cake_ir.tasks.compose import execute_matched_from_config, execute_portfolio_from_config
+    from open_cake_ir.tasks.compose import execute_matched_from_config
     from open_cake_ir.lab.custody import admit_new_campaign_path
 
     lab = TaskLab(args.project_root)
@@ -205,26 +205,10 @@ def _lab(args: argparse.Namespace) -> int:
     )
     lock = CampaignLock.load(args.lock)
     if args.lab_command == "execute":
-        campaign = (
-            execute_portfolio_from_config(
-                args.project_root,
-                lock,
-                args.runtime_config,
-                execution_evidence_root,
-            )
-            if lock.study_kind == "portfolio"
-            else execute_matched_from_config(
-                args.project_root,
-                lock,
-                args.runtime_config,
-                execution_evidence_root,
-            )
+        campaign = execute_matched_from_config(
+            args.project_root, lock, args.runtime_config, execution_evidence_root,
         )
-        report = (
-            lab.audit_portfolio(campaign)
-            if lock.study_kind == "portfolio"
-            else lab.audit(campaign)
-        )
+        report = lab.audit(campaign)
         _emit(report)
         return 0 if report.archive_integrity_passed else 2
     campaign = lab.reference_campaign(lock, args.evidence_root)
@@ -232,11 +216,7 @@ def _lab(args: argparse.Namespace) -> int:
         view = lab.threshold_view(campaign, args.threshold_ms)
         _emit(view)
         return 0 if view["audit"].archive_integrity_passed else 2
-    report = (
-        lab.audit_portfolio(campaign)
-        if lock.study_kind == "portfolio"
-        else lab.audit(campaign)
-    )
+    report = lab.audit(campaign)
     _emit(report)
     return 0 if report.archive_integrity_passed else 2
 

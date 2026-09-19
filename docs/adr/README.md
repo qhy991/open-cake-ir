@@ -95,3 +95,5 @@ ADR 记录“为什么这样设计”。当前版本看 [发布状态](../../rep
 - [0068: AKA is a challenge corpus, not a Compiler Corpus](0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)（原 0038）
 - [0069: a single-writer state update is a proven store effect](0069-single-writer-state-store-is-a-store-effect.md)（原 0039）
 - [0070: B300 is an exact target on the existing Triton path](0070-b300-is-an-exact-target.md)（原 0053）
+
+- [ADR 0071: retire structural ranking and Portfolio Study](0071-retire-uncalibrated-ranking-and-portfolio-study.md)

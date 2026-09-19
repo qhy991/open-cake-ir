@@ -53,7 +53,7 @@ class SemanticExecutorFixture:
         self.stack = ExitStack()
         self.stack.enter_context(patch.object(ExecutorRevision, "load", self.load))
         self.stack.enter_context(patch.object(ExecutorRevision, "load_reference", self.load_reference))
-        for owner in ("open_cake_ir.lab.bindings", "open_cake_ir.lab.preflight", "open_cake_ir.tasks.flash_kmeans.study"):
+        for owner in ("open_cake_ir.lab.bindings", "open_cake_ir.lab.preflight"):
             self.stack.enter_context(patch(owner + ".resolve_executor", self.resolve))
         return self
 

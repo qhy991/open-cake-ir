@@ -533,18 +533,13 @@ class LabContractTests(SemanticLabTestCase):
             "matched-search-infrastructure-template.json",
             "matched-search-system-qualification-ralph-template.json",
             "artifact-optimization-ralph-template.json",
-            "flash-kmeans-r45-portfolio-reconstruction-template.json",
             "matched-search-clean-start-reference-template.json",
             "matched-search-system-qualification-ralph-template.json",
             "artifact-optimization-ralph-template.json",
         ):
             path = ROOT / "contracts/studies" / name
             study = json.loads(path.read_text(encoding="utf-8"))
-            compiler_binding = (
-                study["compiler_revision"]
-                if study["kind"] == "portfolio"
-                else study["arms"]["open_cake"]["compiler_revision"]
-            )
+            compiler_binding = study["arms"]["open_cake"]["compiler_revision"]
             self.assertEqual(study["state"], "template", name)
             self.assertEqual(compiler_binding, {"binding": "current_release"}, name)
             self.assertEqual(
@@ -1938,161 +1933,13 @@ class LabContractTests(SemanticLabTestCase):
         self.assertEqual(r42_cuda_three[0].state, "reached_no_qualified_candidate")
         self.assertIsNone(r42_cuda_three[0].best_candidate_sha256)
 
-    def test_portfolio_semantic_replay_keeps_correctness_separate_from_timing(self) -> None:
-        lab = TaskLab(ROOT)
-        lock = lab.preflight(
-            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-template.json"
-        )
-        from open_cake_ir.compiler import Compiler
-        from open_cake_ir.tasks.flash_kmeans.portfolio import PortfolioArtifact, PortfolioCaseObservation, evaluate_portfolio_observations
-        from open_cake_ir.evaluation import WorkloadContract
-        from open_cake_ir.tasks.flash_kmeans.seed import KernelSeed, lower_specialists
-
-        workload = load_workload(
-            ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
-        )
-        seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json"
-        )
-        compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
-        cases = {
-            case_id: workload.case(case_id)["shape"]
-            for case_id in ("headline_b32", "b32_smoke", "public_b1")
-        }
-        lowerings = lower_specialists(compiler, seed, cases)
-        candidates = {}
-        for item in lowerings:
-            source = item.lowering.source.encode()
-            manifest = json.dumps(
-                {"case_id": item.case_id, "grid": item.assessment.analysis["grid"]},
-                sort_keys=True,
-            ).encode()
-            payloads = {
-                "lowered_source": source,
-                "compiler_expanded_source": b"expanded:" + source,
-                "ptx": b"ptx:" + item.case_id.encode(),
-                "cubin": b"cubin:" + item.case_id.encode(),
-                "launch_manifest": manifest,
-            }
-            candidates[item.case_id] = LaunchableCandidate(
-                candidate_sha256=item.lowering.schedule_sha256,
-                target="sm_100a",
-                entry_point=item.lowering.route.entry_point,
-                artifact_roles={
-                    role: sha256(payload).hexdigest()
-                    for role, payload in payloads.items()
-                },
-                launch_spec_sha256=sha256(manifest).hexdigest(),
-                artifact_payloads=payloads,
-            )
-        artifact = PortfolioArtifact.build(workload, seed.canonical_sha256, candidates)
-        stable = tuple(tuple([1.0] * 25) for _ in range(5))
-        unstable = tuple(
-            tuple([1.0, 2.0] * 12 + [1.0]) if index == 0 else tuple([1.0] * 25)
-            for index in range(5)
-        )
-        observations = {}
-        for case_id in candidates:
-            observations[case_id] = PortfolioCaseObservation(
-                direct_preflight_correct=True,
-                dispatcher_preflight_correct=True,
-                postflight_correct=True,
-                kernel_cohorts_ms=stable,
-                dispatcher_cohorts_ms=(stable if case_id == "headline_b32" else unstable),
-                correctness_receipts={
-                    "direct_preflight": {"passed": True},
-                    "dispatcher_preflight": {"passed": True},
-                    "postflight": {"passed": True},
-                },
-                candidate_record_sha256=candidates[case_id].canonical_sha256,
-                cubin_sha256=candidates[case_id].artifact_roles["cubin"],
-                launch_spec_sha256=candidates[case_id].launch_spec_sha256,
-                module_admission={
-                    "candidate_record_sha256": candidates[case_id].canonical_sha256,
-                    "cubin_sha256": candidates[case_id].artifact_roles["cubin"],
-                    "launch_spec_sha256": candidates[case_id].launch_spec_sha256,
-                    "module_loaded": True,
-                    "gpu_uuid": "GPU-fixture",
-                    "broker_job_id": "gpuq-000000000001",
-                },
-            )
-        route_counts = {
-            "automatic_retries": 0,
-            "compiler_invocations": 3,
-            "module_loads": 3,
-            "module_unloads": 3,
-            "direct_preflight_calls": 3,
-            "dispatcher_preflight_calls": 3,
-            "cupti_candidate_calls": 540,
-            "host_dispatch_calls": 450,
-            "l2_flush_calls": 450,
-            "dispatcher_postflight_calls": 3,
-            "unsupported_probes": 1,
-            "candidate_kernel_calls": 999,
-            "dispatcher_kernel_calls": 456,
-            "fallback_calls": 0,
-            "selections": {case_id: 152 for case_id in observations},
-        }
-        protocol_sha256 = sha256(
-            json.dumps(
-                lock.document["evaluation_protocol"],
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode()
-        ).hexdigest()
-        receipt = evaluate_portfolio_observations(
-            artifact,
-            observations,
-            evaluation_protocol_sha256=protocol_sha256,
-            route_counts=route_counts,
-            unsupported_kernel_call_delta=0,
-        )
-
-        class Assay:
-            def __init__(self, artifact_value, protocol_value, receipt_value):
-                self.artifact = artifact_value
-                self.protocol_sha256 = protocol_value
-                self.receipt = receipt_value
-
-            def prepare(self, campaign_lock):
-                return self.artifact
-
-            def evaluate(self, campaign_lock):
-                return self.receipt
-
-        with tempfile.TemporaryDirectory() as directory:
-            campaign = lab.execute_portfolio(
-                lock,
-                Path(directory).resolve() / "portfolio-evidence",
-                assay=Assay(artifact, protocol_sha256, receipt),
-            )
-            report = lab.audit_portfolio(campaign)
-
-        self.assertTrue(report.claim_view.heldout_correctness_supported, report)
-        self.assertTrue(report.semantic_replay_passed)
-        self.assertTrue(report.claim_view.dispatcher_correctness_supported)
-        self.assertTrue(report.claim_view.stable_kernel_performance_supported)
-        self.assertFalse(
-            report.claim_view.stable_heldout_dispatcher_performance_supported
-        )
-        self.assertFalse(report.claim_view.arbitrary_shape_generalization_supported)
-        self.assertFalse(report.claim_view.serving_supported)
-        self.assertFalse(report.claim_view.paper_result_reproduced)
 
     def test_preflight_resolves_variant_specific_inputs_into_one_lock(self) -> None:
         matched = TaskLab(ROOT).preflight(
             ROOT / "contracts/studies/matched-search-infrastructure-template.json"
         )
-        portfolio = TaskLab(ROOT).preflight(
-            ROOT / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-template.json"
-        )
-
         self.assertEqual(matched.study_kind, "matched_search")
         self.assertEqual(matched.experimental_unit, "run")
-        self.assertEqual(len(matched.run_order), 6)
-        self.assertEqual(portfolio.study_kind, "portfolio")
-        self.assertEqual(portfolio.experimental_unit, "case_route")
-        self.assertEqual(portfolio.run_order, ("portfolio-1",))
 
 
 
@@ -3405,9 +3252,6 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
         del legacy["evidence"]["event_vocabulary"]
         with self.assertRaisesRegex(ValueError, "study.evidence is unsupported"):
             self.preflight(study=legacy)
-        path = self.root / "contracts/studies/flash-kmeans-r45-portfolio-reconstruction-template.json"
-        with self.assertRaisesRegex(ValueError, "artifact_optimization_only"):
-            self.lab.preflight(path, empirical_cost_model_path=model_path)
 
     def test_context_and_revision_matching_is_exact(self):
         from open_cake_ir.lab.selection import _EmpiricalSelection

@@ -185,3 +185,5 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [ADR 0068 (was 0038): AKA is a challenge corpus, not a Compiler Corpus](adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) · [阅读](zh-CN/adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)
 - [ADR 0069 (was 0039): a single-writer state update is a proven store effect](adr/0069-single-writer-state-store-is-a-store-effect.md) · [阅读](zh-CN/adr/0069-single-writer-state-store-is-a-store-effect.md)
 - [ADR 0070 (was 0053): B300 is an exact target on the existing Triton path](adr/0070-b300-is-an-exact-target.md)
+
+- [ADR 0071: retire structural ranking and Portfolio Study](adr/0071-retire-uncalibrated-ranking-and-portfolio-study.md)

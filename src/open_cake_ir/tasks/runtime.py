@@ -6,11 +6,9 @@ from typing import Mapping
 
 from open_cake_ir.lab.core import Lab
 from open_cake_ir.lab.efficiency_policy import performance_reporting_policy
-from open_cake_ir.lab.contracts import StudyContract
 from .workloads import load_workload
 from .authoring import prepare_schedule, validate_authoring
 from .launch import parse_launch_manifest
-from .flash_kmeans.study import PortfolioStudyMixin
 
 
 def _admit_measurement_coverage(study) -> None:
@@ -79,7 +77,7 @@ def _admit_execution_mode(study) -> None:
             f"declares allocation {allocation(backend)!r}, which is {expected!r}")
 
 
-class TaskLab(PortfolioStudyMixin, Lab):
+class TaskLab(Lab):
     def __init__(self, project_root, **kwargs):
         super().__init__(
             project_root,
@@ -92,13 +90,6 @@ class TaskLab(PortfolioStudyMixin, Lab):
 
     def preflight(self, study_path, *, empirical_cost_model_path=None,
                   execution_bindings_path=None):
-        study = StudyContract.load(study_path)
-        if study.document["kind"] == "portfolio":
-            if empirical_cost_model_path is not None or execution_bindings_path is not None:
-                raise ValueError("empirical selection requires artifact_optimization_only matched search")
-            return self._preflight_portfolio(study)
-        _admit_measurement_coverage(study)
-        _admit_execution_mode(study)
         return super().preflight(study_path, empirical_cost_model_path=empirical_cost_model_path,
                                  execution_bindings_path=execution_bindings_path)
 

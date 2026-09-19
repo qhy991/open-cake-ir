@@ -45,7 +45,7 @@ AKA 是拿来提出问题的外部题库，不能直接当作编译器的正式�
 | 两个任务文件加 Ralph 控制器能否按预算运行 | `matched-search-system-qualification-ralph-template.json` |
 | 用 Ralph 多轮改进一个产物 | `artifact-optimization-ralph-template.json` |
 | 从头写程序时，参考材料是否没有泄露目标实现 | `matched-search-clean-start-reference-template.json` |
-| 已验证的专用方案能否覆盖事先声明的输入集合 | `portfolio` Study |
+| 已验证的专用方案能否覆盖事先声明的输入集合 | Historical replay at its pinned commit (ADR 0071) |
 | 在 B300 上用 Ralph 比较 Cake 与原生 Triton | `matched-search-triton-b300-optimization-template.json` |
 
 这些名字只是找文件的线索，真正的约定是被固定的 Study 内容。`preflight` 把结果写入仓库外的新 CampaignLock。修改 provider、执行器、模型、推理强度、broker 命令、运行配置或文件保管规则时，需要明确的后继 Study，不能悄悄改正在跑的任务。
@@ -86,11 +86,9 @@ Lab 负责轮数、累计预算、限定的零工作重提、检查点、选择�
 - `artifact_optimization_only`：每个 Run 可以多轮接收反馈，最多选出一个通过确认性评测的候选；保留辅助活动，但只有主作者提交候选，只有外部 Lab 评测。
 - 瓶颈分析：每个搜索后通过正确性检查的候选另做 profiler 评测。其耗时不能当作正常运行延迟。
 
-## 6. 多个专用方案组成 portfolio
+## 6. 历史 Portfolio 回放
 
-portfolio 用事先固定的键选择封存方案。例如，某个键表示一种输入形状，只能选出约定的专用程序。Study 固定键、分发规则、非法键检查、正确性、计时和稳定性要求。
-
-整个 portfolio CLI 要作为一个获准的 GPU job 运行，运行配置参考 [`portfolio-live.example.json`](../../examples/runtime/portfolio-live.example.json)。错误或太慢的种子要回到固定形状搜索，不能把它藏在一个“平时不会选中”的条件后面。通过已声明的输入，不等于支持任意形状、模型或服务。
+Portfolio Study CLI 已按 ADR 0071 退役。旧 Campaign 在其固定源码提交回放；模板和运行配置示例保存在 `history`。
 
 ## 7. 离线复查
 

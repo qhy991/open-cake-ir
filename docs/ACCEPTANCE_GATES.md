@@ -34,7 +34,7 @@ Require:
 - complete Authoring Environment as the matched treatment;
 - Estimand declared before execution and absent from non-scientific Claim Scopes;
 - independent kernel and Compiler evolution loops;
-- `matched_search` and the evidence-justified `portfolio` Study variants;
+- `matched_search` as the sole live Study kind (Portfolio Study retired under ADR 0071);
 - artifact optimization as a non-scientific Claim Scope, not another execution mode.
 
 Failure returns to Architecture and an ADR before runtime work proceeds.

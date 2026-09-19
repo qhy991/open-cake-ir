@@ -256,8 +256,8 @@ the comparison, not just the run.
 - Study templates are stable and execution binding lives in the CampaignLock. Do not mint
   a frozen Study successor per Compiler or Executor change; the 36
   `flash-kmeans-r45-portfolio-reconstruction` successors that predate this rule live on
-  the `history` branch, and only the template remains.
-- `matched_search` and the exact-shape `portfolio` variant share one Lab path;
+  the `history` branch together with the retired template and lifecycle.
+- `matched_search` is the sole live Study kind; the Portfolio Study lifecycle is retired;
   `artifact_optimization_only` is a Claim Scope on it, not a mode, and promotion under it
   still requires common confirmatory Evaluation and forms no arm comparison.
 - A Schedule declares its own `lowering` route. Refusal is a property of the Schedule: an

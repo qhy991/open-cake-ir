@@ -91,3 +91,5 @@ Start with 0001, 0029, 0047, 0048, and 0051. Proposed means the stated draft wor
 - [0068: AKA is a challenge corpus, not a Compiler Corpus](../../adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md) (was 0038) · [中文](../../zh-CN/adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)
 - [0069: a single-writer state update is a proven store effect](../../adr/0069-single-writer-state-store-is-a-store-effect.md) (was 0039) · [中文](../../zh-CN/adr/0069-single-writer-state-store-is-a-store-effect.md)
 - [0070: B300 is an exact target on the existing Triton path](../../adr/0070-b300-is-an-exact-target.md) (was 0053)
+
+- [ADR 0071: retire structural ranking and Portfolio Study](../../adr/0071-retire-uncalibrated-ranking-and-portfolio-study.md)
