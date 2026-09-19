@@ -42,12 +42,12 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=False)
     import torch
     import triton
+    admission = observe_exclusive_cuda('sm_103a')
     if torch.cuda.device_count() != 1:
         raise ValueError('run under an exclusive one-GPU allocation')
     name = torch.cuda.get_device_name(0)
     capability = torch.cuda.get_device_capability(0)
     compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
-    admission = observe_exclusive_cuda('sm_103a')
     # Match the Target document rather than accepting another CUDA device.
     target_document = json.loads((ROOT/'compiler/targets/sm_103a.json').read_text())
     expected = tuple(target_document['compute_capability'])
