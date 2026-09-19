@@ -95,10 +95,8 @@ in `findings/`, not here.
   Version 1 is replayed at its pinned commit; it is not silently translated at admission.
 
 
-What this section still knows to be open is F-2026-09-18-006; of its five items, the
-`launch_cubin_once` literals and the Metal/native-CUDA warp-width literals closed with
-the Phase 1 commit that introduced the registry, and the `warps` rename, the
-`environment_kind` wording and `PLACED_CONTRACTS` mnemonics (now registry-derived) remain.
+The five measured defects formerly tracked here are closed in F-2026-09-18-006,
+which retains their original evidence and the software verification scope.
 
 ## Cake IR design principles (arXiv:2608.12629v1, Appendix B.1)
 
