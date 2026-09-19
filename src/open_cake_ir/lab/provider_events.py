@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from hashlib import sha256
 from pathlib import Path
 from typing import Mapping, cast
@@ -22,6 +23,20 @@ from .provider_documents import (
 )
 
 
+def _reconnect_notice(event: Mapping[str, object]) -> bool:
+    """The bounded native 0.153.4 notice observed in F-2026-09-20-002.
+
+    This only recognizes syntax. Recovery is established by the surrounding
+    complete turn and its normal terminal, lifecycle, usage and candidate checks.
+    Fatal errors and differently shaped future notifications remain refusals.
+    """
+    message = event.get("message")
+    return (set(event) == {"type", "message"} and isinstance(message, str)
+            and re.fullmatch(
+                r"Reconnecting\.\.\. [1-5]/5 \(stream disconnected before completion: [^\r\n]+\)",
+                message) is not None)
+
+
 def parse_codex_turn_events(
     raw_events: bytes,
     *,
@@ -36,8 +51,9 @@ def parse_codex_turn_events(
     }:
         raise ValueError("provider terminal expectation differs")
     try:
-        events = [json.loads(line) for line in raw_events.splitlines()]
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        events = [json.loads(line, object_pairs_hook=_unique_json_object,
+                            parse_constant=_reject_json_constant) for line in raw_events.splitlines()]
+    except (UnicodeDecodeError, ValueError) as error:
         raise ValueError("provider events are not JSONL") from error
     if any(not isinstance(event, Mapping) for event in events):
         raise ValueError("provider event sequence is incomplete")
@@ -51,6 +67,8 @@ def parse_codex_turn_events(
         "item.completed",
         "turn.completed",
     }
+    if event_contract == "tool_rich_candidate_v1":
+        admitted_types.add("error")
     if (
         (
             event_contract == "closed_file_change_v1"
@@ -82,6 +100,8 @@ def parse_codex_turn_events(
     auxiliary_events: dict[
         str, list[tuple[str, Mapping[str, object]]]
     ] = {}
+    auxiliary_positions: dict[str, int] = {}
+    transport_notices: list[tuple[int, ProviderAuxiliaryActivity]] = []
     activity_indices: list[int] = []
     auxiliary_types = {
         "reasoning",
@@ -95,6 +115,14 @@ def parse_codex_turn_events(
     }
     for index, event in enumerate(typed_events[2:-1], start=2):
         event_type = event.get("type")
+        if event_type == "error":
+            if event_contract != "tool_rich_candidate_v1" or not _reconnect_notice(event):
+                raise ValueError(f"provider error at JSONL event {index} is not an admitted reconnect notice")
+            # jsonl:N locates the original event; it is not a fabricated native
+            # item id. Retain the notice without counting it as functional work.
+            transport_notices.append((index, ProviderAuxiliaryActivity(
+                item_id=f"jsonl:{index}", item_type="transport_reconnect", status="recovered")))
+            continue
         if event_type not in {"item.started", "item.updated", "item.completed"}:
             raise ValueError("provider item lifecycle differs")
         item = event.get("item")
@@ -123,6 +151,7 @@ def parse_codex_turn_events(
             auxiliary_events.setdefault(item_id, []).append(
                 (cast(str, event_type), cast(Mapping[str, object], item))
             )
+            auxiliary_positions.setdefault(item_id, index)
             # Passive CLI notices remain retained auxiliary evidence, but do not
             # move the terminal brackets around actual tool/file activity.
             if item_type not in {"error", "reasoning"}:
@@ -131,6 +160,11 @@ def parse_codex_turn_events(
             raise ValueError("provider emitted an unadmitted item type")
 
     tool_activity = _auxiliary_activity(auxiliary_events)
+    if any(notice.item_id in auxiliary_events for _, notice in transport_notices):
+        raise ValueError("provider native item collides with a transport event location")
+    tool_activity = [activity for _, activity in sorted(
+        [(auxiliary_positions[activity.item_id], activity) for activity in tool_activity]
+        + transport_notices, key=lambda pair: pair[0])]
     if event_contract == "tool_rich_candidate_v1" and not activity_indices:
         raise ValueError("provider Turn lacks functional tool or file activity")
 

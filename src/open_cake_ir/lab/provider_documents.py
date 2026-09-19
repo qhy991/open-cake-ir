@@ -184,7 +184,11 @@ class ProviderTurn:
 
 @dataclass(frozen=True)
 class ProviderAuxiliaryActivity:
-    """One provider-emitted non-submission item retained from raw JSONL."""
+    """One native item or indexed transport notice retained from raw JSONL.
+
+    For transport_reconnect, item_id is the zero-based jsonl:N location rather
+    than a native item identifier. Its full text remains in the original stream.
+    """
 
     item_id: str
     item_type: str
