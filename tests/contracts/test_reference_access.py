@@ -63,20 +63,23 @@ class ReferenceAccessTests(unittest.TestCase):
         self.assertIn("wmma::mma_sync", package.task_markdown)
         self.assertIn("Reference role: target_reference", package.task_markdown)
 
-    def test_bound_reproduction_rules_reach_every_request_once_and_only_the_assigned_arm(self):
+    def test_bound_reproduction_rules_reach_every_request_once(self):
         source = ROOT / "contracts/scaffolds/kernel-reproduction/AGENTS.md"
         rules = source.read_bytes()
         external = self.external / "AGENTS.md"
         external.write_bytes(rules)
         document = self.document(KNOWN)
-        document["arms"]["open_cake"]["scaffold"] = {
-            "path": str(external), "sha256": sha256(rules).hexdigest()}
+        reference = {"path": str(external), "sha256": sha256(rules).hexdigest()}
+        # Matched comparisons require a shared scaffold. Preserve that existing
+        # treatment rule while exercising the instruction delivery boundary.
+        for arm in document["arms"].values():
+            arm["scaffold"] = dict(reference)
         lock = self.preflight(document)
         package = self.lab.task_package(lock, "open_cake-1")
         self.assertNotIn(rules.decode(), package.task_markdown)
         self.assertEqual(package.agents_markdown.count(rules.decode()), 1)
         other = self.lab.task_package(lock, "direct_cuda-1")
-        self.assertNotIn(rules.decode(), other.agents_markdown)
+        self.assertEqual(other.agents_markdown.count(rules.decode()), 1)
         for turn in (1, 2):
             prompt, bundle = render_task_request(package, {"turn": turn})
             delivered = json.loads(bundle)
@@ -90,8 +93,9 @@ class ReferenceAccessTests(unittest.TestCase):
     def test_reproduction_rules_cannot_be_injected_into_clean_start(self):
         document = self.document()
         source = ROOT / "contracts/scaffolds/kernel-reproduction/AGENTS.md"
-        document["arms"]["open_cake"]["scaffold"] = {
-            "path": str(source.relative_to(ROOT)), "sha256": sha256(source.read_bytes()).hexdigest()}
+        reference = {"path": str(source.relative_to(ROOT)), "sha256": sha256(source.read_bytes()).hexdigest()}
+        for arm in document["arms"].values():
+            arm["scaffold"] = dict(reference)
         with self.assertRaisesRegex(ValueError, "authoring_instructions.*vetted"):
             self.preflight(document)
 

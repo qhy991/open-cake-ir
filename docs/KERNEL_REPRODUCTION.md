@@ -18,7 +18,9 @@
 scaffold，再传入它的绝对路径。保留来源和内容，不要仅给隔离作者一个无法读取的路径。
 
 已有自定义 Study 可将 `arms.open_cake.scaffold` 绑定到同一文件，沿用现有 reference
-绑定和 preflight 流程。读取实现的 arm 必须声明 `known_kernel_reproduction`；本规范
+绑定和 preflight 流程。双 arm 的 matched comparison 仍要求共享 scaffold；若使用这类
+Study，规范应按各 arm 声明的 authoring environment 分别执行，不能让比较 arm 改写 Cake。
+读取实现的 arm 必须声明 `known_kernel_reproduction`；本规范
 不能绕过 clean-start 的参考访问检查。不指定参数时保持原来的 scaffold 选择。
 
 `launch_task.py` 仍使用注册任务的 starter。本参数传入规范与材料，不会自动导入任意
