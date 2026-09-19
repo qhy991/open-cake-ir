@@ -77,6 +77,17 @@ independent evidence. A dispatcher or library fallback is not an authored single
 
 ## Reproduction loop
 
+The management Agent uses `tools/kernel_experiment.py prepare` to stage the
+reference material and task rules, then `run --cell` for an explicitly bound
+target/node. GPU work uses the node's existing GPU Infra daemon and its sole
+agent-gpu-broker allocator, including profiling and confirmatory evaluation.
+Do not start a second local lock/broker or hold a GPU while an Agent is thinking.
+An accepted evaluation keeps its node/run identity. Unknown transport status
+requires observation of that identity, never an automatic retry or failover.
+Each target owns its toolchain, measurement and coverage; cooperative Metal
+allocation does not establish external GPU idleness. Retain node-owned evidence;
+a local mirror or GPU Infra frontier cannot replace Cake's acceptance checks.
+
 1. Build the most faithful complete Schedule that the current Compiler can express.
    Preserve observable arithmetic, rounding, state and synchronization. Use existing
    primitives in their canonical form; never embed the reference as an opaque escape.

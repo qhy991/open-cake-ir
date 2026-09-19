@@ -4,6 +4,59 @@
 它要求 Agent 自主拆解参考实现、建立结构对应、选择候选、诊断缺口归属，并提出或执行
 其权限范围内的 Compiler 演进。研究者不需要逐次决定失败属于 IR、后端还是候选。
 
+## 多架构实验入口
+
+`tools/kernel_experiment.py prepare --config /absolute/experiment-input.json --workspace /absolute/new-experiment`
+准备管理 Agent 的 `TASK.md`、规范、参考材料快照及目标列表。管理 Agent 随后调用
+`tools/kernel_experiment.py run --workspace /absolute/new-experiment --cell CELL_ID`。
+每个 cell 独立选择本机或 SSH 节点、精确 backend、工具链 Python 和已运行的 GPU Infra
+socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `launch_task.py`。
+该入口不会启动生产 daemon、修改驱动或自动安装工具链。
+
+输入示例（替换模型及所有节点路径；每个 cell 的预算独立计数）：
+
+```json
+{
+  "schema_version": 1,
+  "objective": "复现参考 RMSNorm 的执行结构，并解释性能差距",
+  "provider": {"harness": "codex", "model": "YOUR_MODEL", "effort": "high"},
+  "budget": {"turns": 8, "token_budget": 300000, "wall_seconds": 7200},
+  "references": [{"path": "/absolute/reference/kernel.py", "source": "repository commit and original path"}],
+  "cells": [{
+    "id": "rmsnorm-b300", "task": "rmsnorm", "backend": "triton-b300",
+    "rows": 128, "columns": 4096,
+    "node": {"transport": "ssh", "host": "B300-M2",
+      "project_root": "/absolute/open-cake-ir", "python": "/absolute/venv/bin/python",
+      "kernelctl": "/absolute/gpu-infra/bin/kernelctl", "socket": "/absolute/kernel-infra.sock",
+      "workspace": "/absolute/experiments/rmsnorm-b300"}
+  }]
+}
+```
+
+可添加 `metal-m1-pro`、`triton-dcu`、`triton-gfx1151` 等已声明且该任务支持的 cell。
+本机节点使用 `transport: local` 并省略 `host`。源 commit 必须已存在于节点仓库，节点
+Python 和 host capture 必须满足对应 Executor；不自动把任务改投另一架构。
+如果已有外部参考的 sealed baseline bundle，可在 cell 中提供节点上的绝对路径
+`fixed_baseline_bundle`。否则仍使用注册任务的 starter，不能据此宣称外部实现性能复现。
+
+管理 Agent 获得源码分析、实验推进和 Compiler 演进的规范；冻结的 Run 作者仍执行已有
+候选协议。入口不另外调用一个管理模型，也不创建第二个 Campaign 数据库。
+`launches/<cell>/request.json` 和日志保留启动输入；再次启动同一 cell 会被拒绝。
+SSH 失败意味着状态可能未知，不能从退出码推断远程实验未启动，更不能自动重提。
+
+## GPU Infra 执行边界
+
+单任务和 `launch_task_matrix.py` 均接受 `--kernelctl /absolute/kernelctl`
+与 `--infra-socket /absolute/socket`，不能同时提供旧 `--gpu-run` / `--broker-socket`。
+每次 Evaluation 都通过 GPU Infra 快照、异步提交和固定 run-id 观察，实际 GPU 作业由
+daemon 的 broker 独占分配。同步 Lab 调用等待这一作业，但不会持卡等待作者生成候选。
+daemon 必须报告 `allocation_environment: gpuq_v1`；旧服务会在 provider 启动前被拒绝。
+
+Cake 仍拥有 oracle、paired timing、profiler、confirmation 和最终接受语义。适配器只
+投影 judge 正确性和保留原始 receipt，不在 GPU Infra frontier 中重新做性能晋升。
+Metal 保留 cooperative 范围与外部占用未知；AMD 与 Hygon 必须匹配不同 broker 后端，
+并通过实际 HIP 精确设备检查。规范和 CPU 测试不等于这些节点已经完成运行资格验证。
+
 ## 启动输入
 
 在现有 `tools/launch_task.py` 命令的任务、硬件、模型、预算和外部 workspace 参数之外，加上：
