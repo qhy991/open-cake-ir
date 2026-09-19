@@ -37,6 +37,14 @@ def write(path, value):
         stream.write("\n")
 
 
+def admit_judge_source(commit, task, stage_id):
+    """The frozen Infra stage, not its directory name, binds the judge commit."""
+    stages = [stage for stage in task.get("stages", []) if stage.get("id") == stage_id]
+    if (len(stages) != 1
+            or stages[0].get("judge", {}).get("identity") != "open-cake-ir@" + commit):
+        raise ValueError("comparison judge source differs from the frozen Infra task")
+
+
 def load_module(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -112,6 +120,8 @@ def main():
     try:
         config = input_spec(inputs_root)
         report.update(input=config, source_commit=checkout_commit(ROOT))
+        admit_judge_source(report["source_commit"],
+            json.loads(Path(os.environ["KERNELINFRA_TASK"]).read_bytes()), os.environ["KERNELINFRA_STAGE_ID"])
         report["allocation"] = observe_allocation(config["target"])
         # Observe exclusive exact hardware before importing Torch initializes CUDA.
         admission = observe_exclusive_cuda(config["target"])

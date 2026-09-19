@@ -17,7 +17,9 @@ retained. This permits reference-derived row-packing candidates to be tested
 without modifying the external implementation or introducing a new Workload.
 
 Run the tool as an exclusive `judge` stage with its pinned checkout as cwd and
-the admitted Executor Python. The existing task oracle checks both outputs and
+the admitted Executor Python. Its `judge.identity` must equal
+`open-cake-ir@<clean checkout commit>`; a differently bound or ambiguous stage is
+refused before device admission. The existing task oracle checks both outputs and
 input preservation for all five distributions before and after timing. The
 original reference performs its autotune during preflight; its selected
 configuration is recorded, and its internal timing scores are not results here.

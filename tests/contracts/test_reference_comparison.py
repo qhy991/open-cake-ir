@@ -4,13 +4,22 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.compare_flashinfer_reference import input_spec, cake_candidate
+from tools.compare_flashinfer_reference import input_spec, cake_candidate, admit_judge_source
 from open_cake_ir.tasks.evaluate import _fresh_tile_cohort
 from open_cake_ir.tasks.workloads import create_task, materialize_case, reference_outputs
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 
 class ReferenceComparisonTests(unittest.TestCase):
+    def test_judge_source_must_match_the_selected_frozen_stage(self):
+        stage = {"id":"comparison", "judge":{"identity":"open-cake-ir@" + "a"*40}}
+        admit_judge_source("a"*40, {"stages":[stage]}, "comparison")
+        for task, stage_id in (({"stages":[stage]}, "other"),
+                               ({"stages":[stage,stage]}, "comparison"),
+                               ({"stages":[{**stage,"judge":{"identity":"open-cake-ir@"+"b"*40}}]}, "comparison")):
+            with self.assertRaises(ValueError):
+                admit_judge_source("a"*40, task, stage_id)
+
     def test_authored_candidate_preserves_task_target_abi_and_route(self):
         document, source = create_task("fib_rmsnorm_h2048", backend="triton-b300", rows=79, columns=2048)
         workload = WorkloadContract(document)
