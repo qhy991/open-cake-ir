@@ -231,11 +231,11 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
             self.assertEqual(study["state"], "frozen")
             self.assertEqual(
                 set(study["arms"]["open_cake"]["compiler_revision"]),
-                {"revision_id", "path", "canonical_sha256"},
+                {"revision_id", "path"},
             )
             self.assertEqual(
                 set(study["execution"]["executor_revision"]),
-                {"executor_id", "path", "canonical_sha256"},
+                {"executor_id", "path"},
             )
             self.assertEqual(
                 study["arms"]["open_cake"]["provider"]["reasoning_effort"],

@@ -537,8 +537,8 @@ class PairedLabFixtureTests(unittest.TestCase):
                 value['feedback'] = (['findings'] if arm == 'open_cake' else ['compile']) + ['correctness','qualified_timing']
             study = root / 'fixture-study.json'; study.write_bytes(encoded(document))
             gate = SimpleNamespace(compiler_revision_id='compiler-fixture',  passed=True)
-            reference = {'revision_id':'compiler-fixture','path':'compiler/revision.json','canonical_sha256':'a'*64}
-            executor = {'executor_id':'open-cake-ir-b200-v9000','path':'runtime/executors/fixture.json','canonical_sha256':'e'*64}
+            reference = {'revision_id':'compiler-fixture','path':'compiler/revision.json'}
+            executor = {'executor_id':'open-cake-ir-b200-v9000','path':'runtime/executors/fixture.json'}
             stack.enter_context(mock.patch('open_cake_ir.lab.preflight._resolve_compiler_reference', return_value=(gate, reference['path'], reference)))
             bound_executor = SimpleNamespace(reference=executor)
             stack.enter_context(mock.patch('open_cake_ir.lab.preflight.resolve_executor', return_value=bound_executor))
@@ -550,7 +550,7 @@ class PairedLabFixtureTests(unittest.TestCase):
             def admit_fixture_compiler(project_root, value, context):
                 self.assertEqual(Path(project_root).resolve(), root.resolve())
                 self.assertEqual(value, reference, context)
-                return SimpleNamespace(revision_id=reference['revision_id'], canonical_sha256=reference['canonical_sha256'])
+                return SimpleNamespace(revision_id=reference['revision_id'])
             stack.enter_context(mock.patch('open_cake_ir.lab.bindings.load_compiler_reference', side_effect=admit_fixture_compiler))
             lab = TaskLab(root)
             lock = lab.preflight(study)

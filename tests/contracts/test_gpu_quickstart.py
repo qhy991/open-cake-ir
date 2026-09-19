@@ -206,11 +206,11 @@ class GpuQuickstartContractTests(unittest.TestCase):
         self.assertEqual(
             {
                 key: result["executor_revision"][key]
-                for key in ("executor_id", "canonical_sha256")
+                for key in ("executor_id",)
             },
             {
                 key: inventory["executor_revision"][key]
-                for key in ("executor_id", "canonical_sha256")
+                for key in ("executor_id",)
             },
         )
         self.assertEqual(

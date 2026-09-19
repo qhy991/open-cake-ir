@@ -391,7 +391,7 @@ class TaskIncumbentTests(unittest.TestCase):
             document={"execution": {"executor_revision": {
                 "executor_id": "historical-executor",
                 "path": "runtime/executors/historical.json",
-                "canonical_sha256": "1" * 64,
+
             }}},
         )
         executor = SimpleNamespace(document={"host_environment": {"python": {

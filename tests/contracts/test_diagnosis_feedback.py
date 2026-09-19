@@ -210,7 +210,7 @@ class DiagnosisSummaryTests(unittest.TestCase):
                 for index in range(2):
                     store = EvidenceStore.create(root / f"evidence-{index}")
                     authority = {"campaign_id": f"fixture-{index}", "execution": {
-                        "executor_revision": {"executor_id": f"fixture-executor-{index}", "canonical_sha256": str(index) * 64}},
+                        "executor_revision": {"executor_id": f"fixture-executor-{index}"}},
                         "resolved_inputs": {"evidence_policy": {"event_vocabulary": f"fixture-{index}"}}}
                     run = store.start_run("direct_cuda-1", authority=authority,
                         authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())

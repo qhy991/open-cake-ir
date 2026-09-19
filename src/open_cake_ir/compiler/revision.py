@@ -82,7 +82,12 @@ def _project_path(root: Path, value: object, context: str) -> tuple[str, Path]:
     parsed = PurePosixPath(relative)
     if parsed.is_absolute() or ".." in parsed.parts or "\\" in relative:
         raise CompilerError(f"{context} is unsafe")
-    path = (root / relative).resolve(strict=True)
+    unresolved = root
+    for part in parsed.parts:
+        unresolved /= part
+        if unresolved.is_symlink():
+            raise CompilerError(f"{context} file custody differs: symlink {unresolved}")
+    path = unresolved.resolve(strict=True)
     if root not in path.parents:
         raise CompilerError(f"{context} escapes project root")
     return relative, path

@@ -369,8 +369,8 @@ class PairedExecutionTests(unittest.TestCase):
     def test_submitter_transports_both_sealed_bundles_to_worker_and_checks_actual_job(self):
         retained = self.execute()
         executor_reference = {'path':'runtime/executors/CPU-fixture.json',
-                              'canonical_sha256':'a'*64, 'executor_id':'CPU-fixture'}
-        executor = SimpleNamespace(reference=executor_reference, canonical_sha256='a'*64, executor_id='CPU-fixture', project_root=ROOT)
+                               'executor_id':'CPU-fixture'}
+        executor = SimpleNamespace(reference=executor_reference,  executor_id='CPU-fixture', project_root=ROOT)
         requests = []
         def command(argv, **kwargs):
             request_path = Path(argv[argv.index('--request') + 1])
@@ -666,7 +666,7 @@ class PairedExecutionTests(unittest.TestCase):
                     'fixed_baseline_selection':baseline_selection}
         bp = self.output / 'bindings.json'; bp.write_bytes(encoded(bindings))
         gate = SimpleNamespace(compiler_revision_id='fixture',passed=True)
-        compiler_ref = {'revision_id':'fixture','path':'compiler/revision.json','canonical_sha256':'a'*64}
+        compiler_ref = {'revision_id':'fixture','path':'compiler/revision.json'}
         with ExitStack() as stack:
             stack.enter_context(patch('open_cake_ir.lab.preflight._resolve_compiler_reference',
                 return_value=(gate, compiler_ref['path'], compiler_ref)))

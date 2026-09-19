@@ -93,6 +93,18 @@ class RevisionAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(CompilerError, "does not track.*synthetic-ignored"):
             self.load()
 
+    def test_corpus_symlink_cannot_borrow_a_clean_commit(self):
+        from tests.contracts.test_source_identity import _git
+        corpus = self.root / "corpus.json"
+        corpus.rename(self.root / "local-corpus.json")
+        corpus.symlink_to("local-corpus.json")
+        (self.root / ".gitignore").write_text("local-corpus.json\n")
+        _git(self.root, "init", "-q")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-q", "-m", "fixture")
+        with self.assertRaisesRegex(CompilerError, "corpus_manifest.*symlink"):
+            self.load()
+
     def test_revision_outside_root_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "revision.json"
@@ -222,7 +234,7 @@ class CorpusOwnershipTests(unittest.TestCase):
             schedule_sha256="1" * 64, target="fixture_target",
         )
         self.compiler = SimpleNamespace(
-            _revision=SimpleNamespace(project_root=self.root, revision_id="fixture", canonical_sha256="3" * 64,
+            _revision=SimpleNamespace(project_root=self.root, revision_id="fixture",
                                       targets={"fixture_target": object(), "unexamined_target": object()}),
             assess_file=Mock(return_value=self.assessment),
             lower=Mock(return_value=SimpleNamespace(source_sha256="2" * 64)),
