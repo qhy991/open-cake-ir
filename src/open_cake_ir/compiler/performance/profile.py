@@ -301,7 +301,7 @@ def _runtime_indexed_buffers(schedule: Schedule) -> tuple[str, ...]:
             {
                 access.buffer
                 for access in schedule.access_maps
-                if any(index.source is AccessIndexKind.BUFFER for index in access.indices)
+                if any(index.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER} for index in access.indices)
             }
         )
     )

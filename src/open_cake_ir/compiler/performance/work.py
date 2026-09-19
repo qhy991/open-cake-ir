@@ -55,7 +55,7 @@ MULTIPLY_ADD_FLOPS = 2
 published FLOP count for a matmul uses. Naming it is cheaper than explaining a 2."""
 
 _TRANSCENDENTAL = frozenset(
-    {ElementwiseOp.RSQRT, ElementwiseOp.EXP, ElementwiseOp.TANH}
+    {ElementwiseOp.RSQRT, ElementwiseOp.EXP, ElementwiseOp.LOG2, ElementwiseOp.TANH}
 )
 """Primitives with no defensible operation count.
 
@@ -409,6 +409,8 @@ def operation_repetitions(
 def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
     """Floating-point operations one execution performs, or None when it is uncountable."""
 
+    if operation.kind in {OperationKind.COORDINATE, OperationKind.COMPARE, OperationKind.SELECT}:
+        return 0  # Integer coordinates/predicates and selection are not floating arithmetic.
     if operation.kind in _NON_ARITHMETIC_KINDS:
         return 0
     if operation.kind in _UNCOUNTABLE_KINDS:
@@ -434,6 +436,8 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
         parameters = operation.parameters
         if not isinstance(parameters, ElementwiseParameters) or len(operation.writes) != 1:
             return None
+        if schedule.buffer(operation.writes[0]).dtype.value == "int32":
+            return 0
         if parameters.op in _TRANSCENDENTAL:
             return None
         if parameters.op is ElementwiseOp.FMA:
@@ -444,6 +448,8 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
         return _elements(schedule, operation.writes[0])
 
     if operation.kind is OperationKind.REDUCE:
+        if operation.reads and schedule.buffer(operation.reads[0]).dtype.value == "int32":
+            return 0
         parameters = operation.parameters
         if not isinstance(parameters, ReduceParameters):
             return None
@@ -497,7 +503,7 @@ def _is_partially_addressed(schedule: Schedule, name: str) -> bool:
         if access.buffer != name:
             continue
         for component in access.indices:
-            if component.source is AccessIndexKind.BUFFER:
+            if component.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}:
                 return True
             if component.offset or component.extent is not None:
                 return True

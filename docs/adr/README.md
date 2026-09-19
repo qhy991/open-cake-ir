@@ -81,3 +81,4 @@ ADR 保存设计理由，当前实现以代码和[当前状态](../../reports/cu
 - [0072: Backend-owned input policies and native adapters](0072-backend-owned-input-and-native-adapters.md)
 - [0073: One Study parse and one reading index per responsibility](0073-single-study-admission-and-reading-owners.md)
 - [0074: FlashInfer fixed-shape starters](0074-flashinfer-fixed-shape-starters.md)
+- [0075: Runtime index values and ordered launches](0075-runtime-index-values-and-ordered-launches.md)

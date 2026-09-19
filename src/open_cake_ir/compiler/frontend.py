@@ -117,12 +117,17 @@ class _Access:
 
 
 @dataclass(frozen=True)
+class _ScalarIndex:
+    buffer: _Ref
+
+
+@dataclass(frozen=True)
 class _Broadcast:
     buffer: _Ref
     axis: int
 
 
-_BINARY = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul", ast.Div: "div"}
+_BINARY = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul", ast.Div: "div", ast.FloorDiv: "floor_div", ast.Mod: "remainder"}
 # The two whose operands may be exchanged without changing what is computed. A leading
 # literal is canonicalised to the second position for these and refused for the others,
 # where `2.0 - x` is not `x - 2.0` and swapping would silently compute something else.
@@ -282,6 +287,11 @@ class _Builder:
                     item["extent"] = stop - start
             else:
                 index = self.value(component)
+                if isinstance(index, _ScalarIndex):
+                    if buffer.space.value != "global":
+                        self.fail(component, "runtime scalar indices require global storage")
+                    indices.append(dict(source="scalar_buffer", name=index.buffer.name))
+                    continue
                 if isinstance(index, _Ref) and index.collection == "buffers":
                     index_buffer = self.buffer(index, component)
                     if (index_buffer.dtype.value != "int32" or index_buffer.space.value != "register"
@@ -300,7 +310,7 @@ class _Builder:
                     "program" if self.record(index)["tile"] == 1 else "program_tile")
                 item = dict(source=source, name=index.name)
             indices.append(item)
-        if any(item['source'] == 'buffer' for item in indices):
+        if any(item['source'] in {'buffer', 'scalar_buffer'} for item in indices):
             tiled = [(item['source'], item['name']) for item in indices
                      if item['source'] in {'program_tile', 'loop_tile'}]
             if len(tiled) != len(set(tiled)):
@@ -321,7 +331,7 @@ class _Builder:
                     shape.extend(current)
             elif item["source"] == "dimension":
                 shape.append(item.get("extent", source.shape[item["dimension"]] - item.get("offset", 0)))
-            elif item["source"] != "program":
+            elif item["source"] not in {"program", "scalar_buffer"}:
                 shape.append(self.record(self.symbols[item["name"]])["tile"])
         return shape or [1]
 
@@ -386,6 +396,14 @@ class _Builder:
             ProgramAxis.from_dict(axes[-1], f"schedule.program_map.axes[{len(axes) - 1}]")
             result = self.symbols[target] = _Ref("program", target)
             return result
+        if method == "scalar_index":
+            if len(node.args) != 1 or node.keywords:
+                self.fail(node, "scalar_index takes one INT32 [1] register buffer")
+            ref = self.reference(self.value(node.args[0]), node)
+            buffer = self.buffer(ref, node)
+            if buffer.dtype.value != "int32" or buffer.shape != (1,) or buffer.space.value != "register":
+                self.fail(node, "scalar_index takes one INT32 [1] register buffer")
+            return _ScalarIndex(ref)
         if method == "broadcast":
             if len(node.args) != 1 or set(k.arg for k in node.keywords) != {"axis"}:
                 self.fail(node, "broadcast takes one value and an explicit axis")
@@ -454,6 +472,16 @@ class _Builder:
             values = [values[1], values[0]]
         reads, accesses = [], []
         for position, value in enumerate(values):
+            if kind == "select" and position == 2 and (type(value) in (int, float) or value == "negative_infinity"):
+                if "false_value" in parameters:
+                    self.fail(node, "select false value is declared once")
+                parameters["false_value"] = value
+                continue
+            if kind == "compare" and position == 1 and type(value) in (int, float):
+                if "scalar" in parameters:
+                    self.fail(node, "compare scalar is declared once")
+                parameters["scalar"] = value
+                continue
             if isinstance(value, _Broadcast):
                 if kind != "elementwise" or position != 1 or "broadcast_axis" in parameters:
                     self.fail(node, "broadcast applies once to the second arithmetic operand")
@@ -479,19 +507,38 @@ class _Builder:
         if kind == "load":
             for access in accesses:
                 for item in access.indices:
-                    if item["source"] == "buffer":
+                    if item["source"] in {"buffer", "scalar_buffer"}:
                         index = self.symbols[item["name"]]
                         if index not in reads:
                             reads.append(index)
         outputs = controls.pop("out", None)
         if outputs is None:
-            if not reads:
+            if not reads and kind != "coordinate":
                 self.fail(node, "a computed result requires an input value")
-            first = self.buffer(reads[0], node)
-            shape, dtype = list(first.shape), first.dtype.value
+            if kind == "coordinate":
+                source = parameters.get("source")
+                if source == "range":
+                    shape = [parameters.get("extent")]
+                else:
+                    ref = self.symbols.get(parameters.get("name"))
+                    expected = "program" if source in {"program", "program_tile"} else "loop"
+                    if not isinstance(ref, _Ref) or ref.collection != expected:
+                        self.fail(node, "coordinate must name a visible program or loop axis")
+                    shape = [self.record(ref)["tile"] if source.endswith("_tile") else 1]
+                dtype = "int32"
+            else:
+                first = self.buffer(reads[0], node)
+                shape, dtype = list(first.shape), first.dtype.value
+            if kind in {"compare", "select"}:
+                operands = [self.buffer(ref, node) for ref in reads]
+                dtype = "int32" if kind == "compare" else (operands[1].dtype.value if len(operands) > 1 else None)
+                shapes = {operand.shape for operand in operands if not operand.is_scalar}
+                if len(shapes) > 1:
+                    self.fail(node, "compare/select require matching shapes or [1] scalars")
+                shape = list(next(iter(shapes), (1,)))
             if kind == "elementwise":
                 operands = [self.buffer(ref, node) for ref in reads]
-                promoted = elementwise_result_dtype(operand.dtype for operand in operands)
+                promoted = elementwise_result_dtype((operand.dtype for operand in operands), ElementwiseOp(parameters["op"]))
                 if promoted is None:
                     self.fail(node, f"{parameters['op']} has no implicit dtype promotion for "
                         f"{[operand.dtype.value for operand in operands]}; use lm.cast(..., to=...) explicitly",
@@ -516,7 +563,7 @@ class _Builder:
                     self.fail(node, "automatic MMA results require two rank-two operands")
                 right = self.buffer(reads[1], node)
                 shape, dtype = [first.shape[0], right.shape[0]], "fp32"
-            elif kind not in {"elementwise", "scan"}:
+            elif kind not in {"elementwise", "scan", "coordinate", "compare", "select"}:
                 self.fail(node, f"{kind} requires explicit result buffers via out")
             result_name = target or self.fresh()
             outputs = [self.declare("buffers", result_name,
@@ -527,10 +574,10 @@ class _Builder:
             self.fail(node, "out requires at least one result buffer")
         writes = [self.reference(value.buffer if isinstance(value, _Access) else value, node) for value in outputs]
         accesses.extend(value for value in outputs if isinstance(value, _Access))
-        if any(isinstance(value, _Access) and any(item['source'] == 'buffer' for item in value.indices)
+        if any(isinstance(value, _Access) and any(item['source'] in {'buffer', 'scalar_buffer'} for item in value.indices)
                for value in outputs):
             self.fail(node, "buffer-indexed destinations are not supported by this frontend")
-        if kind != 'load' and any(item['source'] == 'buffer' for access in accesses for item in access.indices):
+        if kind != 'load' and any(item['source'] in {'buffer', 'scalar_buffer'} for access in accesses for item in access.indices):
             self.fail(node, "buffer-indexed views are supported only by load")
         op_id = controls.pop("id", target or f"{kind}_{writes[0].name}")
         if not isinstance(op_id, str) or op_id in self.ancestors:

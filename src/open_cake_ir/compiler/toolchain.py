@@ -40,7 +40,7 @@ class TritonCompilation:
 # candidates additionally belongs in the Lab's filesystem-isolated build process.
 _TRITON_CALLS = frozenset({
     "arange", "program_id", "num_programs", "load", "store", "full", "zeros",
-    "sum", "max", "min", "maximum", "minimum", "where", "exp", "exp2", "log",
+    "sum", "max", "min", "maximum", "minimum", "where", "exp", "exp2", "log", "log2",
     "log2", "sqrt", "rsqrt", "abs", "sigmoid", "dot", "trans", "reshape",
     "broadcast_to", "expand_dims", "cast", "div_rn", "fma", "range", "static_range",
     "cumsum", "cumprod", "gather", "debug_barrier", "multiple_of", "max_contiguous",

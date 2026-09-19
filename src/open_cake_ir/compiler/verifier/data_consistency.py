@@ -5,6 +5,8 @@ those contracts depend on the same representation proof."""
 
 from __future__ import annotations
 
+import math
+
 from ..ir import (
     AccessIndexKind,
     BufferMode,
@@ -646,6 +648,18 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
 
+    from ..ir.value_ops import VALUE_KINDS, result_type
+    for index, operation in enumerate(schedule.operations):
+        if operation.kind not in VALUE_KINDS:
+            continue
+        try:
+            dtype, shape = result_type(schedule, operation)
+            result = buffers.get(operation.writes[0])
+            if result is None or result.dtype is not dtype or result.shape != shape or result.space is not MemorySpace.REGISTER:
+                raise ValueError(f"expected {dtype.value} register result {list(shape)}")
+        except ValueError as error:
+            out.add("VALUE_OPERATION_TYPE", f"operations[{index}]", str(error), category)
+
     # ---- buffer roles ------------------------------------------------------
     # An input buffer that is written is the static form of the candidate mutating its
     # own inputs; downstream correctness compares against a reference recomputed from
@@ -895,12 +909,12 @@ def _verify_operation_shape(
                         f"{list(output.shape)}",
                         category,
                     )
-                allowed = {DType.BF16, DType.FP16, DType.FP32}
+                allowed = {DType.BF16, DType.FP16, DType.FP32, DType.FP8_E4M3}
                 if source.dtype not in allowed or output.dtype not in allowed:
                     out.add(
                         "CAST_DTYPE_UNSUPPORTED",
                         path,
-                        "the admitted cast converts among bf16, fp16, and fp32",
+                        "the admitted cast converts among bf16, fp16, fp32 and fp8e4m3",
                         category,
                     )
                 if output.dtype is not operation.parameters.to:
@@ -1246,8 +1260,8 @@ def _verify_operation_shape(
         axis = operation.parameters.axis
         if source is not None and result is not None:
             if (
-                source.dtype not in _ELEMENTWISE_FLOAT_DTYPES
-                or result.dtype is not DType.FP32
+                source.dtype not in (_ELEMENTWISE_FLOAT_DTYPES | {DType.INT32})
+                or result.dtype is not (DType.INT32 if source.dtype is DType.INT32 else DType.FP32)
             ):
                 out.add(
                     "SCAN_DTYPE_MISMATCH",
@@ -1494,7 +1508,13 @@ def _verify_operation_shape(
             result = buffers.get(operation.writes[0])
             reads = [buffers[name] for name in operation.reads if name in buffers]
             if result is not None and len(reads) == len(operation.reads):
-                inferred_dtype = elementwise_result_dtype(read.dtype for read in reads)
+                inferred_dtype = elementwise_result_dtype((read.dtype for read in reads), parameters.op)
+                if inferred_dtype is DType.INT32:
+                    scalar = parameters.scalar
+                    if scalar is not None and (not math.isfinite(scalar) or scalar != int(scalar) or not -(2**31) <= scalar < 2**31):
+                        out.add("INTEGER_SCALAR_INVALID", f"{path}.parameters.scalar", "INT32 requires an exact signed integer scalar", category)
+                    if parameters.op in {ElementwiseOp.FLOOR_DIV, ElementwiseOp.REMAINDER} and (scalar is None or scalar <= 0):
+                        out.add("INTEGER_DIVISOR_INVALID", f"{path}.parameters.scalar", "index division requires a positive literal divisor", category)
                 if inferred_dtype is None:
                     out.add(
                         "ELEMENTWISE_DTYPE_UNSUPPORTED",
@@ -1575,8 +1595,8 @@ def _verify_operation_shape(
         axis = operation.parameters.axis
         if source is not None and result is not None:
             if (
-                source.dtype not in _ELEMENTWISE_FLOAT_DTYPES
-                or result.dtype is not DType.FP32
+                source.dtype not in (_ELEMENTWISE_FLOAT_DTYPES | {DType.INT32})
+                or result.dtype is not (DType.INT32 if source.dtype is DType.INT32 else DType.FP32)
             ):
                 out.add(
                     "REDUCE_DTYPE_MISMATCH",
@@ -1740,7 +1760,7 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"operation {operation.op_id!r}'s lexical scope",
                         category,
                     )
-            elif component.source is AccessIndexKind.BUFFER:
+            elif component.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}:
                 index_buffer = buffers.get(component.name)
                 if index_buffer is None:
                     out.add(
@@ -1807,7 +1827,7 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
         indirect = [
             component
             for component in access.indices
-            if component.source is AccessIndexKind.BUFFER
+            if component.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}
         ]
         # AccessMap, not the ordering of Operation.reads, owns the global source.
         # Keep one dtype relation and one Finding spelling for direct and runtime-
@@ -1835,6 +1855,17 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 category,
             )
         if indirect:
+            scalar_indices = [component for component in indirect if component.source is AccessIndexKind.SCALAR_BUFFER]
+            if scalar_indices and operation.kind is not OperationKind.LOAD:
+                out.add("SCALAR_INDEX_WRITE_UNPROVEN", path,
+                    "scalar-buffer coordinates are admitted only for bounded loads; indexed writes need ownership proof",
+                    FindingCategory.PROGRAM_SAFETY)
+                continue
+            for component in scalar_indices:
+                scalar = buffers.get(component.name)
+                if scalar is not None and scalar.shape != (1,):
+                    out.add("ACCESS_SCALAR_INDEX_SHAPE", path,
+                        f"scalar index {component.name!r} requires [1], got {list(scalar.shape)}", category)
             index_names = tuple(dict.fromkeys(component.name for component in indirect))
             if operation.kind not in {
                 OperationKind.LOAD,
@@ -2036,9 +2067,11 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                                 FindingCategory.PROGRAM_SAFETY,
                             )
 
-            index_buffers = [buffers.get(name) for name in index_names]
+            all_index_buffers = [buffers.get(name) for name in index_names]
+            index_buffers = [buffers.get(component.name) for component in indirect
+                             if component.source is AccessIndexKind.BUFFER]
             known = [item for item in index_buffers if item is not None]
-            if len(known) == len(index_buffers):
+            if index_buffers and len(known) == len(index_buffers):
                 shapes = {item.shape for item in known}
                 if any(len(item.shape) != 1 for item in known):
                     out.add(
@@ -2072,9 +2105,9 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 source = buffer
                 expected_shape: list[int] = []
                 added_index_domain = False
-                shape_known = len(known) == len(index_buffers) and bool(known)
+                shape_known = all(item is not None for item in all_index_buffers)
                 for component in access.indices:
-                    if component.source is AccessIndexKind.PROGRAM:
+                    if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.SCALAR_BUFFER}:
                         continue
                     if component.source is AccessIndexKind.BUFFER:
                         if not added_index_domain and shape_known:
@@ -2112,7 +2145,7 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                             component.span(source.shape[component.dimension])
                         )
                 if staged is not None and shape_known:
-                    if staged.shape != tuple(expected_shape):
+                    if staged.shape != (tuple(expected_shape) or (1,)):
                         out.add(
                             "ACCESS_INDEXED_VALUE_SHAPE",
                             f"operations[{schedule.operations.index(operation)}]."
@@ -2155,7 +2188,7 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
         # it supplies. The dedicated check above derives that shape; the legacy loop
         # below intentionally remains byte-for-byte the path for all existing cases.
         if any(
-            component.source is AccessIndexKind.BUFFER
+            component.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}
             for component in access.indices
         ):
             continue

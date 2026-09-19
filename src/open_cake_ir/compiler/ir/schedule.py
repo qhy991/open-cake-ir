@@ -210,7 +210,7 @@ class Schedule:
                 access = self.access_map(producer.op_id, parent.name)
                 if parent.space is not MemorySpace.GLOBAL or access is None:
                     return None
-                if any(index.source is AccessIndexKind.BUFFER for index in access.indices):
+                if any(index.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER} for index in access.indices):
                     return None
                 vectors = [(position, index) for position, index in enumerate(access.indices)
                            if index.source is not AccessIndexKind.PROGRAM]
@@ -314,7 +314,7 @@ class Schedule:
         axis = 0
         saw_buffer_domain = False
         for component in access.indices:
-            if component.source is AccessIndexKind.PROGRAM:
+            if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.SCALAR_BUFFER}:
                 continue
             if component.source is AccessIndexKind.BUFFER:
                 # All buffer-valued coordinates in one access are zipped over one

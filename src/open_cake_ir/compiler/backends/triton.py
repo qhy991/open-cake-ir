@@ -106,6 +106,9 @@ SCANS: dict[ScanOp, str] = {
 # Dispatch is scope-aware. Position restrictions share these tables with preflight;
 # narrower in-loop effect contracts are checked below before any source is emitted.
 OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
+    OperationKind.COORDINATE: "_emit_coordinate",
+    OperationKind.COMPARE: "_emit_compare",
+    OperationKind.SELECT: "_emit_select",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
@@ -121,6 +124,9 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
 
 INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.STORE: "_emit_store",
+    OperationKind.COORDINATE: "_emit_coordinate",
+    OperationKind.COMPARE: "_emit_compare",
+    OperationKind.SELECT: "_emit_select",
     OperationKind.LOAD: "_emit_load",
     OperationKind.MMA: "_emit_mma",
     OperationKind.REDUCE_ARGMIN: "_emit_argmin",
@@ -223,7 +229,7 @@ def target_route_facts(target: Target) -> dict[str, object]:
 
 def requirements(schedule: Schedule) -> tuple[Finding, ...]:
     """Target-independent requirements shared by Compiler and direct emission."""
-    findings = list(vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS))
+    findings = list(vocabulary_findings(schedule, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS, runtime_values=True))
     findings.extend(python_name_findings(schedule, PYTHON_NAMESPACE))
     for index, loop in enumerate(schedule.tile_loops):
         if loop.range_options.warp_specialize and any(
@@ -329,12 +335,16 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         for index, axis in enumerate(schedule.program_map.axes):
             if axis.is_tiled:
                 arange(0, axis.tile, f"program_map.axes[{index}].tile")
+    for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.COORDINATE and operation.parameters.source == "range":
+            p = operation.parameters
+            arange(p.start, p.start + p.extent, f"operations[{index}].parameters")
     for index, loop in enumerate(schedule.tile_loops):
         arange(0, loop.tile, f"tile_loops[{index}].tile")
     for index, access in enumerate(schedule.access_maps):
         operation = schedule.operation(access.operation)
         if (operation is not None and operation.kind is OperationKind.LOAD
-            and any(component.source is AccessIndexKind.BUFFER for component in access.indices)):
+            and any(component.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER} for component in access.indices)):
             seen_tiles = set()
             for position, component in enumerate(access.indices):
                 if component.source in {AccessIndexKind.PROGRAM_TILE, AccessIndexKind.LOOP_TILE}:
@@ -666,7 +676,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 required.extend(axis.name for axis in schedule.program_map.axes)
             add(
                 destination.mode is BufferMode.OUTPUT
-                and all(component.source is not AccessIndexKind.BUFFER for component in access.indices)
+                and all(component.source not in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER} for component in access.indices)
                 and all(coordinates.count(name) == 1 for name in required),
                 "TRITON_LOOP_STORE_OWNERSHIP",
                 f"operations[{index}]",
@@ -938,7 +948,7 @@ class _TritonEmitter:
         """Pointer expression and mask for one access map."""
 
         if any(
-            component.source is AccessIndexKind.BUFFER
+            component.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}
             for component in access.indices
         ):
             return self._indexed_address(access, pad)
@@ -1026,6 +1036,10 @@ class _TritonEmitter:
             if component.source is AccessIndexKind.PROGRAM:
                 expression = str(component.name)
                 domain = None
+            elif component.source is AccessIndexKind.SCALAR_BUFFER:
+                # A [1] block and a scalar-producing tl.load both normalize to rank zero.
+                expression = f"tl.sum(tl.full((1,), 0, tl.int32) + {component.name}, axis=0)"
+                domain = None
             elif component.source is AccessIndexKind.PROGRAM_TILE:
                 expression = f"{component.name}_offsets"
                 domain = expression
@@ -1084,7 +1098,7 @@ class _TritonEmitter:
                 _require(any(loop.iterator == component.name for loop in self.schedule.tile_loops),
                          f"{expression} indexes an unknown loop")
                 masks.append(f"{coordinate} < {self._extent(buffer.name, position)}")
-            elif component.source is AccessIndexKind.BUFFER:
+            elif component.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}:
                 bound = self._extent(buffer.name, position)
                 masks.append(f"({coordinate} >= 0) & ({coordinate} < {bound})")
 
@@ -1344,6 +1358,8 @@ class _TritonEmitter:
                 _require(result is not None, "a carried reduction has no result buffer")
                 shape = self._state_shape(result)
                 identity = REDUCTIONS[operation.parameters.op].identity.format(shape=shape)
+                if result.dtype is DType.INT32:
+                    identity = identity.replace('float("-inf")', "-2147483648").replace("tl.float32", "tl.int32")
                 self.line(f"{pad}{result.name} = {identity}", declares=(result.name,))
                 self.line()
             elif (
@@ -1497,6 +1513,9 @@ class _TritonEmitter:
         ElementwiseOp.RSQRT: "tl.rsqrt({a})",
         ElementwiseOp.EXP: "tl.exp({a})",
         ElementwiseOp.EXP2: "tl.exp2({a})",
+        ElementwiseOp.LOG2: "tl.log2({a})",
+        ElementwiseOp.FLOOR_DIV: "({a} // {b} - (({a} < 0) & ({a} % {b} != 0)).to(tl.int32))",
+        ElementwiseOp.REMAINDER: "({a} - ({a} // {b} - (({a} < 0) & ({a} % {b} != 0)).to(tl.int32)) * {b})",
         # Spelled as an explicit divide so the emitted body carries no approximation
         # this backend has not measured.
         ElementwiseOp.RECIPROCAL: "1.0 / {a}",
@@ -1517,6 +1536,36 @@ class _TritonEmitter:
         ),
     }
 
+    def _emit_coordinate(self, operation, pad):
+        p = operation.parameters
+        if p.source == "range":
+            expression = f"tl.arange({p.start}, {p.start + p.extent})"
+        elif p.source == "program_tile":
+            tile = self._axis(p.name).tile
+            expression = f"{p.name} * {tile} + tl.arange(0, {tile})"
+        elif p.source == "loop_tile":
+            loop = next(loop for loop in self.schedule.tile_loops if loop.iterator == p.name)
+            expression = f"{p.name} + tl.arange(0, {loop.tile})"
+        else:
+            expression = f"tl.full((1,), {p.name}, tl.int32)"
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{operation.writes[0]} = {expression}", declares=(operation.writes[0],))
+
+    def _emit_compare(self, operation, pad):
+        p = operation.parameters
+        left = operation.reads[0]
+        right = repr(p.scalar) if p.scalar is not None else operation.reads[1]
+        symbol = {"lt": "<", "le": "<=", "eq": "==", "ne": "!=", "gt": ">", "ge": ">="}[p.op]
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{operation.writes[0]} = ({left} {symbol} {right}).to(tl.int32)", declares=(operation.writes[0],))
+
+    def _emit_select(self, operation, pad):
+        p = operation.parameters
+        false_value = ('float("-inf")' if p.false_value == "negative_infinity" else repr(p.false_value)) if p.false_value is not None else operation.reads[2]
+        dtype = self.schedule.buffer(operation.writes[0]).dtype
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(f"{pad}{operation.writes[0]} = tl.where({operation.reads[0]} != 0, {operation.reads[1]}, {false_value}).to({_TL_DTYPE[dtype]})", declares=(operation.writes[0],))
+
     def _emit_elementwise(self, operation, pad: str) -> None:
         """One arithmetic primitive, written once per backend rather than per operator.
 
@@ -1528,7 +1577,8 @@ class _TritonEmitter:
         parameters = operation.parameters
         operands = [self._operand(name, operation) for name in operation.reads]
         if parameters.scalar is not None:
-            operands.append(repr(parameters.scalar))
+            integer = self.schedule.buffer(operation.writes[0]).dtype is DType.INT32
+            operands.append(repr(int(parameters.scalar) if integer else parameters.scalar))
         if parameters.op is ElementwiseOp.FMA:
             instruction = parameters.instruction
             _require(
@@ -1592,6 +1642,8 @@ class _TritonEmitter:
             and operation.parameters.across_loop
         )
         template = reduction.accumulate if carried else reduction.once
+        if source.dtype is DType.INT32:
+            template = template.replace("tl.float32", "tl.int32")
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(
             pad

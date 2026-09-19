@@ -45,9 +45,17 @@ from .vocabulary import (
 ELEMENTWISE_FLOAT_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32})
 
 
-def elementwise_result_dtype(operands: Iterable[DType]) -> DType | None:
+INT_ARITHMETIC = frozenset({ElementwiseOp.ADD, ElementwiseOp.SUB, ElementwiseOp.MUL,
+                            ElementwiseOp.FLOOR_DIV, ElementwiseOp.REMAINDER})
+
+
+def elementwise_result_dtype(operands: Iterable[DType], op: ElementwiseOp | None = None) -> DType | None:
     """The canonical arithmetic promotion shared by construction and verification."""
     dtypes = set(operands)
+    if dtypes == {DType.INT32} and op in INT_ARITHMETIC:
+        return DType.INT32
+    if op in {ElementwiseOp.FLOOR_DIV, ElementwiseOp.REMAINDER}:
+        return None
     if not dtypes or not dtypes <= ELEMENTWISE_FLOAT_DTYPES:
         return None
     if len(dtypes) == 1:
@@ -382,6 +390,25 @@ class ElementwiseParameters:
 
 
 @dataclass(frozen=True)
+class CoordinateParameters:
+    source: str
+    name: str | None = None
+    start: int = 0
+    extent: int = 1
+
+
+@dataclass(frozen=True)
+class CompareParameters:
+    op: str
+    scalar: int | float | None = None
+
+
+@dataclass(frozen=True)
+class SelectParameters:
+    false_value: int | float | str | None = None
+
+
+@dataclass(frozen=True)
 class StoreParameters:
     coalesced: bool
 
@@ -392,6 +419,7 @@ class FenceProxyParameters:
 
 
 OperationParameters = Union[
+    CoordinateParameters, CompareParameters, SelectParameters,
     LoadParameters,
     MmaParameters,
     EpilogueParameters,
@@ -412,6 +440,35 @@ OperationParameters = Union[
 def _operation_parameters(
     kind: OperationKind, value: Any, context: str
 ) -> OperationParameters:
+    if kind is OperationKind.COORDINATE:
+        if not isinstance(value, dict):
+            raise ScheduleParseError(f"{context} must be an object")
+        source = value.get("source")
+        if source == "range":
+            obj = _strict_object(value, required={"source", "start", "extent"}, context=context)
+            start = _nonnegative_int(obj["start"], f"{context}.start")
+            extent = _positive_int(obj["extent"], f"{context}.extent")
+            if start + extent > 2**31 - 1:
+                raise ScheduleParseError(f"{context} coordinate exceeds INT32")
+            return CoordinateParameters(source, start=start, extent=extent)
+        if source not in {"program", "program_tile", "loop", "loop_tile"}:
+            raise ScheduleParseError(f"{context}.source is unsupported")
+        obj = _strict_object(value, required={"source", "name"}, context=context)
+        return CoordinateParameters(source, name=_string(obj["name"], f"{context}.name"))
+    if kind is OperationKind.COMPARE:
+        obj = _strict_object(value, required={"op"}, optional={"scalar"}, context=context)
+        if obj["op"] not in {"lt", "le", "eq", "ne", "gt", "ge"}:
+            raise ScheduleParseError(f"{context}.op is unsupported")
+        scalar = obj.get("scalar")
+        if "scalar" in obj and type(scalar) not in {int, float}:
+            raise ScheduleParseError(f"{context}.scalar must be a number")
+        return CompareParameters(obj["op"], scalar)
+    if kind is OperationKind.SELECT:
+        obj = _strict_object(value, required=set(), optional={"false_value"}, context=context)
+        fallback = obj.get("false_value")
+        if "false_value" in obj and (type(fallback) not in {int, float} and fallback != "negative_infinity"):
+            raise ScheduleParseError(f"{context}.false_value must be a number or negative_infinity")
+        return SelectParameters(fallback)
     if kind is OperationKind.LOAD:
         obj = _strict_object(
             value,

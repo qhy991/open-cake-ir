@@ -235,6 +235,14 @@ _PARAMETERS = {
             "sentinel": {"type": "integer"},
         }
     ),
+    OperationKind.COORDINATE: {"oneOf": [
+        _object({"source": {"enum": ["program", "program_tile", "loop", "loop_tile"]}, "name": {"type": "string"}}),
+        _object({"source": {"const": "range"}, "start": _NONNEGATIVE, "extent": _POSITIVE}),
+    ]},
+    OperationKind.COMPARE: _object({"op": {"enum": ["lt", "le", "eq", "ne", "gt", "ge"]}},
+                                  {"scalar": {"type": "number"}}),
+    OperationKind.SELECT: _object({}, {"false_value": {"anyOf": [
+        {"type": "number"}, {"const": "negative_infinity"}]}}),
     OperationKind.CAST: _object({"to": _enum(DType)}),
     OperationKind.ATOMIC_RMW: _object(
         {

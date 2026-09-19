@@ -31,7 +31,10 @@
     "cast",
     "elementwise",
     "scan",
-    "store"
+    "store",
+    "coordinate",
+    "compare",
+    "select"
   ],
   "warp_size": 32,
   "resource_limits": {

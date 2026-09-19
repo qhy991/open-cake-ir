@@ -69,6 +69,9 @@ class OperationKind(str, Enum):
     INDEX_EXPAND = "index_expand"
     ONLINE_SOFTMAX = "online_softmax"
     ATOMIC_RMW = "atomic_rmw"
+    COORDINATE = "coordinate"
+    COMPARE = "compare"
+    SELECT = "select"
     CAST = "cast"
     ELEMENTWISE = "elementwise"
     SCAN = "scan"
@@ -177,6 +180,9 @@ class ElementwiseOp(str, Enum):
     # transcendental-bound epilogue is otherwise forced to spell as exp and div.
     # Three tasks reached for them before this vocabulary admitted either.
     EXP2 = "exp2"
+    LOG2 = "log2"
+    FLOOR_DIV = "floor_div"
+    REMAINDER = "remainder"
     RECIPROCAL = "reciprocal"
     RELU = "relu"
     TANH = "tanh"
@@ -198,6 +204,7 @@ class ElementwiseOp(str, Enum):
                 ElementwiseOp.RSQRT,
                 ElementwiseOp.EXP,
                 ElementwiseOp.EXP2,
+                ElementwiseOp.LOG2,
                 ElementwiseOp.RECIPROCAL,
                 ElementwiseOp.RELU,
                 ElementwiseOp.TANH,
@@ -280,6 +287,7 @@ class AccessIndexKind(str, Enum):
     LOOP_TILE = "loop_tile"
     DIMENSION = "dimension"
     BUFFER = "buffer"
+    SCALAR_BUFFER = "scalar_buffer"
 
 
 class BoundaryPolicy(str, Enum):

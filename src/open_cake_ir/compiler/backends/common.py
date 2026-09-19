@@ -53,7 +53,8 @@ TORCH_DTYPES = {
 
 
 def vocabulary_findings(
-    schedule: Schedule, dtypes: frozenset[DType], operation_kinds: frozenset[OperationKind]
+    schedule: Schedule, dtypes: frozenset[DType], operation_kinds: frozenset[OperationKind],
+    *, runtime_values: bool = False
 ) -> tuple[Finding, ...]:
     """Check the representations each concrete backend actually implements."""
     backend = schedule.lowering.backend.value
@@ -70,6 +71,24 @@ def vocabulary_findings(
                 "BACKEND_OPERATION_UNEMITTABLE", f"operations[{index}].kind",
                 f"backend {backend!r} has no body for operation kind {operation.kind.value!r}",
             ))
+    if not runtime_values:
+        for index, access in enumerate(schedule.access_maps):
+            if any(component.source.value == "scalar_buffer" for component in access.indices):
+                findings.append(refusal("BACKEND_ACCESS_INDEX_UNSUPPORTED", f"access_maps[{index}]",
+                    f"backend {backend!r} has no scalar-buffer addressing implementation"))
+        for index, operation in enumerate(schedule.operations):
+            if operation.kind.value == "elementwise" and (
+                operation.parameters.op.value in {"log2", "floor_div", "remainder"}
+                or any(schedule.buffer(name) is not None and schedule.buffer(name).dtype is DType.INT32
+                       for name in operation.writes)):
+                findings.append(refusal("BACKEND_ARITHMETIC_UNSUPPORTED", f"operations[{index}]",
+                    f"backend {backend!r} has no body for this typed arithmetic"))
+            if operation.kind.value == "cast" and any(schedule.buffer(name) is not None and schedule.buffer(name).dtype is DType.FP8_E4M3 for name in (*operation.reads, *operation.writes)):
+                findings.append(refusal("BACKEND_CAST_UNSUPPORTED", f"operations[{index}]",
+                    f"backend {backend!r} has no explicit FP8 conversion implementation"))
+            if operation.kind.value == "reduce" and any(schedule.buffer(name) is not None and schedule.buffer(name).dtype is DType.INT32 for name in operation.reads):
+                findings.append(refusal("BACKEND_REDUCTION_UNSUPPORTED", f"operations[{index}]",
+                    f"backend {backend!r} has no exact INT32 reduction implementation"))
     return tuple(findings)
 
 
