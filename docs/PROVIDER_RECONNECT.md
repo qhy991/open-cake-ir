@@ -21,8 +21,11 @@ raw stream, and all reported input/output tokens remain charged.
 This does not retry a provider invocation, resume a failed campaign, or assert
 that a proxy is reliable. CPU counterexamples cover fatal errors, failed and
 truncated turns, missing file events, invalid candidates and ambiguous JSON.
-Precise replay of the remote failure and a fresh two-turn live qualification
-remain required before closing the Finding or claiming a qualified deployment.
+At commit `1b51db28`, precise replay of the remote failure preserved all original
+events and token accounting and matched the frozen candidate plan. A fresh
+two-turn live qualification also passed on B300-M3 through the jump proxy; the
+Finding records both external evidence paths. This verifies the bounded adapter
+repair, without changing the old failure or establishing network reliability.
 
 Upstream references: [JSONL event documentation](https://developers.openai.com/codex/noninteractive),
 and `openai/codex` tag `rust-v0.153.4`,

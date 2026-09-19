@@ -24,7 +24,16 @@
   "proposed_change": "For tool_rich_candidate_v1 only, recognize the observed bounded Reconnecting... n/5 stream-disconnected notice and retain an indexed auxiliary projection. Continue to reject arbitrary/fatal errors, malformed notices, failed or incomplete turns, incomplete item lifecycles, wrong terminals and invalid candidates. Preserve original raw JSONL and token accounting. Do not launch another provider call as a substitute for deterministic replay.",
   "decision": "accepted",
   "implemented_in": "0e3c0f8777de9c569cdc03545f2e8a14c512e0bc",
-  "verified_by": null,
+  "verified_by": {
+    "source_commit": "1b51db289ab2ac7387874619295e598721b8e377",
+    "exact_replay": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/reconnect-replay-20260920.json",
+    "replay_result": "Original 19-event stdout retained unchanged; candidate equals the frozen first-turn plan; duplicate_exact_bracketed with three terminal messages; jsonl:10 retained as transport_reconnect/recovered; 155220 provider tokens retained. Original failed qualification remains failed.",
+    "successor_workspace": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/reconnect-qualification-20260920",
+    "successor_run": "evidence/runs/recovered-stream-successor",
+    "successor_events": [0, 1],
+    "successor_result": "receipt.json: qualified=true, scope=live_two_turn_tool_rich_provider, initial_and_resume_equivalent=true, file_lifecycle_observed=true, usage_observed=true; qualifier reports integrity=true. Codex CLI 0.153.4, gpt-5.6-sol, high reasoning, through the jump proxy.",
+    "scope": "Protocol repair verified by exact original replay and fresh live qualification. No network-reliability or kernel-performance claim."
+  },
   "partial_verification": {
     "source_commit": "1b51db289ab2ac7387874619295e598721b8e377",
     "contract_tests_passed": 103,
