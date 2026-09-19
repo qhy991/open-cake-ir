@@ -12,14 +12,25 @@
     "workspace": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/rmsnorm-h2048-github-m3-20260919-r2",
     "run": "qualification-evidence/runs/task-provider-qualification",
     "event": 0,
-    "roles": ["provider_stdout", "provider_stderr"],
+    "roles": [
+      "provider_stdout",
+      "provider_stderr"
+    ],
     "indices": "The 19 stdout events include one thread.started, one turn.started, an error at index 10 saying Reconnecting... 2/5 (stream disconnected before completion: IO error: peer closed connection without sending TLS close_notify...), and one turn.completed at index 18. Indices 2, 3 and 17 carry the same terminal JSON; the file write follows the notice. Indices are zero-based.",
     "prior_read_only_review": "/Users/haiyan/Documents/cake-experiments/rmsnorm-h2048-walkthrough-20260919/run-m3-002/review-network-and-protocol.md",
     "upstream": "openai/codex rust-v0.153.4, codex-rs/exec/src/event_processor_with_jsonl_output.rs: ServerNotification::Error emits a top-level error and stays Running; TurnStatus::Completed independently emits turn.completed. The exec_events.rs comment calling every top-level error unrecoverable is insufficient to describe the observed recovered stream."
   },
   "observation": "The adapter reaches parsing after a zero process exit, but its admitted top-level event set excludes error. An in-memory diagnostic replay excluding only that event parsed with duplicate_exact_bracketed, and the candidate matched the first-turn qualification plan. Neither that replay nor the output file establishes two-turn qualification. The original failed run remains failed. The remote raw artifacts are currently inaccessible because SSH to the jump host is down.",
   "proposed_change": "For tool_rich_candidate_v1 only, recognize the observed bounded Reconnecting... n/5 stream-disconnected notice and retain an indexed auxiliary projection. Continue to reject arbitrary/fatal errors, malformed notices, failed or incomplete turns, incomplete item lifecycles, wrong terminals and invalid candidates. Preserve original raw JSONL and token accounting. Do not launch another provider call as a substitute for deterministic replay.",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null
+  "decision": "accepted",
+  "implemented_in": "0e3c0f8777de9c569cdc03545f2e8a14c512e0bc",
+  "verified_by": null,
+  "partial_verification": {
+    "source_commit": "1b51db289ab2ac7387874619295e598721b8e377",
+    "contract_tests_passed": 103,
+    "corpus_cases": 164,
+    "corpus_expectations_changed": false,
+    "scope": "Synthetic positive and adversarial protocol fixtures, native invocation/qualification regression tests, and comparison input checks. No provider call or GPU execution.",
+    "remaining": "Replay the exact retained remote provider_stdout plus candidate after SSH recovery, then perform a new two-turn qualification. verified_by remains null; the original failure has not been reclassified."
+  }
 }
