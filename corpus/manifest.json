@@ -2146,6 +2146,83 @@
         "schedule_sha256": "0b8ef1f5a956971b333210f5af094117d15b55d9f0ad5083640974a11a9f35ba",
         "lowering_source_sha256": "062e687d39c3941cd0551811435ad3326999ea6b2c654e64b871d900a35c97cf"
       }
+    },
+    {
+      "case_id": "runtime-values-b300-accepted",
+      "schedule": "corpus/schedules/runtime-values-b300-accepted.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [],
+        "schedule_sha256": "550e5b835b9a543bb17081652201847cedc4bead79e1ea24e7a2332d5bcb6a37",
+        "lowering_source_sha256": "a13c40fc93761eb7d0e157793576eaf693cad09ea48d7306e29f8d8876a10b51"
+      }
+    },
+    {
+      "case_id": "runtime-values-b300-float-index",
+      "schedule": "corpus/schedules/runtime-values-b300-float-index.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "ACCESS_INDEX_BUFFER_DTYPE",
+          "ELEMENTWISE_RESULT_DTYPE"
+        ],
+        "schedule_sha256": "00335686e043eab73f3e46c199a05986b59a4a66d1b46a7d3d424dcdf87a8766",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "runtime-values-b300-scalar-store",
+      "schedule": "corpus/schedules/runtime-values-b300-scalar-store.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "SCALAR_INDEX_WRITE_UNPROVEN"
+        ],
+        "schedule_sha256": "cee1a5a113b1349e7ace7f35c64fe21fb7c02dfdaca21b0647167a89d1d6e253",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "runtime-values-b300-zero-divisor",
+      "schedule": "corpus/schedules/runtime-values-b300-zero-divisor.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "INTEGER_DIVISOR_INVALID"
+        ],
+        "schedule_sha256": "a632446e13cfef9d704394aed81f24e784c03faa5940de2d77d9ea40532a5238",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "runtime-values-b300-unknown-coordinate",
+      "schedule": "corpus/schedules/runtime-values-b300-unknown-coordinate.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "VALUE_OPERATION_TYPE"
+        ],
+        "schedule_sha256": "7b9303d39f4da7e41c3263d354f1c64400724d00d315d8686578363f252f2f83",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "runtime-values-b300-float-predicate",
+      "schedule": "corpus/schedules/runtime-values-b300-float-predicate.json",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "VALUE_OPERATION_TYPE"
+        ],
+        "schedule_sha256": "5712410642e0db772ac202826dc0a38a6e6b55e4dc169a468d1bc83ecf6cca25",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }
