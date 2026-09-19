@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-20-001",
+  "kind": "bug",
+  "date": "2026-09-20",
+  "title": "Shape-preserving casts hide the K axis from MMA carry analysis",
+  "backend": "triton",
+  "target": "sm_103a; shared query also exercised on sm_100a",
+  "compiler_revision_id": "open-cake-ir@b4948b61",
+  "executor_revision": "none; static probes and CPU source execution only",
+  "evidence": {
+    "workspace": "/Users/haiyan/Documents/cake-experiments/collection-audit-b4948b61/gemm-dot-probes",
+    "record": "report.json",
+    "cases": "All eight fib_gemm tasks have a direct FP16 probe and an explicit FP16-to-FP32 plus tf32-dot probe. The former is correctly refused by TARGET_INSTRUCTION_UNSUPPORTED. The latter is refused by BUFFER_ESCAPES_LOOP for acc, although both loads walk the contraction K axis.",
+    "replay": "tests/contracts/test_cast_contraction_provenance.py"
+  },
+  "observation": "Schedule._staged_axis_filled_by only looks for an access map on the immediate producer. A cast has no access map, so inserting shape-preserving casts between loads and MMA makes mma_accumulates_over return false. Both the register-lifetime verifier and emitter consume that query. Removing the lifetime guard alone would be wrong: the emitter would also lose the carry. Eight task probes share this same cause; they are not eight independent performance observations.",
+  "proposed_change": "Trace a unique, shape-preserving cast chain back to its producer before querying the existing access map. Refuse to prove cyclic, ambiguous or shape-changing chains. Preserve the output-axis distinction. Check CPU execution of the emitted K-loop with tails and cast chains; retain all target admission gates and Corpus expectations. The bounded nested backend gate remains a separate capability limit.",
+  "principles": "P1/P3: no new syntax or accumulate flag. P2/P8: explicit casts retain their semantics and only preserve coordinates. P4/P5/P7: construction and dtype checks stay with their owners, while the shared provenance query updates verifier and emitter together. P6: regression tests and unchanged Corpus Gate.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

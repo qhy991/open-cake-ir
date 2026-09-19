@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-20-001 — shape-preserving casts hide a loaded operand's K axis from MMA carry analysis; eight FP16-to-FP32 GEMM probes are refused by BUFFER_ESCAPES_LOOP. The query is shared by lifetime verification and emission, so both need the same coordinate proof (bug, proposed; no GPU or performance claim).
+
 - F-2026-09-17-001 — a non-power-of-two row width closes every lowering route for RMSNorm on sm_103a: the whole row hits Triton's arange power-of-two rule, the tiled two-pass hits its loop-nest rule (siblings at depth [0,0] where it requires a [0,1] nest), and native_cuda declares reduce_argmin but not reduce; h2048 and h4096 produce eight accepted Schedules and h7168 produces five refusals (capacity, proposed; a lowering gap, not a vocabulary one -- the arange rule is faithful and stays)
 - F-2026-09-16-013 — the eight FIB GEMM tasks are a dispatcher corpus: 699 of 707 kernel-plus-library candidates branch on M in code, and at n=6144/n=28672 the branch hides authored kernels measuring 0.35x/0.44x behind a library path reporting 1.14x/1.05x (behavior, proposed; contributes no IR requirement because its dominant pattern is correctly inexpressible)
 - F-2026-09-16-012 — a third of the audit's 1,839 GPU evaluations report only 'no trace produced' while the real nvcc error sits above that line in the same stderr (464 of 612); a quarter of those are the harness's own contract, including a hardcoded '::run' entry symbol that breaks exactly the three tasks declaring 'forward' (protocol, proposed)
