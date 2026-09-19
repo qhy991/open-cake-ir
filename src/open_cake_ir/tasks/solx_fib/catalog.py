@@ -3,7 +3,7 @@
 Names are the pack join keys in the retained FlashInfer round-one inventory.
 Listing a task here does not register a Workload, an oracle or a device qualification.
 """
-from . import gemm, workload
+from . import attention, gemm, moe, workload
 
 TASK_IDS = (
     '001_fused_add_rmsnorm_h2048',
@@ -43,4 +43,8 @@ def task_owner(task_id: str):
         return name, workload
     if name in gemm.TASKS:
         return name, gemm
+    if name in attention.TASKS:
+        return name, attention
+    if name in moe.TASKS:
+        return name, moe
     return name, None

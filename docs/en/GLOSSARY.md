@@ -172,6 +172,10 @@ A candidate qualified under a frozen narrow confirmatory scope that may support 
 
 A sealed candidate with exact target, entry, launch description, and complete role-tagged artifacts, admitted to common Evaluation. A filename alone is insufficient.
 
+### Launch Plan
+
+An immutable ordered composition of complete Cake Schedules with explicit public ABI, intermediate tensors and bindings. Evaluation owns allocation and same-device/stream launch order; all task mathematics stays in generated kernels. Types, single producers and disjoint storage are checked before launch.
+
 ### Evaluation Protocol
 
 Workload-owned assays referenced by the Study, including rows, purposes, and correctness before timing. It does not define scientific analysis.

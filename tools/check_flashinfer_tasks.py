@@ -14,6 +14,7 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.tasks.solx_fib.catalog import TASK_IDS, task_owner
 from open_cake_ir.tasks.workloads import create_task
+from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.source_identity import checkout_commit
 
 
@@ -26,6 +27,19 @@ def check(backend: str) -> dict:
         row = {"task_id": task_id, "task": task, "device_test": "not_run"}
         if owner is None:
             row.update(status="not_integrated", reason="no_task_contract_oracle_or_starter")
+        elif hasattr(owner, 'author_plan'):
+            try:
+                variants = []
+                for variant in owner.VARIANTS:
+                    workload = WorkloadContract(owner.workload_document(task, variant=variant))
+                    plan = owner.launch_plan(workload)
+                    compiled = plan.compile(compiler)
+                    variants.append({'variant': variant, 'workload_id': workload.workload_id,
+                                     'stages': len(compiled.lowerings)})
+                row.update(status='offline_lowering_passed', route='cake_launch_plan', variants=variants,
+                           target=plan.target)
+            except ValueError as error:
+                row.update(status='refused', reason=str(error))
         else:
             spec = owner.SPECS[task]
             rows = owner.default_rows(task) if hasattr(owner, "default_rows") else min(spec["batches"])

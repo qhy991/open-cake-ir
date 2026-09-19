@@ -467,7 +467,7 @@ class TensorLaunchManifest(WorkloadTensorManifest):
             or not isinstance(document['case_id'], str) or not document['case_id']
             or not isinstance(rows, list) or not rows):
             raise ValueError('Workload tensor launch identity differs')
-        abi = tensor_abi_rows(rows, dtypes=frozenset({'fp32', 'bf16', 'fp16', 'int32'}),
+        abi = tensor_abi_rows(rows, dtypes=frozenset({'fp32', 'bf16', 'fp16', 'fp8_e4m3', 'int32'}),
                               ascii_names=False,
                               row_error='Workload tensor launch ABI differs',
                               order_error='Workload tensor launch ABI order differs')
@@ -498,7 +498,7 @@ class TensorLaunchManifest(WorkloadTensorManifest):
 
     @property
     def tensors(self) -> tuple[tuple[str, tuple[int, ...], str], ...]:
-        dtypes = {'fp32': 'torch.float32', 'bf16': 'torch.bfloat16', 'fp16': 'torch.float16', 'int32': 'torch.int32'}
+        dtypes = {'fp32': 'torch.float32', 'bf16': 'torch.bfloat16', 'fp16': 'torch.float16', 'fp8_e4m3': 'torch.float8_e4m3fn', 'int32': 'torch.int32'}
         return tuple((name, shape, dtypes[dtype]) for name, shape, dtype, _ in self.tensor_abi)
 
     def as_dict(self) -> dict[str, object]:
@@ -521,7 +521,7 @@ def compare_tile_outputs(workload, before, expected, observed, after):
             raise ValueError('per-output comparison must cover every output exactly')
         for rule in comparisons.values():
             if (not isinstance(rule, Mapping) or set(rule) != {'comparison', 'atol', 'rtol'}
-                or rule['comparison'] not in {'bitwise_bf16', 'elementwise_atol_rtol'}
+                or rule['comparison'] not in {'bitwise_bf16', 'elementwise_atol_rtol', 'elementwise_atol_rtol_ieee'}
                 or any(type(rule[k]) not in {int, float} or not math.isfinite(rule[k]) or rule[k] < 0
                        for k in ('atol', 'rtol'))
                 or (rule['comparison'] == 'bitwise_bf16' and (rule['atol'] != 0 or rule['rtol'] != 0))):
@@ -538,9 +538,16 @@ def compare_tile_outputs(workload, before, expected, observed, after):
                 mismatch += 1
                 continue
             for value, reference in zip(actual, values, strict=True):
-                if (not isinstance(value, (float, int)) or isinstance(value, bool)
-                    or not -3.4028234663852886e38 <= value <= 3.4028234663852886e38
-                    or not math.isfinite(value)):
+                if any(not isinstance(v, (float,int)) or isinstance(v,bool) for v in (value,reference)):
+                    mismatch += 1
+                    continue
+                if not math.isfinite(value) or not math.isfinite(reference):
+                    matches = (rule['comparison'] == 'elementwise_atol_rtol_ieee' and
+                               ((math.isnan(value) and math.isnan(reference)) or
+                                (math.isinf(value) and value == reference)))
+                    mismatch += not matches
+                    continue
+                if not -3.4028234663852886e38 <= value <= 3.4028234663852886e38:
                     mismatch += 1
                     continue
                 error = abs(value - reference)
@@ -587,7 +594,13 @@ class LoadedTorchTensorCandidate:
         self.manifest = manifest
         self.admission = admission
         self.inputs = {name: list(values) for name, values in inputs.items()}
-        dtypes = {'fp32': torch.float32, 'bf16': torch.bfloat16, 'fp16': torch.float16, 'int32': torch.int32}
+        dtype_names = {'fp32': 'float32', 'bf16': 'bfloat16', 'fp16': 'float16',
+                       'fp8_e4m3': 'float8_e4m3fn', 'int32': 'int32'}
+        dtypes = {}
+        for _, _, dtype, _ in manifest.tensor_abi:
+            if not hasattr(torch, dtype_names[dtype]):
+                raise ValueError(f'framework cannot name required tensor dtype {dtype!r}')
+            dtypes[dtype] = getattr(torch, dtype_names[dtype])
         # `cuda:0` is torch's device string for both runtimes: a ROCm build keeps the
         # `torch.cuda` namespace and maps it onto HIP. It reads like a vendor leak and is
         # not one, so it is left alone rather than aliased into a second spelling.

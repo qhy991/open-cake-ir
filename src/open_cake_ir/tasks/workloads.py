@@ -28,6 +28,7 @@ from .contraction import workload as contraction_math
 from .contraction.authoring import starter_source as contraction_starter_source
 from .aka_v3 import workload as aka_v3_math
 from .deepseek_v4 import workload as deepseek_v4_math
+from .solx_fib import attention as solx_fib_attention, moe as solx_fib_moe
 from .solx_fib import gemm as solx_fib_gemm
 from .solx_fib import workload as solx_fib_math
 from .solx_fib.authoring import starter_source as solx_fib_starter_source
@@ -63,6 +64,8 @@ _TASKS = {
        for operator, _ in contraction_math.TASKS.values()},
     # SoL-ExecBench, FlashInfer-Bench definitions. The `solx_fib_` prefix is the upstream
     # authority; the SOL-ExecBench L1 subset registers separately under `solx_l1_`.
+    **{operator: (module.validate_contract, WorkloadContract)
+       for module in (solx_fib_attention, solx_fib_moe) for operator, _ in module.TASKS.values()},
     **{operator: (solx_fib_gemm.validate_contract, WorkloadContract)
        for operator, _ in solx_fib_gemm.TASKS.values()},
     **{operator: (solx_fib_math.validate_solx_fib_contract, WorkloadContract)

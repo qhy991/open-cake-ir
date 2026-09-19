@@ -108,3 +108,27 @@ class RuntimeIndexValues(unittest.TestCase):
         assessment = self.compiler.assess(parse(source).document)
         self.assertEqual(assessment.findings, ())
         self.compiler.lower(assessment)
+
+
+class ExactIntegerValues(unittest.TestCase):
+    def test_integral_float_literals_do_not_promote_integer_comparison(self):
+        source = """from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="large-int", target="sm_103a", backend="triton", entry_point="run")
+def candidate(lm, x: cake.Tensor((4,), "int32"), y: cake.Tensor((4,), "int32", mode="output")):
+    block = lm.program(y, axis=0, dimension=0, tile=4)
+    compute = lm.role(execution_groups=[0])
+    with compute:
+        values = lm.load(x[block])
+        chosen = lm.compare(values, 16777217.0, op="eq")
+        result = lm.select(chosen, values, 16777217.0)
+        lm.store(y[block], result, coalesced=False)
+"""
+        compiler=Compiler.load(ROOT,ROOT/'compiler/revision.json')
+        assessment=compiler.assess(parse(source).document)
+        self.assertEqual(assessment.findings,())
+        generated=compiler.lower(assessment).source
+        self.assertIn('values == 16777217)',generated)
+        self.assertIn('values, 16777217).to(tl.int32)',generated)
+        scan=source.replace('chosen = lm.compare(values, 16777217.0, op="eq")',
+                            'chosen = lm.scan(values, op="sum", axis=0)')
+        self.assertIn('SCAN_DTYPE_MISMATCH',{f.code for f in compiler.assess(parse(scan).document).findings})

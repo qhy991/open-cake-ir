@@ -5,7 +5,8 @@ belong here. Each kernel's computation remains visible in its complete Schedule.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from threading import Lock
 from types import MappingProxyType
 from collections.abc import Mapping, Callable
 import json
@@ -152,7 +153,7 @@ class CompiledLaunchPlan:
     lowerings: tuple
 
     def prepare(self, inputs: Mapping[str, object], *, allocate: Callable,
-                load_kernel: Callable, check_tensor: Callable):
+                load_kernel: Callable, check_tensor: Callable, storage_span: Callable, execution_context: Callable):
         """Bind all storage before timing. The caller supplies platform-owned adapters.
 
         allocate(name, PlanTensor), check_tensor(tensor, PlanTensor), and
@@ -166,8 +167,15 @@ class CompiledLaunchPlan:
             if name not in buffers:
                 buffers[name] = allocate(name, spec)
             check_tensor(buffers[name], spec)
-        if len({id(tensor) for tensor in buffers.values()}) != len(buffers):
-            raise ValueError('launch plan storage objects must not alias')
+        spans = []
+        for name, tensor in buffers.items():
+            device, start, end = storage_span(tensor)
+            if type(start) is not int or type(end) is not int or not 0 < start < end:
+                raise ValueError('launch plan requires exact nonempty storage byte intervals')
+            if any(device == other_device and start < other_end and other_start < end
+                   for other_device, other_start, other_end in spans):
+                raise ValueError(f'launch plan storage for {name!r} overlaps another tensor')
+            spans.append((device, start, end))
         calls = []
         for stage, lowering in zip(self.plan.stages, self.lowerings, strict=True):
             if lowering.target != self.plan.target or not lowering.generated:
@@ -179,7 +187,7 @@ class CompiledLaunchPlan:
             kernel = load_kernel(stage.name, lowering)
             calls.append((kernel, arguments, outputs[0] if len(outputs)==1 else outputs))
         return PreparedLaunchPlan(tuple(calls), MappingProxyType({name:buffers[name] for name in self.plan.outputs}),
-                                  MappingProxyType(buffers))
+                                  MappingProxyType(buffers), execution_context, execution_context())
 
 
 @dataclass
@@ -187,11 +195,19 @@ class PreparedLaunchPlan:
     calls: tuple
     outputs: Mapping[str, object]
     buffers: Mapping[str, object]
+    execution_context: Callable
+    bound_context: object
     launch_calls: int = 0
+    _lock: object = field(default_factory=Lock, repr=False)
 
     def run(self):
         """One invocation contains every ordered stage; no task work on the host."""
-        for kernel, inputs, outputs in self.calls:
-            kernel(**inputs, out=outputs)
-            self.launch_calls += 1
-        return self.outputs
+        with self._lock:
+            for kernel, inputs, outputs in self.calls:
+                if self.execution_context() != self.bound_context:
+                    raise ValueError('launch plan execution device/stream changed')
+                kernel(**inputs, out=outputs)
+                self.launch_calls += 1
+            if self.execution_context() != self.bound_context:
+                raise ValueError('launch plan execution device/stream changed')
+            return self.outputs

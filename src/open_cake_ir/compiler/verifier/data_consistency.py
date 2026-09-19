@@ -1260,8 +1260,8 @@ def _verify_operation_shape(
         axis = operation.parameters.axis
         if source is not None and result is not None:
             if (
-                source.dtype not in (_ELEMENTWISE_FLOAT_DTYPES | {DType.INT32})
-                or result.dtype is not (DType.INT32 if source.dtype is DType.INT32 else DType.FP32)
+                source.dtype not in _ELEMENTWISE_FLOAT_DTYPES
+                or result.dtype is not DType.FP32
             ):
                 out.add(
                     "SCAN_DTYPE_MISMATCH",
@@ -1602,7 +1602,7 @@ def _verify_operation_shape(
                     "REDUCE_DTYPE_MISMATCH",
                     f"{path}.writes",
                     f"{operation.parameters.op.value} reduces bf16/fp16/fp32 into "
-                    f"fp32, but {source.name!r} is {source.dtype.value} and "
+                    f"fp32, or int32 into int32, but {source.name!r} is {source.dtype.value} and "
                     f"{result.name!r} is {result.dtype.value}",
                     category,
                 )
@@ -2145,7 +2145,8 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                             component.span(source.shape[component.dimension])
                         )
                 if staged is not None and shape_known:
-                    if staged.shape != (tuple(expected_shape) or (1,)):
+                    expected_shape = expected_shape or [1]
+                    if staged.shape != tuple(expected_shape):
                         out.add(
                             "ACCESS_INDEXED_VALUE_SHAPE",
                             f"operations[{schedule.operations.index(operation)}]."

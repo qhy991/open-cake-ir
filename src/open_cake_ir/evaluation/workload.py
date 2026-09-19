@@ -179,7 +179,7 @@ class WorkloadContract:
                 ):
                     raise ValueError(f"workload tensor {name} has an unresolved shape")
                 dtype = tensor.get("dtype")
-                if not isinstance(dtype, str) or dtype not in {"fp32", "bf16", "fp16", "int32"}:
+                if not isinstance(dtype, str) or dtype not in {"fp32", "bf16", "fp16", "fp8_e4m3", "int32"}:
                     raise ValueError(f"workload tensor {name} dtype is unsupported")
                 if tensor.get("layout") != "contiguous_row_major":
                     raise ValueError(f"workload tensor {name} must be contiguous row major")

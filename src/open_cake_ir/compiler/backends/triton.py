@@ -1554,7 +1554,8 @@ class _TritonEmitter:
     def _emit_compare(self, operation, pad):
         p = operation.parameters
         left = operation.reads[0]
-        right = repr(p.scalar) if p.scalar is not None else operation.reads[1]
+        integer = self.schedule.buffer(operation.reads[0]).dtype is DType.INT32
+        right = repr(int(p.scalar) if integer else p.scalar) if p.scalar is not None else operation.reads[1]
         symbol = {"lt": "<", "le": "<=", "eq": "==", "ne": "!=", "gt": ">", "ge": ">="}[p.op]
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}{operation.writes[0]} = ({left} {symbol} {right}).to(tl.int32)", declares=(operation.writes[0],))
@@ -1563,6 +1564,8 @@ class _TritonEmitter:
         p = operation.parameters
         false_value = ('float("-inf")' if p.false_value == "negative_infinity" else repr(p.false_value)) if p.false_value is not None else operation.reads[2]
         dtype = self.schedule.buffer(operation.writes[0]).dtype
+        if p.false_value is not None and dtype is DType.INT32:
+            false_value = repr(int(p.false_value))
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
         self.line(f"{pad}{operation.writes[0]} = tl.where({operation.reads[0]} != 0, {operation.reads[1]}, {false_value}).to({_TL_DTYPE[dtype]})", declares=(operation.writes[0],))
 

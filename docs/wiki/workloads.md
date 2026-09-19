@@ -150,7 +150,33 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 | [solx_fib_rmsnorm_h7168_bf16](../../contracts/workloads/solx-fib-rmsnorm-h7168-bf16-triton-b300-r64-v1.json) | 固定形状 `{'C': 7168, 'R': 64}`；设备验证待完成。 |
 
 GEMM 保留 FP16 的 A[M,K] 与 B[N,K] 转置语义，当前 starter 以归约保证正确性，不声称性能。
-完整 26 项中的 GQA、MLA 与 FP8 MoE 仍待接入；离线清单由 `tools/check_flashinfer_tasks.py` 输出。
+完整 26 项的离线清单由 `tools/check_flashinfer_tasks.py` 输出；其中 9 项采用下面的顺序 Cake 计划。
+
+## FlashInfer 注意力与 MoE 的顺序 Cake 计划
+
+每个计划由 Compiler 检查并生成全部阶段，Evaluation 只绑定张量并按顺序启动。
+注意力同时验证输出和 base-2 LSE；不同上游定义的全掩码 NaN/零输出语义分别保留。
+MoE 保留完整 32 个本地专家、FP8 分块缩放、运行时 offset/factor，以及第二半输入上的 SiLU。
+
+| 合同 | 范围 |
+| --- | --- |
+| [solx-fib-gqa-paged-decode-h32-kv4-d128-ps1-bf16-b300-boundary-v1](../../contracts/workloads/solx-fib-gqa-paged-decode-h32-kv4-d128-ps1-bf16-b300-boundary-v1.json) | `boundary` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-paged-decode-h32-kv4-d128-ps1-bf16-b300-captured-v1](../../contracts/workloads/solx-fib-gqa-paged-decode-h32-kv4-d128-ps1-bf16-b300-captured-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-paged-decode-h32-kv8-d128-ps1-bf16-b300-boundary-v1](../../contracts/workloads/solx-fib-gqa-paged-decode-h32-kv8-d128-ps1-bf16-b300-boundary-v1.json) | `boundary` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-paged-decode-h32-kv8-d128-ps1-bf16-b300-captured-v1](../../contracts/workloads/solx-fib-gqa-paged-decode-h32-kv8-d128-ps1-bf16-b300-captured-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-paged-prefill-causal-h32-kv4-d128-ps1-bf16-b300-boundary-v1](../../contracts/workloads/solx-fib-gqa-paged-prefill-causal-h32-kv4-d128-ps1-bf16-b300-boundary-v1.json) | `boundary` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-paged-prefill-causal-h32-kv4-d128-ps1-bf16-b300-captured-v1](../../contracts/workloads/solx-fib-gqa-paged-prefill-causal-h32-kv4-d128-ps1-bf16-b300-captured-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-paged-prefill-causal-h32-kv8-d128-ps1-bf16-b300-boundary-v1](../../contracts/workloads/solx-fib-gqa-paged-prefill-causal-h32-kv8-d128-ps1-bf16-b300-boundary-v1.json) | `boundary` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-paged-prefill-causal-h32-kv8-d128-ps1-bf16-b300-captured-v1](../../contracts/workloads/solx-fib-gqa-paged-prefill-causal-h32-kv8-d128-ps1-bf16-b300-captured-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-ragged-prefill-causal-h32-kv4-d128-bf16-b300-boundary-v1](../../contracts/workloads/solx-fib-gqa-ragged-prefill-causal-h32-kv4-d128-bf16-b300-boundary-v1.json) | `boundary` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-ragged-prefill-causal-h32-kv4-d128-bf16-b300-captured-v1](../../contracts/workloads/solx-fib-gqa-ragged-prefill-causal-h32-kv4-d128-bf16-b300-captured-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-ragged-prefill-causal-h32-kv8-d128-bf16-b300-boundary-v1](../../contracts/workloads/solx-fib-gqa-ragged-prefill-causal-h32-kv8-d128-bf16-b300-boundary-v1.json) | `boundary` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-gqa-ragged-prefill-causal-h32-kv8-d128-bf16-b300-captured-v1](../../contracts/workloads/solx-fib-gqa-ragged-prefill-causal-h32-kv8-d128-bf16-b300-captured-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-mla-paged-decode-h16-ckv512-kpe64-ps1-bf16-b300-boundary-v1](../../contracts/workloads/solx-fib-mla-paged-decode-h16-ckv512-kpe64-ps1-bf16-b300-boundary-v1.json) | `boundary` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-mla-paged-decode-h16-ckv512-kpe64-ps1-bf16-b300-captured-v1](../../contracts/workloads/solx-fib-mla-paged-decode-h16-ckv512-kpe64-ps1-bf16-b300-captured-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-mla-paged-prefill-causal-h16-ckv512-kpe64-ps1-bf16-b300-boundary-v1](../../contracts/workloads/solx-fib-mla-paged-prefill-causal-h16-ckv512-kpe64-ps1-bf16-b300-boundary-v1.json) | `boundary` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-mla-paged-prefill-causal-h16-ckv512-kpe64-ps1-bf16-b300-captured-v1](../../contracts/workloads/solx-fib-mla-paged-prefill-causal-h16-ckv512-kpe64-ps1-bf16-b300-captured-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
+| [solx-fib-moe-fp8-block-scale-ds-routing-topk8-ng8-kg4-e32-h7168-i2048-bf16-b300-t1-v1](../../contracts/workloads/solx-fib-moe-fp8-block-scale-ds-routing-topk8-ng8-kg4-e32-h7168-i2048-bf16-b300-t1-v1.json) | `captured` 固定形状；不继承原始 blob、评分或延迟。 |
 
 ## 为什么有些示例不在这张合同表里
 

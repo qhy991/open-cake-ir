@@ -1,0 +1,231 @@
+{
+  "cases": [
+    {
+      "case_id": "primary",
+      "mode": "primary",
+      "seed": 2801,
+      "shape": {
+        "head_dim": 128,
+        "len_indptr": 3,
+        "num_kv_heads": 8,
+        "num_qo_heads": 32,
+        "total_kv": 5,
+        "total_q": 6
+      }
+    },
+    {
+      "case_id": "zeros",
+      "mode": "zeros",
+      "seed": 2802,
+      "shape": {
+        "head_dim": 128,
+        "len_indptr": 3,
+        "num_kv_heads": 8,
+        "num_qo_heads": 32,
+        "total_kv": 5,
+        "total_q": 6
+      }
+    },
+    {
+      "case_id": "permuted",
+      "mode": "permuted",
+      "seed": 2803,
+      "shape": {
+        "head_dim": 128,
+        "len_indptr": 3,
+        "num_kv_heads": 8,
+        "num_qo_heads": 32,
+        "total_kv": 5,
+        "total_q": 6
+      }
+    },
+    {
+      "case_id": "scaled",
+      "mode": "scaled",
+      "seed": 2804,
+      "shape": {
+        "head_dim": 128,
+        "len_indptr": 3,
+        "num_kv_heads": 8,
+        "num_qo_heads": 32,
+        "total_kv": 5,
+        "total_q": 6
+      }
+    },
+    {
+      "case_id": "segmented",
+      "mode": "segmented",
+      "seed": 2805,
+      "shape": {
+        "head_dim": 128,
+        "len_indptr": 3,
+        "num_kv_heads": 8,
+        "num_qo_heads": 32,
+        "total_kv": 5,
+        "total_q": 6
+      }
+    }
+  ],
+  "operator": "solx_fib_gqa_ragged_prefill_causal_h32_kv8_d128_bf16",
+  "oracle": {
+    "callable": "open_cake_ir.tasks.solx_fib.attention.reference_tensors",
+    "implementation": "CPU_float64_dot_softmax_then_declared_output_rounding",
+    "kind": "independent_cpu_attention"
+  },
+  "provenance": [
+    {
+      "kind": "solx_pack_task",
+      "path": "flashinfer-bench-tasks/tasks/017_gqa_ragged_prefill_causal_h32_kv8_d128",
+      "scope": "mathematical_definition_only_no_candidate_or_timing_import",
+      "upstream": "flashinfer-bench"
+    },
+    {
+      "kind": "upstream_workload",
+      "path": "flashinfer_trace/workloads/gqa_ragged/gqa_ragged_prefill_causal_h32_kv8_d128.jsonl",
+      "scope": "synthetic_boundary_shape",
+      "workload_uuid": "f7a038e9-6c18-4fd6-9b79-e349a4c79bd8"
+    },
+    {
+      "kind": "restricted_artifact",
+      "path": "flashinfer-bench-tasks/tasks/017_gqa_ragged_prefill_causal_h32_kv8_d128/baseline/",
+      "scope": "complete_target_implementation"
+    }
+  ],
+  "revision": "1",
+  "schema_version": 1,
+  "semantics": {
+    "candidate_abi": {
+      "inputs": [
+        "q",
+        "k",
+        "v",
+        "qo_indptr",
+        "kv_indptr",
+        "sm_scale"
+      ],
+      "outputs": [
+        "output",
+        "lse"
+      ]
+    },
+    "definition": "scaled QK dot plus optional positional dot; bottom-right causal softmax; weighted V and base2 logsumexp",
+    "empty_or_masked_lse": "negative_infinity",
+    "empty_segment_output": "zero",
+    "exclusions": [
+      "one_fixed_shape_per_contract",
+      "new_input_distributions_not_original_blob_bytes",
+      "no_upstream_score_or_latency_claim"
+    ],
+    "fully_masked_nonempty_segment_output": "nan",
+    "input_effects": "unchanged",
+    "materialization": "deterministic CPU torch generator; BF16 uniform[-0.5,0.5]; runtime monotone indptr and in-range pages; captured scale as FP32",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "scalar_abi": "upstream scalar values are one-element input tensors, never specialization constants",
+    "target": "sm_103a",
+    "task": "fib_gqa_ragged_prefill_causal_h32_kv8_d128",
+    "variant": "boundary"
+  },
+  "state": "frozen",
+  "tensors": {
+    "k": {
+      "dtype": "bf16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 0.5,
+      "shape": [
+        5,
+        8,
+        128
+      ]
+    },
+    "kv_indptr": {
+      "dtype": "int32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "shape": [
+        3
+      ]
+    },
+    "lse": {
+      "dtype": "fp32",
+      "finite_only": false,
+      "layout": "contiguous_row_major",
+      "shape": [
+        6,
+        32
+      ]
+    },
+    "output": {
+      "dtype": "bf16",
+      "finite_only": false,
+      "layout": "contiguous_row_major",
+      "shape": [
+        6,
+        32,
+        128
+      ]
+    },
+    "q": {
+      "dtype": "bf16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 0.5,
+      "shape": [
+        6,
+        32,
+        128
+      ]
+    },
+    "qo_indptr": {
+      "dtype": "int32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "shape": [
+        3
+      ]
+    },
+    "sm_scale": {
+      "dtype": "fp32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 1.0,
+      "shape": [
+        1
+      ]
+    },
+    "v": {
+      "dtype": "bf16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 0.5,
+      "shape": [
+        5,
+        8,
+        128
+      ]
+    }
+  },
+  "validation": {
+    "all_cases_required": true,
+    "atol": 1.52587890625e-05,
+    "comparison": "per_output",
+    "equal_nan": true,
+    "outputs": {
+      "lse": {
+        "atol": 0.0001,
+        "comparison": "elementwise_atol_rtol_ieee",
+        "rtol": 1e-05
+      },
+      "output": {
+        "atol": 1.52587890625e-05,
+        "comparison": "elementwise_atol_rtol_ieee",
+        "rtol": 0.0078125
+      }
+    },
+    "primary_case": "primary",
+    "qualification": "all_elements_and_both_outputs_at_this_fixed_shape; ordered_Cake_plan; performance_unqualified",
+    "rtol": 0.0078125,
+    "tolerance_rationale": "BF16 output permits FP32 reduction rounding; LSE is FP32. IEEE comparison matches only corresponding NaNs and signed infinities required by the source definition."
+  },
+  "workload_id": "solx-fib-gqa-ragged-prefill-causal-h32-kv8-d128-bf16-b300-boundary-v1"
+}

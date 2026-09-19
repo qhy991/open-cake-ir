@@ -7,6 +7,8 @@ Canonical definitions are in the [`Glossary`](../../GLOSSARY.md#evaluation-terms
 
 ## Owned terms
 
+- [Launch Plan](../../GLOSSARY.md#launch-plan)
+
 - [`LaunchableCandidate`](../../GLOSSARY.md#launchablecandidate)
 - [`Evaluation Protocol`](../../GLOSSARY.md#evaluation-protocol)
 - [`Logical Evaluation Attempt`](../../GLOSSARY.md#logical-evaluation-attempt)
@@ -41,3 +43,5 @@ sample. “Source” must name its role—authored source, lowered source, expan
 CUBIN, or SASS—rather than collapse distinct artifacts.
 
 Operator materializers, oracles and exact semantic validators live in task modules. This context supplies their shared contracts and measurement mechanisms; see [task ownership](../../en/TASKS.md).
+
+Ordered Cake compositions use `evaluation/launch_plan.py`. Each stage is assessed and lowered by the same clean Compiler commit. The plan owns typed bindings and allocation; platform adapters bind exact devices, storage intervals and execution streams. Whole-plan evaluation includes every ordered kernel, with no host-side task mathematics.

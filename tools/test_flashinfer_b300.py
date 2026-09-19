@@ -82,6 +82,75 @@ def _admit_receipt(socket_path: Path, receipt_path: Path):
     return _observe_cuda_device(declared_target('sm_103a'), visible, job_id, 'exclusive')
 
 
+def _test_launch_plan(owner, task_id, task, compiler, output, torch, timing_requested):
+    """Compile every stage through Cake, then check the complete ordered candidate."""
+    row = {'task_id': task_id, 'route': 'cake_launch_plan', 'cases': [], 'variants': [],
+           'timing': 'whole_plan_interval_unqualified' if timing_requested else 'not_requested'}
+    types = {'fp16':torch.float16, 'bf16':torch.bfloat16, 'fp32':torch.float32,
+             'int32':torch.int32, 'fp8_e4m3':torch.float8_e4m3fn}
+    for variant in owner.VARIANTS:
+        document = owner.workload_document(task, variant=variant)
+        workload = WorkloadContract(document)
+        author = owner.author_plan(workload)
+        plan = author.finish()
+        compiled = plan.compile(compiler)
+        directory = output/task_id/variant
+        directory.mkdir(parents=True)
+        (directory/'workload.json').write_text(json.dumps(document,indent=2)+'\n')
+        (directory/'launch-plan.json').write_bytes(plan.document_bytes)
+        entries = {}
+        for stage, lowering in zip(plan.stages, compiled.lowerings, strict=True):
+            (directory/(stage.name+'.cake.py')).write_text(author.sources[stage.name])
+            path = directory/(stage.name+'.triton.py')
+            path.write_text(lowering.source)
+            module_spec = importlib.util.spec_from_file_location('fib_'+task_id+'_'+variant+'_'+stage.name,path)
+            module = importlib.util.module_from_spec(module_spec)
+            sys.modules[module_spec.name] = module
+            module_spec.loader.exec_module(module)
+            entries[stage.name] = getattr(module,lowering.route.entry_point)
+        for case_id in workload.case_ids:
+            cpu_inputs = owner.materialize_tensors(workload,case_id)
+            expected = owner.reference_tensors(workload,case_id,cpu_inputs)
+            inputs = {name:value.to(device='cuda:0') for name,value in cpu_inputs.items()}
+            snapshots = {name:value.clone() for name,value in inputs.items()}
+            def allocate(name,spec):
+                poison = -(2**31) if spec.dtype.value=='int32' else float('nan')
+                return torch.full(spec.shape,poison,dtype=types[spec.dtype.value],device='cuda:0')
+            def check_tensor(value,spec):
+                if (tuple(value.shape)!=spec.shape or value.dtype!=types[spec.dtype.value]
+                        or not value.is_cuda or value.device.index!=0 or not value.is_contiguous()):
+                    raise ValueError('launch plan platform tensor binding differs')
+            def storage_span(value):
+                return str(value.device), value.data_ptr(), value.data_ptr()+value.numel()*value.element_size()
+            def context():
+                return torch.cuda.current_device(),torch.cuda.current_stream().cuda_stream
+            prepared = compiled.prepare(inputs,allocate=allocate,check_tensor=check_tensor,
+                storage_span=storage_span,execution_context=context,load_kernel=lambda name,lowering:entries[name])
+            result = prepared.run()
+            torch.cuda.synchronize()
+            if prepared.launch_calls!=len(plan.stages):
+                raise ValueError('the invocation did not execute every launch-plan stage')
+            validation = document['validation']
+            if set(result)!=set(expected):raise ValueError('launch plan public outputs differ')
+            for name, reference in expected.items():
+                rule = validation['outputs'][name] if validation['comparison']=='per_output' else validation
+                torch.testing.assert_close(result[name].cpu(), reference, atol=rule['atol'], rtol=rule['rtol'],
+                                           equal_nan=rule['comparison']=='elementwise_atol_rtol_ieee')
+            if not all(torch.equal(inputs[name].view(torch.uint8),old.view(torch.uint8))
+                       for name,old in snapshots.items()):
+                raise ValueError('ordered candidate mutated a public input')
+            row['cases'].append({'variant':variant,'case_id':case_id,'status':'passed',
+                'elements':sum(value.numel() for value in result.values()),'stage_launches':prepared.launch_calls,
+                'expected_nonfinite':{name:{'nan':int(torch.isnan(value).sum()),'negative_infinity':int(torch.isneginf(value).sum())}
+                                      for name,value in expected.items()}})
+            print(task_id,variant,case_id,'passed',flush=True)
+            del prepared,inputs,snapshots,cpu_inputs,expected,result
+        row['variants'].append({'variant':variant,'workload_id':workload.workload_id,'stages':len(plan.stages),
+                                'allocated_bytes':plan.allocated_bytes})
+    row['status']='passed'
+    return row
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
@@ -99,6 +168,7 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=False)
     import torch
     import triton
+    torch.set_num_threads(min(8, os.cpu_count() or 1))
     admission = (_admit_receipt(args.broker_socket, args.admission_receipt)
                  if args.admission_receipt else observe_exclusive_cuda('sm_103a'))
     if torch.cuda.device_count() != 1:
@@ -123,6 +193,11 @@ def main() -> int:
             summary['tasks'].append(row)
             continue
         try:
+            if hasattr(owner, 'author_plan'):
+                row = _test_launch_plan(owner, task_id, task, compiler, output, torch, args.timing)
+                summary['tasks'].append(row)
+                (output/'progress.json').write_text(json.dumps(summary,indent=2)+'\n')
+                continue
             spec = owner.SPECS[task]
             rows = owner.default_rows(task) if hasattr(owner, 'default_rows') else min(spec['batches'])
             columns = spec['hidden'] if 'hidden' in spec else spec['N']

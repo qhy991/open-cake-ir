@@ -1,0 +1,265 @@
+{
+  "cases": [
+    {
+      "case_id": "primary",
+      "mode": "primary",
+      "seed": 2901,
+      "shape": {
+        "E": 256,
+        "H": 7168,
+        "I": 2048,
+        "LOCAL_E": 32,
+        "T": 1
+      }
+    },
+    {
+      "case_id": "zero_hidden",
+      "mode": "zero_hidden",
+      "seed": 2902,
+      "shape": {
+        "E": 256,
+        "H": 7168,
+        "I": 2048,
+        "LOCAL_E": 32,
+        "T": 1
+      }
+    },
+    {
+      "case_id": "all_nonlocal",
+      "mode": "all_nonlocal",
+      "seed": 2903,
+      "shape": {
+        "E": 256,
+        "H": 7168,
+        "I": 2048,
+        "LOCAL_E": 32,
+        "T": 1
+      }
+    },
+    {
+      "case_id": "mixed_local",
+      "mode": "mixed_local",
+      "seed": 2904,
+      "shape": {
+        "E": 256,
+        "H": 7168,
+        "I": 2048,
+        "LOCAL_E": 32,
+        "T": 1
+      }
+    },
+    {
+      "case_id": "scaled",
+      "mode": "scaled",
+      "seed": 2905,
+      "shape": {
+        "E": 256,
+        "H": 7168,
+        "I": 2048,
+        "LOCAL_E": 32,
+        "T": 1
+      }
+    },
+    {
+      "case_id": "ties",
+      "mode": "ties",
+      "seed": 2906,
+      "shape": {
+        "E": 256,
+        "H": 7168,
+        "I": 2048,
+        "LOCAL_E": 32,
+        "T": 1
+      }
+    }
+  ],
+  "operator": "solx_fib_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048_bf16",
+  "oracle": {
+    "callable": "open_cake_ir.tasks.solx_fib.moe.reference_tensors",
+    "implementation": "CPU_stable_sort_routing_and_per_expert_FP64_dequantized_matmul",
+    "kind": "independent_cpu_fp8_moe"
+  },
+  "provenance": [
+    {
+      "kind": "solx_pack_task",
+      "path": "flashinfer-bench-tasks/tasks/020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048",
+      "scope": "mathematical_definition_only_no_candidate_or_timing_import",
+      "upstream": "flashinfer-bench"
+    },
+    {
+      "kind": "upstream_workload",
+      "path": "flashinfer_trace/workloads/moe/moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048.jsonl",
+      "scope": "smallest_declared_seq_len_1",
+      "workload_uuid": "e05c6c03-5603-4a1c-b34c-dcce0ecaeea4"
+    },
+    {
+      "kind": "restricted_artifact",
+      "path": "flashinfer-bench-tasks/tasks/020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/baseline/",
+      "scope": "complete_target_implementation"
+    }
+  ],
+  "revision": "1",
+  "schema_version": 1,
+  "semantics": {
+    "candidate_abi": {
+      "inputs": [
+        "routing_logits",
+        "routing_bias",
+        "hidden_states",
+        "hidden_states_scale",
+        "gemm1_weights",
+        "gemm1_weights_scale",
+        "gemm2_weights",
+        "gemm2_weights_scale",
+        "local_expert_offset",
+        "routed_scaling_factor"
+      ],
+      "outputs": [
+        "output"
+      ]
+    },
+    "definition": "sigmoid + bias for group/expert choice; group top2 sum -> top4 groups -> top8 experts; normalize unbiased sigmoid over all selected experts; local FP8 scaled GEMM1 -> X1*silu(X2) -> scaled GEMM2 -> weighted sum -> BF16",
+    "exclusions": [
+      "seq_len_1_only",
+      "new_input_distributions_not_original_blob_bytes",
+      "no_speedup_or_framework_claim"
+    ],
+    "input_effects": "unchanged",
+    "local_offset_domain": [
+      0,
+      224
+    ],
+    "materialization": "CPU torch seeded finite bounded values; nonuniform positive scales; structured routing exercises local/nonlocal ownership; ties case has zero hidden so task output is tie-independent",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "quantization": "FP8_E4M3FN_values_times_FP32_scales_in_128_element_blocks",
+    "scalar_abi": "offset and factor are one-element input tensors, never specialization constants",
+    "target": "sm_103a",
+    "task": "fib_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048",
+    "tie_break": "lowest_global_index_for_group_and_expert_cutoffs",
+    "tie_scope": "deterministic refinement of upstream unspecified topk ties; no claim of matching an arbitrary torch tie outcome",
+    "variant": "captured"
+  },
+  "state": "frozen",
+  "tensors": {
+    "gemm1_weights": {
+      "dtype": "fp8_e4m3",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 0.0625,
+      "shape": [
+        32,
+        4096,
+        7168
+      ]
+    },
+    "gemm1_weights_scale": {
+      "dtype": "fp32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 1.5,
+      "shape": [
+        32,
+        32,
+        56
+      ]
+    },
+    "gemm2_weights": {
+      "dtype": "fp8_e4m3",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 0.0625,
+      "shape": [
+        32,
+        7168,
+        2048
+      ]
+    },
+    "gemm2_weights_scale": {
+      "dtype": "fp32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 1.5,
+      "shape": [
+        32,
+        56,
+        16
+      ]
+    },
+    "hidden_states": {
+      "dtype": "fp8_e4m3",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 0.25,
+      "shape": [
+        1,
+        7168
+      ]
+    },
+    "hidden_states_scale": {
+      "dtype": "fp32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 1.5,
+      "shape": [
+        56,
+        1
+      ]
+    },
+    "local_expert_offset": {
+      "dtype": "int32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "shape": [
+        1
+      ]
+    },
+    "output": {
+      "dtype": "bf16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "shape": [
+        1,
+        7168
+      ]
+    },
+    "routed_scaling_factor": {
+      "dtype": "fp32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 4.0,
+      "shape": [
+        1
+      ]
+    },
+    "routing_bias": {
+      "dtype": "bf16",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 0.02,
+      "shape": [
+        256
+      ]
+    },
+    "routing_logits": {
+      "dtype": "fp32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "max_abs": 3.0,
+      "shape": [
+        1,
+        256
+      ]
+    }
+  },
+  "validation": {
+    "all_cases_required": true,
+    "atol": 0.01,
+    "comparison": "elementwise_atol_rtol",
+    "equal_nan": false,
+    "primary_case": "primary",
+    "qualification": "all_elements_all_six_input_cases; ordered_Cake_plan; performance_unqualified",
+    "rtol": 0.01,
+    "tolerance_rationale": "Predeclared pack tolerance, requiring all output elements instead of matched_ratio 0.99; allows FP32 accumulation order and BF16 output rounding."
+  },
+  "workload_id": "solx-fib-moe-fp8-block-scale-ds-routing-topk8-ng8-kg4-e32-h7168-i2048-bf16-b300-t1-v1"
+}

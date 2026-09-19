@@ -45,10 +45,21 @@ class OrderedLaunchPlanTests(unittest.TestCase):
         compiled = CompiledLaunchPlan(plan, 'fixture', tuple(
             SimpleNamespace(target='sm_103a',generated=True) for _ in plan.stages))
         prepared = compiled.prepare({'x':[1,2,3,4]}, allocate=lambda n,s:[None]*4,
-                                    load_kernel=load, check_tensor=lambda tensor,spec:None)
+                                    load_kernel=load, check_tensor=lambda tensor,spec:None,
+                                    storage_span=lambda tensor:('fixture',id(tensor)*1000,id(tensor)*1000+16),
+                                    execution_context=lambda:('fixture','stream'))
         self.assertEqual(prepared.run()['y'],[3,4,5,6])
         self.assertEqual(order,['first','second'])
         self.assertEqual(prepared.launch_calls,2)
+
+    def test_distinct_views_with_overlapping_storage_are_refused(self):
+        plan=LaunchPlan.from_dict(document())
+        compiled=CompiledLaunchPlan(plan,'fixture',tuple(
+            SimpleNamespace(target='sm_103a',generated=True) for _ in plan.stages))
+        with self.assertRaisesRegex(ValueError,'overlaps'):
+            compiled.prepare({'x':[1,2,3,4]}, allocate=lambda n,s:[None]*4,
+                check_tensor=lambda t,s:None, storage_span=lambda t:('same-device',1000,1016),
+                execution_context=lambda:0, load_kernel=lambda n,l:None)
 
     def test_read_before_producer_and_double_writer_are_refused(self):
         bad = document();bad['stages'].reverse()
