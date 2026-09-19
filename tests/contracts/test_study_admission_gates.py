@@ -126,23 +126,38 @@ class GatesAreReachedTests(unittest.TestCase):
         for study in specimens:
             with self.subTest(study=study), \
                  mock.patch.object(runtime.StudyContract, "load", return_value=study), \
-                 mock.patch.object(runtime.Lab, "preflight") as delegated:
+                 mock.patch("open_cake_ir.lab.preflight.resolve_execution_bindings") as delegated:
                 with self.assertRaises(ValueError):
                     runtime.TaskLab(ROOT).preflight(Path("unused.json"))
                 delegated.assert_not_called()
 
-    def test_task_lab_preflight_calls_both_before_delegating(self):
+    def test_task_lab_preflight_calls_both_before_resolving_dependencies(self):
         called = []
         study = _study("gfx1151", evaluation=UNTIMED, mode="local_serialized")
-        with mock.patch.object(runtime.StudyContract, "load", return_value=study), \
+        def reached(*args):
+            self.assertIs(args[1], study)
+            called.append("resolved")
+            raise RuntimeError("stop at dependency resolution")
+        with mock.patch.object(runtime.StudyContract, "load", return_value=study) as loader, \
              mock.patch.object(runtime, "_admit_measurement_coverage",
                                side_effect=lambda s: called.append("coverage")), \
              mock.patch.object(runtime, "_admit_execution_mode",
                                side_effect=lambda s: called.append("mode")), \
-             mock.patch.object(runtime.Lab, "preflight",
-                               side_effect=lambda *a, **k: called.append("delegated")):
-            runtime.TaskLab(ROOT).preflight(Path("unused.json"))
-        self.assertEqual(called, ["coverage", "mode", "delegated"])
+             mock.patch("open_cake_ir.lab.preflight.resolve_execution_bindings", side_effect=reached):
+            with self.assertRaisesRegex(RuntimeError, "stop at dependency resolution"):
+                runtime.TaskLab(ROOT).preflight(Path("unused.json"))
+        loader.assert_called_once_with(Path("unused.json"))
+        self.assertEqual(called, ["coverage", "mode", "resolved"])
+
+    def test_real_preflight_builds_a_lock_from_one_study_parse(self):
+        from tests.contracts._executor_fixture import SemanticExecutorFixture
+        path = ROOT / "contracts/studies/matched-search-infrastructure-template.json"
+        with SemanticExecutorFixture(), \
+             mock.patch.object(runtime.StudyContract, "load", wraps=runtime.StudyContract.load) as loader:
+            lock = runtime.TaskLab(ROOT).preflight(path)
+        loader.assert_called_once_with(path)
+        self.assertEqual(lock.study_kind, "matched_search")
+        self.assertEqual(len(lock.run_order), 6)
 
 
 if __name__ == "__main__":

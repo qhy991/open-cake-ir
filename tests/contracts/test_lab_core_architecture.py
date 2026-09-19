@@ -130,9 +130,11 @@ class LabCoreArchitectureTests(unittest.TestCase):
                   "replay", "reporting", "selection", "archive", "environments",
                   "admission", "build", "candidate_filter", "evaluation_writer", "execution_admission",
                   "provider_documents", "provider_events", "provider_invocation", "providers",
-                  "replay_artifacts", "replay_attempts", "replay_candidates", "replay_outcomes",
-                  "replay_provider", "replay_selection", "run_completion", "runtime", "runtime_config",
+                  "run_completion", "runtime", "runtime_config",
                   "endpoints", "evaluation_lifecycle", "diagnoses", "reference_access"}
+        lab_root = ROOT / "src/open_cake_ir/lab"
+        owners.update("replay." + path.stem for path in (lab_root / "replay").glob("*.py")
+                      if path.name != "__init__.py")
         edges = {name: set() for name in owners}
         def runtime_imports(node):
             if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":
@@ -142,21 +144,25 @@ class LabCoreArchitectureTests(unittest.TestCase):
             for child in ast.iter_child_nodes(node):
                 yield from runtime_imports(child)
         for name in owners:
-            path = ROOT / "src/open_cake_ir/lab" / (name + ".py")
+            path = lab_root / (name.replace(".", "/") + ".py")
+            if not path.is_file():
+                path = lab_root / name.replace(".", "/") / "__init__.py"
+            package = "open_cake_ir.lab"
+            suffix = name if path.name == "__init__.py" else name.rpartition(".")[0]
+            if suffix:
+                package += "." + suffix
             for imported in runtime_imports(ast.parse(path.read_text())):
                 self.assertFalse(any(alias.name == "*" for alias in imported.names), name)
-                if imported.level == 1:
-                    targets = [imported.module.split(".")[0]] if imported.module else [alias.name for alias in imported.names]
-                elif (imported.module or "").startswith("open_cake_ir.lab."):
-                    targets = [imported.module.split(".")[2]]
-                else:
-                    targets = []
-                edges[name].update(target for target in targets if target in owners)
+                module = (importlib.util.resolve_name("." * imported.level + (imported.module or ""), package)
+                          if imported.level else imported.module or "")
+                targets = ([module + "." + alias.name for alias in imported.names]
+                           if not imported.module else [module])
+                edges[name].update(target.removeprefix("open_cake_ir.lab.") for target in targets
+                                   if target.removeprefix("open_cake_ir.lab.") in owners)
         self.assertFalse(edges["selection"] & {"core", "contracts", "environments"})
         self.assertFalse(edges["replay"] & {"core", "execution", "preflight", "reporting"})
         self.assertFalse(edges["_documents"])
-        for reader in ("replay", "replay_artifacts", "replay_attempts", "replay_candidates",
-                       "replay_outcomes", "replay_provider", "replay_selection"):
+        for reader in (name for name in owners if name == "replay" or name.startswith("replay.")):
             self.assertFalse(edges[reader] & {"execution", "evaluation_writer", "run_completion"})
         def visit(name, path):
             self.assertNotIn(name, path, " -> ".join((*path, name)))

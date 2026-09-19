@@ -44,6 +44,9 @@ class Lab:
             prepare_schedule=self._prepare_schedule,
         )
 
+    def _validate_study(self, study: contracts.StudyContract) -> None:
+        """Task-specific admission of the parsed Study, before resolving dependencies."""
+
     def preflight(
         self,
         study_path: str | Path,
@@ -60,6 +63,7 @@ class Lab:
             manifest_parser=self._parse_manifest,
             empirical_cost_model_path=empirical_cost_model_path,
             execution_bindings_path=execution_bindings_path,
+            validate_study=self._validate_study,
         )
 
     def reference_campaign(

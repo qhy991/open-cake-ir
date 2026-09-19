@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping
 
-from .providers import CANDIDATE_SET_ENVELOPE_V1, CODEX_DISABLED_FEATURES
+from .provider_documents import CANDIDATE_SET_ENVELOPE_V1, CODEX_DISABLED_FEATURES
 from ._documents import _canonical_json_bytes
 from .claude import CLAUDE_EVENT_CONTRACTS, CLAUDE_AUTHORING_TOOLS, terminal_schema
 

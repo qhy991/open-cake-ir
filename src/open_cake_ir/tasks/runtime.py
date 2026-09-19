@@ -89,13 +89,9 @@ class TaskLab(Lab):
             **kwargs,
         )
 
-    def preflight(self, study_path, *, empirical_cost_model_path=None,
-                  execution_bindings_path=None):
-        study = StudyContract.load(study_path)
+    def _validate_study(self, study: StudyContract) -> None:
         _admit_measurement_coverage(study)
         _admit_execution_mode(study)
-        return super().preflight(study_path, empirical_cost_model_path=empirical_cost_model_path,
-                                 execution_bindings_path=execution_bindings_path)
 
     def audit(self, campaign):
         policy = performance_reporting_policy(campaign.lock.analysis_plan, campaign.lock.claim_scope)

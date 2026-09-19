@@ -9,7 +9,7 @@ import subprocess
 import shutil
 import tempfile
 import unittest
-from open_cake_ir.lab.replay_refusals import ReplayRefusal
+from open_cake_ir.lab.replay.refusals import ReplayRefusal
 from unittest.mock import patch
 
 from open_cake_ir.compiler.frontend import parse as parse_python_schedule
@@ -128,7 +128,7 @@ class ClaudeProviderContracts(unittest.TestCase):
     def test_campaign_replay_dispatches_compaction_by_contract_and_checks_auxiliary_record(self):
         from hashlib import sha256
         from types import SimpleNamespace
-        from open_cake_ir.lab.replay_provider import _replay_provider_turns
+        from open_cake_ir.lab.replay.provider import _replay_provider_turns
         from open_cake_ir.lab.task_package import TaskPackage
         run_id = "open_cake-1"
         package = TaskPackage(run_id, "open_cake", "task", "rules")

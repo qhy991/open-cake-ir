@@ -88,7 +88,7 @@ class CompilerDependencyTests(unittest.TestCase):
         from open_cake_ir.evaluation import LaunchableCandidate
         from open_cake_ir.evidence import EvidenceStore
         from open_cake_ir.lab.archive import _archive_logical_attempt, _logical_attempt_document
-        from open_cake_ir.lab.replay_attempts import _replay_broker_attempt_ledger
+        from open_cake_ir.lab.replay.attempts import _replay_broker_attempt_ledger
         from tests.contracts.test_lab import FakeEvaluator
         payload = b"CPU fixture executable; never launched"
         digest = sha256(payload).hexdigest()

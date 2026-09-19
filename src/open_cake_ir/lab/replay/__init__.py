@@ -8,23 +8,23 @@ from typing import Callable, Mapping, Sequence, cast
 
 from open_cake_ir.evidence import EvidenceStore, RunAudit
 
-from ._documents import _canonical_json_bytes, _object
-from ._policies import _MATCHED_EVENT_KINDS_V1, _matched_evidence_policy_version
-from .claude import CLAUDE_EVENT_CONTRACTS, candidate_write_declared_unwitnessed
-from .contracts import CampaignLock
-from .executor import ExecutorRevision
-from .endpoints import endpoint_policy
-from .evaluation_lifecycle import replay_evaluation_invocations
-from .selection import _EmpiricalSelection, _empirical_context
-from .replay_candidates import _artifact_outcomes_are_closed, _replay_candidates
-from .replay_outcomes import _replay_terminal
-from .replay_provider import (
+from .._documents import _canonical_json_bytes, _object
+from .._policies import _MATCHED_EVENT_KINDS_V1, _matched_evidence_policy_version
+from ..claude import CLAUDE_EVENT_CONTRACTS, candidate_write_declared_unwitnessed
+from ..contracts import CampaignLock
+from ..executor import ExecutorRevision
+from ..endpoints import endpoint_policy
+from ..evaluation_lifecycle import replay_evaluation_invocations
+from ..selection import _EmpiricalSelection, _empirical_context
+from .candidates import _artifact_outcomes_are_closed, _replay_candidates
+from .outcomes import _replay_terminal
+from .provider import (
     _expected_terminal_message,
     _replay_provider_turns,
     replay_fault_usage,
 )
-from .replay_refusals import ReplayRefusal, ReplayResult, refuse
-from .replay_selection import _replay_candidate_selection
+from .refusals import ReplayRefusal, ReplayResult, refuse
+from .selection import _replay_candidate_selection
 
 _REQUIRED_FAULT_FIELDS = frozenset({
     "fault", "exception_type", "turn", "stage", "terminal_provider_tokens",
@@ -96,7 +96,7 @@ def _replay_matched_run(
     manifest_parser: Callable,
     task_package: Callable,
 ) -> None:
-    from .bindings import load_compiler_reference
+    from ..bindings import load_compiler_reference
     compiler_ref = _identity_reference(lock.document["compiler_revision"], "compiler_revision")
     load_compiler_reference(project_root, compiler_ref, "replay.compiler_revision")
     events = evidence.replay_events(audit.run_id)

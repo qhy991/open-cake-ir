@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from open_cake_ir.lab.replay_refusals import ReplayRefusal
+from open_cake_ir.lab.replay.refusals import ReplayRefusal
 
 from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.lab.faults import ReportedProviderUsage, RunProtocolFault, ProviderBoundaryDeclarationFault
@@ -51,7 +51,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
 
     def test_claude_fault_usage_flows_through_common_native_dispatch_and_replay(self):
         from open_cake_ir.lab.provider_events import reported_provider_usage
-        from open_cake_ir.lab.replay_provider import replay_fault_usage
+        from open_cake_ir.lab.replay.provider import replay_fault_usage
         from tests.contracts.test_claude_provider import ClaudeProviderContracts, CLAUDE_EVENT_CONTRACT
         fixture = ClaudeProviderContracts()
         fixture.setUp()
@@ -74,7 +74,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
                           expected_thread_id="00000000-0000-0000-0000-000000000001")
 
     def test_claude_fault_quota_attribution_is_rederived_from_retained_stdout(self):
-        from open_cake_ir.lab.replay_provider import replay_fault_usage
+        from open_cake_ir.lab.replay.provider import replay_fault_usage
         from tests.contracts.test_claude_provider import ClaudeProviderContracts, CLAUDE_EVENT_CONTRACT
         fixture = ClaudeProviderContracts()
         fixture.setUp()
@@ -136,7 +136,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
         unchanged, and the marker cannot stand in for a notice in either
         direction.
         """
-        from open_cake_ir.lab.replay_provider import replay_fault_usage
+        from open_cake_ir.lab.replay.provider import replay_fault_usage
         from tests.contracts.test_claude_provider import ClaudeProviderContracts, CLAUDE_EVENT_CONTRACT
         fixture = ClaudeProviderContracts()
         fixture.setUp()
@@ -175,7 +175,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
             evidence=bare_evidence, provider=provider)
 
     def test_replayed_usage_refuses_boolean_and_float_token_witnesses(self):
-        from open_cake_ir.lab.replay_provider import replay_fault_usage
+        from open_cake_ir.lab.replay.provider import replay_fault_usage
         for native_tokens, claimed_tokens in ((0, False), (1, True), (191499, 191499.0)):
             raw = codex_report(native_tokens)
             payload = {"stage": "provider", "provider_usage": {"status": "observed",

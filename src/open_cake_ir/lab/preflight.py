@@ -52,10 +52,13 @@ def preflight(
     manifest_parser: Callable,
     empirical_cost_model_path: str | Path | None = None,
     execution_bindings_path: str | Path | None = None,
+    validate_study: Callable[[StudyContract], None] | None = None,
 ) -> CampaignLock:
     """Resolve one Study Contract without provider, GPU or evidence side effects."""
 
     study = StudyContract.load(study_path)
+    if validate_study is not None:
+        validate_study(study)
     resolved_document, bound_executor = resolve_execution_bindings(
         project_root, study, execution_bindings_path
     )

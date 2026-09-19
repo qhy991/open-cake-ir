@@ -10,7 +10,7 @@ from pathlib import Path
 import tempfile
 from types import MappingProxyType, SimpleNamespace
 import unittest
-from open_cake_ir.lab.replay_refusals import ReplayRefusal
+from open_cake_ir.lab.replay.refusals import ReplayRefusal
 from unittest.mock import patch
 
 from open_cake_ir.evidence import EvidenceStore
@@ -20,7 +20,7 @@ from open_cake_ir.lab.providers import (
     ProviderQualificationReceipt,
 )
 from open_cake_ir.lab.ralph import RalphBudget, RalphController
-from open_cake_ir.lab.replay_provider import _replay_provider_turns
+from open_cake_ir.lab.replay.provider import _replay_provider_turns
 from open_cake_ir.lab.rubrics import derive_rubric
 from open_cake_ir.lab.task_package import TaskPackage, materialize_task_package
 from tests.contracts.test_lab import FakeProvider
