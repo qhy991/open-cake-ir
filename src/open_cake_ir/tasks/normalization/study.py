@@ -9,7 +9,7 @@ from open_cake_ir.compiler import frontend
 from open_cake_ir.evaluation.paired import (
     ROUTE_CALLS_PER_COHORT, PAIRED_HIP_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND,
     paired_protocol)
-from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING
+from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING, source_reference_path
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
 from open_cake_ir.lab._policies import _ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN, untimed
 from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
@@ -142,7 +142,8 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                    token_budget: int = 150000, maximum_candidates: int = 3,
                    searches_per_turn: int = 2, wall_seconds: int = 14400,
                    dispatches_per_sample: int | None = None,
-                   maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6) -> dict:
+                   maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
+                   agents_md: Path | None = None) -> dict:
     """Bind mathematical inputs and treatment while leaving runtime facts unresolved.
 
     The policy is operator-agnostic: every task validates through its own
@@ -160,6 +161,11 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
               "evaluation_limits": {"search": turns * searches_per_turn, "confirmatory": turns,
                                     "attribution": turns * searches_per_turn}}
     RalphBudget.from_mapping(budget)
+    scaffold_name, scaffold_path = source_reference_path(
+        root, str(agents_md) if agents_md is not None else SCAFFOLD, "scaffold")
+    scaffold_bytes = scaffold_path.read_bytes()
+    if not scaffold_bytes.decode("utf-8").strip():
+        raise ValueError("authoring AGENTS.md must contain nonempty UTF-8 instructions")
     source = frontend.read_schedule(starter_path)
     provider = {"model": model, "reasoning_effort": effort,
                 "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
@@ -183,7 +189,7 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         "workload": {"path": str(workload_path), "canonical_sha256": workload.canonical_sha256},
         "arms": {"open_cake": {
             "environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "provider": provider,
-            "scaffold": {"path": SCAFFOLD, "sha256": sha256((root / SCAFFOLD).read_bytes()).hexdigest()},
+            "scaffold": {"path": scaffold_name, "sha256": sha256(scaffold_bytes).hexdigest()},
             "compiler_revision": dict(CURRENT_RELEASE_BINDING),
             "lowering_route": source.document["lowering"],
             "schedule_skeleton": {"path": str(starter_path), "canonical_sha256": sha256(canonical(source.document)).hexdigest()},

@@ -48,6 +48,29 @@ class TaskLaunchTests(unittest.TestCase):
                 admit.assert_not_called()
                 self.assertFalse(self.workspace.exists())
 
+    def test_agents_md_cli_binds_external_rules_before_stack_admission(self):
+        rules = self.directory / "AGENTS.md"
+        rules.write_text("# 复现实验\nCheck structure before claiming parity.\n", encoding="utf-8")
+        with patch.object(launch_task, "_provider_executable", return_value=Path("/fixture/provider")), \
+             patch.object(launch_task, "_admit_stack", side_effect=RuntimeError("stop before execution")):
+            with self.assertRaisesRegex(RuntimeError, "stop before execution"):
+                launch_task.main(self.args() + ["--agents-md", str(rules)])
+        study_path = self.workspace / "study.json"
+        study = StudyContract.load(study_path)
+        self.assertEqual(study.document["arms"]["open_cake"]["scaffold"]["path"], str(rules))
+        self.assertEqual(study.document["arms"]["open_cake"]["reference_access"], "known_kernel_reproduction")
+
+    def test_agents_md_rejects_empty_or_non_utf8_input_before_stack_admission(self):
+        for payload in (b" \n", b"\xff"):
+            rules = self.directory / "AGENTS.md"
+            rules.write_bytes(payload)
+            with patch.object(launch_task, "_provider_executable", return_value=Path("/fixture/provider")), \
+                 patch.object(launch_task, "_admit_stack") as admit:
+                with self.assertRaises((ValueError, UnicodeError)):
+                    launch_task.main(self.args() + ["--agents-md", str(rules)])
+                admit.assert_not_called()
+            self.workspace = self.directory / "next-task"
+
     def test_codex_npm_wrapper_resolves_only_its_own_native_dependency(self):
         package = self.directory/'codex-package'
         (package/'bin').mkdir(parents=True)

@@ -496,6 +496,8 @@ def main(argv=None) -> int:
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
     parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--agents-md", type=Path,
+                        help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
     parser.add_argument("--depth", type=int,
@@ -565,7 +567,8 @@ def main(argv=None) -> int:
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
-        maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins)
+        maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
+        agents_md=args.agents_md)
     study_path = workspace / "study.json"
     _write(study_path, canonical(study))
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)

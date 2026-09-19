@@ -71,3 +71,11 @@ selection policy and fault-stage ownership with the caller. Preserve rejection o
 clock accounting, raw artifact formats, and public import identity. Replay must remain independent
 of live writers. Use a source-bound Executor successor for changed Lab code; never rewrite an old
 descriptor to accommodate a refactor. File length is a review signal, not an acceptance test.
+
+## Agent-led reproduction
+
+For reference-kernel reproduction, bind the reusable
+[AGENTS.md](../../../contracts/scaffolds/kernel-reproduction/AGENTS.md) as the arm's
+scaffold. The launcher accepts `--agents-md`; the bound instructions are delivered in
+the generated `AGENTS.md` on every provider turn. See the
+[workflow and input guide](../../../docs/KERNEL_REPRODUCTION.md).
