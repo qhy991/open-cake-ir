@@ -440,7 +440,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_frozen_seed_lowers_three_distinct_exact_shape_specialists(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json"
         )
         workload = json.loads(
             (ROOT / "contracts/workloads/flash-kmeans-assign-v2.json").read_text()
@@ -468,7 +468,7 @@ class CompilerContractTests(unittest.TestCase):
     def test_frozen_seed_rejects_a_non_exact_tail_without_retuning(self) -> None:
         compiler = Compiler.load(ROOT, REVISION_PATH)
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json"
         )
 
         with self.assertRaisesRegex(ValueError, "exactly tiled"):

@@ -183,7 +183,7 @@
         "entry_point": "cake_flash_kmeans_assign"
       },
       "schedule_skeleton": {
-        "canonical_sha256": "70941d7e2661c89ba7110d67efcf6ecf75df100b2e1c1d4cdcb4251440cf1261",
+        "canonical_sha256": "57e186d71004ed35294d7e5cc363f326742952f460f3f9341b3f0d4d414c9a83",
         "path": "contracts/scaffolds/open-cake-clean-start-v1.json"
       },
       "tool_surface": [

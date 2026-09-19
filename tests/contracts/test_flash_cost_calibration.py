@@ -61,7 +61,7 @@ class FlashCalibrationTest(unittest.TestCase):
                      for path in (ROOT / "compiler/targets").glob("*.json"))
         paths.update({"compiler/revision.json", manifest["corpus_manifest"],
                       "contracts/workloads/flash-kmeans-assign-v2.json",
-                      "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"})
+                      "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json"})
         # The child-process supervision probes need the actual Python runtime code.
         shutil.copytree(ROOT / "src", cls.project / "src", ignore=shutil.ignore_patterns("__pycache__"))
         for relative in paths:
@@ -83,7 +83,7 @@ class FlashCalibrationTest(unittest.TestCase):
             {"path": "src/open_cake_ir/tasks/evaluate.py"},
         ]})
         cls.workload = load_workload(cls.project / "contracts/workloads/flash-kmeans-assign-v2.json")
-        cls.seed = KernelSeed.load(cls.project, cls.project / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json")
+        cls.seed = KernelSeed.load(cls.project, cls.project / "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json")
 
     def setUp(self):
         self.local = tempfile.TemporaryDirectory(prefix="run-", dir=self.root)

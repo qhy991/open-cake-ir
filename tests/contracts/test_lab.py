@@ -1952,7 +1952,7 @@ class LabContractTests(SemanticLabTestCase):
             ROOT / "contracts/workloads/flash-kmeans-assign-v2.json"
         )
         seed = KernelSeed.load(
-            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-v3.json"
+            ROOT, ROOT / "contracts/kernel-seeds/r42-cake-r1-turn1-schedule-v2.json"
         )
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         cases = {

@@ -132,7 +132,7 @@
       },
       "schedule_skeleton": {
         "path": "corpus/schedules/gemm-bias-b1-smoke-b300.json",
-        "canonical_sha256": "a952cd109d1bb78b7bd24149aac53e3c68d8c8a76e2834006fdc1c76512e8818"
+        "canonical_sha256": "d6d4c1239deeeff534f5fa15a86babc72f8ca162ed6496d8f874dd0f9a0c4007"
       },
       "tool_surface": [
         "submit_schedule_or_python"

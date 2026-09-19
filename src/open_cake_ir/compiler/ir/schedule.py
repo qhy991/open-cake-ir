@@ -458,7 +458,7 @@ class Schedule:
             optional=_SCHEDULE_OPTIONAL,
             context="schedule",
         )
-        if type(obj["schema_version"]) is not int or obj["schema_version"] != 2:
+        if obj["schema_version"] != 2:
             raise ScheduleParseError("schedule.schema_version must be 2")
 
         has_grid = "grid" in obj

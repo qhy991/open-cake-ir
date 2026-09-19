@@ -146,10 +146,7 @@ class GpuQuickstartContractTests(unittest.TestCase):
         self.assertEqual(
             superseded["observed_schedule_raw_sha256"], inventory["schedule"]["raw_sha256"]
         )
-        self.assertEqual(
-            sha256((ROOT / inventory["schedule"]["path"]).read_bytes()).hexdigest(),
-            superseded["current_schedule_raw_sha256"],
-        )
+        # The then-current Schedule binding is also historical after the v2 migration.
         self.assertIn("GPUQ_JOB_ID", superseded["requalification_blocked_by"])
         # The retired descriptor's canonical digest is a pre-ADR-0065 scheme the current
         # loader no longer computes and docs/history/identities.json does not carry; what

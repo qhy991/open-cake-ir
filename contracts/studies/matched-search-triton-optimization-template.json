@@ -128,7 +128,7 @@
       },
       "schedule_skeleton": {
         "path": "corpus/schedules/rmsnorm-b8-smoke.json",
-        "canonical_sha256": "bbdc605be0aba32e842f312601050d30bde48e417f3f8ea8decc774f1a81e946"
+        "canonical_sha256": "b7565471d6a2e99a3544a7d80565bbdf25c99a958c5a6341c04a1ba4f856a94f"
       },
       "tool_surface": [
         "submit_schedule_or_python"

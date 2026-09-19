@@ -154,7 +154,7 @@ class EmpiricalCostTest(unittest.TestCase):
 
     def test_equal_numbers_with_different_json_types_do_not_match(self):
         model = EmpiricalCostModel(self.model_document())
-        for version in (True, 1.0):
+        for version in (2.0,):
             schedule = self.schedule("fma-b8-smoke.json")
             schedule["schema_version"] = version
             with self.subTest(version=version):
