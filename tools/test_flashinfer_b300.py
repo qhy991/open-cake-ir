@@ -11,6 +11,10 @@ import argparse
 import importlib.util
 import json
 import math
+import os
+import socket
+import struct
+from hashlib import sha256
 from pathlib import Path
 import statistics
 import sys
@@ -26,7 +30,56 @@ from open_cake_ir.tasks.solx_fib.catalog import TASK_IDS, task_owner
 from open_cake_ir.tasks.workloads import create_task, materialize_case, reference_outputs
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
-from open_cake_ir.evaluation.admission import observe_exclusive_cuda
+from open_cake_ir.evaluation.admission import observe_exclusive_cuda, _observe_cuda_device
+from open_cake_ir.compiler.target import declared_target
+
+
+def _broker_request(path: Path, request: dict) -> dict:
+    """Read the existing broker status/receipt protocol; never create a lease here."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(10)
+        client.connect(str(path))
+        peer = struct.unpack("3i", client.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if peer[1] not in {0, os.getuid()}:
+            raise ValueError("broker peer UID differs")
+        with client.makefile("rwb") as stream:
+            stream.write((json.dumps(request) + "\n").encode())
+            stream.flush()
+            return json.loads(stream.readline())
+
+
+def _admit_receipt(socket_path: Path, receipt_path: Path):
+    """Bind this development process to the broker's live exclusive receipt.
+
+    Broker v0.6 supplies a receipt but does not export GPUQ_JOB_ID. Query the issuer
+    and bind the existing launch digest once at this handoff, without inventing an ID
+    or modifying the production broker or the worker's environment admission rule.
+    """
+    receipt = json.loads(receipt_path.read_text())
+    job_id = receipt.get('job_id')
+    visible = os.environ.get('CUDA_VISIBLE_DEVICES')
+    if (receipt.get('schema') != 'gpuq.admission-receipt.v1'
+            or not isinstance(job_id, str) or not job_id.startswith('gpuq-')
+            or receipt.get('mode') != 'exclusive' or receipt.get('gpu_count') != 1
+            or not isinstance(receipt.get('gpu_ids'), list) or len(receipt['gpu_ids']) != 1
+            or visible != str(receipt['gpu_ids'][0]) or receipt.get('cwd') != str(ROOT)):
+        raise ValueError('development broker receipt allocation differs')
+    # This is the existing broker launch-identity boundary, not a new digest inventory.
+    argv_bytes = json.dumps(sys.orig_argv, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
+    if (receipt.get('argv_count') != len(sys.orig_argv)
+            or receipt.get('argv_sha256') != sha256(argv_bytes).hexdigest()
+            or receipt.get('resolved_executable') != str(Path(sys.executable).resolve())):
+        raise ValueError('development broker receipt command differs')
+    issued = _broker_request(socket_path, {'op': 'receipt', 'job_id': job_id})
+    if issued.get('ok') is not True or issued.get('receipt') != receipt:
+        raise ValueError('development receipt differs from its live issuer')
+    snapshot = _broker_request(socket_path, {'op': 'status'}).get('snapshot', {})
+    jobs = [job for job in snapshot.get('running', []) if job.get('job_id') == job_id]
+    if (snapshot.get('probe_error') or snapshot.get('instance_id') != receipt.get('broker_instance_id')
+            or len(jobs) != 1 or jobs[0].get('state') != 'running'
+            or jobs[0].get('mode') != 'exclusive' or jobs[0].get('gpu_ids') != receipt['gpu_ids']):
+        raise ValueError('development broker lease is not live and exclusive')
+    return _observe_cuda_device(declared_target('sm_103a'), visible, job_id, 'exclusive')
 
 
 def main() -> int:
@@ -34,7 +87,11 @@ def main() -> int:
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--task', choices=TASK_IDS, action='append')
     parser.add_argument('--timing', action='store_true', help='CUPTI cold-L2 timing after all cases pass')
+    parser.add_argument('--broker-socket', type=Path)
+    parser.add_argument('--admission-receipt', type=Path)
     args = parser.parse_args()
+    if bool(args.broker_socket) != bool(args.admission_receipt):
+        parser.error('broker socket and admission receipt must be supplied together')
     commit = checkout_commit(ROOT)
     output = args.output.resolve()
     if any((parent / '.git').exists() for parent in (output, *output.parents)):
@@ -42,7 +99,8 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=False)
     import torch
     import triton
-    admission = observe_exclusive_cuda('sm_103a')
+    admission = (_admit_receipt(args.broker_socket, args.admission_receipt)
+                 if args.admission_receipt else observe_exclusive_cuda('sm_103a'))
     if torch.cuda.device_count() != 1:
         raise ValueError('run under an exclusive one-GPU allocation')
     name = torch.cuda.get_device_name(0)
