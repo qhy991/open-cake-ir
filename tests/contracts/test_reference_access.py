@@ -114,6 +114,15 @@ class ReferenceAccessTests(unittest.TestCase):
             self.preflight(document)
         self.assertEqual(document_role("python-example.py", "known_kernel_reproduction"), "target_implementation")
 
+    def test_unknown_environment_is_refused_without_claiming_inherited_code(self):
+        for access in ("clean_start", "direct_low_level", "known_kernel_reproduction"):
+            with self.subTest(access=access), self.assertRaisesRegex(
+                ValueError, "unsupported Authoring Environment kind 'synthetic'"
+            ):
+                validate_reference_handoff(ROOT, {"arm": {
+                    "environment_kind": "synthetic", "reference_access": access,
+                }})
+
     def test_inherited_native_lowering_requires_known_kernel_reproduction(self):
         document = self.document("matched-search-triton-optimization-template.json")
         document["arms"]["native_triton"]["reference_access"] = "clean_start"
