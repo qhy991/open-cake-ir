@@ -41,7 +41,6 @@ class CorpusGateReport:
 
     corpus_id: str
     compiler_revision_id: str
-    compiler_revision_sha256: str
     passed: bool
     cases: tuple[CorpusCaseReport, ...]
     # Defaulted so the Revision's declared set, not the case list, decides what
@@ -248,7 +247,6 @@ def check_corpus(compiler: Compiler, corpus_path: str | Path) -> CorpusGateRepor
     return CorpusGateReport(
         corpus_id=corpus_id,
         compiler_revision_id=compiler._revision.revision_id,
-        compiler_revision_sha256=compiler._revision.canonical_sha256,
         passed=all(report.matched for report in reports),
         cases=tuple(reports),
         declared_targets=tuple(sorted(compiler._revision.targets)),

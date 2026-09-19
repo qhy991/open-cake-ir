@@ -52,7 +52,7 @@ class ProfileReportTest(unittest.TestCase):
             "schema_version": 2,
             "model_id": "synthetic-report-fixture",
             "compiler_revision_id": assessment.compiler_revision_id,
-            "compiler_revision_sha256": assessment.compiler_revision_sha256,
+
             "target": "sm_100a",
             "context": {
                 "timer": "synthetic; no measurement",

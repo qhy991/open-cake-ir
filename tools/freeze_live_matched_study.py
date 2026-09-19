@@ -187,7 +187,6 @@ def main() -> int:
     _object(arms["open_cake"], "study.arms.open_cake")["compiler_revision"] = {
         "revision_id": gate.compiler_revision_id,
         "path": "compiler/revision.json",
-        "canonical_sha256": gate.compiler_revision_sha256,
     }
     for arm_name in arms:
         arm = _object(arms[arm_name], f"study.arms.{arm_name}")

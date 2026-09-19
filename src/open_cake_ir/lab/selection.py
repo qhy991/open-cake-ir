@@ -9,7 +9,7 @@ from typing import Mapping, cast
 from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
 from open_cake_ir.evaluation import EvaluationReceipt
 
-from ._documents import _object
+from ._documents import _object, differs
 from .executor import ExecutorRevision
 from .routing import CANDIDATE, COST_MODEL
 
@@ -19,23 +19,25 @@ class _EmpiricalSelection:
 
     def __init__(
         self, binding: Mapping[str, object], *, context: Mapping[str, object],
-        compiler_revision_id: str, compiler_revision_sha256: str, target: str,
+        compiler_revision_id: str, target: str,
     ) -> None:
         if set(binding) != {"kind", "model"} or binding.get("kind") != _EMPIRICAL_SELECTION:
-            raise ValueError("empirical selection binding differs")
+            raise differs(
+                "empirical selection binding",
+                expected={"kind": _EMPIRICAL_SELECTION, "fields": ["kind", "model"]},
+                observed={"kind": binding.get("kind"), "fields": sorted(binding)},
+            )
         self.model = EmpiricalCostModel(binding["model"])
         self._context_differences = tuple(
             key for key in ("timer", "cache_protocol", "runtime", "input_scope")
             if binding["model"]["context"].get(key) != context.get(key)
         ) + (("fields",) if set(binding["model"]["context"]) != set(context) else ())
         self._compiler_revision_id = compiler_revision_id
-        self._compiler_revision_sha256 = compiler_revision_sha256
         self._target = target
 
     def estimate(self, schedule: dict) -> dict[str, object]:
         result = self.model.estimate(
             schedule, compiler_revision_id=self._compiler_revision_id,
-            compiler_revision_sha256=self._compiler_revision_sha256,
             target=self._target,
         )
         reason = None
@@ -52,8 +54,7 @@ class _EmpiricalSelection:
         # The full supplier document is already frozen in the CampaignLock. Arbitrary
         # context/provenance maps (including raw observations) are not agent feedback.
         return {key: result[key] for key in (
-            "kind", "model_id", "model_compiler_revision_id",
-            "model_compiler_revision_sha256", "target", "covered",
+            "kind", "model_id", "model_compiler_revision_id", "target", "covered",
             "predicted_kernel_us", "empirical_range_us", "reason",
         )}
 
@@ -63,8 +64,9 @@ def _empirical_context(
 ) -> dict[str, object]:
     """Reference the shared CUPTI assay and its admitted, frozen runtime owner.
 
-    The Executor content identity binds the helper, assay source and host closure;
-    this projection does not infer equivalence between suppliers' free-text contexts.
+    The Executor identity (`<target>@<commit>`) binds the helper, assay source and host
+    closure; this projection does not infer equivalence between suppliers' free-text
+    contexts.
     """
     packages = executor.document["host_environment"]["packages"]
     return {
@@ -72,7 +74,7 @@ def _empirical_context(
         "cache_protocol": "cold_l2_cache=true",
         "runtime": {
             "compiler_version": packages.get("triton"),
-            "executor_revision": executor.canonical_sha256,
+            "executor_revision": executor.executor_id,
         },
         "input_scope": json.dumps(
             {"workload_contract_sha256": workload_sha256, "case_id": case_id},
@@ -230,9 +232,9 @@ def _empirical_filter(
         if estimate.get("covered") is True:
             value = estimate.get("predicted_kernel_us")
             if type(value) not in (float, int) or not math.isfinite(value) or value <= 0:
-                raise ValueError("candidate empirical prediction differs")
+                raise differs("candidate empirical prediction", expected="<finite positive number>", observed=value)
         elif estimate.get("covered") is not False:
-            raise ValueError("candidate empirical coverage differs")
+            raise differs("candidate empirical coverage", expected=[True, False], observed=estimate.get("covered"))
     applied = bool(launchable) and all(row["empirical_cost"]["covered"] for row in launchable)
     if applied:
         launchable.sort(key=lambda row: row["empirical_cost"]["predicted_kernel_us"])

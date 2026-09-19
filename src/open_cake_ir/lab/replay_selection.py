@@ -18,6 +18,7 @@ from .selection import (
     _receipt_qualifies,
 )
 from .replay_outcomes import _expected_matched_diagnoses_v1, _validate_matched_diagnoses_v1
+from .replay_refusals import event_location, refuse
 
 
 def _replay_candidate_selection(
@@ -34,31 +35,38 @@ def _replay_candidate_selection(
     receipt_order: Sequence[tuple[int, str, str]],
     receipts: Mapping[tuple[int, str, str], EvaluationReceipt],
     rejected: Mapping[tuple[int, str], Mapping[str, object]],
-) -> tuple[list[TurnObservation], int, str | None] | None:
+) -> tuple[list[TurnObservation], int, str | None]:
     filter_events = [
         event for event in events if event.get("kind") == "candidate_set_filtered"
     ]
     filters: dict[int, Mapping[str, object]] = {}
     filter_order: dict[int, tuple[str, ...]] = {}
     filter_disposition: dict[int, dict[str, str]] = {}
-    for event in filter_events:
+    for ordinal, event in enumerate(filter_events):
+        location = event_location("candidate_set_filtered", ordinal=ordinal)
         payload = _object(event.get("payload"), "candidate_set_filtered.payload")
         turn = payload.get("turn")
         order = payload.get("order")
-        if (
-            set(payload) != {"turn", "submitted", "launchable", "order"} | (
-                {"candidate_selection"} if empirical_selection is not None else set()
-            )
-            or not isinstance(turn, int)
-            or isinstance(turn, bool)
-            or turn in filters
-            or turn not in candidate_set_turns
-            or not isinstance(order, list)
-        ):
-            return None
+        expected_fields = {"turn", "submitted", "launchable", "order"} | (
+            {"candidate_selection"} if empirical_selection is not None else set()
+        )
+        if set(payload) != expected_fields:
+            refuse(f"{location}.payload", "fields differ", observed=set(payload),
+                   expected=expected_fields)
+        if not isinstance(turn, int) or isinstance(turn, bool):
+            refuse(f"{location}.payload.turn", "not an integer", observed=turn)
+        if turn in filters:
+            refuse(f"{location}.payload.turn", "a second filter for one Turn", observed=turn)
+        if turn not in candidate_set_turns:
+            refuse(f"{location}.payload.turn", "no candidate set was submitted in this Turn",
+                   observed=turn, expected=candidate_set_turns)
+        location = event_location("candidate_set_filtered", turn=turn)
+        if not isinstance(order, list):
+            refuse(f"{location}.payload.order", "not a list", observed=type(order).__name__)
         candidates: list[str] = []
         dispositions: dict[str, str] = {}
-        for row in order:
+        for index, row in enumerate(order):
+            row_location = f"{location}.payload.order[{index}]"
             expected_row_fields = {
                 "candidate_sha256",
                 "disposition",
@@ -68,50 +76,54 @@ def _replay_candidate_selection(
             if empirical_selection is not None:
                 expected_row_fields.add("empirical_cost")
             if not isinstance(row, Mapping) or set(row) != expected_row_fields:
-                return None
+                refuse(row_location, "row fields differ",
+                       observed=set(row) if isinstance(row, Mapping) else type(row).__name__,
+                       expected=expected_row_fields)
             candidate_sha256 = row.get("candidate_sha256")
             disposition = row.get("disposition")
             cost = row.get("cost")
             semantic_sha256 = row.get("semantic_sha256")
-            if (
-                not isinstance(candidate_sha256, str)
-                or _DIGEST.fullmatch(candidate_sha256) is None
-                or candidate_sha256 in dispositions
-                or disposition not in {"launchable", "rejected"}
-                or (
-                    cost is not None
-                    and (
-                        not isinstance(cost, Mapping)
-                        or set(cost) != {"device_fill", "binding_resource"}
-                        or not isinstance(cost.get("device_fill"), (int, float))
-                        or isinstance(cost.get("device_fill"), bool)
-                        or not math.isfinite(float(cost["device_fill"]))
-                        or not 0 < float(cost["device_fill"]) <= 1
-                        or not isinstance(cost.get("binding_resource"), str)
-                        or not cost.get("binding_resource")
-                    )
-                )
-                or (
-                    semantic_sha256 is not None
-                    and (
-                        not isinstance(semantic_sha256, str)
-                        or _DIGEST.fullmatch(semantic_sha256) is None
-                    )
-                )
+            if not isinstance(candidate_sha256, str) or _DIGEST.fullmatch(candidate_sha256) is None:
+                refuse(f"{row_location}.candidate_sha256", "not a SHA256 digest", observed=candidate_sha256)
+            if candidate_sha256 in dispositions:
+                refuse(f"{row_location}.candidate_sha256", "a second row for one candidate",
+                       observed=candidate_sha256)
+            if disposition not in {"launchable", "rejected"}:
+                refuse(f"{row_location}.disposition", "not a disposition", observed=disposition,
+                       expected={"launchable", "rejected"})
+            if cost is not None and (
+                not isinstance(cost, Mapping)
+                or set(cost) != {"device_fill", "binding_resource"}
+                or not isinstance(cost.get("device_fill"), (int, float))
+                or isinstance(cost.get("device_fill"), bool)
+                or not math.isfinite(float(cost["device_fill"]))
+                or not 0 < float(cost["device_fill"]) <= 1
+                or not isinstance(cost.get("binding_resource"), str)
+                or not cost.get("binding_resource")
             ):
-                return None
+                refuse(f"{row_location}.cost",
+                       "not a cost record with device_fill in (0, 1] and a named binding resource",
+                       observed=cost)
+            if semantic_sha256 is not None and (
+                not isinstance(semantic_sha256, str)
+                or _DIGEST.fullmatch(semantic_sha256) is None
+            ):
+                refuse(f"{row_location}.semantic_sha256", "not a SHA256 digest", observed=semantic_sha256)
             candidates.append(candidate_sha256)
             dispositions[candidate_sha256] = cast(str, disposition)
         provider_candidates = provider_candidates_by_turn.get(turn)
-        if (
-            provider_candidates is None
-            or len(candidates) != len(provider_candidates)
-            or set(candidates) != set(provider_candidates)
-            or payload.get("submitted") != len(provider_candidates)
-            or payload.get("launchable")
-            != sum(value == "launchable" for value in dispositions.values())
-        ):
-            return None
+        if provider_candidates is None:
+            refuse(f"{location}.payload.turn", "no provider Turn completed for this filter", observed=turn)
+        if len(candidates) != len(provider_candidates) or set(candidates) != set(provider_candidates):
+            refuse(f"{location}.payload.order", "rows differ from the candidates the provider submitted",
+                   observed=candidates, expected=provider_candidates)
+        if payload.get("submitted") != len(provider_candidates):
+            refuse(f"{location}.payload.submitted", "differs from the submitted candidate count",
+                   observed=payload.get("submitted"), expected=len(provider_candidates))
+        expected_launchable = sum(value == "launchable" for value in dispositions.values())
+        if payload.get("launchable") != expected_launchable:
+            refuse(f"{location}.payload.launchable", "differs from the launchable rows",
+                   observed=payload.get("launchable"), expected=expected_launchable)
         if empirical_selection is not None:
             rows_by_candidate = {row["candidate_sha256"]: row for row in order}
             expected_rows = []
@@ -124,12 +136,14 @@ def _replay_candidate_selection(
                 )
                 expected_rows.append(expected)
             expected_rows, expected_selection = _empirical_filter(expected_rows)
-            if (
-                _canonical_json_bytes(order) != _canonical_json_bytes(expected_rows)
-                or _canonical_json_bytes(payload["candidate_selection"])
-                != _canonical_json_bytes(expected_selection)
-            ):
-                return None
+            if _canonical_json_bytes(order) != _canonical_json_bytes(expected_rows):
+                refuse(f"{location}.payload.order",
+                       "differs from the empirical order rederived from the retained candidates",
+                       observed=order, expected=expected_rows)
+            if _canonical_json_bytes(payload["candidate_selection"]) != _canonical_json_bytes(expected_selection):
+                refuse(f"{location}.payload.candidate_selection",
+                       "differs from the empirical selection rederived from the retained candidates",
+                       observed=payload["candidate_selection"], expected=expected_selection)
         filters[turn] = payload
         filter_order[turn] = tuple(candidates)
         filter_disposition[turn] = dispositions
@@ -141,38 +155,39 @@ def _replay_candidate_selection(
         if disposition == "rejected"
     }
     if set(rejected) != expected_rejections:
-        return None
+        refuse("candidate_rejected", "rejection events differ from the filters' rejected rows",
+               observed={f"turn={turn},candidate={candidate}" for turn, candidate in rejected},
+               expected={f"turn={turn},candidate={candidate}" for turn, candidate in expected_rejections})
 
     selection_events = [
         event for event in events if event.get("kind") == "candidate_selected"
     ]
     selections: dict[int, Mapping[str, object]] = {}
-    for event in selection_events:
+    for ordinal, event in enumerate(selection_events):
+        location = event_location("candidate_selected", ordinal=ordinal)
         payload = _object(event.get("payload"), "candidate_selected.payload")
         turn = payload.get("turn")
         candidate_sha256 = payload.get("candidate_sha256")
         qualified = payload.get("qualified_search_candidates")
-        if (
-            set(payload)
-            != {
-                "turn",
-                "candidate_sha256",
-                "qualified_search_candidates",
-                "reason",
-            }
-            or not isinstance(turn, int)
-            or isinstance(turn, bool)
-            or turn in selections
-            or turn not in candidate_set_turns
-            or not isinstance(candidate_sha256, str)
-            or _DIGEST.fullmatch(candidate_sha256) is None
-            or not isinstance(qualified, list)
-            or any(
-                not isinstance(value, str) or _DIGEST.fullmatch(value) is None
-                for value in qualified
-            )
+        expected_fields = {"turn", "candidate_sha256", "qualified_search_candidates", "reason"}
+        if set(payload) != expected_fields:
+            refuse(f"{location}.payload", "fields differ", observed=set(payload), expected=expected_fields)
+        if not isinstance(turn, int) or isinstance(turn, bool):
+            refuse(f"{location}.payload.turn", "not an integer", observed=turn)
+        if turn in selections:
+            refuse(f"{location}.payload.turn", "a second selection for one Turn", observed=turn)
+        if turn not in candidate_set_turns:
+            refuse(f"{location}.payload.turn", "no candidate set was submitted in this Turn",
+                   observed=turn, expected=candidate_set_turns)
+        location = event_location("candidate_selected", turn=turn)
+        if not isinstance(candidate_sha256, str) or _DIGEST.fullmatch(candidate_sha256) is None:
+            refuse(f"{location}.payload.candidate_sha256", "not a SHA256 digest", observed=candidate_sha256)
+        if not isinstance(qualified, list) or any(
+            not isinstance(value, str) or _DIGEST.fullmatch(value) is None
+            for value in qualified
         ):
-            return None
+            refuse(f"{location}.payload.qualified_search_candidates", "not a list of SHA256 digests",
+                   observed=qualified)
         selections[turn] = payload
 
     observations: list[TurnObservation] = []
@@ -202,32 +217,45 @@ def _replay_candidate_selection(
         if turn in candidate_set_turns:
             if turn not in filters:
                 if turn != fault_turn:
-                    return None
+                    refuse(event_location("candidate_set_filtered", turn=turn),
+                           "no filter for a Turn that did not fault", expected=fault_turn)
                 continue
             selection = selections.get(turn)
+            location = event_location("candidate_selected", turn=turn)
             if selection is None:
                 if turn != fault_turn:
-                    return None
+                    refuse(location, "no selection for a Turn that did not fault", expected=fault_turn)
                 continue
             selected = cast(str, selection["candidate_sha256"])
             order = filter_order[turn]
             dispositions = filter_disposition[turn]
             if selected not in provider_candidates:
-                return None
+                refuse(f"{location}.payload.candidate_sha256",
+                       "the selected candidate is not one the provider submitted in that Turn",
+                       observed=selected, expected=provider_candidates)
             search_keys = [
                 key
                 for key in receipt_order
                 if key[0] == turn and key[1] == "search"
             ]
             if selection.get("reason") == "all_candidates_rejected":
-                if (
-                    selected != order[0]
-                    or any(value == "launchable" for value in dispositions.values())
-                    or search_keys
-                    or selection.get("qualified_search_candidates") != []
-                    or (turn, selected) not in rejected
-                ):
-                    return None
+                if selected != order[0]:
+                    refuse(f"{location}.payload.candidate_sha256",
+                           "an all-rejected Turn selects the first filtered row",
+                           observed=selected, expected=order[0])
+                if any(value == "launchable" for value in dispositions.values()):
+                    refuse(f"{location}.payload.reason", "all_candidates_rejected although a row is launchable",
+                           observed=dispositions)
+                if search_keys:
+                    refuse(f"{location}.payload.reason", "all_candidates_rejected although searches were evaluated",
+                           observed=[key[2] for key in search_keys])
+                if selection.get("qualified_search_candidates") != []:
+                    refuse(f"{location}.payload.qualified_search_candidates",
+                           "an all-rejected Turn qualifies no candidate",
+                           observed=selection.get("qualified_search_candidates"), expected=[])
+                if (turn, selected) not in rejected:
+                    refuse(f"{location}.payload.candidate_sha256", "the selected candidate has no rejection event",
+                           observed=selected)
                 if turn != fault_turn:
                     observations.append(
                         TurnObservation(
@@ -240,25 +268,29 @@ def _replay_candidate_selection(
                     )
                 continue
             if not search_keys or len(search_keys) > searches_per_turn:
-                return None
+                refuse(event_location("candidate_evaluated", turn=turn, purpose="search"),
+                       "search evaluation count is outside 1..searches_per_turn",
+                       observed=len(search_keys), expected=f"1..{searches_per_turn}")
             searched_candidates = [key[2] for key in search_keys]
-            if (
-                len(set(searched_candidates)) != len(searched_candidates)
-                or any(dispositions.get(value) != "launchable" for value in searched_candidates)
-                or [order.index(value) for value in searched_candidates]
-                != sorted(order.index(value) for value in searched_candidates)
-                or (
-                    searched_candidates
-                    != (
-                        expected_searches[turn][
-                            : len(searched_candidates)
-                        ]
-                        if turn == fault_turn
-                        else expected_searches[turn]
-                    )
-                )
+            search_location = event_location("candidate_evaluated", turn=turn, purpose="search")
+            if len(set(searched_candidates)) != len(searched_candidates):
+                refuse(search_location, "a candidate was searched twice", observed=searched_candidates)
+            if any(dispositions.get(value) != "launchable" for value in searched_candidates):
+                refuse(search_location, "a searched candidate is not a launchable row of the filter",
+                       observed={value: dispositions.get(value) for value in searched_candidates})
+            if [order.index(value) for value in searched_candidates] != sorted(
+                order.index(value) for value in searched_candidates
             ):
-                return None
+                refuse(search_location, "searches are not in filter order", observed=searched_candidates,
+                       expected=[value for value in order if value in searched_candidates])
+            expected_searched = (
+                expected_searches[turn][: len(searched_candidates)]
+                if turn == fault_turn
+                else expected_searches[turn]
+            )
+            if searched_candidates != expected_searched:
+                refuse(search_location, "searched candidates differ from the rederived search plan",
+                       observed=searched_candidates, expected=expected_searched)
             qualified_search = [
                 key[2] for key in search_keys if _receipt_qualifies(receipts[key])
             ]
@@ -278,12 +310,17 @@ def _replay_candidate_selection(
                 if qualified_search
                 else "no_qualified_search_candidate"
             )
-            if (
-                selection.get("qualified_search_candidates") != qualified_search
-                or selected != expected_selected
-                or selection.get("reason") != expected_reason
-            ):
-                return None
+            if selection.get("qualified_search_candidates") != qualified_search:
+                refuse(f"{location}.payload.qualified_search_candidates",
+                       "differs from the qualification rederived from the search receipts",
+                       observed=selection.get("qualified_search_candidates"), expected=qualified_search)
+            if selected != expected_selected:
+                refuse(f"{location}.payload.candidate_sha256",
+                       "differs from the selection rederived from the search receipts",
+                       observed=selected, expected=expected_selected)
+            if selection.get("reason") != expected_reason:
+                refuse(f"{location}.payload.reason", "differs from the rederived selection reason",
+                       observed=selection.get("reason"), expected=expected_reason)
             confirms = [
                 receipt
                 for (candidate_turn, purpose, candidate), receipt in receipts.items()
@@ -298,12 +335,18 @@ def _replay_candidate_selection(
                 and key[1] == "confirmatory"
                 and key[2] != selected
             ]
-            if foreign_confirms or (not qualified_search and confirms):
-                return None
+            confirm_location = event_location("candidate_evaluated", turn=turn, purpose="confirmatory")
+            if foreign_confirms:
+                refuse(confirm_location, "a confirmatory evaluation of a candidate that was not selected",
+                       observed=[key[2] for key in foreign_confirms], expected=selected)
+            if not qualified_search and confirms:
+                refuse(confirm_location, "a confirmatory evaluation although no search candidate qualified",
+                       observed=len(confirms), expected=0)
             if turn == fault_turn:
                 continue
             if len(confirms) != (1 if qualified_search else 0):
-                return None
+                refuse(confirm_location, "confirmatory evaluation count differs",
+                       observed=len(confirms), expected=1 if qualified_search else 0)
             confirmed = confirms[0] if confirms else None
             qualified = confirmed is not None and _receipt_qualifies(confirmed)
             attributions = [
@@ -331,7 +374,9 @@ def _replay_candidate_selection(
                 or {key[2] for key in attributions}
                 != set(expected_attributions)
             ):
-                return None
+                refuse(event_location("candidate_evaluated", turn=turn, purpose="attribution"),
+                       "attribution evaluations differ from the protocol's expectation",
+                       observed=[key[2] for key in attributions], expected=expected_attributions)
             observations.append(
                 TurnObservation(
                     turn,
@@ -346,7 +391,9 @@ def _replay_candidate_selection(
             # explicit filter/selection events. Keep that bounded spelling readable;
             # new evidence must use the candidate-set contract above.
             if len(provider_candidates) != 1:
-                return None
+                refuse(event_location("provider_turn_completed", turn=turn),
+                       "a Turn without a candidate set submits exactly one candidate",
+                       observed=len(provider_candidates), expected=1)
             selected = provider_candidates[0]
             if turn == fault_turn:
                 continue
@@ -355,7 +402,9 @@ def _replay_candidate_selection(
                 key[0] == turn and key[2] == selected for key in receipts
             )
             if has_rejection == has_evaluation:
-                return None
+                refuse(event_location("provider_turn_completed", turn=turn),
+                       "the Turn's candidate was neither rejected nor evaluated, or both",
+                       observed={"rejected": has_rejection, "evaluated": has_evaluation})
             confirmed = receipts.get((turn, "confirmatory", selected))
             qualified = confirmed is not None and _receipt_qualifies(confirmed)
             observations.append(
@@ -375,9 +424,12 @@ def _replay_candidate_selection(
             fault_turn in candidate_set_turns
             and set(filters) | {fault_turn} == candidate_set_turns
         ):
-            return None
-    if any(turn not in filters for turn in selections):
-        return None
+            refuse("candidate_set_filtered", "filtered Turns differ from the Turns with a candidate set",
+                   observed=set(filters), expected=candidate_set_turns)
+    unfiltered_selections = sorted(turn for turn in selections if turn not in filters)
+    if unfiltered_selections:
+        refuse("candidate_selected", "a selection in a Turn that was not filtered",
+               observed=unfiltered_selections, expected=set(filters))
     for turn, candidate_sha256 in rejected:
         if turn in candidate_set_turns:
             # Rejection is a property of each set member, not of the Turn's
@@ -390,11 +442,15 @@ def _replay_candidate_selection(
                 filter_disposition.get(turn, {}).get(candidate_sha256)
                 != "rejected"
             ):
-                return None
+                refuse(event_location("candidate_rejected", turn=turn, candidate=candidate_sha256),
+                       "the filter does not dispose this candidate as rejected",
+                       observed=filter_disposition.get(turn, {}).get(candidate_sha256), expected="rejected")
 
     for turn, candidate_sha256 in launchables:
         if turn in candidate_set_turns and filter_disposition.get(turn, {}).get(
             candidate_sha256
         ) != "launchable":
-            return None
+            refuse(event_location("launchable_candidate_sealed", turn=turn, candidate=candidate_sha256),
+                   "the filter does not dispose this candidate as launchable",
+                   observed=filter_disposition.get(turn, {}).get(candidate_sha256), expected="launchable")
     return observations, searches_per_turn, attribution_evaluation

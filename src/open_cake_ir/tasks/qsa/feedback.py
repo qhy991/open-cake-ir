@@ -38,8 +38,7 @@ def _bounded_empirical_cost(cost: object) -> Mapping[str, object]:
     return {
         key: cost[key]
         for key in (
-            "kind", "model_id", "model_compiler_revision_id",
-            "model_compiler_revision_sha256", "target", "covered",
+            "kind", "model_id", "model_compiler_revision_id", "target", "covered",
             "predicted_kernel_us", "empirical_range_us", "reason",
         )
         if key in cost

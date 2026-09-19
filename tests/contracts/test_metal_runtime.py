@@ -19,7 +19,7 @@ def host_fixture():
     """Synthetic assessment identities isolate the host protocol from release authority."""
     source = frontend.read_schedule(ROOT / "examples/python/metal_elementwise.py")
     schedule = Schedule.from_dict(source.document)
-    common = dict(compiler_revision_id="host-test", compiler_revision_sha256="fixture-revision",
+    common = dict(compiler_revision_id="host-test",
                   schedule_id=schedule.schedule_id, schedule_sha256="fixture-schedule",
                   target=schedule.target, route=schedule.lowering)
     assessment = Assessment(**common, accepted=True, lowering_eligible=True, findings=(),

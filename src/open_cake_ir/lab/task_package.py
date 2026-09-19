@@ -114,7 +114,7 @@ def build_run_reference_documents(
             "candidate_selection": {
                 "kind": selection["kind"],
                 "model": {key: model[key] for key in (
-                    "model_id", "compiler_revision_id", "compiler_revision_sha256", "target",
+                    "model_id", "compiler_revision_id", "target",
                 )},
             },
         }

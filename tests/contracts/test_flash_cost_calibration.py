@@ -168,7 +168,7 @@ class FlashCalibrationTest(unittest.TestCase):
             # this new derived Schedule; never edit or relabel the frozen seed.
             schedule["metadata"]["workload_contract_sha256"] = self.workload.canonical_sha256
             write(candidate / spec["schedule"], schedule)
-        judge = {"identity": f"{self.executor.executor_id}@{self.executor.canonical_sha256}", "cwd": str(self.project), "command": [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "src/open_cake_ir/tasks/flash_kmeans/calibrate.py"), "collect"]}
+        judge = {"identity": self.executor.executor_id, "cwd": str(self.project), "command": [self.executor.document["host_environment"]["python"]["invocation_path"], str(self.project / "src/open_cake_ir/tasks/flash_kmeans/calibrate.py"), "collect"]}
         task = {"schema": "kernelinfra.task.v1", "task_id": "SYNTHETIC-no-GPU-task", "workloads": [self.workload.workload_id], "comparison": {"primary_workloads": [self.workload.workload_id], "relative_noise_floor": .05}, "stages": [{"id": "compile", "kind": "compile", "execution": "local", "judge": judge}, {"id": "collection", "kind": "judge", "resources": {"mode": "exclusive", "gpu_count": 1, "run_timeout_s": 3600}, "judge": judge}]}
         write(run / "task.json", task)
         principal = {"pid": 200, "parent_pid": 100, "uid": 321, "gid": 654, "broker_peer": [100, 321, 654], "broker_socket": "/SYNTHETIC/no-broker.sock", "job_id": None, "visible_device": "7", "run_id": "SYNTHETIC-NOT-A-GPU-RUN"}
@@ -215,7 +215,7 @@ class FlashCalibrationTest(unittest.TestCase):
         for buffer in schedule["buffers"]:
             if buffer["name"] in {"tokens", "assignments"}:
                 buffer["shape"][1] += 128
-        prediction = model.estimate(schedule, compiler_revision_id=self.compiler_ref["revision_id"], compiler_revision_sha256=self.compiler_ref["canonical_sha256"], target="sm_100a")
+        prediction = model.estimate(schedule, compiler_revision_id=self.compiler_ref["revision_id"],  target="sm_100a")
         self.assertFalse(prediction["covered"])
         judge = instrument._read(run / "stages/collection/result.json")
         self.assertFalse(any("candidate_ms" in row or "baseline_ms" in row for row in judge["workloads"]))

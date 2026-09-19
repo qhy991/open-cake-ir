@@ -121,8 +121,7 @@ class DiagnosisRunTests(unittest.TestCase):
         # Exact interface fixture binds the same declared input at preflight/replay;
         # it neither writes a release nor represents a successful Corpus Gate.
         reference = compiler_reference(ROOT)
-        gate = SimpleNamespace(compiler_revision_id=reference["revision_id"],
-                               compiler_revision_sha256=reference["canonical_sha256"])
+        gate = SimpleNamespace(compiler_revision_id=reference["revision_id"])
         def resolve(root, value, context, *, template):
             if value != ({"binding": "current_release"} if template else reference):
                 raise ValueError("diagnosis fixture Compiler reference differs")

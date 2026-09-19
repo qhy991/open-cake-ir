@@ -73,3 +73,21 @@ def checkout_commit_or_none(project_root: str | Path) -> str | None:
         return checkout_commit(project_root)
     except SourceIdentityError:
         return None
+
+
+def untracked_paths(project_root: str | Path, relative_paths: tuple[str, ...]) -> tuple[str, ...]:
+    """Return those of ``relative_paths`` (POSIX, root-relative) that the index does not track.
+
+    `checkout_commit` refuses a tree with untracked files, but a file hidden by
+    `.git/info/exclude` or a global excludes file is invisible to `git status` and still
+    present on disk, so a loader that globs a directory would read it into an identity
+    the commit does not cover. A loader that claims the commit as its identity asks here
+    for every document it read.
+    """
+
+    if not relative_paths:
+        return ()
+    root = Path(project_root).resolve(strict=True)
+    listed = _git(root, "ls-files", "-z", "--", *relative_paths)
+    tracked = {name for name in listed.split("\0") if name}
+    return tuple(path for path in relative_paths if path not in tracked)

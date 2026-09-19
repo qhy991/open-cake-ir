@@ -296,10 +296,7 @@ def main() -> int:
         "observed_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "purpose": "residency_attribution",
         "host": socket.gethostname(),
-        "compiler_revision": {
-            "revision_id": assessment.compiler_revision_id,
-            "revision_sha256": assessment.compiler_revision_sha256,
-        },
+        "compiler_revision": {"revision_id": assessment.compiler_revision_id},
         "schedule": {
             "path": arguments.schedule,
             "schedule_id": assessment.schedule_id,

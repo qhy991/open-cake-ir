@@ -14,6 +14,7 @@ from ._policies import _ATTRIBUTION_EVALUATION
 from .checkpoints import TurnObservation, project_checkpoints
 from .contracts import CampaignLock
 from .ralph import RalphBudget, derive_ralph_stop_reason
+from .replay_refusals import event_location, refuse
 from .selection import (
     _collapse_diagnosis,
     _matched_search_decision,
@@ -69,16 +70,20 @@ def _validate_matched_diagnoses_v1(
     """Require every retained diagnosis to be the unique derived projection."""
 
     observed: dict[int, list[Mapping[str, object]]] = {}
+    ordinal = 0
     for event in events:
         if event.get("kind") != "diagnosis_routed":
             continue
         payload = _object(event.get("payload"), "diagnosis_routed.payload")
         turn = payload.get("turn")
         if not isinstance(turn, int) or isinstance(turn, bool) or turn <= 0:
-            raise ValueError("diagnosis_routed Turn differs")
+            refuse(event_location("diagnosis_routed", ordinal=ordinal) + ".payload.turn",
+                   "not a positive integer", observed=turn)
+        ordinal += 1
         observed.setdefault(turn, []).append(payload)
     if set(observed) - set(expected):
-        raise ValueError("diagnosis_routed Turn is outside the filtered set")
+        refuse("diagnosis_routed", "a diagnosis in a Turn that was not filtered",
+               observed=set(observed) - set(expected), expected=set(expected))
     for turn, expected_payloads in expected.items():
         actual = observed.get(turn, [])
         admitted = (
@@ -87,7 +92,9 @@ def _validate_matched_diagnoses_v1(
             else expected_payloads
         )
         if [dict(payload) for payload in actual] != admitted:
-            raise ValueError("diagnosis_routed is not derived from retained evidence")
+            refuse(event_location("diagnosis_routed", turn=turn),
+                   "differs from the diagnoses rederived from the retained filter and receipts",
+                   observed=[dict(payload) for payload in actual], expected=admitted)
 
 
 def _replay_terminal(
@@ -104,11 +111,14 @@ def _replay_terminal(
     searches_per_turn: int,
     invocation_counts: Mapping[str, int] | None = None,
     boundary_converted: bool = False,
-) -> bool:
+) -> None:
+    """Refuse unless the terminal, checkpoints and Ralph state rederive from the Run's facts."""
     if not observations and not faults and endpoint_policy(lock.analysis_plan) is None:
-        return False
-    if [item.turn for item in observations] != list(range(1, len(observations) + 1)):
-        return False
+        refuse("run_terminal", "a Run with no Turn observation and no fault has no terminal to derive")
+    observed_turns = [item.turn for item in observations]
+    if observed_turns != list(range(1, len(observations) + 1)):
+        refuse("checkpoints_projected", "observed Turns are not 1..n", observed=observed_turns,
+               expected=list(range(1, len(observations) + 1)))
     resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
     budget = _object(resolved["budget"], "resolved_inputs.budget")
     terminal_tokens = fault_terminal_tokens if fault_terminal_tokens is not None else max(cumulative_by_turn.values(), default=0)
@@ -131,18 +141,22 @@ def _replay_terminal(
         # already settled. A terminal whose own replayed facts leave the final
         # checkpoint unreached has nothing settled to convert, so the marker
         # cannot stand -- the fault terminal it displaced does.
-        return False
+        refuse("run_terminal.payload.boundary_diagnostic",
+               "a boundary conversion with the final checkpoint unreached has nothing settled to convert",
+               observed=projected[-1].state)
     checkpoint_payload = _object(
         checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
     )
     expected_checkpoint_fields = (
         {"checkpoints", "ralph"}
     )
-    if (
-        (set(checkpoint_payload) != expected_checkpoint_fields)
-        or checkpoint_payload.get("checkpoints") != expected_projection
-    ):
-        return False
+    if set(checkpoint_payload) != expected_checkpoint_fields:
+        refuse("checkpoints_projected.payload", "fields differ", observed=set(checkpoint_payload),
+               expected=expected_checkpoint_fields)
+    if checkpoint_payload.get("checkpoints") != expected_projection:
+        refuse("checkpoints_projected.payload.checkpoints",
+               "differs from the projection rederived from the Turn observations",
+               observed=checkpoint_payload.get("checkpoints"), expected=expected_projection)
     ralph_state = _object(
         checkpoint_payload.get("ralph"), "checkpoints_projected.ralph"
     )
@@ -153,18 +167,20 @@ def _replay_terminal(
     state_turn = ralph_state.get("iteration")
     elapsed_wall = ralph_state.get("elapsed_wall_seconds")
     active_authoring = ralph_state.get("active_authoring_seconds")
-    if (
-        not isinstance(state_turn, int)
-        or isinstance(state_turn, bool)
-        or not isinstance(elapsed_wall, (int, float))
-        or isinstance(elapsed_wall, bool)
-        or not isinstance(active_authoring, (int, float))
-        or isinstance(active_authoring, bool)
-    ):
-        return False
-    if endpoint_policy(lock.analysis_plan) is not None and state_turn != min(
-            budget["maximum_turns"] + 1, len(observations) + 1):
-        return False
+    if not isinstance(state_turn, int) or isinstance(state_turn, bool):
+        refuse("checkpoints_projected.payload.ralph.iteration", "not an integer", observed=state_turn)
+    if not isinstance(elapsed_wall, (int, float)) or isinstance(elapsed_wall, bool):
+        refuse("checkpoints_projected.payload.ralph.elapsed_wall_seconds", "not a number",
+               observed=elapsed_wall)
+    if not isinstance(active_authoring, (int, float)) or isinstance(active_authoring, bool):
+        refuse("checkpoints_projected.payload.ralph.active_authoring_seconds", "not a number",
+               observed=active_authoring)
+    if endpoint_policy(lock.analysis_plan) is not None:
+        expected_turn = min(budget["maximum_turns"] + 1, len(observations) + 1)
+        if state_turn != expected_turn:
+            refuse("checkpoints_projected.payload.ralph.iteration",
+                   "differs from the Turn after the last observed or budgeted one",
+                   observed=state_turn, expected=expected_turn)
     # A converted boundary terminal keeps its fault observation in the ledger
     # but derives its stop reason like any normal budget terminal; every other
     # faulted Run reports the adherence it ended with.
@@ -184,23 +200,33 @@ def _replay_terminal(
             ),
         )
     )
-    if (
-        ralph_state.get("kind") != "ralph_state_v1"
-        or ralph_state.get("cumulative_provider_tokens")
-        != terminal_tokens
-        or ralph_state.get("remaining", {}).get("provider_tokens") != max(0, budget["limit"] - terminal_tokens)
-        or ralph_state.get("evaluation_counts") != expected_counts
-        or ralph_state.get("terminal_reason") != expected_stop_reason
+    for field, observed, expected in (
+        ("kind", ralph_state.get("kind"), "ralph_state_v1"),
+        ("cumulative_provider_tokens", ralph_state.get("cumulative_provider_tokens"), terminal_tokens),
+        ("remaining.provider_tokens", ralph_state.get("remaining", {}).get("provider_tokens"),
+         max(0, budget["limit"] - terminal_tokens)),
+        ("evaluation_counts", ralph_state.get("evaluation_counts"), expected_counts),
+        ("terminal_reason", ralph_state.get("terminal_reason"), expected_stop_reason),
     ):
-        return False
+        if observed != expected:
+            refuse(f"checkpoints_projected.payload.ralph.{field}",
+                   "differs from the Ralph state rederived from the Run's facts",
+                   observed=observed, expected=expected)
     expected_observation, expected_endpoint = matched_endpoint(
         checkpoint=projected[-1], observations=observations,
         terminal_provider_tokens=terminal_tokens, protocol_adherence=audit.protocol_adherence,
         terminal_reason=expected_stop_reason, analysis=lock.analysis_plan,
     )
-    endpoint_matches = audit.endpoint == expected_endpoint
+    if audit.endpoint_observation != expected_observation:
+        refuse("run_terminal.payload.endpoint_observation",
+               "differs from the observation rederived from the final checkpoint",
+               observed=audit.endpoint_observation, expected=expected_observation)
+    observed_endpoint = dict(audit.endpoint) if audit.endpoint is not None else None
+    endpoint_matches = observed_endpoint == expected_endpoint
     if endpoint_policy(lock.analysis_plan) is not None:
         # Exact JSON types as well as fields: observed zero is not False, and a
         # typed terminal token count cannot be substituted by an equal float.
-        endpoint_matches = canonical_json_bytes(dict(audit.endpoint) if audit.endpoint is not None else None) == canonical_json_bytes(expected_endpoint)
-    return audit.endpoint_observation == expected_observation and endpoint_matches
+        endpoint_matches = canonical_json_bytes(observed_endpoint) == canonical_json_bytes(expected_endpoint)
+    if not endpoint_matches:
+        refuse("run_terminal.payload.endpoint", "differs from the endpoint rederived from the final checkpoint",
+               observed=observed_endpoint, expected=expected_endpoint)

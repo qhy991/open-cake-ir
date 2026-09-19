@@ -129,7 +129,7 @@ def _executor(root: Path, compiler_reference: Mapping[str, object]) -> ExecutorR
     task = json.loads(_required_environment_path("KERNELINFRA_TASK").read_text())
     stage_id = os.environ.get("KERNELINFRA_STAGE_ID")
     stages = [stage for stage in task["stages"] if stage["id"] == stage_id]
-    expected_identity = f"{executor.executor_id}@{executor.canonical_sha256}"
+    expected_identity = executor.executor_id
     if len(stages) != 1 or stages[0]["judge"]["identity"] != expected_identity:
         raise ValueError("GPU Infra task does not bind the current Executor Revision")
     command = stages[0]["judge"].get("command")
@@ -1019,7 +1019,7 @@ def main(argv: list[str] | None = None) -> int:
                     nvcc=arguments.nvcc.resolve(strict=True),
                     cuobjdump=arguments.cuobjdump.resolve(strict=True),
                     compiler=Compiler(project_root=root, revision_id=dependency.revision_id,
-                        revision_sha256=dependency.canonical_sha256, commit=dependency.commit,
+                        commit=dependency.commit,
                         target_definitions=dependency.targets, corpus_path=dependency.corpus_path,
                         calibration_coverage=dependency.calibration_coverage),
                     target=dependency.targets["sm_100a"],

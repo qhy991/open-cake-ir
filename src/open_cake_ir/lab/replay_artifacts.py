@@ -12,6 +12,7 @@ from open_cake_ir.evidence import EvidenceStore
 
 from ._documents import _canonical_json_bytes, _object
 from .archive import _arm_artifact_roles
+from .replay_refusals import event_location, refuse
 
 
 def _replay_launchable_candidate(
@@ -25,6 +26,7 @@ def _replay_launchable_candidate(
 ) -> LaunchableCandidate:
     """Rebuild one sealed launchable and enforce its arm-owned artifact contract."""
 
+    location = event_location("launchable_candidate_sealed", turn=turn, candidate=candidate_sha256)
     matching = []
     for event in launchable_events:
         payload = _object(event.get("payload"), "launchable.payload")
@@ -34,23 +36,22 @@ def _replay_launchable_candidate(
         ):
             matching.append(payload)
     if len(matching) != 1:
-        raise ValueError("launchable candidate event coverage differs")
+        refuse(location, "launchable candidate event coverage differs", observed=len(matching), expected=1)
     payload = matching[0]
-    if set(payload) != {
-        "turn",
-        "candidate_sha256",
-        "candidate_record_sha256",
-        "objects",
-    } or payload.get("candidate_sha256") != candidate_sha256:
-        raise ValueError("launchable candidate event authority differs")
+    expected_fields = {"turn", "candidate_sha256", "candidate_record_sha256", "objects"}
+    if set(payload) != expected_fields:
+        refuse(f"{location}.payload", "launchable candidate event authority differs",
+               observed=set(payload), expected=expected_fields)
     references = payload.get("objects")
     if not isinstance(references, list):
-        raise ValueError("launchable candidate object references differ")
+        refuse(f"{location}.payload.objects", "launchable candidate object references differ",
+               observed=type(references).__name__)
     artifact_payloads: dict[str, bytes] = {}
     artifact_roles: dict[str, str] = {}
-    for reference in references:
+    for index, reference in enumerate(references):
         if not isinstance(reference, Mapping):
-            raise ValueError("launchable candidate object reference differs")
+            refuse(f"{location}.payload.objects[{index}]", "launchable candidate object reference differs",
+                   observed=type(reference).__name__)
         role = reference.get("role")
         digest = reference.get("sha256")
         if (
@@ -58,19 +59,21 @@ def _replay_launchable_candidate(
             or role in artifact_roles
             or not isinstance(digest, str)
         ):
-            raise ValueError("launchable candidate object roles differ")
+            refuse(f"{location}.payload.objects[{index}]", "launchable candidate object roles differ",
+                   observed={"role": role, "sha256": digest})
         artifact_payloads[role] = evidence.read_object(reference)
         artifact_roles[role] = digest
         if sha256(artifact_payloads[role]).hexdigest() != digest:
-            raise ValueError("launchable candidate artifact bytes differ")
+            refuse(f"{location}.{role}", "launchable candidate artifact bytes differ")
     if "launch_manifest" not in artifact_payloads:
-        raise ValueError("launchable candidate lacks its launch manifest")
+        refuse(f"{location}.payload.objects", "launchable candidate lacks its launch manifest",
+               observed=set(artifact_roles))
     manifest = manifest_parser(json.loads(artifact_payloads["launch_manifest"]))
-    if (not _arm_artifact_roles(arm, manifest.target) <= set(artifact_roles)
-            or set(artifact_payloads) != set(artifact_roles)):
-        raise ValueError("launchable candidate arm artifact roles differ")
+    if not _arm_artifact_roles(arm, manifest.target) <= set(artifact_roles):
+        refuse(f"{location}.payload.objects", "launchable candidate arm artifact roles differ",
+               observed=set(artifact_roles), expected=_arm_artifact_roles(arm, manifest.target))
     if artifact_roles["launch_manifest"] != manifest.canonical_sha256:
-        raise ValueError("launchable candidate launch manifest seal differs")
+        refuse(f"{location}.launch_manifest", "launchable candidate launch manifest seal differs")
     candidate = LaunchableCandidate(
         candidate_sha256=candidate_sha256,
         target=manifest.target,
@@ -80,7 +83,7 @@ def _replay_launchable_candidate(
         artifact_payloads=artifact_payloads,
     )
     if payload.get("candidate_record_sha256") != candidate.canonical_sha256:
-        raise ValueError("launchable candidate record seal differs")
+        refuse(f"{location}.payload.candidate_record_sha256", "launchable candidate record seal differs")
     return candidate
 
 
@@ -96,43 +99,52 @@ def _replay_evaluation_receipt(
     purpose: str,
     evaluation_protocol: Mapping[str, object],
     fixed_baseline: Mapping[str, object] | None,
-) -> EvaluationReceipt | None:
-    """Reconstruct a receipt from independent archived raw-role objects."""
+    location: str,
+) -> EvaluationReceipt:
+    """Reconstruct a receipt from independent archived raw-role objects.
+
+    `location` names the `candidate_evaluated` event whose payload this is; every
+    refusal is placed under it.
+    """
     objects = payload.get("objects")
     if not isinstance(objects, list):
-        return None
+        refuse(f"{location}.objects", "object references are not a list",
+               observed=type(objects).__name__)
     receipt_refs = [
         item
         for item in objects
         if isinstance(item, Mapping) and item.get("role") == "evaluation_receipt"
     ]
     if len(receipt_refs) != 1:
-        return None
+        refuse(f"{location}.objects", "evaluation_receipt reference count differs",
+               observed=len(receipt_refs), expected=1)
     receipt = _object(
         json.loads(evidence.read_object(cast(Mapping[str, object], receipt_refs[0]))),
         "evaluation_receipt",
     )
-    if (
-        receipt.get("candidate_sha256") != candidate_sha256
-        or receipt.get("workload_sha256") != workload_sha256
-        or receipt.get("evaluation_protocol_sha256") != protocol_sha256
-        or receipt.get("case_id") != case_id
-        or receipt.get("purpose") != payload.get("purpose")
+    for field, expected in (
+        ("candidate_sha256", candidate_sha256),
+        ("workload_sha256", workload_sha256),
+        ("evaluation_protocol_sha256", protocol_sha256),
+        ("case_id", case_id),
+        ("purpose", payload.get("purpose")),
     ):
-        return None
+        if receipt.get(field) != expected:
+            refuse(f"{location}.evaluation_receipt.{field}", "receipt authority differs",
+                   observed=receipt.get(field), expected=expected)
     if launchable is None:
-        return None
+        refuse(location, "no launchable_candidate_sealed event for this candidate and Turn")
     expected_raw = receipt.get("artifact_payload_sha256")
-    if not isinstance(expected_raw, Mapping) or (
-        purpose in {"search", "confirmatory"}
-        and set(expected_raw)
-        != {"correctness_output", "launch_receipt", "timing_samples"}
-    ) or (
-        purpose == "attribution"
-        and set(expected_raw)
-        != {"correctness_output", "launch_receipt", "profile"}
-    ):
-        return None
+    expected_raw_roles = (
+        {"correctness_output", "launch_receipt", "profile"}
+        if purpose == "attribution"
+        else {"correctness_output", "launch_receipt", "timing_samples"}
+    )
+    if not isinstance(expected_raw, Mapping) or set(expected_raw) != expected_raw_roles:
+        refuse(f"{location}.evaluation_receipt.artifact_payload_sha256",
+               "raw artifact roles differ",
+               observed=set(expected_raw) if isinstance(expected_raw, Mapping) else expected_raw,
+               expected=expected_raw_roles)
     raw_payloads: dict[str, bytes] = {}
     for role in sorted(expected_raw):
         matching = [
@@ -141,21 +153,23 @@ def _replay_evaluation_receipt(
             if isinstance(item, Mapping) and item.get("role") == role
         ]
         if len(matching) != 1:
-            return None
+            refuse(f"{location}.objects", f"{role} reference count differs",
+                   observed=len(matching), expected=1)
         raw_payloads[role] = evidence.read_object(
             cast(Mapping[str, object], matching[0])
         )
-    if expected_raw != {
-        role: sha256(raw).hexdigest()
-        for role, raw in sorted(raw_payloads.items())
-    }:
-        return None
-    if {
+    for role, raw in sorted(raw_payloads.items()):
+        if expected_raw[role] != sha256(raw).hexdigest():
+            refuse(f"{location}.evaluation_receipt.artifact_payload_sha256.{role}",
+                   "retained raw bytes differ from the receipt's digest")
+    archived_roles = {
         item.get("role")
         for item in objects
         if isinstance(item, Mapping)
-    } != {"evaluation_receipt", *expected_raw}:
-        return None
+    }
+    if archived_roles != {"evaluation_receipt", *expected_raw}:
+        refuse(f"{location}.objects", "archived object roles differ",
+               observed=archived_roles, expected={"evaluation_receipt", *expected_raw})
     validated_receipt = EvaluationReceipt(
         candidate_sha256=candidate_sha256,
         workload_sha256=workload_sha256,
@@ -179,5 +193,6 @@ def _replay_evaluation_receipt(
     if validated_receipt.canonical_sha256 != sha256(
         _canonical_json_bytes(receipt)
     ).hexdigest():
-        return None
+        refuse(f"{location}.evaluation_receipt",
+               "retained receipt document differs from the receipt rebuilt from its raw objects")
     return validated_receipt

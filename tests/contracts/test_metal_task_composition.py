@@ -79,7 +79,7 @@ class MetalTaskCompositionTests(unittest.TestCase):
                     "workload":{"path":str(workload_path),"canonical_sha256":workload.canonical_sha256},
                     "compiler_revision":{"path":"compiler/revision.json","canonical_sha256":"compiler-fixture"},
                     "evaluation_protocol":evaluation_policy(workload),"execution":execution})
-            compiler = SimpleNamespace(commit='0' * 40,check_corpus=lambda:SimpleNamespace(passed=True,compiler_revision_sha256='compiler-fixture'))
+            compiler = SimpleNamespace(commit='0' * 40,check_corpus=lambda:SimpleNamespace(passed=True))
             receipt = SimpleNamespace(scope='live_two_turn_tool_rich_provider',canonical_sha256='qualification-fixture',provider_revision='unit-fixture')
             toolchain = Mock(canonical_sha256='metal-toolchain-fixture')
             package = TaskPackage('open_cake-1','open_cake','# CPU wiring fixture\n','# CPU wiring fixture\n')

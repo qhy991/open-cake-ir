@@ -39,7 +39,7 @@ class CoverageDerivationContracts(unittest.TestCase):
         report = CorpusGateReport(
             corpus_id="fixture",
             compiler_revision_id="fixture",
-            compiler_revision_sha256="not-live",
+
             passed=True,
             cases=(_case("a", "alpha"), _case("b", "alpha"), _case("c", "beta")),
             declared_targets=("alpha", "beta", "gamma"),

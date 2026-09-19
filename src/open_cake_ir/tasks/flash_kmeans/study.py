@@ -242,7 +242,6 @@ class PortfolioStudyMixin:
             "compiler_revision": {
                 "revision_id": gate.compiler_revision_id,
                 "path": compiler_relative,
-                "canonical_sha256": gate.compiler_revision_sha256,
             },
             "resolved_inputs": {
                 "kernel_seed": {

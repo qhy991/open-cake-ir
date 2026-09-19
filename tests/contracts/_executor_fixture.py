@@ -22,7 +22,7 @@ class SemanticExecutorFixture:
     as a released authority, used for host admission, or used by release tests.
     """
     def revision(self, root):
-        return ExecutorRevision(executor_id="CPU-semantic-fixture", canonical_sha256="e" * 64,
+        return ExecutorRevision(executor_id="CPU-semantic-fixture",
             document={"schema_version": 1, "executor_id": "CPU-semantic-fixture",
                       "commit": "0" * 40, "target": "cpu-semantic-fixture",
                       "host_environment": _synthetic_cuda_host()},
@@ -59,6 +59,38 @@ class SemanticExecutorFixture:
 
     def __exit__(self, *args):
         return self.stack.__exit__(*args)
+
+
+def copy_project(source, destination, *, omit=()):
+    """Copy a checkout's source into `destination`: the files git tracks at `source`,
+    and nothing else.
+
+    A whole-tree copy carried the virtualenv, caches and every generated output
+    along with the source, and `commit_project` then committed them all. The copy
+    uses tracked working-tree files, so an edit not yet committed still arrives
+    (the copy's own commit is its identity, never the original's), while `.git`,
+    `.venv` and every ignored path stay behind. `omit` names top-level entries to
+    leave out as well, for fixtures that need no retained history.
+    """
+    source = Path(source).resolve(strict=True)
+    destination = Path(destination)
+    listed = subprocess.run(
+        ["git", "-C", str(source), "ls-files", "-z", "--cached"],
+        check=True, capture_output=True,
+    ).stdout.decode()
+    copied = 0
+    for relative in filter(None, listed.split("\0")):
+        if relative.split("/", 1)[0] in omit:
+            continue
+        path = source / relative
+        if not path.is_file():
+            # Listed by the index but deleted in the working tree.
+            continue
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        copied += 1
+    return copied
 
 
 def commit_project(root):
@@ -101,8 +133,7 @@ def compiler_reference(root):
     """The exact reference this checkout provides; Compiler admission is tested separately."""
     from open_cake_ir.compiler.revision import load_revision
     revision = load_revision(root, Path(root) / "compiler/revision.json")
-    return {"path": "compiler/revision.json", "revision_id": revision.revision_id,
-            "canonical_sha256": revision.canonical_sha256}
+    return {"path": "compiler/revision.json", "revision_id": revision.revision_id}
 
 
 if __name__ == "__main__":

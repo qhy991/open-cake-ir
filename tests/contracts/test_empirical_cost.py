@@ -21,7 +21,6 @@ class EmpiricalCostTest(unittest.TestCase):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         assessment = cls.compiler.assess_file(ROOT / "corpus/schedules/fma-b8-smoke.json")
         cls.revision_id = assessment.compiler_revision_id
-        cls.revision_sha256 = assessment.compiler_revision_sha256
 
     def schedule(self, filename, extent=None):
         document = json.loads((ROOT / "corpus/schedules" / filename).read_text())
@@ -43,7 +42,7 @@ class EmpiricalCostTest(unittest.TestCase):
                            "points": [{"extent": extent, "kernel_us": duration} for extent, duration in zip(extents, [10, 18, 34])],
                            "relative_error_envelope": .1})
         return {"schema_version": 2, "model_id": "synthetic-api-contract-fixture",
-                "compiler_revision_id": self.revision_id, "compiler_revision_sha256": self.revision_sha256, "target": "sm_100a",
+                "compiler_revision_id": self.revision_id,  "target": "sm_100a",
                 "context": {"timer": "synthetic; no measurement", "cache_protocol": "synthetic",
                             "runtime": {"compiler_version": "synthetic"}, "input_scope": "unit fixture only"},
                 "reported_evidence": {"kind": "synthetic; no calibration qualification"}, "curves": curves}
@@ -102,7 +101,7 @@ class EmpiricalCostTest(unittest.TestCase):
         k = op['parameters']['tile_shape'][2]
         model = EmpiricalCostModel(self.model_document())
         identity = dict(compiler_revision_id=self.revision_id,
-                        compiler_revision_sha256=self.revision_sha256, target='sm_100a')
+                         target='sm_100a')
         original = model.estimate(query, **identity)
         self.assertTrue(original['covered'])
         op['parameters']['k_ranges'] = [[0, k // 2], [k // 2, k]]
@@ -117,16 +116,16 @@ class EmpiricalCostTest(unittest.TestCase):
         self.assertIsNone(partial['predicted_kernel_us'])
 
     def test_wrong_revision_and_target_abstain(self):
-        for field, value in [("compiler_revision_id", "other-revision"), ("compiler_revision_sha256", "0" * 64), ("target", "different-target")]:
+        for field, value in [("compiler_revision_id", "other-revision"), ("target", "different-target")]:
             model = EmpiricalCostModel(self.model_document())
-            arguments = {"compiler_revision_id": self.revision_id, "compiler_revision_sha256": self.revision_sha256, "target": "sm_100a", field: value}
+            arguments = {"compiler_revision_id": self.revision_id,  "target": "sm_100a", field: value}
             cost = model.estimate(self.schedule("fma-b8-smoke.json"), **arguments)
             self.assertFalse(cost["covered"])
             self.assertIsNone(cost["predicted_kernel_us"])
 
     def test_observed_backend_version_drift_abstains(self):
         model = EmpiricalCostModel(self.model_document())
-        cost = model.estimate(self.schedule("fma-b8-smoke.json"), compiler_revision_id=self.revision_id, compiler_revision_sha256=self.revision_sha256,
+        cost = model.estimate(self.schedule("fma-b8-smoke.json"), compiler_revision_id=self.revision_id,
                               target="sm_100a", compiled_compiler_version="other-toolchain")
         self.assertFalse(cost["covered"])
         self.assertIn("compiler version", cost["reason"])
@@ -160,7 +159,7 @@ class EmpiricalCostTest(unittest.TestCase):
             schedule["schema_version"] = version
             with self.subTest(version=version):
                 cost = model.estimate(schedule, compiler_revision_id=self.revision_id,
-                                      compiler_revision_sha256=self.revision_sha256, target="sm_100a")
+                                       target="sm_100a")
                 self.assertFalse(cost["covered"])
                 self.assertIsNone(cost["predicted_kernel_us"])
                 self.assertEqual(cost["reason"], "no curve covers this exact Schedule and extent")

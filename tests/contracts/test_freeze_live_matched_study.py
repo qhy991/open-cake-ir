@@ -4,7 +4,6 @@ import grp
 import json
 import os
 import pwd
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,7 +19,7 @@ from open_cake_ir.tasks.runtime import TaskLab
 from tools.freeze_live_matched_study import (  # noqa: E402
     _replace_artifact_feedback_budget,
 )
-from tests.contracts._executor_fixture import SemanticExecutorFixture, commit_project
+from tests.contracts._executor_fixture import SemanticExecutorFixture, commit_project, copy_project
 from tests.contracts._contexts import enter_context
 
 
@@ -118,18 +117,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             project = temporary / "open-cake-ir"
-
-            def ignored(path: str, names: list[str]) -> set[str]:
-                omitted = {"__pycache__", ".pytest_cache"}
-                if Path(path).resolve() == ROOT:
-                    omitted |= {"evidence", "migration"}
-                return omitted & set(names)
-
-            shutil.copytree(
-                ROOT,
-                project,
-                ignore=ignored,
-            )
+            copy_project(ROOT, project, omit=("evidence", "migration"))
             commit_project(project)
             executable = _provider_fixture(project, b"qualified codex fixture")
             provider_revision = "codex-live-contract-fixture"
@@ -436,14 +424,7 @@ class FreezeLiveMatchedStudyContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             temporary = Path(directory)
             project = temporary / "open-cake-ir"
-
-            def ignored(path: str, names: list[str]) -> set[str]:
-                omitted = {"__pycache__", ".pytest_cache"}
-                if Path(path).resolve() == ROOT:
-                    omitted |= {"evidence", "migration"}
-                return omitted & set(names)
-
-            shutil.copytree(ROOT, project, ignore=ignored)
+            copy_project(ROOT, project, omit=("evidence", "migration"))
             commit_project(project)
             executable = _provider_fixture(project, b"qualified Ralph Codex fixture")
             provider_revision = "codex-live-ralph-contract-fixture"

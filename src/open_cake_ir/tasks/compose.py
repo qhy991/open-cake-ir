@@ -351,9 +351,14 @@ def execute_matched_from_config(
     if (
         compiler.commit is None
         or not compiler_gate.passed
-        or compiler_gate.compiler_revision_sha256 != compiler_ref["canonical_sha256"]
+        or compiler_gate.compiler_revision_id != compiler_ref["revision_id"]
     ):
-        raise ValueError("runtime Compiler Revision differs from the Campaign Lock")
+        raise ValueError(
+            "runtime Compiler Revision differs from the Campaign Lock: the lock pins "
+            f"{compiler_ref.get('revision_id')!r}, this checkout provides "
+            f"{compiler_gate.compiler_revision_id!r} (commit {compiler.commit!r}, "
+            f"Corpus Gate passed={compiler_gate.passed})"
+        )
     if not metal:
         workload, workload_path, workload_contract = _load_workload_binding(root, lock)
         protocol = _object(lock.document["evaluation_protocol"], "evaluation_protocol")

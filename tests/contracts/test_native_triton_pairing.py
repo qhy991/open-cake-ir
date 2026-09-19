@@ -536,7 +536,7 @@ class PairedLabFixtureTests(unittest.TestCase):
                 value['provider']['qualification'] = {'path':'contracts/providers/native-fixture.json', 'canonical_sha256':sha256(encoded(qualification)).hexdigest()}
                 value['feedback'] = (['findings'] if arm == 'open_cake' else ['compile']) + ['correctness','qualified_timing']
             study = root / 'fixture-study.json'; study.write_bytes(encoded(document))
-            gate = SimpleNamespace(compiler_revision_id='compiler-fixture', compiler_revision_sha256='a'*64, passed=True)
+            gate = SimpleNamespace(compiler_revision_id='compiler-fixture',  passed=True)
             reference = {'revision_id':'compiler-fixture','path':'compiler/revision.json','canonical_sha256':'a'*64}
             executor = {'executor_id':'open-cake-ir-b200-v9000','path':'runtime/executors/fixture.json','canonical_sha256':'e'*64}
             stack.enter_context(mock.patch('open_cake_ir.lab.preflight._resolve_compiler_reference', return_value=(gate, reference['path'], reference)))

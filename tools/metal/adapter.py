@@ -43,8 +43,7 @@ def manifest(assessment: Assessment, lowering: Lowering, inputs: Mapping[str, by
     """
     _require(assessment.accepted and assessment.lowering_eligible,
              "a refused assessment cannot be executed")
-    for field in ("compiler_revision_id", "compiler_revision_sha256", "schedule_id",
-                  "schedule_sha256", "target", "route"):
+    for field in ("compiler_revision_id", "schedule_id", "schedule_sha256", "target", "route"):
         _require(getattr(assessment, field) == getattr(lowering, field),
                  f"lowering {field} differs from the assessment")
     schedule = Schedule.from_dict(json.loads(assessment.schedule_bytes))

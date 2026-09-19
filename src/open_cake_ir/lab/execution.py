@@ -12,7 +12,7 @@ from typing import Callable, Mapping, cast
 from open_cake_ir.evaluation import EvaluationReceipt, LaunchableCandidate
 from open_cake_ir.evidence import EvidenceStore
 
-from ._documents import _canonical_json_bytes, _digest, _name, _object
+from ._documents import _canonical_json_bytes, _digest, _name, _object, differs
 from ._policies import (
     _ATTRIBUTION_EVALUATION,
     _LEGACY_ATTRIBUTION_EVALUATION,
@@ -109,7 +109,11 @@ def execute_campaign(
     )
     matched_run_arms(environments, lock.claim_scope)
     if set(environments) != set(lock.document["resolved_inputs"]["arm_environments"]):
-        raise ValueError("Campaign Authoring Environment set differs")
+        raise differs(
+            "Campaign Authoring Environment set",
+            expected=sorted(lock.document["resolved_inputs"]["arm_environments"]),
+            observed=sorted(environments),
+        )
     if lock.study_kind != "matched_search":
         raise ValueError("Lab.execute matched-search path requires a matched Campaign Lock")
     ExecutorRevision.load_reference(
@@ -241,7 +245,7 @@ def execute_campaign(
                     ralph.end_authoring(authoring_started)
                 next_thread_id = provider_turn.thread_id
                 if thread_id is not None and next_thread_id != thread_id:
-                    raise ValueError("provider resume thread identity differs")
+                    raise differs("provider resume thread identity", expected=thread_id, observed=next_thread_id)
                 next_cumulative_tokens = cumulative_tokens + provider_turn.provider_tokens
                 _archive_provider_turn(
                     arm=arm,

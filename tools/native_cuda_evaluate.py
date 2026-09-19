@@ -310,7 +310,6 @@ def lower_rows(compiler):
                         "workload_sha256": owner(row).canonical_sha256,
                         "source_sha256": lowering.source_sha256,
                         "compiler_revision_id": lowering.compiler_revision_id,
-                        "compiler_revision_sha256": lowering.compiler_revision_sha256,
                         "schedule_sha256": lowering.schedule_sha256,
                         "metadata": metadata}
         if row["family"] != "two_mma":

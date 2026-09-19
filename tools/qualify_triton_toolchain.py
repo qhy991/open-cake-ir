@@ -58,7 +58,6 @@ def main() -> int:
         "schema_version": 1,
         "kind": "triton_compile_only_qualification",
         "compiler_revision_id": assessment.compiler_revision_id,
-        "compiler_revision_sha256": assessment.compiler_revision_sha256,
         "schedule_id": assessment.schedule_id,
         "schedule_sha256": assessment.schedule_sha256,
         "lowering_source_sha256": lowering.source_sha256,

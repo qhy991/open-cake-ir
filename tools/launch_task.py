@@ -161,7 +161,7 @@ def _admit_stack(root: Path, workspace: Path, target: str, route: str = "metal")
                              f"{target!r}; no other Apple GPU is substituted")
         host = MetalArchiveHost.from_executor(executor)
     return compiler, executor, host, {"path": "compiler/revision.json",
-        "revision_id": gate.compiler_revision_id, "canonical_sha256": gate.compiler_revision_sha256}
+        "revision_id": gate.compiler_revision_id}
 
 
 def _triton_runtime_roots(interpreter: Path, declared_paths: tuple[str, ...] = ()) -> list[str]:

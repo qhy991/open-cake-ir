@@ -45,7 +45,6 @@ class Assessment:
     """
 
     compiler_revision_id: str
-    compiler_revision_sha256: str
     schedule_id: str
     schedule_sha256: str
     target: str
@@ -70,7 +69,6 @@ class Lowering:
     """
 
     compiler_revision_id: str
-    compiler_revision_sha256: str
     schedule_id: str
     schedule_sha256: str
     target: str
@@ -155,7 +153,6 @@ class Compiler:
         *,
         project_root: Path,
         revision_id: str,
-        revision_sha256: str,
         commit: str | None,
         target_definitions: Mapping[str, Target],
         corpus_path: Path,
@@ -164,7 +161,6 @@ class Compiler:
         self._revision = CompilerRevision(
             project_root=project_root,
             revision_id=revision_id,
-            canonical_sha256=revision_sha256,
             commit=commit,
             targets=MappingProxyType(dict(target_definitions)),
             corpus_path=corpus_path,
@@ -185,7 +181,6 @@ class Compiler:
         return cls(
             project_root=revision.project_root,
             revision_id=revision.revision_id,
-            revision_sha256=revision.canonical_sha256,
             commit=revision.commit,
             target_definitions=revision.targets,
             corpus_path=revision.corpus_path,
@@ -291,7 +286,6 @@ class Compiler:
         })
         return Assessment(
             compiler_revision_id=self._revision.revision_id,
-            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=typed_schedule.schedule_id,
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target,
@@ -322,7 +316,6 @@ class Compiler:
         target = schedule.get("target")
         return Assessment(
             compiler_revision_id=self._revision.revision_id,
-            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=schedule_id if isinstance(schedule_id, str) else "",
             schedule_sha256=sha256(_canonical_json_bytes(schedule)).hexdigest(),
             target=target if isinstance(target, str) else "",
@@ -362,7 +355,6 @@ class Compiler:
         source = emission.source.replace("__SCHEDULE_SHA256__", assessment.schedule_sha256)
         return Lowering(
             compiler_revision_id=self._revision.revision_id,
-            compiler_revision_sha256=self._revision.canonical_sha256,
             schedule_id=assessment.schedule_id,
             schedule_sha256=assessment.schedule_sha256,
             target=assessment.target,
@@ -403,7 +395,6 @@ class Compiler:
             from dataclasses import replace
             profile = replace(profile, empirical_cost=cost_model.estimate(
                 json.loads(assessment.schedule_bytes), compiler_revision_id=self._revision.revision_id,
-                compiler_revision_sha256=self._revision.canonical_sha256,
                 target=assessment.target,
                 compiled_compiler_version=compiled_resources.compiler_version if compiled_resources else None,
             ))
@@ -430,10 +421,7 @@ class Compiler:
         eligible: list[Schedule] = []
         withheld: list[str] = []
         for assessment in assessments:
-            if (
-                assessment.compiler_revision_id != self._revision.revision_id
-                or assessment.compiler_revision_sha256 != self._revision.canonical_sha256
-            ):
+            if assessment.compiler_revision_id != self._revision.revision_id:
                 raise CompilerError("assessment belongs to a different Compiler Revision")
             replayed = self.assess(
                 _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
@@ -466,10 +454,7 @@ class Compiler:
     def lower(self, assessment: Assessment) -> Lowering:
         """Lower an eligible Assessment to deterministic inspectable target source."""
 
-        if (
-            assessment.compiler_revision_id != self._revision.revision_id
-            or assessment.compiler_revision_sha256 != self._revision.canonical_sha256
-        ):
+        if assessment.compiler_revision_id != self._revision.revision_id:
             raise CompilerError("assessment belongs to a different Compiler Revision")
         replayed = self.assess(
             _object(json.loads(assessment.schedule_bytes), "assessment.schedule")

@@ -17,7 +17,9 @@ from types import MappingProxyType
 from typing import Callable, Mapping, cast
 
 from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes
-from open_cake_ir.source_identity import SourceIdentityError, checkout_commit
+from open_cake_ir.source_identity import SourceIdentityError, checkout_commit, untracked_paths
+
+from ._documents import differs
 
 
 HIP_PACKAGES = frozenset({"packaging", "pybind11", "psutil", "setuptools", "torch", "triton"})
@@ -80,13 +82,13 @@ def _digest(value: object, context: str) -> str:
         or len(value) != 64
         or any(character not in "0123456789abcdef" for character in value)
     ):
-        raise ValueError(f"{context} digest differs")
+        raise differs(f"{context} digest", expected="<64 lowercase hex characters>", observed=value)
     return value
 
 
 def _relative_file(root: Path, value: object, context: str) -> tuple[str, Path]:
     if not isinstance(value, str) or not value:
-        raise ValueError(f"{context} path differs")
+        raise differs(f"{context} path", expected="<non-empty root-relative path>", observed=value)
     relative = PurePosixPath(value)
     if relative.is_absolute() or ".." in relative.parts or "\\" in value:
         raise ValueError(f"{context} path is unsafe")
@@ -94,16 +96,16 @@ def _relative_file(root: Path, value: object, context: str) -> tuple[str, Path]:
     for part in relative.parts:
         unresolved /= part
         if unresolved.is_symlink():
-            raise ValueError(f"{context} file custody differs")
+            raise differs(f"{context} file custody", expected="<no symlink on the path>", observed=str(unresolved))
     path = unresolved.resolve(strict=True)
     if root not in path.parents or not path.is_file():
-        raise ValueError(f"{context} file custody differs")
+        raise differs(f"{context} file custody", expected=f"<regular file under {root}>", observed=str(path))
     return value, path
 
 
 def _external_file(root: Path, value: object, context: str) -> Path:
     if not isinstance(value, str) or not value:
-        raise ValueError(f"{context} path differs")
+        raise differs(f"{context} path", expected="<non-empty root-relative path>", observed=value)
     relative = PurePosixPath(value)
     if relative.is_absolute() or ".." in relative.parts or "\\" in value:
         raise ValueError(f"{context} path is unsafe")
@@ -111,23 +113,26 @@ def _external_file(root: Path, value: object, context: str) -> Path:
     for part in relative.parts:
         unresolved /= part
         if unresolved.is_symlink():
-            raise ValueError(f"{context} file custody differs")
+            raise differs(f"{context} file custody", expected="<no symlink on the path>", observed=str(unresolved))
     path = unresolved.resolve(strict=True)
     if root not in path.parents or not path.is_file():
-        raise ValueError(f"{context} file custody differs")
+        raise differs(f"{context} file custody", expected=f"<regular file under {root}>", observed=str(path))
     return path
 
 
 def _file_record(value: object, context: str) -> Mapping[str, object]:
     if not isinstance(value, Mapping) or set(value) != {"path", "sha256", "size_bytes"}:
-        raise ValueError(f"{context} fields differ")
+        raise differs(
+            f"{context} fields differ", expected=["path", "sha256", "size_bytes"],
+            observed=sorted(value) if isinstance(value, Mapping) else value,
+        )
     _digest(value["sha256"], f"{context}.sha256")
     if (
         not isinstance(value["size_bytes"], int)
         or isinstance(value["size_bytes"], bool)
         or value["size_bytes"] <= 0
     ):
-        raise ValueError(f"{context}.size_bytes differs")
+        raise differs(f"{context}.size_bytes", expected="<positive int>", observed=value["size_bytes"])
     return cast(Mapping[str, object], value)
 
 
@@ -140,7 +145,12 @@ def _python_authority(value: object, context: str) -> Mapping[str, object]:
         or not isinstance(value["version"], str)
         or not value["version"]
     ):
-        raise ValueError(f"{context} authority differs")
+        raise differs(
+            f"{context} authority",
+            expected={"invocation_path": "<absolute path>", "version": "<non-empty>",
+                      "resolved_sha256": "<digest>"},
+            observed=value,
+        )
     _digest(value["resolved_sha256"], f"{context}.resolved_sha256")
     return cast(Mapping[str, object], value)
 
@@ -157,7 +167,10 @@ def _package_authority(value: object, context: str) -> Mapping[str, object]:
             for name, version in value.items()
         )
     ):
-        raise ValueError(f"{context} requirements differ")
+        raise differs(
+            f"{context} requirements differ", expected="<non-empty {distribution: version} of strings>",
+            observed=value,
+        )
     return cast(Mapping[str, object], value)
 
 
@@ -175,7 +188,12 @@ def _executable_record(value: object, context: str) -> Mapping[str, object]:
         or isinstance(value["size_bytes"], bool)
         or value["size_bytes"] <= 0
     ):
-        raise ValueError(f"{context} authority differs")
+        raise differs(
+            f"{context} authority",
+            expected={"kind": "<non-empty>", "path": "<absolute path>", "version": "<non-empty>",
+                      "sha256": "<digest>", "size_bytes": "<positive int>"},
+            observed=value,
+        )
     _digest(value["sha256"], f"{context}.sha256")
     return cast(Mapping[str, object], value)
 
@@ -186,14 +204,18 @@ def _admit_executable(
     record = _executable_record(value, context)
     unresolved = Path(str(record["path"]))
     if not unresolved.is_file() or not os.access(unresolved, os.X_OK):
-        raise ValueError(f"{context} custody differs")
+        raise differs(f"{context} custody", expected="<executable regular file>", observed=str(unresolved))
     path = unresolved.resolve(strict=True)
     payload = path.read_bytes()
     if (
         sha256(payload).hexdigest() != record["sha256"]
         or len(payload) != record["size_bytes"]
     ):
-        raise ValueError(f"{context} bytes differ")
+        raise differs(
+            f"{context} bytes differ",
+            expected={"sha256": record["sha256"], "size_bytes": record["size_bytes"]},
+            observed={"sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)},
+        )
     return MappingProxyType(dict(record))
 
 
@@ -209,7 +231,12 @@ def _shared_library_record(value: object, context: str) -> Mapping[str, object]:
         or isinstance(value["size_bytes"], bool)
         or value["size_bytes"] <= 0
     ):
-        raise ValueError(f"{context} authority differs")
+        raise differs(
+            f"{context} authority",
+            expected={"soname": "<non-empty>", "path": "<absolute path>", "sha256": "<digest>",
+                      "size_bytes": "<positive int>"},
+            observed=value,
+        )
     _digest(value["sha256"], f"{context}.sha256")
     return cast(Mapping[str, object], value)
 
@@ -218,13 +245,17 @@ def _admit_shared_library(value: object, context: str) -> Mapping[str, object]:
     record = _shared_library_record(value, context)
     unresolved = Path(str(record["path"]))
     if not unresolved.is_file():
-        raise ValueError(f"{context} custody differs")
+        raise differs(f"{context} custody", expected="<regular file>", observed=str(unresolved))
     payload = unresolved.resolve(strict=True).read_bytes()
     if (
         sha256(payload).hexdigest() != record["sha256"]
         or len(payload) != record["size_bytes"]
     ):
-        raise ValueError(f"{context} bytes differ")
+        raise differs(
+            f"{context} bytes differ",
+            expected={"sha256": record["sha256"], "size_bytes": record["size_bytes"]},
+            observed={"sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)},
+        )
     return MappingProxyType(dict(record))
 
 
@@ -252,11 +283,11 @@ class ExecutorRevision:
     The commit binds every tracked source byte, so there is no per-file closure to
     re-release when a shared file changes, and a change never retires another host. The
     host capture is committed under `runtime/hosts/<target>.json` and changes only when
-    the host does.
+    the host does. `executor_id` is `<target>@<commit>`, and the capture is a tracked
+    file at that commit, so the id is the whole identity.
     """
 
     executor_id: str
-    canonical_sha256: str
     document: Mapping[str, object]
     project_root: Path
     relative_path: str
@@ -270,17 +301,15 @@ class ExecutorRevision:
         Host admission is a separate live-execution boundary. Every producer,
         worker and replay consumer calls this validator independently.
         """
-        if not isinstance(reference, Mapping) or set(reference) != {
-            "path", "canonical_sha256", "executor_id"
-        }:
-            raise ValueError(f"{context} fields differ")
+        if not isinstance(reference, Mapping) or set(reference) != {"path", "executor_id"}:
+            raise differs(
+                f"{context} fields differ", expected=["executor_id", "path"],
+                observed=sorted(reference) if isinstance(reference, Mapping) else reference,
+            )
         root = Path(project_root).resolve(strict=True)
         _, path = _relative_file(root, reference["path"], context)
         revision = cls.load(root, path)
-        if (revision.executor_id != reference["executor_id"]
-            or revision.canonical_sha256 != _digest(
-                reference["canonical_sha256"], f"{context}.canonical_sha256"
-            )):
+        if revision.executor_id != reference["executor_id"]:
             raise ValueError(
                 f"{context} Executor Revision differs: the reference pins "
                 f"{reference['executor_id']!r} and this checkout provides "
@@ -310,7 +339,7 @@ class ExecutorRevision:
         root = Path(project_root).resolve(strict=True)
         unresolved_source = Path(path)
         if unresolved_source.is_symlink():
-            raise ValueError("Executor host capture custody differs")
+            raise differs("Executor host capture custody", expected="<no symlink>", observed=str(unresolved_source))
         source = unresolved_source.resolve(strict=True)
         try:
             relative_source = source.relative_to(root).as_posix()
@@ -330,7 +359,14 @@ class ExecutorRevision:
             or document["schema_version"] != 1
             or document.get("target") != target
         ):
-            raise ValueError("Executor host capture fields, schema or target differ")
+            raise differs(
+                "Executor host capture fields, schema or target differ",
+                expected={"fields": ["host_environment", "schema_version", "target"],
+                          "schema_version": 1, "target": target},
+                observed=({"fields": sorted(document), "schema_version": document.get("schema_version"),
+                           "target": document.get("target")}
+                          if isinstance(document, Mapping) else document),
+            )
         host = cast(Mapping[str, object], document["host_environment"])
         cls._validate_host_document(host)
         captured = _host_kind(host).captured_target(host)
@@ -342,6 +378,11 @@ class ExecutorRevision:
             raise ValueError(
                 f"the Executor for {target!r} requires a clean committed checkout: {error}"
             ) from error
+        if untracked_paths(root, (relative_source,)):
+            raise ValueError(
+                f"the Executor for {target!r} reads {relative_source}, which commit "
+                f"{commit} does not track"
+            )
         executor_id = f"{target}@{commit}"
         detached = cast(
             Mapping[str, object],
@@ -355,9 +396,6 @@ class ExecutorRevision:
         )
         return cls(
             executor_id=executor_id,
-            canonical_sha256=sha256(_canonical_json_bytes(
-                {"commit": commit, "host_capture": document}
-            )).hexdigest(),
             document=detached,
             project_root=root,
             relative_path=relative_source,
@@ -372,7 +410,7 @@ class ExecutorRevision:
         know.
         """
         if not isinstance(host, Mapping):
-            raise ValueError("Executor host environment fields differ")
+            raise differs("Executor host environment fields differ", expected="<object>", observed=host)
         _host_kind(host).validate(host)
 
     @staticmethod
@@ -388,7 +426,11 @@ class ExecutorRevision:
             frozenset(legacy_fields),
             frozenset(legacy_fields | {"nsight_compute"}),
         }:
-            raise ValueError("Executor host environment fields differ")
+            raise differs(
+                "Executor host environment fields differ",
+                expected=[sorted(legacy_fields), sorted(legacy_fields | {"nsight_compute"})],
+                observed=sorted(host),
+            )
         python = host["python"]
         packages = host["packages"]
         cupti = host["cupti_python"]
@@ -406,7 +448,12 @@ class ExecutorRevision:
             or not isinstance(cupti["files"], (list, tuple))
             or not cupti["files"]
         ):
-            raise ValueError("Executor CUPTI Python authority differs")
+            raise differs(
+                "Executor CUPTI Python authority",
+                expected={"site_packages_path": "<absolute path>", "distribution": "<str>",
+                          "version": "<str>", "files": "<non-empty list>"},
+                observed=cupti,
+            )
         for index, value in enumerate(cast(list[object], cupti["files"])):
             _file_record(value, f"executor.cupti_python.files[{index}]")
         if (
@@ -417,14 +464,19 @@ class ExecutorRevision:
             or not isinstance(helper["distribution"], str)
             or not isinstance(helper["version"], str)
         ):
-            raise ValueError("Executor FlashInfer helper authority differs")
+            raise differs(
+                "Executor FlashInfer helper authority",
+                expected={"path": "<absolute path>", "distribution": "<str>", "version": "<str>",
+                          "sha256": "<digest>", "size_bytes": "<positive int>"},
+                observed=helper,
+            )
         _digest(helper["sha256"], "executor.flashinfer_helper.sha256")
         if (
             not isinstance(helper["size_bytes"], int)
             or isinstance(helper["size_bytes"], bool)
             or helper["size_bytes"] <= 0
         ):
-            raise ValueError("Executor FlashInfer helper size differs")
+            raise differs("Executor FlashInfer helper size", expected="<positive int>", observed=helper["size_bytes"])
         if "nsight_compute" in host:
             profiler = host["nsight_compute"]
             if (
@@ -438,21 +490,24 @@ class ExecutorRevision:
                 or isinstance(profiler["size_bytes"], bool)
                 or profiler["size_bytes"] <= 0
             ):
-                raise ValueError("Executor Nsight Compute authority differs")
+                raise differs(
+                    "Executor Nsight Compute authority",
+                    expected={"path": "<absolute path>", "version": "<non-empty>", "sha256": "<digest>",
+                              "size_bytes": "<positive int>"},
+                    observed=profiler,
+                )
             _digest(profiler["sha256"], "executor.nsight_compute.sha256")
 
     @staticmethod
     def _validate_hip_host_document(host: Mapping[str, object]) -> None:
-        if not isinstance(host, Mapping) or set(host) != {
-            "kind",
-            "platform",
-            "python",
-            "packages",
-            "runtime",
-            "runtime_libraries",
-            "tools",
-        } or host.get("kind") != "hip":
-            raise ValueError("Executor HIP host environment fields differ")
+        hip_fields = {"kind", "platform", "python", "packages", "runtime", "runtime_libraries", "tools"}
+        if not isinstance(host, Mapping) or set(host) != hip_fields or host.get("kind") != "hip":
+            raise differs(
+                "Executor HIP host environment fields differ",
+                expected={"kind": "hip", "fields": sorted(hip_fields)},
+                observed=({"kind": host.get("kind"), "fields": sorted(host)}
+                          if isinstance(host, Mapping) else host),
+            )
         platform_value = host["platform"]
         if (
             not isinstance(platform_value, Mapping)
@@ -463,11 +518,15 @@ class ExecutorRevision:
                 for field in platform_value
             )
         ):
-            raise ValueError("Executor HIP platform authority differs")
+            raise differs(
+                "Executor HIP platform authority",
+                expected={"system": "<non-empty>", "machine": "<non-empty>", "kernel_release": "<non-empty>"},
+                observed=platform_value,
+            )
         _python_authority(host["python"], "Executor HIP Python")
         packages = _package_authority(host["packages"], "Executor HIP package")
         if set(packages) != HIP_PACKAGES:
-            raise ValueError("Executor HIP package set differs")
+            raise differs("Executor HIP package set", expected=sorted(HIP_PACKAGES), observed=sorted(packages))
         runtime = host["runtime"]
         if (
             not isinstance(runtime, Mapping)
@@ -484,22 +543,32 @@ class ExecutorRevision:
             or runtime["visible_device_count"] != 1
             or not _build_environment(runtime.get("build_environment"))
         ):
-            raise ValueError("Executor HIP runtime authority differs")
+            raise differs(
+                "Executor HIP runtime authority",
+                expected={"backend": "hip", "torch_hip_version": "<non-empty>", "visible_device_count": 1,
+                          "build_environment": "<non-empty {NAME: value}>"},
+                observed=runtime,
+            )
         tools = host["tools"]
         if not isinstance(tools, Mapping) or set(tools) != {
             "build_tools",
             "device_monitor",
             "profilers",
         }:
-            raise ValueError("Executor HIP tool authority differs")
+            raise differs(
+                "Executor HIP tool authority", expected=["build_tools", "device_monitor", "profilers"],
+                observed=sorted(tools) if isinstance(tools, Mapping) else tools,
+            )
         monitor = _executable_record(
             tools["device_monitor"], "Executor HIP device monitor"
         )
         if monitor["kind"] not in HIP_DEVICE_MONITORS:
-            raise ValueError("Executor HIP device monitor kind differs")
+            raise differs(
+                "Executor HIP device monitor kind", expected=sorted(HIP_DEVICE_MONITORS), observed=monitor["kind"],
+            )
         profilers = tools["profilers"]
         if not isinstance(profilers, (list, tuple)):
-            raise ValueError("Executor HIP profiler authority differs")
+            raise differs("Executor HIP profiler authority", expected="<list of records>", observed=profilers)
         seen: set[str] = set()
         for index, value in enumerate(profilers):
             profiler = _executable_record(
@@ -507,11 +576,15 @@ class ExecutorRevision:
             )
             kind = cast(str, profiler["kind"])
             if kind not in HIP_PROFILERS or kind in seen:
-                raise ValueError("Executor HIP profiler kind differs")
+                raise differs(
+                    "Executor HIP profiler kind",
+                    expected=f"one of {sorted(HIP_PROFILERS)}, not yet declared in {sorted(seen)}",
+                    observed=kind,
+                )
             seen.add(kind)
         build_tools = tools["build_tools"]
         if not isinstance(build_tools, (list, tuple)):
-            raise ValueError("Executor HIP build-tool authority differs")
+            raise differs("Executor HIP build-tool authority", expected="<list of records>", observed=build_tools)
         seen_build_tools: set[str] = set()
         for index, value in enumerate(build_tools):
             tool = _executable_record(
@@ -519,13 +592,20 @@ class ExecutorRevision:
             )
             kind = cast(str, tool["kind"])
             if kind in seen_build_tools:
-                raise ValueError("Executor HIP build-tool kind differs")
+                raise differs(
+                    "Executor HIP build-tool kind", expected=f"not yet declared in {sorted(seen_build_tools)}",
+                    observed=kind,
+                )
             seen_build_tools.add(kind)
         if seen_build_tools != HIP_BUILD_TOOLS:
-            raise ValueError("Executor HIP build-tool set differs")
+            raise differs(
+                "Executor HIP build-tool set", expected=sorted(HIP_BUILD_TOOLS), observed=sorted(seen_build_tools),
+            )
         runtime_libraries = host["runtime_libraries"]
         if not isinstance(runtime_libraries, (list, tuple)):
-            raise ValueError("Executor HIP runtime-library authority differs")
+            raise differs(
+                "Executor HIP runtime-library authority", expected="<list of records>", observed=runtime_libraries,
+            )
         seen_libraries: set[str] = set()
         for index, value in enumerate(runtime_libraries):
             library = _shared_library_record(
@@ -533,21 +613,23 @@ class ExecutorRevision:
             )
             soname = cast(str, library["soname"])
             if soname in seen_libraries:
-                raise ValueError("Executor HIP runtime-library soname differs")
+                raise differs(
+                    "Executor HIP runtime-library soname", expected=f"not yet declared in {sorted(seen_libraries)}",
+                    observed=soname,
+                )
             seen_libraries.add(soname)
         if seen_libraries != HIP_RUNTIME_LIBRARIES:
-            raise ValueError("Executor HIP runtime-library set differs")
+            raise differs(
+                "Executor HIP runtime-library set", expected=sorted(HIP_RUNTIME_LIBRARIES),
+                observed=sorted(seen_libraries),
+            )
 
     @property
     def reference(self) -> Mapping[str, str]:
         """Return the exact Study/Campaign reference for this revision."""
 
         return MappingProxyType(
-            {
-                "path": self.relative_path,
-                "canonical_sha256": self.canonical_sha256,
-                "executor_id": self.executor_id,
-            }
+            {"path": self.relative_path, "executor_id": self.executor_id}
         )
 
     def admit_host(self) -> object:
@@ -579,17 +661,21 @@ def _admit_python_and_packages(host: Mapping[str, object]) -> None:
     python = _python_authority(host["python"], "Executor Python")
     expected_invocation = Path(str(python["invocation_path"])).absolute()
     observed_invocation = Path(sys.executable).absolute()
+    observed_python = {
+        "invocation_path": str(observed_invocation), "version": sys.version.split()[0],
+        "resolved_sha256": sha256(observed_invocation.resolve(strict=True).read_bytes()).hexdigest(),
+    }
     if (
         observed_invocation != expected_invocation
-        or sys.version.split()[0] != python["version"]
-        or sha256(observed_invocation.resolve(strict=True).read_bytes()).hexdigest()
-        != python["resolved_sha256"]
+        or observed_python["version"] != python["version"]
+        or observed_python["resolved_sha256"] != python["resolved_sha256"]
     ):
-        raise ValueError("Executor Python runtime differs")
+        raise differs("Executor Python runtime", expected=dict(python), observed=observed_python)
     packages = _package_authority(host["packages"], "Executor package")
     for distribution, expected in packages.items():
-        if importlib.metadata.version(distribution) != expected:
-            raise ValueError(f"Executor package {distribution!r} differs")
+        observed_version = importlib.metadata.version(distribution)
+        if observed_version != expected:
+            raise differs(f"Executor package {distribution!r}", expected=expected, observed=observed_version)
 
 
 def admit_host_environment(
@@ -598,7 +684,7 @@ def admit_host_environment(
     """Validate and admit one captured software host through the boundary, by its kind."""
 
     if not isinstance(host, Mapping):
-        raise ValueError("Executor host environment fields differ")
+        raise differs("Executor host environment fields differ", expected="<object>", observed=host)
     ExecutorRevision._validate_host_document(host)
     return _host_kind(host).admit(host, executor_id=executor_id)
 
@@ -610,7 +696,7 @@ def _admit_cuda_environment(host: Mapping[str, object], *, executor_id: str = ""
     cupti = cast(Mapping[str, object], host["cupti_python"])
     site = Path(str(cupti["site_packages_path"])).resolve(strict=True)
     if not site.is_dir() or site.is_symlink():
-        raise ValueError("Executor CUPTI site-packages custody differs")
+        raise differs("Executor CUPTI site-packages custody", expected="<directory, no symlink>", observed=str(site))
     for index, value in enumerate(cast(list[object], cupti["files"])):
         record = _file_record(value, f"executor.cupti_python.files[{index}]")
         path = _external_file(site, record["path"], f"executor.cupti.files[{index}]")
@@ -619,11 +705,19 @@ def _admit_cuda_environment(host: Mapping[str, object], *, executor_id: str = ""
             sha256(payload).hexdigest() != record["sha256"]
             or len(payload) != record["size_bytes"]
         ):
-            raise ValueError("Executor CUPTI runtime file differs")
+            raise differs(
+                f"Executor CUPTI runtime file {record['path']!r}",
+                expected={"sha256": record["sha256"], "size_bytes": record["size_bytes"]},
+                observed={"sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)},
+            )
     if str(site) not in sys.path:
         sys.path.append(str(site))
-    if importlib.metadata.version(str(cupti["distribution"])) != cupti["version"]:
-        raise ValueError("Executor CUPTI distribution differs")
+    observed_cupti_version = importlib.metadata.version(str(cupti["distribution"]))
+    if observed_cupti_version != cupti["version"]:
+        raise differs(
+            f"Executor CUPTI distribution {cupti['distribution']!r} version",
+            expected=cupti["version"], observed=observed_cupti_version,
+        )
     from cupti import cupti as cupti_extension
 
     if cupti_extension is None:
@@ -632,14 +726,15 @@ def _admit_cuda_environment(host: Mapping[str, object], *, executor_id: str = ""
     helper = cast(Mapping[str, object], host["flashinfer_helper"])
     helper_path = Path(str(helper["path"]))
     if helper_path.is_symlink() or not helper_path.is_file():
-        raise ValueError("Executor FlashInfer helper custody differs")
+        raise differs("Executor FlashInfer helper custody", expected="<regular file, no symlink>", observed=str(helper_path))
     helper_payload = helper_path.read_bytes()
-    if (
-        sha256(helper_payload).hexdigest() != helper["sha256"]
-        or len(helper_payload) != helper["size_bytes"]
-        or importlib.metadata.version(str(helper["distribution"])) != helper["version"]
-    ):
-        raise ValueError("Executor FlashInfer helper differs")
+    observed_helper = {
+        "sha256": sha256(helper_payload).hexdigest(), "size_bytes": len(helper_payload),
+        "version": importlib.metadata.version(str(helper["distribution"])),
+    }
+    expected_helper = {key: helper[key] for key in ("sha256", "size_bytes", "version")}
+    if observed_helper != expected_helper:
+        raise differs("Executor FlashInfer helper", expected=expected_helper, observed=observed_helper)
     module_spec = importlib.util.spec_from_file_location(
         "open_cake_ir_pinned_flashinfer_testing_utils", helper_path
     )
@@ -653,7 +748,10 @@ def _admit_cuda_environment(host: Mapping[str, object], *, executor_id: str = ""
         "bench_gpu_time_with_cudagraph",
     )
     if any(not callable(getattr(module, name, None)) for name in required):
-        raise ValueError("Executor FlashInfer helper surface differs")
+        raise differs(
+            "Executor FlashInfer helper surface", expected=list(required),
+            observed=[name for name in required if callable(getattr(module, name, None))],
+        )
     return module
 
 
@@ -683,13 +781,17 @@ def _admit_cuda_profiler(host: Mapping[str, object]) -> Mapping[str, object]:
     profiler = cast(Mapping[str, object], host["nsight_compute"])
     path = Path(str(profiler["path"]))
     if path.is_symlink() or not path.is_file() or not os.access(path, os.X_OK):
-        raise ValueError("Executor Nsight Compute custody differs")
+        raise differs("Executor Nsight Compute custody", expected="<executable regular file, no symlink>", observed=str(path))
     payload = path.read_bytes()
     if (
         sha256(payload).hexdigest() != profiler["sha256"]
         or len(payload) != profiler["size_bytes"]
     ):
-        raise ValueError("Executor Nsight Compute bytes differ")
+        raise differs(
+            "Executor Nsight Compute bytes differ",
+            expected={"sha256": profiler["sha256"], "size_bytes": profiler["size_bytes"]},
+            observed={"sha256": sha256(payload).hexdigest(), "size_bytes": len(payload)},
+        )
     return MappingProxyType(dict(profiler))
 
 
@@ -706,7 +808,7 @@ def _admit_hip_environment(
         "kernel_release": platform.release(),
     }
     if observed_platform["system"] != "Linux" or observed_platform != dict(expected_platform):
-        raise ValueError("Executor HIP platform differs")
+        raise differs("Executor HIP platform", expected=dict(expected_platform), observed=observed_platform)
 
     runtime = cast(Mapping[str, object], host["runtime"])
     torch = importlib.import_module("torch")
@@ -717,7 +819,11 @@ def _admit_hip_environment(
         or observed_hip != runtime["torch_hip_version"]
         or getattr(torch_version, "cuda", None) is not None
     ):
-        raise ValueError("Executor HIP runtime differs")
+        raise differs(
+            "Executor HIP runtime",
+            expected={"torch.version.hip": runtime["torch_hip_version"], "torch.version.cuda": None},
+            observed={"torch.version.hip": observed_hip, "torch.version.cuda": getattr(torch_version, "cuda", None)},
+        )
 
     tools = cast(Mapping[str, object], host["tools"])
     monitor = _admit_executable(

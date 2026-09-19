@@ -114,8 +114,8 @@ def _plan(candidate):
 
 def _authorities(plan):
     compiler_ref = plan["compiler_revision"]
-    if set(compiler_ref) != {"path", "revision_id", "canonical_sha256"}:
-        raise ValueError("Compiler reference differs")
+    if set(compiler_ref) != {"path", "revision_id"}:
+        raise ValueError(f"Compiler reference differs: expected ['path', 'revision_id'], observed {sorted(compiler_ref)!r}")
     compiler = Compiler.load(ROOT, _external_file(ROOT, compiler_ref["path"], "Compiler"))
     if compiler.commit is None:
         raise ValueError("collection and fitting require a Compiler at a clean committed checkout")
@@ -136,7 +136,7 @@ def _authorities(plan):
 def _assessment(compiler, plan, document):
     assessment = compiler.assess(document)
     ref = plan["compiler_revision"]
-    if (assessment.compiler_revision_id != ref["revision_id"] or assessment.compiler_revision_sha256 != ref["canonical_sha256"] or assessment.target != plan["target"] or not assessment.accepted or not assessment.lowering_eligible):
+    if (assessment.compiler_revision_id != ref["revision_id"] or assessment.target != plan["target"] or not assessment.accepted or not assessment.lowering_eligible):
         raise ValueError("Schedule assessment or frozen Compiler binding differs")
     return assessment, compiler.lower(assessment)
 
@@ -147,7 +147,7 @@ def _task(task, executor, workload):
     stages = task["stages"]
     if [(s["id"], s["kind"], s.get("execution", "broker")) for s in stages] != [("compile", "compile", "local"), ("collection", "judge", "broker")]:
         raise ValueError("calibration requires local compile and one broker judge stage")
-    identity = f"{executor.executor_id}@{executor.canonical_sha256}"
+    identity = executor.executor_id
     for stage in stages:
         if stage["judge"]["identity"] != identity:
             raise ValueError("GPU Infra judge Executor identity differs")
@@ -450,7 +450,7 @@ def _receipts(run, task, result, executor):
     for spec in task["stages"]:
         stage = run / "stages" / spec["id"]
         receipt = _read(_external_file(stage, "receipt.json", "stage receipt"))
-        expected = {"schema": "kernelinfra.stage-receipt.v1", "run_id": result["run_id"], "stage_id": spec["id"], "stage_kind": spec["kind"], "execution": spec.get("execution", "broker"), "judge_identity": f"{executor.executor_id}@{executor.canonical_sha256}", "exit_code": 0, "judge_result_valid": True, "error": None}
+        expected = {"schema": "kernelinfra.stage-receipt.v1", "run_id": result["run_id"], "stage_id": spec["id"], "stage_kind": spec["kind"], "execution": spec.get("execution", "broker"), "judge_identity": executor.executor_id, "exit_code": 0, "judge_result_valid": True, "error": None}
         _equal({key: receipt[key] for key in expected}, expected, "durable stage receipt")
         if spec["id"] == "collection":
             ids = receipt["gpu_ids"]
@@ -469,7 +469,7 @@ def _derive(plan, executor, workload, compiled, rows, run_id):
     by_split = {split: {r["candidate_id"]: r for r in rows if r["split"] == split} for split in ("fit", "calibration", "audit")}
     context = _empirical_context(executor, workload_sha256=workload.canonical_sha256, case_id=plan["case_id"])
     ref = plan["compiler_revision"]
-    model = {"schema_version": 2, "model_id": plan["model_id"], "compiler_revision_id": ref["revision_id"], "compiler_revision_sha256": ref["canonical_sha256"], "target": plan["target"], "context": context,
+    model = {"schema_version": 3, "model_id": plan["model_id"], "compiler_revision_id": ref["revision_id"], "target": plan["target"], "context": context,
              "reported_evidence": {"run_id": run_id, "plan_id": plan["plan_id"], "scope": "same-case independent measurement cohorts; advisory exact-pool prediction only", "range_meaning": "observed calibration deviation, not a probability, guarantee or pruning rule"}, "curves": []}
     for spec in plan["pool"]:
         name = spec["id"]
@@ -482,7 +482,7 @@ def _derive(plan, executor, workload, compiled, rows, run_id):
         envelope = abs(by_split["calibration"][name]["median_ms"] * 1000 / point - 1)
         model["curves"].append({"template": template, "varying_dimensions": [{"buffer": b, "dimension": 1} for b in ("tokens", "assignments")], "extent_multiple": 1, "points": [{"extent": extent, "kernel_us": point}], "relative_error_envelope": envelope})
     EmpiricalCostModel(model)  # Freeze point/envelope before inspecting audit outcomes.
-    selection = _EmpiricalSelection({"kind": "external_empirical_advisory_v1", "model": model}, context=context, compiler_revision_id=ref["revision_id"], compiler_revision_sha256=ref["canonical_sha256"], target=plan["target"])
+    selection = _EmpiricalSelection({"kind": "external_empirical_advisory_v1", "model": model}, context=context, compiler_revision_id=ref["revision_id"], target=plan["target"])
     limits = plan["acceptance"]
     validation = {}
     passed = True

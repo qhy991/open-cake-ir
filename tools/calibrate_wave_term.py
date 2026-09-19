@@ -131,10 +131,7 @@ def main() -> int:
                 }
             )
             continue
-        revision = {
-            "id": assessment.compiler_revision_id,
-            "sha256": assessment.compiler_revision_sha256,
-        }
+        revision = {"id": assessment.compiler_revision_id}
         scored, _ = compiler.rank([assessment])
         # The point of the sweep is the region where the model declines, so a Cost is
         # absent for most of it. The grid and the residency ceiling are facts either way.

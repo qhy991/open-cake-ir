@@ -37,7 +37,7 @@ def _synthetic_flash_model(workload, compiler_ref, context, durations=(20.0, 10.
     return {
         "schema_version": 2, "model_id": "synthetic-flash-selection-contract",
         "compiler_revision_id": compiler_ref["revision_id"],
-        "compiler_revision_sha256": compiler_ref["canonical_sha256"], "target": "sm_100a",
+         "target": "sm_100a",
         "context": context, "reported_evidence": {"kind": "synthetic software fixture; no measurements"},
         "curves": curves,
     }
@@ -93,10 +93,10 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         assessment = compiler.assess(schedule)
         compiler_ref = {
             "revision_id": assessment.compiler_revision_id,
-            "canonical_sha256": assessment.compiler_revision_sha256,
+
         }
         # Explicit prospective software fixture; it is never loaded/admitted as a host.
-        executor = ExecutorRevision("fixture", "a" * 64, {"host_environment": {"packages": {"triton": "fixture"}}}, ROOT, "fixture")
+        executor = ExecutorRevision("fixture", {"host_environment": {"packages": {"triton": "fixture"}}}, ROOT, "fixture")
         context = _empirical_context(executor, workload_sha256=workload.canonical_sha256, case_id="headline_b32")
         model = _synthetic_flash_model(workload, compiler_ref, context)
         authority = {
@@ -118,7 +118,7 @@ class OpenCakeAuthoringEnvironmentContractTests(unittest.TestCase):
         self.assertEqual(rejected.disposition, "rejected")
         self.assertIsNone(rejected.empirical_cost)
         wrong_authority = json.loads(json.dumps(authority))
-        wrong_authority["compiler_revision"]["canonical_sha256"] = "0" * 64
+        wrong_authority["compiler_revision"]["revision_id"] = "different"
         rejected = OpenCakeEnvironment(compiler, toolchain, authority_document=wrong_authority, workload=workload, case_id="headline_b32", executor=executor).build(submit(schedule))
         self.assertEqual(rejected.disposition, "rejected")
         self.assertIn("Compiler Revision", rejected.feedback["error"])

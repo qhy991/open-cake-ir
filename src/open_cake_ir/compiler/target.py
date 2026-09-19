@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
@@ -337,18 +337,6 @@ class Occupancy:
 
 
 @dataclass(frozen=True)
-class TargetSource:
-    """Revision-checked identity and source bytes retained for provenance.
-
-    Provenance only: nothing reads hardware facts back out of these bytes, so they
-    cannot become a second live hardware representation.
-    """
-
-    canonical_sha256: str
-    document_bytes: bytes
-
-
-@dataclass(frozen=True)
 class Target:
     target_id: str
     architecture: str
@@ -375,7 +363,6 @@ class Target:
     # a role's slot range rather than a preference. Declared beside its citation like
     # `warp_size`, and absent -- not zero, not a borrowed four -- on an ISA without it.
     warps_per_warpgroup: int | None = None
-    source: TargetSource | None = field(default=None, repr=False, compare=False)
 
     @classmethod
     def load(cls, path: str | Path) -> "Target":

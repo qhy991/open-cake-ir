@@ -94,7 +94,6 @@ def main() -> int:
     compiler_reference = {
         "revision_id": gate.compiler_revision_id,
         "path": "compiler/revision.json",
-        "canonical_sha256": gate.compiler_revision_sha256,
     }
     if document.get("kind") == "portfolio":
         if arguments.enable_attribution or any(

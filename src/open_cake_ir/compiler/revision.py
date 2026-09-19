@@ -10,29 +10,31 @@ refuses to run a Campaign without it.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
-from hashlib import sha256
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Mapping, cast
 
-from ..serialization import canonical_json_bytes as _canonical_json_bytes
-from ..source_identity import checkout_commit_or_none
+from ..source_identity import checkout_commit_or_none, untracked_paths
 from .errors import CompilerError
 from .ir import ScheduleParseError
 from .ir.instruction_contracts import CONTRACTS, ContractKind
-from .target import Target, TargetParseError, TargetSource
+from .target import Target, TargetParseError
 
 TARGETS_DIRECTORY = "compiler/targets"
 
 
 @dataclass(frozen=True)
 class CompilerRevision:
-    """Declared Targets, Corpus and calibration coverage at one source identity."""
+    """Declared Targets, Corpus and calibration coverage at one source identity.
+
+    The identity is the clean commit alone: `revision_id` is `open-cake-ir@<commit>`, and
+    every document this loader read is a tracked file at that commit, so a second digest
+    over those documents could only restate it.
+    """
 
     project_root: Path
     revision_id: str
-    canonical_sha256: str
     commit: str | None
     targets: Mapping[str, Target]
     corpus_path: Path
@@ -127,14 +129,7 @@ def _load_target(target_path: Path) -> Target:
     if not citations:
         raise CompilerError(f"target definition {target_id!r} requires citations")
     _declared_contracts(typed_target)
-    document_bytes = _canonical_json_bytes(document)
-    return replace(
-        typed_target,
-        source=TargetSource(
-            canonical_sha256=sha256(document_bytes).hexdigest(),
-            document_bytes=document_bytes,
-        ),
-    )
+    return typed_target
 
 
 def load_revision(project_root: str | Path, revision_path: str | Path) -> CompilerRevision:
@@ -142,11 +137,13 @@ def load_revision(project_root: str | Path, revision_path: str | Path) -> Compil
 
     root = Path(project_root).resolve(strict=True)
     path = Path(revision_path).resolve(strict=True)
+    if root not in path.parents:
+        raise CompilerError(f"compiler revision {path} is outside the project root {root}")
     revision = _object(json.loads(path.read_text(encoding="utf-8")), "compiler_revision")
     if (set(revision) != {"schema_version", "corpus_manifest", "calibration_coverage"}
             or revision.get("schema_version") != 2):
         raise CompilerError("compiler revision fields differ")
-    _, corpus_path = _project_path(
+    corpus_relative, corpus_path = _project_path(
         root, revision.get("corpus_manifest"), "compiler_revision.corpus_manifest"
     )
     calibration = revision.get("calibration_coverage")
@@ -163,21 +160,26 @@ def load_revision(project_root: str | Path, revision_path: str | Path) -> Compil
         if target_path.is_symlink() or not target_path.is_file():
             raise CompilerError(f"target definition {target_path.name!r} custody differs")
         targets[target_path.stem] = _load_target(target_path)
-    corpus_document = json.loads(corpus_path.read_text(encoding="utf-8"))
+    json.loads(corpus_path.read_text(encoding="utf-8"))
     commit = checkout_commit_or_none(root)
-    identity = {
-        "commit": commit,
-        "revision": revision,
-        "targets": {
-            target_id: cast(TargetSource, targets[target_id].source).canonical_sha256
-            for target_id in sorted(targets)
-        },
-        "corpus_manifest": sha256(_canonical_json_bytes(corpus_document)).hexdigest(),
-    }
+    if commit is not None:
+        # The commit is the identity, so it must cover every document read above. A
+        # clean tree can still hold a file that `git status` does not show (an excludes
+        # entry); naming it here is the refusal that used to be an implicit
+        # `open-cake-ir@uncommitted`.
+        untracked = untracked_paths(root, (
+            path.relative_to(root).as_posix(),
+            corpus_relative,
+            *(target_path.relative_to(root).as_posix() for target_path in target_paths),
+        ))
+        if untracked:
+            raise CompilerError(
+                f"compiler revision at commit {commit} reads documents the commit does not "
+                f"track: {', '.join(untracked)}"
+            )
     return CompilerRevision(
         project_root=root,
         revision_id=f"open-cake-ir@{commit or 'uncommitted'}",
-        canonical_sha256=sha256(_canonical_json_bytes(identity)).hexdigest(),
         commit=commit,
         targets=MappingProxyType(targets),
         corpus_path=corpus_path,

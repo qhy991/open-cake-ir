@@ -60,18 +60,13 @@ class RevisionAdmissionTests(unittest.TestCase):
             _write(self.path, document)
         return load_revision(self.root, self.path)
 
-    def test_manifest_holds_typed_targets_and_preserves_source_provenance(self):
+    def test_manifest_holds_typed_targets_at_one_commit(self):
         revision = self.load()
         target = revision.targets["sm_100a"]
         self.assertIsInstance(target, Target)
         self.assertIsInstance(next(iter(target.memory_spaces)), MemorySpace)
         self.assertIsInstance(next(iter(target.operation_kinds)), OperationKind)
         self.assertEqual(target, Target.from_dict(self.target))
-        # Provenance is bytes plus their digest; nothing projects a live document back
-        # out of them, so the typed facts are the only hardware representation.
-        self.assertEqual(json.loads(target.source.document_bytes), self.target)
-        self.assertFalse(hasattr(target.source, "document"))
-        self.assertEqual(target.source.canonical_sha256, sha256(_canonical(self.target)).hexdigest())
         self.assertEqual(revision.project_root, self.root)
         self.assertEqual(revision.corpus_path, self.root / "corpus.json")
         # The fixture root is no checkout, so it has no commit to be identified by;
@@ -85,11 +80,30 @@ class RevisionAdmissionTests(unittest.TestCase):
         self.assertEqual(target.resource_limits.maximum_threads_per_cta,
                          self.target["resource_limits"]["maximum_threads_per_cta"])
 
+    def test_ignored_target_cannot_borrow_a_clean_commit(self):
+        from tests.contracts.test_source_identity import _git
+        _git(self.root, "init", "-q")
+        _git(self.root, "add", ".")
+        _git(self.root, "commit", "-q", "-m", "fixture")
+        extra = copy.deepcopy(self.target)
+        extra["target_id"] = "synthetic-ignored"
+        target_path = self.root / "compiler/targets/synthetic-ignored.json"
+        _write(target_path, extra)
+        (self.root / ".git/info/exclude").write_text("compiler/targets/synthetic-ignored.json\n")
+        with self.assertRaisesRegex(CompilerError, "does not track.*synthetic-ignored"):
+            self.load()
+
+    def test_revision_outside_root_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "revision.json"
+            _write(path, self.draft)
+            with self.assertRaisesRegex(CompilerError, "outside the project root"):
+                load_revision(self.root, path)
+
     def test_bound_target_admits_specification_peak_without_arithmetic_coverage(self):
         target = self.load().targets["sm_100a"]
         self.assertEqual(target.peak.memory_bandwidth.value, 8e12)
         self.assertFalse(target.peak.arithmetic)
-        self.assertEqual(json.loads(target.source.document_bytes)["peak"], self.target["peak"])
 
     def test_current_manifest_retains_all_exact_targets_and_unmodeled_tmem(self):
         """The exact declared set, updated only by a deliberate data addition.
