@@ -42,8 +42,8 @@ not results of existing artifact-only campaigns.
 Existing [bounded passes](../../src/open_cake_ir/compiler/passes.py) and
 [experience-material preparation](../OMOE_TRANSFER.md) provide implementation foundations.
 The prototype now connects complete Programs, independent Runs, controlled material/pass
-access, preassigned E/P Studies and audited analysis. Software tests exercise these protocol
-paths; production orchestration, target adaptations and measured transfer benefits remain
+access, shared Run runtime assembly, preassigned E/P Studies and audited analysis. Software tests exercise these protocol
+paths; complete consumer migration, target adaptations and measured transfer benefits remain
 to be qualified. Automatic mechanism extraction is outside the current implementation.
 The design builds on explicit transformations such as
 [MLIR Transform](https://mlir.llvm.org/docs/Tutorials/transform/) and prior schedule reuse such

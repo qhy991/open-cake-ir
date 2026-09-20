@@ -75,6 +75,16 @@ The existing Study facade remains an input boundary. Independent Runs carry thei
 authority and use the same engine and independent replay. A new source commit
 changes the identity of future execution; it does not rewrite historical evidence.
 
+`tasks.compose.run_runtime_factory` 统一装配每个 Run 的 provider、构建环境和评测器。
+生产装配要求真实 live qualification，并核对冻结的 Compiler、Executor、工具链、broker 和基线。
+消息作者的 runtime `provider` 对象为空，不声明 CLI 可执行文件或作者目录；其消息和历史按 Run
+隔离。CLI 作者每个 Run 使用新目录。旧 Campaign 入口只适配预分配和原有报告，保留它自己的
+比较约束；普通 Run 不需要比较组或估计量。
+
+命令 `open-cake-ir lab run preflight|execute|audit --run <run.json>` 接收独立 Run；执行另需
+`--runtime-config` 和 `--evidence-root`。任务启动准备层仍有旧 Campaign 输入消费者，正在迁移；
+新装配已替代它们此前单独维护的生产 adapter 装配。
+
 ## Preassigned E/P Studies
 
 `StudyPlan` 保留 `matched_search` 类型，冻结四个 E/P 组合、知识版本、源发现/目标适配/测试划分，
@@ -85,7 +95,8 @@ changes the identity of future execution; it does not rewrite historical evidenc
 `Lab.prepare_study` 在外部目录写入计划及每个预分配 Run；`execute_study` 通过调用方提供的
 runtime factory 调用同一个 `execute_run`，不引入另一套搜索状态。已尝试分配不得覆盖或自动替换，
 启动前失败也有绑定原 Run 身份的记录。`audit_study` 只采用匹配预分配且通过独立回放的结果。
-`tools/transfer_study.py prepare/audit` 提供准备和审计入口；生产 runtime factory 接线仍待完成。
+`tools/transfer_study.py prepare|execute|audit` 提供准备、执行和审计入口；execute 指定
+`--runtime-config` 并使用上述共同装配。prepare 和 audit 不启动 provider 或 GPU。
 
 报告按任务等权计算材料、pass 与交互的成功率差，缺失保留在分母并给出范围与已观测子集敏感性。
 配对 task bootstrap 需要预注册的先导依据和最小任务数，单任务及软件资格测试不生成总体区间。
