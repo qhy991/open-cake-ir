@@ -1,16 +1,24 @@
-# Running open-cake-ir tasks on bw1100 (gfx938)
+# Historical DCU operator notes: bw1100, 2026-09-17/18
 
-*Operator notes for one specific host, not a contract. The scripts it names live under
-`/tmp` on bw1100 and are not in this repository; this file records what they are and how to
-drive them so the knowledge does not live only in a session transcript. Nothing here is
-evidence — what the campaigns produced is under `findings/`, and the reading of it is
-`docs/dcu-gfx938-results.md`. The design and the gate sequence are in
+*These notes retain the setup used for the 2026-09-17/18 campaigns on one specific host.
+The scripts were reported under `/tmp` on bw1100; their versions and current availability
+are not bound by this document. It is a historical operator record, not a current launch
+recipe or a contract. Campaign source commits are recorded per run in
+`findings/data/2026-09-18-dcu-confirmatory-medians.json`. Results are read in
+`docs/dcu-gfx938-results.md`; the design and gate sequence are in
 `docs/dcu-gfx938-design.md`.*
+
+Before reusing any command below, inspect the actual scripts, bind a clean source commit,
+verify the intended target/toolchain and workload contract, and obtain the current task's
+run authorization and resource ownership under the repository's existing admission rules.
+The example commands do not establish those conditions. This integration did not inspect
+bw1100, refresh the scripts or run a campaign. The configuration and model observations
+below describe the recorded setup and must be rechecked before reuse.
 
 *The provider token is supplied through the environment by whoever runs a campaign. It is
 not in this repository, not in any workspace, and not in the container image.*
 
-Three scripts, all already on bw1100 under `/tmp`. Start here:
+The recorded setup used three scripts under `/tmp`. Historical launch example:
 
 ```bash
 ssh bw1100 'setsid bash /tmp/sweep_dcu.sh > /tmp/sweep.log 2>&1 < /dev/null & disown'
