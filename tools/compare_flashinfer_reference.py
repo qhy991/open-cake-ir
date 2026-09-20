@@ -83,19 +83,25 @@ class LoadedCallable:
         self.launch_function = launch
         self.torch = torch
         self.abi = workload.tensor_abi("primary")
-        self.inputs = {a.name: torch.tensor(values[a.name], dtype=torch.bfloat16,
+        dtypes = {'bf16': torch.bfloat16, 'fp16': torch.float16}
+        outputs = [a for a in self.abi if a.mode == 'output']
+        if (len(outputs) != 1 or outputs[0].name != 'out'
+                or any(a.dtype not in dtypes for a in self.abi)):
+            raise ValueError('external callable requires a supported single-output ABI')
+        self.output_dtype = dtypes[outputs[0].dtype]
+        self.inputs = {a.name: torch.tensor(values[a.name], dtype=dtypes[a.dtype],
             device="cuda:0").reshape(a.shape) for a in self.abi if a.mode == "input"}
-        self.output_shape = next(a.shape for a in self.abi if a.mode == "output")
+        self.output_shape = outputs[0].shape
 
     def fresh_argument_sets(self, count):
         return [{"inputs": {k: v.clone() for k, v in self.inputs.items()},
                  "out": self.torch.full(self.output_shape, float("nan"),
-                     dtype=self.torch.bfloat16, device="cuda:0"), "result": None}
+                     dtype=self.output_dtype, device="cuda:0"), "result": None}
                 for _ in range(count)]
 
     def launch(self, arguments):
         result = self.launch_function(arguments["inputs"], arguments["out"])
-        if (not isinstance(result, self.torch.Tensor) or result.dtype != self.torch.bfloat16
+        if (not isinstance(result, self.torch.Tensor) or result.dtype != self.output_dtype
                 or tuple(result.shape) != tuple(self.output_shape) or not result.is_contiguous()
                 or result.device.type != "cuda" or result.device.index != 0):
             raise ValueError("candidate output ABI differs")
