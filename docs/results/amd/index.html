@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Open-Cake · __PAGE_TITLE__</title>
+<title>Open-Cake · AMD 实验结果</title>
 <style>
 :root{color-scheme:light;--ink:#142c3b;--muted:#536675;--line:#dae2e7;--paper:#f5f7f8;--teal:#087f8c;--purple:#7357bb;--orange:#a75c15}
 *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
@@ -22,11 +22,11 @@ details{min-width:210px;max-width:480px}summary{color:#087f8c;cursor:pointer;whi
 </head>
 <body>
 <main>
-<div class="top"><div class="eyebrow">OPEN-CAKE / EXPERIMENT RESULTS</div><div class="stamp">__PAGE_SCOPE__</div></div>
-<h1>__PAGE_TITLE__</h1>
+<div class="top"><div class="eyebrow">OPEN-CAKE / EXPERIMENT RESULTS</div><div class="stamp">amd 分支 · 独立维护</div></div>
+<h1>AMD 实验结果</h1>
 <p class="intro">查看任务的已确认实现、历史晋升与尚未解决的缺口。<b>加速比 = 基线耗时 ÷ 候选耗时</b>，大于 1× 表示更快。不同硬件、形状与计时协议分别阅读；这里不计算跨平台总分。</p>
 <div class="summary">
-__PLATFORM_CARDS__
+<div class="card"><b>AMD</b><span>gfx1151；计时边界待解决<br>1 条观察 · 2026-09-20</span></div>
 </div>
 <nav class="tabs" aria-label="按硬件平台筛选"></nav>
 <div class="filters">
@@ -43,7 +43,7 @@ __PLATFORM_CARDS__
 <p id="links"></p></section>
 <footer>Generated reading view · 无外部脚本、字体或分析服务。原报告和 Finding 保留权威；本页不会启动 GPU、更新最佳实现或授予新的验收资格。</footer>
 </main>
-<script type="application/json" id="data">__RESULTS_DATA__</script>
+<script type="application/json" id="data">{"rows": [{"hardware": "Radeon / Strix Halo", "target": "gfx1151", "task": "rmsnorm smoke", "source": "findings/2026-09-17-002-two-device-timers-disagree-on-gfx1151.json", "workload": "gfx1151-rmsnorm-b8-smoke", "date": "2026-09-17", "baseline_us": null, "candidate_us": null, "speedup": null, "status": "计时边界未解决", "baseline_name": "任务固定初始基线", "version": "见来源", "locator": "infplane；原调查未产生 Campaign", "note": "31.858 与 24.224 µs 来自不同计时器，不作为合格延迟或加速比。", "ratio_kind": "paired", "history": [], "id": "amd-result-080", "platform": "AMD", "branch": "amd", "source_url": "https://github.com/qhy991/open-cake-ir/blob/f95af8005619a9356d5891873b38a9322d32f102/findings/2026-09-17-002-two-device-timers-disagree-on-gfx1151.json"}], "notes": {"AMD": "gfx1151 的两种设备计时器尚未对齐。保留支持状态与调查入口，不给出合格性能或加速比。"}, "links": [{"label": "main 汇总", "url": "https://github.com/qhy991/open-cake-ir/blob/main/docs/RESULTS.md"}, {"label": "分支维护流程", "url": "https://github.com/qhy991/open-cake-ir/blob/main/docs/RESULTS_MAINTENANCE.md"}, {"label": "amd 维护入口", "url": "https://github.com/qhy991/open-cake-ir/tree/amd/docs/results/amd"}]}</script>
 <script>
 const data=JSON.parse(document.getElementById('data').textContent);
 const platforms=Object.keys(data.notes);let active='全部';
