@@ -41,12 +41,15 @@ def main():
         p=subprocess.run(command,capture_output=True,text=True,timeout=300,env=env)
         (out/(standard+'.stdout')).write_text(p.stdout);(out/(standard+'.stderr')).write_text(p.stderr)
         rows.append({'standard':standard,'returncode':p.returncode,'command':command,
-                     'object_exists':(out/(standard+'.o')).is_file()})
+                     'object_exists':(out/(standard+'.o')).is_file(),
+                     'object_nonempty':(out/(standard+'.o')).is_file() and (out/(standard+'.o')).stat().st_size>0,
+                     'original_symptom':all(text in p.stderr+p.stdout for text in ('ATen/core/List_inl.h','difference_type','typename'))})
     report={'scope':'CPU object build only; unchanged CUDA source; no linked module or GPU launch',
             'hypothesis':'explicit C++20 compilation resolves the observed NVCC/ATen dependent-type rejection',
             'rows':rows}
     (out/'build-probe.json').write_text(json.dumps(report,indent=2)+'\n')
-    passed=rows[0]['returncode']!=0 and rows[1]['returncode']==0
+    passed=(rows[0]['returncode']!=0 and rows[0]['original_symptom']
+            and rows[1]['returncode']==0 and rows[1]['object_nonempty'])
     Path(os.environ['KERNELINFRA_RESULT']).write_text(json.dumps({'schema':'kernelinfra.stage-result.v1',
         'status':'passed' if passed else 'failed','validity':'valid' if passed else 'unknown',
         'summary':'C++17 failure / C++20 success reproduced' if passed else 'hypothesis not established',
