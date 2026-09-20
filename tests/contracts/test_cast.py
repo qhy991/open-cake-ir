@@ -28,14 +28,15 @@ class CastPrimitiveTest(unittest.TestCase):
 
     def integer_cast(self, source_dtype="int32", output_dtype="fp32"):
         source = f'''from open_cake_ir.compiler import frontend as cake
-@cake.schedule(name="integer-cast", target="gfx1151", backend="triton", entry_point="run", grid=(1, 1, 1))
+@cake.schedule(name="integer-cast", target="gfx1151", backend="triton", entry_point="run")
 def candidate(lm, x: cake.Tensor((32,), "{source_dtype}"),
               y: cake.Tensor((32,), "{output_dtype}", mode="output")):
     compute = lm.role(execution_groups=[0])
+    block = lm.program(x, axis=0, dimension=0, tile=32)
     with compute:
-        values = lm.load(x[:], id="load_x")
+        values = lm.load(x[block], id="load_x")
         converted = lm.cast(values, to="{output_dtype}", id="cast_x")
-        lm.store(y[:], converted, coalesced=False, id="store_y")
+        lm.store(y[block], converted, coalesced=False, id="store_y")
 '''
         return self.compiler.assess(frontend.parse(source).document)
 
