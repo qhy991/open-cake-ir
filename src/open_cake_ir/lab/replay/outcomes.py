@@ -112,6 +112,7 @@ def _replay_terminal(
     invocation_counts: Mapping[str, int] | None = None,
     confirmation=None,
     search_state=None,
+    compilation_count=0,
 ) -> None:
     """Refuse unless the terminal, checkpoints and Ralph state rederive from the Run's facts."""
     if not observations and not faults and search_state is None:
@@ -186,6 +187,8 @@ def _replay_terminal(
         ("remaining.provider_tokens", ralph_state.get("remaining", {}).get("provider_tokens"),
          max(0, budget["limit"] - terminal_tokens)),
         ("evaluation_counts", ralph_state.get("evaluation_counts"), expected_counts),
+        ('compilation_count',ralph_state.get('compilation_count'),compilation_count),
+        ('remaining.compilations',ralph_state.get('remaining',{}).get('compilations'),budget['maximum_compilations']-compilation_count),
         ("terminal_reason", ralph_state.get("terminal_reason"), expected_stop_reason),
     ):
         if observed != expected:

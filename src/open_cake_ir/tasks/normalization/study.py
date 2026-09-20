@@ -139,7 +139,7 @@ def _allocation_mode(target: object) -> str:
 
 def study_template(root: Path, workload, workload_path: Path, starter_path: Path, *,
                    harness: str, model: str, effort: str, turns: int = 4,
-                   token_budget: int = 150000, maximum_candidates: int = 3,
+                   token_budget: int = 150000, maximum_candidates: int = 3, maximum_compilations: int = 128,
                    searches_per_turn: int = 2, wall_seconds: int = 14400,
                    dispatches_per_sample: int | None = None,
                    maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
@@ -157,6 +157,7 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         raise ValueError("searches per Turn must fit the candidate budget")
     budget = {"unit": "provider_tokens", "limit": token_budget, "checkpoints": [token_budget],
               "maximum_turns": turns, "maximum_candidates_per_turn": maximum_candidates,
+              "maximum_compilations": maximum_compilations,
               "wall_time_seconds": wall_seconds, "active_authoring_time_seconds": wall_seconds / 2,
               "evaluation_limits": {"search": turns * searches_per_turn, "confirmatory": turns,
                                     "attribution": turns * searches_per_turn}}

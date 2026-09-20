@@ -9,7 +9,7 @@ from .refusals import refuse
 from .._documents import _object
 
 
-def replay_nomination(*, events, observations, launchables, receipts, budget, protocol, terminal_tokens):
+def replay_nomination(*, events, observations, launchables, receipts, budget, protocol, terminal_tokens, compilation_count=0):
     completed = [event['payload'] for event in events if event['kind'] == 'search_completed']
     nominations = [event['payload'] for event in events if event['kind'] == 'candidate_nominated']
     confirmations = [(key, value) for key, value in receipts.items() if key[1] == 'confirmatory']
@@ -33,11 +33,13 @@ def replay_nomination(*, events, observations, launchables, receipts, budget, pr
               for name in ('search','confirmatory','attribution')}
     if (state.get('evaluation_counts') != counts or counts['confirmatory'] != 0
         or state.get('cumulative_provider_tokens') != terminal_tokens
+        or state.get('compilation_count') != compilation_count
         or state.get('iteration') != min(budget['maximum_turns']+1,len(observations)+1)):
         refuse('search_completed.state', 'search accounting differs from completed evidence')
     reason = derive_ralph_stop_reason(RalphBudget.from_mapping(budget),turn=state['iteration'],
         cumulative_provider_tokens=terminal_tokens,elapsed_wall_seconds=state['elapsed_wall_seconds'],
         active_authoring_seconds=state['active_authoring_seconds'],evaluation_counts=counts,
+        compilation_count=compilation_count,
         searches_per_turn=protocol.get('searches_per_turn',1),
         profile_each_search_survivor=protocol.get('attribution_evaluation')=='correctness_then_profile_each_search_survivor')
     if reason is None or state.get('terminal_reason') != reason:

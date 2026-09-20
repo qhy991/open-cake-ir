@@ -318,12 +318,12 @@ class FailedProviderConsumerTests(unittest.TestCase):
                                raw_events_sha256="f" * 64 if rejected_return else sha256(raw).hexdigest())
 
         class Environment(consumers.FakeEnvironment):
-            def build(inner, submission):
+            def build(inner, submission, *, compilation=None):
                 if stage == "environment":
                     raise RunProtocolFault("harness_fault", "synthetic environment fault",
                         artifact_payloads={"provider_stdout": codex_report(tokens)},
                         reported_usage=ReportedProviderUsage(CONTRACT, THREAD, tokens))
-                return super().build(submission)
+                return super().build(submission, compilation=compilation)
 
         directory = Path(tempfile.mkdtemp(dir=self.parent))
         arms = self.lock.document["resolved_inputs"]["arm_environments"]

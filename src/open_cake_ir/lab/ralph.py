@@ -18,6 +18,7 @@ class RalphBudget:
     search_evaluations: int
     confirmatory_evaluations: int
     attribution_evaluations: int
+    maximum_compilations: int
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, object]) -> "RalphBudget":
@@ -55,6 +56,7 @@ class RalphBudget:
             search_evaluations=positive_int(evaluations, "search"),
             confirmatory_evaluations=positive_int(evaluations, "confirmatory"),
             attribution_evaluations=positive_int(evaluations, "attribution"),
+            maximum_compilations=positive_int(value, 'maximum_compilations'),
         )
         if budget.active_authoring_time_seconds > budget.wall_time_seconds:
             raise ValueError("Ralph active authoring limit exceeds wall-time limit")
@@ -71,6 +73,7 @@ def derive_ralph_stop_reason(
     evaluation_counts: Mapping[str, int],
     searches_per_turn: int,
     profile_each_search_survivor: bool,
+    compilation_count: int,
 ) -> str | None:
     """Pure terminal decision shared by live control and semantic replay."""
 
@@ -82,6 +85,10 @@ def derive_ralph_stop_reason(
         return "wall_time_limit"
     if active_authoring_seconds >= budget.active_authoring_time_seconds:
         return "active_authoring_time_limit"
+    if type(compilation_count) is not int or not 0 <= compilation_count <= budget.maximum_compilations:
+        raise ValueError('Run compilation count differs')
+    if compilation_count == budget.maximum_compilations:
+        return 'compilation_budget'
     required = {
         "search": searches_per_turn,
         "confirmatory": 0,
@@ -125,6 +132,7 @@ class RalphController:
         self._started = clock()
         self._active_authoring = 0.0
         self._counts = {"search": 0, "confirmatory": 0, "attribution": 0}
+        self._compilations = 0
 
     @property
     def elapsed_wall_seconds(self) -> float:
@@ -143,6 +151,7 @@ class RalphController:
             evaluation_counts=self._counts,
             searches_per_turn=self.searches_per_turn,
             profile_each_search_survivor=self.profile_each_search_survivor,
+            compilation_count=self._compilations,
         )
 
     def begin_authoring(self) -> float:
@@ -161,6 +170,13 @@ class RalphController:
         if self._counts[purpose] >= limit:
             raise ValueError(f"Ralph {purpose} Evaluation budget exhausted")
         self._counts[purpose] += 1
+
+    def record_compilation(self):
+        from .faults import CompilationBudgetExceeded
+        if self._compilations >= self.budget.maximum_compilations:
+            raise CompilationBudgetExceeded('Run native compilation budget exhausted')
+        self._compilations += 1
+        return self._compilations
 
     def state_card(
         self,
@@ -184,7 +200,9 @@ class RalphController:
             "elapsed_wall_seconds": round(elapsed, 6),
             "active_authoring_seconds": round(self._active_authoring, 6),
             "evaluation_counts": dict(self._counts),
+            "compilation_count": self._compilations,
             "remaining": {
+                "compilations": self.budget.maximum_compilations - self._compilations,
                 "provider_tokens": max(
                     0, self.budget.provider_token_limit - cumulative_provider_tokens
                 ),

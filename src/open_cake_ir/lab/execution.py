@@ -334,6 +334,7 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 ledger=ledger,
                 candidate_payloads=tuple(resolved_candidates.values()),
                 turn_number=turn_number,
+                ralph=ralph,
             )
             record_candidate_rejections(
                 built=built, evidence=evidence, ledger=ledger, turn_number=turn_number, arm=kind,
@@ -543,7 +544,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
             active_authoring_seconds=search_state['active_authoring_seconds'],
             evaluation_counts=search_state['evaluation_counts'],
             searches_per_turn=ralph.searches_per_turn,
-            profile_each_search_survivor=profile_each_search_survivor)
+            profile_each_search_survivor=profile_each_search_survivor,
+            compilation_count=search_state['compilation_count'])
         if ralph_stop_reason is None:
             raise ValueError('search ended without a declared budget stop')
         search_state['terminal_reason'] = ralph_stop_reason

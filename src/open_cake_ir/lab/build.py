@@ -5,9 +5,9 @@ from __future__ import annotations
 from open_cake_ir.serialization import canonical_json_bytes
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
-from typing import Mapping, Protocol
+from typing import Mapping, Protocol, Callable
 
 from open_cake_ir.compiler import Finding, FindingCategory, FindingSeverity
 from open_cake_ir.compiler.toolchain import (project_triton_kernel, triton_route,
@@ -30,6 +30,8 @@ class BuildRequest:
     entry_point: str
     toolchain_requirements: Mapping[str, object]
     tensor_abi: tuple | None = None
+    # Ephemeral execution dependency, not authored data or part of source identity.
+    compilation: Callable | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         digests = (self.candidate_sha256, self.source_sha256)
@@ -52,6 +54,13 @@ class ToolchainBuilder(Protocol):
 
     def build(self, request: BuildRequest) -> LaunchableCandidate:
         """Build with the Campaign-pinned toolchain and retain artifact roles."""
+
+
+def invoke_compiler(request, *, compiler, variant, operation):
+    """Each source-to-artifact compiler entry call obtains its Run permit here."""
+    if request.compilation is None:
+        return operation()  # Standalone construction outside a Run has no Run budget.
+    return request.compilation(request, compiler=compiler, variant=variant, operation=operation)
 
 
 def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> int:
@@ -120,13 +129,15 @@ class TritonToolchainBuilder:
         kernel_source = (project_triton_kernel(request.source, requirements)
                          if request.source_role == "lowered_source" else request.source)
         validate_triton_kernel(kernel_source, requirements)
-        compilation = self._isolated.compile(kernel_source, requirements)
+        compilation = invoke_compiler(request, compiler='triton', variant='generic',
+            operation=lambda: self._isolated.compile(kernel_source, requirements))
         generic = self._seal(request, requirements, route, compilation)
         if self._pointer_alignment is None:
             return generic
         alignments = {name: self._pointer_alignment for name in requirements['signature']}
         aligned_requirements = {**requirements, 'pointer_alignments': alignments}
-        specialized = self._isolated.compile(kernel_source, aligned_requirements)
+        specialized = invoke_compiler(request, compiler='triton', variant='aligned',
+            operation=lambda: self._isolated.compile(kernel_source, aligned_requirements))
         aligned = self._seal(request, aligned_requirements, route, specialized)
         from open_cake_ir.evaluation.kernel_bundle import pack_candidates
         manifest = TensorLaunchManifest.from_dict(json.loads(generic.artifact_payloads['launch_manifest']))

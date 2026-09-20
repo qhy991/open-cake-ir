@@ -33,7 +33,7 @@ def validate_run_controls(document):
     maximum_candidates_per_turn = budget.get("maximum_candidates_per_turn", 1)
     budget_fields = {
         "unit", "limit", "checkpoints", "maximum_turns", "maximum_candidates_per_turn",
-        "wall_time_seconds", "active_authoring_time_seconds", "evaluation_limits",
+        "wall_time_seconds", "active_authoring_time_seconds", "evaluation_limits", "maximum_compilations",
     }
     if (
         set(budget) != budget_fields

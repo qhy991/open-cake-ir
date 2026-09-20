@@ -73,7 +73,7 @@ class LabCoreArchitectureTests(unittest.TestCase):
         from open_cake_ir.lab.ralph import RalphBudget, RalphController
         budget = {"limit": 80000, "maximum_turns": 2, "maximum_candidates_per_turn": 1,
                   "wall_time_seconds": 30, "active_authoring_time_seconds": 15,
-                  "evaluation_limits": {"search": 2, "confirmatory": 2, "attribution": 2}, "checkpoints": [80000]}
+                  "maximum_compilations": 128, "evaluation_limits": {"search": 2, "confirmatory": 2, "attribution": 2}, "checkpoints": [80000]}
         lock.document["resolved_inputs"]["budget"] = budget
         ralph = RalphController(RalphBudget.from_mapping(budget), searches_per_turn=1,
                                 profile_each_search_survivor=False, clock=lambda: 0.0)

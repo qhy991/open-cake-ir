@@ -82,7 +82,7 @@ class FakeEnvironment:
             ).encode()
         ).hexdigest()
 
-    def build(self, submission):
+    def build(self, submission, *, compilation=None):
         source_role = "lowered_source" if self.arm == "open_cake" else "authored_source"
         turn = json.loads(submission.payload)["turn"]
         entry_point = f"{self.arm}_turn_{turn}"
@@ -1080,7 +1080,7 @@ class LabContractTests(SemanticLabTestCase):
 
     def test_system_qualification_requires_a_replayed_evaluation_in_every_run(self) -> None:
         class RejectingEnvironment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 return EnvironmentResult(
                     "rejected",
                     submission.sha256,
@@ -1360,7 +1360,7 @@ class LabContractTests(SemanticLabTestCase):
         """A negative authoring result is data, not an external missing Run."""
 
         class RejectOpenCakeOne(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 if json.loads(submission.payload)["run_id"] == "open_cake-1":
                     return EnvironmentResult(
                         "rejected",
@@ -1368,7 +1368,7 @@ class LabContractTests(SemanticLabTestCase):
                         None,
                         {"stage": "correctness", "passed": False},
                     )
-                return super().build(submission)
+                return super().build(submission, compilation=compilation)
 
         lab = TaskLab(ROOT)
         lock = self.two_turn_lock(lab)
@@ -1494,8 +1494,8 @@ class LabContractTests(SemanticLabTestCase):
         self.assertTrue(any(item["severity"] == "hint" for item in diagnostics))
 
         class ReportingEnvironment(FakeEnvironment):
-            def build(self, submission):
-                result = super().build(submission)
+            def build(self, submission, *, compilation=None):
+                result = super().build(submission, compilation=compilation)
                 return EnvironmentResult(
                     result.disposition,
                     result.submission_sha256,
@@ -1664,9 +1664,9 @@ class LabContractTests(SemanticLabTestCase):
                 builds: list[str] = []
 
                 class RecordingEnvironment(FakeEnvironment):
-                    def build(self, submission):
+                    def build(self, submission, *, compilation=None):
                         builds.append(submission.sha256)
-                        return super().build(submission)
+                        return super().build(submission, compilation=compilation)
 
                 class InvalidProvider(FakeProvider):
                     def turn(self, request):
@@ -1806,7 +1806,7 @@ class LabContractTests(SemanticLabTestCase):
         resolved = lock.document["resolved_inputs"]
 
         class RejectFirst(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 if json.loads(submission.payload)["turn"] == 1:
                     return EnvironmentResult(
                         "rejected",
@@ -1814,7 +1814,7 @@ class LabContractTests(SemanticLabTestCase):
                         None,
                         {"stage": "correctness", "passed": False},
                     )
-                return super().build(submission)
+                return super().build(submission, compilation=compilation)
 
         protocol_sha256 = sha256(
             json.dumps(
@@ -2035,7 +2035,7 @@ class CandidateSetFilterTest(SemanticLabTestCase):
 
     def test_every_member_of_an_all_rejected_set_replays(self) -> None:
         class RejectAllEnvironment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 return EnvironmentResult(
                     "rejected",
                     submission.sha256,
@@ -2378,9 +2378,9 @@ class StructurallyDistinctCandidatesTest(SemanticLabTestCase):
 
     def _run(self, *, same_program: bool):
         class TwinEnvironment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 variant = json.loads(submission.payload)["variant"]
-                result = super().build(submission)
+                result = super().build(submission, compilation=compilation)
                 return EnvironmentResult(
                     result.disposition,
                     result.submission_sha256,
@@ -2532,9 +2532,9 @@ class QualifiedCandidateSelectionTest(SemanticLabTestCase):
 
     def test_an_unstable_fastest_candidate_cannot_win_or_lend_findings(self) -> None:
         class SelectionEnvironment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 variant = json.loads(submission.payload)["variant"]
-                result = super().build(submission)
+                result = super().build(submission, compilation=compilation)
                 candidate = result.launchable
                 assert candidate is not None
                 entry_point = f"{self.arm}_turn_{variant + 1}"
@@ -2831,6 +2831,7 @@ class RalphTaskInterfaceTests(SemanticLabTestCase):
                 "maximum_candidates_per_turn": 2,
                 "wall_time_seconds": 20,
                 "active_authoring_time_seconds": 10,
+                "maximum_compilations": 128,
                 "evaluation_limits": {
                     "search": 4,
                     "confirmatory": 2,

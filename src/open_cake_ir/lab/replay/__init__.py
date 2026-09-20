@@ -25,6 +25,7 @@ from .provider import (
 from .refusals import ReplayRefusal, ReplayResult, refuse
 from .selection import _replay_candidate_selection
 from .nomination import replay_nomination
+from .compilations import replay_compilations
 
 _REQUIRED_FAULT_FIELDS = frozenset({
     "fault", "exception_type", "turn", "stage", "terminal_provider_tokens",
@@ -302,6 +303,8 @@ def _replay_matched_run(
         specification=lock, events=events, evidence=evidence,
         provider_candidates_by_turn=provider_candidates_by_turn, provider_candidate_bytes=provider_candidate_bytes,
         compiler_factory=compiler_factory, fault_turn=fault_turn)
+    compilation_count = replay_compilations(events,candidates_by_turn=provider_candidates_by_turn,
+        maximum=replay_budget['maximum_compilations'],target=lock.document['execution']['target'])
     candidates = _replay_candidates(
         arm=lock.environment_kind,
         case_id=case_id,
@@ -341,6 +344,7 @@ def _replay_matched_run(
     observations, searches_per_turn, attribution_evaluation = selected
     confirmation, search_state = replay_nomination(events=events, observations=observations,
         launchables=launchables, receipts=receipts,budget=replay_budget,protocol=lock.document['evaluation_protocol'],
+        compilation_count=compilation_count,
         terminal_tokens=fault_terminal_tokens if fault_terminal_tokens is not None else prior_cumulative)
     _replay_terminal(
         attribution_evaluation=attribution_evaluation,
@@ -354,7 +358,7 @@ def _replay_matched_run(
         receipts=receipts,
         searches_per_turn=searches_per_turn,
         invocation_counts=invocation_counts,
-        confirmation=confirmation, search_state=search_state,
+        confirmation=confirmation, search_state=search_state, compilation_count=compilation_count,
     )
 
 def _refuse_unless_fault_payload_is_closed(fault_payload: Mapping[str, object]) -> None:

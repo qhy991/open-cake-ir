@@ -532,6 +532,8 @@ def main(argv=None) -> int:
     parser.add_argument("--token-budget", type=int, default=3000000,
                         help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
     parser.add_argument("--max-candidates", type=int, default=3)
+    parser.add_argument("--max-compilations", type=int, default=128,
+                        help="native source-to-artifact compiler entry calls, including failed calls and variants")
     parser.add_argument("--searches-per-turn", type=int, default=2)
     parser.add_argument("--maximum-cv", type=float,
                         help="cohort CV bound recorded in the Study (default: CUDA 0.15, Metal 0.05)")
@@ -603,6 +605,7 @@ def main(argv=None) -> int:
     study = study_template(ROOT, workload, workload_path, source_path, harness=args.harness,
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
+        maximum_compilations=args.max_compilations,
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md)

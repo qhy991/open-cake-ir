@@ -112,11 +112,11 @@ class TerminalRunTests(unittest.TestCase):
             provider = ArtifactProvider()
         provider = provider or FakeProvider()
         class Environment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 return (EnvironmentResult("rejected", submission.sha256, None,
                     {"stage": "assessment", "code": "CPU_FIXTURE_REFUSAL"})
                     if rejected or (reject_first and json.loads(submission.payload)["turn"] == 1)
-                    else super().build(submission))
+                    else super().build(submission, compilation=compilation))
         protocol = lock.document["evaluation_protocol"]
         evaluator = evaluator_class(protocol, sha256(json.dumps(protocol, sort_keys=True, separators=(",", ":")).encode()).hexdigest(), lock.document["workload"]["canonical_sha256"])
         campaign = _execute(lab, lock, directory / "evidence", provider=provider,

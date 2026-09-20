@@ -7,7 +7,7 @@ from .checkpoints import CheckpointObservation, TurnObservation
 
 NORMAL_BUDGET_TERMINAL = "normal_budget_terminal_v1"
 _NORMAL_REASONS = frozenset({"provider_token_limit", "maximum_turns", "wall_time_limit",
-                             "active_authoring_time_limit", "evaluation_budget"})
+                             "active_authoring_time_limit", "evaluation_budget", "compilation_budget"})
 
 
 def endpoint_policy(analysis: Mapping[str, object]) -> str | None:

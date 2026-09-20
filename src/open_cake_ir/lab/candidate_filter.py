@@ -9,6 +9,8 @@ from .providers import ProviderTurn
 from .archive import _candidate_artifact_media_type
 from .routing import route_rejection
 from .selection import _empirical_filter
+from .compilation import CompilationRecorder
+from .faults import CompilationBudgetExceeded
 
 
 def _build_filter_candidates(
@@ -18,6 +20,7 @@ def _build_filter_candidates(
     ledger: RunLedger,
     candidate_payloads: tuple[bytes, ...],
     turn_number: int,
+    ralph,
 ) -> tuple[
     list[tuple[CandidateSubmission, EnvironmentResult]],
     list[int],
@@ -28,7 +31,12 @@ def _build_filter_candidates(
     built = []
     for payload in candidate_payloads:
         entry = CandidateSubmission.seal(environment.media_type, payload)
-        built.append((entry, environment.build(entry)))
+        try:
+            result = environment.build(entry, compilation=CompilationRecorder(ralph,ledger,turn_number,entry.sha256))
+        except CompilationBudgetExceeded:
+            result = EnvironmentResult('rejected',entry.sha256,None,
+                {'stage':'budget','reason':'compilation_budget','error':'No remaining native compilation permits.'})
+        built.append((entry,result))
     launchable_first = [
         index
         for index, (_, result) in enumerate(built)

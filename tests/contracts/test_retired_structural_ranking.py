@@ -10,7 +10,7 @@ class DefaultCandidateOrderingTests(unittest.TestCase):
     def test_builds_every_member_before_retaining_provider_order_among_survivors(self):
         payloads = (b'first', b'rejected', b'last')
         observed = []
-        def build(submission):
+        def build(submission, *, compilation=None):
             observed.append(submission.payload)
             return SimpleNamespace(disposition='rejected' if submission.payload == b'rejected' else 'launchable',
                                    semantic_sha256=None, empirical_cost=None)
@@ -22,7 +22,7 @@ class DefaultCandidateOrderingTests(unittest.TestCase):
         ledger.append.side_effect = append
         built, order, applied, rows, summary = _build_filter_candidates(
             empirical_enabled=False, environment=SimpleNamespace(media_type='text/x-cuda', build=build),
-            ledger=ledger, candidate_payloads=payloads, turn_number=1)
+            ledger=ledger, candidate_payloads=payloads, turn_number=1, ralph=None)
         self.assertEqual([built[i][0].payload for i in order], [b'first', b'last', b'rejected'])
         self.assertFalse(applied)
         self.assertIsNone(summary)
