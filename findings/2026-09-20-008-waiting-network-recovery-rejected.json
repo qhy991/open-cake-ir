@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-20",
+  "backend": "Codex provider JSONL adapter; tool_rich_candidate_v1",
+  "target": "gfx1151",
+  "compiler_revision_id": "open-cake-ir@2af76a79551ad31e66faa11bec760d38d6c3c973",
+  "executor_revision": "gfx1151@2af76a79551ad31e66faa11bec760d38d6c3c973",
+  "decision": "accepted",
+  "implemented_in": "9bcee8021",
+  "verified_by": {
+    "replay": "infplane:/home/wwxq/oci-lab/amd-experiment-repair-20260920/original-replay-r1.json",
+    "tests": "infplane:/home/wwxq/oci-lab/amd-experiment-repair-20260920/tests-r1.stdout: 124 tests and 176 subtests passed at 9bcee8021; provider, failed usage, runtime and live/replay Lab consumers",
+    "scope": "Deterministic software replay and CPU contracts. Original evidence unchanged; no retroactive campaign acceptance or GPU performance claim."
+  },
+  "id": "F-2026-09-20-008",
+  "kind": "protocol",
+  "title": "Recovered Codex waiting-for-network notices reject a completed candidate turn",
+  "evidence": {
+    "workspace": "infplane:/home/wwxq/oci-experiments-amd-20260920/gelu-tanh-backward-sol-high-3m",
+    "run": "campaign-evidence/runs/open_cake-1",
+    "event": 50,
+    "role": "provider_stdout",
+    "indices": "JSONL indices 7,8,9 contain Reconnecting... waiting for network (Connection failed: error sending request). The same retained stream ends in turn.completed and exact turn-5 terminal markers; actors/open_cake-1/candidate-set.json retains the submission."
+  },
+  "observation": "The process recovered after proxy HTTP CONNECT 503 errors. The old parser admitted numbered retries but rejected the new 0.155.1 network-wait notice, faulting a completed invocation.",
+  "proposed_change": "Admit only the exact observed message and exact type/message fields in the tool-rich contract. Retain indexed transport evidence; still require completed turn, terminal, functional lifecycle and candidate validity. Unknown/auth/fatal messages remain refused."
+}

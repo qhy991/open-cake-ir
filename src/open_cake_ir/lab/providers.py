@@ -29,7 +29,7 @@ from .provider_documents import (
     required_live_provider_qualification_scope,
     _project_candidate_submission,
 )
-from .provider_events import normalize_codex_turn, parse_codex_turn_events, reported_codex_usage, reported_provider_usage
+from .provider_events import normalize_codex_turn, parse_codex_turn_events, reported_codex_usage, reported_provider_usage, provider_token_delta
 from .provider_invocation import CodexInvocationBuilder, resolve_codex_code_mode_host
 
 
@@ -285,10 +285,15 @@ class QualifiedRunProvider:
                 artifact_payloads={"provider_stdout": result.raw_events},
                 reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
                                                        expected_thread_id=request.thread_id)) from error
-        return replace(
-            result,
-            reference_bundle=reference_bundle,
-        )
+        try:
+            tokens = provider_token_delta(result.provider_tokens, provider=self.configuration,
+                                          previous_tokens=request.cumulative_provider_tokens)
+        except ValueError as error:
+            raise RunProtocolFault("provider_fault", str(error),
+                artifact_payloads={"provider_stdout": result.raw_events},
+                reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
+                                                       expected_thread_id=request.thread_id)) from error
+        return replace(result, provider_tokens=tokens, reference_bundle=reference_bundle)
 
 
 class CodexRunProvider(QualifiedRunProvider):

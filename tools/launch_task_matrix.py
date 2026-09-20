@@ -116,7 +116,8 @@ def main(argv=None) -> int:
     parser.add_argument("--depth", type=int, default=256,
                         help="K extent for contraction and gemm_bias tasks")
     parser.add_argument("--turns", type=int, default=32)
-    parser.add_argument("--token-budget", type=int, default=3000000)
+    parser.add_argument("--token-budget", type=int, default=3000000,
+                        help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
     parser.add_argument("--maximum-cv", type=float)
