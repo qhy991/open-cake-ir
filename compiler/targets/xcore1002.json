@@ -7,6 +7,7 @@
   "code_object": "mcfatbin",
   "triton_arch": 80,
   "warp_size": 64,
+  "l2_cache_bytes": 8388608,
   "memory_spaces": ["global", "shared", "register"],
   "operation_kinds": ["load", "cast", "elementwise", "reduce", "store"],
   "resource_limits": {
@@ -23,6 +24,11 @@
   "instruction_contracts": ["maca.tanh.f32"],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "device_observation",
+      "source": "c550-1, native MACA device attribute and activity discovery, 2026-09-20",
+      "locator": "mcDeviceGetAttribute(mcDeviceAttributeL2CacheSize=38) reports 8388608 bytes, matching torch device properties L2_cache_size. Native SDK activity API version18 exposes Kernel8 timestamps/correlation and records zero dropped activity in the retained diagnostic. Raw observations: open-cake-ir-evidence/metax-parity-20260920/native-profiler-result.json and torch-profiler-result.json. Capacity is a hardware fact, not proof of cache-reset effectiveness or timing qualification."
+    },
     {
       "kind": "device_observation",
       "source": "c550-1 MACA 3.5.3 / FlagTree 0.5.1+metax3.1, 2026-09-20, source f1cadbdd",
