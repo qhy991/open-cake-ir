@@ -1,4 +1,7 @@
-# Open Cake 中文文档：从零看懂这个系统
+# Open Cake 技术报告：中文阅读入口
+
+本页是秦海岩（Haiyan Qin）维护的 open-cake-ir 技术报告中文阅读入口。
+[报告题名、范围与引用方式](../README.md)由统一入口说明。
 
 原生 CUDA/PTX 的执行分工与使用，见[原生后端指南](NATIVE_CUDA.md)。
 

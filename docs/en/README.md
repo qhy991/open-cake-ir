@@ -1,4 +1,4 @@
-# Open Cake documentation
+# Open Cake Technical Report: English Reading Guide
 
 For native CUDA/PTX schedules and their exact compile boundary, see the [native backend guide](../NATIVE_CUDA.md).
 
@@ -69,25 +69,11 @@ Original documents retain their paths. Chinese reading companions for English or
 
 ## Citation
 
-```bibtex
-@software{qin_open_cake_ir,
-  author  = {Qin, Haiyan},
-  title   = {{open-cake-ir}: Agent-driven compiler and kernel co-evolution},
-  url     = {https://github.com/qhy991/open-cake-ir},
-  license = {Apache-2.0},
-  note    = {Cite the commit the work was run at, with its target and workload}
-}
-```
+These documents are the English reading edition of Haiyan Qin's open-cake-ir technical report.
+The [report entry point](../README.md) defines its scope and provides the recommended citation,
+BibTeX, and instructions for citing a fixed commit. Machine-readable metadata is maintained in
+[CITATION.cff](../../CITATION.cff). Language companions may summarize the original chapters;
+they do not define separate publications or independent experimental evidence.
 
-Contact: Haiyan Qin \<haiyanq@buaa.edu.cn\>. Machine-readable metadata is in
-[CITATION.cff](../../CITATION.cff).
-
-**Cite the commit.** Source identity is the git commit of the checkout
-([ADR 0065](adr/0065-source-identity-is-the-commit.md)), so `open-cake-ir@<commit>` is the
-reproducible coordinate; naming the exact target (`sm_103a`, `gfx938`, `apple_gpu_family8`)
-and the workload alongside it is what lets a reader find the run. A number without those
-three cannot be checked.
-
-When citing a measurement, say which timing source that target declares and what coverage it
-states: targets use different timers, and a target may report correctness with no latency at
-all, saying so explicitly.
+For experimental results, retain the experiment's own source commit, target, workload, and
+timing boundary in addition to the report chapter you cite.

@@ -8,7 +8,7 @@ Agent 用 Python 编写显式执行计划，在固定任务与编译器版本下
 
 A research system for agent-driven GPU kernel search and compiler evolution.
 
-[中文文档](docs/zh-CN/README.md) · [English](docs/en/README.md) · [当前状态](reports/current/STATUS.md)
+[技术报告 / Technical report](docs/README.md) · [中文文档](docs/zh-CN/README.md) · [English](docs/en/README.md) · [当前状态](reports/current/STATUS.md)
 
 ## 快速开始
 
@@ -38,7 +38,9 @@ GPU 构建、运行和测量需要对应目标的工具链与设备环境。
 
 [贡献说明](CONTRIBUTING.md) · [安全问题](SECURITY.md) · [引用信息](CITATION.cff)
 
-引用时注明源码提交、精确硬件目标和工作负载；测量结果同时注明计时范围。
+现有中英文文档共同构成本仓库的技术报告，作者为秦海岩（Haiyan Qin）。
+报告入口提供推荐引用和 BibTeX；引用具体章节时使用提交永久链接。
+测量结果另注明其源码提交、精确硬件目标、工作负载和计时范围。
 联系：Haiyan Qin <haiyanq@buaa.edu.cn>。
 
 本项目独立探索 [CAKE 论文](https://arxiv.org/abs/2608.12629v1)的部分思路，属于源码研究预览，并非官方实现。
