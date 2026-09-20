@@ -18,7 +18,16 @@
   },
   "observation": "The complete CLI turn writes its candidate and ends with the required JSON marker, but the adapter treats every completed agent_message as a terminal and rejects the leading progress prose. Network timeouts and the earlier unsupported CLI 0.146.0 are separate retained failures, not this finding.",
   "proposed_change": "In tool-rich mode retain non-JSON progress messages as native auxiliary evidence. Require the final agent_message to be a structured terminal after functional work; keep JSON-like frames in the existing strict normalization. Preserve the closed research contract, usage checks, candidate postconditions and raw streams.",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null
+  "decision": "accepted",
+  "implemented_in": "fce27dec06eef73dbc13c17df648ddad740d3951",
+  "verified_by": {
+    "kind": "retained original-stream and candidate replay plus CPU contract checks",
+    "source_commit": "fce27dec06eef73dbc13c17df648ddad740d3951",
+    "raw_replay": "infplane:/home/wwxq/oci-lab/amd-lab-launch-20260920/commentary-raw-replay.json",
+    "tests": "infplane:/home/wwxq/oci-lab/amd-lab-launch-20260920/commentary-tests-r2.stderr",
+    "tests_passed": 99,
+    "corpus_cases": 164,
+    "outcome": "Original stream parses with commentary retained as auxiliary evidence, exactly one structured terminal and 99775 reported tokens; candidate matches the immutable original plan. The original failed ledger remains provider_fault.",
+    "scope": "Software parser repair only; a fresh complete initial/resume qualification is still required before a campaign."
+  }
 }
