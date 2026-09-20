@@ -106,7 +106,9 @@ git worktree add -b task/dcu-sync-main \
 git -C ../open-cake-ir-workspaces/tasks/dcu-sync-main merge origin/main
 ```
 
-提交冲突修复、验证并通过目标为 `dcu` 的 PR 集成。平台到 `main` 的 PR 也应保留合并祖先。
+提交冲突修复、验证并通过目标为 `dcu` 的 PR 集成。同步任务 PR 同样使用 merge 或
+fast-forward，不能 squash/rebase，否则会丢失同步带来的祖先关系。平台到 `main` 的 PR
+也应保留合并祖先。
 长期分支推送遵循普通 fast-forward 规则，不使用 force-push。
 
 CI 的触发范围由 [CPU contracts](../.github/workflows/ci.yml) 和
