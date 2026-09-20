@@ -1122,5 +1122,56 @@
     ],
     "interpretation": "003 width-one new/old is quality-passing close_null (1.023x), so this run establishes no material compiler-floor improvement. Width four and sixteen beat the old control on qualified edges (1.463x and 2.125x), but their external edges fail CV. Width changes are candidate tuning, not a new Compiler mechanism. 022 width four beats the external on a qualified 1.164x edge; no tested width has a quality-passing improvement over the retained original starter. Preserve that starter. A valid individual edge does not qualify the whole three-edge report.",
     "promotion_disposition": "No promotion. Retain failed timing edges and pending numerical verification. Next structural candidate replaces the sliced/reloading 003 computation with an existing masked whole-row formulation at the same width; profiler attribution is still separate."
+  },
+  "work_assignment_completion": {
+    "observed_at": "2026-09-20T16:22:10.084466+00:00",
+    "completed_runs": 7,
+    "snapshots_checked": 17850,
+    "correctness_passed": true,
+    "previous_observation": "2026-09-20T16:12:47.944599+00:00",
+    "previously_pending_result": {
+      "task": "003_fused_add_rmsnorm_h7168",
+      "width": 8,
+      "control_role": "optimized",
+      "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/003_fused_add_rmsnorm_h7168-w8",
+      "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-w8.json",
+      "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-original.py",
+      "run_id": "nvidia-work-assignment-comparison-20260920-c3bed83a0d53",
+      "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-c3bed83a0d53",
+      "node_state": "completed",
+      "status": "measurement_quality_failed",
+      "correctness_passed": true,
+      "snapshots_checked": 2550,
+      "edges": {
+        "optimized_vs_external": {
+          "left_us": 10.368,
+          "right_us": 3.072,
+          "right_over_left": 0.296296296296296,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.057705778395632,
+          "cohorts_above_cv_limit": 1
+        },
+        "starter_vs_external": {
+          "left_us": 14.527999999999999,
+          "right_us": 3.04,
+          "right_over_left": 0.209251101321586,
+          "quality_passed": true,
+          "classification": "second_arm_faster",
+          "maximum_cohort_cv": 0.037878573976812,
+          "cohorts_above_cv_limit": 0
+        },
+        "optimized_vs_starter": {
+          "left_us": 10.368,
+          "right_us": 14.496,
+          "right_over_left": 1.398148148148148,
+          "quality_passed": true,
+          "classification": "first_arm_faster",
+          "maximum_cohort_cv": 0.02443424942865,
+          "cohorts_above_cv_limit": 0
+        }
+      }
+    },
+    "interpretation": "003 width eight also beats the frozen old optimized control on a qualified edge: 10.368 versus 14.496 us, 1.398x. Its external edge fails CV. Width-dependent improvement is not monotonic. All seven runs now pass their 2550 complete numerical snapshots; only 003 width one has all three timing edges quality-passing. Six full reports remain measurement_quality_failed. Individual qualified edges retain their own scope. No promotion."
   }
 }
