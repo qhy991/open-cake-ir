@@ -89,6 +89,56 @@ class QsaCommonProgramTests(unittest.TestCase):
             self.assertEqual(len(fixture.requests),len(reference.implementation.stages))
             self.assertEqual(candidate.kernels_per_call,len(reference.implementation.stages))
             self.assertEqual([item.kernel_id for item in inspection.kernels],[stage.name for stage in reference.implementation.stages])
+            # Virtual storage exercises the real large public ABI and singleton
+            # views without allocating GPU memory or large CPU arrays.
+            class VirtualTorch(Torch):
+                def full(self,shape,value,*,dtype,device):
+                    tensor = Tensor(tuple(shape),dtype,[],self.position)
+                    self.position += tensor.numel()*tensor.element_size()+1024
+                    self.allocations.append(tensor)
+                    return tensor
+            torch = VirtualTorch()
+            inputs = {name:torch.full(spec.shape,0,dtype=spec.dtype.value,device='cuda:0')
+                      for name,spec in manifest.program.tensors.items() if name in manifest.program.inputs}
+            result_tensor = torch.full(manifest.program.tensors['output'].shape,0,dtype='bf16',device='cuda:0')
+            calls=[];kernels=[]
+            test = self
+            class Kernel:
+                launch_calls=0;closed=False;resources={}
+                def __init__(self,child): self.child=child
+                def launch(self,args,*,tensor_contract,stream):
+                    test.assertEqual(stream,7)
+                    for (_,shape,dtype,_),arg in zip(tensor_contract.tensor_abi,args,strict=True):
+                        test.assertEqual((arg.shape,arg.dtype),(shape,dtype))
+                    calls.append(self.child.entry_point);self.launch_calls+=1
+                def close(self,*,synchronize): synchronize();self.closed=True
+            def loader(child,spec,admission):
+                kernel = Kernel(child);kernels.append(kernel);return kernel
+            with patch.dict('sys.modules',{'torch':torch}),patch.object(cake,'_load_cubin',side_effect=loader):
+                loaded = evaluate._load_program(output.parent,'candidate',root=ROOT,compiler=self.compiler,
+                    inputs=inputs,output=result_tensor,admission=object())
+                loaded.launch(loaded.tensors,stream=7)
+                self.assertEqual(calls,[item.kernel_name for item in inspection.kernels])
+                self.assertEqual(set(loaded.tensors),set(manifest.program.tensors))
+                loaded.close(synchronize=torch.cuda.synchronize)
+                self.assertTrue(all(kernel.closed for kernel in kernels))
+
+    def test_device_admission_uses_broker_facts_and_rejects_a_different_exact_target(self):
+        properties = SimpleNamespace(uuid='GPU-software-fixture')
+        cuda = SimpleNamespace(device_count=lambda:1,get_device_name=lambda index:'NVIDIA B200',
+            get_device_capability=lambda index:(10,0),get_device_properties=lambda index:properties)
+        environment = {'KERNELINFRA_STAGE_KIND':'correctness','KERNELINFRA_RUN_ID':'run-fixture',
+            'GPUQ_JOB_ID':'gpuq-012345abcdef','GPUQ_DEVICE_IDS':'0','GPUQ_BACKEND':'nvidia',
+            'GPUQ_MODE':'exclusive','GPUQ_OCCUPANCY_SCOPE':'system','CUDA_VISIBLE_DEVICES':'0'}
+        with patch.dict('sys.modules',{'torch':SimpleNamespace(cuda=cuda)}),patch.dict('os.environ',environment):
+            admission = evaluate._admit_gpu()
+            self.assertEqual(admission.gpu_uuid,properties.uuid)
+            self.assertEqual(admission.broker_job_id,environment['GPUQ_JOB_ID'])
+            with patch.dict('os.environ',{'GPUQ_JOB_ID':''}):
+                with self.assertRaises(ValueError): evaluate._admit_gpu()
+            cuda.get_device_name = lambda index:'NVIDIA B300'
+            cuda.get_device_capability = lambda index:(10,3)
+            with self.assertRaisesRegex(ValueError,'exact declared target'): evaluate._admit_gpu()
 
     def test_variable_stage_programs_use_common_build_storage_launch_and_oracle(self):
         fused = self.compiler.rewrite_program(self.program,'fuse_pointwise_epilogue',
