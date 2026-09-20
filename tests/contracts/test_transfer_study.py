@@ -174,6 +174,32 @@ class TransferStudyTests(SemanticLabTestCase):
         self.assertEqual(row['status'],'missing')
         self.assertEqual(row['reason'],'pre_execution_or_unsealed_failure')
 
+    def test_unseen_shape_requires_seen_semantics_and_an_actual_new_shape(self):
+        lab,plan,_,_,_,root = self.fixture()
+        document = plan.document
+        task = document['tasks'][0]
+        task.update(family='normalization',generalization='unseen_shape')
+        # New operator in a seen family is not evidence of shape generalization.
+        with self.assertRaisesRegex(ValueError,'same non-shape contract'):
+            lab.prepare_study(StudyPlan.from_dict(document),root/'new-operator')
+        self.assertFalse((root/'new-operator').exists())
+        task['family'] = 'activation'
+        for split,backend,columns in [('discovery','triton-b300',32),('adaptation','triton-b200',64)]:
+            value,_ = create_task('silu',backend=backend,rows=1,columns=columns)
+            path = root/(split+'-silu.json');path.write_bytes(encoded(value))
+            source = load_workload(path)
+            document[split][0].update(family='activation',workload={
+                'workload_id':source.workload_id,'path':str(path),'canonical_sha256':source.canonical_sha256})
+        # Same SiLU semantics, source shapes 1x32/1x64, new test shape 2x8.
+        self.assertEqual(len(lab.prepare_study(StudyPlan.from_dict(document),root/'new-shape').plan.allocations()),4)
+        value,_ = create_task('silu',backend='triton-b300',rows=2,columns=8)
+        path = root/'same-shape.json';path.write_bytes(encoded(value))
+        source = load_workload(path)
+        document['discovery'][0]['workload'] = {
+            'workload_id':source.workload_id,'path':str(path),'canonical_sha256':source.canonical_sha256}
+        with self.assertRaisesRegex(ValueError,'overlaps discovery/adaptation'):
+            lab.prepare_study(StudyPlan.from_dict(document),root/'same-shape')
+
     def test_fixture_study_does_not_issue_task_population_intervals(self):
         _,plan,_,_,_,_ = self.fixture()
         document = plan.document

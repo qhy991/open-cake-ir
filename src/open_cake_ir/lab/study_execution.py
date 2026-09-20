@@ -28,10 +28,29 @@ def _case_key(workload,case_id):
                                  'shape':workload.case(case_id)['shape'],'abi':abi})
 
 
+def _non_shape_contract(workload,case_id):
+    """Shape transfer keeps operator semantics, tensor roles and numeric acceptance.
+
+    Family names alone do not establish that relation. Target identity, case labels
+    and explanatory prose do not change the contract; tensor dimensions may change.
+    This compares declared contracts, not arbitrary mathematical equivalence.
+    """
+    document = workload.document
+    semantics = document['semantics']
+    semantics.pop('target',None)
+    validation = document['validation']
+    for field in ('primary_case','tolerance_rationale','qualification'):
+        validation.pop(field,None)
+    abi = [(row.name,row.dtype,row.mode) for row in workload.tensor_abi(case_id)]
+    return canonical_json_bytes({'operator':document['operator'],'semantics':semantics,
+                                 'abi':abi,'validation':validation})
+
+
 def validate_study_inputs(plan, *, project_root, workload_loader, preflight_run, task_package):
     document = plan.document
     target = document['tasks'][0]['run_template']['execution']['target']
     seen = {}
+    upstream_contracts = set()
     family_by_operator = {}
     def check_family(workload,family):
         operator = workload.document['operator']
@@ -51,6 +70,7 @@ def validate_study_inputs(plan, *, project_root, workload_loader, preflight_run,
                 raise ValueError(f'{split} repeats a canonical workload case')
             phase_keys.add(key)
             seen[key] = split
+            upstream_contracts.add(_non_shape_contract(workload,entry['case_id']))
     # One representative per task suffices for shared runtime admission. All four
     # actual material/API projections are nevertheless constructed before dispatch.
     by_task = {}
@@ -60,7 +80,11 @@ def validate_study_inputs(plan, *, project_root, workload_loader, preflight_run,
         template = task['run_template']
         workload = _workload(template['workload'],root=project_root,loader=workload_loader)
         check_family(workload,task['family'])
-        key = _case_key(workload,template['evaluation_protocol']['case_id'])
+        case_id = template['evaluation_protocol']['case_id']
+        if (task['generalization']=='unseen_shape'
+            and _non_shape_contract(workload,case_id) not in upstream_contracts):
+            raise ValueError('unseen_shape requires an upstream operator with the same non-shape contract')
+        key = _case_key(workload,case_id)
         if key in seen:
             raise ValueError('test task is a renamed duplicate or overlaps discovery/adaptation cases')
         seen[key] = 'test'
