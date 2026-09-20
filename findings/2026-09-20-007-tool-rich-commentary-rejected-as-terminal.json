@@ -29,5 +29,19 @@
     "corpus_cases": 164,
     "outcome": "Original stream parses with commentary retained as auxiliary evidence, exactly one structured terminal and 99775 reported tokens; candidate matches the immutable original plan. The original failed ledger remains provider_fault.",
     "scope": "Software parser repair only; a fresh complete initial/resume qualification is still required before a campaign."
+  },
+  "operational_verification": {
+    "source_commit": "5b31360136f2578296ed74d16674099ee6c7b13d",
+    "provider": "codex-cli 0.155.1; gpt-6-astra; xhigh",
+    "scope": "live_two_turn_tool_rich_provider; zero GPU",
+    "receipt": "infplane:/home/wwxq/oci-lab/amd-lab-launch-20260920/provider-qualification-r5.json",
+    "anchor": "infplane:/home/wwxq/oci-lab/amd-lab-launch-20260920/provider-anchor-r5.json",
+    "evidence_root": "infplane:/home/wwxq/oci-lab/amd-lab-launch-20260920/provider-qualification-r5-evidence",
+    "run_id": "amd-codex-commentary-successor",
+    "qualified": true,
+    "initial_and_resume_equivalent": true,
+    "file_lifecycle_observed": true,
+    "usage_observed": true,
+    "boundary": "Fresh qualification under the preserved SSH proxy route and staged CLI; original failed runs are unchanged. No candidate GPU or performance claim."
   }
 }
