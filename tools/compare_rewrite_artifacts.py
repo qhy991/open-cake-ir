@@ -193,6 +193,9 @@ def main():
         admit_judge_source(report['judge_commit'],
             json.loads(Path(os.environ['KERNELINFRA_TASK']).read_bytes()), os.environ['KERNELINFRA_STAGE_ID'])
         report['input'] = json.loads(regular(root, 'comparison.json').read_bytes())
+        if report['input'].get('kind') == 'explicit_alignment_ablation':
+            report['roles'].update(optimized='same-source candidate with guarded AOT alignment variants',
+                                   starter='unchanged pre-specialization optimized binary')
         workload = WorkloadContract(json.loads(regular(root, 'workload.json').read_bytes()))
         if workload.target != 'sm_103a':
             raise ValueError('comparison binds exact B300 target')
@@ -254,6 +257,8 @@ def main():
                     'medians_ms': {r: x['summary']['median_ms'] for r, x in pair['arms'].items()}}), flush=True)
             raw['timing'] = paired_summary(raw)
         check_all('postflight')
+        report['compiled_resources'] = {role:loaded[role,'primary'].loaded.resources
+                                        for role in ('optimized','starter')}
         report['correctness_passed'] = True
         report['measurement_quality_passed'] = all(c['timing']['measurement_quality_passed'] for c in report['comparisons'].values())
         report['status'] = 'passed' if report['measurement_quality_passed'] else 'measurement_quality_failed'

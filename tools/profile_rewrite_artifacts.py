@@ -117,6 +117,8 @@ def child(role, output, root, owner):
         report['profiled_output'] = {'passed': passed, 'metrics': metrics}
         if not passed:
             raise ArithmeticError('profiled output failed')
+        if role != 'external':
+            report['compiled_resources'] = loaded.loaded.resources
         report['passed'] = True
     except Exception as error:
         report.update(passed=False, error=f'{type(error).__name__}: {error}',

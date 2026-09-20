@@ -11,6 +11,22 @@ from open_cake_ir.tasks.workloads import create_task
 
 
 class ExternalDtypeTests(unittest.TestCase):
+    def test_external_input_snapshot_preserves_native_array_bit_checks(self):
+        from array import array
+        from open_cake_ir.evaluation.core import _same_tensor_inputs
+        class HostTensor:
+            def __init__(self, values): self.values = values
+            def cpu(self): return self
+            def flatten(self): return self
+            def tolist(self): return list(self.values)
+        loaded = object.__new__(LoadedCallable)
+        for values, expected in [([1.0,-0.0],True), ([1.0,0.0],False), ([2.0,-0.0],False)]:
+            observed, after = loaded.snapshot({'result':HostTensor([1.0]),
+                'inputs':{'x':HostTensor(values)}})
+            self.assertEqual(observed,{'out':[1.0]})
+            self.assertIsInstance(after['x'],array)
+            self.assertEqual(_same_tensor_inputs({'x':array('d',[1.0,-0.0])},after),expected)
+
     def test_fp16_gemm_and_bf16_norm_keep_their_abi(self):
         class Tensor:
             counter = 0
