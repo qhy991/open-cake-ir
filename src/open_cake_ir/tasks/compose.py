@@ -160,7 +160,11 @@ def run_runtime_factory(project_root, runtime_config_path):
                             else Path(provider_config['workspace_root']).absolute()/specification.run_id)
         if harness != 'responses':
             from open_cake_ir.lab.custody import admit_new_campaign_path
-            author_workspace = admit_new_campaign_path(root,author_workspace,role='Run author workspace')
+            if author_workspace.parent.exists():
+                author_workspace = admit_new_campaign_path(root,author_workspace,role='Run author workspace')
+            else:
+                parent = admit_new_campaign_path(root,author_workspace.parent,role='Run author workspace root')
+                author_workspace = parent/specification.run_id
         if row.backend is LoweringBackend.METAL:
             toolchain = MetalToolchainBuilder(workload=workload,case_id=protocol['case_id'],
                 output_root=Path(toolchain_config['output_root']),
@@ -217,7 +221,7 @@ def run_runtime_factory(project_root, runtime_config_path):
             if sha256(executable.read_bytes()).hexdigest() != declared_provider['executable_sha256']:
                 raise ValueError('runtime provider executable differs from the Run')
             # Do not recreate or reuse an actor directory from an attempted Run.
-            author_workspace.parent.mkdir(mode=0o750,parents=True,exist_ok=True)
+            author_workspace.parent.mkdir(mode=0o750,parents=False,exist_ok=True)
             author_workspace.mkdir(mode=0o750,exist_ok=False)
             materialize_task_package(author_workspace,package)
             common = dict(executable=executable,provider_revision=qualification.provider_revision,
