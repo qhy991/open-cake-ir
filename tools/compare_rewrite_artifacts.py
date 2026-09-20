@@ -63,6 +63,19 @@ def reference_spec(root):
     return spec, paths, file, function
 
 
+def reference_arguments(workload):
+    abi = workload.tensor_abi('primary')
+    names = [a.name for a in abi if a.mode == 'input']
+    if [a.name for a in abi if a.mode == 'output'] != ['out']:
+        raise ValueError('comparison requires one out tensor')
+    normalization = (names in (['x', 'weight'], ['x', 'residual', 'weight'])
+                     and all(a.dtype == 'bf16' for a in abi))
+    gemm = names == ['a', 'b'] and all(a.dtype == 'fp16' for a in abi)
+    if not (normalization or gemm):
+        raise ValueError('reference call ABI differs from BF16 normalization or FP16 GEMM')
+    return names
+
+
 def load_reference(root, output, report, cohort_calls):
     spec, paths, file, function = reference_spec(root)
     report['reference'] = spec
@@ -183,12 +196,7 @@ def main():
         workload = WorkloadContract(json.loads(regular(root, 'workload.json').read_bytes()))
         if workload.target != 'sm_103a':
             raise ValueError('comparison binds exact B300 target')
-        abi = workload.tensor_abi('primary')
-        if any(a.dtype != 'bf16' for a in abi) or [a.name for a in abi if a.mode == 'output'] != ['out']:
-            raise ValueError('comparison currently admits the single-output BF16 normalization ABI')
-        names = [a.name for a in abi if a.mode == 'input']
-        if names not in (['x', 'weight'], ['x', 'residual', 'weight']):
-            raise ValueError('reference call ABI differs')
+        names = reference_arguments(workload)
         participants = {role: load_baseline_bundle(ROOT, regular(root, role + '/candidate.json'))
                         for role in ('optimized', 'starter')}
         manifests = validate_pair_candidates(participants['optimized'], participants['starter'], workload, 'primary')
