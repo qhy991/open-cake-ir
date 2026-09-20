@@ -76,6 +76,29 @@ class NominationTests(SemanticLabTestCase):
         self.assertEqual(starts[0]['source_turn'],1)
         self.assertEqual(len(provider.requests),2)
 
+    def test_numerically_incorrect_confirmation_is_observed_without_using_search_latency(self):
+        class Incorrect(EarlierSearchEvaluator):
+            def evaluate(self,candidate,*,case_id,purpose):
+                attempt = super().evaluate(candidate,case_id=case_id,purpose=purpose)
+                if purpose != 'confirmatory': return attempt
+                correctness = {'tie_aware_distance_match':False}
+                receipt = replace(attempt.final_receipt,correctness_passed=False,correctness=correctness,
+                    artifact_payloads={**attempt.final_receipt.artifact_payloads,
+                                       'correctness_output':encoded(correctness)})
+                broker = attempt.attempts[0]
+                raw = json.loads(broker.artifact_payloads['broker_record'])
+                raw['receipt'].update(correctness_passed=False,correctness=correctness)
+                broker = replace(broker,receipt=receipt,artifact_payloads={**broker.artifact_payloads,
+                    'broker_record':encoded(raw),'evaluator_result':encoded(raw)})
+                return replace(attempt,attempts=(broker,),final_receipt=receipt)
+        _,_,_,audit,_,events,_ = self.execute(Incorrect)
+        self.assertEqual(audit.protocol_adherence,'adhered')
+        self.assertEqual(audit.endpoint_observation,'no_qualified_candidate')
+        self.assertNotIn('best_confirmed_latency_ms',audit.endpoint)
+        self.assertEqual(sum(e['kind']=='candidate_nominated' for e in events),1)
+        self.assertEqual(sum(e['kind']=='evaluation_attempt_started' and e['payload']['purpose']=='confirmatory'
+                             for e in events),1)
+
     def test_replay_refuses_posthoc_nominee_changes_and_search_after_nomination(self):
         lab,spec,_,audit,evidence,events,_ = self.execute()
         for mutation in ('source','artifact','duplicate','resume'):

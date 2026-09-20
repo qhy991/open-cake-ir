@@ -1933,7 +1933,7 @@ class LabContractTests(SemanticLabTestCase):
             checkpoints=(150000,),
             terminal_provider_tokens=329934,
         )
-        self.assertEqual(r42_cuda_three[0].state, "reached_no_qualified_candidate")
+        self.assertEqual(r42_cuda_three[0].state, "reached_no_search_candidate")
         self.assertIsNone(r42_cuda_three[0].best_candidate_sha256)
 
 

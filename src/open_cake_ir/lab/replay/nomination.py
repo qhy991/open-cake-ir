@@ -1,10 +1,12 @@
 """Reconstruct the unique terminal nomination from completed search evidence."""
+import math
 from open_cake_ir.serialization import canonical_json_bytes
 
 from ..nomination import FinalConfirmation, nominate, nomination_document
 from ..ralph import RalphBudget, derive_ralph_stop_reason
 from ..selection import _receipt_qualifies, _receipt_latency_ms
 from .refusals import refuse
+from .._documents import _object
 
 
 def replay_nomination(*, events, observations, launchables, receipts, budget, protocol, terminal_tokens):
@@ -18,7 +20,13 @@ def replay_nomination(*, events, observations, launchables, receipts, budget, pr
         return None, None
     if len(completed) != 1 or len(nominations) != 1 or set(completed[0]) != {'state'}:
         refuse('candidate_nominated', 'a completed search has exactly one closed nomination')
-    state = completed[0]['state']
+    state = _object(completed[0]['state'], 'search_completed.state')
+    for field in ('elapsed_wall_seconds','active_authoring_seconds'):
+        value = state.get(field)
+        if type(value) not in {int,float} or not math.isfinite(value) or value < 0:
+            refuse('search_completed.state.'+field, 'not a finite nonnegative duration')
+    if state['active_authoring_seconds'] > state['elapsed_wall_seconds']:
+        refuse('search_completed.state', 'authoring time exceeds search wall time')
     counts = {name: sum(event['kind']=='evaluation_attempt_started'
                        and event['payload']['purpose']==name for event in
                        events[:next(i for i,e in enumerate(events) if e['kind']=='search_completed')])
@@ -45,6 +53,8 @@ def replay_nomination(*, events, observations, launchables, receipts, budget, pr
         return None,state
     key = (nominee.turn,'confirmatory',nominee.candidate_sha256)
     terminal_fault = bool(faults and 'source_turn' in faults[0])
+    if faults and (not terminal_fault or faults[0]['source_turn'] != nominee.turn):
+        refuse('run_fault', 'post-search fault differs from the nominated Evaluation source')
     if not confirmations:
         if not terminal_fault:
             refuse('candidate_evaluated', 'the nominee has no independent confirmation or terminal fault')

@@ -95,7 +95,7 @@ class AuthorActionTests(SemanticLabTestCase):
         self.assertEqual(len(compiled.requests),2)
         self.assertNotEqual(compiled.requests[0][1]['compile_options']['num_warps'],8)
         self.assertEqual(compiled.requests[1][1]['compile_options']['num_warps'],8)
-        self.assertEqual(evaluator.calls,4)
+        self.assertEqual(evaluator.calls,3)
         self.assertEqual(audit.endpoint_observation,'qualified')
 
     def test_withheld_pass_refuses_without_a_second_build_or_evaluation(self):
@@ -106,7 +106,7 @@ class AuthorActionTests(SemanticLabTestCase):
         self.assertEqual(rows[1]['objects'],[])
         self.assertEqual(len(compiled.requests),1)
         self.assertEqual(evaluator.calls,2)
-        self.assertEqual(audit.endpoint_observation,'qualified')  # retains only the earlier confirmed submit
+        self.assertEqual(audit.endpoint_observation,'qualified')  # nominates and confirms the earlier submit after the refused action
 
     def test_all_denied_actions_form_an_observed_nonqualifying_run(self):
         _,_,audit,events,compiled,evaluator = self.execute_fixture([],only_transform=True)

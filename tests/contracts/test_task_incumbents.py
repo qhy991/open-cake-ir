@@ -163,7 +163,7 @@ class TaskIncumbentTests(unittest.TestCase):
         run.append(
             "candidate_evaluated",
             {
-                "turn": 1,
+                "source_turn": 1,
                 "purpose": "confirmatory",
                 "candidate_sha256": candidate.candidate_sha256,
                 "objects": [receipt.reference("evaluation_receipt")],
@@ -185,7 +185,7 @@ class TaskIncumbentTests(unittest.TestCase):
                 "semantic_replay_by_run": {"open_cake-1": True},
                 "promoted_artifacts": {
                     "open_cake-1": {"candidate_sha256": candidate.candidate_sha256,
-                        "turn": 1, "confirmed_latency_ms": 1.0,
+                        "source_turn": 1, "confirmed_latency_ms": 1.0,
                         "evaluation_receipt_sha256": receipt.sha256}
                 }
             },
@@ -222,7 +222,7 @@ class TaskIncumbentTests(unittest.TestCase):
                             "promoted_artifacts": {
                                 "open_cake-1": {
                                     "candidate_sha256": fixture[3].candidate_sha256,
-                                    "turn": 1,
+                                    "source_turn": 1,
                                     "confirmed_latency_ms": 1.0,
                                     "evaluation_receipt_sha256": receipt_sha256,
                                 }

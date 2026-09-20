@@ -18,6 +18,8 @@ from open_cake_ir.evidence import EvidenceStore
 from open_cake_ir.lab.checkpoints import TurnObservation, project_checkpoints
 from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL, endpoint_policy, matched_endpoint
 from open_cake_ir.lab.faults import RunProtocolFault
+from open_cake_ir.lab.nomination import FinalConfirmation
+from open_cake_ir.lab.evaluation_lifecycle import evaluation_origin
 from open_cake_ir.tasks.runtime import TaskLab
 from tests.contracts._contexts import enter_context
 from tests.contracts import test_diagnosis_feedback as diagnosis_consumers
@@ -30,12 +32,17 @@ class TerminalProjectionTests(unittest.TestCase):
                  TurnObservation(2, 40, "b" * 64, True, 0.8),
                  TurnObservation(3, 60, "c" * 64, True, 0.8)]
         checkpoints = project_checkpoints(turns=turns, checkpoints=[30, 100], terminal_provider_tokens=60)
-        self.assertEqual([row.state for row in checkpoints], ["reached_with_best", "unreached"])
+        self.assertEqual([row.state for row in checkpoints], ["reached_with_search_candidate", "unreached"])
         self.assertEqual(checkpoints[0].best_candidate_sha256, "a" * 64)
+        state, value = matched_endpoint(checkpoint=checkpoints[-1], observations=turns,
+            terminal_provider_tokens=60, protocol_adherence='adhered', terminal_reason='maximum_turns',
+            analysis={'endpoint_policy':NORMAL_BUDGET_TERMINAL})
+        self.assertEqual(state,'no_qualified_candidate')  # Search alone is never confirmation.
         for reason in ("provider_token_limit", "maximum_turns", "wall_time_limit", "active_authoring_time_limit", "evaluation_budget"):
             state, value = matched_endpoint(checkpoint=checkpoints[-1], observations=turns,
                 terminal_provider_tokens=60, protocol_adherence="adhered", terminal_reason=reason,
-                analysis={"endpoint_policy": NORMAL_BUDGET_TERMINAL})
+                analysis={"endpoint_policy": NORMAL_BUDGET_TERMINAL},
+                confirmation=FinalConfirmation(2, "b"*64, 60, True, 0.8))
             self.assertEqual(state, "qualified")
             self.assertEqual(value, {"qualified_by_budget": True, "budget": 60,
                 "best_candidate_sha256": "b" * 64, "best_confirmed_latency_ms": 0.8,
@@ -148,7 +155,7 @@ class TerminalRunTests(unittest.TestCase):
             self.assertEqual(audit.endpoint["budget"], 160000)
             projection = next(event["payload"]["checkpoints"] for event in store.replay_events(audit.run_id)
                               if event["kind"] == "checkpoints_projected")
-            self.assertEqual(projection[0]["state"], "reached_no_qualified_candidate")
+            self.assertEqual(projection[0]["state"], "reached_no_search_candidate")
             self.assertIsNone(projection[0]["best_candidate_sha256"])
             self.assertEqual(projection[-1]["state"], "unreached")
 
@@ -217,16 +224,16 @@ class TerminalRunTests(unittest.TestCase):
             self.assertEqual(audit.endpoint_observation, "missing")
             self.assertIsNone(audit.endpoint)
             events = EvidenceStore.open(campaign.evidence_root).replay_events(audit.run_id)
-            confirmations = [event["payload"]["turn"] for event in events
+            confirmations = [event["payload"]["source_turn"] for event in events
                              if event["kind"] == "candidate_evaluated" and event["payload"]["purpose"] == "confirmatory"]
-            self.assertEqual(confirmations, [1])
+            self.assertEqual(confirmations, [])
             starts = [event["payload"] for event in events if event["kind"] == "evaluation_attempt_started"]
-            self.assertTrue(all(set(value) == {"turn", "purpose", "candidate_sha256"} for value in starts))
-            self.assertEqual(sum(value["purpose"] == "confirmatory" for value in starts), 2)
+            self.assertTrue(all(set(value) == {"source_turn" if value["purpose"] == "confirmatory" else "turn", "purpose", "candidate_sha256"} for value in starts))
+            self.assertEqual(sum(value["purpose"] == "confirmatory" for value in starts), 1)
             checkpoint = next(event["payload"] for event in events if event["kind"] == "checkpoints_projected")
-            self.assertEqual(checkpoint["ralph"]["evaluation_counts"]["confirmatory"], 2)
-            self.assertEqual(report.descriptive["terminal_observations"][audit.run_id]["logical_evaluation_invocation_counts"]["confirmatory"], 2)
-            self.assertEqual(report.descriptive["evaluation_receipt_counts"][audit.run_id], 5)
+            self.assertEqual(checkpoint["ralph"]["evaluation_counts"]["confirmatory"], 1)
+            self.assertEqual(report.descriptive["terminal_observations"][audit.run_id]["logical_evaluation_invocation_counts"]["confirmatory"], 1)
+            self.assertEqual(report.descriptive["evaluation_receipt_counts"][audit.run_id], 4)
 
     def test_evaluator_invocation_order_and_identity_are_independently_replayed(self):
         from copy import deepcopy
@@ -236,7 +243,7 @@ class TerminalRunTests(unittest.TestCase):
         store = EvidenceStore.open(campaign.evidence_root)
         audit = store.audit_run(campaign.lock.run_order[0])
         original = list(store.replay_events(audit.run_id))
-        receipts = {(event["payload"]["turn"], event["payload"]["purpose"], event["payload"]["candidate_sha256"]): SimpleNamespace(correctness_passed=True)
+        receipts = {(evaluation_origin(event["payload"]), event["payload"]["purpose"], event["payload"]["candidate_sha256"]): SimpleNamespace(correctness_passed=True)
                     for event in original if event["kind"] == "candidate_evaluated"}
         budget = campaign.lock.document["resolved_inputs"]["budget"]
         protocol = campaign.lock.document["evaluation_protocol"]
@@ -271,7 +278,7 @@ class TerminalRunTests(unittest.TestCase):
                 # checksum or provider assertion supplies this negative result.
                 replay_evaluation_invocations(events, receipts=receipts, budget=budget, protocol=protocol)
         self.assertEqual(replay_evaluation_invocations(original, receipts=receipts, budget=budget, protocol=protocol),
-                         {"search": 2, "confirmatory": 2, "attribution": 2})
+                         {"search": 2, "confirmatory": 1, "attribution": 2})
         altered = deepcopy(original)
         altered.pop(starts[0])
         with patch.object(store, "replay_events", return_value=tuple(altered)):
