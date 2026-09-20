@@ -114,7 +114,7 @@ def _matched_endpoint_from_checkpoint(
 def _receipt_qualifies(receipt: EvaluationReceipt) -> bool:
     return (
         receipt.correctness_passed
-        and receipt.kernel_calls == 1
+        and receipt.kernel_calls > 0
         and receipt.fallback_calls == 0
         and receipt.timing is not None
         and receipt.timing.get("measurement_quality_passed") is True

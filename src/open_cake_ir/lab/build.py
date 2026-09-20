@@ -29,6 +29,7 @@ class BuildRequest:
     target: str
     entry_point: str
     toolchain_requirements: Mapping[str, object]
+    tensor_abi: tuple | None = None
 
     def __post_init__(self) -> None:
         digests = (self.candidate_sha256, self.source_sha256)
@@ -137,6 +138,13 @@ class TritonToolchainBuilder:
             {role: sha256(value).hexdigest() for role, value in payloads.items()},
             sha256(manifest_bytes).hexdigest(), payloads)
 
+    def build_stage(self, request: BuildRequest, tensor_abi):
+        """Build a Program stage without inventing a stage Workload or oracle."""
+        from dataclasses import replace
+        if self._pointer_alignment is not None:
+            raise ValueError('Program stages do not yet admit alignment dispatcher variants')
+        return self.build(replace(request, tensor_abi=tuple(tensor_abi)))
+
     def _seal(self, request, requirements, route, compilation):
         if (compilation.target != request.target
             or compilation.entry_point != requirements.get('kernel_entry_point')):
@@ -155,11 +163,19 @@ class TritonToolchainBuilder:
             # uninitialized kernarg memory. The CUDA route keeps its own literal, which
             # every retained CUDA manifest has replayed through.
             "hidden_null_pointer_parameters": _hidden_pointers(
-                route, stages, len(self._workload.tensor_abi(self._case_id))),
+                route, stages, len(request.tensor_abi if request.tensor_abi is not None else self._workload.tensor_abi(self._case_id))),
         }
         if requirements.get('pointer_alignments'):
             launch['pointer_alignments'] = dict(requirements['pointer_alignments'])
-        manifest = (TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch))
+        if request.tensor_abi is None:
+            manifest = TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch)
+        else:
+            manifest = TensorLaunchManifest.from_dict({
+                'schema_version': 2 if 'pointer_alignments' in launch else 1,
+                'abi': TensorLaunchManifest.abi, 'workload_sha256': self._workload.canonical_sha256,
+                'case_id': self._case_id,
+                'tensor_abi': [dict(name=n, shape=list(s), dtype=d, mode=m) for n,s,d,m in request.tensor_abi],
+                **launch})
         manifest_bytes = canonical_json_bytes(manifest.as_dict())
         # The route names the artifacts its backend produces -- ptx/cubin for CUDA,
         # amdgcn/hsaco for AMDGCN. Naming them here instead meant the one place that

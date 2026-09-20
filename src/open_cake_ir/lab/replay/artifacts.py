@@ -23,6 +23,7 @@ def _replay_launchable_candidate(
     candidate_sha256: str,
     arm: str,
     manifest_parser: Callable,
+    compiler_factory=None,
 ) -> LaunchableCandidate:
     """Rebuild one sealed launchable and enforce its arm-owned artifact contract."""
 
@@ -71,9 +72,9 @@ def _replay_launchable_candidate(
     manifest = manifest_parser(json.loads(artifact_payloads["launch_manifest"]))
     if hasattr(manifest, 'check_complete_domain'):
         manifest.check_complete_domain()
-    if not _arm_artifact_roles(arm, manifest.target) <= set(artifact_roles):
+    if not _arm_artifact_roles(arm, manifest.target, program="program_bundle" in artifact_roles) <= set(artifact_roles):
         refuse(f"{location}.payload.objects", "launchable candidate arm artifact roles differ",
-               observed=set(artifact_roles), expected=_arm_artifact_roles(arm, manifest.target))
+               observed=set(artifact_roles), expected=_arm_artifact_roles(arm, manifest.target, program="program_bundle" in artifact_roles))
     if artifact_roles["launch_manifest"] != manifest.canonical_sha256:
         refuse(f"{location}.launch_manifest", "launchable candidate launch manifest seal differs")
     candidate = LaunchableCandidate(
@@ -84,6 +85,13 @@ def _replay_launchable_candidate(
         launch_spec_sha256=manifest.canonical_sha256,
         artifact_payloads=artifact_payloads,
     )
+    if candidate.is_program:
+        if compiler_factory is None:
+            raise ValueError('Program replay requires its exact Compiler')
+        lowered = compiler_factory().lower_program(manifest.program)
+        if manifest.lowered_sources != {stage.name: lowering.source_sha256
+                for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True)}:
+            raise ValueError('Program stage source differs from its pinned Compiler lowering')
     if payload.get("candidate_record_sha256") != candidate.canonical_sha256:
         refuse(f"{location}.payload.candidate_record_sha256", "launchable candidate record seal differs")
     return candidate

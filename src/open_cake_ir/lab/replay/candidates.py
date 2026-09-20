@@ -57,6 +57,7 @@ def _replay_candidates(
     protocol_sha256: str,
     provider_candidates_by_turn: Mapping[int, tuple[str, ...]],
     workload_sha256: str,
+    compiler_factory=None,
 ) -> tuple[
     dict[tuple[int, str], LaunchableCandidate],
     dict[tuple[int, str, str], EvaluationReceipt],
@@ -120,7 +121,7 @@ def _replay_candidates(
             turn=turn,
             candidate_sha256=candidate_sha256,
             arm=arm,
-            manifest_parser=manifest_parser,
+            manifest_parser=manifest_parser, compiler_factory=compiler_factory,
         )
 
     receipts: dict[tuple[int, str, str], EvaluationReceipt] = {}

@@ -27,8 +27,13 @@ from .providers import CANDIDATE_SET_ENVELOPE_V1, ProviderTurn, _project_candida
 _DIRECT_CUDA_ROLES = frozenset({"ptx", "cubin", "sass", "launch_manifest"})
 
 
-def _arm_artifact_roles(arm: str, target: str) -> frozenset[str]:
+def _arm_artifact_roles(arm: str, target: str, *, program: bool = False) -> frozenset[str]:
     """Arm owns source provenance; the target's platform row owns its compiled products."""
+    if program:
+        if arm != 'open_cake':
+            raise ValueError('Program artifacts require the Cake authoring environment')
+        from open_cake_ir.evaluation.program import PROGRAM_ROLES
+        return PROGRAM_ROLES
     role = executable_role(target)
     if role == "metal_binary_archive":
         if arm != "open_cake":
@@ -161,6 +166,12 @@ def _validate_receipt_authority(
     evaluation_protocol: Mapping[str, object] | None = None,
     fixed_baseline: Mapping[str, object] | None = None,
 ) -> None:
+    expected_calls = 1
+    if candidate.is_program:
+        from open_cake_ir.evaluation.program import program_components
+        expected_calls = program_components(candidate)[0].kernels_per_call
+    if receipt.kernel_calls != expected_calls:
+        raise ValueError('EvaluationReceipt physical kernel count differs from the candidate')
     if (
         receipt.candidate_sha256 != candidate.candidate_sha256
         or receipt.workload_sha256 != workload_sha256

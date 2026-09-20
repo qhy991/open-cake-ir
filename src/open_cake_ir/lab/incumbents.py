@@ -339,7 +339,7 @@ class TaskIncumbentRegistry:
         }
         if any(by_role[role].get("sha256") != digest for role, digest in artifact_roles.items()):
             raise ValueError("incumbent artifact identity differs")
-        candidate_from_identity(candidate, payloads)
+        sealed_candidate = candidate_from_identity(candidate, payloads)
         receipt_payload = self.store.read_object(by_role["confirmation_receipt"])
         receipt = _object(json.loads(receipt_payload), "incumbent confirmation receipt")
         receipt_timing = _object(
@@ -353,9 +353,10 @@ class TaskIncumbentRegistry:
             sha256(receipt_payload).hexdigest()
             != source.get("evaluation_receipt_sha256")
             or receipt.get("candidate_sha256") != candidate.get("candidate_sha256")
+            or receipt.get("kernel_calls") != sealed_candidate.kernels_per_call
             or receipt.get("purpose") != "confirmatory"
             or receipt.get("correctness_passed") is not True
-            or receipt.get("kernel_calls") != 1
+            or type(receipt.get("kernel_calls")) is not int or receipt["kernel_calls"] <= 0
             or receipt.get("fallback_calls") != 0
             or receipt_timing.get("classification")
             != comparison.get("classification")
@@ -626,7 +627,7 @@ def promote_task_incumbent(
         or not math.isfinite(float(speedup))
         or float(speedup) < protocol.materiality_ratio
         or receipt.get("correctness_passed") is not True
-        or receipt.get("kernel_calls") != 1
+        or type(receipt.get("kernel_calls")) is not int or receipt["kernel_calls"] <= 0
         or receipt.get("fallback_calls") != 0
         or selected.get("evaluation_receipt_sha256") != receipt_sha256
         or selected.get("turn") != confirm_payload.get("turn")
@@ -638,10 +639,13 @@ def promote_task_incumbent(
         cast(str, reference["role"]): source_store.read_object(reference)
         for reference in candidate_refs
     }
+    from open_cake_ir.evaluation.paired import _manifest_spellings
+    launch_document = json.loads(artifact_payloads['launch_manifest'])
+    launch_manifest = _manifest_spellings()[launch_document['abi']].from_dict(launch_document)
     candidate_identity = {
         "candidate_sha256": candidate_sha,
-        "target": json.loads(artifact_payloads["launch_manifest"])["target"],
-        "entry_point": json.loads(artifact_payloads["launch_manifest"])["kernel_name"],
+        "target": launch_manifest.target,
+        "entry_point": launch_manifest.kernel_name,
         "artifact_roles": {
             role: sha256(payload).hexdigest()
             for role, payload in sorted(artifact_payloads.items())
@@ -651,7 +655,9 @@ def promote_task_incumbent(
         ).hexdigest(),
         "candidate_record_sha256": launch_payload["candidate_record_sha256"],
     }
-    candidate_from_identity(candidate_identity, artifact_payloads)
+    sealed_candidate = candidate_from_identity(candidate_identity, artifact_payloads)
+    if receipt["kernel_calls"] != sealed_candidate.kernels_per_call:
+        raise ValueError("promoted receipt kernel count differs from its complete candidate")
     key = TaskIncumbentKey.from_campaign(lock)
     root = external_path(Path(registry_root).absolute())
     if project == root or project in root.parents or root in project.parents:

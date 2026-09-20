@@ -351,6 +351,7 @@ def _replay_matched_run(
         fault_turn = fault_turn_value
         fault_terminal_tokens = fault_terminal_value
 
+    from open_cake_ir.compiler import Compiler
     candidates = _replay_candidates(
         arm=lock.environment_kind,
         case_id=case_id,
@@ -360,6 +361,7 @@ def _replay_matched_run(
         faults=faults,
         lock=lock,
         manifest_parser=manifest_parser,
+        compiler_factory=lambda: Compiler.load(project_root, project_root / compiler_ref["path"]),
         protocol_sha256=protocol_sha256,
         provider_candidates_by_turn=provider_candidates_by_turn,
         workload_sha256=workload_sha256,

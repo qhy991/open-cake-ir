@@ -336,7 +336,7 @@ def _execute_run(specification: RunSpecification, *, evidence, clock, provider, 
             else:
                 launchable = environment_result.launchable
                 assert launchable is not None
-                required_roles = _arm_artifact_roles(kind, launchable.target)
+                required_roles = _arm_artifact_roles(kind, launchable.target, program=launchable.is_program)
                 if (
                     not required_roles <= set(launchable.artifact_roles)
                     or set(launchable.artifact_payloads)

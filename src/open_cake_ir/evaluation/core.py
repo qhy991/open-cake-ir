@@ -66,7 +66,12 @@ class LaunchableCandidate:
 
     def __post_init__(self) -> None:
         executable = executable_role(self.target)
-        allowed_roles = allowed_artifact_roles(self.target)
+        if self.is_program:
+            from .program import PROGRAM_ROLES
+            allowed_roles = PROGRAM_ROLES
+            executable = 'program_bundle'
+        else:
+            allowed_roles = allowed_artifact_roles(self.target)
         if (
             _DIGEST.fullmatch(self.candidate_sha256) is None
             or _DIGEST.fullmatch(self.launch_spec_sha256) is None
@@ -115,6 +120,9 @@ class LaunchableCandidate:
                 document = json.loads(self.artifact_payloads['launch_manifest'])
             except (ValueError, UnicodeError):
                 pass
+        if self.is_program and self.artifact_payloads:
+            from .program import program_components
+            program_components(self)
         bundled = 'kernel_bundle' in self.artifact_payloads
         declares_variant = isinstance(document, Mapping) and document.get('aligned_variant') is not None
         if bundled or declares_variant:
@@ -122,6 +130,17 @@ class LaunchableCandidate:
                 raise ValueError('aligned candidate requires its complete sealed kernel bundle')
             from .kernel_bundle import alignment_component
             alignment_component(self, TensorLaunchManifest.from_dict(document))
+
+    @property
+    def is_program(self):
+        return 'program_bundle' in self.artifact_roles
+
+    @property
+    def kernels_per_call(self):
+        if self.is_program:
+            from .program import ProgramLaunchManifest
+            return ProgramLaunchManifest.from_dict(json.loads(self.artifact_payloads['launch_manifest'])).kernels_per_call
+        return 1
 
     @property
     def canonical_sha256(self) -> str:
@@ -221,7 +240,7 @@ class EvaluationReceipt:
             or _DIGEST.fullmatch(self.launch_receipt_sha256) is None
             or self.purpose not in {"search", "confirmatory", "attribution"}
             or not self.case_id
-            or self.kernel_calls != 1
+            or type(self.kernel_calls) is not int or self.kernel_calls <= 0
             or self.fallback_calls != 0
             or (self.purpose == "attribution" and self.timing is not None)
             # The profile describes this launch, not the earlier confirmatory one. An
@@ -279,6 +298,12 @@ class EvaluationReceipt:
                             or launch_raw.get("gpu_uuid") != profile["gpu_uuid"]):
                         raise ValueError(
                             "HIP attribution launch differs from instrumented profile")
+                elif profile_document.get('kind') == 'ncu_program_attribution':
+                    from .profiler import load_ncu_program_profile
+                    profile = load_ncu_program_profile(self.artifact_payloads['profile'],
+                        expected_candidate_sha256=self.candidate_sha256, expected_case_id=self.case_id)
+                    if len(profile['stages']) != self.kernel_calls:
+                        raise ValueError('Program profile kernel coverage differs from its receipt')
                 elif profile_document.get("kind") != "ncu_kernel_attribution":
                     raise ValueError(
                         "no attribution source declares profile kind "
@@ -418,6 +443,12 @@ class EvaluationReceipt:
                 expected_candidate_sha256=self.candidate_sha256,
                 expected_case_id=self.case_id,
                 expected_protocol_sha256=self.evaluation_protocol_sha256))
+        if kind == 'ncu_program_attribution':
+            from .profiler import load_ncu_program_profile
+            profile = load_ncu_program_profile(self.artifact_payloads['profile'],
+                expected_candidate_sha256=self.candidate_sha256, expected_case_id=self.case_id)
+            return {'kind': kind, 'stages': [{key: stage[key] for key in ('stage', 'kernel_name', 'summary')}
+                                             for stage in profile['stages']]}
         if kind != "ncu_kernel_attribution":
             raise ValueError(
                 f"no attribution source declares profile kind {kind!r}; this reader knows "
@@ -701,7 +732,18 @@ class LoadedTorchTensorCandidate:
             raise ValueError(
                 f'{candidate.target!r} builds a {executable.value!r}, which this '
                 'tensor-tile path has no driver for')
-        if manifest.aligned_variant:
+        if candidate.is_program:
+            from .program import LoadedProgram
+            def allocate(spec):
+                dtype = getattr(torch, dtype_names[spec.dtype.value])
+                return torch.full(spec.shape, float('nan') if spec.dtype.value != 'int32' else -(2**31),
+                                  dtype=dtype, device='cuda:0')
+            self.loaded = LoadedProgram(candidate, manifest, admission, loader,
+                allocate=allocate, view=lambda t, shape: t.view(shape),
+                storage_span=lambda t: (str(t.device), t.data_ptr(), t.data_ptr() + t.numel() * t.element_size()),
+                stream=torch.cuda.current_stream().cuda_stream)
+            self.loaded.prepare_arguments(self.arguments)
+        elif manifest.aligned_variant:
             from .kernel_bundle import LoadedAlignmentCandidate
             self.loaded = LoadedAlignmentCandidate(candidate, manifest, admission, loader, torch.cuda.synchronize)
         else:
@@ -720,6 +762,9 @@ class LoadedTorchTensorCandidate:
                     float('nan') if dtype != 'int32' else -(2**31))
                  for (_, _, dtype, mode), argument in zip(self.manifest.tensor_abi, self.arguments, strict=True)]
                 for _ in range(count)]
+        if self.candidate.is_program:
+            for arguments in sets:
+                self.loaded.prepare_arguments(arguments)
         torch.cuda.synchronize()
         return sets
 

@@ -62,7 +62,7 @@ def _promoted_artifact(
         if (
             receipt.get("candidate_sha256") != candidate_sha256
             or receipt.get("correctness_passed") is not True
-            or receipt.get("kernel_calls") != 1
+            or type(receipt.get("kernel_calls")) is not int or receipt["kernel_calls"] <= 0
             or receipt.get("fallback_calls") != 0
             or not isinstance(timing, Mapping)
             or timing.get("measurement_quality_passed") is not True

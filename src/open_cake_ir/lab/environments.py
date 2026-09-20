@@ -174,6 +174,40 @@ class OpenCakeEnvironment:
             for item in assessment.findings + assessment.guidance
         ]
 
+    def _build_program(self, submission, parsed):
+        from open_cake_ir.compiler.ir import Program
+        from open_cake_ir.evaluation.program import stage_abi, seal_program_candidate, admit_program_execution
+        try:
+            program = Program.from_dict(parsed)
+            public = {name: ('global', tensor.dtype.value, list(tensor.shape), mode)
+                      for mode, names in (('input', program.inputs), ('output', program.outputs))
+                      for name in names for tensor in (program.tensors[name],)}
+            if program.target != self._target or public != self._expected:
+                raise ValueError('Program public ABI or target differs from the Workload')
+            if any(stage.schedule.lowering.backend.value != self._route['backend'] for stage in program.stages):
+                raise ValueError('Program stage backend is outside the authoring environment')
+            build_stage = getattr(self._toolchain, 'build_stage', None)
+            if not callable(build_stage):
+                raise ValueError('this toolchain has no Program stage build capability')
+            admit_program_execution(program.target)
+            lowered = self._compiler.lower_program(program)
+            children = {}
+            for stage, lowering in zip(program.stages, lowered.lowerings, strict=True):
+                request = BuildRequest(submission.sha256, lowering.source.encode(), 'lowered_source',
+                    lowering.source_sha256, lowering.target, lowering.route.entry_point, lowering.toolchain_requirements)
+                children[stage.name] = build_stage(request, stage_abi(stage))
+            launchable = seal_program_candidate(lowered, children, candidate_sha256=submission.sha256,
+                                               workload=self._workload, case_id=self._case_id)
+            return EnvironmentResult('launchable', submission.sha256, launchable,
+                {'stage': 'built', 'program_stages': [stage.name for stage in program.stages],
+                 'cost_model_coverage': 'whole_program_unmodeled'})
+        except CandidateCompileRejected as error:
+            return EnvironmentResult('rejected', submission.sha256, None,
+                {'stage': 'compile', 'diagnostic': error.diagnostic}, artifact_payloads=error.artifact_payloads)
+        except (CompilerError, ValueError, TypeError) as error:
+            return EnvironmentResult('rejected', submission.sha256, None,
+                                     {'stage': 'assessment', 'error': str(error)})
+
     def build(self, submission: CandidateSubmission) -> EnvironmentResult:
         if submission.media_type != self.media_type:
             raise differs("Open Cake candidate media type", expected=self.media_type, observed=submission.media_type)
@@ -196,6 +230,8 @@ class OpenCakeEnvironment:
                 parsed = source.document
             if not isinstance(parsed, Mapping):
                 raise CompilerError("Schedule root must be an object")
+            if "program_id" in parsed:
+                return self._build_program(submission, parsed)
             metadata = parsed.get("metadata")
             buffers = parsed.get("buffers")
             route = parsed.get("lowering")
