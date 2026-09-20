@@ -18,8 +18,9 @@ def kernel(name, correlation, start, *, grid=(8, 1, 1), block=(64, 1, 1)):
 
 
 def capture(*kernels):
-    return dict(source="mcpti_activity", api_version=18, dropped_records=0,
-                records=[*kernels, *[dict(kind=5, correlation=k["correlation"], return_value=0) for k in kernels]])
+    return dict(source="mcpti_activity", api_version=18, dropped_records=0, pending_buffers=0,
+                records=[*kernels, *[dict(kind=5, cbid=60, start_ns=k['start_ns']-500,
+                    end_ns=k['start_ns']-100, correlation=k["correlation"], return_value=0) for k in kernels]])
 
 
 class McptiMeasurements(unittest.TestCase):
@@ -69,10 +70,32 @@ class McptiMeasurements(unittest.TestCase):
             dispatch_samples(raw,kernel_name="cak",grid=(8,1,1),block=(64,1,1),repeats=2,reset_record=None)
 
     def test_device_drop_and_failed_launch_api_invalidate_attribution_too(self):
-        for change in ({"api_version":19},{"dropped_records":True},{"dropped_records":2}):
+        for change in ({"api_version":19},{"dropped_records":True},{"dropped_records":2},
+                       {"pending_buffers":1}):
             with self.subTest(change=change),self.assertRaises(ValueError):kernel_records({**self.raw,**change})
         raw=deepcopy(self.raw);raw["records"][-1]["return_value"]=2
         with self.assertRaisesRegex(ValueError,"failed"):kernel_records(raw)
+
+    def test_unmatched_launch_api_and_borrowed_correlation_are_refused(self):
+        for cbid in (19, 333, 57):
+            raw=deepcopy(self.raw);raw['records'][-1]['cbid']=cbid
+            with self.subTest(cbid=cbid),self.assertRaises(ValueError):self.samples(raw)
+        raw=deepcopy(self.raw);raw['records'].append(dict(kind=5,cbid=60,start_ns=20000,
+            end_ns=20100,correlation=99,return_value=0))
+        with self.assertRaisesRegex(ValueError,'one to one'):self.samples(raw)
+        raw=deepcopy(self.raw);raw['records'][-1]['start_ns']=0
+        with self.assertRaises(ValueError):self.samples(raw)
+
+    def test_forced_end_drain_refuses_buffers_the_sdk_did_not_return(self):
+        import threading
+        collector=object.__new__(McptiActivity)
+        collector._buffers={1:object()};collector._errors=[];collector._rows=[];collector._dropped=0
+        collector._enabled=[];collector._active=True;collector._session=threading.Lock()
+        collector._session.acquire();calls=[]
+        collector._call=lambda name,flag:calls.append((name,flag))
+        with self.assertRaisesRegex(ValueError,'retained activity buffers'):collector.finish()
+        self.assertEqual(calls,[('mcptiActivityFlushAll',1),('mcptiActivityFlushAll',1)])
+        self.assertFalse(collector._active)
 
     def test_python_prefix_agrees_with_the_qualified_sdk_layout(self):
         # These are the installed SDK ABI offsets, not C550 hardware constants.

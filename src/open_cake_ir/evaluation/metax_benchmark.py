@@ -15,6 +15,11 @@ from .metax_activity import activity_collector
 
 TIMER = "mcpti_concurrent_kernel_start_end_ns"
 RESET = "fp32_fill_ones_4x_declared_l2_same_stream_before_each_sample"
+# MACA 3.5.3 mcpti_runtime_cbid.h. Only the ordinary Torch launch and the sealed
+# module launch are qualified. Batch/cooperative/graph launches cannot masquerade
+# as one dispatch even if their activity record happens to carry the expected name.
+_LAUNCH_CBIDS = frozenset({56, 57, 58, 60, 61, 62, 63, 64, 65, 66, 333, 394})
+_SINGLE_LAUNCH_CBIDS = frozenset({56, 60})
 
 
 def kernel_records(activity: Mapping) -> list[dict]:
@@ -22,17 +27,24 @@ def kernel_records(activity: Mapping) -> list[dict]:
     if (not isinstance(activity, Mapping) or activity.get("source") != "mcpti_activity"
             or activity.get("api_version") != 18 or activity.get("dropped_records") != 0
             or type(activity.get("dropped_records")) is not int
+            or type(activity.get("pending_buffers")) is not int or activity["pending_buffers"] != 0
             or not isinstance(activity.get("records"), (list, tuple))):
         raise ValueError("MACA activity source, ABI or dropped-record coverage differs")
-    kernels, correlations, apis = [], set(), set()
+    kernels, correlations, launches = [], set(), {}
     for item in activity["records"]:
         if not isinstance(item, Mapping) or type(item.get("kind")) is not int:
             raise ValueError("MACA activity record differs")
         if item["kind"] in (4, 5):
-            if (type(item.get("correlation")) is not int or item["correlation"] <= 0
+            if (item["kind"] != 5
+                    or any(type(item.get(key)) is not int or item[key] <= 0
+                           for key in ("correlation", "cbid", "start_ns", "end_ns"))
+                    or item["end_ns"] < item["start_ns"]
                     or type(item.get("return_value")) is not int or item["return_value"] != 0):
-                raise ValueError("MACA activity contains a failed or unidentified API call")
-            apis.add(item["correlation"])
+                raise ValueError("MACA activity contains a failed, unmodeled or unidentified API call")
+            if item["cbid"] in _LAUNCH_CBIDS:
+                if (item["cbid"] not in _SINGLE_LAUNCH_CBIDS or item["correlation"] in launches):
+                    raise ValueError("MACA launch API is not a unique qualified single dispatch")
+                launches[item["correlation"]] = item
             continue
         if item["kind"] != 10:
             raise ValueError("MACA cohort contains a copy, memset or unmodeled device operation")
@@ -48,8 +60,10 @@ def kernel_records(activity: Mapping) -> list[dict]:
             raise ValueError("MACA kernel timestamps, launch identity or resources differ")
         correlations.add(item["correlation"])
         kernels.append(dict(item))
-    if not correlations <= apis:
-        raise ValueError("MACA kernel has no corresponding observed launch API")
+    if correlations != set(launches):
+        raise ValueError("MACA launch APIs and device dispatches do not correspond one to one")
+    if any(launches[item["correlation"]]["start_ns"] > item["end_ns"] for item in kernels):
+        raise ValueError("MACA device activity precedes its launch API")
     return sorted(kernels, key=lambda item: (item["start_ns"], item["correlation"]))
 
 
@@ -115,11 +129,15 @@ class McptiDispatchBenchmark:
         try:
             function()
             torch.cuda.synchronize()
-        except BaseException:
+        except BaseException as primary:
             try:
                 torch.cuda.synchronize()
             finally:
-                self._collector.finish()
+                try:
+                    self._collector.finish()
+                except BaseException as teardown:
+                    from .loaders import LifecycleError
+                    raise LifecycleError(primary, teardown) from primary
             raise
         return self._collector.finish()
 

@@ -147,7 +147,9 @@ class McptiActivity:
         if not self._session.acquire(blocking=False):
             raise RuntimeError("MCPTI activity collection is already active")
         try:
-            self._call("mcptiActivityFlushAll", 0)
+            self._call("mcptiActivityFlushAll", 1)
+            if self._buffers:
+                self._errors.append("MCPTI retained activity buffers after forced drain")
             if self._errors or self._dropped:
                 raise ValueError("MCPTI has unreconciled errors from the preceding activity session")
             self._rows, self._errors, self._dropped = [], [], 0
@@ -175,13 +177,16 @@ class McptiActivity:
         if not self._active:
             raise RuntimeError("MCPTI activity collection is not active")
         try:
-            self._call("mcptiActivityFlushAll", 0)
+            self._call("mcptiActivityFlushAll", 1)
             self._disable()
-            self._call("mcptiActivityFlushAll", 0)
+            self._call("mcptiActivityFlushAll", 1)
+            if self._buffers:
+                self._errors.append("MCPTI retained activity buffers after forced drain")
             if self._errors or self._dropped:
                 raise ValueError(f"MCPTI incomplete activity: dropped={self._dropped}, errors={self._errors}")
             return {"source": "mcpti_activity", "api_version": self.version,
-                    "dropped_records": self._dropped, "records": list(self._rows)}
+                    "dropped_records": self._dropped, "pending_buffers": len(self._buffers),
+                    "records": list(self._rows)}
         finally:
             self._disable()
             self._active = False
