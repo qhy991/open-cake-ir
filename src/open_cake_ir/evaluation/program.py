@@ -264,6 +264,7 @@ class LoadedProgram:
                 args.append(value)
             stage_arguments[stage.name] = args
         self._prepared[id(arguments)] = (arguments, tuple(id(value) for value in arguments), tensors, stage_arguments)
+        return MappingProxyType(tensors)
 
     @property
     def launch_calls(self):
@@ -285,19 +286,23 @@ class LoadedProgram:
                 raise ValueError('Program argument set is not retained')
             del self._prepared[id(arguments)]
 
-    def launch(self, arguments, *, tensor_contract, stream):
+    def launch(self, arguments, *, tensor_contract, stream, boundary=None):
         with self._lock:
-            self._launch(arguments, tensor_contract=tensor_contract, stream=stream)
+            self._launch(arguments, tensor_contract=tensor_contract, stream=stream,boundary=boundary)
 
-    def _launch(self, arguments, *, tensor_contract, stream):
+    def _launch(self, arguments, *, tensor_contract, stream,boundary=None):
         if tensor_contract.canonical_sha256 != self.manifest.canonical_sha256 or stream != self._stream:
             raise ValueError('Program launch contract or ordered stream differs')
         prepared = self._prepared.get(id(arguments))
         if prepared is None or prepared[0] is not arguments or prepared[1] != tuple(id(value) for value in arguments):
             raise ValueError('Program arguments must be prepared outside the timed interval')
         for stage in self.manifest.program.stages:
+            if boundary is not None:
+                boundary(stage.name,'before')
             self._children[stage.name].launch(prepared[3][stage.name],
                 tensor_contract=self._manifests[stage.name], stream=stream)
+            if boundary is not None:
+                boundary(stage.name,'after')
 
     def close(self, *, synchronize):
         with self._lock:

@@ -695,6 +695,35 @@ _MODULE_LOADERS = {
 }
 
 
+_TORCH_DTYPE_NAMES = {'fp32':'float32','bf16':'bfloat16','fp16':'float16',
+                      'fp8_e4m3':'float8_e4m3fn','int32':'int32'}
+
+
+def load_torch_program(candidate,manifest,arguments,admission,loader):
+    """Prepare already materialized public tensors through common Program ownership."""
+    import torch
+    from .program import LoadedProgram
+    def allocate(spec):
+        return torch.full(spec.shape,float('nan') if spec.dtype.value!='int32' else -(2**31),
+            dtype=getattr(torch,_TORCH_DTYPE_NAMES[spec.dtype.value]),device=arguments[0].device)
+    def span(tensor):
+        if not tensor.is_contiguous():
+            raise ValueError('Program tensors must have contiguous storage')
+        return (str(tensor.device),tensor.data_ptr(),tensor.data_ptr()+tensor.numel()*tensor.element_size())
+    loaded = LoadedProgram(candidate,manifest,admission,loader,allocate=allocate,
+        view=lambda tensor,shape:tensor.view(shape),storage_span=span,
+        stream=torch.cuda.current_stream().cuda_stream)
+    try:
+        return loaded,loaded.prepare_arguments(arguments)
+    except BaseException as primary:
+        try:
+            loaded.close(synchronize=torch.cuda.synchronize)
+        except BaseException as teardown:
+            from .loaders import LifecycleError
+            raise LifecycleError(primary,teardown) from primary
+        raise
+
+
 class LoadedTorchTensorCandidate:
     """One Workload-shaped argument set and admitted module for preflight/timing/postflight."""
 
@@ -705,8 +734,7 @@ class LoadedTorchTensorCandidate:
         self.manifest = manifest
         self.admission = admission
         self.inputs = {name: array('d', values) for name, values in inputs.items()}
-        dtype_names = {'fp32': 'float32', 'bf16': 'bfloat16', 'fp16': 'float16',
-                       'fp8_e4m3': 'float8_e4m3fn', 'int32': 'int32'}
+        dtype_names = _TORCH_DTYPE_NAMES
         dtypes = {}
         for _, _, dtype, _ in manifest.tensor_abi:
             if not hasattr(torch, dtype_names[dtype]):
@@ -733,24 +761,7 @@ class LoadedTorchTensorCandidate:
                 f'{candidate.target!r} builds a {executable.value!r}, which this '
                 'tensor-tile path has no driver for')
         if candidate.is_program:
-            from .program import LoadedProgram
-            def allocate(spec):
-                dtype = getattr(torch, dtype_names[spec.dtype.value])
-                return torch.full(spec.shape, float('nan') if spec.dtype.value != 'int32' else -(2**31),
-                                  dtype=dtype, device='cuda:0')
-            self.loaded = LoadedProgram(candidate, manifest, admission, loader,
-                allocate=allocate, view=lambda t, shape: t.view(shape),
-                storage_span=lambda t: (str(t.device), t.data_ptr(), t.data_ptr() + t.numel() * t.element_size()),
-                stream=torch.cuda.current_stream().cuda_stream)
-            try:
-                self.loaded.prepare_arguments(self.arguments)
-            except BaseException as primary:
-                try:
-                    self.loaded.close(synchronize=torch.cuda.synchronize)
-                except BaseException as teardown:
-                    from .loaders import LifecycleError
-                    raise LifecycleError(primary, teardown) from primary
-                raise
+            self.loaded,_ = load_torch_program(candidate,manifest,self.arguments,admission,loader)
         elif manifest.aligned_variant:
             from .kernel_bundle import LoadedAlignmentCandidate
             self.loaded = LoadedAlignmentCandidate(candidate, manifest, admission, loader, torch.cuda.synchronize)

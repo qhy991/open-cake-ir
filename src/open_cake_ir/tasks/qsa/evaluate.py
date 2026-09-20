@@ -21,12 +21,16 @@ from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.compiler import Compiler, Schedule, Target, profile_envelope
 from open_cake_ir.evaluation import NCU_ATTRIBUTION_METRICS, WorkloadContract, build_ncu_attribution_profile, ncu_attribution_feedback
 from open_cake_ir.tasks.qsa.program import ProgramContract
+from open_cake_ir.tasks.qsa.cake import (QsaWorkloadBinding, candidate_program, admit_candidate_descriptor, read_cake_artifact, LoadedCakeProgram)
 from open_cake_ir.tasks.qsa.evaluation import audit_qsa_output, materialize_qsa_case, qsa_block_scores, reference_qsa_output
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.tasks.qsa.cuda import LoadedQsaProgram, QsaProgramArtifact, qsa_program_tensors
 from open_cake_ir.lab import BuildRequest, ExecutorRevision
 from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
-from open_cake_ir.compiler.toolchain import compile_triton
+from open_cake_ir.compiler.toolchain import compile_triton, project_triton_kernel
+from open_cake_ir.lab.build import seal_triton_compilation
+from open_cake_ir.evaluation.program import stage_abi, seal_program_candidate
+from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
 from dataclasses import asdict
 from open_cake_ir.tasks.qsa.feedback import qsa_compiler_feedback
@@ -37,7 +41,6 @@ _PROGRAM_PATH = "contracts/programs/qsa-prefill-t32768-v4.json"
 _WORKLOAD_PATH = "contracts/workloads/qsa-prefill-t32768-v1.json"
 _DIRECT_SOURCE = "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.cu"
 _DIRECT_MANIFEST = "src/open_cake_ir/tasks/qsa/assets/qsa_direct_reference_v1.json"
-_OPEN_CAKE_ORDER = ("pool", "layernorm", "score_topk", "expand", "attention")
 _DIRECT_ORDER = ("pool_layernorm", "score_topk", "expand", "attention")
 
 
@@ -144,170 +147,64 @@ def _executor(root: Path, compiler_reference: Mapping[str, object]) -> ExecutorR
 def _candidate_document(candidate_root: Path) -> Mapping[str, object]:
     source = _owned_file(candidate_root, "candidate.json", "candidate descriptor")
     document = _object(json.loads(source.read_text(encoding="utf-8")), "candidate")
-    arm = document.get("arm")
-    expected = (
-        {"schema_version", "arm", "nodes"}
-        if arm == "open_cake"
-        else {"schema_version", "arm", "source", "launch_manifest"}
-    )
-    if set(document) != expected or document.get("schema_version") != 1:
-        raise ValueError("QSA candidate fields differ")
-    return document
+    return admit_candidate_descriptor(document)
 
 
-def _global_abi(schedule: Schedule) -> dict[str, tuple[tuple[int, ...], str]]:
-    return {
-        buffer.name: (buffer.shape, buffer.dtype.value)
-        for buffer in schedule.buffers
-        if buffer.space.value == "global"
-    }
+def _compile_node(request: BuildRequest):
+    """Compile only frozen Compiler-emitted code in the broker's compile stage.
+
+    Sealing is shared with Lab; this legacy broker stage does not claim the
+    filesystem-isolated author compiler used by ordinary Run runtime assembly.
+    """
+    return compile_triton(project_triton_kernel(request.source,request.toolchain_requirements),
+                          request.toolchain_requirements)
 
 
-def _compile_node(request: BuildRequest) -> dict[str, bytes]:
-    """Compile a QSA node; only the QSA Program owns its tensor ABI."""
-    requirements = request.toolchain_requirements
-    compilation = compile_triton(request.source, requirements)
-    if (compilation.target != request.target
-        or compilation.entry_point != requirements["kernel_entry_point"]):
-        raise ValueError("QSA node compilation target or entry point differs")
-    launch = CudaKernelSpec.from_dict({
-        "target": request.target,
-        "kernel_name": compilation.entry_point,
-        "grid": requirements["grid"],
-        "block": [compilation.threads_per_cta, 1, 1],
-        "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
-        "hidden_null_pointer_parameters": 2,
-    })
-    return {
-        "lowered_source": request.source,
-        "ptx": compilation.artifacts["ptx"],
-        "cubin": compilation.artifacts["cubin"],
-        "launch_manifest": _canonical_json_bytes(asdict(launch)),
-    }
-
-
-def _compile_open_cake(
-    root: Path,
-    candidate_root: Path,
-    candidate: Mapping[str, object],
-    output: Path,
-    *, compiler: Compiler, target: Target,
-) -> Mapping[str, object]:
+def _compile_open_cake(root,candidate_root,candidate,output,*,compiler,target,candidate_sha256):
     if not compiler.check_corpus().passed:
-        raise RuntimeError("released Compiler Corpus Gate no longer passes")
-    program = ProgramContract.load(root, root / _PROGRAM_PATH, compiler)
-    raw_nodes = candidate.get("nodes")
-    if not isinstance(raw_nodes, list):
-        raise ValueError("Open Cake candidate nodes differ")
-    by_id: dict[str, Path] = {}
-    for index, raw in enumerate(raw_nodes):
-        node = _object(raw, f"candidate.nodes[{index}]")
-        if set(node) != {"id", "schedule"} or node.get("id") in by_id:
-            raise ValueError(f"candidate.nodes[{index}] differs")
-        by_id[str(node["id"])] = _owned_file(
-            candidate_root,
-            node["schedule"],
-            f"candidate.nodes[{index}].schedule",
-        )
-    if tuple(by_id) != _OPEN_CAKE_ORDER:
-        raise ValueError("Open Cake candidate node order differs")
-    output.mkdir(parents=True, exist_ok=False)
-    manifest_kernels: list[dict[str, object]] = []
-    node_profiles: dict[str, object] = {}
-    canonical_nodes = {node.node_id: node for node in program.nodes}
-    for node_id in _OPEN_CAKE_ORDER:
-        schedule_path = by_id[node_id]
-        candidate_schedule = Schedule.load(schedule_path)
-        canonical_schedule = Schedule.load(canonical_nodes[node_id].schedule_path)
-        if _global_abi(candidate_schedule) != _global_abi(canonical_schedule):
-            raise ValueError(f"Open Cake node {node_id!r} changes the Program ABI")
-        assessment = compiler.assess_file(schedule_path)
-        if not assessment.accepted or not assessment.lowering_eligible:
-            codes = ",".join(finding.code for finding in assessment.findings)
-            feedback = dict(
-                qsa_compiler_feedback(
-                    assessment,
-                    static_profile=profile_envelope(
-                        candidate_schedule, target
-                    ).as_dict(),
-                )
-            )
-            feedback["program_node"] = node_id
-            raise _CandidateRejected(
-                f"Open Cake node {node_id!r} rejected: {codes}", feedback
-            )
-        lowering = compiler.lower(assessment)
-        node_profile = profile_envelope(
-            candidate_schedule,
-            target,
-            lowered_source=lowering.source,
-        ).as_dict()
-        node_profile["findings"] = qsa_compiler_feedback(assessment)["findings"]
-        node_profiles[node_id] = node_profile
-        request = BuildRequest(
-            candidate_sha256=lowering.schedule_sha256,
-            source=lowering.source.encode("utf-8"),
-            source_role="lowered_source",
-            source_sha256=lowering.source_sha256,
-            target=lowering.target,
-            entry_point=lowering.route.entry_point,
-            toolchain_requirements=lowering.toolchain_requirements,
-        )
+        raise RuntimeError('released Compiler Corpus Gate no longer passes')
+    reference = ProgramContract.load(root,root/_PROGRAM_PATH,compiler)
+    binding = QsaWorkloadBinding(reference)
+    program = candidate_program(candidate,candidate_root,reference,_owned_file)
+    if target.target_id != program.target:
+        raise ValueError('QSA Program target differs from its admitted Compiler target')
+    node_profiles = {}
+    for stage in program.stages:
+        schedule = stage.schedule
+        assessment = compiler.assess(json.loads(stage.schedule_bytes))
+        if not assessment.lowering_eligible:
+            feedback = dict(qsa_compiler_feedback(assessment,
+                static_profile=profile_envelope(schedule,target).as_dict()))
+            feedback['program_node'] = stage.name
+            raise _CandidateRejected(f'Open Cake stage {stage.name!r} was refused',feedback)
+        node_profile = profile_envelope(schedule,target).as_dict()
+        node_profile['findings'] = qsa_compiler_feedback(assessment)['findings']
+        node_profiles[stage.name] = node_profile
+    lowered = compiler.lower_program(program)
+    children = {}
+    for stage,lowering in zip(program.stages,lowered.lowerings,strict=True):
+        node_profiles[stage.name] = {**profile_envelope(stage.schedule,target,lowered_source=lowering.source).as_dict(),
+                                     'findings':node_profiles[stage.name]['findings']}
+        request = BuildRequest(candidate_sha256,lowering.source.encode(),'lowered_source',lowering.source_sha256,
+            lowering.target,lowering.route.entry_point,lowering.toolchain_requirements,tensor_abi=stage_abi(stage))
         try:
-            artifacts = _compile_node(request)
+            compilation = _compile_node(request)
+            children[stage.name] = seal_triton_compilation(request,compilation,workload=binding,case_id='target_t32768')
         except Exception as error:
-            raise _CandidateRejected(
-                f"Open Cake node {node_id!r} toolchain rejected the lowering: {error}",
-                {
-                    "schema_version": 1,
-                    "kind": "compiler",
-                    "stage": "compile",
-                    "program_node": node_id,
-                    "actionable": True,
-                    "routed_to": "verifier",
-                    "diagnostic": str(error),
-                },
-            ) from error
-        node_root = output / node_id
-        node_root.mkdir()
-        for role in ("lowered_source", "ptx", "cubin"):
-            (node_root / role).write_bytes(artifacts[role])
-        launch = json.loads(artifacts["launch_manifest"])
-        manifest_kernels.append(
-            {
-                "id": node_id,
-                "cubin": f"candidate/{node_id}/cubin",
-                "kernel_name": launch["kernel_name"],
-                "grid": launch["grid"],
-                "block": launch["block"],
-                "dynamic_shared_memory_bytes": launch[
-                    "dynamic_shared_memory_bytes"
-                ],
-                "arguments": list(lowering.toolchain_requirements["signature"]),
-                "hidden_null_pointer_parameters": 2,
-            }
-        )
-    _write_json(
-        output / "program.json",
-        {
-            "schema_version": 1,
-            "abi": program.abi,
-            "arm": "open_cake",
-            "kernels": manifest_kernels,
-        },
-    )
-    _write_json(
-        output / "static-profile.json",
-        {
-            "schema_version": 1,
-            "kind": "open_cake_program_static_profile",
-            "nodes": node_profiles,
-        },
-    )
-    return {
-        "kind": "open_cake_program_static_profile",
-        "nodes": node_profiles,
-    }
+            raise _CandidateRejected(f'Open Cake stage {stage.name!r} compile rejected: {error}',
+                {'schema_version':1,'kind':'compiler','stage':'compile','program_node':stage.name,
+                 'actionable':True,'routed_to':'verifier','diagnostic':str(error)}) from error
+    sealed = seal_program_candidate(lowered,children,candidate_sha256=candidate_sha256,workload=binding,case_id='target_t32768')
+    output.mkdir(parents=True,exist_ok=False)
+    paths = {}
+    for role,payload in sealed.artifact_payloads.items():
+        paths[role] = role+'.bin'
+        (output/paths[role]).write_bytes(payload)
+    # Use the existing complete candidate bundle envelope; no QSA candidate graph.
+    _write_json(output/'program.json',{'candidate':candidate_identity(sealed),'artifact_paths':paths})
+    metrics = {'kind':'open_cake_program_static_profile','nodes':node_profiles}
+    _write_json(output/'static-profile.json',{'schema_version':1,**metrics})
+    return metrics
 
 
 def _checked_direct_manifest(path: Path) -> list[Mapping[str, object]]:
@@ -430,7 +327,7 @@ def _compile_stage(
     *,
     nvcc: Path,
     cuobjdump: Path,
-    compiler: Compiler, target: Target,
+    compiler: Compiler, target: Target, candidate_sha256: str,
 ) -> tuple[str, Mapping[str, object], Mapping[str, object]]:
     candidate = _candidate_document(candidate_root)
     baseline = build_root / "baseline"
@@ -454,7 +351,7 @@ def _compile_stage(
     candidate_output = build_root / "candidate"
     if arm == "open_cake":
         compile_metrics = _compile_open_cake(
-            root, candidate_root, candidate, candidate_output, compiler=compiler, target=target
+            root, candidate_root, candidate, candidate_output, compiler=compiler, target=target,candidate_sha256=candidate_sha256
         )
     elif arm == "direct_cuda":
         try:
@@ -506,32 +403,47 @@ def _compile_stage(
     )
 
 
-def _admit_gpu() -> object:
+def _admit_gpu():
+    """Observe the broker allocation and exact device; never invent an admission."""
     import torch
-
-    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
-    if (
-        os.environ.get("KERNELINFRA_STAGE_KIND")
-        not in {"correctness", "benchmark", "profile"}
-        or not os.environ.get("KERNELINFRA_RUN_ID")
-        or not visible
-        or "," in visible
-        or torch.cuda.device_count() != 1
-        or torch.cuda.get_device_name(0) != "NVIDIA B200"
-        or torch.cuda.get_device_capability(0) != (10, 0)
-    ):
-        raise ValueError("broker-visible QSA device differs")
-    return {
-        "device_name": "NVIDIA B200",
-        "compute_capability": [10, 0],
-        "visible_device": visible,
-    }
+    from open_cake_ir.evaluation.gpuq import observe_allocation
+    from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission
+    if (os.environ.get('KERNELINFRA_STAGE_KIND') not in {'correctness','benchmark','profile'}
+        or not os.environ.get('KERNELINFRA_RUN_ID')):
+        raise ValueError('QSA device use requires its GPU Infra stage')
+    allocation = observe_allocation('sm_100a')
+    if torch.cuda.device_count()!=1:
+        raise ValueError('broker-visible QSA device differs')
+    admission = CudaDeviceAdmission(torch.cuda.get_device_name(0),torch.cuda.get_device_capability(0),
+        str(getattr(torch.cuda.get_device_properties(0),'uuid','')),allocation['job_id'],allocation['mode'])
+    if admission.target!='sm_100a':
+        raise ValueError('QSA assay requires its exact declared target')
+    return admission
 
 
-def _load_program(build_root: Path, name: str) -> LoadedQsaProgram:
-    artifact_root = build_root / name
-    artifact = QsaProgramArtifact.load(build_root, artifact_root / "program.json")
-    return LoadedQsaProgram(artifact)
+def _read_program_artifact(root,build_root,name):
+    path = build_root/name/'program.json'
+    document = json.loads(path.read_bytes())
+    if isinstance(document,Mapping) and 'candidate' in document:
+        return read_cake_artifact(root,path)
+    return QsaProgramArtifact.load(build_root,path)
+
+
+def _load_program(build_root,name,*,root,compiler,inputs,output,admission):
+    artifact = _read_program_artifact(root,build_root,name)
+    if isinstance(artifact,tuple):
+        candidate,manifest,inspection = artifact
+        reference = ProgramContract.load(root,root/_PROGRAM_PATH,compiler)
+        manifest.check_workload(QsaWorkloadBinding(reference),'target_t32768')
+        return LoadedCakeProgram(candidate,manifest,inspection,inputs,output,admission)
+    loaded = LoadedQsaProgram(artifact)
+    try:
+        loaded.tensors = qsa_program_tensors(inputs,output[0])
+    except BaseException:
+        import torch
+        loaded.close(synchronize=torch.cuda.synchronize)
+        raise
+    return loaded
 
 
 def _case(root: Path):
@@ -564,6 +476,12 @@ def _index_observation(actual, expected) -> dict[str, object]:
 def _qsa_failure_diagnostics(workload, inputs, tensors) -> dict[str, object]:
     """Localize a failed final output at the first Program-owned boundary."""
 
+    boundaries = {'pool':'pooled','layernorm':'normalized_keys','score_topk':'block_indices','expand':'token_indices'}
+    unavailable = [name for name,tensor in boundaries.items() if tensor not in tensors]
+    if len(unavailable)==len(boundaries):
+        return {'first_divergence':'unknown','first_observed_reference_mismatch':None,
+                'unobserved_boundaries':unavailable,'boundaries':{},
+                'scope':'materialized_reference_boundaries_only'}
     import torch
 
     index_key = inputs["index_k"][0, :, 0, :]
@@ -574,12 +492,17 @@ def _qsa_failure_diagnostics(workload, inputs, tensors) -> dict[str, object]:
         * torch.rsqrt(centered.square().mean(dim=-1, keepdim=True) + 1.0e-6)
         * inputs["k_norm_weight"]
     )
-    observations: dict[str, dict[str, object]] = {
-        "pool": _float_observation(tensors["pooled"], pooled, atol=1.0e-5, rtol=1.0e-5),
-        "layernorm": _float_observation(
-            tensors["normalized_keys"], normalized, atol=1.0e-4, rtol=1.0e-4
-        ),
-    }
+    observations = {}
+    def available(name,expected):
+        value = tensors.get(boundaries[name])
+        if value is None or value.shape!=expected.shape or value.dtype!=expected.dtype:
+            if name not in unavailable: unavailable.append(name)
+            return None
+        return value
+    value = available('pool',pooled)
+    if value is not None: observations['pool'] = _float_observation(value,pooled,atol=1.e-5,rtol=1.e-5)
+    value = available('layernorm',normalized)
+    if value is not None: observations['layernorm'] = _float_observation(value,normalized,atol=1.e-4,rtol=1.e-4)
 
     scores = qsa_block_scores(workload, inputs)
     positions = torch.arange(32768, device=scores.device)
@@ -592,9 +515,10 @@ def _qsa_failure_diagnostics(workload, inputs, tensors) -> dict[str, object]:
         -1,
         selected_blocks,
     ).to(torch.int32)
-    actual_blocks = torch.sort(tensors["block_indices"], dim=-1).values
-    expected_blocks = torch.sort(selected_blocks, dim=-1).values
-    observations["score_topk"] = _index_observation(actual_blocks, expected_blocks)
+    value = available('score_topk',selected_blocks)
+    if value is not None:
+        observations['score_topk'] = _index_observation(torch.sort(value,dim=-1).values,
+                                                      torch.sort(selected_blocks,dim=-1).values)
 
     offsets = torch.arange(4, device=scores.device, dtype=torch.int32)
     expected_tokens = torch.where(
@@ -602,26 +526,24 @@ def _qsa_failure_diagnostics(workload, inputs, tensors) -> dict[str, object]:
         selected_blocks[:, :, None] * 4 + offsets,
         -1,
     ).reshape(32768, 2048)
-    actual_tokens = torch.sort(tensors["token_indices"], dim=-1).values
-    expected_tokens = torch.sort(expected_tokens, dim=-1).values
-    observations["expand"] = _index_observation(actual_tokens, expected_tokens)
-    first = next(
-        (name for name in ("pool", "layernorm", "score_topk", "expand") if not observations[name]["passed"]),
-        "attention",
-    )
-    return {"first_divergence": first, "boundaries": observations}
+    value = available('expand',expected_tokens)
+    if value is not None:
+        observations['expand'] = _index_observation(torch.sort(value,dim=-1).values,
+                                                  torch.sort(expected_tokens,dim=-1).values)
+    first = next((name for name in boundaries if name in observations and not observations[name]['passed']),None)
+    return {'first_divergence':'unknown' if unavailable else (first or 'output'),
+            'first_observed_reference_mismatch':first,'unobserved_boundaries':unavailable,
+            'boundaries':observations,'scope':'materialized_reference_boundaries_only'}
 
 
-def _correctness_stage(root: Path, build_root: Path, stage_dir: Path) -> tuple[bool, dict[str, object]]:
+def _correctness_stage(root: Path, build_root: Path, stage_dir: Path, *,compiler) -> tuple[bool, dict[str, object]]:
     import torch
 
-    _admit_gpu()
+    admission = _admit_gpu()
     workload, inputs = _case(root)
-    output = torch.empty(
-        (1, 32768, 32, 128), dtype=torch.bfloat16, device="cuda"
-    )
-    tensors = qsa_program_tensors(inputs, output[0])
-    program = _load_program(build_root, "candidate")
+    output = torch.empty_like(inputs['q'])
+    program = _load_program(build_root,'candidate',root=root,compiler=compiler,inputs=inputs,output=output,admission=admission)
+    tensors = program.tensors
     try:
         with torch.no_grad():
             program.launch(tensors, stream=torch.cuda.current_stream().cuda_stream)
@@ -785,22 +707,23 @@ def _benchmark_stage(
     stage_dir: Path,
     executor: ExecutorRevision,
     *,
-    component_timing: bool,
+    component_timing: bool, compiler,
 ) -> dict[str, object]:
     import torch
 
-    _admit_gpu()
+    admission = _admit_gpu()
     helper = executor.admit_host()
     cupti = StrictCuptiBenchmark(helper)
     _, inputs = _case(root)
-    candidate_output = torch.empty(
-        (1, 32768, 32, 128), dtype=torch.bfloat16, device="cuda"
-    )
+    candidate_output = torch.empty_like(inputs['q'])
     baseline_output = torch.empty_like(candidate_output)
-    candidate_tensors = qsa_program_tensors(inputs, candidate_output[0])
-    baseline_tensors = qsa_program_tensors(inputs, baseline_output[0])
-    candidate = _load_program(build_root, "candidate")
-    baseline = _load_program(build_root, "baseline")
+    candidate = _load_program(build_root,'candidate',root=root,compiler=compiler,inputs=inputs,output=candidate_output,admission=admission)
+    try:
+        baseline = _load_program(build_root,'baseline',root=root,compiler=compiler,inputs=inputs,output=baseline_output,admission=admission)
+    except BaseException:
+        candidate.close(synchronize=torch.cuda.synchronize)
+        raise
+    candidate_tensors,baseline_tensors = candidate.tensors,baseline.tensors
     stream = torch.cuda.current_stream().cuda_stream
 
     def candidate_launch() -> None:
@@ -867,16 +790,14 @@ def _benchmark_stage(
         baseline.close(synchronize=torch.cuda.synchronize)
 
 
-def _profile_child(root: Path, build_root: Path) -> int:
+def _profile_child(root: Path, build_root: Path, *,compiler) -> int:
     import torch
 
-    _admit_gpu()
+    admission = _admit_gpu()
     _, inputs = _case(root)
-    output = torch.empty(
-        (1, 32768, 32, 128), dtype=torch.bfloat16, device="cuda"
-    )
-    tensors = qsa_program_tensors(inputs, output[0])
-    program = _load_program(build_root, "candidate")
+    output = torch.empty_like(inputs['q'])
+    program = _load_program(build_root,'candidate',root=root,compiler=compiler,inputs=inputs,output=output,admission=admission)
+    tensors = program.tensors
     try:
         program.launch(tensors, stream=torch.cuda.current_stream().cuda_stream)
         torch.cuda.synchronize()
@@ -911,9 +832,8 @@ def _profile_stage(
     profile_kernel: str,
     compiler_reference: Mapping[str, object],
 ) -> Mapping[str, object]:
-    artifact_root = build_root / "candidate"
-    artifact = QsaProgramArtifact.load(build_root, artifact_root / "program.json")
-    target = _profile_target(artifact, profile_kernel)
+    artifact = _read_program_artifact(root,build_root,'candidate')
+    target = _profile_target(artifact[2] if isinstance(artifact,tuple) else artifact,profile_kernel)
     profiler = executor.admit_profiler()
     command = [
         str(profiler["path"]),
@@ -997,10 +917,12 @@ def main(argv: list[str] | None = None) -> int:
     dependency = load_compiler_reference(root, arguments.compiler_reference, "QSA compiler_revision")
     if "sm_100a" not in dependency.targets:
         raise ValueError("QSA target is not bound by the admitted Compiler")
+    compiler = Compiler(project_root=root,revision_id=dependency.revision_id,commit=dependency.commit,
+                        target_definitions=dependency.targets,corpus_path=dependency.corpus_path)
     if arguments.profile_child:
         if arguments.build_root is None:
             raise ValueError("QSA profile child build root is missing")
-        return _profile_child(root, arguments.build_root.resolve(strict=True))
+        return _profile_child(root, arguments.build_root.resolve(strict=True),compiler=compiler)
     result_path = _required_output_path("KERNELINFRA_RESULT")
     stage_dir = _required_environment_path("KERNELINFRA_STAGE_DIR")
     run_dir = _required_environment_path("KERNELINFRA_RUN_DIR")
@@ -1018,10 +940,9 @@ def main(argv: list[str] | None = None) -> int:
                     build_root,
                     nvcc=arguments.nvcc.resolve(strict=True),
                     cuobjdump=arguments.cuobjdump.resolve(strict=True),
-                    compiler=Compiler(project_root=root, revision_id=dependency.revision_id,
-                        commit=dependency.commit,
-                        target_definitions=dependency.targets, corpus_path=dependency.corpus_path),
+                    compiler=compiler,
                     target=dependency.targets["sm_100a"],
+                    candidate_sha256=json.loads((run_dir/'request.json').read_bytes())['candidate_sha256'],
                 )
             except _BaselineCompileError as error:
                 return _stage_result(
@@ -1058,7 +979,7 @@ def main(argv: list[str] | None = None) -> int:
         ).is_file():
             raise RuntimeError("QSA compile-stage artifacts are missing")
         if stage_kind == "correctness":
-            passed, metrics = _correctness_stage(root, build_root, stage_dir)
+            passed, metrics = _correctness_stage(root, build_root, stage_dir,compiler=compiler)
             return _stage_result(
                 result_path,
                 status="passed" if passed else "failed",
@@ -1087,7 +1008,7 @@ def main(argv: list[str] | None = None) -> int:
                 build_root,
                 stage_dir,
                 executor,
-                component_timing=arguments.component_timing,
+                component_timing=arguments.component_timing,compiler=compiler,
             )
             candidate_ms = float(timing["candidate_median"])
             baseline_ms = float(timing["baseline_median"])

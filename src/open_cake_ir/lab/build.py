@@ -5,7 +5,7 @@ from __future__ import annotations
 from open_cake_ir.serialization import canonical_json_bytes
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace, field
 from hashlib import sha256
 from typing import Mapping, Protocol, Callable
 
@@ -119,7 +119,7 @@ class TritonToolchainBuilder:
         grid = requirements.get("grid")
         if not isinstance(grid, list) or len(grid) != 3:
             raise ValueError("Triton launch grid differs")
-        if request.target != self._workload.document['semantics'].get('target'):
+        if request.target != self._workload.target:
             raise ValueError("Triton build target differs from the Workload")
         if self._isolated is None:
             raise RunProtocolFault("harness_fault", "paired Triton requires filesystem-isolated compilation")
@@ -131,14 +131,14 @@ class TritonToolchainBuilder:
         validate_triton_kernel(kernel_source, requirements)
         compilation = invoke_compiler(request, compiler='triton', variant='generic',
             operation=lambda: self._isolated.compile(kernel_source, requirements))
-        generic = self._seal(request, requirements, route, compilation)
+        generic = seal_triton_compilation(request,compilation,workload=self._workload,case_id=self._case_id)
         if self._pointer_alignment is None:
             return generic
         alignments = {name: self._pointer_alignment for name in requirements['signature']}
         aligned_requirements = {**requirements, 'pointer_alignments': alignments}
         specialized = invoke_compiler(request, compiler='triton', variant='aligned',
             operation=lambda: self._isolated.compile(kernel_source, aligned_requirements))
-        aligned = self._seal(request, aligned_requirements, route, specialized)
+        aligned = seal_triton_compilation(replace(request,toolchain_requirements=aligned_requirements),specialized,workload=self._workload,case_id=self._case_id)
         from open_cake_ir.evaluation.kernel_bundle import pack_candidates
         manifest = TensorLaunchManifest.from_dict(json.loads(generic.artifact_payloads['launch_manifest']))
         document = {**manifest.as_dict(), 'schema_version': 2, 'aligned_variant': 'aligned'}
@@ -156,66 +156,76 @@ class TritonToolchainBuilder:
             raise ValueError('Program stages do not yet admit alignment dispatcher variants')
         return self.build(replace(request, tensor_abi=tuple(tensor_abi)))
 
-    def _seal(self, request, requirements, route, compilation):
-        if (compilation.target != request.target
-            or compilation.entry_point != requirements.get('kernel_entry_point')):
-            raise ValueError("Triton compilation target or entry point differs from its request")
-        stages = compilation.artifacts
-        kernel_name = compilation.entry_point
-        launch = {
-            "target": request.target, "kernel_name": kernel_name, "grid": requirements['grid'],
-            "block": [compilation.threads_per_cta, 1, 1],
-            "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
-            # How many pointers the kernel takes beyond its tensors is the kernel's own
-            # fact, and for AMDGCN it is written in the emitted `.amdgpu_metadata`.
-            # Deriving it from the route's scratch fields was a guess, and the device
-            # refused it: an rmsnorm over three tensors declares five pointer arguments,
-            # the launcher passed four, and the kernel read its fifth out of
-            # uninitialized kernarg memory. The CUDA route keeps its own literal, which
-            # every retained CUDA manifest has replayed through.
-            "hidden_null_pointer_parameters": _hidden_pointers(
-                route, stages, len(request.tensor_abi if request.tensor_abi is not None else self._workload.tensor_abi(self._case_id))),
-        }
-        if requirements.get('pointer_alignments'):
-            launch['pointer_alignments'] = dict(requirements['pointer_alignments'])
-        if request.tensor_abi is None:
-            manifest = TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch)
-        else:
-            manifest = TensorLaunchManifest.from_dict({
-                'schema_version': 2 if 'pointer_alignments' in launch else 1,
-                'abi': TensorLaunchManifest.abi, 'workload_sha256': self._workload.canonical_sha256,
-                'case_id': self._case_id,
-                'tensor_abi': [dict(name=n, shape=list(s), dtype=d, mode=m) for n,s,d,m in request.tensor_abi],
-                **launch})
-        manifest_bytes = canonical_json_bytes(manifest.as_dict())
-        # The route names the artifacts its backend produces -- ptx/cubin for CUDA,
-        # amdgcn/hsaco for AMDGCN. Naming them here instead meant the one place that
-        # seals a candidate could only seal a CUDA one.
-        payloads = {
-            request.source_role: request.source,
-            "compiler_expanded_source": stages["source"],
-            **{role: stages[role] for role in route.artifact_roles if role != "source"},
-            "launch_manifest": manifest_bytes,
-        }
-        if request.tensor_abi is not None:
-            payloads['stage_compilation'] = canonical_json_bytes({
-                'schema_version': 1, 'kind': 'triton_stage_compilation',
-                'source_sha256': request.source_sha256,
-                'target': compilation.target, 'kernel_name': compilation.entry_point,
-                'threads_per_cta': compilation.threads_per_cta,
-                'dynamic_shared_memory_bytes': compilation.dynamic_shared_bytes,
-                'hidden_null_pointer_parameters': launch['hidden_null_pointer_parameters'],
-                'grid': list(requirements['grid'])})
-        return LaunchableCandidate(
-            candidate_sha256=request.candidate_sha256,
-            target=request.target,
-            entry_point=kernel_name,
-            artifact_roles={
-                role: sha256(payload).hexdigest() for role, payload in payloads.items()
-            },
-            launch_spec_sha256=sha256(manifest_bytes).hexdigest(),
-            artifact_payloads=payloads,
-        )
+
+def seal_triton_compilation(request,compilation,*,workload,case_id):
+    """Seal one owned Triton compilation, independent of where compilation ran."""
+    requirements = request.toolchain_requirements
+    route = triton_route(requirements)
+    expected_source = (project_triton_kernel(request.source,requirements)
+                       if request.source_role=='lowered_source' else request.source)
+    if (compilation.source != expected_source or request.target != workload.target
+        or requirements.get('compiler') != 'triton' or requirements.get('target') != request.target
+        or not set(route.artifact_roles) <= set(compilation.artifacts)):
+        raise ValueError('Triton compilation source, target or artifacts differ from the build request')
+    if (compilation.target != request.target
+        or compilation.entry_point != requirements.get('kernel_entry_point')):
+        raise ValueError("Triton compilation target or entry point differs from its request")
+    stages = compilation.artifacts
+    kernel_name = compilation.entry_point
+    launch = {
+        "target": request.target, "kernel_name": kernel_name, "grid": requirements['grid'],
+        "block": [compilation.threads_per_cta, 1, 1],
+        "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
+        # How many pointers the kernel takes beyond its tensors is the kernel's own
+        # fact, and for AMDGCN it is written in the emitted `.amdgpu_metadata`.
+        # Deriving it from the route's scratch fields was a guess, and the device
+        # refused it: an rmsnorm over three tensors declares five pointer arguments,
+        # the launcher passed four, and the kernel read its fifth out of
+        # uninitialized kernarg memory. The CUDA route keeps its own literal, which
+        # every retained CUDA manifest has replayed through.
+        "hidden_null_pointer_parameters": _hidden_pointers(
+            route, stages, len(request.tensor_abi if request.tensor_abi is not None else workload.tensor_abi(case_id))),
+    }
+    if requirements.get('pointer_alignments'):
+        launch['pointer_alignments'] = dict(requirements['pointer_alignments'])
+    if request.tensor_abi is None:
+        manifest = TensorLaunchManifest.for_workload(workload, case_id, **launch)
+    else:
+        manifest = TensorLaunchManifest.from_dict({
+            'schema_version': 2 if 'pointer_alignments' in launch else 1,
+            'abi': TensorLaunchManifest.abi, 'workload_sha256': workload.canonical_sha256,
+            'case_id': case_id,
+            'tensor_abi': [dict(name=n, shape=list(s), dtype=d, mode=m) for n,s,d,m in request.tensor_abi],
+            **launch})
+    manifest_bytes = canonical_json_bytes(manifest.as_dict())
+    # The route names the artifacts its backend produces -- ptx/cubin for CUDA,
+    # amdgcn/hsaco for AMDGCN. Naming them here instead meant the one place that
+    # seals a candidate could only seal a CUDA one.
+    payloads = {
+        request.source_role: request.source,
+        "compiler_expanded_source": stages["source"],
+        **{role: stages[role] for role in route.artifact_roles if role != "source"},
+        "launch_manifest": manifest_bytes,
+    }
+    if request.tensor_abi is not None:
+        payloads['stage_compilation'] = canonical_json_bytes({
+            'schema_version': 1, 'kind': 'triton_stage_compilation',
+            'source_sha256': request.source_sha256,
+            'target': compilation.target, 'kernel_name': compilation.entry_point,
+            'threads_per_cta': compilation.threads_per_cta,
+            'dynamic_shared_memory_bytes': compilation.dynamic_shared_bytes,
+            'hidden_null_pointer_parameters': launch['hidden_null_pointer_parameters'],
+            'grid': list(requirements['grid'])})
+    return LaunchableCandidate(
+        candidate_sha256=request.candidate_sha256,
+        target=request.target,
+        entry_point=kernel_name,
+        artifact_roles={
+            role: sha256(payload).hexdigest() for role, payload in payloads.items()
+        },
+        launch_spec_sha256=sha256(manifest_bytes).hexdigest(),
+        artifact_payloads=payloads,
+    )
 
 
 def _ptxas_finding_rows(

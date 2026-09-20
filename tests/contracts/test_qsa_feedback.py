@@ -88,29 +88,24 @@ class QsaFeedbackTest(unittest.TestCase):
             program_path = root / evaluator._PROGRAM_PATH
             program_path.parent.mkdir(parents=True, exist_ok=True)
             program_path.write_text(json.dumps(program))
-            candidate = {"nodes": [
+            candidate = {"schema_version":1,"arm":"open_cake","nodes": [
                 {"id": node["id"], "schedule": node["schedule"]}
                 for node in program["nodes"]
             ]}
 
+            from tests.contracts.test_native_triton_pairing import CompilationFixture
+            from open_cake_ir.compiler.toolchain import project_triton_kernel
+            fixture = CompilationFixture()
             def build(request):
-                return {
-                    "lowered_source": request.source,
-                    "ptx": b"software fixture, not compiled PTX",
-                    "cubin": b"software fixture, not a launchable kernel",
-                    "launch_manifest": json.dumps({
-                        "kernel_name": request.entry_point,
-                        "grid": [1, 1, 1], "block": [1, 1, 1],
-                        "dynamic_shared_memory_bytes": 0,
-                    }).encode(),
-                }
+                return fixture.compile(project_triton_kernel(request.source,request.toolchain_requirements),
+                                       request.toolchain_requirements)
 
             with (
                 patch.object(cls.compiler, "check_corpus", return_value=SimpleNamespace(passed=True)),
                 patch.object(evaluator, "_compile_node", side_effect=build),
             ):
                 metrics = evaluator._compile_open_cake(root, root, candidate, root / "built",
-                    compiler=cls.compiler, target=evaluator.Target.load(root / "compiler/targets/sm_100a.json"))
+                    compiler=cls.compiler,target=evaluator.Target.load(root / "compiler/targets/sm_100a.json"),candidate_sha256='a'*64)
             retained = json.loads((root / "built/static-profile.json").read_text())
             if retained != {"schema_version": 1, **metrics}:
                 raise AssertionError("producer receipt differs from returned compile metrics")
