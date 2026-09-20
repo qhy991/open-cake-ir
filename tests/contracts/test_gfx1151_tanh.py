@@ -43,5 +43,5 @@ class Gfx1151TanhTests(unittest.TestCase):
             with self.subTest(contract=contract):
                 assessment = self.compiler.assess(document)
                 self.assertFalse(assessment.lowering_eligible)
-                self.assertIn("TARGET_INSTRUCTION_CONTRACT_UNSUPPORTED",
+                self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED",
                               {finding.code for finding in assessment.findings})
