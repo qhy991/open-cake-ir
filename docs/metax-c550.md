@@ -5,8 +5,10 @@ MetaX 的精确 Target 是 [`xcore1002`](../compiler/targets/xcore1002.json)，�
 Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host admission
 由各自的平台实现负责。
 
-当前范围是 **FP32、load / elementwise / reduce / store、完整输出正确性验证**。
-混合精度、cast、tanh instruction contract、矩阵指令、计时和 profiler 尚未启用。
+当前范围是 **FP32 / FP16 / BF16 / INT32 缓冲区、load / cast / elementwise / reduce / store、
+完整输出正确性验证**。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
+INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
+FP8、专用矩阵指令、计时和 profiler 尚未启用。
 这些输入会被具体的 Target/backend rule 拒绝，或明确报告 measurement coverage
 unavailable。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
 
@@ -48,7 +50,9 @@ MACA 通过已有 local broker 的 `maca` kind 执行。容器必须与宿主共
 调查选用的公开镜像地址及下载来源在[初次调查](metax-c550-bringup.md)中保留。
 当前节点 `c550-1` 的 `open-cake-metax` namespace 使用准备后的本地镜像
 `open-cake-metax-dev:20260920`：保留原 SDK，增加已捕获的 bubblewrap。
-源码在容器内 `/work/source`；构建与证据目录位于 checkout 外。
+首轮冻结源码在容器内 `/work/source`；数值扩展分别保留为
+`/work/source-f1cadbdd` 和 `/work/source-5aef189b`。这些目录保持各自已验证的提交，
+构建与证据目录位于 checkout 外；日常开发从维护分支 `metax` 创建独立 checkout。
 
 原编译容器发生嵌套 `/proc` mount 拒绝，失败记录保持原样。经 owner 明确授权，
 后继 CPU 容器 `open-cake-metax-compile-v2` 在原配置上增加
@@ -60,7 +64,7 @@ MACA 通过已有 local broker 的 `maca` kind 执行。容器必须与宿主共
 
 ```sh
 nerdctl --namespace open-cake-metax exec \
-  -w /work/source --env PYTHONPATH=/work/source/src \
+  -w /work/source-5aef189b --env PYTHONPATH=/work/source-5aef189b/src \
   open-cake-metax-compile-v2 /opt/conda/bin/python3 tools/launch_task.py \
   --task rmsnorm --backend triton-metax --rows 128 --columns 1024 \
   --harness codex --model baseline-only --effort low \
@@ -90,6 +94,24 @@ workspace 必须不存在。`--baseline-only` 构建、封存后退出，不调�
 其报告明确列为 unexamined；不能把 164/164 当作 C550 的设备或 corpus 覆盖。
 本轮没有 kernel 优化机制、性能测量或经验 pass promotion。
 
-下一阶段分别处理 BF16/FP16 舍入与 cast、MACA tanh 数值契约，以及原生 timer / profiler。
+后续数值能力验证在 `open-cake-ir-evidence/metax-numerics-20260920/` 保留独立记录：
+`f1cadbdd` 的七条转换路径共 717114 个输入与标准库 RNE 参考逐 bit 一致；tanh 的
+82097 个有限样本相对 `math.tanh`→FP32 参考最大 2 ULP，保留正负零。源输入 bit pattern
+先在设备内核调用前核对，输出用 NaN 预填充以拒绝漏写。这是独立 primitive diagnostic，
+不等同于 Workload 收据；实际任务通过既有 broker / worker / oracle 另行验证。
+这些观测不构成全域 tanh 误差上界，也不把原始记录重标为后来的源码提交。
+
+任务级补验保留在同一外部证据目录的 `final-device-results/`：`f1cadbdd` 的 20 项
+混合精度／整数任务通过 100 个 case；`5aef189b` 的 GELU forward／backward 通过
+10 个 case。FP16 GEMM 保留原始固定 N/K、最小声明 M；BF16 FlashInfer normalization
+保留原始 hidden size、最小声明 batch；其余新任务为 `8×128`。所有输出按各自原有
+oracle 和容差逐元素比较，输入不变，零 fallback、零 timing sample。最大的 FP16
+GEMM 最大绝对误差为 `0.5`，在原容差内通过，不能描述为 bit exact。
+
+加上前一阶段 29 项／145 cases（包含单独补验的两项 AKA FP32），统一 CLI 的 51 项
+任务累计有 255 个 case 的 C550 结果。这是上述固定形状的验收，不是全部 batch/shape
+或完整模型的资格。各批原始源码身份分别保留；逐项源码兼容性检查不替代新设备运行。
+
+下一阶段仍需单独接入原生 timer / profiler。
 FlashInfer GQA/MLA/MoE 和其他精确绑定 B200/B300 的合同仍需各自的后继验证，
 不能只改 target 字符串后宣称可用。
