@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from open_cake_ir.compiler import Compiler, Program
+from open_cake_ir.compiler import Compiler, Program, frontend
 from open_cake_ir.evaluation.core import EvaluationProtocol, LaunchableCandidate, LoadedTorchTensorCandidate
 from open_cake_ir.evaluation.loaders import LifecycleError
 from open_cake_ir.compiler.target import CodeObject
@@ -63,8 +63,12 @@ class ProgramEvaluationTests(unittest.TestCase):
         self.assertEqual(result.disposition, 'launchable', result.feedback)
         return result.launchable, workload, fixture
 
-    def loaded(self, candidate, *, failing_stage=None):
-        manifest, children, _ = program_components(candidate)
+    def loaded(self, candidate, *, failing_stage=None, program=None):
+        if candidate.is_program:
+            manifest, children, _ = program_components(candidate)
+        else:
+            from open_cake_ir.tasks.launch import parse_launch_manifest
+            manifest = parse_launch_manifest(json.loads(candidate.artifact_payloads['launch_manifest']))
         position = 1000
         def tensor(values, shape, dtype):
             nonlocal position
@@ -88,6 +92,11 @@ class ProgramEvaluationTests(unittest.TestCase):
                     if mode == 'output': arg.data[:] = outputs[name]
             def close(self, *, synchronize):
                 synchronize(); self.closed = True
+        if not candidate.is_program:
+            # A CPU single-kernel device double executes the exact fused Schedule.
+            kernel = Kernel(program.stages[0])
+            kernel.prepare_arguments = lambda arguments: None
+            return kernel, manifest, tensor, calls, {kernel.stage.name:kernel}
         by_entry = {children[s.name].entry_point: s for s in manifest.program.stages}
         def loader(child, spec, admission):
             kernel = Kernel(by_entry[child.entry_point]); kernels[kernel.stage.name] = kernel
@@ -98,8 +107,8 @@ class ProgramEvaluationTests(unittest.TestCase):
             stream='fixed-stream')
         return loaded, manifest, tensor, calls, kernels
 
-    def assay(self, candidate, workload, *, failing_stage=None):
-        loaded, manifest, tensor, calls, _ = self.loaded(candidate, failing_stage=failing_stage)
+    def assay(self, candidate, workload, *, failing_stage=None, program=None):
+        loaded, manifest, tensor, calls, _ = self.loaded(candidate, failing_stage=failing_stage,program=program)
         inputs = {'a': [0.]*16, 'b': [0.]*64, 'bias': [1.00390625, -1., .1, 2., -.1, .5, -.5, 0.]}
         # Independent scalar oracle: rounded materialization, then SiLU, then rounded output.
         expected = {'out': [rounded(rounded(value, 'bf16')/(1+math.exp(-rounded(value, 'bf16'))), 'bf16')
@@ -133,7 +142,8 @@ class ProgramEvaluationTests(unittest.TestCase):
         rewrite = self.compiler.rewrite_program(Program.from_dict(epilogue_program()), 'fuse_pointwise_epilogue',
             {'producer':'producer', 'epilogue':'epilogue', 'schedule_id':'fused', 'entry_point':'fused'})
         fused, _, _ = self.build(rewrite.program.document)
-        fused_receipt, fused_calls = self.assay(fused, workload)
+        self.assertFalse(fused.is_program)
+        fused_receipt, fused_calls = self.assay(fused, workload,program=rewrite.program)
         self.assertTrue(fused_receipt.correctness_passed)
         self.assertEqual(fused_receipt.kernel_calls, 1)
         self.assertEqual(fused_calls, ['fused'])
@@ -141,6 +151,89 @@ class ProgramEvaluationTests(unittest.TestCase):
         work = participant_work({'participants': {'candidate': candidate_identity(fused), 'baseline': candidate_identity(candidate)},
                                  'launch_manifests': {role: value.as_dict() for role,value in manifests.items()}})
         self.assertEqual(work, {'candidate': {'modules':1,'kernels':1}, 'baseline': {'modules':2,'kernels':2}})
+
+    def test_single_stage_program_preserves_each_target_kernel_build_and_public_abi(self):
+        from open_cake_ir.evaluation.artifacts import required_build_roles
+        from open_cake_ir.evaluation.core import TensorLaunchManifest
+        from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.tasks.devices import BACKENDS
+        from open_cake_ir.tasks.workloads import create_task
+        for backend in BACKENDS:
+            with self.subTest(backend=backend):
+                document,source = create_task('relu',backend=backend,rows=2,columns=32)
+                workload = WorkloadContract(document)
+                schedule = frontend.parse(source).document
+                program = Program.from_schedule(schedule)
+                requests = []
+                class KernelBuilder:
+                    # Deliberately only the existing single-kernel interface.
+                    def build(self,request):
+                        requests.append(request)
+                        requirements = request.toolchain_requirements
+                        if requirements['source_language']=='metal':
+                            manifest = MetalTensorLaunchManifest.for_workload(workload,'primary',target=request.target,
+                                kernel_name=request.entry_point,grid=requirements['threadgroups_per_grid'],
+                                block=requirements['threads_per_threadgroup'],
+                                threadgroup_memory_bytes=requirements['threadgroup_memory_bytes'])
+                        else:
+                            manifest = TensorLaunchManifest.for_workload(workload,'primary',target=request.target,
+                                kernel_name=requirements['kernel_entry_point'],grid=requirements['grid'],
+                                block=[requirements['compile_options']['num_warps']*requirements['warp_size'],1,1],
+                                dynamic_shared_memory_bytes=0,hidden_null_pointer_parameters=0)
+                        payloads = {role:b'CPU ABI fixture; not executable' for role in required_build_roles(request.target)}
+                        payloads.update(lowered_source=request.source,launch_manifest=canonical_json_bytes(manifest.as_dict()))
+                        return LaunchableCandidate(request.candidate_sha256,request.target,manifest.kernel_name,
+                            {role:sha256(value).hexdigest() for role,value in payloads.items()},manifest.canonical_sha256,payloads)
+                environment = OpenCakeEnvironment(self.compiler,KernelBuilder(),workload=workload,case_id='primary',
+                    authority_document={'lowering_route':schedule['lowering']})
+                submission = CandidateSubmission.seal(environment.media_type,program.document_bytes)
+                result = environment.build(submission)
+                self.assertEqual(result.disposition,'launchable',result.feedback)
+                self.assertFalse(result.launchable.is_program)
+                self.assertEqual(result.launchable.candidate_sha256,submission.sha256)
+                self.assertEqual(len(requests),1)
+                self.assertIsNone(requests[0].tensor_abi)
+                self.assertEqual(requests[0].target,program.target)
+                self.assertEqual(requests[0].source,self.compiler.lower_program(program).lowerings[0].source.encode())
+
+    def test_single_stage_projection_does_not_erase_a_public_binding(self):
+        from open_cake_ir.evaluation.program import single_kernel_lowering
+        from open_cake_ir.tasks.workloads import create_task
+        _,source = create_task('relu',backend='triton-b200',rows=2,columns=32)
+        program = Program.from_schedule(frontend.parse(source).document)
+        changed = program.document
+        old = changed['inputs'][0]
+        changed['inputs'][0] = 'public_x'
+        changed['tensors']['public_x'] = changed['tensors'].pop(old)
+        changed['stages'][0]['bindings'][old] = 'public_x'
+        self.assertIsNone(single_kernel_lowering(self.compiler.lower_program(Program.from_dict(changed))))
+
+    def test_single_stage_replay_checks_authored_program_source_and_launch(self):
+        from open_cake_ir.lab.replay.artifacts import _replay_launchable_candidate
+        from open_cake_ir.tasks.launch import parse_launch_manifest
+        rewrite = self.compiler.rewrite_program(Program.from_dict(epilogue_program()),'fuse_pointwise_epilogue',
+            {'producer':'producer','epilogue':'epilogue','schedule_id':'fused','entry_point':'fused'})
+        candidate,_,_ = self.build(rewrite.program.document)
+        self.assertFalse(candidate.is_program)
+        def replay(payloads):
+            spec = parse_launch_manifest(json.loads(payloads['launch_manifest']))
+            bound = LaunchableCandidate(candidate.candidate_sha256,candidate.target,spec.kernel_name,
+                {role:sha256(value).hexdigest() for role,value in payloads.items()},spec.canonical_sha256,payloads)
+            event = {'kind':'launchable_candidate_sealed','payload':{'turn':1,
+                'candidate_sha256':bound.candidate_sha256,'candidate_record_sha256':bound.canonical_sha256,
+                'objects':[{'role':role,'sha256':digest} for role,digest in bound.artifact_roles.items()]}}
+            evidence = SimpleNamespace(read_object=lambda reference:payloads[reference['role']])
+            return _replay_launchable_candidate(evidence,[event],turn=1,candidate_sha256=bound.candidate_sha256,
+                arm='open_cake',manifest_parser=parse_launch_manifest,compiler_factory=lambda:self.compiler,
+                authored_bytes=rewrite.program.document_bytes)
+        self.assertEqual(replay(candidate.artifact_payloads).canonical_sha256,candidate.canonical_sha256)
+        with self.assertRaisesRegex(ValueError,'authored Program lowering'):
+            replay({**candidate.artifact_payloads,'lowered_source':b'changed source'})
+        manifest = json.loads(candidate.artifact_payloads['launch_manifest'])
+        manifest['grid'][0] += 1
+        with self.assertRaisesRegex(ValueError,'authored Program lowering'):
+            replay({**candidate.artifact_payloads,'launch_manifest':canonical_json_bytes(manifest)})
 
     def test_missing_stage_result_is_rejected_by_common_oracle(self):
         candidate, workload, _ = self.build()

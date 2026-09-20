@@ -176,7 +176,9 @@ class OpenCakeEnvironment:
 
     def _build_program(self, submission, parsed, *, compilation=None):
         from open_cake_ir.compiler.ir import Program
-        from open_cake_ir.evaluation.program import stage_abi, seal_program_candidate, admit_program_execution
+        from open_cake_ir.evaluation.program import (
+            stage_abi, seal_program_candidate, admit_program_execution, single_kernel_lowering,
+        )
         try:
             program = Program.from_dict(parsed)
             public = {name: ('global', tensor.dtype.value, list(tensor.shape), mode)
@@ -186,19 +188,23 @@ class OpenCakeEnvironment:
                 raise ValueError('Program public ABI or target differs from the Workload')
             if any(stage.schedule.lowering.backend.value != self._route['backend'] for stage in program.stages):
                 raise ValueError('Program stage backend is outside the authoring environment')
-            build_stage = getattr(self._toolchain, 'build_stage', None)
-            if not callable(build_stage):
-                raise ValueError('this toolchain has no Program stage build capability')
-            admit_program_execution(program.target)
             lowered = self._compiler.lower_program(program)
-            children = {}
-            for stage, lowering in zip(program.stages, lowered.lowerings, strict=True):
-                request = BuildRequest(submission.sha256, lowering.source.encode(), 'lowered_source',
+            def request(lowering):
+                return BuildRequest(submission.sha256, lowering.source.encode(), 'lowered_source',
                     lowering.source_sha256, lowering.target, lowering.route.entry_point, lowering.toolchain_requirements,
                     compilation=compilation)
-                children[stage.name] = build_stage(request, stage_abi(stage))
-            launchable = seal_program_candidate(lowered, children, candidate_sha256=submission.sha256,
-                                               workload=self._workload, case_id=self._case_id)
+            single = single_kernel_lowering(lowered)
+            if single is not None:
+                launchable = self._toolchain.build(request(single))
+            else:
+                build_stage = getattr(self._toolchain, 'build_stage', None)
+                if not callable(build_stage):
+                    raise ValueError('this toolchain has no Program stage build capability')
+                admit_program_execution(program.target)
+                children = {stage.name:build_stage(request(lowering),stage_abi(stage))
+                            for stage,lowering in zip(program.stages,lowered.lowerings,strict=True)}
+                launchable = seal_program_candidate(lowered, children, candidate_sha256=submission.sha256,
+                                                   workload=self._workload, case_id=self._case_id)
             return EnvironmentResult('launchable', submission.sha256, launchable,
                 {'stage': 'built', 'program_stages': [stage.name for stage in program.stages],
                  'cost_model_coverage': 'whole_program_unmodeled'})

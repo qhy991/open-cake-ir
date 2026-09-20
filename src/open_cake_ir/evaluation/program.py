@@ -20,6 +20,30 @@ from .launch_manifest import WorkloadTensorManifest
 PROGRAM_ROLES = frozenset({'launch_manifest', 'program_bundle'})
 
 
+def program_tensor_abi(program):
+    return tuple((name, program.tensors[name].shape, program.tensors[name].dtype.value, mode)
+                 for mode, names in (('input', program.inputs), ('output', program.outputs))
+                 for name in names)
+
+
+def single_kernel_lowering(lowered):
+    """Use the existing kernel ABI when composition requires no runtime mapping.
+
+    No stage, entry point, binding or tensor is renamed. The authored Program remains
+    the candidate identity; this only selects its executable handoff representation.
+    Views and nonidentity bindings need the ordered Program adapter instead.
+    """
+    program = lowered.program
+    if len(program.stages) != 1:
+        return None
+    stage = program.stages[0]
+    if (set(program.tensors) != set(program.inputs) | set(program.outputs)
+        or any(name != binding.tensor or binding.singleton_view for name,binding in stage.bindings.items())
+        or stage_abi(stage) != program_tensor_abi(program)):
+        return None
+    return lowered.lowerings[0]
+
+
 def admit_program_execution(target):
     """The implemented Program adapter domain; this is not device qualification."""
     from open_cake_ir.compiler.target import CodeObject
@@ -76,9 +100,7 @@ class ProgramLaunchManifest:
 
     @property
     def tensor_abi(self):
-        return tuple((name, self.program.tensors[name].shape, self.program.tensors[name].dtype.value, mode)
-                     for mode, names in (('input', self.program.inputs), ('output', self.program.outputs))
-                     for name in names)
+        return program_tensor_abi(self.program)
 
     def check_workload(self, workload, case_id):
         WorkloadTensorManifest.check_workload(self, workload, case_id)

@@ -86,13 +86,25 @@ def _replay_launchable_candidate(
         launch_spec_sha256=manifest.canonical_sha256,
         artifact_payloads=artifact_payloads,
     )
-    if candidate.is_program:
+    authored = json.loads(authored_bytes) if arm=='open_cake' and authored_bytes is not None else None
+    if candidate.is_program or isinstance(authored,Mapping) and 'program_id' in authored:
         if compiler_factory is None:
             raise ValueError('Program replay requires its exact Compiler')
         from open_cake_ir.compiler import Program
-        if authored_bytes is None or Program.from_dict(json.loads(authored_bytes)).document != manifest.program.document:
+        from open_cake_ir.evaluation.program import program_tensor_abi, single_kernel_lowering
+        program = Program.from_dict(authored)
+        lowered = compiler_factory().lower_program(program)
+        if not candidate.is_program:
+            single = single_kernel_lowering(lowered)
+            if (single is None or candidate.target != program.target
+                or manifest.tensor_abi != program_tensor_abi(program)
+                or candidate.artifact_roles.get('lowered_source') != single.source_sha256
+                or candidate.entry_point != single.toolchain_requirements.get('kernel_entry_point',single.route.entry_point)
+                or list(manifest.grid) != single.toolchain_requirements.get('grid',single.toolchain_requirements.get('threadgroups_per_grid'))):
+                raise ValueError('single-kernel artifact differs from its authored Program lowering or ABI')
+        elif program.document != manifest.program.document:
             raise ValueError('Program manifest differs from the archived author candidate')
-        lowered = compiler_factory().lower_program(manifest.program)
+    if candidate.is_program:
         if manifest.lowered_sources != {stage.name: lowering.source_sha256
                 for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True)}:
             raise ValueError('Program stage source differs from its pinned Compiler lowering')
