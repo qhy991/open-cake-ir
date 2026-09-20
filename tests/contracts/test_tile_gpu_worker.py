@@ -42,6 +42,7 @@ class TileGpuWorkerTests(unittest.TestCase):
             def __init__(self, candidate, manifest, inputs, admission):
                 self.loaded = SimpleNamespace(launch_calls=0, resources={})
                 self.inputs = inputs
+                self.admission = admission
                 self.closed = False
                 instances.append(self)
 
@@ -69,7 +70,7 @@ class TileGpuWorkerTests(unittest.TestCase):
                 return output, after, {'candidate_sha256': candidate.candidate_sha256,
                     'kernel_calls': 1, 'fallback_calls': 0,
                     'manifest_sha256': manifest.canonical_sha256,
-                    'device_admission': asdict(admission)}
+                    'device_admission': asdict(self.admission)}
 
             def close(self):
                 self.closed = True
