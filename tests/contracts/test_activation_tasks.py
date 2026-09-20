@@ -42,7 +42,7 @@ TRANSCENDENTAL = {
 
 # Requirements keys that are one Target's own facts riding the contract (which code
 # object, which architecture, which lane width), not the route's.
-OWN = frozenset({"target", "code_object", "triton_arch", "warp_size"})
+OWN = frozenset({"target", "code_object", "triton_arch", "warp_size", "codegen_arch"})
 
 class ActivationTaskTests(unittest.TestCase):
     @classmethod
