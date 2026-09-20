@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="790" viewBox="0 0 1160 790" role="img" aria-labelledby="title desc">
+  <title id="title">Cross-hardware transfer of executable optimization knowledge</title>
+  <desc id="desc">A source agent produces a mechanism with conditions and counterexamples. Explanation material E and callable rewrite access P are separately controlled before reaching a destination agent. All destination candidates pass the same Target, backend, oracle and measurement checks. Outcomes inform later studies. An illustrative Add to SiLU fusion preserves BF16 rounding while avoiding an intermediate global buffer.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#34536d"/></marker>
+    <marker id="feedback-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#79858e"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #182b3a; }
+      .title { font-size: 29px; font-weight: 600; }
+      .heading { font-size: 22px; font-weight: 600; }
+      .body { font-size: 19px; }
+      .small { font-size: 16px; fill: #496171; }
+      .box { fill: #f4f7fa; stroke: #b2c0ca; stroke-width: 1.4; rx: 9; }
+      .knowledge { fill: #edf4fa; stroke: #829eb5; stroke-width: 1.5; rx: 9; }
+      .channel { fill: #fff6e9; stroke: #cba66e; stroke-width: 1.5; rx: 9; }
+      .target { fill: #edf7f2; stroke: #86ab99; stroke-width: 1.5; rx: 9; }
+      .flow { fill: none; stroke: #34536d; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1160" height="790" fill="#ffffff"/>
+  <text x="35" y="48" class="title">Cross-hardware transfer of executable optimization knowledge</text>
+  <text x="35" y="79" class="body">Proposed mechanism · explanations and rewrite access are separately controlled</text>
+
+  <path d="M225 240H270" class="flow"/>
+  <path d="M510 215H530V145H555" class="flow"/>
+  <path d="M510 270H530V375H555" class="flow"/>
+  <path d="M790 145H825V215H865" class="flow"/>
+  <path d="M790 375H825V270H865" class="flow"/>
+  <path d="M995 300V340" class="flow"/>
+  <path d="M995 425V453" class="flow"/>
+  <path d="M995 567V613" class="flow"/>
+  <path d="M865 653H790" class="flow"/>
+  <path d="M555 653H527V754H15V145H390V180" fill="none" stroke="#79858e" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#feedback-arrow)"/>
+
+  <rect x="35" y="180" width="190" height="120" class="box"/>
+  <text x="130" y="218" text-anchor="middle" class="heading">Source platform</text>
+  <text x="130" y="250" text-anchor="middle" class="body">Agent exploration</text>
+  <text x="130" y="278" text-anchor="middle" class="small">NVIDIA, for example</text>
+
+  <rect x="270" y="180" width="240" height="120" class="knowledge"/>
+  <text x="390" y="218" text-anchor="middle" class="heading">Retained mechanism</text>
+  <text x="390" y="250" text-anchor="middle" class="body">Conditions + limits</text>
+  <text x="390" y="278" text-anchor="middle" class="small">Counterexamples + evidence</text>
+
+  <rect x="555" y="95" width="235" height="100" class="channel"/>
+  <text x="672" y="130" text-anchor="middle" class="heading">E  Explanations</text>
+  <text x="672" y="157" text-anchor="middle" class="body">Extra notes and cases</text>
+  <text x="672" y="181" text-anchor="middle" class="small">off / on</text>
+
+  <rect x="555" y="325" width="235" height="100" class="channel"/>
+  <text x="672" y="360" text-anchor="middle" class="heading">P  Rewrite access</text>
+  <text x="672" y="387" text-anchor="middle" class="body">Explicit, guarded IR pass</text>
+  <text x="672" y="411" text-anchor="middle" class="small">off / on · agent chooses calls</text>
+
+  <rect x="865" y="180" width="260" height="120" class="target"/>
+  <text x="995" y="218" text-anchor="middle" class="heading">Destination agent</text>
+  <text x="995" y="250" text-anchor="middle" class="body">Adapt and search locally</text>
+  <text x="995" y="278" text-anchor="middle" class="small">One declared hardware target</text>
+
+  <rect x="865" y="340" width="260" height="85" class="target"/>
+  <text x="995" y="374" text-anchor="middle" class="heading">Target candidates</text>
+  <text x="995" y="405" text-anchor="middle" class="body">Retune local parameters</text>
+
+  <rect x="849" y="455" width="292" height="269" fill="#f8fafb" stroke="#ced7de" stroke-width="1" rx="12"/>
+  <text x="995" y="477" text-anchor="middle" class="small">COMMON TO ALL FOUR ARMS</text>
+  <rect x="865" y="487" width="260" height="80" class="box"/>
+  <text x="995" y="520" text-anchor="middle" class="heading">Target + backend</text>
+  <text x="995" y="550" text-anchor="middle" class="body">Legality and lowering</text>
+  <path d="M995 567V613" class="flow"/>
+  <rect x="865" y="613" width="260" height="80" class="box"/>
+  <text x="995" y="646" text-anchor="middle" class="heading">Oracle + measurement</text>
+  <text x="995" y="676" text-anchor="middle" class="body">Correctness before timing</text>
+  <text x="995" y="715" text-anchor="middle" class="small">Checks are never ablated</text>
+
+  <rect x="555" y="613" width="235" height="80" class="knowledge"/>
+  <text x="672" y="646" text-anchor="middle" class="heading">Destination evidence</text>
+  <text x="672" y="676" text-anchor="middle" class="body">Win / no gain / reject</text>
+
+  <text x="35" y="414" class="heading">Example: preserve the BF16 seam</text>
+  <text x="35" y="443" class="small">A private intermediate can avoid global store / reload</text>
+  <text x="35" y="500" class="body">2 kernels</text>
+  <rect x="135" y="468" width="128" height="60" class="box"/>
+  <text x="199" y="492" text-anchor="middle" class="body">Add</text>
+  <text x="199" y="516" text-anchor="middle" class="small">BF16 round</text>
+  <path d="M263 498H291" class="flow"/>
+  <rect x="293" y="478" width="92" height="40" fill="#fff6e9" stroke="#cba66e" stroke-width="1.2" rx="5"/>
+  <text x="339" y="504" text-anchor="middle" class="body">global z</text>
+  <path d="M385 498H413" class="flow"/>
+  <rect x="415" y="468" width="85" height="60" class="box"/>
+  <text x="457" y="504" text-anchor="middle" class="body">SiLU</text>
+  <text x="35" y="597" class="body">1 kernel</text>
+  <rect x="135" y="561" width="365" height="63" class="target"/>
+  <text x="317" y="600" text-anchor="middle" class="body">Add → BF16 round → SiLU</text>
+  <text x="135" y="651" class="small">Intermediate stays in registers, per tile</text>
+  <text x="35" y="704" class="small">Illustration, not a measured speedup</text>
+
+  <rect x="51" y="744" width="418" height="25" fill="#ffffff"/>
+  <text x="59" y="762" class="small">Feedback to later studies; frozen within each study</text>
+</svg>
