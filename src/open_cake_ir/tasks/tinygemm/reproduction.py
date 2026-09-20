@@ -23,6 +23,26 @@ PEER_COMMIT = '67f76379a145f19793896394974e29e610cda912'
 PEER_DIRECTORY = 'experiments/flashinfer_rewrites/references/029_cake_tinygemm2/baseline/csrc'
 
 
+@cache
+def official_cake_module(target):
+    """Pinned CAKE-generated export for external comparison, never a candidate route."""
+    import torch
+    from flashinfer.jit.core import gen_jit_spec, current_compilation_context
+    from open_cake_ir.compiler.target import declared_target
+    from open_cake_ir.source_identity import checkout_commit
+    root = Path(__file__).resolve().parents[4]
+    checkout_commit(root)
+    if tuple(torch.cuda.get_device_capability()) != declared_target(target).compute_capability:
+        raise ValueError('CAKE export peer target differs')
+    directory = root / 'experiments/flashinfer_rewrites/references/029_cake_tinygemm2'
+    record = json.loads((directory / 'reference.json').read_text())
+    return gen_jit_spec(
+        f'open_cake_official_tiny_{record["source_commit"][:12]}_{target}',
+        [directory / 'csrc/tinygemm2_sm100.cu'], extra_include_paths=[root / PEER_DIRECTORY],
+        extra_cuda_cflags=current_compilation_context.get_nvcc_flags_list(supported_major_versions=[10]),
+    ).build_and_load()
+
+
 def workload_document(*, backend='triton-b300', rows=1, columns=128, depth=720):
     if backend not in TARGETS:
         raise ValueError('TinyGEMM reproduction requires its exact B200 or B300 target')

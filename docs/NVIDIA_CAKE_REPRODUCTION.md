@@ -55,3 +55,22 @@ gate, and no performance benefit is inferred from source generation.
 Results, complete outputs, source commits, broker receipts and terminal states remain
 in the external GPU Infra run directories. This document describes the task and the
 proposal; it is not an alternative acceptance ledger.
+
+## Matched official comparison
+
+The development judge accepts explicit `benchmark: true` only on its B300 input.
+Before timing, all 30 candidate checks and all 15 official-export checks must pass the
+same original-peer bitwise gate, with the independent CPU mathematical check retained.
+The comparison includes Open-Cake stage requests 4/8, the pinned CAKE-generated
+stage4 export (selected by the original dispatcher on these three fixtures), and the
+pinned TensorRT-LLM-derived reference. Short K candidates declare no loop and report
+`applied_loop_stages: null`; duplicate requests there are not distinct pipelines.
+
+Timing uses five rounds in alternating forward/reverse arm order, 25 samples per arm
+per round, strict CUPTI, cold L2, no CUDA Graph and no PDL. Inputs are stateless and the
+output is fully overwritten; complete output and input preservation are rechecked
+after each block. Allocation, compilation, oracle work and CPU wrapper cost are outside
+the GPU interval. A separate profiler observation must see exactly one CUDA kernel per
+arm. Raw samples, coefficients of variation, kernel symbols and paired ratios remain
+in the report. There is no predeclared parity threshold, no fixed-clock claim and no
+extrapolation to the paper's 35/239-shape or model-serving results.

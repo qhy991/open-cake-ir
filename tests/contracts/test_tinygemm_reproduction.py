@@ -17,6 +17,20 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TinyGemmReproduction(unittest.TestCase):
+    def test_benchmark_is_an_explicit_boolean_and_keeps_the_exact_target(self):
+        from tools.test_cake_tinygemm_infra import specification
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'qualification.json'
+            for value in ({'task':task.TASK,'target':'sm_103a'},
+                          {'task':task.TASK,'target':'sm_103a','benchmark':True}):
+                path.write_text(json.dumps(value))
+                self.assertEqual(specification(path),value)
+            for value in ({'task':task.TASK,'target':'sm_100a','benchmark':True},
+                          {'task':task.TASK,'target':'sm_103a','benchmark':'false'},
+                          {'task':task.TASK,'target':'sm_103a','benchmark':True,'skip_correctness':True}):
+                path.write_text(json.dumps(value))
+                with self.assertRaises(ValueError): specification(path)
+
     def workload(self):
         return WorkloadContract(task.workload_document(rows=1, columns=16, depth=32))
 
