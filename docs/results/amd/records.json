@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "branch": "amd",
+  "platform": "AMD",
+  "as_of": "2026-09-20",
+  "source_commit": "f95af8005619a9356d5891873b38a9322d32f102",
+  "scope": "Publication projection of retained reports and Findings; not a promotion registry or new evaluation.",
+  "card": "gfx1151；计时边界待解决",
+  "notes": "gfx1151 的两种设备计时器尚未对齐。保留支持状态与调查入口，不给出合格性能或加速比。",
+  "details": [
+    "此记录来自设备调查，未形成 Campaign；两种计时器的绝对耗时不可互换。"
+  ],
+  "figures": [],
+  "records": [
+    {
+      "hardware": "Radeon / Strix Halo",
+      "target": "gfx1151",
+      "task": "rmsnorm smoke",
+      "source": "findings/2026-09-17-002-two-device-timers-disagree-on-gfx1151.json",
+      "workload": "gfx1151-rmsnorm-b8-smoke",
+      "date": "2026-09-17",
+      "baseline_us": null,
+      "candidate_us": null,
+      "speedup": null,
+      "status": "计时边界未解决",
+      "baseline_name": "任务固定初始基线",
+      "version": "见来源",
+      "locator": "infplane；原调查未产生 Campaign",
+      "note": "31.858 与 24.224 µs 来自不同计时器，不作为合格延迟或加速比。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "amd-result-080"
+    }
+  ]
+}
