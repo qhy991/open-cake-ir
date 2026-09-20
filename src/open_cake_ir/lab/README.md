@@ -82,8 +82,11 @@ changes the identity of future execution; it does not rewrite historical evidenc
 比较约束；普通 Run 不需要比较组或估计量。
 
 命令 `open-cake-ir lab run preflight|execute|audit --run <run.json>` 接收独立 Run；执行另需
-`--runtime-config` 和 `--evidence-root`。任务启动准备层仍有旧 Campaign 输入消费者，正在迁移；
-新装配已替代它们此前单独维护的生产 adapter 装配。
+`--runtime-config` 和 `--evidence-root`。`tools/launch_task.py` 直接准备并冻结 `run.json`，
+执行后写入 `run-evidence/` 和来自独立审计的 `report.json`；`kernel_experiment.py` 的各节点
+沿用这个入口。基线来源、incumbent 选择、后端 assay 和完整输入验证保留原有准入规则。
+旧 Study 模板仅投影共同的任务控制项，普通任务不再写入 Study 或 Campaign Lock。
+`report_task_efficiency.py` 可读取新 Run workspace，也保留旧 Campaign 的 opt-in 报告约束。
 
 ## Preassigned E/P Studies
 
@@ -121,7 +124,7 @@ stage，计时覆盖完整有序调用；NCU 输出按 dispatch 保留各 stage 
 需要多次 launch、非 identity 绑定或视图映射的 Program，目前使用 Triton/CUDA 组合适配；
 其他 code object 对这些组合仍明确拒绝。静态表示和上述单 kernel 路径不受此组合适配范围
 限制。软件合同测试不赋予实机正确性、计时或跨架构收益资格。显式动作、知识授权与消息作者
-隔离见下节；生产运行装配与正式硬件消融仍未完成。
+隔离见下节；QSA 候选消费者和独立 Run 的 incumbent 晋升入口仍在迁移，正式硬件消融尚未验证。
 
 ## Knowledge and explicit author actions
 
