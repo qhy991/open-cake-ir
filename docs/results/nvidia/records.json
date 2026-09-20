@@ -1,0 +1,1118 @@
+{
+  "schema_version": 1,
+  "branch": "nvidia",
+  "platform": "NVIDIA",
+  "as_of": "2026-09-20",
+  "source_commit": "f95af8005619a9356d5891873b38a9322d32f102",
+  "scope": "Publication projection of retained reports and Findings; not a promotion registry or new evaluation.",
+  "card": "B300 多任务与 CAKE 对照；B200 正确性记录",
+  "notes": "B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版本，不混成一个榜。B200 单列正确性证据。",
+  "details": [
+    "B300 服务实验投影保留每个 Campaign 的最佳合格候选及确认历史；不是远端 registry 的当前冠军。",
+    "CTA 宽度验证与 CAKE 对照分别保留自身基线、版本及协议。"
+  ],
+  "figures": [
+    {
+      "title": "NVIDIA B300",
+      "subtitle": "Retained campaign endpoints / starter baseline",
+      "records": [
+        "nvidia-result-016",
+        "nvidia-result-010",
+        "nvidia-result-003",
+        "nvidia-result-013"
+      ]
+    }
+  ],
+  "records": [
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "absmax_rescale",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "absmax-rescale-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.32,
+      "candidate_us": 2.2720000000000002,
+      "speedup": 1.02112676056338,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/absmax_rescale-20260916-100813/report.json; open_cake-1; event=17; candidate=a363e12177e7c493ca3748b23b5fad0515f84efc761d0bd62d6c37e02fa2adb5",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 2,
+          "event": 17,
+          "us": 2.2720000000000002,
+          "speedup": 1.02112676056338
+        }
+      ],
+      "id": "nvidia-result-001"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "adadelta",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "adadelta-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 4.159999999999999,
+      "candidate_us": 4.096,
+      "speedup": 1.015625,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/adadelta-20260916-060824/report.json; open_cake-1; event=17; candidate=1eb5ed817fcf0ddc63179af3c7eed9d6cda9354e7d6e3ebed6506e8f08960904",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 2,
+          "event": 17,
+          "us": 4.096,
+          "speedup": 1.015625
+        }
+      ],
+      "id": "nvidia-result-002"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "adamw",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "adamw-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 4.064,
+      "candidate_us": 2.592,
+      "speedup": 1.567901234567901,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/adamw-20260916-053018/report.json; open_cake-1; event=26; candidate=398044880e6094b2c0e585775b7d0753650db52ad51d2aecc6aa0200ea09cc4f",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 4.0,
+          "speedup": 1.016
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.592,
+          "speedup": 1.567901234567901
+        }
+      ],
+      "id": "nvidia-result-003"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "attention_decode",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "contraction-attention-decode-fp32-triton-b300-r1024-k1024-n64-v1",
+      "date": "2026-09-16",
+      "baseline_us": 339.874,
+      "candidate_us": 230.769,
+      "speedup": 1.472788806122139,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/attention_decode-20260916-184301/report.json; open_cake-1; event=13; candidate=62bc95ec21df257e1f1f7f7b28d6845dc47a6af5d32c5d970b1f840af27ad5bf",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 230.769,
+          "speedup": 1.472788806122139
+        }
+      ],
+      "id": "nvidia-result-004"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "bias_gradient_reduction",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "bias-gradient-reduction-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": null,
+      "candidate_us": null,
+      "speedup": null,
+      "status": "未合格终点",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/bias_gradient_reduction-20260916-065950/report.json; open_cake-1; event=None; candidate=None",
+      "note": "provider_fault; missing; None",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-005"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "bias_gradient_reduction",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "bias-gradient-reduction-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.784,
+      "candidate_us": 2.7520000000000002,
+      "speedup": 1.011627906976744,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/bias_gradient_reduction-20260916-130258/report.json; open_cake-1; event=13; candidate=1f9b4ad199fc61c3ae923d998bd1ac59d1fbcde65649725e66f64e989b791df8",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.7520000000000002,
+          "speedup": 1.011627906976744
+        }
+      ],
+      "id": "nvidia-result-006"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "channel_absmax_scale",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "channel-absmax-scale-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.784,
+      "candidate_us": 2.783,
+      "speedup": 1.000359324469996,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/channel_absmax_scale-20260916-124804/report.json; open_cake-1; event=26; candidate=bb02cc80ae5a1785f89440d86203f1d058c61b80074629edf8a0d7f4c915e743",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.784,
+          "speedup": 1.0
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.783,
+          "speedup": 1.000359324469996
+        }
+      ],
+      "id": "nvidia-result-007"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "cosine_similarity",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "cosine-similarity-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.976,
+      "candidate_us": 2.977,
+      "speedup": 0.999664091367148,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/cosine_similarity-20260916-102543/report.json; open_cake-1; event=13; candidate=f739fb48dec1050ae77b2abbe731a106d055be484eb657fada04e1b108a4fea4",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.977,
+          "speedup": 0.999664091367148
+        }
+      ],
+      "id": "nvidia-result-008"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "gelu_tanh",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "gelu-tanh-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 4.415,
+      "candidate_us": 4.352,
+      "speedup": 1.014476102941176,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/gelu_tanh-20260916-042956/report.json; open_cake-1; event=17; candidate=f42e4152b65487a489d44963da52469166425ebf2e7862416ff128272dbc65b8",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 2,
+          "event": 17,
+          "us": 4.352,
+          "speedup": 1.014476102941176
+        }
+      ],
+      "id": "nvidia-result-009"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "gelu_tanh_backward",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "gelu-tanh-backward-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 4.96,
+      "candidate_us": 2.72,
+      "speedup": 1.823529411764706,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/gelu_tanh_backward-20260916-120441/report.json; open_cake-1; event=17; candidate=62aca837508c4a2dbd5cc1c14235d6833b26cbc858dad707288bec74f48c92aa",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 2,
+          "event": 17,
+          "us": 2.72,
+          "speedup": 1.823529411764706
+        }
+      ],
+      "id": "nvidia-result-010"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "gemm",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "contraction-gemm-fp32-triton-b300-r1024-k1024-n64-v1",
+      "date": "2026-09-16",
+      "baseline_us": 169.24900000000002,
+      "candidate_us": 154.945,
+      "speedup": 1.092316628481074,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/gemm-20260916-170620/report.json; open_cake-1; event=17; candidate=445d2727b4e39d3aae77f38415ea7ebc40190db07ffd325674ebb05c380fd454",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 2,
+          "event": 17,
+          "us": 154.945,
+          "speedup": 1.092316628481074
+        }
+      ],
+      "id": "nvidia-result-011"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "gemm_silu",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "contraction-gemm-silu-fp32-triton-b300-r1024-k1024-n64-v1",
+      "date": "2026-09-16",
+      "baseline_us": 166.08100000000002,
+      "candidate_us": 178.30499999999998,
+      "speedup": 0.931443313423628,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/gemm_silu-20260916-172338/report.json; open_cake-1; event=26; candidate=0cfa7400e15901e6e39968f14f956117ca8ca6c9d622cceae04e339f6ea34860",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 324.2735,
+          "speedup": 0.509349360956107
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 178.30499999999998,
+          "speedup": 0.931443313423628
+        }
+      ],
+      "id": "nvidia-result-012"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "layernorm",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "layernorm-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 3.6159999999999997,
+      "candidate_us": 2.464,
+      "speedup": 1.467532467532467,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/layernorm-20260916-034037/report.json; open_cake-1; event=13; candidate=d110d259af65053f62a441195bd51dd4d3827ad3210324e3be89ffa87c6ebf9c",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.464,
+          "speedup": 1.467532467532467
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.4650000000000003,
+          "speedup": 1.466937119675456
+        }
+      ],
+      "id": "nvidia-result-013"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "layernorm_backward_input",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "layernorm-backward-input-fp32-triton-b300-r128-c1024-v2",
+      "date": "2026-09-16",
+      "baseline_us": 3.1679999999999997,
+      "candidate_us": 3.04,
+      "speedup": 1.042105263157895,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/layernorm_backward_input-20260916-094015/report.json; open_cake-1; event=26; candidate=b123db1855356f93ed21bb3063101963857e893d120c33dd837b05b0bcb9819b",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 3.2,
+          "speedup": 0.99
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 3.04,
+          "speedup": 1.042105263157895
+        }
+      ],
+      "id": "nvidia-result-014"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "momentum_sgd",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "momentum-sgd-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 3.52,
+      "candidate_us": 3.52,
+      "speedup": 1.0,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/momentum_sgd-20260916-051315/report.json; open_cake-1; event=26; candidate=a17d866faea721d4a7ea9ee3579af848a649d0625d7470b64430d3256f80d62f",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 4.864,
+          "speedup": 0.726870888157895
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 3.52,
+          "speedup": 1.0
+        }
+      ],
+      "id": "nvidia-result-015"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "pairwise_sqdist",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "contraction-pairwise-sqdist-fp32-triton-b300-r1024-k1024-n64-v1",
+      "date": "2026-09-16",
+      "baseline_us": 411.7945,
+      "candidate_us": 53.856,
+      "speedup": 7.646213978015449,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/pairwise_sqdist-20260916-180016/report.json; open_cake-1; event=17; candidate=1c24a27ae8410b36407e837607d0349d0d152634f6759da19283697afccc0962",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 2,
+          "event": 17,
+          "us": 53.856,
+          "speedup": 7.646213978015449
+        }
+      ],
+      "id": "nvidia-result-016"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "per_channel_moments",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "per-channel-moments-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.784,
+      "candidate_us": 2.784,
+      "speedup": 1.0,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/per_channel_moments-20260916-104523/report.json; open_cake-1; event=13; candidate=b087e9645f5ba0d469c650fde3fc65fda1f79c50b8d150c0f5c633feee3ad3df",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.784,
+          "speedup": 1.0
+        }
+      ],
+      "id": "nvidia-result-017"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "prelu",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "prelu-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.8960000000000004,
+      "candidate_us": 2.832,
+      "speedup": 1.022598870056497,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/prelu-20260916-122027/report.json; open_cake-1; event=13; candidate=56e850a984d225bdc58d359bc91fd12a28074af6c56aba9df64ee1a77591ebcf",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.832,
+          "speedup": 1.022598870056497
+        }
+      ],
+      "id": "nvidia-result-018"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "residual_rmsnorm",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "residual-rmsnorm-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 3.264,
+      "candidate_us": 2.4,
+      "speedup": 1.36,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/residual_rmsnorm-20260916-044120/report.json; open_cake-1; event=26; candidate=533df099cbd8ced4e5be0305fa946ea1691c7249797ff9917f194c92aa35c999",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 3.232,
+          "speedup": 1.0
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.4,
+          "speedup": 1.36
+        }
+      ],
+      "id": "nvidia-result-019"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "rmsnorm",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "rmsnorm-fp32-triton-b300-r128-c1024-v3",
+      "date": "2026-09-16",
+      "baseline_us": null,
+      "candidate_us": null,
+      "speedup": null,
+      "status": "未合格终点",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/rmsnorm-20260916-031407/report.json; open_cake-1; event=None; candidate=None",
+      "note": "broker_fault; missing; None",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-020"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "rmsnorm",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "rmsnorm-fp32-triton-b300-r128-c1024-v3",
+      "date": "2026-09-16",
+      "baseline_us": 2.5755,
+      "candidate_us": 2.2720000000000002,
+      "speedup": 1.133582746478873,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/rmsnorm-20260916-032057/report.json; open_cake-1; event=26; candidate=3d9385205d3413906415268c8c6e2b85cc82a8de9dfa213708f0870989f77802",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.4,
+          "speedup": 1.080416666666667
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.2720000000000002,
+          "speedup": 1.133582746478873
+        }
+      ],
+      "id": "nvidia-result-021"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "rmsnorm_input_gradient",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "rmsnorm-input-gradient-fp32-triton-b300-r128-c1024-v2",
+      "date": "2026-09-16",
+      "baseline_us": 3.04,
+      "candidate_us": 2.432,
+      "speedup": 1.25,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/rmsnorm_input_gradient-20260916-064534/report.json; open_cake-1; event=26; candidate=77fdf24695c20187bd7e22ccb6bb332c329d425498f1a098c1c38950952fc940",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.6879999999999997,
+          "speedup": 1.095238095238095
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.432,
+          "speedup": 1.25
+        }
+      ],
+      "id": "nvidia-result-022"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "selu",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "selu-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.368,
+      "candidate_us": 2.0955000000000004,
+      "speedup": 1.130040563111429,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/selu-20260916-112941/report.json; open_cake-1; event=13; candidate=8bc67babc39b24758c111e18d6f669c04940077f4fef70c965945aee5bec83fa",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.0955000000000004,
+          "speedup": 1.130040563111429
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.1125,
+          "speedup": 1.12094674556213
+        }
+      ],
+      "id": "nvidia-result-023"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "silu",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "silu-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.432,
+      "candidate_us": 2.112,
+      "speedup": 1.151515151515151,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/silu-20260916-040643/report.json; open_cake-1; event=26; candidate=282f390f27dc28fcb86e9bafad4c5d1aeb1ee77bf86c135d6bee41e4fb3d5ddc",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.432,
+          "speedup": 1.0
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.112,
+          "speedup": 1.151515151515151
+        }
+      ],
+      "id": "nvidia-result-024"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "softmax",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "softmax-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.4955,
+      "candidate_us": 2.464,
+      "speedup": 1.012784090909091,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/softmax-20260916-035525/report.json; open_cake-1; event=17; candidate=4484a1e9ff3a2b46bf87bf1971d1c824321c225f3c0ab3c3f3ab6bd67edea845",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 2,
+          "event": 17,
+          "us": 2.464,
+          "speedup": 1.012784090909091
+        }
+      ],
+      "id": "nvidia-result-025"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "softmax_backward",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "softmax-backward-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.944,
+      "candidate_us": 2.592,
+      "speedup": 1.135802469135802,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/softmax_backward-20260916-062444/report.json; open_cake-1; event=13; candidate=9a920f573083bc5a81c073abcd497aeafe1a2ac7371477e51b600b2673a5ac79",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.592,
+          "speedup": 1.135802469135802
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.592,
+          "speedup": 1.136188271604938
+        }
+      ],
+      "id": "nvidia-result-026"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "softplus_gradient",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "softplus-gradient-fp32-triton-b300-r128-c1024-v2",
+      "date": "2026-09-16",
+      "baseline_us": 2.9765,
+      "candidate_us": 2.2079999999999997,
+      "speedup": 1.348052536231884,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/softplus_gradient-20260916-114305/report.json; open_cake-1; event=26; candidate=7c347746d32c355786837f6905864de79bcd3cafa34fbf92642a91ac10bb6d8a",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.944,
+          "speedup": 1.0
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 2.2079999999999997,
+          "speedup": 1.348052536231884
+        }
+      ],
+      "id": "nvidia-result-027"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "softsign",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "softsign-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 2.432,
+      "candidate_us": 2.4,
+      "speedup": 1.013333333333333,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/softsign-20260916-111344/report.json; open_cake-1; event=13; candidate=c980c8bfc21b13b7e500597320d127c21771cd0bc8131b77e671c1c66493d142",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 2.4,
+          "speedup": 1.013333333333333
+        }
+      ],
+      "id": "nvidia-result-028"
+    },
+    {
+      "hardware": "B300 · 服务实验",
+      "target": "sm_103a",
+      "task": "swiglu",
+      "source": "docs/results/b300-service-20260920.json",
+      "workload": "swiglu-fp32-triton-b300-r128-c1024-v1",
+      "date": "2026-09-16",
+      "baseline_us": 3.52,
+      "candidate_us": 3.232,
+      "speedup": 1.089108910891089,
+      "status": "报告已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "open-cake-ir-sm100a-v84",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/swiglu-20260916-041831/report.json; open_cake-1; event=13; candidate=312b3a5636d5fef356c884dfc408b0e2d062467d3e7ea04e748ae6e002e14fd2",
+      "note": "该 Campaign 记录的最佳合格候选；基线选择=starter_reference。仅投影原审计结果，不是当前 registry 冠军。",
+      "ratio_kind": "paired",
+      "history": [
+        {
+          "turn": 1,
+          "event": 13,
+          "us": 3.232,
+          "speedup": 1.089108910891089
+        },
+        {
+          "turn": 2,
+          "event": 26,
+          "us": 4.5440000000000005,
+          "speedup": 0.795774647887324
+        }
+      ],
+      "id": "nvidia-result-029"
+    },
+    {
+      "hardware": "B300 · CTA 宽度验证",
+      "target": "sm_103a",
+      "task": "rmsnorm_input_gradient",
+      "source": "findings/2026-09-15-005-explicit-triton-cta-width.json",
+      "workload": "FP32 · R=128, C=1024",
+      "date": "2026-09-15",
+      "baseline_us": 3.104,
+      "candidate_us": 2.4965,
+      "speedup": 1.243340676947727,
+      "status": "已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "6198976b",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oc-width-ticktock-20260915-DBihzZ/evaluation/rmsnorm_input_gradient/w8/confirmatory/receipt.json",
+      "note": "显式选择 8 warps；10/10 配对胜出，五种输入与稳定性通过，保留 NCU。无通用最优宽度结论。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-030"
+    },
+    {
+      "hardware": "B300 · CTA 宽度验证",
+      "target": "sm_103a",
+      "task": "swiglu",
+      "source": "findings/2026-09-15-005-explicit-triton-cta-width.json",
+      "workload": "FP32 · R=128, C=1024",
+      "date": "2026-09-15",
+      "baseline_us": 3.648,
+      "candidate_us": 2.2079999999999997,
+      "speedup": 1.652173913043478,
+      "status": "已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "6198976b",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oc-width-ticktock-20260915-DBihzZ/evaluation/swiglu/w16/confirmatory/receipt.json",
+      "note": "显式选择 16 warps；10/10 配对胜出，五种输入与稳定性通过，保留 NCU。无通用最优宽度结论。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-031"
+    },
+    {
+      "hardware": "B300 · CTA 宽度验证",
+      "target": "sm_103a",
+      "task": "softmax_backward",
+      "source": "findings/2026-09-15-005-explicit-triton-cta-width.json",
+      "workload": "FP32 · R=128, C=1024",
+      "date": "2026-09-15",
+      "baseline_us": 2.9274999999999998,
+      "candidate_us": 2.56,
+      "speedup": 1.1435546875,
+      "status": "已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "a5734239",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oc-width-transfer-20260915-KoekDV/evaluation/softmax_backward/w16/confirmatory/receipt.json",
+      "note": "显式选择 16 warps；10/10 配对胜出，五种输入与稳定性通过，保留 NCU。无通用最优宽度结论。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-032"
+    },
+    {
+      "hardware": "B300 · CTA 宽度验证",
+      "target": "sm_103a",
+      "task": "cosine_similarity",
+      "source": "findings/2026-09-15-005-explicit-triton-cta-width.json",
+      "workload": "FP32 · R=128, C=1024",
+      "date": "2026-09-15",
+      "baseline_us": 2.976,
+      "candidate_us": 2.528,
+      "speedup": 1.177215189873418,
+      "status": "已确认",
+      "baseline_name": "任务固定初始基线",
+      "version": "a5734239",
+      "locator": "B300-M2:/mnt/b300-shared/home/qinhaiyan/oc-width-transfer-20260915-KoekDV/evaluation/cosine_similarity/w8/confirmatory/receipt.json",
+      "note": "显式选择 8 warps；10/10 配对胜出，五种输入与稳定性通过，保留 NCU。无通用最优宽度结论。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-033"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "TinyGEMM2 s2",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "BF16+bias · B/N/K=1 / 128 / 720",
+      "date": "2026-09-20",
+      "baseline_us": 2.72,
+      "candidate_us": 99.969,
+      "speedup": 0.027233115468409588,
+      "status": "正确；性能落后",
+      "baseline_name": "官方 CAKE stage4 固定导出",
+      "version": "539c6c81",
+      "locator": "B300-M2:cake-tinygemm-compare-b300-539c6c81-a98903082f5c/stages/comparison/checks/report.json",
+      "note": "30/30 Open-Cake 与 15/15 CAKE 检查通过。此加速比由报告中四舍五入的 36.72x 耗时倍数取倒数，约数；非新配对计算。s2/s4 在短 K 无循环时不是两种流水线。",
+      "ratio_kind": "inverse_rounded_slowdown",
+      "history": [],
+      "id": "nvidia-result-034"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "TinyGEMM2 s4",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "BF16+bias · B/N/K=1 / 128 / 720",
+      "date": "2026-09-20",
+      "baseline_us": 2.72,
+      "candidate_us": 100.192,
+      "speedup": 0.027196083763937992,
+      "status": "正确；性能落后",
+      "baseline_name": "官方 CAKE stage4 固定导出",
+      "version": "539c6c81",
+      "locator": "B300-M2:cake-tinygemm-compare-b300-539c6c81-a98903082f5c/stages/comparison/checks/report.json",
+      "note": "30/30 Open-Cake 与 15/15 CAKE 检查通过。此加速比由报告中四舍五入的 36.77x 耗时倍数取倒数，约数；非新配对计算。s2/s4 在短 K 无循环时不是两种流水线。",
+      "ratio_kind": "inverse_rounded_slowdown",
+      "history": [],
+      "id": "nvidia-result-035"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "TinyGEMM2 s2",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "BF16+bias · B/N/K=16 / 1024 / 1024",
+      "date": "2026-09-20",
+      "baseline_us": 3.04,
+      "candidate_us": 106.016,
+      "speedup": 0.028677946659019217,
+      "status": "正确；性能落后",
+      "baseline_name": "官方 CAKE stage4 固定导出",
+      "version": "539c6c81",
+      "locator": "B300-M2:cake-tinygemm-compare-b300-539c6c81-a98903082f5c/stages/comparison/checks/report.json",
+      "note": "30/30 Open-Cake 与 15/15 CAKE 检查通过。此加速比由报告中四舍五入的 34.87x 耗时倍数取倒数，约数；非新配对计算。s2/s4 在短 K 无循环时不是两种流水线。",
+      "ratio_kind": "inverse_rounded_slowdown",
+      "history": [],
+      "id": "nvidia-result-036"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "TinyGEMM2 s4",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "BF16+bias · B/N/K=16 / 1024 / 1024",
+      "date": "2026-09-20",
+      "baseline_us": 3.04,
+      "candidate_us": 105.825,
+      "speedup": 0.02872737719046251,
+      "status": "正确；性能落后",
+      "baseline_name": "官方 CAKE stage4 固定导出",
+      "version": "539c6c81",
+      "locator": "B300-M2:cake-tinygemm-compare-b300-539c6c81-a98903082f5c/stages/comparison/checks/report.json",
+      "note": "30/30 Open-Cake 与 15/15 CAKE 检查通过。此加速比由报告中四舍五入的 34.81x 耗时倍数取倒数，约数；非新配对计算。s2/s4 在短 K 无循环时不是两种流水线。",
+      "ratio_kind": "inverse_rounded_slowdown",
+      "history": [],
+      "id": "nvidia-result-037"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "TinyGEMM2 s2",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "BF16+bias · B/N/K=64 / 4096 / 3072",
+      "date": "2026-09-20",
+      "baseline_us": 21.216,
+      "candidate_us": 239.969,
+      "speedup": 0.08841732979664013,
+      "status": "正确；性能落后",
+      "baseline_name": "官方 CAKE stage4 固定导出",
+      "version": "539c6c81",
+      "locator": "B300-M2:cake-tinygemm-compare-b300-539c6c81-a98903082f5c/stages/comparison/checks/report.json",
+      "note": "30/30 Open-Cake 与 15/15 CAKE 检查通过。此加速比由报告中四舍五入的 11.31x 耗时倍数取倒数，约数；非新配对计算。s2/s4 在短 K 无循环时不是两种流水线。",
+      "ratio_kind": "inverse_rounded_slowdown",
+      "history": [],
+      "id": "nvidia-result-038"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "TinyGEMM2 s4",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "BF16+bias · B/N/K=64 / 4096 / 3072",
+      "date": "2026-09-20",
+      "baseline_us": 21.216,
+      "candidate_us": 289.186,
+      "speedup": 0.07336757153338225,
+      "status": "正确；性能落后",
+      "baseline_name": "官方 CAKE stage4 固定导出",
+      "version": "539c6c81",
+      "locator": "B300-M2:cake-tinygemm-compare-b300-539c6c81-a98903082f5c/stages/comparison/checks/report.json",
+      "note": "30/30 Open-Cake 与 15/15 CAKE 检查通过。此加速比由报告中四舍五入的 13.63x 耗时倍数取倒数，约数；非新配对计算。s2/s4 在短 K 无循环时不是两种流水线。",
+      "ratio_kind": "inverse_rounded_slowdown",
+      "history": [],
+      "id": "nvidia-result-039"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "KDA prefill",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "完整任务尚未完成",
+      "date": "2026-09-20",
+      "baseline_us": null,
+      "candidate_us": null,
+      "speedup": null,
+      "status": "未实测",
+      "baseline_name": "官方 CAKE 导出",
+      "version": "见来源",
+      "locator": "",
+      "note": "已有源参考与准备规格；尚无完整合格候选。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-040"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "KDA decode",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "完整任务尚未完成",
+      "date": "2026-09-20",
+      "baseline_us": null,
+      "candidate_us": null,
+      "speedup": null,
+      "status": "未实测",
+      "baseline_name": "官方 CAKE 导出",
+      "version": "见来源",
+      "locator": "",
+      "note": "已有源参考与准备规格；尚无完整合格候选。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-041"
+    },
+    {
+      "hardware": "B300 · CAKE 对照",
+      "target": "sm_103a",
+      "task": "Alpha-MoE",
+      "source": "docs/NVIDIA_CAKE_REPRODUCTION.md",
+      "workload": "完整任务尚未完成",
+      "date": "2026-09-20",
+      "baseline_us": null,
+      "candidate_us": null,
+      "speedup": null,
+      "status": "未实测",
+      "baseline_name": "官方 CAKE 导出",
+      "version": "见来源",
+      "locator": "",
+      "note": "已有源参考与准备规格；尚无完整合格候选。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-042"
+    },
+    {
+      "hardware": "B200",
+      "target": "sm_100a",
+      "task": "FMA / affine / state-store",
+      "source": "docs/AKA_FMA_B200_CORRECTNESS_20260904.md",
+      "workload": "固定正确性实例，详见各报告",
+      "date": "2026-09-06",
+      "baseline_us": null,
+      "candidate_us": null,
+      "speedup": null,
+      "status": "仅正确性",
+      "baseline_name": "任务固定初始基线",
+      "version": "见来源",
+      "locator": "",
+      "note": "没有此组实例的合格计时；另见 AFFINE_PARENT_B200_CANARY_20260906 与 STATE_STORE_B200_CORRECTNESS_20260903。",
+      "ratio_kind": "paired",
+      "history": [],
+      "id": "nvidia-result-043"
+    }
+  ]
+}
