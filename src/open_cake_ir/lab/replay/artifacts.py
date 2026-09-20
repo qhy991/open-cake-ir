@@ -99,9 +99,25 @@ def _replay_launchable_candidate(
             if (single is None or candidate.target != program.target
                 or manifest.tensor_abi != program_tensor_abi(program)
                 or candidate.artifact_roles.get('lowered_source') != single.source_sha256
-                or candidate.entry_point != single.toolchain_requirements.get('kernel_entry_point',single.route.entry_point)
                 or list(manifest.grid) != single.toolchain_requirements.get('grid',single.toolchain_requirements.get('threadgroups_per_grid'))):
                 raise ValueError('single-kernel artifact differs from its authored Program lowering or ABI')
+            from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
+            if single.route.backend is LoweringBackend.CUTLASS_CUTE_DSL:
+                # CuTe owns its SDK-mangled binary symbol and complete compiler ABI.
+                # Reuse the same receipt verifier as its builder, not source-name equality.
+                from open_cake_ir.compiler.cute_toolchain import CuTeCompilation, validate_cute_compilation
+                if not {'compiler_expanded_source','ptx','cubin','toolchain_resource_report'} <= set(candidate.artifact_payloads):
+                    raise ValueError('single-kernel CuTe compilation evidence is incomplete')
+                report = _object(json.loads(candidate.artifact_payloads['toolchain_resource_report']),'CuTe compiler report')
+                compiled = CuTeCompilation(single.source.encode(),candidate.target,candidate.entry_point,
+                    {'source':candidate.artifact_payloads['compiler_expanded_source'],
+                     **{role:candidate.artifact_payloads[role] for role in ('ptx','cubin','toolchain_resource_report')}},
+                    manifest.block[0],manifest.dynamic_shared_memory_bytes,report.get('compiler_version'))
+                validate_cute_compilation(compiled,single.source.encode(),single.toolchain_requirements)
+                if list(manifest.block) != single.toolchain_requirements['block'] or manifest.hidden_null_pointer_parameters != 0:
+                    raise ValueError('single-kernel CuTe launch ABI differs')
+            elif candidate.entry_point != single.toolchain_requirements.get('kernel_entry_point',single.route.entry_point):
+                raise ValueError('single-kernel entry point differs from its authored Program lowering')
         elif program.document != manifest.program.document:
             raise ValueError('Program manifest differs from the archived author candidate')
     if candidate.is_program:

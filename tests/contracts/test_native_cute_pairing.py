@@ -94,6 +94,23 @@ class NativeCuTePairingTests(unittest.TestCase):
                 manifest = TensorLaunchManifest.from_dict(json.loads(native.launchable.artifact_payloads['launch_manifest']))
                 manifest.check_workload(self.workload, case_id)
                 self.assertEqual(manifest.hidden_null_pointer_parameters, 0)
+
+    def test_single_stage_program_replays_the_sdk_binary_symbol_and_compile_contract(self):
+        from open_cake_ir.compiler import Program
+        from tests.contracts.test_program_evaluation import replay_program_candidate
+        schedule,_,environment,_,_ = self.environments()
+        program = Program.from_schedule(schedule)
+        result = environment.build(CandidateSubmission.seal(environment.media_type,program.document_bytes))
+        self.assertEqual(result.disposition,'launchable',result.feedback)
+        candidate = result.launchable
+        self.assertFalse(candidate.is_program)
+        self.assertNotEqual(candidate.entry_point,schedule['lowering']['entry_point'])
+        replayed = replay_program_candidate(self.compiler,program,candidate,candidate.artifact_payloads)
+        self.assertEqual(replayed.canonical_sha256,candidate.canonical_sha256)
+        payloads = dict(candidate.artifact_payloads)
+        payloads.pop('toolchain_resource_report')
+        with self.assertRaisesRegex(ValueError,'compilation evidence is incomplete'):
+            replay_program_candidate(self.compiler,program,candidate,payloads)
                 self.assertEqual(list(manifest.block), [32, 1, 1])
                 self.assertNotEqual(manifest.kernel_name, lowering.route.entry_point)
 

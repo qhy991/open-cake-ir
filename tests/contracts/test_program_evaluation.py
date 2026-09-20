@@ -15,6 +15,7 @@ from open_cake_ir.evaluation.loaders import LifecycleError
 from open_cake_ir.compiler.target import CodeObject
 from open_cake_ir.evaluation.program import ProgramLaunchManifest, LoadedProgram, program_components
 from open_cake_ir.evaluation.kernel_bundle import pack_candidates
+from open_cake_ir.evaluation.workload import TensorABI
 from open_cake_ir.evaluation.paired import validate_pair_candidates, candidate_identity, participant_work
 from open_cake_ir.evaluation.profiler import NCU_ATTRIBUTION_METRICS, build_ncu_program_profile, load_ncu_program_profile
 from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment, TritonToolchainBuilder
@@ -28,13 +29,28 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def workload_for(program):
-    abi = [SimpleNamespace(name=name, shape=program.tensors[name].shape,
+    abi = [TensorABI(name=name, shape=program.tensors[name].shape,
                            dtype=program.tensors[name].dtype.value, mode=mode)
            for mode, names in (('input', program.inputs), ('output', program.outputs)) for name in names]
     return SimpleNamespace(canonical_sha256='1'*64, target=program.target,
         document={'semantics': {'target': program.target, 'candidate_abi': {}},
                   'validation': {'comparison': 'elementwise_atol_rtol', 'atol': 0., 'rtol': 0.}},
         tensor_abi=lambda case: abi)
+
+
+def replay_program_candidate(compiler,program,candidate,payloads):
+    from open_cake_ir.lab.replay.artifacts import _replay_launchable_candidate
+    from open_cake_ir.tasks.launch import parse_launch_manifest
+    spec = parse_launch_manifest(json.loads(payloads['launch_manifest']))
+    bound = LaunchableCandidate(candidate.candidate_sha256,candidate.target,spec.kernel_name,
+        {role:sha256(value).hexdigest() for role,value in payloads.items()},spec.canonical_sha256,payloads)
+    event = {'kind':'launchable_candidate_sealed','payload':{'turn':1,
+        'candidate_sha256':bound.candidate_sha256,'candidate_record_sha256':bound.canonical_sha256,
+        'objects':[{'role':role,'sha256':digest} for role,digest in bound.artifact_roles.items()]}}
+    evidence = SimpleNamespace(read_object=lambda reference:payloads[reference['role']])
+    return _replay_launchable_candidate(evidence,[event],turn=1,candidate_sha256=bound.candidate_sha256,
+        arm='open_cake',manifest_parser=parse_launch_manifest,compiler_factory=lambda:compiler,
+        authored_bytes=program.document_bytes)
 
 
 @dataclass
@@ -200,24 +216,13 @@ class ProgramEvaluationTests(unittest.TestCase):
         self.assertIsNone(single_kernel_lowering(self.compiler.lower_program(Program.from_dict(changed))))
 
     def test_single_stage_replay_checks_authored_program_source_and_launch(self):
-        from open_cake_ir.lab.replay.artifacts import _replay_launchable_candidate
-        from open_cake_ir.tasks.launch import parse_launch_manifest
         from open_cake_ir.tasks.workloads import create_task
         _,source = create_task('softsign',backend='triton-b200',rows=2,columns=32)
         program = Program.from_schedule(frontend.parse(source).document)
         candidate,_,_ = self.build(program.document)
         self.assertFalse(candidate.is_program)
         def replay(payloads):
-            spec = parse_launch_manifest(json.loads(payloads['launch_manifest']))
-            bound = LaunchableCandidate(candidate.candidate_sha256,candidate.target,spec.kernel_name,
-                {role:sha256(value).hexdigest() for role,value in payloads.items()},spec.canonical_sha256,payloads)
-            event = {'kind':'launchable_candidate_sealed','payload':{'turn':1,
-                'candidate_sha256':bound.candidate_sha256,'candidate_record_sha256':bound.canonical_sha256,
-                'objects':[{'role':role,'sha256':digest} for role,digest in bound.artifact_roles.items()]}}
-            evidence = SimpleNamespace(read_object=lambda reference:payloads[reference['role']])
-            return _replay_launchable_candidate(evidence,[event],turn=1,candidate_sha256=bound.candidate_sha256,
-                arm='open_cake',manifest_parser=parse_launch_manifest,compiler_factory=lambda:self.compiler,
-                authored_bytes=program.document_bytes)
+            return replay_program_candidate(self.compiler,program,candidate,payloads)
         self.assertEqual(replay(candidate.artifact_payloads).canonical_sha256,candidate.canonical_sha256)
         with self.assertRaisesRegex(ValueError,'authored Program lowering'):
             replay({**candidate.artifact_payloads,'lowered_source':b'changed source'})
