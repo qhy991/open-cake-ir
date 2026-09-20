@@ -595,8 +595,9 @@ def _operation_parameters(
             # True is what omitting the field already means, so writing it is refused to
             # keep one spelling of one fact (P3). The message used to say only that the
             # spelling was "historical", which tells an author that what they wrote is
-            # wrong and not what is right: three of roughly twenty DCU campaigns on
-            # 2026-09-17 lost a candidate here, and each had to guess from it.
+            # wrong and not what is right: two of the eleven DCU campaigns pooled on
+            # 2026-09-17 lost a candidate here (F-2026-09-18-001), and each had to guess
+            # from it.
             raise ScheduleParseError(
                 f"{context}.across_loop=true is the default; omit the field. State it "
                 "only as false, which folds within one tile instead of across the loop"

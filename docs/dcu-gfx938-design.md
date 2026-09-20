@@ -225,10 +225,16 @@ exact target 'gfx938'` -- has been false since 2026-09-15. The Evaluation half
 [F-2026-09-15-003](../findings/2026-09-15-003-evaluation-layer-has-no-amdgcn-peer.json)
 called missing now exists: gfx938 descriptors are published under `runtime/executors/`,
 the AMDGCN evaluator launches and times through `hip_dispatch`, and attribution runs
-through roctracer. 27 of the 29 tasks reach a qualified endpoint; what the remaining two
-fail on is recorded in
-[F-2026-09-18-004](../findings/2026-09-18-004-the-gemm-bias-baseline-fails-its-own-validation-case.json)
-and in the sweep ledgers it cites.
+through roctracer. 27 of the 29 tasks reach a qualified endpoint, and the two that do not fail
+for different reasons rather than one. `gemm_bias` cannot qualify on any target at any
+budget: no fp32 accumulation order meets its `mixed_magnitude` tolerance
+([F-2026-09-18-004](../findings/2026-09-18-004-the-gemm-bias-baseline-fails-its-own-validation-case.json)).
+`gemm_silu` reached the device and its candidate failed all five validation cases by 0.5
+to 100.8 against the external oracle -- a wrong kernel, caught, which is the oracle
+working rather than a gap
+([F-2026-09-18-003](../findings/2026-09-18-003-half-the-dcu-failures-are-turn-budget-not-capability.json),
+which also separates these two from the four that fail only on turn budget). This
+paragraph cited F-2026-09-18-004 for both, which was never that record's claim.
 
 ## Measurement: per-dispatch timing and L2
 
