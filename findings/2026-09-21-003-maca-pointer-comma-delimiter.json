@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-21-003",
+  "date": "2026-09-21",
+  "kind": "bug",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@f605be5c",
+  "executor_revision": "xcore1002@f605be5c",
+  "decision": "accepted",
+  "implemented_in": "2345b8eb",
+  "title": "MACA pointer-count inspection includes the comma in a valid TTGIR pointer type",
+  "evidence": {
+    "workspace": "/tmp/open-cake-native-program-tensors-check",
+    "test": "tests/contracts/test_native_program_tensors.py::NativeProgramCustody::test_maca_sealed_stages_use_the_existing_program_order_and_lifecycle",
+    "input": "tt.func public @k(%arg0: !tt.ptr<f32>, %arg1: !tt.ptr<bf16>) attributes {}",
+    "failure": "MACA kernel ABI is not a nonempty pointer-only signature"
+  },
+  "observation": "The pointer-count reader delimited the type token only by whitespace, so a valid comma directly after the pointer type became part of that type and was rejected during stage sealing. This is a CPU contract reproduction, not a native compiler or device failure.",
+  "proposed_change": "Treat a comma as an argument delimiter while preserving the closed pointer-only grammar. Replay comma-adjacent, spaced and multiline signatures; scalar parameters and unadmitted pointer forms remain refused.",
+  "verified_by": {
+    "replay": "tests/contracts/test_native_program_tensors.py::NativeProgramCustody::test_maca_pointer_signature_uses_the_comma_as_a_delimiter",
+    "scope": "CPU source/ABI parsing and sealed-stage fixture only; no device qualification follows."
+  }
+}
