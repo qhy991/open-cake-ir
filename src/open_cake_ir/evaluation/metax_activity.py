@@ -18,6 +18,8 @@ _KINDS = (_KERNEL, 1, 2, 4, 5)  # kernel, memcpy, memset, driver, runtime
 _MAX_BUFFER_BYTES = 64 * 1024 * 1024
 _BUFFER_BYTES = 8 * 1024 * 1024
 _MAX_RECORDS = 100000
+_COLLECTOR = None
+_CREATION = threading.RLock()
 
 
 class _Kernel8Prefix(C.Structure):
@@ -48,6 +50,14 @@ class McptiActivity:
     """One process-owned callback collector bound to an admitted absolute library."""
 
     def __init__(self, library: str):
+        with _CREATION:
+            if _COLLECTOR is not None:
+                raise RuntimeError("MCPTI callbacks already have a process owner; use activity_collector")
+            self._initialize(library)
+
+    def _initialize(self, library: str):
+        global _COLLECTOR
+        self._ready = False
         path = Path(library)
         if not path.is_absolute() or path.resolve(strict=True) != path:
             raise ValueError("MCPTI requires the admitted resolved absolute library")
@@ -76,9 +86,13 @@ class McptiActivity:
         self._dropped = 0
         self._enabled = []
         self._active = False
+        self._owner_thread = None
         self._requested_callback = _Request(self._requested)
         self._completed_callback = _Complete(self._completed)
+        # Keep callbacks alive even if registration reports an ambiguous failure.
+        _COLLECTOR = self
         self._call("mcptiActivityRegisterCallbacks", self._requested_callback, self._completed_callback)
+        self._ready = True
 
     def _call(self, name, *args):
         status = getattr(self.api, name)(*args)
@@ -144,6 +158,8 @@ class McptiActivity:
             self._buffers.pop(address, None)
 
     def begin(self):
+        if not self._ready:
+            raise RuntimeError("MCPTI callback registration did not succeed")
         if not self._session.acquire(blocking=False):
             raise RuntimeError("MCPTI activity collection is already active")
         try:
@@ -154,12 +170,14 @@ class McptiActivity:
                 raise ValueError("MCPTI has unreconciled errors from the preceding activity session")
             self._rows, self._errors, self._dropped = [], [], 0
             self._active = True
+            self._owner_thread = threading.get_ident()
             for kind in _KINDS:
                 self._call("mcptiActivityEnable", kind)
                 self._enabled.append(kind)
         except BaseException:
             self._disable()
             self._active = False
+            self._owner_thread = None
             self._session.release()
             raise
 
@@ -174,8 +192,8 @@ class McptiActivity:
         self._errors.extend(errors)
 
     def finish(self):
-        if not self._active:
-            raise RuntimeError("MCPTI activity collection is not active")
+        if not self._active or self._owner_thread != threading.get_ident():
+            raise RuntimeError("MCPTI activity collection must finish on its owning thread")
         try:
             self._call("mcptiActivityFlushAll", 1)
             self._disable()
@@ -190,11 +208,10 @@ class McptiActivity:
         finally:
             self._disable()
             self._active = False
+            self._owner_thread = None
             self._session.release()
 
 
-_COLLECTOR = None
-_CREATION = threading.Lock()
 
 
 def activity_collector(library: str) -> McptiActivity:
@@ -202,6 +219,8 @@ def activity_collector(library: str) -> McptiActivity:
     with _CREATION:
         if _COLLECTOR is None:
             _COLLECTOR = McptiActivity(library)
+        if not _COLLECTOR._ready:
+            raise RuntimeError("MCPTI callback registration did not succeed")
         if _COLLECTOR.library != str(Path(library).resolve(strict=True)):
             raise ValueError("MCPTI collector cannot change its admitted library in one process")
         return _COLLECTOR

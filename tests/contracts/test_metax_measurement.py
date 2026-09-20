@@ -90,7 +90,7 @@ class McptiMeasurements(unittest.TestCase):
         import threading
         collector=object.__new__(McptiActivity)
         collector._buffers={1:object()};collector._errors=[];collector._rows=[];collector._dropped=0
-        collector._enabled=[];collector._active=True;collector._session=threading.Lock()
+        collector._enabled=[];collector._active=True;collector._owner_thread=threading.get_ident();collector._session=threading.Lock()
         collector._session.acquire();calls=[]
         collector._call=lambda name,flag:calls.append((name,flag))
         with self.assertRaisesRegex(ValueError,'retained activity buffers'):collector.finish()
@@ -115,3 +115,32 @@ class McptiMeasurements(unittest.TestCase):
             collector._requested(ctypes.pointer(pointer),ctypes.pointer(size),ctypes.pointer(count))
         self.assertEqual((pointer.value,size.value,count.value),(None,0,0))
         self.assertIn("capacity",collector._errors[-1])
+
+
+class CollectorOwnership(unittest.TestCase):
+    def test_a_second_constructor_cannot_replace_live_native_callbacks(self):
+        import open_cake_ir.evaluation.metax_activity as activity
+        with patch.object(activity, "_COLLECTOR", object()):
+            with self.assertRaisesRegex(RuntimeError, "process owner"):
+                activity.McptiActivity("/does/not/need/to/exist")
+
+    def test_another_thread_cannot_finish_the_active_session(self):
+        import threading
+        collector=object.__new__(McptiActivity)
+        collector._active=True;collector._owner_thread=threading.get_ident()+1
+        with self.assertRaisesRegex(RuntimeError,"owning thread"):collector.finish()
+        self.assertTrue(collector._active)
+
+    def test_failed_launch_and_failed_drain_are_both_visible(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        from open_cake_ir.evaluation.loaders import LifecycleError
+        def finish():raise RuntimeError("drain failed")
+        def launch():raise ValueError("launch failed")
+        benchmark=object.__new__(McptiDispatchBenchmark)
+        benchmark._collector=SimpleNamespace(begin=lambda:None,finish=finish)
+        torch=SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda:None))
+        with patch.dict("sys.modules",{"torch":torch}),self.assertRaises(LifecycleError) as result:
+            benchmark._collect(launch)
+        self.assertIn("launch failed",str(result.exception))
+        self.assertIn("drain failed",str(result.exception))

@@ -130,14 +130,18 @@ class McptiDispatchBenchmark:
             function()
             torch.cuda.synchronize()
         except BaseException as primary:
+            failures = [primary]
             try:
                 torch.cuda.synchronize()
-            finally:
-                try:
-                    self._collector.finish()
-                except BaseException as teardown:
-                    from .loaders import LifecycleError
-                    raise LifecycleError(primary, teardown) from primary
+            except BaseException as synchronization:
+                failures.append(synchronization)
+            try:
+                self._collector.finish()
+            except BaseException as teardown:
+                failures.append(teardown)
+            if len(failures) > 1:
+                from .loaders import LifecycleError
+                raise LifecycleError(*failures) from primary
             raise
         return self._collector.finish()
 
