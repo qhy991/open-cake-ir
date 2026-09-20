@@ -1,0 +1,219 @@
+# MetaX C550：当前可用路径
+
+MetaX 的精确 Target 是 [`xcore1002`](../compiler/targets/xcore1002.json)，任务入口为
+`triton-metax`，维护分支为 `metax`。它复用现有 Python authoring、Triton emitter、
+Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host admission
+由各自的平台实现负责。
+
+当前范围是 **FP32 / FP16 / BF16 / INT32 缓冲区、load / cast / elementwise / reduce / store、
+完整输出正确性验证**。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
+INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
+矩阵路径复用现有 `mma` 与 `triton.dot.fp16_fp32`、`triton.dot.bf16_fp32`、
+`triton.dot.fp32_ieee` 三条契约；FP16、FP32 已有下述正式任务结果，BF16 尚限于
+单 tile 原生诊断。TF32 和 FP8 尚未准入。原生 MCPTI 成对计时和独立 profiler 已接入；
+测量质量不通过时明确返回 `measurement_quality_failed`，不作为有效性能结果。
+历史的无计时策略仍可回放。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
+
+## 三种身份分别检查
+
+物理设备、工具链 family 与兼容 API 分别是 `xcore1002`、`xcore1000` 与
+`GPUTarget("maca", 80, 64)`。硬件常量及来源只在 Target 文档声明。
+`80` 是 MACA Triton API 的兼容值，不是 NVIDIA SM80；设备 admission 还会从
+原生 MACA 属性查询实际物理架构。
+
+已验证环境使用 MACA PyTorch `2.8.0+metax3.5.3.9`、FlagTree
+`0.5.1+metax3.1`，其提供的 Triton **API 版本为 3.1.0**。系统 Python 不等于
+该环境：实际解释器是 `/opt/conda/bin/python3`。
+[`runtime/hosts/xcore1002.json`](../runtime/hosts/xcore1002.json) 由 canonical capture
+命令生成并绑定解释器、包、构建工具、MACA runtime、MCPTI 库及其 API 版本。
+每个 worker 都重新 admission；实际已映射的库必须是捕获的绝对路径。
+
+## 编译与执行
+
+编译通过现有 bubblewrap 路径运行，不挂载 GPU，也不暴露作者工作目录。
+当前 MACA backend 实际提供 TTIR、TTGIR 和 mcfatbin；没有 LLVM/PTX artifact
+时不会生成占位文件。mcfatbin 是 Clang offload bundle，包含原生设备 ELF 和
+bitcode。检查器验证声明的 family、成员边界和 MXC ELF 类型，loader 仅提交
+原生 ELF，避免模块加载回退到 bitcode 编译。
+
+当前 vendor launcher 只传非 constexpr 参数。封存 manifest 读取实际 TTGIR
+signature 并验证 tensor 参数数量，隐藏指针数为 0。
+Evaluation 验证全部 Workload input cases、每个输出元素及输入不变性，并保留
+PCI 标识和 runtime 路径。无计时收据使用 JSON `null` 的 `timing_samples`，
+不会给出零延迟。CUDA/NCU 的 profile child 仍保留自己的单次校验与独立 profiler 路径。
+
+MACA 通过已有 local broker 的 `maca` kind 执行。容器必须与宿主共享同一个
+`/tmp/open-cake-ir-maca-<uid>.lock` inode，并只暴露一个选定设备；不能在每个
+容器里各自建一个私有锁。这个分配模式只声明本用户任务串行，外部活动没有被排除，
+计时收据保留 `local_serialized` 和 `external_gpu_activity=not_excluded`，不声称物理设备独占。
+
+## 现有 C550 开发环境
+
+调查选用的公开镜像地址及下载来源在[初次调查](metax-c550-bringup.md)中保留。
+当前节点 `c550-1` 的 `open-cake-metax` namespace 使用准备后的本地镜像
+`open-cake-metax-dev:20260920`：保留原 SDK，增加已捕获的 bubblewrap。
+首轮冻结源码在容器内 `/work/source`；数值扩展分别保留为
+`/work/source-f1cadbdd` 和 `/work/source-5aef189b`。这些目录保持各自已验证的提交，
+构建与证据目录位于 checkout 外；日常开发从维护分支 `metax` 创建独立 checkout。
+
+原编译容器发生嵌套 `/proc` mount 拒绝，失败记录保持原样。经 owner 明确授权，
+后继 CPU 容器 `open-cake-metax-compile-v2` 在原配置上增加
+`systempaths=unconfined`，保持无 GPU、无网络，随后完成隔离构建。
+这不是在构建器中增加无隔离 fallback。相同镜像不保证任意宿主拥有相同隔离权限；
+新的环境必须在自己的 capture 和 admission 下验证。
+
+在这个已准备环境中，封存一个新的 RMSNorm baseline：
+
+```sh
+nerdctl --namespace open-cake-metax exec \
+  -w /work/source-5aef189b --env PYTHONPATH=/work/source-5aef189b/src \
+  open-cake-metax-compile-v2 /opt/conda/bin/python3 tools/launch_task.py \
+  --task rmsnorm --backend triton-metax --rows 128 --columns 1024 \
+  --harness codex --model baseline-only --effort low \
+  --workspace /work/rmsnorm-new-baseline --baseline-only
+```
+
+workspace 必须不存在。`--baseline-only` 构建、封存后退出，不调用 provider，
+也不执行 GPU kernel。构建后的固定 bundle 由 `load_prepared_baseline` 读取，再交给
+`CommandBrokerSubmitter` / `BoundedBrokerEvaluator`。当前本地 Triton TaskLab 使用
+`tasks.evaluate --local-kind maca`：先计算 CPU 输入和原 oracle，再通过
+`evaluation.local_broker.admit_local_job` 获取真实 allocation 并执行。
+上例所用历史源码仍保留原先 broker exec worker 的入口。
+原验证 driver 及它调用的确切输入保存在下述外部证据目录。
+
+## 验收范围与后续
+
+设备验证在源码提交 `b7179ede6e7f1591d0aa856cb87b08712922df11`、上述固定软件环境完成。
+27 项 FP32 任务在列出的固定形状上通过了全部既有输入分布：RMSNorm 为
+`128×1024`，其他一般任务为 `8×128`，contraction / GEMM-bias 为 `R=8,C=8,K=32`。
+这覆盖 135 个 case，原 oracle 和容差未修改；它不外推到所有形状、性能、模型或 serving。
+原始报告及 per-attempt 收据保留在 checkout 外：
+
+* `c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/fp32-qualification-summary.json`
+* 同目录 `gpu-rmsnorm-b7179ede-v1/` 与 `gpu-bounded-fp32-b7179ede-v1/`
+* 本地镜像：`open-cake-ir-evidence/metax-implementation-20260920/c550-fp32-qualification-b7179ede.tar.gz`
+
+静态验证与设备结果分开：该提交通过完整合同测试（2115 tests、7768 subtests，
+19 个环境 skip）和现有 Corpus Gate（164/164）。现有 corpus 没有 C550 case，
+其报告明确列为 unexamined；不能把 164/164 当作 C550 的设备或 corpus 覆盖。
+本轮没有 kernel 优化机制、性能测量或经验 pass promotion。
+
+后续数值能力验证在 `open-cake-ir-evidence/metax-numerics-20260920/` 保留独立记录：
+`f1cadbdd` 的七条转换路径共 717114 个输入与标准库 RNE 参考逐 bit 一致；tanh 的
+82097 个有限样本相对 `math.tanh`→FP32 参考最大 2 ULP，保留正负零。源输入 bit pattern
+先在设备内核调用前核对，输出用 NaN 预填充以拒绝漏写。这是独立 primitive diagnostic，
+不等同于 Workload 收据；实际任务通过既有 broker / worker / oracle 另行验证。
+这些观测不构成全域 tanh 误差上界，也不把原始记录重标为后来的源码提交。
+
+任务级补验保留在同一外部证据目录的 `final-device-results/`：`f1cadbdd` 的 20 项
+混合精度／整数任务通过 100 个 case；`5aef189b` 的 GELU forward／backward 通过
+10 个 case。FP16 GEMM 保留原始固定 N/K、最小声明 M；BF16 FlashInfer normalization
+保留原始 hidden size、最小声明 batch；其余新任务为 `8×128`。所有输出按各自原有
+oracle 和容差逐元素比较，输入不变，零 fallback、零 timing sample。最大的 FP16
+GEMM 最大绝对误差为 `0.5`，在原容差内通过，不能描述为 bit exact。
+
+加上前一阶段 29 项／145 cases（包含单独补验的两项 AKA FP32），统一 CLI 的 51 项
+任务累计有 255 个 case 的 C550 结果。这是上述固定形状的验收，不是全部 batch/shape
+或完整模型的资格。各批原始源码身份分别保留；逐项源码兼容性检查不替代新设备运行。
+
+## 原生计时与归因
+
+MCPTI API 18 的并发 kernel record 提供原生 start/end 时间戳；样本是单次目标
+dispatch 的 end−start，不包含 host launch 或前置 reset。每个样本前，同一 stream
+写入一个四倍于 Target 所声明 L2 的 FP32 缓冲区（C550 为 32 MiB）。这是明确的
+reset 操作，不是“所有缓存已清空”的证明。收据保留独立 reset 校准、每次原生活动、
+API/kernel correlation 和 sealed manifest；丢失／额外 dispatch、跨 cohort 换校准、
+错误设备或样本与原始时间戳不一致都会被拒绝。
+
+正式成对流程仍检查全部 Workload cases，并验证每次 warmup／timed 调用的新输出。
+独立 profile 另做预检和 instrumented 输出检查，反馈 dispatch、寄存器、共享内存及
+函数 local-memory 需求。`function_local_bytes_per_thread` 来自已绑定的函数属性；
+`mcpti_reported_local_bytes_per_thread` 仅保留 MCPTI 原值。后者曾在函数报告 492 bytes/thread
+时报告 0，故 `local_memory_reservation` 明确列为 `not_qualified`，不推断 padding、
+实际零用量或两个 API 量相等。occupancy、bandwidth 和 instruction counters 未采集。
+
+在冻结执行源码 `66dcc472`，GEMM-bias `M=8,N=8,K=4096` 的显式四执行组版本
+通过全部五 case、完整 fresh-output 检查及 500 个计时样本；20 个 cohort 的 CV 为
+0.006988–0.015165，低于原 0.05 门槛。相同 artifact 的两 arm 中位数均为 26.368 us，
+判定 `close_null`；这是该形状上的测量控制，不是优化收益。该 artifact 编译于
+`becb3bb1`，只把原 Schedule 的 `execution_groups=[0]` 改为 `[0,1,2,3]`。
+默认一组的 K4096 artifact 曾发生 native launch 拒绝，不能宣称它已被这个结果验证。
+
+RMSNorm `128×1024`、LayerNorm `8×128`、GEMM-bias `8×8×32` 的正式正确性和
+独立 profile 均通过，但它们在原 0.05 CV 门槛下的成对测量均失败。记录全部保留，
+没有重试取最好值或放宽门槛；以上较长 kernel 的通过也不外推到这些短 kernel。
+这批收据与失败诊断位于 `c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/`，
+本地镜像及审查在 `open-cake-ir-evidence/metax-parity-20260920/RESULTS.md`。
+
+BF16 正式矩阵任务、TF32、FP8、更多形状及完整 provider 优化闭环仍需后续验收。
+FlashInfer GQA/MLA/MoE 和其他精确绑定 B200/B300 的合同仍需各自的后继验证，
+不能只改 target 字符串后宣称可用。
+
+## 矩阵路径的正式任务证据
+
+以下结果执行于 `8c0cad53`，沿用各自原 Workload 的五个输入分布、完整输出 oracle、
+输入不变性和容差。统一 Compiler 生成 Triton 源码，经 CPU 隔离编译封存为 mcfatbin，
+再由原 MACA broker、worker 和 receipt reader 执行。每项成对检查均有 740 次候选路径
+调用、500 个样本和零 fallback；全部 20 个 cohort 通过原 CV 0.05 门槛。
+三个比较都是同一产物的自比较，结论均为 `close_null`，不构成优化收益。
+
+| 原任务 / 精度 | M / N / K | 覆盖 | 最大绝对误差（全部 cases） | cohort CV 范围 | 成对 job |
+| --- | --- | --- | ---: | --- | --- |
+| `fib_gemm_n128_k2048` / FP16 输入与输出、FP32 累积 | 17 / 128 / 2048 | 32 次 K 累积、M 尾部 | 0.03125 | 0.006690–0.010692 | `maca-59e41335edd4` |
+| 同一任务 / 同一精度 | 64 / 128 / 2048 | 32 次 K 累积、完整 M tile | 0.25 | 0.005623–0.010624 | `maca-c0e219b81422` |
+| `aka_gemm_nt_bias` / FP32 IEEE | 72 / 128 / 128 | 两次 K 累积、一次 bias、M 尾部 | 0.000019073486328125 | 0.011054–0.018379 | `maca-38b2c5bbb9d2` |
+
+原 FP16 任务使用 `atol=rtol=0.01`，AKA 任务使用 `atol=rtol=0.00002`。
+表中是容差内通过，不能描述为逐 bit 一致。所有候选显式使用 `64×64×64` tile 和
+四个执行组，未扩展 NVIDIA 专用的 Compiler width pass。它们增加的是既有任务的
+矩阵路径与形状证据，不是新增三项注册任务。
+
+三个独立 attribution job 分别为 `maca-02169aa5f6fd`、`maca-eacd79b7ee49`、
+`maca-d14c8ca7fec4`。每个都检查预检和 instrumented dispatch 的实际 primary 输出。
+FP16 两个形状均报告 224 registers/thread、16384 bytes 动态共享内存和 0 function-local
+bytes/thread；FP32 为 256、32768 和 396。MCPTI local-memory reservation 仍未合格，
+profile 时间仍只用于归因；occupancy、带宽和指令计数尚未采集。
+
+产物编译、prepared 上下文与执行身份分别保留：M17 编译于 `5ed6420f`、准备于
+`2c06833e`；AKA 编译于 `2c06833e`、准备于 `8c0cad53`；M64 两者均为 `8c0cad53`。
+后继 worker 在申请原 broker allocation 前计算各 case 的 CPU 输入和 oracle，
+并在同一进程复用；锁仍保持到 worker 退出，包括失败路径，不在构造失败时提前释放。
+原始 bundle、控制器、成对与归因收据均在外部证据根
+`open-cake-ir-evidence/metax-parity-20260920/matrix-*/`，远端同名目录位于
+`c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/`。
+
+BF16 的范围仍是 `64×64×64`、五个分布的原生独立诊断，尚未完成注册 Workload 的
+整条路径。原 TF32 RNE 假设有两个失败分布；事后 RTZ 分析不替换失败，也不授权准入。
+FP8 直接 dot 保留 LLVM lowering 失败。AKA 的 `N=80,K=130` 请求被现有任务工厂的
+row-span 限制拒绝，本表不声称 N/K 尾部或任意矩阵形状已验收。
+
+MACA 预检还会拒绝当前 Triton API 不接受的非默认 `loop_unroll_factor`、`flatten`、
+`disallow_acc_multi_buffer`、`disable_licm`；`num_stages` 保持可表达。
+partial-K 仍由 `TRITON_MMA_K_RANGES_UNSUPPORTED` 拒绝，不会落入 NVIDIA inline assembly。
+新增三个正例和两个反例使完整 Corpus 成为 169 项，其中五项检查 xcore1002；
+静态 Corpus、上述设备证据和完整后端能力仍分别报告。
+
+## M17 的一次显式 M tile 优化
+
+在已验收的 FIB `M17/N128/K2048` 固定 baseline 上，仅将 M tile 从 64 改为 32；
+N/K tile 仍为 64，四个执行组和 32 次 K 累积不变。完整解析后的 Schedule 比较
+只改变 M tile、MMA M extent 和三个派生寄存器 buffer 的 M extent，原 Workload、
+输入 ABI、oracle 和测量策略保持。候选编译、执行于 `8c0cad53`，baseline 仍是原
+`5ed6420f` 产物。
+
+一次 search（`maca-4785c930f50c`）通过后，按事先声明的流程进行了独立 confirmatory
+（`maca-f166d55e4231`）。两次均通过全部五 case、所有 fresh-output 检查、原 CV 0.05
+和 materiality 1.05 门槛，候选均赢得 10/10 对；每次保留 500 样本、零 fallback。
+确认阶段 baseline/candidate 中位数为 **72.448 / 58.368 us，1.241228×**，
+20 个 cohort 的 CV 为 0.007220–0.012788，最大绝对误差为 0.03125，输入未改变。
+
+独立 profile `maca-51d9d428f693` 的实际输出同样通过，报告 170 registers/thread 和
+12288 bytes 动态共享内存，原 baseline 为 224 和 16384。函数 local bytes/thread
+均为 0；这没有补齐 MCPTI local reservation、occupancy、带宽或指令计数的资格。
+减少 tile extent、资源变化和速度改善是同一次受控改动的观测；没有计数器证据可以
+把全部收益进一步归因到某种硬件瓶颈。
+
+收益限于这一个固定形状、固定 baseline 和 `local_serialized` 测量范围。
+这是显式 authoring 对照，尚不是完整 provider/Ralph 优化 Campaign；promotion disposition
+为 **No promotion**。原始结果在上述外部证据根的
+`matrix-fib-m17-tile32-{search,confirmatory,attribution}-8c0cad53-v1/`。

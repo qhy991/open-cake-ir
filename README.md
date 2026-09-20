@@ -8,6 +8,10 @@ Agent 用 Python 编写显式执行计划，在固定任务与编译器版本下
 
 A research system for agent-driven GPU kernel search and compiler evolution.
 
+框架提出[跨硬件的可执行优化知识迁移](docs/OPTIMIZATION_TRANSFER.md)：将 Agent 发现的优化机制
+沉淀为带前提的显式变换，在目标平台重新选择参数并验证；通过机制材料与变换调用的消融，
+研究经验如何降低后续探索成本。已有有限 pass 作为基础，迁移效果仍待受控实验验证。
+
 [技术报告 / Technical report](docs/README.md) · [中文文档](docs/zh-CN/README.md) · [English](docs/en/README.md) · [当前状态](reports/current/STATUS.md)
 
 <!-- hardware-results:start -->
@@ -20,7 +24,7 @@ A research system for agent-driven GPU kernel search and compiler evolution.
 
 | 硬件 | 维护分支 | 已收录观察 | 独立数据与页面 |
 |---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 43 | [B300 多任务与 CAKE 对照；B200 正确性记录](docs/results/nvidia/README.md) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 80 | [B300 多任务与 CAKE 对照；B200 正确性记录](docs/results/nvidia/README.md) |
 | Apple | [metal](https://github.com/qhy991/open-cake-ir/tree/metal/docs/results/metal) | 4 | [M1 Pro / M4 / M2；历史确认、晋升与稳定性边界](docs/results/metal/README.md) |
 | Hygon DCU | [dcu](https://github.com/qhy991/open-cake-ir/tree/dcu/docs/results/dcu) | 32 | [BW1101；首个合格结果、后续运行与失败记录](docs/results/dcu/README.md) |
 | AMD | [amd](https://github.com/qhy991/open-cake-ir/tree/amd/docs/results/amd) | 1 | [gfx1151；计时边界待解决](docs/results/amd/README.md) |

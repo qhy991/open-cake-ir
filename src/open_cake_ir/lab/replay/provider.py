@@ -11,7 +11,7 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .._documents import _object
 from ..faults import ReportedProviderUsage
-from ..provider_events import reported_provider_usage
+from ..provider_events import reported_provider_usage, provider_token_delta
 from ..providers import (
     CANDIDATE_SET_ENVELOPE_V1,
     _project_candidate_submission,
@@ -265,9 +265,14 @@ def _replay_provider_turns(
         if parsed.thread_id != thread_id:
             refuse(f"{location}.payload.thread_id", "differs from the retained provider events",
                    observed=thread_id, expected=parsed.thread_id)
-        if turn_tokens != parsed.provider_tokens:
+        try:
+            expected_tokens = provider_token_delta(parsed.provider_tokens, provider=provider_authority,
+                                                   previous_tokens=prior_cumulative)
+        except ValueError as error:
+            refuse(f"{location}.provider_events.usage", str(error))
+        if turn_tokens != expected_tokens:
             refuse(f"{location}.payload.turn_provider_tokens", "differs from the retained provider events",
-                   observed=turn_tokens, expected=parsed.provider_tokens)
+                   observed=turn_tokens, expected=expected_tokens)
         if cumulative != prior_cumulative + turn_tokens:
             refuse(f"{location}.payload.cumulative_provider_tokens", "differs from the replayed running total",
                    observed=cumulative, expected=prior_cumulative + turn_tokens)
@@ -304,7 +309,7 @@ def _replay_provider_turns(
     return cumulative_by_turn, provider_candidates_by_turn, provider_candidate_bytes, candidate_set_turns, prior_cumulative
 
 
-def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None) -> int:
+def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None, previous_tokens=0) -> int:
     """Rederive failed-invocation usage from retained stdout, never its declaration.
 
     Every refusal is located under the `run_fault` event's payload.
@@ -323,7 +328,7 @@ def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None) 
                observed=len(stdout), expected="0 or 1")
     try:
         observed = reported_provider_usage(evidence.read_object(stdout[0]), provider=provider,
-            expected_thread_id=expected_thread_id) if stdout else None
+            expected_thread_id=expected_thread_id, previous_tokens=previous_tokens) if stdout else None
     except (OSError, ValueError, KeyError) as error:
         refuse(f"{location}.objects.provider_stdout",
                f"retained stdout does not yield provider usage: {error}")

@@ -7,9 +7,9 @@
 
 ## Compiler
 
-- 声明的目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, gfx1151, gfx938, sm_100a, sm_103a`
-- 语料检查： `164/164` 项符合预期
-- 语料覆盖： 检查了 `apple_gpu_family8`（15）、`gfx1151`（1）、`gfx938`（10）、`sm_100a`（102）、`sm_103a`（35）
+- 声明的目标： `apple_gpu_family7, apple_gpu_family8, apple_gpu_family9, gfx1151, gfx938, sm_100a, sm_103a, xcore1002`
+- 语料检查： `169/169` 项符合预期
+- 语料覆盖： 检查了 `apple_gpu_family8`（15）、`gfx1151`（1）、`gfx938`（10）、`sm_100a`（102）、`sm_103a`（35）、`xcore1002`（5）
 - 未检查的已声明目标： `apple_gpu_family7, apple_gpu_family9`（上面的通过数不涵盖这些目标）
 - 只用于拒绝检查的未声明目标： `apple_gpu_family10`（1）
 - 结构排序： 已退役；显式经验模型仍独立提供条件估计
@@ -52,6 +52,12 @@
 - 主机类型： `cuda`
 - 解释器： `/mnt/b300-shared/home/qinhaiyan/open-cake-round3-20260906-JdwgrZ/venv/bin/python`（3.12.13）
 - 采集文件： [`runtime/hosts/sm_103a.json`](../../runtime/hosts/sm_103a.json)
+
+### `xcore1002`
+
+- 主机类型： `maca`
+- 解释器： `/opt/conda/bin/python3`（3.12.11）
+- 采集文件： [`runtime/hosts/xcore1002.json`](../../runtime/hosts/xcore1002.json)
 
 - 负责记录： [`runtime/hosts/`](../../runtime/hosts)
 

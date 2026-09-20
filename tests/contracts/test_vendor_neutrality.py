@@ -232,12 +232,16 @@ class OfflineRouteMatchesEveryDeclaredDocumentTest(unittest.TestCase):
                 if target.code_object is CodeObject.HSACO:
                     self.assertEqual(route.architecture, target.target_id)
                     self.assertEqual(route.text_role, "amdgcn")
-                else:
+                elif target.code_object is CodeObject.MCFATBIN:
+                    self.assertEqual(route.architecture, target.triton_arch)
+                    self.assertEqual(route.text_role, "ttgir")
+                    self.assertIsNone(route.target_pattern)
+                elif target.code_object is CodeObject.CUBIN:
                     major, minor = target.compute_capability
                     self.assertEqual(route.architecture, major * 10 + minor)
                     self.assertEqual(route.text_role, "ptx")
                 checked.add(target.code_object)
-        self.assertEqual(checked, {CodeObject.CUBIN, CodeObject.HSACO})
+        self.assertEqual(checked, {CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN})
 
     def test_an_unlisted_target_is_refused_not_stepped_down(self) -> None:
         """A contract missing a route fact is refused; nothing reads 32 or cuda for it."""

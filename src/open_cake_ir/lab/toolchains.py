@@ -68,6 +68,7 @@ class Toolchain:
     # Campaign Lock pins -- to a parsed runtime `toolchain` section and an admitted
     # Executor. None means another layer owns the binding (D12).
     bind_toolchain: Callable[[Mapping[str, object], object, object], object] | None
+    optional_runtime_fields: frozenset[str] = frozenset()
 
     @property
     def native(self) -> NativeBackend | None:
@@ -92,6 +93,7 @@ _ROWS = (
         arm="native_triton",
         single_environment=True,
         bind_toolchain=_bind_isolated_triton,
+        optional_runtime_fields=frozenset({'pointer_alignment'}),
     ),
     Toolchain(
         backend=LoweringBackend.CUTLASS_CUTE_DSL,

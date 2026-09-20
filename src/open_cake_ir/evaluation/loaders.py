@@ -33,18 +33,24 @@ def is_elf(payload: object) -> bool:
     return isinstance(payload, bytes) and payload.startswith(b"\x7fELF")
 
 
-def check_launch_authority(candidate, payload: bytes, role: str, manifest) -> None:
-    """Refuse a load whose candidate, executable and manifest are not one authority.
+def check_candidate_authority(candidate, payload: bytes, role: str, manifest) -> None:
+    """Bind executable bytes and manifest to their seal, independently of file format.
 
-    `role` is the executable role the candidate's Target declares; the payload must be
-    the ELF the candidate sealed under that role, and the manifest must be the one the
-    candidate's launch seal names.
+    Each loader owns its binary format check. A MACA fat binary is not an ELF file,
+    while its relationship to the sealed candidate is the same as a cubin's.
     """
     if (
-        not is_elf(payload)
+        not isinstance(payload, bytes) or not payload
         or candidate.target != manifest.target
         or candidate.entry_point != manifest.kernel_name
         or candidate.launch_spec_sha256 != manifest.canonical_sha256
         or candidate.artifact_roles.get(role) != sha256(payload).hexdigest()
     ):
         raise ValueError("persistent candidate launch authority differs")
+
+
+def check_launch_authority(candidate, payload: bytes, role: str, manifest) -> None:
+    """The existing ELF module boundary used by CUDA and HIP loaders."""
+    if not is_elf(payload):
+        raise ValueError("persistent candidate launch authority differs")
+    check_candidate_authority(candidate, payload, role, manifest)

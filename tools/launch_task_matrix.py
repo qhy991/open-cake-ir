@@ -28,7 +28,7 @@ ALL_TASKS = (
     *launch_task.REDUCTION_TASKS, *launch_task.OPTIMIZER_TASKS,
     *launch_task.CONTRACTION_TASKS, "gemm_bias",
 )
-DEPTH_TASKS = frozenset((*launch_task.CONTRACTION_TASKS, "gemm_bias"))
+DEPTH_TASKS = frozenset((*launch_task.CONTRACTION_TASKS, "gemm_bias", "aka_gemm_nt_bias"))
 
 
 def _now() -> str:
@@ -94,8 +94,8 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", action="append", choices=ALL_TASKS,
-                        help="task to run; repeat to select an ordered subset; default is all")
+    parser.add_argument("--task", action="append", choices=launch_task.TASKS,
+                        help="task to run; repeat to select any launchable subset; default is the portable matrix")
     parser.add_argument("--backend", choices=tuple(launch_task.DEVICE_BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
@@ -116,7 +116,8 @@ def main(argv=None) -> int:
     parser.add_argument("--depth", type=int, default=256,
                         help="K extent for contraction and gemm_bias tasks")
     parser.add_argument("--turns", type=int, default=32)
-    parser.add_argument("--token-budget", type=int, default=3000000)
+    parser.add_argument("--token-budget", type=int, default=3000000,
+                        help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
     parser.add_argument("--maximum-cv", type=float)

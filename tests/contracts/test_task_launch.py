@@ -243,10 +243,10 @@ class TaskLaunchTests(unittest.TestCase):
                     self.workspace, executor, Path('/unit-test/provider'), 'triton',
                     allocation='local_broker')
         command = runtime['broker']['command']
-        self.assertIn('open_cake_ir.evaluation.local_broker', command)
+        self.assertIn('open_cake_ir.tasks.evaluate', command)
         self.assertNotIn('gpu-run', ' '.join(command))
         # Its own lock and its own job prefix; a DCU run is not recorded as a Metal one.
-        self.assertEqual(command[command.index('--kind') + 1], 'hip')
+        self.assertEqual(command[command.index('--local-kind') + 1], 'hip')
         # The toolchain is still Triton's, because the route did not change.
         self.assertEqual(runtime['toolchain']['triton_version'], '3.6.0')
         self.assertNotIn('output_root', runtime['toolchain'])
@@ -487,7 +487,8 @@ class TaskLaunchTests(unittest.TestCase):
                     "triton-b200": ("sm_100a", "NVIDIA B200"),
                     "triton-b300": ("sm_103a", "NVIDIA B300"),
                     "triton-dcu": ("gfx938", "BW1101"),
-                    "triton-gfx1151": ("gfx1151", "AMD Radeon Graphics")}
+                    "triton-gfx1151": ("gfx1151", "AMD Radeon Graphics"),
+                    "triton-metax": ("xcore1002", "MetaX C550")}
         # This family read an Apple-only registry until the task families were given one
         # device registry, so a normalization Workload could be frozen for Metal alone.
         self.assertEqual(set(launch_task.BACKENDS), set(expected))

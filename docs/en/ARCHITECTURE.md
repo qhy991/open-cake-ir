@@ -45,6 +45,15 @@ Correctness, measurement stability, and application benefit are different facts.
 
 Concrete implementations live under `src/open_cake_ir/tasks/`. Tasks supply contract validation, oracles and preparation; the common Lab and Evaluation never import concrete tasks. See [task ownership](TASKS.md).
 
+## Executable optimization knowledge across hardware
+
+The framework proposes turning agent-discovered fusion, tiling and memory-hierarchy
+mechanisms into explicit guarded rewrites. Destination backends supply hardware-specific
+implementations; Lab retunes parameters and verifies benefit. Extra mechanism material and
+callable rewrites are separate experimental factors while base capabilities and validation
+remain fixed. Existing bounded passes provide a foundation; cross-hardware effects remain
+unverified. See the [mechanism and ablation design](OPTIMIZATION_TRANSFER.md).
+
 ## Lab lifecycle ownership
 
 `lab/core.py` connects the public API and retains its six existing dependencies: project
