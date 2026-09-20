@@ -14,7 +14,8 @@ import json
 import os
 import statistics
 import sys
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping, cast
@@ -389,6 +390,9 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
                     seen = getattr(assays[role], 'non_target_dispatches', None)
                     if seen is not None:
                         row['arms'][role]['non_target_dispatches'] = seen
+                    activity = getattr(assays[role], 'last_activity', None)
+                    if activity is not None:
+                        row['arms'][role]['native_activity'] = deepcopy(activity)
                 measurements.append(row)
             for role in protocol.arms:
                 correctness(role, 'postflight')
@@ -403,9 +407,9 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             'participants': identities, 'workload_sha256': authority.workload.canonical_sha256,
             'case_id': authority.case_id, 'purpose': authority.request['purpose'],
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'device_admission': asdict(admission),
+            'launch_manifests': {role: manifest.as_dict() for role, manifest in manifests.items()},
             'measurements': measurements}
-        if any(getattr(manifest, 'aligned_variant', None) for manifest in manifests.values()):
-            raw['launch_manifests'] = {role: manifest.as_dict() for role, manifest in manifests.items()}
         if not measurements:
             raw['not_measured'] = 'correctness_rejected'
         timing = paired_summary(raw) if measurements else None
@@ -414,6 +418,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             'passed': passed, 'metrics': metrics, 'participants': checks})
         _write_new(authority.request_root / 'launch-receipt.json', {
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'device_admission': asdict(admission),
             'candidate_sha256': authority.candidate.candidate_sha256, 'participants': identities,
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
             'resources': {role: loaded[(role, authority.case_id)].loaded.resources for role in protocol.arms}})
@@ -591,7 +596,10 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
         _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
             'preflight': dict(preflight.correctness), 'correctness_launches': correctness_calls,
             'timed_output_checks': timed_checks})
-        _write_new(launch_path, {'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+        # Preserve the loaded launch's manifest and device binding. Reconstructing a
+        # smaller envelope here discarded facts the native profile reader must check.
+        _write_new(launch_path, {**json.loads(preflight.artifact_payloads['launch_receipt']),
+            'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
             'candidate_sha256': authority.candidate.candidate_sha256,
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
             'resources': loaded.loaded.resources})
