@@ -5,6 +5,9 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass
 import os
+from pathlib import Path
+import re
+from typing import Mapping
 
 from open_cake_ir.compiler.target import CodeObject, declared_target
 
@@ -19,6 +22,22 @@ class MetaxDeviceAdmission:
     pci_bus_id: str
     runtime_library: str
     gpu_uuid: str | None = None
+
+
+def validate_maca_admission(value, *, target_id: str, job_id: str) -> None:
+    """Read the native identity retained by a MACA launch, without inventing a UUID."""
+    target = declared_target(target_id)
+    if (target.code_object is not CodeObject.MCFATBIN or not isinstance(value, Mapping)
+            or not isinstance(job_id, str) or re.fullmatch(r'maca-[0-9a-f]{12}', job_id) is None
+            or job_id == 'maca-000000000000' or value.get('broker_job_id') != job_id
+            or value.get('target') != target_id or value.get('device_arch') != target_id
+            or value.get('device_name') not in target.device_names
+            or value.get('warp_size') != target.warp_size or value.get('gpu_uuid') is not None
+            or not isinstance(value.get('pci_bus_id'), str)
+            or re.fullmatch(r'[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}', value['pci_bus_id']) is None
+            or not isinstance(value.get('runtime_library'), str)
+            or not Path(value['runtime_library']).is_absolute()):
+        raise ValueError('MACA recorded device admission differs')
 
 
 def observe_local_metax(target_id: str, *, runtime_library: str) -> MetaxDeviceAdmission:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from open_cake_ir.compiler import frontend
 from open_cake_ir.evaluation.paired import (
-    ROUTE_CALLS_PER_COHORT, PAIRED_HIP_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND,
+    ROUTE_CALLS_PER_COHORT, PAIRED_HIP_KIND, PAIRED_MACA_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND,
     paired_protocol)
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING, source_reference_path
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
@@ -120,6 +120,7 @@ _PAIRED_KINDS = {
     "cupti": PAIRED_KIND,
     "metal": PAIRED_METAL_BATCHED_KIND,
     "hip_dispatch": PAIRED_HIP_KIND,
+    "mcpti_dispatch": PAIRED_MACA_KIND,
 }
 # Every source whose row declares its count, read from the rows; Metal's is contributed
 # here because this module owns it (above), not because the row was consulted and found
