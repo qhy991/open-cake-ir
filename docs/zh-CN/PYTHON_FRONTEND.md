@@ -64,7 +64,7 @@ PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler lower \
 - Buffer 参数声明输入、输出或调用者状态。临时结果的形状和类型由操作推导，不随意贴标签。
 - 一个下标对应一个维度。首个接口支持 program 坐标、loop tile 和连续静态切片；不支持的整数、间隔切片、动态间接索引或省略维度会拒绝。
 - 切片只能作为操作地址，不能拿切片冒充 lm.program、lm.range 或 lm.broadcast 所需的 Buffer 本身，也不能嵌套下标。
-- `lm.broadcast` 明示已有广播轴，不增加 splat 或 reshape。归约写明 sum/max、轴和协作范围。
+- `lm.broadcast` 明示已有广播轴，不增加 splat 或 reshape。可先绑定到变量再用于逐元素表达式，名称会消去为同一个 `broadcast_axis` 关系。axis 指保留的向量轴：对 `[R,C]`，权重 `[C]` 用 axis=1，行归约结果 `[R]` 用 axis=0。归约写明 sum/max、轴和协作范围。
 - `out=buffer` 或多个输出 Buffer 指定结果后，不再把这个操作赋给另一个变量。普通输出来自 Buffer mode，没有另加 return 指令。
 - `lm.range` 创建符号循环，不能换成任意 Python range、while 或 if。默认 stages 和展开因子为 1，其他布尔选项为 false，性能相关选择应明确写。
 
