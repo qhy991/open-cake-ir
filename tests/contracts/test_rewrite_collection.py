@@ -14,9 +14,11 @@ class RewriteCollectionTests(unittest.TestCase):
         self.assertEqual(len(rows), 26)
         self.assertEqual(len({row['id'] for row in rows}), 26)
         ready = pack.select_tasks(None)
-        self.assertEqual(len(ready), 10)
-        self.assertEqual(sum(r['reference_kind'] == 'library_wrapper' for r in ready), 2)
-        for row in ready:
+        self.assertEqual(len(ready), 17)
+        self.assertEqual(sum(r['reference_kind'] == 'library_dispatch' for r in ready), 1)
+        for row in rows:
+            self.assertEqual(row['reference_status'], 'available')
+            self.assertTrue(row['source'])
             for ref in row['references']:
                 self.assertTrue(pack.reference_path(ref).is_file())
         for row in rows:
@@ -26,7 +28,7 @@ class RewriteCollectionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pack.reference_path('../README.md')
         self.assertEqual(next(r for r in ready if r['id'].startswith('010'))['references'][-1],
-                         'references/010_gemm_n6144_k4096/n1a1-num_stages4.py')
+                         'references/010_gemm_n6144_k4096/cudallm_iter_1_sample_1.cu')
 
     def test_all_ready_tasks_prepare_with_frozen_source_and_delivered_instructions(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -34,7 +36,7 @@ class RewriteCollectionTests(unittest.TestCase):
             workspace = root / 'inputs'
             profile = pack.PACK / 'profiles/b300-m2.example.json'
             manifest = pack.prepare_batch(profile, workspace, root / 'runs')
-            self.assertEqual(len(manifest['tasks']), 10)
+            self.assertEqual(len(manifest['tasks']), 17)
             for row in pack.select_tasks(None):
                 task = workspace / 'tasks' / row['id']
                 config = json.loads((task / 'experiment.json').read_text())
@@ -42,6 +44,7 @@ class RewriteCollectionTests(unittest.TestCase):
                 self.assertEqual(config['cells'][0]['node']['project_root'], str(pack.ROOT))
                 scaffold = (task / 'scaffold.md').read_text()
                 self.assertIn(row['objective'], scaffold)
+                self.assertIn(row['source'], scaffold)
                 self.assertIn('structurally distinct', scaffold)
                 for ref in row['references']:
                     # References are JSON-quoted by the canonical preparation owner.
@@ -59,7 +62,7 @@ class RewriteCollectionTests(unittest.TestCase):
     def test_skipped_task_fails_before_creating_any_batch(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
-            with self.assertRaisesRegex(ValueError, 'missing_optimized_source'):
+            with self.assertRaisesRegex(ValueError, 'authoring_route_not_integrated'):
                 pack.prepare_batch(pack.PACK / 'profiles/b300-m2.example.json', root / 'inputs',
-                                   root / 'runs', ['004_gemm_n128_k2048'])
+                                   root / 'runs', ['020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048'])
             self.assertFalse((root / 'inputs').exists())

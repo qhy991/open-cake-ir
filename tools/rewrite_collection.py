@@ -85,7 +85,7 @@ def prepare_batch(profile_path, workspace, run_root, ids=None):
         config = {'schema_version': 1, 'objective': row['objective'],
                   'provider': profile['provider'], 'budget': profile['budget'],
                   'references': [{'path': str(reference_path(ref)),
-                                  'source': f"User-supplied flashinfer-bench-collection-0706, author kersor, {ref}; unqualified reference data"}
+                                  'source': f"{row['source']}; {ref}; unqualified reference data"}
                                  for ref in row['references']],
                   'cells': [{'id': row['id'].replace('_', '-'), 'task': row['task'],
                              'backend': row['backend'], 'rows': row['rows'],
@@ -141,7 +141,7 @@ def main(argv=None):
     prepare.add_argument('--profile', type=Path, required=True)
     prepare.add_argument('--workspace', type=Path, required=True)
     prepare.add_argument('--run-root', type=Path, required=True)
-    prepare.add_argument('--task', action='append', help='repeat; omitted selects all ten ready tasks')
+    prepare.add_argument('--task', action='append', help='repeat; omitted selects all ready tasks')
     for action in ('run', 'status'):
         command = sub.add_parser(action)
         command.add_argument('--workspace', type=Path, required=True)

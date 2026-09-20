@@ -1,0 +1,36 @@
+{
+  "name": "kersor_b300_005_gemm_n256_k7168",
+  "definition": "005_gemm_n256_k7168",
+  "author": "qinhaiyan",
+  "spec": {
+    "languages": [
+      "cuda_cpp"
+    ],
+    "target_hardware": [
+      "LOCAL"
+    ],
+    "entry_point": "ksearch_c1_a2.cu::run",
+    "dependencies": [],
+    "destination_passing_style": false,
+    "binding": "torch",
+    "compile_options": {
+      "cflags": [
+        "-std=c++17",
+        "-O3"
+      ],
+      "cuda_cflags": [
+        "-std=c++17",
+        "-O3",
+        "--use_fast_math"
+      ],
+      "ld_flags": []
+    }
+  },
+  "description": "005_gemm_n256_k7168 optimized CUDA kernel for NVIDIA B300 SXM6 (sm_103). Measured 1.6296x geomean over the task's full 17-workload set (17/17 PASS). Produced by the ksearch workflow in the KerSor/FlashInfer-Bench sweep, 2026-09.",
+  "source_paths": [
+    "ksearch_c1_a2.cu"
+  ],
+  "source_package": "flashinfer-bench-b300-individual-20260918",
+  "source_file": "005_gemm_n256_k7168/solution.json",
+  "verification": "User-supplied source; reported performance not independently verified or imported."
+}
