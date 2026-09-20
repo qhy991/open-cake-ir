@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-20-007",
+  "id": "F-2026-09-20-010",
   "kind": "behavior",
   "date": "2026-09-20",
   "title": "Starter-relative gains leave external-reference gaps and incomplete work-assignment reproduction",
@@ -659,5 +659,11 @@
     "scope": "One fixed shape per task, one retained comparison run, no serving claim, no leaderboard aggregate, no provider-arm comparison and no promotion. 005/023/024/026 successors and 012-020 multi-stage authoring are outside this completed comparison set."
   },
   "interpretation_reference": "https://docs.nvidia.com/nsight-compute/ProfilingGuide/",
-  "promotion_disposition": "No promotion; existing Compiler mechanisms and Lab selection are the next experimental owners."
+  "promotion_disposition": "No promotion; existing Compiler mechanisms and Lab selection are the next experimental owners.",
+  "renumbered_from": {
+    "id": "F-2026-09-20-007",
+    "path": "findings/2026-09-20-007-rewrite-external-performance-gap.json",
+    "commit": "cb5e73b39c75a817a19f4f6328dca6d72d1e9cbe",
+    "reason": "NVIDIA integration found the same date/sequence already used by main provider-protocol findings; original evidence remains at the pinned commit."
+  }
 }

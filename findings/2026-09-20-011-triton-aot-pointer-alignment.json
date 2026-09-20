@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-20-008",
+  "id": "F-2026-09-20-011",
   "kind": "capacity",
   "date": "2026-09-20",
   "title": "Offline Triton code lacks pointer-alignment facts needed to vectorize retained normalization kernels",
@@ -9,7 +9,7 @@
   "compiler_revision_id": "open-cake-ir@2812dd95 retained lowered programs; toolchain path inspected at ebbeec28",
   "executor_revision": "CPU-only probe with Torch 2.11.0+cu130 and Triton 3.6.0; no device execution",
   "evidence": {
-    "related_finding": "F-2026-09-20-007",
+    "related_finding": "F-2026-09-20-010",
     "run": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-alignment-compile-probe-20260920-d09c9d8abf03",
     "input_root": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/alignment-compile-probe-20260920",
     "compiler_source": "src/open_cake_ir/compiler/toolchain.py: compile_triton path builds ASTSource(kernel, signature, constants) without attrs",
@@ -99,7 +99,13 @@
   "observation": "The retained optimized kernels have no pointer tt.divisibility attributes in TTGIR and scalar b16 PTX memory instructions. 002 already emits .cg for its streamed inputs, so another input-cache-hint change would not test this gap. In three CPU-only compilations, holding the retained program, target and compile options fixed while hypothetically adding tt.divisibility=16 to pointer arguments changes sizePerThread from 1 to 8 and changes scalar b16 loads/stores to v4.b32 vector operations. Static load/store instruction counts change from 24/8 to 3/1 in 001 and 002, and from 64/32 to 8/4 in 025. CUDA was not initialized. This demonstrates a code-generation mechanism, not an eightfold runtime speedup or GPU correctness.",
   "proposed_change": "Design one evidence-gated pointer-alignment contract across authoring/compile and launch admission, then project admitted facts into ASTSource attrs. Do not hardcode 16-byte alignment for every pointer: contiguous offset views can be unaligned. Preserve the unconstrained ABI until the applicable contract actually guarantees alignment, verify actual input and output addresses, and exercise intentionally unaligned views and lower-alignment cases before adoption. Shared ABI/Compiler changes go through main with complete verification and independent review; fresh B300 correctness and matched timing are required after implementation. No first-class layout algebra is proposed.",
   "decision": "proposed",
-  "implemented_in": null,
+  "implemented_in": "246f5520b9ba276efd33889df5e9b36c0fddc8d8",
   "verified_by": null,
-  "promotion_disposition": "No promotion. The hypothetical aligned outputs were only compiled, never launched or installed as candidates."
+  "promotion_disposition": "Guarded generic/aligned AOT variants implemented and independently reviewed in PR #108, with 164 Corpus cases passing. GPU guard replay and matched timing remain pending; no performance promotion.",
+  "renumbered_from": {
+    "id": "F-2026-09-20-008",
+    "path": "findings/2026-09-20-008-triton-aot-pointer-alignment.json",
+    "commit": "cb5e73b39c75a817a19f4f6328dca6d72d1e9cbe",
+    "reason": "NVIDIA integration found the same date/sequence already used by main provider-protocol findings; original evidence remains at the pinned commit."
+  }
 }
