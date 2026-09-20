@@ -36,8 +36,20 @@ def controller(maximum):
 
 
 class CompilationBudgetTests(SemanticLabTestCase):
-    def run_fixture(self, *, failed=False):
+    def run_fixture(self, *, failed=False, second_stage=False):
         lab,spec,workload,program = action_fixture.AuthorActionTests.fixture(self,[])
+        if second_stage:
+            # This candidate is stopped during construction, before any semantic
+            # Evaluation. Its complete public ABI remains the fixed Workload's.
+            output = program['outputs'][0]
+            second = deepcopy(program['stages'][0])
+            program['tensors']['intermediate'] = deepcopy(program['tensors'][output])
+            program['stages'][0]['bindings'][output] = 'intermediate'
+            second['name'] = 'second'
+            second['schedule']['schedule_id'] = 'second'
+            second['schedule']['lowering']['entry_point'] = 'second'
+            second['bindings'][program['inputs'][0]] = 'intermediate'
+            program['stages'].append(second)
         document = spec.document
         document['budget']['maximum_compilations'] = 1
         document['endpoint_policy'] = NORMAL_BUDGET_TERMINAL
@@ -89,6 +101,16 @@ class CompilationBudgetTests(SemanticLabTestCase):
         completion = next(e['payload'] for e in events if e['kind']=='compilation_completed')
         self.assertEqual(completion['outcome'],'raised')
 
+    def test_partial_program_at_quota_is_retained_as_budget_refusal_and_replays(self):
+        _,audit,events,native,_,evaluator = self.run_fixture(second_stage=True)
+        self.assertEqual(len(native.requests),1)
+        self.assertEqual(evaluator.calls,0)
+        self.assertEqual(audit.endpoint_observation,'no_qualified_candidate')
+        refusal = next(e['payload'] for e in events if e['kind']=='candidate_rejected')
+        self.assertEqual(refusal['feedback']['stage'],'budget')
+        self.assertIsNone(refusal['routed_to'])
+        self.assertEqual(sum(e['kind']=='compilation_refused' for e in events),1)
+
     def test_program_stages_consume_separate_permits_and_stop_before_the_second_native_call(self):
         document = epilogue_program()
         program = Program.from_dict(document)
@@ -106,7 +128,6 @@ class CompilationBudgetTests(SemanticLabTestCase):
         self.assertEqual(built[0][1].feedback['stage'],'budget')
         self.assertIsNone(built[0][1].launchable)
         self.assertEqual([e['kind'] for e in events],['compilation_started','compilation_completed','compilation_refused','candidate_set_filtered'])
-        self.assertEqual(replay_compilations(events,candidates_by_turn={1:(sha256(payload).hexdigest(),)},maximum=1,target=program.target),1)
 
     def test_alignment_specialization_obtains_a_second_permit(self):
         alignment_fixture.AlignmentVariants.setUpClass()
@@ -132,3 +153,10 @@ class CompilationBudgetTests(SemanticLabTestCase):
             next(e['payload'] for e in changed if e['kind']==kind)[key] = value
             with self.subTest(key=key),self.assertRaises(ReplayRefusal):
                 replay_compilations(changed,candidates_by_turn=candidates,maximum=1,target=spec.document['execution']['target'])
+        changed = deepcopy(list(events))
+        start = next(i for i,e in enumerate(changed) if e['kind']=='compilation_started')
+        pair = changed[start:start+2]
+        del changed[start:start+2]
+        changed[1:1] = pair
+        with self.assertRaisesRegex(ReplayRefusal,'preceded resolution'):
+            replay_compilations(changed,candidates_by_turn=candidates,maximum=1,target=spec.document['execution']['target'])

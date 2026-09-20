@@ -40,8 +40,14 @@ Run 冻结公共评测、预算、作者环境、参考材料和终点规则；�
 `best_search_latency_ms`；最终端点和产物晋升使用独立确认。阈值视图记录全部搜索消耗和确认完成
 时间，不把较早候选的生成成本当作整个 Run 的成功成本。
 
-现有逻辑评测计数已随终态协议迁移。确认专用 wall-time 预留与实际编译调用预算仍待补齐；
-本任务的完整预算及正式消融验收尚未完成。
+`budget.maximum_compilations` 限制原生 kernel 源码编译入口的调用次数：每个 Program stage、
+Triton 对齐版本和 NVCC 的 PTX/CUBIN 调用各自领取额度，失败调用同样计数。静态拒绝、
+反汇编和预制 host 工具的准备不计为 kernel 编译。`CompilationRecorder` 在实际入口前向
+Ralph 领取额度；没有额度就不调用工具链，并将候选记录为预算拒绝，不推断实现缺陷。
+回放从 `compilation_started/completed/refused` 重建计数、顺序和对应候选，拒绝提名前后
+越界调用或把预算拒绝变成可执行产物。`launch_task.py --max-compilations` 显式冻结该限额。
+
+确认专用 wall-time 预留仍待补齐；本任务的完整预算及正式消融验收尚未完成。
 
 `replay/__init__.py` 组织独立回放，`artifacts.py`、`attempts.py`、`candidates.py`、
 `provider.py`、`selection.py`、`outcomes.py` 和 `refusals.py` 核对各自的原始记录。

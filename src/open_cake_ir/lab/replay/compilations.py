@@ -7,11 +7,18 @@ from .refusals import refuse
 def replay_compilations(events, *, candidates_by_turn, maximum, target):
     count, active, last_time = 0, None, 0.0
     filtered = set()
+    available = {}
+    denied = set()
     closed = False
     identity_fields = {'turn','candidate_sha256','compiler','target','entry_point','variant'}
     for event in events:
         kind,payload = event['kind'],event['payload']
+        if kind == 'author_actions_resolved':
+            available[payload['turn']] = candidates_by_turn.get(payload['turn'],())
         if kind == 'candidate_set_filtered':
+            dispositions = {row['candidate_sha256']:row['disposition'] for row in payload['order']}
+            if any(dispositions.get(candidate) != 'rejected' for turn,candidate in denied if turn==payload['turn']):
+                refuse(kind,'a refused compilation permit cannot produce a launchable candidate')
             filtered.add(payload['turn'])
         if kind in {'search_completed','checkpoints_projected'}:
             state = payload.get('state') if kind == 'search_completed' else payload.get('ralph')
@@ -36,11 +43,14 @@ def replay_compilations(events, *, candidates_by_turn, maximum, target):
                 or payload['turn'] in filtered or payload.get('target') != target
                 or any(not isinstance(payload.get(name),str) or not payload[name] for name in ('compiler','entry_point','variant'))):
                 refuse(kind,'native compilation identity differs from the admitted candidate build')
+            if payload['candidate_sha256'] not in available.get(payload['turn'],()):
+                refuse(kind,'native compilation preceded resolution of its author action')
             if active is not None:
                 refuse(kind,'native compiler invocations overlap')
             if kind == 'compilation_refused':
                 if count != maximum or payload['reason'] != 'compilation_budget':
                     refuse(kind,'a native compilation permit was refused before exhaustion')
+                denied.add((payload['turn'],payload['candidate_sha256']))
                 continue
             if count >= maximum or type(payload['number']) is not int or payload['number'] != count+1:
                 refuse(kind,'native compilation start exceeds its quota or ordinal')

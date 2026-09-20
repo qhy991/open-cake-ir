@@ -285,8 +285,8 @@ class CuTePairedLabFixtureTests(unittest.TestCase):
             view = lab.threshold_view(campaign,0.5)
             # Search fixture latencies are 0.1ms, but fresh confirmations are 1/2ms.
             self.assertEqual(len(view['runs']),6)
-            self.assertTrue(all(row['first_confirmation_turn'] is None for row in view['runs']))
+            self.assertTrue(all(row['nominee_source_turn'] is None for row in view['runs']))
             self.assertTrue(report.filesystem_custody_verified, 'new Evidence fixture requires a custody-capable temporary filesystem')
             reached = lab.threshold_view(campaign,1.5)
             self.assertEqual(sum(row['status']=='reached_by_fresh_confirmation' for row in reached['runs']),3)
-            self.assertTrue(all(row['elapsed_wall_seconds'] is not None for row in reached['runs'] if row['first_confirmation_turn']))
+            self.assertTrue(all(row['elapsed_wall_seconds'] is not None for row in reached['runs'] if row['nominee_source_turn']))
