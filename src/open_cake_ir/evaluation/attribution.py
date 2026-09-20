@@ -29,7 +29,7 @@ class TensorProfileFormat:
     kind: str
     summary: Callable
     load: Callable
-    feedback: Callable
+    feedback: Callable  # receives the profile and its already-validated launch record
     validate_launch: Callable
 
 
