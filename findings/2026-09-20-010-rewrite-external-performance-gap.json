@@ -394,6 +394,171 @@
             "cohorts_above_cv_limit": 0
           }
         }
+      },
+      {
+        "task": "005_gemm_n256_k7168",
+        "run_id": "nvidia-gap-successors-20260920-comparison-2126e322eb9c",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-2126e322eb9c",
+        "judge_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f",
+        "candidate_source": {
+          "task_id": "005_gemm_n256_k7168",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rewrite-successor-20260920-m2/runs/005_gemm_n256_k7168",
+          "source_commit": "open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rewrite-successor-20260920-m2/runs/005_gemm_n256_k7168/campaign-evidence/runs/open_cake-1/events/000000000010.json",
+          "selected_turn": 1,
+          "reference_source": "flashinfer-bench-b300-individual-20260918/005_gemm_n256_k7168/solution.json; author qinhaiyan",
+          "selection": "report-qualified best confirmed candidate; unchanged predecessor starter artifact"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 9.152000000000001,
+            "right_us": 6.88,
+            "right_over_left": 0.751748251748252,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.054560397996124,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 8.671999999999999,
+            "right_us": 6.928,
+            "right_over_left": 0.798892988929889,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.045250936779083,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 9.152000000000001,
+            "right_us": 8.640500000000001,
+            "right_over_left": 0.944110576923077,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.027545112700016,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "023_rmsnorm_h1536",
+        "run_id": "nvidia-gap-successors-20260920-comparison-c2e26eb06cd5",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-c2e26eb06cd5",
+        "judge_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f",
+        "candidate_source": {
+          "task_id": "023_rmsnorm_h1536",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rewrite-successor-20260920-m3/runs/023_rmsnorm_h1536",
+          "source_commit": "open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rewrite-successor-20260920-m3/runs/023_rmsnorm_h1536/campaign-evidence/runs/open_cake-1/events/000000000010.json",
+          "selected_turn": 1,
+          "reference_source": "flashinfer-bench-collection-0706/023_rmsnorm_h1536; author kersor",
+          "selection": "report-qualified best confirmed candidate; unchanged predecessor starter artifact"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 2.8800000000000003,
+            "right_us": 4.095,
+            "right_over_left": 1.421875,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.052015982371333,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 4.032,
+            "right_us": 4.064,
+            "right_over_left": 1.007936507936508,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 5,
+              "baseline": 4
+            },
+            "maximum_cohort_cv": 0.045257129215984,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 2.8800000000000003,
+            "right_us": 4.064,
+            "right_over_left": 1.411111111111111,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.052280728057257,
+            "cohorts_above_cv_limit": 1
+          }
+        }
+      },
+      {
+        "task": "024_rmsnorm_h2048",
+        "run_id": "nvidia-gap-024-20260920-comparison-6d911313e6b2",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-024-20260920-comparison-6d911313e6b2",
+        "judge_commit": "cb5e73b39c75a817a19f4f6328dca6d72d1e9cbe",
+        "candidate_source": {
+          "task_id": "024_rmsnorm_h2048",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rewrite-successor-20260920-m2/runs/024_rmsnorm_h2048",
+          "source_commit": "open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rewrite-successor-20260920-m2/runs/024_rmsnorm_h2048/campaign-evidence/runs/open_cake-1/events/000000000023.json",
+          "selected_turn": 2,
+          "reference_source": "flashinfer-bench-collection-0706/024_rmsnorm_h2048; author kersor",
+          "selection": "report-qualified best confirmed candidate; unchanged predecessor starter artifact"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 2.464,
+            "right_us": 2.2720000000000002,
+            "right_over_left": 0.922077922077922,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.071239303961444,
+            "cohorts_above_cv_limit": 4
+          },
+          "starter_vs_external": {
+            "left_us": 6.1770000000000005,
+            "right_us": 2.2399999999999998,
+            "right_over_left": 0.362635583616642,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.059477238200344,
+            "cohorts_above_cv_limit": 6
+          },
+          "optimized_vs_starter": {
+            "left_us": 2.496,
+            "right_us": 6.1770000000000005,
+            "right_over_left": 2.474759615384615,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.039791901116223,
+            "cohorts_above_cv_limit": 0
+          }
+        }
       }
     ],
     "profiles": [
@@ -665,5 +830,6 @@
     "path": "findings/2026-09-20-007-rewrite-external-performance-gap.json",
     "commit": "cb5e73b39c75a817a19f4f6328dca6d72d1e9cbe",
     "reason": "NVIDIA integration found the same date/sequence already used by main provider-protocol findings; original evidence remains at the pinned commit."
-  }
+  },
+  "followup_observation": "Three subsequent external comparisons complete 005, 023 (h1536) and 024: all 90 pre/postflight checks passed, bringing this record to 10 tasks and 300 such checks. Their optimized-versus-external timing edges each fail the unchanged CV gate. 024 improves on its old starter by 2.475x with qualified timing; 005 is 5.6 percent slower than its old starter with qualified timing, so keep the starter and return that seed to optimization. 023 has only a descriptive external lead. These are additional historical-source comparisons, not measurements of the new guarded alignment implementation."
 }
