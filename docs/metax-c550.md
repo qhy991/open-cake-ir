@@ -10,7 +10,7 @@ Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host ad
 INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
 矩阵路径复用现有 `mma` 与 `triton.dot.fp16_fp32`、`triton.dot.bf16_fp32`、
 `triton.dot.fp32_ieee` 三条契约；FP16、FP32 已有下述正式任务结果，BF16 尚限于
-单 tile 原生诊断。TF32 和 FP8 尚未准入。原生 MCPTI 成对计时和独立 profiler 已接入；
+单 tile 原生诊断。TF32 和 FP8 矩阵尚未准入；FP8 的范围限于下述存储和解码。原生 MCPTI 成对计时和独立 profiler 已接入；
 测量质量不通过时明确返回 `measurement_quality_failed`，不作为有效性能结果。
 历史的无计时策略仍可回放。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
 
@@ -222,13 +222,21 @@ N/K tile 仍为 64，四个执行组和 32 次 K 累积不变。完整解析后�
 
 MACA native loader 接受封存 ABI 中的 `fp8_e4m3`，要求真实的
 `torch.float8_e4m3fn` 和既有 DType 声明的一字节存储宽度。uint8、FP16、E4M3FNUZ、
-E5M2 或错误宽度均在 dispatch 前拒绝。此处是存储接口；Compiler 的
-`MACA_DTYPE_UNQUALIFIED` 仍拒绝 FP8 Schedule，尚未开放一般 FP8 算子。
+E5M2 或错误宽度均在 dispatch 前拒绝。Compiler 允许 E4M3FN 的 load/store，以及非标量 tile 向 FP16、FP32 的显式 cast。
+该解码路径供后继 scaled-reduction/MoE 使用；其他算子需求仍须各自验收。
+
+`MACA_FP8_CAST_UNQUALIFIED` 拒绝逆向编码和 FP8→BF16 等未验收转换；
+`MACA_FP8_SCALAR_CAST_UNSUPPORTED` 在外部编译前拒绝当前 SDK 会断言的
+单值转换。直接 FP8 算术由 `MACA_FP8_OPERATION_UNQUALIFIED` 拒绝，
+FP8 MMA 契约仍未在 Target 声明。存储准入不改变这几个边界。
 
 冻结执行源码 `6d997c3d` 的独立诊断直接传输原始 bytes，再 view 为真实 FN tensor，
 launch 前后先 view uint8 再复制到 CPU，避免数值转换改变 NaN 编码或负零。
 它们使用真实 MACA broker job，但不是注册 Workload 的 EvaluationReceipt，也没有计时。
 
+- `maca-bd7ef50c9f98`：全部 256 个原始 FP8 编码在两个输出 poison（0、126）下
+  直接复制，两次调用的 512 个输出 byte 均相等，包含正负零和两个 NaN 编码，输入
+  bytes 不变。这是纯 load/store，无转换或算术，2 registers/thread、shared/local 为 0。
 - `maca-584187da1812`：FP8→FP16 和 FP8→FP32 各检查全部 254 个有限编码的输出 word，
   包含正负零，均逐 bit 相等；两个 NaN 编码的分类也分别通过。
 - `maca-ff7880c5bf02`：FP32→FP8 在 `[-448,448]` 内的 1014 个特定有限输入模式和

@@ -2,18 +2,35 @@
   "schema_version": 1,
   "target_id": "xcore1002",
   "architecture": "xcore1000",
-  "device_names": ["MetaX C550"],
+  "device_names": [
+    "MetaX C550"
+  ],
   "vendor": "metax",
   "code_object": "mcfatbin",
   "triton_arch": 80,
   "warp_size": 64,
   "l2_cache_bytes": 8388608,
-  "memory_spaces": ["global", "shared", "register"],
-  "operation_kinds": ["load", "cast", "elementwise", "mma", "reduce", "store"],
+  "memory_spaces": [
+    "global",
+    "shared",
+    "register"
+  ],
+  "operation_kinds": [
+    "load",
+    "cast",
+    "elementwise",
+    "mma",
+    "reduce",
+    "store"
+  ],
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_shared_memory_bytes": 65536,
-    "grid": {"x": 2147483647, "y": 2147483647, "z": 2147483647}
+    "grid": {
+      "x": 2147483647,
+      "y": 2147483647,
+      "z": 2147483647
+    }
   },
   "occupancy": {
     "multiprocessor_count": 104,
@@ -21,9 +38,19 @@
     "shared_memory_per_multiprocessor_bytes": 65536,
     "maximum_threads_per_multiprocessor": 2048
   },
-  "instruction_contracts": ["maca.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
+  "instruction_contracts": [
+    "maca.tanh.f32",
+    "triton.dot.fp16_fp32",
+    "triton.dot.bf16_fp32",
+    "triton.dot.fp32_ieee"
+  ],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "device_observation",
+      "source": "c550-1, MACA 3.5.3 / FlagTree 0.5.1+metax3.1, source 6d997c3d, 2026-09-21",
+      "locator": "E4M3FN storage and decoding only. Native loader job maca-bd7ef50c9f98 copied all 256 encodings under two output poisons with all 512 output bytes exact, including signed zero and both NaN codes; input bytes unchanged. Job maca-584187da1812 decoded all 254 finite encodings bit-exact to FP16 and FP32 and classified both NaN codes for each destination. Raw data and independent reviews: open-cake-ir-evidence/metax-parity-20260920/fp8-copy-gpu-6d997c3d-v1/, fp8-diagnostic-gpu-6d997c3d-v1/ and reviews/. Scalar FP8 conversion hits a captured SDK RankedTensorType assertion and remains refused; inverse conversion, FP8-to-BF16, direct FP8 arithmetic and MMA are not admitted by these observations."
+    },
     {
       "kind": "device_observation",
       "source": "c550-1, MACA 3.5.3 / FlagTree 0.5.1+metax3.1, source 66dcc472, 2026-09-20",

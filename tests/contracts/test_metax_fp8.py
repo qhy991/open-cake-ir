@@ -58,9 +58,15 @@ class MetaxFP8Admission(unittest.TestCase):
     def test_fp8_matrix_does_not_inherit_storage_qualification(self):
         source = (ROOT / "corpus/schedules/xcore1002-dot-fp16-64.py").read_text()
         source = source.replace('"fp16"', '"fp8_e4m3"').replace("triton.dot.fp16_fp32", "triton.dot.fp8e4m3_fp32")
-        result = self.compiler.assess(frontend.parse(source).document)
+        document = frontend.parse(source).document
+        result = self.compiler.assess(document)
         self.assertFalse(result.lowering_eligible)
         codes = [f.code for f in result.findings]
-        self.assertIn("MACA_FP8_OPERATION_UNQUALIFIED", codes)
         self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED", codes)
         self.assertNotIn("MACA_DTYPE_UNQUALIFIED", codes)
+        # Compiler stops at the undeclared instruction before backend preflight.
+        # Direct emission must independently refuse the unqualified FP8 operation.
+        findings = triton.preflight(Schedule.from_dict(document), declared_target("xcore1002"))
+        self.assertIn("MACA_FP8_OPERATION_UNQUALIFIED", [f.code for f in findings])
+        with self.assertRaises(EmitError):
+            triton.emit(Schedule.from_dict(document), declared_target("xcore1002"))
