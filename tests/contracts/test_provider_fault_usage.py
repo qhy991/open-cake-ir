@@ -261,7 +261,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
                 with self.assertRaises(RunProtocolFault) as raised:
                     provider.turn(SimpleNamespace(run_id="open_cake-1", arm="open_cake", turn=1,
                         maximum_candidates_per_turn=1, thread_id=None,
-                        state_card={"schema_version": 1, "kind": "ralph_state_v1", "iteration": 1}))
+                        state_card={"schema_version": 1, "kind": "ralph_state_v1", "iteration": 1}, environment_kind="open_cake"))
                 self.assertEqual(raised.exception.reported_usage, ReportedProviderUsage(CONTRACT, THREAD, 150119))
                 self.assertEqual(raised.exception.artifact_payloads["provider_stdout"], raw)
 

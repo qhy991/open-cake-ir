@@ -1266,7 +1266,7 @@ class ProviderContractTests(unittest.TestCase):
                     feedback={"kind": "initial"},
                     maximum_candidates_per_turn=2,
                     state_card=state,
-                )
+                 environment_kind="open_cake")
             )
             second = provider.turn(
                 SimpleNamespace(
@@ -1284,7 +1284,7 @@ class ProviderContractTests(unittest.TestCase):
                             "iteration": 2,
                         }
                     ),
-                )
+                 environment_kind="open_cake")
             )
 
             self.assertEqual(
@@ -1306,7 +1306,7 @@ class ProviderContractTests(unittest.TestCase):
             with self.assertRaisesRegex(RunProtocolFault, "cumulative thread usage regressed"):
                 provider.turn(SimpleNamespace(run_id="open_cake-1", arm="open_cake", turn=3,
                     cumulative_provider_tokens=240, thread_id=first.thread_id, feedback={},
-                    maximum_candidates_per_turn=2, state_card=state))
+                    maximum_candidates_per_turn=2, state_card=state, environment_kind="open_cake"))
             bundle = json.loads(second.reference_bundle)
             self.assertEqual(bundle["task_markdown"], package.task_markdown)
             self.assertEqual(bundle["agents_markdown"], package.agents_markdown)
@@ -1317,7 +1317,7 @@ class ProviderContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'task file TASK.md custody'):
                 provider.turn(SimpleNamespace(run_id='open_cake-1', arm='open_cake', turn=3,
                     cumulative_provider_tokens=200, thread_id=first.thread_id, feedback={},
-                    maximum_candidates_per_turn=2, state_card=state))
+                    maximum_candidates_per_turn=2, state_card=state, environment_kind='open_cake'))
             self.assertEqual(len(adapter.invocations), 3)
 
 

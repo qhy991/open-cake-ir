@@ -186,7 +186,7 @@ class RubricContractTests(unittest.TestCase):
                 state = controller.state_card(turn=turn, cumulative_provider_tokens=cumulative, feedback=feedback)
                 current_request = SimpleNamespace(run_id=package.run_id, arm=package.arm, turn=turn,
                     cumulative_provider_tokens=cumulative, thread_id=thread, feedback=feedback,
-                    maximum_candidates_per_turn=1, state_card=state)
+                    maximum_candidates_per_turn=1, state_card=state, environment_kind=package.arm)
                 result = provider.turn(current_request)
                 thread = result.thread_id
                 self.assertEqual(result.provider_tokens, 80000)

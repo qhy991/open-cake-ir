@@ -567,7 +567,7 @@ def promote_task_incumbent(
         not source_audit.archive_integrity
         or not source_audit.filesystem_custody_verified
         or source_audit.protocol_adherence != "adhered"
-        or source_audit.authority_sha256 != lock.canonical_sha256
+        or source_audit.authority_sha256 != lock.run_specification(source_audit.run_id).canonical_sha256
     ):
         raise ValueError("promoted source Run is not custody-audited")
     events = source_store.replay_events(selected_run)
