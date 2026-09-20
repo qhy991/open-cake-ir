@@ -7,6 +7,20 @@ other clause of ADR 0065 stands. The identity reservations of
 [ADR 0049](0049-released-executor-descriptors-reserve-their-identities.md) and
 [ADR 0050](0050-released-compiler-locks-reserve-their-identities.md) are kept.
 
+## Later branch cleanup, 2026-09-20
+
+The owner requested that GitHub retain only the five maintained branches and active task
+branches. The former `history` branch tip, `387ff34c`, is retained as the immutable
+`history` tag before the remote branch is deleted. `git fetch origin tag history` retrieves
+it, and `git show history:<path>` continues to resolve the same tree. No historical object,
+path, identity or evidence is rewritten. The legacy `history_branch` key in
+`docs/history/identities.json` remains compatible: its value is a Git ref, now a tag.
+Future archival additions use new versioned tags; published tags are not moved.
+
+This changes the original decision's branch lifecycle only. The original rationale and
+move set below remain the record of the 2026-09-18 decision. Current task and archive
+routing is owned by [Development branches](../DEVELOPMENT_BRANCHES.md).
+
 ## Context
 
 ADR 0065 made the clean commit the source identity and removed the per-change release

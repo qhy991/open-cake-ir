@@ -9,7 +9,9 @@ Follow [Development branches](docs/DEVELOPMENT_BRANCHES.md), the canonical owner
 five maintained branches, task naming, shared-code routing, integration and synchronization.
 New work uses `task/<platform-or-core>-<subject>` without a `codex/` prefix and its own
 worktree. Inspect existing worktrees before editing; preserve legacy branches and active
-checkouts. A platform branch is a maintenance boundary, not a fork of the shared Compiler.
+checkouts. Merged task branches are removed from GitHub; archive tags retain historical
+work outside the five maintained branches. A platform branch is a maintenance boundary,
+not a fork of the shared Compiler.
 
 ## Targets are peers, and the shared layers are vendor-neutral
 
@@ -265,7 +267,7 @@ the comparison, not just the run.
 - Study templates are stable and execution binding lives in the CampaignLock. Do not mint
   a frozen Study successor per Compiler or Executor change; the 36
   `flash-kmeans-r45-portfolio-reconstruction` successors that predate this rule live on
-  the `history` branch together with the retired template and lifecycle.
+  the `history` tag together with the retired template and lifecycle.
 - `matched_search` is the sole live Study kind; the Portfolio Study lifecycle is retired;
   `artifact_optimization_only` is a Claim Scope on it, not a mode, and promotion under it
   still requires common confirmatory Evaluation and forms no arm comparison.
@@ -311,7 +313,7 @@ the comparison, not just the run.
 Retired release outputs -- `compiler/releases/`, `runtime/executors/`,
 `evidence/executors/`, `evidence/calibration/`, `contracts/calibrations/`, the retired
 runtime locks, the Study successors above and the retired AKA tools and tests -- live byte-identical
-at their original paths on the `history` branch (`git show history:<path>`), as the ADR
+at their original paths under the `history` tag (`git show history:<path>`), as the ADR
 that reverses ADR 0065's "History stays where it is" records. `docs/history/identities.json`
 maps every retired Compiler Revision and Executor id to its producing commit and history
 path, so findings and retained Evidence that cite them stay resolvable. Those identities

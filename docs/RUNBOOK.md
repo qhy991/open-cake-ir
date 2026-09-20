@@ -77,8 +77,8 @@ AKA review was a read-only challenge-corpus workflow, not a Compiler Corpus Gate
 relevance judgment, or GPU/performance evidence ([ADR 0068](adr/0068-aka-is-a-challenge-corpus-not-a-compiler-corpus.md)).
 The campaign is closed. Its harness -- `tools/audit_aka_corpus.py`,
 `tools/review_aka_expressibility.py`, the `tools/run_aka_*.py` runners and their
-plan, admission and summary tools, with their contract tests -- lives on the `history`
-branch at its original paths (`git show history:tools/<name>.py`), and its published
+plan, admission and summary tools, with their contract tests -- lives under the `history`
+tag at its original paths (`git show history:tools/<name>.py`), and its published
 dataset stays under `docs/data/` with `tools/verify_aka_qualified_review_export.py` and
 `tools/verify_aka_fma_v41_reaudit.py` as the retained verifiers. Every retained result
 remains provisional with `semantic_binding=reviewer_claimed` and `gpu_test=not_run`; do
