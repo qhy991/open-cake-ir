@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from open_cake_ir.evaluation.workload import WorkloadContract
-from .plan_authoring import PlanAuthor
+from .plan_authoring import PlanAuthor, plan_workload_target
 
 TASK = 'fib_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048'
 TASKS = {TASK:('solx_'+TASK+'_bf16','1')}
@@ -30,11 +30,16 @@ def _bound(name):
     raise ValueError('unknown MoE bounded input')
 
 
-def workload_document(task=TASK,*,variant='captured'):
+def workload_document(task=TASK,*,variant='captured',backend='triton-b300'):
     if task!=TASK or variant!='captured':raise ValueError('unsupported FlashInfer MoE task/variant')
     operator,revision=TASKS[task]
+    target=plan_workload_target(backend,top_k=True,fp8=True)
+    predecessor_id=operator.replace('_','-')+'-b300-t1-v1'
+    successor=backend!='triton-b300'
+    if successor:revision='2'
     return {
-        'schema_version':1,'workload_id':operator.replace('_','-')+'-b300-t1-v1',
+        'schema_version':1,'workload_id':(operator.replace('_','-')+'-'+backend+'-t1-v2'
+                                       if successor else predecessor_id),
         'revision':revision,'state':'frozen','operator':operator,
         'provenance':[{'kind':'solx_pack_task','upstream':'flashinfer-bench',
                       'path':'flashinfer-bench-tasks/tasks/020_'+TASK[4:],
@@ -42,13 +47,16 @@ def workload_document(task=TASK,*,variant='captured'):
                      {'kind':'upstream_workload','path':'flashinfer_trace/workloads/moe/'+TASK[4:]+'.jsonl',
                       'workload_uuid':'e05c6c03-5603-4a1c-b34c-dcce0ecaeea4','scope':'smallest_declared_seq_len_1'},
                      {'kind':'restricted_artifact','path':'flashinfer-bench-tasks/tasks/020_'+TASK[4:]+'/baseline/',
-                      'scope':'complete_target_implementation'}],
+                      'scope':'complete_target_implementation'}]
+                     + ([{'kind':'workload_successor','workload_id':predecessor_id,
+                           'scope':'new_exact_target_binding; original_semantics_inputs_oracle_tolerances_preserved'}]
+                        if successor else []),
         'cases':[{'case_id':case,'shape':{'T':1,'E':256,'LOCAL_E':32,'H':7168,'I':2048},
                   'seed':2901+i,'mode':case} for i,case in enumerate(CASES)],
         'tensors':{name:{'shape':shape,'dtype':dtype,'layout':'contiguous_row_major','finite_only':True,
                         **({'max_abs':_bound(name)} if name not in {'output','local_expert_offset'} else {})}
                    for name,(shape,dtype) in TENSORS.items()},
-        'semantics':{'target':'sm_103a','task':TASK,'variant':variant,
+        'semantics':{'target':target,'task':TASK,'variant':variant,
             'candidate_abi':{'inputs':[n for n in TENSORS if n!='output'],'outputs':['output']},
             'input_effects':'unchanged','output_storage':'fresh_contiguous_nonaliasing',
             'definition':'sigmoid + bias for group/expert choice; group top2 sum -> top4 groups -> top8 experts; normalize unbiased sigmoid over all selected experts; local FP8 scaled GEMM1 -> X1*silu(X2) -> scaled GEMM2 -> weighted sum -> BF16',
@@ -69,7 +77,11 @@ def workload_document(task=TASK,*,variant='captured'):
 
 
 def validate_contract(document: Mapping):
-    if json.dumps(document,sort_keys=True,allow_nan=False)!=json.dumps(workload_document(),sort_keys=True):
+    from open_cake_ir.tasks.devices import backend_for_target
+    backend=backend_for_target(document.get('semantics',{}).get('target'))
+    if backend is None:
+        raise ValueError('FlashInfer MoE target is not registered')
+    if json.dumps(document,sort_keys=True,allow_nan=False)!=json.dumps(workload_document(backend=backend),sort_keys=True):
         raise ValueError('FlashInfer MoE frozen semantic/ABI contract differs')
     workload=WorkloadContract(document)
     for case in CASES:workload.tensor_abi(case)

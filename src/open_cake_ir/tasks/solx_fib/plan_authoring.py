@@ -4,6 +4,23 @@ from open_cake_ir.compiler import Program
 from open_cake_ir.evaluation.launch_plan import prepare_program
 
 
+def plan_workload_target(backend, *, top_k=False, fp8=False):
+    """Bind a successor to the existing device registry and declared operations.
+
+    The original B300 documents remain revision 1. Other Triton targets describe
+    new contracts; this structural admission never imports another device's results.
+    """
+    from open_cake_ir.tasks.devices import BACKENDS, admit_dtype, admit_operations
+    if backend not in BACKENDS or BACKENDS[backend]['route'] != 'triton':
+        raise ValueError('FlashInfer composed tasks require a registered Triton backend')
+    if backend != 'triton-b300':
+        kinds = ('load', 'cast', 'coordinate', 'compare', 'select', 'elementwise', 'reduce', 'store')
+        admit_operations(backend, kinds + (('top_k',) if top_k else ()))
+        for dtype in ('fp32', 'bf16', 'int32') + (('fp8_e4m3',) if fp8 else ()):
+            admit_dtype(backend, dtype)
+    return BACKENDS[backend]['target']
+
+
 class PlanAuthor:
     def __init__(self, workload, case_id):
         self.workload = workload
