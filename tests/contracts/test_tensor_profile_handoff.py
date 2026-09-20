@@ -31,7 +31,8 @@ class TensorProfileHandoffTests(unittest.TestCase):
                 raise ValueError('synthetic launch differs')
             self.assertEqual(correctness['metrics'],self.metrics)
         self.source=TensorProfileFormat(self.kind,summary,load,
-            lambda profile:{'kind':'synthetic_feedback','value':profile['summary']['value']},validate_launch)
+            lambda profile,launch:{'kind':'synthetic_feedback','value':profile['summary']['value'],
+                                   'device':launch['observed_device']},validate_launch)
 
     def receipt(self):
         launch=canonical_json_bytes(self.launch)
@@ -45,7 +46,7 @@ class TensorProfileHandoffTests(unittest.TestCase):
     def test_new_typed_registration_reaches_validation_and_next_turn_feedback(self):
         with patch('open_cake_ir.evaluation.core.TENSOR_PROFILES',{self.kind:self.source}):
             receipt=self.receipt()
-            self.assertEqual(receipt.attribution_feedback,{'kind':'synthetic_feedback','value':7})
+            self.assertEqual(receipt.attribution_feedback,{'kind':'synthetic_feedback','value':7,'device':'fixture'})
             self.profile['raw']={'value':8}
             with self.assertRaisesRegex(ValueError,'synthetic raw'):self.receipt()
 
