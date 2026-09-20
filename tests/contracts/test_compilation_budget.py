@@ -84,7 +84,7 @@ class CompilationBudgetTests(SemanticLabTestCase):
         _,audit,events,native,provider,evaluator = self.run_fixture()
         self.assertEqual(len(native.requests),1)
         self.assertEqual(len(provider.requests),1)
-        self.assertEqual(evaluator.calls,2)  # The reserved confirmation still evaluates the sealed nominee.
+        self.assertEqual(evaluator.calls,2)  # Terminal confirmation still evaluates the sealed nominee.
         self.assertEqual(audit.endpoint_observation,'qualified')
         state = events[-2]['payload']['ralph']
         self.assertEqual(state['compilation_count'],1)
@@ -160,3 +160,8 @@ class CompilationBudgetTests(SemanticLabTestCase):
         changed[1:1] = pair
         with self.assertRaisesRegex(ReplayRefusal,'preceded resolution'):
             replay_compilations(changed,candidates_by_turn=candidates,maximum=1,target=spec.document['execution']['target'])
+        for order in (None,[{}],[{'candidate_sha256':[],'disposition':'launchable'}]):
+            changed = deepcopy(list(events))
+            next(e['payload'] for e in changed if e['kind']=='candidate_set_filtered')['order'] = order
+            with self.subTest(order=order),self.assertRaisesRegex(ReplayRefusal,'readable filter rows'):
+                replay_compilations(changed,candidates_by_turn=candidates,maximum=1,target=spec.document['execution']['target'])

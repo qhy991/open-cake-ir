@@ -1,5 +1,6 @@
 """Reconstruct native compilation permits separately from candidate counts."""
 import math
+from collections.abc import Mapping
 
 from .refusals import refuse
 
@@ -16,18 +17,28 @@ def replay_compilations(events, *, candidates_by_turn, maximum, target):
         if kind == 'author_actions_resolved':
             available[payload['turn']] = candidates_by_turn.get(payload['turn'],())
         if kind == 'candidate_set_filtered':
-            dispositions = {row['candidate_sha256']:row['disposition'] for row in payload['order']}
+            order = payload.get('order')
+            # Read only the projection this check needs. Full filter semantics
+            # remain owned by candidate-selection replay.
+            if (type(payload.get('turn')) is not int or payload['turn'] <= 0
+                or not isinstance(order,list) or any(not isinstance(row,Mapping)
+                or not isinstance(row.get('candidate_sha256'),str)
+                or not isinstance(row.get('disposition'),str) for row in order)):
+                refuse(kind,'candidate dispositions are not readable filter rows')
+            dispositions = {row['candidate_sha256']:row['disposition'] for row in order}
             if any(dispositions.get(candidate) != 'rejected' for turn,candidate in denied if turn==payload['turn']):
                 refuse(kind,'a refused compilation permit cannot produce a launchable candidate')
             filtered.add(payload['turn'])
         if kind in {'search_completed','checkpoints_projected'}:
             state = payload.get('state') if kind == 'search_completed' else payload.get('ralph')
-            if not isinstance(state,dict) or (type(state.get('compilation_count')) is not int
+            remaining = state.get('remaining') if isinstance(state,Mapping) else None
+            if not isinstance(state,Mapping) or not isinstance(remaining,Mapping) or (type(state.get('compilation_count')) is not int
                 or state.get('compilation_count') != count
-                or type(state.get('remaining',{}).get('compilations')) is not int
-                or state.get('remaining',{}).get('compilations') != maximum-count):
+                or type(remaining.get('compilations')) is not int
+                or remaining.get('compilations') != maximum-count):
                 refuse(kind, 'compilation budget does not derive from native invocation starts')
-            if type(state.get('elapsed_wall_seconds')) not in {int,float} or state['elapsed_wall_seconds'] < last_time:
+            if (type(state.get('elapsed_wall_seconds')) not in {int,float}
+                or not math.isfinite(state['elapsed_wall_seconds']) or state['elapsed_wall_seconds'] < last_time):
                 refuse(kind, 'Run clock predates its native compilation observations')
             closed = True
         if not kind.startswith('compilation_'):
