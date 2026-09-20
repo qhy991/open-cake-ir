@@ -34,7 +34,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-20-005 — Codex tool-rich progress prose is mistaken for a terminal despite a complete candidate write and exact final marker; preserve commentary as auxiliary evidence while retaining final-message and candidate gates (protocol, proposed; original infplane qualification retained).
+- F-2026-09-20-007 — Codex tool-rich progress prose is mistaken for a terminal despite a complete candidate write and exact final marker; preserve commentary as auxiliary evidence while retaining final-message and candidate gates (protocol, proposed; original infplane qualification retained).
 
 - F-2026-09-20-003 — live composition rejects a canonical external AGENTS.md already admitted by the Study; scaffold custody must use the same external-file rule at execution (protocol, fixed at 0bd562c1 and closed by original bound-scaffold replay, 55 CPU tests and unchanged Corpus Gate; successor campaign outcome is separate).
 

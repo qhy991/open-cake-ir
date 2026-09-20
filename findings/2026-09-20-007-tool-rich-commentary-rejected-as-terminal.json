@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "F-2026-09-20-005",
+  "id": "F-2026-09-20-007",
   "kind": "protocol",
   "date": "2026-09-20",
   "title": "Tool-rich Codex progress prose is rejected as a malformed structured terminal",
