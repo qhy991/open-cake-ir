@@ -237,6 +237,8 @@ class ExperimentInputTests(unittest.TestCase):
         node = deepcopy(self.config["cells"][0]["node"])
         node["provider_executable"] = "/opt/codex/bin/codex"
         node["http_proxy"] = "http://127.0.0.1:17990"
+        node["qualification"] = "/external/receipt.json"
+        node["qualification_anchor"] = "/external/anchor.json"
         payload = {"cell": {**self.config["cells"][0], "node": node},
             "source_commit": COMMIT, "scaffold": "rules", "provider": self.config["provider"],
             "budget": self.config["budget"]}
@@ -248,6 +250,8 @@ class ExperimentInputTests(unittest.TestCase):
         self.assertEqual(result.exception.code, 0)
         command = execute.call_args.args[0]
         self.assertEqual(command[command.index("--provider-executable") + 1], "/opt/codex/bin/codex")
+        self.assertEqual(command[command.index("--qualification") + 1], "/external/receipt.json")
+        self.assertEqual(command[command.index("--qualification-anchor") + 1], "/external/anchor.json")
         for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
             self.assertEqual(execute.call_args.kwargs["env"][key], node["http_proxy"])
 
@@ -257,6 +261,12 @@ class ExperimentInputTests(unittest.TestCase):
             config["cells"][0]["node"]["http_proxy"] = proxy
             with self.assertRaises(ValueError):
                 kernel_experiment.validate(config)
+
+    def test_qualification_requires_both_external_locators(self):
+        config = deepcopy(self.config)
+        config['cells'][0]['node']['qualification'] = '/external/receipt.json'
+        with self.assertRaisesRegex(ValueError, 'supplied together'):
+            kernel_experiment.validate(config)
 
     def test_duplicate_workspace_and_undeclared_target_refuse(self):
         for mutation in ("workspace", "backend"):

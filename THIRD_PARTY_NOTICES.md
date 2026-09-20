@@ -39,3 +39,12 @@ AKA dataset. Generated compiler outputs retain any embedded third-party notices.
 Do not copy a dependency's full source or binary distribution into a contribution without
 including its required license and attribution. When a contribution adds third-party
 material, identify the exact source, version, affected files, and redistribution terms.
+
+## User-supplied FlashInfer rewrite references
+
+`experiments/flashinfer_rewrites/references/` contains selected, unchanged entry points
+and dependencies from the user-supplied `flashinfer-bench-collection-0706`, attributed
+by its collection metadata to kersor. These are reference data, not project-authored
+code; no separate license document was supplied and the project's Apache-2.0 grant
+does not relicense them. See `experiments/flashinfer_rewrites/NOTICE.md` for the exact
+selection, provenance and scope. No timing claims accompany these files.

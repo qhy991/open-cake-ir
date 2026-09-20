@@ -76,7 +76,12 @@ def validate(config):
         create_task(cell["task"], backend=cell["backend"], rows=cell["rows"],
                     columns=cell["columns"], depth=cell.get("depth"))
         node = cell["node"]
-        object_fields(node, {"transport", "project_root", "python", "kernelctl", "socket", "workspace"}, {"host", "provider_executable", "http_proxy"})
+        object_fields(node, {"transport", "project_root", "python", "kernelctl", "socket", "workspace"}, {"host", "provider_executable", "http_proxy", "qualification", "qualification_anchor"})
+        if ("qualification" in node) != ("qualification_anchor" in node):
+            raise ValueError("qualification receipt and anchor must be supplied together")
+        for key in ("qualification", "qualification_anchor"):
+            if key in node:
+                absolute(node[key])
         if "provider_executable" in node:
             absolute(node["provider_executable"])
         if "http_proxy" in node:
@@ -160,6 +165,9 @@ args = [n["python"], str(source / "tools/launch_task.py"), "--workspace", str(w)
         "--kernelctl", n["kernelctl"], "--infra-socket", n["socket"], "--agents-md", str(inputs / "AGENTS.md")]
 if "provider_executable" in n:
     args += ["--provider-executable", n["provider_executable"]]
+for field in ("qualification", "qualification_anchor"):
+    if field in n:
+        args += ["--" + field.replace("_", "-"), n[field]]
 for name in ("task", "backend", "rows", "columns", "depth", "fixed_baseline_bundle"):
     if name in p["cell"]:
         args += ["--" + name.replace("_", "-"), str(p["cell"][name])]
