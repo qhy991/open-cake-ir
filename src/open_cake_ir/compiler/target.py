@@ -237,7 +237,7 @@ _TARGET_FIELDS = frozenset({
 })
 # `compute_capability` and `warps_per_warpgroup` are admitted by code object below.
 _OPTIONAL_TARGET_FIELDS = frozenset({
-    "occupancy", "peak", "compute_capability", "warps_per_warpgroup", "triton_arch",
+    "occupancy", "peak", "compute_capability", "warps_per_warpgroup", "triton_arch", "l2_cache_bytes",
 })
 
 
@@ -369,6 +369,9 @@ class Target:
     # the physical xcore target and its native code-generation family. It is not a
     # CUDA compute capability and may not confer CUDA contracts or instructions.
     triton_arch: int | None = None
+    # Optional observed hardware capacity for target-owned measurement reset protocols.
+    # Absence is unmodeled, never an inherited size or a zero-byte cache.
+    l2_cache_bytes: int | None = None
 
     @classmethod
     def load(cls, path: str | Path) -> "Target":
@@ -480,4 +483,6 @@ class Target:
             peak=peak,
             warps_per_warpgroup=warpgroup,
             triton_arch=triton_arch,
+            l2_cache_bytes=(_int_field(value["l2_cache_bytes"], "target.l2_cache_bytes")
+                            if "l2_cache_bytes" in value else None),
         )

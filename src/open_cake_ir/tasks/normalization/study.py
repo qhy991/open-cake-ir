@@ -1,4 +1,4 @@
-"""Stable artifact-optimization policy; execution identities bind in CampaignLock."""
+"""Shared task authoring and evaluation controls; Study is an external projection."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from open_cake_ir.compiler import frontend
 from open_cake_ir.evaluation.paired import (
-    ROUTE_CALLS_PER_COHORT, PAIRED_HIP_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND,
+    ROUTE_CALLS_PER_COHORT, PAIRED_HIP_KIND, PAIRED_MACA_KIND, PAIRED_KIND, PAIRED_METAL_BATCHED_KIND,
     paired_protocol)
 from open_cake_ir.lab.bindings import CAMPAIGN_BINDING, CURRENT_RELEASE_BINDING, source_reference_path
 from open_cake_ir.lab.claude import CLAUDE_AUTHORING_TOOLS, CLAUDE_EVENT_CONTRACT, terminal_schema
@@ -22,6 +22,7 @@ from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, timing_sour
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
 SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"
+METAL_SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-metal-v3.md"
 
 
 def arm_feedback(evaluation) -> list[str]:
@@ -120,6 +121,7 @@ _PAIRED_KINDS = {
     "cupti": PAIRED_KIND,
     "metal": PAIRED_METAL_BATCHED_KIND,
     "hip_dispatch": PAIRED_HIP_KIND,
+    "mcpti_dispatch": PAIRED_MACA_KIND,
 }
 # Every source whose row declares its count, read from the rows; Metal's is contributed
 # here because this module owns it (above), not because the row was consulted and found
@@ -137,17 +139,17 @@ def _allocation_mode(target: object) -> str:
     return "local_serialized" if allocation(backend) == "local_broker" else "exclusive"
 
 
-def study_template(root: Path, workload, workload_path: Path, starter_path: Path, *,
+def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Path, *,
                    harness: str, model: str, effort: str, turns: int = 4,
-                   token_budget: int = 150000, maximum_candidates: int = 3,
-                   searches_per_turn: int = 2, wall_seconds: int = 14400,
+                   token_budget: int = 150000, maximum_candidates: int = 3, maximum_compilations: int = 128,
+                   searches_per_turn: int = 2, wall_seconds: int = 14400, confirmation_seconds: float | None = None,
                    dispatches_per_sample: int | None = None,
                    maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
                    agents_md: Path | None = None) -> dict:
-    """Bind mathematical inputs and treatment while leaving runtime facts unresolved.
+    """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
-    The policy is operator-agnostic: every task validates through its own
-    registered contract and shares this matched-search treatment.
+    These controls are operator-agnostic and also feed the retained external Study
+    format. No comparison assignment or statistical analysis is needed here.
     """
     from open_cake_ir.tasks.workloads import validate_workload_document
     validate_workload_document(workload.document)
@@ -157,12 +159,18 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
         raise ValueError("searches per Turn must fit the candidate budget")
     budget = {"unit": "provider_tokens", "limit": token_budget, "checkpoints": [token_budget],
               "maximum_turns": turns, "maximum_candidates_per_turn": maximum_candidates,
+              "maximum_compilations": maximum_compilations,
+              "confirmation_wall_time_seconds": wall_seconds / 10 if confirmation_seconds is None else confirmation_seconds,
               "wall_time_seconds": wall_seconds, "active_authoring_time_seconds": wall_seconds / 2,
               "evaluation_limits": {"search": turns * searches_per_turn, "confirmatory": turns,
                                     "attribution": turns * searches_per_turn}}
     RalphBudget.from_mapping(budget)
+    backend = backend_for_target(workload.target)
+    default_scaffold = (METAL_SCAFFOLD
+                        if backend is not None and BACKENDS[backend]["route"] == "metal"
+                        else SCAFFOLD)
     scaffold_name, scaffold_path = source_reference_path(
-        root, str(agents_md) if agents_md is not None else SCAFFOLD, "scaffold")
+        root, str(agents_md) if agents_md is not None else default_scaffold, "scaffold")
     scaffold_bytes = scaffold_path.read_bytes()
     if not scaffold_bytes.decode("utf-8").strip():
         raise ValueError("authoring AGENTS.md must contain nonempty UTF-8 instructions")
@@ -182,12 +190,13 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                                    dispatches_per_sample=dispatches_per_sample,
                                    maximum_cv=maximum_cv, required_pair_wins=required_pair_wins)
     return {
-        "schema_version": 2, "state": "template", "kind": "matched_search",
-        "study_id": f"{workload.workload_id}-{harness}-artifact-optimization",
-        "claim_scope": "artifact_optimization_only",
+        "schema_version": 1, "run_id": "open_cake-1", "sequence": 1, "assignment": None,
+        "compiler_revision": dict(CURRENT_RELEASE_BINDING),
+        "reference_inputs": {}, "knowledge": {"materials": [], "transformations": []},
+        "endpoint_policy": NORMAL_BUDGET_TERMINAL,
         "agent_interface": {"schema_version": 1, "kind": "task_agents_ralph_v1"},
-        "workload": {"path": str(workload_path), "canonical_sha256": workload.canonical_sha256},
-        "arms": {"open_cake": {
+        "workload": {"workload_id": workload.workload_id,"path": str(workload_path), "canonical_sha256": workload.canonical_sha256},
+        "authoring": {
             "environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "provider": provider,
             "scaffold": {"path": scaffold_name, "sha256": sha256(scaffold_bytes).hexdigest()},
             "compiler_revision": dict(CURRENT_RELEASE_BINDING),
@@ -201,8 +210,7 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
             # device can produce.
             "feedback": arm_feedback(evaluation),
             "toolchain_sha256": dict(CAMPAIGN_BINDING),
-        }},
-        "allocation": {"method": "predeclared_balanced_blocks", "order": ["open_cake-1"]},
+        },
         "budget": budget,
         "run_protocol": {"automatic_retries": 0, "independent_thread": True, "replacement_runs": 0,
                          "resume_invariants": ["authority", "cwd", "sandbox", "provider", "scaffold", "arm_environment", "task_package"],
@@ -215,9 +223,23 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
                               # serializes one local device.
                               "mode": _allocation_mode(workload.target)},
                       "sandbox": provider["sandbox"]},
-        "analysis_plan": {**json.loads(canonical(_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN)),
-                          "endpoint_policy": NORMAL_BUDGET_TERMINAL,
-                          "performance_reporting": TASK_EFFICIENCY_V1},
-        "evidence": {"schema_version": 3, "terminal_archive_required_for_every_run": True,
+        "evidence_policy": {"schema_version": 3, "terminal_archive_required_for_every_run": True,
                      "event_vocabulary": "matched_ralph_v1"},
+    }
+
+
+def study_template(root,workload,workload_path,starter_path,**options):
+    """Retain the externally consumed Study input without duplicating task controls."""
+    inputs = task_run_inputs(root,workload,workload_path,starter_path,**options)
+    return {
+        "schema_version":2,"state":"template","kind":"matched_search",
+        "study_id":f"{workload.workload_id}-{options['harness']}-artifact-optimization",
+        "claim_scope":"artifact_optimization_only",
+        "workload":{key:value for key,value in inputs['workload'].items() if key!='workload_id'},
+        "arms":{"open_cake":inputs['authoring']},
+        "allocation":{"method":"predeclared_balanced_blocks","order":[inputs['run_id']]},
+        **{key:inputs[key] for key in ('agent_interface','budget','run_protocol','evaluation_protocol','execution')},
+        "analysis_plan":{**json.loads(canonical(_ARTIFACT_OPTIMIZATION_ANALYSIS_PLAN)),
+                         "endpoint_policy":inputs['endpoint_policy'],"performance_reporting":TASK_EFFICIENCY_V1},
+        "evidence":inputs['evidence_policy'],
     }

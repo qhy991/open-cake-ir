@@ -165,7 +165,7 @@ def _qualification_package(
         "TASK.md and AGENTS.md unchanged. Do not use a GPU or network.\n"
         + tool_instruction + "\n"
     )
-    return TaskPackage(run_id, arm, task, agents)
+    return TaskPackage(run_id, arm, task, agents, arm)
 
 
 def _planned_turn(package: TaskPackage, turn: int) -> dict[str, object]:
@@ -342,6 +342,8 @@ def main() -> int:
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--provider-revision", required=True)
     parser.add_argument("--output-schema", type=Path, required=True)
+    parser.add_argument("--environment-kind", choices=("open_cake", "direct_cuda", "native_triton", "native_cute_dsl"),
+                        help="explicit candidate representation for a condition-neutral output schema")
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--receipt-output", type=Path, required=True)
     parser.add_argument("--anchor-output", type=Path, required=True)
@@ -386,14 +388,22 @@ def main() -> int:
     schema = json.loads(output_schema.read_text(encoding="utf-8"))
     arm_schema = schema.get("properties", {}).get("arm", {})
     arms = arm_schema.get("enum")
+    generic_schema = arms is None and arm_schema.get('type') == 'string'
+    if generic_schema:
+        if args.environment_kind is None:
+            raise ValueError('condition-neutral qualification requires --environment-kind')
+        arms = [args.environment_kind]
+    elif args.environment_kind is not None:
+        raise ValueError('--environment-kind is for condition-neutral output schemas')
     single_arm = arms == ["open_cake"]
-    if not isinstance(arms, list) or len(arms) not in {1, 2} or arms[0] != "open_cake":
+    if not generic_schema and (not isinstance(arms, list) or len(arms) not in {1, 2} or arms[0] != "open_cake"):
         raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm")
     try:
-        comparison_arm(dict.fromkeys(arms))
+        if not generic_schema:
+            comparison_arm(dict.fromkeys(arms))
     except ValueError as error:
         raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm") from error
-    if single_arm and (args.feature_policy != "provider_defaults_optimization" or args.python_source is None):
+    if not generic_schema and single_arm and (args.feature_policy != "provider_defaults_optimization" or args.python_source is None):
         raise ValueError("single-arm artifact qualification requires provider defaults and --python-source")
     if args.harness == "claude-code" and (not single_arm or args.service_tier != "default"):
         raise ValueError("Claude qualification requires a single artifact-only arm and no service-tier override")
@@ -572,7 +582,7 @@ def main() -> int:
                 expected_terminal_message=_canonical_json_bytes(initial_plan["terminal_message"]).decode(),
                 event_contract=event_contract,
                 submission_contract=submission_contract,
-                arm=arm,
+                arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
             initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model, event_contract=event_contract)
@@ -608,7 +618,7 @@ def main() -> int:
                 expected_terminal_message=_canonical_json_bytes(resumed_plan["terminal_message"]).decode(),
                 event_contract=event_contract,
                 submission_contract=submission_contract,
-                arm=arm,
+                arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
             resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model, event_contract=event_contract)

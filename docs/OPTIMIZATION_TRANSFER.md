@@ -13,8 +13,8 @@ lowering 和实机评测决定能否应用、是否正确以及是否有收益�
 
 ![源平台的优化经验经机制说明 E 和可调用变换 P 两个独立控制的入口进入目标 Agent；目标检查与实机验证始终保留](figures/optimization-knowledge-transfer.svg)
 
-*图：机制设计。E 控制额外的机制说明与案例，P 控制显式变换的调用权限；它们是实验变量，
-不是已经实现的命令行开关。图中不包含实测性能结果。*
+*图：E 控制额外的机制说明与案例，P 控制显式变换的调用权限。二者由冻结的 Study 分配，
+共同使用 Run 执行与评测。图中不包含实测性能结果。*
 
 ## 一份规则，按目标实现和验证
 
@@ -49,8 +49,11 @@ E0P1 的接口本身携带知识，不能称为“无知识”。这里分离的
 ## 实现基础与研究定位
 
 当前已有[显式融合、输出列特化与 Triton 执行宽度变换](../src/open_cake_ir/compiler/passes.py)，
-以及[带前提和反例的经验材料入口](OMOE_TRANSFER.md)。这些是实现基础，尚不构成跨硬件迁移效果的证明；
-自动机制提炼及 E/P 权限控制、配套 Study 仍需实现和验证。
+以及[带前提和反例的经验材料入口](OMOE_TRANSFER.md)。原型已接入完整 Program、独立 Run、
+材料与 pass 权限隔离、共同的 Run 装配、预分配 E/P Study 和审计统计。软件测试验证了协议路径；
+普通任务、incumbent 与 QSA Cake 候选已迁入公共路径。真正需要组合执行的
+多 stage 程序目前限于 Triton/CUDA；其他目标保留已有单 kernel 路径。跨目标组合适配与真实
+迁移收益仍待验证，自动机制提炼不在当前实现范围内。
 
 可组合变换与调度复用已有明确基础，包括 [MLIR Transform](https://mlir.llvm.org/docs/Tutorials/transform/)
 和 [Transfer-Tuning](https://arxiv.org/abs/2201.05587v2)。本设计聚焦 Agent 经验如何经显式改写与目标验证

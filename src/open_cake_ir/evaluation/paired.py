@@ -43,6 +43,7 @@ PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
 # the others are: what the interval includes and what resets the device are part of the
 # policy, and a successor states its own.
 PAIRED_HIP_KIND = 'fixed_baseline_paired_hip_dispatch_v1'
+PAIRED_MACA_KIND = 'fixed_baseline_paired_mcpti_dispatch_v1'
 METAL_KINDS = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].paired_kinds
 PAIRED_KINDS = frozenset().union(*(row.paired_kinds for row in PLATFORMS.values()))
 # How many times a cohort calls the route, per measurement source that declares it on its
@@ -109,6 +110,8 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     # has no calibration callbacks of its own, which is where CUPTI's extra six go.
     if value['kind'] == PAIRED_HIP_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from the HIP dispatch invocation contract')
+    if value['kind'] == PAIRED_MACA_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
+        raise ValueError('paired policy differs from the MACA dispatch invocation contract')
     if kind in METAL_KINDS:
         if protocol.route_calls_per_cohort <= protocol.samples_per_cohort:
             raise ValueError('Metal assay requires declared warmup calls before timestamp samples')
@@ -151,7 +154,8 @@ def _manifest_spellings():
     """The Workload tensor manifest class per `abi`, from the two spellings that exist."""
     from .core import TensorLaunchManifest
     from .metal_manifest import MetalTensorLaunchManifest
-    return {cls.abi: cls for cls in (TensorLaunchManifest, MetalTensorLaunchManifest)}
+    from .program import ProgramLaunchManifest
+    return {cls.abi: cls for cls in (TensorLaunchManifest, MetalTensorLaunchManifest, ProgramLaunchManifest)}
 
 
 def validate_pair_candidates(candidate, baseline, workload, case_id):
@@ -164,10 +168,18 @@ def validate_pair_candidates(candidate, baseline, workload, case_id):
         # The row for the participant's target says which spelling it seals; a manifest
         # in another spelling is not this participant's, whatever else it parses as.
         if (not isinstance(document, Mapping)
-                or document.get('abi') != platform_for(item.target).launch_abi):
+                or document.get('abi') not in {platform_for(item.target).launch_abi, 'ordered_program_v1'}):
             raise ValueError('paired policy requires the explicit Workload tensor ABI')
         manifest = spellings[document['abi']].from_dict(document)
+        if item.is_program:
+            from .program import program_components
+            program_components(item)
         manifest.check_workload(workload, case_id)
+        if hasattr(manifest, 'check_complete_domain'):
+            manifest.check_complete_domain()
+        if getattr(manifest, 'aligned_variant', None):
+            from .kernel_bundle import alignment_component
+            alignment_component(item, manifest)
         if (item.target != manifest.target or item.entry_point != manifest.kernel_name
             or item.launch_spec_sha256 != manifest.canonical_sha256):
             raise ValueError('paired participant and launch manifest differ')
@@ -191,6 +203,9 @@ def paired_summary(raw):
             or type(record.get('position')) is not int for record in arms.values()):
             raise ValueError('paired position must be an integer')
     kind = raw['evaluation_protocol']['paired_timing']['kind']
+    if kind == PAIRED_MACA_KIND:
+        from .metax_benchmark import validate_paired_activity
+        validate_paired_activity(raw, protocol)
     if kind in METAL_KINDS:
         from .metal_observations import METAL_TIMER, METAL_CACHE, validate_command_samples
         if raw.get('timer') != METAL_TIMER or raw.get('cache_policy') != METAL_CACHE:
@@ -263,6 +278,9 @@ def admit_device_identity(raw, launch, participants) -> None:
                 or raw['job_id'] == f'{row.local_job_prefix}-000000000000'))
                 or launch.get('gpu_uuid') != raw['gpu_uuid']):
             raise ValueError('paired AMDGCN device/host identity differs')
+    elif raw['kind'] == PAIRED_MACA_KIND:
+        from .metax_benchmark import validate_paired_device
+        validate_paired_device(raw, launch, participants)
     else:
         # Every declared kind is checked by name above. Reaching here means a policy kind
         # was admitted upstream that nothing here knows how to check, which is not the
@@ -289,6 +307,7 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
         raise ValueError('paired receipt partner is missing')
     for role in protocol.arms:
         candidate_from_identity(participants[role])
+    participant_work(raw)
     # Five distinct facts, each said by name. As one condition this reported that
     # something about the participants or the allocation differed and left the reader to
     # find which, from a worker whose artifacts are gone by the time anyone reads it.
@@ -437,6 +456,16 @@ def validate_metal_correctness_checks(check, case_ids, *, timed=False):
 
 
 def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
+    if candidate is not None and receipt.kernel_calls != candidate.kernels_per_call:
+        raise ValueError('receipt physical kernel count differs from its sealed candidate')
+    if candidate is not None and candidate.is_program and receipt.purpose == 'attribution':
+        from .program import program_components
+        manifest, children, _ = program_components(candidate)
+        profile = json.loads(receipt.artifact_payloads['profile'])
+        expected = [(stage.name, children[stage.name].entry_point) for stage in manifest.program.stages]
+        if (profile.get('kind') != 'ncu_program_attribution'
+            or [(row['stage'], row['kernel_name']) for row in profile['stages']] != expected):
+            raise ValueError('Program attribution differs from its complete stage sequence')
     if receipt.purpose == 'attribution' or paired_protocol(evaluation) is None:
         return
     if baseline is None or not receipt.artifact_payloads:
@@ -446,6 +475,28 @@ def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
         json.loads(receipt.artifact_payloads['correctness_output']),
         json.loads(receipt.artifact_payloads['launch_receipt']),
         evaluation=evaluation, baseline=baseline, candidate=candidate)
+
+
+def participant_work(raw):
+    """Derive physical work from manifest bytes bound by participant identities."""
+    participants = raw['participants']
+    declarations = raw.get('launch_manifests')
+    if declarations is None:
+        if any({'kernel_bundle', 'program_bundle'} & set(item['artifact_roles']) for item in participants.values()):
+            raise ValueError('composed participant requires its sealed launch manifest for work accounting')
+        return {role: {'modules': 1, 'kernels': 1} for role in participants}
+    if not isinstance(declarations, Mapping) or set(declarations) != set(participants):
+        raise ValueError('paired launch manifest coverage differs')
+    result = {}
+    for role, document in declarations.items():
+        manifest = _manifest_spellings()[document['abi']].from_dict(document)
+        if manifest.canonical_sha256 != participants[role]['launch_spec_sha256']:
+            raise ValueError('paired launch manifest differs from its participant seal')
+        if hasattr(manifest, 'check_complete_domain'):
+            manifest.check_complete_domain()
+        result[role] = {'modules': getattr(manifest, 'module_count', 1),
+                        'kernels': getattr(manifest, 'kernels_per_call', 1)}
+    return result
 
 
 def validate_paired_broker(receipt, job_id, counters):
@@ -460,9 +511,13 @@ def validate_paired_broker(receipt, job_id, counters):
     cases = (len(validation_case_ids(raw['evaluation_protocol']))
              if raw['kind'] in METAL_KINDS or 'validation_case_ids' in raw['evaluation_protocol'] else 1)
     correctness_calls = (4 if cohorts else 2) * cases
-    expected = {'compiler_invocations': 0, 'module_loads': 2 if raw['kind'] in METAL_KINDS else 2 * cases,
+    work = participant_work(raw)
+    kernel_sum = sum(item['kernels'] for item in work.values())
+    kernel_calls = kernel_sum * ((2 if cohorts else 1) * cases
+                                + (len(protocol.pair_order) * protocol.route_calls_per_cohort if cohorts else 0))
+    expected = {'compiler_invocations': 0, 'module_loads': 2 if raw['kind'] in METAL_KINDS else sum(item['modules'] for item in work.values()) * cases,
         'preflight_calls': 2 * cases,
-        'kernel_calls': correctness_calls + cohorts * protocol.route_calls_per_cohort,
+        'kernel_calls': kernel_calls,
         'timing_samples': cohorts * protocol.samples_per_cohort, 'fallback_calls': 0}
     launch = json.loads(receipt.artifact_payloads['launch_receipt'])
     # No allocator's zero placeholder is a job: the worker writes one before any broker

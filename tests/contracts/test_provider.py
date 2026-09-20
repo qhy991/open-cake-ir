@@ -203,14 +203,14 @@ class ProviderContractTests(unittest.TestCase):
                 expected_change="add",
                 expected_terminal_message='{"candidate_written":true}',
                          arm="open_cake",
-            )
+             environment_kind="open_cake")
             duplicate = normalize_codex_turn(
                 self._events(candidate, duplicate=True),
                 candidate_path=candidate,
                 expected_change="add",
                 expected_terminal_message='{"candidate_written":true}',
                             arm="open_cake",
-            )
+             environment_kind="open_cake")
 
         self.assertEqual(single.provider_tokens, duplicate.provider_tokens, 120)
         self.assertEqual(single.candidate_sha256s, duplicate.candidate_sha256s)
@@ -295,7 +295,7 @@ class ProviderContractTests(unittest.TestCase):
                 expected_change="add",
                 expected_terminal_message='{"candidate_written":true}',
                        arm="open_cake",
-            )
+             environment_kind="open_cake")
 
         self.assertEqual(turn.terminal_message_count, 2)
         self.assertEqual(turn.normalization, "duplicate_semantic_bracketed")
@@ -356,7 +356,7 @@ class ProviderContractTests(unittest.TestCase):
                 expected_change="update",
                 expected_terminal_message='{"candidate_written":true}',
                        arm="open_cake",
-            )
+             environment_kind="open_cake")
             different_paths = json.loads(json.dumps(events))
             for index in (5, 6):
                 different_paths[index]["item"]["changes"][0]["path"] = str(
@@ -386,7 +386,7 @@ class ProviderContractTests(unittest.TestCase):
                 expected_change="update",
                 expected_terminal_message='{"candidate_written":true}',
                        arm="open_cake",
-            )
+             environment_kind="open_cake")
             initial_events = [
                 json.loads(line)
                 for line in self._events(candidate, duplicate=False).splitlines()
@@ -405,7 +405,7 @@ class ProviderContractTests(unittest.TestCase):
                     expected_change="add",
                     expected_terminal_message='{"candidate_written":true}',
                     arm="open_cake",
-                )
+                 environment_kind="open_cake")
 
         self.assertEqual(turn.candidates, (b'{"schedule":2}',))
         self.assertEqual(turn.provider_tokens, 120)
@@ -447,7 +447,7 @@ class ProviderContractTests(unittest.TestCase):
                     submission_contract=CANDIDATE_SET_ENVELOPE_V1,
                     arm=arm,
                     maximum_candidates_per_turn=3,
-                )
+                 environment_kind=arm)
 
             self.assertEqual(turn.candidates, expected)
             self.assertEqual(
@@ -490,7 +490,7 @@ class ProviderContractTests(unittest.TestCase):
                         submission_contract=CANDIDATE_SET_ENVELOPE_V1,
                         arm=arm,
                         maximum_candidates_per_turn=maximum,
-                    )
+                     environment_kind=arm)
 
     def test_json_presentation_preserves_members_order_and_captured_raw_bytes(self) -> None:
         for arm in ("open_cake", "native_triton", "direct_cuda"):
@@ -524,7 +524,7 @@ class ProviderContractTests(unittest.TestCase):
                         self._events(candidate, duplicate=False), candidate_path=candidate,
                         expected_change="add", expected_terminal_message='{"candidate_written":true}',
                         arm=arm, maximum_candidates_per_turn=2,
-                    )
+                     environment_kind=arm)
                     candidate.write_bytes(b"overwritten by a later turn")
                     self.assertEqual(turn.raw_submission, raw)
                     self.assertEqual(turn.candidates, expected)
@@ -564,7 +564,7 @@ class ProviderContractTests(unittest.TestCase):
                         self._events(candidate, duplicate=False), candidate_path=candidate,
                         expected_change="add", expected_terminal_message='{"candidate_written":true}',
                         arm=arm, maximum_candidates_per_turn=2,
-                    )
+                     environment_kind=arm)
 
     def test_nonidentical_duplicate_terminal_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -577,7 +577,7 @@ class ProviderContractTests(unittest.TestCase):
                     expected_change="add",
                     expected_terminal_message='{"candidate_written":true}',
                     arm="open_cake",
-                )
+                 environment_kind="open_cake")
 
     def _notice_bracketed_events(self, candidate):
         terminal = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_turn","turn":1}'
@@ -612,7 +612,7 @@ class ProviderContractTests(unittest.TestCase):
             terminal, events = self._notice_bracketed_events(candidate)
             raw = b"\n".join(json.dumps(event).encode() for event in events)
             turn = normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
-                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake", environment_kind="open_cake")
             self.assertEqual(turn.normalization, "duplicate_exact_bracketed")
             self.assertEqual(turn.candidates, (b'{"schedule":1}',))
             self.assertEqual(turn.provider_tokens, 120)
@@ -633,7 +633,7 @@ class ProviderContractTests(unittest.TestCase):
             events.insert(6, notice)
             raw = b"\n".join(json.dumps(event).encode() for event in events)
             turn = normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
-                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake", environment_kind="open_cake")
             self.assertEqual(turn.raw_events, raw)
             self.assertEqual(turn.candidates, (b'{"schedule":1}',))
             self.assertEqual(turn.provider_tokens, 120)
@@ -646,7 +646,7 @@ class ProviderContractTests(unittest.TestCase):
             candidate.write_text('{"schema_version":1,"arm":"open_cake","candidates":[]}')
             with self.assertRaises(ValueError):
                 normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
-                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake", environment_kind="open_cake")
 
     def test_waiting_for_network_notice_requires_recovered_turn_and_valid_candidate(self):
         from copy import deepcopy
@@ -658,7 +658,7 @@ class ProviderContractTests(unittest.TestCase):
             original.insert(6, {"type": "error", "message": message})
             raw = b"\n".join(json.dumps(e).encode() for e in original)
             turn = normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
-                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake", environment_kind="open_cake")
             self.assertEqual(turn.provider_tokens, 120)
             self.assertEqual(turn.raw_events, raw)
             self.assertEqual(turn.candidates, (b'{"schedule":1}',))
@@ -680,7 +680,7 @@ class ProviderContractTests(unittest.TestCase):
             candidate.write_text('{"schema_version":1,"arm":"open_cake","candidates":[]}')
             with self.assertRaises(ValueError):
                 normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
-                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake", environment_kind="open_cake")
 
     def test_reconnect_notice_cannot_hide_fatal_or_incomplete_turns(self):
         from copy import deepcopy
@@ -792,7 +792,7 @@ class ProviderContractTests(unittest.TestCase):
                 expected_terminal_message='{"candidate_written":true}',
                 event_contract="tool_rich_candidate_v1",
                        arm="open_cake",
-            )
+             environment_kind="open_cake")
 
         self.assertEqual(
             [activity.item_type for activity in turn.tool_activity],
@@ -855,7 +855,7 @@ class ProviderContractTests(unittest.TestCase):
                 expected_terminal_message='{"candidate_written":true}',
                 event_contract="tool_rich_candidate_v1",
                        arm="open_cake",
-            )
+             environment_kind="open_cake")
 
         self.assertEqual(turn.candidates, (b'{"schedule":1}',))
         self.assertEqual(turn.tool_activity[0].item_type, "command_execution")
@@ -964,7 +964,7 @@ class ProviderContractTests(unittest.TestCase):
                 submission_contract=CANDIDATE_SET_ENVELOPE_V1,
                 arm="direct_cuda",
                 maximum_candidates_per_turn=3,
-            )
+             environment_kind="direct_cuda")
 
         self.assertEqual(turn.candidates, (b"// candidate\n",))
         self.assertEqual(turn.terminal_message_count, 3)
@@ -989,12 +989,12 @@ class ProviderContractTests(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
                     expected_terminal_message='{"candidate_written":true}',
-                    event_contract="tool_rich_candidate_v1", arm="open_cake")
+                    event_contract="tool_rich_candidate_v1", arm="open_cake", environment_kind="open_cake")
             # A recovered scratch failure does not invalidate a separately produced artifact.
             self._write_schedule_set(candidate, 1)
             turn = normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
                 expected_terminal_message='{"candidate_written":true}',
-                event_contract="tool_rich_candidate_v1", arm="open_cake")
+                event_contract="tool_rich_candidate_v1", arm="open_cake", environment_kind="open_cake")
             self.assertEqual(turn.tool_activity[0].status, "failed")
             with self.assertRaises(ValueError):
                 parse_codex_turn_events(raw, expected_terminal_message='{"candidate_written":true}',
@@ -1056,7 +1056,7 @@ class ProviderContractTests(unittest.TestCase):
                     expected_terminal_message='{"candidate_written":true}',
                     event_contract="tool_rich_candidate_v1",
                     arm="open_cake",
-                )
+                 environment_kind="open_cake")
 
     def test_tool_rich_turn_rejects_an_incomplete_auxiliary_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1090,7 +1090,7 @@ class ProviderContractTests(unittest.TestCase):
                     expected_terminal_message='{"candidate_written":true}',
                     event_contract="tool_rich_candidate_v1",
                     arm="open_cake",
-                )
+                 environment_kind="open_cake")
 
     def test_unadmitted_item_lifecycle_event_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1116,7 +1116,7 @@ class ProviderContractTests(unittest.TestCase):
                     expected_change="add",
                     expected_terminal_message='{"candidate_written":true}',
                     arm="open_cake",
-                )
+                 environment_kind="open_cake")
 
     def test_candidate_symlink_cannot_cross_the_workspace_custody_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1132,7 +1132,7 @@ class ProviderContractTests(unittest.TestCase):
                     expected_change="add",
                     expected_terminal_message='{"candidate_written":true}',
                     arm="open_cake",
-                )
+                 environment_kind="open_cake")
 
 
 
@@ -1167,7 +1167,7 @@ class ProviderContractTests(unittest.TestCase):
             schema.write_text("{}")
             package = TaskPackage(
                 "open_cake-1",
-                "open_cake",
+                "E0P0",
                 "# TASK.md\n\nImplement the frozen task.\n",
                 "# AGENTS.md\n\nWrite only candidate-set.json.\n",
             )
@@ -1210,6 +1210,7 @@ class ProviderContractTests(unittest.TestCase):
                     event_contract,
                     submission_contract,
                     arm,
+                    environment_kind,
                     maximum_candidates_per_turn,
                 ):
                     self.invocations.append(invocation)
@@ -1259,19 +1260,19 @@ class ProviderContractTests(unittest.TestCase):
             first = provider.turn(
                 SimpleNamespace(
                     run_id="open_cake-1",
-                    arm="open_cake",
+                    arm="E0P0",
                     turn=1,
                     cumulative_provider_tokens=0,
                     thread_id=None,
                     feedback={"kind": "initial"},
                     maximum_candidates_per_turn=2,
                     state_card=state,
-                )
+                 environment_kind="open_cake")
             )
             second = provider.turn(
                 SimpleNamespace(
                     run_id="open_cake-1",
-                    arm="open_cake",
+                    arm="E0P0",
                     turn=2,
                     cumulative_provider_tokens=100,
                     thread_id=first.thread_id,
@@ -1284,7 +1285,7 @@ class ProviderContractTests(unittest.TestCase):
                             "iteration": 2,
                         }
                     ),
-                )
+                 environment_kind="open_cake")
             )
 
             self.assertEqual(
@@ -1304,9 +1305,9 @@ class ProviderContractTests(unittest.TestCase):
             self.assertNotEqual(first.candidate_sha256s, second.candidate_sha256s)
             self.assertEqual((first.provider_tokens, second.provider_tokens), (100, 140))
             with self.assertRaisesRegex(RunProtocolFault, "cumulative thread usage regressed"):
-                provider.turn(SimpleNamespace(run_id="open_cake-1", arm="open_cake", turn=3,
+                provider.turn(SimpleNamespace(run_id="open_cake-1", arm="E0P0", turn=3,
                     cumulative_provider_tokens=240, thread_id=first.thread_id, feedback={},
-                    maximum_candidates_per_turn=2, state_card=state))
+                    maximum_candidates_per_turn=2, state_card=state, environment_kind="open_cake"))
             bundle = json.loads(second.reference_bundle)
             self.assertEqual(bundle["task_markdown"], package.task_markdown)
             self.assertEqual(bundle["agents_markdown"], package.agents_markdown)
@@ -1317,7 +1318,7 @@ class ProviderContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'task file TASK.md custody'):
                 provider.turn(SimpleNamespace(run_id='open_cake-1', arm='open_cake', turn=3,
                     cumulative_provider_tokens=200, thread_id=first.thread_id, feedback={},
-                    maximum_candidates_per_turn=2, state_card=state))
+                    maximum_candidates_per_turn=2, state_card=state, environment_kind='open_cake'))
             self.assertEqual(len(adapter.invocations), 3)
 
 

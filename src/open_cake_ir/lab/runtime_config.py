@@ -27,8 +27,8 @@ def _runtime_command(value: object) -> tuple[str, ...]:
     return tuple(_name(item, "runtime_config.broker.command[]") for item in value)
 
 
-def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, object]:
-    """Parse the current matched runtime document without resolving its paths.
+def load_runtime_config(path: str | Path, *, toolchain_kind: str, provider_kind: str = 'codex') -> dict[str, object]:
+    """Parse the runtime document without resolving its paths.
 
     Builder-specific mount/admission policy and raw file identity stay with their
     consumers. In particular, Triton guest aliases must not be resolved here.
@@ -40,15 +40,19 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
         raise ValueError("runtime configuration fields differ")
     # The field set is the toolchain row's; `toolchain_kind` keeps accepting the spelling
     # the runtime documents under runtime/ and their callers already use.
-    toolchain_fields = set(toolchain_for(toolchain_kind).runtime_fields)
+    toolchain_row = toolchain_for(toolchain_kind)
+    if provider_kind not in {'codex','claude-code','responses'}:
+        raise ValueError('runtime provider kind is unsupported')
+    toolchain_fields = set(toolchain_row.runtime_fields)
     sections = {}
     for name, expected in (
-        ("provider", {"executable", "workspace_root"}),
+        ("provider", set() if provider_kind=='responses' else {"executable", "workspace_root"}),
         ("toolchain", toolchain_fields),
         ("broker", {"command", "cwd", "timeout_seconds", "service_user", "service_group"}),
     ):
         section = value[name]
-        if not isinstance(section, Mapping) or set(section) != expected:
+        optional = toolchain_row.optional_runtime_fields if name == 'toolchain' else frozenset()
+        if not isinstance(section, Mapping) or not expected <= set(section) <= expected | optional:
             raise ValueError(f"runtime_config.{name} fields differ")
         sections[name] = dict(section)
     provider, toolchain, broker = (sections[name] for name in ("provider", "toolchain", "broker"))
@@ -56,7 +60,11 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
         _name(item, f"runtime_config.provider.{name}")
     for name, item in toolchain.items():
         context = f"runtime_config.toolchain.{name}"
-        if name == "timeout_seconds":
+        if name == 'pointer_alignment':
+            _runtime_positive_int(item, context)
+            if item & (item - 1):
+                raise ValueError(f'{context} must be a power of two')
+        elif name == "timeout_seconds":
             _runtime_positive_int(item, context)
         elif name == "runtime_roots":
             # Emptiness stays the builder's admission decision, not this parser's.

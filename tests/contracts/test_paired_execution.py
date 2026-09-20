@@ -141,10 +141,12 @@ class PairedExecutionTests(unittest.TestCase):
         self.close_error = RuntimeError('test-only close failure')
         self.callback_count = 42
         self.latencies = {'candidate': 1.0, 'baseline': 1.0}
+        self.native_activity = False
 
     def execute(self):
         owner = self
         class FakeLoaded:
+            module_count = 1
             def __init__(self, candidate, manifest, inputs, admission):
                 if len(owner.created) == owner.fail_load_at:
                     raise owner.load_error
@@ -193,16 +195,42 @@ class PairedExecutionTests(unittest.TestCase):
             self.output, None, self.workload, self.manifest, self.candidate,
             self.candidate.artifact_payloads, self.case_id, self.baseline)
         result = worker._base_result('gpuq-123456789abc')
-        admission = SimpleNamespace(broker_job_id='gpuq-123456789abc', gpu_uuid='GPU-CPU-fixture')
+        admission = worker.CudaDeviceAdmission('NVIDIA B300', (10, 3), 'GPU-CPU-fixture',
+                                               'gpuq-123456789abc', 'exclusive')
         with patch.object(worker, 'LoadedTorchTensorCandidate', FakeLoaded):
             # The producer takes the assay, not the helper it used to build one from:
             # which assay times an arm is the backend's to say. CUPTI is not bound to a
             # kernel, so both arms share the one instance this builds.
             strict_cupti = worker.StrictCuptiBenchmark(Helper())
+            def assay(callback, **kwargs):
+                values = strict_cupti(callback, **kwargs)
+                if owner.native_activity:
+                    # A source may reuse its capture object. Receipt custody must
+                    # retain each cohort, not twenty references to the final one.
+                    assay.last_activity['sequence'] = len(owner.benchmarks)
+                return values
+            if owner.native_activity:
+                assay.last_activity = {}
             worker._evaluate_paired_tile(authority, result,
-                                         lambda role, manifest: strict_cupti, admission)
+                                         lambda role, manifest: assay, admission)
         self.result = result
         return self.receipt()
+
+    def test_native_capture_manifest_and_device_survive_the_common_paired_producer(self):
+        self.native_activity = True
+        receipt = self.execute()
+        raw = json.loads(receipt.artifact_payloads['timing_samples'])
+        launch = json.loads(receipt.artifact_payloads['launch_receipt'])
+        captures = [row['arms'][role]['native_activity']['sequence']
+                    for row in raw['measurements'] for role in row['order']]
+        self.assertEqual(captures, list(range(1, 21)))
+        self.assertEqual(raw['device_admission'], launch['device_admission'])
+        self.assertEqual(raw['device_admission']['gpu_uuid'], 'GPU-CPU-fixture')
+        self.assertEqual(raw['launch_manifests']['candidate'], self.manifest.as_dict())
+        changed = copy.deepcopy(raw)
+        changed['launch_manifests']['candidate']['workload_sha256'] = 'f' * 64
+        with self.assertRaisesRegex(ValueError, 'participant seal'):
+            self.receipt(payloads={**receipt.artifact_payloads, 'timing_samples': encoded(changed)})
 
     def receipt(self, *, payloads=None, timing=None):
         values = self.result['receipt']
@@ -366,17 +394,19 @@ class PairedExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'job or work counters'):
             validate_paired_broker(receipt, 'gpuq-123456789abc', {**self.result['counters'], 'timing_samples': 499})
 
-    def test_submitter_transports_both_sealed_bundles_to_worker_and_checks_actual_job(self):
+    def _submitter_transport(self, *, corrupt_summary=False, unsafe_artifact=False):
         retained = self.execute()
         executor_reference = {'path':'runtime/executors/CPU-fixture.json',
                                'executor_id':'CPU-fixture'}
         executor = SimpleNamespace(reference=executor_reference,  executor_id='CPU-fixture', project_root=ROOT)
         requests = []
+        temporary_roots = []
         def command(argv, **kwargs):
             request_path = Path(argv[argv.index('--request') + 1])
             result_path = Path(argv[argv.index('--output') + 1])
             document = json.loads(request_path.read_bytes())
             requests.append(document)
+            temporary_roots.append(request_path.parent)
             with patch.object(worker.ExecutorRevision, 'load_reference', return_value=executor):
                 authority = worker._load_authority(request_path)
             self.assertEqual(authority.candidate, self.candidate)
@@ -384,7 +414,11 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(authority.request['evaluation_protocol'], self.protocol)
             for role, name in self.result['receipt']['artifacts'].items():
                 (request_path.parent / name).write_bytes(retained.artifact_payloads[role])
-            result = {**self.result, 'admitted':True}
+            result = {**copy.deepcopy(self.result), 'admitted':True}
+            if corrupt_summary:
+                result['receipt']['timing']['pooled_median_ms'] = 9.0
+            if unsafe_artifact:
+                result['receipt']['artifacts']['timing_samples'] = '../outside-receipt'
             result_path.write_bytes(encoded(result))
             return SimpleNamespace(returncode=0, stdout=b'',
                 stderr=b'[gpu-run] accepted job gpuq-123456789abc\n')
@@ -398,10 +432,36 @@ class PairedExecutionTests(unittest.TestCase):
             evaluation_protocol=self.protocol, baseline=self.baseline,
             workload_loader=load_workload)
         with patch('open_cake_ir.lab.runtime.run_supervised', side_effect=command):
+            if corrupt_summary or unsafe_artifact:
+                from open_cake_ir.lab.faults import RunProtocolFault
+                with self.assertRaisesRegex(RunProtocolFault, 'evaluator evidence rejected') as caught:
+                    submitter.submit(self.candidate, case_id='tiny', purpose='search', attempt=1)
+                self.assertTrue(all(not path.exists() for path in temporary_roots))
+                return retained, caught.exception
             attempt = submitter.submit(self.candidate, case_id='tiny', purpose='search', attempt=1)
         self.assertEqual(attempt.receipt.canonical_sha256, retained.canonical_sha256)
         self.assertEqual(len(requests), 1)
         self.assertTrue(all(value.startswith('baseline-') for value in requests[0]['baseline']['artifact_paths'].values()))
+
+    def test_submitter_transports_both_sealed_bundles_to_worker_and_checks_actual_job(self):
+        self._submitter_transport()
+
+    def test_rejected_receipt_retains_raw_artifacts_after_worker_directory_is_removed(self):
+        retained, fault = self._submitter_transport(corrupt_summary=True)
+        self.assertEqual(fault.protocol_adherence, 'broker_fault')
+        self.assertIsInstance(fault.__cause__, ValueError)
+        self.assertEqual(json.loads(fault.artifact_payloads['broker_result'])['receipt']['timing']['pooled_median_ms'], 9.0)
+        self.assertIn('gpuq-123456789abc', fault.artifact_payloads['broker_stderr'].decode())
+        for role, payload in retained.artifact_payloads.items():
+            self.assertEqual(fault.artifact_payloads[f'receipt_{role}'], payload)
+
+    def test_fault_retention_never_opens_an_unsafe_artifact_to_complete_its_evidence(self):
+        retained, fault = self._submitter_transport(unsafe_artifact=True)
+        self.assertIn('unsafe', str(fault))
+        self.assertNotIn('receipt_timing_samples', fault.artifact_payloads)
+        self.assertEqual(fault.artifact_payloads['receipt_correctness_output'],
+                         retained.artifact_payloads['correctness_output'])
+        self.assertIn('broker_result', fault.artifact_payloads)
 
     def test_nested_paired_receipt_archives_and_replays_against_raw_evidence(self):
         receipt = self.execute()
@@ -683,6 +743,7 @@ class PairedExecutionTests(unittest.TestCase):
             stack.enter_context(patch('open_cake_ir.compiler.Compiler.load', return_value=draft))
             toolchain = stack.enter_context(patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler' if comparison == 'native_triton' else 'open_cake_ir.lab.cute_build.IsolatedCuTeCompiler'))
             toolchain.return_value.canonical_sha256 = 'b'*64
+            toolchain.return_value.pointer_alignment = None
             stack.enter_context(patch('open_cake_ir.lab.bindings.broker_execution_sha256', return_value='c'*64))
             lock = Lab(project).preflight(template, execution_bindings_path=bp)
             resolver.assert_called_once_with(project, {'binding': 'current_release'},
@@ -725,25 +786,28 @@ class PairedExecutionTests(unittest.TestCase):
                 else:
                     self.assertIn('restricted Python', package.agents_markdown)
 
-            # Exercise live composition through its existing Lab.execute handoff.
-            # The CPU fixture constructs the provider and injects the broker boundary;
-            # it requires no service account and invokes neither adapter.
+            # Each independently allocated Run binds fresh provider state through
+            # the production factory. Frozen toolchain identity remains common.
             from open_cake_ir.tasks import compose
             with patch.object(compose, '_admit_executor', return_value=(bound_executor, None)), \
                  patch.object(compose, 'broker_execution_sha256', return_value='c'*64), \
                  patch.object(draft, 'check_corpus', return_value=gate), \
                  patch.object(compose, 'CommandBrokerSubmitter') as broker, \
-                 patch.object(compose.TaskLab, 'execute', return_value='CPU-composition-handoff') as execute:
-                result = compose.execute_matched_from_config(project, lock, rp, self.output / 'unused-run-evidence')
-            self.assertEqual(result, 'CPU-composition-handoff')
+                 patch.object(compose.TaskLab, 'preflight_run', side_effect=lambda spec:spec):
+                factory = compose.run_runtime_factory(project,rp)
+                components = {run_id:factory(lock.run_specification(run_id),self.output/run_id)
+                              for run_id in lock.run_order}
             self.assertEqual(broker.call_args.kwargs['baseline'], baseline)
             broker.return_value.submit.assert_not_called()
-            environments = execute.call_args.kwargs['environments']
+            environments = {lock.run_specification(run_id).environment_kind:value['environment']
+                            for run_id,value in components.items()}
             self.assertEqual(set(environments), {'open_cake', comparison})
-            self.assertIs(environments['open_cake']._toolchain, environments[comparison]._toolchain)
             self.assertIs(environments['open_cake']._toolchain._isolated, toolchain.return_value)
+            self.assertIs(environments[comparison]._toolchain._isolated, toolchain.return_value)
             self.assertEqual(environments[comparison].media_type, policy.media_type)
-            self.assertEqual(set(execute.call_args.kwargs['provider']._builders), set(lock.run_order))
+            self.assertEqual(len({id(value['provider']) for value in components.values()}),len(lock.run_order))
+            for run_id,value in components.items():
+                self.assertEqual(set(value['provider']._builders),{run_id})
 
             if comparison == 'native_triton':
                 invalid_workload = workload.document

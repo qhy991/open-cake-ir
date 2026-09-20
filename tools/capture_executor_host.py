@@ -285,7 +285,8 @@ def _check_maca_arguments(arguments: argparse.Namespace) -> None:
 
 
 def _capture_maca_host(arguments: argparse.Namespace) -> dict[str, object]:
-    from open_cake_ir.lab.metax_host import BUILD_TOOLS
+    import ctypes
+    from open_cake_ir.lab.metax_host import BUILD_TOOLS, LIBRARIES
     common = _capture_python_and_packages(arguments)
     torch = importlib.import_module("torch")
     triton = importlib.import_module("triton")
@@ -305,15 +306,20 @@ def _capture_maca_host(arguments: argparse.Namespace) -> dict[str, object]:
         result = subprocess.run(argv, capture_output=True, text=True, check=True, timeout=30)
         version = next((s.strip() for s in (result.stdout or result.stderr).splitlines() if s.strip()), "")
         tools.append({**_file_record(path.resolve(strict=True), str(path)), "kind": kind, "version": version})
-    library = sdk / "lib/libmcruntime.so"
+    activity = ctypes.CDLL(str((sdk / "lib/libmcpti.so").resolve(strict=True)))
+    query = activity.mcptiGetVersion
+    query.argtypes, query.restype = [ctypes.POINTER(ctypes.c_uint32)], ctypes.c_int
+    version = ctypes.c_uint32()
+    if query(ctypes.byref(version)) != 0 or version.value <= 0:
+        raise ValueError("MACA activity API version is unavailable")
     return {**common, "kind": "maca",
         "platform": {"system": platform.system(), "machine": platform.machine(), "kernel_release": platform.release()},
         "runtime": {"backend": "maca", "torch_maca_version": maca_version,
-                    "triton_version": triton.__version__,
+                    "triton_version": triton.__version__, "activity_api_version": version.value,
                     "build_environment": _capture_build_environment(arguments.maca_build_environment)},
         "tools": {"build_tools": tools},
-        "runtime_libraries": [{**_file_record(library.resolve(strict=True), str(library)),
-                               "soname": "libmcruntime.so"}],
+        "runtime_libraries": [{**_file_record((sdk / "lib" / name).resolve(strict=True), str(sdk / "lib" / name)),
+                               "soname": name} for name in sorted(LIBRARIES)],
     }
 
 

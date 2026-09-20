@@ -1,6 +1,7 @@
 from open_cake_ir.tasks.workloads import load_workload
 """CPU protocol regressions for the shared Workload-tensor GPU worker."""
 import json
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -20,6 +21,56 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TileGpuWorkerTests(unittest.TestCase):
+    def test_capture_retains_all_fresh_arguments_without_claiming_correctness(self):
+        calls = []
+        arguments = [object() for _ in range(4)]
+        loaded = SimpleNamespace(fresh_argument_sets=lambda count: arguments,
+                                 launch=calls.append,
+                                 release_argument_sets=mock.Mock(),
+                                 snapshot=mock.Mock(side_effect=AssertionError('capture is not validation')))
+        def measure(function, **options):
+            self.assertEqual(options,dict(dry_run_iters=11,repeat_iters=2,
+                                         cold_l2_cache=True,use_cuda_graph=False))
+            for _ in range(4): function()
+            return [1.0,2.0]
+        samples, retained = worker.capture_tile_cohort(loaded,measure,
+            samples_per_cohort=2,route_calls_per_cohort=4)
+        self.assertEqual(samples,[1.0,2.0])
+        self.assertIs(retained,arguments)
+        self.assertEqual(calls,arguments)
+        loaded.snapshot.assert_not_called()
+        loaded.release_argument_sets.assert_not_called()
+
+    def test_failed_capture_releases_unreturned_program_arguments(self):
+        arguments = [object()]
+        loaded = SimpleNamespace(fresh_argument_sets=lambda count: arguments,
+                                 launch=mock.Mock(), release_argument_sets=mock.Mock())
+        with self.assertRaisesRegex(RuntimeError, 'timer failed'):
+            worker.capture_tile_cohort(loaded, mock.Mock(side_effect=RuntimeError('timer failed')),
+                samples_per_cohort=1, route_calls_per_cohort=1)
+        loaded.release_argument_sets.assert_called_once_with(arguments)
+
+    def test_immediate_validation_releases_retained_program_arguments_on_success_and_fault(self):
+        inputs = {'x': [1.]}
+        arguments = [object()]
+        observation = dict(output_mismatches=0, max_abs_error=0., inputs_unchanged=True)
+        for error in (None, RuntimeError('snapshot failed')):
+            with self.subTest(error=error):
+                loaded = SimpleNamespace(snapshot=mock.Mock(return_value=({}, {}), side_effect=error),
+                                         release_argument_sets=mock.Mock())
+                with mock.patch.object(worker, 'capture_tile_cohort', return_value=([1.], arguments)), \
+                     mock.patch.object(worker, 'compare_tile_outputs', return_value=(True, observation)):
+                    if error is None:
+                        samples, check = worker._fresh_tile_cohort(loaded, None, self.workload, inputs, {},
+                            samples_per_cohort=1, route_calls_per_cohort=1)
+                        self.assertEqual(samples, [1.])
+                        self.assertTrue(check['passed'])
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'snapshot failed'):
+                            worker._fresh_tile_cohort(loaded, None, self.workload, inputs, {},
+                                samples_per_cohort=1, route_calls_per_cohort=1)
+                loaded.release_argument_sets.assert_called_once_with(arguments)
+
     def setUp(self):
         self.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')
         self.manifest = TensorLaunchManifest.for_workload(self.workload, 'tiny', target='sm_100a',
@@ -32,14 +83,16 @@ class TileGpuWorkerTests(unittest.TestCase):
         from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission
         self.admission = CudaDeviceAdmission('NVIDIA B200', (10, 0), 'fixture-uuid', 'gpuq-123456789abc', 'exclusive')
 
-    def assay(self, *, fail_preflight=False, mutate_after_timing=False, timing_error=False, write_once=False):
+    def assay(self, *, fail_preflight=False, mutate_after_timing=False, timing_error=False, write_once=False, profile=False):
         workload = self.workload
         instances = []
 
         class Loaded:
+            module_count = 1
             def __init__(self, candidate, manifest, inputs, admission):
                 self.loaded = SimpleNamespace(launch_calls=0, resources={})
                 self.inputs = inputs
+                self.admission = admission
                 self.closed = False
                 instances.append(self)
 
@@ -65,7 +118,9 @@ class TileGpuWorkerTests(unittest.TestCase):
                 if fail_preflight:
                     output['y'][0] += 1
                 return output, after, {'candidate_sha256': candidate.candidate_sha256,
-                    'kernel_calls': 1, 'fallback_calls': 0}
+                    'kernel_calls': 1, 'fallback_calls': 0,
+                    'manifest_sha256': manifest.canonical_sha256,
+                    'device_admission': asdict(self.admission)}
 
             def close(self):
                 self.closed = True
@@ -98,6 +153,33 @@ class TileGpuWorkerTests(unittest.TestCase):
             # so the double is handed in rather than patched over a constructor that is
             # no longer called.
             with mock.patch.object(worker, 'LoadedTorchTensorCandidate', Loaded):
+                if profile:
+                    authority.request = {'purpose': 'attribution', 'evaluation_protocol': {
+                        'case_id': 'tiny', 'attribution_evaluation': 'correctness_then_profile'}}
+                    def collect(launch, name):
+                        launch()
+                        return {'observed': name}
+                    def evaluate_profile():
+                        worker._evaluate_tile_candidate(authority, result, None, self.admission, False,
+                            route_calls_per_cohort=None, profile_source=collect,
+                            profile_format=SimpleNamespace(kind='fixture_profile', summary=dict))
+                    if write_once:
+                        with self.assertRaisesRegex(ValueError, 'instrumented dispatch output'):
+                            evaluate_profile()
+                        self.assertIsNone(result['receipt'])
+                    else:
+                        evaluate_profile()
+                        correctness = json.loads((root / 'correctness-output.json').read_bytes())
+                        launch = json.loads((root / 'launch-receipt.json').read_bytes())
+                        self.assertTrue(correctness['instrumented']['passed'])
+                        self.assertEqual(correctness['correctness_launches'], 2)
+                        self.assertEqual(launch['correctness_launches'], 2)
+                        self.assertEqual(launch['manifest_sha256'], self.candidate.launch_spec_sha256)
+                        self.assertIsNone(result['receipt']['timing'])
+                    self.assertEqual(result['counters']['kernel_calls'], 2)
+                    self.assertEqual(result['counters']['timing_samples'], 0)
+                    self.assertTrue(instances[0].closed)
+                    return
                 if timing_error:
                     with self.assertRaisesRegex(RuntimeError, 'CUPTI failure'):
                         worker._evaluate_tile_candidate(
@@ -129,6 +211,9 @@ class TileGpuWorkerTests(unittest.TestCase):
                 self.assertEqual(len(raw['timing']['non_target_dispatches_per_cohort']),
                                  raw['timing']['cohort_count'])
             artifacts = {role: (root / path).read_bytes() for role, path in raw['artifacts'].items()}
+            launch = json.loads(artifacts['launch_receipt'])
+            self.assertEqual(launch['manifest_sha256'], self.candidate.launch_spec_sha256)
+            self.assertEqual(launch['device_admission'], json.loads(encoded(asdict(self.admission))))
             receipt = EvaluationReceipt(self.candidate.candidate_sha256, workload.canonical_sha256,
                 'b' * 64, 'confirmatory', 'tiny', raw['correctness_passed'], raw['correctness'],
                 raw['kernel_calls'], raw['fallback_calls'], sha256(artifacts['launch_receipt']).hexdigest(),
@@ -153,6 +238,12 @@ class TileGpuWorkerTests(unittest.TestCase):
     def test_worker_preflight_timing_postflight_forms_a_valid_common_receipt(self):
         self.assay()
 
+    def test_instrumented_output_has_its_own_oracle_check(self):
+        self.assay(profile=True)
+
+    def test_passing_preflight_cannot_hide_unwritten_instrumented_outputs(self):
+        self.assay(profile=True, write_once=True)
+
     def test_wrong_preflight_does_not_enter_timing(self):
         self.assay(fail_preflight=True)
 
@@ -172,9 +263,20 @@ class TileGpuWorkerTests(unittest.TestCase):
             def cpu(self): return self
             def tolist(self): return list(self.values)
             def fill_(self, value): self.values[:] = [value] * len(self.values)
+            def detach(self): return self
+            def contiguous(self): return self
+            def to(self, **_):
+                import ctypes
+                self.storage = (ctypes.c_double * len(self.values))(*self.values)
+                return self
+            def numel(self): return len(self.values)
+            def element_size(self): return 8
+            def data_ptr(self):
+                import ctypes
+                return ctypes.addressof(self.storage)
 
         import math
-        fake_torch = SimpleNamespace(float32='fp32', bfloat16='bf16', float16='fp16', int32='int32',
+        fake_torch = SimpleNamespace(float32='fp32', bfloat16='bf16', float16='fp16', int32='int32', float64='fp64',
             tensor=lambda values, **_: Tensor(values),
             full=lambda shape, value, **_: Tensor([value] * math.prod(shape)),
             full_like=lambda tensor, value: Tensor([value] * len(tensor.values)),

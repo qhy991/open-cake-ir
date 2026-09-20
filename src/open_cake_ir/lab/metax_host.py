@@ -10,7 +10,7 @@ from pathlib import Path
 
 PACKAGES = frozenset({"torch", "flagtree", "packaging", "pybind11", "psutil", "setuptools"})
 BUILD_TOOLS = frozenset({"cxx", "mxcc", "bwrap", "sh"})
-LIBRARIES = frozenset({"libmcruntime.so"})
+LIBRARIES = frozenset({"libmcruntime.so", "libmcpti.so"})
 
 
 def validate_host(host: Mapping) -> None:
@@ -30,10 +30,11 @@ def validate_host(host: Mapping) -> None:
         raise ValueError("MACA host package set differs")
     runtime = host["runtime"]
     if (not isinstance(runtime, Mapping)
-            or set(runtime) != {"backend", "torch_maca_version", "triton_version", "build_environment"}
+            or set(runtime) != {"backend", "torch_maca_version", "triton_version", "build_environment", "activity_api_version"}
             or runtime["backend"] != "maca"
             or any(not isinstance(runtime[k], str) or not runtime[k]
                    for k in ("torch_maca_version", "triton_version"))
+            or type(runtime["activity_api_version"]) is not int or runtime["activity_api_version"] <= 0
             or not _build_environment(runtime["build_environment"])):
         raise ValueError("MACA runtime authority differs")
     if (not isinstance(host["tools"], Mapping) or set(host["tools"]) != {"build_tools"}
@@ -64,17 +65,27 @@ def admit_host(host: Mapping, *, executor_id: str = "") -> Mapping:
         raise ValueError("MACA PyTorch or Triton provider differs from capture")
     for row in host["tools"]["build_tools"]:
         _admit_executable(row, "MACA build tool")
-    library = _admit_shared_library(host["runtime_libraries"][0], "MACA runtime library")
-    expected = Path(library["path"]).resolve(strict=True)
-    mapped = set()
+    import ctypes
+    libraries = {row["soname"]: _admit_shared_library(row, "MACA runtime library")
+                 for row in host["runtime_libraries"]}
+    expected = {name: Path(row["path"]).resolve(strict=True) for name, row in libraries.items()}
+    activity = ctypes.CDLL(str(expected["libmcpti.so"]))
+    query = activity.mcptiGetVersion
+    query.argtypes, query.restype = [ctypes.POINTER(ctypes.c_uint32)], ctypes.c_int
+    version = ctypes.c_uint32()
+    if query(ctypes.byref(version)) != 0 or version.value != host["runtime"]["activity_api_version"]:
+        raise ValueError("MACA activity API differs from capture")
+    mapped = {name: set() for name in LIBRARIES}
     for line in Path("/proc/self/maps").read_text().splitlines():
         fields = line.split(maxsplit=5)
         if len(fields) != 6 or not fields[5].startswith("/"):
             continue
         path = Path(fields[5])
-        if path.name == "libmcruntime.so" or path.name.startswith("libmcruntime.so."):
-            mapped.add(path.resolve(strict=True))
-    if mapped != {expected}:
-        raise ValueError("MACA PyTorch has not loaded exactly the captured runtime library")
+        for name in LIBRARIES:
+            if path.name == name or path.name.startswith(name + "."):
+                mapped[name].add(path.resolve(strict=True))
+    if any(mapped[name] != {path} for name, path in expected.items()):
+        raise ValueError("MACA has not loaded exactly the captured runtime and activity libraries")
     return {"executor_id": executor_id, "kind": "maca", "triton_version": triton.__version__,
-            "runtime_library": str(expected)}
+            "runtime_library": str(expected["libmcruntime.so"]),
+            "activity_library": str(expected["libmcpti.so"]), "activity_api_version": version.value}

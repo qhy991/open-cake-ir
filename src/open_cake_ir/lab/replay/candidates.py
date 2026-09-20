@@ -16,6 +16,7 @@ from ..contracts import CampaignLock
 from ..pairing import comparison_arm, native_backend
 from open_cake_ir.evaluation.paired import paired_protocol
 from ..routing import route_rejection
+from ..evaluation_lifecycle import evaluation_origin
 
 
 def _artifact_outcomes_are_closed(payload: Mapping[str, object]) -> bool:
@@ -57,6 +58,8 @@ def _replay_candidates(
     protocol_sha256: str,
     provider_candidates_by_turn: Mapping[int, tuple[str, ...]],
     workload_sha256: str,
+    compiler_factory=None,
+    provider_candidate_bytes=None,
 ) -> tuple[
     dict[tuple[int, str], LaunchableCandidate],
     dict[tuple[int, str, str], EvaluationReceipt],
@@ -72,10 +75,10 @@ def _replay_candidates(
         payload = _object(
             event.get("payload"), "evaluation_attempt_completed.payload"
         )
-        turn = payload.get("turn")
+        turn = evaluation_origin(payload)
         purpose = payload.get("purpose")
         candidate_sha256 = payload.get("candidate_sha256")
-        expected_fields = {"turn", "purpose", "candidate_sha256", "objects"}
+        expected_fields = {"source_turn" if "source_turn" in payload else "turn", "purpose", "candidate_sha256", "objects"}
         if set(payload) != expected_fields:
             refuse(f"{location}.payload", "fields differ", observed=set(payload),
                    expected=expected_fields)
@@ -96,6 +99,7 @@ def _replay_candidates(
                    observed={"turn": turn, "purpose": purpose, "candidate_sha256": candidate_sha256})
         attempt_payloads[key] = payload
     replayed_attempts: set[tuple[int, str, str]] = set()
+    used_job_ids = set()
     launchable_events = [
         event for event in events if event.get("kind") == "launchable_candidate_sealed"
     ]
@@ -114,13 +118,18 @@ def _replay_candidates(
         if key in launchables:
             refuse(location, "a second sealed launchable for one Turn and candidate",
                    observed={"turn": turn, "candidate_sha256": candidate_sha256})
+        if candidate_sha256 not in provider_candidates_by_turn.get(turn, ()):
+            refuse(location, 'launchable candidate was not submitted in this Turn')
+        if provider_candidate_bytes is not None and key not in provider_candidate_bytes:
+            refuse(location, 'archived author candidate bytes are missing')
         launchables[key] = _replay_launchable_candidate(
             evidence,
             launchable_events,
             turn=turn,
             candidate_sha256=candidate_sha256,
             arm=arm,
-            manifest_parser=manifest_parser,
+            manifest_parser=manifest_parser, compiler_factory=compiler_factory,
+            authored_bytes=provider_candidate_bytes[(turn, candidate_sha256)] if provider_candidate_bytes is not None else None,
         )
 
     receipts: dict[tuple[int, str, str], EvaluationReceipt] = {}
@@ -180,15 +189,10 @@ def _replay_candidates(
                        observed={"turn": turn, "candidate_sha256": candidate_sha256})
             rejected[(turn, candidate_sha256)] = payload
         elif kind == "candidate_evaluated":
-            turn = payload.get("turn")
+            turn = evaluation_origin(payload)
             purpose = payload.get("purpose")
             candidate_sha256 = payload.get("candidate_sha256")
-            expected_fields = {"turn", "purpose", "candidate_sha256", "objects"}
-            if purpose == "confirmatory" and (
-                native_backend(comparison_arm(lock.document["resolved_inputs"]["arm_environments"])) is not None
-                or paired_protocol(lock.document["evaluation_protocol"]) is not None
-            ):
-                expected_fields.add("elapsed_wall_seconds")
+            expected_fields = {"source_turn" if "source_turn" in payload else "turn", "purpose", "candidate_sha256", "objects",'elapsed_wall_seconds'}
             if set(payload) != expected_fields:
                 refuse(f"{location}.payload", "fields differ", observed=set(payload),
                        expected=expected_fields)
@@ -234,6 +238,7 @@ def _replay_candidates(
                 protocol_sha256=protocol_sha256,
                 compiler_reference=lock.document["compiler_revision"],
                 final_receipt=validated_receipt,
+                case_id=case_id, used_job_ids=used_job_ids,
                 location=event_location("evaluation_attempt_completed", turn=turn, purpose=purpose,
                                         candidate=candidate_sha256),
             )
@@ -264,6 +269,7 @@ def _replay_candidates(
             protocol_sha256=protocol_sha256,
             compiler_reference=lock.document["compiler_revision"],
             final_receipt=None,
+            case_id=case_id, used_job_ids=used_job_ids,
             location=location,
         )
 

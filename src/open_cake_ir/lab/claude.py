@@ -606,7 +606,7 @@ def normalize_claude_turn(raw_events: bytes, *, candidate_path: Path, expected_c
                           expected_terminal_message: str, expected_thread_id: str | None = None,
                           event_contract: str = CLAUDE_EVENT_CONTRACT,
                           submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
-                          arm: str | None = None, maximum_candidates_per_turn: int = 1) -> ProviderTurn:
+                          arm: str | None = None, environment_kind: str = "open_cake", maximum_candidates_per_turn: int = 1) -> ProviderTurn:
     """Seal the existing candidate envelope; Python remains source inside its member."""
     if event_contract not in CLAUDE_EVENT_CONTRACTS or expected_change not in {"add", "update"}:
         raise ValueError("Claude event or candidate lifecycle contract differs")
@@ -619,7 +619,7 @@ def normalize_claude_turn(raw_events: bytes, *, candidate_path: Path, expected_c
         raise ValueError("Claude resumed session identity differs")
     submission = _read_candidate_nofollow(candidate_path)
     candidates = _project_candidate_submission(submission, submission_contract=submission_contract,
-        arm=arm, maximum_candidates_per_turn=maximum_candidates_per_turn)
+        arm=arm, environment_kind=environment_kind, maximum_candidates_per_turn=maximum_candidates_per_turn)
     return ProviderTurn(
         thread_id=parsed.thread_id, provider_tokens=parsed.provider_tokens, candidates=candidates,
         candidate_sha256s=tuple(sha256(candidate).hexdigest() for candidate in candidates),
@@ -794,7 +794,7 @@ class ClaudeProviderAdapter:
     def execute(self, invocation: ProviderInvocation, *, candidate_path: Path, expected_change: str,
                 expected_terminal_message: str, event_contract: str = CLAUDE_EVENT_CONTRACT,
                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
-                arm: str | None = None, maximum_candidates_per_turn: int = 1) -> ProviderTurn:
+                arm: str | None = None, environment_kind: str = "open_cake", maximum_candidates_per_turn: int = 1) -> ProviderTurn:
         if (invocation.sandbox != "none" or event_contract not in CLAUDE_EVENT_CONTRACTS or
                 submission_contract != CANDIDATE_SET_ENVELOPE_V1 or expected_change not in {"add", "update"} or
                 candidate_path.absolute() != invocation.cwd.absolute() / "candidate-set.json"):
@@ -839,7 +839,7 @@ class ClaudeProviderAdapter:
             return normalize_claude_turn(completed.stdout, candidate_path=candidate_path,
                 expected_change=expected_change, expected_terminal_message=expected_terminal_message,
                 expected_thread_id=invocation.thread_id, event_contract=event_contract,
-                submission_contract=submission_contract, arm=arm,
+                submission_contract=submission_contract, arm=arm, environment_kind=environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn)
         except ClaudeCandidateWriteUnwitnessed as error:
             # F-2026-09-16-002: the boundary shape gets its own fault type so the

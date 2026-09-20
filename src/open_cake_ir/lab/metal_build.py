@@ -218,9 +218,10 @@ class MetalToolchainBuilder:
         source = directory / "lowered.metal"
         source.write_bytes(request.source)
         archive = directory / "pipeline.binary.metallib"
-        report = self.host.invoke({"action": "build", "target": request.target,
+        from .build import invoke_compiler
+        report = invoke_compiler(request, compiler="metal", variant="pipeline_archive", operation=lambda: self.host.invoke({"action": "build", "target": request.target,
             "expected_device_names": list(self.target.device_names), "entry_point": request.entry_point,
-            "archive_path": str(archive), "source_path": str(source), "expected_host": None}, directory / "compile")
+            "archive_path": str(archive), "source_path": str(source), "expected_host": None}, directory / "compile"))
         if report.get("status") != "completed":
             if report.get("stage") in {"source_compile", "function_lookup", "archive_serialize", "strict_pipeline_load"}:
                 raise CandidateCompileRejected(str(report.get("error")), artifact_payloads={"metal_build_report": _json(report)})

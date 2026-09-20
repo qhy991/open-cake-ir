@@ -123,7 +123,9 @@ class CuTeToolchainBuilder:
             raise ValueError("CuTe build requirements differ from the Workload tensor ABI")
         if self._isolated is None:
             raise RunProtocolFault("harness_fault", "CuTe requires filesystem-isolated compilation")
-        compiled = self._isolated.compile(request.source, requirements)
+        from .build import invoke_compiler
+        compiled = invoke_compiler(request, compiler='cute', variant='generic',
+            operation=lambda: self._isolated.compile(request.source, requirements))
         validate_cute_compilation(compiled, request.source, requirements)
         manifest = TensorLaunchManifest.for_workload(self._workload, self._case_id,
             target=compiled.target, kernel_name=compiled.entry_point, grid=requirements["grid"],

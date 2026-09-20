@@ -23,6 +23,8 @@ def _replay_launchable_candidate(
     candidate_sha256: str,
     arm: str,
     manifest_parser: Callable,
+    compiler_factory=None,
+    authored_bytes=None,
 ) -> LaunchableCandidate:
     """Rebuild one sealed launchable and enforce its arm-owned artifact contract."""
 
@@ -69,9 +71,11 @@ def _replay_launchable_candidate(
         refuse(f"{location}.payload.objects", "launchable candidate lacks its launch manifest",
                observed=set(artifact_roles))
     manifest = manifest_parser(json.loads(artifact_payloads["launch_manifest"]))
-    if not _arm_artifact_roles(arm, manifest.target) <= set(artifact_roles):
+    if hasattr(manifest, 'check_complete_domain'):
+        manifest.check_complete_domain()
+    if not _arm_artifact_roles(arm, manifest.target, program="program_bundle" in artifact_roles) <= set(artifact_roles):
         refuse(f"{location}.payload.objects", "launchable candidate arm artifact roles differ",
-               observed=set(artifact_roles), expected=_arm_artifact_roles(arm, manifest.target))
+               observed=set(artifact_roles), expected=_arm_artifact_roles(arm, manifest.target, program="program_bundle" in artifact_roles))
     if artifact_roles["launch_manifest"] != manifest.canonical_sha256:
         refuse(f"{location}.launch_manifest", "launchable candidate launch manifest seal differs")
     candidate = LaunchableCandidate(
@@ -82,6 +86,62 @@ def _replay_launchable_candidate(
         launch_spec_sha256=manifest.canonical_sha256,
         artifact_payloads=artifact_payloads,
     )
+    authored = json.loads(authored_bytes) if arm=='open_cake' and authored_bytes is not None else None
+    if candidate.is_program or isinstance(authored,Mapping) and 'program_id' in authored:
+        if compiler_factory is None:
+            raise ValueError('Program replay requires its exact Compiler')
+        from open_cake_ir.compiler import Program
+        from open_cake_ir.evaluation.program import program_tensor_abi, single_kernel_lowering
+        program = Program.from_dict(authored)
+        lowered = compiler_factory().lower_program(program)
+        if not candidate.is_program:
+            single = single_kernel_lowering(lowered)
+            if (single is None or candidate.target != program.target
+                or manifest.tensor_abi != program_tensor_abi(program)
+                or candidate.artifact_roles.get('lowered_source') != single.source_sha256
+                or list(manifest.grid) != single.toolchain_requirements.get('grid',single.toolchain_requirements.get('threadgroups_per_grid'))):
+                raise ValueError('single-kernel artifact differs from its authored Program lowering or ABI')
+            from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
+            if single.route.backend is LoweringBackend.CUTLASS_CUTE_DSL:
+                # CuTe owns its SDK-mangled binary symbol and complete compiler ABI.
+                # Reuse the same receipt verifier as its builder, not source-name equality.
+                from open_cake_ir.compiler.cute_toolchain import CuTeCompilation, validate_cute_compilation
+                if not {'compiler_expanded_source','ptx','cubin','toolchain_resource_report'} <= set(candidate.artifact_payloads):
+                    raise ValueError('single-kernel CuTe compilation evidence is incomplete')
+                report = _object(json.loads(candidate.artifact_payloads['toolchain_resource_report']),'CuTe compiler report')
+                compiled = CuTeCompilation(single.source.encode(),candidate.target,candidate.entry_point,
+                    {'source':candidate.artifact_payloads['compiler_expanded_source'],
+                     **{role:candidate.artifact_payloads[role] for role in ('ptx','cubin','toolchain_resource_report')}},
+                    manifest.block[0],manifest.dynamic_shared_memory_bytes,report.get('compiler_version'))
+                validate_cute_compilation(compiled,single.source.encode(),single.toolchain_requirements)
+                if list(manifest.block) != single.toolchain_requirements['block'] or manifest.hidden_null_pointer_parameters != 0:
+                    raise ValueError('single-kernel CuTe launch ABI differs')
+            elif candidate.entry_point != single.toolchain_requirements.get('kernel_entry_point',single.route.entry_point):
+                raise ValueError('single-kernel entry point differs from its authored Program lowering')
+            if single.route.backend is LoweringBackend.TRITON:
+                from open_cake_ir.evaluation.program import check_triton_launch_record
+                check_triton_launch_record(candidate,manifest,single.source_sha256)
+                if manifest.aligned_variant:
+                    from open_cake_ir.evaluation.kernel_bundle import alignment_component
+                    child,child_manifest = alignment_component(candidate,manifest)
+                    check_triton_launch_record(child,child_manifest,single.source_sha256)
+            elif single.route.backend is LoweringBackend.METAL:
+                if (list(manifest.block) != single.toolchain_requirements['threads_per_threadgroup']
+                    or manifest.threadgroup_memory_bytes != single.toolchain_requirements['threadgroup_memory_bytes']):
+                    raise ValueError('single-kernel Metal launch differs from its authored Program lowering')
+        elif program.document != manifest.program.document:
+            raise ValueError('Program manifest differs from the archived author candidate')
+    if candidate.is_program:
+        if manifest.lowered_sources != {stage.name: lowering.source_sha256
+                for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True)}:
+            raise ValueError('Program stage source differs from its pinned Compiler lowering')
+        from open_cake_ir.evaluation.program import program_components
+        _, children, manifests = program_components(candidate)
+        for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True):
+            requirements = lowering.toolchain_requirements
+            if (children[stage.name].entry_point != requirements['kernel_entry_point']
+                or list(manifests[stage.name].grid) != list(requirements['grid'])):
+                raise ValueError('Program stage launch differs from its pinned Compiler lowering')
     if payload.get("candidate_record_sha256") != candidate.canonical_sha256:
         refuse(f"{location}.payload.candidate_record_sha256", "launchable candidate record seal differs")
     return candidate

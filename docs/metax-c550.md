@@ -6,11 +6,13 @@ Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host ad
 由各自的平台实现负责。
 
 当前范围是 **FP32 / FP16 / BF16 / INT32 缓冲区、load / cast / elementwise / reduce / store、
-完整输出正确性验证**。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
+完整输出正确性验证**，以及下述受限的 E4M3FN 存储和解码。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
 INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
-FP8、专用矩阵指令、计时和 profiler 尚未启用。
-这些输入会被具体的 Target/backend rule 拒绝，或明确报告 measurement coverage
-unavailable。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
+矩阵路径复用现有 `mma` 与 `triton.dot.fp16_fp32`、`triton.dot.bf16_fp32`、
+`triton.dot.fp32_ieee` 三条契约；FP16、FP32 已有下述正式任务结果，BF16 尚限于
+单 tile 原生诊断。TF32 和 FP8 矩阵尚未准入；FP8 的范围限于下述存储和解码。原生 MCPTI 成对计时和独立 profiler 已接入；
+测量质量不通过时明确返回 `measurement_quality_failed`，不作为有效性能结果。
+历史的无计时策略仍可回放。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
 
 ## 三种身份分别检查
 
@@ -23,8 +25,8 @@ unavailable。没有 CUDA/HIP fallback，没有借用其他设备的校准或性
 `0.5.1+metax3.1`，其提供的 Triton **API 版本为 3.1.0**。系统 Python 不等于
 该环境：实际解释器是 `/opt/conda/bin/python3`。
 [`runtime/hosts/xcore1002.json`](../runtime/hosts/xcore1002.json) 由 canonical capture
-命令生成并绑定解释器、包、构建工具和 MACA runtime。每个 worker 都重新 admission；
-实际已映射的 runtime 必须是捕获的绝对库路径。
+命令生成并绑定解释器、包、构建工具、MACA runtime、MCPTI 库及其 API 版本。
+每个 worker 都重新 admission；实际已映射的库必须是捕获的绝对路径。
 
 ## 编译与执行
 
@@ -43,7 +45,7 @@ PCI 标识和 runtime 路径。无计时收据使用 JSON `null` 的 `timing_sam
 MACA 通过已有 local broker 的 `maca` kind 执行。容器必须与宿主共享同一个
 `/tmp/open-cake-ir-maca-<uid>.lock` inode，并只暴露一个选定设备；不能在每个
 容器里各自建一个私有锁。这个分配模式只声明本用户任务串行，外部活动没有被排除，
-因此当前没有任何性能或独占设备结论。
+计时收据保留 `local_serialized` 和 `external_gpu_activity=not_excluded`，不声称物理设备独占。
 
 ## 现有 C550 开发环境
 
@@ -72,9 +74,11 @@ nerdctl --namespace open-cake-metax exec \
 ```
 
 workspace 必须不存在。`--baseline-only` 构建、封存后退出，不调用 provider，
-也不执行 GPU kernel。执行层的 canonical 接口是
-`load_prepared_baseline` → `CommandBrokerSubmitter` / `BoundedBrokerEvaluator` →
-`evaluation.local_broker` → `tasks.evaluate`；正常 TaskLab 同样使用这条路径。
+也不执行 GPU kernel。构建后的固定 bundle 由 `load_prepared_baseline` 读取，再交给
+`CommandBrokerSubmitter` / `BoundedBrokerEvaluator`。当前本地 Triton TaskLab 使用
+`tasks.evaluate --local-kind maca`：先计算 CPU 输入和原 oracle，再通过
+`evaluation.local_broker.admit_local_job` 获取真实 allocation 并执行。
+上例所用历史源码仍保留原先 broker exec worker 的入口。
 原验证 driver 及它调用的确切输入保存在下述外部证据目录。
 
 ## 验收范围与后续
@@ -112,6 +116,154 @@ GEMM 最大绝对误差为 `0.5`，在原容差内通过，不能描述为 bit e
 任务累计有 255 个 case 的 C550 结果。这是上述固定形状的验收，不是全部 batch/shape
 或完整模型的资格。各批原始源码身份分别保留；逐项源码兼容性检查不替代新设备运行。
 
-下一阶段仍需单独接入原生 timer / profiler。
+## 原生计时与归因
+
+MCPTI API 18 的并发 kernel record 提供原生 start/end 时间戳；样本是单次目标
+dispatch 的 end−start，不包含 host launch 或前置 reset。每个样本前，同一 stream
+写入一个四倍于 Target 所声明 L2 的 FP32 缓冲区（C550 为 32 MiB）。这是明确的
+reset 操作，不是“所有缓存已清空”的证明。收据保留独立 reset 校准、每次原生活动、
+API/kernel correlation 和 sealed manifest；丢失／额外 dispatch、跨 cohort 换校准、
+错误设备或样本与原始时间戳不一致都会被拒绝。
+
+正式成对流程仍检查全部 Workload cases，并验证每次 warmup／timed 调用的新输出。
+独立 profile 另做预检和 instrumented 输出检查，反馈 dispatch、寄存器、共享内存及
+函数 local-memory 需求。`function_local_bytes_per_thread` 来自已绑定的函数属性；
+`mcpti_reported_local_bytes_per_thread` 仅保留 MCPTI 原值。后者曾在函数报告 492 bytes/thread
+时报告 0，故 `local_memory_reservation` 明确列为 `not_qualified`，不推断 padding、
+实际零用量或两个 API 量相等。occupancy、bandwidth 和 instruction counters 未采集。
+
+在冻结执行源码 `66dcc472`，GEMM-bias `M=8,N=8,K=4096` 的显式四执行组版本
+通过全部五 case、完整 fresh-output 检查及 500 个计时样本；20 个 cohort 的 CV 为
+0.006988–0.015165，低于原 0.05 门槛。相同 artifact 的两 arm 中位数均为 26.368 us，
+判定 `close_null`；这是该形状上的测量控制，不是优化收益。该 artifact 编译于
+`becb3bb1`，只把原 Schedule 的 `execution_groups=[0]` 改为 `[0,1,2,3]`。
+默认一组的 K4096 artifact 曾发生 native launch 拒绝，不能宣称它已被这个结果验证。
+
+RMSNorm `128×1024`、LayerNorm `8×128`、GEMM-bias `8×8×32` 的正式正确性和
+独立 profile 均通过，但它们在原 0.05 CV 门槛下的成对测量均失败。记录全部保留，
+没有重试取最好值或放宽门槛；以上较长 kernel 的通过也不外推到这些短 kernel。
+这批收据与失败诊断位于 `c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/`，
+本地镜像及审查在 `open-cake-ir-evidence/metax-parity-20260920/RESULTS.md`。
+
+BF16 正式矩阵任务、TF32、FP8、更多形状及完整 provider 优化闭环仍需后续验收。
 FlashInfer GQA/MLA/MoE 和其他精确绑定 B200/B300 的合同仍需各自的后继验证，
 不能只改 target 字符串后宣称可用。
+
+## 矩阵路径的正式任务证据
+
+以下结果执行于 `8c0cad53`，沿用各自原 Workload 的五个输入分布、完整输出 oracle、
+输入不变性和容差。统一 Compiler 生成 Triton 源码，经 CPU 隔离编译封存为 mcfatbin，
+再由原 MACA broker、worker 和 receipt reader 执行。每项成对检查均有 740 次候选路径
+调用、500 个样本和零 fallback；全部 20 个 cohort 通过原 CV 0.05 门槛。
+三个比较都是同一产物的自比较，结论均为 `close_null`，不构成优化收益。
+
+| 原任务 / 精度 | M / N / K | 覆盖 | 最大绝对误差（全部 cases） | cohort CV 范围 | 成对 job |
+| --- | --- | --- | ---: | --- | --- |
+| `fib_gemm_n128_k2048` / FP16 输入与输出、FP32 累积 | 17 / 128 / 2048 | 32 次 K 累积、M 尾部 | 0.03125 | 0.006690–0.010692 | `maca-59e41335edd4` |
+| 同一任务 / 同一精度 | 64 / 128 / 2048 | 32 次 K 累积、完整 M tile | 0.25 | 0.005623–0.010624 | `maca-c0e219b81422` |
+| `aka_gemm_nt_bias` / FP32 IEEE | 72 / 128 / 128 | 两次 K 累积、一次 bias、M 尾部 | 0.000019073486328125 | 0.011054–0.018379 | `maca-38b2c5bbb9d2` |
+
+原 FP16 任务使用 `atol=rtol=0.01`，AKA 任务使用 `atol=rtol=0.00002`。
+表中是容差内通过，不能描述为逐 bit 一致。所有候选显式使用 `64×64×64` tile 和
+四个执行组，未扩展 NVIDIA 专用的 Compiler width pass。它们增加的是既有任务的
+矩阵路径与形状证据，不是新增三项注册任务。
+
+三个独立 attribution job 分别为 `maca-02169aa5f6fd`、`maca-eacd79b7ee49`、
+`maca-d14c8ca7fec4`。每个都检查预检和 instrumented dispatch 的实际 primary 输出。
+FP16 两个形状均报告 224 registers/thread、16384 bytes 动态共享内存和 0 function-local
+bytes/thread；FP32 为 256、32768 和 396。MCPTI local-memory reservation 仍未合格，
+profile 时间仍只用于归因；occupancy、带宽和指令计数尚未采集。
+
+产物编译、prepared 上下文与执行身份分别保留：M17 编译于 `5ed6420f`、准备于
+`2c06833e`；AKA 编译于 `2c06833e`、准备于 `8c0cad53`；M64 两者均为 `8c0cad53`。
+后继 worker 在申请原 broker allocation 前计算各 case 的 CPU 输入和 oracle，
+并在同一进程复用；锁仍保持到 worker 退出，包括失败路径，不在构造失败时提前释放。
+原始 bundle、控制器、成对与归因收据均在外部证据根
+`open-cake-ir-evidence/metax-parity-20260920/matrix-*/`，远端同名目录位于
+`c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/`。
+
+BF16 的范围仍是 `64×64×64`、五个分布的原生独立诊断，尚未完成注册 Workload 的
+整条路径。原 TF32 RNE 假设有两个失败分布；事后 RTZ 分析不替换失败，也不授权准入。
+FP8 直接 dot 保留 LLVM lowering 失败。AKA 的 `N=80,K=130` 请求被现有任务工厂的
+row-span 限制拒绝，本表不声称 N/K 尾部或任意矩阵形状已验收。
+
+MACA 预检还会拒绝当前 Triton API 不接受的非默认 `loop_unroll_factor`、`flatten`、
+`disallow_acc_multi_buffer`、`disable_licm`；`num_stages` 保持可表达。
+partial-K 仍由 `TRITON_MMA_K_RANGES_UNSUPPORTED` 拒绝，不会落入 NVIDIA inline assembly。
+新增三个正例和两个反例使完整 Corpus 成为 169 项，其中五项检查 xcore1002；
+静态 Corpus、上述设备证据和完整后端能力仍分别报告。
+
+## M17 的一次显式 M tile 优化
+
+在已验收的 FIB `M17/N128/K2048` 固定 baseline 上，仅将 M tile 从 64 改为 32；
+N/K tile 仍为 64，四个执行组和 32 次 K 累积不变。完整解析后的 Schedule 比较
+只改变 M tile、MMA M extent 和三个派生寄存器 buffer 的 M extent，原 Workload、
+输入 ABI、oracle 和测量策略保持。候选编译、执行于 `8c0cad53`，baseline 仍是原
+`5ed6420f` 产物。
+
+一次 search（`maca-4785c930f50c`）通过后，按事先声明的流程进行了独立 confirmatory
+（`maca-f166d55e4231`）。两次均通过全部五 case、所有 fresh-output 检查、原 CV 0.05
+和 materiality 1.05 门槛，候选均赢得 10/10 对；每次保留 500 样本、零 fallback。
+确认阶段 baseline/candidate 中位数为 **72.448 / 58.368 us，1.241228×**，
+20 个 cohort 的 CV 为 0.007220–0.012788，最大绝对误差为 0.03125，输入未改变。
+
+独立 profile `maca-51d9d428f693` 的实际输出同样通过，报告 170 registers/thread 和
+12288 bytes 动态共享内存，原 baseline 为 224 和 16384。函数 local bytes/thread
+均为 0；这没有补齐 MCPTI local reservation、occupancy、带宽或指令计数的资格。
+减少 tile extent、资源变化和速度改善是同一次受控改动的观测；没有计数器证据可以
+把全部收益进一步归因到某种硬件瓶颈。
+
+收益限于这一个固定形状、固定 baseline 和 `local_serialized` 测量范围。
+这是显式 authoring 对照，尚不是完整 provider/Ralph 优化 Campaign；promotion disposition
+为 **No promotion**。原始结果在上述外部证据根的
+`matrix-fib-m17-tile32-{search,confirmatory,attribution}-8c0cad53-v1/`。
+
+## FP8 原生存储与数值诊断
+
+MACA native loader 接受封存 ABI 中的 `fp8_e4m3`，要求真实的
+`torch.float8_e4m3fn` 和既有 DType 声明的一字节存储宽度。uint8、FP16、E4M3FNUZ、
+E5M2 或错误宽度均在 dispatch 前拒绝。Compiler 允许 E4M3FN 的 load/store，以及非标量 tile 向 FP16、FP32 的显式 cast。
+该解码路径供后继 scaled-reduction/MoE 使用；其他算子需求仍须各自验收。
+
+`MACA_FP8_CAST_UNQUALIFIED` 拒绝逆向编码和 FP8→BF16 等未验收转换；
+`MACA_FP8_SCALAR_CAST_UNSUPPORTED` 在外部编译前拒绝当前 SDK 会断言的
+单值转换。直接 FP8 算术由 `MACA_FP8_OPERATION_UNQUALIFIED` 拒绝，
+FP8 MMA 契约仍未在 Target 声明。存储准入不改变这几个边界。
+
+冻结执行源码 `6d997c3d` 的独立诊断直接传输原始 bytes，再 view 为真实 FN tensor，
+launch 前后先 view uint8 再复制到 CPU，避免数值转换改变 NaN 编码或负零。
+它们使用真实 MACA broker job，但不是注册 Workload 的 EvaluationReceipt，也没有计时。
+
+- `maca-bd7ef50c9f98`：全部 256 个原始 FP8 编码在两个输出 poison（0、126）下
+  直接复制，两次调用的 512 个输出 byte 均相等，包含正负零和两个 NaN 编码，输入
+  bytes 不变。这是纯 load/store，无转换或算术，2 registers/thread、shared/local 为 0。
+- `maca-584187da1812`：FP8→FP16 和 FP8→FP32 各检查全部 254 个有限编码的输出 word，
+  包含正负零，均逐 bit 相等；两个 NaN 编码的分类也分别通过。
+- `maca-ff7880c5bf02`：FP32→FP8 在 `[-448,448]` 内的 1014 个特定有限输入模式和
+  10 个 padding 上验证 RNE。四批各用两个不同输出 poison，共八次 native call、
+  2048 个输出 byte 全部精确匹配，输入 bits 未改变。NaN、Inf、overflow/saturation
+  尚未取得编码资格，不能从这些点外推一般转换行为。
+- 显式 FP8→FP16 后的 K64 dot 在原严格诊断中仍有一个超差输出；K16 分组后继修正了
+  那个点，但在 mixed_magnitude `[43,28]` 出现新的超差。因此两次完整诊断均保留失败，
+  不按 case 选择两个实现中较好的结果。原参考和 `.001/.0001` 容差没有改动。
+- `maca-59a4486282a2` 使用不同的 SIMT 算术：FP8 解码到 FP32、FP32 products 和
+  Neumaier 补偿累加。原五个 case 的 20480 个输出 word 全部与参考相等，输入 bytes
+  未改变；五次 native call，21 registers/thread，shared/local 为 0。
+  这是精度 control，不是 FP16 dot、native FP8 MMA 或性能替代，也不改判前两次失败。
+
+调查还发现当前 SDK 对标量 FP8→FP32 的最小程序触发 `RankedTensorType` 内部断言。
+补偿 control 先按 tensor 转换，再在 FP32 上选择元素，才通过编译；这没有修复或
+取得标量 FP8 转换的资格。全部原始源码、编译失败、封存参考、NPZ 观察与结果保留于
+上述外部证据根的 `fp8-*` 目录。后继算子需按自己的原 Workload、范围和 oracle 验收；
+这批诊断不构成 FP8 MoE、scaled matrix 或完整后端能力的资格。
+
+三条新增 Corpus 程序还完成了 Compiler 生成路径的设备复验：`e21aeaad` 的
+`xcore1002-fp8-copy`、`xcore1002-fp8-decode-fp16`、`xcore1002-fp8-decode-fp32`
+经正式 assessment、lowering、kernel projection 和 CPU 隔离编译，封存为 `[1,256]` ABI；
+参考仍是上面原封存的全部 256 个编码与解码 word，仅张量形状增加一行维度。
+执行源码 `7e86e8ad` 的 `maca-b1424247b525` 完成四次 native call：复制两次共
+512 byte 精确匹配，两个 decoder 各 254 个有限 word 精确匹配、两个 NaN 分类正确；
+全部输入 bytes 未改变，零 timing samples。复制报告 2 registers/thread，两个 decoder
+各 10；三者 shared/local 均为 0。原始观察在外部证据根的
+`fp8-corpus-gpu-7e86e8ad-v1/`。这验证了生成路径的原语正确性，尚不构成
+完整 MoE、scaled matrix、其他形状或性能资格。

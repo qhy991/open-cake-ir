@@ -3,13 +3,37 @@
 [中文阅读](zh-CN/RUNBOOK.md) · [Bilingual catalog](README.md)
 
 This runbook describes the supported operating path, not authorization or historical
-experiment results. A live run still requires the exact Workload and Study gates, a
+experiment results. A live run still requires exact Workload and Run admission, applicable Study gates, a
 qualified provider, released Compiler and Executor authorities, admitted GPU
 infrastructure, new external output roots, and explicit permission for external effects.
 
 New users should first follow [`GETTING_STARTED.md`](GETTING_STARTED.md), which runs no
 provider Campaign and makes no performance claim. Terms in this runbook are defined in
 [`GLOSSARY.md`](GLOSSARY.md).
+
+## Independent Runs and transfer Studies
+
+Ordinary optimization prepares `run.json` directly through `tools/launch_task.py` and
+`tasks.preparation.prepare_task_run`; it needs no Study or CampaignLock. A Run freezes
+execution inputs, permissions, budget and confirmation policy. Its CLI is:
+
+```bash
+open-cake-ir lab run preflight --run /external/run.json
+open-cake-ir lab run execute --run /external/run.json \
+  --runtime-config /external/runtime.json --evidence-root /external/run-evidence
+open-cake-ir lab run audit --run /external/run.json --evidence-root /external/run-evidence
+```
+
+Paths denote newly prepared task-owned inputs and outputs. Preflight and audit do not
+invoke an author or GPU; execute requires the actual qualified runtime. `tools/transfer_study.py`
+prepares, executes and audits preassigned E/P Studies using the same Run runtime factory.
+Study controls allocation and analysis; it supplies no second execution engine.
+See [Lab ownership](../src/open_cake_ir/lab/README.md) and the
+[ablation protocol](OPTIMIZATION_TRANSFER_ABLATION.md).
+
+The numbered Study/CampaignLock procedures below document the retained legacy input
+adapter, including its original comparison and qualification policy. Those inputs project
+into the same Run engine; they are not prerequisites for independent engineering Runs.
 
 ## 1. Resolve the source identity and the host
 
