@@ -249,6 +249,19 @@ class ProgramEvaluationTests(unittest.TestCase):
             self.assertFalse(calls)
         finally: loaded.close(synchronize=lambda:None)
 
+    def test_replay_reports_unknown_authored_candidate_without_reading_artifacts(self):
+        from unittest.mock import Mock
+        from open_cake_ir.lab.replay.candidates import _replay_candidates
+        from open_cake_ir.lab.replay.refusals import ReplayRefusal
+        evidence = Mock()
+        with self.assertRaisesRegex(ReplayRefusal, 'not submitted'):
+            _replay_candidates(arm='open_cake', case_id='primary',
+                events=[{'kind':'launchable_candidate_sealed','payload':{'turn':1,'candidate_sha256':'2'*64}}],
+                evidence=evidence, fault_turn=None, faults=(), lock=None, manifest_parser=Mock(),
+                protocol_sha256='3'*64, workload_sha256='1'*64,
+                provider_candidates_by_turn={1:('4'*64,)}, provider_candidate_bytes={})
+        evidence.read_object.assert_not_called()
+
     def test_program_profile_covers_each_dispatch_and_rejects_projection_drift(self):
         candidate, _, _ = self.build()
         manifest, children, _ = program_components(candidate)

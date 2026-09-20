@@ -182,7 +182,7 @@ class OpenCakeEnvironment:
             public = {name: ('global', tensor.dtype.value, list(tensor.shape), mode)
                       for mode, names in (('input', program.inputs), ('output', program.outputs))
                       for name in names for tensor in (program.tensors[name],)}
-            if program.target != self._target or public != self._expected:
+            if program.target != self._target or public != self._expected or tuple(public) != tuple(self._expected):
                 raise ValueError('Program public ABI or target differs from the Workload')
             if any(stage.schedule.lowering.backend.value != self._route['backend'] for stage in program.stages):
                 raise ValueError('Program stage backend is outside the authoring environment')
