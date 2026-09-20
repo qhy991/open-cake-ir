@@ -26,6 +26,7 @@ class TileGpuWorkerTests(unittest.TestCase):
         arguments = [object() for _ in range(4)]
         loaded = SimpleNamespace(fresh_argument_sets=lambda count: arguments,
                                  launch=calls.append,
+                                 release_argument_sets=mock.Mock(),
                                  snapshot=mock.Mock(side_effect=AssertionError('capture is not validation')))
         def measure(function, **options):
             self.assertEqual(options,dict(dry_run_iters=11,repeat_iters=2,
@@ -38,6 +39,37 @@ class TileGpuWorkerTests(unittest.TestCase):
         self.assertIs(retained,arguments)
         self.assertEqual(calls,arguments)
         loaded.snapshot.assert_not_called()
+        loaded.release_argument_sets.assert_not_called()
+
+    def test_failed_capture_releases_unreturned_program_arguments(self):
+        arguments = [object()]
+        loaded = SimpleNamespace(fresh_argument_sets=lambda count: arguments,
+                                 launch=mock.Mock(), release_argument_sets=mock.Mock())
+        with self.assertRaisesRegex(RuntimeError, 'timer failed'):
+            worker.capture_tile_cohort(loaded, mock.Mock(side_effect=RuntimeError('timer failed')),
+                samples_per_cohort=1, route_calls_per_cohort=1)
+        loaded.release_argument_sets.assert_called_once_with(arguments)
+
+    def test_immediate_validation_releases_retained_program_arguments_on_success_and_fault(self):
+        inputs = {'x': [1.]}
+        arguments = [object()]
+        observation = dict(output_mismatches=0, max_abs_error=0., inputs_unchanged=True)
+        for error in (None, RuntimeError('snapshot failed')):
+            with self.subTest(error=error):
+                loaded = SimpleNamespace(snapshot=mock.Mock(return_value=({}, {}), side_effect=error),
+                                         release_argument_sets=mock.Mock())
+                with mock.patch.object(worker, 'capture_tile_cohort', return_value=([1.], arguments)), \
+                     mock.patch.object(worker, 'compare_tile_outputs', return_value=(True, observation)):
+                    if error is None:
+                        samples, check = worker._fresh_tile_cohort(loaded, None, self.workload, inputs, {},
+                            samples_per_cohort=1, route_calls_per_cohort=1)
+                        self.assertEqual(samples, [1.])
+                        self.assertTrue(check['passed'])
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'snapshot failed'):
+                            worker._fresh_tile_cohort(loaded, None, self.workload, inputs, {},
+                                samples_per_cohort=1, route_calls_per_cohort=1)
+                loaded.release_argument_sets.assert_called_once_with(arguments)
 
     def setUp(self):
         self.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')

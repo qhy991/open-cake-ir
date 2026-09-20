@@ -13,6 +13,10 @@
 socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `launch_task.py`。
 该入口不会启动生产 daemon、修改驱动或自动安装工具链。
 
+每个 cell 直接冻结独立的 `run.json`，结果保存在 `run-evidence/` 和经审计的 `report.json`；
+普通复现无需 Study。已声明的参考访问、固定基线、验证用例和预算都由同一 Run 约束。
+使用原 source checkout 的 `report_task_efficiency.py --workspace ...` 可以重建描述性性能报告。
+
 输入示例（替换模型及所有节点路径；每个 cell 的预算独立计数）：
 
 ```json

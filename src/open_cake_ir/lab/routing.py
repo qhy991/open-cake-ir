@@ -56,11 +56,11 @@ _VOCABULARY_CODES = frozenset(
 class Route:
     """Where one diagnosis belongs, and the evidence that put it there."""
 
-    destination: str
+    destination: str | None
     reason: str
 
     def __post_init__(self) -> None:
-        if self.destination not in DESTINATIONS or not self.reason:
+        if self.destination is not None and self.destination not in DESTINATIONS or not self.reason:
             raise ValueError("routing destination or reason differs")
 
 
@@ -75,6 +75,8 @@ def route_rejection(feedback: Mapping[str, object], *, arm: str = "open_cake") -
     if arm not in {"open_cake", "direct_cuda", "native_triton", "native_cute_dsl"}:
         raise ValueError("diagnosis Authoring Environment arm differs")
     stage = feedback.get("stage")
+    if stage == 'budget':
+        return Route(None,'the Run exhausted its compilation quota; no implementation defect is inferred')
 
     if stage == "compile" and arm != "open_cake":
         return Route(CANDIDATE, "the toolchain refused source authored by this arm")

@@ -39,6 +39,7 @@ from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCa
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case, PreparedTensorCase
 from open_cake_ir.evaluation.local_broker import LOCAL_KINDS, LocalBrokerBusy, admit_local_job
 from open_cake_ir.tasks.launch import parse_launch_manifest
+from open_cake_ir.evaluation.program import ProgramLaunchManifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
@@ -209,7 +210,7 @@ def _load_authority(request_path: Path) -> _Authority:
         raise ValueError("worker Evaluation purpose differs")
     case_id = str(request["case_id"])
     workload.case(case_id)
-    if isinstance(manifest, (TensorLaunchManifest, MetalTensorLaunchManifest)):
+    if isinstance(manifest, (TensorLaunchManifest, MetalTensorLaunchManifest, ProgramLaunchManifest)):
         manifest.check_workload(workload, case_id)
     baseline = None
     timed_assay_available = True
@@ -274,6 +275,9 @@ def _execution_platform(authority: _Authority) -> CodeObject:
     the same fact, and a mismatched pair is a sealed candidate nobody can launch.
     """
     row = platform_for(authority.candidate.target)
+    if isinstance(authority.manifest, ProgramLaunchManifest):
+        from open_cake_ir.evaluation.program import admit_program_execution
+        admit_program_execution(authority.candidate.target)
     metal_manifest = isinstance(authority.manifest, MetalTensorLaunchManifest)
     if metal_manifest != (row.code_object is CodeObject.METAL_BINARY_ARCHIVE):
         raise ValueError(
@@ -308,26 +312,28 @@ def _observe_cuda(authority: _Authority):
 
 
 def capture_tile_cohort(loaded, strict_cupti, *, samples_per_cohort, route_calls_per_cohort):
-    """Capture one cohort, retaining every argument set for subsequent validation.
-
-    No correctness or acceptance is returned here. The caller must observe and
-    validate every retained input and output, either now or in a later CPU phase.
-    """
+    """Capture fresh arguments; the caller owns subsequent validation and release."""
     arguments = loaded.fresh_argument_sets(route_calls_per_cohort)
-    used = 0
-    def launch_fresh():
-        nonlocal used
-        if used >= len(arguments):
-            raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
-        loaded.launch(arguments[used])
-        used += 1
-    samples = [float(value) for value in strict_cupti(launch_fresh,
-        dry_run_iters=11, repeat_iters=samples_per_cohort, cold_l2_cache=True, use_cuda_graph=False)]
-    if len(samples) != samples_per_cohort:
-        raise ValueError('worker CUPTI sample count differs')
-    if used != len(arguments):
-        raise RuntimeError('retained CUPTI helper invocation count differs')
-    return samples, arguments
+    try:
+        used = 0
+        def launch_fresh():
+            nonlocal used
+            if used >= len(arguments):
+                raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
+            loaded.launch(arguments[used])
+            used += 1
+        samples = [float(value) for value in strict_cupti(launch_fresh,
+            dry_run_iters=11, repeat_iters=samples_per_cohort, cold_l2_cache=True, use_cuda_graph=False)]
+        if len(samples) != samples_per_cohort:
+            raise ValueError('worker CUPTI sample count differs')
+        if used != len(arguments):
+            raise RuntimeError('retained CUPTI helper invocation count differs')
+        return samples, arguments
+    except BaseException:
+        release = getattr(loaded, 'release_argument_sets', None)
+        if release is not None:
+            release(arguments)
+        raise
 
 
 def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
@@ -338,18 +344,21 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
         raise ValueError('retained validation inputs differ from the Workload case')
     samples, arguments = capture_tile_cohort(loaded, strict_cupti,
         samples_per_cohort=samples_per_cohort, route_calls_per_cohort=route_calls_per_cohort)
-    check = {'checked_launches': len(arguments), 'passed': True, 'output_mismatches': 0,
-             'max_abs_error': 0.0, 'inputs_unchanged': True}
-    # A loaded tensor candidate retained a value-identical native CPU array at
-    # admission. Generic callables keep their original input representation.
-    for values in arguments:
-        observed, after = loaded.snapshot(values)
-        correct, observation = compare_tile_outputs(workload, validation_inputs, expected, observed, after)
-        check['passed'] = check['passed'] and correct
-        check['output_mismatches'] += observation['output_mismatches']
-        check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
-        check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
-    return samples, check
+    try:
+        check = {'checked_launches': len(arguments), 'passed': True, 'output_mismatches': 0,
+                 'max_abs_error': 0.0, 'inputs_unchanged': True}
+        for values in arguments:
+            observed, after = loaded.snapshot(values)
+            correct, observation = compare_tile_outputs(workload, validation_inputs, expected, observed, after)
+            check['passed'] = check['passed'] and correct
+            check['output_mismatches'] += observation['output_mismatches']
+            check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
+            check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
+        return samples, check
+    finally:
+        release = getattr(loaded, 'release_argument_sets', None)
+        if release is not None:
+            release(arguments)
 
 
 def _evaluate_paired_tile(authority, result, benchmark_for, admission):
@@ -486,7 +495,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
             'resources': {role: loaded[(role, authority.case_id)].loaded.resources for role in protocol.arms}})
         result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
-            'kernel_calls': 1, 'fallback_calls': 0, 'timing': timing,
+            'kernel_calls': authority.manifest.kernels_per_call, 'fallback_calls': 0, 'timing': timing,
             'artifacts': {'correctness_output': 'correctness-output.json',
                           'launch_receipt': 'launch-receipt.json', 'timing_samples': 'timing-samples.json'}}
     finally:
@@ -551,7 +560,7 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
     # Absence of measurement is explicit; omitting the role breaks broker admission.
     _write_new(authority.request_root / "timing-samples.json", None)
     result["receipt"] = {"correctness_passed": passed, "correctness": metrics,
-        "kernel_calls": 1, "fallback_calls": 0, "timing": None,
+        "kernel_calls": authority.manifest.kernels_per_call, "fallback_calls": 0, "timing": None,
         "artifacts": {"correctness_output": "correctness-output.json",
                       "launch_receipt": "launch-receipt.json", "timing_samples": "timing-samples.json"}}
 
@@ -716,7 +725,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
         # The common receipt describes the final correctness launch; counters and
         # the raw launch artifact retain the separate preflight and timing work.
         result['receipt'] = {'correctness_passed': passed, 'correctness': metrics,
-            'kernel_calls': 1, 'fallback_calls': 0, 'timing': timing, 'artifacts': artifacts}
+            'kernel_calls': authority.manifest.kernels_per_call, 'fallback_calls': 0, 'timing': timing, 'artifacts': artifacts}
     finally:
         counters['kernel_calls'] = loaded.loaded.launch_calls
         counters['timing_samples'] = sum(len(s) for s in cohorts)
@@ -997,7 +1006,7 @@ def _evaluate_candidate(
         _evaluate_paired_tile(authority, result,
                               lambda role, manifest: strict_cupti, admission)
         return
-    if isinstance(authority.manifest, TensorLaunchManifest):
+    if isinstance(authority.manifest, (TensorLaunchManifest, ProgramLaunchManifest)):
         _evaluate_tile_candidate(
             authority, result,
             StrictCuptiBenchmark(helper) if collect_timing else None,
@@ -1166,6 +1175,17 @@ def _profile_candidate(
         },
     )
     child_result_path = authority.request_root / "profile-child-result.json"
+    program_stages = None
+    kernel_filter = authority.candidate.entry_point
+    launch_count = 1
+    if authority.candidate.is_program:
+        import re
+        from open_cake_ir.evaluation.program import program_components
+        manifest, children, _ = program_components(authority.candidate)
+        program_stages = [{'stage': stage.name, 'kernel_name': children[stage.name].entry_point}
+                          for stage in manifest.program.stages]
+        kernel_filter = 'regex:^(' + '|'.join(re.escape(row['kernel_name']) for row in program_stages) + ')$'
+        launch_count = len(program_stages)
     from open_cake_ir.evaluation.source_bootstrap import module_command
     command = [
         str(profiler["path"]),
@@ -1178,11 +1198,11 @@ def _profile_candidate(
         "--kernel-name-base",
         "function",
         "--kernel-name",
-        authority.candidate.entry_point,
+        kernel_filter,
         "--print-kernel-base",
         "function",
         "--launch-count",
-        "1",
+        str(launch_count),
         "--replay-mode",
         "kernel",
         *module_command(sys.executable, "open_cake_ir.tasks.evaluate"),
@@ -1241,15 +1261,14 @@ def _profile_candidate(
         if receipt.get("correctness_passed") is not True:
             raise ValueError("profiled launch did not pass the external oracle")
         profile_path = authority.request_root / "profile.json"
-        profile_payload = build_ncu_attribution_profile(
-            candidate_sha256=authority.candidate.candidate_sha256,
-            case_id=authority.case_id,
-            kernel_name=authority.candidate.entry_point,
-            ncu_version=str(profiler["version"]),
-            ncu_executable_sha256=str(profiler["sha256"]),
-            stdout=completed.stdout,
-            stderr=completed.stderr,
-        )
+        arguments = dict(candidate_sha256=authority.candidate.candidate_sha256,
+            case_id=authority.case_id, ncu_version=str(profiler['version']),
+            ncu_executable_sha256=str(profiler['sha256']), stdout=completed.stdout, stderr=completed.stderr)
+        if program_stages is None:
+            profile_payload = build_ncu_attribution_profile(kernel_name=authority.candidate.entry_point, **arguments)
+        else:
+            from open_cake_ir.evaluation.profiler import build_ncu_program_profile
+            profile_payload = build_ncu_program_profile(stages=program_stages, **arguments)
         with profile_path.open("xb") as stream:
             stream.write(profile_payload)
         result_receipt = cast(dict[str, object], result["receipt"])

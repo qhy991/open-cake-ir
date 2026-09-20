@@ -32,10 +32,12 @@ def task_package(
     workload_loader: Callable,
     prepare_schedule: Callable,
 ) -> TaskPackage:
-    workload = workload_loader(project_root / str(lock.document["workload"]["path"]))
+    from .run_spec import RunSpecification
+    specification = lock.run_specification(run_id) if isinstance(lock, CampaignLock) else RunSpecification.from_dict(lock.document)
+    workload = workload_loader(project_root / str(specification.document["workload"]["path"]))
     return render_task_package(
         project_root,
-        lock,
+        specification,
         run_id,
         workload_contract=workload,
         prepare_schedule=prepare_schedule,
@@ -279,3 +281,21 @@ def preflight(
     # `CampaignLock.from_dict` is the lock's one validator; the projection it returns is
     # read from the document written above, so re-comparing it here only restated it.
     return CampaignLock.from_dict(lock_document)
+
+
+def preflight_run(run_path, *, project_root, workload_loader, validate_run=None):
+    """Admit an already resolved Run without creating or loading a Study.
+
+    Dependencies are exact references. Task preparation resolves source/executor and
+    baseline selection before calling this boundary; no current-release marker is
+    allowed to survive into a Run.
+    """
+    from .run_spec import RunSpecification
+    from .admission import admit_run_inputs
+
+    specification = (RunSpecification.from_dict(run_path.document) if isinstance(run_path,RunSpecification)
+                     else RunSpecification.load(run_path))
+    if validate_run is not None:
+        validate_run(specification)
+    admit_run_inputs(specification, project_root=project_root, workload_loader=workload_loader)
+    return specification

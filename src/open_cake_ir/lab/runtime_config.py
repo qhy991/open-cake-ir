@@ -27,8 +27,8 @@ def _runtime_command(value: object) -> tuple[str, ...]:
     return tuple(_name(item, "runtime_config.broker.command[]") for item in value)
 
 
-def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, object]:
-    """Parse the current matched runtime document without resolving its paths.
+def load_runtime_config(path: str | Path, *, toolchain_kind: str, provider_kind: str = 'codex') -> dict[str, object]:
+    """Parse the runtime document without resolving its paths.
 
     Builder-specific mount/admission policy and raw file identity stay with their
     consumers. In particular, Triton guest aliases must not be resolved here.
@@ -41,10 +41,12 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str) -> dict[str, o
     # The field set is the toolchain row's; `toolchain_kind` keeps accepting the spelling
     # the runtime documents under runtime/ and their callers already use.
     toolchain_row = toolchain_for(toolchain_kind)
+    if provider_kind not in {'codex','claude-code','responses'}:
+        raise ValueError('runtime provider kind is unsupported')
     toolchain_fields = set(toolchain_row.runtime_fields)
     sections = {}
     for name, expected in (
-        ("provider", {"executable", "workspace_root"}),
+        ("provider", set() if provider_kind=='responses' else {"executable", "workspace_root"}),
         ("toolchain", toolchain_fields),
         ("broker", {"command", "cwd", "timeout_seconds", "service_user", "service_group"}),
     ):

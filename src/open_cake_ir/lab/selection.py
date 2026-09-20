@@ -86,35 +86,10 @@ def _empirical_context(
 _EMPIRICAL_SELECTION = "external_empirical_advisory_v1"
 
 
-def _matched_endpoint_from_checkpoint(
-    checkpoint: object,
-    protocol_adherence: str,
-) -> tuple[str, Mapping[str, object] | None]:
-    state = getattr(checkpoint, "state")
-    if protocol_adherence != "adhered" or state == "unreached":
-        return "missing", None
-    if state == "reached_with_best":
-        return (
-            "qualified",
-            {
-                "qualified_by_budget": True,
-                "budget": getattr(checkpoint, "provider_tokens"),
-                "best_candidate_sha256": getattr(checkpoint, "best_candidate_sha256"),
-                "best_confirmed_latency_ms": getattr(
-                    checkpoint, "best_confirmed_latency_ms"
-                ),
-            },
-        )
-    return (
-        "no_qualified_candidate",
-        {"qualified_by_budget": False, "budget": getattr(checkpoint, "provider_tokens")},
-    )
-
-
 def _receipt_qualifies(receipt: EvaluationReceipt) -> bool:
     return (
         receipt.correctness_passed
-        and receipt.kernel_calls == 1
+        and receipt.kernel_calls > 0
         and receipt.fallback_calls == 0
         and receipt.timing is not None
         and receipt.timing.get("measurement_quality_passed") is True

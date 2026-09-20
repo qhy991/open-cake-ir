@@ -19,11 +19,12 @@ AI reads TASK.md and AGENTS.md and submits candidates. External Evaluation judge
 | Check | Authority |
 | --- | --- |
 | Inputs, mathematics, outputs, tolerance, cases | Workload Contract |
-| Environments, repetitions, budget, stopping | Study Contract |
+| One optimization's environment, permissions, budget and stopping | RunSpecification |
+| Research allocation, repetitions and analysis | StudyPlan when conducting a study |
 | Compiler and full Corpus | Clean commit, `compiler/revision.json`, and Corpus Gate |
 | Lab, evaluator, and host closure | Source commit and exact-target host capture |
 | Actual AI binary and frozen capabilities | Provider qualification |
-| Exact versions for this execution | CampaignLock produced by preflight |
+| Exact versions for this execution | Frozen Run inputs; legacy CampaignLock adapts into the same engine |
 | GPU admission and new outputs | Controlled runtime configuration and external Evidence root |
 
 Read [current release status](../../../reports/current/STATUS.md). The two no-GPU checks retained from the Chinese guide are:

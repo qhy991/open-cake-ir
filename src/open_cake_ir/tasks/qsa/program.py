@@ -11,7 +11,8 @@ from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Mapping, cast
 
-from open_cake_ir.compiler import Compiler, Schedule
+from open_cake_ir.compiler import Compiler, Schedule, Program
+from open_cake_ir.compiler.ir import BufferMode, MemorySpace
 
 from open_cake_ir.evaluation.workload import WorkloadContract
 
@@ -69,6 +70,7 @@ class ProgramContract:
     intermediates: Mapping[str, Mapping[str, object]]
     nodes: tuple[ProgramNode, ...]
     reference_visibility: str
+    implementation: Program
 
     @classmethod
     def load(
@@ -114,9 +116,7 @@ class ProgramContract:
         ):
             raise ValueError("program public ABI differs from Workload tensors")
         intermediates = _object(document["intermediates"], "program.intermediates")
-        available = set(public_inputs)
-        writers: dict[str, str] = {}
-        observed_nodes: set[str] = set()
+        stage_documents = []
         parsed_nodes: list[ProgramNode] = []
         raw_nodes = document["nodes"]
         if not isinstance(raw_nodes, list) or not raw_nodes:
@@ -137,8 +137,6 @@ class ProgramContract:
             }:
                 raise ValueError(f"program.nodes[{index}] fields differ")
             node_id = _name(node["id"], f"program.nodes[{index}].id")
-            if node_id in observed_nodes:
-                raise ValueError(f"program node {node_id!r} is duplicated")
             inputs = tuple(cast(list[str], node["inputs"]))
             outputs = tuple(cast(list[str], node["outputs"]))
             dependencies = tuple(cast(list[str], node["depends_on"]))
@@ -147,9 +145,6 @@ class ProgramContract:
                 not inputs
                 or not outputs
                 or set(views) != set(inputs + outputs)
-                or any(name not in available for name in inputs)
-                or any(name in writers or name in public_inputs for name in outputs)
-                or any(dependency not in observed_nodes for dependency in dependencies)
             ):
                 raise ValueError(f"program node {node_id!r} dataflow differs")
             schedule_path = _project_path(
@@ -187,10 +182,13 @@ class ProgramContract:
                 buffer = globals_by_name[name]
                 if buffer.shape != expected_shape or buffer.dtype.value != spec["dtype"]:
                     raise ValueError(f"program node {node_id!r} tensor {name!r} differs")
-            for name in outputs:
-                writers[name] = node_id
-                available.add(name)
-            observed_nodes.add(node_id)
+            if ({name for name, buffer in globals_by_name.items() if buffer.mode is BufferMode.INPUT} != set(inputs)
+                or {name for name, buffer in globals_by_name.items() if buffer.mode is BufferMode.OUTPUT} != set(outputs)):
+                raise ValueError(f"program node {node_id!r} input/output directions differ")
+            stage_documents.append({'name': node_id, 'schedule': json.loads(assessment.schedule_bytes),
+                                    'bindings': {name: name if views[name] == 'identity'
+                                                 else {'tensor': name, 'view': 'singleton_axes'}
+                                                 for name in inputs + outputs}})
             parsed_nodes.append(
                 ProgramNode(
                     node_id,
@@ -204,8 +202,26 @@ class ProgramContract:
                     dict(cast(Mapping[str, str], views)),
                 )
             )
-        if any(name not in writers for name in public_outputs):
-            raise ValueError("program public output has no writer")
+        # The frozen QSA manifest is an external reference format, not another
+        # executable graph. Resolve its real singleton views into the common model.
+        implementation = Program.from_dict({
+            'schema_version': 1, 'program_id': document['program_id'],
+            'target': stage_documents[0]['schedule']['target'], 'inputs': list(public_inputs), 'outputs': list(public_outputs),
+            'tensors': {name: {'shape': list(cls._schedule_shape(spec, target_shape, 'identity')),
+                               'dtype': spec['dtype']}
+                        for name, spec in {**{name: tensors[name] for name in public_inputs + public_outputs},
+                                           **intermediates}.items()},
+            'stages': stage_documents,
+        })
+        producers = {}
+        for stage, node in zip(implementation.stages, parsed_nodes, strict=True):
+            schedule = stage.schedule
+            dependencies = {producers[stage.bindings[b.name].tensor] for b in schedule.buffers
+                            if b.space is MemorySpace.GLOBAL and b.mode is BufferMode.INPUT
+                            and stage.bindings[b.name].tensor in producers}
+            if set(node.depends_on) != dependencies or len(node.depends_on) != len(dependencies):
+                raise ValueError(f"program node {node.node_id!r} dependency declaration differs")
+            producers.update({stage.bindings[name].tensor: stage.name for name in schedule.outputs})
         return cls(
             source,
             _name(document["program_id"], "program.program_id"),
@@ -217,6 +233,7 @@ class ProgramContract:
             cast(Mapping[str, Mapping[str, object]], intermediates),
             tuple(parsed_nodes),
             _name(document["reference_visibility"], "program.reference_visibility"),
+            implementation,
         )
 
     @staticmethod

@@ -40,6 +40,60 @@ def _expected_terminal_message(arm: str, turn: int, event_contract: str) -> str:
     )
 
 
+def _replay_reference_bundle(reference_bundle, *, expected_task_package, run_id, arm,
+                             expected_turn, prior_cumulative, location):
+    bundle_location = f"{location}.provider_reference_bundle"
+    try:
+        bundle = _object(
+            json.loads(reference_bundle.decode("utf-8")),
+            "provider Ralph task package",
+        )
+        state = _object(
+            bundle.get("state_card"),
+            "provider Ralph StateCard",
+        )
+    except (UnicodeError, json.JSONDecodeError, ValueError) as error:
+        refuse(bundle_location, f"not a Ralph task package: {error}")
+    expected_bundle_fields = {
+        "schema_version",
+        "kind",
+        "run_id",
+        "arm",
+        "task_markdown",
+        "agents_markdown",
+        "state_card",
+        "rubric",
+    }
+    if set(bundle) != expected_bundle_fields:
+        refuse(bundle_location, "fields differ", observed=set(bundle),
+               expected=expected_bundle_fields)
+    for field, expected in (
+        ("schema_version", 1),
+        ("kind", TASK_AGENTS_RALPH_V1),
+        ("run_id", run_id),
+        ("arm", arm),
+    ):
+        if bundle.get(field) != expected:
+            refuse(f"{bundle_location}.{field}", "differs from the Run's authority",
+                   observed=bundle.get(field), expected=expected)
+    for field in ("task_markdown", "agents_markdown"):
+        if bundle.get(field) != getattr(expected_task_package, field):
+            refuse(f"{bundle_location}.{field}",
+                   "differs from the task package rederived from the Campaign Lock")
+    for field, expected in (
+        ("kind", "ralph_state_v1"),
+        ("iteration", expected_turn),
+        ("cumulative_provider_tokens", prior_cumulative),
+        ("terminal_reason", None),
+    ):
+        if state.get(field) != expected:
+            refuse(f"{bundle_location}.state_card.{field}", "differs from the replayed state",
+                   observed=state.get(field), expected=expected)
+    if reference_bundle != expected_task_package.evidence_bundle(state):
+        refuse(bundle_location,
+               "retained bytes differ from the bundle rederived from the task package and state")
+
+
 def _replay_provider_turns(
     *,
     arm: str,
@@ -63,6 +117,9 @@ def _replay_provider_turns(
     provider_candidate_bytes: dict[tuple[int, str], bytes] = {}
     candidate_set_turns: set[int] = set()
     prior_cumulative = 0
+    message_history = []
+    message_response_ids = set()
+    message_model = provider_authority.get('model') if event_contract == 'responses_messages_v1' else None
     for expected_turn, event in enumerate(provider_events, start=1):
         location = event_location("provider_turn_completed", turn=expected_turn)
         payload = _object(event.get("payload"), "provider_turn.payload")
@@ -169,7 +226,7 @@ def _replay_provider_turns(
             projected_candidates = _project_candidate_submission(
                 evidence.read_object(submission_references[0]),
                 submission_contract=CANDIDATE_SET_ENVELOPE_V1,
-                arm=arm,
+                arm=arm, environment_kind=expected_task_package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
         except (UnicodeError, ValueError) as error:
@@ -195,62 +252,32 @@ def _replay_provider_turns(
             refuse(f"{location}.payload.objects", "two candidate submissions carry the same bytes",
                    observed=candidate_digests)
         if reference_bundle is not None:
-            bundle_location = f"{location}.provider_reference_bundle"
-            try:
-                bundle = _object(
-                    json.loads(reference_bundle.decode("utf-8")),
-                    "provider Ralph task package",
-                )
-                state = _object(
-                    bundle.get("state_card"),
-                    "provider Ralph StateCard",
-                )
-            except (UnicodeError, json.JSONDecodeError, ValueError) as error:
-                refuse(bundle_location, f"not a Ralph task package: {error}")
-            expected_bundle_fields = {
-                "schema_version",
-                "kind",
-                "run_id",
-                "arm",
-                "task_markdown",
-                "agents_markdown",
-                "state_card",
-                "rubric",
-            }
-            if set(bundle) != expected_bundle_fields:
-                refuse(bundle_location, "fields differ", observed=set(bundle),
-                       expected=expected_bundle_fields)
-            for field, expected in (
-                ("schema_version", 1),
-                ("kind", TASK_AGENTS_RALPH_V1),
-                ("run_id", audit.run_id),
-                ("arm", arm),
-            ):
-                if bundle.get(field) != expected:
-                    refuse(f"{bundle_location}.{field}", "differs from the Run's authority",
-                           observed=bundle.get(field), expected=expected)
-            for field in ("task_markdown", "agents_markdown"):
-                if bundle.get(field) != getattr(expected_task_package, field):
-                    refuse(f"{bundle_location}.{field}",
-                           "differs from the task package rederived from the Campaign Lock")
-            for field, expected in (
-                ("kind", "ralph_state_v1"),
-                ("iteration", expected_turn),
-                ("cumulative_provider_tokens", prior_cumulative),
-                ("terminal_reason", None),
-            ):
-                if state.get(field) != expected:
-                    refuse(f"{bundle_location}.state_card.{field}", "differs from the replayed state",
-                           observed=state.get(field), expected=expected)
-            if reference_bundle != expected_task_package.evidence_bundle(state):
-                refuse(bundle_location,
-                       "retained bytes differ from the bundle rederived from the task package and state")
+            _replay_reference_bundle(reference_bundle, expected_task_package=expected_task_package,
+                run_id=audit.run_id, arm=arm, expected_turn=expected_turn,
+                prior_cumulative=prior_cumulative, location=location)
         expected_terminal = _expected_terminal_message(arm, expected_turn, event_contract)
         expected_change = "add" if expected_turn == 1 else "update"
         expected_name = (
             "candidate-set.json"
         )
-        if event_contract in CLAUDE_EVENT_CONTRACTS:
+        if event_contract == 'responses_messages_v1':
+            from types import SimpleNamespace
+            from ..message_provider import validate_exchange, usage
+            from ..provider_policy import execution_configuration
+            record, response_bytes = validate_exchange(raw_events,
+                config=execution_configuration(provider_authority), history=message_history, bundle=reference_bundle,
+                run_id=audit.run_id, turn=expected_turn, thread_id=next(iter(threads)) if threads else None,
+                expected_model=message_model)
+            if response_bytes != evidence.read_object(submission_references[0]):
+                refuse(f'{location}.provider_submission_envelope', 'message output differs from retained submission')
+            if record['response']['id'] in message_response_ids:
+                refuse(f'{location}.provider_events', 'native response was replayed as another turn')
+            message_response_ids.add(record['response']['id'])
+            message_model = record['response']['model']
+            message_history = record['request']['input'] + record['response']['output']
+            parsed = SimpleNamespace(thread_id=record['thread_id'], provider_tokens=usage(record['response']),
+                                     candidate_path=None, normalization='single_exact',tool_activity=())
+        elif event_contract in CLAUDE_EVENT_CONTRACTS:
             parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal, event_contract=event_contract)
             if parsed.reported_models != (provider_authority["model"],):
                 refuse(f"{location}.provider_events", "reported models differ from the arm's provider authority",
@@ -283,7 +310,7 @@ def _replay_provider_turns(
             if Path(parsed.candidate_path).name != expected_name:
                 refuse(f"{location}.provider_events", "candidate file name differs",
                        observed=Path(parsed.candidate_path).name, expected=expected_name)
-        elif event_contract != "tool_rich_candidate_v1":
+        elif event_contract not in {"tool_rich_candidate_v1", "responses_messages_v1"}:
             refuse(f"{location}.provider_events", "no candidate write under a contract that requires one",
                    observed=event_contract)
         if payload.get("normalization") != parsed.normalization:
@@ -309,7 +336,36 @@ def _replay_provider_turns(
     return cumulative_by_turn, provider_candidates_by_turn, provider_candidate_bytes, candidate_set_turns, prior_cumulative
 
 
-def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None, previous_tokens=0) -> int:
+def _replay_message_fault_request(raw, *, evidence, provider, run_id, expected_task_package,
+                                  provider_events, previous_tokens, expected_thread_id):
+    from ..message_provider import _json, validate_exchange_request
+    from ..provider_policy import execution_configuration
+    if expected_task_package is None or run_id is None:
+        raise ValueError('failed message request needs its frozen Run task package')
+    record = _json(raw)
+    inputs = record['request']['input']
+    if not isinstance(inputs, list) or not inputs or not isinstance(inputs[-1], Mapping):
+        raise ValueError('failed message request has no task input')
+    bundle = inputs[-1]['content'].encode('utf-8')
+    turn = len(provider_events) + 1
+    _replay_reference_bundle(bundle, expected_task_package=expected_task_package, run_id=run_id,
+        arm=expected_task_package.arm, expected_turn=turn, prior_cumulative=previous_tokens,
+        location='run_fault.payload')
+    history = []
+    if provider_events:
+        # Completed exchanges have already passed _replay_provider_turns. Reuse
+        # their native history, never context taken from the failed invocation.
+        references = [ref for ref in provider_events[-1]['payload']['objects'] if ref['role']=='provider_events']
+        if len(references) != 1:
+            raise ValueError('prior message exchange reference count differs')
+        prior = _json(evidence.read_object(references[0]))
+        history = prior['request']['input'] + prior['response']['output']
+    validate_exchange_request(raw, config=execution_configuration(provider), history=history, bundle=bundle,
+        run_id=run_id, turn=turn, thread_id=expected_thread_id)
+
+
+def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None, previous_tokens=0,
+                       run_id=None, expected_task_package=None, provider_events=()) -> int:
     """Rederive failed-invocation usage from retained stdout, never its declaration.
 
     Every refusal is located under the `run_fault` event's payload.
@@ -327,9 +383,13 @@ def replay_fault_usage(*, payload, evidence, provider, expected_thread_id=None, 
         refuse(f"{location}.objects", "provider_stdout reference count differs",
                observed=len(stdout), expected="0 or 1")
     try:
+        if stdout and provider.get('event_contract') == 'responses_messages_v1':
+            _replay_message_fault_request(evidence.read_object(stdout[0]), evidence=evidence, provider=provider,
+                run_id=run_id, expected_task_package=expected_task_package, provider_events=provider_events,
+                previous_tokens=previous_tokens, expected_thread_id=expected_thread_id)
         observed = reported_provider_usage(evidence.read_object(stdout[0]), provider=provider,
             expected_thread_id=expected_thread_id, previous_tokens=previous_tokens) if stdout else None
-    except (OSError, ValueError, KeyError) as error:
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, UnicodeError) as error:
         refuse(f"{location}.objects.provider_stdout",
                f"retained stdout does not yield provider usage: {error}")
     retained_usage = payload.get("provider_usage")

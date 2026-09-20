@@ -90,7 +90,7 @@ class ClaudeProviderContracts(unittest.TestCase):
                 with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed) as process:
                     ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
                         expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake",
-                        event_contract=contract)
+                        event_contract=contract, environment_kind="open_cake")
                 process.assert_called_once()
                 actual = process.call_args.args[0]
                 schema = json.loads(actual[actual.index("--json-schema") + 1])
@@ -314,7 +314,7 @@ class ClaudeProviderContracts(unittest.TestCase):
             with self.assertRaises(ValueError):
                 ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
                     expected_change="update", expected_terminal_message=TERMINAL,
-                    event_contract="closed_file_change_v1", arm="open_cake")
+                    event_contract="closed_file_change_v1", arm="open_cake", environment_kind="open_cake")
         process.assert_not_called()
 
     def test_adapter_uses_existing_supervisor_and_retains_failed_streams(self):
@@ -328,7 +328,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         completed = subprocess.CompletedProcess(invocation.argv, 0, self.raw(events), b"")
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed) as process:
             turn = adapter.execute(invocation, candidate_path=self.candidate, expected_change="update",
-                                   expected_terminal_message=TERMINAL, arm="open_cake")
+                                   expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         self.assertEqual(turn.provider_tokens, 205)
         self.assertEqual(process.call_args.kwargs["timeout_seconds"], 17)
         self.assertEqual(process.call_args.kwargs["cwd"], self.workspace)
@@ -336,7 +336,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         with patch("open_cake_ir.lab.claude.run_supervised", side_effect=failure):
             with self.assertRaises(RunProtocolFault) as captured:
                 adapter.execute(invocation, candidate_path=self.candidate, expected_change="update",
-                                expected_terminal_message=TERMINAL, arm="open_cake")
+                                expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], failure.stdout)
         self.assertEqual(captured.exception.protocol_adherence, "provider_fault")
         self.assertEqual(CLAUDE_EVENT_CONTRACT, self.builder().configuration["event_contract"])
@@ -353,7 +353,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
             with self.assertRaisesRegex(RunProtocolFault, "reported model differs") as captured:
                 ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
-                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], completed.stdout)
 
 
@@ -486,7 +486,7 @@ class ClaudeProviderContracts(unittest.TestCase):
                 with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
                     with self.assertRaisesRegex(RunProtocolFault, "exit code 1") as captured:
                         ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
-                            expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
+                            expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
                 self.assertEqual(captured.exception.observed_quota, attributed)
                 self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], completed.stdout)
 
@@ -557,7 +557,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
             with self.assertRaises(ProviderBoundaryDeclarationFault) as captured:
                 ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
-                    expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
+                    expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         error = captured.exception
         self.assertIsInstance(error, RunProtocolFault)
         self.assertEqual(error.protocol_adherence, "provider_fault")
@@ -571,7 +571,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=broken):
             with self.assertRaises(RunProtocolFault) as generic:
                 ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
-                    expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
+                    expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         self.assertNotIsInstance(generic.exception, ProviderBoundaryDeclarationFault)
         self.assertEqual(generic.exception.observed_quota, {"observed": "no_notice"})
 
@@ -922,7 +922,7 @@ class ClaudeProviderContracts(unittest.TestCase):
             with patch("open_cake_ir.lab.claude.run_supervised") as process:
                 with self.assertRaisesRegex(ValueError, "native terminal schema"):
                     ClaudeProviderAdapter().execute(replace(first, argv=argv), candidate_path=self.candidate,
-                        expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake")
+                        expected_change="add", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
                 process.assert_not_called()
 
     def test_optional_usage_activity_fields_preserve_old_tool_projection(self):
@@ -942,7 +942,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         completed = subprocess.CompletedProcess(invocation.argv, 0, raw, b"")
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed) as process:
             turn = ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
-                expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+                expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         process.assert_called_once()
         self.assertEqual(turn.provider_tokens, 205)
         self.assertEqual(turn.thread_id, SESSION)
@@ -967,7 +967,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         completed = subprocess.CompletedProcess(invocation.argv, 0, raw, b"")
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
             turn = ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
-                expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+                expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         summary, = [entry for entry in turn.tool_activity if entry.item_type == "post_turn_summary"]
         self.assertEqual(summary.item_id, OTHER_SESSION)
         # The category is retained as observed, not read as an outcome.
@@ -1040,7 +1040,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed) as process:
             with self.assertRaises(RunProtocolFault) as captured:
                 ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
-                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         process.assert_called_once()
         self.assertEqual(captured.exception.reported_usage.provider_tokens, 205)
         self.assertEqual(captured.exception.artifact_payloads["provider_stdout"], raw)
@@ -1048,7 +1048,7 @@ class ClaudeProviderContracts(unittest.TestCase):
         with patch("open_cake_ir.lab.claude.run_supervised", side_effect=timeout):
             with self.assertRaises(RunProtocolFault) as captured:
                 ClaudeProviderAdapter().execute(invocation, candidate_path=self.candidate,
-                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+                    expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake", environment_kind="open_cake")
         self.assertEqual(captured.exception.reported_usage.provider_tokens, 205)
 
 

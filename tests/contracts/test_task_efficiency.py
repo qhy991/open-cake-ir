@@ -108,7 +108,7 @@ class TaskEfficiencyTests(unittest.TestCase):
                         "execution": {"target": "apple_gpu_family7", "fixed_baseline": {
                             "candidate": {"candidate_sha256": "b" * 64}}},
                         "evaluation_protocol": {"case_id": "primary", "paired_timing": {"kind": "fixed_baseline_paired_metal_v2"}},
-                        "workload": {"path": "workload.json", "canonical_sha256": workload.canonical_sha256},
+                        "workload": {"workload_id":workload.workload_id,"path": "workload.json", "canonical_sha256": workload.canonical_sha256},
                         "compiler_revision": {"path": "compiler.json"}})
                 report = SimpleNamespace(run_audits=[store.audit_run("open_cake-1")],
                     descriptive={"semantic_replay_by_run": {"open_cake-1": True}})

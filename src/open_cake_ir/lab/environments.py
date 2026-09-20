@@ -89,7 +89,7 @@ class AuthoringEnvironment(Protocol):
     canonical_sha256: str
     authority_document: Mapping[str, object]
 
-    def build(self, submission: CandidateSubmission) -> EnvironmentResult:
+    def build(self, submission: CandidateSubmission, *, compilation=None) -> EnvironmentResult:
         """Assess/build once and return bounded same-Run feedback."""
 
 class OpenCakeEnvironment:
@@ -174,7 +174,51 @@ class OpenCakeEnvironment:
             for item in assessment.findings + assessment.guidance
         ]
 
-    def build(self, submission: CandidateSubmission) -> EnvironmentResult:
+    def _build_program(self, submission, parsed, *, compilation=None):
+        from open_cake_ir.compiler.ir import Program
+        from open_cake_ir.evaluation.program import (
+            stage_abi, seal_program_candidate, admit_program_execution, single_kernel_lowering,
+        )
+        try:
+            program = Program.from_dict(parsed)
+            public = {name: ('global', tensor.dtype.value, list(tensor.shape), mode)
+                      for mode, names in (('input', program.inputs), ('output', program.outputs))
+                      for name in names for tensor in (program.tensors[name],)}
+            if program.target != self._target or public != self._expected or tuple(public) != tuple(self._expected):
+                raise ValueError('Program public ABI or target differs from the Workload')
+            if any(stage.schedule.lowering.backend.value != self._route['backend'] for stage in program.stages):
+                raise ValueError('Program stage backend is outside the authoring environment')
+            lowered = self._compiler.lower_program(program)
+            def request(lowering):
+                return BuildRequest(submission.sha256, lowering.source.encode(), 'lowered_source',
+                    lowering.source_sha256, lowering.target, lowering.route.entry_point, lowering.toolchain_requirements,
+                    compilation=compilation)
+            single = single_kernel_lowering(lowered)
+            if single is not None:
+                from dataclasses import replace
+                # Explicit ABI retains the Triton builder's physical compile record,
+                # including any alignment variant, without requiring a graph adapter.
+                launchable = self._toolchain.build(replace(request(single),tensor_abi=stage_abi(program.stages[0])))
+            else:
+                build_stage = getattr(self._toolchain, 'build_stage', None)
+                if not callable(build_stage):
+                    raise ValueError('this toolchain has no Program stage build capability')
+                admit_program_execution(program.target)
+                children = {stage.name:build_stage(request(lowering),stage_abi(stage))
+                            for stage,lowering in zip(program.stages,lowered.lowerings,strict=True)}
+                launchable = seal_program_candidate(lowered, children, candidate_sha256=submission.sha256,
+                                                   workload=self._workload, case_id=self._case_id)
+            return EnvironmentResult('launchable', submission.sha256, launchable,
+                {'stage': 'built', 'program_stages': [stage.name for stage in program.stages],
+                 'cost_model_coverage': 'whole_program_unmodeled'})
+        except CandidateCompileRejected as error:
+            return EnvironmentResult('rejected', submission.sha256, None,
+                {'stage': 'compile', 'diagnostic': error.diagnostic}, artifact_payloads=error.artifact_payloads)
+        except (CompilerError, ValueError, TypeError) as error:
+            return EnvironmentResult('rejected', submission.sha256, None,
+                                     {'stage': 'assessment', 'error': str(error)})
+
+    def build(self, submission: CandidateSubmission, *, compilation=None) -> EnvironmentResult:
         if submission.media_type != self.media_type:
             raise differs("Open Cake candidate media type", expected=self.media_type, observed=submission.media_type)
         source = None
@@ -196,6 +240,8 @@ class OpenCakeEnvironment:
                 parsed = source.document
             if not isinstance(parsed, Mapping):
                 raise CompilerError("Schedule root must be an object")
+            if "program_id" in parsed:
+                return self._build_program(submission, parsed, compilation=compilation)
             metadata = parsed.get("metadata")
             buffers = parsed.get("buffers")
             route = parsed.get("lowering")
@@ -299,6 +345,7 @@ class OpenCakeEnvironment:
                     target=lowering.target,
                     entry_point=lowering.route.entry_point,
                     toolchain_requirements=lowering.toolchain_requirements,
+                    compilation=compilation,
                 )
             )
         except CandidateCompileRejected as error:
@@ -358,7 +405,7 @@ class NativeTritonEnvironment:
         self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
         self.canonical_sha256 = sha256(canonical_json_bytes(self.authority_document)).hexdigest()
 
-    def build(self, submission: CandidateSubmission) -> EnvironmentResult:
+    def build(self, submission: CandidateSubmission, *, compilation=None) -> EnvironmentResult:
         if submission.media_type != self.media_type:
             raise differs('native Triton candidate media type', expected=self.media_type, observed=submission.media_type)
         try:
@@ -408,7 +455,7 @@ class NativeTritonEnvironment:
         try:
             launchable = self._toolchain.build(BuildRequest(
                 submission.sha256, source, 'authored_source', digest, self._target,
-                str(requirements['kernel_entry_point']), requirements))
+                str(requirements['kernel_entry_point']), requirements, compilation=compilation))
         except CandidateCompileRejected as error:
             return EnvironmentResult('rejected', submission.sha256, None,
                 {'stage': 'compile', 'diagnostic': error.diagnostic}, error.artifact_payloads)
@@ -440,7 +487,7 @@ class NativeCuTeEnvironment:
         self.authority_document = json.loads(json.dumps(authority_document, sort_keys=True))
         self.canonical_sha256 = sha256(canonical_json_bytes(self.authority_document)).hexdigest()
 
-    def build(self, submission: CandidateSubmission) -> EnvironmentResult:
+    def build(self, submission: CandidateSubmission, *, compilation=None) -> EnvironmentResult:
         from open_cake_ir.compiler.cute_toolchain import validate_cute_kernel
         if submission.media_type != self.media_type:
             raise differs('native CuTe candidate media type', expected=self.media_type, observed=submission.media_type)
@@ -462,7 +509,7 @@ class NativeCuTeEnvironment:
         digest = sha256(source).hexdigest()
         try:
             launchable = self._toolchain.build(BuildRequest(submission.sha256, source, 'authored_source',
-                digest, self._target, str(requirements['kernel_entry_point']), requirements))
+                digest, self._target, str(requirements['kernel_entry_point']), requirements, compilation=compilation))
         except CandidateCompileRejected as error:
             return EnvironmentResult('rejected', submission.sha256, None,
                 {'stage': 'compile', 'diagnostic': error.diagnostic}, error.artifact_payloads)

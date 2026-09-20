@@ -216,7 +216,7 @@ class EvidenceCustodyTests(unittest.TestCase):
             "correctness_passed": True, "kernel_calls": 1, "fallback_calls": 0,
             "timing": {"measurement_quality_passed": True, "pooled_median_ms": 1.0}}).encode(),
             media_type="application/json")
-        run.append("candidate_evaluated", {"purpose": "confirmatory", "turn": 1,
+        run.append("candidate_evaluated", {"purpose": "confirmatory", "turn": 1, "source_turn": 1,
             "candidate_sha256": candidate, "objects": [receipt.reference("evaluation_receipt")]})
         run.seal(protocol_adherence="adhered", endpoint_observation="observed", endpoint={"fixture": True})
         audit = evidence.audit_run("run")

@@ -35,6 +35,11 @@ class ProgramContractTest(unittest.TestCase):
     def test_current_program_successor_preserves_the_frozen_workload_and_composition(self) -> None:
         path = ROOT / "contracts/programs/qsa-prefill-t32768-v4.json"
         program = ProgramContract.load(ROOT, path, self.compiler)
+        self.assertEqual(program.implementation.outputs, program.public_outputs)
+        self.assertEqual([stage.name for stage in program.implementation.stages],
+                         [node.node_id for node in program.nodes])
+        self.assertTrue(program.implementation.stages[0].bindings['index_k'].singleton_view)
+        self.assertFalse(program.implementation.stages[0].bindings['pooled'].singleton_view)
         previous = json.loads(self.path.read_text())
         successor = json.loads(path.read_text())
         self.assertEqual(program.program_id, successor["program_id"])

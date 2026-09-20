@@ -48,7 +48,8 @@ def evaluate_tile_validation_case(candidate: LaunchableCandidate, workload: Work
 def _evaluate_tile(candidate, workload, protocol, launcher, *, validation_case, prepared):
     if protocol.workload_sha256 != workload.canonical_sha256 or protocol.timing != 'none' or protocol.purpose == 'attribution':
         raise ValueError('tile correctness Evaluation protocol differs')
-    manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
+    from open_cake_ir.tasks.launch import parse_launch_manifest
+    manifest = parse_launch_manifest(json.loads(candidate.artifact_payloads['launch_manifest']))
     manifest.check_complete_domain()
     if validation_case:
         manifest.check_validation_case(workload, protocol.case_id)
@@ -68,11 +69,11 @@ def _evaluate_tile(candidate, workload, protocol, launcher, *, validation_case, 
     observed, after, launch = launcher.launch_tensors(candidate, manifest, inputs)
     passed, metrics = compare_tile_outputs(workload, before, expected, observed, after)
     if (not isinstance(launch, Mapping) or launch.get('candidate_sha256') != candidate.candidate_sha256
-        or launch.get('kernel_calls') != 1 or launch.get('fallback_calls') != 0):
+        or launch.get('kernel_calls') != manifest.kernels_per_call or launch.get('fallback_calls') != 0):
         raise ValueError('tile launch receipt differs')
     launch_bytes = _canonical_json_bytes(launch)
     return EvaluationReceipt(candidate.candidate_sha256, workload.canonical_sha256,
         protocol.canonical_sha256, protocol.purpose, protocol.case_id, passed, metrics,
-        1, 0, sha256(launch_bytes).hexdigest(), None, artifact_payloads={
+        manifest.kernels_per_call, 0, sha256(launch_bytes).hexdigest(), None, artifact_payloads={
             'correctness_output': _canonical_json_bytes({'passed': passed, 'metrics': metrics}),
             'launch_receipt': launch_bytes, 'timing_samples': b'null'})

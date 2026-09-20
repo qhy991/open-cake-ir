@@ -12,29 +12,30 @@ _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 @dataclass(frozen=True)
 class TurnObservation:
-    """One immutable candidate observation within a Run."""
+    """One completed search turn; this never confers final confirmation."""
 
     turn: int
     cumulative_provider_tokens: int
-    candidate_sha256: str
-    qualified: bool
-    confirmed_latency_ms: float | None
+    candidate_sha256: str | None
+    search_qualified: bool
+    search_latency_ms: float | None
 
     def __post_init__(self) -> None:
         if (
             self.turn <= 0
             or self.cumulative_provider_tokens <= 0
-            or _DIGEST.fullmatch(self.candidate_sha256) is None
-            or not isinstance(self.qualified, bool)
+            or (self.candidate_sha256 is not None and (not isinstance(self.candidate_sha256, str) or _DIGEST.fullmatch(self.candidate_sha256) is None))
+            or (self.search_qualified and self.candidate_sha256 is None)
+            or not isinstance(self.search_qualified, bool)
             or (
-                self.qualified
+                self.search_qualified
                 and (
-                    self.confirmed_latency_ms is None
-                    or not math.isfinite(self.confirmed_latency_ms)
-                    or self.confirmed_latency_ms <= 0
+                    self.search_latency_ms is None
+                    or not math.isfinite(self.search_latency_ms)
+                    or self.search_latency_ms <= 0
                 )
             )
-            or (not self.qualified and self.confirmed_latency_ms is not None)
+            or (not self.search_qualified and self.search_latency_ms is not None)
         ):
             raise ValueError("Turn observation is invalid")
 
@@ -46,7 +47,7 @@ class CheckpointObservation:
     provider_tokens: int
     state: str
     best_candidate_sha256: str | None
-    best_confirmed_latency_ms: float | None
+    best_search_latency_ms: float | None
 
 
 def project_checkpoints(
@@ -80,19 +81,19 @@ def project_checkpoints(
             result.append(CheckpointObservation(boundary, "unreached", None, None))
             continue
         eligible = [turn for turn in turns if turn.cumulative_provider_tokens <= boundary]
-        qualified = [turn for turn in eligible if turn.qualified]
+        qualified = [turn for turn in eligible if turn.search_qualified]
         if not qualified:
             result.append(
-                CheckpointObservation(boundary, "reached_no_qualified_candidate", None, None)
+                CheckpointObservation(boundary, "reached_no_search_candidate", None, None)
             )
             continue
-        best = min(qualified, key=lambda turn: turn.confirmed_latency_ms or math.inf)
+        best = min(qualified, key=lambda turn: turn.search_latency_ms or math.inf)
         result.append(
             CheckpointObservation(
                 boundary,
-                "reached_with_best",
+                "reached_with_search_candidate",
                 best.candidate_sha256,
-                best.confirmed_latency_ms,
+                best.search_latency_ms,
             )
         )
     return tuple(result)

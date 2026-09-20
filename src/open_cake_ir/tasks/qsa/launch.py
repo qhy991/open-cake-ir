@@ -21,6 +21,7 @@ from open_cake_ir.tasks.workloads import load_workload
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.tasks.qsa.program import ProgramContract
+from open_cake_ir.tasks.qsa.cake import admit_candidate_descriptor
 from open_cake_ir.evaluation import WorkloadContract
 from open_cake_ir.lab import ExecutorRevision
 from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
@@ -81,15 +82,7 @@ def _materialize_candidates(root: Path, program: ProgramContract) -> tuple[Path,
     direct = candidates / "direct-cuda-seed"
     cake.mkdir()
     direct.mkdir()
-    nodes: list[dict[str, str]] = []
-    for node in program.nodes:
-        destination = cake / f"{node.node_id}.json"
-        shutil.copyfile(node.schedule_path, destination)
-        nodes.append({"id": node.node_id, "schedule": destination.name})
-    _write_new(
-        cake / "candidate.json",
-        {"schema_version": 1, "arm": "open_cake", "nodes": nodes},
-    )
+    _write_new(cake/'candidate.json',{'schema_version':2,'arm':'open_cake','program':program.implementation.document})
     shutil.copyfile(_DIRECT_SOURCE, direct / "program.cu")
     shutil.copyfile(_DIRECT_MANIFEST, direct / "launch.json")
     _write_new(
@@ -131,16 +124,9 @@ def _external_open_cake_candidates(
                 f"external Open-Cake candidate descriptor is missing: {source}"
             )
         descriptor = json.loads(descriptor_source.read_text(encoding="utf-8"))
-        if (
-            not isinstance(descriptor, dict)
-            or set(descriptor) != {"schema_version", "arm", "nodes"}
-            or descriptor.get("schema_version") != 1
-            or descriptor.get("arm") != "open_cake"
-            or not isinstance(descriptor.get("nodes"), list)
-        ):
-            raise ValueError(
-                f"external Open-Cake candidate descriptor differs: {source}"
-            )
+        admit_candidate_descriptor(descriptor)
+        if descriptor['arm']!='open_cake':
+            raise ValueError(f'external Open-Cake candidate descriptor differs: {source}')
         seen.add(candidate)
         resolved.append(candidate)
     return tuple(resolved)

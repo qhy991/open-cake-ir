@@ -6,13 +6,15 @@
 
 ## 负责什么
 
-- 两种写程序环境都先达到相同的 LaunchableCandidate 边界。
+- 所有写程序环境都先达到相同的 LaunchableCandidate 边界。
 - 按 Workload 生成真实输入，用外部标准答案和容差判对。
 - 先正确性，再计时或收集 profiler；搜索、确认、profiler 分别保留收据。
 - 保存原始计时组、启动与备用路径次数，以及可重建分析的原始 profiler 输出。
 - portfolio 遇到不支持的输入键，在启动前拒绝。
 
-Workload 提供题目和判分方法；CampaignLock 提供本次精确运行准入；Evidence 保存候选和收据。Study 分析读取 Run Audit，而不是只读评测器的一行最快时间。
+Workload 提供题目和判分方法；RunSpecification 提供本次精确运行准入，旧 CampaignLock 在输入边界适配；Evidence 保存候选和收据。Study 分析读取 Run Audit，而不是只读评测器的一行最快时间。
+
+Program 的结构和绑定由 Compiler 拥有。Evaluation 负责设备存储、视图与有序启动；测量覆盖完整程序，不能用某个 stage 的时间代替整体结果。
 
 ## 看懂几个常见误会
 

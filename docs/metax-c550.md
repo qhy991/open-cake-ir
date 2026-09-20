@@ -6,11 +6,11 @@ Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host ad
 由各自的平台实现负责。
 
 当前范围是 **FP32 / FP16 / BF16 / INT32 缓冲区、load / cast / elementwise / reduce / store、
-完整输出正确性验证**。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
+完整输出正确性验证**，以及下述受限的 E4M3FN 存储和解码。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
 INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
 矩阵路径复用现有 `mma` 与 `triton.dot.fp16_fp32`、`triton.dot.bf16_fp32`、
 `triton.dot.fp32_ieee` 三条契约；FP16、FP32 已有下述正式任务结果，BF16 尚限于
-单 tile 原生诊断。TF32 和 FP8 尚未准入。原生 MCPTI 成对计时和独立 profiler 已接入；
+单 tile 原生诊断。TF32 和 FP8 矩阵尚未准入；FP8 的范围限于下述存储和解码。原生 MCPTI 成对计时和独立 profiler 已接入；
 测量质量不通过时明确返回 `measurement_quality_failed`，不作为有效性能结果。
 历史的无计时策略仍可回放。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
 
@@ -217,3 +217,53 @@ N/K tile 仍为 64，四个执行组和 32 次 K 累积不变。完整解析后�
 这是显式 authoring 对照，尚不是完整 provider/Ralph 优化 Campaign；promotion disposition
 为 **No promotion**。原始结果在上述外部证据根的
 `matrix-fib-m17-tile32-{search,confirmatory,attribution}-8c0cad53-v1/`。
+
+## FP8 原生存储与数值诊断
+
+MACA native loader 接受封存 ABI 中的 `fp8_e4m3`，要求真实的
+`torch.float8_e4m3fn` 和既有 DType 声明的一字节存储宽度。uint8、FP16、E4M3FNUZ、
+E5M2 或错误宽度均在 dispatch 前拒绝。Compiler 允许 E4M3FN 的 load/store，以及非标量 tile 向 FP16、FP32 的显式 cast。
+该解码路径供后继 scaled-reduction/MoE 使用；其他算子需求仍须各自验收。
+
+`MACA_FP8_CAST_UNQUALIFIED` 拒绝逆向编码和 FP8→BF16 等未验收转换；
+`MACA_FP8_SCALAR_CAST_UNSUPPORTED` 在外部编译前拒绝当前 SDK 会断言的
+单值转换。直接 FP8 算术由 `MACA_FP8_OPERATION_UNQUALIFIED` 拒绝，
+FP8 MMA 契约仍未在 Target 声明。存储准入不改变这几个边界。
+
+冻结执行源码 `6d997c3d` 的独立诊断直接传输原始 bytes，再 view 为真实 FN tensor，
+launch 前后先 view uint8 再复制到 CPU，避免数值转换改变 NaN 编码或负零。
+它们使用真实 MACA broker job，但不是注册 Workload 的 EvaluationReceipt，也没有计时。
+
+- `maca-bd7ef50c9f98`：全部 256 个原始 FP8 编码在两个输出 poison（0、126）下
+  直接复制，两次调用的 512 个输出 byte 均相等，包含正负零和两个 NaN 编码，输入
+  bytes 不变。这是纯 load/store，无转换或算术，2 registers/thread、shared/local 为 0。
+- `maca-584187da1812`：FP8→FP16 和 FP8→FP32 各检查全部 254 个有限编码的输出 word，
+  包含正负零，均逐 bit 相等；两个 NaN 编码的分类也分别通过。
+- `maca-ff7880c5bf02`：FP32→FP8 在 `[-448,448]` 内的 1014 个特定有限输入模式和
+  10 个 padding 上验证 RNE。四批各用两个不同输出 poison，共八次 native call、
+  2048 个输出 byte 全部精确匹配，输入 bits 未改变。NaN、Inf、overflow/saturation
+  尚未取得编码资格，不能从这些点外推一般转换行为。
+- 显式 FP8→FP16 后的 K64 dot 在原严格诊断中仍有一个超差输出；K16 分组后继修正了
+  那个点，但在 mixed_magnitude `[43,28]` 出现新的超差。因此两次完整诊断均保留失败，
+  不按 case 选择两个实现中较好的结果。原参考和 `.001/.0001` 容差没有改动。
+- `maca-59a4486282a2` 使用不同的 SIMT 算术：FP8 解码到 FP32、FP32 products 和
+  Neumaier 补偿累加。原五个 case 的 20480 个输出 word 全部与参考相等，输入 bytes
+  未改变；五次 native call，21 registers/thread，shared/local 为 0。
+  这是精度 control，不是 FP16 dot、native FP8 MMA 或性能替代，也不改判前两次失败。
+
+调查还发现当前 SDK 对标量 FP8→FP32 的最小程序触发 `RankedTensorType` 内部断言。
+补偿 control 先按 tensor 转换，再在 FP32 上选择元素，才通过编译；这没有修复或
+取得标量 FP8 转换的资格。全部原始源码、编译失败、封存参考、NPZ 观察与结果保留于
+上述外部证据根的 `fp8-*` 目录。后继算子需按自己的原 Workload、范围和 oracle 验收；
+这批诊断不构成 FP8 MoE、scaled matrix 或完整后端能力的资格。
+
+三条新增 Corpus 程序还完成了 Compiler 生成路径的设备复验：`e21aeaad` 的
+`xcore1002-fp8-copy`、`xcore1002-fp8-decode-fp16`、`xcore1002-fp8-decode-fp32`
+经正式 assessment、lowering、kernel projection 和 CPU 隔离编译，封存为 `[1,256]` ABI；
+参考仍是上面原封存的全部 256 个编码与解码 word，仅张量形状增加一行维度。
+执行源码 `7e86e8ad` 的 `maca-b1424247b525` 完成四次 native call：复制两次共
+512 byte 精确匹配，两个 decoder 各 254 个有限 word 精确匹配、两个 NaN 分类正确；
+全部输入 bytes 未改变，零 timing samples。复制报告 2 registers/thread，两个 decoder
+各 10；三者 shared/local 均为 0。原始观察在外部证据根的
+`fp8-corpus-gpu-7e86e8ad-v1/`。这验证了生成路径的原语正确性，尚不构成
+完整 MoE、scaled matrix、其他形状或性能资格。

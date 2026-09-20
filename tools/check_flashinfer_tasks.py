@@ -35,7 +35,7 @@ def check(backend: str) -> dict:
                 for variant in owner.VARIANTS:
                     workload = WorkloadContract(owner.workload_document(task, variant=variant))
                     plan = owner.launch_plan(workload)
-                    compiled = plan.compile(compiler)
+                    compiled = compiler.lower_program(plan)
                     variants.append({'variant': variant, 'workload_id': workload.workload_id,
                                      'stages': len(compiled.lowerings)})
                 row.update(status='offline_lowering_passed', route='cake_launch_plan', variants=variants,
