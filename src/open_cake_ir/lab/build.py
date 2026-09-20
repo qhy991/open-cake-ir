@@ -55,11 +55,13 @@ class ToolchainBuilder(Protocol):
 
 def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> int:
     """Pointers the kernel takes beyond the Workload's tensors, from the kernel itself."""
-    if route.gpu_backend != "hip":
+    if route.gpu_backend == "cuda":
         # Triton's two CUDA scratch pointers, the count every retained CUDA manifest
         # replays through. Reading it from the artifact here would restate a settled
         # relation on a path nothing has reported a problem with.
         return 2
+    if route.gpu_backend != "hip":
+        raise ValueError(f"no kernel argument inspector is registered for {route.gpu_backend!r}")
     from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers
 
     declared = amdgcn_kernarg_pointers(stages[route.text_role])

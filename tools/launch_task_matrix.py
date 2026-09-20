@@ -28,7 +28,7 @@ ALL_TASKS = (
     *launch_task.REDUCTION_TASKS, *launch_task.OPTIMIZER_TASKS,
     *launch_task.CONTRACTION_TASKS, "gemm_bias",
 )
-DEPTH_TASKS = frozenset((*launch_task.CONTRACTION_TASKS, "gemm_bias"))
+DEPTH_TASKS = frozenset((*launch_task.CONTRACTION_TASKS, "gemm_bias", "aka_gemm_nt_bias"))
 
 
 def _now() -> str:
@@ -94,8 +94,8 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", action="append", choices=ALL_TASKS,
-                        help="task to run; repeat to select an ordered subset; default is all")
+    parser.add_argument("--task", action="append", choices=launch_task.TASKS,
+                        help="task to run; repeat to select any launchable subset; default is the portable matrix")
     parser.add_argument("--backend", choices=tuple(launch_task.DEVICE_BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
