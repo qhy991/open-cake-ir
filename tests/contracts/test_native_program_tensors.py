@@ -46,6 +46,16 @@ def build(program, workload, compiler):
 
 
 class NativeProgramCustody(unittest.TestCase):
+    def test_maca_pointer_signature_uses_the_comma_as_a_delimiter(self):
+        from open_cake_ir.compiler.metax_toolchain import pointer_parameters
+        for separator in (',', ', ', ' ,\n'):
+            signature = f'tt.func public @k(%arg0: !tt.ptr<f32>{separator}%arg1: !tt.ptr<bf16>) attributes {{}}'
+            with self.subTest(separator=separator):
+                self.assertEqual(pointer_parameters(signature.encode()), 2)
+        for argument in ('i32', '!tt.ptr<f32, 3>', '!tt.ptr<f32>garbage'):
+            with self.subTest(argument=argument), self.assertRaises(ValueError):
+                pointer_parameters(f'tt.func public @k(%arg0: {argument}) attributes {{}}'.encode())
+
     def test_maca_sealed_stages_use_the_existing_program_order_and_lifecycle(self):
         raw = document()
         raw['target'] = 'xcore1002'
