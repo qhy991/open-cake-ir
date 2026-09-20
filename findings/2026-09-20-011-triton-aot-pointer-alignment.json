@@ -101,7 +101,7 @@
   "decision": "proposed",
   "implemented_in": "88aab6b27e8fdd350d0e8c1d5d57beebaba23dfc",
   "verified_by": null,
-  "promotion_disposition": "No promotion. PR #108 implemented guarded variants, and PR #114 corrected authoring-input binding after real compiler-expanded IR differed as expected. Independent reviews, the 164-case Corpus and all three Python CPU CI versions passed. Three real CPU rebuilds succeeded; GPU correctness and performance remain pending.",
+  "promotion_disposition": "No performance promotion. Guarded AOT source binding is implemented and three real CPU builds succeeded; all 180 GPU pointer-guard/output checks passed on B300 in the prepare/local -> guard/broker -> verify/local flow. Each GPU worker exited before CPU verification. Matched GPU timing versus the unchanged control and external reference, and successor authoring campaigns, remain pending.",
   "renumbered_from": {
     "id": "F-2026-09-20-008",
     "path": "findings/2026-09-20-008-triton-aot-pointer-alignment.json",
@@ -118,5 +118,161 @@
       "025_rmsnorm_h4096"
     ],
     "result": "All three original sources rebuilt and sealed generic/aligned binaries. Generic memory instructions remain scalar and aligned variants use v4.b32. Actual input/output offset correctness and matched GPU timing remain unverified."
+  },
+  "gpu_guard_replay": {
+    "source_commit": "f1499b70865bd74b8d24176577dd9e594becfe21",
+    "target": "sm_103a",
+    "scope": "Three retained exact-shape kernels, all five required distributions, aligned and every public input/output pointer offset; no performance measurement",
+    "cases": [
+      {
+        "task": "001_fused_add_rmsnorm_h2048",
+        "run_id": "nvidia-alignment-guards-20260920-0e762344f212",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-0e762344f212",
+        "judge_commit": "f1499b70865bd74b8d24176577dd9e594becfe21",
+        "broker_job_id": "gpuq-a5854c0963d2",
+        "checks_passed": 65,
+        "input_distributions": [
+          "alternating",
+          "mixed_magnitude",
+          "near_zero",
+          "primary",
+          "zeros"
+        ],
+        "guarded_offsets_bytes": [
+          2,
+          4,
+          8
+        ],
+        "device_worker_exit": "completed exit=0",
+        "numerical_verification": "following local CPU stage; all outputs and unchanged inputs checked",
+        "resources": {
+          "implementations": {
+            "generic": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            },
+            "aligned": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            }
+          },
+          "dispatch_counts": {
+            "generic": 12,
+            "aligned": 1
+          },
+          "last_variant": "generic"
+        }
+      },
+      {
+        "task": "002_fused_add_rmsnorm_h4096",
+        "run_id": "nvidia-alignment-guards-20260920-13447a2cfa61",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-13447a2cfa61",
+        "judge_commit": "f1499b70865bd74b8d24176577dd9e594becfe21",
+        "broker_job_id": "gpuq-36692c9a4286",
+        "checks_passed": 65,
+        "input_distributions": [
+          "alternating",
+          "mixed_magnitude",
+          "near_zero",
+          "primary",
+          "zeros"
+        ],
+        "guarded_offsets_bytes": [
+          2,
+          4,
+          8
+        ],
+        "device_worker_exit": "completed exit=0",
+        "numerical_verification": "following local CPU stage; all outputs and unchanged inputs checked",
+        "resources": {
+          "implementations": {
+            "generic": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            },
+            "aligned": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            }
+          },
+          "dispatch_counts": {
+            "generic": 12,
+            "aligned": 1
+          },
+          "last_variant": "generic"
+        }
+      },
+      {
+        "task": "025_rmsnorm_h4096",
+        "run_id": "nvidia-alignment-guards-20260920-33445a79498a",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-33445a79498a",
+        "judge_commit": "f1499b70865bd74b8d24176577dd9e594becfe21",
+        "broker_job_id": "gpuq-3c1f36fcba88",
+        "checks_passed": 50,
+        "input_distributions": [
+          "alternating",
+          "mixed_magnitude",
+          "near_zero",
+          "primary",
+          "zeros"
+        ],
+        "guarded_offsets_bytes": [
+          2,
+          4,
+          8
+        ],
+        "device_worker_exit": "completed exit=0",
+        "numerical_verification": "following local CPU stage; all outputs and unchanged inputs checked",
+        "resources": {
+          "implementations": {
+            "generic": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 768,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            },
+            "aligned": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            }
+          },
+          "dispatch_counts": {
+            "generic": 9,
+            "aligned": 1
+          },
+          "last_variant": "generic"
+        }
+      }
+    ],
+    "total_checks_passed": 180,
+    "performance_measured": false
   }
 }
