@@ -232,6 +232,7 @@ def _bubblewrap(host) -> str:
 
 def _triton_toolchain_config(executor):
     """One explicit configuration for baseline preparation and the runtime builder."""
+    from open_cake_ir.lab.executor import triton_version
     host = executor.document["host_environment"]
     interpreter = Path(str(host["python"]["invocation_path"]))
     # A HIP host declares the environment its toolchain needs inside the jail; a CUDA
@@ -242,7 +243,7 @@ def _triton_toolchain_config(executor):
     return {"python": str(interpreter), "bubblewrap": _bubblewrap(host),
             "runtime_roots": _triton_runtime_roots(interpreter, declared),
             "build_environment": environment,
-            "triton_version": host["packages"]["triton"], "timeout_seconds": 600}
+            "triton_version": triton_version(host), "timeout_seconds": 600}
 
 
 def _triton_builder(executor, workload):

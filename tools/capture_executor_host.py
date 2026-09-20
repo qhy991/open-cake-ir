@@ -13,6 +13,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -271,6 +272,51 @@ def _capture_hip_host(arguments: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _check_maca_arguments(arguments: argparse.Namespace) -> None:
+    from open_cake_ir.lab.metax_host import PACKAGES
+    if (any(_hip_arguments(arguments)) or arguments.hip_profiler
+            or any(_cuda_arguments(arguments)) or any(v is not None for v in _metal_arguments(arguments))):
+        raise ValueError("MACA capture must not receive another platform's host fields")
+    if arguments.package and set(arguments.package) != PACKAGES:
+        raise ValueError("MACA capture package set differs")
+    if not arguments.maca_root.is_absolute() or not arguments.maca_build_environment:
+        raise ValueError("MACA capture requires an absolute SDK root and declared build environment")
+    arguments.package = sorted(PACKAGES)
+
+
+def _capture_maca_host(arguments: argparse.Namespace) -> dict[str, object]:
+    from open_cake_ir.lab.metax_host import BUILD_TOOLS
+    common = _capture_python_and_packages(arguments)
+    torch = importlib.import_module("torch")
+    triton = importlib.import_module("triton")
+    maca_version = getattr(torch.version, "maca", None)
+    if not isinstance(maca_version, str) or not maca_version:
+        raise ValueError("MACA capture requires MACA PyTorch")
+    sdk = arguments.maca_root
+    paths = {"mxcc": str(sdk / "mxgpu_llvm/bin/mxcc"),
+             **{name: shutil.which("c++" if name == "cxx" else name)
+                for name in BUILD_TOOLS if name != "mxcc"}}
+    tools = []
+    for kind, name in sorted(paths.items()):
+        if name is None:
+            raise ValueError(f"MACA build tool {kind!r} is unavailable")
+        path = Path(name)
+        argv = [str(path), *(["-c", "printf 'POSIX-sh\\n'"] if kind == "sh" else ["--version"])]
+        result = subprocess.run(argv, capture_output=True, text=True, check=True, timeout=30)
+        version = next((s.strip() for s in (result.stdout or result.stderr).splitlines() if s.strip()), "")
+        tools.append({**_file_record(path.resolve(strict=True), str(path)), "kind": kind, "version": version})
+    library = sdk / "lib/libmcruntime.so"
+    return {**common, "kind": "maca",
+        "platform": {"system": platform.system(), "machine": platform.machine(), "kernel_release": platform.release()},
+        "runtime": {"backend": "maca", "torch_maca_version": maca_version,
+                    "triton_version": triton.__version__,
+                    "build_environment": _capture_build_environment(arguments.maca_build_environment)},
+        "tools": {"build_tools": tools},
+        "runtime_libraries": [{**_file_record(library.resolve(strict=True), str(library)),
+                               "soname": "libmcruntime.so"}],
+    }
+
+
 def _capture_metal_host(arguments: argparse.Namespace) -> dict[str, object]:
     from open_cake_ir.compiler.target import Target
     from open_cake_ir.lab.metal_host import command_text, inspect_metal_host, observe_sdk
@@ -364,6 +410,9 @@ _CAPTURES = {
     "metal": HostCapture("metal", _check_metal_arguments,
                          lambda arguments: _capture_metal_host(arguments),
                          False, lambda arguments: True),
+    "maca": HostCapture("maca", _check_maca_arguments,
+                        lambda arguments: _capture_maca_host(arguments),
+                        False, lambda arguments: False),
 }
 
 
@@ -374,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--package", action="append", default=[],
                         help="installed distribution to bind; repeat for each runtime dependency")
     parser.add_argument("--kind", "--runtime-kind", dest="host_kind",
-                        choices=("cuda", "hip", "amd", "metal"), default=None,
+                        choices=("cuda", "hip", "amd", "metal", "maca"), default=None,
                         help="host runtime kind, as a cross-check only: the Target's declared "
                              "code object selects the capture; amd is the public name for the "
                              "HIP/DCU host")
@@ -396,6 +445,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="environment variable the isolated build jail must be given; "
                              "repeat per variable. The jail clears the environment, so a "
                              "value only an env.sh knows about is declared here or lost.")
+    parser.add_argument("--maca-root", type=Path, default=Path("/opt/maca"))
+    parser.add_argument("--maca-build-environment", nargs=2, action="append", default=[],
+                        metavar=("NAME", "VALUE"))
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT,
                         help="checkout whose runtime/hosts/<target>.json this capture writes")
     parser.add_argument("--target", required=True,
