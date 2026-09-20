@@ -217,7 +217,7 @@ def _replay_matched_run(
             lock=lock,
             evidence=evidence,
             expected_task_package=(task_package(lock, audit.run_id)
-                if lock.document['authoring']['provider'].get('harness') == 'responses' else None),
+                if lock.document['authoring'].get('provider', {}).get('harness') == 'responses' else None),
         )
         return
     replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
