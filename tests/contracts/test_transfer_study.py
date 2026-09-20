@@ -100,7 +100,13 @@ class TransferStudyTests(SemanticLabTestCase):
         self.assertFalse(before['complete']);self.assertEqual(before['allocated'],4)
         self.assertTrue(all(row['reason']=='not_started' for row in before['runs']))
         seen = {}
-        lab.execute_study(study,runtime_factory=self.factory(lab,workload,program,qualification,seen))
+        from tools.transfer_study import main
+        runtime = root/'runtime.json'
+        runtime.write_text('{}')  # The injected CPU runtime replaces production adapters.
+        with patch('tools.transfer_study.run_runtime_factory',return_value=self.factory(lab,workload,program,qualification,seen)) as factory, \
+             redirect_stdout(io.StringIO()):
+            self.assertEqual(main(['execute','--study',str(study.root),'--runtime-config',str(runtime)]),0)
+        factory.assert_called_once_with(ROOT,runtime)
         report = lab.audit_study(read_study(study.root))
         self.assertTrue(report['complete'])
         self.assertEqual(report['pipeline_verified'],4)

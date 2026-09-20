@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare or audit preassigned E/P Studies; these commands launch no provider or GPU."""
+"""Prepare, execute or audit preassigned E/P Studies through independent Runs."""
 import argparse
 import json
 from pathlib import Path
@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 from open_cake_ir.lab import read_study
 from open_cake_ir.tasks.runtime import TaskLab
+from open_cake_ir.tasks.compose import run_runtime_factory
 
 
 def main(argv=None):
@@ -19,6 +20,9 @@ def main(argv=None):
     prepare.add_argument('--output',type=Path,required=True)
     audit = sub.add_parser('audit')
     audit.add_argument('--study',type=Path,required=True)
+    execute = sub.add_parser('execute')
+    execute.add_argument('--study',type=Path,required=True)
+    execute.add_argument('--runtime-config',type=Path,required=True)
     args = parser.parse_args(argv)
     lab = TaskLab(ROOT)
     if args.command=='prepare':
@@ -26,7 +30,10 @@ def main(argv=None):
         result = {'study':str(study.root),'study_id':study.plan.study_id,
                   'allocated_runs':len(study.plan.allocations()),'executed_runs':0}
     else:
-        result = lab.audit_study(read_study(args.study))
+        study = read_study(args.study)
+        if args.command=='execute':
+            lab.execute_study(study,runtime_factory=run_runtime_factory(ROOT,args.runtime_config))
+        result = lab.audit_study(study)
     print(json.dumps(result,ensure_ascii=False,indent=2))
     return 0
 

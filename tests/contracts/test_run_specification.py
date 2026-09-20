@@ -68,6 +68,40 @@ class IndependentRunTests(SemanticLabTestCase):
     def test_ordinary_run_executes_and_replays_without_study_or_estimand(self):
         self.assertEqual(self.run_fixture(), 'qualified')
 
+    def test_campaign_input_retains_its_report_with_independently_assembled_runs(self):
+        from open_cake_ir.lab.provider_policy import execution_configuration
+        lab = TaskLab(ROOT)
+        lock = lab.preflight(ROOT/'contracts/studies/matched-search-system-qualification-ralph-template.json')
+        providers = []
+        def runtime(specification,directory):
+            document = specification.document
+            provider = RalphFakeProvider({specification.run_id:lab.task_package(specification,specification.run_id)})
+            provider.configuration = execution_configuration(document['authoring']['provider'])
+            provider.qualification_sha256 = document['authoring']['provider']['qualification']['canonical_sha256']
+            providers.append(provider)
+            protocol = document['evaluation_protocol']
+            return {'provider':provider,'environment':FakeEnvironment(specification.environment_kind,document['authoring']),
+                'evaluator':FakeEvaluator(protocol,sha256(canonical_json_bytes(protocol)).hexdigest(),document['workload']['canonical_sha256'])}
+        with tempfile.TemporaryDirectory() as directory:
+            campaign = lab.execute_campaign_with_factory(lock,Path(directory)/'evidence',runtime_factory=runtime)
+            report = lab.audit(campaign)
+        self.assertTrue(report.archive_integrity_passed)
+        self.assertEqual(len(providers),len(lock.run_order))
+        self.assertTrue(all(provider.requests for provider in providers))
+        self.assertEqual(len({id(provider) for provider in providers}),len(lock.run_order))
+
+    def test_independent_cli_preflight_uses_no_study_and_prints_the_run(self):
+        import io
+        from contextlib import redirect_stdout
+        from open_cake_ir.cli import main
+        _,specification = self.fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'run.json';source.write_bytes(canonical_json_bytes(specification.document))
+            output = io.StringIO()
+            with patch.object(StudyContract,'load',side_effect=AssertionError('independent CLI requested a Study')),redirect_stdout(output):
+                self.assertEqual(main(['--project-root',str(ROOT),'lab','run','preflight','--run',str(source)]),0)
+            self.assertEqual(json.loads(output.getvalue()),specification.document)
+
     def test_condition_rename_does_not_change_candidate_representation(self):
         self.assertEqual(self.run_fixture(condition='E0P0'), self.run_fixture(condition='named-treatment'))
 

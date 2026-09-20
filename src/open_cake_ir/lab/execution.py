@@ -176,6 +176,25 @@ def execute_run(specification: RunSpecification, evidence_root, *, project_root,
     return RunRef(specification, evidence.root)
 
 
+def execute_campaign_with_factory(lock,evidence_root,*,project_root,workload_loader,clock,
+                                  runtime_factory,task_package,validate_run):
+    """Keep the external Campaign archive while assembling independent Run adapters."""
+    lock = CampaignLock.from_dict(lock.document)
+    root = admit_new_campaign_path(project_root,evidence_root,role='Campaign Evidence root')
+    from .preflight import preflight_run
+    specifications = [preflight_run(lock.run_specification(run_id),project_root=project_root,
+                      workload_loader=workload_loader,validate_run=validate_run) for run_id in lock.run_order]
+    evidence = EvidenceStore.create(root)
+    for specification in specifications:
+        components = runtime_factory(specification,root.parent/(root.name+'-'+specification.run_id))
+        if not isinstance(components,Mapping) or set(components) != {'provider','environment','evaluator'}:
+            raise ValueError('Run runtime factory must bind provider, environment and evaluator')
+        validate_run_bindings(specification,project_root=project_root,workload_loader=workload_loader,
+                              task_package=task_package,**components)
+        _execute_run(specification,project_root=project_root,evidence=evidence,clock=clock,**components)
+    return CampaignRef(lock=lock,evidence_root=evidence.root)
+
+
 def _execute_run(specification: RunSpecification, *, project_root, evidence, clock, provider, environment, evaluator):
     """The one search/evaluation lifecycle for every frozen Run."""
     document = specification.document

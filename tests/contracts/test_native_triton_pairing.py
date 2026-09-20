@@ -352,7 +352,7 @@ class NativePairingContractTests(unittest.TestCase):
                 compiler.check_executor(executor, author_workspace=workspace)
 
     def test_canonical_composition_rejects_an_unpinned_isolated_runtime_before_build(self):
-        from open_cake_ir.tasks.compose import execute_matched_from_config
+        from open_cake_ir.tasks.compose import run_runtime_factory
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             runtime = root / 'runtime'; runtime.mkdir()
@@ -366,6 +366,11 @@ class NativePairingContractTests(unittest.TestCase):
             arm = {'provider':authority, 'toolchain_sha256':'b'*64}
             lock = SimpleNamespace(study_kind='matched_search', claim_scope='scientific_matched_search',
                 document={'resolved_inputs':{'arm_environments':{'open_cake':arm,'native_triton':arm}, 'budget':{}}})
+            specification = SimpleNamespace(environment_kind='native_triton',run_id='native-fixture',document={
+                'authoring':arm,'execution':{},'evaluation_protocol':{},
+                'compiler_revision':{'path':'compiler/revision.json','revision_id':'fixture'}})
+            admitted_workload = SimpleNamespace(target='sm_100a',document={'semantics':{'candidate_abi':{}}})
+            compiler = SimpleNamespace(commit='fixture',check_corpus=lambda:SimpleNamespace(passed=True,compiler_revision_id='fixture'))
             executor = SimpleNamespace(document={'host_environment':{
                 'python':{'invocation_path':str(python)},'packages':{'triton':'fixture'}}})
             qualification = SimpleNamespace(scope='live_two_turn_current_provider',canonical_sha256='a'*64)
@@ -377,16 +382,20 @@ class NativePairingContractTests(unittest.TestCase):
             path = root/'runtime.json'; path.write_bytes(encoded(config))
             with mock.patch('open_cake_ir.tasks.compose._admit_executor',return_value=(executor,None)), \
                  mock.patch('open_cake_ir.tasks.compose.ProviderQualificationReceipt.load',return_value=qualification), \
+                 mock.patch('open_cake_ir.tasks.compose.TaskLab') as lab, \
+                 mock.patch('open_cake_ir.tasks.compose._load_workload_binding',return_value=(None,None,admitted_workload)), \
+                 mock.patch('open_cake_ir.tasks.compose.Compiler.load',return_value=compiler), \
                  mock.patch('open_cake_ir.lab.triton_build.sys.platform','linux'), \
                  mock.patch('open_cake_ir.lab.triton_build.run_supervised') as run:
+                lab.return_value.preflight_run.return_value = specification
                 with self.assertRaisesRegex(ValueError,'runtime differs from the frozen Executor'):
-                    execute_matched_from_config(root,lock,path,root/'evidence')
+                    run_runtime_factory(root,path)(specification,root/'evidence')
                 run.assert_not_called()
                 config['toolchain']['python'] = str(python)
                 config['toolchain']['triton_version'] = 'other-version'
                 path.write_bytes(encoded(config))
                 with self.assertRaisesRegex(ValueError,'runtime differs from the frozen Executor'):
-                    execute_matched_from_config(root,lock,path,root/'evidence')
+                    run_runtime_factory(root,path)(specification,root/'evidence')
                 run.assert_not_called()
 
     def test_worker_runtime_faults_propagate_through_both_authoring_environments(self):

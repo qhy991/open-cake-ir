@@ -86,6 +86,14 @@ def _analysis_estimand(
     return _name(analysis.get("estimand"), f"{context}.analysis_plan.estimand")
 
 
+def _matched_author_controls(arms):
+    """Shared treatment controls belong to the external matched-Study contract."""
+    reference = arms['open_cake']
+    for name,environment in arms.items():
+        if any(environment.get(field) != reference.get(field) for field in ('provider','scaffold')):
+            raise ValueError('matched Authoring Environments differ in provider or scaffold')
+
+
 def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
     """Every rule a matched-search Study document satisfies by its own bytes.
 
@@ -186,15 +194,7 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
                     "launch_contract": "direct launch contract reference",
                     "candidate_skeleton": "direct candidate skeleton reference"}[field]
             raise differs(f"Study Contract {noun}", expected=sorted(keys), observed=sorted(reference))
-    if comparison is not None and (
-            open_cake.get("provider") != comparison_arm_document.get("provider")
-            or open_cake.get("scaffold") != comparison_arm_document.get("scaffold")):
-        raise differs(
-            "matched Authoring Environments differ in provider or scaffold",
-            expected={"provider": comparison_arm_document.get("provider"),
-                      "scaffold": comparison_arm_document.get("scaffold")},
-            observed={"provider": open_cake.get("provider"), "scaffold": open_cake.get("scaffold")},
-        )
+    _matched_author_controls(arms)
     expected_open_cake_tools = (["submit_schedule_or_python"] if policy is not None or single_environment
                                 else ["submit_schedule"])
     expected_comparison_tools = (None if comparison is None
@@ -499,6 +499,7 @@ class CampaignLock:
         )
         validate_declarations(arms)
         comparison = comparison_arm(arms)
+        _matched_author_controls(arms)
         if set(arm_hashes) != set(arms):
             raise differs(
                 "Campaign Lock Authoring Environment set",
