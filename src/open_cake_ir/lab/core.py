@@ -166,6 +166,15 @@ class Lab:
         )
         return audit, result
 
+    def report_run(self,run):
+        audit,replay_result = self.audit_run(run)
+        from open_cake_ir.evidence import EvidenceStore
+        from .reporting import _promoted_artifact
+        confirmed = (_promoted_artifact(EvidenceStore.open(run.evidence_root),audit)
+                     if replay_result else None)
+        return {'run_id':run.specification.run_id,'evidence_root':str(run.evidence_root),
+                'audit':audit,'replay':replay_result,'confirmed_artifact':confirmed}
+
     def threshold_view(
         self,
         campaign: contracts.CampaignRef,

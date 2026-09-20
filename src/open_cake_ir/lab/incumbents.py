@@ -31,10 +31,12 @@ from open_cake_ir.serialization import canonical_json_bytes
 from ._documents import _object, _digest
 from .contracts import CampaignLock, CampaignRef, StudyReport
 from .executor import ExecutorRevision
+from .run_spec import RunSpecification, RunRef
 
 
 _RUN = re.compile(r"^incumbent-([0-9a-f]{64})-([0-9]{12})$")
 _PROMOTION_KIND = "task_incumbent_promoted_v1"
+_RUN_PROMOTION_KIND = "task_incumbent_promoted_v2"
 _KEY_KIND = "task_incumbent_key_v1"
 
 
@@ -100,6 +102,19 @@ class TaskIncumbentKey:
             backend=str(route["backend"]),
             evaluation_protocol=evaluation,
         )
+
+    @classmethod
+    def from_run(cls,specification: RunSpecification) -> "TaskIncumbentKey":
+        document = specification.document
+        authoring = document['authoring']
+        if specification.environment_kind=='open_cake':
+            backend = authoring['lowering_route']['backend']
+        else:
+            from .toolchains import toolchain_for_arm
+            backend = toolchain_for_arm(specification.environment_kind).backend.value
+        return cls.from_values(workload_id=document['workload']['workload_id'],
+            workload_sha256=document['workload']['canonical_sha256'],case_id=document['evaluation_protocol']['case_id'],
+            target=document['execution']['target'],backend=backend,evaluation_protocol=document['evaluation_protocol'])
 
     @classmethod
     def from_dict(cls, value: object) -> "TaskIncumbentKey":
@@ -273,7 +288,7 @@ class TaskIncumbentRegistry:
         ):
             raise ValueError(f"incumbent promotion {run_id!r} is not custody-audited")
         events = self.store.replay_events(run_id)
-        if len(events) != 2 or events[0].get("kind") != _PROMOTION_KIND:
+        if len(events) != 2 or events[0].get("kind") not in {_PROMOTION_KIND,_RUN_PROMOTION_KIND}:
             raise ValueError("incumbent promotion event sequence differs")
         payload = _object(events[0].get("payload"), "incumbent promotion")
         expected = {
@@ -289,6 +304,7 @@ class TaskIncumbentRegistry:
         candidate = _object(payload["candidate"], "incumbent candidate")
         comparison = _object(payload["comparison"], "incumbent comparison")
         source = _object(payload["source"], "incumbent source")
+        authority = ('run_specification' if events[0]['kind']==_RUN_PROMOTION_KIND else 'campaign_lock')
         if set(comparison) != {
             "baseline_candidate_sha256",
             "classification",
@@ -298,8 +314,8 @@ class TaskIncumbentRegistry:
             "measurement_quality_passed",
             "materiality_ratio",
         } or set(source) != {
-            "campaign_lock_path",
-            "campaign_lock_sha256",
+            authority+"_path",
+            authority+"_sha256",
             "evidence_root",
             "run_id",
             "launchable_event_sequence",
@@ -474,7 +490,7 @@ def admit_baseline_selection(value, *, candidate, workload, case_id, backend,
 def _bound_audit_report(
     project: Path, lock: CampaignLock, lock_path: Path, evidence_path: Path
 ) -> Mapping[str, object]:
-    """Audit through the frozen Campaign's own Executor source, including history."""
+    """Audit through the frozen execution's own Executor source, including history."""
 
     execution = _object(lock.document["execution"], "campaign execution")
     reference = _object(
@@ -485,20 +501,10 @@ def _bound_audit_report(
     )
     python = executor.document["host_environment"]["python"]["invocation_path"]
     bootstrap = project / "src/open_cake_ir/evaluation/source_bootstrap.py"
-    command = [
-        str(python),
-        "-I",
-        str(bootstrap),
-        "open_cake_ir.cli",
-        "--project-root",
-        str(project),
-        "lab",
-        "audit",
-        "--lock",
-        str(lock_path),
-        "--evidence-root",
-        str(evidence_path),
-    ]
+    independent = isinstance(lock,RunSpecification)
+    command = [str(python),'-I',str(bootstrap),'open_cake_ir.cli','--project-root',str(project),'lab',
+        *(['run','audit','--run'] if independent else ['audit','--lock']),
+        str(lock_path),'--evidence-root',str(evidence_path)]
     completed = subprocess.run(
         command,
         cwd=project,
@@ -513,11 +519,12 @@ def _bound_audit_report(
             + (completed.stderr.strip().splitlines() or ["no diagnostic"])[-1]
         )
     report = _object(json.loads(completed.stdout), "campaign-bound audit report")
-    if (
-        report.get("study_id") != lock.study_id
-        or report.get("claim_scope") != lock.claim_scope
-    ):
-        raise ValueError("campaign-bound audit report identity differs")
+    if independent:
+        if (report.get('run_id') != lock.run_id
+            or _object(report.get('audit'),'Run audit').get('authority_sha256') != lock.canonical_sha256):
+            raise ValueError('Run-bound audit report identity differs')
+    elif (report.get('study_id') != lock.study_id or report.get('claim_scope') != lock.claim_scope):
+        raise ValueError('campaign-bound audit report identity differs')
     return report
 
 
@@ -525,16 +532,44 @@ def promote_task_incumbent(
     *,
     project_root: str | Path,
     registry_root: str | Path,
-    campaign_lock_path: str | Path,
+    campaign_lock_path: str | Path | None = None,
+    run_path: str | Path | None = None,
     evidence_root: str | Path,
     lab=None,
     run_id: str | None = None,
 ) -> Mapping[str, object]:
     """Promote one material confirmed winner and seal its complete artifact bundle."""
 
+    if (campaign_lock_path is None) == (run_path is None):
+        raise ValueError('promotion requires exactly one Run or Campaign authority')
     project = Path(project_root).resolve(strict=True)
-    lock_path = Path(campaign_lock_path).resolve(strict=True)
     evidence_path = Path(evidence_root).resolve(strict=True)
+    if run_path is not None:
+        authority_path = Path(run_path).resolve(strict=True)
+        specification = RunSpecification.load(authority_path)
+        if specification.document['assignment'] is not None:
+            raise ValueError('Study-assigned Runs retain their Study promotion policy')
+        if run_id is not None and run_id != specification.run_id:
+            raise ValueError('selected Run differs from its authority')
+        if lab is None:
+            report = _bound_audit_report(project,specification,authority_path,evidence_path)
+            replayed = _object(report.get('replay'),'Run semantic replay')
+            if replayed.get('run_id') != specification.run_id or replayed.get('refusals') != []:
+                raise ValueError('task incumbent promotion requires selected-Run semantic replay')
+            selected = report.get('confirmed_artifact')
+        else:
+            from .reporting import _promoted_artifact
+            audit,replayed = lab.audit_run(RunRef(specification,evidence_path))
+            if not replayed:
+                raise ValueError('task incumbent promotion requires selected-Run semantic replay')
+            selected = _promoted_artifact(EvidenceStore.open(evidence_path),audit)
+        if selected is None:
+            raise ValueError('task incumbent promotion requires a confirmed artifact')
+        return _publish_incumbent(project,registry_root,evidence_path,
+            document=specification.document,selected_run=specification.run_id,selected=_object(selected,'confirmed artifact'),
+            run_authority_sha256=specification.canonical_sha256,key=TaskIncumbentKey.from_run(specification),
+            authority_source={'run_specification_path':str(authority_path),'run_specification_sha256':specification.canonical_sha256})
+    lock_path = Path(campaign_lock_path).resolve(strict=True)
     lock = CampaignLock.load(lock_path)
     if lock.claim_scope != "artifact_optimization_only":
         raise ValueError("task incumbent promotion requires artifact_optimization_only")
@@ -561,6 +596,15 @@ def promote_task_incumbent(
     if semantic_replay.get(selected_run) is not True:
         raise ValueError("task incumbent promotion requires selected-Run semantic replay")
     selected = _object(promoted[selected_run], "promoted artifact")
+    return _publish_incumbent(project,registry_root,evidence_path,document=lock.document,
+        selected_run=selected_run,selected=selected,
+        run_authority_sha256=lock.run_specification(selected_run).canonical_sha256,key=TaskIncumbentKey.from_campaign(lock),
+        authority_source={'campaign_lock_path':str(lock_path),'campaign_lock_sha256':lock.canonical_sha256})
+
+
+def _publish_incumbent(project,registry_root,evidence_path,*,document,selected_run,selected,
+                       run_authority_sha256,key,authority_source):
+    """The one material-win check and append-only registry writer for both inputs."""
     candidate_sha = _digest(selected.get("candidate_sha256"), "promoted candidate")
     source_store = EvidenceStore.open(evidence_path)
     source_audit = source_store.audit_run(selected_run)
@@ -568,7 +612,7 @@ def promote_task_incumbent(
         not source_audit.archive_integrity
         or not source_audit.filesystem_custody_verified
         or source_audit.protocol_adherence != "adhered"
-        or source_audit.authority_sha256 != lock.run_specification(source_audit.run_id).canonical_sha256
+        or source_audit.authority_sha256 != run_authority_sha256
     ):
         raise ValueError("promoted source Run is not custody-audited")
     events = source_store.replay_events(selected_run)
@@ -615,7 +659,7 @@ def promote_task_incumbent(
     timing = _object(receipt.get("timing"), "confirmation timing")
     receipt_sha256 = sha256(receipt_payload).hexdigest()
     protocol = paired_protocol(
-        _object(lock.document["evaluation_protocol"], "evaluation protocol")
+        _object(document["evaluation_protocol"], "evaluation protocol")
     )
     speedup = timing.get("speedup")
     medians = _object(timing.get("pooled_medians_ms"), "confirmation medians")
@@ -664,7 +708,6 @@ def promote_task_incumbent(
     sealed_candidate = candidate_from_identity(candidate_identity, artifact_payloads)
     if receipt["kernel_calls"] != sealed_candidate.kernels_per_call:
         raise ValueError("promoted receipt kernel count differs from its complete candidate")
-    key = TaskIncumbentKey.from_campaign(lock)
     root = external_path(Path(registry_root).absolute())
     if project == root or project in root.parents or root in project.parents:
         raise ValueError("task incumbent registry must remain outside the source checkout")
@@ -672,7 +715,7 @@ def promote_task_incumbent(
         store = EvidenceStore.writer(root) if root.exists() else EvidenceStore.create(root)
         registry = TaskIncumbentRegistry(store)
         previous = registry.current(key)
-        fixed = _object(lock.document["execution"], "campaign execution")
+        fixed = _object(document["execution"], "campaign execution")
         baseline = _object(
             _object(fixed["fixed_baseline"], "fixed baseline")["candidate"],
             "fixed baseline candidate",
@@ -719,8 +762,7 @@ def promote_task_incumbent(
             "materiality_ratio": protocol.materiality_ratio,
         }
         source = {
-            "campaign_lock_path": str(lock_path),
-            "campaign_lock_sha256": lock.canonical_sha256,
+            **authority_source,
             "evidence_root": str(evidence_path),
             "run_id": selected_run,
             "launchable_event_sequence": launchable[0]["sequence"],
@@ -728,7 +770,7 @@ def promote_task_incumbent(
             "evaluation_receipt_sha256": receipt_sha256,
         }
         ledger.append(
-            _PROMOTION_KIND,
+            _RUN_PROMOTION_KIND if 'run_specification_path' in authority_source else _PROMOTION_KIND,
             {
                 "generation": generation,
                 "candidate": candidate_identity,

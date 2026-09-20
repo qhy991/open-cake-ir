@@ -99,9 +99,8 @@ class TaskLab(Lab):
 
     def report_run(self,run):
         from .efficiency import run_performance
-        audit,replay = self.audit_run(run)
-        return {'run_id':run.specification.run_id,'evidence_root':str(run.evidence_root),
-                'audit':audit,'replay':replay,'performance':run_performance(self._root,run,audit,replay)}
+        report = super().report_run(run)
+        return {**report,'performance':run_performance(self._root,run,report['audit'],report['replay'])}
 
     def audit(self, campaign):
         policy = performance_reporting_policy(campaign.lock.analysis_plan, campaign.lock.claim_scope)

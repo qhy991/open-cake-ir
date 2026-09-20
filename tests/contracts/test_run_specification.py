@@ -65,7 +65,10 @@ class IndependentRunTests(SemanticLabTestCase):
                     with patch('open_cake_ir.tasks.compose.run_runtime_factory',return_value=lambda spec,path:components),redirect_stdout(output):
                         self.assertEqual(main(['--project-root',str(ROOT),'lab','run','execute','--run',str(source),
                             '--runtime-config',str(runtime),'--evidence-root',str(Path(directory)/'evidence')]),0)
-                    self.assertEqual(json.loads(output.getvalue())['audit']['endpoint_observation'],'qualified')
+                    described = json.loads(output.getvalue())
+                    self.assertEqual(described['audit']['endpoint_observation'],'qualified')
+                    self.assertEqual(described['confirmed_artifact']['candidate_sha256'],
+                                     described['audit']['endpoint']['best_candidate_sha256'])
                     run = RunRef(specification,Path(directory)/'evidence')
                     with redirect_stdout(io.StringIO()):
                         self.assertEqual(main(['--project-root',str(ROOT),'lab','run','audit','--run',str(source),

@@ -23,6 +23,7 @@ from open_cake_ir.lab.incumbents import (
     admit_baseline_selection,
 )
 from open_cake_ir.lab.bindings import load_prepared_baseline
+from open_cake_ir.lab import RunSpecification
 from open_cake_ir.lab.execution import _baseline_comparison_feedback
 from open_cake_ir.serialization import canonical_json_bytes
 
@@ -92,6 +93,7 @@ class TaskIncumbentTests(unittest.TestCase):
         *,
         classification: str = "first_arm_faster",
         speedup: float = 1.2,
+        independent: bool = False,
     ):
         candidate, payloads = self.candidate(character)
         evidence = EvidenceStore.create(self.base / f"evidence-{name}")
@@ -102,6 +104,7 @@ class TaskIncumbentTests(unittest.TestCase):
             },
             "execution": {
                 "target": "apple_gpu_family9",
+                "executor_revision":{"executor_id":"fixture","path":"runtime/fixture.json"},
                 "fixed_baseline": {"candidate": dict(baseline)},
             },
             "evaluation_protocol": self.protocol,
@@ -119,6 +122,15 @@ class TaskIncumbentTests(unittest.TestCase):
             run_specification=lambda run_id: SimpleNamespace(canonical_sha256=lock_sha),
             document=lock_document,
         )
+        if independent:
+            # Minimal immutable curator-boundary authority double, not a runnable
+            # or independently qualified Run. The loader and semantic audit below
+            # are explicit doubles; artifact custody/receipt/chain checks are real.
+            authority = {key:value for key,value in lock_document.items() if key!='resolved_inputs'}
+            authority.update(run_id='open_cake-1',assignment=None,
+                authoring={'environment_kind':'open_cake','lowering_route':{'backend':'metal'}})
+            lock = RunSpecification(canonical_json_bytes(authority))
+            lock_sha = lock.canonical_sha256
         run = evidence.start_run(
             "open_cake-1", authority_sha256=lock_sha, authority=authority
         )
@@ -194,6 +206,74 @@ class TaskIncumbentTests(unittest.TestCase):
             reference_campaign=lambda *_: object(), audit=lambda _: report
         )
         return lock, lock_path, evidence.root, candidate
+
+    def promote_run(self,fixture,*,replay=True):
+        specification,path,evidence_root,_ = fixture
+        with patch('open_cake_ir.lab.incumbents.RunSpecification.load',return_value=specification):
+            return promote_task_incumbent(project_root=ROOT,registry_root=self.registry,
+                run_path=path,evidence_root=evidence_root,
+                lab=SimpleNamespace(audit_run=lambda run:(EvidenceStore.open(run.evidence_root).audit_run(run.specification.run_id),replay)))
+
+    def test_independent_run_and_old_campaign_share_one_incumbent_chain(self):
+        baseline,_ = self.candidate('0')
+        first_fixture = self.campaign('old','a',candidate_identity(baseline))
+        first = self.promote(first_fixture)
+        second_fixture = self.campaign('run','b',first['candidate'],independent=True)
+        second = self.promote_run(second_fixture)
+        self.assertEqual(second['generation'],1)
+        self.assertEqual(second['predecessor']['run_id'],first['run_id'])
+        self.assertIn('campaign_lock_path',first['source'])
+        self.assertNotIn('campaign_lock_path',second['source'])
+        self.assertEqual(second['source']['run_specification_sha256'],second_fixture[0].canonical_sha256)
+        key = TaskIncumbentKey.from_run(second_fixture[0])
+        registry = TaskIncumbentRegistry.open(self.registry)
+        self.assertEqual(registry.current(key)['candidate'],second['candidate'])
+        path,retained = registry.materialize(key,self.base/'run-winner')
+        self.assertTrue(path.is_file())
+        self.assertEqual(retained['run_id'],second['run_id'])
+
+    def test_independent_promotion_refuses_unreplayed_close_and_study_assigned_results(self):
+        baseline,_ = self.candidate('0')
+        fixture = self.campaign('unreplayed','a',candidate_identity(baseline),independent=True)
+        with self.assertRaisesRegex(ValueError,'semantic replay'):
+            self.promote_run(fixture,replay=False)
+        self.assertFalse(self.registry.exists())
+        close = self.campaign('close-run','b',candidate_identity(baseline),independent=True,classification='close',speedup=1.01)
+        with self.assertRaisesRegex(ValueError,'material confirmed win'):
+            self.promote_run(close)
+        document = fixture[0].document
+        document['assignment'] = {'study_id':'held-out-study','study_sha256':'7'*64,'condition_id':'E1P1'}
+        assigned = (RunSpecification(canonical_json_bytes(document)),*fixture[1:])
+        with self.assertRaisesRegex(ValueError,'Study-assigned'):
+            self.promote_run(assigned)
+        self.assertFalse(self.registry.exists())
+
+    def test_run_promotion_cli_uses_the_source_bound_run_audit_command(self):
+        import contextlib
+        import io
+        from open_cake_ir.cli import _json_projection
+        from open_cake_ir.lab.reporting import _promoted_artifact
+        from tools.promote_task_incumbent import main
+        baseline,_ = self.candidate('0')
+        specification,path,evidence_root,candidate = self.campaign('cli','a',candidate_identity(baseline),independent=True)
+        # The audit command resolves the interpreter from this exact Executor binding.
+        executor = SimpleNamespace(document={'host_environment':{'python':{'invocation_path':'/fixture/python'}}})
+        store = EvidenceStore.open(evidence_root)
+        audit = store.audit_run(specification.run_id)
+        report = {'run_id':specification.run_id,'audit':audit,
+            'replay':{'run_id':specification.run_id,'refusals':[]},
+            'confirmed_artifact':_promoted_artifact(store,audit)}
+        completed = SimpleNamespace(returncode=0,stdout=json.dumps(_json_projection(report)),stderr='')
+        with patch('open_cake_ir.lab.incumbents.RunSpecification.load',return_value=specification), \
+             patch('open_cake_ir.lab.incumbents.ExecutorRevision.load_reference',return_value=executor), \
+             patch('open_cake_ir.lab.incumbents.subprocess.run',return_value=completed) as invoked, \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(['--project-root',str(ROOT),'--registry-root',str(self.registry),
+                '--run',str(path),'--evidence-root',str(evidence_root)]),0)
+        self.assertEqual(json.loads(output.getvalue())['candidate_sha256'],candidate.candidate_sha256)
+        command = invoked.call_args.args[0]
+        self.assertEqual(command[:2],['/fixture/python','-I'])
+        self.assertEqual(command[-6:],['run','audit','--run',str(path),'--evidence-root',str(evidence_root)])
 
     def promote(self, fixture):
         lock, lock_path, evidence_root, _ = fixture
