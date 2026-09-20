@@ -18,6 +18,7 @@ def prepare_program(lowered: LoweredProgram, inputs: Mapping[str, object], *, al
     """
     if set(inputs) != set(lowered.program.inputs):
         raise ValueError('launch plan public input set differs')
+    bound_context = execution_context()
     buffers = dict(inputs)
     for name, spec in lowered.program.tensors.items():
         if name not in buffers:
@@ -28,6 +29,10 @@ def prepare_program(lowered: LoweredProgram, inputs: Mapping[str, object], *, al
         device, start, end = storage_span(tensor)
         if type(start) is not int or type(end) is not int or not 0 < start < end:
             raise ValueError('launch plan requires exact nonempty storage byte intervals')
+        if spans and device != spans[0][0]:
+            raise ValueError('program tensors must share one device')
+        if end - start != lowered.program.tensors[name].nbytes:
+            raise ValueError('program storage interval differs from its tensor extent')
         if any(device == other_device and start < other_end and other_start < end
                for other_device, other_start, other_end in spans):
             raise ValueError(f'launch plan storage for {name!r} overlaps another tensor')
@@ -54,8 +59,10 @@ def prepare_program(lowered: LoweredProgram, inputs: Mapping[str, object], *, al
         outputs = tuple(bound(stage, schedule.buffer(name)) for name in schedule.outputs)
         kernel = load_kernel(stage.name, lowering)
         calls.append((kernel, arguments, outputs[0] if len(outputs)==1 else outputs))
+    if execution_context() != bound_context:
+        raise ValueError('program execution device/stream changed during preparation')
     return PreparedProgram(tuple(calls), MappingProxyType({name:buffers[name] for name in lowered.program.outputs}),
-                              MappingProxyType(buffers), execution_context, execution_context())
+                              MappingProxyType(buffers), execution_context, bound_context)
 
 @dataclass
 class PreparedProgram:

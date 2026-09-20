@@ -7,7 +7,7 @@ import unittest
 from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.program import LoweredProgram
 from open_cake_ir.evaluation.launch_plan import prepare_program
-from tests.contracts.test_epilogue_fusion import stage, execute, rounded
+from tests.contracts.test_epilogue_fusion import stage, execute
 from tests.contracts.test_ordered_launch_plan import document as scalar_program
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,7 +21,7 @@ def epilogue_program(dtype='bf16'):
             if b['space'] == 'global':
                 tensors[b['name']] = {'shape': b['shape'], 'dtype': b['dtype']}
     return {'schema_version': 1, 'program_id': 'rounded-epilogue', 'target': p['target'],
-            'tensors': tensors, 'inputs': ['a', 'b', 'bias'], 'outputs': e['outputs'],
+            'tensors': tensors, 'inputs': ['a', 'b', 'bias'], 'outputs': list(e['outputs']),
             'stages': [{'name': name, 'schedule': schedule,
                         'bindings': {b['name']: b['name'] for b in schedule['buffers'] if b['space'] == 'global'}}
                        for name, schedule in [('producer', p), ('epilogue', e)]]}
