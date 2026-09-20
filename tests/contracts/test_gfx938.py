@@ -169,7 +169,7 @@ class TritonAdmissionTest(unittest.TestCase):
         the object the Target declares it runs. Neither keeps a table of target ids."""
         document = _document("gfx938-rmsnorm-b8-smoke")
         self.assertEqual(triton.preflight(Schedule.from_dict(document), self.target), ())
-        self.assertEqual(triton.CODE_OBJECTS, {CodeObject.CUBIN, CodeObject.HSACO})
+        self.assertEqual(triton.CODE_OBJECTS, {CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN})
         assessment = self.compiler.assess({**document, "target": "apple_gpu_family9"})
         refusals = [f for f in assessment.findings if f.code == "BACKEND_TARGET_UNSUPPORTED"]
         self.assertEqual(len(refusals), 1, [f.code for f in assessment.findings])

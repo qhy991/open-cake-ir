@@ -45,11 +45,6 @@ TRITON_MAXIMUM_TILE = 1 << 20
 SNAPSHOT_PAYLOAD_LIMIT = 64 * 1024 * 1024
 
 BACKENDS = {
-    "triton-metax": {"target": "xcore1002", "device_name": "MetaX C550",
-                     "provenance_token": "C550", "route": "triton",
-                     "allocation": "local_broker",
-                     "tanh_contract": None, "timing_source": None,
-                     "power_of_two_width": True},
     "metal-m1-pro": {"target": "apple_gpu_family7", "device_name": "Apple M1 Pro",
                      "provenance_token": "M1_Pro", "route": "metal",
                      "allocation": "local_broker",
@@ -113,6 +108,11 @@ BACKENDS = {
                        "allocation": "local_broker",
                        "tanh_contract": None, "timing_source": "hip_dispatch",
                        "power_of_two_width": True},
+    "triton-metax": {"target": "xcore1002", "device_name": "MetaX C550",
+                     "provenance_token": "C550", "route": "triton",
+                     "allocation": "local_broker",
+                     "tanh_contract": None, "timing_source": None,
+                     "power_of_two_width": True},
 }
 
 
