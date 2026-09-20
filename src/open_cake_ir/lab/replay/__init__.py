@@ -216,6 +216,8 @@ def _replay_matched_run(
             events=events,
             lock=lock,
             evidence=evidence,
+            expected_task_package=(task_package(lock, audit.run_id)
+                if lock.document['authoring']['provider'].get('harness') == 'responses' else None),
         )
         return
     replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
@@ -287,7 +289,8 @@ def _replay_matched_run(
         fault_terminal_value = fault_payload.get("terminal_provider_tokens")
         usage_delta = replay_fault_usage(payload=fault_payload, evidence=evidence,
             provider=provider_authority, previous_tokens=prior_cumulative,
-            expected_thread_id=provider_events[-1]["payload"]["thread_id"])
+            expected_thread_id=provider_events[-1]["payload"]["thread_id"],
+            run_id=audit.run_id, expected_task_package=expected_task_package, provider_events=provider_events)
         if fault_terminal_value != prior_cumulative + usage_delta:
             refuse("run_fault.payload.terminal_provider_tokens",
                    "differs from the completed Turns' total plus the usage rederived from the fault stdout",
@@ -443,6 +446,7 @@ def _replay_provider_fault(
     events: Sequence[Mapping[str, object]],
     lock: RunSpecification,
     evidence: EvidenceStore,
+    expected_task_package,
 ) -> None:
     """A Run whose first provider Turn faulted: exactly four events and a zero-Turn terminal."""
     kinds = [event.get("kind") for event in events]
@@ -471,7 +475,8 @@ def _replay_provider_fault(
                observed=terminal_tokens)
     arm = lock.condition_id
     provider = lock.document["authoring"].get("provider", {})
-    delta = replay_fault_usage(payload=fault_payload, evidence=evidence, provider=provider)
+    delta = replay_fault_usage(payload=fault_payload, evidence=evidence, provider=provider,
+                              run_id=audit.run_id, expected_task_package=expected_task_package)
     if terminal_tokens != delta:
         refuse("run_fault.payload.terminal_provider_tokens",
                "differs from the usage rederived from the fault stdout",

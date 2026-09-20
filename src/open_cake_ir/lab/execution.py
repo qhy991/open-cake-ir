@@ -160,7 +160,7 @@ def execute_campaign(
 
 
 def execute_run(specification: RunSpecification, evidence_root, *, project_root,
-                workload_loader, clock, provider, environment, evaluator, validate_run=None):
+                workload_loader, clock, provider, environment, evaluator, task_package, validate_run=None):
     """Execute a frozen engineering or Study-assigned Run through the same engine."""
     root = admit_new_campaign_path(project_root, evidence_root, role='Run Evidence root')
     specification = RunSpecification.from_dict(specification.document)
@@ -168,7 +168,7 @@ def execute_run(specification: RunSpecification, evidence_root, *, project_root,
         validate_run(specification)
     validate_run_bindings(specification, project_root=project_root,
                           workload_loader=workload_loader, provider=provider,
-                          environment=environment, evaluator=evaluator)
+                          environment=environment, evaluator=evaluator, task_package=task_package)
     evidence = EvidenceStore.create(root)
     _execute_run(specification, project_root=project_root, evidence=evidence, clock=clock, provider=provider,
                  environment=environment, evaluator=evaluator)

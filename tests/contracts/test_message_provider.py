@@ -184,6 +184,86 @@ class MessageProviderTests(SemanticLabTestCase):
         with self.assertRaisesRegex(ValueError,'assistant phase'):
             response_submission(first)
 
+    def test_live_qualification_refuses_injected_transport_and_provider_subclasses(self):
+        # Synthetic live label is solely a constructor test: no live receipt is
+        # persisted and no network call is made or qualified by this fixture.
+        document = qualify(CONFIG,FakeTransport(),fixture=True).document
+        document['scope'] = 'live_two_turn_message_provider'
+        qualification = MessageQualification.from_dict(document)
+        with self.assertRaisesRegex(ValueError,'owned HTTP transport'):
+            ResponsesRunProvider(qualification=qualification,task_packages={},transport=FakeTransport())
+        class ReplacementTransport(ResponsesHTTPTransport):
+            def __call__(self, payload):
+                raise AssertionError('must never run')
+        with self.assertRaisesRegex(ValueError,'owned HTTP transport'):
+            ResponsesRunProvider(qualification=qualification,task_packages={},transport=ReplacementTransport(10))
+        class ReplacementProvider(ResponsesRunProvider):
+            def turn(self, request):
+                raise AssertionError('must never run')
+        with self.assertRaisesRegex(ValueError,'owned Responses provider'):
+            ReplacementProvider(qualification=qualification,task_packages={})
+        provider = ResponsesRunProvider(qualification=qualification,task_packages={})
+        provider._transport = FakeTransport()
+        with self.assertRaisesRegex(ValueError,'owned HTTP transport'):
+            provider.validate_transport(qualification)
+
+    def test_admission_rechecks_transport_before_evidence_or_execution(self):
+        lab,spec,provider,evaluator,_ = self.fixture()
+        provider._transport = ResponsesHTTPTransport(10)
+        environment = FakeEnvironment('open_cake',spec.document['authoring'])
+        with tempfile.TemporaryDirectory() as directory, patch.object(ResponsesHTTPTransport,'__call__',
+                side_effect=AssertionError('invalid transport reached network')):
+            root = Path(directory)/'evidence'
+            with self.assertRaisesRegex(ValueError,'fixture qualification'):
+                lab.execute_run(spec,root,provider=provider,environment=environment,evaluator=evaluator)
+            self.assertFalse(root.exists())
+
+    def test_admission_refuses_withheld_material_before_transmission(self):
+        transport = FakeTransport()
+        lab,spec,provider,evaluator,_ = self.fixture(transport)
+        provider._packages[spec.run_id] = replace(provider._packages[spec.run_id],
+                                                 task_markdown='WITHHELD_E1_MATERIAL')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)/'evidence'
+            with self.assertRaisesRegex(ValueError,'frozen Run materials'):
+                lab.execute_run(spec,root,provider=provider,
+                    environment=FakeEnvironment('open_cake',spec.document['authoring']),evaluator=evaluator)
+            self.assertFalse(root.exists())
+            self.assertEqual(transport.requests,[])
+
+    def test_first_and_resumed_faults_replay_the_frozen_request_boundary(self):
+        from open_cake_ir.lab.replay import replay_matched_run
+        for fault_turn in (1,2):
+            transport = FakeTransport(incomplete_turn=fault_turn)
+            lab,spec,provider,evaluator,_ = self.fixture(transport)
+            with self.subTest(fault_turn=fault_turn), tempfile.TemporaryDirectory() as directory:
+                run = lab.execute_run(spec,Path(directory)/'evidence',provider=provider,
+                    environment=FakeEnvironment('open_cake',spec.document['authoring']),evaluator=evaluator)
+                audit,replay = lab.audit_run(run)
+                self.assertTrue(replay,replay.refusals)
+                evidence = EvidenceStore.open(run.evidence_root)
+                fault = next(event['payload'] for event in evidence.replay_events(spec.run_id)
+                             if event['kind']=='run_fault')
+                reference = next(ref for ref in fault['objects'] if ref['role']=='provider_stdout')
+                original = json.loads(evidence.read_object(reference))
+                read_object = evidence.read_object
+                for mutation in (
+                    lambda row:row.update(run_id='foreign-run'),
+                    lambda row:row.update(turn=99),
+                    lambda row:row['request'].update(tools=[{'type':'web_search'}],tool_choice='auto'),
+                    lambda row:row['request']['input'].insert(0,{'role':'user','content':'FOREIGN_HISTORY'}),
+                    lambda row:row['request']['input'][-1].update(content=row['request']['input'][-1]['content'].replace(
+                        '"task_markdown":','"unknown_material":"WITHHELD", "task_markdown":')),
+                ):
+                    changed = deepcopy(original); mutation(changed)
+                    def read(ref):
+                        return encoded(changed) if ref == reference else read_object(ref)
+                    with patch.object(evidence,'read_object',side_effect=read):
+                        replay = replay_matched_run(evidence,audit,spec,project_root=ROOT,
+                            manifest_parser=lab._parse_manifest,task_package=lab.task_package)
+                    self.assertFalse(replay)
+                    self.assertIn('run_fault',str(replay.refusals[0]))
+
     def test_qualification_cli_retains_requests_without_real_network(self):
         from tools.qualify_message_provider import main
         transport = FakeTransport()

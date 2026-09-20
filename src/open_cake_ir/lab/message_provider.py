@@ -109,7 +109,8 @@ def response_submission(response, *, expected_model=None):
     return finals[0].encode('utf-8')
 
 
-def validate_exchange(raw, *, config, history, bundle, run_id, turn, thread_id=None, expected_model=None):
+def validate_exchange_request(raw, *, config, history, bundle, run_id, turn, thread_id=None):
+    """Validate the sent context even when the native response failed or is absent."""
     record = _json(raw)
     if (not isinstance(record, Mapping) or set(record) != {'schema_version','kind','run_id','turn','thread_id','request','response'}
         or type(record['schema_version']) is not int or record['schema_version'] != 1
@@ -117,9 +118,16 @@ def validate_exchange(raw, *, config, history, bundle, run_id, turn, thread_id=N
         or record['run_id'] != run_id or record['turn'] != turn
         or thread_id is not None and record['thread_id'] != thread_id):
         raise ValueError('message exchange authority differs')
-    ReportedProviderUsage(CONTRACT, record['thread_id'], usage(record['response']))
+    if not isinstance(record['thread_id'], str) or str(uuid.UUID(record['thread_id'])) != record['thread_id']:
+        raise ValueError('message exchange thread identity differs')
     if record['request'] != request_body(config, history, bundle):
         raise ValueError('message request differs from frozen context or grants external tools/state')
+    return record
+
+
+def validate_exchange(raw, *, config, history, bundle, run_id, turn, thread_id=None, expected_model=None):
+    record = validate_exchange_request(raw, config=config, history=history, bundle=bundle,
+                                      run_id=run_id, turn=turn, thread_id=thread_id)
     submission = response_submission(record['response'], expected_model=expected_model)
     return record, submission
 
@@ -242,13 +250,26 @@ class ResponsesRunProvider:
             if qualification.scope != 'live_two_turn_message_provider':
                 raise ValueError('fixture qualification cannot authorize a live Responses call')
             transport = ResponsesHTTPTransport(self.configuration['timeout_seconds'])
-        if type(transport) is ResponsesHTTPTransport and qualification.scope != 'live_two_turn_message_provider':
-            raise ValueError('fixture qualification cannot authorize a live Responses call')
-        if type(transport) is ResponsesHTTPTransport and transport.timeout_seconds != self.configuration['timeout_seconds']:
-            raise ValueError('message transport timeout differs from its qualification')
         self._transport = transport
+        self.validate_transport(qualification)
         self._packages = dict(task_packages)
         self._records = {name: [] for name in task_packages}
+
+    def validate_transport(self, qualification):
+        """Live execution uses the same owned no-tools HTTP boundary as qualification."""
+        if type(self) is not ResponsesRunProvider:
+            raise ValueError('message-only authoring requires the owned Responses provider')
+        if qualification.scope == 'live_two_turn_message_provider':
+            if type(self._transport) is not ResponsesHTTPTransport:
+                raise ValueError('live message provider requires the owned HTTP transport')
+            if self._transport.timeout_seconds != qualification.document['configuration']['timeout_seconds']:
+                raise ValueError('message transport timeout differs from its qualification')
+        elif isinstance(self._transport, ResponsesHTTPTransport):
+            raise ValueError('fixture qualification cannot authorize a live Responses call')
+
+    def validate_task_package(self, expected):
+        if self._packages.get(expected.run_id) != expected:
+            raise ValueError('message task package differs from frozen Run materials')
 
     def turn(self, request):
         package = self._packages.get(request.run_id)

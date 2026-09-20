@@ -110,7 +110,8 @@ def validate_execution_bindings(
     return arms, provider_document
 
 
-def validate_run_bindings(specification, *, project_root, workload_loader, provider, environment, evaluator):
+def validate_run_bindings(specification, *, project_root, workload_loader, provider, environment, evaluator,
+                          task_package):
     """Resolve the live closure for one Run before evidence or process side effects."""
     from .bindings import source_reference_path
     from .provider_policy import execution_configuration
@@ -133,8 +134,10 @@ def validate_run_bindings(specification, *, project_root, workload_loader, provi
     message_provider = declared.get('harness') == 'responses'
     if message_provider:
         from .message_provider import ResponsesRunProvider
-        if not isinstance(provider, ResponsesRunProvider):
+        if type(provider) is not ResponsesRunProvider:
             raise ValueError('message-only authoring requires the owned Responses provider')
+        provider.validate_transport(qualification)
+        provider.validate_task_package(task_package(specification, specification.run_id))
     if (qualification.canonical_sha256 != reference['canonical_sha256']
         or qualification.provider_revision != declared['revision']
         or qualification.configuration_sha256 != sha256(_canonical_json_bytes(configuration)).hexdigest()

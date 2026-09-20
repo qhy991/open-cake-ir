@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Run 准入与 Study 输入绑定 | `core.py`、`preflight.py`、`run_spec.py`、`contracts.py`、`bindings.py`、`admission.py` | Run 冻结执行闭包；Study 预先指定条件与分析 |
 | 搜索与预算 | `execution.py`、`candidate_filter.py`、`selection.py`、`ralph.py`、`run_completion.py` | 全部候选完成过滤后才评测；预算和终态有明确归属 |
-| 作者与构建 | `providers.py`、`provider_documents.py`、`provider_events.py`、`provider_invocation.py`、`toolchains.py`、`build.py` | 协议数据、进程调用和工具链各自负责自己的规则 |
+| 作者与构建 | `providers.py`、`message_provider.py`、`provider_documents.py`、`provider_events.py`、`provider_invocation.py`、`toolchains.py`、`build.py` | 协议数据、进程调用和工具链各自负责自己的规则 |
 | 证据与回放 | `archive.py`、`evaluation_writer.py`、`replay/`、`reporting.py` | 写入与独立核验分离；报告使用审计后的结果 |
 | 任务接线 | `environments.py`、`pairing.py`、`task_package.py`；任务层 `TaskLab` | 通用引擎不导入具体任务实现 |
 
@@ -61,7 +61,7 @@ stage，计时覆盖完整有序调用；NCU 输出按 dispatch 保留各 stage 
 
 当前完整 Program 执行适配实现于 Triton/CUDA 路径；其他 code object 在构建及执行入口
 明确拒绝，静态 Program 表示不因这个适配范围受限。软件合同测试不赋予实机正确性、
-计时或跨架构收益资格。显式动作和知识授权见下节；作者进程隔离和正式消融仍在本任务中实施。
+计时或跨架构收益资格。显式动作、知识授权与消息作者隔离见下节；正式消融仍在本任务中实施。
 
 ## Knowledge and explicit author actions
 
@@ -78,8 +78,23 @@ P0 在解析父程序和调用 Compiler 之前拒绝变换。直接提交的既�
 冻结权限与此前候选重新推导结果。材料计入 provider 输入，拒绝的请求也占 per-turn 上限，
 改写与构建时间计入同一 Run 的 wall budget。
 
-这验证服务端调用权限与材料交付，不等同于证明 CLI 作者无法读取主机文件。正式 E/P 研究
-还需要受限作者 I/O 与冻结 Study 分配，不能把工具权限检查单独当作完整消融隔离。
+服务端调用权限与材料交付不等同于证明 CLI 作者无法读取主机文件。受限作者使用下面的消息
+入口；正式 E/P Study 的冻结分配、统计分析和统一终态确认尚未完成。
+
+## Message-only authoring
+
+`message_provider.py::ResponsesRunProvider` 接入同一 Run 引擎。模型只收到冻结任务材料和本 Run
+的消息历史，以 JSON 提交候选或显式动作；请求没有文件、shell、web 或可执行回调工具。
+每个 Run 独立保留原生 response output，包括 reasoning 与 assistant phase；不共享服务端
+conversation 或 previous-response 引用。独立回放重建请求并核对候选、上下文及原生 token 用量。
+
+正式实例只接受 `ResponsesHTTPTransport`，准入再次检查实际传输和资格绑定；自定义传输只用于
+CPU 协议测试。`tools/qualify_message_provider.py` 留存两轮原生请求与响应，资格区分
+`live_two_turn_message_provider` 和 `zero_gpu_contract_fixture_only`。显式执行该工具会调用 API；
+fixture 标签本身不模拟网络。当前验证使用假传输，没有真实模型或 GPU 资格。
+
+当前消息作者已接入 `Lab.execute_run` Python API；生产 CLI/管理器接线仍待完成。原有 CLI
+provider 继续服务其既有工程用途，不因上述消息协议测试获得正式消融隔离资格。
 
 ## Agent-led reproduction
 

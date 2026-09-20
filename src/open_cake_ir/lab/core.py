@@ -80,6 +80,7 @@ class Lab:
             specification, evidence_root, project_root=self._root,
             workload_loader=self._load_workload, clock=self._clock, provider=provider,
             environment=environment, evaluator=evaluator, validate_run=self._validate_run,
+            task_package=self.task_package,
         )
 
     def reference_campaign(
