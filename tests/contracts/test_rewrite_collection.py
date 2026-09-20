@@ -78,7 +78,7 @@ class RewriteCollectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             for row in rows:
-                with self.subTest(task=row['id']), self.assertRaisesRegex(ValueError, 'not_integrated'):
+                with self.subTest(task=row['id']), self.assertRaisesRegex(ValueError, row['reason']):
                     pack.prepare_batch(pack.PACK / 'profiles/b300-m2.example.json', root / 'batch',
                                        root / 'runs', [row['id']])
                 self.assertFalse((root / 'batch').exists())

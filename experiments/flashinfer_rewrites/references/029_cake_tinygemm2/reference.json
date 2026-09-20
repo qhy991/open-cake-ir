@@ -15,6 +15,9 @@
   "additional_baseline": {
     "commit": "67f76379a145f19793896394974e29e610cda912",
     "path": "csrc/tinygemm2.cu",
-    "packaged_path": "baseline/csrc/tinygemm2.cu"
+    "packaged_path": "baseline/csrc/tinygemm2.cu",
+    "support_files": [
+      "csrc/tvm_ffi_utils.h"
+    ]
   }
 }

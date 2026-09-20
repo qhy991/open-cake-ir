@@ -883,7 +883,7 @@
     {
       "id": "029_cake_tinygemm2",
       "status": "blocked",
-      "reason": "full_workload_oracle_and_authoring_not_integrated",
+      "reason": "external_bitwise_and_mechanism_qualification_pending",
       "task": "cake_tinygemm2",
       "reference_kind": "cake_generated_kernel_family",
       "references": [
@@ -891,7 +891,8 @@
         "references/029_cake_tinygemm2/csrc/tinygemm2_sm100.cu",
         "references/029_cake_tinygemm2/flashinfer/gemm/routergemm.py",
         "references/029_cake_tinygemm2/tests/model_optimizations/test_tinygemm2_sm100.py",
-        "references/029_cake_tinygemm2/baseline/csrc/tinygemm2.cu"
+        "references/029_cake_tinygemm2/baseline/csrc/tinygemm2.cu",
+        "references/029_cake_tinygemm2/baseline/csrc/tvm_ffi_utils.h"
       ],
       "source": "https://github.com/flashinfer-ai/flashinfer PR #4274 at b38a0d686ee0d0be7a07b2ea559f2af14d2adf59",
       "reference_status": "available",
@@ -939,8 +940,8 @@
           "legacy_tinygemm"
         ],
         "next_steps": [
-          "Successor task contract/oracle/starter for current generated routes; checked_cuda_asset is retired.",
-          "PDL expression/launch support and exact reduction-order evidence.",
+          "Run the task-owned TinyGEMM reproduction Workload and complete generated starters through GPU Infra, checking the independent CPU math and pinned external bitwise peer.",
+          "Only admit the authoring launcher after an actual baseline passes; retain PDL, faithful pipeline/partition and dispatch as separate mechanism gates.",
           "Only three published latency fixtures are enumerated here; obtain the original 35/239-row manifests before claiming their coverage."
         ],
         "performance_criterion": "Unselected: bind the external baseline, criterion and budget before measurements; report ratios without a parity claim until then."
