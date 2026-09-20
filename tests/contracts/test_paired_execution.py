@@ -141,6 +141,7 @@ class PairedExecutionTests(unittest.TestCase):
         self.close_error = RuntimeError('test-only close failure')
         self.callback_count = 42
         self.latencies = {'candidate': 1.0, 'baseline': 1.0}
+        self.native_activity = False
 
     def execute(self):
         owner = self
@@ -194,16 +195,42 @@ class PairedExecutionTests(unittest.TestCase):
             self.output, None, self.workload, self.manifest, self.candidate,
             self.candidate.artifact_payloads, self.case_id, self.baseline)
         result = worker._base_result('gpuq-123456789abc')
-        admission = SimpleNamespace(broker_job_id='gpuq-123456789abc', gpu_uuid='GPU-CPU-fixture')
+        admission = worker.CudaDeviceAdmission('NVIDIA B300', (10, 3), 'GPU-CPU-fixture',
+                                               'gpuq-123456789abc', 'exclusive')
         with patch.object(worker, 'LoadedTorchTensorCandidate', FakeLoaded):
             # The producer takes the assay, not the helper it used to build one from:
             # which assay times an arm is the backend's to say. CUPTI is not bound to a
             # kernel, so both arms share the one instance this builds.
             strict_cupti = worker.StrictCuptiBenchmark(Helper())
+            def assay(callback, **kwargs):
+                values = strict_cupti(callback, **kwargs)
+                if owner.native_activity:
+                    # A source may reuse its capture object. Receipt custody must
+                    # retain each cohort, not twenty references to the final one.
+                    assay.last_activity['sequence'] = len(owner.benchmarks)
+                return values
+            if owner.native_activity:
+                assay.last_activity = {}
             worker._evaluate_paired_tile(authority, result,
-                                         lambda role, manifest: strict_cupti, admission)
+                                         lambda role, manifest: assay, admission)
         self.result = result
         return self.receipt()
+
+    def test_native_capture_manifest_and_device_survive_the_common_paired_producer(self):
+        self.native_activity = True
+        receipt = self.execute()
+        raw = json.loads(receipt.artifact_payloads['timing_samples'])
+        launch = json.loads(receipt.artifact_payloads['launch_receipt'])
+        captures = [row['arms'][role]['native_activity']['sequence']
+                    for row in raw['measurements'] for role in row['order']]
+        self.assertEqual(captures, list(range(1, 21)))
+        self.assertEqual(raw['device_admission'], launch['device_admission'])
+        self.assertEqual(raw['device_admission']['gpu_uuid'], 'GPU-CPU-fixture')
+        self.assertEqual(raw['launch_manifests']['candidate'], self.manifest.as_dict())
+        changed = copy.deepcopy(raw)
+        changed['launch_manifests']['candidate']['workload_sha256'] = 'f' * 64
+        with self.assertRaisesRegex(ValueError, 'participant seal'):
+            self.receipt(payloads={**receipt.artifact_payloads, 'timing_samples': encoded(changed)})
 
     def receipt(self, *, payloads=None, timing=None):
         values = self.result['receipt']

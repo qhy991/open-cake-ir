@@ -1,6 +1,7 @@
 from open_cake_ir.tasks.workloads import load_workload
 """CPU protocol regressions for the shared Workload-tensor GPU worker."""
 import json
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -66,7 +67,9 @@ class TileGpuWorkerTests(unittest.TestCase):
                 if fail_preflight:
                     output['y'][0] += 1
                 return output, after, {'candidate_sha256': candidate.candidate_sha256,
-                    'kernel_calls': 1, 'fallback_calls': 0}
+                    'kernel_calls': 1, 'fallback_calls': 0,
+                    'manifest_sha256': manifest.canonical_sha256,
+                    'device_admission': asdict(admission)}
 
             def close(self):
                 self.closed = True
@@ -130,6 +133,9 @@ class TileGpuWorkerTests(unittest.TestCase):
                 self.assertEqual(len(raw['timing']['non_target_dispatches_per_cohort']),
                                  raw['timing']['cohort_count'])
             artifacts = {role: (root / path).read_bytes() for role, path in raw['artifacts'].items()}
+            launch = json.loads(artifacts['launch_receipt'])
+            self.assertEqual(launch['manifest_sha256'], self.candidate.launch_spec_sha256)
+            self.assertEqual(launch['device_admission'], json.loads(encoded(asdict(self.admission))))
             receipt = EvaluationReceipt(self.candidate.candidate_sha256, workload.canonical_sha256,
                 'b' * 64, 'confirmatory', 'tiny', raw['correctness_passed'], raw['correctness'],
                 raw['kernel_calls'], raw['fallback_calls'], sha256(artifacts['launch_receipt']).hexdigest(),
