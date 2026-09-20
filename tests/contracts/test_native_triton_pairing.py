@@ -375,7 +375,7 @@ class NativePairingContractTests(unittest.TestCase):
                 'python':{'invocation_path':str(python)},'packages':{'triton':'fixture'}}})
             qualification = SimpleNamespace(scope='live_two_turn_current_provider',canonical_sha256='a'*64)
             (root / 'fixture.json').write_text('{}')
-            config = {'schema_version':1, 'provider':{'executable':str(executable),'workspace_root':str(root/'author')},
+            config = {'schema_version':1, 'provider':{'executable':str(executable),'workspace_root':str(root.with_name(root.name+'-author'))},
                 'toolchain':{'python':str(other),'bubblewrap':str(bwrap),'runtime_roots':[str(runtime)],
                              'build_environment':{},'triton_version':'fixture','timeout_seconds':1},
                 'broker':{'command':['unused'],'cwd':str(root),'timeout_seconds':1,'service_user':'fixture','service_group':'fixture'}}

@@ -124,8 +124,9 @@ def run_runtime_factory(project_root, runtime_config_path):
         harness = provider_harness(declared_provider)
         reference, workload_path, workload = _load_workload_binding(root,specification)
         explicit = isinstance(workload.document['semantics'].get('candidate_abi'),Mapping)
-        # The task-owned Flash assay binds its nvcc comparator even for its Cake
-        # author. Ordinary tensor Runs select their own emission route directly.
+        flash_cake = kind=='open_cake' and not explicit
+        # The external Flash runtime file contains the nvcc comparator section.
+        # The Cake Run itself uses its Compiler/Executor-bound Triton builder.
         row = (toolchain_for(authoring['lowering_route']['backend'] if explicit else 'native_cuda')
                if kind=='open_cake' else toolchain_for_arm(kind))
         config = load_runtime_config(runtime_path,toolchain_kind=row.runtime_kind,provider_kind=harness)
@@ -165,7 +166,9 @@ def run_runtime_factory(project_root, runtime_config_path):
             else:
                 parent = admit_new_campaign_path(root,author_workspace.parent,role='Run author workspace root')
                 author_workspace = parent/specification.run_id
-        if row.backend is LoweringBackend.METAL:
+        if flash_cake:
+            toolchain = None
+        elif row.backend is LoweringBackend.METAL:
             toolchain = MetalToolchainBuilder(workload=workload,case_id=protocol['case_id'],
                 output_root=Path(toolchain_config['output_root']),
                 host=row.bind(toolchain_config,executor,author_workspace=author_workspace),
@@ -174,15 +177,17 @@ def run_runtime_factory(project_root, runtime_config_path):
             toolchain = row.bind(toolchain_config,executor,author_workspace=author_workspace)
         else:
             toolchain = NvccToolchainBuilder(nvcc=toolchain_config['nvcc'],cuobjdump=toolchain_config['cuobjdump'])
-        if toolchain.canonical_sha256 != authoring['toolchain_sha256']:
+        if not flash_cake and toolchain.canonical_sha256 != authoring['toolchain_sha256']:
             raise ValueError('runtime toolchain differs from the Run')
 
-        if row.backend is LoweringBackend.METAL:
+        if flash_cake:
+            builder = FlashTritonToolchainBuilder()
+        elif row.backend is LoweringBackend.METAL:
             builder = toolchain
         elif row.native is not None:
             builder = row.native.builder(workload=workload,case_id=protocol['case_id'],isolated_compiler=toolchain)
         else:
-            builder = FlashTritonToolchainBuilder()
+            builder = None  # Direct CUDA consumes its own nvcc toolchain below.
         if kind=='open_cake':
             environment = OpenCakeEnvironment(compiler,builder,authority_document=authoring,
                 workload=workload,case_id=protocol['case_id'],executor=executor)

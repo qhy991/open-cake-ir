@@ -113,7 +113,6 @@ class IndependentRunTests(SemanticLabTestCase):
 
     def test_campaign_adapter_refuses_changed_matched_controls_before_runtime(self):
         from open_cake_ir.lab import CampaignLock
-        from unittest.mock import Mock
         lab = TaskLab(ROOT)
         lock = lab.preflight(ROOT/'contracts/studies/matched-search-system-qualification-ralph-template.json')
         document = json.loads(canonical_json_bytes(lock.document))
@@ -135,6 +134,40 @@ class IndependentRunTests(SemanticLabTestCase):
             with patch.object(StudyContract,'load',side_effect=AssertionError('independent CLI requested a Study')),redirect_stdout(output):
                 self.assertEqual(main(['--project-root',str(ROOT),'lab','run','preflight','--run',str(source)]),0)
             self.assertEqual(json.loads(output.getvalue()),specification.document)
+
+    def test_flash_cake_runtime_uses_its_compiler_executor_bound_builder(self):
+        from types import SimpleNamespace
+        from open_cake_ir.tasks import compose
+        from open_cake_ir.tasks.flash_kmeans.environment import FlashTritonToolchainBuilder
+        from tests.contracts.test_runtime_config import runtime_document
+        lab,specification = self.fixture()
+        lab.preflight_run(specification)  # Real old Campaign-to-Run projection is admitted.
+        self.assertNotIn('toolchain_sha256',specification.document['authoring'])
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            executable = directory/'provider';executable.write_bytes(b'CPU provider fixture; never executed')
+            document = specification.document
+            document['authoring']['provider']['executable_sha256'] = sha256(executable.read_bytes()).hexdigest()
+            specification = RunSpecification.from_dict(document)
+            runtime = runtime_document('nvcc')
+            runtime['provider'] = {'executable':str(executable),'workspace_root':str(directory/'actors')}
+            runtime['broker']['cwd'] = str(ROOT)
+            path = directory/'runtime.json';path.write_bytes(canonical_json_bytes(runtime))
+            declared = document['authoring']['provider']
+            # Explicit production-boundary doubles; this test never qualifies or calls a provider.
+            qualification = SimpleNamespace(scope='live_two_turn_current_provider',
+                canonical_sha256=declared['qualification']['canonical_sha256'],provider_revision=declared['revision'])
+            with patch.object(compose.TaskLab,'preflight_run',return_value=specification), \
+                 patch.object(compose,'_admit_executor',return_value=(SimpleNamespace(),None)), \
+                 patch.object(compose.ProviderQualificationReceipt,'load',return_value=qualification), \
+                 patch.object(compose,'NvccToolchainBuilder',side_effect=AssertionError('Cake consumed the comparator toolchain')), \
+                 patch.object(compose,'broker_execution_sha256',return_value=document['execution']['broker_execution_sha256']), \
+                 patch.object(compose,'CommandBrokerSubmitter'), \
+                 patch.object(compose,'CodexInvocationBuilder'), \
+                 patch.object(compose,'CodexRunProvider'):
+                components = compose.run_runtime_factory(ROOT,path)(specification,directory/'runtime-context')
+            self.assertIsInstance(components['environment']._toolchain,FlashTritonToolchainBuilder)
+            self.assertEqual(components['environment'].authority_document,document['authoring'])
 
     def test_condition_rename_does_not_change_candidate_representation(self):
         self.assertEqual(self.run_fixture(condition='E0P0'), self.run_fixture(condition='named-treatment'))
