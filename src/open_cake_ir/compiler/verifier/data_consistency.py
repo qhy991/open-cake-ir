@@ -908,11 +908,14 @@ def _verify_operation_shape(
                         category,
                     )
                 allowed = {DType.BF16, DType.FP16, DType.FP32, DType.FP8_E4M3}
-                if source.dtype not in allowed or output.dtype not in allowed:
+                float_conversion = source.dtype in allowed and output.dtype in allowed
+                integer_to_float = source.dtype is DType.INT32 and output.dtype is DType.FP32
+                if not (float_conversion or integer_to_float):
                     out.add(
                         "CAST_DTYPE_UNSUPPORTED",
                         path,
-                        "the admitted cast converts among bf16, fp16, fp32 and fp8e4m3",
+                        "cast admits conversions among bf16, fp16, fp32 and fp8e4m3, "
+                        "and the directed int32-to-fp32 conversion",
                         category,
                     )
                 if output.dtype is not operation.parameters.to:

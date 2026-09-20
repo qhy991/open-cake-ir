@@ -1,4 +1,4 @@
-"""Three source-complete AKA v3 workloads with independent CPU oracles.
+"""Source-complete AKA v3 workloads with independent CPU oracles.
 
 The records named here were fixed-B200 qualified in AKA.  This module does not reuse that
 node evidence: it gives each derived, fixed-shape Workload its own semantic and oracle
@@ -12,7 +12,9 @@ import random
 from collections.abc import Mapping, Sequence
 
 from open_cake_ir.evaluation.workload import TensorABI, WorkloadContract
-from open_cake_ir.tasks.devices import BACKENDS, backend_for_target
+from open_cake_ir.tasks.devices import (
+    BACKENDS, admit_dtype, admit_operations, admit_width, backend_for_target,
+)
 from open_cake_ir.tasks.tiles.workload import _round
 
 
@@ -49,6 +51,31 @@ TASKS = {
         "momentum_sgd_update_contiguous_fp32_i32_block256_v1",
     ),
 }
+# Only these contracts have a complete starter on the common tensor execution path.
+# The prefix distinguishes the AKA ABI from similarly named, different Workloads.
+LAUNCHABLE_TASKS = {f"aka_{name}": name for name in (
+    "residual_layernorm", "gemm_nt_bias", "row_gather", "momentum_sgd",
+)}
+
+
+def _admit_starter(task_name: str, backend: str, *, columns: int, depth: int) -> None:
+    if task_name not in LAUNCHABLE_TASKS.values():
+        raise ValueError(f"AKA task {task_name!r} has no portable starter")
+    kinds = ("load", "elementwise", "store")
+    if task_name in {"residual_layernorm", "gemm_nt_bias"}:
+        kinds += ("reduce",)
+    if task_name == "momentum_sgd":
+        kinds += ("cast",)
+    admit_operations(backend, kinds)
+    admit_dtype(backend, "fp32")
+    if task_name in {"row_gather", "momentum_sgd"}:
+        admit_dtype(backend, "int32")
+    if task_name != "momentum_sgd":
+        admit_width(backend, columns)
+    if task_name == "gemm_nt_bias":
+        admit_width(backend, depth)
+
+
 CASES = {
     "residual_layernorm": {
         "primary": ("uniform", 9101), "zeros": ("zeros", 9102),
@@ -104,12 +131,19 @@ def workload_document(
     campaign shapes, a portability claim, or a benchmark configuration.
     """
     operator, revision, record_id, parent_id = _task(task_name)
-    if backend != "triton-b200" or backend not in BACKENDS:
-        raise ValueError("AKA v3 derived contracts bind the original B200 target only")
+    if backend not in BACKENDS:
+        raise ValueError("unsupported AKA v3 backend")
+    # Revision 1 is the retained B200 contract, including its historical qualification
+    # wording. Other targets get a successor identity and must have an expressible
+    # starter; the old documents are neither rewritten nor silently retargeted.
+    if backend != "triton-b200":
+        revision = "2"
     if any(type(value) is not int or value <= 0 for value in
            (rows, columns, depth, source_rows, output_rows, bins, batch, input_length,
             output_length, channels, kernel_size, stride, elements)) or type(pad) is not int or pad < 0:
         raise ValueError("AKA v3 task dimensions must be positive integers")
+    if revision == "2":
+        _admit_starter(task_name, backend, columns=columns, depth=depth)
     if task_name == "gemm_nt_bias" and (rows * depth + columns * depth + rows * columns) * 4 > 2**31 - 1:
         raise ValueError("GEMM buffers exceed the standalone FP32 ABI")
     if task_name != "gemm_nt_bias" and rows * columns * 4 > 2**31 - 1:
@@ -237,14 +271,22 @@ def workload_document(
             "comparison": "bitwise_fp32" if task_name == "row_gather" else "elementwise_atol_rtol",
             "atol": 0.0 if task_name == "row_gather" else 2e-5,
             "rtol": 0.0 if task_name == "row_gather" else 2e-5,
-            "qualification": "CPU_oracle_only; Open-Cake_B200_compile_correctness_sanitizer_timing_profile_pending",
-            "performance_domain": "future_B200_protocol_must_use_four_workloads_spanning_at_least_1000x_work",
+            "qualification": (
+                "CPU_oracle_only; Open-Cake_B200_compile_correctness_sanitizer_timing_profile_pending"
+                if revision == "1" else
+                "independent_CPU_oracle; target_GPU_correctness_timing_profile_pending"),
+            "performance_domain": (
+                "future_B200_protocol_must_use_four_workloads_spanning_at_least_1000x_work"
+                if revision == "1" else "fixed_shape_target_local_tensor_task_only"),
         },
     }
 
 
 def _name_for(document: Mapping[str, object]) -> str:
-    return next((name for name, (operator, revision, _, _) in TASKS.items()
+    semantics = document.get("semantics", {})
+    backend = backend_for_target(semantics.get("target") if isinstance(semantics, Mapping) else None)
+    revision = "1" if backend == "triton-b200" else "2"
+    return next((name for name, (operator, _, _, _) in TASKS.items()
                  if document.get("operator") == operator and document.get("revision") == revision), "")
 
 
@@ -254,7 +296,7 @@ def validate_aka_v3_contract(document: Mapping[str, object]) -> None:
     task_name = _name_for(document)
     semantics = document.get("semantics")
     backend = backend_for_target(semantics.get("target") if isinstance(semantics, Mapping) else None)
-    if not task_name or backend != "triton-b200" or workload.case_ids != tuple(CASES[task_name]):
+    if not task_name or backend is None or workload.case_ids != tuple(CASES[task_name]):
         raise ValueError("AKA v3 task identity, target, or case protocol differs")
     shape = workload.case("primary")["shape"]
     if task_name == "gemm_nt_bias":
