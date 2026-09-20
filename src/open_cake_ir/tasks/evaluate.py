@@ -488,7 +488,7 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
 
 
 def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
-                             *, route_calls_per_cohort, profile_source=None):
+                             *, route_calls_per_cohort, profile_source=None, profile_format=None):
     """Use the common oracle and one loaded module across correctness and timing.
 
     `benchmark` is the timing source itself, not the host it came from: a callable taking
@@ -508,6 +508,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     receipt carries no profile rather than an empty one. It takes the single-dispatch
     launch and the kernel name, and returns the raw activity its own profiler saw.
     """
+    if (profile_source is None) != (profile_format is None):
+        raise ValueError("a tensor profile collector and its format must be bound together")
     if collect_timing and benchmark is None:
         raise ValueError("a timed tile evaluation requires its timing source")
     if (not collect_timing and profile_source is None and authority.request["purpose"] != "attribution"
@@ -598,14 +600,12 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             # One separate instrumented dispatch, after correctness and outside every
             # cohort. It is attribution, not a sample: no device-state reset precedes it
             # and the record says so, so nobody compares it to a cohort median.
-            from open_cake_ir.evaluation.hip_observations import (
-                HIP_PROFILE_KIND, hip_profile_summary)
             instrumented = loaded.fresh_argument_sets(1)[0]
             raw = profile_source(lambda: loaded.launch(instrumented),
                                  authority.manifest.kernel_name)
             profile_path = authority.request_root / 'profile.json'
             _write_new(profile_path, {
-                'kind': HIP_PROFILE_KIND,
+                'kind': profile_format.kind,
                 'candidate_sha256': authority.candidate.candidate_sha256,
                 'case_id': authority.case_id,
                 'kernel_name': authority.manifest.kernel_name,
@@ -615,7 +615,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                 'external_gpu_activity': 'not_excluded',
                 'separate_instrumented_launch': True,
                 'evaluation_protocol': authority.request['evaluation_protocol'],
-                'raw': raw, 'summary': hip_profile_summary(raw)})
+                'raw': raw, 'summary': profile_format.summary(raw)})
             artifacts['profile'] = profile_path.name
         if collect_timing:
             timing_path = authority.request_root / 'timing-samples.json'
@@ -803,7 +803,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     absent rather than implying none was possible.
     """
     from open_cake_ir.evaluation.hip_benchmark import HipDispatchBenchmark
-    from open_cake_ir.evaluation.hip_observations import collect_hip_dispatch_activity
+    from open_cake_ir.evaluation.hip_observations import collect_hip_dispatch_activity, HIP_PROFILE
     from open_cake_ir.evaluation.triton_hip import observe_local_hip
 
     if admission is None:
@@ -824,7 +824,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
         _evaluate_tile_candidate(
             authority, result, None, admission, False,
             route_calls_per_cohort=_route_calls_per_cohort(authority),
-            profile_source=collect_hip_dispatch_activity)
+            profile_source=collect_hip_dispatch_activity, profile_format=HIP_PROFILE)
         return
     if authority.baseline is not None and collect_timing:
         # A Study with a paired policy sends both participants, and the assay is one per
