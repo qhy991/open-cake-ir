@@ -89,7 +89,8 @@ class CorpusCaseTarget(unittest.TestCase):
         # vanish without someone saying why; moving it is the saying-why.
         # C550 adds three measured dot modes and two owned negative contracts,
         # then three FP8 storage/decoder cases and two conversion refusals.
-        self.assertEqual(report.case_count, 174)
+        # Routing adds two measured compositions and two unqualified top-k forms.
+        self.assertEqual(report.case_count, 178)
 
 
 if __name__ == "__main__":
