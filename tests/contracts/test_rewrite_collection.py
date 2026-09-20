@@ -45,6 +45,7 @@ class RewriteCollectionTests(unittest.TestCase):
                 scaffold = (task / 'scaffold.md').read_text()
                 self.assertIn(row['objective'], scaffold)
                 self.assertIn(row['source'], scaffold)
+                self.assertIn((pack.PACK / 'AUTHORING.md').read_text(), scaffold)
                 self.assertIn('structurally distinct', scaffold)
                 for ref in row['references']:
                     # References are JSON-quoted by the canonical preparation owner.

@@ -1,0 +1,511 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-20-011",
+  "kind": "capacity",
+  "date": "2026-09-20",
+  "title": "Offline Triton code lacks pointer-alignment facts needed to vectorize retained normalization kernels",
+  "backend": "Triton offline compilation and tensor ABI",
+  "target": "sm_103a observed",
+  "compiler_revision_id": "open-cake-ir@2812dd95 retained lowered programs; toolchain path inspected at ebbeec28",
+  "executor_revision": "CPU-only probe with Torch 2.11.0+cu130 and Triton 3.6.0; no device execution",
+  "evidence": {
+    "related_finding": "F-2026-09-20-010",
+    "run": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-alignment-compile-probe-20260920-d09c9d8abf03",
+    "input_root": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/alignment-compile-probe-20260920",
+    "compiler_source": "src/open_cake_ir/compiler/toolchain.py: compile_triton path builds ASTSource(kernel, signature, constants) without attrs",
+    "retained_sources": "full-reference-comparison-20260920/inputs/{001_fused_add_rmsnorm_h2048,002_fused_add_rmsnorm_h4096,025_rmsnorm_h4096}/optimized/lowered_source.bin and launch_manifest.bin",
+    "probe": {
+      "scope": "CPU-only compiler mechanism probe; hypothetical pointer alignment is not an admitted ABI and no GPU result is claimed",
+      "torch": "2.11.0+cu130",
+      "triton": "3.6.0",
+      "target": "cuda arch103 warp32",
+      "rows": [
+        {
+          "task": "001_fused_add_rmsnorm_h2048",
+          "compile_options": {
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "arms": {
+            "current_no_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.b16": 24,
+                "st.global.b16": 8
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [1], threadsPerWarp = [32], warpsPerCTA = [8], order = [0]}>"
+            },
+            "hypothetical_16byte_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.v4.b32": 3,
+                "st.global.v4.b32": 1
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [8], threadsPerWarp = [32], warpsPerCTA = [8], order = [0]}>"
+            }
+          }
+        },
+        {
+          "task": "002_fused_add_rmsnorm_h4096",
+          "compile_options": {
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "arms": {
+            "current_no_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.cg.b16": 16,
+                "ld.global.b16": 8,
+                "st.global.b16": 8
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [1], threadsPerWarp = [32], warpsPerCTA = [16], order = [0]}>"
+            },
+            "hypothetical_16byte_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.cg.v4.b32": 2,
+                "ld.global.v4.b32": 1,
+                "st.global.v4.b32": 1
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [8], threadsPerWarp = [32], warpsPerCTA = [16], order = [0]}>"
+            }
+          }
+        },
+        {
+          "task": "025_rmsnorm_h4096",
+          "compile_options": {
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "arms": {
+            "current_no_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.b16": 64,
+                "st.global.b16": 32
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [1], threadsPerWarp = [32], warpsPerCTA = [4], order = [0]}>"
+            },
+            "hypothetical_16byte_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.v4.b32": 8,
+                "st.global.v4.b32": 4
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [8], threadsPerWarp = [32], warpsPerCTA = [4], order = [0]}>"
+            }
+          }
+        }
+      ],
+      "cuda_initialized": false,
+      "passed": true
+    }
+  },
+  "observation": "The retained optimized kernels have no pointer tt.divisibility attributes in TTGIR and scalar b16 PTX memory instructions. 002 already emits .cg for its streamed inputs, so another input-cache-hint change would not test this gap. In three CPU-only compilations, holding the retained program, target and compile options fixed while hypothetically adding tt.divisibility=16 to pointer arguments changes sizePerThread from 1 to 8 and changes scalar b16 loads/stores to v4.b32 vector operations. Static load/store instruction counts change from 24/8 to 3/1 in 001 and 002, and from 64/32 to 8/4 in 025. CUDA was not initialized. This demonstrates a code-generation mechanism, not an eightfold runtime speedup or GPU correctness.",
+  "proposed_change": "Design one evidence-gated pointer-alignment contract across authoring/compile and launch admission, then project admitted facts into ASTSource attrs. Do not hardcode 16-byte alignment for every pointer: contiguous offset views can be unaligned. Preserve the unconstrained ABI until the applicable contract actually guarantees alignment, verify actual input and output addresses, and exercise intentionally unaligned views and lower-alignment cases before adoption. Shared ABI/Compiler changes go through main with complete verification and independent review; fresh B300 correctness and matched timing are required after implementation. No first-class layout algebra is proposed.",
+  "decision": "proposed",
+  "implemented_in": "88aab6b27e8fdd350d0e8c1d5d57beebaba23dfc",
+  "verified_by": null,
+  "promotion_disposition": "All three staged runs completed with 7650/7650 complete snapshots passing. Qualified external edges: 001 2.304 versus 2.336 us (close_null); 002 3.008 versus 3.296 us (1.0957x, first_arm_faster); 025 2.720 versus 2.720 us (close_null). Only 001 has a qualified direct old-control gain (1.0833x). The direct control edges for 002/025 fail the unchanged CV gate, so their nominal 1.206x/1.153x gains are descriptive and the overall three-edge reports remain measurement_quality_failed. No blanket promotion or generalization; successor authoring and new profiling are separate work.",
+  "renumbered_from": {
+    "id": "F-2026-09-20-008",
+    "path": "findings/2026-09-20-008-triton-aot-pointer-alignment.json",
+    "commit": "cb5e73b39c75a817a19f4f6328dca6d72d1e9cbe",
+    "reason": "NVIDIA integration found the same date/sequence already used by main provider-protocol findings; original evidence remains at the pinned commit."
+  },
+  "implementation_replay": {
+    "kind": "CPU-only sealed-artifact rebuild",
+    "source_commit": "88aab6b27e8fdd350d0e8c1d5d57beebaba23dfc",
+    "input_root": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-alignment-20260920/inputs",
+    "tasks": [
+      "001_fused_add_rmsnorm_h2048",
+      "002_fused_add_rmsnorm_h4096",
+      "025_rmsnorm_h4096"
+    ],
+    "result": "All three original sources rebuilt and sealed generic/aligned binaries. Generic memory instructions remain scalar and aligned variants use v4.b32. Actual input/output offset correctness and matched GPU timing remain unverified."
+  },
+  "gpu_guard_replay": {
+    "source_commit": "f1499b70865bd74b8d24176577dd9e594becfe21",
+    "target": "sm_103a",
+    "scope": "Three retained exact-shape kernels, all five required distributions, aligned and every public input/output pointer offset; no performance measurement",
+    "cases": [
+      {
+        "task": "001_fused_add_rmsnorm_h2048",
+        "run_id": "nvidia-alignment-guards-20260920-0e762344f212",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-0e762344f212",
+        "judge_commit": "f1499b70865bd74b8d24176577dd9e594becfe21",
+        "broker_job_id": "gpuq-a5854c0963d2",
+        "checks_passed": 65,
+        "input_distributions": [
+          "alternating",
+          "mixed_magnitude",
+          "near_zero",
+          "primary",
+          "zeros"
+        ],
+        "guarded_offsets_bytes": [
+          2,
+          4,
+          8
+        ],
+        "device_worker_exit": "completed exit=0",
+        "numerical_verification": "following local CPU stage; all outputs and unchanged inputs checked",
+        "resources": {
+          "implementations": {
+            "generic": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            },
+            "aligned": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            }
+          },
+          "dispatch_counts": {
+            "generic": 12,
+            "aligned": 1
+          },
+          "last_variant": "generic"
+        }
+      },
+      {
+        "task": "002_fused_add_rmsnorm_h4096",
+        "run_id": "nvidia-alignment-guards-20260920-13447a2cfa61",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-13447a2cfa61",
+        "judge_commit": "f1499b70865bd74b8d24176577dd9e594becfe21",
+        "broker_job_id": "gpuq-36692c9a4286",
+        "checks_passed": 65,
+        "input_distributions": [
+          "alternating",
+          "mixed_magnitude",
+          "near_zero",
+          "primary",
+          "zeros"
+        ],
+        "guarded_offsets_bytes": [
+          2,
+          4,
+          8
+        ],
+        "device_worker_exit": "completed exit=0",
+        "numerical_verification": "following local CPU stage; all outputs and unchanged inputs checked",
+        "resources": {
+          "implementations": {
+            "generic": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            },
+            "aligned": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            }
+          },
+          "dispatch_counts": {
+            "generic": 12,
+            "aligned": 1
+          },
+          "last_variant": "generic"
+        }
+      },
+      {
+        "task": "025_rmsnorm_h4096",
+        "run_id": "nvidia-alignment-guards-20260920-33445a79498a",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-33445a79498a",
+        "judge_commit": "f1499b70865bd74b8d24176577dd9e594becfe21",
+        "broker_job_id": "gpuq-3c1f36fcba88",
+        "checks_passed": 50,
+        "input_distributions": [
+          "alternating",
+          "mixed_magnitude",
+          "near_zero",
+          "primary",
+          "zeros"
+        ],
+        "guarded_offsets_bytes": [
+          2,
+          4,
+          8
+        ],
+        "device_worker_exit": "completed exit=0",
+        "numerical_verification": "following local CPU stage; all outputs and unchanged inputs checked",
+        "resources": {
+          "implementations": {
+            "generic": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 768,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            },
+            "aligned": {
+              "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+              "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+              "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+              "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+              "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+            }
+          },
+          "dispatch_counts": {
+            "generic": 9,
+            "aligned": 1
+          },
+          "last_variant": "generic"
+        }
+      }
+    ],
+    "total_checks_passed": 180,
+    "performance_measured": false
+  },
+  "performance_replays": [
+    {
+      "task": "001_fused_add_rmsnorm_h2048",
+      "run_id": "nvidia-staged-alignment-comparison-20260920-df5de212bcdd",
+      "evidence_path": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-df5de212bcdd/stages/verify/comparison-report.json",
+      "judge_commit": "d31c551a8fbd4a947ad5b09053ded1787a3c0ac8",
+      "complete_snapshots_checked": 2550,
+      "correctness_passed": true,
+      "measurement_quality_passed": true,
+      "timed_interval": "Unchanged CUPTI device-activity span, cold L2 per sample, no timer fallback; all three edges in one exclusive allocation. CPU preparation precedes it; required preflight numerical gates stay before timing. Every timed/postflight tensor is retained in its original dtype for complete CPU verification after device worker exit.",
+      "roles": {
+        "optimized": "same-source candidate with guarded AOT alignment variants",
+        "starter": "unchanged pre-specialization optimized binary",
+        "external": "unchanged supplied external implementation"
+      },
+      "edges": {
+        "optimized_vs_external": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.002304,
+          "pooled_medians_ms": {
+            "candidate": 0.002304,
+            "baseline": 0.002336
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 9,
+            "baseline": 0
+          },
+          "tied_pairs": 1,
+          "speedup": 1.013888888888889,
+          "classification": "close_null"
+        },
+        "starter_vs_external": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.002496,
+          "pooled_medians_ms": {
+            "candidate": 0.002496,
+            "baseline": 0.002336
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 0,
+            "baseline": 10
+          },
+          "tied_pairs": 0,
+          "speedup": 0.935897435897436,
+          "classification": "second_arm_faster"
+        },
+        "optimized_vs_starter": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.002304,
+          "pooled_medians_ms": {
+            "candidate": 0.002304,
+            "baseline": 0.002496
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 10,
+            "baseline": 0
+          },
+          "tied_pairs": 0,
+          "speedup": 1.083333333333333,
+          "classification": "first_arm_faster"
+        }
+      }
+    },
+    {
+      "task": "002_fused_add_rmsnorm_h4096",
+      "run_id": "nvidia-staged-alignment-comparison-20260920-69481876670f",
+      "evidence_path": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-69481876670f/stages/verify/comparison-report.json",
+      "judge_commit": "d31c551a8fbd4a947ad5b09053ded1787a3c0ac8",
+      "complete_snapshots_checked": 2550,
+      "correctness_passed": true,
+      "measurement_quality_passed": false,
+      "timed_interval": "Unchanged CUPTI device-activity span, cold L2 per sample, no timer fallback; all three edges in one exclusive allocation. CPU preparation precedes it; required preflight numerical gates stay before timing. Every timed/postflight tensor is retained in its original dtype for complete CPU verification after device worker exit.",
+      "roles": {
+        "optimized": "same-source candidate with guarded AOT alignment variants",
+        "starter": "unchanged pre-specialization optimized binary",
+        "external": "unchanged supplied external implementation"
+      },
+      "edges": {
+        "optimized_vs_external": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.003008,
+          "pooled_medians_ms": {
+            "candidate": 0.003008,
+            "baseline": 0.003296
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 10,
+            "baseline": 0
+          },
+          "tied_pairs": 0,
+          "speedup": 1.095744680851064,
+          "classification": "first_arm_faster"
+        },
+        "starter_vs_external": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.003632,
+          "pooled_medians_ms": {
+            "candidate": 0.003632,
+            "baseline": 0.003264
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 0,
+            "baseline": 10
+          },
+          "tied_pairs": 0,
+          "speedup": 0.898678414096916,
+          "classification": "second_arm_faster"
+        },
+        "optimized_vs_starter": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": false,
+          "pooled_median_ms": 0.0030245,
+          "pooled_medians_ms": {
+            "candidate": 0.0030245,
+            "baseline": 0.003648
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 10,
+            "baseline": 0
+          },
+          "tied_pairs": 0,
+          "speedup": 1.206149776822615,
+          "classification": "measurement_quality_failed"
+        }
+      }
+    },
+    {
+      "task": "025_rmsnorm_h4096",
+      "run_id": "nvidia-staged-alignment-comparison-20260920-68716e4d66e1",
+      "evidence_path": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-68716e4d66e1/stages/verify/comparison-report.json",
+      "judge_commit": "d31c551a8fbd4a947ad5b09053ded1787a3c0ac8",
+      "complete_snapshots_checked": 2550,
+      "correctness_passed": true,
+      "measurement_quality_passed": false,
+      "timed_interval": "Unchanged CUPTI device-activity span, cold L2 per sample, no timer fallback; all three edges in one exclusive allocation. CPU preparation precedes it; required preflight numerical gates stay before timing. Every timed/postflight tensor is retained in its original dtype for complete CPU verification after device worker exit.",
+      "roles": {
+        "optimized": "same-source candidate with guarded AOT alignment variants",
+        "starter": "unchanged pre-specialization optimized binary",
+        "external": "unchanged supplied external implementation"
+      },
+      "edges": {
+        "optimized_vs_external": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.00272,
+          "pooled_medians_ms": {
+            "candidate": 0.00272,
+            "baseline": 0.00272
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 4,
+            "baseline": 1
+          },
+          "tied_pairs": 5,
+          "speedup": 1.0,
+          "classification": "close_null"
+        },
+        "starter_vs_external": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.003136,
+          "pooled_medians_ms": {
+            "candidate": 0.003136,
+            "baseline": 0.00272
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 0,
+            "baseline": 10
+          },
+          "tied_pairs": 0,
+          "speedup": 0.86734693877551,
+          "classification": "second_arm_faster"
+        },
+        "optimized_vs_starter": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": false,
+          "pooled_median_ms": 0.00272,
+          "pooled_medians_ms": {
+            "candidate": 0.00272,
+            "baseline": 0.003136
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 10,
+            "baseline": 0
+          },
+          "tied_pairs": 0,
+          "speedup": 1.152941176470588,
+          "classification": "measurement_quality_failed"
+        }
+      }
+    }
+  ]
+}

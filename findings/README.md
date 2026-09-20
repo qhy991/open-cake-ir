@@ -128,3 +128,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 - F-2026-09-20-005 — equal GEMM array/list inputs were refused by container identity in the loader and output checker (bug, verification pending).
 - F-2026-09-20-006 — named broadcast markers were refused before shape checking; masked whole-row tails already use existing tiled program coordinates (capacity, verification pending; no new IR or pass).
+
+- F-2026-09-20-010 — seven fixed-shape external comparisons and six three-way NCU profiles separate starter gains from reference gaps: 003 remains 4.73x slower despite a 1.54x starter gain; 022 row packing reduces observed concurrency, while its starter beats the supplied reference. Six external timing edges retain CV failures. Existing width/load-reuse mechanisms should be isolated before new IR; no promotion (behavior, proposed).
+
+- F-2026-09-20-011 — three retained normalization kernels compile to scalar b16 memory operations without pointer attributes; a CPU-only 16-byte-alignment hypothesis switches them to v4.b32 vector operations. The ABI does not yet guarantee this assumption, so it is not launched or promoted; align compile facts with launch checks before GPU qualification (capacity, proposed). Software implementation: PR #108; GPU verification pending.
