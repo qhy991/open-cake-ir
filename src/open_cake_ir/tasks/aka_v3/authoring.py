@@ -63,7 +63,7 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
             'momentum = lm.load(mu[:], id="load_mu")',
             'rate = lm.load(lr[:], id="load_lr")',
             'flag_int = lm.load(nesterov[:], id="load_nesterov")',
-            'flag = lm.cast(flag_int, dtype="fp32", id="cast_nesterov")',
+            'flag = lm.cast(flag_int, to="fp32", id="cast_nesterov")',
             'updated = moments * momentum + gradients * rate',
             'ordinary = parameters - updated',
             'accelerated = parameters - updated * (momentum + 1.0) + moments * momentum',
