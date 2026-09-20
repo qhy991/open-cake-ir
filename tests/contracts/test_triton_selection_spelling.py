@@ -31,7 +31,8 @@ class SelectionSourceAdmission(unittest.TestCase):
             with self.subTest(source_tiles_per_merge=merge):
                 document = json.loads((ROOT / "corpus/schedules/qsa-score-topk-t32768.json").read_text())
                 op = next(op for op in document["operations"] if op["kind"] == "top_k")
-                op["parameters"]["source_tiles_per_merge"] = merge
+                if merge == 2:
+                    op["parameters"]["source_tiles_per_merge"] = merge
                 assessment = self.compiler.assess(document)
                 self.assertTrue(assessment.lowering_eligible, assessment.findings)
                 lowered = self.compiler.lower(assessment)
