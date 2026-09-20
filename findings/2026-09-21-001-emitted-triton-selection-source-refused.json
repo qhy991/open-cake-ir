@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-21-001",
+  "date": "2026-09-21",
+  "kind": "bug",
+  "title": "Native source admission refuses the existing Triton top-k selection emitter",
+  "backend": "triton",
+  "target": [
+    "xcore1002",
+    "sm_100a",
+    "sm_103a"
+  ],
+  "compiler_revision_id": "open-cake-ir@7e86e8ad636d0100aa50a865601ad53b29a57e72",
+  "executor_revision": "xcore1002@7e86e8ad636d0100aa50a865601ad53b29a57e72",
+  "decision": "accepted",
+  "implemented_in": "2aedbddcb46aff238b2d60b72342828d54a355f3",
+  "verified_by": {
+    "replay": "open-cake-ir-evidence/metax-parity-20260920/moe-routing-source-replay-283ab6a8.json: original retained 7e source is unchanged and now passes canonical kernel projection",
+    "tests": "Fixed 283ab6a8: 24 tests /1327 subtests; original MoE four routing stages and original QSA one-tile/two-tile selection project; unknown calls, indirect module attributes, kwargs expansion and host eval remain refused; full Corpus169 and89source snapshots unchanged.",
+    "scope": "Source-admission software repair only. No SDK compatibility, Target operation admission, device, workload or performance qualification follows."
+  },
+  "evidence": {
+    "workspace": "c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/moe-routing-compile-7e86e8ad-v1",
+    "retained_source": "open-cake-ir-evidence/metax-parity-20260920/moe-routing-source-7e86e8ad.py",
+    "failure": "project_triton_kernel -> validate_triton_kernel: native Triton unsupported call at line 66, before external native compilation; tl.topk is present in the emitted routing stage"
+  },
+  "observation": "The existing MoE routing emitter calls tl.topk, but the shared native-source allowlist omits it. The existing QSA streaming/half-selection emitter also uses cat, sort, bitonic_merge and split omitted at the same boundary. Target capability admission and native SDK compilation are separate; this source-level refusal occurs before either native compilation or device execution.",
+  "proposed_change": "Admit only the five existing selection-emitter language calls at the shared source boundary, retain direct-module and closed-call restrictions, and replay the real MoE/QSA emissions through canonical kernel projection. No target capability, dtype, oracle or emitted selection algorithm changes."
+}

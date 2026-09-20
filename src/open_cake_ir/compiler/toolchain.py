@@ -45,6 +45,7 @@ _TRITON_CALLS = frozenset({
     "log2", "sqrt", "rsqrt", "abs", "sigmoid", "dot", "trans", "reshape",
     "broadcast_to", "expand_dims", "cast", "div_rn", "fma", "range", "static_range",
     "cumsum", "cumprod", "gather", "debug_barrier", "multiple_of", "max_contiguous",
+    "topk", "cat", "sort", "bitonic_merge", "split",
 })
 _TRITON_TYPES = frozenset({"constexpr", "float32", "float16", "bfloat16", "float8e4nv", "int32",
                            "int64", "uint32", "uint64", "int1"})
