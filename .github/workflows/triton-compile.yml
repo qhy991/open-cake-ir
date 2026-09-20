@@ -8,7 +8,7 @@ on:
       - 'tools/check_triton_topk_compile.py'
       - '.github/workflows/triton-compile.yml'
   push:
-    branches: [main, metal, amd, dcu, nvidia]
+    branches: [main, metal, amd, dcu, nvidia, metax]
     paths:
       - 'src/open_cake_ir/compiler/**'
       - 'corpus/**'

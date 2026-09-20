@@ -430,6 +430,56 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             raise cleanup_error
 
 
+def _evaluate_untimed_validation_cases(authority, result, admission):
+    """Keep the full Workload distribution contract when a platform has no timer."""
+    from dataclasses import asdict
+    cases = validation_case_ids(authority.request["evaluation_protocol"])
+    if (cases != authority.workload.case_ids
+            or authority.workload.document["validation"].get("all_cases_required") is not True):
+        raise ValueError("untimed validation cases differ from the Workload")
+    rows = []
+    metrics = {"output_mismatches": 0, "max_abs_error": 0.0, "inputs_unchanged": True}
+    counters = result["counters"]
+    for case_id in cases:
+        authority.manifest.check_validation_case(authority.workload, case_id)
+        inputs = materialize_case(authority.workload, case_id)
+        loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
+        counters["module_loads"] += 1
+        try:
+            protocol = EvaluationProtocol("workload-tensor-worker-correctness", authority.request["purpose"],
+                authority.workload.canonical_sha256, case_id, "none")
+            receipt = evaluate_tile_validation_case(authority.candidate, authority.workload, protocol, loaded)
+            counters["preflight_calls"] += 1
+            values = dict(receipt.correctness)
+            metrics["output_mismatches"] += values["output_mismatches"]
+            metrics["max_abs_error"] = max(metrics["max_abs_error"], values["max_abs_error"])
+            metrics["inputs_unchanged"] &= values["inputs_unchanged"]
+            rows.append({"input_case_id": case_id, "passed": receipt.correctness_passed,
+                         "metrics": values, "resources": loaded.loaded.resources})
+        finally:
+            counters["kernel_calls"] += loaded.loaded.launch_calls
+            loaded.close()
+    passed = all(row["passed"] for row in rows)
+    _write_new(authority.request_root / "correctness-output.json", {
+        "passed": passed, "metrics": metrics, "validation_cases": rows,
+        "correctness_launches": len(rows),
+    })
+    _write_new(authority.request_root / "launch-receipt.json", {
+        "job_id": admission.broker_job_id, "gpu_uuid": admission.gpu_uuid,
+        "device_admission": asdict(admission),
+        "candidate_sha256": authority.candidate.candidate_sha256,
+        "correctness_launches": len(rows), "fallback_calls": 0,
+        "allocation_mode": job_mode(admission.broker_job_id), "external_gpu_activity": "not_excluded",
+    })
+    # The common receipt retains a timing artifact even when it contains JSON null.
+    # Absence of measurement is explicit; omitting the role breaks broker admission.
+    _write_new(authority.request_root / "timing-samples.json", None)
+    result["receipt"] = {"correctness_passed": passed, "correctness": metrics,
+        "kernel_calls": 1, "fallback_calls": 0, "timing": None,
+        "artifacts": {"correctness_output": "correctness-output.json",
+                      "launch_receipt": "launch-receipt.json", "timing_samples": "timing-samples.json"}}
+
+
 def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
                              *, route_calls_per_cohort, profile_source=None):
     """Use the common oracle and one loaded module across correctness and timing.
@@ -453,6 +503,9 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     """
     if collect_timing and benchmark is None:
         raise ValueError("a timed tile evaluation requires its timing source")
+    if (not collect_timing and profile_source is None and authority.request["purpose"] != "attribution"
+            and "validation_case_ids" in authority.request["evaluation_protocol"]):
+        return _evaluate_untimed_validation_cases(authority, result, admission)
     inputs = materialize_case(authority.workload, authority.case_id)
     loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
     counters = result['counters']
@@ -560,6 +613,10 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
         if collect_timing:
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
+            artifacts['timing_samples'] = timing_path.name
+        elif profile_source is None and authority.request["purpose"] != "attribution":
+            timing_path = authority.request_root / 'timing-samples.json'
+            _write_new(timing_path, None)
             artifacts['timing_samples'] = timing_path.name
         # The common receipt describes the final correctness launch; counters and
         # the raw launch artifact retain the separate preflight and timing work.
@@ -773,6 +830,20 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
                  if collect_timing else None)
     _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
                              route_calls_per_cohort=_route_calls_per_cohort(authority))
+
+
+def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=None):
+    from open_cake_ir.evaluation.triton_metax import observe_local_metax
+
+    if collect_timing or authority.request["purpose"] == "attribution":
+        raise ValueError("MACA timing and profiler coverage are unavailable")
+    host = authority.executor.admit_host()
+    if admission is None:
+        admission = observe_local_metax(authority.candidate.target, runtime_library=host["runtime_library"])
+    elif admission.runtime_library != host["runtime_library"]:
+        raise ValueError("MACA device admission refers to another runtime library")
+    result.update(job_id=admission.broker_job_id, mode=job_mode(admission.broker_job_id), admitted=True)
+    _evaluate_tile_candidate(authority, result, None, admission, False, route_calls_per_cohort=None)
 
 
 def _evaluate_candidate(
@@ -1124,6 +1195,11 @@ _PLATFORMS = {
         evaluate=lambda authority, result: _evaluate_hip_candidate(
             authority, result, collect_timing=authority.timed_assay_available),
         platform=PLATFORMS[CodeObject.HSACO],
+    ),
+    CodeObject.MCFATBIN: _ExecutionPlatform(
+        evaluate=lambda authority, result: _evaluate_metax_candidate(
+            authority, result, collect_timing=authority.timed_assay_available),
+        platform=PLATFORMS[CodeObject.MCFATBIN],
     ),
 }
 

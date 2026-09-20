@@ -57,7 +57,8 @@ class IsolatedTritonCompiler(IsolatedCompiler):
         host = executor.document["host_environment"]
         invocation = Path(host["python"]["invocation_path"])
         expected_python = Path(os.path.abspath(invocation))
-        if self.python != expected_python or self.triton_version != host["packages"]["triton"]:
+        from .executor import triton_version
+        if self.python != expected_python or self.triton_version != triton_version(host):
             raise ValueError("isolated Triton runtime differs from the frozen Executor")
         workspace = Path(author_workspace).resolve()
         checkout = Path(__file__).resolve().parents[3]
@@ -137,9 +138,10 @@ def _compile_failure(error: Exception) -> tuple[bool, str]:
 
 def _worker(path: str) -> int:
     """Trusted supervisor entry; input is validated again before any candidate import."""
-    import importlib.metadata
+    from open_cake_ir.compiler.toolchain import route_for_code_object
     request = json.loads(Path(path).read_text())
-    if importlib.metadata.version('triton') != request['triton_version']:
+    route = route_for_code_object(request['requirements']['code_object'])
+    if route.compiler_version() != request['triton_version']:
         raise ValueError('pinned Triton version differs')
     source = request['source'].encode()
     validate_triton_kernel(source, request['requirements'])

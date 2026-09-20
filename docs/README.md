@@ -32,6 +32,7 @@ Start with the system overview, then follow the implementation or evidence relev
 - [按硬件查看实验结果 / Results by hardware](RESULTS.md)：任务结果、历史晋升、CAKE 对照与原始证据定位。
 - [研究路线 / Roadmap](ROADMAP.md)
 - [平台与分支维护 / Development branches](DEVELOPMENT_BRANCHES.md)
+- [MetaX C550：当前可用路径与验收边界](metax-c550.md)
 - [设计决策 / Decisions](adr/README.md)
 - [完整阅读目录与历史材料 / Full catalog and history](catalog.md)
 
