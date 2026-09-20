@@ -883,7 +883,7 @@
     {
       "id": "029_cake_tinygemm2",
       "status": "blocked",
-      "reason": "external_bitwise_and_mechanism_qualification_pending",
+      "reason": "external_bitwise_baseline_qualification_pending",
       "task": "cake_tinygemm2",
       "reference_kind": "cake_generated_kernel_family",
       "references": [

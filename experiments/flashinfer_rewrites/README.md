@@ -65,6 +65,12 @@ register MMA 不证明 TinyGEMM bitwise parity，TMA/TMEM 示例也不证明跨 
 禁止用原始 CUDA 包装、退役 `checked_cuda_asset`、简化算子或未申明的多 kernel 替代来报
 “结构复现”。允许有正确的替代实现，但其语义、机制和性能结果分列。
 
+NVIDIA 线的具体接入和后端演进见 [NVIDIA CAKE reproduction](../../docs/NVIDIA_CAKE_REPRODUCTION.md)。
+029 已注册新的 BF16+bias Workload、独立 CPU 数学参考、固定 CUDA peer 和完整 typed 候选。
+首轮 B300-M2 严格比对为 22/30，因此尚未加入默认启动集合；四路 K 分区后继须重新通过
+外部 bitwise 基线检查。Triton 的 `num_stages` 和算术分区不等于原参考的 TMA/warp 调度，
+PDL、完整 dispatch、性能和 serving 仍独立验收。
+
 性能比较前固定外部参考、计时边界、判据和预算；分别报告 kernel duration sum、GPU span、
 API wall 和框架指标。KDA prefill 的公开 FlashKDA 比对使用容差；TinyGEMM 要求 bitwise；
 Alpha-MoE 要保留中间量化和累加舍入约定。不能让参考源码携带的历史通过数替代这些验收。
