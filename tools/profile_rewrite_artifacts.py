@@ -115,6 +115,10 @@ def child(role, output, root, owner):
         if not passed:
             raise ArithmeticError('profiled output failed')
         report['passed'] = True
+    except Exception as error:
+        report.update(passed=False, error=f'{type(error).__name__}: {error}',
+                      failure_kind='correctness' if isinstance(error, ArithmeticError) else 'infrastructure')
+        raise
     finally:
         if role != 'external' and loaded is not None:
             loaded.close()
@@ -141,7 +145,7 @@ def main():
     output = Path(os.environ['KERNELINFRA_STAGE_DIR'])
     report = {'scope': 'separate NCU attribution; not performance timing or promotion',
               'source_commit': commit, 'promotion_disposition': 'No promotion', 'roles': {}}
-    valid = False
+    validity = 'unknown'
     try:
         report['allocation'] = observe_allocation('sm_103a')
         # Device admission belongs to each child before it initializes CUDA; the
@@ -161,26 +165,36 @@ def main():
                        '--task-document', str(task_path), '--stage-id', stage_id,
                        '--owner', str(os.geteuid()), str(os.getegid())]
             # Do not cap launch count: a reference's multi-kernel callable must remain visible.
-            result = run_ncu(command, cwd=ROOT, environment=dict(os.environ), timeout_seconds=600)
+            try:
+                result = run_ncu(command, cwd=ROOT, environment=dict(os.environ), timeout_seconds=600)
+            except Exception as error:
+                write_new(directory / 'stdout.log', getattr(error, 'stdout', b''))
+                write_new(directory / 'stderr.log', getattr(error, 'stderr', b''))
+                raise
             write_new(directory / 'stdout.log', result.stdout)
             write_new(directory / 'stderr.log', result.stderr)
             row = {'command': command, 'returncode': result.returncode}
             report['roles'][role] = row
+            if (directory / 'child.json').is_file():
+                row['validation'] = json.loads((directory / 'child.json').read_text())
+                if row['validation'].get('failure_kind') == 'correctness':
+                    raise ArithmeticError('profile child correctness failed for ' + role)
             if result.returncode:
                 raise ValueError('NCU child failed for ' + role)
-            row['validation'] = json.loads((directory / 'child.json').read_text())
-            if not row['validation'].get('passed'):
+            if not row.get('validation', {}).get('passed'):
                 raise ValueError('profile child did not validate output')
             row['kernels'] = parse_metrics((directory / 'stdout.log').read_text())
-        valid = True
+        validity = 'valid'
     except Exception as error:
+        if isinstance(error, ArithmeticError):
+            validity = 'invalid'
         report.update(error=f'{type(error).__name__}: {error}', traceback=traceback.format_exc())
     write(output / 'profile-report.json', report)
     write(Path(os.environ['KERNELINFRA_RESULT']), {'schema': 'kernelinfra.stage-result.v1',
-          'status': 'passed' if valid else 'failed', 'validity': 'valid' if valid else 'unknown',
-          'summary': 'attribution complete' if valid else report['error'],
+          'status': 'passed' if validity == 'valid' else 'failed', 'validity': validity,
+          'summary': 'attribution complete' if validity == 'valid' else report['error'],
           'artifacts': {'profile': 'profile-report.json'}})
-    return 0 if valid else 1
+    return 1 if validity == 'unknown' else 0
 
 
 if __name__ == '__main__':
