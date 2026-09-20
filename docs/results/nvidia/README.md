@@ -14,7 +14,7 @@
 
 | 平台 | 维护分支 | 数据日期 | 观察条目 | 发布数据 |
 |---|---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-20 | 51 | [nvidia/records.json](records.json) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-20 | 57 | [nvidia/records.json](records.json) |
 
 观察条目数不等于任务数：同一任务可以有不同形状、实验集合和历史尝试。
 
@@ -28,6 +28,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - 六项三方NCU均为单kernel且未观察到local-memory sectors。003/022优先检查工作分配与并行度；001/002/025对齐launch几何后继续核对访存。详见F-2026-09-20-010。
 - F-2026-09-20-011隔离了AOT对齐信息机制：仅CPU编译、假设16字节pointer alignment，三项kernel由标量b16变为128位向量访存。该历史probe时ABI未保证该假设；未做GPU运行、速度或晋升声明。002原有.cg提示并未解决该向量化信息缺口。
 - PR #108已将运行时检查的通用/对齐AOT变体合入main，保留合法非对齐输入与原v1基线；本页历史测量仍指向原提交，新变体尚无GPU性能结论。
+- With 005, 023 (h1536) and 024, ten tasks have three-way comparisons and all 300 pre/postflight checks pass. The three new external timing edges fail the unchanged CV gate. The qualified starter edges show 2.475x for 024 and 0.944x for 005; keep the faster 005 starter.
 
 | 设备 / 集合 | Task | 输入 / Workload | 基线 µs | 候选 µs | 加速比 | 状态 | 详情 |
 |---|---|---|---:|---:|---:|---|---|
@@ -82,6 +83,12 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 | B300 · FlashInfer外部对照 | `022_rmsnorm_h512` | fib_rmsnorm_h512 / R=539, C=512 / BF16 | 2.720 | 5.152 | — | 正确；计时质量未通过 | [nvidia-fib-external-022-20260920](#nvidia-fib-external-022-20260920) |
 | B300 · FlashInfer外部对照 | `025_rmsnorm_h4096` | fib_rmsnorm_h4096 / R=170, C=4096 / BF16 | 2.752 | 3.168 | — | 正确；计时质量未通过 | [nvidia-fib-external-025-20260920](#nvidia-fib-external-025-20260920) |
 | B300 · FlashInfer外部对照 | `022_rmsnorm_h512_starter` | fib_rmsnorm_h512 / R=539, C=512 / BF16 | 2.688 | 2.336 | 1.151× | 正确；starter更快（质量通过） | [nvidia-fib-external-022-starter-20260920](#nvidia-fib-external-022-starter-20260920) |
+| B300 / FlashInfer comparison | `005_gemm_n256_k7168` | fib_gemm_n256_k7168 / R=1, C=256 / FP16 | 6.880 | 9.152 | — | Correct; timing quality failed | [nvidia-fib-external-005-20260920](#nvidia-fib-external-005-20260920) |
+| B300 / FlashInfer comparison | `005_gemm_n256_k7168` | fib_gemm_n256_k7168 / R=1, C=256 / FP16 | 8.641 | 9.152 | 0.944× | Correct; timing qualified | [nvidia-fib-starter-005-20260920](#nvidia-fib-starter-005-20260920) |
+| B300 / FlashInfer comparison | `023_rmsnorm_h1536` | fib_rmsnorm_h1536 / R=539, C=1536 / BF16 | 4.095 | 2.880 | — | Correct; timing quality failed | [nvidia-fib-external-023-20260920](#nvidia-fib-external-023-20260920) |
+| B300 / FlashInfer comparison | `023_rmsnorm_h1536` | fib_rmsnorm_h1536 / R=539, C=1536 / BF16 | 4.064 | 2.880 | — | Correct; timing quality failed | [nvidia-fib-starter-023-20260920](#nvidia-fib-starter-023-20260920) |
+| B300 / FlashInfer comparison | `024_rmsnorm_h2048` | fib_rmsnorm_h2048 / R=79, C=2048 / BF16 | 2.272 | 2.464 | — | Correct; timing quality failed | [nvidia-fib-external-024-20260920](#nvidia-fib-external-024-20260920) |
+| B300 / FlashInfer comparison | `024_rmsnorm_h2048` | fib_rmsnorm_h2048 / R=79, C=2048 / BF16 | 6.177 | 2.496 | 2.475× | Correct; timing qualified | [nvidia-fib-starter-024-20260920](#nvidia-fib-starter-024-20260920) |
 
 ## 演进与更新
 
@@ -722,3 +729,63 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - 来源：[findings/2026-09-20-007-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/be5e3e879b21ea782cdd0db0767a708d8d3ddda5/findings/2026-09-20-007-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-full-reference-comparison-20260920-213dc1d85874/stages/comparison/comparison-report.json; starter_vs_external`。
 - 一行/CTA的固定starter胜过该外部参考；这不等于四行打包的改写候选也更快。相同shape和精度、五种输入检查通过；10对×25样本、cold L2/CUPTI、CV门禁通过。外部优秀实现不保证每个固定shape最优。
+
+### nvidia-fib-external-005-20260920
+
+**B300 / FlashInfer comparison · 005_gemm_n256_k7168** — 2026-09-20 / Correct; timing quality failed
+
+- Workload：`fib_gemm_n256_k7168 / R=1, C=256 / FP16`；目标：`sm_103a`；版本：`open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50; judge 76cf8762`。
+- 基线：Supplied external implementation；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/839e8b8a4629e8b664724e22c98818337c6bc82c/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-2126e322eb9c/stages/comparison/comparison-report.json`。
+- All 30 pre/postflight checks over five distributions passed. CUPTI device activity, cold L2 per sample, 10 pairs x 25 samples, 42 calls per cohort. Maximum CV=5.456%; 1/20 cohorts exceed the unchanged 5% limit. Historical frozen candidate, not the new AOT alignment implementation; no E2E or official leaderboard claim.
+
+### nvidia-fib-starter-005-20260920
+
+**B300 / FlashInfer comparison · 005_gemm_n256_k7168** — 2026-09-20 / Correct; timing qualified
+
+- Workload：`fib_gemm_n256_k7168 / R=1, C=256 / FP16`；目标：`sm_103a`；版本：`open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50; judge 76cf8762`。
+- 基线：Original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/839e8b8a4629e8b664724e22c98818337c6bc82c/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-2126e322eb9c/stages/comparison/comparison-report.json`。
+- All 30 pre/postflight checks over five distributions passed. CUPTI device activity, cold L2 per sample, 10 pairs x 25 samples, 42 calls per cohort. Maximum CV=2.755%; 0/20 cohorts exceed the unchanged 5% limit. Historical frozen candidate, not the new AOT alignment implementation; no E2E or official leaderboard claim. Keep the starter: this candidate is slower in a qualified comparison.
+
+### nvidia-fib-external-023-20260920
+
+**B300 / FlashInfer comparison · 023_rmsnorm_h1536** — 2026-09-20 / Correct; timing quality failed
+
+- Workload：`fib_rmsnorm_h1536 / R=539, C=1536 / BF16`；目标：`sm_103a`；版本：`open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50; judge 76cf8762`。
+- 基线：Supplied external implementation；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/839e8b8a4629e8b664724e22c98818337c6bc82c/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-c2e26eb06cd5/stages/comparison/comparison-report.json`。
+- All 30 pre/postflight checks over five distributions passed. CUPTI device activity, cold L2 per sample, 10 pairs x 25 samples, 42 calls per cohort. Maximum CV=5.202%; 1/20 cohorts exceed the unchanged 5% limit. Historical frozen candidate, not the new AOT alignment implementation; no E2E or official leaderboard claim.
+
+### nvidia-fib-starter-023-20260920
+
+**B300 / FlashInfer comparison · 023_rmsnorm_h1536** — 2026-09-20 / Correct; timing quality failed
+
+- Workload：`fib_rmsnorm_h1536 / R=539, C=1536 / BF16`；目标：`sm_103a`；版本：`open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50; judge 76cf8762`。
+- 基线：Original Cake starter；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/839e8b8a4629e8b664724e22c98818337c6bc82c/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-c2e26eb06cd5/stages/comparison/comparison-report.json`。
+- All 30 pre/postflight checks over five distributions passed. CUPTI device activity, cold L2 per sample, 10 pairs x 25 samples, 42 calls per cohort. Maximum CV=5.228%; 1/20 cohorts exceed the unchanged 5% limit. Historical frozen candidate, not the new AOT alignment implementation; no E2E or official leaderboard claim.
+
+### nvidia-fib-external-024-20260920
+
+**B300 / FlashInfer comparison · 024_rmsnorm_h2048** — 2026-09-20 / Correct; timing quality failed
+
+- Workload：`fib_rmsnorm_h2048 / R=79, C=2048 / BF16`；目标：`sm_103a`；版本：`open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50; judge cb5e73b3`。
+- 基线：Supplied external implementation；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/839e8b8a4629e8b664724e22c98818337c6bc82c/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-024-20260920-comparison-6d911313e6b2/stages/comparison/comparison-report.json`。
+- All 30 pre/postflight checks over five distributions passed. CUPTI device activity, cold L2 per sample, 10 pairs x 25 samples, 42 calls per cohort. Maximum CV=7.124%; 4/20 cohorts exceed the unchanged 5% limit. Historical frozen candidate, not the new AOT alignment implementation; no E2E or official leaderboard claim.
+
+### nvidia-fib-starter-024-20260920
+
+**B300 / FlashInfer comparison · 024_rmsnorm_h2048** — 2026-09-20 / Correct; timing qualified
+
+- Workload：`fib_rmsnorm_h2048 / R=79, C=2048 / BF16`；目标：`sm_103a`；版本：`open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50; judge cb5e73b3`。
+- 基线：Original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/839e8b8a4629e8b664724e22c98818337c6bc82c/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-024-20260920-comparison-6d911313e6b2/stages/comparison/comparison-report.json`。
+- All 30 pre/postflight checks over five distributions passed. CUPTI device activity, cold L2 per sample, 10 pairs x 25 samples, 42 calls per cohort. Maximum CV=3.979%; 0/20 cohorts exceed the unchanged 5% limit. Historical frozen candidate, not the new AOT alignment implementation; no E2E or official leaderboard claim.
