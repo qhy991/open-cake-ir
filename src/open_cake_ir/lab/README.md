@@ -61,7 +61,25 @@ stage，计时覆盖完整有序调用；NCU 输出按 dispatch 保留各 stage 
 
 当前完整 Program 执行适配实现于 Triton/CUDA 路径；其他 code object 在构建及执行入口
 明确拒绝，静态 Program 表示不因这个适配范围受限。软件合同测试不赋予实机正确性、
-计时或跨架构收益资格。显式作者变换动作与 E/P 权限接线仍在本任务中实施。
+计时或跨架构收益资格。显式动作和知识授权见下节；作者进程隔离和正式消融仍在本任务中实施。
+
+## Knowledge and explicit author actions
+
+`knowledge.py` 校验版本化机制说明及原始证据引用。Run 分别冻结 `knowledge.materials`
+与 `knowledge.transformations`；解释材料不要求对应一个 pass，工具授权也不自动交付经验材料。
+Compiler 的变换声明拥有 API 与 guard；知识记录不再保存硬件支持表或复制测量结果。
+
+`actions.py` 将作者请求解析成新的候选字节或拒绝。父引用只能来自此前本 Run 已产生的候选，
+或 `reference_inputs.baseline_programs` 中明示授权的完整实现；同一批动作不互相授予父引用。
+P0 在解析父程序和调用 Compiler 之前拒绝变换。直接提交的既有输入继续作为 submit 处理。
+
+`author_actions_resolved` 留存动作、父引用、变换和结果对象；构建过滤只处理实际产生的候选。
+全部动作被拒绝时留下无候选的 Turn observation，不伪造 Candidate。独立回放从原始动作、
+冻结权限与此前候选重新推导结果。材料计入 provider 输入，拒绝的请求也占 per-turn 上限，
+改写与构建时间计入同一 Run 的 wall budget。
+
+这验证服务端调用权限与材料交付，不等同于证明 CLI 作者无法读取主机文件。正式 E/P 研究
+还需要受限作者 I/O 与冻结 Study 分配，不能把工具权限检查单独当作完整消融隔离。
 
 ## Agent-led reproduction
 
