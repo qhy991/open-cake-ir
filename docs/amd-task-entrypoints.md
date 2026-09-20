@@ -4,7 +4,11 @@ The unified launcher exposes `add_rmsnorm_bf16` and four AKA-derived tasks:
 `aka_residual_layernorm`, `aka_gemm_nt_bias`, `aka_row_gather`, and
 `aka_momentum_sgd`. They use the existing `triton-gfx1151` device row, tensor
 Workload oracle, isolated Triton compiler, HSACO artifacts, and HIP local broker.
-No Compiler primitive or Target capability is added by these entrypoints.
+The existing explicit `cast` gains one directed typing edge, signed `int32` to
+`fp32`, for the dynamic Nesterov flag. Conversion rounds to nearest FP32, ties to
+even; the flag's 0/1 values are exact. Reverse and other integer conversions remain
+refused. The conversion keeps its explicit operation, shape and effects and uses
+the existing backend emission. No Target capability set is widened.
 
 The AKA B200 revision-1 documents remain frozen. A target other than the legacy
 B200 gets a revision-2 Workload only for a task with a complete starter, and only
