@@ -66,7 +66,7 @@ class AuthoredPlanAdmissionTests(unittest.TestCase):
         plan = attention.launch_plan(workload)
         driver.admit_plan_workload(plan, workload)
         for altered in (replace(plan, target='sm_100a'), replace(plan, outputs=('output',))):
-            with self.subTest(plan=altered.plan_id), self.assertRaisesRegex(ValueError, 'target or public'):
+            with self.subTest(plan=altered.program_id), self.assertRaisesRegex(ValueError, 'target or public'):
                 driver.admit_plan_workload(altered, workload)
         tensors = dict(plan.tensors)
         tensors['q'] = replace(tensors['q'], shape=(1,))

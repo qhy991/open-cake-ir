@@ -25,6 +25,8 @@ def _replay_broker_attempt_ledger(
     protocol_sha256: str,
     compiler_reference: Mapping[str, object],
     final_receipt: EvaluationReceipt | None,
+    purpose: str,
+    case_id: str,
     location: str = "evaluation_attempt_completed",
 ) -> None:
     """Rebuild every broker attempt from retained raw results and compare its ledger.
@@ -157,6 +159,8 @@ def _replay_broker_attempt_ledger(
             ("launch_spec_sha256", candidate.launch_spec_sha256),
             ("evaluation_protocol_sha256", protocol_sha256),
             ("attempt", index),
+            ("purpose", purpose),
+            ("case_id", case_id),
         ):
             if request.get(field) != expected or (field == "attempt" and type(request.get(field)) is not int):
                 refuse(f"{raw}_evaluator_request.{field}", "worker request authority differs",
@@ -337,6 +341,8 @@ def _replay_evaluation_attempt_event(
     protocol_sha256: str,
     compiler_reference: Mapping[str, object],
     final_receipt: EvaluationReceipt | None,
+    case_id: str,
+    used_job_ids: set,
     location: str = "evaluation_attempt_completed",
 ) -> None:
     """Resolve one attempt event to its sole ledger and retained raw artifacts."""
@@ -370,5 +376,10 @@ def _replay_evaluation_attempt_event(
         protocol_sha256=protocol_sha256,
         compiler_reference=compiler_reference,
         final_receipt=final_receipt,
+        purpose=payload['purpose'], case_id=case_id,
         location=location,
     )
+    jobs = [item['job_id'] for item in document['attempts']]
+    if used_job_ids.intersection(jobs):
+        refuse(location, 'broker job was reused across Evaluation invocations')
+    used_job_ids.update(jobs)

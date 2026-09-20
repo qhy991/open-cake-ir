@@ -18,7 +18,9 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=ROOT)
     parser.add_argument("--registry-root", type=Path, required=True)
-    parser.add_argument("--campaign-lock", type=Path, required=True)
+    authority = parser.add_mutually_exclusive_group(required=True)
+    authority.add_argument("--campaign-lock",type=Path,help='retained Campaign input')
+    authority.add_argument("--run",type=Path,help='independent engineering Run')
     parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--run-id")
     arguments = parser.parse_args(argv)
@@ -27,6 +29,7 @@ def main(argv=None) -> int:
         project_root=project,
         registry_root=arguments.registry_root,
         campaign_lock_path=arguments.campaign_lock,
+        run_path=arguments.run,
         evidence_root=arguments.evidence_root,
         run_id=arguments.run_id,
     )

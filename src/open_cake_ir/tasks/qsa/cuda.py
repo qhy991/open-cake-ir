@@ -1,4 +1,4 @@
-"""Exact-CUBIN launch boundary for the multi-kernel QSA Program.
+"""Native-reference CUBIN launch boundary for the frozen QSA assay.
 
 The Workload owns semantics and the candidate owns implementation bytes.  This module
 owns only the common launch seam: a closed kernel list, exact tensor bindings, one CUDA
@@ -28,15 +28,12 @@ _KERNEL_FIELDS = {
     "hidden_null_pointer_parameters",
 }
 _EXPECTED_ARGUMENTS = {
-    "pool": ("index_k", "pooled"),
-    "layernorm": ("pooled", "k_norm_weight", "normalized_keys"),
     "score_topk": ("index_q", "normalized_keys", "block_indices"),
     "pool_layernorm": ("index_k", "k_norm_weight", "normalized_keys"),
     "expand": ("block_indices", "token_indices"),
     "attention": ("q", "k", "v", "token_indices", "output"),
 }
 _EXPECTED_ORDER = {
-    "open_cake": ("pool", "layernorm", "score_topk", "expand", "attention"),
     "direct_cuda": ("pool_layernorm", "score_topk", "expand", "attention"),
 }
 _MAX_DYNAMIC_SHARED_MEMORY_BYTES = 232_448
@@ -281,14 +278,13 @@ class LoadedQsaProgram:
 
 
 def qsa_program_tensors(inputs: Mapping[str, object], output: object) -> dict[str, object]:
-    """Allocate the four Program-owned intermediates on the input device."""
+    """Allocate only the fixed native reference's three intermediate tensors."""
 
     import torch
 
     device = getattr(inputs["q"], "device")
     return {
         **inputs,
-        "pooled": torch.empty((8192, 128), dtype=torch.float32, device=device),
         "normalized_keys": torch.empty(
             (8192, 128), dtype=torch.float32, device=device
         ),

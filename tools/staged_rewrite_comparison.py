@@ -293,7 +293,11 @@ def capture(root,output,prepared,workload,commit):
                         observed,after = obj.snapshot(arguments[0])
                         correct,metrics = compare_tile_outputs(workload,cases[case],expected[case],observed,after)
                         if not correct:raise ArithmeticError(f'{role} failed preflight {case}: {metrics}')
-                for arguments_ in arguments:writer.append(arguments_,case)
+                try:
+                    for arguments_ in arguments:writer.append(arguments_,case)
+                finally:
+                    release = getattr(obj, 'release_argument_sets', None)
+                    if release is not None:release(arguments)
                 report['groups'].append(group)
             report['snapshot_count'] = writer.count
             report['snapshot_bytes'] = writer.encoder.bytes_written

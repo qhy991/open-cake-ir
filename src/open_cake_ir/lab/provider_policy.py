@@ -19,7 +19,23 @@ def provider_harness(provider: Mapping[str, object]) -> str:
 
 
 def provider_configuration(provider: Mapping[str, object], claim_scope: str, *, arms) -> dict:
-    """Validate declared treatment; qualification separately binds actual capability."""
+    """Admit the externally supported matched-Study input contract."""
+    if provider_harness(provider) == 'claude-code' and (
+        claim_scope != 'artifact_optimization_only' or set(arms) != {'open_cake'}
+    ):
+        raise ValueError('Study Contract Claude provider configuration or authoring scope differs')
+    if provider_harness(provider) == 'codex':
+        expected = 'tool_rich_candidate_v1' if claim_scope == 'artifact_optimization_only' else 'closed_file_change_v1'
+        if provider.get('event_contract', 'closed_file_change_v1') != expected:
+            raise ValueError('Study Contract provider configuration differs')
+    return execution_configuration(provider)
+
+
+def execution_configuration(provider: Mapping[str, object]) -> dict:
+    """Validate provider execution capabilities independently of research assignment."""
+    if provider_harness(provider) == 'responses':
+        from .message_provider import configuration
+        return configuration(provider)
     for name in ("model", "reasoning_effort"):
         value = provider.get(name)
         if not isinstance(value, str) or not value or value != value.strip() or "\x00" in value:
@@ -30,8 +46,7 @@ def provider_configuration(provider: Mapping[str, object], claim_scope: str, *, 
         raise ValueError("Study Contract provider configuration workspace/environment differs")
     harness = provider_harness(provider)
     if harness == "claude-code":
-        if (set(provider) != _AUTHORITY | _CLAUDE or claim_scope != "artifact_optimization_only"
-                or set(arms) != {"open_cake"}
+        if (set(provider) != _AUTHORITY | _CLAUDE
                 or provider.get("sandbox") != "none" or provider.get("permission_mode") != "acceptEdits"
                 or provider.get("safe_mode") is not True or provider.get("tools") != list(CLAUDE_AUTHORING_TOOLS)
                 or provider.get("event_contract") not in CLAUDE_EVENT_CONTRACTS
@@ -44,7 +59,7 @@ def provider_configuration(provider: Mapping[str, object], claim_scope: str, *, 
         frozenset(_AUTHORITY | _CODEX | {"event_contract"}),
     }:
         raise ValueError("Study Contract provider configuration fields differ")
-    defaults = claim_scope == "artifact_optimization_only"
+    defaults = provider.get("event_contract") == "tool_rich_candidate_v1"
     expected_event = "tool_rich_candidate_v1" if defaults else "closed_file_change_v1"
     if (provider.get("service_tier") != "default" or provider.get("sandbox") != "workspace-write"
             or provider.get("disabled_features") != ([] if defaults else list(CODEX_DISABLED_FEATURES))

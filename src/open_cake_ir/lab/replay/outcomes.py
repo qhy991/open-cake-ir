@@ -13,7 +13,7 @@ from ..endpoints import endpoint_policy, matched_endpoint
 from .._policies import _ATTRIBUTION_EVALUATION
 from ..checkpoints import TurnObservation, project_checkpoints
 from ..contracts import CampaignLock
-from ..ralph import RalphBudget, derive_ralph_stop_reason
+from ..ralph import RalphBudget, exceeded_run_budgets
 from .refusals import event_location, refuse
 from ..selection import (
     _collapse_diagnosis,
@@ -110,16 +110,18 @@ def _replay_terminal(
     receipts: Mapping[tuple[int, str, str], EvaluationReceipt],
     searches_per_turn: int,
     invocation_counts: Mapping[str, int] | None = None,
-    boundary_converted: bool = False,
+    confirmation=None,
+    search_state=None,
+    compilation_count=0,
 ) -> None:
     """Refuse unless the terminal, checkpoints and Ralph state rederive from the Run's facts."""
-    if not observations and not faults and endpoint_policy(lock.analysis_plan) is None:
+    if not observations and not faults and search_state is None:
         refuse("run_terminal", "a Run with no Turn observation and no fault has no terminal to derive")
     observed_turns = [item.turn for item in observations]
     if observed_turns != list(range(1, len(observations) + 1)):
         refuse("checkpoints_projected", "observed Turns are not 1..n", observed=observed_turns,
                expected=list(range(1, len(observations) + 1)))
-    resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
+    resolved = lock.document
     budget = _object(resolved["budget"], "resolved_inputs.budget")
     terminal_tokens = fault_terminal_tokens if fault_terminal_tokens is not None else max(cumulative_by_turn.values(), default=0)
     projected = project_checkpoints(
@@ -132,18 +134,10 @@ def _replay_terminal(
             "provider_tokens": item.provider_tokens,
             "state": item.state,
             "best_candidate_sha256": item.best_candidate_sha256,
-            "best_confirmed_latency_ms": item.best_confirmed_latency_ms,
+            "best_search_latency_ms": item.best_search_latency_ms,
         }
         for item in projected
     ]
-    if boundary_converted and projected[-1].state == "unreached":
-        # F-2026-09-16-002: the conversion exists because a checkpoint had
-        # already settled. A terminal whose own replayed facts leave the final
-        # checkpoint unreached has nothing settled to convert, so the marker
-        # cannot stand -- the fault terminal it displaced does.
-        refuse("run_terminal.payload.boundary_diagnostic",
-               "a boundary conversion with the final checkpoint unreached has nothing settled to convert",
-               observed=projected[-1].state)
     checkpoint_payload = _object(
         checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
     )
@@ -175,37 +169,39 @@ def _replay_terminal(
     if not isinstance(active_authoring, (int, float)) or isinstance(active_authoring, bool):
         refuse("checkpoints_projected.payload.ralph.active_authoring_seconds", "not a number",
                observed=active_authoring)
-    if endpoint_policy(lock.analysis_plan) is not None:
+    if endpoint_policy(lock.terminal_policy) is not None:
         expected_turn = min(budget["maximum_turns"] + 1, len(observations) + 1)
         if state_turn != expected_turn:
             refuse("checkpoints_projected.payload.ralph.iteration",
                    "differs from the Turn after the last observed or budgeted one",
                    observed=state_turn, expected=expected_turn)
-    # A converted boundary terminal keeps its fault observation in the ledger
-    # but derives its stop reason like any normal budget terminal; every other
-    # faulted Run reports the adherence it ended with.
-    expected_stop_reason = (
-        audit.protocol_adherence
-        if faults and not boundary_converted
-        else derive_ralph_stop_reason(
-            RalphBudget.from_mapping(budget),
-            turn=state_turn,
-            cumulative_provider_tokens=terminal_tokens,
-            elapsed_wall_seconds=float(elapsed_wall),
-            active_authoring_seconds=float(active_authoring),
-            evaluation_counts=expected_counts,
-            searches_per_turn=searches_per_turn,
-            profile_each_search_survivor=(
-                attribution_evaluation == _ATTRIBUTION_EVALUATION
-            ),
-        )
-    )
+    expected_stop_reason = audit.protocol_adherence if faults else (
+        search_state['terminal_reason'] if search_state else None)
+    if search_state is not None:
+        if (elapsed_wall < search_state['elapsed_wall_seconds']
+            or active_authoring != search_state['active_authoring_seconds']):
+            refuse('checkpoints_projected.payload.ralph', 'terminal time predates search or adds authoring after nomination')
+    time_limits = RalphBudget.from_mapping(budget)
+    search_elapsed = search_state['elapsed_wall_seconds'] if search_state else elapsed_wall
+    confirmation_elapsed = round(elapsed_wall-search_elapsed,6) if search_state else 0.
+    remaining = _object(ralph_state.get('remaining'),'checkpoints_projected.payload.ralph.remaining')
+    for name,expected in (
+        ('wall_time_seconds',round(max(0.,time_limits.wall_time_seconds-elapsed_wall),6)),
+        ('search_wall_time_seconds',round(max(0.,time_limits.search_wall_time_seconds-search_elapsed),6)),
+        ('confirmation_wall_time_seconds',round(max(0.,time_limits.confirmation_wall_time_seconds-confirmation_elapsed),6)),
+    ):
+        if type(remaining.get(name)) not in {int,float} or remaining[name] != expected:
+            refuse('checkpoints_projected.payload.ralph.remaining.'+name,'phase remainder differs from elapsed time')
     for field, observed, expected in (
+        ('budget_exceeded',ralph_state.get('budget_exceeded'),
+         list(exceeded_run_budgets(time_limits,search_state=search_state,terminal_state=ralph_state))),
         ("kind", ralph_state.get("kind"), "ralph_state_v1"),
         ("cumulative_provider_tokens", ralph_state.get("cumulative_provider_tokens"), terminal_tokens),
         ("remaining.provider_tokens", ralph_state.get("remaining", {}).get("provider_tokens"),
          max(0, budget["limit"] - terminal_tokens)),
         ("evaluation_counts", ralph_state.get("evaluation_counts"), expected_counts),
+        ('compilation_count',ralph_state.get('compilation_count'),compilation_count),
+        ('remaining.compilations',ralph_state.get('remaining',{}).get('compilations'),budget['maximum_compilations']-compilation_count),
         ("terminal_reason", ralph_state.get("terminal_reason"), expected_stop_reason),
     ):
         if observed != expected:
@@ -215,7 +211,8 @@ def _replay_terminal(
     expected_observation, expected_endpoint = matched_endpoint(
         checkpoint=projected[-1], observations=observations,
         terminal_provider_tokens=terminal_tokens, protocol_adherence=audit.protocol_adherence,
-        terminal_reason=expected_stop_reason, analysis=lock.analysis_plan,
+        terminal_reason=expected_stop_reason, analysis=lock.terminal_policy, confirmation=confirmation,
+        budget_exceeded=exceeded_run_budgets(time_limits,search_state=search_state,terminal_state=ralph_state),
     )
     if audit.endpoint_observation != expected_observation:
         refuse("run_terminal.payload.endpoint_observation",
@@ -223,7 +220,7 @@ def _replay_terminal(
                observed=audit.endpoint_observation, expected=expected_observation)
     observed_endpoint = dict(audit.endpoint) if audit.endpoint is not None else None
     endpoint_matches = observed_endpoint == expected_endpoint
-    if endpoint_policy(lock.analysis_plan) is not None:
+    if endpoint_policy(lock.terminal_policy) is not None:
         # Exact JSON types as well as fields: observed zero is not False, and a
         # typed terminal token count cannot be substituted by an equal float.
         endpoint_matches = canonical_json_bytes(observed_endpoint) == canonical_json_bytes(expected_endpoint)

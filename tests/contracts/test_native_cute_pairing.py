@@ -97,6 +97,23 @@ class NativeCuTePairingTests(unittest.TestCase):
                 self.assertEqual(list(manifest.block), [32, 1, 1])
                 self.assertNotEqual(manifest.kernel_name, lowering.route.entry_point)
 
+    def test_single_stage_program_replays_the_sdk_binary_symbol_and_compile_contract(self):
+        from open_cake_ir.compiler import Program
+        from tests.contracts.test_program_evaluation import replay_program_candidate
+        schedule,_,environment,_,_ = self.environments()
+        program = Program.from_schedule(schedule)
+        result = environment.build(CandidateSubmission.seal(environment.media_type,program.document_bytes))
+        self.assertEqual(result.disposition,'launchable',result.feedback)
+        candidate = result.launchable
+        self.assertFalse(candidate.is_program)
+        self.assertNotEqual(candidate.entry_point,schedule['lowering']['entry_point'])
+        replayed = replay_program_candidate(self.compiler,program,candidate,candidate.artifact_payloads)
+        self.assertEqual(replayed.canonical_sha256,candidate.canonical_sha256)
+        payloads = dict(candidate.artifact_payloads)
+        payloads.pop('toolchain_resource_report')
+        with self.assertRaisesRegex(ValueError,'compilation evidence is incomplete'):
+            replay_program_candidate(self.compiler,program,candidate,payloads)
+
     def test_python_example_preserves_real_workload_binding_and_source_locations(self):
         source = (ROOT / 'examples/python/b300_cute_gemm_bias.py').read_text()
         parsed = parse(source)
@@ -166,7 +183,7 @@ class NativeCuTePairingTests(unittest.TestCase):
         member = native_baseline(lowering)
         payload = encoded({'schema_version':1, 'arm':'native_cute_dsl', 'candidates':[member]})
         self.assertEqual(_project_candidate_submission(payload, submission_contract=CANDIDATE_SET_ENVELOPE_V1,
-            arm='native_cute_dsl', maximum_candidates_per_turn=1), (encoded(member),))
+            arm='native_cute_dsl', maximum_candidates_per_turn=1, environment_kind='native_cute_dsl'), (encoded(member),))
         candidate = env.build(CandidateSubmission.seal(env.media_type, encoded(member))).launchable
         workload = self.workload
         class Launcher:
@@ -285,8 +302,8 @@ class CuTePairedLabFixtureTests(unittest.TestCase):
             view = lab.threshold_view(campaign,0.5)
             # Search fixture latencies are 0.1ms, but fresh confirmations are 1/2ms.
             self.assertEqual(len(view['runs']),6)
-            self.assertTrue(all(row['first_confirmation_turn'] is None for row in view['runs']))
+            self.assertTrue(all(row['nominee_source_turn'] is None for row in view['runs']))
             self.assertTrue(report.filesystem_custody_verified, 'new Evidence fixture requires a custody-capable temporary filesystem')
             reached = lab.threshold_view(campaign,1.5)
             self.assertEqual(sum(row['status']=='reached_by_fresh_confirmation' for row in reached['runs']),3)
-            self.assertTrue(all(row['elapsed_wall_seconds'] is not None for row in reached['runs'] if row['first_confirmation_turn']))
+            self.assertTrue(all(row['elapsed_wall_seconds'] is not None for row in reached['runs'] if row['nominee_source_turn']))

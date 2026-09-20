@@ -38,3 +38,24 @@ def bind_python_reference(source: str, prepared: Mapping[str, object], *, filena
     if frontend.parse(bound, filename=filename).document != prepared:
         raise ValueError("bound Python starter differs from the prepared Schedule")
     return bound.encode("utf-8")
+
+
+def read_skeleton_reference(project_root, reference, context='Schedule skeleton'):
+    """Read and seal the actual delivered source against its frozen reference."""
+    import json
+    from hashlib import sha256
+    from .bindings import source_reference_path
+    from ._documents import _object, _digest, _canonical_json_bytes, differs
+
+    reference = _object(reference, context)
+    if set(reference) != {'path', 'canonical_sha256'}:
+        raise ValueError(f'{context} reference fields differ')
+    _, path = source_reference_path(project_root, reference['path'], context)
+    payload = path.read_bytes()
+    document = (frontend.parse(payload.decode('utf-8'), filename=str(path)).document
+                if path.suffix == '.py' else json.loads(payload))
+    expected = _digest(reference['canonical_sha256'], context)
+    observed = sha256(_canonical_json_bytes(document)).hexdigest()
+    if expected != observed:
+        raise differs(f'{context} bytes differ', expected=expected, observed=observed)
+    return payload, document

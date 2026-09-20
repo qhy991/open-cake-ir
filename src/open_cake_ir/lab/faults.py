@@ -7,6 +7,10 @@ import re
 from typing import Mapping
 
 
+class CompilationBudgetExceeded(RuntimeError):
+    """No native compilation was started because the Run exhausted its quota."""
+
+
 @dataclass(frozen=True)
 class ReportedProviderUsage:
     """A complete usage witness, independent of candidate acceptance.

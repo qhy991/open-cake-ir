@@ -154,7 +154,8 @@ def _manifest_spellings():
     """The Workload tensor manifest class per `abi`, from the two spellings that exist."""
     from .core import TensorLaunchManifest
     from .metal_manifest import MetalTensorLaunchManifest
-    return {cls.abi: cls for cls in (TensorLaunchManifest, MetalTensorLaunchManifest)}
+    from .program import ProgramLaunchManifest
+    return {cls.abi: cls for cls in (TensorLaunchManifest, MetalTensorLaunchManifest, ProgramLaunchManifest)}
 
 
 def validate_pair_candidates(candidate, baseline, workload, case_id):
@@ -167,9 +168,12 @@ def validate_pair_candidates(candidate, baseline, workload, case_id):
         # The row for the participant's target says which spelling it seals; a manifest
         # in another spelling is not this participant's, whatever else it parses as.
         if (not isinstance(document, Mapping)
-                or document.get('abi') != platform_for(item.target).launch_abi):
+                or document.get('abi') not in {platform_for(item.target).launch_abi, 'ordered_program_v1'}):
             raise ValueError('paired policy requires the explicit Workload tensor ABI')
         manifest = spellings[document['abi']].from_dict(document)
+        if item.is_program:
+            from .program import program_components
+            program_components(item)
         manifest.check_workload(workload, case_id)
         if hasattr(manifest, 'check_complete_domain'):
             manifest.check_complete_domain()
@@ -452,6 +456,16 @@ def validate_metal_correctness_checks(check, case_ids, *, timed=False):
 
 
 def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
+    if candidate is not None and receipt.kernel_calls != candidate.kernels_per_call:
+        raise ValueError('receipt physical kernel count differs from its sealed candidate')
+    if candidate is not None and candidate.is_program and receipt.purpose == 'attribution':
+        from .program import program_components
+        manifest, children, _ = program_components(candidate)
+        profile = json.loads(receipt.artifact_payloads['profile'])
+        expected = [(stage.name, children[stage.name].entry_point) for stage in manifest.program.stages]
+        if (profile.get('kind') != 'ncu_program_attribution'
+            or [(row['stage'], row['kernel_name']) for row in profile['stages']] != expected):
+            raise ValueError('Program attribution differs from its complete stage sequence')
     if receipt.purpose == 'attribution' or paired_protocol(evaluation) is None:
         return
     if baseline is None or not receipt.artifact_payloads:
@@ -468,7 +482,7 @@ def participant_work(raw):
     participants = raw['participants']
     declarations = raw.get('launch_manifests')
     if declarations is None:
-        if any('kernel_bundle' in item['artifact_roles'] for item in participants.values()):
+        if any({'kernel_bundle', 'program_bundle'} & set(item['artifact_roles']) for item in participants.values()):
             raise ValueError('composed participant requires its sealed launch manifest for work accounting')
         return {role: {'modules': 1, 'kernels': 1} for role in participants}
     if not isinstance(declarations, Mapping) or set(declarations) != set(participants):

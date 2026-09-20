@@ -33,7 +33,8 @@ from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda, _observe_cuda_device
 from open_cake_ir.compiler.target import declared_target
 from open_cake_ir.lab.pairing import bind_baseline
-from open_cake_ir.evaluation.launch_plan import LaunchPlan
+from open_cake_ir.compiler import Program
+from open_cake_ir.evaluation.launch_plan import prepare_program
 
 
 def _broker_request(path: Path, request: dict) -> dict:
@@ -98,9 +99,9 @@ def _test_launch_plan(owner, task_id, task, compiler, output, torch, timing_requ
         document = owner.workload_document(task, variant=variant)
         workload = WorkloadContract(document)
         author = owner.author_plan(workload) if candidate_plan is None else None
-        plan = author.finish() if author is not None else LaunchPlan.from_dict(json.loads(candidate_plan.read_text()))
+        plan = author.finish() if author is not None else Program.from_dict(json.loads(candidate_plan.read_text()))
         admit_plan_workload(plan, workload)
-        compiled = plan.compile(compiler)
+        compiled = compiler.lower_program(plan)
         directory = output/task_id/variant
         directory.mkdir(parents=True)
         (directory/'workload.json').write_text(json.dumps(document,indent=2)+'\n')
@@ -133,7 +134,7 @@ def _test_launch_plan(owner, task_id, task, compiler, output, torch, timing_requ
                 return str(value.device), value.data_ptr(), value.data_ptr()+value.numel()*value.element_size()
             def context():
                 return torch.cuda.current_device(),torch.cuda.current_stream().cuda_stream
-            prepared = compiled.prepare(inputs,allocate=allocate,check_tensor=check_tensor,
+            prepared = prepare_program(compiled, inputs,allocate=allocate,check_tensor=check_tensor,
                 storage_span=storage_span,execution_context=context,load_kernel=lambda name,lowering:entries[name])
             result = prepared.run()
             torch.cuda.synchronize()

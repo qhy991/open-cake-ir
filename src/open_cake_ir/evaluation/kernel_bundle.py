@@ -20,20 +20,25 @@ def pack_candidates(candidates):
 
 def unpack_candidates(parent):
     from .paired import candidate_from_identity
-    raw = json.loads(parent.artifact_payloads['kernel_bundle'])
+    return unpack_candidate_bundle(parent.artifact_payloads['kernel_bundle'], target=parent.target)
+
+
+def unpack_candidate_bundle(payload, *, target):
+    from .paired import candidate_from_identity
+    raw = json.loads(payload)
     if (not isinstance(raw, Mapping) or set(raw) != {'schema_version', 'kernels'}
             or raw['schema_version'] != 1 or not isinstance(raw['kernels'], Mapping)
             or not raw['kernels']):
         raise ValueError('sealed kernel bundle fields differ')
     result = {}
     for name, record in raw['kernels'].items():
-        if (not isinstance(name, str) or not name.isidentifier()
+        if (not isinstance(name, str) or not name
                 or not isinstance(record, Mapping) or set(record) != {'identity', 'payloads'}
                 or not isinstance(record['payloads'], Mapping)):
             raise ValueError('sealed kernel bundle entry differs')
         payloads = {role: base64.b64decode(value, validate=True) for role, value in record['payloads'].items()}
         child = candidate_from_identity(record['identity'], payloads)
-        if child.target != parent.target:
+        if child.target != target:
             raise ValueError('sealed kernel bundle changes the exact target')
         result[name] = child
     return result

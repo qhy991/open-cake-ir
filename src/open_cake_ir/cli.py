@@ -162,6 +162,20 @@ def _lab(args: argparse.Namespace) -> int:
     from open_cake_ir.lab.custody import admit_new_campaign_path
 
     lab = TaskLab(args.project_root)
+    if args.lab_command == 'run':
+        from open_cake_ir.lab import RunSpecification, RunRef
+        from open_cake_ir.tasks.compose import execute_run_from_config
+        specification = RunSpecification.load(args.run)
+        if args.run_command == 'preflight':
+            _emit(lab.preflight_run(specification).document)
+            return 0
+        if args.run_command == 'execute':
+            run = execute_run_from_config(args.project_root,specification,args.runtime_config,args.evidence_root)
+        else:
+            run = RunRef(specification,args.evidence_root.resolve(strict=True))
+        report = lab.report_run(run)
+        _emit(report)
+        return 0 if report['audit'].archive_integrity and report['replay'] else 2
     if args.lab_command == "preflight":
         output_path = (
             admit_new_campaign_path(
@@ -247,6 +261,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     lab = commands.add_parser("lab")
     lab_commands = lab.add_subparsers(dest="lab_command", required=True)
+    run = lab_commands.add_parser('run',help='preflight, execute or audit an independent Run')
+    run_commands = run.add_subparsers(dest='run_command',required=True)
+    for name in ('preflight','execute','audit'):
+        command = run_commands.add_parser(name)
+        command.add_argument('--run',type=Path,required=True)
+        if name != 'preflight':
+            command.add_argument('--evidence-root',type=Path,required=True)
+        if name == 'execute':
+            command.add_argument('--runtime-config',type=Path,required=True)
     preflight = lab_commands.add_parser("preflight")
     preflight.add_argument("study", type=Path)
     preflight.add_argument("--output", type=Path)

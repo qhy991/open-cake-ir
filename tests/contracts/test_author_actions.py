@@ -1,0 +1,186 @@
+"""Explicit transfer actions through the real Run/Compiler path; CPU fixtures only."""
+from dataclasses import replace
+from hashlib import sha256
+import json
+from pathlib import Path
+import tempfile
+from unittest.mock import Mock, patch
+
+from open_cake_ir.compiler import Compiler, Program, frontend
+from open_cake_ir.evidence import EvidenceStore
+from open_cake_ir.lab import RunSpecification, OpenCakeEnvironment, TritonToolchainBuilder
+from open_cake_ir.lab.actions import resolve_action_set
+from open_cake_ir.lab.knowledge import OptimizationKnowledge
+from open_cake_ir.lab.provider_policy import execution_configuration
+from open_cake_ir.serialization import canonical_json_bytes as encoded
+from open_cake_ir.tasks.workloads import create_task, load_workload
+from tests.contracts.test_run_specification import IndependentRunTests
+from tests.contracts.test_lab import SemanticLabTestCase, RalphFakeProvider, FakeEvaluator, _submission_envelope
+from tests.contracts.test_native_triton_pairing import CompilationFixture
+from tests.contracts.test_program_rewrites import epilogue_program
+
+ROOT = Path(__file__).resolve().parents[2]
+PASS = 'specialize_triton_warps'
+KNOWLEDGE = ROOT/'contracts/knowledge/rounded-epilogue-fusion-v1.json'
+
+
+def rewrite(parent, *, transformation=PASS, stage='seed', width=8):
+    return {'action':'transform', 'parent':parent, 'transformation':transformation,
+            'parameters':{'stage':stage,'num_warps':width,'schedule_id':'rewritten','entry_point':'rewritten'}}
+
+
+class ProgramEvaluator(FakeEvaluator):
+    """Fixed-cost fixture: physical entry points do not encode author Turn identity."""
+    def candidate_position(self,candidate):
+        return 'open_cake',1
+
+
+class AuthorActionTests(SemanticLabTestCase):
+    def fixture(self, grants, *, baseline=False):
+        lab, template = IndependentRunTests.fixture(self)
+        document = template.document
+        temporary = tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name).resolve()
+        workload_document, source = create_task('silu', backend='triton-b200', rows=2, columns=8)
+        (root/'workload.json').write_bytes(encoded(workload_document))
+        (root/'starter.py').write_text(source)
+        schedule = frontend.parse(source).document
+        program = Program.from_schedule(schedule).document
+        program['program_id'] = 'open_cake_turn_1'
+        program['stages'][0]['name'] = 'seed'
+        workload = load_workload(root/'workload.json')
+        document['workload'] = {'workload_id':workload.workload_id,'path':str(root/'workload.json'),
+                                'canonical_sha256':workload.canonical_sha256}
+        document['knowledge']['transformations'] = grants
+        document['authoring'].update(reference_access='known_kernel_reproduction', input_format='schedule_or_python_v1',
+            lowering_route=schedule['lowering'], schedule_skeleton={'path':str(root/'starter.py'),'canonical_sha256':sha256(encoded(schedule)).hexdigest()})
+        document['evaluation_protocol'] = {'case_id':'primary','search_evaluation':'correctness_then_paired_cupti',
+            'confirmatory_evaluation':'fresh_fixed_candidate_correctness_then_paired_cupti'}
+        if workload.document['validation'].get('all_cases_required'):
+            document['evaluation_protocol']['validation_case_ids'] = list(workload.case_ids)
+        document['budget'].update(limit=160000,checkpoints=[80000,160000],maximum_turns=2,maximum_candidates_per_turn=2)
+        if baseline: document['reference_inputs']['baseline_programs'] = {'seed':program}
+        return lab, RunSpecification.from_dict(document), workload, program
+
+    def execute_fixture(self, grants, *, only_transform=False, parent=None):
+        lab, specification, workload, program = self.fixture(grants)
+        document = specification.document
+        parent_id = sha256(encoded(program)).hexdigest()
+        class Provider(RalphFakeProvider):
+            def turn(self, request):
+                observed = super().turn(request)
+                action = (rewrite(parent or parent_id) if only_transform or request.turn > 1
+                          else {'action':'submit','candidate':program})
+                payload = encoded(action)
+                return replace(observed,candidates=(payload,),candidate_sha256s=(sha256(payload).hexdigest(),),
+                               raw_submission=_submission_envelope(request.arm,(payload,)))
+        provider = Provider({specification.run_id:lab.task_package(specification,specification.run_id)})
+        provider.configuration = execution_configuration(document['authoring']['provider'])
+        provider.qualification_sha256 = document['authoring']['provider']['qualification']['canonical_sha256']
+        compilation = CompilationFixture()
+        environment = OpenCakeEnvironment(Compiler.load(ROOT,ROOT/'compiler/revision.json'),
+            TritonToolchainBuilder(workload=workload,case_id='primary',isolated_compiler=compilation),
+            authority_document=document['authoring'],workload=workload,case_id='primary')
+        evaluator = ProgramEvaluator(document['evaluation_protocol'],sha256(encoded(document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
+        root = tempfile.TemporaryDirectory();self.addCleanup(root.cleanup)
+        run = lab.execute_run(specification,Path(root.name)/'evidence',provider=provider,environment=environment,evaluator=evaluator)
+        audit, replay = lab.audit_run(run)
+        self.assertTrue(replay, replay.refusals)
+        self.assertEqual(audit.protocol_adherence,'adhered')
+        events = EvidenceStore.open(run.evidence_root).replay_events(specification.run_id)
+        return lab, run, audit, events, compilation, evaluator
+
+    def test_explicit_transform_produces_new_program_and_replays_its_parent(self):
+        _,_,audit,events,compiled,evaluator = self.execute_fixture([PASS])
+        actions = [event['payload']['actions'][0] for event in events if event['kind']=='author_actions_resolved']
+        self.assertEqual([row['kind'] for row in actions],['submit','transform'])
+        self.assertNotEqual(actions[0]['action_sha256'],actions[0]['candidate_sha256'])
+        self.assertEqual(actions[1]['parent'],actions[0]['candidate_sha256'])
+        self.assertNotEqual(actions[1]['candidate_sha256'],actions[0]['candidate_sha256'])
+        self.assertEqual(actions[1]['reason'],'applied')
+        self.assertEqual(len(compiled.requests),2)
+        self.assertNotEqual(compiled.requests[0][1]['compile_options']['num_warps'],8)
+        self.assertEqual(compiled.requests[1][1]['compile_options']['num_warps'],8)
+        self.assertEqual(evaluator.calls,3)
+        self.assertEqual(audit.endpoint_observation,'qualified')
+
+    def test_withheld_pass_refuses_without_a_second_build_or_evaluation(self):
+        _,_,audit,events,compiled,evaluator = self.execute_fixture([])
+        rows = [event['payload']['actions'][0] for event in events if event['kind']=='author_actions_resolved']
+        self.assertEqual(rows[1]['reason'],'transform_not_granted')
+        self.assertIsNone(rows[1]['candidate_sha256'])
+        self.assertEqual(rows[1]['objects'],[])
+        self.assertEqual(len(compiled.requests),1)
+        self.assertEqual(evaluator.calls,2)
+        self.assertEqual(audit.endpoint_observation,'qualified')  # nominates and confirms the earlier submit after the refused action
+
+    def test_all_denied_actions_form_an_observed_nonqualifying_run(self):
+        _,_,audit,events,compiled,evaluator = self.execute_fixture([],only_transform=True)
+        self.assertFalse(compiled.requests)
+        self.assertEqual(evaluator.calls,0)
+        self.assertEqual(audit.endpoint_observation,'no_qualified_candidate')
+        self.assertTrue(all(event['payload']['candidate_sha256'] is None for event in events if event['kind']=='candidate_selected'))
+
+    def test_foreign_run_parent_is_not_resolved(self):
+        _,_,_,events,compiled,evaluator = self.execute_fixture([PASS],parent='f'*64)
+        row = [event for event in events if event['kind']=='author_actions_resolved'][-1]['payload']['actions'][0]
+        self.assertEqual(row['reason'],'parent_not_authorized')
+        self.assertEqual(len(compiled.requests),1)
+        self.assertEqual(evaluator.calls,2)
+
+    def test_authorized_complete_baseline_fuses_without_caller_private_tensor_promise(self):
+        compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
+        action = {'action':'transform','parent':'baseline:reference','transformation':'fuse_pointwise_epilogue',
+            'parameters':{'producer':'producer','epilogue':'epilogue','schedule_id':'fused','entry_point':'fused'}}
+        result, = resolve_action_set((encoded(action),), environment_kind='open_cake',
+            transformations=['fuse_pointwise_epilogue'],candidates={},
+            baselines={'reference':encoded(epilogue_program())},compiler_factory=lambda:compiler)
+        self.assertEqual(result.reason,'applied')
+        self.assertEqual(len(Program.from_dict(json.loads(result.candidate)).stages),1)
+        self.assertEqual(result.parent,'baseline:reference')
+
+    def test_malformed_python_parent_is_an_action_refusal_not_a_batch_fault(self):
+        payload = encoded({'python_source':42})
+        parent = sha256(payload).hexdigest()
+        compiler = Mock(side_effect=AssertionError('malformed parent reached Compiler'))
+        results = resolve_action_set((encoded(rewrite(parent)),encoded({'action':'submit','candidate':{'turn':2}})),
+            environment_kind='open_cake',transformations=[PASS],candidates={parent:payload},baselines={},
+            compiler_factory=compiler,allow_python=True)
+        self.assertEqual(results[0].reason,'parent_not_program')
+        self.assertIsNone(results[0].candidate)
+        self.assertEqual(json.loads(results[1].candidate),{'turn':2})
+        compiler.assert_not_called()
+
+    def test_replay_rejects_changed_parent_or_result(self):
+        lab,run,audit,events,_,_ = self.execute_fixture([PASS])
+        from copy import deepcopy
+        from open_cake_ir.lab import replay as reader
+        store = EvidenceStore.open(run.evidence_root)
+        for field,value in [('parent','e'*64),('candidate_sha256','e'*64),('reason','unchanged')]:
+            changed = deepcopy(events)
+            [event for event in changed if event['kind']=='author_actions_resolved'][-1]['payload']['actions'][0][field] = value
+            proxy = Mock(wraps=store)
+            proxy.replay_events.return_value = changed
+            result = reader.replay_matched_run(proxy,audit,run.specification,project_root=ROOT,
+                manifest_parser=lab._parse_manifest,task_package=lab.task_package)
+            self.assertFalse(result)
+            self.assertIn('action result differs',str(result.refusals[0]))
+
+    def test_material_and_pass_selection_are_orthogonal_and_frozen(self):
+        lab,specification,_,program = self.fixture([])
+        unit = OptimizationKnowledge.load(KNOWLEDGE).document
+        base = specification.document
+        for explain, grant in ((False,False),(True,False),(False,True),(True,True)):
+            document = json.loads(encoded(base))
+            document['knowledge'] = {'materials':[unit] if explain else [],
+                                     'transformations':['fuse_pointwise_epilogue'] if grant else []}
+            frozen = RunSpecification.from_dict(document)
+            package = lab.task_package(frozen,frozen.run_id)
+            self.assertEqual(unit['mechanism'] in package.task_markdown,explain)
+            self.assertEqual('## Frozen reference: `transformation-api.json`' in package.task_markdown,grant)
+            document['knowledge']['materials'].clear()
+            self.assertEqual(bool(frozen.document['knowledge']['materials']),explain)
+        bad = specification.document;bad['reference_inputs']['baseline_programs']={'p':program}
+        bad['authoring']['reference_access']='clean_start'
+        with self.assertRaisesRegex(ValueError,'known-kernel'):
+            RunSpecification.from_dict(bad)

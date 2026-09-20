@@ -144,14 +144,56 @@ def resolve_executor(
     return ExecutorRevision.load_reference(root, value, f"{context}.executor_revision")
 
 
+def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anchor_path):
+    """Resolve the CLI provider's existing qualification into one authoring value."""
+    from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
+    from .provider_policy import provider_harness
+    harness = provider_harness(provider)
+    if harness not in {'codex','claude-code'}:
+        raise ValueError('CLI task preparation requires a CLI provider')
+    config = load_runtime_config(runtime_path,toolchain_kind=row.runtime_kind)
+    receipt = ProviderQualificationReceipt.load(receipt_path)
+    anchor = json.loads(Path(anchor_path).read_bytes())
+    executable = Path(config['provider']['executable']).resolve(strict=True)
+    observed = sha256(executable.read_bytes()).hexdigest()
+    if observed != receipt.executable_sha256:
+        raise differs('runtime provider executable differs from qualification',
+                      expected=receipt.executable_sha256,observed=observed)
+    bound = json.loads(canonical(provider))
+    bound.update(revision=receipt.provider_revision,executable_sha256=receipt.executable_sha256,
+        qualification={'path':str(receipt_path),'canonical_sha256':receipt.canonical_sha256},
+        qualification_anchor={'path':str(anchor_path),'canonical_sha256':sha256(canonical(anchor)).hexdigest()})
+    if harness=='codex':
+        bound['code_mode_host'] = resolve_codex_code_mode_host(executable)
+    return bound,config
+
+
+def bind_runtime_execution(project_root,row,executor,config,runtime_path):
+    """Freeze one admitted toolchain and broker, shared by Run and Campaign preparation."""
+    toolchain = row.bind(config['toolchain'],executor,author_workspace=config['provider']['workspace_root'])
+    broker = config['broker']
+    execution = {'executor_revision':dict(executor.reference),
+        'broker_execution_sha256':broker_execution_sha256(broker['command'],
+            cwd=Path(broker['cwd']).resolve(strict=True),project_root=Path(project_root),
+            timeout_seconds=broker['timeout_seconds'],service_user=broker['service_user'],service_group=broker['service_group']),
+        'runtime_config':{'path':str(runtime_path),'sha256':sha256(Path(runtime_path).read_bytes()).hexdigest()}}
+    return toolchain.canonical_sha256,execution
+
+
+def bind_fixed_baseline(project_root,path,selection=None):
+    baseline = load_baseline_bundle(project_root,path)
+    fixed = {'bundle_path':str(external_file(project_root,str(path),'fixed baseline bundle')),
+             'candidate':candidate_identity(baseline)}
+    if selection is not None:
+        from .incumbents import validate_baseline_selection
+        fixed['selection'] = validate_baseline_selection(selection)
+    return fixed
+
+
 def resolve_execution_bindings(
     project_root: str | Path, study, bindings_path: str | Path | None
 ) -> tuple[dict[str, object], ExecutorRevision | None]:
     """Return resolved runtime leaves and the Executor already validated for them."""
-    # providers and provider_policy reach this module through task_package and
-    # reference_access, so they stay function-local.
-    from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
-
     document = json.loads(canonical(study.document))
     arms = document['arms']
     single = set(arms) == {"open_cake"} and document["claim_scope"] == "artifact_optimization_only"
@@ -192,8 +234,6 @@ def resolve_execution_bindings(
     receipt_path = external_file(project_root, bindings['qualification_path'], 'qualification')
     anchor_path = external_file(project_root, bindings['qualification_anchor_path'], 'qualification anchor')
     runtime_path = external_file(project_root, bindings['runtime_config_path'], 'runtime configuration')
-    receipt = ProviderQualificationReceipt.load(receipt_path)
-    anchor = json.loads(anchor_path.read_bytes())
     if single:
         route = arms["open_cake"].get("lowering_route")
         if not isinstance(route, Mapping) or "backend" not in route:
@@ -201,45 +241,18 @@ def resolve_execution_bindings(
         row = single_environment_toolchain(route["backend"])
     else:
         row = toolchain_for(policy.backend)
-    config = load_runtime_config(runtime_path, toolchain_kind=row.runtime_kind)
-    executable = Path(config['provider']['executable']).resolve(strict=True)
-    observed_executable_sha256 = sha256(executable.read_bytes()).hexdigest()
-    if observed_executable_sha256 != receipt.executable_sha256:
-        raise differs(
-            'runtime provider executable differs from qualification',
-            expected=receipt.executable_sha256, observed=observed_executable_sha256,
-        )
-    code_mode_host = resolve_codex_code_mode_host(executable) if harness == "codex" else None
+    provider,config = bind_cli_provider(project_root,arms['open_cake']['provider'],row,
+        runtime_path=runtime_path,receipt_path=receipt_path,anchor_path=anchor_path)
     for arm in arms.values():
-        provider = arm['provider']
-        provider.update(revision=receipt.provider_revision, executable_sha256=receipt.executable_sha256,
-            qualification={'path': str(receipt_path), 'canonical_sha256': receipt.canonical_sha256},
-            qualification_anchor={'path': str(anchor_path), 'canonical_sha256': sha256(canonical(anchor)).hexdigest()})
-        if code_mode_host is not None:
-            provider['code_mode_host'] = code_mode_host
-    # current_release resolves once, with the existing Executor resolver's closure checks.
-    executor = resolve_executor(Path(project_root), execution['executor_revision'],
-        'study.execution', template=True, target=execution['target'])
-    executor_reference = dict(executor.reference)
-    toolchain = row.bind(config['toolchain'], executor,
-                         author_workspace=config['provider']['workspace_root'])
+        arm['provider'] = json.loads(canonical(provider))
+    executor = resolve_executor(Path(project_root),execution['executor_revision'],
+        'study.execution',template=True,target=execution['target'])
+    toolchain_sha256,bound_execution = bind_runtime_execution(project_root,row,executor,config,runtime_path)
     for arm in arms.values():
-        arm['toolchain_sha256'] = toolchain.canonical_sha256
-    broker = config['broker']
-    command = broker['command']
-    execution['executor_revision'] = executor_reference
-    execution['broker_execution_sha256'] = broker_execution_sha256(command,
-        cwd=Path(broker['cwd']).resolve(strict=True), project_root=Path(project_root),
-        timeout_seconds=broker['timeout_seconds'], service_user=broker['service_user'], service_group=broker['service_group'])
-    baseline = load_baseline_bundle(project_root, bindings['fixed_baseline_bundle_path'])
-    fixed_baseline = {'bundle_path': str(external_file(project_root,
-        bindings['fixed_baseline_bundle_path'], 'fixed baseline bundle')), 'candidate': candidate_identity(baseline)}
-    if version == 2:
-        from .incumbents import validate_baseline_selection
-        fixed_baseline['selection'] = validate_baseline_selection(
-            bindings['fixed_baseline_selection'])
-    execution['fixed_baseline'] = fixed_baseline
-    execution['runtime_config'] = {'path': str(runtime_path), 'sha256': sha256(runtime_path.read_bytes()).hexdigest()}
+        arm['toolchain_sha256'] = toolchain_sha256
+    execution.update(bound_execution)
+    execution['fixed_baseline'] = bind_fixed_baseline(project_root,bindings['fixed_baseline_bundle_path'],
+        bindings.get('fixed_baseline_selection') if version==2 else None)
     return document, executor
 
 

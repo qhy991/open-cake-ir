@@ -63,6 +63,16 @@ class RuntimeConfigTests(unittest.TestCase):
     def parse(self, value, toolchain_kind="triton"):
         return load_runtime_config(self.write(value), toolchain_kind=toolchain_kind)
 
+    def test_messages_only_runtime_has_no_cli_executable_or_author_workspace(self):
+        document = runtime_document()
+        document['provider'] = {}
+        parsed = load_runtime_config(self.write(document),toolchain_kind='triton',provider_kind='responses')
+        self.assertEqual(parsed['provider'],{})
+        for field in ('executable','workspace_root'):
+            document['provider'] = {field:'/unused'}
+            with self.assertRaisesRegex(ValueError,'provider fields differ'):
+                load_runtime_config(self.write(document),toolchain_kind='triton',provider_kind='responses')
+
     def test_triton_paths_and_guest_aliases_stay_with_the_builder(self):
         host_runtime = self.root / "host-runtime"
         host_runtime.mkdir()
@@ -257,9 +267,8 @@ class RuntimeEntryPointTests(unittest.TestCase):
             (("provider", "workspace_root"), None),
             (("toolchain",), []),
         ]
-        lock = SimpleNamespace(study_kind="matched_search", document={
-            "resolved_inputs": {"arm_environments": {"open_cake": {}, arm: {}}},
-        })
+        specification = SimpleNamespace(environment_kind=arm,document={
+            "authoring":{"provider":{}},"execution":{},"evaluation_protocol":{}})
         for location, value in malformed:
             with self.subTest(field=location, value=value):
                 self.runtime_path.write_text(json.dumps(replace_field(runtime_document(kind), location, value)), encoding="utf-8")
@@ -279,15 +288,18 @@ class RuntimeEntryPointTests(unittest.TestCase):
                     for operation in blocked:
                         operation.assert_not_called()
                 with ExitStack() as stack:
-                    stack.enter_context(patch.object(compose, "_admit_executor", return_value=(object(), None)))
+                    lab = stack.enter_context(patch.object(compose,"TaskLab"))
+                    lab.return_value.preflight_run.return_value = specification
+                    stack.enter_context(patch.object(compose,"_load_workload_binding",return_value=(None,None,
+                        SimpleNamespace(document={"semantics":{"candidate_abi":{}}}))))
                     parser = stack.enter_context(patch.object(compose, "load_runtime_config", wraps=load_runtime_config))
                     blocked = [stack.enter_context(patch.object(compose, name, side_effect=AssertionError("runtime admission must precede execution"))) for name in (
-                        "NvccToolchainBuilder", "CommandBrokerSubmitter", "TaskLab",
+                        "NvccToolchainBuilder", "CommandBrokerSubmitter", "_admit_executor",
                     )]
                     stack.enter_context(patch.object(compose.ProviderQualificationReceipt, "load", side_effect=AssertionError("provider qualification must follow runtime parsing")))
                     with self.assertRaises(ValueError) as execution_error:
-                        compose.execute_matched_from_config(self.project, lock, self.runtime_path, self.external / "unused-evidence")
-                    parser.assert_called_once_with(self.runtime_path, toolchain_kind=kind)
+                        compose.run_runtime_factory(self.project,self.runtime_path)(specification,self.external / "unused-evidence")
+                    parser.assert_called_once_with(self.runtime_path, toolchain_kind=kind, provider_kind="codex")
                     self.assertEqual(str(execution_error.exception), str(binding_error.exception))
                     for operation in blocked:
                         operation.assert_not_called()
@@ -295,20 +307,22 @@ class RuntimeEntryPointTests(unittest.TestCase):
     def test_nvcc_execution_uses_the_nvcc_parser_before_any_runtime_construction(self):
         from open_cake_ir.tasks import compose
 
-        lock = SimpleNamespace(study_kind="matched_search", document={
-            "resolved_inputs": {"arm_environments": {"open_cake": {}, "direct_cuda": {}}},
-        })
+        specification = SimpleNamespace(environment_kind="direct_cuda",document={
+            "authoring":{"provider":{}},"execution":{},"evaluation_protocol":{}})
         for location, value in ((("broker", "timeout_seconds"), True),
                                 (("broker", "command"), ["broker", None]),
                                 (("toolchain", "nvcc"), False)):
             with self.subTest(field=location):
                 self.runtime_path.write_text(json.dumps(replace_field(runtime_document("nvcc"), location, value)), encoding="utf-8")
-                with patch.object(compose, "_admit_executor", return_value=(object(), None)), \
+                with patch.object(compose,"TaskLab") as lab, \
+                     patch.object(compose,"_load_workload_binding",return_value=(None,None,
+                         SimpleNamespace(document={"semantics":{"candidate_abi":{}}}))), \
                      patch.object(compose, "load_runtime_config", wraps=load_runtime_config) as parser, \
                      patch.object(compose, "NvccToolchainBuilder", side_effect=AssertionError("unexpected build")) as builder:
+                    lab.return_value.preflight_run.return_value = specification
                     with self.assertRaises(ValueError):
-                        compose.execute_matched_from_config(self.project, lock, self.runtime_path, self.external / "unused-evidence")
-                    parser.assert_called_once_with(self.runtime_path, toolchain_kind="nvcc")
+                        compose.run_runtime_factory(self.project,self.runtime_path)(specification,self.external / "unused-evidence")
+                    parser.assert_called_once_with(self.runtime_path, toolchain_kind="nvcc",provider_kind="codex")
                     builder.assert_not_called()
 
     def test_direct_broker_boundaries_refuse_invalid_scalars_before_files_or_accounts(self):
