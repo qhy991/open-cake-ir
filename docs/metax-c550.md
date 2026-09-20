@@ -5,8 +5,10 @@ MetaX 的精确 Target 是 [`xcore1002`](../compiler/targets/xcore1002.json)，�
 Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host admission
 由各自的平台实现负责。
 
-当前范围是 **FP32、load / elementwise / reduce / store、完整输出正确性验证**。
-混合精度、cast、tanh instruction contract、矩阵指令、计时和 profiler 尚未启用。
+当前范围是 **FP32 / FP16 / BF16 / INT32 缓冲区、load / cast / elementwise / reduce / store、
+完整输出正确性验证**。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
+INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
+FP8、专用矩阵指令、计时和 profiler 尚未启用。
 这些输入会被具体的 Target/backend rule 拒绝，或明确报告 measurement coverage
 unavailable。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
 
@@ -90,6 +92,13 @@ workspace 必须不存在。`--baseline-only` 构建、封存后退出，不调�
 其报告明确列为 unexamined；不能把 164/164 当作 C550 的设备或 corpus 覆盖。
 本轮没有 kernel 优化机制、性能测量或经验 pass promotion。
 
-下一阶段分别处理 BF16/FP16 舍入与 cast、MACA tanh 数值契约，以及原生 timer / profiler。
+后续数值能力验证在 `open-cake-ir-evidence/metax-numerics-20260920/` 保留独立记录：
+`f1cadbdd` 的七条转换路径共 717114 个输入与标准库 RNE 参考逐 bit 一致；tanh 的
+82097 个有限样本相对 `math.tanh`→FP32 参考最大 2 ULP，保留正负零。源输入 bit pattern
+先在设备内核调用前核对，输出用 NaN 预填充以拒绝漏写。这是独立 primitive diagnostic，
+不等同于 Workload 收据；实际任务通过既有 broker / worker / oracle 另行验证。
+这些观测不构成全域 tanh 误差上界，也不把原始记录重标为后来的源码提交。
+
+下一阶段仍需单独接入原生 timer / profiler。
 FlashInfer GQA/MLA/MoE 和其他精确绑定 B200/B300 的合同仍需各自的后继验证，
 不能只改 target 字符串后宣称可用。

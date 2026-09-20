@@ -20,9 +20,14 @@
     "shared_memory_per_multiprocessor_bytes": 65536,
     "maximum_threads_per_multiprocessor": 2048
   },
-  "instruction_contracts": [],
+  "instruction_contracts": ["maca.tanh.f32"],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "device_observation",
+      "source": "c550-1 MACA 3.5.3 / FlagTree 0.5.1+metax3.1, 2026-09-20, source f1cadbdd",
+      "locator": "Standalone native-kernel diagnostic under the shared MACA user lock: all six FP32/FP16/BF16 cast directions plus INT32-to-FP32 matched the standard-library RNE reference bitwise over 717114 inputs, including every finite FP16/BF16 source pattern, FP32 midpoint neighbors, signed zero, overflow/underflow and INT32 boundaries. MACA libdevice.tanh (CUDA-compatible entry mapped to maca_mathlib, not NVIDIA's implementation) had maximum 2 ULP against math.tanh rounded to FP32 on 82097 finite samples, with signed zero and input bits preserved. This is bounded diagnostic evidence, not a global error proof or a Workload receipt. Raw expected/observed bits and sealed artifacts: c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/primitive-f1cadbdd-v3.tar.gz; local open-cake-ir-evidence/metax-numerics-20260920/primitive-results/. No timing or profiler qualification."
+    },
     {
       "kind": "device_observation",
       "source": "c550-1, probe_metax_host.py against MACA 3.5.3.18, 2026-09-20",

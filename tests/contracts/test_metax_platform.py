@@ -112,6 +112,21 @@ def candidate(lm, x: cake.Tensor((8, 128), "{source_dtype}"), y: cake.Tensor((8,
                 self.assertTrue(assessment.lowering_eligible, assessment.findings)
                 self.assertEqual(self.compiler.lower(assessment).target, "xcore1002")
 
+    def test_gelu_uses_the_declared_maca_math_contract_and_refuses_borrowed_names(self):
+        for task in ("gelu_tanh", "gelu_tanh_backward"):
+            _, source = create_task(task, backend="triton-metax", rows=8, columns=128)
+            document = parse(source).document
+            assessment = self.compiler.assess(document)
+            self.assertTrue(assessment.lowering_eligible, assessment.findings)
+            self.assertIn("libdevice.tanh(", self.compiler.lower(assessment).source)
+            operation = next(op for op in document["operations"] if op["id"] == "tanh")
+            self.assertEqual(operation["parameters"]["instruction"]["contract"], "maca.tanh.f32")
+            for borrowed in ("libdevice.tanh.f32", "ocml.tanh.f32"):
+                operation["parameters"]["instruction"]["contract"] = borrowed
+                refused = self.compiler.assess(document)
+                self.assertFalse(refused.lowering_eligible)
+                self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED", [f.code for f in refused.findings])
+
     def test_missing_timer_is_a_coverage_limitation_and_preserves_all_cases(self):
         document, _ = create_task("rmsnorm", backend="triton-metax", rows=8, columns=128)
         workload = WorkloadContract(document)
