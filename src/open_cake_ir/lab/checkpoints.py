@@ -12,11 +12,11 @@ _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 
 @dataclass(frozen=True)
 class TurnObservation:
-    """One immutable candidate observation within a Run."""
+    """One completed author turn; a refused action may produce no candidate."""
 
     turn: int
     cumulative_provider_tokens: int
-    candidate_sha256: str
+    candidate_sha256: str | None
     qualified: bool
     confirmed_latency_ms: float | None
 
@@ -24,7 +24,8 @@ class TurnObservation:
         if (
             self.turn <= 0
             or self.cumulative_provider_tokens <= 0
-            or _DIGEST.fullmatch(self.candidate_sha256) is None
+            or (self.candidate_sha256 is not None and (not isinstance(self.candidate_sha256, str) or _DIGEST.fullmatch(self.candidate_sha256) is None))
+            or (self.qualified and self.candidate_sha256 is None)
             or not isinstance(self.qualified, bool)
             or (
                 self.qualified

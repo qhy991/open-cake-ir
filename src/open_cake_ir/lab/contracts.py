@@ -692,6 +692,7 @@ class CampaignLock:
             'workload': self.document['workload'],
             'compiler_revision': self.document['compiler_revision'],
             'authoring': resolved['arm_environments'][condition],
+            'knowledge': {'materials': [], 'transformations': []},
             'reference_inputs': ({'baseline_schedule': resolved['arm_environments']['open_cake']['schedule_skeleton']}
                                  if resolved['arm_environments'][condition]['environment_kind'] in {'native_triton', 'native_cute_dsl'} else {}),
             'budget': resolved['budget'], 'run_protocol': resolved['run_protocol'],

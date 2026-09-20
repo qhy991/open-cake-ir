@@ -374,6 +374,8 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
             raise ValueError('Run Schedule skeleton target or lowering route differs')
     for name, reference in document['reference_inputs'].items():
+        if name == 'baseline_programs':
+            continue
         _, skeleton = read_skeleton_reference(project_root, reference, f'Run {name}')
         from .pairing import native_backend
         if (skeleton.get('target') != execution['target']

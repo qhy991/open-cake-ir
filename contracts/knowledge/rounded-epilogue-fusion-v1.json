@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "knowledge_id": "rounded-epilogue-fusion",
+  "version": "1",
+  "mechanism": "Fuse a producer with a pointwise consumer when the materialized intermediate is private to the complete implementation. Retain the explicit low-precision rounding step: forwarding a pre-rounding accumulator changes semantics. A public intermediate or an additional consumer prevents this rewrite. The Compiler owns the exact supported domain; this explanation is not a hardware support table. On a destination target, recheck legality, numerical correctness and whole-implementation performance. The cited evidence is software-only and establishes no target speedup.",
+  "references": [
+    {"role": "source", "locator": "git:9a37f9177661e70ac64d0f93affe69a64f0cca67:src/open_cake_ir/compiler/program_passes.py"},
+    {"role": "counterexample", "locator": "git:9a37f9177661e70ac64d0f93affe69a64f0cca67:tests/contracts/test_program_rewrites.py"},
+    {"role": "counterexample", "locator": "git:9a37f9177661e70ac64d0f93affe69a64f0cca67:tests/contracts/test_epilogue_fusion.py"}
+  ],
+  "transformations": ["fuse_pointwise_epilogue"]
+}

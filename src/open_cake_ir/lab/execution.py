@@ -153,7 +153,7 @@ def execute_campaign(
     evidence = EvidenceStore.create(root)
     for run_id in lock.run_order:
         specification = lock.run_specification(run_id)
-        _execute_run(specification, evidence=evidence, clock=clock, provider=provider,
+        _execute_run(specification, project_root=project_root, evidence=evidence, clock=clock, provider=provider,
                      environment=environments[specification.condition_id], evaluator=evaluator)
 
     return CampaignRef(lock=lock, evidence_root=evidence.root)
@@ -170,14 +170,25 @@ def execute_run(specification: RunSpecification, evidence_root, *, project_root,
                           workload_loader=workload_loader, provider=provider,
                           environment=environment, evaluator=evaluator)
     evidence = EvidenceStore.create(root)
-    _execute_run(specification, evidence=evidence, clock=clock, provider=provider,
+    _execute_run(specification, project_root=project_root, evidence=evidence, clock=clock, provider=provider,
                  environment=environment, evaluator=evaluator)
     return RunRef(specification, evidence.root)
 
 
-def _execute_run(specification: RunSpecification, *, evidence, clock, provider, environment, evaluator):
+def _execute_run(specification: RunSpecification, *, project_root, evidence, clock, provider, environment, evaluator):
     """The one search/evaluation lifecycle for every frozen Run."""
     document = specification.document
+    from open_cake_ir.compiler import Compiler
+    from .actions import resolve_action_set
+    action_compiler = None
+    def compiler_factory():
+        nonlocal action_compiler
+        if action_compiler is None:
+            action_compiler = Compiler.load(project_root, project_root / document['compiler_revision']['path'])
+        return action_compiler
+    prior_candidates = {}
+    baselines = {name: _canonical_json_bytes(program) for name, program in
+                 document['reference_inputs'].get('baseline_programs', {}).items()}
     run_id = specification.run_id
     sequence = document['sequence']
     budget = document['budget']
@@ -292,6 +303,22 @@ def _execute_run(specification: RunSpecification, *, evidence, clock, provider, 
             # the stage the paper spends compile time on to avoid spending GPU
             # time, so building all of them is the point rather than a cost.
             live_stage = "environment"
+            resolutions = resolve_action_set(provider_turn.candidates,
+                environment_kind=kind, transformations=document['knowledge']['transformations'],
+                candidates=prior_candidates, baselines=baselines, compiler_factory=compiler_factory,
+                allow_python=document["authoring"].get("input_format") == "schedule_or_python_v1")
+            action_rows = []
+            resolved_candidates = {}
+            for ordinal, resolution in enumerate(resolutions):
+                row = {'ordinal': ordinal, **resolution.document, 'objects': []}
+                if resolution.candidate is not None:
+                    obj = evidence.put(resolution.candidate, media_type=environment.media_type)
+                    row['objects'] = [obj.reference('resolved_candidate')]
+                    resolved_candidates[obj.sha256] = resolution.candidate
+                action_rows.append(row)
+            ledger.append('author_actions_resolved', {'turn': turn_number, 'actions': action_rows})
+            prior_candidates.update(resolved_candidates)
+            action_feedback = [{key: value for key, value in row.items() if key != 'objects'} for row in action_rows]
             (
                 built,
                 launchable_first,
@@ -302,12 +329,18 @@ def _execute_run(specification: RunSpecification, *, evidence, clock, provider, 
                 empirical_enabled=empirical_enabled,
                 environment=environment,
                 ledger=ledger,
-                provider_turn=provider_turn,
+                candidate_payloads=tuple(resolved_candidates.values()),
                 turn_number=turn_number,
             )
             record_candidate_rejections(
                 built=built, evidence=evidence, ledger=ledger, turn_number=turn_number, arm=kind,
             )
+            if not built:
+                ledger.append('candidate_selected', {'turn': turn_number, 'candidate_sha256': None,
+                    'qualified_search_candidates': [], 'reason': 'no_candidate_produced'})
+                observations.append(TurnObservation(turn_number, cumulative_tokens, None, False, None))
+                feedback = {'stage': 'authoring', 'author_actions': action_feedback}
+                continue
             submission, environment_result = built[launchable_first[0]]
             if environment_result.disposition == "rejected":
                 ledger.append(
@@ -509,6 +542,8 @@ def _execute_run(specification: RunSpecification, *, evidence, clock, provider, 
                         else None
                     )
                 feedback = MappingProxyType(feedback_document)
+            if any(row["kind"] != "submit" or row["action_sha256"] != row["candidate_sha256"] for row in action_rows):
+                feedback = MappingProxyType({**feedback, "author_actions": action_feedback})
             rejected_peers = rejected_peer_feedback(built, arm=kind)
             if rejected_peers:
                 feedback = MappingProxyType({**feedback, "rejected_candidates": rejected_peers})

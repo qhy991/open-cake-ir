@@ -16,6 +16,7 @@ from ._policies import _matched_evidence_policy_version
 from .endpoints import endpoint_policy
 from .run_controls import validate_run_controls
 from .reference_access import validate_declarations
+from .knowledge import validate_knowledge_access
 
 
 @dataclass(frozen=True)
@@ -28,7 +29,7 @@ class RunSpecification:
         fields = {'schema_version', 'run_id', 'sequence', 'assignment', 'workload',
                   'compiler_revision', 'authoring', 'budget', 'run_protocol',
                   'agent_interface', 'evidence_policy', 'evaluation_protocol',
-                  'execution', 'endpoint_policy', 'reference_inputs'}
+                  'execution', 'endpoint_policy', 'reference_inputs', 'knowledge'}
         if set(document) != fields or type(document['schema_version']) is not int or document['schema_version'] != 1:
             raise ValueError('Run specification fields or schema_version differ')
         run_id = _name(document['run_id'], 'run.run_id')
@@ -61,11 +62,24 @@ class RunSpecification:
         if 'compiler_revision' in authoring and authoring['compiler_revision'] != compiler:
             raise ValueError('authoring Compiler reference differs from the Run Compiler')
         validate_declarations({'author': authoring})
+        validate_knowledge_access(document['knowledge'], environment_kind=authoring['environment_kind'])
         references = _object(document['reference_inputs'], 'run.reference_inputs')
         expected_references = {'baseline_schedule'} if authoring['environment_kind'] in {'native_triton', 'native_cute_dsl'} else set()
-        if set(references) != expected_references:
+        if not expected_references <= set(references) <= expected_references | {'baseline_programs'}:
             raise ValueError('Run reference inputs differ from its authoring environment')
-        for reference in references.values():
+        baselines = references.get('baseline_programs', {})
+        if not isinstance(baselines, Mapping) or any(not isinstance(name, str) or not name for name in baselines):
+            raise ValueError('Run baseline Programs require named frozen implementations')
+        if baselines and (authoring['environment_kind'] != 'open_cake' or authoring['reference_access'] != 'known_kernel_reproduction'):
+            raise ValueError('baseline Programs require authorized known-kernel reproduction')
+        from open_cake_ir.compiler import Program
+        for value in baselines.values():
+            program = Program.from_dict(value)
+            if program.target != document['execution']['target']:
+                raise ValueError('baseline Program target differs from the Run')
+        for name, reference in references.items():
+            if name == 'baseline_programs':
+                continue
             if not isinstance(reference, Mapping) or set(reference) != {'path', 'canonical_sha256'}:
                 raise ValueError('Run baseline Schedule reference differs')
             _name(reference['path'], 'run.reference.path')

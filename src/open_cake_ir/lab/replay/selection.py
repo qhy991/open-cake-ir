@@ -83,7 +83,7 @@ def _replay_candidate_selection(
             disposition = row.get("disposition")
             cost = row.get("cost")
             semantic_sha256 = row.get("semantic_sha256")
-            if not isinstance(candidate_sha256, str) or _DIGEST.fullmatch(candidate_sha256) is None:
+            if candidate_sha256 is not None and (not isinstance(candidate_sha256, str) or _DIGEST.fullmatch(candidate_sha256) is None):
                 refuse(f"{row_location}.candidate_sha256", "not a SHA256 digest", observed=candidate_sha256)
             if candidate_sha256 in dispositions:
                 refuse(f"{row_location}.candidate_sha256", "a second row for one candidate",
@@ -180,7 +180,7 @@ def _replay_candidate_selection(
             refuse(f"{location}.payload.turn", "no candidate set was submitted in this Turn",
                    observed=turn, expected=candidate_set_turns)
         location = event_location("candidate_selected", turn=turn)
-        if not isinstance(candidate_sha256, str) or _DIGEST.fullmatch(candidate_sha256) is None:
+        if candidate_sha256 is not None and (not isinstance(candidate_sha256, str) or _DIGEST.fullmatch(candidate_sha256) is None):
             refuse(f"{location}.payload.candidate_sha256", "not a SHA256 digest", observed=candidate_sha256)
         if not isinstance(qualified, list) or any(
             not isinstance(value, str) or _DIGEST.fullmatch(value) is None
@@ -226,8 +226,16 @@ def _replay_candidate_selection(
                 if turn != fault_turn:
                     refuse(location, "no selection for a Turn that did not fault", expected=fault_turn)
                 continue
-            selected = cast(str, selection["candidate_sha256"])
+            selected = selection['candidate_sha256']
             order = filter_order[turn]
+            if not order:
+                if (selected is not None or selection['qualified_search_candidates'] != []
+                    or selection['reason'] != 'no_candidate_produced'):
+                    refuse(location, 'an action-only turn cannot select a candidate')
+                observations.append(TurnObservation(turn, cumulative_by_turn[turn], None, False, None))
+                continue
+            if selected is None:
+                refuse(location, 'candidate selection is missing despite produced candidates')
             dispositions = filter_disposition[turn]
             if selected not in provider_candidates:
                 refuse(f"{location}.payload.candidate_sha256",

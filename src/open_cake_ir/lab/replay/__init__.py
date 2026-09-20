@@ -352,6 +352,17 @@ def _replay_matched_run(
         fault_terminal_tokens = fault_terminal_value
 
     from open_cake_ir.compiler import Compiler
+    from .actions import replay_actions
+    action_compiler = None
+    def compiler_factory():
+        nonlocal action_compiler
+        if action_compiler is None:
+            action_compiler = Compiler.load(project_root, project_root / compiler_ref['path'])
+        return action_compiler
+    provider_candidates_by_turn, provider_candidate_bytes = replay_actions(
+        specification=lock, events=events, evidence=evidence,
+        provider_candidates_by_turn=provider_candidates_by_turn, provider_candidate_bytes=provider_candidate_bytes,
+        compiler_factory=compiler_factory, fault_turn=fault_turn)
     candidates = _replay_candidates(
         arm=lock.environment_kind,
         case_id=case_id,
@@ -361,7 +372,7 @@ def _replay_matched_run(
         faults=faults,
         lock=lock,
         manifest_parser=manifest_parser,
-        compiler_factory=lambda: Compiler.load(project_root, project_root / compiler_ref["path"]),
+        compiler_factory=compiler_factory,
         provider_candidate_bytes=provider_candidate_bytes,
         protocol_sha256=protocol_sha256,
         provider_candidates_by_turn=provider_candidates_by_turn,

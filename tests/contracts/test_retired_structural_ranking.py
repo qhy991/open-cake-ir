@@ -22,7 +22,7 @@ class DefaultCandidateOrderingTests(unittest.TestCase):
         ledger.append.side_effect = append
         built, order, applied, rows, summary = _build_filter_candidates(
             empirical_enabled=False, environment=SimpleNamespace(media_type='text/x-cuda', build=build),
-            ledger=ledger, provider_turn=SimpleNamespace(candidates=payloads), turn_number=1)
+            ledger=ledger, candidate_payloads=payloads, turn_number=1)
         self.assertEqual([built[i][0].payload for i in order], [b'first', b'last', b'rejected'])
         self.assertFalse(applied)
         self.assertIsNone(summary)

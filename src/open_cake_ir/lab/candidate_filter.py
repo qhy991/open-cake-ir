@@ -16,7 +16,7 @@ def _build_filter_candidates(
     empirical_enabled: bool,
     environment: AuthoringEnvironment,
     ledger: RunLedger,
-    provider_turn: ProviderTurn,
+    candidate_payloads: tuple[bytes, ...],
     turn_number: int,
 ) -> tuple[
     list[tuple[CandidateSubmission, EnvironmentResult]],
@@ -26,7 +26,7 @@ def _build_filter_candidates(
     dict[str, object] | None,
 ]:
     built = []
-    for payload in provider_turn.candidates:
+    for payload in candidate_payloads:
         entry = CandidateSubmission.seal(environment.media_type, payload)
         built.append((entry, environment.build(entry)))
     launchable_first = [

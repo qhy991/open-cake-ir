@@ -63,6 +63,7 @@ _MATCHED_EVENT_KINDS_V1 = frozenset(
     {
         "run_started",
         "provider_turn_completed",
+        "author_actions_resolved",
         "candidate_set_filtered",
         "candidate_rejected",
         "launchable_candidate_sealed",

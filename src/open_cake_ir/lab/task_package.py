@@ -130,6 +130,15 @@ def build_run_reference_documents(
         "target.json": _read_relative(root, target_relative, "target"),
         "scaffold.md": scaffold_bytes,
     }
+    from .knowledge import transformation_surface
+    knowledge = lock.document['knowledge']
+    if knowledge['materials']:
+        documents['optimization-knowledge.json'] = _canonical_json(knowledge['materials']).encode()
+    if knowledge['transformations']:
+        documents['transformation-api.json'] = _canonical_json(transformation_surface(knowledge['transformations'])).encode()
+    baselines = lock.document['reference_inputs'].get('baseline_programs', {})
+    if baselines:
+        documents['authorized-programs.json'] = _canonical_json(baselines).encode()
     environment_kind = arm.get("environment_kind")
     if environment_kind == "open_cake":
         skeleton_ref = _object(arm["schedule_skeleton"], "arm.schedule_skeleton")
@@ -336,6 +345,18 @@ The comparison baseline is the frozen black-box `{baseline_source}` artifact
 (`promotion_run_id={promotion_run}`). Its identity is in `run-authority.json`; its
 implementation is not additional reference access. Improve against its measured latency,
 and never call or inspect it from a Candidate.
+
+## Author actions and candidate output
+
+A Cake member can submit an implementation directly, or use
+`{{"action":"submit","candidate":<complete implementation>}}`.
+A granted rewrite uses `{{"action":"transform","parent":<prior candidate id or baseline:name>,
+"transformation":<granted name>,"parameters":<object>}}`.
+Use the exact candidate ids returned in feedback. A transform produces a new complete
+candidate or an explicit refusal; it does not confer correctness or performance.
+Only the APIs in `transformation-api.json`, when present, are granted. Every request
+counts toward the per-turn proposal limit, including refused requests. Material tokens
+are part of native provider usage; transform/build work consumes the Run wall budget.
 
 ## Candidate output
 

@@ -85,6 +85,14 @@ def document_role(name: str, access: str) -> str:
     """Describe controlled package slots; the caller cannot assign arbitrary roles."""
     if access not in REFERENCE_ACCESS:
         raise ValueError("task reference access category differs")
+    if name == 'optimization-knowledge.json':
+        return 'frozen_optimization_explanations_and_evidence_references'
+    if name == 'transformation-api.json':
+        return 'granted_Compiler_transformation_API'
+    if name == 'authorized-programs.json':
+        if access != 'known_kernel_reproduction':
+            raise ValueError('complete baseline Program reference is not authorized')
+        return 'target_implementation'
     if name == "workload.json":
         return "mathematical_specification_and_oracle"
     if name == "target.json":
