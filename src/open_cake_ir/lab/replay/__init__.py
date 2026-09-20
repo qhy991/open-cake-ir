@@ -11,7 +11,7 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 from .._documents import _canonical_json_bytes, _object
 from .._policies import _MATCHED_EVENT_KINDS_V1, _matched_evidence_policy_version
 from ..claude import CLAUDE_EVENT_CONTRACTS, candidate_write_declared_unwitnessed
-from ..contracts import CampaignLock
+from ..run_spec import RunSpecification
 from ..executor import ExecutorRevision
 from ..endpoints import endpoint_policy
 from ..evaluation_lifecycle import replay_evaluation_invocations
@@ -61,7 +61,7 @@ def _fault_message_is_closed(payload) -> bool:
 def replay_matched_run(
     evidence: EvidenceStore,
     audit: RunAudit,
-    lock: CampaignLock,
+    lock: RunSpecification,
     *,
     project_root: Path,
     manifest_parser: Callable,
@@ -90,7 +90,7 @@ def replay_matched_run(
 def _replay_matched_run(
     evidence: EvidenceStore,
     audit: RunAudit,
-    lock: CampaignLock,
+    lock: RunSpecification,
     *,
     project_root: Path,
     manifest_parser: Callable,
@@ -100,9 +100,7 @@ def _replay_matched_run(
     compiler_ref = _identity_reference(lock.document["compiler_revision"], "compiler_revision")
     load_compiler_reference(project_root, compiler_ref, "replay.compiler_revision")
     events = evidence.replay_events(audit.run_id)
-    resolved_inputs = _object(
-        lock.document["resolved_inputs"], "resolved_inputs"
-    )
+    resolved_inputs = lock.document
     event_vocabulary = _matched_evidence_policy_version(
         _object(
             resolved_inputs["evidence_policy"],
@@ -110,11 +108,11 @@ def _replay_matched_run(
         ),
         "resolved_inputs.evidence_policy",
     )
-    arm = audit.run_id.rsplit("-", 1)[0]
+    arm = lock.condition_id
     kinds = [event.get("kind") for event in events]
-    if audit.run_id not in lock.run_order:
+    if audit.run_id != lock.run_id:
         refuse("run_id", "not a Run of this Campaign Lock", observed=audit.run_id,
-               expected=lock.run_order)
+               expected=lock.run_id)
     unknown_kinds = [
         f"events[{index}]" for index, kind in enumerate(kinds) if kind not in _MATCHED_EVENT_KINDS_V1
     ]
@@ -133,7 +131,7 @@ def _replay_matched_run(
         events[0].get("payload"), "run_started.payload"
     )
     expected_start = {
-        "sequence": lock.run_order.index(audit.run_id) + 1,
+        "sequence": lock.document["sequence"],
         "assigned_arm": arm,
         "automatic_retries": 0,
         "replacement_run": False,
@@ -202,7 +200,7 @@ def _replay_matched_run(
     provider_events = [event for event in events if event.get("kind") == "provider_turn_completed"]
     checkpoint_events = [event for event in events if event.get("kind") == "checkpoints_projected"]
     if not provider_events:
-        if (endpoint_policy(lock.analysis_plan) is not None and audit.protocol_adherence == "adhered" and
+        if (endpoint_policy(lock.terminal_policy) is not None and audit.protocol_adherence == "adhered" and
                 kinds == ["run_started", "checkpoints_projected", "run_terminal"]):
             protocol = lock.document["evaluation_protocol"]
             _replay_terminal(
@@ -224,11 +222,9 @@ def _replay_matched_run(
     maximum_candidates_per_turn = int(
         replay_budget.get("maximum_candidates_per_turn", 1)
     )
-    arm_environments = _object(
-        resolved_inputs["arm_environments"], "resolved_inputs.arm_environments"
-    )
+    authoring = lock.document["authoring"]
     empirical_selection = None
-    selection_binding = arm_environments[arm].get("candidate_selection")
+    selection_binding = authoring.get("candidate_selection")
     if selection_binding is not None:
         executor = ExecutorRevision.load_reference(
             project_root,
@@ -245,7 +241,7 @@ def _replay_matched_run(
             target=lock.document["execution"]["target"],
         )
     provider_authority = _object(
-        _object(arm_environments[arm], f"arm_environments.{arm}")["provider"],
+        _object(authoring, f"arm_environments.{arm}")["provider"],
         f"arm_environments.{arm}.provider",
     )
     event_contract = str(
@@ -256,6 +252,7 @@ def _replay_matched_run(
     )
     provider = _replay_provider_turns(
         arm=arm,
+        environment_kind=lock.environment_kind,
         audit=audit,
         event_contract=event_contract,
         evidence=evidence,
@@ -356,7 +353,7 @@ def _replay_matched_run(
         fault_terminal_tokens = fault_terminal_value
 
     candidates = _replay_candidates(
-        arm=arm,
+        arm=lock.environment_kind,
         case_id=case_id,
         events=events,
         evidence=evidence,
@@ -431,7 +428,7 @@ def _replay_provider_fault(
     audit: RunAudit,
     checkpoint_events: Sequence[Mapping[str, object]],
     events: Sequence[Mapping[str, object]],
-    lock: CampaignLock,
+    lock: RunSpecification,
     evidence: EvidenceStore,
 ) -> None:
     """A Run whose first provider Turn faulted: exactly four events and a zero-Turn terminal."""
@@ -459,8 +456,8 @@ def _replay_provider_fault(
     if not isinstance(terminal_tokens, int) or isinstance(terminal_tokens, bool) or terminal_tokens < 0:
         refuse("run_fault.payload.terminal_provider_tokens", "not a non-negative integer",
                observed=terminal_tokens)
-    arm = audit.run_id.rsplit("-", 1)[0]
-    provider = lock.document["resolved_inputs"]["arm_environments"][arm].get("provider", {})
+    arm = lock.condition_id
+    provider = lock.document["authoring"].get("provider", {})
     delta = replay_fault_usage(payload=fault_payload, evidence=evidence, provider=provider)
     if terminal_tokens != delta:
         refuse("run_fault.payload.terminal_provider_tokens",

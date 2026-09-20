@@ -185,7 +185,7 @@ def _replay_candidates(
             candidate_sha256 = payload.get("candidate_sha256")
             expected_fields = {"turn", "purpose", "candidate_sha256", "objects"}
             if purpose == "confirmatory" and (
-                native_backend(comparison_arm(lock.document["resolved_inputs"]["arm_environments"])) is not None
+                native_backend(lock.environment_kind) is not None
                 or paired_protocol(lock.document["evaluation_protocol"]) is not None
             ):
                 expected_fields.add("elapsed_wall_seconds")

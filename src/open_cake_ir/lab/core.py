@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Mapping
 
 from . import contracts, execution, preflight, replay, reporting
+from .run_spec import RunSpecification, RunRef
 
 if TYPE_CHECKING:
     from open_cake_ir.evidence import EvidenceStore, RunAudit
@@ -66,6 +67,17 @@ class Lab:
             validate_study=self._validate_study,
         )
 
+    def _validate_run(self, specification: RunSpecification) -> None:
+        """Task-owned target/evaluation admission, independent of Study policy."""
+
+    def execute_run(self, specification: RunSpecification, evidence_root: str | Path, *,
+                    provider, environment, evaluator) -> RunRef:
+        return execution.execute_run(
+            specification, evidence_root, project_root=self._root,
+            workload_loader=self._load_workload, clock=self._clock, provider=provider,
+            environment=environment, evaluator=evaluator, validate_run=self._validate_run,
+        )
+
     def reference_campaign(
         self,
         lock: contracts.CampaignLock,
@@ -107,11 +119,23 @@ class Lab:
         return replay.replay_matched_run(
             evidence,
             audit,
-            lock,
+            lock.run_specification(audit.run_id),
             project_root=self._root,
             manifest_parser=self._parse_manifest,
             task_package=self.task_package,
         )
+
+    def audit_run(self, run: RunRef):
+        from open_cake_ir.evidence import EvidenceStore
+        evidence = EvidenceStore.open(run.evidence_root)
+        audit = evidence.audit_run(run.specification.run_id)
+        if not audit.archive_integrity or audit.authority_sha256 != run.specification.canonical_sha256:
+            raise ValueError('Run evidence authority or archive integrity differs')
+        result = replay.replay_matched_run(
+            evidence, audit, run.specification, project_root=self._root,
+            manifest_parser=self._parse_manifest, task_package=self.task_package,
+        )
+        return audit, result
 
     def threshold_view(
         self,

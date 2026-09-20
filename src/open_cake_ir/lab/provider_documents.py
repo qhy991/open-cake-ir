@@ -87,6 +87,7 @@ def _project_candidate_submission(
     *,
     submission_contract: str,
     arm: str | None,
+    environment_kind: str = "open_cake",
     maximum_candidates_per_turn: int,
 ) -> tuple[bytes, ...]:
     """Project one sealed provider file into the ordered semantic Candidate set."""
@@ -97,7 +98,7 @@ def _project_candidate_submission(
         or maximum_candidates_per_turn <= 0
     ):
         raise ValueError("provider maximum candidates per Turn differs")
-    if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or arm not in {
+    if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or not isinstance(arm, str) or not arm or environment_kind not in {
         "open_cake",
         "direct_cuda",
         "native_triton",
@@ -128,7 +129,7 @@ def _project_candidate_submission(
         or len(candidates) > maximum_candidates_per_turn
     ):
         raise ValueError("provider candidate-set envelope count differs")
-    if arm in {"open_cake", "native_triton", "native_cute_dsl"}:
+    if environment_kind in {"open_cake", "native_triton", "native_cute_dsl"}:
         if any(not isinstance(candidate, Mapping) for candidate in candidates):
             raise ValueError("Open Cake candidate-set member is not a Schedule object")
         projected = tuple(_canonical_json_bytes(candidate) for candidate in candidates)

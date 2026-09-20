@@ -113,13 +113,13 @@ def _replay_terminal(
     boundary_converted: bool = False,
 ) -> None:
     """Refuse unless the terminal, checkpoints and Ralph state rederive from the Run's facts."""
-    if not observations and not faults and endpoint_policy(lock.analysis_plan) is None:
+    if not observations and not faults and endpoint_policy(lock.terminal_policy) is None:
         refuse("run_terminal", "a Run with no Turn observation and no fault has no terminal to derive")
     observed_turns = [item.turn for item in observations]
     if observed_turns != list(range(1, len(observations) + 1)):
         refuse("checkpoints_projected", "observed Turns are not 1..n", observed=observed_turns,
                expected=list(range(1, len(observations) + 1)))
-    resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
+    resolved = lock.document
     budget = _object(resolved["budget"], "resolved_inputs.budget")
     terminal_tokens = fault_terminal_tokens if fault_terminal_tokens is not None else max(cumulative_by_turn.values(), default=0)
     projected = project_checkpoints(
@@ -175,7 +175,7 @@ def _replay_terminal(
     if not isinstance(active_authoring, (int, float)) or isinstance(active_authoring, bool):
         refuse("checkpoints_projected.payload.ralph.active_authoring_seconds", "not a number",
                observed=active_authoring)
-    if endpoint_policy(lock.analysis_plan) is not None:
+    if endpoint_policy(lock.terminal_policy) is not None:
         expected_turn = min(budget["maximum_turns"] + 1, len(observations) + 1)
         if state_turn != expected_turn:
             refuse("checkpoints_projected.payload.ralph.iteration",
@@ -215,7 +215,7 @@ def _replay_terminal(
     expected_observation, expected_endpoint = matched_endpoint(
         checkpoint=projected[-1], observations=observations,
         terminal_provider_tokens=terminal_tokens, protocol_adherence=audit.protocol_adherence,
-        terminal_reason=expected_stop_reason, analysis=lock.analysis_plan,
+        terminal_reason=expected_stop_reason, analysis=lock.terminal_policy,
     )
     if audit.endpoint_observation != expected_observation:
         refuse("run_terminal.payload.endpoint_observation",
@@ -223,7 +223,7 @@ def _replay_terminal(
                observed=audit.endpoint_observation, expected=expected_observation)
     observed_endpoint = dict(audit.endpoint) if audit.endpoint is not None else None
     endpoint_matches = observed_endpoint == expected_endpoint
-    if endpoint_policy(lock.analysis_plan) is not None:
+    if endpoint_policy(lock.terminal_policy) is not None:
         # Exact JSON types as well as fields: observed zero is not False, and a
         # typed terminal token count cannot be substituted by an equal float.
         endpoint_matches = canonical_json_bytes(observed_endpoint) == canonical_json_bytes(expected_endpoint)

@@ -24,12 +24,7 @@ from open_cake_ir.serialization import canonical_json_bytes
 TASK_AGENTS_RALPH_V1 = "task_agents_ralph_v1"
 
 
-class CampaignLockLike(Protocol):
-    document: Mapping[str, object]
-    study_id: str
-    study_kind: str
-    claim_scope: str
-    run_order: tuple[str, ...]
+from .run_spec import RunSpecification
 
 
 def _canonical_json(value: object) -> str:
@@ -75,7 +70,7 @@ def _read_relative(root: Path, value: object, context: str) -> bytes:
 
 def build_run_reference_documents(
     project_root: str | Path,
-    lock: CampaignLockLike,
+    lock: RunSpecification,
     arm: Mapping[str, object],
     *, workload_contract: WorkloadContract, prepare_schedule: Callable,
 ) -> Mapping[str, bytes]:
@@ -92,11 +87,10 @@ def build_run_reference_documents(
     # The Compiler declares every document under compiler/targets, so the package reads
     # the Target from there rather than from a second reference table.
     target_relative = f"compiler/targets/{target_id}.json"
-    resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
-    assigned_arms = _object(resolved["arm_environments"], "arm_environments")
-    if not any(arm == value for value in assigned_arms.values()):
+    resolved = lock.document
+    if arm != resolved["authoring"]:
         raise ValueError("task package Authoring Environment differs from the frozen arm")
-    validate_reference_handoff(root, assigned_arms)
+    validate_reference_handoff(root, {"author": arm})
     # External task instructions may change after preflight. Verify the actual
     # payload once at delivery, against the existing frozen reference, and reuse
     # those bytes below rather than reopening the file after the check.
@@ -121,7 +115,7 @@ def build_run_reference_documents(
         }
     run_authority = {
         "schema_version": 1,
-        "study": lock.document["study"],
+        "assignment": lock.document["assignment"],
         "workload": lock.document["workload"],
         "authoring_environment": authoring_environment,
         "budget": resolved["budget"],
@@ -163,8 +157,7 @@ def build_run_reference_documents(
             policy = backend_policy(arm["lowering_route"]["backend"])
             documents[policy.authoring_file] = (root / "docs/en" / policy.document).read_bytes()
     elif environment_kind != "direct_cuda" and (policy := native_backend(environment_kind)) is not None:
-        open_arm = _object(_object(resolved["arm_environments"], "arm_environments")["open_cake"], "open_cake")
-        skeleton_ref = _object(open_arm["schedule_skeleton"], "schedule_skeleton")
+        skeleton_ref = resolved["reference_inputs"]["baseline_schedule"]
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
         baseline = bind_baseline(json.loads(_read_relative(root, skeleton_ref["path"], "schedule_skeleton")), workload_contract, case_id)
         compiler_instance = Compiler.load(root, root / str(compiler["path"]))
@@ -224,6 +217,7 @@ class TaskPackage:
     arm: str
     task_markdown: str
     agents_markdown: str
+    environment_kind: str = "open_cake"
 
     @property
     def task_sha256(self) -> str:
@@ -294,21 +288,20 @@ def render_task_request(
 
 def render_task_package(
     project_root: str | Path,
-    lock: CampaignLockLike,
+    lock: RunSpecification,
     run_id: str,
     *, workload_contract: WorkloadContract, prepare_schedule: Callable,
 ) -> TaskPackage:
     """Render TASK.md and AGENTS.md from canonical owners, never from run history."""
 
-    if lock.study_kind != "matched_search" or run_id not in lock.run_order:
-        raise ValueError("task package requires one matched Campaign Run")
-    resolved = _object(lock.document["resolved_inputs"], "resolved_inputs")
+    if run_id != lock.run_id:
+        raise ValueError("task package requires its assigned Run")
+    resolved = lock.document
     interface = _object(resolved.get("agent_interface"), "resolved_inputs.agent_interface")
     if interface != {"schema_version": 1, "kind": TASK_AGENTS_RALPH_V1}:
         raise ValueError("Campaign agent interface differs")
-    arm = run_id.rsplit("-", 1)[0]
-    arms = _object(resolved["arm_environments"], "resolved_inputs.arm_environments")
-    authority = _object(arms[arm], f"arm_environments.{arm}")
+    arm = lock.condition_id
+    authority = resolved["authoring"]
     documents = build_run_reference_documents(project_root, lock, authority,
         workload_contract=workload_contract, prepare_schedule=prepare_schedule)
     budget = _object(resolved["budget"], "resolved_inputs.budget")
@@ -331,13 +324,13 @@ def render_task_package(
         else None
     )
     output_contract = f'`{{"arm":"{arm}","candidates":[...],"schema_version":1}}`'
-    task = f"""# TASK.md — {lock.study_id} / {run_id}
+    task = f"""# TASK.md — {run_id}
 
 ## Objective
 
 Produce structurally distinct `{arm}` Candidates for the frozen Workload case
 `{evaluation['case_id']}` and improve the confirmed absolute latency without violating
-correctness, artifact custody, or the declared Claim Scope `{lock.claim_scope}`.
+correctness, artifact custody, or the frozen Run authority.
 
 The comparison baseline is the frozen black-box `{baseline_source}` artifact
 (`promotion_run_id={promotion_run}`). Its identity is in `run-authority.json`; its
@@ -371,7 +364,7 @@ can promote a Candidate or support a checkpoint.
 
 ## Claim boundary
 
-This Run is governed by `{lock.claim_scope}`. An operator or fixed-Program result is not a
+This Run establishes only its declared evaluation result. An operator or fixed-Program result is not a
 model-forward or serving result. Infrastructure `unknown` is not a Candidate failure.
 
 ## Complete frozen authority
@@ -392,11 +385,11 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
             "Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:")
     arm_rule = (
         "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
-        if arm == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"
+        if authority["environment_kind"] == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"
         else "Author only Cake IR Schedules; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
-        if arm == "open_cake"
-        else f"Author only the supplied kernel-only {native_backend(arm).label} baseline and declared compile/launch metadata. Host Python is forbidden."
-        if native_backend(arm) is not None
+        if authority["environment_kind"] == "open_cake"
+        else f"Author only the supplied kernel-only {native_backend(authority["environment_kind"]).label} baseline and declared compile/launch metadata. Host Python is forbidden."
+        if native_backend(authority["environment_kind"]) is not None
         else "Author only direct CUDA/PTX source. Do not access the Open Cake Compiler or a target implementation."
     )
     agents = f"""# AGENTS.md — Ralph optimization rules
@@ -436,7 +429,7 @@ write surface, reference access, tool permissions, budget, or acceptance authori
 
 {_document_sections({'scaffold.md': documents['scaffold.md']}, access=reference_access(authority, 'arm'))}
 """
-    return TaskPackage(run_id, arm, task, agents)
+    return TaskPackage(run_id, arm, task, agents, authority["environment_kind"])
 
 
 def materialize_task_package(workspace: str | Path, package: TaskPackage) -> None:

@@ -109,7 +109,7 @@ def audit_campaign(
         except (OSError, ValueError, json.JSONDecodeError):
             campaign_complete = False
             continue
-        if audit.authority_sha256 != campaign.lock.canonical_sha256:
+        if audit.authority_sha256 != campaign.lock.run_specification(audit.run_id).canonical_sha256:
             campaign_complete = False
         audits.append(audit)
     campaign_complete = campaign_complete and len(audits) == len(campaign.lock.run_order)
@@ -124,7 +124,7 @@ def audit_campaign(
     evaluation_receipt_counts: dict[str, int] = {}
     terminal_observations: dict[str, object] = {}
     for audit in audits:
-        if not audit.archive_integrity or audit.authority_sha256 != campaign.lock.canonical_sha256:
+        if not audit.archive_integrity or audit.authority_sha256 != campaign.lock.run_specification(audit.run_id).canonical_sha256:
             continue
         try:
             replay_result = replay_run(evidence, audit, campaign.lock)
@@ -168,7 +168,7 @@ def audit_campaign(
         not audit.archive_integrity
         or not semantic_replay_by_run[audit.run_id]
         or not audit.filesystem_custody_verified
-        or audit.authority_sha256 != campaign.lock.canonical_sha256
+        or audit.authority_sha256 != campaign.lock.run_specification(audit.run_id).canonical_sha256
         or audit.endpoint_observation == "missing"
         or audit.protocol_adherence != "adhered"
         for audit in audits
@@ -294,7 +294,7 @@ def audit_campaign(
             inclusions.append(
                 AnalysisInclusion(audit.run_id, False, False, "archive_integrity")
             )
-        elif audit.authority_sha256 != campaign.lock.canonical_sha256:
+        elif audit.authority_sha256 != campaign.lock.run_specification(audit.run_id).canonical_sha256:
             inclusions.append(
                 AnalysisInclusion(audit.run_id, False, False, "campaign_authority")
             )

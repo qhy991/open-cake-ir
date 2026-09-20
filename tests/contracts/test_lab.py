@@ -1458,8 +1458,8 @@ class LabContractTests(SemanticLabTestCase):
             for run_id in lock.run_order[:-1]:
                 run = evidence.start_run(
                     run_id,
-                    authority_sha256=lock.canonical_sha256,
-                    authority=lock.document,
+                    authority_sha256=lock.run_specification(run_id).canonical_sha256,
+                    authority=lock.run_specification(run_id).document,
                 )
                 run.seal(
                     protocol_adherence="provider_fault",
@@ -1744,8 +1744,8 @@ class LabContractTests(SemanticLabTestCase):
             for run_id in lock.run_order:
                 run = evidence.start_run(
                     run_id,
-                    authority_sha256=lock.canonical_sha256,
-                    authority=lock.document,
+                    authority_sha256=lock.run_specification(run_id).canonical_sha256,
+                    authority=lock.run_specification(run_id).document,
                 )
                 if run_id == "direct_cuda-3":
                     run.seal(
@@ -3333,7 +3333,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
             with self.subTest(interface=interface):
                 lock, _, _ = self.preflight(model=model, study=study)
                 arm = lock.document["resolved_inputs"]["arm_environments"]["open_cake"]
-                documents = build_run_reference_documents(self.root, lock, arm,
+                documents = build_run_reference_documents(self.root, lock.run_specification("open_cake-1"), arm,
                     workload_contract=load_workload(self.root / lock.document["workload"]["path"]),
                     prepare_schedule=prepare_schedule)
                 authority = json.loads(documents["run-authority.json"])

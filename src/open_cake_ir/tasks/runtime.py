@@ -93,6 +93,10 @@ class TaskLab(Lab):
         _admit_measurement_coverage(study)
         _admit_execution_mode(study)
 
+    def _validate_run(self, specification) -> None:
+        _admit_measurement_coverage(specification)
+        _admit_execution_mode(specification)
+
     def audit(self, campaign):
         policy = performance_reporting_policy(campaign.lock.analysis_plan, campaign.lock.claim_scope)
         report = super().audit(campaign)

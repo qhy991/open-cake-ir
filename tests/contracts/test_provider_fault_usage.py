@@ -221,7 +221,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
                 with self.assertRaises(RunProtocolFault) as raised:
                     CodexProviderAdapter().execute(invocation, candidate_path=directory / "candidate-set.json",
                         expected_change="add", expected_terminal_message='{"candidate_written":true}',
-                        event_contract=CONTRACT, arm="open_cake")
+                        event_contract=CONTRACT, arm="open_cake", environment_kind="open_cake")
                 self.assertEqual(raised.exception.reported_usage,
                                  ReportedProviderUsage(CONTRACT, THREAD, 150119))
                 self.assertEqual(raised.exception.artifact_payloads["provider_stdout"], raw)

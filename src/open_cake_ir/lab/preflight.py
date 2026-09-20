@@ -32,10 +32,11 @@ def task_package(
     workload_loader: Callable,
     prepare_schedule: Callable,
 ) -> TaskPackage:
-    workload = workload_loader(project_root / str(lock.document["workload"]["path"]))
+    specification = lock.run_specification(run_id) if isinstance(lock, CampaignLock) else lock
+    workload = workload_loader(project_root / str(specification.document["workload"]["path"]))
     return render_task_package(
         project_root,
-        lock,
+        specification,
         run_id,
         workload_contract=workload,
         prepare_schedule=prepare_schedule,

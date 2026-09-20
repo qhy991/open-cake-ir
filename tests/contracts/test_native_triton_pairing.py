@@ -482,7 +482,7 @@ class NativePairingContractTests(unittest.TestCase):
         for arm, member in [('native_triton', self.native), ('open_cake', {'python_source': 'not executed'})]:
             envelope = encoded({'schema_version': 1, 'arm': arm, 'candidates': [member]}) + b'\n'
             self.assertEqual(_project_candidate_submission(envelope, submission_contract=CANDIDATE_SET_ENVELOPE_V1,
-                arm=arm, maximum_candidates_per_turn=3), (encoded(member),))
+                arm=arm, maximum_candidates_per_turn=3, environment_kind=arm), (encoded(member),))
 
     def test_common_correctness_uses_workload_oracle_and_detects_mutated_inputs(self):
         _, env, _ = self.environments()

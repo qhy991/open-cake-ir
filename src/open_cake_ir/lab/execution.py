@@ -20,13 +20,14 @@ from ._policies import (
 )
 from .archive import _arm_artifact_roles, _archive_provider_turn, _candidate_artifact_media_type
 from .evaluation_writer import EvaluationWriter
-from .execution_admission import validate_execution_bindings
+from .execution_admission import validate_execution_bindings, validate_run_bindings
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
 from .diagnoses import rejected_peer_feedback
 from .run_completion import _seal_run, record_run_fault
 from .faults import RunProtocolFault, ReportedProviderUsage, ProviderBoundaryDeclarationFault
 from .provider_events import reported_provider_usage, provider_token_delta
 from .checkpoints import TurnObservation, project_checkpoints
+from .run_spec import RunSpecification, RunRef
 from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, TurnRequest
 from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
@@ -131,20 +132,9 @@ def execute_campaign(
         ),
         "campaign_lock.resolved_inputs.evidence_policy",
     )
-    budget = _object(resolved_inputs["budget"], "campaign_lock.resolved_inputs.budget")
-    checkpoints = cast(list[int], budget["checkpoints"])
-    maximum_turns = cast(int, budget["maximum_turns"])
-    maximum_candidates_per_turn = cast(
-        int, budget.get("maximum_candidates_per_turn", 1)
-    )
     evaluation_protocol = _object(
         lock.document["evaluation_protocol"], "campaign_lock.evaluation_protocol"
     )
-    attribution_evaluation = evaluation_protocol.get("attribution_evaluation")
-    profile_each_search_survivor = (
-        attribution_evaluation == _ATTRIBUTION_EVALUATION
-    )
-    ralph_budget = RalphBudget.from_mapping(budget)
     expected_protocol_sha256 = sha256(
         _canonical_json_bytes(evaluation_protocol)
     ).hexdigest()
@@ -160,425 +150,459 @@ def execute_campaign(
         workload_loader=workload_loader,
         validate_authoring=validate_authoring,
     )
-    case_id = _name(evaluation_protocol.get("case_id"), "evaluation_protocol.case_id")
-    workload_sha256 = _digest(
-        _object(lock.document["workload"], "campaign_lock.workload").get(
-            "canonical_sha256"
-        ),
-        "campaign_lock.workload.canonical_sha256",
-    )
     evidence = EvidenceStore.create(root)
-    record_confirmation_time = native_backend(comparison_arm(environments)) is not None or paired_protocol(evaluation_protocol) is not None
-    for sequence, run_id in enumerate(lock.run_order, start=1):
-        run_started_at = clock() if record_confirmation_time else None
-        arm = run_id.rsplit("-", 1)[0]
-        environment = environments[arm]
-        empirical_enabled = "candidate_selection" in arms[arm]
-        ledger = evidence.start_run(
-            run_id,
-            authority_sha256=lock.canonical_sha256,
-            authority=lock.document,
-        )
-        ledger.append(
-            "run_started",
-            {
-                "sequence": sequence,
-                "assigned_arm": arm,
-                "automatic_retries": 0,
-                "replacement_run": False,
-            },
-        )
-        protocol_adherence = "adhered"
-        thread_id: str | None = None
-        cumulative_tokens = 0
-        feedback: Mapping[str, object] = MappingProxyType({"kind": "initial"})
-        observations: list[TurnObservation] = []
-        live_stage = "provider"
-        provider_usage_accounted = False
-        provider_turn = None
-        ralph = RalphController(
-            ralph_budget,
-            searches_per_turn=int(evaluation_protocol.get("searches_per_turn", 1)),
-            profile_each_search_survivor=profile_each_search_survivor,
-            clock=clock,
-        )
-        ralph_stop_reason: str | None = None
-        boundary_diagnostic: Mapping[str, object] | None = None
-        evaluation_writer = EvaluationWriter(
-            evidence=evidence, ledger=ledger, evaluator=evaluator, ralph=ralph,
-            case_id=case_id, workload_sha256=workload_sha256,
-            protocol_sha256=expected_protocol_sha256, evaluation_protocol=evaluation_protocol,
-            execution=lock.document['execution'],
-            clock=clock, run_started_at=run_started_at,
-        )
-        try:
-            for turn_number in range(1, maximum_turns + 1):
-                ralph_stop_reason = ralph.stop_reason(
-                    turn=turn_number,
-                    cumulative_provider_tokens=cumulative_tokens,
-                )
-                if ralph_stop_reason is not None:
-                    break
-                state_card = ralph.state_card(
-                    turn=turn_number,
-                    cumulative_provider_tokens=cumulative_tokens,
-                    feedback=feedback,
-                )
-                live_stage = "provider"
-                provider_usage_accounted = False
-                provider_turn = None
-                authoring_started = ralph.begin_authoring()
-                try:
-                    provider_turn = provider.turn(
-                        TurnRequest(
-                            run_id,
-                            arm,
-                            turn_number,
-                            cumulative_tokens,
-                            thread_id,
-                            feedback,
-                            maximum_candidates_per_turn,
-                            state_card,
-                        )
-                    )
-                finally:
-                    ralph.end_authoring(authoring_started)
-                next_thread_id = provider_turn.thread_id
-                if thread_id is not None and next_thread_id != thread_id:
-                    raise differs("provider resume thread identity", expected=thread_id, observed=next_thread_id)
-                next_cumulative_tokens = cumulative_tokens + provider_turn.provider_tokens
-                _archive_provider_turn(
-                    arm=arm,
-                    candidate_media_type=environment.media_type,
-                    cumulative_tokens=next_cumulative_tokens,
-                    evidence=evidence,
-                    ledger=ledger,
-                    maximum_candidates_per_turn=maximum_candidates_per_turn,
-                    provider_document=provider_document,
-                    provider_turn=provider_turn,
-                    thread_id=next_thread_id,
-                    turn_number=turn_number,
-                )
-                # Completion owns the cumulative/session commit. A returned Turn
-                # can still be refused by archive validation before any build.
-                thread_id = next_thread_id
-                cumulative_tokens = next_cumulative_tokens
-                provider_usage_accounted = True
-                # The pre-GPU filter runs on the whole set: every candidate is built,
-                # which is the verifier and the toolchain but no device. Only then is
-                # an order taken, and only the survivor reaches an Evaluation. This is
-                # the stage the paper spends compile time on to avoid spending GPU
-                # time, so building all of them is the point rather than a cost.
-                live_stage = "environment"
-                (
-                    built,
-                    launchable_first,
-                    cost_order_applied,
-                    filter_rows,
-                    selection_summary,
-                ) = _build_filter_candidates(
-                    empirical_enabled=empirical_enabled,
-                    environment=environment,
-                    ledger=ledger,
-                    provider_turn=provider_turn,
-                    turn_number=turn_number,
-                )
-                record_candidate_rejections(
-                    built=built, evidence=evidence, ledger=ledger, turn_number=turn_number, arm=arm,
-                )
-                submission, environment_result = built[launchable_first[0]]
-                if environment_result.disposition == "rejected":
-                    ledger.append(
-                        "candidate_selected",
-                        {
-                            "turn": turn_number,
-                            "candidate_sha256": submission.sha256,
-                            "qualified_search_candidates": [],
-                            "reason": "all_candidates_rejected",
-                        },
-                    )
-                    observations.append(
-                        TurnObservation(
-                            turn_number,
-                            cumulative_tokens,
-                            submission.sha256,
-                            False,
-                            None,
-                        )
-                    )
-                    feedback = environment_result.feedback
-                else:
-                    launchable = environment_result.launchable
-                    assert launchable is not None
-                    required_roles = _arm_artifact_roles(arm, launchable.target)
-                    if (
-                        not required_roles <= set(launchable.artifact_roles)
-                        or set(launchable.artifact_payloads)
-                        != set(launchable.artifact_roles)
-                        or launchable.artifact_roles.get("launch_manifest")
-                        != launchable.launch_spec_sha256
-                    ):
-                        raise ValueError("LaunchableCandidate artifact custody is incomplete")
-
-                    # Search-evaluate the candidates the filter kept, in its order.
-                    # Search is the assay that exists to choose; confirmatory stays
-                    # single because that one is the measurement a claim rests on.
-                    budget_k = int(
-                        evaluation_protocol.get("searches_per_turn", 1)
-                    )
-                    searched: list[_SearchedCandidate] = []
-                    planned_searches, collapsed = _matched_search_plan(
-                        filter_rows, budget_k
-                    )
-                    position_by_candidate = {
-                        submission.sha256: index
-                        for index, (submission, _) in enumerate(built)
-                    }
-                    for candidate_sha256 in planned_searches:
-                        position = position_by_candidate[candidate_sha256]
-                        entry_submission, entry_result = built[position]
-                        entry_launchable = entry_result.launchable
-                        assert entry_launchable is not None
-                        artifact_references = []
-                        for role, payload in sorted(
-                            entry_launchable.artifact_payloads.items()
-                        ):
-                            artifact = evidence.put(
-                                payload,
-                                media_type=_candidate_artifact_media_type(role),
-                            )
-                            artifact_references.append(artifact.reference(role))
-                        ledger.append(
-                            "launchable_candidate_sealed",
-                            {
-                                "turn": turn_number,
-                                "candidate_sha256": entry_launchable.candidate_sha256,
-                                "candidate_record_sha256": entry_launchable.canonical_sha256,
-                                "objects": artifact_references,
-                            },
-                        )
-                        live_stage = "evaluation"
-                        entry_search = evaluation_writer.evaluate(
-                            entry_launchable, purpose="search", turn=turn_number,
-                        )
-                        entry_attribution = (
-                            evaluation_writer.evaluate(entry_launchable, purpose="attribution", turn=turn_number)
-                            if profile_each_search_survivor
-                            and entry_search.correctness_passed
-                            else None
-                        )
-                        searched.append(
-                            _SearchedCandidate(
-                                entry_submission,
-                                entry_result,
-                                entry_launchable,
-                                entry_search,
-                                entry_attribution,
-                            )
-                        )
-
-                    collapse_diagnosis = _collapse_diagnosis(
-                        turn_number, collapsed
-                    )
-                    if collapse_diagnosis is not None:
-                        # Not a measurement's finding, so it does not wait for
-                        # materiality: two spellings of one program is a fact about
-                        # the set, visible before any of it ran.
-                        ledger.append(
-                            "diagnosis_routed", collapse_diagnosis
-                        )
-
-                    # Qualification and order diagnosis share this pure decision in
-                    # execution and replay, so the gate cannot manufacture a second
-                    # interpretation of the retained measurements.
-                    qualified_search, best, cost_diagnosis = (
-                        _matched_search_decision(
-                            turn_number,
-                            [
-                                (item.launchable.candidate_sha256, item.receipt)
-                                for item in searched
-                            ],
-                            cost_order_applied=cost_order_applied,
-                            materiality_ratio=float(
-                                evaluation_protocol.get(
-                                    "search_materiality_ratio", math.inf
-                                )
-                            ),
-                        )
-                    )
-                    if cost_diagnosis is not None:
-                        ledger.append("diagnosis_routed", cost_diagnosis)
-                    selected = searched[best]
-                    submission = selected.submission
-                    environment_result = selected.environment_result
-                    launchable = selected.launchable
-                    search = selected.receipt
-                    ledger.append(
-                        "candidate_selected",
-                        {
-                            "turn": turn_number,
-                            "candidate_sha256": launchable.candidate_sha256,
-                            "qualified_search_candidates": [
-                                searched[index].launchable.candidate_sha256
-                                for index in qualified_search
-                            ],
-                            "reason": (
-                                "lowest_qualified_search_latency"
-                                if qualified_search
-                                else "no_qualified_search_candidate"
-                            ),
-                        },
-                    )
-
-                    confirmed: EvaluationReceipt | None = None
-                    if qualified_search:
-                        confirmed = evaluation_writer.evaluate(
-                            launchable, purpose="confirmatory", turn=turn_number,
-                        )
-                    qualified = confirmed is not None and _receipt_qualifies(confirmed)
-                    latency = _receipt_latency_ms(confirmed) if qualified else None
-                    # The current assay already profiled every correctness-passing
-                    # search survivor. The selected profile is feedback, not an
-                    # acceptance input. Frozen Studies retain the earlier
-                    # selected-after-confirmation operation at this compatibility
-                    # edge.
-                    attribution = selected.attribution
-                    if (
-                        not profile_each_search_survivor
-                        and qualified
-                        and attribution_evaluation
-                        == _LEGACY_ATTRIBUTION_EVALUATION
-                    ):
-                        attribution = evaluation_writer.evaluate(launchable, purpose="attribution", turn=turn_number)
-                    observations.append(
-                        TurnObservation(
-                            turn_number,
-                            cumulative_tokens,
-                            launchable.candidate_sha256,
-                            qualified,
-                            latency,
-                        )
-                    )
-                    # A measurement says what this candidate cost; the Environment's
-                    # surviving findings say which declared resource is what bounds
-                    # it. Only the pair is actionable, so the next Turn gets both.
-                    feedback_document: dict[str, object] = {
-                        "kind": "evaluation",
-                        "candidate_disposition": search.candidate_disposition,
-                        "measurement_quality": search.measurement_quality,
-                        "confirmed": qualified,
-                        "search_latency_ms": _receipt_latency_ms(search),
-                        "confirmed_latency_ms": latency,
-                        "findings": environment_result.feedback.get("findings", []),
-                    }
-                    if isinstance(search.timing, Mapping):
-                        feedback_document["baseline_comparison"] = (
-                            _baseline_comparison_feedback(lock, search.timing)
-                        )
-                    if "attribution_evaluation" in evaluation_protocol:
-                        attribution_feedback = (
-                            attribution.attribution_feedback
-                            if attribution is not None
-                            else None
-                        )
-                        feedback_document["profile"] = (
-                            dict(attribution_feedback)
-                            if attribution_feedback is not None
-                            else None
-                        )
-                    feedback = MappingProxyType(feedback_document)
-                rejected_peers = rejected_peer_feedback(built, arm=arm)
-                if rejected_peers:
-                    feedback = MappingProxyType({**feedback, "rejected_candidates": rejected_peers})
-                if empirical_enabled:
-                    feedback = MappingProxyType({
-                        **feedback,
-                        "candidate_selection": {**selection_summary, "order": filter_rows},
-                    })
-                if cumulative_tokens >= cast(int, budget["limit"]):
-                    break
-        except Exception as error:
-            pending_usage = live_stage == "provider" and not provider_usage_accounted
-            observed_usage = None
-            declared_usage = None
-            payloads = dict(error.artifact_payloads) if isinstance(error, RunProtocolFault) else {}
-            if pending_usage:
-                declared_usage = error.reported_usage if isinstance(error, RunProtocolFault) else None
-                if declared_usage is not None:
-                    try:
-                        declared_usage = replace(declared_usage, provider_tokens=provider_token_delta(
-                            declared_usage.provider_tokens, provider=provider_document,
-                            previous_tokens=cumulative_tokens))
-                    except ValueError:
-                        declared_usage = None
-                if provider_turn is not None:
-                    # Preserve the native statement even when the returned Turn's
-                    # bundle, identity or candidate envelope failed validation.
-                    raw_events = getattr(provider_turn, "raw_events", None)
-                    if isinstance(raw_events, bytes):
-                        payloads.setdefault("provider_stdout", raw_events)
-                    if declared_usage is None:
-                        try:
-                            declared_usage = ReportedProviderUsage(
-                                provider_document.get("event_contract", "closed_file_change_v1"),
-                                provider_turn.thread_id, provider_turn.provider_tokens)
-                        except (AttributeError, TypeError, ValueError):
-                            declared_usage = None
-                observed_usage = reported_provider_usage(payloads.get("provider_stdout", b""),
-                    provider=provider_document, expected_thread_id=thread_id,
-                    previous_tokens=cumulative_tokens)
-                if observed_usage is not None:
-                    cumulative_tokens += observed_usage.provider_tokens
-            # F-2026-09-16-002: the budget boundary can take the final Turn's
-            # candidate write with it while the CLI still reports success and
-            # the author still declares candidate_written. The fault observation
-            # is retained below either way; but when the checkpoint grid had
-            # already settled an outcome on completed Turns, that settled
-            # observation wins the terminal instead of a post-hoc fault
-            # overwriting it. With nothing settled the fault stands unchanged.
-            boundary_diagnostic = (
-                {"turn": turn_number, "stage": "provider",
-                 "diagnostic": "candidate_write_declared_unwitnessed"}
-                if isinstance(error, ProviderBoundaryDeclarationFault)
-                and observations
-                and project_checkpoints(
-                    turns=observations,
-                    checkpoints=checkpoints,
-                    terminal_provider_tokens=cumulative_tokens,
-                )[-1].state != "unreached"
-                else None
-            )
-            fault = record_run_fault(
-                error=error,
-                live_stage=live_stage,
-                turn_number=turn_number,
-                cumulative_tokens=cumulative_tokens,
-                evidence=evidence,
-                ledger=ledger,
-                pending_provider_usage=pending_usage,
-                observed_usage=observed_usage,
-                declared_usage=declared_usage,
-                artifact_payloads=payloads,
-            )
-            if boundary_diagnostic is not None:
-                protocol_adherence = "adhered"
-                ralph_stop_reason = None
-            else:
-                protocol_adherence = fault
-                ralph_stop_reason = fault
-
-        _seal_run(
-            ralph_stop_reason=ralph_stop_reason,
-            checkpoints=checkpoints,
-            cumulative_tokens=cumulative_tokens,
-            feedback=feedback,
-            ledger=ledger,
-            maximum_turns=maximum_turns,
-            observations=observations,
-            protocol_adherence=protocol_adherence,
-            ralph=ralph,
-            analysis=lock.analysis_plan,
-            boundary_diagnostic=boundary_diagnostic,
-        )
+    for run_id in lock.run_order:
+        specification = lock.run_specification(run_id)
+        _execute_run(specification, evidence=evidence, clock=clock, provider=provider,
+                     environment=environments[specification.condition_id], evaluator=evaluator)
 
     return CampaignRef(lock=lock, evidence_root=evidence.root)
+
+
+def execute_run(specification: RunSpecification, evidence_root, *, project_root,
+                workload_loader, clock, provider, environment, evaluator, validate_run=None):
+    """Execute a frozen engineering or Study-assigned Run through the same engine."""
+    specification = RunSpecification.from_dict(specification.document)
+    if validate_run is not None:
+        validate_run(specification)
+    validate_run_bindings(specification, project_root=project_root,
+                          workload_loader=workload_loader, provider=provider,
+                          environment=environment, evaluator=evaluator)
+    root = admit_new_campaign_path(project_root, evidence_root, role='Run Evidence root')
+    evidence = EvidenceStore.create(root)
+    _execute_run(specification, evidence=evidence, clock=clock, provider=provider,
+                 environment=environment, evaluator=evaluator)
+    return RunRef(specification, evidence.root)
+
+
+def _execute_run(specification: RunSpecification, *, evidence, clock, provider, environment, evaluator):
+    """The one search/evaluation lifecycle for every frozen Run."""
+    document = specification.document
+    run_id = specification.run_id
+    sequence = document['sequence']
+    budget = document['budget']
+    checkpoints = budget['checkpoints']
+    maximum_turns = budget['maximum_turns']
+    maximum_candidates_per_turn = budget['maximum_candidates_per_turn']
+    evaluation_protocol = document['evaluation_protocol']
+    attribution_evaluation = evaluation_protocol.get('attribution_evaluation')
+    profile_each_search_survivor = attribution_evaluation == _ATTRIBUTION_EVALUATION
+    ralph_budget = RalphBudget.from_mapping(budget)
+    expected_protocol_sha256 = sha256(_canonical_json_bytes(evaluation_protocol)).hexdigest()
+    provider_document = document['authoring']['provider']
+    case_id = evaluation_protocol['case_id']
+    workload_sha256 = document['workload']['canonical_sha256']
+    record_confirmation_time = (native_backend(specification.environment_kind) is not None
+                                or paired_protocol(evaluation_protocol) is not None)
+    run_started_at = clock() if record_confirmation_time else None
+    arm = specification.condition_id
+    kind = specification.environment_kind
+    empirical_enabled = "candidate_selection" in document["authoring"]
+    ledger = evidence.start_run(
+        run_id,
+        authority_sha256=specification.canonical_sha256,
+        authority=document,
+    )
+    ledger.append(
+        "run_started",
+        {
+            "sequence": sequence,
+            "assigned_arm": arm,
+            "automatic_retries": 0,
+            "replacement_run": False,
+        },
+    )
+    protocol_adherence = "adhered"
+    thread_id: str | None = None
+    cumulative_tokens = 0
+    feedback: Mapping[str, object] = MappingProxyType({"kind": "initial"})
+    observations: list[TurnObservation] = []
+    live_stage = "provider"
+    provider_usage_accounted = False
+    provider_turn = None
+    ralph = RalphController(
+        ralph_budget,
+        searches_per_turn=int(evaluation_protocol.get("searches_per_turn", 1)),
+        profile_each_search_survivor=profile_each_search_survivor,
+        clock=clock,
+    )
+    ralph_stop_reason: str | None = None
+    boundary_diagnostic: Mapping[str, object] | None = None
+    evaluation_writer = EvaluationWriter(
+        evidence=evidence, ledger=ledger, evaluator=evaluator, ralph=ralph,
+        case_id=case_id, workload_sha256=workload_sha256,
+        protocol_sha256=expected_protocol_sha256, evaluation_protocol=evaluation_protocol,
+        execution=document['execution'],
+        clock=clock, run_started_at=run_started_at,
+    )
+    try:
+        for turn_number in range(1, maximum_turns + 1):
+            ralph_stop_reason = ralph.stop_reason(
+                turn=turn_number,
+                cumulative_provider_tokens=cumulative_tokens,
+            )
+            if ralph_stop_reason is not None:
+                break
+            state_card = ralph.state_card(
+                turn=turn_number,
+                cumulative_provider_tokens=cumulative_tokens,
+                feedback=feedback,
+            )
+            live_stage = "provider"
+            provider_usage_accounted = False
+            provider_turn = None
+            authoring_started = ralph.begin_authoring()
+            try:
+                provider_turn = provider.turn(
+                    TurnRequest(
+                        run_id,
+                        arm,
+                        turn_number,
+                        cumulative_tokens,
+                        thread_id,
+                        feedback,
+                        maximum_candidates_per_turn,
+                        state_card,
+                        environment_kind=kind,
+                    )
+                )
+            finally:
+                ralph.end_authoring(authoring_started)
+            next_thread_id = provider_turn.thread_id
+            if thread_id is not None and next_thread_id != thread_id:
+                raise differs("provider resume thread identity", expected=thread_id, observed=next_thread_id)
+            next_cumulative_tokens = cumulative_tokens + provider_turn.provider_tokens
+            _archive_provider_turn(
+                arm=arm,
+                candidate_media_type=environment.media_type,
+                environment_kind=kind,
+                cumulative_tokens=next_cumulative_tokens,
+                evidence=evidence,
+                ledger=ledger,
+                maximum_candidates_per_turn=maximum_candidates_per_turn,
+                provider_document=provider_document,
+                provider_turn=provider_turn,
+                thread_id=next_thread_id,
+                turn_number=turn_number,
+            )
+            # Completion owns the cumulative/session commit. A returned Turn
+            # can still be refused by archive validation before any build.
+            thread_id = next_thread_id
+            cumulative_tokens = next_cumulative_tokens
+            provider_usage_accounted = True
+            # The pre-GPU filter runs on the whole set: every candidate is built,
+            # which is the verifier and the toolchain but no device. Only then is
+            # an order taken, and only the survivor reaches an Evaluation. This is
+            # the stage the paper spends compile time on to avoid spending GPU
+            # time, so building all of them is the point rather than a cost.
+            live_stage = "environment"
+            (
+                built,
+                launchable_first,
+                cost_order_applied,
+                filter_rows,
+                selection_summary,
+            ) = _build_filter_candidates(
+                empirical_enabled=empirical_enabled,
+                environment=environment,
+                ledger=ledger,
+                provider_turn=provider_turn,
+                turn_number=turn_number,
+            )
+            record_candidate_rejections(
+                built=built, evidence=evidence, ledger=ledger, turn_number=turn_number, arm=kind,
+            )
+            submission, environment_result = built[launchable_first[0]]
+            if environment_result.disposition == "rejected":
+                ledger.append(
+                    "candidate_selected",
+                    {
+                        "turn": turn_number,
+                        "candidate_sha256": submission.sha256,
+                        "qualified_search_candidates": [],
+                        "reason": "all_candidates_rejected",
+                    },
+                )
+                observations.append(
+                    TurnObservation(
+                        turn_number,
+                        cumulative_tokens,
+                        submission.sha256,
+                        False,
+                        None,
+                    )
+                )
+                feedback = environment_result.feedback
+            else:
+                launchable = environment_result.launchable
+                assert launchable is not None
+                required_roles = _arm_artifact_roles(kind, launchable.target)
+                if (
+                    not required_roles <= set(launchable.artifact_roles)
+                    or set(launchable.artifact_payloads)
+                    != set(launchable.artifact_roles)
+                    or launchable.artifact_roles.get("launch_manifest")
+                    != launchable.launch_spec_sha256
+                ):
+                    raise ValueError("LaunchableCandidate artifact custody is incomplete")
+
+                # Search-evaluate the candidates the filter kept, in its order.
+                # Search is the assay that exists to choose; confirmatory stays
+                # single because that one is the measurement a claim rests on.
+                budget_k = int(
+                    evaluation_protocol.get("searches_per_turn", 1)
+                )
+                searched: list[_SearchedCandidate] = []
+                planned_searches, collapsed = _matched_search_plan(
+                    filter_rows, budget_k
+                )
+                position_by_candidate = {
+                    submission.sha256: index
+                    for index, (submission, _) in enumerate(built)
+                }
+                for candidate_sha256 in planned_searches:
+                    position = position_by_candidate[candidate_sha256]
+                    entry_submission, entry_result = built[position]
+                    entry_launchable = entry_result.launchable
+                    assert entry_launchable is not None
+                    artifact_references = []
+                    for role, payload in sorted(
+                        entry_launchable.artifact_payloads.items()
+                    ):
+                        artifact = evidence.put(
+                            payload,
+                            media_type=_candidate_artifact_media_type(role),
+                        )
+                        artifact_references.append(artifact.reference(role))
+                    ledger.append(
+                        "launchable_candidate_sealed",
+                        {
+                            "turn": turn_number,
+                            "candidate_sha256": entry_launchable.candidate_sha256,
+                            "candidate_record_sha256": entry_launchable.canonical_sha256,
+                            "objects": artifact_references,
+                        },
+                    )
+                    live_stage = "evaluation"
+                    entry_search = evaluation_writer.evaluate(
+                        entry_launchable, purpose="search", turn=turn_number,
+                    )
+                    entry_attribution = (
+                        evaluation_writer.evaluate(entry_launchable, purpose="attribution", turn=turn_number)
+                        if profile_each_search_survivor
+                        and entry_search.correctness_passed
+                        else None
+                    )
+                    searched.append(
+                        _SearchedCandidate(
+                            entry_submission,
+                            entry_result,
+                            entry_launchable,
+                            entry_search,
+                            entry_attribution,
+                        )
+                    )
+
+                collapse_diagnosis = _collapse_diagnosis(
+                    turn_number, collapsed
+                )
+                if collapse_diagnosis is not None:
+                    # Not a measurement's finding, so it does not wait for
+                    # materiality: two spellings of one program is a fact about
+                    # the set, visible before any of it ran.
+                    ledger.append(
+                        "diagnosis_routed", collapse_diagnosis
+                    )
+
+                # Qualification and order diagnosis share this pure decision in
+                # execution and replay, so the gate cannot manufacture a second
+                # interpretation of the retained measurements.
+                qualified_search, best, cost_diagnosis = (
+                    _matched_search_decision(
+                        turn_number,
+                        [
+                            (item.launchable.candidate_sha256, item.receipt)
+                            for item in searched
+                        ],
+                        cost_order_applied=cost_order_applied,
+                        materiality_ratio=float(
+                            evaluation_protocol.get(
+                                "search_materiality_ratio", math.inf
+                            )
+                        ),
+                    )
+                )
+                if cost_diagnosis is not None:
+                    ledger.append("diagnosis_routed", cost_diagnosis)
+                selected = searched[best]
+                submission = selected.submission
+                environment_result = selected.environment_result
+                launchable = selected.launchable
+                search = selected.receipt
+                ledger.append(
+                    "candidate_selected",
+                    {
+                        "turn": turn_number,
+                        "candidate_sha256": launchable.candidate_sha256,
+                        "qualified_search_candidates": [
+                            searched[index].launchable.candidate_sha256
+                            for index in qualified_search
+                        ],
+                        "reason": (
+                            "lowest_qualified_search_latency"
+                            if qualified_search
+                            else "no_qualified_search_candidate"
+                        ),
+                    },
+                )
+
+                confirmed: EvaluationReceipt | None = None
+                if qualified_search:
+                    confirmed = evaluation_writer.evaluate(
+                        launchable, purpose="confirmatory", turn=turn_number,
+                    )
+                qualified = confirmed is not None and _receipt_qualifies(confirmed)
+                latency = _receipt_latency_ms(confirmed) if qualified else None
+                # The current assay already profiled every correctness-passing
+                # search survivor. The selected profile is feedback, not an
+                # acceptance input. Frozen Studies retain the earlier
+                # selected-after-confirmation operation at this compatibility
+                # edge.
+                attribution = selected.attribution
+                if (
+                    not profile_each_search_survivor
+                    and qualified
+                    and attribution_evaluation
+                    == _LEGACY_ATTRIBUTION_EVALUATION
+                ):
+                    attribution = evaluation_writer.evaluate(launchable, purpose="attribution", turn=turn_number)
+                observations.append(
+                    TurnObservation(
+                        turn_number,
+                        cumulative_tokens,
+                        launchable.candidate_sha256,
+                        qualified,
+                        latency,
+                    )
+                )
+                # A measurement says what this candidate cost; the Environment's
+                # surviving findings say which declared resource is what bounds
+                # it. Only the pair is actionable, so the next Turn gets both.
+                feedback_document: dict[str, object] = {
+                    "kind": "evaluation",
+                    "candidate_disposition": search.candidate_disposition,
+                    "measurement_quality": search.measurement_quality,
+                    "confirmed": qualified,
+                    "search_latency_ms": _receipt_latency_ms(search),
+                    "confirmed_latency_ms": latency,
+                    "findings": environment_result.feedback.get("findings", []),
+                }
+                if isinstance(search.timing, Mapping):
+                    feedback_document["baseline_comparison"] = (
+                        _baseline_comparison_feedback(specification, search.timing)
+                    )
+                if "attribution_evaluation" in evaluation_protocol:
+                    attribution_feedback = (
+                        attribution.attribution_feedback
+                        if attribution is not None
+                        else None
+                    )
+                    feedback_document["profile"] = (
+                        dict(attribution_feedback)
+                        if attribution_feedback is not None
+                        else None
+                    )
+                feedback = MappingProxyType(feedback_document)
+            rejected_peers = rejected_peer_feedback(built, arm=kind)
+            if rejected_peers:
+                feedback = MappingProxyType({**feedback, "rejected_candidates": rejected_peers})
+            if empirical_enabled:
+                feedback = MappingProxyType({
+                    **feedback,
+                    "candidate_selection": {**selection_summary, "order": filter_rows},
+                })
+            if cumulative_tokens >= cast(int, budget["limit"]):
+                break
+    except Exception as error:
+        pending_usage = live_stage == "provider" and not provider_usage_accounted
+        observed_usage = None
+        declared_usage = None
+        payloads = dict(error.artifact_payloads) if isinstance(error, RunProtocolFault) else {}
+        if pending_usage:
+            declared_usage = error.reported_usage if isinstance(error, RunProtocolFault) else None
+            if declared_usage is not None:
+                try:
+                    declared_usage = replace(declared_usage, provider_tokens=provider_token_delta(
+                        declared_usage.provider_tokens, provider=provider_document,
+                        previous_tokens=cumulative_tokens))
+                except ValueError:
+                    declared_usage = None
+            if provider_turn is not None:
+                # Preserve the native statement even when the returned Turn's
+                # bundle, identity or candidate envelope failed validation.
+                raw_events = getattr(provider_turn, "raw_events", None)
+                if isinstance(raw_events, bytes):
+                    payloads.setdefault("provider_stdout", raw_events)
+                if declared_usage is None:
+                    try:
+                        declared_usage = ReportedProviderUsage(
+                            provider_document.get("event_contract", "closed_file_change_v1"),
+                            provider_turn.thread_id, provider_turn.provider_tokens)
+                    except (AttributeError, TypeError, ValueError):
+                        declared_usage = None
+            observed_usage = reported_provider_usage(payloads.get("provider_stdout", b""),
+                provider=provider_document, expected_thread_id=thread_id,
+                previous_tokens=cumulative_tokens)
+            if observed_usage is not None:
+                cumulative_tokens += observed_usage.provider_tokens
+        # F-2026-09-16-002: the budget boundary can take the final Turn's
+        # candidate write with it while the CLI still reports success and
+        # the author still declares candidate_written. The fault observation
+        # is retained below either way; but when the checkpoint grid had
+        # already settled an outcome on completed Turns, that settled
+        # observation wins the terminal instead of a post-hoc fault
+        # overwriting it. With nothing settled the fault stands unchanged.
+        boundary_diagnostic = (
+            {"turn": turn_number, "stage": "provider",
+             "diagnostic": "candidate_write_declared_unwitnessed"}
+            if isinstance(error, ProviderBoundaryDeclarationFault)
+            and observations
+            and project_checkpoints(
+                turns=observations,
+                checkpoints=checkpoints,
+                terminal_provider_tokens=cumulative_tokens,
+            )[-1].state != "unreached"
+            else None
+        )
+        fault = record_run_fault(
+            error=error,
+            live_stage=live_stage,
+            turn_number=turn_number,
+            cumulative_tokens=cumulative_tokens,
+            evidence=evidence,
+            ledger=ledger,
+            pending_provider_usage=pending_usage,
+            observed_usage=observed_usage,
+            declared_usage=declared_usage,
+            artifact_payloads=payloads,
+        )
+        if boundary_diagnostic is not None:
+            protocol_adherence = "adhered"
+            ralph_stop_reason = None
+        else:
+            protocol_adherence = fault
+            ralph_stop_reason = fault
+
+    _seal_run(
+        ralph_stop_reason=ralph_stop_reason,
+        checkpoints=checkpoints,
+        cumulative_tokens=cumulative_tokens,
+        feedback=feedback,
+        ledger=ledger,
+        maximum_turns=maximum_turns,
+        observations=observations,
+        protocol_adherence=protocol_adherence,
+        ralph=ralph,
+        analysis=specification.terminal_policy,
+        boundary_diagnostic=boundary_diagnostic,
+    )

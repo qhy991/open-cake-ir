@@ -764,6 +764,34 @@ class CampaignLock:
             analysis_plan=MappingProxyType(dict(analysis)),
         )
 
+    def run_specification(self, run_id: str):
+        """Project the external matched-Study format into the common Run authority."""
+        from .run_spec import RunSpecification
+        if run_id not in self.run_order:
+            raise ValueError('Run was not allocated by this Campaign')
+        resolved = self.document['resolved_inputs']
+        # The legacy input format encodes assignment in the id; the execution
+        # model below carries it explicitly and never decodes a run id.
+        condition = run_id.rsplit('-', 1)[0]
+        return RunSpecification.from_dict({
+            'schema_version': 1, 'run_id': run_id,
+            'sequence': self.run_order.index(run_id) + 1,
+            'assignment': {'study_id': self.study_id,
+                           'study_sha256': self.document['study']['canonical_sha256'],
+                           'condition_id': condition},
+            'workload': self.document['workload'],
+            'compiler_revision': self.document['compiler_revision'],
+            'authoring': resolved['arm_environments'][condition],
+            'reference_inputs': ({'baseline_schedule': resolved['arm_environments']['open_cake']['schedule_skeleton']}
+                                 if resolved['arm_environments'][condition]['environment_kind'] in {'native_triton', 'native_cute_dsl'} else {}),
+            'budget': resolved['budget'], 'run_protocol': resolved['run_protocol'],
+            'agent_interface': resolved['agent_interface'],
+            'evidence_policy': resolved['evidence_policy'],
+            'evaluation_protocol': self.document['evaluation_protocol'],
+            'execution': self.document['execution'],
+            'endpoint_policy': self.analysis_plan.get('endpoint_policy'),
+        })
+
     @classmethod
     def load(cls, path: str | Path) -> "CampaignLock":
         """Load a Campaign Lock from canonical JSON."""
@@ -823,6 +851,7 @@ class TurnRequest:
     feedback: Mapping[str, object]
     maximum_candidates_per_turn: int
     state_card: Mapping[str, object] | None = None
+    environment_kind: str = "open_cake"
 
 
 

@@ -107,3 +107,42 @@ def validate_execution_bindings(
         ):
             raise ValueError(f"{name} Authoring Environment does not match the Campaign Lock")
     return arms, provider_document
+
+
+def validate_run_bindings(specification, *, project_root, workload_loader, provider, environment, evaluator):
+    """Resolve the live closure for one Run before evidence or process side effects."""
+    from .bindings import load_compiler_reference, source_reference_path
+    from .executor import ExecutorRevision
+    from .provider_policy import execution_configuration
+    from .reference_access import validate_reference_handoff
+
+    document = specification.document
+    protocol = document['evaluation_protocol']
+    if (getattr(evaluator, 'protocol', None) != protocol
+        or getattr(evaluator, 'protocol_sha256', None) != sha256(_canonical_json_bytes(protocol)).hexdigest()):
+        raise ValueError('Run Evaluator differs from its frozen protocol')
+    load_compiler_reference(project_root, document['compiler_revision'], 'run.compiler_revision')
+    ExecutorRevision.load_reference(project_root, document['execution']['executor_revision'], 'run.executor')
+    _, path = source_reference_path(project_root, document['workload']['path'], 'run.workload.path')
+    workload = workload_loader(path)
+    if workload.canonical_sha256 != document['workload']['canonical_sha256']:
+        raise ValueError('Run Workload differs from its frozen reference')
+    authority = document['authoring']
+    validate_reference_handoff(project_root, {'author': authority})
+    if (getattr(environment, 'authority_document', None) != authority
+        or getattr(environment, 'canonical_sha256', None) != sha256(_canonical_json_bytes(authority)).hexdigest()):
+        raise ValueError('Run Authoring Environment differs from its frozen authority')
+    declared = authority['provider']
+    reference = declared['qualification']
+    _, path = _qualification_path(project_root, reference['path'], 'run.provider.qualification')
+    qualification = ProviderQualificationReceipt.load(path)
+    configuration = execution_configuration(declared)
+    if (qualification.canonical_sha256 != reference['canonical_sha256']
+        or qualification.provider_revision != declared['revision']
+        or qualification.configuration_sha256 != sha256(_canonical_json_bytes(configuration)).hexdigest()
+        or provider.provider_revision != declared['revision']
+        or provider.qualification_sha256 != qualification.canonical_sha256
+        or provider.executable_sha256 != qualification.executable_sha256
+        or provider.configuration != configuration):
+        raise ValueError('Run Provider differs from its frozen qualification and configuration')
+    return workload

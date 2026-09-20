@@ -344,7 +344,7 @@ def normalize_codex_turn(
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
     submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
-    arm: str | None = None,
+    arm: str | None = None, environment_kind: str = "open_cake",
     maximum_candidates_per_turn: int = 1,
 ) -> ProviderTurn:
     """Accept only the two terminal forms observed by the frozen r42 boundary."""
@@ -373,7 +373,7 @@ def normalize_codex_turn(
     candidates = _project_candidate_submission(
         submission,
         submission_contract=submission_contract,
-        arm=arm,
+        arm=arm, environment_kind=environment_kind,
         maximum_candidates_per_turn=maximum_candidates_per_turn,
     )
     return ProviderTurn(

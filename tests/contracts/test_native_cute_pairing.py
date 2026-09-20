@@ -166,7 +166,7 @@ class NativeCuTePairingTests(unittest.TestCase):
         member = native_baseline(lowering)
         payload = encoded({'schema_version':1, 'arm':'native_cute_dsl', 'candidates':[member]})
         self.assertEqual(_project_candidate_submission(payload, submission_contract=CANDIDATE_SET_ENVELOPE_V1,
-            arm='native_cute_dsl', maximum_candidates_per_turn=1), (encoded(member),))
+            arm='native_cute_dsl', maximum_candidates_per_turn=1, environment_kind='native_cute_dsl'), (encoded(member),))
         candidate = env.build(CandidateSubmission.seal(env.media_type, encoded(member))).launchable
         workload = self.workload
         class Launcher:

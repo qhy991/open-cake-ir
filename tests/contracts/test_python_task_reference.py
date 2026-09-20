@@ -122,14 +122,14 @@ class PythonTaskReferenceTests(unittest.TestCase):
             }.items():
                 path = root / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(contents)
             lock = SimpleNamespace(document={"workload": {"path": "workload.json", "canonical_sha256": "a" * 64},
-                "compiler_revision": {"path": "compiler.json"}, "study": {},
+                "compiler_revision": {"path": "compiler.json"}, "assignment": None,
                 "execution": {"target": "apple_gpu_family8"}, "evaluation_protocol": {"case_id": "primary"},
-                "resolved_inputs": {"budget": {}, "run_protocol": {}}})
+                "budget": {}, "run_protocol": {}})
             arm = {"environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "input_format": "schedule_or_python_v1",
                 "schedule_skeleton": {"path": "starter.py"},
                 "scaffold": {"path": "scaffold.md", "sha256": sha256(b"fixture").hexdigest()},
                 "lowering_route": self.document["lowering"]}
-            lock.document["resolved_inputs"]["arm_environments"] = {"open_cake": arm}
+            lock.document["authoring"] = arm
             def prepare(document, workload, case_id, authority):
                 return {**document, "metadata": {"workload_contract_sha256": workload.canonical_sha256}}
             docs = build_run_reference_documents(root, lock, arm,

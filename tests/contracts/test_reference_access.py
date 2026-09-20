@@ -187,5 +187,5 @@ class ReferenceAccessTests(unittest.TestCase):
         foreign_arm = deepcopy(original.document["resolved_inputs"]["arm_environments"]["open_cake"])
         foreign_arm["reference_access"] = "clean_start"
         with self.assertRaisesRegex(ValueError, "differs from the frozen arm"):
-            build_run_reference_documents(ROOT, original, foreign_arm,
+            build_run_reference_documents(ROOT, original.run_specification("open_cake-1"), foreign_arm,
                 workload_contract=load_workload(ROOT / original.document["workload"]["path"]), prepare_schedule=prepare_schedule)

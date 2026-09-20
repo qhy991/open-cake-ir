@@ -176,6 +176,7 @@ def _archive_provider_turn(
     *,
     arm: str,
     candidate_media_type: str,
+    environment_kind: str = "open_cake",
     cumulative_tokens: int,
     evidence: EvidenceStore,
     ledger: RunLedger,
@@ -222,7 +223,7 @@ def _archive_provider_turn(
     projected_candidates = _project_candidate_submission(
         provider_turn.raw_submission,
         submission_contract=CANDIDATE_SET_ENVELOPE_V1,
-        arm=arm,
+        arm=arm, environment_kind=environment_kind,
         maximum_candidates_per_turn=maximum_candidates_per_turn,
     )
     if (
