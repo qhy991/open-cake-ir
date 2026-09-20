@@ -20,6 +20,7 @@ from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.activation import workload as activation
 from open_cake_ir.tasks.devices import BACKENDS, TRITON_MAXIMUM_TILE, admit_width
 from open_cake_ir.tasks.normalization import workload as normalization
+from open_cake_ir.tasks.devices import tanh_contract
 from open_cake_ir.tasks.workloads import create_task, load_workload, materialize_case, reference_outputs
 from open_cake_ir.tasks.tiles.workload import _round
 
@@ -71,9 +72,15 @@ class ActivationTaskTests(unittest.TestCase):
         a task missing from a registry, so the suites below skip the pair rather than
         assert a document that cannot exist.
         """
-        from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS
+        from open_cake_ir.tasks.devices import tanh_contract
 
-        return "tanh" not in name or DEVICE_BACKENDS[backend]["tanh_contract"] is not None
+        if "tanh" not in name:
+            return True
+        try:
+            tanh_contract(backend)
+        except ValueError:
+            return False
+        return True
 
     def test_every_task_registers_one_backend_bound_frozen_document(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -220,7 +227,7 @@ class ActivationTaskTests(unittest.TestCase):
                     assessment = self.compiler.assess(frontend.parse(source).document)
                     self.assertTrue(assessment.lowering_eligible, assessment.findings)
                     self.assertIn(f'backend="{device["route"]}"', source)
-                    self.assertIn(device["tanh_contract"] if name == "gelu_tanh" else "lm.load",
+                    self.assertIn(tanh_contract(backend) if name == "gelu_tanh" else "lm.load",
                                   source)
                 frozen[backend] = document
             (first, *rest) = frozen.values()
