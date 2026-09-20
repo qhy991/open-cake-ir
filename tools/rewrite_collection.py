@@ -137,6 +137,9 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='action', required=True)
     sub.add_parser('list')
+    assess = sub.add_parser('assess', help='CPU-only capability probes and manager task packages; no launches')
+    assess.add_argument('--workspace', type=Path, required=True)
+    assess.add_argument('--task', action='append', help='repeat; omitted selects all capability-assessment tasks')
     prepare = sub.add_parser('prepare')
     prepare.add_argument('--profile', type=Path, required=True)
     prepare.add_argument('--workspace', type=Path, required=True)
@@ -149,7 +152,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.action == 'list':
         for row in catalog():
-            print(row['id'], row['status'], row.get('reference_kind', row.get('reason', '')))
+            print(row['id'], row['status'], row.get('reference_kind', ''), row.get('reason', ''))
+    elif args.action == 'assess':
+        from tools import rewrite_assessment
+        report = rewrite_assessment.prepare(ROOT, catalog(), args.workspace, args.task, reference_path)
+        print(f"Assessed {report['task_count']} tasks at {report['source_commit']}; "
+              f"component evidence only; see {args.workspace / 'assessment.json'}")
+        return 1 if any(row['launch_status'] != 'ready' for row in report['tasks']) else 0
     elif args.action == 'prepare':
         manifest = prepare_batch(args.profile, args.workspace, args.run_root, args.task)
         print(f"Prepared {len(manifest['tasks'])} authoring tasks at {manifest['source_commit']}")

@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/flashinfer-ai/flashinfer",
+  "pull_request": "https://github.com/flashinfer-ai/flashinfer/pull/4274",
+  "source_commit": "b38a0d686ee0d0be7a07b2ea559f2af14d2adf59",
+  "source_files": [
+    "csrc/tinygemm2_sm100.cu",
+    "flashinfer/gemm/routergemm.py",
+    "tests/model_optimizations/test_tinygemm2_sm100.py"
+  ],
+  "reference_access": "known_kernel_reproduction",
+  "license": "Apache-2.0; original file notices retained",
+  "role": "reference_source_only",
+  "completeness": "Selected device, integration and validation sources; not a standalone build closure.",
+  "paper_relation": "Paper-cited PR export. No local GPU qualification is inherited.",
+  "additional_baseline": {
+    "commit": "67f76379a145f19793896394974e29e610cda912",
+    "path": "csrc/tinygemm2.cu",
+    "packaged_path": "baseline/csrc/tinygemm2.cu"
+  }
+}

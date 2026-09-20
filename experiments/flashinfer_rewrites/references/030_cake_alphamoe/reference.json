@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/flashinfer-ai/flashinfer",
+  "pull_request": "https://github.com/flashinfer-ai/flashinfer/pull/4287",
+  "source_commit": "106dede4b7f5ce283e279beb3cca80487ff74b6d",
+  "source_files": [
+    "csrc/alphamoe_sm100.cu",
+    "flashinfer/fused_moe/alphamoe_sm100.py",
+    "tests/moe/test_alphamoe_sm100.py"
+  ],
+  "reference_access": "known_kernel_reproduction",
+  "license": "Apache-2.0; original file notices retained",
+  "role": "reference_source_only",
+  "completeness": "Selected device, integration and validation sources; not a standalone build closure.",
+  "paper_relation": "Paper family with the later v46 export; not the original paper artifact."
+}

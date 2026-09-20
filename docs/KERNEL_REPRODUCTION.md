@@ -4,6 +4,11 @@
 它要求 Agent 自主拆解参考实现、建立结构对应、选择候选、诊断缺口归属，并提出或执行
 其权限范围内的 Compiler 演进。研究者不需要逐次决定失败属于 IR、后端还是候选。
 
+可移植任务集合与 CAKE 原框架能力评估见
+[改写任务包](../experiments/flashinfer_rewrites/README.md)。其中 027–030 对应论文的
+KDA prefill/decode、TinyGEMM2 和 Alpha-MoE；`rewrite_collection.py assess` 生成
+源码绑定的组件探针结果和管理任务包，完整 GPU 改写仍需逐项完成其 Workload 与验收接入。
+
 ## 多架构实验入口
 
 `tools/kernel_experiment.py prepare --config /absolute/experiment-input.json --workspace /absolute/new-experiment`

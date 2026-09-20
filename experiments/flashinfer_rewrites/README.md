@@ -10,8 +10,9 @@
 |---|---|---|
 | 可启动 | 001–011、021–026 | 17 项，均通过现有单 Schedule authoring 路径 |
 | 参考已齐，启动受阻 | 012–020 | 8 个注意力任务及 MoE；已有生成计划与正确性路径，尚未接入完整 Agent 候选计划提交链路 |
+| 可进行能力评估，完整改写启动受阻 | 027–030 | CAKE 论文的 KDA prefill、KDA decode、TinyGEMM2、Alpha-MoE；参考已固定，完整 Workload/oracle/authoring 尚未接通 |
 
-26 项均有参考源码，默认只启动 17 项已接通的任务。源码可用不等于运行资格；
+共 30 项均有参考源码，默认只启动 17 项已接通的任务。源码可用不等于运行资格；
 `catalog.json` 分别记录 `reference_status`、`status`、逐任务 `source`、机制目标与基线范围。
 
 001–019 来自 `flashinfer-bench-b300-individual-20260918` 内嵌的 CUDA 源码；
@@ -21,9 +22,53 @@
 008 在 M=1 有两阶段 GEMV，当前单 Schedule 作者若无法表达完整分阶段机制，须指出缺口并提交完整替代候选。
 011 的指针缓存不构成 B 内容未变的证明，禁止将该假设带入当前输入的计算。
 
-当前绑定 B300 / sm_103a。包内历史说明的通过数与速度未作为本项目复验结果导入。
+原 001–026 绑定 B300 / sm_103a。027–030 的原始目标和评估目标各自由 catalog 声明；
+KDA 原论文提交以 B200 / sm_100a 为准，不能直接把 B300 运行称为同目标复现。
+包内历史说明的通过数与速度未作为本项目复验结果导入。
 源码出处见 [NOTICE.md](NOTICE.md)，逐任务参考入口、精度与机制目标见 [catalog.json](catalog.json)。
 旧 Python 参考保留为历史对照；实际提交给作者的文件仅由每行 `references` 指定。
+
+## CAKE 原框架能力评估：027–030
+
+这四项同时检查完整算子语义与优化机制。`catalog.json` 的 `assessment` 是任务准备规格，
+不是已验收的 Workload Contract。它记录原始 ABI、必须验证的 shape、机制、判对要求和
+接入步骤；参考文件的 commit、原路径和许可只由各目录的 `reference.json` 维护。
+统一管理规范仍是 [kernel-reproduction/AGENTS.md](../../contracts/scaffolds/kernel-reproduction/AGENTS.md)。
+
+| ID | 要复现的功能 | 当前规格中的性能输入 |
+|---|---|---|
+| 027 | KDA prefill：跨 chunk 状态、M64/M128、prep/TMA/MMA/写回流水线、packed/tail 与原地状态更新 | 原 PR 的六个 B200 BF16 shape |
+| 028 | KDA decode：T1 直接递推、T2/T4 与 T5/T6 Gram 方案、分块选择、全部 speculative checkpoint | 原 PR 的 30 个 B200 shape；另要求验证低 CTA-wave 分支 |
+| 029 | TinyGEMM2：bitwise BF16+bias、4/8 级流水线、PDL、batch 尾部与 dispatch | 三个公开时延 fixture；原 35/239 行清单尚未取得，不能宣称覆盖 |
+| 030 | Alpha-MoE：W8A8 gather→gate/up→SwiGLU→再量化→down→带权累加，片上中间结果 | 后续 v46 的四个 fixture；版本和计时口径与论文历史结果分开 |
+
+在干净提交上执行 CPU-only 检查，并生成管理 Agent 可读取的任务目录：
+
+```sh
+python3 tools/rewrite_collection.py assess --workspace "$HOME/cake-assessments/paper-001"
+# 可加 --task 029_cake_tinygemm2 单独检查；目录必须此前不存在且位于源码仓库外。
+```
+
+`assessment.json` 记录 source commit、每项任务的完整接入状态、最小 Schedule 及当前
+Compiler 的原始 Findings。`probes/` 保留实际输入和成功生成的源码。
+`tasks/<id>/` 内包含 `TASK.md`、统一 `AGENTS.md`、准备规格和真正可读取的参考文件。
+这条命令不会调用 provider、编译 GPU 二进制、申请 GPU 或生成 Campaign。存在未接通任务
+时返回 1，同时保留完整报告；这个返回值表示尚未完成整项任务接入，不代表报告未生成。
+
+组件探针复用现有 Corpus 和 Python Schedule，并显式记录改动。通过一项只意味着该
+小程序能生成源码：FP32 state-store 不证明 KDA，INT32 atomic 不证明 BF16 reduce-add，
+register MMA 不证明 TinyGEMM bitwise parity，TMA/TMEM 示例也不证明跨 chunk 状态驻留。
+所有其他阶段保持未测；没有把组件通过率作为原框架能力分数。
+
+管理 Agent 按规格完成新 Workload、独立 oracle、完整候选入口和外部 baseline 适配，再接回
+现有 `launch_task.py` → `kernel_experiment.py` → `rewrite_collection.py prepare/run`。
+禁止用原始 CUDA 包装、退役 `checked_cuda_asset`、简化算子或未申明的多 kernel 替代来报
+“结构复现”。允许有正确的替代实现，但其语义、机制和性能结果分列。
+
+性能比较前固定外部参考、计时边界、判据和预算；分别报告 kernel duration sum、GPU span、
+API wall 和框架指标。KDA prefill 的公开 FlashKDA 比对使用容差；TinyGEMM 要求 bitwise；
+Alpha-MoE 要保留中间量化和累加舍入约定。不能让参考源码携带的历史通过数替代这些验收。
+发现的 Compiler 缺口按现有 Finding/tick-tock 流程处理，不在这里建立第二份缺口数据库。
 
 ## 在另一台电脑启动
 
