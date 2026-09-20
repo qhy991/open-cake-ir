@@ -81,3 +81,56 @@ then passed its first 21 strict checks, including the large-shape stage4 ordinar
 input. Its large-shape stage8 launch was refused for 475136 bytes of shared memory
 against a 232448-byte device limit. Stage8 remains a retained failed candidate;
 the next comparison uses 2/4 stages under the unchanged shapes and numerical gate.
+
+## Measured B300 gap, 2026-09-20
+
+Run `cake-tinygemm-compare-b300-539c6c81-a98903082f5c` completed on B300-M2 under
+broker job `gpuq-1b17d8d753e4`, source `539c6c81`. All **30/30** Open-Cake output
+checks and **15/15** official-export checks passed the same bitwise reference gate;
+every input remained unchanged. A separate profiler observation recorded one CUDA
+kernel for every timed arm. The subsequent public-build admission repair admits only
+the emitter's exact pure FP32 `mov` identity, with negative checks against arbitrary
+assembly; it does not change the measured kernel source.
+
+Times below are medians of five round medians, in microseconds. Slowdown is the median
+paired Open-Cake/official ratio, so it need not equal a ratio of rounded table entries.
+
+| B / N / K | TRT-derived reference | Official CAKE stage4 | Open-Cake s2 | Open-Cake s4 | s2 slowdown vs CAKE | s4 slowdown vs CAKE |
+|---|---:|---:|---:|---:|---:|---:|
+| 1 / 128 / 720 | 2.912 | 2.720 | 99.969 | 100.192 | 36.72x | 36.77x |
+| 16 / 1024 / 1024 | 3.137 | 3.040 | 106.016 | 105.825 | 34.87x | 34.81x |
+| 64 / 4096 / 3072 | 38.016 | 21.216 | 239.969 | 289.186 | 11.31x | 13.63x |
+
+The official-export round-median ranges are 2.688–2.848, 3.008–3.072 and
+21.088–21.248 us. Its largest within-round CV is 7.78% on the smallest shape;
+the comparisons are descriptive measurements, not a declared performance-parity
+acceptance. The TRT-derived arm also has cross-round outliers (up to 7.603 and
+91.240 us for the latter shapes); the full raw samples remain retained, and its
+ratios are not substituted for the official CAKE comparison.
+
+This establishes a correct **numeric rewrite**, with a large measured performance gap.
+The candidate expresses the four-way arithmetic but has not recreated the original
+compact TMA/warp pipeline. The earlier 475136-byte stage8 refusal is a concrete resource
+gap. Register spills, occupancy and memory-traffic attribution have not been measured,
+so those are profiling hypotheses rather than an asserted cause of the slowdown.
+
+The authoritative evidence is on B300-M2 under
+`/mnt/b300-shared/home/qinhaiyan/workspace/aka-mechanism-remaining605-b300-20260907/state/runs/`
+and the run id above: `stages/comparison/checks/report.json` contains samples and kernel
+symbols, the per-shape files contain complete outputs, and `stages/comparison/result.json`
+contains the judge disposition. The local summary mirror is
+`/Users/haiyan-infiniai/open-cake-assessments/nvidia-539c6c81/final-report.json`.
+
+## What is still different from the paper's system
+
+| Family | Current Open-Cake evidence | Missing complete capability | Performance gap |
+|---|---|---|---|
+| TinyGEMM2 | B300 complete numeric candidate; strict peer gate; normal authoring/build entry integrated | Faithful TMA/warp roles, PDL, full dispatcher and original 35/239-shape coverage; framework validation | Measured above: roughly 11–37x slower for tested candidates |
+| KDA prefill | Component probes and pinned six-shape preparation specification | Complete recurrent Workload/oracle/authoring chain; mutable-state CuTe/native lowering and cross-chunk residency | Not measured; no full candidate |
+| KDA decode | Component probes and pinned 30-shape preparation specification | Complete public state/checkpoint/GQA contract and authoring/evaluation path; no equivalence from simple state-store | Not measured; no full candidate |
+| Alpha-MoE | Pinned later export and four-fixture specification | Complete FP8 routed fused computation, quantization/scales and BF16 accumulation; native FP8/atomic probes are refused | Not measured; no full candidate |
+
+These are four task families, not a percentage of the private original compiler. The
+remaining three have not been rewritten and qualified; a standalone probe cannot stand
+in for them. This run does not compare agent token efficiency, cost-model quality or
+compiler-evolution effectiveness under a matched original-CAKE experiment.
