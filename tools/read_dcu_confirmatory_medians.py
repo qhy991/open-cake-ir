@@ -182,8 +182,8 @@ def table(by_task, revisions, *, floor_ms, materiality_ratio):
     qualified_runs = sum(len(runs) for runs in by_task.values())
     # The grid every reported median lies on. hip_benchmark reports resolution_us per
     # cohort, from whatever steps that cohort happened to show; across a whole collection
-    # the greatest common divisor of the pairwise differences is unambiguous, and it is
-    # what decides whether a shape can be measured at all. F-2026-09-18-002 argued from
+    # the greatest common divisor describes the observed median grid. It does not
+    # calibrate hardware timer resolution. F-2026-09-18-002 argued from
     # bytes for three versions without it.
     nanoseconds = sorted({round(row[key] * 1e6) for row in kept.values()
                           for key in ("candidate", "baseline")})
@@ -204,6 +204,7 @@ def table(by_task, revisions, *, floor_ms, materiality_ratio):
         "qualified_runs": qualified_runs,
         "qualified_tasks": len(kept),
         "floor_ms": floor_ms,
+        # Historical field name: observed median-difference GCD, not timer calibration.
         "timer_quantum_ns": quantum or None,
         "materiality_ratio": materiality_ratio,
         "sweep_days": sorted({name.rsplit("-", 2)[1] for name in revisions}),
