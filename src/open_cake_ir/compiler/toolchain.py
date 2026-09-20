@@ -87,6 +87,28 @@ def _fp32_fma_call(node: ast.AST, requirements: Mapping[str, object]) -> bool:
     )
 
 
+def _fp32_materialize_call(node: ast.AST, requirements: Mapping[str, object]) -> bool:
+    """Admit the emitter's exact, pure identity barrier for selected-K partials."""
+    if (requirements.get('code_object') != CodeObject.CUBIN.value or not isinstance(node, ast.Call)
+            or len(node.args) != 1 or not isinstance(node.args[0], ast.Constant)
+            or node.args[0].value != 'mov.b32 $0, $1;'):
+        return False
+    keywords = {kw.arg: kw.value for kw in node.keywords}
+    if len(keywords) != len(node.keywords) or set(keywords) != {'constraints','args','dtype','is_pure','pack'}:
+        return False
+    operands = keywords['args']
+    return (isinstance(operands, ast.List) and len(operands.elts) == 1
+            and not isinstance(operands.elts[0], ast.Starred)
+            and ast.dump(keywords['dtype']) == ast.dump(ast.parse('tl.float32', mode='eval').body)
+            and all(isinstance(keywords[k], ast.Constant) and type(keywords[k].value) is type(v)
+                    and keywords[k].value == v
+                    for k,v in (('constraints','=f,f'),('is_pure',True),('pack',1))))
+
+
+def _approved_fp32_asm(node: ast.AST, requirements: Mapping[str, object]) -> bool:
+    return _fp32_fma_call(node, requirements) or _fp32_materialize_call(node, requirements)
+
+
 def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> None:
     """Admit one kernel-only module without importing or evaluating any source.
 
@@ -167,9 +189,9 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                     if node.attr == "inline_asm_elementwise":
                         call = parents.get(node)
                         allowed = (isinstance(call, ast.Call) and call.func is node
-                                   and _fp32_fma_call(call, requirements))
+                                   and _approved_fp32_asm(call, requirements))
                         if not allowed:
-                            raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract at line {node.lineno}")
+                            raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract or materialization identity at line {node.lineno}")
                 elif isinstance(node.value, ast.Name) and node.value.id == "libdevice":
                     allowed = has_libdevice and node.attr == "tanh" and isinstance(node.ctx, ast.Load)
                 else:
@@ -190,9 +212,9 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
                         raise ValueError(f"native Triton float requires a direct infinity literal at line {node.lineno}")
                 if (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)
                     and fn.value.id == "tl" and fn.attr == "inline_asm_elementwise"):
-                    allowed = _fp32_fma_call(node, requirements)
+                    allowed = _approved_fp32_asm(node, requirements)
                     if not allowed:
-                        raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract at line {node.lineno}")
+                        raise ValueError(f"native Triton inline assembly requires the exact FP32 FMA contract or materialization identity at line {node.lineno}")
                 if not allowed or any(kw.arg is None for kw in node.keywords):
                     raise ValueError(f"native Triton unsupported call at line {node.lineno}")
             if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
