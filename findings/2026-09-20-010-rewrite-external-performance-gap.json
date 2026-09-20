@@ -831,5 +831,347 @@
     "commit": "cb5e73b39c75a817a19f4f6328dca6d72d1e9cbe",
     "reason": "NVIDIA integration found the same date/sequence already used by main provider-protocol findings; original evidence remains at the pinned commit."
   },
-  "followup_observation": "Three subsequent external comparisons complete 005, 023 (h1536) and 024: all 90 pre/postflight checks passed, bringing this record to 10 tasks and 300 such checks. Their optimized-versus-external timing edges each fail the unchanged CV gate. 024 improves on its old starter by 2.475x with qualified timing; 005 is 5.6 percent slower than its old starter with qualified timing, so keep the starter and return that seed to optimization. 023 has only a descriptive external lead. These are additional historical-source comparisons, not measurements of the new guarded alignment implementation."
+  "followup_observation": "Three subsequent external comparisons complete 005, 023 (h1536) and 024: all 90 pre/postflight checks passed, bringing this record to 10 tasks and 300 such checks. Their optimized-versus-external timing edges each fail the unchanged CV gate. 024 improves on its old starter by 2.475x with qualified timing; 005 is 5.6 percent slower than its old starter with qualified timing, so keep the starter and return that seed to optimization. 023 has only a descriptive external lead. These are additional historical-source comparisons, not measurements of the new guarded alignment implementation.",
+  "work_assignment_followup": {
+    "observed_at": "2026-09-20T16:12:47.944599+00:00",
+    "source_commit": "ba4537fd1e0fed9014105f32aa92c0e2a37f2c27",
+    "source_scope": "Complete authored Schedules through the existing Compiler, not an expanded specialize_triton_warps pass. The pass still refuses TileLoop. Width variants change only execution_groups and the nominal Schedule id; width one retains the original Schedule mechanisms under the current compiler. No alignment treatment.",
+    "measurement_boundary": "Original oracle and all input/output checks; 2550 complete snapshots per run, five distributions, 10 alternating pairs per edge, 25 timed samples and 42 checked calls per cohort, cold-L2 CUPTI, one continuous exclusive allocation for all three edges. CPU preparation and bulk validation are outside that allocation. CV and materiality remain 0.05.",
+    "control_boundary": "003 uses its frozen old optimized binary; 022 uses its faster original single-row starter. A width-one recompilation measures current-compiler floor separately. The original task starters are retained at their previous paths. 003 external remains the explicitly derived Graph-host-argument correction; 022 external is unchanged.",
+    "results": [
+      {
+        "task": "003_fused_add_rmsnorm_h7168",
+        "width": 1,
+        "control_role": "optimized",
+        "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/003_fused_add_rmsnorm_h7168-w1",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-w1.json",
+        "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-original.py",
+        "run_id": "nvidia-work-assignment-comparison-20260920-5e937a53efea",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-5e937a53efea",
+        "node_state": "completed",
+        "stage": null,
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshots_checked": 2550,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 14.272,
+            "right_us": 3.04,
+            "right_over_left": 0.213004484304933,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.046209348136879,
+            "cohorts_above_cv_limit": 0
+          },
+          "starter_vs_external": {
+            "left_us": 14.5925,
+            "right_us": 3.04,
+            "right_over_left": 0.208326194963166,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.03814710741417,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 14.3205,
+            "right_us": 14.656,
+            "right_over_left": 1.023427952934604,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.021613267851421,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "003_fused_add_rmsnorm_h7168",
+        "width": 4,
+        "control_role": "optimized",
+        "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/003_fused_add_rmsnorm_h7168-w4",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-w4.json",
+        "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-original.py",
+        "run_id": "nvidia-work-assignment-comparison-20260920-7abcd87339da",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-7abcd87339da",
+        "node_state": "completed",
+        "stage": null,
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshots_checked": 2550,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 10.016,
+            "right_us": 3.104,
+            "right_over_left": 0.309904153354633,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.050078849889253,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 14.6565,
+            "right_us": 3.104,
+            "right_over_left": 0.211783167877733,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.047245416067375,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 10.016,
+            "right_us": 14.656,
+            "right_over_left": 1.463258785942492,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.02805321186867,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "003_fused_add_rmsnorm_h7168",
+        "width": 8,
+        "control_role": "optimized",
+        "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/003_fused_add_rmsnorm_h7168-w8",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-w8.json",
+        "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-original.py",
+        "run_id": "nvidia-work-assignment-comparison-20260920-c3bed83a0d53",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-c3bed83a0d53",
+        "node_state": "running",
+        "stage": "verify",
+        "status": "pending_cpu_verification",
+        "correctness_passed": null,
+        "snapshots_checked": null,
+        "edges": {}
+      },
+      {
+        "task": "003_fused_add_rmsnorm_h7168",
+        "width": 16,
+        "control_role": "optimized",
+        "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/003_fused_add_rmsnorm_h7168-w16",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-w16.json",
+        "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-original.py",
+        "run_id": "nvidia-work-assignment-comparison-20260920-a081f2ee0d4f",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-a081f2ee0d4f",
+        "node_state": "completed",
+        "stage": null,
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshots_checked": 2550,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 6.944,
+            "right_us": 3.1029999999999998,
+            "right_over_left": 0.446860599078341,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.052993746815625,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 14.657,
+            "right_us": 3.1029999999999998,
+            "right_over_left": 0.211707716449478,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.054939003064446,
+            "cohorts_above_cv_limit": 1
+          },
+          "optimized_vs_starter": {
+            "left_us": 6.912,
+            "right_us": 14.687999999999999,
+            "right_over_left": 2.125,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.028385916719004,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "022_rmsnorm_h512",
+        "width": 1,
+        "control_role": "starter",
+        "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/022_rmsnorm_h512-w1",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/022_rmsnorm_h512-w1.json",
+        "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/022_rmsnorm_h512-original.py",
+        "run_id": "nvidia-work-assignment-comparison-20260920-9f123f05addb",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-9f123f05addb",
+        "node_state": "completed",
+        "stage": null,
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshots_checked": 2550,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 2.305,
+            "right_us": 2.6879999999999997,
+            "right_over_left": 1.166160520607375,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.054431395087564,
+            "cohorts_above_cv_limit": 2
+          },
+          "starter_vs_external": {
+            "left_us": 2.336,
+            "right_us": 2.656,
+            "right_over_left": 1.136986301369863,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.064995002308857,
+            "cohorts_above_cv_limit": 3
+          },
+          "optimized_vs_starter": {
+            "left_us": 2.336,
+            "right_us": 2.336,
+            "right_over_left": 1.0,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.071008658305713,
+            "cohorts_above_cv_limit": 2
+          }
+        }
+      },
+      {
+        "task": "022_rmsnorm_h512",
+        "width": 4,
+        "control_role": "starter",
+        "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/022_rmsnorm_h512-w4",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/022_rmsnorm_h512-w4.json",
+        "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/022_rmsnorm_h512-original.py",
+        "run_id": "nvidia-work-assignment-comparison-20260920-0ca4fb237cc1",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-0ca4fb237cc1",
+        "node_state": "completed",
+        "stage": null,
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshots_checked": 2550,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 2.336,
+            "right_us": 2.72,
+            "right_over_left": 1.164383561643836,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.047341193352724,
+            "cohorts_above_cv_limit": 0
+          },
+          "starter_vs_external": {
+            "left_us": 2.368,
+            "right_us": 2.72,
+            "right_over_left": 1.148648648648649,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.059496342302966,
+            "cohorts_above_cv_limit": 1
+          },
+          "optimized_vs_starter": {
+            "left_us": 2.336,
+            "right_us": 2.368,
+            "right_over_left": 1.013698630136986,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.060509516347245,
+            "cohorts_above_cv_limit": 2
+          }
+        }
+      },
+      {
+        "task": "022_rmsnorm_h512",
+        "width": 8,
+        "control_role": "starter",
+        "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/022_rmsnorm_h512-w8",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/022_rmsnorm_h512-w8.json",
+        "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/022_rmsnorm_h512-original.py",
+        "run_id": "nvidia-work-assignment-comparison-20260920-125fa0d071ac",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-125fa0d071ac",
+        "node_state": "completed",
+        "stage": null,
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshots_checked": 2550,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 2.305,
+            "right_us": 2.6879999999999997,
+            "right_over_left": 1.166160520607375,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.055860763351109,
+            "cohorts_above_cv_limit": 4
+          },
+          "starter_vs_external": {
+            "left_us": 2.336,
+            "right_us": 2.657,
+            "right_over_left": 1.137414383561644,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.067411583279925,
+            "cohorts_above_cv_limit": 5
+          },
+          "optimized_vs_starter": {
+            "left_us": 2.3040000000000003,
+            "right_us": 2.336,
+            "right_over_left": 1.013888888888889,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.056609183162573,
+            "cohorts_above_cv_limit": 3
+          }
+        }
+      }
+    ],
+    "interpretation": "003 width-one new/old is quality-passing close_null (1.023x), so this run establishes no material compiler-floor improvement. Width four and sixteen beat the old control on qualified edges (1.463x and 2.125x), but their external edges fail CV. Width changes are candidate tuning, not a new Compiler mechanism. 022 width four beats the external on a qualified 1.164x edge; no tested width has a quality-passing improvement over the retained original starter. Preserve that starter. A valid individual edge does not qualify the whole three-edge report.",
+    "promotion_disposition": "No promotion. Retain failed timing edges and pending numerical verification. Next structural candidate replaces the sliced/reloading 003 computation with an existing masked whole-row formulation at the same width; profiler attribution is still separate."
+  },
+  "work_assignment_completion": {
+    "observed_at": "2026-09-20T16:22:10.084466+00:00",
+    "completed_runs": 7,
+    "snapshots_checked": 17850,
+    "correctness_passed": true,
+    "previous_observation": "2026-09-20T16:12:47.944599+00:00",
+    "previously_pending_result": {
+      "task": "003_fused_add_rmsnorm_h7168",
+      "width": 8,
+      "control_role": "optimized",
+      "input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/003_fused_add_rmsnorm_h7168-w8",
+      "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-w8.json",
+      "original_authored_source": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/003_fused_add_rmsnorm_h7168-original.py",
+      "run_id": "nvidia-work-assignment-comparison-20260920-c3bed83a0d53",
+      "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-c3bed83a0d53",
+      "node_state": "completed",
+      "status": "measurement_quality_failed",
+      "correctness_passed": true,
+      "snapshots_checked": 2550,
+      "edges": {
+        "optimized_vs_external": {
+          "left_us": 10.368,
+          "right_us": 3.072,
+          "right_over_left": 0.296296296296296,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.057705778395632,
+          "cohorts_above_cv_limit": 1
+        },
+        "starter_vs_external": {
+          "left_us": 14.527999999999999,
+          "right_us": 3.04,
+          "right_over_left": 0.209251101321586,
+          "quality_passed": true,
+          "classification": "second_arm_faster",
+          "maximum_cohort_cv": 0.037878573976812,
+          "cohorts_above_cv_limit": 0
+        },
+        "optimized_vs_starter": {
+          "left_us": 10.368,
+          "right_us": 14.496,
+          "right_over_left": 1.398148148148148,
+          "quality_passed": true,
+          "classification": "first_arm_faster",
+          "maximum_cohort_cv": 0.02443424942865,
+          "cohorts_above_cv_limit": 0
+        }
+      }
+    },
+    "interpretation": "003 width eight also beats the frozen old optimized control on a qualified edge: 10.368 versus 14.496 us, 1.398x. Its external edge fails CV. Width-dependent improvement is not monotonic. All seven runs now pass their 2550 complete numerical snapshots; only 003 width one has all three timing edges quality-passing. Six full reports remain measurement_quality_failed. Individual qualified edges retain their own scope. No promotion."
+  }
 }
