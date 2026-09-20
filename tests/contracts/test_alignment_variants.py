@@ -141,3 +141,34 @@ class AlignmentVariants(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(ValueError,'preserve source'):
                 replace(candidate,artifact_payloads=payloads,
                         artifact_roles={k:sha256(v).hexdigest() for k,v in payloads.items()})
+
+    def test_partial_teardown_can_resume_and_all_failures_are_preserved(self):
+        from open_cake_ir.evaluation.loaders import LifecycleError
+        from unittest.mock import Mock
+        candidate, manifest, _ = self.build(16)
+        generic, aligned = Mock(closed=False), Mock(closed=False)
+        primary, cleanup = RuntimeError('load aligned'), RuntimeError('unload generic')
+        generic.close.side_effect = cleanup
+        loader = Mock(side_effect=[generic, primary])
+        with self.assertRaises(LifecycleError) as caught:
+            LoadedAlignmentCandidate(candidate,manifest,None,loader,lambda:None)
+        self.assertIs(caught.exception.primary,primary)
+        self.assertIs(caught.exception.teardown,cleanup)
+        loaded = LoadedAlignmentCandidate(candidate,manifest,None,
+                                          Mock(side_effect=[generic,aligned]),lambda:None)
+        def closed_aligned(**_): aligned.closed = True
+        aligned.close.side_effect = closed_aligned
+        with self.assertRaisesRegex(RuntimeError,'unload generic'):
+            loaded.close(synchronize=lambda:None)
+        def closed_generic(**_): generic.closed = True
+        generic.close.side_effect = closed_generic
+        loaded.close(synchronize=lambda:None)
+        self.assertTrue(loaded.closed)
+        self.assertEqual(aligned.close.call_count,1)
+        generic.closed = aligned.closed = False
+        generic.close.side_effect = cleanup
+        aligned.close.side_effect = primary
+        with self.assertRaises(LifecycleError) as caught:
+            loaded.close(synchronize=lambda:None)
+        self.assertIs(caught.exception.primary,primary)
+        self.assertIs(caught.exception.teardown,cleanup)

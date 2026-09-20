@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping
 
 from open_cake_ir.serialization import canonical_json_bytes
+from .loaders import LifecycleError
 
 
 def pack_candidates(candidates):
@@ -70,8 +71,11 @@ class LoadedAlignmentCandidate:
         self.generic = loader(parent, manifest, admission)
         try:
             self.aligned = loader(child, child_manifest, admission)
-        except BaseException:
-            self.generic.close(synchronize=synchronize)
+        except BaseException as primary:
+            try:
+                self.generic.close(synchronize=synchronize)
+            except BaseException as teardown:
+                raise LifecycleError(primary, teardown) from primary
             raise
         self.dispatch_counts = {'generic': 0, 'aligned': 0}
         self.last_variant = None
@@ -106,11 +110,17 @@ class LoadedAlignmentCandidate:
         self.dispatch_counts[selected] += 1
 
     def close(self, *, synchronize):
+        if self.closed:
+            raise ValueError('alignment candidate modules are already closed')
         errors = []
         for loaded in (self.aligned, self.generic):
+            if loaded.closed:
+                continue
             try:
                 loaded.close(synchronize=synchronize)
             except BaseException as error:
                 errors.append(error)
+        if len(errors) > 1:
+            raise LifecycleError(errors[0], *errors[1:]) from errors[0]
         if errors:
             raise errors[0]
