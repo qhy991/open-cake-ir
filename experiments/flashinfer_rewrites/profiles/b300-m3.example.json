@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "provider": {
+    "harness": "codex",
+    "model": "gpt-5.6-sol",
+    "effort": "high"
+  },
+  "budget": {
+    "turns": 4,
+    "token_budget": 750000,
+    "wall_seconds": 7200
+  },
+  "node": {
+    "transport": "local",
+    "python": "/mnt/b300-shared/home/qinhaiyan/open-cake-round3-20260906-JdwgrZ/venv/bin/python",
+    "kernelctl": "/mnt/b300-shared/home/qinhaiyan/github-deployments/gpu-infra-dc595ba/bin/kernelctl",
+    "socket": "/tmp/kernelinfra-aka-b300-m3.sock",
+    "provider_executable": "/mnt/b300-shared/home/qinhaiyan/cake-providers/codex-0.153.4-clean-20260919/bin/codex",
+    "http_proxy": "http://127.0.0.1:17990"
+  }
+}

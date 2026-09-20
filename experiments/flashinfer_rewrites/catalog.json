@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "collection": "flashinfer-bench-collection-0706",
+  "source_author": "kersor",
+  "scope": "reference-guided agent authoring; starter-relative inner loop; external parity requires separate measurement",
+  "tasks": [
+    {
+      "id": "001_fused_add_rmsnorm_h2048",
+      "status": "ready",
+      "task": "fib_fused_add_rmsnorm_h2048",
+      "backend": "triton-b300",
+      "rows": 79,
+      "columns": 2048,
+      "reference_kind": "authored_kernel",
+      "references": [
+        "references/001_fused_add_rmsnorm_h2048/submission.py",
+        "references/001_fused_add_rmsnorm_h2048/best_kernel.py"
+      ],
+      "objective": "Reproduce the selected four-row small-batch CTA, weight reuse and rounding. Compare a distinct complete work partition; the large-batch prefetch branch is outside this shape."
+    },
+    {
+      "id": "002_fused_add_rmsnorm_h4096",
+      "status": "ready",
+      "task": "fib_fused_add_rmsnorm_h4096",
+      "backend": "triton-b300",
+      "rows": 170,
+      "columns": 4096,
+      "reference_kind": "authored_kernel",
+      "references": [
+        "references/002_fused_add_rmsnorm_h4096/submission.py",
+        "references/002_fused_add_rmsnorm_h4096/kernel.py"
+      ],
+      "objective": "Reproduce the selected two-row CTA and weight reuse. Compare a distinct complete row assignment. The persistent branch above 512 rows is not exercised here."
+    },
+    {
+      "id": "003_fused_add_rmsnorm_h7168",
+      "status": "ready",
+      "task": "fib_fused_add_rmsnorm_h7168",
+      "backend": "triton-b300",
+      "rows": 64,
+      "columns": 7168,
+      "reference_kind": "authored_kernel",
+      "references": [
+        "references/003_fused_add_rmsnorm_h7168/submission.py",
+        "references/003_fused_add_rmsnorm_h7168/candidate_v0.py"
+      ],
+      "objective": "Reproduce the 7168-wide masked reduction and rounding. Compare padded-8192 and chunked reduction structures when expressible."
+    },
+    {
+      "id": "004_gemm_n128_k2048",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "005_gemm_n256_k7168",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "006_gemm_n2048_k4096",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "007_gemm_n4096_k4096",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "008_gemm_n4096_k14336",
+      "status": "ready",
+      "task": "fib_gemm_n4096_k14336",
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 4096,
+      "reference_kind": "library_wrapper",
+      "references": [
+        "references/008_gemm_n4096_k14336/submission.py",
+        "references/008_gemm_n4096_k14336/best_kernel.py"
+      ],
+      "objective": "Use the supplied torch.compile/matmul wrapper as a library reference. Author a complete Cake GEMM; compare explicit reduction and a supported tiled contraction. Do not claim to have reproduced unseen cuBLAS or Inductor internals."
+    },
+    {
+      "id": "009_gemm_n5120_k2048",
+      "status": "ready",
+      "task": "fib_gemm_n5120_k2048",
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 5120,
+      "reference_kind": "library_wrapper",
+      "references": [
+        "references/009_gemm_n5120_k2048/submission.py",
+        "references/009_gemm_n5120_k2048/solution.py"
+      ],
+      "objective": "Use the supplied torch.mm(out=...) implementation as a library reference. Author and compare complete Cake GEMM structures; its library call does not expose a hand-authored kernel design."
+    },
+    {
+      "id": "010_gemm_n6144_k4096",
+      "status": "ready",
+      "task": "fib_gemm_n6144_k4096",
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 6144,
+      "reference_kind": "authored_kernel",
+      "references": [
+        "references/010_gemm_n6144_k4096/submission.py",
+        "references/010_gemm_n6144_k4096/n1a1-num_stages4.py"
+      ],
+      "objective": "Analyze the actual submission entry n1a1-num_stages4.py, including its M<=8 branch at M=1. Reproduce GEMV partitioning/reduction, compare a distinct complete structure, and preserve FP16 accumulation/output semantics. Do not substitute the inactive alternative files or the M>=9 library fallback."
+    },
+    {
+      "id": "011_gemm_n28672_k4096",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "012_gqa_paged_decode_h32_kv4_d128_ps1",
+      "status": "skipped",
+      "reason": "authoring_route_not_integrated"
+    },
+    {
+      "id": "013_gqa_paged_decode_h32_kv8_d128_ps1",
+      "status": "skipped",
+      "reason": "authoring_route_not_integrated"
+    },
+    {
+      "id": "014_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
+      "status": "skipped",
+      "reason": "authoring_route_not_integrated"
+    },
+    {
+      "id": "015_gqa_paged_prefill_causal_h32_kv8_d128_ps1",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "016_gqa_ragged_prefill_causal_h32_kv4_d128",
+      "status": "skipped",
+      "reason": "authoring_route_not_integrated"
+    },
+    {
+      "id": "017_gqa_ragged_prefill_causal_h32_kv8_d128",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "018_mla_paged_decode_h16_ckv512_kpe64_ps1",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    },
+    {
+      "id": "021_rmsnorm_h128",
+      "status": "ready",
+      "task": "fib_rmsnorm_h128",
+      "backend": "triton-b300",
+      "rows": 2528,
+      "columns": 128,
+      "reference_kind": "authored_kernel",
+      "references": [
+        "references/021_rmsnorm_h128/submission.py",
+        "references/021_rmsnorm_h128/kernel.py"
+      ],
+      "objective": "Analyze the selected persistent multirow traversal. Compare faithful work assignment with one-row or row-tiled alternatives. A function name containing TMA is not instruction evidence."
+    },
+    {
+      "id": "022_rmsnorm_h512",
+      "status": "ready",
+      "task": "fib_rmsnorm_h512",
+      "backend": "triton-b300",
+      "rows": 539,
+      "columns": 512,
+      "reference_kind": "authored_kernel",
+      "references": [
+        "references/022_rmsnorm_h512/submission.py",
+        "references/022_rmsnorm_h512/rmsnorm_h512.py"
+      ],
+      "objective": "Analyze dispatch at B=539, persistent traversal and weight reuse. Compare a distinct complete work partition without inventing target constants."
+    },
+    {
+      "id": "023_rmsnorm_h1536",
+      "status": "ready",
+      "task": "fib_rmsnorm_h1536",
+      "backend": "triton-b300",
+      "rows": 539,
+      "columns": 1536,
+      "reference_kind": "authored_kernel",
+      "references": [
+        "references/023_rmsnorm_h1536/submission.py",
+        "references/023_rmsnorm_h1536/kernel.py"
+      ],
+      "objective": "Reproduce the selected 1024+512 reduction decomposition and weight reuse. Compare a distinct padded whole-row structure if supported."
+    },
+    {
+      "id": "024_rmsnorm_h2048",
+      "status": "ready",
+      "task": "fib_rmsnorm_h2048",
+      "backend": "triton-b300",
+      "rows": 79,
+      "columns": 2048,
+      "reference_kind": "authored_kernel",
+      "references": [
+        "references/024_rmsnorm_h2048/submission.py",
+        "references/024_rmsnorm_h2048/kernel.py"
+      ],
+      "objective": "Reproduce the row-packed RMSNorm structure and FP32 reduction with one final BF16 conversion. Compare distinct complete row assignments; width-only tuning does not satisfy the structural-alternative requirement."
+    },
+    {
+      "id": "025_rmsnorm_h4096",
+      "status": "skipped",
+      "reason": "reference_epsilon_conflict"
+    },
+    {
+      "id": "026_rmsnorm_h7168",
+      "status": "skipped",
+      "reason": "missing_optimized_source"
+    }
+  ]
+}
