@@ -144,3 +144,21 @@ class CollectorOwnership(unittest.TestCase):
             benchmark._collect(launch)
         self.assertIn("launch failed",str(result.exception))
         self.assertIn("drain failed",str(result.exception))
+
+
+class RejectedCaptureEvidence(unittest.TestCase):
+    def test_a_rejected_cohort_retains_its_actual_activity_not_the_previous_success(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+        benchmark=object.__new__(McptiDispatchBenchmark)
+        benchmark.manifest=SimpleNamespace(kernel_name='cake',grid=(8,1,1),block=(64,1,1))
+        benchmark.l2_cache_bytes=8388608
+        benchmark.last_activity={'old':True};benchmark.non_target_dispatches=0;benchmark.resolution_us=0.256
+        raw=capture(kernel('unexpected',1,1000))
+        benchmark._collect=lambda function:raw
+        torch=SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda:None))
+        with patch.dict('sys.modules',{'torch':torch}),self.assertRaises(ValueError):
+            benchmark(lambda:None,dry_run_iters=1,repeat_iters=1,cold_l2_cache=False,use_cuda_graph=False)
+        self.assertEqual(benchmark.last_activity['activity'],raw)
+        self.assertIsNone(benchmark.non_target_dispatches)
+        self.assertIsNone(benchmark.resolution_us)

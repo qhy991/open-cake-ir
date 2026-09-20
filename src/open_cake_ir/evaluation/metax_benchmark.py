@@ -162,6 +162,7 @@ class McptiDispatchBenchmark:
 
     def __call__(self, function, *, dry_run_iters, repeat_iters, cold_l2_cache, use_cuda_graph):
         import torch
+        self.last_activity = self.non_target_dispatches = self.resolution_us = None
         if use_cuda_graph:
             raise ValueError("MACA dispatch timing does not measure graph replay")
         if type(cold_l2_cache) is not bool or any(type(v) is not int or v <= 0 for v in (dry_run_iters, repeat_iters)):
@@ -178,11 +179,11 @@ class McptiDispatchBenchmark:
                 function()
         activity = self._collect(cohort)
         reset = self._reset_record if cold_l2_cache else None
-        samples = dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
-            grid=self.manifest.grid, block=self.manifest.block, repeats=repeat_iters, reset_record=reset)
         self.last_activity = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
             "l2_cache_bytes": self.l2_cache_bytes, "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
             "reset_record": reset, "activity": activity}
+        samples = dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
+            grid=self.manifest.grid, block=self.manifest.block, repeats=repeat_iters, reset_record=reset)
         self.non_target_dispatches = 0  # Proven above; any extra device activity is refused.
         unique = sorted(set(int(round(sample * 1e6)) for sample in samples))
         self.resolution_us = min((b - a for a, b in zip(unique, unique[1:])), default=0) / 1000 or None
