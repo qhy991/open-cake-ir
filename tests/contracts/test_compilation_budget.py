@@ -73,7 +73,7 @@ class CompilationBudgetTests(SemanticLabTestCase):
         provider = Provider({spec.run_id:lab.task_package(spec,spec.run_id)})
         provider.configuration = execution_configuration(document['authoring']['provider'])
         provider.qualification_sha256 = document['authoring']['provider']['qualification']['canonical_sha256']
-        evaluator = FakeEvaluator(document['evaluation_protocol'],sha256(encoded(document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
+        evaluator = action_fixture.ProgramEvaluator(document['evaluation_protocol'],sha256(encoded(document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
         temporary = tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
         run = lab.execute_run(spec,Path(temporary.name)/'evidence',provider=provider,environment=environment,evaluator=evaluator)
         audit,replay = lab.audit_run(run)

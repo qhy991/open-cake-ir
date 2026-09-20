@@ -29,6 +29,12 @@ def rewrite(parent, *, transformation=PASS, stage='seed', width=8):
             'parameters':{'stage':stage,'num_warps':width,'schedule_id':'rewritten','entry_point':'rewritten'}}
 
 
+class ProgramEvaluator(FakeEvaluator):
+    """Fixed-cost fixture: physical entry points do not encode author Turn identity."""
+    def candidate_position(self,candidate):
+        return 'open_cake',1
+
+
 class AuthorActionTests(SemanticLabTestCase):
     def fixture(self, grants, *, baseline=False):
         lab, template = IndependentRunTests.fixture(self)
@@ -75,7 +81,7 @@ class AuthorActionTests(SemanticLabTestCase):
         environment = OpenCakeEnvironment(Compiler.load(ROOT,ROOT/'compiler/revision.json'),
             TritonToolchainBuilder(workload=workload,case_id='primary',isolated_compiler=compilation),
             authority_document=document['authoring'],workload=workload,case_id='primary')
-        evaluator = FakeEvaluator(document['evaluation_protocol'],sha256(encoded(document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
+        evaluator = ProgramEvaluator(document['evaluation_protocol'],sha256(encoded(document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
         root = tempfile.TemporaryDirectory();self.addCleanup(root.cleanup)
         run = lab.execute_run(specification,Path(root.name)/'evidence',provider=provider,environment=environment,evaluator=evaluator)
         audit, replay = lab.audit_run(run)

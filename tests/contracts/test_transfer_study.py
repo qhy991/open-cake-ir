@@ -88,7 +88,7 @@ class TransferStudyTests(SemanticLabTestCase):
             environment = OpenCakeEnvironment(Compiler.load(ROOT,ROOT/'compiler/revision.json'),
                 TritonToolchainBuilder(workload=workload,case_id='primary',isolated_compiler=compiler),
                 workload=workload,case_id='primary',authority_document=spec.document['authoring'])
-            evaluator = FakeEvaluator(spec.document['evaluation_protocol'],
+            evaluator = action_fixture.ProgramEvaluator(spec.document['evaluation_protocol'],
                 sha256(encoded(spec.document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
             return {'provider':provider,'environment':environment,'evaluator':evaluator}
         return build

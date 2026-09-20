@@ -311,9 +311,12 @@ class FakeEvaluator:
     def latency_ms(self, arm, turn, purpose):
         return (1.0 if arm == "open_cake" else 2.0) - (turn - 1) * 0.1
 
-    def evaluate(self, candidate, *, case_id, purpose):
+    def candidate_position(self, candidate):
         arm, raw_turn = candidate.entry_point.rsplit("_turn_", 1)
-        turn = int(raw_turn)
+        return arm, int(raw_turn)
+
+    def evaluate(self, candidate, *, case_id, purpose):
+        arm, turn = self.candidate_position(candidate)
         latency = self.latency_ms(arm, turn, purpose)
         launch_receipt = json.dumps(
             {"candidate_sha256": candidate.candidate_sha256, "purpose": purpose},

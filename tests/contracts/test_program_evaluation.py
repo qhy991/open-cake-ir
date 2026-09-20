@@ -63,12 +63,8 @@ class ProgramEvaluationTests(unittest.TestCase):
         self.assertEqual(result.disposition, 'launchable', result.feedback)
         return result.launchable, workload, fixture
 
-    def loaded(self, candidate, *, failing_stage=None, program=None):
-        if candidate.is_program:
-            manifest, children, _ = program_components(candidate)
-        else:
-            from open_cake_ir.tasks.launch import parse_launch_manifest
-            manifest = parse_launch_manifest(json.loads(candidate.artifact_payloads['launch_manifest']))
+    def loaded(self, candidate, *, failing_stage=None):
+        manifest, children, _ = program_components(candidate)
         position = 1000
         def tensor(values, shape, dtype):
             nonlocal position
@@ -92,11 +88,6 @@ class ProgramEvaluationTests(unittest.TestCase):
                     if mode == 'output': arg.data[:] = outputs[name]
             def close(self, *, synchronize):
                 synchronize(); self.closed = True
-        if not candidate.is_program:
-            # A CPU single-kernel device double executes the exact fused Schedule.
-            kernel = Kernel(program.stages[0])
-            kernel.prepare_arguments = lambda arguments: None
-            return kernel, manifest, tensor, calls, {kernel.stage.name:kernel}
         by_entry = {children[s.name].entry_point: s for s in manifest.program.stages}
         def loader(child, spec, admission):
             kernel = Kernel(by_entry[child.entry_point]); kernels[kernel.stage.name] = kernel
@@ -107,8 +98,8 @@ class ProgramEvaluationTests(unittest.TestCase):
             stream='fixed-stream')
         return loaded, manifest, tensor, calls, kernels
 
-    def assay(self, candidate, workload, *, failing_stage=None, program=None):
-        loaded, manifest, tensor, calls, _ = self.loaded(candidate, failing_stage=failing_stage,program=program)
+    def assay(self, candidate, workload, *, failing_stage=None):
+        loaded, manifest, tensor, calls, _ = self.loaded(candidate, failing_stage=failing_stage)
         inputs = {'a': [0.]*16, 'b': [0.]*64, 'bias': [1.00390625, -1., .1, 2., -.1, .5, -.5, 0.]}
         # Independent scalar oracle: rounded materialization, then SiLU, then rounded output.
         expected = {'out': [rounded(rounded(value, 'bf16')/(1+math.exp(-rounded(value, 'bf16'))), 'bf16')
@@ -142,8 +133,7 @@ class ProgramEvaluationTests(unittest.TestCase):
         rewrite = self.compiler.rewrite_program(Program.from_dict(epilogue_program()), 'fuse_pointwise_epilogue',
             {'producer':'producer', 'epilogue':'epilogue', 'schedule_id':'fused', 'entry_point':'fused'})
         fused, _, _ = self.build(rewrite.program.document)
-        self.assertFalse(fused.is_program)
-        fused_receipt, fused_calls = self.assay(fused, workload,program=rewrite.program)
+        fused_receipt, fused_calls = self.assay(fused, workload)
         self.assertTrue(fused_receipt.correctness_passed)
         self.assertEqual(fused_receipt.kernel_calls, 1)
         self.assertEqual(fused_calls, ['fused'])
@@ -161,7 +151,7 @@ class ProgramEvaluationTests(unittest.TestCase):
         from open_cake_ir.tasks.workloads import create_task
         for backend in BACKENDS:
             with self.subTest(backend=backend):
-                document,source = create_task('relu',backend=backend,rows=2,columns=32)
+                document,source = create_task('softsign',backend=backend,rows=2,columns=32)
                 workload = WorkloadContract(document)
                 schedule = frontend.parse(source).document
                 program = Program.from_schedule(schedule)
@@ -200,7 +190,7 @@ class ProgramEvaluationTests(unittest.TestCase):
     def test_single_stage_projection_does_not_erase_a_public_binding(self):
         from open_cake_ir.evaluation.program import single_kernel_lowering
         from open_cake_ir.tasks.workloads import create_task
-        _,source = create_task('relu',backend='triton-b200',rows=2,columns=32)
+        _,source = create_task('softsign',backend='triton-b200',rows=2,columns=32)
         program = Program.from_schedule(frontend.parse(source).document)
         changed = program.document
         old = changed['inputs'][0]
@@ -212,9 +202,10 @@ class ProgramEvaluationTests(unittest.TestCase):
     def test_single_stage_replay_checks_authored_program_source_and_launch(self):
         from open_cake_ir.lab.replay.artifacts import _replay_launchable_candidate
         from open_cake_ir.tasks.launch import parse_launch_manifest
-        rewrite = self.compiler.rewrite_program(Program.from_dict(epilogue_program()),'fuse_pointwise_epilogue',
-            {'producer':'producer','epilogue':'epilogue','schedule_id':'fused','entry_point':'fused'})
-        candidate,_,_ = self.build(rewrite.program.document)
+        from open_cake_ir.tasks.workloads import create_task
+        _,source = create_task('softsign',backend='triton-b200',rows=2,columns=32)
+        program = Program.from_schedule(frontend.parse(source).document)
+        candidate,_,_ = self.build(program.document)
         self.assertFalse(candidate.is_program)
         def replay(payloads):
             spec = parse_launch_manifest(json.loads(payloads['launch_manifest']))
@@ -226,7 +217,7 @@ class ProgramEvaluationTests(unittest.TestCase):
             evidence = SimpleNamespace(read_object=lambda reference:payloads[reference['role']])
             return _replay_launchable_candidate(evidence,[event],turn=1,candidate_sha256=bound.candidate_sha256,
                 arm='open_cake',manifest_parser=parse_launch_manifest,compiler_factory=lambda:self.compiler,
-                authored_bytes=rewrite.program.document_bytes)
+                authored_bytes=program.document_bytes)
         self.assertEqual(replay(candidate.artifact_payloads).canonical_sha256,candidate.canonical_sha256)
         with self.assertRaisesRegex(ValueError,'authored Program lowering'):
             replay({**candidate.artifact_payloads,'lowered_source':b'changed source'})
