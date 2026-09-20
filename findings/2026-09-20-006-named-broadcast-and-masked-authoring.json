@@ -17,7 +17,18 @@
   "observation": "Retained 005 assigns a32_rows=lm.broadcast(a32_k, axis=0); the frontend rejects the temporary as an alias before the existing shape verifier can diagnose its wrong axis. Norm tasks 023/024/026 also repeatedly confuse broadcast axes, power-of-two vector spans and masked tails. Static probes for masked whole-row h1536/h2048/h7168 already assess and lower with existing tiled program coordinates, so those cases do not establish missing IR.",
   "proposed_change": "Allow a named broadcast construction marker to erase into the existing canonical operation, leaving standalone Buffer aliases and indexed-view aliases refused. Explain retained broadcast axes and masked tiled program coordinates in diagnostics. No new IR primitive or pass; existing verifier checks remain authoritative.",
   "decision": "accepted",
-  "implemented_in": null,
+  "implemented_in": "3bb1d22a",
   "verified_by": null,
-  "principles": "P1/P3: erase construction-only naming into existing canonical operations. P4/P5/P7: keep typed shape and lifetime checks with their existing owners. P6: exact regression and unchanged Corpus Gate. P2/P8: no hidden lowering or hardware change."
+  "principles": "P1/P3: erase construction-only naming into existing canonical operations. P4/P5/P7: keep typed shape and lifetime checks with their existing owners. P6: exact regression and unchanged Corpus Gate. P2/P8: no hidden lowering or hardware change.",
+  "partial_verification": {
+    "source_commit": "3bb1d22a",
+    "software": "Named and inline broadcast produce identical canonical IR; wrong axes and storing a marker still refuse. Corpus 164/164 unchanged.",
+    "existing_ir_device_probe": {
+      "source_commit": "91538a93",
+      "root": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/masked-row-gpu-replay-20260920",
+      "cases": "023/024/026, rowpack1 and rowpack2, all 5 input cases each passed (30 total).",
+      "scope": "Shows pre-existing masked-row expressibility and correctness, not the new frontend treatment or performance."
+    },
+    "remaining": "Run successor authoring campaigns with corrected guides and the named broadcast frontend before closing this capability finding."
+  }
 }

@@ -17,7 +17,14 @@
   "observation": "The exact fib_gemm_n128_k2048 zeros materializer returns array.array. LoadedTorchTensorCandidate stores lists, so its inputs != self.inputs check refuses equal values. compare_tile_outputs repeats the container equality mistake: zero output_mismatches but inputs_unchanged=false for identical data. Both 004 and 005 retained GPU workers failed with loaded tensor assay input or candidate differs.",
   "proposed_change": "Compare tensor values and lengths across admitted host sequence containers, preserving signed-zero bit checks, candidate/manifest identity and input mutation refusal. No Workload, tolerance or kernel change.",
   "decision": "accepted",
-  "implemented_in": null,
-  "verified_by": null,
+  "implemented_in": "3bb1d22a",
+  "verified_by": {
+    "source_commit": "3bb1d22a",
+    "kind": "CPU reproduction of actual GEMM array materialization and focused shared contracts",
+    "outcome": "Unchanged array/list inputs now pass both loaded-assay and post-launch input checks; changed values, signed zero, lengths, keys and candidate/manifest identities still refuse.",
+    "focused_tests": "61 passed, 4 environment skips, 67 subtests",
+    "corpus_cases": 164,
+    "scope": "Software repair verified; fresh Common Evaluation replay remains separately reported."
+  },
   "principles": "Tensor ABI owns values, shapes and precision; Python sequence container type is not a tensor fact."
 }
