@@ -351,7 +351,7 @@
   "swiglu-20260917-185702": "open-cake-ir@5151954e"
  },
  "footprint_sweep": {
-  "source": "tools/probe_dcu_shape_floor.py, run on bw1100 (BW1101, triton 3.6.0) on 2026-09-20 and REGENERATED rather than transcribed. An earlier version of this file carried six hand-copied pairs and said so, because the host was unreachable when F-2026-09-18-002 was written and the curve existed only as prose in that record, backed by no artifact and no tool. The probe re-run reproduces all six of those pairs digit for digit -- 0.25 and 0.50 MiB at 2.399 us, 1.00 at 2.559, 1.50 at 2.719, 8.00 at 6.719 and 256 at 153.759 -- and adds the four intermediate sizes the hand copy did not have.",
+  "source": "Reported REGENERATED output supplied in the local DCU update; original raw-output path and executing source commit were not supplied and have not been independently verified in this integration. tools/probe_dcu_shape_floor.py, run on bw1100 (BW1101, triton 3.6.0) on 2026-09-20 and REGENERATED rather than transcribed. An earlier version of this file carried six hand-copied pairs and said so, because the host was unreachable when F-2026-09-18-002 was written and the curve existed only as prose in that record, backed by no artifact and no tool. The probe re-run reproduces all six of those pairs digit for digit -- 0.25 and 0.50 MiB at 2.399 us, 1.00 at 2.559, 1.50 at 2.719, 8.00 at 6.719 and 256 at 153.759 -- and adds the four intermediate sizes the hand copy did not have.",
   "kind": "synthetic_footprint_sweep_v1",
   "is_campaign_evidence": false,
   "device": "BW1101",
@@ -361,7 +361,7 @@
    0.001,
    0.16
   ],
-  "resolution_note": "The probe reports the assay's own resolution_us per cohort. Nine of the ten sizes report 0.16 us, which is the 160 ns grid this file derives independently from the twenty-one distinct campaign medians -- two different routes to the same number, one from the timer's own reporter and one from the data. Only the 256 MiB cohort reports 0.001, where the durations are long enough for a finer step to appear between samples.",
+  "resolution_note": "The probe reports the assay's own resolution_us per cohort. Nine of the ten sizes report 0.16 us, which is the 160 ns grid this file derives independently from the twenty-one distinct campaign medians -- two different routes to the same number, one from per-cohort sample differences and one from pooled medians. Only the 256 MiB cohort reports 0.001, the smallest observed sample difference in that cohort; why it differs is not established.",
   "pairs_mib_us": [
    [
     0.25,
