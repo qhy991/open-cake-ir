@@ -33,7 +33,7 @@ from open_cake_ir.compiler.target import CodeObject
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda, observe_local_cuda
 from open_cake_ir.evaluation.attempts import job_mode
 from open_cake_ir.evaluation.platforms import ExecutionPlatform, PLATFORMS, platform_for, platform_for_paired_kind
-from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
+from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs, _same_tensor_inputs
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
@@ -263,6 +263,9 @@ def _observe_cuda(authority: _Authority):
 def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
                        samples_per_cohort, route_calls_per_cohort):
     """The single retained CUPTI path for both historical and paired tensor assays."""
+    validation_inputs = getattr(loaded, 'validation_inputs', inputs)
+    if validation_inputs is not inputs and not _same_tensor_inputs(inputs, validation_inputs):
+        raise ValueError('retained validation inputs differ from the Workload case')
     arguments = loaded.fresh_argument_sets(route_calls_per_cohort)
     used = 0
     def launch_fresh():
@@ -279,9 +282,11 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
         raise RuntimeError('retained CUPTI helper invocation count differs')
     check = {'checked_launches': used, 'passed': True, 'output_mismatches': 0,
              'max_abs_error': 0.0, 'inputs_unchanged': True}
+    # A loaded tensor candidate retained a value-identical native CPU array at
+    # admission. Generic callables keep their original input representation.
     for values in arguments:
         observed, after = loaded.snapshot(values)
-        correct, observation = compare_tile_outputs(workload, inputs, expected, observed, after)
+        correct, observation = compare_tile_outputs(workload, validation_inputs, expected, observed, after)
         check['passed'] = check['passed'] and correct
         check['output_mismatches'] += observation['output_mismatches']
         check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])

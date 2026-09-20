@@ -518,13 +518,25 @@ def _same_tensor_inputs(before, after):
     Preserve the existing signed-zero/bit-pattern check and reject any changed
     field, length or value before accepting an unchanged-input observation.
     """
+    from array import array
     import struct
     if not isinstance(before, Mapping) or not isinstance(after, Mapping) or set(before) != set(after):
         return False
-    return all(len(after[name]) == len(values) and all(
-        a == b and struct.pack('>d', float(a)) == struct.pack('>d', float(b))
-        for a, b in zip(values, after[name], strict=True))
-        for name, values in before.items())
+    for name, values in before.items():
+        actual = after[name]
+        if len(actual) != len(values):
+            return False
+        if (isinstance(values, array) and isinstance(actual, array)
+                and values.typecode == actual.typecode == 'd'):
+            # Native double-array comparison keeps NaN != NaN; byte comparison
+            # additionally preserves signed zero. Neither makes Python objects or
+            # calls struct.pack once per matrix element.
+            if values != actual or values.tobytes() != actual.tobytes():
+                return False
+        elif not all(a == b and struct.pack('>d', float(a)) == struct.pack('>d', float(b))
+                     for a, b in zip(values, actual, strict=True)):
+            return False
+    return True
 
 def compare_tile_outputs(workload, before, expected, observed, after):
     """One comparison owner for fresh and already-recorded tensor launches."""
@@ -608,11 +620,12 @@ class LoadedTorchTensorCandidate:
     """One Workload-shaped argument set and admitted module for preflight/timing/postflight."""
 
     def __init__(self, candidate, manifest, inputs, admission):
+        from array import array
         import torch
         self.candidate = candidate
         self.manifest = manifest
         self.admission = admission
-        self.inputs = {name: list(values) for name, values in inputs.items()}
+        self.inputs = {name: array('d', values) for name, values in inputs.items()}
         dtype_names = {'fp32': 'float32', 'bf16': 'bfloat16', 'fp16': 'float16',
                        'fp8_e4m3': 'float8_e4m3fn', 'int32': 'int32'}
         dtypes = {}
@@ -660,12 +673,26 @@ class LoadedTorchTensorCandidate:
                            stream=torch.cuda.current_stream().cuda_stream)
 
     def snapshot(self, arguments=None):
+        from array import array
+        import ctypes
+        import torch
         arguments = self.arguments if arguments is None else arguments
         observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
                     in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'output'}
-        after = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
-                 in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'input'}
+        after = {}
+        for (name, _, _, mode), value in zip(self.manifest.tensor_abi, arguments, strict=True):
+            if mode != 'input':
+                continue
+            host = value.detach().to(device='cpu', dtype=torch.float64).contiguous()
+            values = array('d')
+            values.frombytes(ctypes.string_at(host.data_ptr(), host.numel() * host.element_size()))
+            after[name] = values
         return observed, after
+
+    @property
+    def validation_inputs(self):
+        """Private pre-launch CPU copy, checked against each materialized case at preflight."""
+        return self.inputs
 
     def launch_tensors(self, candidate, manifest, inputs):
         from dataclasses import asdict
