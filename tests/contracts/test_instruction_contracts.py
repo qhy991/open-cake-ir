@@ -82,8 +82,9 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             "apple_gpu_family7": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
             "apple_gpu_family8": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
             "apple_gpu_family9": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
-            # gfx1151 admits its measured OCML tanh; gfx938 also admits contractions.
+            # Each target retains exactly its own admitted contracts.
             "gfx1151": {"elementwise": ["ocml.tanh.f32"]},
+            "xcore1002": {},
             "gfx938": {"elementwise": ["ocml.tanh.f32"],
                        "mma": ["triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
                                "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"]},
