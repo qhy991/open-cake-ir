@@ -87,6 +87,20 @@ class TinyGemmReproduction(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'triton-b300 only'):
             create_task(task.TASK,backend='triton-b200',rows=1,columns=128,depth=720)
 
+    def test_public_launcher_prepares_tinygemm_study_before_device_admission(self):
+        from tools import launch_task
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve() / 'run'
+            with patch.object(launch_task,'_provider_executable',return_value=Path('/fixture/provider')), \
+                 patch.object(launch_task,'_admit_stack',side_effect=RuntimeError('stop before device admission')):
+                with self.assertRaisesRegex(RuntimeError,'stop before device admission'):
+                    launch_task.main(['--task',task.TASK,'--backend','triton-b300',
+                                      '--harness','codex','--model','fixture-model','--effort','high',
+                                      '--workspace',str(workspace),'--depth','720'])
+            workload = load_workload(workspace/'workload.json')
+            self.assertEqual(workload.document['operator'],task.OPERATOR)
+            self.assertEqual(workload.document['validation']['comparison'],'bitwise_bf16')
+
     def test_all_public_shapes_and_both_stage_choices_lower_without_gpu_or_peer_calls(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         with patch.object(task, 'peer_reference', side_effect=AssertionError('preparation must be CPU-only')):
