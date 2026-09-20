@@ -185,10 +185,11 @@ The paper states eight. They bind IR changes here.
 - A proposal is checked against P1-P8 before it is implemented. A primitive and its
   analyses evolve together: syntax without effects and legality rules is a reason to
   refuse it, not to defer them.
-- Changes are test-gated across the kernel corpus; CI runs the Corpus Gate on every
-  commit. Review by a session other than the author's before a change reaches `main` is
-  recommended practice, not a gate: direct commits to `main` are permitted (D9) and no
-  check reads a reviewer line.
+- Changes are test-gated across the kernel corpus. Follow the current
+  [branch workflow](docs/DEVELOPMENT_BRANCHES.md) for task integration and independent
+  review of Compiler changes before `main`; that owner-selected workflow replaces the
+  earlier D9 direct-commit default. CI runs the Corpus Gate on applicable pushes and PRs;
+  no per-change release document or machine-checked reviewer field is introduced.
 - Recurring failures become verifier rules, IR primitives, transformation passes and
   reusable tactics. A one-off failure is not evidence for a rule.
 - After a bounded optimization or recurring-failure investigation, record the promotion
