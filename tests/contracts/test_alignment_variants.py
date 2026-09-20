@@ -26,7 +26,7 @@ class AlignmentVariants(unittest.TestCase):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         cls.lowering = compiler.lower(compiler.assess(frontend.parse(source).document))
 
-    def build(self, alignment):
+    def build(self, alignment, *, compilation=None):
         calls = []
         class Isolated:
             def compile(self, source, requirements):
@@ -44,7 +44,7 @@ class AlignmentVariants(unittest.TestCase):
         lower = self.lowering
         payload = lower.source.encode()
         request = BuildRequest('a' * 64, payload, 'lowered_source', sha256(payload).hexdigest(),
-                               'sm_103a', lower.route.entry_point, lower.toolchain_requirements)
+                               'sm_103a', lower.route.entry_point, lower.toolchain_requirements, compilation=compilation)
         result = TritonToolchainBuilder(workload=self.workload, case_id='primary',
             isolated_compiler=Isolated(), pointer_alignment=alignment).build(request)
         return result, TensorLaunchManifest.from_dict(json.loads(result.artifact_payloads['launch_manifest'])), calls

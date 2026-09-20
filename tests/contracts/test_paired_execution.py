@@ -786,25 +786,28 @@ class PairedExecutionTests(unittest.TestCase):
                 else:
                     self.assertIn('restricted Python', package.agents_markdown)
 
-            # Exercise live composition through its existing Lab.execute handoff.
-            # The CPU fixture constructs the provider and injects the broker boundary;
-            # it requires no service account and invokes neither adapter.
+            # Each independently allocated Run binds fresh provider state through
+            # the production factory. Frozen toolchain identity remains common.
             from open_cake_ir.tasks import compose
             with patch.object(compose, '_admit_executor', return_value=(bound_executor, None)), \
                  patch.object(compose, 'broker_execution_sha256', return_value='c'*64), \
                  patch.object(draft, 'check_corpus', return_value=gate), \
                  patch.object(compose, 'CommandBrokerSubmitter') as broker, \
-                 patch.object(compose.TaskLab, 'execute', return_value='CPU-composition-handoff') as execute:
-                result = compose.execute_matched_from_config(project, lock, rp, self.output / 'unused-run-evidence')
-            self.assertEqual(result, 'CPU-composition-handoff')
+                 patch.object(compose.TaskLab, 'preflight_run', side_effect=lambda spec:spec):
+                factory = compose.run_runtime_factory(project,rp)
+                components = {run_id:factory(lock.run_specification(run_id),self.output/run_id)
+                              for run_id in lock.run_order}
             self.assertEqual(broker.call_args.kwargs['baseline'], baseline)
             broker.return_value.submit.assert_not_called()
-            environments = execute.call_args.kwargs['environments']
+            environments = {lock.run_specification(run_id).environment_kind:value['environment']
+                            for run_id,value in components.items()}
             self.assertEqual(set(environments), {'open_cake', comparison})
-            self.assertIs(environments['open_cake']._toolchain, environments[comparison]._toolchain)
             self.assertIs(environments['open_cake']._toolchain._isolated, toolchain.return_value)
+            self.assertIs(environments[comparison]._toolchain._isolated, toolchain.return_value)
             self.assertEqual(environments[comparison].media_type, policy.media_type)
-            self.assertEqual(set(execute.call_args.kwargs['provider']._builders), set(lock.run_order))
+            self.assertEqual(len({id(value['provider']) for value in components.values()}),len(lock.run_order))
+            for run_id,value in components.items():
+                self.assertEqual(set(value['provider']._builders),{run_id})
 
             if comparison == 'native_triton':
                 invalid_workload = workload.document

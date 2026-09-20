@@ -40,11 +40,12 @@ AI 看到 `TASK.md` 中的题目和预算，以及 `AGENTS.md` 中的工具与�
 | 要核对的内容 | 负责它的材料 |
 | --- | --- |
 | 输入、数学、输出、容差与测试行 | Workload Contract |
-| 比较的环境、重复次数、预算、停止规则 | Study Contract |
+| 一次优化的环境、权限、预算、停止规则 | RunSpecification |
+| 研究分组、重复次数与统计方法 | 研究时使用的 StudyPlan |
 | 当前 Compiler 与完整语料 | clean commit、`compiler/revision.json` 与 Corpus Gate |
 | Lab、评测代码和主机环境 | 源码提交与对应 Target 的 host capture |
 | 实际 AI 程序与能力是否符合本次设计 | Provider qualification |
-| 一次运行具体使用哪些固定版本 | preflight 生成的 CampaignLock |
+| 一次运行具体使用哪些固定版本 | 固定 Run 输入；旧 CampaignLock 只作输入适配 |
 | GPU 分配与新输出目录 | 受控运行配置和本次外部证据根 |
 
 在仓库根目录可以先查看 [当前发布状态](../../reports/current/STATUS.md)，再核对它是否过期：
@@ -61,7 +62,8 @@ GPU 操作需要实际机器、驱动、工具链和受控资源分配；旧教�
 
 ## 模板不等于一次已经获准的真实运行
 
-模板说明实验怎样安排；preflight 把其中的版本引用解析成一个固定 CampaignLock。
+普通优化直接准备 Run；研究模板说明如何预分配多个 Run。旧 Study 入口仍由 preflight
+生成 CampaignLock，再转入同一 Run 引擎。
 后续主线升级，不会让旧实验自动改用新编译器。
 
 仓库的基础设施测试模板还含模拟 provider 和工具链信息。它们用于验证流程，不能原样冒充真实环境。

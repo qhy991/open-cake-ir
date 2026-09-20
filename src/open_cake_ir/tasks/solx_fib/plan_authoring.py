@@ -1,6 +1,7 @@
 """Task-side assembly of complete Python-authored Cake Schedules into a launch plan."""
 from open_cake_ir.compiler.frontend import parse
-from open_cake_ir.evaluation.launch_plan import LaunchPlan
+from open_cake_ir.compiler import Program
+from open_cake_ir.evaluation.launch_plan import prepare_program
 
 
 class PlanAuthor:
@@ -8,7 +9,7 @@ class PlanAuthor:
         self.workload = workload
         abi = workload.tensor_abi(case_id)
         self.document = {
-            'schema_version':1, 'plan_id':workload.workload_id+'-'+case_id,
+            'schema_version':1, 'program_id':workload.workload_id+'-'+case_id,
             'target':workload.target,
             'inputs':[a.name for a in abi if a.mode=='input'],
             'outputs':[a.name for a in abi if a.mode=='output'],
@@ -42,4 +43,4 @@ class PlanAuthor:
                                       'bindings':{field:field for field in (*inputs,*outputs)}})
 
     def finish(self):
-        return LaunchPlan.from_dict(self.document)
+        return Program.from_dict(self.document)

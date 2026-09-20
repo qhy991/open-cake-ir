@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import tempfile
 import unittest
 
+from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.compiler import frontend
 from open_cake_ir.lab.python_reference import bind_python_reference, read_skeleton
 from open_cake_ir.lab.task_package import build_run_reference_documents, _document_sections
@@ -122,14 +123,15 @@ class PythonTaskReferenceTests(unittest.TestCase):
             }.items():
                 path = root / relative; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(contents)
             lock = SimpleNamespace(document={"workload": {"path": "workload.json", "canonical_sha256": "a" * 64},
-                "compiler_revision": {"path": "compiler.json"}, "study": {},
+                "compiler_revision": {"path": "compiler.json"}, "assignment": None,
                 "execution": {"target": "apple_gpu_family8"}, "evaluation_protocol": {"case_id": "primary"},
-                "resolved_inputs": {"budget": {}, "run_protocol": {}}})
+                "budget": {}, "run_protocol": {}, "reference_inputs": {},
+                "knowledge": {"materials": [], "transformations": []}})
             arm = {"environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "input_format": "schedule_or_python_v1",
-                "schedule_skeleton": {"path": "starter.py"},
+                "schedule_skeleton": {"path": "starter.py", "canonical_sha256": sha256(canonical_json_bytes(self.document)).hexdigest()},
                 "scaffold": {"path": "scaffold.md", "sha256": sha256(b"fixture").hexdigest()},
                 "lowering_route": self.document["lowering"]}
-            lock.document["resolved_inputs"]["arm_environments"] = {"open_cake": arm}
+            lock.document["authoring"] = arm
             def prepare(document, workload, case_id, authority):
                 return {**document, "metadata": {"workload_contract_sha256": workload.canonical_sha256}}
             docs = build_run_reference_documents(root, lock, arm,
@@ -142,7 +144,7 @@ class PythonTaskReferenceTests(unittest.TestCase):
             # Python-enabled arms retain their authoring surface even when the
             # workload provides its initial Schedule as JSON.
             (root / "starter.json").write_text(json.dumps(self.document))
-            arm["schedule_skeleton"] = {"path": "starter.json"}
+            arm["schedule_skeleton"] = {"path": "starter.json", "canonical_sha256": sha256(canonical_json_bytes(self.document)).hexdigest()}
             json_starter_docs = build_run_reference_documents(root, lock, arm,
                 workload_contract=SimpleNamespace(canonical_sha256="a" * 64), prepare_schedule=prepare)
             self.assertIn("schedule-skeleton.json", json_starter_docs)

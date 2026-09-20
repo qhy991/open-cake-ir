@@ -48,7 +48,7 @@ The language used here to describe GPU execution plans. Exact fields and semanti
 
 ### Open Cake Compiler
 
-An independently usable compiler that assesses a Schedule, reports analysis, and generates eligible target source. It does not call AI, allocate GPUs, or declare experimental wins.
+An independently usable compiler that checks Programs and Schedules, applies explicit rewrites and generates eligible target source. It does not call AI, allocate GPUs, or declare experimental wins.
 
 ## Compiler terms
 
@@ -59,6 +59,10 @@ A complete execution plan specifying Buffers, worker roles, dependencies, loops,
 ### Target
 
 An exact hardware target and declared capabilities bound by a Compiler Revision. It is not an arbitrary available GPU or permission to fall back to another architecture.
+
+### Program
+
+A Compiler-owned complete implementation: exact target, public tensors, ordered complete Schedules and explicit bindings. Construction checks types, single producers and dataflow; a rewrite returns a complete successor or localized refusal. Initial composition is same-device/same-stream with immutable inputs and fresh outputs. Only explicit singleton-axis views are supported; no layout algebra is introduced.
 
 ### Finding
 
@@ -102,6 +106,10 @@ The problem definition: mathematics, input domain and generation, external refer
 
 The experimental design: authoring environments, allocation, budget, references, and analysis. `matched_search` is the sole live Study kind; the Portfolio Study lifecycle is retired (ADR 0071). It is not mutable configuration for one execution.
 
+### StudyPlan
+
+A frozen research allocation of conditions, knowledge versions, discovery/adaptation/test splits, replicate blocks and Run templates. E/P assignments select material and transform access, not candidate language or backend. Execution uses the common Run engine.
+
 ### Claim Scope
 
 The kind of conclusion and use allowed by the Study, distinguishing system qualification, artifact optimization, and scientific analysis. README prose cannot widen it.
@@ -112,7 +120,7 @@ The frozen Authoring Environment policy for available AI features and event inte
 
 ### Authoring Environment
 
-The complete tools, references, feedback, and submission interface supplied to an author. Its frozen Study reference owns it; a comparison cannot be named only by source syntax.
+The complete tools, references, feedback, and submission interface supplied to an author. Run freezes the referenced definition; a Study preassigns it for research. A comparison cannot be named only by source syntax.
 
 ### Campaign
 
@@ -120,11 +128,11 @@ One actual execution of a Study, with versions, host requirements, and evidence 
 
 ### CampaignLock
 
-The preflight-produced exact execution binding for Workload, Compiler, Executor, provider, toolchain, host, and custody. Later main changes do not update it.
+The legacy Study entry's frozen Workload, Compiler, Executor, provider, toolchain, host and custody inputs. It converts to RunSpecification at the input boundary and uses the same Run engine. Historical records replay at their original commits.
 
 ### TaskPackage
 
-The TASK.md and AGENTS.md bundle rendered deterministically by Lab from CampaignLock. It states the problem and rules, not mutable scores, consumed budget, or a current best candidate.
+Task and rule material rendered deterministically by Lab from frozen Run inputs, supplied as TASK.md and AGENTS.md to CLI authors. It contains no mutable scores, consumed budget or current best candidate.
 
 ### Ralph Controller
 
@@ -136,7 +144,11 @@ A next-Turn view derived from retained Run facts: spent and remaining budget and
 
 ### Run
 
-One independently allocated repetition and the comparison unit in a Study. It may contain several Turns; it is not a terminal process or broker job.
+One independent optimization, used directly for engineering or preassigned by a Study as a repetition. It may contain several Turns; it is not a terminal process or broker job.
+
+### RunSpecification
+
+The execution authority freezing one Run's Workload, Compiler/Executor, authoring environment, material and transform permissions, common evaluation, budgets and endpoint rules. Engineering Runs have null assignment; research assignments are fixed before execution. Study supplies no second execution loop.
 
 ### Turn
 
@@ -148,7 +160,7 @@ A submitted, content-fixed artifact with identity and provenance, owned by Evide
 
 ### Artifact Promotion
 
-Selection inside an artifact-only Study using confirmatory evaluation and fixed rules. It is not an arm comparison or production deployment.
+Selection through confirmatory evaluation and fixed rules. An engineering Run may publish an incumbent after independent audit and the existing materiality rules; Study-assigned Runs retain their research policy. Selection is not an arm comparison or production deployment.
 
 ### Endpoint
 
@@ -174,11 +186,11 @@ A sealed candidate with exact target, entry, launch description, and complete ro
 
 ### Launch Plan
 
-An immutable ordered composition of complete Cake Schedules with explicit public ABI, intermediate tensors and bindings. Evaluation owns allocation and same-device/stream launch order; all task mathematics stays in generated kernels. Types, single producers and disjoint storage are checked before launch.
+An Evaluation binding of a Compiler-lowered Program. Program alone owns structure and types; Evaluation owns device storage, views, modules and same-stream ordered launch, checking storage intervals before dispatch. It introduces no second program graph, and task mathematics remains in generated kernels.
 
 ### Evaluation Protocol
 
-Workload-owned assays referenced by the Study, including rows, purposes, and correctness before timing. It does not define scientific analysis.
+Workload-owned assays frozen by the Run, including rows, purposes, and correctness before timing. It does not define scientific analysis.
 
 ### Logical Evaluation Attempt
 

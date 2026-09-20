@@ -1,12 +1,14 @@
 """Typed ordered launches retain dependencies and keep task mathematics in kernels."""
 from copy import deepcopy
 from pathlib import Path
-from types import SimpleNamespace
+from dataclasses import replace
 import unittest
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
-from open_cake_ir.evaluation.launch_plan import LaunchPlan, CompiledLaunchPlan
+from open_cake_ir.compiler import Program
+from open_cake_ir.compiler.program import LoweredProgram
+from open_cake_ir.evaluation.launch_plan import prepare_program
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,7 +27,7 @@ def candidate(lm, x: cake.Tensor((4,), "fp32"), y: cake.Tensor((4,), "fp32", mod
 
 
 def document():
-    return {'schema_version':1,'plan_id':'two-stages','target':'sm_103a',
+    return {'schema_version':1,'program_id':'two-stages','target':'sm_103a',
             'inputs':['x'],'outputs':['y'],
             'tensors':{name:{'shape':[4],'dtype':'fp32'} for name in ['x','middle','y']},
             'stages':[{'name':'first','schedule':stage('first'),'bindings':{'x':'x','y':'middle'}},
@@ -34,7 +36,7 @@ def document():
 
 class OrderedLaunchPlanTests(unittest.TestCase):
     def test_plan_derives_storage_and_runs_every_stage_in_order(self):
-        plan = LaunchPlan.from_dict(document())
+        plan = Program.from_dict(document())
         self.assertEqual(plan.allocated_bytes, 32)
         order = []
         def load(name, lowering):
@@ -42,9 +44,8 @@ class OrderedLaunchPlanTests(unittest.TestCase):
                 order.append(name)
                 out[:] = [v+1 for v in x]
             return kernel
-        compiled = CompiledLaunchPlan(plan, 'fixture', tuple(
-            SimpleNamespace(target='sm_103a',generated=True) for _ in plan.stages))
-        prepared = compiled.prepare({'x':[1,2,3,4]}, allocate=lambda n,s:[None]*4,
+        compiled = Compiler.load(ROOT, ROOT/'compiler/revision.json').lower_program(plan)
+        prepared = prepare_program(compiled, {'x':[1,2,3,4]}, allocate=lambda n,s:[None]*4,
                                     load_kernel=load, check_tensor=lambda tensor,spec:None,
                                     storage_span=lambda tensor:('fixture',id(tensor)*1000,id(tensor)*1000+16),
                                     execution_context=lambda:('fixture','stream'))
@@ -53,39 +54,38 @@ class OrderedLaunchPlanTests(unittest.TestCase):
         self.assertEqual(prepared.launch_calls,2)
 
     def test_distinct_views_with_overlapping_storage_are_refused(self):
-        plan=LaunchPlan.from_dict(document())
-        compiled=CompiledLaunchPlan(plan,'fixture',tuple(
-            SimpleNamespace(target='sm_103a',generated=True) for _ in plan.stages))
+        plan=Program.from_dict(document())
+        compiled = Compiler.load(ROOT, ROOT/'compiler/revision.json').lower_program(plan)
         with self.assertRaisesRegex(ValueError,'overlaps'):
-            compiled.prepare({'x':[1,2,3,4]}, allocate=lambda n,s:[None]*4,
+            prepare_program(compiled, {'x':[1,2,3,4]}, allocate=lambda n,s:[None]*4,
                 check_tensor=lambda t,s:None, storage_span=lambda t:('same-device',1000,1016),
                 execution_context=lambda:0, load_kernel=lambda n,l:None)
 
     def test_read_before_producer_and_double_writer_are_refused(self):
         bad = document();bad['stages'].reverse()
-        with self.assertRaisesRegex(ValueError,'before its producer'):LaunchPlan.from_dict(bad)
+        with self.assertRaisesRegex(ValueError,'before its producer'):Program.from_dict(bad)
         bad = document();bad['stages'][1]['bindings']['y'] = 'middle'
-        with self.assertRaises(ValueError):LaunchPlan.from_dict(bad)
+        with self.assertRaises(ValueError):Program.from_dict(bad)
 
     def test_binding_shape_dtype_and_target_must_match(self):
         for field,value in [('shape',[8]),('dtype','bf16')]:
             bad=document();bad['tensors']['middle'][field]=value
-            with self.assertRaisesRegex(ValueError,'shape/dtype differs'):LaunchPlan.from_dict(bad)
+            with self.assertRaisesRegex(ValueError,'shape/dtype differs'):Program.from_dict(bad)
         bad=document();bad['stages'][1]['schedule']['target']='sm_100a'
-        with self.assertRaisesRegex(ValueError,'target differs'):LaunchPlan.from_dict(bad)
+        with self.assertRaisesRegex(ValueError,'target differs'):Program.from_dict(bad)
 
     def test_inputs_cannot_be_written_or_ignored(self):
         bad=document();bad['stages'][0]['bindings']['y']='x'
-        with self.assertRaises(ValueError):LaunchPlan.from_dict(bad)
+        with self.assertRaises(ValueError):Program.from_dict(bad)
         bad=document();bad['tensors']['unused']={'shape':[4],'dtype':'fp32'};bad['inputs'].append('unused')
-        with self.assertRaisesRegex(ValueError,'ignores a public input'):LaunchPlan.from_dict(bad)
+        with self.assertRaisesRegex(ValueError,'ignores a public input'):Program.from_dict(bad)
 
     def test_compiler_assesses_every_stage(self):
         compiler = Compiler.load(ROOT,ROOT/'compiler/revision.json')
         if compiler.commit is None:
             self.skipTest('compile identity requires committed test worktree')
-        compiled = LaunchPlan.from_dict(document()).compile(compiler)
+        compiled = compiler.lower_program(Program.from_dict(document()))
         self.assertEqual(len(compiled.lowerings),2)
         self.assertTrue(all(lowering.generated for lowering in compiled.lowerings))
         bad=document();bad['stages'][1]['schedule']['operations'][0]['reads']=['missing']
-        with self.assertRaisesRegex(ValueError,'refused'):LaunchPlan.from_dict(bad).compile(compiler)
+        with self.assertRaisesRegex(ValueError,'refused'):compiler.lower_program(Program.from_dict(bad))

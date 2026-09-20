@@ -10,16 +10,16 @@ Even summing each row of a table involves choices: which threads handle a row, h
 
 | Part | Responsibility | Main flow |
 | --- | --- | --- |
-| Compiler | Check and translate a complete hardware plan | Schedule → Assessment → Lowering |
-| Research Lab | Organize AI authoring under a frozen design and budget | Workload + Study → Campaign |
+| Compiler | Check complete programs and leaf schedules, apply explicit rewrites, generate source | Program / Schedule → assessment and lowering |
+| Research Lab | Execute frozen permissions and budgets; allocate and analyze research conditions | Workload + RunSpecification → Run |
 | Evaluation | Check answers, measure, and collect diagnostics | Sealed candidate → receipts |
 | Evidence | Preserve observations and rebuild conclusions | Objects → audit → report |
 
 The Compiler works independently. Lab uses it, Evaluation, and Evidence; the Compiler never imports experimental or provider logic.
 
-## Three different documents
+## Separate task, implementation, execution and research ownership
 
-For row normalization, Workload fixes inputs, mathematics, reference, and tolerance. Schedule assigns threads, storage, and operations. Study fixes the compared authoring environments, repetitions, budgets, and analysis. Changing a plan need not change the mathematical problem. Changing the scoring rule after seeing results destroys comparability.
+For row normalization, Workload fixes mathematics, reference and tolerance. Schedule assigns threads, storage and operations; Program owns complete stage order, public tensors and bindings. RunSpecification freezes one optimization's versions, authoring environment, material and transform permissions, budgets and evaluation. Engineering Runs need no Study. Study preassigns the same Runs to conditions and owns their statistical analysis. Changing an implementation need not change the problem; changing scoring rules after results destroys comparability.
 
 ## The compiler path
 
@@ -29,7 +29,7 @@ The dedicated `checked_cuda_asset` route is retired. Its original TinyGEMM2 Sche
 
 ### Internal ownership and adding a backend
 
-`core.py` connects the public interface; `revision.py` admits a Revision and `corpus.py` compares each observed case with its expected result. Diagnostic types belong to `diagnostics.py`. The four common rule classes belong to `verifier/`; each backend owns its representation and control refusals without turning an expressible Schedule into an IR rejection.
+`core.py` connects the public interface and composes lowering; `ir/program.py` owns typed composition and dataflow, `program.py` owns LoweredProgram and its code binding, and `program_passes.py` owns complete-program rewrites. `revision.py` admits a Revision and `corpus.py` compares observed cases with expectations. Diagnostic types belong to `diagnostics.py`. The four common rule classes belong to `verifier/`; each backend owns its representation and control refusals without turning an expressible Schedule into an IR rejection.
 
 [BACKENDS](../../src/open_cake_ir/compiler/backends/__init__.py) is the single static backend inventory. A backend implements `requirements`, `preflight`, and `emit`; Triton owns `pointer_type(DType)` for its compile signature. To add a backend, define its target, supported inputs and refusal conditions, implement that protocol, and register it once. Test actual supported and refused combinations. The CLI vocabulary view reads this same inventory. Full Corpus gates a successor commit; integration and independent review follow the [branch workflow](../DEVELOPMENT_BRANCHES.md). Registration alone establishes no device support.
 
@@ -37,9 +37,9 @@ The dedicated `checked_cuda_asset` route is retired. Its original TinyGEMM2 Sche
 
 ## The agent and evidence loops
 
-Lab prepares TASK.md for the problem and AGENTS.md for tool rules. An external Ralph controller supplies evidence-derived state and enforces budgets. AI submits candidates; the evaluator independently checks them. Earlier immutable candidates survive later edits.
+Lab freezes task material, rendered as TASK.md and AGENTS.md for CLI authors. A confined message author receives only permitted material and its own Run history. An external Ralph controller supplies evidence-derived state and enforces budgets. AI submits candidates or explicit transformation requests; the evaluator independently checks the resulting candidates. Earlier immutable candidates survive later edits.
 
-`matched_search` handles fixed-task search. The former `portfolio` Study is retired under ADR 0071; historical replay uses its original commit. Artifact-only optimization is a claim scope, not a third runtime. Serving needs later integration and evaluation.
+Engineering optimization directly prepares a Run. A `matched_search` Study preassigns Runs; the legacy CampaignLock is an input adapter to the same search, budget, confirmation and audit engine. The former `portfolio` Study is retired under ADR 0071; historical replay uses its original commit. Serving needs later integration and evaluation.
 
 Correctness, measurement stability, and application benefit are different facts. Faster operator code does not by itself make a model or service faster. Compiler changes happen between frozen Campaigns and update types, verification, analysis, and lowering together, followed by the full Corpus and the integration review specified by the [branch workflow](../DEVELOPMENT_BRANCHES.md). Executor fixes a different closure: Lab, evaluation, evidence tools, and environment. Read the [Glossary](GLOSSARY.md) and [maintenance guide](wiki/maintaining.md) for exact ownership.
 
@@ -51,8 +51,9 @@ The framework proposes turning agent-discovered fusion, tiling and memory-hierar
 mechanisms into explicit guarded rewrites. Destination backends supply hardware-specific
 implementations; Lab retunes parameters and verifies benefit. Extra mechanism material and
 callable rewrites are separate experimental factors while base capabilities and validation
-remain fixed. Existing bounded passes provide a foundation; cross-hardware effects remain
-unverified. See the [mechanism and ablation design](OPTIMIZATION_TRANSFER.md).
+remain fixed. Complete Programs, independent Runs, controlled material/pass access and E/P
+allocation have software implementations; cross-hardware effects remain unverified.
+See the [mechanism and ablation design](OPTIMIZATION_TRANSFER.md).
 
 ## Lab lifecycle ownership
 

@@ -28,11 +28,34 @@ from .provider_policy import provider_configuration, provider_harness
 
 
 def validate_provider(*, open_cake, policy, project_root, study):
-    """Validate provider qualification and declared authoring capabilities."""
-    provider = _object(open_cake.get("provider"), "study.arms.provider")
-    provider_revision = _name(provider.get("revision"), "study.arms.provider.revision")
-    claim_scope = cast(str, study.document["claim_scope"])
-    expected_provider_configuration = provider_configuration(provider, claim_scope, arms=study.document["arms"])
+    """Matched-Study input policy; runtime qualification has an independent owner."""
+    provider = _object(open_cake.get('provider'), 'study.arms.provider')
+    claim_scope = str(study.document['claim_scope'])
+    configuration = provider_configuration(provider, claim_scope, arms=study.document['arms'])
+    validate_provider_binding(provider=provider, project_root=project_root,
+        expected_provider_configuration=configuration,
+        admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
+        require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
+    return claim_scope
+
+
+def validate_provider_binding(*, provider, project_root, expected_provider_configuration,
+                              admitted_scopes, require_native_pair=False, evaluation_protocol=None):
+    """Check provider receipt, retained qualification evidence and delivered schema."""
+    provider_revision = _name(provider.get('revision'), 'provider.revision')
+    if provider_harness(provider) == 'responses':
+        from .message_provider import MessageQualification
+        reference = _object(provider.get('qualification'), 'message provider qualification')
+        if set(reference) != {'path', 'canonical_sha256'}:
+            raise ValueError('message qualification reference fields differ')
+        _, path = _qualification_path(project_root, reference['path'], 'message qualification')
+        qualification = MessageQualification.load(path)
+        if (qualification.canonical_sha256 != reference['canonical_sha256']
+            or qualification.provider_revision != provider_revision
+            or qualification.document['configuration'] != expected_provider_configuration
+            or qualification.scope not in admitted_scopes):
+            raise ValueError('message provider qualification differs from its frozen binding')
+        return qualification
     executable_sha256 = _digest(
         provider.get("executable_sha256"), "study.arms.provider.executable_sha256"
     )
@@ -53,10 +76,6 @@ def validate_provider(*, open_cake, policy, project_root, study):
     qualification = ProviderQualificationReceipt.load(qualification_path)
     expected_configuration_sha256 = sha256(
         _canonical_json_bytes(expected_provider_configuration)).hexdigest()
-    admitted_scopes = {
-        "zero_gpu_contract_fixture_only",
-        required_live_provider_qualification_scope(claim_scope),
-    }
     expected_qualification = {
         "provider_revision": provider_revision, "executable_sha256": executable_sha256,
         "configuration_sha256": expected_configuration_sha256,
@@ -88,8 +107,8 @@ def validate_provider(*, open_cake, policy, project_root, study):
             "provider qualification bytes or capability",
             expected=expected_qualification, observed=observed_qualification,
         )
-    if (policy is not None and qualification.scope != 'zero_gpu_contract_fixture_only'
-        and paired_protocol(study.document['evaluation_protocol']) is None):
+    if (require_native_pair and qualification.scope != 'zero_gpu_contract_fixture_only'
+        and paired_protocol(evaluation_protocol) is None):
         raise ValueError('new live native Campaign requires explicit fixed-baseline paired policy')
     qualification_anchor = provider.get("qualification_anchor")
     if qualification.scope == "zero_gpu_contract_fixture_only":
@@ -168,7 +187,87 @@ def validate_provider(*, open_cake, policy, project_root, study):
                 f"Study Contract provider {field} bytes differ",
                 expected=expected_sha256, observed=observed_sha256,
             )
-    return claim_scope
+    return qualification
+
+
+def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,baseline_lowering,manifest_parser):
+    """One owner for the selected baseline's source, launch and incumbent relation."""
+    fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
+    sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
+    validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
+    selection = fixed.get('selection')
+    incumbent_baseline = False
+    if selection is not None:
+        incumbent_baseline = admit_baseline_selection(
+            selection, candidate=fixed['candidate'], workload=workload,
+            case_id=str(evaluation['case_id']), backend=str(route['backend']),
+            evaluation_protocol=evaluation,
+        )
+    if fixed['candidate'] != candidate_identity(sealed_baseline):
+        raise ValueError('fixed baseline identity differs from its sealed artifact')
+    if incumbent_baseline:
+        # Its complete executable contract was audited before promotion and its
+        # exact current registry identity and Workload ABI were checked above.
+        # It may be a Program or native kernel, independent of the starter source.
+        return
+    requirements = baseline_lowering.toolchain_requirements
+    source = sealed_baseline.artifact_payloads.get('lowered_source')
+    if source is None:
+        raise ValueError('fixed baseline requires retained Compiler lowering source')
+    manifest = manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
+    if route["backend"] == "metal":
+        source_matches = source == baseline_lowering.source.encode()
+        grid, block = requirements["threadgroups_per_grid"], tuple(requirements["threads_per_threadgroup"])
+    else:
+        expected_source = native_source(baseline_lowering.source.encode(), requirements)
+        observed_source = native_source(source, requirements)
+        source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
+        # The width comes from the Target that declares it. Reading a shared 32 here
+        # refused every wave64 baseline, and said the Compiler kernel differed.
+        _, target_path = source_reference_path(
+            project_root, f"compiler/targets/{workload.target}.json",
+            'paired baseline target')
+        grid = requirements['grid']
+        block = tuple(native_block(
+            requirements, warp_size=Target.load(target_path).warp_size))
+        # How many pointers the kernel takes beyond its tensors is the kernel's own
+        # fact, not a per-backend constant. For AMDGCN it is in the sealed assembly's
+        # `.amdgpu_metadata`; the table's 2 was right for every Triton target there
+        # was when it was written, and is still the CUDA route's. The route is read
+        # from the frozen Compiler kernel's own compile contract, which carries the
+        # code object, architecture and lane width of the Target it was lowered for.
+        if route["backend"] == "triton":
+            expected_hidden = _hidden_pointers(
+                triton_route(requirements), sealed_baseline.artifact_payloads,
+                len(workload.tensor_abi(str(evaluation['case_id']))))
+        else:
+            expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
+        if manifest.hidden_null_pointer_parameters != expected_hidden:
+            raise differs(
+                'fixed baseline hidden pointer commitments differ',
+                expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters,
+            )
+    reference_differs = (not source_matches or list(manifest.grid) != list(grid)
+                         or manifest.block != block)
+    if reference_differs:
+        raise differs(
+            'fixed baseline differs from the frozen Compiler kernel or launch commitments',
+            expected={'candidate': fixed['candidate'], 'source_matches': True,
+                      'grid': list(grid), 'block': block},
+            observed={'candidate': candidate_identity(sealed_baseline), 'source_matches': source_matches,
+                      'grid': list(manifest.grid), 'block': manifest.block},
+        )
+
+
+def validate_backend_assay(*,route,evaluation,workload,attribution_evaluation):
+    """Check task timing, validation coverage and attribution against its backend."""
+    if route["backend"] == "metal":
+        if (evaluation.get("paired_timing", {}).get("kind") not in METAL_KINDS
+                or validation_case_ids(evaluation) != tuple(workload.case_ids)
+                or attribution_evaluation != _ATTRIBUTION_EVALUATION):
+            raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
+    elif evaluation.get("paired_timing", {}).get("kind") in METAL_KINDS:
+        raise ValueError("Metal paired assay cannot evaluate a different backend")
 
 
 def validate_evaluation(
@@ -210,23 +309,20 @@ def validate_evaluation(
                 "campaign that selects on latency does."
             )
         raise ValueError("single-environment optimization requires an explicit fixed-baseline paired assay")
-    if route["backend"] == "metal":
-        if (not single_environment or evaluation.get("paired_timing", {}).get("kind") not in METAL_KINDS
-                or validation_case_ids(evaluation) != tuple(workload.case_ids)
-                or attribution_evaluation != _ATTRIBUTION_EVALUATION):
-            raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
-    elif evaluation.get("paired_timing", {}).get("kind") in METAL_KINDS:
-        raise ValueError("Metal paired assay cannot evaluate a different backend")
-    elif ("validation_case_ids" in evaluation
-          or single_environment and workload.document["validation"].get("all_cases_required") is True):
+    if route['backend']=='metal' and not single_environment:
+        raise ValueError('Metal task optimization requires a single authoring environment')
+    validate_backend_assay(route=route,evaluation=evaluation,workload=workload,
+                           attribution_evaluation=attribution_evaluation)
+    # Keep the external Study's existing case-projection policy here. Independent
+    # Run admission separately enforces its Workload's all-cases requirement.
+    if route['backend'] != 'metal' and ("validation_case_ids" in evaluation
+            or single_environment and workload.document['validation'].get('all_cases_required') is True):
         if (validation_case_ids(evaluation) != tuple(workload.case_ids)
-                or workload.document["validation"].get("all_cases_required") is not True):
-            raise differs(
-                "CUDA validation case projection differs from Workload validation",
-                expected={"validation_case_ids": tuple(workload.case_ids), "all_cases_required": True},
-                observed={"validation_case_ids": validation_case_ids(evaluation),
-                          "all_cases_required": workload.document["validation"].get("all_cases_required")},
-            )
+                or workload.document['validation'].get('all_cases_required') is not True):
+            raise differs('CUDA validation case projection differs from Workload validation',
+                expected={'validation_case_ids':tuple(workload.case_ids),'all_cases_required':True},
+                observed={'validation_case_ids':validation_case_ids(evaluation),
+                          'all_cases_required':workload.document['validation'].get('all_cases_required')})
     execution = study.execution
     expected_execution_fields = {'target', 'executor_revision', 'broker_execution_sha256', 'gpu', 'sandbox'}
     if assay is not None:
@@ -237,65 +333,8 @@ def validate_evaluation(
             expected=sorted(expected_execution_fields), observed=sorted(execution),
         )
     if assay is not None:
-        fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
-        sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
-        validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
-        selection = fixed.get('selection')
-        incumbent_baseline = False
-        if selection is not None:
-            incumbent_baseline = admit_baseline_selection(
-                selection, candidate=fixed['candidate'], workload=workload,
-                case_id=str(evaluation['case_id']), backend=str(route['backend']),
-                evaluation_protocol=evaluation,
-            )
-        requirements = baseline_lowering.toolchain_requirements
-        source = sealed_baseline.artifact_payloads.get('lowered_source')
-        if source is None:
-            raise ValueError('fixed baseline requires retained Compiler lowering source')
-        manifest = manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
-        if route["backend"] == "metal":
-            source_matches = source == baseline_lowering.source.encode()
-            grid, block = requirements["threadgroups_per_grid"], tuple(requirements["threads_per_threadgroup"])
-        else:
-            expected_source = native_source(baseline_lowering.source.encode(), requirements)
-            observed_source = native_source(source, requirements)
-            source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
-            # The width comes from the Target that declares it. Reading a shared 32 here
-            # refused every wave64 baseline, and said the Compiler kernel differed.
-            _, target_path = source_reference_path(
-                project_root, f"compiler/targets/{workload.target}.json",
-                'paired baseline target')
-            grid = requirements['grid']
-            block = tuple(native_block(
-                requirements, warp_size=Target.load(target_path).warp_size))
-            # How many pointers the kernel takes beyond its tensors is the kernel's own
-            # fact, not a per-backend constant. For AMDGCN it is in the sealed assembly's
-            # `.amdgpu_metadata`; the table's 2 was right for every Triton target there
-            # was when it was written, and is still the CUDA route's. The route is read
-            # from the frozen Compiler kernel's own compile contract, which carries the
-            # code object, architecture and lane width of the Target it was lowered for.
-            if route["backend"] == "triton":
-                expected_hidden = _hidden_pointers(
-                    triton_route(requirements), sealed_baseline.artifact_payloads,
-                    len(workload.tensor_abi(str(evaluation['case_id']))))
-            else:
-                expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
-            if manifest.hidden_null_pointer_parameters != expected_hidden:
-                raise differs(
-                    'fixed baseline hidden pointer commitments differ',
-                    expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters,
-                )
-        reference_differs = (not source_matches or list(manifest.grid) != list(grid)
-                             or manifest.block != block)
-        if (fixed['candidate'] != candidate_identity(sealed_baseline)
-                or (not incumbent_baseline and reference_differs)):
-            raise differs(
-                'fixed baseline differs from the frozen Compiler kernel or launch commitments',
-                expected={'candidate': fixed['candidate'], 'source_matches': True,
-                          'grid': list(grid), 'block': block},
-                observed={'candidate': candidate_identity(sealed_baseline), 'source_matches': source_matches,
-                          'grid': list(manifest.grid), 'block': manifest.block},
-            )
+        validate_paired_baseline(project_root=project_root,workload=workload,evaluation=evaluation,
+            execution=execution,route=route,baseline_lowering=baseline_lowering,manifest_parser=manifest_parser)
     provider_sandbox = study.arms["open_cake"]["provider"].get("sandbox")
     if (
         execution.get("target") != workload.target
@@ -315,3 +354,80 @@ def validate_evaluation(
         "study.execution.broker_execution_sha256",
     )
     return evaluation, execution
+
+
+def admit_run_inputs(specification, *, project_root, workload_loader):
+    """The complete Run dependency boundary, before provider/Evidence side effects."""
+    from .executor import ExecutorRevision
+    from .provider_policy import execution_configuration
+    from .bindings import load_baseline_bundle
+    from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates, validation_case_ids, paired_protocol
+
+    from .bindings import _resolve_compiler_reference
+    from .reference_access import validate_reference_handoff
+
+    document = specification.document
+    _resolve_compiler_reference(project_root, document['compiler_revision'], 'run.compiler_revision', template=False)
+    ExecutorRevision.load_reference(project_root, document['execution']['executor_revision'], 'run.executor')
+    _, workload_path = source_reference_path(project_root, document['workload']['path'], 'run.workload.path')
+    workload = workload_loader(workload_path)
+    if workload.canonical_sha256 != document['workload']['canonical_sha256']:
+        raise ValueError('Run Workload bytes differ')
+    protocol, execution, authoring = (document[field] for field in ('evaluation_protocol', 'execution', 'authoring'))
+    workload.case(protocol['case_id'])
+    if execution['target'] != workload.target or execution.get('sandbox') != authoring['provider'].get('sandbox'):
+        raise ValueError('Run target or author sandbox differs from its Workload and provider')
+    target = Target.load(project_root / f"compiler/targets/{execution['target']}.json")
+    gpu = execution.get('gpu')
+    if (not isinstance(gpu, dict) or set(gpu) != {'name', 'count', 'mode'}
+        or gpu['name'] not in target.device_names or type(gpu['count']) is not int or gpu['count'] != 1
+        or gpu['mode'] not in {'local_serialized', 'exclusive'}):
+        raise ValueError('Run device admission differs from its exact Target')
+    _digest(execution.get('broker_execution_sha256'), 'run.execution.broker_execution_sha256')
+    if workload.document['validation'].get('all_cases_required') is True:
+        if validation_case_ids(protocol) != tuple(workload.case_ids):
+            raise ValueError('Run evaluation omits Workload validation cases')
+    if paired_protocol(protocol) is not None:
+        fixed = _object(execution.get('fixed_baseline'), 'run.execution.fixed_baseline')
+        baseline = load_baseline_bundle(project_root, fixed.get('bundle_path'))
+        if candidate_identity(baseline) != fixed.get('candidate'):
+            raise ValueError('Run baseline artifact differs from its frozen selection')
+        validate_pair_candidates(baseline, baseline, workload, protocol['case_id'])
+    validate_reference_handoff(project_root, {'author': authoring})
+    from .python_reference import read_skeleton_reference
+    for name in ('scaffold', * (('launch_contract', 'candidate_skeleton') if specification.environment_kind == 'direct_cuda' else ())):
+        reference = _object(authoring.get(name), f'run.authoring.{name}')
+        if set(reference) != {'path', 'sha256'}:
+            raise ValueError(f'Run {name} reference fields differ')
+        _, path = source_reference_path(project_root, reference['path'], f'run.authoring.{name}')
+        if sha256(path.read_bytes()).hexdigest() != reference['sha256']:
+            raise ValueError(f'Run {name} bytes differ')
+    if specification.environment_kind == 'open_cake':
+        _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
+        if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
+            raise ValueError('Run Schedule skeleton target or lowering route differs')
+    for name, reference in document['reference_inputs'].items():
+        if name == 'baseline_programs':
+            continue
+        _, skeleton = read_skeleton_reference(project_root, reference, f'Run {name}')
+        from .pairing import native_backend
+        if (skeleton.get('target') != execution['target']
+            or skeleton.get('lowering', {}).get('backend') != native_backend(specification.environment_kind).backend):
+            raise ValueError('Run baseline Schedule target or backend differs')
+    provider = authoring['provider']
+    if 'output_schema' in provider:
+        _, schema_path = source_reference_path(project_root, provider['output_schema']['path'], 'run.provider.output_schema')
+        schema = json.loads(schema_path.read_bytes())
+        arm_schema = schema.get('properties', {}).get('arm', {})
+        if (arm_schema.get('type') != 'string'
+            or 'enum' in arm_schema and specification.condition_id not in arm_schema['enum']
+            or 'const' in arm_schema and specification.condition_id != arm_schema['const']):
+            raise ValueError('provider output schema excludes the assigned condition id')
+    configuration = execution_configuration(provider)
+    scope = ('live_two_turn_message_provider' if provider_harness(provider) == 'responses' else
+             'live_two_turn_current_provider' if configuration.get('event_contract', 'closed_file_change_v1') == 'closed_file_change_v1'
+             else 'live_two_turn_tool_rich_provider')
+    qualification = validate_provider_binding(provider=provider, project_root=project_root,
+        expected_provider_configuration=configuration,
+        admitted_scopes={'zero_gpu_contract_fixture_only', scope})
+    return workload, qualification

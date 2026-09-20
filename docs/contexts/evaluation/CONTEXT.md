@@ -18,7 +18,7 @@ Canonical definitions are in the [`Glossary`](../../GLOSSARY.md#evaluation-terms
 
 ## Responsibilities
 
-- Require both Authoring Environments to cross the same LaunchableCandidate boundary.
+- Require every Authoring Environment to cross the same LaunchableCandidate boundary.
 - Materialize Workload cases and apply the external oracle and tolerances.
 - Enforce correctness before timing or profiler collection.
 - Keep search, confirmatory, and profiler purposes as separate Evaluation Receipts.
@@ -31,7 +31,7 @@ records what happened at the declared assay boundary.
 ## Relationships
 
 - The Workload Contract supplies semantics, case materialization, oracle, and tolerances.
-- The CampaignLock supplies exact execution admission.
+- RunSpecification supplies exact execution admission; CampaignLock adapts legacy inputs.
 - Evidence stores the Candidate and Receipt bytes after Evaluation observes them.
 - Study analysis consumes Run Audits, not an evaluator's headline number.
 
@@ -44,4 +44,9 @@ CUBIN, or SASS—rather than collapse distinct artifacts.
 
 Operator materializers, oracles and exact semantic validators live in task modules. This context supplies their shared contracts and measurement mechanisms; see [task ownership](../../en/TASKS.md).
 
-Ordered Cake compositions use `evaluation/launch_plan.py`. Each stage is assessed and lowered by the same clean Compiler commit. The plan owns typed bindings and allocation; platform adapters bind exact devices, storage intervals and execution streams. Whole-plan evaluation includes every ordered kernel, with no host-side task mathematics.
+Compiler Program owns typed composition and bindings; every stage uses the same clean
+Compiler commit. `evaluation/program.py` executes sealed Program bundles;
+`evaluation/launch_plan.py` binds a LoweredProgram for existing direct task consumers.
+Both consume Compiler-owned structure. Platform adapters supply exact devices, storage,
+views and streams. Whole-program measurement includes every ordered kernel, with no
+host-side task mathematics. Identity-bound single stages retain their existing kernel route.

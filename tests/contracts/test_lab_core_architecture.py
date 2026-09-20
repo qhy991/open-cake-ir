@@ -73,7 +73,7 @@ class LabCoreArchitectureTests(unittest.TestCase):
         from open_cake_ir.lab.ralph import RalphBudget, RalphController
         budget = {"limit": 80000, "maximum_turns": 2, "maximum_candidates_per_turn": 1,
                   "wall_time_seconds": 30, "active_authoring_time_seconds": 15,
-                  "evaluation_limits": {"search": 2, "confirmatory": 2, "attribution": 2}, "checkpoints": [80000]}
+                  "maximum_compilations": 128, "confirmation_wall_time_seconds": 3, "evaluation_limits": {"search": 2, "confirmatory": 2, "attribution": 2}, "checkpoints": [80000]}
         lock.document["resolved_inputs"]["budget"] = budget
         ralph = RalphController(RalphBudget.from_mapping(budget), searches_per_turn=1,
                                 profile_each_search_survivor=False, clock=lambda: 0.0)
@@ -93,6 +93,13 @@ class LabCoreArchitectureTests(unittest.TestCase):
             {"kind": "run_terminal", "payload": {"protocol_adherence": "harness_fault",
                 "endpoint_observation": "missing", "endpoint": None}},
         ]
+        specification = SimpleNamespace(
+            run_id=audit.run_id, condition_id='open_cake', environment_kind='open_cake', terminal_policy={},
+            document={'compiler_revision': lock.document['compiler_revision'], 'sequence': 1,
+                      'budget': budget, 'evidence_policy': copy.deepcopy(_MATCHED_RALPH_EVIDENCE_POLICY_V1),
+                      'authoring': {'candidate_selection': 'must not resolve'},
+                      'execution': lock.document['execution']})
+        lock.run_specification = lambda run_id: specification
         evidence = SimpleNamespace(replay_events=Mock(return_value=events))
         from open_cake_ir.lab.bindings import load_compiler_reference
         with patch("open_cake_ir.lab.bindings.load_compiler_reference", wraps=load_compiler_reference) as compiler_dependency, \
@@ -126,7 +133,7 @@ class LabCoreArchitectureTests(unittest.TestCase):
             callback.assert_not_called()
 
     def test_explicit_runtime_owner_imports_form_an_acyclic_graph(self):
-        owners = {"core", "contracts", "_documents", "_policies", "bindings", "preflight", "execution",
+        owners = {"core", "contracts", "run_spec", "run_controls", "knowledge", "actions", "message_provider", "_documents", "_policies", "bindings", "preflight", "execution",
                   "replay", "reporting", "selection", "archive", "environments",
                   "admission", "build", "candidate_filter", "evaluation_writer", "execution_admission",
                   "provider_documents", "provider_events", "provider_invocation", "providers",

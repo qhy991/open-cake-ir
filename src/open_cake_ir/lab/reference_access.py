@@ -63,7 +63,9 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object]) -> None:
         if not isinstance(scaffold, Mapping):
             raise ValueError(f"{prefix}: missing authoring_instructions reference")
         _, path = source_reference_path(root, scaffold.get("path"), "scaffold")
-        if path.read_bytes() != (root / VETTED_REFERENCE_ASSETS[2]).read_bytes():
+        vetted_scaffold = ('contracts/scaffolds/message-author/AGENTS.md'
+                           if arm.get('provider', {}).get('harness') == 'responses' else VETTED_REFERENCE_ASSETS[2])
+        if path.read_bytes() != (root / vetted_scaffold).read_bytes():
             raise ValueError(f"{prefix}: authoring_instructions are not a vetted restricted scaffold")
         if kind == "open_cake":
             reference = arm.get("schedule_skeleton")
@@ -85,6 +87,14 @@ def document_role(name: str, access: str) -> str:
     """Describe controlled package slots; the caller cannot assign arbitrary roles."""
     if access not in REFERENCE_ACCESS:
         raise ValueError("task reference access category differs")
+    if name == 'optimization-knowledge.json':
+        return 'frozen_optimization_explanations_and_evidence_references'
+    if name == 'transformation-api.json':
+        return 'granted_Compiler_transformation_API'
+    if name == 'authorized-programs.json':
+        if access != 'known_kernel_reproduction':
+            raise ValueError('complete baseline Program reference is not authorized')
+        return 'target_implementation'
     if name == "workload.json":
         return "mathematical_specification_and_oracle"
     if name == "target.json":

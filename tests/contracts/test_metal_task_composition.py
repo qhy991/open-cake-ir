@@ -48,12 +48,15 @@ class MetalTaskCompositionTests(unittest.TestCase):
     def test_cuda_claude_composes_one_triton_environment_with_the_existing_builder(self):
         self.check_composition('triton-b300')
 
+    def test_messages_only_composition_has_no_cli_or_author_workspace(self):
+        self.check_composition('triton-b300',messages=True)
+
     def test_external_scaffold_reaches_cuda_and_metal_composition(self):
         for backend in ('triton-b300', 'metal-m1-pro'):
             with self.subTest(backend=backend):
                 self.check_composition(backend, external_scaffold=True)
 
-    def check_composition(self, backend, external_scaffold=False):
+    def check_composition(self, backend, external_scaffold=False, messages=False):
         metal = backend.startswith('metal-')
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary).resolve()
@@ -101,6 +104,9 @@ class MetalTaskCompositionTests(unittest.TestCase):
                 runtime['toolchain'] = {'python':'/unit-test/python','bubblewrap':'/unit-test/bwrap',
                     'runtime_roots':['/unit-test'],'build_environment':{},'triton_version':'3.6.0','timeout_seconds':600}
             runtime_path = directory/'runtime.json'
+            if messages:
+                provider['harness'] = 'responses'
+                runtime['provider'] = {}
             runtime_path.write_bytes(canonical(runtime))
             execution = {"broker_execution_sha256":"broker-fixture",
                 "fixed_baseline":{"bundle_path":str(directory/'baseline.json'),"candidate":{}},
@@ -110,16 +116,21 @@ class MetalTaskCompositionTests(unittest.TestCase):
                     "workload":{"path":str(workload_path),"canonical_sha256":workload.canonical_sha256},
                     "compiler_revision":{"path":"compiler/revision.json","revision_id":"compiler-fixture"},
                     "evaluation_protocol":evaluation_policy(workload),"execution":execution})
+            specification = SimpleNamespace(environment_kind='open_cake',run_id='open_cake-1',document={
+                key:value for key,value in lock.document.items() if key != 'resolved_inputs'})
+            specification.document['authoring'] = open_arm
             compiler = SimpleNamespace(commit='0' * 40,check_corpus=lambda:SimpleNamespace(passed=True,compiler_revision_id="compiler-fixture"))
             receipt = SimpleNamespace(scope='live_two_turn_tool_rich_provider',canonical_sha256='qualification-fixture',provider_revision='unit-fixture')
+            if messages:
+                receipt.scope = 'live_two_turn_message_provider'  # Explicit unit-test authority double.
             toolchain = Mock(canonical_sha256='metal-toolchain-fixture', pointer_alignment=None)
             package = TaskPackage('open_cake-1','open_cake','# CPU wiring fixture\n','# CPU wiring fixture\n')
             lab = Mock()
+            lab.preflight_run.return_value = specification
             lab.task_package.return_value = package
-            lab.execute.return_value = 'CPU wiring result'
             baseline = object()
             with patch.object(compose,'_admit_executor',return_value=(Mock(),{})), \
-                 patch.object(compose.ProviderQualificationReceipt,'load',return_value=receipt), \
+                 patch.object(compose.MessageQualification if messages else compose.ProviderQualificationReceipt,'load',return_value=receipt), \
                  patch.object(compose.MetalArchiveHost,'from_executor',return_value=Mock()) as archive, \
                  patch.object(compose,'MetalToolchainBuilder',return_value=toolchain) as build, \
                  patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler',return_value=toolchain) as triton, \
@@ -132,9 +143,9 @@ class MetalTaskCompositionTests(unittest.TestCase):
                  patch.object(compose,'CommandBrokerSubmitter') as submitter, \
                  patch.object(compose,'BoundedBrokerEvaluator') as evaluator, \
                  patch.object(compose,'TaskLab',return_value=lab), \
-                 patch.object(compose,'ClaudeRunProvider') as provider_type, \
+                 patch.object(compose,'ResponsesRunProvider' if messages else 'ClaudeRunProvider') as provider_type, \
                  patch.object(compose,'CodexInvocationBuilder') as codex:
-                self.assertEqual(compose.execute_matched_from_config(ROOT,lock,runtime_path,directory/'evidence'),'CPU wiring result')
+                components = compose.run_runtime_factory(ROOT,runtime_path)(specification,directory/'runtime-context')
             codex.assert_not_called()
             if metal:
                 archive.assert_called_once()
@@ -150,8 +161,15 @@ class MetalTaskCompositionTests(unittest.TestCase):
             nvcc.assert_not_called()
             self.assertEqual(submitter.call_args.kwargs['workload_path'],workload_path)
             self.assertIs(submitter.call_args.kwargs['baseline'],baseline)
-            self.assertEqual(set(lab.execute.call_args.kwargs['environments']),{'open_cake'})
-            self.assertIs(lab.execute.call_args.kwargs['evaluator'],evaluator.return_value)
+            self.assertEqual(set(components),{'provider','environment','evaluator'})
+            self.assertIs(components['evaluator'],evaluator.return_value)
+            self.assertIs(components['environment'],environment.return_value)
+            self.assertIs(components['provider'],provider_type.return_value)
+            if messages:
+                self.assertFalse((directory/'actors').exists())
+                self.assertNotIn('builders',provider_type.call_args.kwargs)
+                self.assertEqual(set(provider_type.call_args.kwargs['task_packages']),{'open_cake-1'})
+                return
             builders = provider_type.call_args.kwargs['builders']
             self.assertEqual(set(builders),{'open_cake-1'})
             builder = builders['open_cake-1']

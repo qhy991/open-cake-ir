@@ -81,8 +81,9 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 if resumed and arguments[-2] != thread_id:
                     raise SystemExit(34)
                 schema_path = Path(arguments[arguments.index("--output-schema") + 1])
-                allowed_arms = json.loads(schema_path.read_text())["properties"]["arm"]["enum"]
-                if arm not in allowed_arms:
+                arm_schema = json.loads(schema_path.read_text())["properties"]["arm"]
+                allowed_arms = arm_schema.get("enum")
+                if arm_schema.get("type") != "string" or allowed_arms is not None and arm not in allowed_arms:
                     raise SystemExit(37)
                 turn = 2 if resumed else 1
                 if projection["state_card"] != {{"turn": turn}}:
@@ -193,6 +194,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         maximum_candidates_per_turn: int | None = None,
         reasoning_effort: str = "max",
         output_schema: Path | None = None,
+        environment_kind: str | None = None,
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -229,6 +231,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 "--feature-policy",
                 feature_policy,
             ]
+        if environment_kind is not None:
+            command.extend(["--environment-kind", environment_kind])
         if maximum_candidates_per_turn is not None:
             command.extend(
                 [
@@ -355,6 +359,22 @@ class ProviderQualificationContractTests(unittest.TestCase):
             self.assertTrue(audit.archive_integrity)
             self.assertEqual(audit.protocol_adherence, "provider_fault")
             self.assertIsNone(json.loads(anchor_path.read_bytes())["qualification_receipt_sha256"])
+
+    def test_condition_neutral_schema_qualifies_through_the_real_entrypoint(self):
+        for kind in ('open_cake', 'direct_cuda'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                executable = root/'codex'
+                self._write_provider(executable, pretty_submission=True)
+                completed, receipt_path, _, evidence_root = self._run_qualification(
+                    root, executable, provider_revision='cpu-generic-condition-provider',
+                    run_id='generic-condition', output_schema=ROOT/'contracts/providers/run-turn-output-schema-v1.json',
+                    environment_kind=kind)
+                self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+                receipt = ProviderQualificationReceipt.load(receipt_path)
+                self.assertTrue(receipt.qualified)
+                self.assertEqual(receipt.scope, 'zero_gpu_contract_fixture_only')
+                self.assertTrue(EvidenceStore.open(evidence_root).audit_run('generic-condition').archive_integrity)
 
     def test_candidate_set_qualification_covers_both_arm_projections(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

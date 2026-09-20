@@ -35,7 +35,7 @@ Lab; they are not additional products.
 | Context | Question | Context document |
 | --- | --- | --- |
 | Compiler | Is this hardware schedule valid, and what target source does it produce? | [`docs/contexts/compiler/CONTEXT.md`](docs/contexts/compiler/CONTEXT.md) |
-| Research Lab | How does an agent improve Candidates under a frozen Study? | [`docs/contexts/lab/CONTEXT.md`](docs/contexts/lab/CONTEXT.md) |
+| Research Lab | How does an agent improve Candidates under a frozen Run, optionally assigned by a Study? | [`docs/contexts/lab/CONTEXT.md`](docs/contexts/lab/CONTEXT.md) |
 | Evaluation | Is one sealed Candidate correct, and was its measurement valid? | [`docs/contexts/evaluation/CONTEXT.md`](docs/contexts/evaluation/CONTEXT.md) |
 | Evidence | Can observations and terminal decisions be replayed independently? | [`docs/contexts/evidence/CONTEXT.md`](docs/contexts/evidence/CONTEXT.md) |
 
@@ -63,7 +63,7 @@ ablation. Executed study assignments and results remain owned by Study contracts
 
 | New information | Destination | Stable docs changed? |
 | --- | --- | --- |
-| Candidate or evaluation result | Campaign Evidence and Evaluation Receipt | No |
+| Candidate or evaluation result | Run Evidence and Evaluation Receipt | No |
 | Completed or failed Run | Terminal Archive and Run Audit | No |
 | Accepted Study conclusion | Study Report; then regenerated Claim View | No |
 | New Workload semantics or oracle | Successor Workload Contract | Only if the general boundary changes |
@@ -86,7 +86,8 @@ ablation. Executed study assignments and results remain owned by Study contracts
 1. [`docs/PAPER_CONTRACT.md`](docs/PAPER_CONTRACT.md)
 2. [`docs/contexts/lab/CONTEXT.md`](docs/contexts/lab/CONTEXT.md)
 3. [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
-4. The exact Workload Contract, Study Contract, and CampaignLock for the intended run
+4. The exact Workload and RunSpecification; the allocating StudyPlan for a research Run,
+   or the Study Contract and CampaignLock when using the legacy input adapter
 
 ### Maintainer or auditor
 

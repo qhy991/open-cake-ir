@@ -50,7 +50,7 @@ class CodexProviderAdapter:
         expected_terminal_message: str,
         event_contract: str = "closed_file_change_v1",
         submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
-        arm: str | None = None,
+        arm: str | None = None, environment_kind: str = "open_cake",
         maximum_candidates_per_turn: int = 1,
     ) -> ProviderTurn:
         """Run without shell expansion and remove every contract-declared environment name."""
@@ -93,7 +93,7 @@ class CodexProviderAdapter:
                 expected_terminal_message=expected_terminal_message,
                 event_contract=event_contract,
                 submission_contract=submission_contract,
-                arm=arm,
+                arm=arm, environment_kind=environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
         except (OSError, ValueError) as error:
@@ -113,6 +113,7 @@ class TurnRequestLike(Protocol):
 
     run_id: str
     arm: str
+    environment_kind: str
     turn: int
     cumulative_provider_tokens: int
     thread_id: str | None
@@ -136,7 +137,7 @@ class ProviderAdapter(Protocol):
     def execute(
         self, invocation: ProviderInvocation, *, candidate_path: Path,
         expected_change: str, expected_terminal_message: str, event_contract: str,
-        submission_contract: str, arm: str | None, maximum_candidates_per_turn: int,
+        submission_contract: str, arm: str | None, environment_kind: str, maximum_candidates_per_turn: int,
     ) -> ProviderTurn: ...
 
 
@@ -208,7 +209,8 @@ class QualifiedRunProvider:
         builder = self._builders.get(request.run_id)
         if (
             builder is None
-            or request.arm not in {"open_cake", "direct_cuda", "native_triton", "native_cute_dsl"}
+            or not isinstance(request.arm, str) or not request.arm
+            or request.environment_kind not in {"open_cake", "direct_cuda", "native_triton", "native_cute_dsl"}
             or request.turn <= 0
             or not isinstance(request.maximum_candidates_per_turn, int)
             or isinstance(request.maximum_candidates_per_turn, bool)
@@ -218,7 +220,7 @@ class QualifiedRunProvider:
         workspace = builder.workspace.absolute()
         package = self._task_packages[request.run_id]
         verify_task_package(workspace, package)
-        if package.arm != request.arm:
+        if package.arm != request.arm or package.environment_kind != request.environment_kind:
             raise ValueError('Ralph request arm differs from the task package')
         if request.turn == 1:
             expected_initial_entries = (
@@ -260,7 +262,7 @@ class QualifiedRunProvider:
             expected_terminal_message=terminal,
             event_contract=self._event_contract,
             submission_contract=self._submission_contract,
-            arm=request.arm,
+            arm=request.arm, environment_kind=request.environment_kind,
             maximum_candidates_per_turn=request.maximum_candidates_per_turn,
         )
         entries = list(workspace.iterdir())
