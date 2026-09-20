@@ -311,6 +311,7 @@ class DcuMedianCounts(unittest.TestCase):
                                          "that is not the floor this table holds")
             for pattern in (r"a difference of (?P<v>\d+\.\d+) us",
                             r"that pair is (?P<v>\d+\.\d+) us",
+                            r"observed synthetic-copy difference is (?P<v>\d+\.\d+) us",
                             r"differ by (?P<v>\d+\.\d+) us"):
                 for match in re.finditer(pattern, text):
                     covered.add(match.span("v"))
