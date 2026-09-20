@@ -27,6 +27,7 @@ from .optimizers.authoring import starter_source as optimizers_starter_source
 from .contraction import workload as contraction_math
 from .contraction.authoring import starter_source as contraction_starter_source
 from .aka_v3 import workload as aka_v3_math
+from .aka_v3.authoring import starter_source as aka_v3_starter_source
 from .deepseek_v4 import workload as deepseek_v4_math
 from .solx_fib import attention as solx_fib_attention, moe as solx_fib_moe
 from .solx_fib import gemm as solx_fib_gemm
@@ -152,6 +153,20 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
     of which case is selected for authoring; all five have the same tensor ABI. GEMM
     owns a third extent because its output column count is unrolled by the Schedule.
     """
+    if task_name in aka_v3_math.LAUNCHABLE_TASKS:
+        name = aka_v3_math.LAUNCHABLE_TASKS[task_name]
+        if any(type(value) is not int or value <= 0 for value in (rows, columns)):
+            raise ValueError("AKA launch dimensions must be positive integers")
+        if depth is not None and name != "gemm_nt_bias":
+            raise ValueError("only AKA NT GEMM declares K")
+        dimensions = ({"rows": rows, "columns": columns, "depth": 32 if depth is None else depth}
+                      if name == "gemm_nt_bias" else
+                      {"source_rows": rows, "output_rows": rows, "columns": columns}
+                      if name == "row_gather" else
+                      {"elements": rows * columns}
+                      if name == "momentum_sgd" else {"rows": rows, "columns": columns})
+        document = aka_v3_math.workload_document(name, backend=backend, **dimensions)
+        return document, aka_v3_starter_source(WorkloadContract(document), case_id)
     if task_name in solx_fib_gemm.TASKS:
         document = solx_fib_gemm.workload_document(task_name, rows=rows, columns=columns,
                                                   depth=depth, backend=backend)

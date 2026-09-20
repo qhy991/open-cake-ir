@@ -84,6 +84,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             "apple_gpu_family9": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
             # gfx1151 admits nothing yet; gfx938 admits the two measured contractions.
             "gfx1151": {},
+            "xcore1002": {},
             "gfx938": {"elementwise": ["ocml.tanh.f32"],
                        "mma": ["triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
                                "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"]},

@@ -576,12 +576,18 @@ def _load_hsaco(candidate, manifest, admission):
         candidate, candidate.artifact_payloads['hsaco'], manifest, admission.device_arch)
 
 
+def _load_mcfatbin(candidate, manifest, admission):
+    from .metax_driver import LoadedMetaxCandidate
+    return LoadedMetaxCandidate.load(candidate, manifest, admission)
+
+
 # The driver that retains a module for the tensor-tile path, per declared object. A row
 # with no loader is refused by the object's name: a Metal binary archive is observed by
 # its native observer rather than launched here.
 _MODULE_LOADERS = {
     CodeObject.CUBIN: _load_cubin,
     CodeObject.HSACO: _load_hsaco,
+    CodeObject.MCFATBIN: _load_mcfatbin,
 }
 
 

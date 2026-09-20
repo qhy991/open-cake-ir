@@ -3,12 +3,16 @@
 本页维护分支职责、任务流向和工作目录约定。实际分支位置、未合入提交与 PR 状态以
 Git 和 GitHub 为准；硬件能力与测量结论仍由各自的 Target 和验证证据负责。
 
-The maintained branches are `main`, `metal`, `amd`, `dcu`, and `nvidia`. Platform tasks
+The maintained branches are `main`, `metal`, `amd`, `dcu`, `nvidia`, and `metax`. Platform tasks
 merge into their platform branch, then into `main`; shared changes go through `main`.
 Every branch contains the complete repository. Platform names describe maintenance
 responsibility, not separate copies of the Compiler or a hardware qualification.
 
-## 五条长期分支
+硬件实验的发布数据按同样的分支归属维护：每个平台负责 `docs/results/<平台>/`，
+`main` 汇总已合入的版本。数据入口、生成命令与检查范围见
+[硬件结果维护流程](RESULTS_MAINTENANCE.md)；不在多个分支分别手写总览成绩。
+
+## 六条长期分支
 
 | 分支 | 职责 | 任务分支示例 | 任务 PR 的目标 |
 | --- | --- | --- | --- |
@@ -17,13 +21,14 @@ responsibility, not separate copies of the Compiler or a hardware qualification.
 | `amd` | AMD Target、ROCm 适配与 AMD 设备验证 | `task/amd-gfx1151-reduction` | `amd` |
 | `dcu` | Hygon Target、DTK/HCU 适配与 DCU 设备验证 | `task/dcu-wave64-reduction` | `dcu` |
 | `nvidia` | NVIDIA Target、CUDA/CuTe 及 NVIDIA 的 Triton 路径与设备验证 | `task/nvidia-b300-mma` | `nvidia` |
+| `metax` | MetaX Target、MACA 生成与执行、C550 设备验证 | `task/metax-c550-runtime` | `metax` |
 
 新分支不使用 `codex/` 前缀。任务使用 `task/<平台或core>-<事项>`；已有 `metal` 分支时，
 Git 不能同时建立 `metal/<事项>`，其他平台同理。任务完成后合入表中的目标，平台成熟改动
 再通过平台到 `main` 的 PR 集成。`main` 的公共更新在需要时同步回平台分支。
 
-GitHub 的长期分支只有这五条；临时分支只在任务或 PR 尚未完成时保留。合并完成后自动
-删除任务的远端分支。五条长期分支由仓库规则禁止删除和改写历史，所以平台到 `main`
+GitHub 的长期分支按此表维护；临时分支只在任务或 PR 尚未完成时保留。合并完成后自动
+删除任务的远端分支。长期分支由仓库规则禁止删除和改写历史，所以平台到 `main`
 的合并不会自动删除平台分支。仍有独有提交的旧工作先保留为归档标签，再删除远端分支；
 本机其他任务正在使用的分支与 worktree 不随远端清理移动。
 
@@ -33,11 +38,13 @@ flowchart LR
     TA["task/amd-事项"] --> A[amd]
     TD["task/dcu-事项"] --> D[dcu]
     TN["task/nvidia-事项"] --> N[nvidia]
+    TX["task/metax-事项"] --> X[metax]
     TC["task/core-事项"] --> MAIN[main]
     M --> MAIN
     A --> MAIN
     D --> MAIN
     N --> MAIN
+    X --> MAIN
 ```
 
 平台分支只接收可独立说明、已完成相应验证的任务；未完成的试验留在任务分支。
@@ -47,7 +54,7 @@ flowchart LR
 ## 代码职责保持统一
 
 代码目录按机制与职责组织，分支按维护方向组织。现有 lowering backend 是
-`native_cuda`、`metal`、`triton`、`cutlass_cute_dsl`；Triton 跨 NVIDIA、AMD 和 Hygon。
+`native_cuda`、`metal`、`triton`、`cutlass_cute_dsl`；Triton 跨 NVIDIA、AMD、Hygon 和 MetaX。
 AMD 与 DCU 可以共用适用的 HIP/HSACO 实现，但各自声明目标、工具链与设备事实。
 
 | 代码位置 | 负责的事实或机制 | 改动归属 |
@@ -118,7 +125,7 @@ fast-forward，不能 squash/rebase，否则会丢失同步带来的祖先关系
 
 CI 的触发范围由 [CPU contracts](../.github/workflows/ci.yml) 和
 [Offline Triton compilation](../.github/workflows/triton-compile.yml) 两份 workflow 负责。
-五条长期分支的 push 以及任务 PR 均进入适用的现有检查；Triton 编译仍按路径筛选。
+表中长期分支的 push 以及任务 PR 均进入适用的现有检查；Triton 编译仍按路径筛选。
 它们不自动提供每个平台的 GPU 资格，也不授权启动新的硬件实验。
 
 ## 历史工作与迁移

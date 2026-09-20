@@ -32,6 +32,8 @@ from open_cake_ir.tasks.compose import execute_matched_from_config
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
 from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, study_template
 from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS, admit_cohort_payload
+from open_cake_ir.tasks.aka_v3.workload import LAUNCHABLE_TASKS as AKA_TASKS
+from open_cake_ir.tasks.add_rmsnorm import TASK as ADD_RMSNORM_TASK
 from open_cake_ir.tasks.activation.workload import TASKS as _ACTIVATION_TASKS
 from open_cake_ir.tasks.rowwise.workload import TASKS as _ROWWISE_TASKS
 from open_cake_ir.tasks.reductions.workload import TASKS as _REDUCTION_TASKS
@@ -59,6 +61,11 @@ CONTRACTION_TASKS = tuple(_CONTRACTION_TASKS)
 # backend admits; normalization starters partition non-power-of-two rows explicitly.
 SOLX_FIB_TASKS = _solx_fib_launchable()
 FIB_GEMM_TASKS = tuple(FIB_GEMM_SPECS)
+# The single-task and explicit matrix selectors expose the same completed factories.
+TASKS = ("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
+         *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS, *OPTIMIZER_TASKS,
+         *CONTRACTION_TASKS, *SOLX_FIB_TASKS, *FIB_GEMM_TASKS, "gemm_bias",
+         ADD_RMSNORM_TASK, *AKA_TASKS)
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -232,6 +239,7 @@ def _bubblewrap(host) -> str:
 
 def _triton_toolchain_config(executor):
     """One explicit configuration for baseline preparation and the runtime builder."""
+    from open_cake_ir.lab.executor import triton_version
     host = executor.document["host_environment"]
     interpreter = Path(str(host["python"]["invocation_path"]))
     # A HIP host declares the environment its toolchain needs inside the jail; a CUDA
@@ -242,7 +250,7 @@ def _triton_toolchain_config(executor):
     return {"python": str(interpreter), "bubblewrap": _bubblewrap(host),
             "runtime_roots": _triton_runtime_roots(interpreter, declared),
             "build_environment": environment,
-            "triton_version": host["packages"]["triton"], "timeout_seconds": 600}
+            "triton_version": triton_version(host), "timeout_seconds": 600}
 
 
 def _triton_builder(executor, workload):
@@ -476,6 +484,10 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
     lane-owned storage bound must refuse (F-2026-09-10-014). The contraction contract's
     own extents keep that operand inside the bound; explicit flags still win.
     """
+    if task in AKA_TASKS:
+        return 8 if rows is None else rows, 256 if columns is None else columns
+    if task == ADD_RMSNORM_TASK:
+        return 128 if rows is None else rows, 2560 if columns is None else columns
     if task in CONTRACTION_TASKS:
         return 1024 if rows is None else rows, 64 if columns is None else columns
     if task in FIB_GEMM_SPECS:
@@ -501,11 +513,7 @@ def _campaign_exit_code(report) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", choices=("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
-                                          *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS,
-                                          *OPTIMIZER_TASKS, *CONTRACTION_TASKS,
-                                          *SOLX_FIB_TASKS, *FIB_GEMM_TASKS,
-                                          "gemm_bias"), required=True)
+    parser.add_argument("--task", choices=TASKS, required=True)
     parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)

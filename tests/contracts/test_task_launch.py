@@ -487,7 +487,8 @@ class TaskLaunchTests(unittest.TestCase):
                     "triton-b200": ("sm_100a", "NVIDIA B200"),
                     "triton-b300": ("sm_103a", "NVIDIA B300"),
                     "triton-dcu": ("gfx938", "BW1101"),
-                    "triton-gfx1151": ("gfx1151", "AMD Radeon Graphics")}
+                    "triton-gfx1151": ("gfx1151", "AMD Radeon Graphics"),
+                    "triton-metax": ("xcore1002", "MetaX C550")}
         # This family read an Apple-only registry until the task families were given one
         # device registry, so a normalization Workload could be frozen for Metal alone.
         self.assertEqual(set(launch_task.BACKENDS), set(expected))

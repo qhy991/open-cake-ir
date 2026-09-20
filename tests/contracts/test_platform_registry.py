@@ -104,10 +104,10 @@ class TheExecutorHostTableIsTheRegistrysHostKinds(unittest.TestCase):
         self.assertIn(None, lab_executor._HOST_VALIDATORS)
         self.assertIs(platform_for_host_kind(None), PLATFORMS[CodeObject.CUBIN])
 
-    def test_the_six_committed_host_captures_validate_through_the_table_unchanged(self) -> None:
+    def test_the_committed_host_captures_validate_through_their_own_rows(self) -> None:
         self.assertEqual([path.name for path in HOST_DOCUMENTS], [
             "apple_gpu_family7.json", "apple_gpu_family8.json", "apple_gpu_family9.json",
-            "gfx1151.json", "gfx938.json", "sm_103a.json"])
+            "gfx1151.json", "gfx938.json", "sm_103a.json", "xcore1002.json"])
         for path in HOST_DOCUMENTS:
             with self.subTest(host=path.stem):
                 document = json.loads(path.read_text(encoding="utf-8"))
@@ -145,7 +145,7 @@ class JobIdsFollowTheAllocatorThatIssuedThem(unittest.TestCase):
         exclusive = {row.exclusive_job_prefix for row in PLATFORMS.values()} - {None}
         local = {row.local_job_prefix for row in PLATFORMS.values()} - {None}
         self.assertEqual(exclusive, {"gpuq"})
-        self.assertEqual(local, {"cuda", "metal", "hip"})
+        self.assertEqual(local, {"cuda", "metal", "hip", "maca"})
         self.assertEqual(set(LOCAL_KINDS), local)
 
 

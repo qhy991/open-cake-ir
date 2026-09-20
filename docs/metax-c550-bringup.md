@@ -5,8 +5,8 @@
 开发镜像查找和只查询设备属性的工具。**尚未接通 Compiler / Executor，
 也没有 GPU kernel 正确性或性能结论。**
 
-后续已创建本地 `metax` 平台分支；当前任务的实际入口检查、可移植任务分组和
-阻塞点见 [C550 任务可运行性检查](metax-task-readiness.md)。
+后续实现与固定范围验收见 [C550 当前可用路径](metax-c550.md)。本页和
+[初始任务可运行性检查](metax-task-readiness.md) 保留接入前的调查结论。
 
 ## 本次可复用的交付
 
