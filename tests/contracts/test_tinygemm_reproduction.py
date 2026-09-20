@@ -98,7 +98,7 @@ class TinyGemmReproduction(unittest.TestCase):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         for batch, columns, depth in ((1, 128, 720), (16, 1024, 1024), (64, 4096, 3072)):
             workload = WorkloadContract(task.workload_document(rows=batch, columns=columns, depth=depth))
-            for stages in (4, 8):
+            for stages in (*task.CANDIDATE_STAGES, 8):
                 document = frontend.parse(task.partitioned_source(workload, stages=stages)).document
                 with self.subTest(depth=depth, stages=stages):
                     assessment = compiler.assess(document)

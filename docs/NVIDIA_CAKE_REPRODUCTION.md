@@ -61,7 +61,7 @@ proposal; it is not an alternative acceptance ledger.
 The development judge accepts explicit `benchmark: true` only on its B300 input.
 Before timing, all 30 candidate checks and all 15 official-export checks must pass the
 same original-peer bitwise gate, with the independent CPU mathematical check retained.
-The comparison includes Open-Cake stage requests 4/8, the pinned CAKE-generated
+The comparison includes Open-Cake stage requests 2/4, the pinned CAKE-generated
 stage4 export (selected by the original dispatcher on these three fixtures), and the
 pinned TensorRT-LLM-derived reference. Short K candidates declare no loop and report
 `applied_loop_stages: null`; duplicate requests there are not distinct pipelines.
@@ -74,3 +74,10 @@ the GPU interval. A separate profiler observation must see exactly one CUDA kern
 arm. Raw samples, coefficients of variation, kernel symbols and paired ratios remain
 in the report. There is no predeclared parity threshold, no fixed-clock claim and no
 extrapolation to the paper's 35/239-shape or model-serving results.
+
+The K720/K1024 successor uses a loop-free masked K tile; the original single-trip
+loop was refused before launch. Run `cake-tinygemm-paper-b300-8fd0d5c9-8a88723e6d54`
+then passed its first 21 strict checks, including the large-shape stage4 ordinary
+input. Its large-shape stage8 launch was refused for 475136 bytes of shared memory
+against a 232448-byte device limit. Stage8 remains a retained failed candidate;
+the next comparison uses 2/4 stages under the unchanged shapes and numerical gate.

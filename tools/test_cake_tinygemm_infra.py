@@ -50,7 +50,7 @@ def qualify(output, compiler, torch, *, include_official=False):
         folder.mkdir(parents=True)
         (folder / 'workload.json').write_text(json.dumps(document, indent=2) + '\n')
         entries = {}
-        for stages in (4, 8):
+        for stages in task.CANDIDATE_STAGES:
             source = task.partitioned_source(workload, stages=stages)
             assessment = compiler.assess(frontend.parse(source).document)
             (folder / f'assessment-s{stages}.json').write_text(json.dumps(
@@ -123,15 +123,15 @@ def measure_matched(timing_inputs, output, torch):
     summaries = []
     for shape, workload, inputs, out_shape, entries, expected in timing_inputs:
         outputs = {name: torch.empty(out_shape, dtype=torch.bfloat16, device='cuda')
-                   for name in ('trt_reference', 'official_cake', 'open_cake_s4', 'open_cake_s8')}
+                   for name in ('trt_reference', 'official_cake', *(f'open_cake_s{s}' for s in task.CANDIDATE_STAGES))}
         reference = task._peer_module(workload.target)
         official = task.official_cake_module(workload.target)
         functions = {
             'trt_reference': lambda: reference.tinygemm2_op(inputs['x'], inputs['weight'], inputs['bias'], outputs['trt_reference'], False),
             'official_cake': lambda: official.stage4_op(inputs['x'], inputs['weight'], inputs['bias'], outputs['official_cake']),
-            'open_cake_s4': lambda: entries[4](**inputs, out=outputs['open_cake_s4']),
-            'open_cake_s8': lambda: entries[8](**inputs, out=outputs['open_cake_s8']),
         }
+        for stages in task.CANDIDATE_STAGES:
+            functions[f'open_cake_s{stages}'] = lambda s=stages: entries[s](**inputs, out=outputs[f'open_cake_s{s}'])
         rounds = []
         before = {name: value.cpu().reshape(-1).tolist() for name, value in inputs.items()}
         for round_id in range(5):
@@ -161,9 +161,11 @@ def measure_matched(timing_inputs, output, torch):
             if len(events) != 1:
                 raise ValueError(f'{arm} does not have a witnessed single-kernel boundary: {events}')
         median = {arm: statistics.median(r['arms'][arm]['median_ms'] for r in rounds) for arm in functions}
+        ratios = {f'open_cake_s{s}': statistics.median(
+            r['arms']['official_cake']['median_ms']/r['arms'][f'open_cake_s{s}']['median_ms'] for r in rounds)
+            for s in task.CANDIDATE_STAGES}
         summaries.append({'shape': shape, 'median_ms': median, 'rounds': rounds, 'cuda_symbols': symbols,
-                          'open_cake_s4_vs_official': statistics.median(r['arms']['official_cake']['median_ms']/r['arms']['open_cake_s4']['median_ms'] for r in rounds),
-                          'open_cake_s8_vs_official': statistics.median(r['arms']['official_cake']['median_ms']/r['arms']['open_cake_s8']['median_ms'] for r in rounds)})
+                          'speedup_vs_official': ratios})
         (output/'timing-progress.json').write_text(json.dumps(summaries,indent=2)+'\n')
     return {'scope':'single_kernel_CUPTI_ms', 'cold_l2':True, 'cuda_graph':False, 'pdl':False,
             'rounds':5, 'samples_per_arm_per_round':25, 'paired_order':'forward_reverse_alternating',
@@ -195,21 +197,27 @@ def main():
         output.mkdir(exist_ok=False)
         rows, timing_inputs = qualify(output, compiler, torch, include_official=config.get('benchmark', False))
         passed = len(rows) == 30 and all(row['passed'] for row in rows)
-        timing = measure_matched(timing_inputs, output, torch) if passed and config.get('benchmark', False) else 'not_measured'
         report = {'source_commit': commit, 'target': 'sm_103a', 'device': torch.cuda.get_device_name(),
                   'allocation': admission.mode, 'torch': torch.__version__, 'triton': triton.__version__,
                   'flashinfer_jit_sdk': flashinfer.__version__, 'peer_source_commit': task.PEER_COMMIT,
                   'scope': 'development_correctness_only; no_Campaign_or_promotion',
-                  'passed': passed, 'timing': timing, 'mechanism_equivalence': 'not_established',
+                  'passed': passed, 'candidate_stages': list(task.CANDIDATE_STAGES),
+                  'timing': 'not_measured', 'mechanism_equivalence': 'not_established',
                   'rows': rows}
         (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
+        if passed and config.get('benchmark', False):
+            report['timing'] = measure_matched(timing_inputs, output, torch)
+            (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
         result.update(status='passed' if passed else 'failed', validity='valid' if passed else 'invalid',
-                      summary=f'{sum(r["passed"] for r in rows)}/{len(rows)} strict peer checks passed; no performance claim',
+                      summary=f'{sum(r["passed"] for r in rows)}/{len(rows)} strict peer checks passed; timing {"collected" if isinstance(report["timing"], dict) else "not measured"}',
                       artifacts={'report': 'checks/report.json'})
     except Exception as error:
         result['summary'] = f'{type(error).__name__}: {error}'
         (stage / 'error.txt').write_text(traceback.format_exc())
         result['artifacts']['error'] = 'error.txt'
+        for name in ('progress', 'report', 'timing-progress'):
+            if (stage / 'checks' / f'{name}.json').is_file():
+                result['artifacts'][name] = f'checks/{name}.json'
     with destination.open('x') as stream:
         json.dump(result, stream, indent=2)
         stream.write('\n')

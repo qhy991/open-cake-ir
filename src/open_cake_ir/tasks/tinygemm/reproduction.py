@@ -19,6 +19,7 @@ TASK = 'cake_tinygemm2'
 OPERATOR = 'cake_tinygemm2_bf16_bias'
 TARGETS = {'triton-b200': 'sm_100a', 'triton-b300': 'sm_103a'}
 CASES = ('primary', 'zeros', 'near_zero', 'alternating', 'mixed_magnitude')
+CANDIDATE_STAGES = (2, 4)
 PEER_COMMIT = '67f76379a145f19793896394974e29e610cda912'
 PEER_DIRECTORY = 'experiments/flashinfer_rewrites/references/029_cake_tinygemm2/baseline/csrc'
 
@@ -173,8 +174,8 @@ def reference_outputs(workload, case_id, inputs):
 
 def _source(workload, case_id, stages, partitioned):
     validate_contract(workload.document)
-    if type(stages) is not int or stages not in (4, 8):
-        raise ValueError('TinyGEMM starter stages must be 4 or 8')
+    if type(stages) is not int or stages not in (2, 4, 8):
+        raise ValueError('TinyGEMM starter stages must be 2, 4 or 8')
     if partitioned and workload.target != 'sm_103a':
         raise ValueError('partitioned TinyGEMM is currently bounded to sm_103a')
     args = workload.tensor_abi(case_id)
