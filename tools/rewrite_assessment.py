@@ -49,7 +49,13 @@ def probe_document(root: Path, name: str, target: str) -> tuple[dict, str, str]:
     elif name == 'native_fp8':
         document['lowering']['backend'] = 'native_cuda'
     elif name == 'native_role_registers':
-        document['roles'][0]['registers_per_thread'] = 168
+        # A partial split is refused by a shared rule before native preflight.
+        # Supply complete warpgroups and a conserved CTA allocation so the witness
+        # actually reaches the backend that would have to emit setmaxnreg.
+        for index, role in enumerate(document['roles']):
+            role['execution_groups'] = list(range(index * 4, (index + 1) * 4))
+            role['registers_per_thread'] = 168 if index == 0 else 48
+        document['residency'] = {'registers_per_thread': 88}
     elif name.startswith('native_pipeline'):
         stages = int(name.removeprefix('native_pipeline'))
         factor = stages // document['pipelines'][0]['stages']
@@ -137,6 +143,22 @@ def prepare(root: Path, rows: list[dict], output: Path,
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
     (output / 'assessment.json').write_text(json.dumps(report, indent=2, ensure_ascii=False) + '\n')
+    summary = [
+        '# CAKE paper-family capability assessment', '',
+        f"Source commit: `{report['source_commit']}`.", '',
+        'CPU-only component observations. No complete paper task, GPU correctness, '
+        'performance or framework equivalence has been established.', '',
+        '| Task | Launch status | Manager input |', '|---|---|---|',
+        *[f"| {row['id']} | {row['launch_status']} | [TASK.md](tasks/{row['id']}/TASK.md) |"
+          for row in report['tasks']], '',
+        '| Component witness | Result | Blocking diagnostics |', '|---|---|---|',
+    ]
+    for key, probe in report['probes'].items():
+        codes = ', '.join(dict.fromkeys(f['code'] for f in probe['findings'] if f['blocks_lowering']))
+        summary.append(f"| [{key}]({probe['input']}) | {probe['status']} | {codes or 'none'} |")
+    summary.extend(['', 'See [assessment.json](assessment.json) for exact scopes, original Finding '
+                    'messages/paths, emitted-source paths and preparation steps.', ''])
+    (output / 'README.md').write_text('\n'.join(summary))
     for row, result in zip(selected, report['tasks']):
         task = output / 'tasks' / row['id']
         task.mkdir(parents=True)

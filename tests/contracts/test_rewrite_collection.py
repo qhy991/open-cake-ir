@@ -96,6 +96,9 @@ class RewriteCollectionTests(unittest.TestCase):
             cute_state = report['probes']['sm_100a/state_cute']
             self.assertEqual(cute_state['status'], 'refused')
             self.assertIn('CUTE_STATE_UNSUPPORTED', [f['code'] for f in cute_state['findings']])
+            register_codes = [f['code'] for f in report['probes']['sm_100a/native_role_registers']['findings']]
+            self.assertIn('NATIVE_ROLE_REGISTERS_UNSUPPORTED', register_codes)
+            self.assertNotIn('ROLE_REGISTERS_PARTIAL', register_codes)
             for row in report['tasks']:
                 self.assertEqual(row['whole_task'], 'not_evaluated')
                 self.assertEqual(row['gpu_correctness'], 'not_run')
