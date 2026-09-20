@@ -529,7 +529,8 @@ def main(argv=None) -> int:
                         help="contracted K extent; only a contraction task declares one")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
     parser.add_argument("--turns", type=int, default=32)
-    parser.add_argument("--token-budget", type=int, default=3000000)
+    parser.add_argument("--token-budget", type=int, default=3000000,
+                        help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
     parser.add_argument("--maximum-cv", type=float,
