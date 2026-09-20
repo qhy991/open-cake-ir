@@ -22,6 +22,7 @@ from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, timing_sour
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
 SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"
+METAL_SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-metal-v3.md"
 
 
 def arm_feedback(evaluation) -> list[str]:
@@ -162,8 +163,12 @@ def study_template(root: Path, workload, workload_path: Path, starter_path: Path
               "evaluation_limits": {"search": turns * searches_per_turn, "confirmatory": turns,
                                     "attribution": turns * searches_per_turn}}
     RalphBudget.from_mapping(budget)
+    backend = backend_for_target(workload.target)
+    default_scaffold = (METAL_SCAFFOLD
+                        if backend is not None and BACKENDS[backend]["route"] == "metal"
+                        else SCAFFOLD)
     scaffold_name, scaffold_path = source_reference_path(
-        root, str(agents_md) if agents_md is not None else SCAFFOLD, "scaffold")
+        root, str(agents_md) if agents_md is not None else default_scaffold, "scaffold")
     scaffold_bytes = scaffold_path.read_bytes()
     if not scaffold_bytes.decode("utf-8").strip():
         raise ValueError("authoring AGENTS.md must contain nonempty UTF-8 instructions")
