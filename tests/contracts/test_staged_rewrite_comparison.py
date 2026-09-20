@@ -97,7 +97,14 @@ class StagedComparisonTests(unittest.TestCase):
                             payloads = []
                             for arg in workload.tensor_abi(case):
                                 payload = legacy.read(math.prod(arg.shape)*staged.WIDTHS[arg.dtype])
-                                if count==1000 and arg.mode==change:
+                                if change=='first_nan_then_good' and case=='primary' and arg.name=='x' and count!=1000:
+                                    payload = struct.pack('=f',float('nan'))+payload[4:]
+                                elif (change=='flip_zero' and case=='zeros' and arg.name=='x'
+                                      and observation['phase']=='preflight' and observation['role']=='starter'):
+                                    value = struct.unpack_from('=f',payload)[0]
+                                    self.assertEqual(value,0.)
+                                    payload = struct.pack('=f',-value)+payload[4:]
+                                elif count==1000 and arg.mode==change:
                                     payload = struct.pack('=f',struct.unpack_from('=f',payload)[0]+1)+payload[4:]
                                     change = None
                                 payloads.append(payload)
@@ -112,11 +119,27 @@ class StagedComparisonTests(unittest.TestCase):
                 compact_result = verify()
                 self.assertEqual(compact_result['comparisons'],result['comparisons'])
                 self.assertEqual(compact_result['cases'],result['cases'])
+                inputs_per_call = sum(a.mode=='input' for a in workload.tensor_abi('primary'))
+                literal_checks = len(workload.case_ids)*inputs_per_call
+                self.assertEqual(compact_result['input_check_counts'],{
+                    'literal':literal_checks,'reference':2550*inputs_per_call-literal_checks})
                 for mode in ('input','output'):
                     snapshots.write_bytes(encode(mode))
                     failed = verify()
                     self.assertFalse(failed['correctness_passed'])
                     self.assertTrue(all('timing' not in row for row in failed['comparisons'].values()))
+                # A good later literal must not overwrite the failed first-NaN
+                # verdict referenced by subsequent R records, even across roles.
+                snapshots.write_bytes(encode('first_nan_then_good'))
+                failed = verify()
+                self.assertFalse(failed['correctness_passed'])
+                self.assertTrue(all(not row['inputs_unchanged'] for row in failed['cases']
+                                    if row['case']=='primary' and row['phase']=='postflight'))
+                snapshots.write_bytes(encode('flip_zero'))
+                failed = verify()
+                self.assertFalse(failed['correctness_passed'])
+                self.assertTrue(all(row['inputs_unchanged'] for row in failed['cases']
+                                    if row['case']=='zeros' and row['phase']=='postflight'))
                 snapshots.write_bytes(encoded+b'extra')
                 with self.assertRaisesRegex(ValueError,'trailing'):verify()
                 snapshots.write_bytes(encoded[:-1])
