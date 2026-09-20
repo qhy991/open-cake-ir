@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping
 from open_cake_ir.evaluation.workload import WorkloadContract
 from .attention_specs import SPECS
-from .plan_authoring import PlanAuthor
+from .plan_authoring import PlanAuthor, plan_workload_target
 
 TASKS = {name:('solx_'+name+'_bf16','1') for name in SPECS}
 VARIANTS = ('captured','boundary')
@@ -27,11 +27,16 @@ def geometry(task, variant='captured'):
     return shape
 
 
-def workload_document(task, *, variant='captured'):
+def workload_document(task, *, variant='captured', backend='triton-b300'):
     if task not in TASKS:
         raise ValueError('unknown FlashInfer attention task')
     spec=SPECS[task]; axes={**spec['constants'],**geometry(task,variant)}
     operator,revision=TASKS[task]
+    target = plan_workload_target(backend)
+    predecessor_id = operator.replace('_','-')+'-b300-'+variant+'-v1'
+    successor = backend != 'triton-b300'
+    if successor:
+        revision = '2'
     tensors={}
     for name,decl in {**spec['inputs'],**spec['outputs']}.items():
         tensors[name]={'shape':[axes.get(v,v) if isinstance(v,str) else v for v in decl['shape']],
@@ -41,7 +46,8 @@ def workload_document(task, *, variant='captured'):
             tensors[name]['max_abs'] = 1.0 if name == 'sm_scale' else 0.5
     nan_masked = not spec['decode'] and (spec['mla'] or not spec['paged'])
     return {
-        'schema_version':1,'workload_id':operator.replace('_','-')+'-b300-'+variant+'-v1',
+        'schema_version':1,'workload_id':(operator.replace('_','-')+'-'+backend+'-'+variant+'-v2'
+                                       if successor else predecessor_id),
         'revision':revision,'state':'frozen','operator':operator,
         'provenance':[{'kind':'solx_pack_task','upstream':'flashinfer-bench','path':'flashinfer-bench-tasks/tasks/'+spec['upstream'],
                        'scope':'mathematical_definition_only_no_candidate_or_timing_import'},
@@ -49,10 +55,13 @@ def workload_document(task, *, variant='captured'):
                        'scope':'first_record_axes_only' if variant=='captured' else 'synthetic_boundary_shape',
                        'workload_uuid':spec['workload_uuid']},
                       {'kind':'restricted_artifact','path':'flashinfer-bench-tasks/tasks/'+spec['upstream']+'/baseline/',
-                       'scope':'complete_target_implementation'}],
+                       'scope':'complete_target_implementation'}]
+                     + ([{'kind':'workload_successor','workload_id':predecessor_id,
+                           'scope':'new_exact_target_binding; original_semantics_inputs_oracle_tolerances_preserved'}]
+                        if successor else []),
         'cases':[{'case_id':case,'shape':axes,'seed':2801+i,'mode':case} for i,case in enumerate(CASES)],
         'tensors':tensors,
-        'semantics':{'target':'sm_103a','variant':variant,'task':task,
+        'semantics':{'target':target,'variant':variant,'task':task,
             'candidate_abi':{'inputs':list(spec['inputs']),'outputs':list(spec['outputs'])},
             'input_effects':'unchanged','output_storage':'fresh_contiguous_nonaliasing',
             'definition':'scaled QK dot plus optional positional dot; bottom-right causal softmax; weighted V and base2 logsumexp',
@@ -74,11 +83,15 @@ def workload_document(task, *, variant='captured'):
 
 
 def validate_contract(document: Mapping):
+    from open_cake_ir.tasks.devices import backend_for_target
     task=document.get('semantics',{}).get('task')
     variant=document.get('semantics',{}).get('variant')
     if task not in TASKS or variant not in {'captured','boundary'}:
         raise ValueError('FlashInfer attention task/variant differs')
-    expected=workload_document(task,variant=variant)
+    backend=backend_for_target(document.get('semantics',{}).get('target'))
+    if backend is None:
+        raise ValueError('FlashInfer attention target is not registered')
+    expected=workload_document(task,variant=variant,backend=backend)
     if json.dumps(document,sort_keys=True,allow_nan=False)!=json.dumps(expected,sort_keys=True):
         raise ValueError('FlashInfer attention frozen semantic/ABI contract differs')
     workload=WorkloadContract(document)
