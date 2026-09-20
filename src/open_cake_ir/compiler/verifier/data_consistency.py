@@ -1579,7 +1579,8 @@ def _verify_operation_shape(
                             "ELEMENTWISE_BROADCAST",
                             f"{path}.parameters.broadcast_axis",
                             f"operand {read.name!r} {list(read.shape)} does not span "
-                            f"axis {axis} of {list(widest)}",
+                            f"axis {axis} of {list(widest)}; broadcast_axis names the "
+                            "retained operand axis, not the axis being inserted",
                             category,
                         )
 
