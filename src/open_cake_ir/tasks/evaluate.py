@@ -261,12 +261,12 @@ def _observe_cuda(authority: _Authority):
     return observe(authority.candidate.target)
 
 
-def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
-                       samples_per_cohort, route_calls_per_cohort):
-    """The single retained CUPTI path for both historical and paired tensor assays."""
-    validation_inputs = getattr(loaded, 'validation_inputs', inputs)
-    if validation_inputs is not inputs and not _same_tensor_inputs(inputs, validation_inputs):
-        raise ValueError('retained validation inputs differ from the Workload case')
+def capture_tile_cohort(loaded, strict_cupti, *, samples_per_cohort, route_calls_per_cohort):
+    """Capture one cohort, retaining every argument set for subsequent validation.
+
+    No correctness or acceptance is returned here. The caller must observe and
+    validate every retained input and output, either now or in a later CPU phase.
+    """
     arguments = loaded.fresh_argument_sets(route_calls_per_cohort)
     used = 0
     def launch_fresh():
@@ -281,7 +281,18 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
         raise ValueError('worker CUPTI sample count differs')
     if used != len(arguments):
         raise RuntimeError('retained CUPTI helper invocation count differs')
-    check = {'checked_launches': used, 'passed': True, 'output_mismatches': 0,
+    return samples, arguments
+
+
+def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
+                       samples_per_cohort, route_calls_per_cohort):
+    """The retained capture path followed by complete immediate numerical checks."""
+    validation_inputs = getattr(loaded, 'validation_inputs', inputs)
+    if validation_inputs is not inputs and not _same_tensor_inputs(inputs, validation_inputs):
+        raise ValueError('retained validation inputs differ from the Workload case')
+    samples, arguments = capture_tile_cohort(loaded, strict_cupti,
+        samples_per_cohort=samples_per_cohort, route_calls_per_cohort=route_calls_per_cohort)
+    check = {'checked_launches': len(arguments), 'passed': True, 'output_mismatches': 0,
              'max_abs_error': 0.0, 'inputs_unchanged': True}
     # A loaded tensor candidate retained a value-identical native CPU array at
     # admission. Generic callables keep their original input representation.
