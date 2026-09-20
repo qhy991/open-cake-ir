@@ -14,6 +14,7 @@ from typing import Mapping, Sequence, cast
 from ..serialization import canonical_json_bytes as _canonical_json_bytes
 from .backends import BACKENDS, Backend
 from .frontend import read_schedule
+from .program import LoweredProgram
 from .passes import (FusionResult, SpecializationResult, fuse_pointwise_epilogue,
                      specialize_output_columns, specialize_triton_warps)
 from .backends.common import EmitError
@@ -174,6 +175,27 @@ class Compiler:
             target_definitions=revision.targets,
             corpus_path=revision.corpus_path,
         )
+
+    def rewrite_program(self, program, transformation: str, parameters: Mapping[str, object]):
+        """Explicit complete-Program action; never invoked by assessment/lowering."""
+        from .program_passes import rewrite_program
+        return rewrite_program(self, program, transformation, parameters)
+
+    def lower_program(self, program):
+        # Public callers can assemble typed fields directly. Reconstruct at this
+        # input boundary; only the resulting validated structure reaches emission.
+        from .ir import Program
+        program = Program.from_dict(program.document)
+        if self.commit is None:
+            raise ValueError('program compilation requires a clean Compiler commit')
+        lowerings = []
+        for stage in program.stages:
+            assessment = self.assess(json.loads(stage.schedule_bytes))
+            if not assessment.lowering_eligible:
+                raise ValueError(f'program stage {stage.name!r} refused: {[f.code for f in assessment.findings]}')
+            lowerings.append(self.lower(assessment))
+        return LoweredProgram(program, lowerings[0].compiler_revision_id, tuple(lowerings))
+
 
     def check_corpus(self) -> CorpusGateReport:
         """Assess the declared Corpus through its canonical report owner."""

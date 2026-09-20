@@ -20,7 +20,7 @@ def module(name):
 
 
 class ReportProjectionTests(unittest.TestCase):
-    def fixture(self, root, *, custody=True, include_pair=True):
+    def fixture(self, root, *, custody=True, include_pair=True, independent=False):
         report = {
             "archive_integrity_passed": True, "filesystem_custody_verified": custody,
             "semantic_replay_passed": True, "campaign_complete": True,
@@ -43,8 +43,43 @@ class ReportProjectionTests(unittest.TestCase):
                 "compiler_revision": {"revision_id": "test-commit"},
                 "execution": {"target": "sm_103a", "fixed_baseline": {
                     "selection": {"source": "starter_reference"}}}}
+        if independent:
+            from hashlib import sha256
+            from open_cake_ir.serialization import canonical_json_bytes
+            lock['run_id'] = 'open_cake-1'
+            report = {'run_id':lock['run_id'],'audit':{**report['run_audits'][0],
+                'authority_sha256':sha256(canonical_json_bytes(lock)).hexdigest(),
+                'archive_integrity':True,'filesystem_custody_verified':custody},
+                'replay':{'run_id':lock['run_id'],'refusals':[]},'performance':report['descriptive']['performance']}
         (root / "report.json").write_text(json.dumps(report))
-        (root / "campaign-lock.json").write_text(json.dumps(lock))
+        (root / ('run.json' if independent else "campaign-lock.json")).write_text(json.dumps(lock))
+
+    def test_independent_report_keeps_its_pair_and_refuses_failed_or_mismatched_replay(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp);self.fixture(root,independent=True)
+            reader = module('read_task_results')
+            row = reader.read_workspace(root)['runs'][0]
+            self.assertEqual(row['status'],'reported_qualified')
+            self.assertEqual(row['baseline_ms'],.004)
+            original = json.loads((root/'report.json').read_text())
+            original_authority = json.loads((root/'run.json').read_text())
+            for field,value in [('workload',{'workload_id':'different-task'}),
+                                ('execution',{**original_authority['execution'],'target':'gfx1151'}),
+                                ('compiler_revision',{'revision_id':'different-commit'})]:
+                (root/'run.json').write_text(json.dumps({**original_authority,field:value}))
+                row = reader.read_workspace(root)['runs'][0]
+                self.assertEqual(row['status'],'not_qualified')
+                self.assertIsNone(row['candidate_ms'])
+            (root/'run.json').write_text(json.dumps(original_authority))
+            for replay in ({'run_id':'other-run','refusals':[]},
+                           {'run_id':'open_cake-1','refusals':[{'message':'not verified'}]}):
+                (root/'report.json').write_text(json.dumps({**original,'replay':replay}))
+                row = reader.read_workspace(root)['runs'][0]
+                self.assertEqual(row['status'],'not_qualified')
+                self.assertIsNone(row['candidate_ms'])
+            (root/'campaign-lock.json').write_text('{}')
+            with self.assertRaisesRegex(ValueError,'two execution authorities'):
+                reader.read_workspace(root)
 
     def test_endpoint_uses_its_own_paired_baseline(self):
         with tempfile.TemporaryDirectory() as temp:

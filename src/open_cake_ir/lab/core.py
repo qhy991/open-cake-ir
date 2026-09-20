@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Mapping
 
 from . import contracts, execution, preflight, replay, reporting
+from .run_spec import RunSpecification, RunRef
 
 if TYPE_CHECKING:
     from open_cake_ir.evidence import EvidenceStore, RunAudit
@@ -66,6 +67,46 @@ class Lab:
             validate_study=self._validate_study,
         )
 
+    def _validate_run(self, specification: RunSpecification) -> None:
+        """Task-owned target/evaluation admission, independent of Study policy."""
+
+    def preflight_run(self, run_path: RunSpecification | str | Path) -> RunSpecification:
+        return preflight.preflight_run(run_path, project_root=self._root,
+                                       workload_loader=self._load_workload, validate_run=self._validate_run)
+
+    def _validate_study_plan(self,plan):
+        from .study_execution import validate_study_inputs
+        validate_study_inputs(plan,project_root=self._root,workload_loader=self._load_workload,
+                              preflight_run=self.preflight_run,task_package=self.task_package)
+
+    def prepare_study(self,plan,output_root):
+        from .study_execution import prepare_study
+        return prepare_study(plan,output_root,project_root=self._root,workload_loader=self._load_workload,
+                             preflight_run=self.preflight_run,task_package=self.task_package)
+
+    def execute_study(self,study,*,runtime_factory):
+        from .study_execution import execute_study
+        self._validate_study_plan(study.plan)
+        return execute_study(study,execute_run=self.execute_run,runtime_factory=runtime_factory)
+
+    def audit_study(self,study):
+        from .study_analysis import audit_study
+        return audit_study(study,audit_run=self.audit_run,validate_inputs=self._validate_study_plan)
+
+    def execute_run(self, specification: RunSpecification, evidence_root: str | Path, *,
+                    provider, environment, evaluator) -> RunRef:
+        return execution.execute_run(
+            specification, evidence_root, project_root=self._root,
+            workload_loader=self._load_workload, clock=self._clock, provider=provider,
+            environment=environment, evaluator=evaluator, validate_run=self._validate_run,
+            task_package=self.task_package,
+        )
+
+    def execute_campaign_with_factory(self,lock,evidence_root,*,runtime_factory):
+        return execution.execute_campaign_with_factory(lock,evidence_root,project_root=self._root,
+            workload_loader=self._load_workload,clock=self._clock,runtime_factory=runtime_factory,
+            task_package=self.task_package,validate_run=self._validate_run,validate_authoring=self._validate_authoring)
+
     def reference_campaign(
         self,
         lock: contracts.CampaignLock,
@@ -107,11 +148,32 @@ class Lab:
         return replay.replay_matched_run(
             evidence,
             audit,
-            lock,
+            lock.run_specification(audit.run_id),
             project_root=self._root,
             manifest_parser=self._parse_manifest,
             task_package=self.task_package,
         )
+
+    def audit_run(self, run: RunRef):
+        from open_cake_ir.evidence import EvidenceStore
+        evidence = EvidenceStore.open(run.evidence_root)
+        audit = evidence.audit_run(run.specification.run_id)
+        if not audit.archive_integrity or audit.authority_sha256 != run.specification.canonical_sha256:
+            raise ValueError('Run evidence authority or archive integrity differs')
+        result = replay.replay_matched_run(
+            evidence, audit, run.specification, project_root=self._root,
+            manifest_parser=self._parse_manifest, task_package=self.task_package,
+        )
+        return audit, result
+
+    def report_run(self,run):
+        audit,replay_result = self.audit_run(run)
+        from open_cake_ir.evidence import EvidenceStore
+        from .reporting import _promoted_artifact
+        confirmed = (_promoted_artifact(EvidenceStore.open(run.evidence_root),audit)
+                     if replay_result else None)
+        return {'run_id':run.specification.run_id,'evidence_root':str(run.evidence_root),
+                'audit':audit,'replay':replay_result,'confirmed_artifact':confirmed}
 
     def threshold_view(
         self,

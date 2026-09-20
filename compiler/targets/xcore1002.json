@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "target_id": "xcore1002",
+  "architecture": "xcore1000",
+  "device_names": ["MetaX C550"],
+  "vendor": "metax",
+  "code_object": "mcfatbin",
+  "triton_arch": 80,
+  "warp_size": 64,
+  "l2_cache_bytes": 8388608,
+  "memory_spaces": ["global", "shared", "register"],
+  "operation_kinds": ["load", "cast", "elementwise", "mma", "reduce", "store"],
+  "resource_limits": {
+    "maximum_threads_per_cta": 1024,
+    "maximum_shared_memory_bytes": 65536,
+    "grid": {"x": 2147483647, "y": 2147483647, "z": 2147483647}
+  },
+  "occupancy": {
+    "multiprocessor_count": 104,
+    "registers_per_multiprocessor": 131072,
+    "shared_memory_per_multiprocessor_bytes": 65536,
+    "maximum_threads_per_multiprocessor": 2048
+  },
+  "instruction_contracts": ["maca.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
+  "synchronization_contracts": [],
+  "citations": [
+    {
+      "kind": "device_observation",
+      "source": "c550-1, MACA 3.5.3 / FlagTree 0.5.1+metax3.1, source 6d997c3d, 2026-09-21",
+      "locator": "E4M3FN storage and decoding only. Native loader job maca-bd7ef50c9f98 copied all 256 encodings under two output poisons with all 512 output bytes exact, including signed zero and both NaN codes; input bytes unchanged. Job maca-584187da1812 decoded all 254 finite encodings bit-exact to FP16 and FP32 and classified both NaN codes for each destination. Raw data and independent reviews: open-cake-ir-evidence/metax-parity-20260920/fp8-copy-gpu-6d997c3d-v1/, fp8-diagnostic-gpu-6d997c3d-v1/ and reviews/. Scalar FP8 conversion hits a captured SDK RankedTensorType assertion and remains refused; inverse conversion, FP8-to-BF16, direct FP8 arithmetic and MMA are not admitted by these observations."
+    },
+    {
+      "kind": "device_observation",
+      "source": "c550-1, MACA 3.5.3 / FlagTree 0.5.1+metax3.1, source 66dcc472, 2026-09-20",
+      "locator": "Standalone native-loader matrix diagnostic, 64x64x64 and four execution groups: FP16, BF16 and FP32 IEEE tl.dot each passed five finite input distributions with unchanged input bits and complete 4096-element outputs per case against a presealed CPU float64 dot rounded to FP32 (atol 0.001, rtol 0.0001). Maximum absolute errors were 6.103515625e-05, 6.103515625e-05 and 0.000152587890625, respectively. This is bounded instruction/ABI evidence, not all shapes, looped accumulation, timing or registered-task qualification. Raw arrays/specs and independent scalar-reference review: open-cake-ir-evidence/metax-parity-20260920/matrix-numerics-gpu-66dcc472-v1/ and matrix-numerics-prepared-66dcc472-v1/. TF32 failed its separate RNE10 hypothesis and remains unadmitted; direct FP8 dot failed LLVM lowering. Neither mode is substituted for IEEE."
+    },
+    {
+      "kind": "device_observation",
+      "source": "c550-1, native MACA device attribute and activity discovery, 2026-09-20",
+      "locator": "mcDeviceGetAttribute(mcDeviceAttributeL2CacheSize=38) reports 8388608 bytes, matching torch device properties L2_cache_size. Native SDK activity API version18 exposes Kernel8 timestamps/correlation and records zero dropped activity in the retained diagnostic. Raw observations: open-cake-ir-evidence/metax-parity-20260920/native-profiler-result.json and torch-profiler-result.json. Capacity is a hardware fact, not proof of cache-reset effectiveness or timing qualification."
+    },
+    {
+      "kind": "device_observation",
+      "source": "c550-1 MACA 3.5.3 / FlagTree 0.5.1+metax3.1, 2026-09-20, source f1cadbdd",
+      "locator": "Standalone native-kernel diagnostic under the shared MACA user lock: all six FP32/FP16/BF16 cast directions plus INT32-to-FP32 matched the standard-library RNE reference bitwise over 717114 inputs, including every finite FP16/BF16 source pattern, FP32 midpoint neighbors, signed zero, overflow/underflow and INT32 boundaries. MACA libdevice.tanh (CUDA-compatible entry mapped to maca_mathlib, not NVIDIA's implementation) had maximum 2 ULP against math.tanh rounded to FP32 on 82097 finite samples, with signed zero and input bits preserved. This is bounded diagnostic evidence, not a global error proof or a Workload receipt. Raw expected/observed bits and sealed artifacts: c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/primitive-f1cadbdd-v3.tar.gz; local open-cake-ir-evidence/metax-numerics-20260920/primitive-results/. No timing or profiler qualification."
+    },
+    {
+      "kind": "device_observation",
+      "source": "c550-1, probe_metax_host.py against MACA 3.5.3.18, 2026-09-20",
+      "locator": "macainfo identifies METAX-MXC-MXMACA--XCORE1002 / MetaX C550. All eight devices returned WarpSize=WaveSize=64, MaxThreadsPerBlock=1024, MaxSharedMemoryPerBlock=65536, MaxGridDimX/Y/Z=2147483647, MultiProcessorCount=104, MaxRegistersPerMultiprocessor=131072, MaxSharedMemoryPerMultiprocessor=65536, MaxThreadsPerMultiProcessor=2048. Retained at open-cake-ir-evidence/metax-c550-20260920/20260920T055904Z-host-survey.json. No occupancy or timing model is calibrated."
+    },
+    {
+      "kind": "toolchain_api",
+      "source": "c550-1 MACA compiler and FlagTree 0.5.1+metax3.1 container, 2026-09-20",
+      "locator": "__metaxgpu_arch selects native family xcore1000; mxcc -fatbin emits a bundle containing native maca-mxc-metax-macahca--xcore1000. The container's torch 2.8.0+metax3.5.3.9 reports MetaX C550, capability (8,0), lane width 64; its active Triton target is GPUTarget(maca,80,64). triton_arch=80 is that compatibility API value, not NVIDIA SM80. The native runtime separately reports (10,2). Retained on c550-1 under /root/.local/share/open-cake-ir/metax-c550-20260920/{native-format-probe,container-software.json,container-device-query.json}."
+    }
+  ]
+}

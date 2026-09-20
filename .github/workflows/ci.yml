@@ -3,7 +3,7 @@ name: CPU contracts
 on:
   workflow_dispatch:
   push:
-    branches: [main, metal, amd, dcu, nvidia]
+    branches: [main, metal, amd, dcu, nvidia, metax]
   pull_request:
 
 permissions:

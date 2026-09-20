@@ -151,10 +151,10 @@ class DiagnosisRunTests(unittest.TestCase):
 
         for mixed in (False, True):
             class Rejections(FakeEnvironment):
-                def build(self, submission):
+                def build(self, submission, *, compilation=None):
                     variant = json.loads(submission.payload)["variant"]
                     if mixed and variant == 0:
-                        return super().build(submission)
+                        return super().build(submission, compilation=compilation)
                     return EnvironmentResult("rejected", submission.sha256, None,
                         {"stage": "compile", "diagnostic": f"syntax variant {variant}"})
             with self.subTest(mixed=mixed), tempfile.TemporaryDirectory() as directory:

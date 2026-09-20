@@ -10,11 +10,10 @@ from open_cake_ir.evidence import EvidenceStore, RunAudit
 
 from .._documents import _canonical_json_bytes, _object
 from .._policies import _MATCHED_EVENT_KINDS_V1, _matched_evidence_policy_version
-from ..claude import CLAUDE_EVENT_CONTRACTS, candidate_write_declared_unwitnessed
-from ..contracts import CampaignLock
+from ..run_spec import RunSpecification
 from ..executor import ExecutorRevision
 from ..endpoints import endpoint_policy
-from ..evaluation_lifecycle import replay_evaluation_invocations
+from ..evaluation_lifecycle import replay_evaluation_invocations, replay_elapsed_clock
 from ..selection import _EmpiricalSelection, _empirical_context
 from .candidates import _artifact_outcomes_are_closed, _replay_candidates
 from .outcomes import _replay_terminal
@@ -25,6 +24,8 @@ from .provider import (
 )
 from .refusals import ReplayRefusal, ReplayResult, refuse
 from .selection import _replay_candidate_selection
+from .nomination import replay_nomination
+from .compilations import replay_compilations
 
 _REQUIRED_FAULT_FIELDS = frozenset({
     "fault", "exception_type", "turn", "stage", "terminal_provider_tokens",
@@ -61,7 +62,7 @@ def _fault_message_is_closed(payload) -> bool:
 def replay_matched_run(
     evidence: EvidenceStore,
     audit: RunAudit,
-    lock: CampaignLock,
+    lock: RunSpecification,
     *,
     project_root: Path,
     manifest_parser: Callable,
@@ -90,7 +91,7 @@ def replay_matched_run(
 def _replay_matched_run(
     evidence: EvidenceStore,
     audit: RunAudit,
-    lock: CampaignLock,
+    lock: RunSpecification,
     *,
     project_root: Path,
     manifest_parser: Callable,
@@ -100,9 +101,7 @@ def _replay_matched_run(
     compiler_ref = _identity_reference(lock.document["compiler_revision"], "compiler_revision")
     load_compiler_reference(project_root, compiler_ref, "replay.compiler_revision")
     events = evidence.replay_events(audit.run_id)
-    resolved_inputs = _object(
-        lock.document["resolved_inputs"], "resolved_inputs"
-    )
+    resolved_inputs = lock.document
     event_vocabulary = _matched_evidence_policy_version(
         _object(
             resolved_inputs["evidence_policy"],
@@ -110,11 +109,11 @@ def _replay_matched_run(
         ),
         "resolved_inputs.evidence_policy",
     )
-    arm = audit.run_id.rsplit("-", 1)[0]
+    arm = lock.condition_id
     kinds = [event.get("kind") for event in events]
-    if audit.run_id not in lock.run_order:
+    if audit.run_id != lock.run_id:
         refuse("run_id", "not a Run of this Campaign Lock", observed=audit.run_id,
-               expected=lock.run_order)
+               expected=lock.run_id)
     unknown_kinds = [
         f"events[{index}]" for index, kind in enumerate(kinds) if kind not in _MATCHED_EVENT_KINDS_V1
     ]
@@ -133,7 +132,7 @@ def _replay_matched_run(
         events[0].get("payload"), "run_started.payload"
     )
     expected_start = {
-        "sequence": lock.run_order.index(audit.run_id) + 1,
+        "sequence": lock.document["sequence"],
         "assigned_arm": arm,
         "automatic_retries": 0,
         "replacement_run": False,
@@ -149,41 +148,14 @@ def _replay_matched_run(
         "endpoint_observation": audit.endpoint_observation,
         "endpoint": dict(audit.endpoint) if audit.endpoint is not None else None,
     }
-    extra_terminal_fields = set(terminal_payload) - set(expected_terminal) - {"boundary_diagnostic"}
+    extra_terminal_fields = set(terminal_payload) - set(expected_terminal)
     if extra_terminal_fields:
         refuse("run_terminal.payload", "fields outside the terminal contract",
-               observed=extra_terminal_fields, expected=set(expected_terminal) | {"boundary_diagnostic"})
+               observed=extra_terminal_fields, expected=set(expected_terminal))
     for field, expected in expected_terminal.items():
         if terminal_payload.get(field) != expected:
             refuse(f"run_terminal.payload.{field}", "differs from the sealed audit",
                    observed=terminal_payload.get(field), expected=expected)
-    boundary_diagnostic = terminal_payload.get("boundary_diagnostic")
-    fault_count = len([event for event in events if event.get("kind") == "run_fault"])
-    if boundary_diagnostic is not None:
-        # F-2026-09-16-002: the terminal names the retained provider fault its
-        # settled checkpoint outlived. The marker is closed, requires exactly the
-        # one fault observation it converts, and only an adhered terminal can
-        # carry it; usage, quota and the unwitnessed shape are rederived below
-        # from the retained fault stdout, never from this declaration.
-        location = "run_terminal.payload.boundary_diagnostic"
-        if not isinstance(boundary_diagnostic, Mapping) or set(boundary_diagnostic) != {"turn", "stage", "diagnostic"}:
-            refuse(location, "not a closed boundary marker", observed=boundary_diagnostic,
-                   expected={"turn", "stage", "diagnostic"})
-        if boundary_diagnostic.get("stage") != "provider":
-            refuse(f"{location}.stage", "only a provider fault converts", observed=boundary_diagnostic.get("stage"),
-                   expected="provider")
-        if boundary_diagnostic.get("diagnostic") != "candidate_write_declared_unwitnessed":
-            refuse(f"{location}.diagnostic", "not the named boundary diagnostic",
-                   observed=boundary_diagnostic.get("diagnostic"),
-                   expected="candidate_write_declared_unwitnessed")
-        if type(boundary_diagnostic.get("turn")) is not int or boundary_diagnostic["turn"] <= 0:
-            refuse(f"{location}.turn", "not a positive integer", observed=boundary_diagnostic.get("turn"))
-        if audit.protocol_adherence != "adhered":
-            refuse("run_terminal.payload.protocol_adherence", "only an adhered terminal carries a boundary marker",
-                   observed=audit.protocol_adherence, expected="adhered")
-        if fault_count != 1:
-            refuse("run_fault", "a boundary marker converts exactly one fault observation",
-                   observed=fault_count, expected=1)
     turn_events = [
         (index, _object(event.get("payload"), f"event.{event.get('kind')}.payload")["turn"])
         for index, event in enumerate(events[1:-2], start=1)
@@ -199,18 +171,18 @@ def _replay_matched_run(
     if turns != sorted(turns):
         refuse("events", "Turn-bearing events are not in Turn order",
                observed=[f"events[{index}]:turn={turn}" for index, turn in turn_events])
+    replay_elapsed_clock(events)
     provider_events = [event for event in events if event.get("kind") == "provider_turn_completed"]
     checkpoint_events = [event for event in events if event.get("kind") == "checkpoints_projected"]
     if not provider_events:
-        if (endpoint_policy(lock.analysis_plan) is not None and audit.protocol_adherence == "adhered" and
-                kinds == ["run_started", "checkpoints_projected", "run_terminal"]):
-            protocol = lock.document["evaluation_protocol"]
-            _replay_terminal(
-                attribution_evaluation=protocol.get("attribution_evaluation"), audit=audit,
-                checkpoint_events=checkpoint_events, cumulative_by_turn={},
-                fault_terminal_tokens=None, faults=(), lock=lock, observations=(), receipts={},
-                searches_per_turn=protocol.get("searches_per_turn", 1),
-            )
+        if kinds == ['run_started','search_completed','candidate_nominated','checkpoints_projected','run_terminal']:
+            protocol = lock.document['evaluation_protocol']
+            confirmation, search_state = replay_nomination(events=events, observations=(),launchables={},receipts={},
+                budget=lock.document['budget'],protocol=protocol,terminal_tokens=0)
+            _replay_terminal(attribution_evaluation=protocol.get('attribution_evaluation'),audit=audit,
+                checkpoint_events=checkpoint_events,cumulative_by_turn={},fault_terminal_tokens=None,faults=(),
+                lock=lock,observations=(),receipts={},searches_per_turn=protocol.get('searches_per_turn',1),
+                confirmation=confirmation,search_state=search_state)
             return
         _replay_provider_fault(
             audit=audit,
@@ -218,17 +190,17 @@ def _replay_matched_run(
             events=events,
             lock=lock,
             evidence=evidence,
+            expected_task_package=(task_package(lock, audit.run_id)
+                if lock.document['authoring'].get('provider', {}).get('harness') == 'responses' else None),
         )
         return
     replay_budget = _object(resolved_inputs["budget"], "resolved_inputs.budget")
     maximum_candidates_per_turn = int(
         replay_budget.get("maximum_candidates_per_turn", 1)
     )
-    arm_environments = _object(
-        resolved_inputs["arm_environments"], "resolved_inputs.arm_environments"
-    )
+    authoring = lock.document["authoring"]
     empirical_selection = None
-    selection_binding = arm_environments[arm].get("candidate_selection")
+    selection_binding = authoring.get("candidate_selection")
     if selection_binding is not None:
         executor = ExecutorRevision.load_reference(
             project_root,
@@ -245,7 +217,7 @@ def _replay_matched_run(
             target=lock.document["execution"]["target"],
         )
     provider_authority = _object(
-        _object(arm_environments[arm], f"arm_environments.{arm}")["provider"],
+        _object(authoring, f"arm_environments.{arm}")["provider"],
         f"arm_environments.{arm}.provider",
     )
     event_contract = str(
@@ -274,24 +246,23 @@ def _replay_matched_run(
     if len(faults) > 1:
         refuse("run_fault", "a Run retains at most one fault", observed=len(faults), expected="0 or 1")
     fault_turn: int | None = None
+    fault_source_turn = None
     fault_terminal_tokens: int | None = None
     if faults:
         fault_payload = _object(faults[0].get("payload"), "run_fault.payload")
         _refuse_unless_fault_payload_is_closed(fault_payload)
         if (
             fault_payload.get("fault") != audit.protocol_adherence
-            and boundary_diagnostic is None
         ):
-            # The converted boundary terminal, validated against its fault
-            # below, is the one adherent exception to fault == adherence.
             refuse("run_fault.payload.fault", "differs from the terminal's protocol adherence",
                    observed=fault_payload.get("fault"), expected=audit.protocol_adherence)
-        fault_turn_value = fault_payload.get("turn")
+        fault_turn_value = fault_payload.get("source_turn", fault_payload.get("turn"))
         fault_stage = fault_payload.get("stage")
         fault_terminal_value = fault_payload.get("terminal_provider_tokens")
         usage_delta = replay_fault_usage(payload=fault_payload, evidence=evidence,
-            provider=provider_authority,
-            expected_thread_id=provider_events[-1]["payload"]["thread_id"])
+            provider=provider_authority, previous_tokens=prior_cumulative,
+            expected_thread_id=provider_events[-1]["payload"]["thread_id"],
+            run_id=audit.run_id, expected_task_package=expected_task_package, provider_events=provider_events)
         if fault_terminal_value != prior_cumulative + usage_delta:
             refuse("run_fault.payload.terminal_provider_tokens",
                    "differs from the completed Turns' total plus the usage rederived from the fault stdout",
@@ -307,63 +278,45 @@ def _replay_matched_run(
             refuse("run_fault.payload.terminal_provider_tokens", "below the completed Turns' total",
                    observed=fault_terminal_value, expected=f">= {prior_cumulative}")
         expected_fault_turn = len(provider_events) + (1 if fault_stage == "provider" else 0)
-        if fault_turn_value != expected_fault_turn:
+        if 'source_turn' in fault_payload:
+            if fault_stage != 'evaluation':
+                refuse('run_fault.payload.source_turn', 'only terminal Evaluation faults have a source turn')
+            fault_source_turn = fault_turn_value
+        elif fault_turn_value != expected_fault_turn:
             refuse("run_fault.payload.turn", f"a {fault_stage} fault lies in a different Turn",
                    observed=fault_turn_value, expected=expected_fault_turn)
         if fault_stage != "provider" and fault_terminal_value != prior_cumulative:
             refuse("run_fault.payload.terminal_provider_tokens",
                    f"a {fault_stage} fault adds no provider usage",
                    observed=fault_terminal_value, expected=prior_cumulative)
-        if boundary_diagnostic is not None:
-            # Scoped to exactly the named boundary fault: same stage, same Turn,
-            # the fault type that carries the name, and a retained stdout that
-            # reparses into the declared-but-unwitnessed shape under the fault
-            # Turn's own terminal expectation.
-            for field, expected in (
-                ("fault", "provider_fault"),
-                ("stage", "provider"),
-                ("exception_type", "ProviderBoundaryDeclarationFault"),
-            ):
-                if fault_payload.get(field) != expected:
-                    refuse(f"run_fault.payload.{field}", "not the fault a boundary marker converts",
-                           observed=fault_payload.get(field), expected=expected)
-            if boundary_diagnostic.get("turn") != fault_turn_value:
-                refuse("run_terminal.payload.boundary_diagnostic.turn", "differs from the fault Turn",
-                       observed=boundary_diagnostic.get("turn"), expected=fault_turn_value)
-            stdout_references = [
-                cast(Mapping[str, object], reference)
-                for reference in fault_payload.get("objects", [])
-                if isinstance(reference, Mapping)
-                and reference.get("role") == "provider_stdout"
-            ]
-            if event_contract not in CLAUDE_EVENT_CONTRACTS:
-                refuse("run_terminal.payload.boundary_diagnostic",
-                       "the unwitnessed-write diagnosis exists only under a Claude event contract",
-                       observed=event_contract, expected=CLAUDE_EVENT_CONTRACTS)
-            if len(stdout_references) != 1:
-                refuse("run_fault.payload.objects", "provider_stdout reference count differs",
-                       observed=len(stdout_references), expected=1)
-            if not candidate_write_declared_unwitnessed(
-                evidence.read_object(stdout_references[0]),
-                expected_terminal_message=_expected_terminal_message(
-                    arm, fault_turn_value, event_contract
-                ),
-                event_contract=event_contract,
-            ):
-                refuse("run_fault.payload.objects.provider_stdout",
-                       "retained stdout does not reparse into a declared-but-unwitnessed candidate write")
-        fault_turn = fault_turn_value
+        fault_turn = None if fault_source_turn is not None else fault_turn_value
         fault_terminal_tokens = fault_terminal_value
 
+    from open_cake_ir.compiler import Compiler
+    from .actions import replay_actions
+    action_compiler = None
+    def compiler_factory():
+        nonlocal action_compiler
+        if action_compiler is None:
+            action_compiler = Compiler.load(project_root, project_root / compiler_ref['path'])
+        return action_compiler
+    provider_candidates_by_turn, provider_candidate_bytes = replay_actions(
+        specification=lock, events=events, evidence=evidence,
+        provider_candidates_by_turn=provider_candidates_by_turn, provider_candidate_bytes=provider_candidate_bytes,
+        compiler_factory=compiler_factory, fault_turn=fault_turn)
+    compilation_count = replay_compilations(events,candidates_by_turn=provider_candidates_by_turn,
+        maximum=replay_budget['maximum_compilations'],target=lock.document['execution']['target'])
     candidates = _replay_candidates(
-        arm=arm,
+        arm=lock.environment_kind,
         case_id=case_id,
         events=events,
         evidence=evidence,
-        fault_turn=fault_turn,
+        fault_turn=fault_source_turn if fault_source_turn is not None else fault_turn,
         faults=faults,
         lock=lock,
         manifest_parser=manifest_parser,
+        compiler_factory=compiler_factory,
+        provider_candidate_bytes=provider_candidate_bytes,
         protocol_sha256=protocol_sha256,
         provider_candidates_by_turn=provider_candidates_by_turn,
         workload_sha256=workload_sha256,
@@ -390,6 +343,10 @@ def _replay_matched_run(
         rejected=rejected,
     )
     observations, searches_per_turn, attribution_evaluation = selected
+    confirmation, search_state = replay_nomination(events=events, observations=observations,
+        launchables=launchables, receipts=receipts,budget=replay_budget,protocol=lock.document['evaluation_protocol'],
+        compilation_count=compilation_count,
+        terminal_tokens=fault_terminal_tokens if fault_terminal_tokens is not None else prior_cumulative)
     _replay_terminal(
         attribution_evaluation=attribution_evaluation,
         audit=audit,
@@ -402,16 +359,20 @@ def _replay_matched_run(
         receipts=receipts,
         searches_per_turn=searches_per_turn,
         invocation_counts=invocation_counts,
-        boundary_converted=boundary_diagnostic is not None,
+        confirmation=confirmation, search_state=search_state, compilation_count=compilation_count,
     )
 
 def _refuse_unless_fault_payload_is_closed(fault_payload: Mapping[str, object]) -> None:
     """The retained fault carries its required fields, no others, and closed text and roles."""
-    missing = _REQUIRED_FAULT_FIELDS - set(fault_payload)
+    origins = set(fault_payload) & {'turn', 'source_turn'}
+    if len(origins) != 1:
+        refuse('run_fault.payload', 'a fault has one search turn or terminal source turn')
+    required = (_REQUIRED_FAULT_FIELDS - {'turn'}) | origins
+    missing = required - set(fault_payload)
     if missing:
         refuse("run_fault.payload", "required fields are missing", observed=set(fault_payload),
                expected=_REQUIRED_FAULT_FIELDS)
-    extra = set(fault_payload) - _REQUIRED_FAULT_FIELDS - _OPTIONAL_FAULT_FIELDS
+    extra = set(fault_payload) - required - _OPTIONAL_FAULT_FIELDS
     if extra:
         refuse("run_fault.payload", "fields outside the fault contract", observed=extra,
                expected=_REQUIRED_FAULT_FIELDS | _OPTIONAL_FAULT_FIELDS)
@@ -431,8 +392,9 @@ def _replay_provider_fault(
     audit: RunAudit,
     checkpoint_events: Sequence[Mapping[str, object]],
     events: Sequence[Mapping[str, object]],
-    lock: CampaignLock,
+    lock: RunSpecification,
     evidence: EvidenceStore,
+    expected_task_package,
 ) -> None:
     """A Run whose first provider Turn faulted: exactly four events and a zero-Turn terminal."""
     kinds = [event.get("kind") for event in events]
@@ -459,9 +421,10 @@ def _replay_provider_fault(
     if not isinstance(terminal_tokens, int) or isinstance(terminal_tokens, bool) or terminal_tokens < 0:
         refuse("run_fault.payload.terminal_provider_tokens", "not a non-negative integer",
                observed=terminal_tokens)
-    arm = audit.run_id.rsplit("-", 1)[0]
-    provider = lock.document["resolved_inputs"]["arm_environments"][arm].get("provider", {})
-    delta = replay_fault_usage(payload=fault_payload, evidence=evidence, provider=provider)
+    arm = lock.condition_id
+    provider = lock.document["authoring"].get("provider", {})
+    delta = replay_fault_usage(payload=fault_payload, evidence=evidence, provider=provider,
+                              run_id=audit.run_id, expected_task_package=expected_task_package)
     if terminal_tokens != delta:
         refuse("run_fault.payload.terminal_provider_tokens",
                "differs from the usage rederived from the fault stdout",

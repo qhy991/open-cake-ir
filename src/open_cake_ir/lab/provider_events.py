@@ -24,7 +24,7 @@ from .provider_documents import (
 
 
 def _reconnect_notice(event: Mapping[str, object]) -> bool:
-    """The bounded native 0.153.4 notice observed in F-2026-09-20-002.
+    """Native reconnect notices observed in F-2026-09-20-002 and F-2026-09-20-008.
 
     This only recognizes syntax. Recovery is established by the surrounding
     complete turn and its normal terminal, lifecycle, usage and candidate checks.
@@ -32,9 +32,10 @@ def _reconnect_notice(event: Mapping[str, object]) -> bool:
     """
     message = event.get("message")
     return (set(event) == {"type", "message"} and isinstance(message, str)
-            and re.fullmatch(
-                r"Reconnecting\.\.\. [1-5]/5 \(stream disconnected before completion: [^\r\n]+\)",
-                message) is not None)
+            and (message == "Reconnecting... waiting for network (Connection failed: error sending request)"
+                 or re.fullmatch(
+                     r"Reconnecting\.\.\. [1-5]/5 \(stream disconnected before completion: [^\r\n]+\)",
+                     message) is not None))
 
 
 def parse_codex_turn_events(
@@ -97,6 +98,7 @@ def parse_codex_turn_events(
 
     file_events: list[tuple[int, Mapping[str, object], Mapping[str, object]]] = []
     messages: list[tuple[int, str]] = []
+    last_agent_message_index: int | None = None
     auxiliary_events: dict[
         str, list[tuple[str, Mapping[str, object]]]
     ] = {}
@@ -143,7 +145,17 @@ def parse_codex_turn_events(
             text = item.get("text")
             if not isinstance(item_id, str) or not item_id or not isinstance(text, str):
                 raise ValueError("provider terminal message differs")
-            messages.append((index, text))
+            last_agent_message_index = index
+            if (event_contract == "tool_rich_candidate_v1"
+                    and text != expected_terminal_message
+                    and not text.lstrip().startswith(("{", "["))):
+                # Native JSONL has no phase field for agent_message. Plain progress
+                # prose is retained as auxiliary evidence, never functional activity
+                # or a structured terminal. JSON-like frames retain the strict checks.
+                auxiliary_events.setdefault(item_id, []).append((event_type, item))
+                auxiliary_positions.setdefault(item_id, index)
+            else:
+                messages.append((index, text))
         elif event_contract == "tool_rich_candidate_v1" and item_type in auxiliary_types:
             item_id = item.get("id")
             if not isinstance(item_id, str) or not item_id:
@@ -201,6 +213,9 @@ def parse_codex_turn_events(
     elif event_contract == "closed_file_change_v1":
         raise ValueError("provider must emit one complete file-change lifecycle")
 
+    if (event_contract == "tool_rich_candidate_v1"
+            and (not messages or messages[-1][0] != last_agent_message_index)):
+        raise ValueError("provider final agent message is not a structured terminal")
     normalization = _normalize_terminal_messages(
         messages, expected_terminal_message, start_index, stop_index,
     )
@@ -275,15 +290,48 @@ def reported_codex_usage(raw_events: bytes, *, event_contract: str,
         return None
 
 
+def provider_token_delta(native_tokens: int, *, provider: Mapping[str, object],
+                         previous_tokens: int) -> int:
+    """Convert a native counter to this invocation's spend, once at the boundary.
+
+    Codex turn.completed reports the resumed thread's cumulative usage. Claude's
+    result reports invocation usage. Execution and replay use the same rule;
+    cached input and reasoning output remain subsets, never added a second time.
+    """
+    if any(type(value) is not int or value < 0 for value in (native_tokens, previous_tokens)):
+        raise ValueError("provider usage counters must be non-negative integers")
+    contract = provider.get("event_contract", "closed_file_change_v1")
+    if contract in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
+        if native_tokens < previous_tokens:
+            raise ValueError("Codex cumulative thread usage regressed")
+        return native_tokens - previous_tokens
+    from .claude import CLAUDE_EVENT_CONTRACTS
+    if contract in CLAUDE_EVENT_CONTRACTS or contract == 'responses_messages_v1':
+        return native_tokens
+    raise ValueError("provider usage contract is unsupported")
+
+
 def reported_provider_usage(raw_events: bytes, *, provider: Mapping[str, object],
-                            expected_thread_id: str | None = None) -> ReportedProviderUsage | None:
+                            expected_thread_id: str | None = None,
+                            previous_tokens: int = 0) -> ReportedProviderUsage | None:
     """Dispatch reported invocation usage using its frozen native provider contract."""
     if not isinstance(raw_events, bytes) or not raw_events:
         return None
     contract = provider.get("event_contract", "closed_file_change_v1")
+    if contract == 'responses_messages_v1':
+        from .message_provider import reported_usage
+        return reported_usage(raw_events, expected_thread_id=expected_thread_id)
     if contract in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
-        return reported_codex_usage(raw_events, event_contract=contract,
-                                    expected_thread_id=expected_thread_id)
+        observed = reported_codex_usage(raw_events, event_contract=contract,
+                                         expected_thread_id=expected_thread_id)
+        if observed is None:
+            return None
+        try:
+            delta = provider_token_delta(observed.provider_tokens, provider=provider,
+                                         previous_tokens=previous_tokens)
+        except ValueError:
+            return None
+        return ReportedProviderUsage(contract, observed.thread_id, delta)
     from .claude import CLAUDE_EVENT_CONTRACTS, reported_claude_usage
     if contract in CLAUDE_EVENT_CONTRACTS:
         return reported_claude_usage(raw_events, expected_model=provider.get("model"),
@@ -299,7 +347,7 @@ def normalize_codex_turn(
     expected_terminal_message: str,
     event_contract: str = "closed_file_change_v1",
     submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
-    arm: str | None = None,
+    arm: str | None = None, environment_kind: str = "open_cake",
     maximum_candidates_per_turn: int = 1,
 ) -> ProviderTurn:
     """Accept only the two terminal forms observed by the frozen r42 boundary."""
@@ -328,7 +376,7 @@ def normalize_codex_turn(
     candidates = _project_candidate_submission(
         submission,
         submission_contract=submission_contract,
-        arm=arm,
+        arm=arm, environment_kind=environment_kind,
         maximum_candidates_per_turn=maximum_candidates_per_turn,
     )
     return ProviderTurn(

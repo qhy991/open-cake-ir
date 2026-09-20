@@ -6,7 +6,7 @@ Lab 像考试组织者：分配题目和工具、控制时间、收作业，再�
 
 ## 负责什么
 
-- 把 Study 模板和已发布输入解析一次，写成固定的 CampaignLock。
+- 将执行输入、权限和预算固定到 RunSpecification；旧 Study/CampaignLock 只作同一 Run 引擎的输入适配。
 - 为后继 Run 生成不可改动的 `TASK.md`、`AGENTS.md`；外部 Ralph 只提供从证据生成的本轮状态。
 - 为每个 Run 指定完整写程序环境，保留一个主要候选提交者。
 - 管理轮数、作者预算、GPU 搜索预算、检查点和停止规则。
@@ -16,13 +16,14 @@ Lab 像考试组织者：分配题目和工具、控制时间、收作业，再�
 
 ## 实验怎样分层
 
-Study 引用一个 Workload，并规定每个 Run 使用哪个环境。Campaign 是这个 Study 的一次实际执行；只有分析计划事先允许，才可合并不同 Campaign。
+工程优化直接使用 Run，无需 Study。研究由 StudyPlan 预分配条件和重复次数，使用同一个 Run 引擎。
+旧 Campaign 输入保留原 Study 的比较约束；跨次汇总仍需分析计划事先允许。
 
 Run 中包含有顺序的 Turn，可以提交多个不可变 Candidate。同一个 Candidate 可以分别有搜索、确认、profiler 评测记录。科学 Study 预先声明 Estimand；系统资格和工程优化没有组间效果估计。
 
 KernelSeed 和独立 portfolio artifact 工具仍保留，但没有 Portfolio Study 生命周期。单个种子不能证明任意形状或完整服务能力。
 
-Study 在 preflight 中只解析一次；任务层先检查该对象的计时覆盖和执行模式，再解析依赖。模块归属见[实现导航](../../../../src/open_cake_ir/lab/README.md)。
+Run 在 preflight 中解析固定输入；任务层在运行副作用之前检查准入，旧 Study 策略在输入边界检查。模块归属见[实现导航](../../../../src/open_cake_ir/lab/README.md)。
 
 ## 两种没得到好结果的情况
 

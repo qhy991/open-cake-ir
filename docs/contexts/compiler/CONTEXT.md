@@ -10,6 +10,7 @@ relationships only.
 ## Owned terms
 
 - [`Schedule`](../../GLOSSARY.md#schedule)
+- [`Program`](../../GLOSSARY.md#program)
 - [`Target`](../../GLOSSARY.md#target)
 - [`Finding`](../../GLOSSARY.md#finding)
 - [`Assessment`](../../GLOSSARY.md#assessment)
@@ -21,7 +22,9 @@ relationships only.
 
 ## Responsibilities
 
-- Parse and type-check complete Schedules under one exact Target.
+- Parse and type-check complete Programs and their leaf Schedules under one exact Target.
+- Own program bindings, use-def legality and explicit rewrites that return a complete
+  successor or a localized refusal; no Lab-owned graph or Study-dependent semantics.
 - Emit localized Findings for schedule semantics, hardware conformance, data consistency,
   program safety, and backend lowering preconditions.
 - Report modeled analysis coverage without presenting estimates as GPU truth.

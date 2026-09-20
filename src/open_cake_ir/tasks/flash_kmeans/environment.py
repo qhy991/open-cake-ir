@@ -11,6 +11,7 @@ from open_cake_ir.compiler.toolchain import compile_triton
 from open_cake_ir.evaluation import LaunchableCandidate
 from open_cake_ir.evaluation.cuda_manifest import CudaKernelSpec
 from open_cake_ir.lab.environments import BuildRequest,CandidateSubmission,ToolchainBuilder,EnvironmentResult,_ptxas_finding_rows
+from open_cake_ir.lab.build import invoke_compiler
 from open_cake_ir.lab.faults import CandidateCompileRejected,RunProtocolFault
 from open_cake_ir.lab.process import run_supervised,sanitized_environment,SupervisedProcessTimeout,SupervisedProcessOutputLimit
 from .cuda_manifest import CudaLaunchManifest,parse_cuda_launch_manifest
@@ -32,7 +33,8 @@ class FlashTritonToolchainBuilder:
             raise ValueError("Triton launch grid differs")
         if request.source_role != "lowered_source":
             raise ValueError("historical Triton builder accepts Compiler lowering only")
-        compilation = compile_triton(request.source, requirements)
+        compilation = invoke_compiler(request, compiler='triton', variant='generic',
+            operation=lambda: compile_triton(request.source, requirements))
         if (compilation.target != request.target
             or compilation.entry_point != requirements.get('kernel_entry_point')):
             raise ValueError("Triton compilation target or entry point differs from its request")
@@ -142,13 +144,14 @@ class NvccToolchainBuilder:
             cubin_path = root / "candidate.cubin"
             source.write_bytes(request.source)
             common = [str(self._nvcc), "-std=c++17", "-O3", "-arch=sm_100a"]
-            self._run(common + ["--ptx", str(source), "-o", str(ptx_path)])
+            invoke_compiler(request, compiler='nvcc', variant='ptx',
+                operation=lambda: self._run(common + ["--ptx", str(source), "-o", str(ptx_path)]))
             # ptxas reports registers, spills and shared memory for free on the assembly
             # pass, and writes them to stderr. Discarding them left this arm's author
             # blind to the resource facts its own toolchain had already measured.
-            _, assembler_output = self._run(
-                common + ["-Xptxas=-v", "--cubin", str(source), "-o", str(cubin_path)]
-            )
+            _, assembler_output = invoke_compiler(request, compiler='nvcc', variant='cubin',
+                operation=lambda: self._run(
+                    common + ["-Xptxas=-v", "--cubin", str(source), "-o", str(cubin_path)]))
             # ptxas also prints its own wall clock, which is a fact about this machine at
             # this moment rather than about the candidate. Every other artifact role here
             # is a function of the source alone, and this one must be too or the same
@@ -208,7 +211,7 @@ class DirectCudaEnvironment:
             canonical_json_bytes(self.authority_document)
         ).hexdigest()
 
-    def build(self, submission: CandidateSubmission) -> EnvironmentResult:
+    def build(self, submission: CandidateSubmission, *, compilation=None) -> EnvironmentResult:
         if submission.media_type != self.media_type:
             raise ValueError("direct CUDA candidate media type differs")
         try:
@@ -230,6 +233,7 @@ class DirectCudaEnvironment:
                     target=manifest.target,
                     entry_point=manifest.kernel_name,
                     toolchain_requirements=self._requirements,
+                    compilation=compilation,
                 )
             )
         except CandidateCompileRejected as error:

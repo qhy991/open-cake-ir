@@ -253,3 +253,71 @@ def ncu_attribution_feedback(profile: Mapping[str, object]) -> Mapping[str, obje
             "signals": dict(_object(summary["signals"], "profile.signals")),
         }
     )
+
+
+def _program_dispatch_rows(raw_stdout, stages):
+    """Partition one invocation by NCU dispatch id; preserve the exact stage order."""
+    lines = raw_stdout.splitlines()
+    required = {'ID', 'Kernel Name', 'Metric Name', 'Metric Unit', 'Metric Value'}
+    start = next((i for i, line in enumerate(lines) if required <= set(next(csv.reader([line]), []))), None)
+    if start is None:
+        raise ValueError('Program NCU dispatch header is missing')
+    reader = csv.DictReader(io.StringIO('\n'.join(lines[start:])))
+    groups = {}
+    for row in reader:
+        if row.get('Metric Name') not in NCU_ATTRIBUTION_METRICS:
+            continue
+        if not row.get('ID'):
+            raise ValueError('Program NCU dispatch id is missing')
+        groups.setdefault(row['ID'], []).append(row)
+    if len(groups) != len(stages):
+        raise ValueError('Program NCU dispatch coverage differs from its ordered stages')
+    results = []
+    for (dispatch_id, rows), stage in zip(groups.items(), stages, strict=True):
+        if not isinstance(stage, Mapping) or set(stage) != {'stage', 'kernel_name'}:
+            raise ValueError('Program NCU stage declaration differs')
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=reader.fieldnames)
+        writer.writeheader(); writer.writerows(rows)
+        metrics = _metric_rows(output.getvalue(), stage['kernel_name'])
+        results.append({**stage, 'dispatch_id': dispatch_id, 'metrics': metrics, 'summary': _summary(metrics)})
+    if len({stage['stage'] for stage in stages}) != len(stages):
+        raise ValueError('Program NCU stage names must be unique')
+    return results
+
+
+def build_ncu_program_profile(*, candidate_sha256, case_id, stages, ncu_version,
+                              ncu_executable_sha256, stdout, stderr):
+    raw = {'stdout': stdout.decode('utf-8'), 'stderr': stderr.decode('utf-8')}
+    document = {'schema_version': 1, 'kind': 'ncu_program_attribution',
+        'candidate_sha256': candidate_sha256, 'case_id': case_id,
+        'tool': {'version': ncu_version, 'executable_sha256': ncu_executable_sha256},
+        'raw': raw, 'stages': _program_dispatch_rows(raw['stdout'], stages)}
+    payload = _canonical_json_bytes(document)
+    load_ncu_program_profile(payload, expected_candidate_sha256=candidate_sha256, expected_case_id=case_id)
+    return payload
+
+
+def load_ncu_program_profile(payload, *, expected_candidate_sha256, expected_case_id):
+    document = _object(json.loads(payload), 'Program profile')
+    fields = {'schema_version', 'kind', 'candidate_sha256', 'case_id', 'tool', 'raw', 'stages'}
+    if (set(document) != fields or document['schema_version'] != 1
+        or document['kind'] != 'ncu_program_attribution' or payload != _canonical_json_bytes(document)
+        or document['candidate_sha256'] != expected_candidate_sha256 or _DIGEST.fullmatch(expected_candidate_sha256) is None
+        or document['case_id'] != expected_case_id or not expected_case_id):
+        raise ValueError('Program profile authority differs')
+    tool, raw, stages = document['tool'], document['raw'], document['stages']
+    if (not isinstance(tool, Mapping) or set(tool) != {'version', 'executable_sha256'}
+        or not isinstance(tool['version'], str) or not tool['version']
+        or not isinstance(tool['executable_sha256'], str) or _DIGEST.fullmatch(tool['executable_sha256']) is None
+        or not isinstance(raw, Mapping) or set(raw) != {'stdout', 'stderr'}
+        or any(not isinstance(value, str) for value in raw.values())
+        or not isinstance(stages, list) or not stages):
+        raise ValueError('Program profile tool or raw records differ')
+    expected_fields = {'stage', 'kernel_name', 'dispatch_id', 'metrics', 'summary'}
+    if any(not isinstance(stage, Mapping) or set(stage) != expected_fields for stage in stages):
+        raise ValueError('Program profile stage records differ')
+    observed = _program_dispatch_rows(raw['stdout'], [{key: stage[key] for key in ('stage', 'kernel_name')} for stage in stages])
+    if observed != stages:
+        raise ValueError('Program profile projections differ from raw dispatches')
+    return document

@@ -352,7 +352,7 @@ class NativePairingContractTests(unittest.TestCase):
                 compiler.check_executor(executor, author_workspace=workspace)
 
     def test_canonical_composition_rejects_an_unpinned_isolated_runtime_before_build(self):
-        from open_cake_ir.tasks.compose import execute_matched_from_config
+        from open_cake_ir.tasks.compose import run_runtime_factory
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             runtime = root / 'runtime'; runtime.mkdir()
@@ -366,27 +366,36 @@ class NativePairingContractTests(unittest.TestCase):
             arm = {'provider':authority, 'toolchain_sha256':'b'*64}
             lock = SimpleNamespace(study_kind='matched_search', claim_scope='scientific_matched_search',
                 document={'resolved_inputs':{'arm_environments':{'open_cake':arm,'native_triton':arm}, 'budget':{}}})
+            specification = SimpleNamespace(environment_kind='native_triton',run_id='native-fixture',document={
+                'authoring':arm,'execution':{},'evaluation_protocol':{},
+                'compiler_revision':{'path':'compiler/revision.json','revision_id':'fixture'}})
+            admitted_workload = SimpleNamespace(target='sm_100a',document={'semantics':{'candidate_abi':{}}})
+            compiler = SimpleNamespace(commit='fixture',check_corpus=lambda:SimpleNamespace(passed=True,compiler_revision_id='fixture'))
             executor = SimpleNamespace(document={'host_environment':{
                 'python':{'invocation_path':str(python)},'packages':{'triton':'fixture'}}})
             qualification = SimpleNamespace(scope='live_two_turn_current_provider',canonical_sha256='a'*64)
             (root / 'fixture.json').write_text('{}')
-            config = {'schema_version':1, 'provider':{'executable':str(executable),'workspace_root':str(root/'author')},
+            config = {'schema_version':1, 'provider':{'executable':str(executable),'workspace_root':str(root.with_name(root.name+'-author'))},
                 'toolchain':{'python':str(other),'bubblewrap':str(bwrap),'runtime_roots':[str(runtime)],
                              'build_environment':{},'triton_version':'fixture','timeout_seconds':1},
                 'broker':{'command':['unused'],'cwd':str(root),'timeout_seconds':1,'service_user':'fixture','service_group':'fixture'}}
             path = root/'runtime.json'; path.write_bytes(encoded(config))
             with mock.patch('open_cake_ir.tasks.compose._admit_executor',return_value=(executor,None)), \
                  mock.patch('open_cake_ir.tasks.compose.ProviderQualificationReceipt.load',return_value=qualification), \
+                 mock.patch('open_cake_ir.tasks.compose.TaskLab') as lab, \
+                 mock.patch('open_cake_ir.tasks.compose._load_workload_binding',return_value=(None,None,admitted_workload)), \
+                 mock.patch('open_cake_ir.tasks.compose.Compiler.load',return_value=compiler), \
                  mock.patch('open_cake_ir.lab.triton_build.sys.platform','linux'), \
                  mock.patch('open_cake_ir.lab.triton_build.run_supervised') as run:
+                lab.return_value.preflight_run.return_value = specification
                 with self.assertRaisesRegex(ValueError,'runtime differs from the frozen Executor'):
-                    execute_matched_from_config(root,lock,path,root/'evidence')
+                    run_runtime_factory(root,path)(specification,root/'evidence')
                 run.assert_not_called()
                 config['toolchain']['python'] = str(python)
                 config['toolchain']['triton_version'] = 'other-version'
                 path.write_bytes(encoded(config))
                 with self.assertRaisesRegex(ValueError,'runtime differs from the frozen Executor'):
-                    execute_matched_from_config(root,lock,path,root/'evidence')
+                    run_runtime_factory(root,path)(specification,root/'evidence')
                 run.assert_not_called()
 
     def test_worker_runtime_faults_propagate_through_both_authoring_environments(self):
@@ -482,7 +491,7 @@ class NativePairingContractTests(unittest.TestCase):
         for arm, member in [('native_triton', self.native), ('open_cake', {'python_source': 'not executed'})]:
             envelope = encoded({'schema_version': 1, 'arm': arm, 'candidates': [member]}) + b'\n'
             self.assertEqual(_project_candidate_submission(envelope, submission_contract=CANDIDATE_SET_ENVELOPE_V1,
-                arm=arm, maximum_candidates_per_turn=3), (encoded(member),))
+                arm=arm, maximum_candidates_per_turn=3, environment_kind=arm), (encoded(member),))
 
     def test_common_correctness_uses_workload_oracle_and_detects_mutated_inputs(self):
         _, env, _ = self.environments()
@@ -592,11 +601,11 @@ class PairedLabFixtureTests(unittest.TestCase):
             view = lab.threshold_view(campaign,0.5)
             # Search fixture latencies are 0.1ms, but fresh confirmations are 1/2ms.
             self.assertEqual(len(view['runs']),6)
-            self.assertTrue(all(row['first_confirmation_turn'] is None for row in view['runs']))
+            self.assertTrue(all(row['nominee_source_turn'] is None for row in view['runs']))
             self.assertTrue(report.filesystem_custody_verified, 'new Evidence fixture requires a custody-capable temporary filesystem')
             reached = lab.threshold_view(campaign,1.5)
             self.assertEqual(sum(row['status']=='reached_by_fresh_confirmation' for row in reached['runs']),3)
-            self.assertTrue(all(row['elapsed_wall_seconds'] is not None for row in reached['runs'] if row['first_confirmation_turn']))
+            self.assertTrue(all(row['elapsed_wall_seconds'] is not None for row in reached['runs'] if row['nominee_source_turn']))
 
 
 if __name__ == '__main__':

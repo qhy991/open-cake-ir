@@ -16,9 +16,9 @@ from open_cake_ir.compiler.target import Target
 from open_cake_ir.evaluation.paired import PAIRED_KIND, PAIRED_METAL_BATCHED_KIND, paired_protocol
 from open_cake_ir.tasks.normalization.study import _PAIRED_KINDS, _ROUTE_CALLS
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.lab.contracts import StudyContract, StudyReport
+from open_cake_ir.lab.contracts import StudyContract
 from open_cake_ir.evidence import RunAudit
-from open_cake_ir.tasks.normalization.study import study_template
+from open_cake_ir.tasks.normalization.study import study_template, canonical
 from open_cake_ir.tasks.workloads import create_task
 from tools import launch_task
 
@@ -51,14 +51,19 @@ class TaskLaunchTests(unittest.TestCase):
     def test_agents_md_cli_binds_external_rules_before_stack_admission(self):
         rules = self.directory / "AGENTS.md"
         rules.write_text("# 复现实验\nCheck structure before claiming parity.\n", encoding="utf-8")
+        captured = []
+        original = launch_task.task_run_inputs
+        def inputs(*args,**kwargs):
+            value = original(*args,**kwargs);captured.append(value);return value
         with patch.object(launch_task, "_provider_executable", return_value=Path("/fixture/provider")), \
+             patch.object(launch_task,'task_run_inputs',side_effect=inputs), \
              patch.object(launch_task, "_admit_stack", side_effect=RuntimeError("stop before execution")):
             with self.assertRaisesRegex(RuntimeError, "stop before execution"):
                 launch_task.main(self.args() + ["--agents-md", str(rules)])
-        study_path = self.workspace / "study.json"
-        study = StudyContract.load(study_path)
-        self.assertEqual(study.document["arms"]["open_cake"]["scaffold"]["path"], str(rules))
-        self.assertEqual(study.document["arms"]["open_cake"]["reference_access"], "known_kernel_reproduction")
+        self.assertEqual(captured[0]['authoring']['scaffold']['path'],str(rules))
+        self.assertEqual(captured[0]['authoring']['reference_access'],'known_kernel_reproduction')
+        self.assertFalse((self.workspace/'study.json').exists())
+        self.assertFalse((self.workspace/'run.json').exists())
 
     def test_agents_md_rejects_empty_or_non_utf8_input_before_stack_admission(self):
         for payload in (b" \n", b"\xff"):
@@ -243,10 +248,10 @@ class TaskLaunchTests(unittest.TestCase):
                     self.workspace, executor, Path('/unit-test/provider'), 'triton',
                     allocation='local_broker')
         command = runtime['broker']['command']
-        self.assertIn('open_cake_ir.evaluation.local_broker', command)
+        self.assertIn('open_cake_ir.tasks.evaluate', command)
         self.assertNotIn('gpu-run', ' '.join(command))
         # Its own lock and its own job prefix; a DCU run is not recorded as a Metal one.
-        self.assertEqual(command[command.index('--kind') + 1], 'hip')
+        self.assertEqual(command[command.index('--local-kind') + 1], 'hip')
         # The toolchain is still Triton's, because the route did not change.
         self.assertEqual(runtime['toolchain']['triton_version'], '3.6.0')
         self.assertNotIn('output_root', runtime['toolchain'])
@@ -487,7 +492,8 @@ class TaskLaunchTests(unittest.TestCase):
                     "triton-b200": ("sm_100a", "NVIDIA B200"),
                     "triton-b300": ("sm_103a", "NVIDIA B300"),
                     "triton-dcu": ("gfx938", "BW1101"),
-                    "triton-gfx1151": ("gfx1151", "AMD Radeon Graphics")}
+                    "triton-gfx1151": ("gfx1151", "AMD Radeon Graphics"),
+                    "triton-metax": ("xcore1002", "MetaX C550")}
         # This family read an Apple-only registry until the task families were given one
         # device registry, so a normalization Workload could be frozen for Metal alone.
         self.assertEqual(set(launch_task.BACKENDS), set(expected))
@@ -553,25 +559,27 @@ class TaskLaunchTests(unittest.TestCase):
         executor = SimpleNamespace(document={"host_environment":{"python":{"invocation_path":"/unit-test/python"},
                                                                  "packages":{"triton":"3.6.0"}}})
         receipt = SimpleNamespace(qualified=True, scope="zero_gpu_contract_fixture_only" if fixture_receipt else "live_two_turn_tool_rich_provider")
-        lock = SimpleNamespace(document={"unit_test_lock":True})
         lab = Mock()
-        lab.preflight.side_effect = preflight_error
-        lab.preflight.return_value = lock
-        values = dict(study_id="fixture", claim_scope="artifact_optimization_only", system_qualification_passed=None,
-            estimand=None, campaign_complete=True, archive_integrity_passed=True,
-            filesystem_custody_verified=True, semantic_replay_passed=True, estimand_available=False,
-            missing_run_count=0, estimate=None, uncertainty=None, run_inclusion=(),
-            descriptive={"performance": {"policy": "task_efficiency_v1", "rows": [],
-                "missing": ["no qualified candidate"], "ranking_scope": "same task and target",
-                "threshold_status": "not_defined"}},
-            run_audits=(SimpleNamespace(protocol_adherence="adhered", endpoint_observation="no_qualified_candidate"),))
+        values = dict(run_id="fixture",authority_sha256=None,archive_integrity=True,
+            filesystem_custody_verified=True,event_count=0,protocol_adherence="adhered",
+            endpoint_observation="no_qualified_candidate",endpoint=None,terminal_seal_sha256=None,findings=())
         if report is not None:
-            values.update(vars(report))
-        values["run_audits"] = tuple(RunAudit(run_id="fixture", authority_sha256=None, archive_integrity=True,
-            filesystem_custody_verified=True, event_count=0, protocol_adherence=audit.protocol_adherence,
-            endpoint_observation=audit.endpoint_observation, endpoint=None, terminal_seal_sha256=None, findings=())
-            for audit in values["run_audits"])
-        lab.audit.return_value = StudyReport(**values)
+            values.update(report)
+        lab.report_run.return_value = {"run_id":"fixture","evidence_root":"unit-test-run",
+            "audit":RunAudit(**values),"replay":True,
+            "performance":{"policy":"task_efficiency_v1","rows":[],"missing":["no qualified candidate"],
+                           "ranking_scope":"same task and target","threshold_status":"not_defined"}}
+        prepared = []
+        def prepare(root,inputs,**bindings):
+            if preflight_error is not None:
+                raise preflight_error
+            # A wiring double, not an admitted Run or qualification fixture.
+            document = json.loads(canonical(inputs))
+            document['execution']['fixed_baseline'] = {'bundle_path':str(bindings['baseline_path']),
+                'selection':bindings['baseline_selection']}
+            specification = SimpleNamespace(document=document)
+            prepared.append(specification)
+            return specification
         args = self.args() + (["--preflight-only"] if preflight_only else [])
         if incumbent:
             args += ["--incumbent-registry", str(self.directory / "incumbents")]
@@ -607,8 +615,9 @@ class TaskLaunchTests(unittest.TestCase):
                           return_value=registry if incumbent == "present" else None), \
              patch.object(launch_task.TaskIncumbentRegistry, "key_for_launch", return_value=key), \
              patch.object(launch_task, "TaskLab", return_value=lab), \
+             patch.object(launch_task,"prepare_task_run",side_effect=prepare) as preparation, \
              patch.object(launch_task, 'admit_cohort_payload') as payload, \
-             patch.object(launch_task, "execute_matched_from_config", return_value=SimpleNamespace(evidence_root="unit-test-campaign")) as execute, \
+             patch.object(launch_task, "execute_run_from_config", return_value=SimpleNamespace(evidence_root="unit-test-run")) as execute, \
              contextlib.redirect_stdout(io.StringIO()) as stdout:
             if preflight_error or fixture_receipt or baseline_error or selection_error:
                 with self.assertRaises(ValueError): launch_task.main(args)
@@ -617,22 +626,21 @@ class TaskLaunchTests(unittest.TestCase):
                 self.assertEqual(launch_task.main(args), expected_exit)
                 if baseline_only:
                     qualify.assert_not_called()
-                    lab.preflight.assert_not_called()
+                    preparation.assert_not_called()
                     execute.assert_not_called()
                     selected = 'incumbent.json' if incumbent == 'present' or prepared_selection is not None else 'baseline.json'
                     self.assertIn(str(self.directory / selected), stdout.getvalue())
                 elif preflight_only:
                     execute.assert_not_called()
-                    lab.audit.assert_not_called()
+                    lab.report_run.assert_not_called()
                 else:
-                    execute.assert_called_once_with(ROOT, lock, self.workspace/"runtime.json", self.workspace/"campaign-evidence")
-                    lab.audit.assert_called_once_with(execute.return_value)
-                    self.assertIn("unit-test-campaign", stdout.getvalue())
+                    execute.assert_called_once_with(ROOT,prepared[0],self.workspace/"runtime.json",self.workspace/"run-evidence")
+                    lab.report_run.assert_called_once_with(execute.return_value)
+                    self.assertIn("unit-test-run",stdout.getvalue())
                     self.assertIn("Task performance:", stdout.getvalue())
                     saved = json.loads((self.workspace / "report.json").read_text())
-                    self.assertEqual(saved["descriptive"], lab.audit.return_value.descriptive)
-                    self.assertEqual(saved["run_audits"][0]["endpoint_observation"],
-                                     lab.audit.return_value.run_audits[0].endpoint_observation)
+                    self.assertEqual(saved['performance'],lab.report_run.return_value['performance'])
+                    self.assertEqual(saved['audit']['endpoint_observation'],lab.report_run.return_value['audit'].endpoint_observation)
             admit.assert_called_once()
             if incumbent == "present" or prepared_selection is not None:
                 baseline.assert_not_called()
@@ -641,18 +649,18 @@ class TaskLaunchTests(unittest.TestCase):
             validate_baseline.assert_called_once()
             if baseline_error or selection_error:
                 qualify.assert_not_called()
-                lab.preflight.assert_not_called()
+                preparation.assert_not_called()
             elif not baseline_only:
                 qualify.assert_called_once()
             if backend == 'metal-m1-pro':
                 payload.assert_called_once()
             else:
                 payload.assert_not_called()
-        return lab, lock
+        return lab, preparation
 
     def test_public_cuda_launch_wires_cupti_exclusive_broker_and_triton_config(self):
         self._wiring(preflight_only=True, backend='triton-b300')
-        study = json.loads((self.workspace/'study.json').read_text())
+        study = json.loads((self.workspace/'run.json').read_text())
         runtime = json.loads((self.workspace/'runtime.json').read_text())
         self.assertEqual(study['evaluation_protocol']['paired_timing']['kind'], PAIRED_KIND)
         self.assertEqual(study['evaluation_protocol']['paired_timing']['maximum_cv'], 0.15)
@@ -705,25 +713,31 @@ class TaskLaunchTests(unittest.TestCase):
     def test_baseline_abi_failure_precedes_provider_qualification(self):
         self._wiring(baseline_error=ValueError('baseline ABI differs'), backend='triton-b300')
 
-    def test_explicit_timing_values_are_frozen_in_the_study(self):
+    def test_explicit_timing_values_are_frozen_in_the_run(self):
         self._wiring(preflight_only=True, backend='triton-b300',
             extra_args=('--maximum-cv','0.12','--required-pair-wins','8'))
-        document=json.loads((self.workspace/'study.json').read_text())
+        document=json.loads((self.workspace/'run.json').read_text())
         assay=paired_protocol(document['evaluation_protocol'])
         self.assertEqual((assay.maximum_cv,assay.required_pair_wins,assay.materiality_ratio), (0.12,8,1.05))
-        StudyContract.load(self.workspace/'study.json')
+        self.assertIsNone(document['assignment'])
 
     def test_launcher_wires_existing_preflight_and_composer_with_persistent_actor_root(self):
-        lab, _ = self._wiring()
-        lab.preflight.assert_called_once_with(self.workspace/"study.json", execution_bindings_path=self.workspace/"execution-bindings.json")
+        lab,preparation = self._wiring()
+        preparation.assert_called_once()
+        self.assertEqual(preparation.call_args.args[0],ROOT)
+        self.assertIsNone(preparation.call_args.args[1]['assignment'])
+        self.assertEqual(preparation.call_args.kwargs['runtime_config_path'],self.workspace/'runtime.json')
+        lab.preflight.assert_not_called()
         runtime = json.loads((self.workspace/"runtime.json").read_text())
         self.assertEqual(runtime["provider"]["workspace_root"], str(self.workspace/"actors"))
         self.assertEqual(runtime["toolchain"], {"output_root":str(self.workspace/"builds")})
         self.assertEqual(runtime["broker"]["command"], ["/unit-test/python", "-I", str(ROOT / "src/open_cake_ir/evaluation/source_bootstrap.py"),
                          "open_cake_ir.evaluation.local_broker", "--kind", "metal",
                          "--worker-module", "open_cake_ir.tasks.evaluate"])
-        self.assertEqual(set(json.loads((self.workspace/"execution-bindings.json").read_text())),
-                         {"schema_version","qualification_path","qualification_anchor_path","runtime_config_path","fixed_baseline_bundle_path","fixed_baseline_selection"})
+        self.assertFalse((self.workspace/'study.json').exists())
+        self.assertFalse((self.workspace/'campaign-lock.json').exists())
+        self.assertFalse((self.workspace/'execution-bindings.json').exists())
+        self.assertTrue((self.workspace/'run.json').exists())
         self.assertFalse((self.workspace/"actors").exists())  # The existing composer creates it once.
         with self.assertRaises(FileExistsError): launch_task._new_workspace(self.workspace)
 
@@ -738,9 +752,9 @@ class TaskLaunchTests(unittest.TestCase):
             "promotion_run_id": "incumbent-fixture",
             "registry_root": str(self.directory / "incumbents"),
         })
-        bindings = json.loads((self.workspace / "execution-bindings.json").read_text())
+        bindings = json.loads((self.workspace / "run.json").read_text())['execution']['fixed_baseline']
         self.assertEqual(
-            bindings["fixed_baseline_bundle_path"],
+            bindings["bundle_path"],
             str(self.directory / "incumbent.json"),
         )
 
@@ -761,44 +775,40 @@ class TaskLaunchTests(unittest.TestCase):
             "promotion_run_id": "prepared-promotion", "registry_root": str(self.directory / "incumbents"),
         }
         self._wiring(preflight_only=True, prepared_selection=selection)
-        bindings = json.loads((self.workspace / "execution-bindings.json").read_text())
-        self.assertEqual(bindings["fixed_baseline_selection"], selection)
-        self.assertEqual(bindings["fixed_baseline_bundle_path"], str(self.directory / "incumbent.json"))
+        bindings = json.loads((self.workspace / "run.json").read_text())['execution']['fixed_baseline']
+        self.assertEqual(bindings["selection"],selection)
+        self.assertEqual(bindings["bundle_path"],str(self.directory/"incumbent.json"))
 
     def test_prepared_selection_refusal_precedes_provider_qualification(self):
         self._wiring(prepared_selection={"fixture": "stale-selection"},
                      selection_error=ValueError("fixed baseline is not the selected current incumbent"))
 
     def test_launcher_returns_nonzero_for_a_recorded_provider_fault(self):
-        self._wiring(report=SimpleNamespace(campaign_complete=True, archive_integrity_passed=True,
-            filesystem_custody_verified=True, semantic_replay_passed=True,
-            run_audits=(SimpleNamespace(protocol_adherence="provider_fault", endpoint_observation="missing"),)),
-            expected_exit=1)
+        self._wiring(report={'protocol_adherence':'provider_fault','endpoint_observation':'missing'},expected_exit=1)
 
-    def test_launcher_rejects_missing_or_unverified_outcomes_but_accepts_adhered_rejections(self):
-        good = dict(campaign_complete=True, archive_integrity_passed=True,
-            filesystem_custody_verified=True, semantic_replay_passed=True,
-            run_audits=(SimpleNamespace(protocol_adherence="adhered", endpoint_observation="no_qualified_candidate"),))
-        self.assertEqual(launch_task._campaign_exit_code(SimpleNamespace(**good)), 0)
-        for field in ("campaign_complete", "archive_integrity_passed", "filesystem_custody_verified", "semantic_replay_passed", "run_audits"):
+    def test_launcher_rejects_unverified_outcomes_but_accepts_adhered_rejections(self):
+        good = dict(archive_integrity=True,filesystem_custody_verified=True,
+                    protocol_adherence='adhered',endpoint_observation='no_qualified_candidate')
+        self.assertEqual(launch_task._run_exit_code({'audit':SimpleNamespace(**good),'replay':True}),0)
+        self.assertEqual(launch_task._run_exit_code({'audit':SimpleNamespace(**good),'replay':False}),1)
+        for field in ('archive_integrity','filesystem_custody_verified'):
             with self.subTest(field=field):
-                self.assertEqual(launch_task._campaign_exit_code(SimpleNamespace(**{**good, field: () if field == "run_audits" else False})), 1)
-        for adherence in ("harness_fault", "custody_violation", "contamination", "broker_fault"):
+                self.assertEqual(launch_task._run_exit_code({'audit':SimpleNamespace(**{**good,field:False}),'replay':True}),1)
+        for adherence in ('harness_fault','custody_violation','contamination','broker_fault'):
             with self.subTest(adherence=adherence):
-                self.assertEqual(launch_task._campaign_exit_code(SimpleNamespace(**{**good,
-                    "run_audits": (SimpleNamespace(protocol_adherence=adherence),)})), 1)
+                self.assertEqual(launch_task._run_exit_code({'audit':SimpleNamespace(**{**good,'protocol_adherence':adherence}),'replay':True}),1)
 
     def test_preflight_refusal_never_reaches_execution(self):
         self._wiring(ValueError("unit-test preflight refusal"))
-        self.assertFalse((self.workspace/"campaign-lock.json").exists())
+        self.assertFalse((self.workspace/"run.json").exists())
 
     def test_fixture_qualification_never_reaches_preflight(self):
-        lab, _ = self._wiring(fixture_receipt=True)
-        lab.preflight.assert_not_called()
+        _,preparation = self._wiring(fixture_receipt=True)
+        preparation.assert_not_called()
 
-    def test_preflight_only_stops_at_reviewable_lock(self):
+    def test_preflight_only_stops_at_reviewable_run(self):
         self._wiring(preflight_only=True)
-        self.assertTrue((self.workspace/"campaign-lock.json").exists())
+        self.assertTrue((self.workspace/"run.json").exists())
 
 
 if __name__ == "__main__":

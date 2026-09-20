@@ -69,12 +69,12 @@ def backend_policy(backend: str) -> NativeBackend:
 
 
 def native_backend(comparison: str | None) -> NativeBackend | None:
-    if comparison in {None, "direct_cuda"}:
+    if comparison in {None, "open_cake", "direct_cuda"}:
         return None
     for policy in _NATIVE_BACKENDS:
         if policy.arm == comparison:
             return policy
-    raise ValueError("unsupported comparison environment")
+    raise ValueError("unsupported authoring environment")
 
 
 def native_source(source: bytes, requirements: Mapping[str, object]) -> bytes:

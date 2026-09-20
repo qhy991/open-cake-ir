@@ -395,7 +395,13 @@ class LoadedCudaCandidate:
             raise ValueError("persistent candidate is closed or its CUBIN changed")
         if tensor_contract.target != self.candidate.target:
             raise ValueError("persistent candidate tensor Target differs")
+        if (getattr(self.manifest, 'pointer_alignments', {})
+                and getattr(tensor_contract, 'canonical_sha256', None) != self.manifest.canonical_sha256):
+            raise ValueError('aligned kernel tensor contract differs from its sealed manifest')
         observed, pointers = _tensor_contract(arguments, tensor_contract)
+        from .launch_manifest import check_pointer_alignments
+        check_pointer_alignments(dict(zip((row[0] for row in tensor_contract.tensors), pointers, strict=True)),
+                                 getattr(self.manifest, 'pointer_alignments', {}))
         self._modules.check_open()
         devices = {
             str(cast(Mapping[str, object], value)["device"])

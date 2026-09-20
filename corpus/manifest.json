@@ -2223,6 +2223,141 @@
         "schedule_sha256": "5712410642e0db772ac202826dc0a38a6e6b55e4dc169a468d1bc83ecf6cca25",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "xcore1002-dot-bf16-64",
+      "schedule": "corpus/schedules/xcore1002-dot-bf16-64.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "b49a80efe5ee1e47457ae42229593a429bbbaa8b9270109815ae3dd3624e039c",
+        "lowering_source_sha256": "d21f906d168ecad79e9a41a6eb6127524d00ac733a4f7f3fcf24c1b84435ca99"
+      }
+    },
+    {
+      "case_id": "xcore1002-dot-fp16-64",
+      "schedule": "corpus/schedules/xcore1002-dot-fp16-64.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "cd6f574aca75ea1b606482b5b54bd3c51dda3f634f42d480dcabe03641fb4f5f",
+        "lowering_source_sha256": "3896cbfeb865a9b9589251268f2ad7bb06eb89f5ff4699cca7236415270d9090"
+      }
+    },
+    {
+      "case_id": "xcore1002-dot-fp32-64",
+      "schedule": "corpus/schedules/xcore1002-dot-fp32-64.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "dd87f04538b2181c80381c435c72e15540046e3b65609f6f4d5d93ae79a6b431",
+        "lowering_source_sha256": "30d6c7d2ef047b9aba6d088d718b41f678df1d5d6ebf52af932bce980167bfc9"
+      }
+    },
+    {
+      "case_id": "xcore1002-dot-operand-dtype-drift-64",
+      "schedule": "corpus/schedules/xcore1002-dot-operand-dtype-drift-64.py",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "MMA_OPERAND_DTYPE_DIFFERS",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "52fc3404d4a0749e692041b12d607d65f65fc95d2f775ab8f2b7fb92182b4a54",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "xcore1002-dot-tf32-unqualified-64",
+      "schedule": "corpus/schedules/xcore1002-dot-tf32-unqualified-64.py",
+      "expected": {
+        "accepted": false,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "TARGET_INSTRUCTION_UNSUPPORTED",
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "392de91b264ac468ad4cc56b83bdea1cf9f4512588f66f3463843a428cde8dd0",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "xcore1002-fp8-copy",
+      "schedule": "corpus/schedules/xcore1002-fp8-copy.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "fc6e01e79500417fc28f86d381c2b309533fe0f4d93e531139e1820067a81ca1",
+        "lowering_source_sha256": "1c4884c97c08fcb4dfe473dab1de114e31224fb970753cbf1e755c6be7f360fb"
+      }
+    },
+    {
+      "case_id": "xcore1002-fp8-decode-fp16",
+      "schedule": "corpus/schedules/xcore1002-fp8-decode-fp16.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "26103ca9c23244fec0be466a6f00c0c0a303ef287702cd1c2b4cf4334ff7a1a1",
+        "lowering_source_sha256": "5148d790c3fb875dd0f8ed867f3317ede2fa420d21f9f0af203ac70c521961f2"
+      }
+    },
+    {
+      "case_id": "xcore1002-fp8-decode-fp32",
+      "schedule": "corpus/schedules/xcore1002-fp8-decode-fp32.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "d31c026e5887b51bd919e04b9e9f1aedb514d1d3f78b06853ebc2bbf69a24a7d",
+        "lowering_source_sha256": "b8a12261876ee760ff2295bac4cfd19df7c5790067830a49b71154de61056af4"
+      }
+    },
+    {
+      "case_id": "xcore1002-fp8-encode-unqualified",
+      "schedule": "corpus/schedules/xcore1002-fp8-encode-unqualified.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "MACA_FP8_CAST_UNQUALIFIED"
+        ],
+        "schedule_sha256": "5c59dce86ab0764379ce3e05f2d36463a9ad231aa26528eb255fc17c6cc3217f",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "xcore1002-fp8-scalar-cast-unsupported",
+      "schedule": "corpus/schedules/xcore1002-fp8-scalar-cast-unsupported.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "MACA_FP8_SCALAR_CAST_UNSUPPORTED"
+        ],
+        "schedule_sha256": "17ab61fd2bb39ef2b45362faacd2f7815822eaa315f69af31e3b2f930de2e013",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

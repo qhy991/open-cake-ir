@@ -105,6 +105,22 @@ CUBIN, checks target and auxiliary-scratch limits, and seals the same Launchable
 boundary. A `workload_tensors_v1` launch manifest projects the Workload ABI and actual compiled
 launch resources. The candidate envelope and kernel source retain separate custody.
 
+An optional `runtime.toolchain.pointer_alignment` (or `--pointer-alignment 16` at launch)
+selects an explicit AOT specialization experiment. It seals generic and aligned binaries
+from the same source in one candidate. The launcher checks every actual input and output
+address on every call, selecting the generic binary for legal unaligned contiguous views.
+The aligned leaf carries and enforces its own requirements; it cannot replace the complete
+Workload candidate on its own. Both modules load before timing, and each call still executes
+one kernel. Raw evidence retains dispatch counts and each implementation's resources.
+The fixed starter keeps its original v1 compilation unless independently replaced; authoring
+options do not modify it. Base-pointer alignment does not assert alignment of arbitrary
+index expressions, and a specialization does not imply a speedup or numerical qualification.
+
+Input snapshots use exact host double arrays to avoid repeated Python scalar allocation.
+Input mutation, signed-zero and NaN checks retain their previous behavior. Every timed output
+is still checked; this reduces host validation work without changing the GPU timing interval
+or sample count.
+
 `evaluate_tile_workload` uses C's `materialize_case` and `reference_outputs`, then compares
 every output and verifies inputs remain unchanged. `LoadedTorchTensorCandidate` allocates from
 the ABI and calls the existing admitted CUDA Driver module/launch/unload lifecycle. It never

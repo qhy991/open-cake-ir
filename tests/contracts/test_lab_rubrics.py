@@ -152,11 +152,14 @@ class RubricContractTests(unittest.TestCase):
                     # FakeProvider supplies existing closed-event-contract bytes, without an external call.
                     result = fake.turn(current_request)
                     kwargs["candidate_path"].write_bytes(result.raw_submission)
-                    return replace(result, reference_bundle=None)
+                    # FakeProvider is a RunProvider (invocation delta); this fixture
+                    # stands in for the native adapter (cumulative thread counter).
+                    return replace(result, reference_bundle=None,
+                                   provider_tokens=current_request.cumulative_provider_tokens + result.provider_tokens)
 
             provider = CodexRunProvider(qualification=qualification, builders={package.run_id: builder},
                                         task_packages={package.run_id: package}, adapter=Adapter())
-            controller = RalphController(RalphBudget(10_000_000, 20, 1, 100, 100, 20, 20, 20),
+            controller = RalphController(RalphBudget(10_000_000, 20, 1, 100, 100, 20, 20, 20, 128, 10),
                                          searches_per_turn=1, profile_each_search_survivor=True, clock=lambda: 0.0)
             feedbacks = [
                 {"kind": "initial"}, {"stage": "assessment", "error": "unsupported lowering"},
@@ -183,10 +186,12 @@ class RubricContractTests(unittest.TestCase):
                 state = controller.state_card(turn=turn, cumulative_provider_tokens=cumulative, feedback=feedback)
                 current_request = SimpleNamespace(run_id=package.run_id, arm=package.arm, turn=turn,
                     cumulative_provider_tokens=cumulative, thread_id=thread, feedback=feedback,
-                    maximum_candidates_per_turn=1, state_card=state)
+                    maximum_candidates_per_turn=1, state_card=state, environment_kind=package.arm)
                 result = provider.turn(current_request)
                 thread = result.thread_id
+                self.assertEqual(result.provider_tokens, 80000)
                 cumulative += result.provider_tokens
+                self.assertEqual(cumulative, turn * 80000)
                 _archive_provider_turn(arm=package.arm, candidate_media_type="application/json",
                     cumulative_tokens=cumulative, evidence=evidence, ledger=ledger, maximum_candidates_per_turn=1,
                     provider_document={}, provider_turn=result, thread_id=thread, turn_number=turn)

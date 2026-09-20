@@ -82,7 +82,7 @@ class FakeEnvironment:
             ).encode()
         ).hexdigest()
 
-    def build(self, submission):
+    def build(self, submission, *, compilation=None):
         source_role = "lowered_source" if self.arm == "open_cake" else "authored_source"
         turn = json.loads(submission.payload)["turn"]
         entry_point = f"{self.arm}_turn_{turn}"
@@ -204,7 +204,7 @@ class FakeProvider:
                 },
                 {
                     "type": "turn.completed",
-                    "usage": {"input_tokens": 70000, "output_tokens": 10000},
+                    "usage": {"input_tokens": request.cumulative_provider_tokens + 70000, "output_tokens": 10000},
                 },
             )
         ) + b"\n"
@@ -308,10 +308,16 @@ class FakeEvaluator:
                                        else compiler_revision_reference)
         self.calls = 0
 
-    def evaluate(self, candidate, *, case_id, purpose):
+    def latency_ms(self, arm, turn, purpose):
+        return (1.0 if arm == "open_cake" else 2.0) - (turn - 1) * 0.1
+
+    def candidate_position(self, candidate):
         arm, raw_turn = candidate.entry_point.rsplit("_turn_", 1)
-        turn = int(raw_turn)
-        latency = (1.0 if arm == "open_cake" else 2.0) - (turn - 1) * 0.1
+        return arm, int(raw_turn)
+
+    def evaluate(self, candidate, *, case_id, purpose):
+        arm, turn = self.candidate_position(candidate)
+        latency = self.latency_ms(arm, turn, purpose)
         launch_receipt = json.dumps(
             {"candidate_sha256": candidate.candidate_sha256, "purpose": purpose},
             sort_keys=True,
@@ -480,6 +486,16 @@ class FindingRoutingContractTests(SemanticLabTestCase):
 
 
 class LabContractTests(SemanticLabTestCase):
+    def two_turn_lock(self, lab):
+        # This scientific fixture allocates the CPU provider's exact 2 x 80k
+        # tokens. Budget overruns are tested separately as nonqualifying.
+        document = json.loads((ROOT/'contracts/studies/matched-search-infrastructure-template.json').read_text())
+        document['budget'].update(limit=160000,checkpoints=[80000,160000])
+        directory = enter_context(self,tempfile.TemporaryDirectory())
+        path = Path(directory)/'two-turn-study.json'
+        path.write_text(json.dumps(document))
+        return lab.preflight(path)
+
 
     def test_provider_fault_does_not_resolve_evaluation_only_fields(self) -> None:
         class FaultProvider(FakeProvider):
@@ -836,7 +852,7 @@ class LabContractTests(SemanticLabTestCase):
                 observed = super().turn(request)
                 events = [json.loads(line) for line in observed.raw_events.splitlines()]
                 events[-1]["usage"] = {
-                    "input_tokens": 60000,
+                    "input_tokens": request.cumulative_provider_tokens + 60000,
                     "output_tokens": 10000,
                 }
                 raw_events = b"".join(
@@ -1041,10 +1057,11 @@ class LabContractTests(SemanticLabTestCase):
         )
         self.assertTrue(
             all(
-                artifact["turn"] == 2
+                artifact["source_turn"] == 1  # Turn 2 crossed this fixture's 150k token limit.
                 for artifact in report.descriptive["promoted_artifacts"].values()
             )
         )
+        self.assertTrue(all(audit.endpoint_observation == 'no_qualified_candidate' for audit in report.run_audits))
         self.assertIsNone(report.estimand)
         self.assertFalse(report.estimand_available)
         self.assertIsNone(report.estimate)
@@ -1066,7 +1083,7 @@ class LabContractTests(SemanticLabTestCase):
 
     def test_system_qualification_requires_a_replayed_evaluation_in_every_run(self) -> None:
         class RejectingEnvironment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 return EnvironmentResult(
                     "rejected",
                     submission.sha256,
@@ -1292,7 +1309,7 @@ class LabContractTests(SemanticLabTestCase):
 
     def test_lab_owns_two_turn_resume_budget_evaluation_and_terminal(self) -> None:
         lab = TaskLab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
+        lock = self.two_turn_lock(lab)
         provider = FakeProvider()
         resolved = lock.document["resolved_inputs"]
         arm_environments = resolved["arm_environments"]
@@ -1346,7 +1363,7 @@ class LabContractTests(SemanticLabTestCase):
         """A negative authoring result is data, not an external missing Run."""
 
         class RejectOpenCakeOne(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 if json.loads(submission.payload)["run_id"] == "open_cake-1":
                     return EnvironmentResult(
                         "rejected",
@@ -1354,12 +1371,10 @@ class LabContractTests(SemanticLabTestCase):
                         None,
                         {"stage": "correctness", "passed": False},
                     )
-                return super().build(submission)
+                return super().build(submission, compilation=compilation)
 
         lab = TaskLab(ROOT)
-        lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-template.json"
-        )
+        lock = self.two_turn_lock(lab)
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -1407,9 +1422,7 @@ class LabContractTests(SemanticLabTestCase):
                 return super().turn(request)
 
         lab = TaskLab(ROOT)
-        lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-template.json"
-        )
+        lock = self.two_turn_lock(lab)
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -1458,8 +1471,8 @@ class LabContractTests(SemanticLabTestCase):
             for run_id in lock.run_order[:-1]:
                 run = evidence.start_run(
                     run_id,
-                    authority_sha256=lock.canonical_sha256,
-                    authority=lock.document,
+                    authority_sha256=lock.run_specification(run_id).canonical_sha256,
+                    authority=lock.run_specification(run_id).document,
                 )
                 run.seal(
                     protocol_adherence="provider_fault",
@@ -1484,8 +1497,8 @@ class LabContractTests(SemanticLabTestCase):
         self.assertTrue(any(item["severity"] == "hint" for item in diagnostics))
 
         class ReportingEnvironment(FakeEnvironment):
-            def build(self, submission):
-                result = super().build(submission)
+            def build(self, submission, *, compilation=None):
+                result = super().build(submission, compilation=compilation)
                 return EnvironmentResult(
                     result.disposition,
                     result.submission_sha256,
@@ -1654,9 +1667,9 @@ class LabContractTests(SemanticLabTestCase):
                 builds: list[str] = []
 
                 class RecordingEnvironment(FakeEnvironment):
-                    def build(self, submission):
+                    def build(self, submission, *, compilation=None):
                         builds.append(submission.sha256)
-                        return super().build(submission)
+                        return super().build(submission, compilation=compilation)
 
                 class InvalidProvider(FakeProvider):
                     def turn(self, request):
@@ -1744,8 +1757,8 @@ class LabContractTests(SemanticLabTestCase):
             for run_id in lock.run_order:
                 run = evidence.start_run(
                     run_id,
-                    authority_sha256=lock.canonical_sha256,
-                    authority=lock.document,
+                    authority_sha256=lock.run_specification(run_id).canonical_sha256,
+                    authority=lock.run_specification(run_id).document,
                 )
                 if run_id == "direct_cuda-3":
                     run.seal(
@@ -1796,7 +1809,7 @@ class LabContractTests(SemanticLabTestCase):
         resolved = lock.document["resolved_inputs"]
 
         class RejectFirst(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 if json.loads(submission.payload)["turn"] == 1:
                     return EnvironmentResult(
                         "rejected",
@@ -1804,7 +1817,7 @@ class LabContractTests(SemanticLabTestCase):
                         None,
                         {"stage": "correctness", "passed": False},
                     )
-                return super().build(submission)
+                return super().build(submission, compilation=compilation)
 
         protocol_sha256 = sha256(
             json.dumps(
@@ -1930,7 +1943,7 @@ class LabContractTests(SemanticLabTestCase):
             checkpoints=(150000,),
             terminal_provider_tokens=329934,
         )
-        self.assertEqual(r42_cuda_three[0].state, "reached_no_qualified_candidate")
+        self.assertEqual(r42_cuda_three[0].state, "reached_no_search_candidate")
         self.assertIsNone(r42_cuda_three[0].best_candidate_sha256)
 
 
@@ -2025,7 +2038,7 @@ class CandidateSetFilterTest(SemanticLabTestCase):
 
     def test_every_member_of_an_all_rejected_set_replays(self) -> None:
         class RejectAllEnvironment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 return EnvironmentResult(
                     "rejected",
                     submission.sha256,
@@ -2368,9 +2381,9 @@ class StructurallyDistinctCandidatesTest(SemanticLabTestCase):
 
     def _run(self, *, same_program: bool):
         class TwinEnvironment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 variant = json.loads(submission.payload)["variant"]
-                result = super().build(submission)
+                result = super().build(submission, compilation=compilation)
                 return EnvironmentResult(
                     result.disposition,
                     result.submission_sha256,
@@ -2522,9 +2535,9 @@ class QualifiedCandidateSelectionTest(SemanticLabTestCase):
 
     def test_an_unstable_fastest_candidate_cannot_win_or_lend_findings(self) -> None:
         class SelectionEnvironment(FakeEnvironment):
-            def build(self, submission):
+            def build(self, submission, *, compilation=None):
                 variant = json.loads(submission.payload)["variant"]
-                result = super().build(submission)
+                result = super().build(submission, compilation=compilation)
                 candidate = result.launchable
                 assert candidate is not None
                 entry_point = f"{self.arm}_turn_{variant + 1}"
@@ -2821,6 +2834,8 @@ class RalphTaskInterfaceTests(SemanticLabTestCase):
                 "maximum_candidates_per_turn": 2,
                 "wall_time_seconds": 20,
                 "active_authoring_time_seconds": 10,
+                "maximum_compilations": 128,
+                "confirmation_wall_time_seconds": 2,
                 "evaluation_limits": {
                     "search": 4,
                     "confirmatory": 2,
@@ -2840,7 +2855,7 @@ class RalphTaskInterfaceTests(SemanticLabTestCase):
         started = controller.begin_authoring()
         now[0] += 4
         controller.end_authoring(started)
-        for purpose in ("search", "search", "confirmatory", "attribution", "attribution"):
+        for purpose in ("search", "search", "attribution", "attribution"):
             controller.record_evaluation(purpose)
         card = controller.state_card(
             turn=2,
@@ -2891,7 +2906,6 @@ class RalphTaskInterfaceTests(SemanticLabTestCase):
             "search",
             "search",
             "search",
-            "confirmatory",
             "attribution",
             "attribution",
             "attribution",
@@ -3333,7 +3347,7 @@ class EmpiricalSelectionContractTests(SemanticLabTestCase):
             with self.subTest(interface=interface):
                 lock, _, _ = self.preflight(model=model, study=study)
                 arm = lock.document["resolved_inputs"]["arm_environments"]["open_cake"]
-                documents = build_run_reference_documents(self.root, lock, arm,
+                documents = build_run_reference_documents(self.root, lock.run_specification("open_cake-1"), arm,
                     workload_contract=load_workload(self.root / lock.document["workload"]["path"]),
                     prepare_schedule=prepare_schedule)
                 authority = json.loads(documents["run-authority.json"])

@@ -324,7 +324,12 @@ class IndexExpandParameters:
 
 @dataclass(frozen=True)
 class CastParameters:
-    """One explicit numeric representation conversion."""
+    """One explicit numeric representation conversion.
+
+    The integer edge is signed int32 to fp32, rounding to nearest representable fp32
+    (ties to even); values through +/-2**24 are exact. It does not admit a float-to-int
+    conversion or an implicit arithmetic promotion. Shape and effects are unchanged.
+    """
 
     to: DType
 

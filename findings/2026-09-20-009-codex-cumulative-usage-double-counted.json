@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "date": "2026-09-20",
+  "backend": "Codex provider JSONL adapter; tool_rich_candidate_v1",
+  "target": "gfx1151",
+  "compiler_revision_id": "open-cake-ir@2af76a79551ad31e66faa11bec760d38d6c3c973",
+  "executor_revision": "gfx1151@2af76a79551ad31e66faa11bec760d38d6c3c973",
+  "decision": "accepted",
+  "implemented_in": "9bcee8021",
+  "verified_by": {
+    "replay": "infplane:/home/wwxq/oci-lab/amd-experiment-repair-20260920/original-replay-r1.json",
+    "tests": "infplane:/home/wwxq/oci-lab/amd-experiment-repair-20260920/tests-r1.stdout: 124 tests and 176 subtests passed at 9bcee8021; provider, failed usage, runtime and live/replay Lab consumers",
+    "scope": "Deterministic software replay and CPU contracts. Original evidence unchanged; no retroactive campaign acceptance or GPU performance claim."
+  },
+  "id": "F-2026-09-20-009",
+  "kind": "bug",
+  "title": "Codex resumed thread usage is repeatedly added as invocation spend",
+  "evidence": {
+    "workspace": "infplane:/home/wwxq/oci-experiments-amd-20260920/gelu-tanh-backward-sol-high-3m",
+    "run": "campaign-evidence/runs/open_cake-1",
+    "events": [
+      1,
+      14,
+      24,
+      37,
+      50
+    ],
+    "roles": [
+      "provider_events",
+      "provider_stdout"
+    ],
+    "native_thread_totals": [
+      266187,
+      535235,
+      872461,
+      1270198,
+      1737381
+    ],
+    "old_ledger_terminal_tokens": 4681462,
+    "session_boundary_corroboration": "Exact task session rollout-2026-09-20T18-48-25-01a0be6e-763e-7001-acda-998615596e65.jsonl task_started/task_complete boundaries preserve the prior token_count.total_token_usage across resume."
+  },
+  "observation": "The budget summed cumulative native thread totals, overcounting usage and stopping runs early. GELU actually reported 1737381 cumulative tokens, not the old ledger sum 4681462. Failed completed invocations were overcounted by the same path.",
+  "proposed_change": "Own native-counter-to-invocation conversion once; use it in qualified RunProvider success, failed-provider accounting and semantic replay. Reject regressing counters as unquantified fault usage and preserve the known subtotal. Claude invocation accounting stays unchanged. Expose the existing between-invocation budget boundary honestly."
+}

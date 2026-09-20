@@ -20,6 +20,7 @@ from typing import Mapping
 
 from .performance.compiled_resources import CompiledResources
 from .target import CodeObject
+from .metax_toolchain import MetaxRoute
 
 
 @dataclass(frozen=True)
@@ -44,8 +45,9 @@ _TRITON_CALLS = frozenset({
     "log2", "sqrt", "rsqrt", "abs", "sigmoid", "dot", "trans", "reshape",
     "broadcast_to", "expand_dims", "cast", "div_rn", "fma", "range", "static_range",
     "cumsum", "cumprod", "gather", "debug_barrier", "multiple_of", "max_contiguous",
+    "topk", "cat", "sort", "bitonic_merge", "split",
 })
-_TRITON_TYPES = frozenset({"constexpr", "float32", "float16", "bfloat16", "int32",
+_TRITON_TYPES = frozenset({"constexpr", "float32", "float16", "bfloat16", "float8e4nv", "int32",
                            "int64", "uint32", "uint64", "int1"})
 _TRITON_IMPORTS = ("import triton", "import triton.language as tl")
 _LIBDEVICE_IMPORT = "from triton.language.extra import libdevice"
@@ -87,6 +89,21 @@ def _fp32_fma_call(node: ast.AST, requirements: Mapping[str, object]) -> bool:
     )
 
 
+def pointer_alignment_attributes(requirements: Mapping[str, object]) -> dict:
+    """Compile-time assumptions; the sealed launch contract must enforce this map."""
+    alignments = requirements.get('pointer_alignments', {})
+    signature = requirements.get('signature', {})
+    if not isinstance(alignments, Mapping) or not isinstance(signature, Mapping):
+        raise ValueError('Triton pointer alignment contract differs')
+    for name, value in alignments.items():
+        if (name not in signature or not isinstance(signature[name], str)
+                or not signature[name].startswith('*') or type(value) is not int
+                or value <= 0 or value & (value - 1)):
+            raise ValueError('Triton pointer alignment must name a pointer and positive power of two')
+    names = list(signature)
+    return {(names.index(name),): [('tt.divisibility', value)] for name, value in alignments.items()}
+
+
 def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> None:
     """Admit one kernel-only module without importing or evaluating any source.
 
@@ -123,6 +140,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     constants = requirements.get("compile_constants")
     if not isinstance(signature, Mapping) or not isinstance(constants, Mapping):
         raise ValueError("native Triton signature or constants differ")
+    pointer_alignment_attributes(requirements)
     if (len(args.args) != len(signature) + len(constants)
         or [arg.arg for arg in args.args[:len(signature)]] != list(signature)
         or {arg.arg for arg in args.args[len(signature):]} != set(constants)):
@@ -240,10 +258,35 @@ class CodeObjectRoute:
     """
 
     gpu_backend: str
+    architecture_type: type
     artifact_roles: tuple[str, ...]
     binary_role: str
     text_role: str
     scratch_fields: tuple[str, ...]
+
+    def compiler_version(self, module=None) -> str:
+        return importlib.metadata.version("triton")
+
+    def read_artifacts(self, compiled, source: bytes) -> dict[str, bytes]:
+        artifacts = {}
+        for role in self.artifact_roles:
+            payload = compiled.asm[role]
+            if isinstance(payload, str):
+                payload = payload.encode("utf-8")
+            if not isinstance(payload, bytes) or not payload:
+                raise ValueError(f"Triton artifact {role!r} differs")
+            artifacts[role] = payload
+        return artifacts
+
+    def validate_artifacts(self, artifacts, requirements, metadata) -> None:
+        target = requirements["target"]
+        if not artifacts[self.binary_role].startswith(b"\x7fELF") or re.search(
+            self.target_pattern(target), artifacts[self.text_role], re.MULTILINE
+        ) is None:
+            raise ValueError(
+                f"Triton output does not match the exact {target} "
+                f"{self.binary_role.upper()} target"
+            )
 
     def target_pattern(self, target: str) -> bytes:
         """The line in the text artifact that names the exact target it was built for."""
@@ -267,9 +310,10 @@ class CodeObjectRoute:
 # document in its jail; every fact that varies by target -- which object, which
 # architecture string, which lane width -- rides the compile contract the emitter
 # produced from the Target it held.
-_CODE_OBJECT_ROUTES: Mapping[CodeObject, CodeObjectRoute] = MappingProxyType({
+_CODE_OBJECT_ROUTES: Mapping[CodeObject, CodeObjectRoute | MetaxRoute] = MappingProxyType({
     CodeObject.CUBIN: CodeObjectRoute(
         gpu_backend="cuda",
+        architecture_type=int,
         artifact_roles=("source", "ttir", "ttgir", "llir", "ptx", "cubin"),
         binary_role="cubin",
         text_role="ptx",
@@ -277,6 +321,7 @@ _CODE_OBJECT_ROUTES: Mapping[CodeObject, CodeObjectRoute] = MappingProxyType({
     ),
     CodeObject.HSACO: CodeObjectRoute(
         gpu_backend="hip",
+        architecture_type=str,
         artifact_roles=("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco"),
         binary_role="hsaco",
         text_role="amdgcn",
@@ -284,10 +329,11 @@ _CODE_OBJECT_ROUTES: Mapping[CodeObject, CodeObjectRoute] = MappingProxyType({
         # read; `profile_scratch_size` is present and is checked like the CUDA route.
         scratch_fields=("profile_scratch_size",),
     ),
+    CodeObject.MCFATBIN: MetaxRoute(),
 })
 
 
-def route_for_code_object(code_object: CodeObject | str) -> CodeObjectRoute:
+def route_for_code_object(code_object: CodeObject | str) -> CodeObjectRoute | MetaxRoute:
     """The Triton route for one declared code object, or a refusal naming it."""
     try:
         code_object = CodeObject(code_object)
@@ -309,7 +355,7 @@ class TritonRoute:
     artifact_roles: tuple[str, ...]
     binary_role: str
     text_role: str
-    target_pattern: bytes
+    target_pattern: bytes | None
     scratch_fields: tuple[str, ...]
     code_object: CodeObject
 
@@ -332,13 +378,11 @@ def triton_route(requirements: Mapping[str, object]) -> TritonRoute:
             or type(warp_size) is not int or warp_size <= 0):
         raise ValueError("Triton compile contract differs")
     route = route_for_code_object(code_object)
-    # The architecture Triton's `GPUTarget` takes is an integer capability for CUDA
-    # and the bare ISA name for AMDGPU; either shape on the wrong route is a differing
-    # contract, not something to coerce.
-    if route.gpu_backend == "cuda":
-        if type(architecture) is not int or architecture <= 0:
-            raise ValueError("Triton compile contract differs")
-    elif not isinstance(architecture, str) or not architecture:
+    # The type belongs to this toolchain route, not to a vendor. MACA also takes an
+    # integer architecture through GPUTarget without producing a CUDA code object.
+    if (type(architecture) is not route.architecture_type
+            or (isinstance(architecture, int) and architecture <= 0)
+            or (isinstance(architecture, str) and not architecture)):
         raise ValueError("Triton compile contract differs")
     return TritonRoute(
         gpu_backend=route.gpu_backend,
@@ -386,19 +430,15 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         kernel = getattr(module, name, None)
         if kernel is None:
             raise ValueError("Triton lowering kernel entry point is missing")
+        attributes = pointer_alignment_attributes(requirements)
         compiled = triton_compile(
-            ASTSource(kernel, dict(signature), dict(constants)),
+            ASTSource(kernel, dict(signature), dict(constants),
+                      **({'attrs': attributes} if attributes else {})),
             target=GPUTarget(route.gpu_backend, route.architecture, route.warp_size),
             options=dict(options),
         )
-        artifacts = {}
-        for role in route.artifact_roles:
-            payload = compiled.asm[role]
-            if isinstance(payload, str):
-                payload = payload.encode("utf-8")
-            if not isinstance(payload, bytes) or not payload:
-                raise ValueError(f"Triton artifact {role!r} differs")
-            artifacts[role] = payload
+        object_route = route_for_code_object(route.code_object)
+        artifacts = object_route.read_artifacts(compiled, source)
         # .asm and .metadata are compile-time objects. .run, _init_handles(), n_regs
         # and n_spills require the GPU runtime and must not be used in this path.
         metadata = compiled.metadata
@@ -413,17 +453,11 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         # backend that returns a different one than the Target declared invalidates them.
         if getattr(metadata, "warp_size", route.warp_size) != route.warp_size:
             raise ValueError(f"Triton compiled {target} at a lane width the Target does not declare")
-        if not artifacts[route.binary_role].startswith(b"\x7fELF") or re.search(
-            route.target_pattern, artifacts[route.text_role], re.MULTILINE
-        ) is None:
-            raise ValueError(
-                f"Triton output does not match the exact {target} "
-                f"{route.binary_role.upper()} target"
-            )
+        object_route.validate_artifacts(artifacts, requirements, metadata)
         return TritonCompilation(
             source, target, name, MappingProxyType(artifacts),
             int(metadata.num_warps) * route.warp_size, int(metadata.shared),
-            importlib.metadata.version("triton"), route.code_object.value,
+            object_route.compiler_version(triton), route.code_object.value,
         )
 
 
@@ -521,8 +555,10 @@ def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Pa
     # An AMDGCN compilation has no CUBIN for this utility to read. Say that, rather
     # than failing on a missing artifact key several frames further in.
     if route_for_code_object(compilation.code_object).text_role != "ptx":
+        guidance = ("use inspect_amdgcn_resources" if compilation.code_object == CodeObject.HSACO.value
+                    else f"this inspector cannot read its {compilation.code_object!r} code object")
         raise ValueError(
-            f"target {compilation.target!r} produces no CUBIN; use inspect_amdgcn_resources"
+            f"target {compilation.target!r} produces no CUBIN; {guidance}"
         )
     inspector = str(Path(cuobjdump).resolve(strict=True))
     version = subprocess.check_output([inspector, "--version"], text=True, timeout=20).strip()

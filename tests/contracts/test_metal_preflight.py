@@ -7,6 +7,7 @@ No live receipt, Executor descriptor or Campaign Lock is published by these test
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -20,7 +21,8 @@ from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.lab import preflight, admission
 from open_cake_ir.lab.incumbents import TaskIncumbentKey
 from open_cake_ir.lab.provider_policy import provider_configuration
-from open_cake_ir.tasks.normalization.study import canonical, study_template, SCAFFOLD
+from open_cake_ir.tasks.normalization.study import (
+    METAL_SCAFFOLD, SCAFFOLD, canonical, study_template)
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import create_task
 
@@ -28,6 +30,70 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class MetalPreflightTests(unittest.TestCase):
+    def test_task_preparation_freezes_an_independent_run_without_loading_a_study(self):
+        from open_cake_ir.lab import bindings, StudyContract
+        from open_cake_ir.lab.executor import ExecutorRevision
+        from open_cake_ir.lab.metal_build import MetalArchiveHost
+        from open_cake_ir.tasks.preparation import prepare_task_run
+        from open_cake_ir.tasks.normalization.study import task_run_inputs
+        from open_cake_ir.tasks.workloads import load_workload
+        from tests.contracts._executor_fixture import compiler_reference
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            _,study,executor,receipt,candidate = self.fixture(directory,'claude-code')
+            workload = load_workload(directory/'workload.json')
+            inputs = task_run_inputs(ROOT,workload,directory/'workload.json',directory/'starter.py',
+                harness='claude-code',model='exact-test-model',effort='high',turns=2)
+            executable = directory/'provider';executable.write_bytes(b'CPU provider; not executed')
+            receipt.executable_sha256 = sha256(executable.read_bytes()).hexdigest()
+            runtime = {'schema_version':1,'provider':{'executable':str(executable),'workspace_root':str(directory/'actors')},
+                'toolchain':{'output_root':str(directory/'builds')},
+                'broker':{'command':[str(executable)],'cwd':str(ROOT),'timeout_seconds':30,
+                          'service_user':'fixture','service_group':'fixture'}}
+            runtime_path = directory/'runtime.json';runtime_path.write_bytes(canonical(runtime))
+            baseline_path = directory/'baseline.json';baseline_path.write_text('{}')
+            selection = {'schema_version':1,'policy':'starter_reference','source':'starter_reference',
+                         'incumbent_key':None,'promotion_run_id':None,'registry_root':None}
+            with patch.object(StudyContract,'load',side_effect=AssertionError('ordinary task loaded a Study')), \
+                 patch.object(admission.ProviderQualificationReceipt,'load',return_value=receipt), \
+                 patch.object(ExecutorRevision,'load_reference',return_value=executor), \
+                 patch.object(MetalArchiveHost,'from_executor',return_value=SimpleNamespace(canonical_sha256='1'*64)), \
+                 patch.object(bindings,'broker_execution_sha256',return_value='2'*64), \
+                 patch.object(bindings,'load_baseline_bundle',return_value=candidate), \
+                 patch.object(admission,'load_baseline_bundle',return_value=candidate):
+                def prepare():
+                    return prepare_task_run(ROOT,inputs,compiler_reference=compiler_reference(ROOT),executor=executor,
+                        qualification_path=directory/'receipt-double.json',qualification_anchor_path=directory/'anchor-double.json',
+                        runtime_config_path=runtime_path,baseline_path=baseline_path,baseline_selection=selection)
+                specification = prepare()
+                self.assertIsNone(specification.document['assignment'])
+                self.assertEqual(specification.document['workload']['workload_id'],workload.workload_id)
+                self.assertEqual(specification.document['execution']['fixed_baseline']['selection'],selection)
+                self.assertEqual(specification.document['authoring']['toolchain_sha256'],'1'*64)
+                self.assertNotIn('analysis_plan',specification.document)
+                original_attribution = inputs['evaluation_protocol']['attribution_evaluation']
+                inputs['evaluation_protocol']['attribution_evaluation'] = None
+                with self.assertRaisesRegex(ValueError,'Metal optimization'):
+                    prepare()
+                inputs['evaluation_protocol']['attribution_evaluation'] = original_attribution
+                from open_cake_ir.tasks.normalization.study import evaluation_policy
+                cuda_workload,_ = create_task('silu',backend='triton-b200',rows=2,columns=8)
+                original_evaluation = inputs['evaluation_protocol']
+                inputs['evaluation_protocol'] = evaluation_policy(WorkloadContract(cuda_workload))
+                with self.assertRaisesRegex(ValueError,'Metal optimization'):
+                    prepare()
+                inputs['evaluation_protocol'] = original_evaluation
+                payloads = {**candidate.artifact_payloads,'lowered_source':candidate.artifact_payloads['lowered_source']+b'\n// other source'}
+                changed = LaunchableCandidate(candidate.candidate_sha256,candidate.target,candidate.entry_point,
+                    {role:sha256(value).hexdigest() for role,value in payloads.items()},candidate.launch_spec_sha256,payloads)
+                with patch.object(bindings,'load_baseline_bundle',return_value=changed), \
+                     patch.object(admission,'load_baseline_bundle',return_value=changed):
+                    with self.assertRaisesRegex(ValueError,'fixed baseline differs from the frozen Compiler'):
+                        prepare()
+                inputs['evaluation_protocol']['validation_case_ids'].pop()
+                with self.assertRaisesRegex(ValueError,'omits Workload validation'):
+                    prepare()
+
     def fixture(self, directory, harness, *, backend='metal-m1-pro'):
         cuda = backend.startswith('triton-')
         document, source = create_task('silu' if cuda else 'rmsnorm', backend=backend,
@@ -116,12 +182,61 @@ class MetalPreflightTests(unittest.TestCase):
                 self.assertIn('schedule-starter.py',package.task_markdown)
                 self.assertIn('```python',package.task_markdown)
                 self.assertEqual(study['arms']['open_cake']['scaffold']['path'],
-                                 'contracts/scaffolds/python-artifact-optimization-v2.md')
-                self.assertIn((ROOT/SCAFFOLD).read_text().strip(), package.task_markdown)
+                                 'contracts/scaffolds/python-artifact-optimization-metal-v3.md')
+                # The package owner delivers the frozen scaffold in AGENTS.md and
+                # references it from TASK.md; do not require a second body copy.
+                self.assertIn((ROOT/METAL_SCAFFOLD).read_text().strip(), package.agents_markdown)
+                self.assertNotIn((ROOT/METAL_SCAFFOLD).read_text().strip(), package.task_markdown)
+                self.assertIn('AGENTS.md', package.task_markdown)
                 self.assertIn('execution_groups=[0]', package.task_markdown)
+                self.assertIn('execution_groups=[0, 1]', package.agents_markdown)
                 self.assertIn('tile=1', package.task_markdown)
                 self.assertIn('coalesced=False', package.task_markdown)
                 self.assertFalse((directory/'campaign-lock.json').exists())
+
+    def test_default_scaffold_follows_route_and_metal_example_lowers(self):
+        compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            for backend, expected in (
+                ('metal-m2', METAL_SCAFFOLD),
+                ('triton-b200', SCAFFOLD),
+            ):
+                with self.subTest(backend=backend):
+                    document, source = create_task('silu', backend=backend, rows=2, columns=8)
+                    workload = WorkloadContract(document)
+                    workload_path = directory/f'{backend}-workload.json'
+                    starter = directory/f'{backend}-starter.py'
+                    workload_path.write_bytes(canonical(document)); starter.write_text(source)
+                    study = study_template(ROOT, workload, workload_path, starter,
+                                           harness='codex', model='exact-test-model',
+                                           effort='high')
+                    self.assertEqual(study['arms']['open_cake']['scaffold']['path'], expected)
+
+            override = directory/'AGENTS.md'
+            override.write_text('explicit task rules')
+            document, source = create_task('silu', backend='metal-m2', rows=2, columns=8)
+            workload = WorkloadContract(document)
+            workload_path = directory/'override-workload.json'
+            starter = directory/'override-starter.py'
+            workload_path.write_bytes(canonical(document)); starter.write_text(source)
+            study = study_template(ROOT, workload, workload_path, starter, harness='codex',
+                                   model='exact-test-model', effort='high', agents_md=override)
+            self.assertEqual(study['arms']['open_cake']['scaffold']['path'], str(override))
+
+        scaffold = (ROOT/METAL_SCAFFOLD).read_text()
+        scaffold_words = ' '.join(scaffold.split())
+        self.assertIn('group count alone does not satisfy the required structural alternative',
+                      scaffold_words)
+        self.assertIn('timestamp-only profiling does not measure physical registers, spills or '
+                      'occupancy', scaffold_words)
+        examples = re.findall(r'```python\n(.*?)\n```', scaffold, flags=re.DOTALL)
+        self.assertEqual(len(examples), 1)
+        assessment = compiler.assess(frontend.parse(examples[0]).document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        lowering = compiler.lower(assessment)
+        self.assertIn('fma(', lowering.source)
+        self.assertEqual(assessment.analysis['total_execution_groups'], 2)
 
     def test_full_preflight_refuses_a_baseline_from_different_lowered_source(self):
         with tempfile.TemporaryDirectory() as temporary:

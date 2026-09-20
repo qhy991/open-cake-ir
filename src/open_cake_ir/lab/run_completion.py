@@ -15,7 +15,7 @@ from .endpoints import matched_endpoint
 def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evidence, ledger,
                      pending_provider_usage=False, observed_usage: ReportedProviderUsage | None = None,
                      declared_usage: ReportedProviderUsage | None = None,
-                     artifact_payloads: Mapping[str, bytes] | None = None):
+                     artifact_payloads: Mapping[str, bytes] | None = None, source_turn=None):
     """Retain the exact fault stage and any available artifacts before sealing."""
     fault = (
         error.protocol_adherence
@@ -34,7 +34,7 @@ def record_run_fault(*, error, live_stage, turn_number, cumulative_tokens, evide
         "fault": fault,
         "exception_type": type(error).__name__,
         "exception_message": message[:2048] if message else None,
-        "turn": turn_number,
+        **({'turn': turn_number} if source_turn is None else {'source_turn': source_turn}),
         "stage": live_stage,
         "terminal_provider_tokens": cumulative_tokens,
     }
@@ -87,7 +87,7 @@ def _seal_run(
     protocol_adherence: str,
     ralph: RalphController,
     analysis: Mapping[str, object] | None = None,
-    boundary_diagnostic: Mapping[str, object] | None = None,
+    confirmation=None,
 ) -> None:
     if ralph_stop_reason is None:
         ralph_stop_reason = ralph.stop_reason(
@@ -106,7 +106,7 @@ def _seal_run(
                     "provider_tokens": item.provider_tokens,
                     "state": item.state,
                     "best_candidate_sha256": item.best_candidate_sha256,
-                    "best_confirmed_latency_ms": item.best_confirmed_latency_ms,
+                    "best_search_latency_ms": item.best_search_latency_ms,
                 }
                 for item in projected
             ]
@@ -125,10 +125,11 @@ def _seal_run(
         checkpoint=final_checkpoint, observations=observations,
         terminal_provider_tokens=cumulative_tokens, protocol_adherence=protocol_adherence,
         terminal_reason=ralph_stop_reason, analysis=analysis or {},
+        confirmation=confirmation,
+        budget_exceeded=checkpoint_payload['ralph']['budget_exceeded'],
     )
     ledger.seal(
         protocol_adherence=protocol_adherence,
         endpoint_observation=endpoint_observation,
         endpoint=endpoint,
-        boundary_diagnostic=boundary_diagnostic,
     )

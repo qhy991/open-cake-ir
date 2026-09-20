@@ -29,7 +29,7 @@ from typing import Mapping
 
 from open_cake_ir.compiler.target import CodeObject
 
-from .attribution import load_instrumented_profile
+from .attribution import TensorProfileFormat, load_instrumented_profile
 from .platforms import PLATFORMS
 
 HIP_PROFILE_KIND = "hip_dispatch_activity_v1"
@@ -106,7 +106,7 @@ def load_hip_profile(payload: bytes, *, expected_candidate_sha256: str, expected
         expected_protocol_sha256=expected_protocol_sha256)
 
 
-def hip_attribution_feedback(profile: Mapping[str, object]) -> Mapping[str, object]:
+def hip_attribution_feedback(profile: Mapping[str, object], launch: Mapping | None = None) -> Mapping[str, object]:
     """Project only bounded actionable facts into the next authoring Turn."""
 
     summary = profile.get("summary")
@@ -119,3 +119,13 @@ def hip_attribution_feedback(profile: Mapping[str, object]) -> Mapping[str, obje
             "coverage", "device_time_us", "non_target_dispatches", "not_collected",
             "timing_use")},
     }
+
+
+def _validate_profile_launch(profile, launch, correctness) -> None:
+    if (launch.get("job_id") != profile["job_id"]
+            or launch.get("gpu_uuid") != profile["gpu_uuid"]):
+        raise ValueError("HIP attribution launch differs from instrumented profile")
+
+
+HIP_PROFILE = TensorProfileFormat(HIP_PROFILE_KIND, hip_profile_summary, load_hip_profile,
+                                 hip_attribution_feedback, _validate_profile_launch)

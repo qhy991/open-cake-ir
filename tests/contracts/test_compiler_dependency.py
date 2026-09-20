@@ -111,6 +111,7 @@ class CompilerDependencyTests(unittest.TestCase):
                 def replay():
                     _replay_broker_attempt_ledger(evidence, refs, _logical_attempt_document(observed),
                         candidate=candidate, protocol_sha256="b" * 64, final_receipt=logical.final_receipt,
+                        purpose="search", case_id="fixture",
                         compiler_reference=compiler_reference(ROOT))
                 if foreign:
                     with self.assertRaisesRegex(ValueError, "Compiler dependency differs"):

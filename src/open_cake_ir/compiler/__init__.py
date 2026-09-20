@@ -24,6 +24,9 @@ from .errors import CompilerError, LoweringRefusedError
 from .backends.common import EmitError, Emission
 from .performance.compiled_resources import CompiledResources
 from .performance.empirical_cost import EmpiricalCostModel
+from .ir import Program, ProgramBinding, ProgramStage, ProgramTensor
+from .program import LoweredProgram
+from .program_passes import ProgramRewriteResult, TRANSFORMATIONS
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
 from .performance.profile import MetricEstimate, ProfileEnvelope, profile_envelope
 from .target import Target, TargetParseError
@@ -31,6 +34,13 @@ from .diagnostics import Finding, FindingCategory, FindingSeverity
 from .verifier import verify
 
 __all__ = [
+    "ProgramRewriteResult",
+    "TRANSFORMATIONS",
+    "Program",
+    "ProgramBinding",
+    "ProgramStage",
+    "ProgramTensor",
+    "LoweredProgram",
     "Assessment",
     "Compiler",
     "CompilerError",

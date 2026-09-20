@@ -36,7 +36,7 @@ def _promoted_artifact(
         payload = _object(event.get("payload"), "candidate_evaluated.payload")
         if payload.get("purpose") != "confirmatory":
             continue
-        turn = payload.get("turn")
+        turn = payload.get("source_turn")
         candidate_sha256 = payload.get("candidate_sha256")
         objects = payload.get("objects")
         if (
@@ -62,7 +62,7 @@ def _promoted_artifact(
         if (
             receipt.get("candidate_sha256") != candidate_sha256
             or receipt.get("correctness_passed") is not True
-            or receipt.get("kernel_calls") != 1
+            or type(receipt.get("kernel_calls")) is not int or receipt["kernel_calls"] <= 0
             or receipt.get("fallback_calls") != 0
             or not isinstance(timing, Mapping)
             or timing.get("measurement_quality_passed") is not True
@@ -82,10 +82,12 @@ def _promoted_artifact(
         )
     if not eligible:
         return None
-    latency, turn, candidate_sha256, receipt_sha256 = min(eligible)
+    if len(eligible) != 1:
+        raise ValueError("a Run promotes only its single terminal confirmation")
+    latency, turn, candidate_sha256, receipt_sha256 = eligible[0]
     return MappingProxyType(
         {
-            "turn": turn,
+            "source_turn": turn,
             "candidate_sha256": candidate_sha256,
             "confirmed_latency_ms": latency,
             "evaluation_receipt_sha256": receipt_sha256,
@@ -109,7 +111,7 @@ def audit_campaign(
         except (OSError, ValueError, json.JSONDecodeError):
             campaign_complete = False
             continue
-        if audit.authority_sha256 != campaign.lock.canonical_sha256:
+        if audit.authority_sha256 != campaign.lock.run_specification(audit.run_id).canonical_sha256:
             campaign_complete = False
         audits.append(audit)
     campaign_complete = campaign_complete and len(audits) == len(campaign.lock.run_order)
@@ -124,7 +126,7 @@ def audit_campaign(
     evaluation_receipt_counts: dict[str, int] = {}
     terminal_observations: dict[str, object] = {}
     for audit in audits:
-        if not audit.archive_integrity or audit.authority_sha256 != campaign.lock.canonical_sha256:
+        if not audit.archive_integrity or audit.authority_sha256 != campaign.lock.run_specification(audit.run_id).canonical_sha256:
             continue
         try:
             replay_result = replay_run(evidence, audit, campaign.lock)
@@ -140,11 +142,16 @@ def audit_campaign(
                 event.get("kind") == "candidate_evaluated" for event in events)
             checkpoint = next(event["payload"] for event in events
                               if event.get("kind") == "checkpoints_projected")
+            fault = next((event['payload'] for event in events if event['kind']=='run_fault'),{})
             terminal_observations[audit.run_id] = {
                 "protocol_adherence": audit.protocol_adherence,
                 "endpoint_observation": audit.endpoint_observation,
                 "terminal_reason": checkpoint.get("ralph", {}).get("terminal_reason"),
                 "logical_evaluation_invocation_counts": checkpoint.get("ralph", {}).get("evaluation_counts"),
+                'budget_exceeded':checkpoint['ralph']['budget_exceeded'],
+                'observed_provider_tokens':checkpoint['ralph']['cumulative_provider_tokens'],
+                'observed_provider_tokens_scope':fault.get('terminal_provider_tokens_scope','observed_total'),
+                'observed_wall_seconds':checkpoint['ralph']['elapsed_wall_seconds'],
                 "token_limit_checkpoint_state": checkpoint["checkpoints"][-1]["state"],
                 "observation_basis": campaign.lock.analysis_plan.get("endpoint_policy", "token_limit_checkpoint"),
                 "missing_reason": ("protocol_fault" if audit.protocol_adherence != "adhered" else
@@ -168,7 +175,7 @@ def audit_campaign(
         not audit.archive_integrity
         or not semantic_replay_by_run[audit.run_id]
         or not audit.filesystem_custody_verified
-        or audit.authority_sha256 != campaign.lock.canonical_sha256
+        or audit.authority_sha256 != campaign.lock.run_specification(audit.run_id).canonical_sha256
         or audit.endpoint_observation == "missing"
         or audit.protocol_adherence != "adhered"
         for audit in audits
@@ -294,7 +301,7 @@ def audit_campaign(
             inclusions.append(
                 AnalysisInclusion(audit.run_id, False, False, "archive_integrity")
             )
-        elif audit.authority_sha256 != campaign.lock.canonical_sha256:
+        elif audit.authority_sha256 != campaign.lock.run_specification(audit.run_id).canonical_sha256:
             inclusions.append(
                 AnalysisInclusion(audit.run_id, False, False, "campaign_authority")
             )
@@ -491,30 +498,47 @@ def threshold_view(
     for run_id in campaign.lock.run_order:
         audit = audits.get(run_id)
         row = {"run_id": run_id, "endpoint": audit.endpoint_observation if audit else "missing",
-               "first_confirmation_turn": None, "provider_tokens": None,
+               "nominee_source_turn": None, "provider_tokens": None,
                "elapsed_wall_seconds": None, "candidate_sha256": None,
                "confirmed_latency_ms": None, "status": "missing"}
-        eligible = (audit is not None and audit.archive_integrity and audit.filesystem_custody_verified
-                    and audit.protocol_adherence == "adhered" and report.semantic_replay_passed)
-        if audit is not None and not eligible:
-            row["status"] = "unverified_archive_or_protocol"
-        elif eligible:
-            row["status"] = "threshold_not_reached"
-            tokens = {}
-            for event in evidence.replay_events(run_id):
+        readable = (audit is not None and audit.archive_integrity and audit.filesystem_custody_verified
+                    and report.semantic_replay_passed)
+        if audit is not None and not readable:
+            row['status'] = 'unverified_archive_or_protocol'
+        elif readable:
+            row['status'] = 'threshold_not_reached'
+            events = evidence.replay_events(run_id)
+            terminal_state = next(event['payload']['ralph'] for event in events if event['kind']=='checkpoints_projected')
+            fault = next((event['payload'] for event in events if event['kind']=='run_fault'),{})
+            row.update(observed_provider_tokens=terminal_state['cumulative_provider_tokens'],
+                       observed_provider_tokens_scope=fault.get('terminal_provider_tokens_scope','observed_total'),
+                       observed_wall_seconds=terminal_state['elapsed_wall_seconds'],
+                       budget_exceeded=terminal_state['budget_exceeded'])
+            if audit.protocol_adherence != 'adhered':
+                row['status'] = 'protocol_fault'
+                rows.append(row)
+                continue
+            if terminal_state['budget_exceeded']:
+                row['status'] = 'budget_exceeded'
+                rows.append(row)
+                continue
+            tokens = None
+            for event in events:
                 payload = event["payload"]
-                if event["kind"] == "provider_turn_completed":
-                    tokens[payload["turn"]] = payload["cumulative_provider_tokens"]
+                if event["kind"] == "search_completed":
+                    tokens = payload["state"]["cumulative_provider_tokens"]
                 if event["kind"] != "candidate_evaluated" or payload["purpose"] != "confirmatory":
                     continue
                 reference = next(value for value in payload["objects"] if value["role"] == "evaluation_receipt")
                 receipt = json.loads(evidence.read_object(reference))
                 timing = receipt["timing"]
-                if (tokens[payload["turn"]] <= limit and receipt["correctness_passed"] is True
+                if (tokens is not None and tokens <= limit and receipt["correctness_passed"] is True
+                    and type(receipt.get("kernel_calls")) is int and receipt["kernel_calls"] > 0
+                    and receipt.get("fallback_calls") == 0
                     and timing is not None and timing.get("measurement_quality_passed") is True
                     and timing["pooled_median_ms"] <= latency_threshold_ms):
-                    row.update(status="reached_by_fresh_confirmation", first_confirmation_turn=payload["turn"],
-                        provider_tokens=tokens[payload["turn"]], elapsed_wall_seconds=payload.get("elapsed_wall_seconds"),
+                    row.update(status="reached_by_fresh_confirmation", nominee_source_turn=payload["source_turn"],
+                        provider_tokens=tokens, elapsed_wall_seconds=payload.get("elapsed_wall_seconds"),
                         candidate_sha256=payload["candidate_sha256"], confirmed_latency_ms=timing["pooled_median_ms"])
                     break
         rows.append(row)

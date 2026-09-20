@@ -24,6 +24,14 @@ from .workload import WorkloadContract
 TensorRows = tuple[tuple[str, tuple[int, ...], str, str], ...]
 
 
+def check_pointer_alignments(pointers, alignments) -> None:
+    """Check actual launch addresses, including outputs, never an allocation base."""
+    for name, alignment in alignments.items():
+        pointer = pointers.get(name)
+        if type(pointer) is not int or pointer <= 0 or pointer % alignment:
+            raise ValueError(f'tensor {name!r} does not meet its {alignment}-byte alignment contract')
+
+
 def tensor_abi_rows(rows: object, *, dtypes: frozenset[str], ascii_names: bool,
                     row_error: str, order_error: str) -> TensorRows:
     """Parse the ordered tensor rows one spelling admits, with that spelling's words.
@@ -73,7 +81,7 @@ class WorkloadTensorManifest:
         expected = tuple((t.name, t.shape, t.dtype, t.mode) for t in workload.tensor_abi(case_id))
         if (self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id
                 or self.tensor_abi != expected
-                or self.target != workload.document["semantics"].get("target")):
+                or self.target != workload.target):
             raise ValueError(self.workload_mismatch)
 
     @property

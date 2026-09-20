@@ -34,6 +34,27 @@ def codex_report(tokens, thread=THREAD):
 
 
 class ReportedProviderUsageTests(unittest.TestCase):
+    def test_cumulative_codex_counter_is_differenced_and_claude_is_per_invocation(self):
+        from open_cake_ir.lab.provider_events import provider_token_delta, reported_provider_usage
+        from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+        provider = {"event_contract": "tool_rich_candidate_v1"}
+        totals = (266187, 535235, 872461, 1270198, 1737381)
+        previous, deltas = 0, []
+        for total in totals:
+            deltas.append(provider_token_delta(total, provider=provider, previous_tokens=previous))
+            previous += deltas[-1]
+        self.assertEqual(deltas, [266187, 269048, 337226, 397737, 467183])
+        self.assertEqual(sum(deltas), 1737381)
+        self.assertEqual(provider_token_delta(535235, provider=provider, previous_tokens=535235), 0)
+        for native, previous in ((12, 13), (True, 0), (12, -1), (12, True)):
+            with self.subTest(native=native, previous=previous), self.assertRaises(ValueError):
+                provider_token_delta(native, provider=provider, previous_tokens=previous)
+        self.assertIsNone(reported_provider_usage(codex_report(12), provider=provider,
+                                                  previous_tokens=13))
+        for contract in CLAUDE_EVENT_CONTRACTS:
+            self.assertEqual(provider_token_delta(12, provider={"event_contract": contract},
+                                                   previous_tokens=100), 12)
+
     def test_usage_requires_complete_typed_native_envelope_but_not_candidate_acceptance(self):
         for tokens in (0, 191499):
             witness = reported_codex_usage(codex_report(tokens), event_contract=CONTRACT)
@@ -200,7 +221,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
                 with self.assertRaises(RunProtocolFault) as raised:
                     CodexProviderAdapter().execute(invocation, candidate_path=directory / "candidate-set.json",
                         expected_change="add", expected_terminal_message='{"candidate_written":true}',
-                        event_contract=CONTRACT, arm="open_cake")
+                        event_contract=CONTRACT, arm="open_cake", environment_kind="open_cake")
                 self.assertEqual(raised.exception.reported_usage,
                                  ReportedProviderUsage(CONTRACT, THREAD, 150119))
                 self.assertEqual(raised.exception.artifact_payloads["provider_stdout"], raw)
@@ -240,7 +261,7 @@ class ReportedProviderUsageTests(unittest.TestCase):
                 with self.assertRaises(RunProtocolFault) as raised:
                     provider.turn(SimpleNamespace(run_id="open_cake-1", arm="open_cake", turn=1,
                         maximum_candidates_per_turn=1, thread_id=None,
-                        state_card={"schema_version": 1, "kind": "ralph_state_v1", "iteration": 1}))
+                        state_card={"schema_version": 1, "kind": "ralph_state_v1", "iteration": 1}, environment_kind="open_cake"))
                 self.assertEqual(raised.exception.reported_usage, ReportedProviderUsage(CONTRACT, THREAD, 150119))
                 self.assertEqual(raised.exception.artifact_payloads["provider_stdout"], raw)
 
@@ -269,11 +290,11 @@ class FailedProviderConsumerTests(unittest.TestCase):
             def turn(inner, request):
                 if request.turn == fault_turn and stage == "provider" and not returned_identity_refusal:
                     thread = request.thread_id or THREAD
-                    raw = b"truncated stdout" if unknown else codex_report(tokens, thread)
+                    raw = b"truncated stdout" if unknown else codex_report(request.cumulative_provider_tokens + tokens, thread)
                     witness = reported_codex_usage(raw, event_contract=CONTRACT,
                                                    expected_thread_id=request.thread_id)
                     if mismatch:
-                        witness = ReportedProviderUsage(CONTRACT, thread, tokens + 1)
+                        witness = ReportedProviderUsage(CONTRACT, thread, request.cumulative_provider_tokens + tokens + 1)
                     if boundary:
                         # F-2026-09-16-002: the boundary fault's own type at the
                         # provider seam; the harness keeps a Codex usage stream so
@@ -290,19 +311,19 @@ class FailedProviderConsumerTests(unittest.TestCase):
                 result = super().turn(request)
                 events = [json.loads(line) for line in result.raw_events.splitlines()]
                 rejected_return = returned_identity_refusal and request.turn == fault_turn
-                events[-1]["usage"] = ({"input_tokens": tokens, "output_tokens": 0} if rejected_return
-                                        else {"input_tokens": 94700, "output_tokens": 58})
+                events[-1]["usage"] = ({"input_tokens": request.cumulative_provider_tokens + tokens, "output_tokens": 0} if rejected_return
+                                        else {"input_tokens": request.cumulative_provider_tokens + 94700, "output_tokens": 58})
                 raw = b"\n".join(json.dumps(event).encode() for event in events)
                 return replace(result, provider_tokens=tokens if rejected_return else 94758, raw_events=raw,
                                raw_events_sha256="f" * 64 if rejected_return else sha256(raw).hexdigest())
 
         class Environment(consumers.FakeEnvironment):
-            def build(inner, submission):
+            def build(inner, submission, *, compilation=None):
                 if stage == "environment":
                     raise RunProtocolFault("harness_fault", "synthetic environment fault",
                         artifact_payloads={"provider_stdout": codex_report(tokens)},
                         reported_usage=ReportedProviderUsage(CONTRACT, THREAD, tokens))
-                return super().build(submission)
+                return super().build(submission, compilation=compilation)
 
         directory = Path(tempfile.mkdtemp(dir=self.parent))
         arms = self.lock.document["resolved_inputs"]["arm_environments"]
@@ -330,7 +351,10 @@ class FailedProviderConsumerTests(unittest.TestCase):
         self.assertEqual(state["cumulative_provider_tokens"], 286257)
         self.assertEqual(state["remaining"]["provider_tokens"], 0)
         self.assertEqual(state["terminal_reason"], "provider_fault")
-        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+        self.assertIn("provider_tokens",state["budget_exceeded"])
+        report = self.lab.audit(campaign)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertIn("provider_tokens",report.descriptive["terminal_observations"]["open_cake-1"]["budget_exceeded"])
 
     def test_observed_quota_attribution_is_retained_and_replays(self):
         quota = {"status": "allowed_warning", "rateLimitType": "seven_day",
@@ -341,31 +365,20 @@ class FailedProviderConsumerTests(unittest.TestCase):
         self.assertEqual(fault["provider_usage"]["provider_tokens"], 191499)
         self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
 
-    def test_settled_checkpoint_outlives_a_budget_boundary_declaration_fault(self):
-        """F-2026-09-16-002: the boundary fault converts only what already settled.
-
-        The fault observation stays in the ledger; the terminal goes to the
-        settled checkpoint with the conversion named on the terminal event and
-        the natural budget stop reason. This synthetic campaign is
-        Codex-contract, so semantic replay must refuse the converted marker
-        here: the marker belongs to the Claude contract whose adapter can raise
-        the fault, which is exactly what the refusal asserts.
-        """
-        limit = self.lock.document["resolved_inputs"]["budget"]["limit"]
+    def test_search_checkpoint_cannot_replace_missing_terminal_confirmation(self):
+        """A provider boundary failure now precedes any independent confirmation."""
+        limit = self.lock.document['resolved_inputs']['budget']['limit']
         campaign, store, events = self.campaign(boundary=True, tokens=limit - 94758)
-        fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
-        self.assertEqual(fault["fault"], "provider_fault")
-        self.assertEqual(fault["exception_type"], "ProviderBoundaryDeclarationFault")
-        self.assertEqual(fault["terminal_provider_tokens"], limit)
-        state = events[-2]["payload"]["ralph"]
-        self.assertEqual(state["terminal_reason"], "provider_token_limit")
-        terminal = events[-1]["payload"]
-        self.assertEqual(terminal["protocol_adherence"], "adhered")
-        self.assertEqual(terminal["boundary_diagnostic"],
-                         {"turn": 2, "stage": "provider",
-                          "diagnostic": "candidate_write_declared_unwitnessed"})
-        self.assertEqual(terminal["endpoint_observation"], "qualified")
-        self.assertFalse(self.lab.audit(campaign).semantic_replay_passed)
+        fault = next(event['payload'] for event in events if event['kind']=='run_fault')
+        self.assertEqual(fault['terminal_provider_tokens'],limit)
+        self.assertEqual(fault['exception_type'],'ProviderBoundaryDeclarationFault')
+        self.assertEqual(events[-2]['payload']['ralph']['terminal_reason'],'provider_fault')
+        terminal = events[-1]['payload']
+        self.assertEqual(terminal['protocol_adherence'],'provider_fault')
+        self.assertEqual(terminal['endpoint_observation'],'missing')
+        self.assertNotIn('boundary_diagnostic',terminal)
+        self.assertFalse(any(e['kind']=='candidate_nominated' for e in events))
+        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
 
     def test_boundary_declaration_without_a_settled_checkpoint_stays_a_fault(self):
         """The declaration check still fails closed with nothing settled."""
@@ -414,7 +427,10 @@ class FailedProviderConsumerTests(unittest.TestCase):
         self.assertEqual(fault["terminal_provider_tokens_scope"], "known_subtotal")
         self.assertNotIn("objects", fault)
         self.assertEqual(events[-2]["payload"]["ralph"]["cumulative_provider_tokens"], 94758)
-        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+        report = self.lab.audit(campaign)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertEqual(report.descriptive['terminal_observations']['open_cake-1']['observed_provider_tokens_scope'],
+                         'known_subtotal')
 
     def test_zero_completed_turn_fault_uses_native_usage_and_independent_replay(self):
         campaign, store, events = self.campaign(fault_turn=1)

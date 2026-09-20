@@ -87,7 +87,9 @@ class CorpusCaseTarget(unittest.TestCase):
         # 151 until the two gfx938 mma cases landed (F-2026-09-17-009), then 153 until
         # the two gfx938 tanh cases, then 155 until the fp32 contraction, then 156 until the tf32 and fp8 ones. The count is pinned so a case cannot appear or
         # vanish without someone saying why; moving it is the saying-why.
-        self.assertEqual(report.case_count, 164)
+        # C550 adds three measured dot modes and two owned negative contracts,
+        # then three FP8 storage/decoder cases and two conversion refusals.
+        self.assertEqual(report.case_count, 174)
 
 
 if __name__ == "__main__":

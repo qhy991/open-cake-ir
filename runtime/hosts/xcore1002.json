@@ -1,0 +1,83 @@
+{
+  "host_environment": {
+    "kind": "maca",
+    "packages": {
+      "flagtree": "0.5.1+metax3.1",
+      "packaging": "26.0",
+      "psutil": "7.2.2",
+      "pybind11": "3.0.2",
+      "setuptools": "82.0.1",
+      "torch": "2.8.0+metax3.5.3.9"
+    },
+    "platform": {
+      "kernel_release": "5.15.0-112-generic",
+      "machine": "x86_64",
+      "system": "Linux"
+    },
+    "python": {
+      "invocation_path": "/opt/conda/bin/python3",
+      "resolved_sha256": "0e4dbf3236310955eaeee14323756b54961e1d0dc12c680c441f50839a67eee0",
+      "version": "3.12.11"
+    },
+    "runtime": {
+      "activity_api_version": 18,
+      "backend": "maca",
+      "build_environment": {
+        "LD_LIBRARY_PATH": "/opt/maca/lib:/opt/maca/mxgpu_llvm/lib",
+        "MACA_CLANG_PATH": "/opt/maca/mxgpu_llvm/bin",
+        "MACA_PATH": "/opt/maca",
+        "PATH": "/opt/conda/bin:/opt/maca/mxgpu_llvm/bin:/usr/bin:/bin"
+      },
+      "torch_maca_version": "3.5.3.9",
+      "triton_version": "3.1.0"
+    },
+    "runtime_libraries": [
+      {
+        "path": "/opt/maca/lib/libmcpti.so",
+        "sha256": "864aea6628fc3a629ec38a863002c557fb3db463d8b0422da6a79b2a13b6038d",
+        "size_bytes": 5154144,
+        "soname": "libmcpti.so"
+      },
+      {
+        "path": "/opt/maca/lib/libmcruntime.so",
+        "sha256": "62fd2491271e89390bc328831a0e9a3862a83e81bb4b3d369c30d54008e602d1",
+        "size_bytes": 70966768,
+        "soname": "libmcruntime.so"
+      }
+    ],
+    "tools": {
+      "build_tools": [
+        {
+          "kind": "bwrap",
+          "path": "/usr/bin/bwrap",
+          "sha256": "bf6cf3d4456665f5d80c14eb79a76e0ce87b39a0883e614a161658b4ec33492c",
+          "size_bytes": 72160,
+          "version": "bubblewrap 0.6.1"
+        },
+        {
+          "kind": "cxx",
+          "path": "/usr/bin/c++",
+          "sha256": "2360901d864cf10bfd6296e261cb2c14053552a80377761ab07146ec9ec9a2c0",
+          "size_bytes": 932680,
+          "version": "c++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0"
+        },
+        {
+          "kind": "mxcc",
+          "path": "/opt/maca/mxgpu_llvm/bin/mxcc",
+          "sha256": "969b89072677de8a0f62df8e3f15b61cd86b8d640e083aa2035fbf4d94ab964b",
+          "size_bytes": 163477264,
+          "version": "mxcc version 1.0.0 (6477545d4d)"
+        },
+        {
+          "kind": "sh",
+          "path": "/usr/bin/sh",
+          "sha256": "4f291296e89b784cd35479fca606f228126e3641f5bcaee68dee36583d7c9483",
+          "size_bytes": 125688,
+          "version": "POSIX-sh"
+        }
+      ]
+    }
+  },
+  "schema_version": 1,
+  "target": "xcore1002"
+}
