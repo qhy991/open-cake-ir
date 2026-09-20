@@ -8,8 +8,8 @@ Paths below are relative to `src/open_cake_ir/` unless they start with `tests/`,
 Follow [Development branches](docs/DEVELOPMENT_BRANCHES.md), the canonical owner of the
 five maintained branches, task naming, shared-code routing, integration and synchronization.
 New work uses `task/<platform-or-core>-<subject>` without a `codex/` prefix and its own
-worktree. Inspect existing worktrees before editing; preserve legacy branches and active
-checkouts. Merged task branches are removed from GitHub; archive tags retain historical
+worktree. Inspect existing worktrees before editing; preserve other tasks' local branches
+and active checkouts. Merged task branches are removed from GitHub; archive tags retain historical
 work outside the five maintained branches. A platform branch is a maintenance boundary,
 not a fork of the shared Compiler.
 
