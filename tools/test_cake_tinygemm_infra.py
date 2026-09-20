@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import sys
@@ -83,7 +84,9 @@ def qualify(output, compiler, torch):
                 rows.append(row)
                 # Whole outputs are retained for independent replay, including failures.
                 (folder / f'{case_id}-s{stages}.json').write_text(json.dumps(
-                    {'expected': expected, 'observed': observed, 'metrics': metrics}, allow_nan=False) + '\n')
+                    {'expected': expected,
+                     'observed': {'out': [v if math.isfinite(v) else str(v) for v in observed['out']]},
+                     'nonfinite_encoding': 'nan/inf/-inf strings', 'metrics': metrics}, allow_nan=False) + '\n')
                 (output / 'progress.json').write_text(json.dumps(rows, indent=2) + '\n')
                 print(shape['id'], case_id, stages, metrics, flush=True)
     return rows
