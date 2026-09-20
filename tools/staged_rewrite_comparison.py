@@ -9,6 +9,7 @@ import json
 import math
 import os
 from pathlib import Path
+import shutil
 import struct
 import sys
 import traceback
@@ -33,6 +34,7 @@ EDGES = (('optimized','external'),('starter','external'),('optimized','starter')
 ROLES = ('external','starter','optimized')
 WIDTHS = {'bf16':2,'fp16':2,'fp32':4,'int32':4}
 TORCH_DTYPES = {'bf16':'torch.bfloat16','fp16':'torch.float16','fp32':'torch.float32','int32':'torch.int32'}
+INPUT_REFERENCES = 'first_input_reference_v1'
 
 
 def observation_plan(workload, protocol):
@@ -71,10 +73,96 @@ def decode_values(payload, dtype):
     return array('d',values)
 
 
+def snapshot_storage_budget(workload, protocol):
+    """Bound successful storage plus one complete unexpected literal snapshot.
+
+    Valid inputs repeat per case. Every output remains a literal. Changed inputs
+    may use the extra allowance; exceeding it leaves incomplete capture evidence,
+    never an accepted numerical/timing result or unbounded shared-disk growth.
+    """
+    seen = set();compact = raw = largest = cache = decoded_cache = 0
+    for row in observation_plan(workload,protocol):
+        size = 0
+        for arg in workload.tensor_abi(row['case']):
+            extent = math.prod(arg.shape)*WIDTHS[arg.dtype]
+            size += extent
+            if arg.mode == 'input':
+                key = row['case'],arg.name
+                compact += row['count']  # One L/R tag per input observation.
+                if key not in seen:
+                    compact += extent;cache += extent
+                    decoded_cache += math.prod(arg.shape)*8
+                    seen.add(key)
+            else:compact += row['count']*extent
+        raw += row['count']*size;largest = max(largest,size)
+    return {'encoding':INPUT_REFERENCES,'raw_bytes':raw,
+            'unchanged_input_bytes':compact,'byte_limit':compact+largest,
+            'first_input_cache_bytes':cache,'decoded_input_cache_bytes':decoded_cache}
+
+
+class SnapshotEncoder:
+    """Lossless input references; bounded first-value cache, no output deduplication."""
+    def __init__(self, stream, workload, byte_limit):
+        self.stream,self.workload,self.byte_limit = stream,workload,byte_limit
+        self.inputs = {};self.bytes_written = 0;self.count = 0
+
+    def write(self, payload):
+        if self.bytes_written+len(payload)>self.byte_limit:
+            raise OSError('snapshot storage budget exceeded; capture is incomplete')
+        if self.stream.write(payload) != len(payload):raise OSError('short snapshot write')
+        self.bytes_written += len(payload)
+
+    def append(self, case, payloads):
+        for arg,payload in zip(self.workload.tensor_abi(case),payloads,strict=True):
+            if len(payload)!=math.prod(arg.shape)*WIDTHS[arg.dtype]:
+                raise ValueError('snapshot tensor byte extent differs')
+            if arg.mode=='input':
+                key = case,arg.name
+                # This byte comparison encodes an observed tensor. It is not an
+                # oracle verdict: CPU replay still checks every input and output.
+                if key in self.inputs and payload==self.inputs[key]:
+                    self.write(b'R');continue
+                self.write(b'L')
+                if key not in self.inputs:self.inputs[key] = payload
+            self.write(payload)
+        self.count += 1
+
+
+class SnapshotReader:
+    def __init__(self, stream, workload, encoding=None):
+        if encoding not in (None,INPUT_REFERENCES):raise ValueError('unknown snapshot encoding')
+        self.stream,self.workload,self.encoding = stream,workload,encoding
+        self.inputs = {}
+
+    def read(self, case):
+        if self.encoding is None:return read_snapshot(self.stream,self.workload,case)
+        before,observed = {},{}
+        for arg in self.workload.tensor_abi(case):
+            key = case,arg.name
+            if arg.mode=='input':
+                tag = self.stream.read(1)
+                if tag==b'R':
+                    if key not in self.inputs:raise ValueError('input reference precedes its literal')
+                    before[arg.name] = self.inputs[key];continue
+                if tag!=b'L':raise ValueError('invalid or truncated input snapshot tag')
+            size = math.prod(arg.shape)*WIDTHS[arg.dtype]
+            payload = self.stream.read(size)
+            if len(payload)!=size:raise ValueError('snapshot stream is truncated')
+            values = decode_values(payload,arg.dtype)
+            if arg.mode=='input':
+                before[arg.name] = values
+                if key not in self.inputs:self.inputs[key] = values
+            else:observed[arg.name] = list(values)
+        return observed,before
+
+
 class SnapshotWriter:
-    def __init__(self, stream, workload):
-        self.stream,self.workload = stream,workload
-        self.count = 0
+    def __init__(self, stream, workload, byte_limit):
+        self.workload = workload
+        self.encoder = SnapshotEncoder(stream,workload,byte_limit)
+
+    @property
+    def count(self):return self.encoder.count
 
     def append(self, arguments, case):
         abi = self.workload.tensor_abi(case)
@@ -82,16 +170,17 @@ class SnapshotWriter:
             tensors = [arguments['inputs'][arg.name] if arg.mode=='input' else arguments['result'] for arg in abi]
         else:
             tensors = arguments
-        for arg,value in zip(abi,tensors,strict=True):
-            if (tuple(value.shape) != arg.shape or str(value.dtype) != TORCH_DTYPES[arg.dtype]
-                    or not value.is_contiguous()):
-                raise ValueError('captured tensor ABI differs')
-            host = value.detach().to(device='cpu').contiguous()
-            size = math.prod(arg.shape)*WIDTHS[arg.dtype]
-            if host.numel()*host.element_size() != size:
-                raise ValueError('captured tensor byte extent differs')
-            self.stream.write(ctypes.string_at(host.data_ptr(),size))
-        self.count += 1
+        def payloads():
+            for arg,value in zip(abi,tensors,strict=True):
+                if (tuple(value.shape) != arg.shape or str(value.dtype) != TORCH_DTYPES[arg.dtype]
+                        or not value.is_contiguous()):
+                    raise ValueError('captured tensor ABI differs')
+                host = value.detach().to(device='cpu').contiguous()
+                size = math.prod(arg.shape)*WIDTHS[arg.dtype]
+                if host.numel()*host.element_size() != size:
+                    raise ValueError('captured tensor byte extent differs')
+                yield ctypes.string_at(host.data_ptr(),size)
+        self.encoder.append(case,payloads())
 
 
 def read_snapshot(stream, workload, case):
@@ -123,7 +212,8 @@ def prepare(root,output,workload):
     load_participants(root,workload)
     prepare_cases(workload,output)
     spec,_,_,_ = reference_spec(root)
-    metadata = {'torch':torch.__version__,'native_library':None,'reference':spec}
+    metadata = {'torch':torch.__version__,'native_library':None,'reference':spec,
+                'snapshot_storage':snapshot_storage_budget(workload,paired_protocol(evaluation_policy(workload)))}
     if spec['kind'] == 'cuda_cpp':
         report = {'roles':{}}
         load_reference(root,output,report,1)
@@ -147,12 +237,17 @@ def capture(root,output,prepared,workload,commit):
     preparation = json.loads(regular(prepared,'preparation.json').read_text())
     if preparation['torch'] != torch.__version__:raise ValueError('prepared native runtime differs')
     policy = evaluation_policy(workload);protocol = paired_protocol(policy)
+    storage = snapshot_storage_budget(workload,protocol)
+    if preparation.get('snapshot_storage') != storage:raise ValueError('prepared snapshot budget differs')
+    if shutil.disk_usage(output).free < storage['byte_limit']:
+        raise OSError('insufficient storage for the complete snapshot budget')
     candidates,manifests = load_participants(root,workload)
     report = {'scope':'staged_sealed_three_way_comparison','judge_commit':commit,
         'input':json.loads(regular(root,'comparison.json').read_text()),
         'workload_sha256':workload.canonical_sha256,'byteorder':sys.byteorder,
         'participants':{role:candidate_identity(value) for role,value in candidates.items()},
         'evaluation_protocol':policy,'groups':[],'capture_complete':False,
+        'snapshot_encoding':INPUT_REFERENCES,
         'roles':{'optimized':'sealed confirmed Cake candidate','starter':'sealed original Cake starter',
                  'external':'unchanged supplied external implementation'}}
     report['roles'] = comparison_roles(report['input'])
@@ -174,7 +269,7 @@ def capture(root,output,prepared,workload,commit):
                 cached_output=report['reference'].get('cached_output',False))
         assay = StrictCuptiBenchmark(timer)
         with (output/'snapshots.bin').open('xb') as stream:
-            writer = SnapshotWriter(stream,workload)
+            writer = SnapshotWriter(stream,workload,storage['byte_limit'])
             for observation in observation_plan(workload,protocol):
                 role,case = observation['role'],observation['case']
                 obj = loaded[role,case]
@@ -196,6 +291,7 @@ def capture(root,output,prepared,workload,commit):
                 for arguments_ in arguments:writer.append(arguments_,case)
                 report['groups'].append(group)
             report['snapshot_count'] = writer.count
+            report['snapshot_bytes'] = writer.encoder.bytes_written
         report['compiled_resources'] = {role:loaded[role,'primary'].loaded.resources for role in ('optimized','starter')}
         report['capture_complete'] = True
         write(output/'capture.json',report)
@@ -240,12 +336,13 @@ def verify(root,output,prepared,captured,workload):
                 for i,order in enumerate(protocol.pair_order)]}
     all_correct = True
     with regular(captured,'snapshots.bin').open('rb') as stream:
+        reader = SnapshotReader(stream,workload,raw.get('snapshot_encoding'))
         for row in raw['groups']:
             observation = row['observation'];case = observation['case']
             check = {'checked_launches':observation['count'],'passed':True,'output_mismatches':0,
                      'max_abs_error':0.0,'inputs_unchanged':True}
             for _ in range(observation['count']):
-                observed,after = read_snapshot(stream,workload,case)
+                observed,after = reader.read(case)
                 correct,metrics = compare_tile_outputs(workload,cases[case],expected[case],observed,after)
                 check['passed'] &= correct
                 check['output_mismatches'] += metrics['output_mismatches']
