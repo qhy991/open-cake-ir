@@ -109,7 +109,7 @@ class AkaTaskLaunchTests(unittest.TestCase):
             for task in (launch_task.ADD_RMSNORM_TASK, *aka.LAUNCHABLE_TASKS):
                 args = ["--task", task, "--backend", "triton-gfx1151", "--harness", "codex",
                         "--model", "not-invoked", "--effort", "high", "--baseline-only",
-                        "--workspace", str(Path(directory) / task)]
+                        "--workspace", str(Path(directory).resolve() / task)]
                 with self.subTest(task=task), patch.object(
                     launch_task, "_admit_stack", side_effect=RuntimeError("stack boundary")
                 ), self.assertRaisesRegex(RuntimeError, "stack boundary"):
@@ -120,7 +120,7 @@ class AkaTaskLaunchTests(unittest.TestCase):
             for task in (launch_task.ADD_RMSNORM_TASK, *aka.LAUNCHABLE_TASKS):
                 args = ["--task", task, "--backend", "triton-gfx1151", "--harness", "codex",
                         "--model", "not-invoked", "--effort", "high",
-                        "--workspace-root", str(Path(directory) / task)]
+                        "--workspace-root", str(Path(directory).resolve() / task)]
                 with self.subTest(task=task), patch.object(
                     launch_task_matrix.subprocess, "run", side_effect=RuntimeError("baseline boundary")
                 ), self.assertRaisesRegex(RuntimeError, "baseline boundary"):
