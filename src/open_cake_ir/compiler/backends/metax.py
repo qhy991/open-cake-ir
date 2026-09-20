@@ -1,12 +1,12 @@
 """The bounded MACA capability checks used by the shared Triton emitter."""
 
 from ..diagnostics import Finding
-from ..ir import DType, Schedule
+from ..ir import DType, OperationKind, Schedule
 from ..target import Target
 from .common import refusal
 
 
-_BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32})
+_BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
@@ -15,8 +15,37 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
         if buffer.dtype not in _BUFFER_DTYPES:
             findings.append(refusal(
                 "MACA_DTYPE_UNQUALIFIED", f"buffers[{index}].dtype",
-                "this MACA route admits FP32, FP16, BF16 and INT32 buffers; "
+                "this MACA route admits FP32, FP16, BF16, INT32 and E4M3FN buffers; "
                 "other tensor representations require their own device qualification",
+            ))
+    for index, operation in enumerate(schedule.operations):
+        operands = [schedule.buffer(name) for name in (*operation.reads, *operation.writes)]
+        if not any(buffer is not None and buffer.dtype is DType.FP8_E4M3 for buffer in operands):
+            continue
+        path = f"operations[{index}]"
+        if operation.kind is OperationKind.CAST:
+            source = schedule.buffer(operation.reads[0]) if operation.reads else None
+            # The complete E4M3FN decoding domain is measured. The inverse
+            # diagnostic covers finite points only, so it cannot admit arbitrary
+            # FP32 values or a different destination format here.
+            if (source is None or source.dtype is not DType.FP8_E4M3
+                    or operation.parameters.to not in (DType.FP16, DType.FP32)):
+                findings.append(refusal(
+                    "MACA_FP8_CAST_UNQUALIFIED", path,
+                    "the MACA FP8 cast route admits E4M3FN to FP16 or FP32 only; "
+                    "other conversion directions have no complete device contract",
+                ))
+            elif source.is_scalar:
+                findings.append(refusal(
+                    "MACA_FP8_SCALAR_CAST_UNSUPPORTED", path,
+                    "the captured MACA compiler asserts on scalar FP8 conversion; "
+                    "this route requires a non-scalar FP8 tile before casting",
+                ))
+        elif operation.kind not in (OperationKind.LOAD, OperationKind.STORE):
+            findings.append(refusal(
+                "MACA_FP8_OPERATION_UNQUALIFIED", path,
+                "the MACA E4M3FN route admits load, store and decoded FP16/FP32 arithmetic; "
+                "arithmetic directly on FP8 values requires separate qualification",
             ))
     if schedule.residency is not None and schedule.residency.registers_per_thread is not None:
         findings.append(refusal(
