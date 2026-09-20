@@ -28,4 +28,16 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             "MACA_WARP_SPECIALIZATION_UNSUPPORTED", "tile_loops",
             "the admitted MACA Triton version has no qualified warp-specialization route",
         ))
+    # The captured MACA Triton 3.1 range accepts num_stages only. These options
+    # would otherwise reach its JIT as unknown keywords; dropping them would
+    # silently change the authored Schedule's performance commitments.
+    for index, loop in enumerate(schedule.tile_loops):
+        for name, default in (("loop_unroll_factor", 1), ("flatten", False),
+                              ("disallow_acc_multi_buffer", False), ("disable_licm", False)):
+            if getattr(loop.range_options, name) != default:
+                findings.append(refusal(
+                    "MACA_LOOP_OPTION_UNSUPPORTED", f"tile_loops[{index}].range_options.{name}",
+                    f"the admitted MACA Triton range does not support {name}; "
+                    "the backend does not discard a declared loop option",
+                ))
     return tuple(findings)
