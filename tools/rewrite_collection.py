@@ -105,6 +105,7 @@ def prepare_batch(profile_path, workspace, run_root, ids=None):
         kernel_experiment.prepare(config_path, path)
         with (path / 'scaffold.md').open('a') as stream:
             stream.write(AUTHORING.format(**row))
+            stream.write('\n\n' + (PACK / 'AUTHORING.md').read_text())
         manifest['tasks'].append({'id': row['id'], 'cell_id': config['cells'][0]['id']})
     kernel_experiment.write(workspace / 'manifest.json', json.dumps(manifest, indent=2) + '\n')
     return manifest
