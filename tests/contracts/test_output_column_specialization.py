@@ -210,6 +210,7 @@ class OutputColumnSpecializationTests(unittest.TestCase):
             document = wide_document(columns=columns)
             before = deepcopy(document)
             assessment = self.compiler.assess(document)
+            self.assertTrue(assessment.accepted)
             self.assertFalse(assessment.lowering_eligible)
             self.assertEqual({f.code for f in assessment.findings
                               if f.blocks_lowering or f.blocks_acceptance}, {'METAL_PRIVATE_STORAGE_LIMIT'})
