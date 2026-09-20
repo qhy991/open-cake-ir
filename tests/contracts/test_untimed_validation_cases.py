@@ -34,7 +34,7 @@ class UntimedValidationCases(unittest.TestCase):
     def test_a_nonprimary_failure_rejects_the_whole_candidate(self):
         closed, cases = [], []
         def loaded(*args):
-            return SimpleNamespace(loaded=SimpleNamespace(launch_calls=1, resources={}),
+            return SimpleNamespace(module_count=1, loaded=SimpleNamespace(launch_calls=1, resources={}),
                                    close=lambda: closed.append(True))
         def evaluate(candidate, workload, protocol, launcher):
             cases.append(protocol.case_id)
@@ -80,7 +80,7 @@ class UntimedValidationCases(unittest.TestCase):
         self.authority.case_id = "primary"
         self.authority.request = {"purpose": "attribution",
             "evaluation_protocol": evaluation_policy(self.authority.workload)}
-        loaded = SimpleNamespace(loaded=SimpleNamespace(launch_calls=1, resources={}), close=Mock())
+        loaded = SimpleNamespace(module_count=1, loaded=SimpleNamespace(launch_calls=1, resources={}), close=Mock())
         receipt = SimpleNamespace(correctness_passed=True, correctness={
             "output_mismatches": 0, "max_abs_error": 0.0, "inputs_unchanged": True})
         admission = CudaDeviceAdmission("NVIDIA B300", (10, 3), "GPU-synthetic",
