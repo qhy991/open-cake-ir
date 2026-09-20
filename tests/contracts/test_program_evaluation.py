@@ -160,8 +160,8 @@ class ProgramEvaluationTests(unittest.TestCase):
         self.assertEqual(work, {'candidate': {'modules':1,'kernels':1}, 'baseline': {'modules':2,'kernels':2}})
 
     def test_single_stage_program_preserves_each_target_kernel_build_and_public_abi(self):
+        from open_cake_ir.compiler.toolchain import TritonCompilation, triton_route
         from open_cake_ir.evaluation.artifacts import required_build_roles
-        from open_cake_ir.evaluation.core import TensorLaunchManifest
         from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
         from open_cake_ir.evaluation.workload import WorkloadContract
         from open_cake_ir.tasks.devices import BACKENDS
@@ -173,6 +173,24 @@ class ProgramEvaluationTests(unittest.TestCase):
                 schedule = frontend.parse(source).document
                 program = Program.from_schedule(schedule)
                 requests = []
+                class NativeCompiler:
+                    def compile(self,source,requirements):
+                        route = triton_route(requirements)
+                        artifacts = {role:b'CPU compilation fixture; not executable' for role in route.artifact_roles}
+                        artifacts['source'] = source
+                        count = len(requirements['signature'])
+                        if route.gpu_backend=='hip':
+                            entries = '\n'.join('      - .address_space: global\n'
+                                f'        .offset: {index*8}\n        .size: 8\n'
+                                '        .value_kind: global_buffer' for index in range(count))
+                            artifacts['amdgcn'] = ('\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n'
+                                f'{entries}\n    .kernarg_segment_size: {count*8}\n    .name: k\n...\n'
+                                '\t.end_amdgpu_metadata\n').encode()
+                        elif route.gpu_backend=='maca':
+                            parameters = ', '.join(f'%arg{index}: !tt.ptr<f32> ' for index in range(count))
+                            artifacts['ttgir'] = f'tt.func public @k({parameters}) attributes {{}}'.encode()
+                        return TritonCompilation(source,requirements['target'],requirements['kernel_entry_point'],artifacts,
+                            requirements['compile_options']['num_warps']*requirements['warp_size'],0,'CPU fixture',route.code_object.value)
                 class KernelBuilder:
                     # Deliberately only the existing single-kernel interface.
                     def build(self,request):
@@ -184,10 +202,10 @@ class ProgramEvaluationTests(unittest.TestCase):
                                 block=requirements['threads_per_threadgroup'],
                                 threadgroup_memory_bytes=requirements['threadgroup_memory_bytes'])
                         else:
-                            manifest = TensorLaunchManifest.for_workload(workload,'primary',target=request.target,
-                                kernel_name=requirements['kernel_entry_point'],grid=requirements['grid'],
-                                block=[requirements['compile_options']['num_warps']*requirements['warp_size'],1,1],
-                                dynamic_shared_memory_bytes=0,hidden_null_pointer_parameters=0)
+                            # Exercise the actual shared builder and all target-specific
+                            # ABI inspectors/sealers, with only compilation substituted.
+                            return TritonToolchainBuilder(workload=workload,case_id='primary',
+                                isolated_compiler=NativeCompiler()).build(request)
                         payloads = {role:b'CPU ABI fixture; not executable' for role in required_build_roles(request.target)}
                         payloads.update(lowered_source=request.source,launch_manifest=canonical_json_bytes(manifest.as_dict()))
                         return LaunchableCandidate(request.candidate_sha256,request.target,manifest.kernel_name,
@@ -204,6 +222,8 @@ class ProgramEvaluationTests(unittest.TestCase):
                     tuple((row.name,row.shape,row.dtype,row.mode) for row in workload.tensor_abi('primary')))
                 self.assertEqual(requests[0].target,program.target)
                 self.assertEqual(requests[0].source,self.compiler.lower_program(program).lowerings[0].source.encode())
+                replayed = replay_program_candidate(self.compiler,program,result.launchable,result.launchable.artifact_payloads)
+                self.assertEqual(replayed.canonical_sha256,result.launchable.canonical_sha256)
 
     def test_single_stage_projection_does_not_erase_a_public_binding(self):
         from open_cake_ir.evaluation.program import single_kernel_lowering

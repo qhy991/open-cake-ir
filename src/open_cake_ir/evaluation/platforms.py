@@ -104,7 +104,7 @@ _ROWS = (
         build_roles=frozenset({"compiler_expanded_source", "amdgcn", "hsaco", "launch_manifest"}),
         allowed_artifact_roles=frozenset({
             "authored_source", "lowered_source", "compiler_expanded_source", "ttir", "ttgir",
-            "llir", "amdgcn", "hsaco", "toolchain_resource_report", "launch_manifest", "kernel_bundle",
+            "llir", "amdgcn", "hsaco", "toolchain_resource_report", "launch_manifest", "kernel_bundle", "stage_compilation",
         }),
         launch_abi="workload_tensors_v1",
         measurement_source="hip_dispatch",
@@ -122,7 +122,7 @@ _ROWS = (
         build_roles=frozenset({"compiler_expanded_source", "ttir", "ttgir", "mcfatbin", "launch_manifest"}),
         allowed_artifact_roles=frozenset({
             "authored_source", "lowered_source", "compiler_expanded_source", "ttir", "ttgir",
-            "mcfatbin", "launch_manifest", "kernel_bundle",
+            "mcfatbin", "launch_manifest", "kernel_bundle", "stage_compilation",
         }),
         launch_abi="workload_tensors_v1",
         measurement_source=None,
