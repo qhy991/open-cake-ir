@@ -2104,7 +2104,7 @@
       "version": "compiler/judge 5b85e313",
       "locator": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-425a55c43e72/stages/verify/comparison-report.json",
       "note": "This edge fails the original CV quality gate; displayed latencies are descriptive only, with no qualified speedup. Other external edges in this 007 run fail quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.",
-      "ratio_kind": "paired",
+      "ratio_kind": "descriptive_quality_failed",
       "history": []
     },
     {
@@ -2144,7 +2144,7 @@
       "version": "compiler/judge 5b85e313",
       "locator": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-3f37f1636a9b/stages/verify/comparison-report.json",
       "note": "This edge fails the original CV quality gate; displayed latencies are descriptive only, with no qualified speedup. Other external edges in this 007 run fail quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.",
-      "ratio_kind": "paired",
+      "ratio_kind": "descriptive_quality_failed",
       "history": []
     },
     {

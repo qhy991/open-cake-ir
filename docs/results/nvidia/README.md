@@ -1184,7 +1184,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 **B300 / GEMM work assignment · 007_gemm_n4096_k4096 / width-w4** — 2026-09-21 / Correct; measurement_quality_failed
 
 - Workload：`M=1, N=4096, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
-- 基线：Supplied cuBLASLt/at::mm CUDA selector；比值口径：`paired`。
+- 基线：Supplied cuBLASLt/at::mm CUDA selector；比值口径：`descriptive_quality_failed`。
 - 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-425a55c43e72/stages/verify/comparison-report.json`。
 - This edge fails the original CV quality gate; displayed latencies are descriptive only, with no qualified speedup. Other external edges in this 007 run fail quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
@@ -1204,7 +1204,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 **B300 / GEMM work assignment · 007_gemm_n4096_k4096 / width-w8** — 2026-09-21 / Correct; measurement_quality_failed
 
 - Workload：`M=1, N=4096, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
-- 基线：Supplied cuBLASLt/at::mm CUDA selector；比值口径：`paired`。
+- 基线：Supplied cuBLASLt/at::mm CUDA selector；比值口径：`descriptive_quality_failed`。
 - 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-3f37f1636a9b/stages/verify/comparison-report.json`。
 - This edge fails the original CV quality gate; displayed latencies are descriptive only, with no qualified speedup. Other external edges in this 007 run fail quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
