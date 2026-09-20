@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.evaluation.core import EvaluationReceipt
+from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission
 from open_cake_ir.evaluation.triton_metax import MetaxDeviceAdmission
 from open_cake_ir.tasks import evaluate as worker
 from open_cake_ir.tasks.normalization.study import evaluation_policy
@@ -72,3 +73,27 @@ class UntimedValidationCases(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "validation cases differ"):
                 worker._evaluate_untimed_validation_cases(self.authority, self.result, self.admission)
             loaded.assert_not_called()
+
+    def test_ncu_child_keeps_one_confirmatory_check_and_its_two_artifact_handoff(self):
+        document, _ = create_task("rmsnorm", backend="triton-b300", rows=2, columns=128)
+        self.authority.workload = WorkloadContract(document)
+        self.authority.case_id = "primary"
+        self.authority.request = {"purpose": "attribution",
+            "evaluation_protocol": evaluation_policy(self.authority.workload)}
+        loaded = SimpleNamespace(loaded=SimpleNamespace(launch_calls=1, resources={}), close=Mock())
+        receipt = SimpleNamespace(correctness_passed=True, correctness={
+            "output_mismatches": 0, "max_abs_error": 0.0, "inputs_unchanged": True})
+        admission = CudaDeviceAdmission("NVIDIA B300", (10, 3), "GPU-synthetic",
+                                        "gpuq-123456789abc", "exclusive")
+        with patch.object(worker, "LoadedTorchTensorCandidate", return_value=loaded), \
+             patch.object(worker, "materialize_case", return_value={}), \
+             patch.object(worker, "evaluate_tile_workload", return_value=receipt) as evaluate, \
+             patch.object(worker, "evaluate_tile_validation_case") as all_cases:
+            worker._evaluate_tile_candidate(self.authority, self.result, None, admission,
+                                            False, route_calls_per_cohort=42)
+        all_cases.assert_not_called()
+        evaluate.assert_called_once()
+        self.assertEqual(evaluate.call_args.args[2].purpose, "confirmatory")
+        self.assertEqual(set(self.result["receipt"]["artifacts"]),
+                         {"correctness_output", "launch_receipt"})
+        self.assertFalse((self.authority.request_root / "timing-samples.json").exists())

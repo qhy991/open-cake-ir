@@ -503,7 +503,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     """
     if collect_timing and benchmark is None:
         raise ValueError("a timed tile evaluation requires its timing source")
-    if (not collect_timing and profile_source is None
+    if (not collect_timing and profile_source is None and authority.request["purpose"] != "attribution"
             and "validation_case_ids" in authority.request["evaluation_protocol"]):
         return _evaluate_untimed_validation_cases(authority, result, admission)
     inputs = materialize_case(authority.workload, authority.case_id)
@@ -614,7 +614,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
             artifacts['timing_samples'] = timing_path.name
-        elif profile_source is None:
+        elif profile_source is None and authority.request["purpose"] != "attribution":
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, None)
             artifacts['timing_samples'] = timing_path.name
