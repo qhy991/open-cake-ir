@@ -33,6 +33,7 @@ class AlignmentVariants(unittest.TestCase):
                 label = b'aligned' if requirements.get('pointer_alignments') else b'generic'
                 route = triton_route(requirements)
                 artifacts = {role: b'fixture-' + role.encode() + label for role in route.artifact_roles}
+                artifacts['cubin'] = b'\x7fELF' + artifacts['cubin']
                 artifacts['source'] = source
                 return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'],
                     artifacts, requirements['compile_options']['num_warps'] * 32,

@@ -106,11 +106,10 @@ class LaunchableCandidate:
             "artifact_payloads",
             MappingProxyType(dict(self.artifact_payloads)),
         )
-        if self.artifact_payloads and 'launch_manifest' in self.artifact_payloads:
+        if 'kernel_bundle' in self.artifact_payloads:
             document = json.loads(self.artifact_payloads['launch_manifest'])
-            if 'kernel_bundle' in self.artifact_payloads or document.get('aligned_variant'):
-                from .kernel_bundle import alignment_component
-                alignment_component(self, TensorLaunchManifest.from_dict(document))
+            from .kernel_bundle import alignment_component
+            alignment_component(self, TensorLaunchManifest.from_dict(document))
 
     @property
     def canonical_sha256(self) -> str:
