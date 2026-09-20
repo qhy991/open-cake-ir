@@ -1,7 +1,7 @@
 """Typed ordered launches retain dependencies and keep task mathematics in kernels."""
 from copy import deepcopy
 from pathlib import Path
-from types import SimpleNamespace
+from dataclasses import replace
 import unittest
 
 from open_cake_ir.compiler import Compiler
@@ -44,8 +44,7 @@ class OrderedLaunchPlanTests(unittest.TestCase):
                 order.append(name)
                 out[:] = [v+1 for v in x]
             return kernel
-        compiled = LoweredProgram(plan, 'fixture', tuple(
-            SimpleNamespace(target='sm_103a',generated=True) for _ in plan.stages))
+        compiled = Compiler.load(ROOT, ROOT/'compiler/revision.json').lower_program(plan)
         prepared = prepare_program(compiled, {'x':[1,2,3,4]}, allocate=lambda n,s:[None]*4,
                                     load_kernel=load, check_tensor=lambda tensor,spec:None,
                                     storage_span=lambda tensor:('fixture',id(tensor)*1000,id(tensor)*1000+16),
@@ -56,8 +55,7 @@ class OrderedLaunchPlanTests(unittest.TestCase):
 
     def test_distinct_views_with_overlapping_storage_are_refused(self):
         plan=Program.from_dict(document())
-        compiled=LoweredProgram(plan,'fixture',tuple(
-            SimpleNamespace(target='sm_103a',generated=True) for _ in plan.stages))
+        compiled = Compiler.load(ROOT, ROOT/'compiler/revision.json').lower_program(plan)
         with self.assertRaisesRegex(ValueError,'overlaps'):
             prepare_program(compiled, {'x':[1,2,3,4]}, allocate=lambda n,s:[None]*4,
                 check_tensor=lambda t,s:None, storage_span=lambda t:('same-device',1000,1016),

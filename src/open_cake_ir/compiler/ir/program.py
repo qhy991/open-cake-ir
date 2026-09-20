@@ -52,7 +52,6 @@ class Program:
     inputs: tuple[str, ...]
     outputs: tuple[str, ...]
     stages: tuple[ProgramStage, ...]
-    document_bytes: bytes
 
     @classmethod
     def from_dict(cls, document):
@@ -152,7 +151,7 @@ class Program:
         if not intermediates <= producers & consumed:
             raise ValueError('program intermediates require a producer and a consumer')
         return cls(document['program_id'], document['target'], MappingProxyType(tensors),
-                   io['inputs'], io['outputs'], tuple(stages), canonical_json_bytes(document))
+                   io['inputs'], io['outputs'], tuple(stages))
 
     @property
     def allocated_bytes(self):
@@ -162,7 +161,21 @@ class Program:
     @property
     def document(self) -> dict:
         """A fresh projection, not mutable Program authority."""
-        return json.loads(self.document_bytes)
+        return {
+            'schema_version': 1, 'program_id': self.program_id, 'target': self.target,
+            'tensors': {name: {'shape': list(tensor.shape), 'dtype': tensor.dtype.value}
+                        for name, tensor in self.tensors.items()},
+            'inputs': list(self.inputs), 'outputs': list(self.outputs),
+            'stages': [{'name': stage.name, 'schedule': json.loads(stage.schedule_bytes),
+                        'bindings': {name: {'tensor': binding.tensor, 'view': 'singleton_axes'}
+                                     if binding.singleton_view else binding.tensor
+                                     for name, binding in stage.bindings.items()}}
+                       for stage in self.stages],
+        }
+
+    @property
+    def document_bytes(self) -> bytes:
+        return canonical_json_bytes(self.document)
 
     @classmethod
     def from_schedule(cls, document: Mapping) -> Program:

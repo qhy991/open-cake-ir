@@ -1,6 +1,6 @@
 """Complete Program proofs and execution boundaries; no device performance claim."""
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 import unittest
 
@@ -94,6 +94,27 @@ class CompleteProgramRewriteTests(unittest.TestCase):
         for name in ('inputs', 'outputs', 'tensors', 'target'):
             self.assertEqual(observed[name], document[name])
 
+    def test_public_typed_input_cannot_bypass_program_legality(self):
+        program = Program.from_dict(scalar_program())
+        changed = replace(program, outputs=('x',))
+        self.assertEqual(changed.document['outputs'], ['x'])
+        with self.assertRaisesRegex(ValueError, 'inputs are immutable'):
+            self.compiler.lower_program(changed)
+        result = self.compiler.rewrite_program(changed, 'specialize_triton_warps',
+            {'stage': 'first', 'num_warps': 2, 'schedule_id': 'wide', 'entry_point': 'wide'})
+        self.assertFalse(result.applied)
+
+    def test_stage_lowering_substitution_is_rejected_before_device_side_effects(self):
+        compiled = self.compiler.lower_program(Program.from_dict(scalar_program()))
+        for altered in (replace(compiled, lowerings=compiled.lowerings[::-1]),
+                        replace(compiled, compiler_revision_id='unrelated'),
+                        replace(compiled, lowerings=compiled.lowerings[:1])):
+            def forbidden(*args, **kwargs):
+                self.fail('an invalid code binding reached device preparation')
+            with self.assertRaisesRegex(ValueError, 'binding differs|stage count'):
+                prepare_program(altered, {}, allocate=forbidden, load_kernel=forbidden,
+                    check_tensor=forbidden, storage_span=forbidden, execution_context=forbidden)
+
     def test_program_projection_is_immutable_and_single_schedule_is_ergonomic(self):
         schedule = stage('producer')
         program = Program.from_schedule(schedule)
@@ -137,9 +158,7 @@ class ProgramViewTests(unittest.TestCase):
 
     def test_runtime_view_must_preserve_storage_not_make_a_copy(self):
         program = Program.from_dict(self.document())
-        from types import SimpleNamespace
-        lowered = LoweredProgram(program, 'fixture', tuple(
-            SimpleNamespace(target=program.target, generated=True) for _ in program.stages))
+        lowered = Compiler.load(ROOT, ROOT/'compiler/revision.json').lower_program(program)
         dtype = program.tensors['x'].dtype
         inputs = {'x': Tensor((1, 4, 1), dtype, 100, 16)}
         next_address = iter((200, 300))

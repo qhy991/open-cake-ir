@@ -206,7 +206,7 @@ class ProgramContract:
         # executable graph. Resolve its real singleton views into the common model.
         implementation = Program.from_dict({
             'schema_version': 1, 'program_id': document['program_id'],
-            'target': workload.target, 'inputs': list(public_inputs), 'outputs': list(public_outputs),
+            'target': stage_documents[0]['schedule']['target'], 'inputs': list(public_inputs), 'outputs': list(public_outputs),
             'tensors': {name: {'shape': list(cls._schedule_shape(spec, target_shape, 'identity')),
                                'dtype': spec['dtype']}
                         for name, spec in {**{name: tensors[name] for name in public_inputs + public_outputs},

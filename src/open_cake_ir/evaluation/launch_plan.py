@@ -16,6 +16,7 @@ def prepare_program(lowered: LoweredProgram, inputs: Mapping[str, object], *, al
     load_kernel(stage_name, Lowering) perform platform binding; none supplies math.
     Source modules must be loaded from the exact Lowering the Compiler produced.
     """
+    lowered.validate_binding()
     if set(inputs) != set(lowered.program.inputs):
         raise ValueError('launch plan public input set differs')
     bound_context = execution_context()

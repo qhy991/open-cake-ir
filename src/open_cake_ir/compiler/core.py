@@ -182,6 +182,10 @@ class Compiler:
         return rewrite_program(self, program, transformation, parameters)
 
     def lower_program(self, program):
+        # Public callers can assemble typed fields directly. Reconstruct at this
+        # input boundary; only the resulting validated structure reaches emission.
+        from .ir import Program
+        program = Program.from_dict(program.document)
         if self.commit is None:
             raise ValueError('program compilation requires a clean Compiler commit')
         lowerings = []
