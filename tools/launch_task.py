@@ -28,9 +28,10 @@ from open_cake_ir.lab.build import TritonToolchainBuilder
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder
 from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
 from open_cake_ir.lab.providers import ProviderQualificationReceipt
-from open_cake_ir.tasks.compose import execute_matched_from_config
+from open_cake_ir.tasks.compose import execute_run_from_config
+from open_cake_ir.tasks.preparation import prepare_task_run
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment
-from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, study_template
+from open_cake_ir.tasks.normalization.study import OUTPUT_SCHEMA, canonical, task_run_inputs, _ROUTE_CALLS_PER_COHORT
 from open_cake_ir.tasks.devices import BACKENDS as DEVICE_BACKENDS, admit_cohort_payload
 from open_cake_ir.tasks.aka_v3.workload import LAUNCHABLE_TASKS as AKA_TASKS
 from open_cake_ir.tasks.add_rmsnorm import TASK as ADD_RMSNORM_TASK
@@ -397,11 +398,11 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
                        "service_group": grp.getgrgid(os.getgid()).gr_name}}
 
 
-def _prepare_baseline(root, workspace, compiler, executor, host, workload, study, source,
+def _prepare_baseline(root, workspace, compiler, executor, host, workload, authoring, source,
                       compiler_reference, route="metal"):
     builder = _launch_toolchain(route).baseline_builder(
         root, workspace, executor, host, workload, compiler_reference)
-    environment = TaskOpenCakeEnvironment(compiler, builder, authority_document=study["arms"]["open_cake"],
+    environment = TaskOpenCakeEnvironment(compiler, builder, authority_document=authoring,
                                          workload=workload, case_id="primary", executor=executor)
     submission = CandidateSubmission.seal(environment.media_type, canonical({"python_source": source}))
     result = environment.build(submission)
@@ -502,12 +503,11 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
     return 128 if rows is None else rows, 1024 if columns is None else columns
 
 
-def _campaign_exit_code(report) -> int:
+def _run_exit_code(report) -> int:
     """CLI success describes an intact protocol outcome, including negative results."""
-    valid = (report.campaign_complete and report.archive_integrity_passed
-             and report.filesystem_custody_verified and report.semantic_replay_passed
-             and bool(report.run_audits)
-             and all(audit.protocol_adherence == "adhered" for audit in report.run_audits))
+    audit = report['audit']
+    valid = (audit.archive_integrity and audit.filesystem_custody_verified
+             and report['replay'] and audit.protocol_adherence=='adhered')
     return 0 if valid else 1
 
 
@@ -536,7 +536,7 @@ def main(argv=None) -> int:
                         help="native source-to-artifact compiler entry calls, including failed calls and variants")
     parser.add_argument("--searches-per-turn", type=int, default=2)
     parser.add_argument("--maximum-cv", type=float,
-                        help="cohort CV bound recorded in the Study (default: CUDA 0.15, Metal 0.05)")
+                        help="cohort CV bound recorded in the Run (default: CUDA 0.15, Metal 0.05)")
     parser.add_argument("--required-pair-wins", type=int,
                         help="required wins among ten timing pairs (default: CUDA 9, Metal 6)")
     parser.add_argument("--dispatches-per-sample", type=int,
@@ -565,7 +565,7 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--baseline-only", action="store_true",
                         help="build and seal the baseline, then stop before provider qualification or GPU evaluation")
-    parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Campaign preflight")
+    parser.add_argument("--preflight-only", action="store_true", help="stop after baseline preparation, qualification and Run preflight")
     args = parser.parse_args(argv)
     if (args.kernelctl is None) != (args.infra_socket is None):
         parser.error("--kernelctl and --infra-socket must be supplied together")
@@ -603,16 +603,14 @@ def main(argv=None) -> int:
     # with the campaign's authoring tokens already spent. Check the same arithmetic here.
     if route == "metal":
         admit_cohort_payload(workload, args.case,
-                             study_template.__globals__["_ROUTE_CALLS_PER_COHORT"])
-    study = study_template(ROOT, workload, workload_path, source_path, harness=args.harness,
+                             _ROUTE_CALLS_PER_COHORT)
+    inputs = task_run_inputs(ROOT, workload, workload_path, source_path, harness=args.harness,
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         maximum_compilations=args.max_compilations, confirmation_seconds=args.confirmation_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md)
-    study_path = workspace / "study.json"
-    _write(study_path, canonical(study))
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     # The runtime config binds the provider and the allocator, both of which belong to
     # stages `--baseline-only` stops before; it is written only on the path that reaches
@@ -658,7 +656,7 @@ def main(argv=None) -> int:
             case_id=args.case,
             target=workload.target,
             backend=route,
-            evaluation_protocol=study["evaluation_protocol"],
+            evaluation_protocol=inputs["evaluation_protocol"],
         )
         materialized = (
             registry.materialize(key, workspace / "incumbent-baseline")
@@ -673,7 +671,7 @@ def main(argv=None) -> int:
                 executor,
                 host,
                 workload,
-                study,
+                inputs['authoring'],
                 source,
                 compiler_reference,
                 route,
@@ -700,7 +698,7 @@ def main(argv=None) -> int:
             executor,
             host,
             workload,
-            study,
+            inputs['authoring'],
             source,
             compiler_reference,
             route,
@@ -719,7 +717,7 @@ def main(argv=None) -> int:
     validate_pair_candidates(baseline, baseline, workload, args.case)
     admit_baseline_selection(baseline_selection, candidate=candidate_identity(baseline),
                             workload=workload, case_id=args.case, backend=route,
-                            evaluation_protocol=study["evaluation_protocol"])
+                            evaluation_protocol=inputs["evaluation_protocol"])
     if args.baseline_only:
         _write(workspace / "prepared-baseline.json", canonical({
             "schema_version": 1,
@@ -735,24 +733,20 @@ def main(argv=None) -> int:
         raise ValueError("task execution requires an actual live artifact-optimization provider qualification")
     runtime_path = workspace / "runtime.json"
     _write(runtime_path, canonical(runtime))
-    bindings_path = workspace / "execution-bindings.json"
-    _write(bindings_path, canonical({"schema_version": 2, "qualification_path": str(receipt_path),
-        "qualification_anchor_path": str(anchor_path), "runtime_config_path": str(runtime_path),
-        "fixed_baseline_bundle_path": str(baseline_path),
-        "fixed_baseline_selection": baseline_selection}))
-    lock = TaskLab(ROOT).preflight(study_path, execution_bindings_path=bindings_path)
-    _write(workspace / "campaign-lock.json", canonical(lock.document))
+    specification = prepare_task_run(ROOT,inputs,compiler_reference=compiler_reference,executor=executor,
+        qualification_path=receipt_path,qualification_anchor_path=anchor_path,runtime_config_path=runtime_path,
+        baseline_path=baseline_path,baseline_selection=baseline_selection)
+    _write(workspace / "run.json",canonical(specification.document))
     if args.preflight_only:
-        print(workspace / "campaign-lock.json")
+        print(workspace / "run.json")
         return 0
-    campaign = execute_matched_from_config(ROOT, lock, runtime_path, workspace / "campaign-evidence")
-    print(campaign.evidence_root)
-    report = TaskLab(ROOT).audit(campaign)
-    _write(workspace / "report.json", canonical(_json_projection(report)))
-    performance = report.descriptive.get("performance")
-    if performance is not None:
-        print(primary_summary(performance))
-    return _campaign_exit_code(report)
+    run = execute_run_from_config(ROOT,specification,runtime_path,workspace / "run-evidence")
+    print(run.evidence_root)
+    report = TaskLab(ROOT).report_run(run)
+    _write(workspace / "report.json",canonical(_json_projection(report)))
+    print(primary_summary(report['performance']))
+    return _run_exit_code(report)
+
 
 
 if __name__ == "__main__":

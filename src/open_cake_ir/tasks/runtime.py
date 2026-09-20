@@ -97,6 +97,12 @@ class TaskLab(Lab):
         _admit_measurement_coverage(specification)
         _admit_execution_mode(specification)
 
+    def report_run(self,run):
+        from .efficiency import run_performance
+        audit,replay = self.audit_run(run)
+        return {'run_id':run.specification.run_id,'evidence_root':str(run.evidence_root),
+                'audit':audit,'replay':replay,'performance':run_performance(self._root,run,audit,replay)}
+
     def audit(self, campaign):
         policy = performance_reporting_policy(campaign.lock.analysis_plan, campaign.lock.claim_scope)
         report = super().audit(campaign)

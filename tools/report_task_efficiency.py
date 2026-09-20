@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit an opted-in task workspace using its exact source checkout; never backfill a Study."""
+"""Audit a task Run or an opted-in Campaign at its exact source checkout."""
 from __future__ import annotations
 
 import argparse
@@ -21,7 +21,7 @@ def _external_path(path: Path, *, directory: bool = False) -> Path:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, required=True,
-                        help="exact source checkout used by the Campaign; no source fallback")
+                        help="exact source checkout used by the execution; no source fallback")
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--output", type=Path, help="optional new external JSON report; existing files are refused")
     args = parser.parse_args(argv)
@@ -40,13 +40,19 @@ def main(argv=None) -> int:
     from open_cake_ir.lab.contracts import CampaignLock
     from open_cake_ir.lab.efficiency_policy import performance_reporting_policy
     from open_cake_ir.tasks.runtime import TaskLab
-
-    lock = CampaignLock.load(workspace / "campaign-lock.json")
-    if performance_reporting_policy(lock.analysis_plan, lock.claim_scope) is None:
-        raise ValueError("Campaign has no performance_reporting policy; historical backfill is forbidden")
     lab = TaskLab(root)
-    campaign = lab.reference_campaign(lock, workspace / "campaign-evidence")
-    report = lab.audit(campaign)
+    if (workspace/'run.json').exists():
+        if (workspace/'campaign-lock.json').exists():
+            raise ValueError('workspace has two execution authorities; select one original workspace')
+        from open_cake_ir.lab import RunSpecification, RunRef
+        run = RunRef(RunSpecification.load(workspace/'run.json'),workspace/'run-evidence')
+        report = lab.report_run(run)
+    else:
+        lock = CampaignLock.load(workspace / "campaign-lock.json")
+        if performance_reporting_policy(lock.analysis_plan, lock.claim_scope) is None:
+            raise ValueError("Campaign has no performance_reporting policy; historical backfill is forbidden")
+        campaign = lab.reference_campaign(lock, workspace / "campaign-evidence")
+        report = lab.audit(campaign)
     document = _json_projection(report)
     payload = json.dumps(document, sort_keys=True, indent=2, allow_nan=False) + "\n"
     if output is not None:

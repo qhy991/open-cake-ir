@@ -28,6 +28,51 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class MetalPreflightTests(unittest.TestCase):
+    def test_task_preparation_freezes_an_independent_run_without_loading_a_study(self):
+        from open_cake_ir.lab import bindings, StudyContract
+        from open_cake_ir.lab.executor import ExecutorRevision
+        from open_cake_ir.lab.metal_build import MetalArchiveHost
+        from open_cake_ir.tasks.preparation import prepare_task_run
+        from open_cake_ir.tasks.normalization.study import task_run_inputs
+        from open_cake_ir.tasks.workloads import load_workload
+        from tests.contracts._executor_fixture import compiler_reference
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            _,study,executor,receipt,candidate = self.fixture(directory,'claude-code')
+            workload = load_workload(directory/'workload.json')
+            inputs = task_run_inputs(ROOT,workload,directory/'workload.json',directory/'starter.py',
+                harness='claude-code',model='exact-test-model',effort='high',turns=2)
+            executable = directory/'provider';executable.write_bytes(b'CPU provider; not executed')
+            receipt.executable_sha256 = sha256(executable.read_bytes()).hexdigest()
+            runtime = {'schema_version':1,'provider':{'executable':str(executable),'workspace_root':str(directory/'actors')},
+                'toolchain':{'output_root':str(directory/'builds')},
+                'broker':{'command':[str(executable)],'cwd':str(ROOT),'timeout_seconds':30,
+                          'service_user':'fixture','service_group':'fixture'}}
+            runtime_path = directory/'runtime.json';runtime_path.write_bytes(canonical(runtime))
+            baseline_path = directory/'baseline.json';baseline_path.write_text('{}')
+            selection = {'schema_version':1,'policy':'starter_reference','source':'starter_reference',
+                         'incumbent_key':None,'promotion_run_id':None,'registry_root':None}
+            with patch.object(StudyContract,'load',side_effect=AssertionError('ordinary task loaded a Study')), \
+                 patch.object(admission.ProviderQualificationReceipt,'load',return_value=receipt), \
+                 patch.object(ExecutorRevision,'load_reference',return_value=executor), \
+                 patch.object(MetalArchiveHost,'from_executor',return_value=SimpleNamespace(canonical_sha256='1'*64)), \
+                 patch.object(bindings,'broker_execution_sha256',return_value='2'*64), \
+                 patch.object(bindings,'load_baseline_bundle',return_value=candidate), \
+                 patch.object(admission,'load_baseline_bundle',return_value=candidate):
+                def prepare():
+                    return prepare_task_run(ROOT,inputs,compiler_reference=compiler_reference(ROOT),executor=executor,
+                        qualification_path=directory/'receipt-double.json',qualification_anchor_path=directory/'anchor-double.json',
+                        runtime_config_path=runtime_path,baseline_path=baseline_path,baseline_selection=selection)
+                specification = prepare()
+                self.assertIsNone(specification.document['assignment'])
+                self.assertEqual(specification.document['workload']['workload_id'],workload.workload_id)
+                self.assertEqual(specification.document['execution']['fixed_baseline']['selection'],selection)
+                self.assertEqual(specification.document['authoring']['toolchain_sha256'],'1'*64)
+                self.assertNotIn('analysis_plan',specification.document)
+                inputs['evaluation_protocol']['validation_case_ids'].pop()
+                with self.assertRaisesRegex(ValueError,'omits Workload validation'):
+                    prepare()
+
     def fixture(self, directory, harness, *, backend='metal-m1-pro'):
         cuda = backend.startswith('triton-')
         document, source = create_task('silu' if cuda else 'rmsnorm', backend=backend,

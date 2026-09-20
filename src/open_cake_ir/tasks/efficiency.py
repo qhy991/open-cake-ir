@@ -79,29 +79,38 @@ def score_measurement(work: Mapping, target: Target, latency_ms: float, *, cache
     }
 
 
-def campaign_performance(project_root, campaign, report) -> dict:
-    """Project only confirmations already admitted by the existing full Run audit.
-
-    Compiler source and receipt semantics are verified by TaskLab.audit before this
-    projection. Do not rehash its closure or manufacture acceptance from a report.
-    """
-    root = Path(project_root).resolve()
+def campaign_performance(project_root,campaign,report) -> dict:
+    """External Campaign projection; acceptance remains with its full Run audit."""
     lock = campaign.lock.document
     if campaign.lock.claim_scope != "artifact_optimization_only":
         raise ValueError("task efficiency reporting requires artifact optimization scope")
     if lock["analysis_plan"].get("performance_reporting") != POLICY:
         raise ValueError("task efficiency reporting is not declared by this Campaign")
+    eligible = [audit for audit in report.run_audits
+                if audit.archive_integrity and audit.filesystem_custody_verified
+                and audit.protocol_adherence == "adhered"
+                and report.descriptive["semantic_replay_by_run"].get(audit.run_id) is True]
+    return _performance(project_root,campaign.evidence_root,lock,eligible)
+
+
+def run_performance(project_root,run,audit,replay) -> dict:
+    """Describe one independently audited Run without a Study policy or estimate."""
+    eligible = [audit] if (audit.archive_integrity and audit.filesystem_custody_verified
+        and audit.protocol_adherence=='adhered' and replay
+        and audit.run_id==run.specification.run_id
+        and audit.authority_sha256==run.specification.canonical_sha256) else []
+    return _performance(project_root,run.evidence_root,run.specification.document,eligible)
+
+
+def _performance(project_root,evidence_root,lock,eligible):
+    root = Path(project_root).resolve()
     case_id = lock["evaluation_protocol"]["case_id"]
-    result = {"policy": POLICY, "workload_id": campaign.lock.workload_id, "case_id": case_id,
+    result = {"policy": POLICY, "workload_id": lock["workload"]["workload_id"], "case_id": case_id,
               "target": lock["execution"]["target"], "rows": [], "missing": [],
               "ranking_scope": "within_exact_workload_case_target_and_assay_only",
               "threshold_status": "not_calibrated_no_hard_efficiency_threshold",
               "selection": "descending_reference_score_equivalent_to_ascending_confirmed_latency",
               "speedup_role": "auxiliary_fixed_baseline_comparison"}
-    eligible = [audit for audit in report.run_audits
-                if audit.archive_integrity and audit.filesystem_custody_verified
-                and audit.protocol_adherence == "adhered"
-                and report.descriptive["semantic_replay_by_run"].get(audit.run_id) is True]
     if not eligible:
         result["missing"] = ["no_adhered_custody_verified_semantically_replayed_run"]
         return result
@@ -109,7 +118,7 @@ def campaign_performance(project_root, campaign, report) -> dict:
     workload = load_workload(workload_path)
     if (workload.canonical_sha256 != lock["workload"]["canonical_sha256"]
             or workload.target != result["target"]):
-        raise ValueError("performance Workload differs from the audited Campaign")
+        raise ValueError("performance Workload differs from the audited execution")
     try:
         work = task_work(workload, case_id)
     except ValueError as error:
@@ -123,7 +132,7 @@ def campaign_performance(project_root, campaign, report) -> dict:
     if target.target_id != workload.target:
         raise ValueError("performance target differs from the Workload")
     result["target_citations"] = json.loads(target_path.read_bytes()).get("citations", [])
-    evidence = EvidenceStore.open(campaign.evidence_root)
+    evidence = EvidenceStore.open(evidence_root)
     paired = lock["evaluation_protocol"].get("paired_timing", {})
     cache = "warm_no_explicit_flush" if "metal" in paired.get("kind", "") else "cold_l2_cache"
     baseline = lock["execution"].get("fixed_baseline", {}).get("candidate", {})

@@ -173,9 +173,9 @@ def _lab(args: argparse.Namespace) -> int:
             run = execute_run_from_config(args.project_root,specification,args.runtime_config,args.evidence_root)
         else:
             run = RunRef(specification,args.evidence_root.resolve(strict=True))
-        audit,replay = lab.audit_run(run)
-        _emit({'run_id':specification.run_id,'evidence_root':str(run.evidence_root),'audit':audit,'replay':replay})
-        return 0 if audit.archive_integrity and replay else 2
+        report = lab.report_run(run)
+        _emit(report)
+        return 0 if report['audit'].archive_integrity and report['replay'] else 2
     if args.lab_command == "preflight":
         output_path = (
             admit_new_campaign_path(

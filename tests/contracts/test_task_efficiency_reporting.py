@@ -90,6 +90,7 @@ class EfficiencyReportingTests(unittest.TestCase):
         campaign = SimpleNamespace(lock=SimpleNamespace(analysis_plan=policy,
             claim_scope="artifact_optimization_only", workload_id="fixture",
             document={"analysis_plan": policy, "execution": {"target": "apple_gpu_family7"},
+                      "workload":{"workload_id":"fixture"},
                       "evaluation_protocol": {"case_id": "primary"}}))
         with patch.object(Lab, "audit", return_value=report_fixture()):
             report = TaskLab(ROOT).audit(campaign)
@@ -115,6 +116,22 @@ class EfficiencyReportingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "historical backfill"):
                 report_task_efficiency.main(["--project-root", str(ROOT), "--workspace", str(Path(directory).resolve())])
             audit.assert_not_called()
+
+    def test_run_workspace_reporting_needs_no_campaign_or_analysis_policy(self):
+        from open_cake_ir.lab import RunSpecification, RunRef
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory).resolve()
+            (workspace/'run.json').write_text('{}')
+            specification = SimpleNamespace(run_id='fixture')
+            result = {'run_id':'fixture','audit':{'endpoint_observation':'no_qualified_candidate'},
+                      'replay':{'passed':True},'performance':{'rows':[],'missing':['no confirmation']}}
+            with patch.object(RunSpecification,'load',return_value=specification), \
+                 patch.object(CampaignLock,'load',side_effect=AssertionError('Run requested Campaign authority')), \
+                 patch.object(TaskLab,'report_run',return_value=result) as report, \
+                 contextlib.redirect_stdout(io.StringIO()) as stdout:
+                self.assertEqual(report_task_efficiency.main(['--project-root',str(ROOT),'--workspace',str(workspace)]),0)
+                report.assert_called_once_with(RunRef(specification,workspace/'run-evidence'))
+            self.assertEqual(json.loads(stdout.getvalue()),result)
 
     def test_cli_projects_full_audit_and_writes_only_a_new_external_report(self):
         lock = SimpleNamespace(analysis_plan={"performance_reporting": TASK_EFFICIENCY_V1},
