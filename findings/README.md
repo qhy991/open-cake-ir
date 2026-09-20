@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-21-001 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
+
 - F-2026-09-20-008 — recovered Codex waiting-for-network notices rejected a completed candidate turn; exact notice admission verified by original-stream and candidate replay.
 - F-2026-09-20-009 — resumed Codex thread totals were summed as invocation spend; success, failure and semantic replay now use the same delta, with regressing counters refused.
 

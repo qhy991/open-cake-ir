@@ -9,6 +9,7 @@ evidence, not GPU, timing or performance qualification.
 
 from copy import deepcopy
 import json
+import itertools
 import math
 from pathlib import Path
 import random
@@ -60,8 +61,8 @@ def gemm_silu_document():
     return frontend.parse(text).document
 
 
-def wide_document(width=256, columns=64, coupled=False):
-    body = _PLAIN_STORE[1]
+def wide_document(width=256, columns=64, coupled=False, silu=False):
+    final, body = _SILU if silu else _PLAIN_STORE
     extra = ''
     if coupled:
         extra = ', rowsum: cake.Tensor((1,), "fp32", mode="output")'
@@ -70,7 +71,7 @@ def wide_document(width=256, columns=64, coupled=False):
 '''
     return frontend.parse(_HEADER.format(name='wide-row-contraction', entry='cake_wide_rows',
         metadata='', rows=1, width=width, columns=columns, extra_args=extra, axes='',
-        body=body, final='shifted')).document
+        body=body, final=final)).document
 
 
 def coupled_document():
@@ -206,8 +207,8 @@ class OutputColumnSpecializationTests(unittest.TestCase):
                         self.assertLessEqual(abs(got - want), 1e-5 * max(1.0, abs(want)))
 
     def test_storage_refused_rows_can_produce_fully_admitted_columns(self):
-        for columns in (64, 128, 256):
-            document = wide_document(columns=columns)
+        for columns, silu in itertools.product((64, 128, 256), (False, True)):
+            document = wide_document(columns=columns, silu=silu)
             before = deepcopy(document)
             assessment = self.compiler.assess(document)
             self.assertTrue(assessment.accepted)

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-21-001",
+  "kind": "capacity",
+  "date": "2026-09-21",
+  "title": "Output-column specialization cannot rescue its own Metal private-storage refusal",
+  "backend": "metal",
+  "target": "apple_gpu_family7 software probes; device verification pending",
+  "compiler_revision_id": "open-cake-ir@19221db4",
+  "executor_revision": "none; CPU semantic verification only",
+  "evidence": {
+    "workspace": "/Users/haiyan/Documents/cake-experiments/metal-review-19221db4-20260921",
+    "record": "column-pass-admission.json",
+    "red_commit": "3b2481ee",
+    "red_test": "tests/contracts/test_output_column_specialization.py: storage rescue, independent-dot and guard tests",
+    "observation": "M=128,K=256,N=64/128/256 whole-row starters are semantically accepted but refused by METAL_PRIVATE_STORAGE_LIMIT. The pass returns input_refused; equivalent direct column candidates lower with 25 logical lane slots. New red tests reproduced 3 failures and retained the unrelated-refusal test."
+  },
+  "observation": "The input lowering gate excludes the exact backend-resource condition this candidate-producing transformation reduces. It is not an IR semantic failure and does not justify relaxing the backend storage cap.",
+  "proposed_change": "Admit semantically accepted source schedules only when the complete blocker set is METAL_PRIVATE_STORAGE_LIMIT. Preserve structural guards and re-assess every complete result, including its storage limit. Keep original input immutable.",
+  "principles": "P1/P3 no new syntax; P2 logical-slot reduction remains inspectable and is not physical register allocation; P4/P5/P7 retain source semantic and result analyses; P6 unchanged Corpus; P8 no new target fact or performance estimate.",
+  "decision": "accepted",
+  "implemented_in": "33c3cf90",
+  "verified_by": null,
+  "partial_verification": {
+    "commit": "33c3cf90",
+    "tests": "42 passed, 1 skipped across output-column and Metal contracts; independent emitted-body CPU dot oracle passes",
+    "corpus_cases": 164,
+    "scope": "Software verification only; capability claims remain device-gated. The current host registry-id mismatch prevents a live campaign."
+  }
+}
