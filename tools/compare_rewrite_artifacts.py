@@ -100,6 +100,8 @@ def load_reference(root, output, report, cohort_calls):
     if any(not callable(reference) for reference in references):
         raise ValueError('reference entry is not callable')
     report['reference'] = spec
+    if spec.get('derived_from'):
+        report['roles']['external'] = 'derived external reference; source correction recorded in reference metadata'
     report['external_instance_count'] = len(modules)
     report['external_instance_policy'] = ('Independent copies of one compiled native module; '
         'each cached output is warmed and poisoned before the cohort, then used once. '
