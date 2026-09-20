@@ -30,5 +30,33 @@
     "raw_replay": "/tmp/open-cake-provider-repair-evidence-20260920/exact-parser-replay.json",
     "outcome": "Both original raw streams parse with failed file statuses retained; candidate absence still refuses acceptance. Old failures remain failed.",
     "scope": "Protocol parsing repair only. Node-local state mitigation and live recovery require new qualification."
+  },
+  "operational_verification": {
+    "source_commit": "2812dd95",
+    "provider": "codex-cli 0.153.4; gpt-5.6-sol; high",
+    "sandbox": "workspace-write retained",
+    "qualification_scope": "live_two_turn_tool_rich_provider",
+    "nodes": {
+      "m2": {
+        "receipt": "B300-M2:/mnt/b300-shared/home/qinhaiyan/cake-experiments/provider-repair-20260920-m2/receipt.json",
+        "evidence": "provider-repair-20260920-m2/evidence/runs/node-local-state-qualification",
+        "codex_home": "/var/tmp/cake-codex-rewrite-20260920-m2",
+        "qualified": true,
+        "initial_and_resume_equivalent": true,
+        "file_lifecycle_observed": true,
+        "usage_observed": true
+      },
+      "m3": {
+        "receipt": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/provider-repair-20260920-m3/receipt.json",
+        "evidence": "provider-repair-20260920-m3/evidence/runs/node-local-state-qualification",
+        "codex_home": "/var/tmp/cake-codex-rewrite-20260920-m3",
+        "qualified": true,
+        "initial_and_resume_equivalent": true,
+        "file_lifecycle_observed": true,
+        "usage_observed": true
+      }
+    },
+    "negative_probe": "Codex refused helper creation with CODEX_HOME under /tmp on both nodes. Those failed probes are not successful qualification. /var/tmp node-local homes passed deterministic sandbox /bin/true and the new two-turn qualifications.",
+    "scope": "Observed recovery under explicit node-local state, not proof that all former failures share one root cause or that future calls cannot fail. No GPU-performance conclusion. Original failures unchanged."
   }
 }
