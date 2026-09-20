@@ -1271,7 +1271,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`M=1, N=5120, K=2048, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Newly frozen original Cake starter；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-c729a4205261/stages/verify/comparison-report.json`。
 - This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1281,7 +1281,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`M=1, N=5120, K=2048, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Supplied runtime-selecting CUDA callable；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-c729a4205261/stages/verify/comparison-report.json`。
 - This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1291,7 +1291,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`M=1, N=5120, K=2048, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Newly frozen original Cake starter；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-decf02d08ed4/stages/verify/comparison-report.json`。
 - This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1301,7 +1301,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`M=1, N=5120, K=2048, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Supplied runtime-selecting CUDA callable；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-decf02d08ed4/stages/verify/comparison-report.json`。
 - This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1311,7 +1311,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`M=1, N=6144, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Newly frozen original Cake starter；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-65f2811ce33c/stages/verify/comparison-report.json`。
 - This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1321,7 +1321,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`M=1, N=6144, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Supplied CUDA GEMV/dispatch callable；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-65f2811ce33c/stages/verify/comparison-report.json`。
 - This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1331,7 +1331,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`M=1, N=6144, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Newly frozen original Cake starter；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-2b7f4f07851e/stages/verify/comparison-report.json`。
 - This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1341,7 +1341,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`M=1, N=6144, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Supplied CUDA GEMV/dispatch callable；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-2b7f4f07851e/stages/verify/comparison-report.json`。
 - This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1351,7 +1351,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Frozen old original Cake starter；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-cd0519f984bb/stages/verify/comparison-report.json`。
 - This edge passes original quality. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1361,7 +1361,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Supplied masked8192 Python/Triton callable；比值口径：`descriptive_quality_failed`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-cd0519f984bb/stages/verify/comparison-report.json`。
 - Failed CV; displayed latencies are descriptive, with no qualified speedup. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1371,7 +1371,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Frozen old original Cake starter；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-9eb8c7412df2/stages/verify/comparison-report.json`。
 - This edge passes original quality. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1381,7 +1381,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Supplied masked8192 Python/Triton callable；比值口径：`descriptive_quality_failed`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-9eb8c7412df2/stages/verify/comparison-report.json`。
 - Failed CV; displayed latencies are descriptive, with no qualified speedup. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1391,7 +1391,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Frozen sliced-width8 Cake candidate；比值口径：`paired`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-c46f642cc623/stages/verify/comparison-report.json`。
 - This edge passes original quality. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1401,7 +1401,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
 - 基线：Supplied masked8192 Python/Triton callable；比值口径：`descriptive_quality_failed`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-c46f642cc623/stages/verify/comparison-report.json`。
 - Failed CV; displayed latencies are descriptive, with no qualified speedup. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
 
@@ -1411,6 +1411,6 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 - Workload：`012–019captured/boundary;020captured`；目标：`sm_103a`；版本：`compiler204d87e3`。
 - 基线：Existing task-authored complete Programs；比值口径：`not_measured`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/93c9a712f0e14693af0a836e925c5be4111105d5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/sealing-results.json`。
 - Canonical Lab build and independent bundle/ABI readback passed. Normal launcher, common device validation and multiple-output external comparison remain incomplete. No timing or promotion claim; large input preparation requires capacity planning.
