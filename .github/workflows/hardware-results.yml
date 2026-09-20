@@ -2,7 +2,7 @@ name: Hardware results
 
 on:
   push:
-    branches: [main, nvidia, metal, dcu, amd]
+    branches: [main, nvidia, metal, dcu, amd, metax]
     paths: ['docs/results/**', 'tools/render_hardware_results.py', 'tools/hardware_results.html', 'tests/contracts/test_hardware_results.py', '.github/workflows/hardware-results.yml']
   pull_request:
     paths: ['docs/results/**', 'tools/render_hardware_results.py', 'tools/hardware_results.html', 'tests/contracts/test_hardware_results.py', '.github/workflows/hardware-results.yml']
@@ -29,7 +29,8 @@ jobs:
           case "$RESULT_BRANCH" in
             nvidia|metal|dcu|amd)
               python tools/render_hardware_results.py --platform "$RESULT_BRANCH" --check --figures ;;
-            main)
+            # MetaX has no published dataset yet; check its inherited aggregate view.
+            main|metax)
               python tools/render_hardware_results.py --check --figures ;;
             *)
               echo "No maintained result destination: $RESULT_BRANCH" >&2

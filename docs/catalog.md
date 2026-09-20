@@ -1,5 +1,7 @@
 # 文档总目录 / Documentation catalog
 
+[跨硬件的可执行优化知识迁移](OPTIMIZATION_TRANSFER.md) · [English](en/OPTIMIZATION_TRANSFER.md)：框架研究设计、机制图与[消融方法](OPTIMIZATION_TRANSFER_ABLATION.md)。
+
 [按硬件查看实验结果](RESULTS.md)：NVIDIA、Apple、Hygon DCU、AMD 的结果目录、历史记录与交互筛选页面。
 
 [Triton CTA 宽度特化与 tick-tock 经验总结](TRITON_CTA_WIDTH.md)：显式候选变换、经验归属、适用条件与配对测量。

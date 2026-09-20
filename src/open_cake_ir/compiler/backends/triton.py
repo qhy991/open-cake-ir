@@ -192,7 +192,7 @@ def validate_input(document: Mapping[str, object]) -> None:
                 raise EmitError(f"tile_loops[{index}].body must be a list of non-empty strings")
 
 
-CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO})
+CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN})
 
 
 def _power_of_two(value: int) -> bool:
@@ -216,6 +216,8 @@ def target_route_facts(target: Target) -> dict[str, object]:
         architecture: object = major * 10 + minor
     elif target.code_object is CodeObject.HSACO:
         architecture = target.target_id
+    elif target.code_object is CodeObject.MCFATBIN:
+        architecture = target.triton_arch
     else:
         raise EmitError(
             f"the Triton backend emits no {target.code_object.value!r} code object"
@@ -224,6 +226,8 @@ def target_route_facts(target: Target) -> dict[str, object]:
         "code_object": target.code_object.value,
         "triton_arch": architecture,
         "warp_size": target.warp_size,
+        **({"codegen_arch": target.architecture}
+           if target.code_object is CodeObject.MCFATBIN else {}),
     }
 
 
@@ -275,6 +279,9 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
     """
 
     findings = list(requirements(schedule))
+    if target.code_object is CodeObject.MCFATBIN:
+        from .metax import preflight as metax_preflight
+        findings.extend(metax_preflight(schedule, target))
     if findings:
         return tuple(findings)
 
