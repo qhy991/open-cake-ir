@@ -23,8 +23,8 @@ open-cake-ir 解决的问题是：**让计算方法写得明确，让错误能�
 
 | 部分 | 用普通话说 | 输入与输出 |
 | --- | --- | --- |
-| Compiler，编译器 | 读懂并检查执行计划，再翻译成源码 | Schedule → Assessment → Lowering |
-| Research Lab，实验系统 | 按约定安排 AI 修改候选、分配预算、决定何时停止 | Workload + Study → 一次实验 |
+| Compiler，编译器 | 检查完整程序及叶子执行计划，执行显式改写并生成源码 | Program / Schedule → 检查与生成 |
+| Research Lab，实验系统 | 按冻结权限和预算组织优化；Study 分配与分析研究条件 | Workload + RunSpecification → 一次 Run |
 | Evaluation，评测 | 先核对答案，再按相同规则计时和分析瓶颈 | 固定候选 → 检查与测量记录 |
 | Evidence，证据存储 | 保存事实，并让别人从记录重建结论 | 原始产物 → 审计 → 报告 |
 
@@ -33,19 +33,22 @@ open-cake-ir 解决的问题是：**让计算方法写得明确，让错误能�
 ```mermaid
 flowchart LR
     W["Workload：要算什么、怎样判对"] --> L["Lab：组织实验"]
-    S["Study：比较什么、花多少预算"] --> L
+    R["Run：版本、权限、预算"] --> L
+    S["Study：研究分组与统计"] -. "研究时预分配" .-> R
     L --> C["Compiler：检查与翻译"]
     L --> V["Evaluation：核对与测量"]
     V --> E["Evidence：保存与复查"]
     E --> L
 ```
 
-## 3. 三份说明不能混为一份
+## 3. 任务、实现、执行与研究各有负责者
 
 以“对每行数值做归一化”为例：
 
 - **Workload，任务约定：** 输入有几行、每行几个数，怎样算标准答案，容许多少误差。
 - **Schedule，执行计划：** 哪组线程处理哪一行，数据放在哪里，先做什么再做什么。
+- **Program，完整程序：** 公共输入输出、各 Schedule 的顺序和张量绑定；融合可以改变 stage 数量。
+- **Run，一次优化：** 固定版本、作者环境、材料与变换权限、预算及评测规则；普通工程优化不需要 Study。
 - **Study，实验约定：** 比较哪些写程序的环境，每组运行几次，预算多少，怎样解释结果。
 
 数学任务可以不变，而执行计划改变。实验约定也必须预先固定，否则结果出来后再换标准就失去可比性。
@@ -72,7 +75,7 @@ Schedule 留作结构拒绝用例，旧固定源码结果只能在绑定的历�
 
 ### 编译器内部的负责位置
 
-- `core.py` 只连接公开接口；`revision.py` 负责加载版本，`corpus.py` 负责逐项对照预期。
+- `core.py` 连接公开接口；`ir/program.py` 拥有程序结构与数据流约束，`program.py` 拥有完整程序改写和 lowering；`revision.py` 加载版本，`corpus.py` 逐项对照预期。
 - `diagnostics.py` 拥有诊断类型；`verifier/` 拥有四类通用规则。后端专属限制由后端报告，阻止生成，不把可表达的计划误判为结构错误。
 - [backends](../src/open_cake_ir/compiler/backends/__init__.py) 的 `BACKENDS` 是唯一静态后端清单。每个后端实现 `requirements`、`preflight`、`emit`，注册项可声明原始输入检查；Triton 的 `pointer_type(DType)` 负责指针类型拼写。
 - [performance](../src/open_cake_ir/compiler/performance/__init__.py) 归集工作量、驻留、profile、编译资源、经验成本和利用率。同一输入的分析结果计算一次并显式传递，不另设全局缓存。
@@ -91,7 +94,7 @@ Schedule 留作结构拒绝用例，旧固定源码结果只能在绑定的历�
 
 ## 5. AI 怎样参与
 
-Lab 为每次独立尝试准备两个文件：
+Lab 为每次独立尝试生成固定任务材料；CLI 作者收到两个文件：
 
 - `TASK.md`：题目、输入输出、评测方法、预算和固定参考。
 - `AGENTS.md`：工具与行为规则。
@@ -101,7 +104,8 @@ AI 提交候选，外部控制器 Ralph 记录预算和当前状态，再决定�
 不同候选有各自固定的内容，旧结果不会被后来编辑覆盖。
 
 当前唯一的 Study kind 是 `matched_search`。旧 `portfolio` Study 生命周期已退役，历史回放使用原提交（ADR 0071）。
-只想优化一个产物，可以在同一搜索路径中选择对应的声明范围，不需要第三套运行系统。
+普通优化直接准备 Run；研究通过 Study 预分配相同的 Run。旧 CampaignLock 只在输入边界适配，
+两者共用搜索、预算、确认与审计。受限消息作者只接收冻结材料和本 Run 历史，用于控制消融的信息访问。
 完整服务部署属于之后的接入与评测工作。见 [实验流程](wiki/experiments.md)。
 
 ## 6. 结果怎样形成结论
@@ -132,7 +136,7 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 框架进一步提出将 Agent 在 fusion、tiling 和 memory hierarchy optimization 中发现的机制，
 提炼为带适用条件的显式变换；目标后端承接硬件差异，Lab 重新选择参数并验证收益。
 机制材料与变换调用分别作为可消融变量，底层编译能力、正确性与测量流程保持一致。
-这是待验证的研究设计；现有有限 pass 提供实现基础。见[机制与图示](OPTIMIZATION_TRANSFER.md)
+完整 Program、独立 Run、材料与变换授权和 E/P 研究分配已有软件实现；跨硬件收益仍待实测。见[机制与图示](OPTIMIZATION_TRANSFER.md)
 及[实验设计](OPTIMIZATION_TRANSFER_ABLATION.md)。
 
 ## 8. Lab 内部怎样分工

@@ -48,7 +48,7 @@ CAKE 指论文中的系统与研究思路。项目只引用其已公开说明，
 
 ### Open Cake Compiler
 
-独立的编译器：检查 Schedule、给出分析，并为允许的计划生成目标源码。它不负责调用 AI、申请 GPU 或宣布实验成绩。
+独立的编译器：检查 Program 及其 Schedule、执行显式改写并生成允许的目标源码。它不负责调用 AI、申请 GPU 或宣布实验成绩。
 
 ## Compiler terms
 
@@ -59,6 +59,12 @@ CAKE 指论文中的系统与研究思路。项目只引用其已公开说明，
 ### Target
 
 明确的硬件目标及其已声明能力，由 Compiler Revision 绑定。它不是随便选一张 GPU 的名字，也不允许静默换成另一架构。
+
+### Program
+
+Compiler 拥有的完整程序：精确目标、公共输入输出、有序的完整 Schedule 与显式张量绑定。
+构造时检查类型、唯一生产者及数据流；改写返回完整后继或局部拒绝。当前组合范围是同设备、
+同一流、不可变输入和新输出，只允许显式 singleton-axis 视图，不引入 layout algebra。
 
 ### Finding
 
@@ -103,6 +109,11 @@ CAKE 指论文中的系统与研究思路。项目只引用其已公开说明，
 
 实验约定：比较哪些写程序的环境，如何分配尝试，预算多少，读什么参考，怎样汇总结果。当前只有 `matched_search` 一种 Study；Portfolio Study 生命周期已退役（ADR 0071）。它定义实验设计，不是一次实际执行的可变配置。
 
+### StudyPlan
+
+预先冻结研究条件、知识版本、发现/适配/测试划分、重复区组和 Run 模板的研究计划。
+E/P 分配只改变材料与变换权限，不决定候选语言或后端；执行仍调用同一个 Run 引擎。
+
 ### Claim Scope
 
 一轮实验允许作出和使用哪类声明，由 Study 固定。当前范围区分系统资格、单产物优化和科学分析；README 中的一句话不能扩大它。
@@ -113,7 +124,7 @@ AI 程序能使用哪些功能，以及怎样解释它的事件。负责者是 A
 
 ### Authoring Environment
 
-作者实际得到的完整写程序环境：工具、参考、诊断和提交方式。负责者是 Study 引用的固定定义；实验比较不能只按代码语法给环境命名。
+作者实际得到的完整写程序环境：工具、参考、诊断和提交方式。Run 冻结所引用的定义；研究时由 Study 预分配。实验比较不能只按代码语法给环境命名。
 
 ### Campaign
 
@@ -121,11 +132,13 @@ AI 程序能使用哪些功能，以及怎样解释它的事件。负责者是 A
 
 ### CampaignLock
 
-preflight 生成的一次执行约定，固定 Workload、Compiler、Executor、provider、工具链、机器和 custody。后续主线变化不会自动修改这个 lock。
+旧 Study 入口的固定执行输入，包含 Workload、Compiler、Executor、provider、工具链、机器和 custody。
+它在输入边界转换成 RunSpecification，共用 Run 引擎；历史记录仍在原提交回放。
 
 ### TaskPackage
 
-Lab 根据 CampaignLock 确定性生成的 `TASK.md` 与 `AGENTS.md`。它们向 AI 说明题目和规则，不保存可变分数、已花预算或当前最好方案。
+Lab 根据固定 Run 输入确定性生成的任务与规则材料，CLI 形式为 `TASK.md` 与 `AGENTS.md`。
+它们不保存可变分数、已花预算或当前最好方案。
 
 ### Ralph Controller
 
@@ -137,7 +150,12 @@ Lab 外部的迭代控制器，决定是否开始下一步，提供 StateCard，
 
 ### Run
 
-Study 中一次独立分配的重复尝试，也是比较实验的单位。一个 Run 可以含多个 Turn；它不是某个终端进程或 broker job。
+一次独立优化，可直接用于工程任务，也可由 Study 分配为重复尝试。一个 Run 可以含多个 Turn；它不是某个终端进程或 broker job。
+
+### RunSpecification
+
+一次 Run 的执行权威：冻结 Workload、Compiler/Executor、作者环境、材料与变换权限、公共评测、
+预算和终点规则。工程 Run 的 assignment 为 null；研究分配在执行前固定。Study 不另建执行循环。
 
 ### Turn
 
@@ -149,7 +167,8 @@ Run 中一次 provider 交互及其候选提交机会。由 Run 协议定义，�
 
 ### Artifact Promotion
 
-单产物优化中，按确认性评测和既定规则选出候选。负责者是该 Study 的分析；选中一个候选不等于两组环境的统计比较，也不是生产部署。
+按确认性评测和既定规则选择候选。工程 Run 可经独立审计及既有实质收益规则写入 incumbent；
+Study 分配仍遵守其研究策略。选中一个候选不等于组间统计比较或生产部署。
 
 ### Endpoint
 
@@ -175,11 +194,13 @@ Study 预先指定、按 Run 观察的结果，如预算结束时是否已有合
 
 ### Launch Plan
 
-一个逻辑候选的不可变顺序启动计划：明确公共输入输出、中间张量及每个 Cake Schedule 的绑定。Evaluation 负责分配和同一设备/流上的顺序启动；任务数学全部留在 Compiler 生成的内核内。类型、唯一生产者和存储不重叠在启动前检查。
+Compiler 降低后的 Program 在 Evaluation 中的执行绑定。程序结构和类型由 Program 唯一拥有；
+Evaluation 负责设备存储、视图、模块与同一流上的有序启动，并在启动前验证存储区间。
+它不另定义程序图，任务数学全部留在生成的内核内。
 
 ### Evaluation Protocol
 
-Workload 拥有并被 Study 引用的检查与测量方法，包括测试行、检查目的，以及先正确性后计时的顺序。它不定义 Study 的统计分析。
+Workload 拥有并被 Run 冻结引用的检查与测量方法，包括测试行、检查目的，以及先正确性后计时的顺序。它不定义 Study 的统计分析。
 
 ### Logical Evaluation Attempt
 

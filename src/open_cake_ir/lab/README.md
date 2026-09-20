@@ -129,7 +129,9 @@ stage，计时覆盖完整有序调用；NCU 输出按 dispatch 保留各 stage 
 需要多次 launch、非 identity 绑定或视图映射的 Program，目前使用 Triton/CUDA 组合适配；
 其他 code object 对这些组合仍明确拒绝。静态表示和上述单 kernel 路径不受此组合适配范围
 限制。软件合同测试不赋予实机正确性、计时或跨架构收益资格。显式动作、知识授权与消息作者
-隔离见下节；QSA 候选消费者仍在迁移，正式硬件消融尚未验证。
+隔离见下节。QSA Cake 候选已使用同一 Program 构建、封存与执行路径；其旧节点描述只作输入
+适配，原生 CUDA 参考保留自己的固定 ABI。QSA 的真实参考形状与视图已通过 CPU 编译替身和
+虚拟存储合同检查，另有小型融合 oracle 回归；正式硬件消融尚未验证。
 
 ## Knowledge and explicit author actions
 
@@ -161,7 +163,7 @@ CPU 协议测试。`tools/qualify_message_provider.py` 留存两轮原生请求�
 `live_two_turn_message_provider` 和 `zero_gpu_contract_fixture_only`。显式执行该工具会调用 API；
 fixture 标签本身不模拟网络。当前验证使用假传输，没有真实模型或 GPU 资格。
 
-当前消息作者已接入 `Lab.execute_run` Python API；生产 CLI/管理器接线仍待完成。原有 CLI
+消息作者通过共同的 `run_runtime_factory` 接入 `Lab.execute_run` 和 `lab run execute`；原有 CLI
 provider 继续服务其既有工程用途，不因上述消息协议测试获得正式消融隔离资格。
 
 ## Agent-led reproduction

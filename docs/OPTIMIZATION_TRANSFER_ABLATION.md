@@ -99,9 +99,9 @@ pass 调用与验证开销都计入该 Run。例行日志记录材料引用、�
 - **StudyPlan**拥有 E/P 处理、材料范围、预分配和估计量；RunSpecification 绑定具体源码、
   目标环境、作者材料和预算。四组共用 Run 执行路径，类型仍为 `matched_search`。
   原 Cake-vs-native 配对输入保留在其输入/报告边界，不能冒充 E/P 消融。
-- **原型入口**为 `Lab.prepare_study/execute_study/audit_study`，准备与审计另有
+- **原型入口**为 `Lab.prepare_study/execute_study/audit_study`，准备、执行与审计另有
   `tools/transfer_study.py` 入口。分组在运行前冻结；材料交付、pass 使用、确认与预算均可回放。
   科学研究要求 live 作者资格和本机配对基线，软件 fixture 不输出科学主估计量或总体区间。
-  生产调度接线与真实硬件迁移结果仍待验收。
+  执行通过共同的 `run_runtime_factory` 装配；真实作者与硬件迁移结果仍待验收。
 - 正式运行前，先用轻量验收确认 E0 不泄漏材料、P0 的调用被实际拒绝、P1 可显式调用，
   且四组通过同一正确性与测量路径。该验收不证明迁移收益；收益由上述冻结实验给出。

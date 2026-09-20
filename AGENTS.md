@@ -282,16 +282,19 @@ the comparison, not just the run.
 - The Compiler is the product core and imports no Lab, provider, workload, campaign,
   evidence-store or claim code (`tests/contracts/test_compiler.py:101`); the common layers
   import no task implementation (`tests/contracts/test_task_boundaries.py:13`, ADR 0055).
-- Workload Contract owns operator semantics and oracle; Study Contract owns treatment,
-  estimand and analysis; Lab owns KernelSeed and Workload-case specialization. The Compiler
-  accepts complete Schedules and stays unaware of held-out roles or Study policy.
-- Study templates are stable and execution binding lives in the CampaignLock. Do not mint
+- Workload Contract owns operator semantics and oracle; Study owns treatment, estimand and
+  analysis; RunSpecification owns one execution's inputs, permissions and budgets. Lab owns
+  KernelSeed and Workload-case specialization. The Compiler owns complete Programs, their
+  leaf Schedules and deterministic rewrites, and stays unaware of Study policy.
+- Study templates are stable and execution binding lives in RunSpecification. CampaignLock
+  remains an input adapter to the same Run engine, not a second execution owner. Do not mint
   a frozen Study successor per Compiler or Executor change; the 36
   `flash-kmeans-r45-portfolio-reconstruction` successors that predate this rule live on
   the `history` tag together with the retired template and lifecycle.
 - `matched_search` is the sole live Study kind; the Portfolio Study lifecycle is retired;
   `artifact_optimization_only` is a Claim Scope on it, not a mode, and promotion under it
   still requires common confirmatory Evaluation and forms no arm comparison.
+  Independent engineering Runs need no Study; assigned Runs retain their Study's policy.
 - A Schedule declares its own `lowering` route. Refusal is a property of the Schedule: an
   unsupported dtype or operation body is a backend capability Finding before lowering, not
   a name lookup. An operator that composes existing primitives needs a Workload Contract,
@@ -324,8 +327,8 @@ the comparison, not just the run.
   promotion, qualification or estimate. Never restore modes so a custody check passes
   (ADR 0031); report a missing custody environment as a precondition.
 - No formal provider or GPU experiment runs before all applicable acceptance gates pass.
-  Generated runs and secret bytes stay outside source; new Campaign Locks, Evidence roots
-  and reports stay outside the checkout; historical in-checkout Campaigns are read-only
+  Generated runs and secret bytes stay outside source; new Run specifications, Study plans,
+  Campaign Locks, Evidence roots and reports stay outside the checkout; historical in-checkout Campaigns are read-only
   replay inputs. Legacy cleanup needs separate user authorization. Do not copy legacy
   `rXX`, `vN`, failure or archive runners.
 

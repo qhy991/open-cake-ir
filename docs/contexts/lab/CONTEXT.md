@@ -2,13 +2,14 @@
 
 [中文阅读](../../zh-CN/contexts/lab/CONTEXT.md) · [Bilingual catalog](../../README.md)
 
-The Research Lab owns Study design and execution while treating Workload, Compiler, and
+The Research Lab owns independent Run execution and Study allocation/analysis while treating Workload, Compiler, and
 Executor revisions as frozen inputs. Canonical definitions are in the
 [`Glossary`](../../GLOSSARY.md#workload-and-research-lab-terms).
 
 ## Owned terms
 
 - [`Study Contract`](../../GLOSSARY.md#study-contract)
+- [`StudyPlan`](../../GLOSSARY.md#studyplan) and [`RunSpecification`](../../GLOSSARY.md#runspecification)
 - [`Claim Scope`](../../GLOSSARY.md#claim-scope)
 - [`Provider Feature Policy`](../../GLOSSARY.md#provider-feature-policy)
 - [`Authoring Environment`](../../GLOSSARY.md#authoring-environment)
@@ -32,7 +33,8 @@ The Lab references but does not redefine the
 
 ## Responsibilities
 
-- Resolve a Study template and released inputs exactly once into a CampaignLock.
+- Freeze execution inputs, permissions and budgets in RunSpecification; adapt legacy
+  Study/CampaignLock inputs into that same execution path.
 - Render one immutable TASK.md/AGENTS.md TaskPackage per successor Run and let the
   external Ralph Controller supply only evidence-derived iteration state.
 - Assign every Run to one complete Authoring Environment.
@@ -46,10 +48,10 @@ Evaluator's Receipt, or turn system qualification into a scientific comparison.
 
 ## Relationships
 
-- A Study Contract references one Workload Contract and assigns every Run to one Authoring
-  Environment.
-- A Campaign executes one Study Contract; pooling across Campaigns is forbidden unless the
-  Study's Analysis Plan declares it.
+- An engineering Run needs no Study. StudyPlan preassigns conditions and repetitions to
+  the same Run engine, with one Authoring Environment per Run and frozen analysis.
+- The legacy Campaign executes one Study Contract; pooling remains subject to its
+  Analysis Plan. The adapter retains that policy without owning another execution loop.
 - A Run contains ordered Turns and may submit multiple immutable Candidates.
 - One Candidate may receive distinct search, confirmatory, and profiler Evaluation
   Receipts.
@@ -75,8 +77,9 @@ Concrete task code and the TaskLab composition root live outside the common engi
 workload loader, schedule preparation, authoring validation and manifest parser.
 Phase functions receive those dependencies explicitly; there is no second context object.
 
-Study parsing occurs once in preflight. The task-specific admission hook checks that parsed
-object before dependency resolution. See the [implementation map](../../../src/open_cake_ir/lab/README.md)
+Run parsing occurs once in preflight. Task-specific admission checks the frozen inputs
+before runtime side effects; legacy Study policy is checked at its input boundary.
+See the [implementation map](../../../src/open_cake_ir/lab/README.md)
 for module ownership and the independent replay package. Historical campaigns replay at their
 pinned source commit; a refactor never rewrites their records.
 

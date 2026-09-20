@@ -6,6 +6,11 @@
 
 可以把一次实验想成一次有记录的考试：先固定题目、工具和评分方法，再作答，最后由独立评分程序核对。不能做完题后改评分标准，也不能只保存答得好的那一份。
 
+普通优化由 `tools/launch_task.py` 直接准备 `run.json`，无需 Study 或 CampaignLock；
+`lab run preflight|execute|audit --run` 使用同一个 Run 引擎。跨架构 E/P 研究通过
+`tools/transfer_study.py` 预分配并执行这些 Run。具体命令见[独立 Run 入口](../RUNBOOK.md#independent-runs-and-transfer-studies)。
+下文的 Study/CampaignLock 步骤描述保留的旧输入适配及原有比较策略，不是普通工程优化的前置要求。
+
 ## 1. 先确定要用哪一版
 
 不要从旧文章复制版本号。三个入口各有明确用途：

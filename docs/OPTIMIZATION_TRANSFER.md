@@ -51,7 +51,9 @@ E0P1 的接口本身携带知识，不能称为“无知识”。这里分离的
 当前已有[显式融合、输出列特化与 Triton 执行宽度变换](../src/open_cake_ir/compiler/passes.py)，
 以及[带前提和反例的经验材料入口](OMOE_TRANSFER.md)。原型已接入完整 Program、独立 Run、
 材料与 pass 权限隔离、共同的 Run 装配、预分配 E/P Study 和审计统计。软件测试验证了协议路径；
-完整消费者迁移、跨目标适配与真实迁移收益仍待验收，自动机制提炼也不在当前实现范围内。
+普通任务、incumbent 与 QSA Cake 候选已迁入公共路径。真正需要组合执行的
+多 stage 程序目前限于 Triton/CUDA；其他目标保留已有单 kernel 路径。跨目标组合适配与真实
+迁移收益仍待验证，自动机制提炼不在当前实现范围内。
 
 可组合变换与调度复用已有明确基础，包括 [MLIR Transform](https://mlir.llvm.org/docs/Tutorials/transform/)
 和 [Transfer-Tuning](https://arxiv.org/abs/2201.05587v2)。本设计聚焦 Agent 经验如何经显式改写与目标验证
