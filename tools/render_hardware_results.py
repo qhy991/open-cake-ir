@@ -19,7 +19,8 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-GITHUB = "https://github.com/qhy991/open-cake-ir/blob/task/core-hardware-results/"
+# Public source snapshot. Keep downloads usable after the task branch is deleted.
+GITHUB = "https://github.com/qhy991/open-cake-ir/blob/f95af8005619a9356d5891873b38a9322d32f102/"
 PLATFORMS = ("NVIDIA", "Apple", "Hygon DCU", "AMD")
 F_WIDTH = "findings/2026-09-15-005-explicit-triton-cta-width.json"
 F_M4 = "findings/2026-09-12-001-r2-row-reduction-scalarization.json"
