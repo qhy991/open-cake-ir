@@ -21,6 +21,24 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TileGpuWorkerTests(unittest.TestCase):
+    def test_capture_retains_all_fresh_arguments_without_claiming_correctness(self):
+        calls = []
+        arguments = [object() for _ in range(4)]
+        loaded = SimpleNamespace(fresh_argument_sets=lambda count: arguments,
+                                 launch=calls.append,
+                                 snapshot=mock.Mock(side_effect=AssertionError('capture is not validation')))
+        def measure(function, **options):
+            self.assertEqual(options,dict(dry_run_iters=11,repeat_iters=2,
+                                         cold_l2_cache=True,use_cuda_graph=False))
+            for _ in range(4): function()
+            return [1.0,2.0]
+        samples, retained = worker.capture_tile_cohort(loaded,measure,
+            samples_per_cohort=2,route_calls_per_cohort=4)
+        self.assertEqual(samples,[1.0,2.0])
+        self.assertIs(retained,arguments)
+        self.assertEqual(calls,arguments)
+        loaded.snapshot.assert_not_called()
+
     def setUp(self):
         self.workload = load_workload(ROOT / 'contracts/workloads/rmsnorm-fp32-v1.json')
         self.manifest = TensorLaunchManifest.for_workload(self.workload, 'tiny', target='sm_100a',

@@ -394,17 +394,19 @@ class PairedExecutionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'job or work counters'):
             validate_paired_broker(receipt, 'gpuq-123456789abc', {**self.result['counters'], 'timing_samples': 499})
 
-    def test_submitter_transports_both_sealed_bundles_to_worker_and_checks_actual_job(self):
+    def _submitter_transport(self, *, corrupt_summary=False, unsafe_artifact=False):
         retained = self.execute()
         executor_reference = {'path':'runtime/executors/CPU-fixture.json',
                                'executor_id':'CPU-fixture'}
         executor = SimpleNamespace(reference=executor_reference,  executor_id='CPU-fixture', project_root=ROOT)
         requests = []
+        temporary_roots = []
         def command(argv, **kwargs):
             request_path = Path(argv[argv.index('--request') + 1])
             result_path = Path(argv[argv.index('--output') + 1])
             document = json.loads(request_path.read_bytes())
             requests.append(document)
+            temporary_roots.append(request_path.parent)
             with patch.object(worker.ExecutorRevision, 'load_reference', return_value=executor):
                 authority = worker._load_authority(request_path)
             self.assertEqual(authority.candidate, self.candidate)
@@ -412,7 +414,11 @@ class PairedExecutionTests(unittest.TestCase):
             self.assertEqual(authority.request['evaluation_protocol'], self.protocol)
             for role, name in self.result['receipt']['artifacts'].items():
                 (request_path.parent / name).write_bytes(retained.artifact_payloads[role])
-            result = {**self.result, 'admitted':True}
+            result = {**copy.deepcopy(self.result), 'admitted':True}
+            if corrupt_summary:
+                result['receipt']['timing']['pooled_median_ms'] = 9.0
+            if unsafe_artifact:
+                result['receipt']['artifacts']['timing_samples'] = '../outside-receipt'
             result_path.write_bytes(encoded(result))
             return SimpleNamespace(returncode=0, stdout=b'',
                 stderr=b'[gpu-run] accepted job gpuq-123456789abc\n')
@@ -426,10 +432,36 @@ class PairedExecutionTests(unittest.TestCase):
             evaluation_protocol=self.protocol, baseline=self.baseline,
             workload_loader=load_workload)
         with patch('open_cake_ir.lab.runtime.run_supervised', side_effect=command):
+            if corrupt_summary or unsafe_artifact:
+                from open_cake_ir.lab.faults import RunProtocolFault
+                with self.assertRaisesRegex(RunProtocolFault, 'evaluator evidence rejected') as caught:
+                    submitter.submit(self.candidate, case_id='tiny', purpose='search', attempt=1)
+                self.assertTrue(all(not path.exists() for path in temporary_roots))
+                return retained, caught.exception
             attempt = submitter.submit(self.candidate, case_id='tiny', purpose='search', attempt=1)
         self.assertEqual(attempt.receipt.canonical_sha256, retained.canonical_sha256)
         self.assertEqual(len(requests), 1)
         self.assertTrue(all(value.startswith('baseline-') for value in requests[0]['baseline']['artifact_paths'].values()))
+
+    def test_submitter_transports_both_sealed_bundles_to_worker_and_checks_actual_job(self):
+        self._submitter_transport()
+
+    def test_rejected_receipt_retains_raw_artifacts_after_worker_directory_is_removed(self):
+        retained, fault = self._submitter_transport(corrupt_summary=True)
+        self.assertEqual(fault.protocol_adherence, 'broker_fault')
+        self.assertIsInstance(fault.__cause__, ValueError)
+        self.assertEqual(json.loads(fault.artifact_payloads['broker_result'])['receipt']['timing']['pooled_median_ms'], 9.0)
+        self.assertIn('gpuq-123456789abc', fault.artifact_payloads['broker_stderr'].decode())
+        for role, payload in retained.artifact_payloads.items():
+            self.assertEqual(fault.artifact_payloads[f'receipt_{role}'], payload)
+
+    def test_fault_retention_never_opens_an_unsafe_artifact_to_complete_its_evidence(self):
+        retained, fault = self._submitter_transport(unsafe_artifact=True)
+        self.assertIn('unsafe', str(fault))
+        self.assertNotIn('receipt_timing_samples', fault.artifact_payloads)
+        self.assertEqual(fault.artifact_payloads['receipt_correctness_output'],
+                         retained.artifact_payloads['correctness_output'])
+        self.assertIn('broker_result', fault.artifact_payloads)
 
     def test_nested_paired_receipt_archives_and_replays_against_raw_evidence(self):
         receipt = self.execute()

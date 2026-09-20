@@ -256,6 +256,8 @@ class EvaluationReceipt:
                 raise ValueError("EvaluationReceipt raw artifacts are not JSON") from error
             if self.purpose == "attribution":
                 profile_document = json.loads(self.artifact_payloads["profile"])
+                if not isinstance(profile_document, Mapping):
+                    raise ValueError('attribution profile must be an object')
                 if profile_document.get("kind") == "metal_compute_stage_timestamps_v1":
                     from .metal_observations import load_metal_profile
                     profile = load_metal_profile(self.artifact_payloads["profile"],
