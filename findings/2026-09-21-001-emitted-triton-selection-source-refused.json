@@ -12,9 +12,13 @@
   ],
   "compiler_revision_id": "open-cake-ir@7e86e8ad636d0100aa50a865601ad53b29a57e72",
   "executor_revision": "xcore1002@7e86e8ad636d0100aa50a865601ad53b29a57e72",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null,
+  "decision": "accepted",
+  "implemented_in": "2aedbddcb46aff238b2d60b72342828d54a355f3",
+  "verified_by": {
+    "replay": "open-cake-ir-evidence/metax-parity-20260920/moe-routing-source-replay-283ab6a8.json: original retained 7e source is unchanged and now passes canonical kernel projection",
+    "tests": "Fixed 283ab6a8: 24 tests /1327 subtests; original MoE four routing stages and original QSA one-tile/two-tile selection project; unknown calls, indirect module attributes, kwargs expansion and host eval remain refused; full Corpus169 and89source snapshots unchanged.",
+    "scope": "Source-admission software repair only. No SDK compatibility, Target operation admission, device, workload or performance qualification follows."
+  },
   "evidence": {
     "workspace": "c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/moe-routing-compile-7e86e8ad-v1",
     "retained_source": "open-cake-ir-evidence/metax-parity-20260920/moe-routing-source-7e86e8ad.py",
