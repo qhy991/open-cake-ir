@@ -14,7 +14,7 @@
 
 | 平台 | 维护分支 | 数据日期 | 观察条目 | 发布数据 |
 |---|---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-20 | 57 | [nvidia/records.json](records.json) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-20 | 60 | [nvidia/records.json](records.json) |
 
 观察条目数不等于任务数：同一任务可以有不同形状、实验集合和历史尝试。
 
@@ -29,6 +29,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - F-2026-09-20-011隔离了AOT对齐信息机制：仅CPU编译、假设16字节pointer alignment，三项kernel由标量b16变为128位向量访存。该历史probe时ABI未保证该假设；未做GPU运行、速度或晋升声明。002原有.cg提示并未解决该向量化信息缺口。
 - PR #108已将运行时检查的通用/对齐AOT变体合入main，保留合法非对齐输入与原v1基线；本页历史测量仍指向原提交，新变体尚无GPU性能结论。
 - With 005, 023 (h1536) and 024, ten tasks have three-way comparisons and all 300 pre/postflight checks pass. The three new external timing edges fail the unchanged CV gate. The qualified starter edges show 2.475x for 024 and 0.944x for 005; keep the faster 005 starter.
+- Guarded AOT validation now passes 180/180 checks on B300: 001=65, 002=65, 025=50. CPU preparation and numerical verification run without a GPU lease; the device stage only launches and retains snapshots. Performance comparison of these new binaries remains pending.
 
 | 设备 / 集合 | Task | 输入 / Workload | 基线 µs | 候选 µs | 加速比 | 状态 | 详情 |
 |---|---|---|---:|---:|---:|---|---|
@@ -89,6 +90,9 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 | B300 / FlashInfer comparison | `023_rmsnorm_h1536` | fib_rmsnorm_h1536 / R=539, C=1536 / BF16 | 4.064 | 2.880 | — | Correct; timing quality failed | [nvidia-fib-starter-023-20260920](#nvidia-fib-starter-023-20260920) |
 | B300 / FlashInfer comparison | `024_rmsnorm_h2048` | fib_rmsnorm_h2048 / R=79, C=2048 / BF16 | 2.272 | 2.464 | — | Correct; timing quality failed | [nvidia-fib-external-024-20260920](#nvidia-fib-external-024-20260920) |
 | B300 / FlashInfer comparison | `024_rmsnorm_h2048` | fib_rmsnorm_h2048 / R=79, C=2048 / BF16 | 6.177 | 2.496 | 2.475× | Correct; timing qualified | [nvidia-fib-starter-024-20260920](#nvidia-fib-starter-024-20260920) |
+| B300 / guarded AOT validation | `001_fused_add_rmsnorm_h2048` | Retained exact shape / BF16 / five distributions / aligned and each pointer offset 2, 4, 8 bytes | — | — | — | Correctness only: 65 checks passed | [nvidia-alignment-guard-001-20260920](#nvidia-alignment-guard-001-20260920) |
+| B300 / guarded AOT validation | `002_fused_add_rmsnorm_h4096` | Retained exact shape / BF16 / five distributions / aligned and each pointer offset 2, 4, 8 bytes | — | — | — | Correctness only: 65 checks passed | [nvidia-alignment-guard-002-20260920](#nvidia-alignment-guard-002-20260920) |
+| B300 / guarded AOT validation | `025_rmsnorm_h4096` | Retained exact shape / BF16 / five distributions / aligned and each pointer offset 2, 4, 8 bytes | — | — | — | Correctness only: 50 checks passed | [nvidia-alignment-guard-025-20260920](#nvidia-alignment-guard-025-20260920) |
 
 ## 演进与更新
 
@@ -789,3 +793,33 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/839e8b8a4629e8b664724e22c98818337c6bc82c/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-024-20260920-comparison-6d911313e6b2/stages/comparison/comparison-report.json`。
 - All 30 pre/postflight checks over five distributions passed. CUPTI device activity, cold L2 per sample, 10 pairs x 25 samples, 42 calls per cohort. Maximum CV=3.979%; 0/20 cohorts exceed the unchanged 5% limit. Historical frozen candidate, not the new AOT alignment implementation; no E2E or official leaderboard claim.
+
+### nvidia-alignment-guard-001-20260920
+
+**B300 / guarded AOT validation · 001_fused_add_rmsnorm_h2048** — 2026-09-20 / Correctness only: 65 checks passed
+
+- Workload：`Retained exact shape / BF16 / five distributions / aligned and each pointer offset 2, 4, 8 bytes`；目标：`sm_103a`；版本：`compiler 88aab6b2; judge f1499b70`。
+- 基线：Original Workload oracle; no timing comparison；比值口径：`correctness_only`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/e1e550b44bf0f06866468c16b0bb253305ce6655/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-0e762344f212/stages/verify/guard-report.json`。
+- CPU preparation precedes the broker GPU stage. Every input/output snapshot is checked by the following CPU stage after GPU worker exit. All input mutation checks passed. Generic and aligned binaries are both exercised; the extracted restricted leaf rejects unaligned calls. No speedup or broad-shape claim.
+
+### nvidia-alignment-guard-002-20260920
+
+**B300 / guarded AOT validation · 002_fused_add_rmsnorm_h4096** — 2026-09-20 / Correctness only: 65 checks passed
+
+- Workload：`Retained exact shape / BF16 / five distributions / aligned and each pointer offset 2, 4, 8 bytes`；目标：`sm_103a`；版本：`compiler 88aab6b2; judge f1499b70`。
+- 基线：Original Workload oracle; no timing comparison；比值口径：`correctness_only`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/e1e550b44bf0f06866468c16b0bb253305ce6655/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-13447a2cfa61/stages/verify/guard-report.json`。
+- CPU preparation precedes the broker GPU stage. Every input/output snapshot is checked by the following CPU stage after GPU worker exit. All input mutation checks passed. Generic and aligned binaries are both exercised; the extracted restricted leaf rejects unaligned calls. No speedup or broad-shape claim.
+
+### nvidia-alignment-guard-025-20260920
+
+**B300 / guarded AOT validation · 025_rmsnorm_h4096** — 2026-09-20 / Correctness only: 50 checks passed
+
+- Workload：`Retained exact shape / BF16 / five distributions / aligned and each pointer offset 2, 4, 8 bytes`；目标：`sm_103a`；版本：`compiler 88aab6b2; judge f1499b70`。
+- 基线：Original Workload oracle; no timing comparison；比值口径：`correctness_only`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/e1e550b44bf0f06866468c16b0bb253305ce6655/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-alignment-guards-20260920-33445a79498a/stages/verify/guard-report.json`。
+- CPU preparation precedes the broker GPU stage. Every input/output snapshot is checked by the following CPU stage after GPU worker exit. All input mutation checks passed. Generic and aligned binaries are both exercised; the extracted restricted leaf rejects unaligned calls. No speedup or broad-shape claim.
