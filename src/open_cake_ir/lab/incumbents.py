@@ -488,7 +488,7 @@ def admit_baseline_selection(value, *, candidate, workload, case_id, backend,
 
 
 def _bound_audit_report(
-    project: Path, lock: CampaignLock, lock_path: Path, evidence_path: Path
+    project: Path, lock: CampaignLock | RunSpecification, lock_path: Path, evidence_path: Path
 ) -> Mapping[str, object]:
     """Audit through the frozen execution's own Executor source, including history."""
 

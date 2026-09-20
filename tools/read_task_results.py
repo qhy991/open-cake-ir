@@ -14,12 +14,29 @@ from pathlib import Path
 
 def read_workspace(workspace: Path) -> dict:
     report = json.loads((workspace / "report.json").read_text())
-    lock = json.loads((workspace / "campaign-lock.json").read_text())
+    if (workspace/'run.json').exists():
+        if (workspace/'campaign-lock.json').exists():
+            raise ValueError('workspace has two execution authorities')
+        lock = json.loads((workspace/'run.json').read_text())
+        audit,replay = report.get('audit'),report.get('replay')
+        if not isinstance(audit,dict) or not isinstance(replay,dict):
+            raise ValueError('Run report audit or replay fields differ')
+        audits = [audit]
+        verified = (report.get('run_id')==lock['run_id']==audit.get('run_id')==replay.get('run_id')
+                    and audit.get('archive_integrity') is True and audit.get('filesystem_custody_verified') is True
+                    and replay.get('refusals')==[])
+        performance = report.get('performance',{})
+    else:
+        lock = json.loads((workspace / "campaign-lock.json").read_text())
+        audits = report.get('run_audits',[])
+        verified = (all(report.get(key) is True for key in (
+            'archive_integrity_passed','filesystem_custody_verified','semantic_replay_passed'))
+            and report.get('campaign_complete') is True)
+        performance = report.get("descriptive", {}).get("performance", {})
     workload = lock["workload"]["workload_id"]
-    performance = report.get("descriptive", {}).get("performance", {})
     rows = performance.get("rows", [])
     retained = []
-    for audit in report.get("run_audits", []):
+    for audit in audits:
         endpoint = audit.get("endpoint") or {}
         best = endpoint.get("best_candidate_sha256")
         candidate = next((r for r in rows if r.get("role") == "candidate"
@@ -31,9 +48,7 @@ def read_workspace(workspace: Path) -> dict:
                          and r.get("run_id") == candidate.get("run_id")
                          and r.get("confirmation_event") == candidate.get("confirmation_event")), None)
         qualified = (
-            all(report.get(k) is True for k in (
-                "archive_integrity_passed", "filesystem_custody_verified", "semantic_replay_passed"))
-            and report.get("campaign_complete") is True
+            verified
             and audit.get("protocol_adherence") == "adhered"
             and audit.get("endpoint_observation") == "qualified"
             and candidate is not None and baseline is not None
