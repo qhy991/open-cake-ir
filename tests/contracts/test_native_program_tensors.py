@@ -1,8 +1,12 @@
 """CPU contracts for native Program custody; fixtures are not executable GPU code."""
 from dataclasses import dataclass
+from contextlib import redirect_stdout
 import importlib.util
+from io import StringIO
 import json
 from pathlib import Path
+import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -47,6 +51,24 @@ def build(program, workload, compiler):
 
 
 class NativeProgramCustody(unittest.TestCase):
+    def test_cli_persists_fault_observations_without_publishing_a_receipt(self):
+        spec = importlib.util.spec_from_file_location('qualify_tensor_program_fixture', ROOT / 'tools/qualify_tensor_program.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        payload = b'{"observed_tensors":{"out":{"bytes_base64":"AA=="}}}'
+        def fail(args, result):
+            raise RunProtocolFault('harness_fault', 'fixture teardown failed',
+                                   artifact_payloads={'program_observation': payload})
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'result'
+            argv = ['qualify_tensor_program.py', 'evaluate', '--built', str(Path(directory)/'built'),
+                    '--case', 'primary', '--output', str(output)]
+            with patch.object(sys, 'argv', argv), patch.object(module, 'evaluate', fail), redirect_stdout(StringIO()):
+                self.assertEqual(module.main(), 1)
+            self.assertEqual((output / 'fault-program_observation.bin').read_bytes(), payload)
+            self.assertFalse(json.loads((output / 'result.json').read_text())['passed'])
+            self.assertFalse((output / 'receipt.json').exists())
+
     def test_maca_pointer_signature_uses_the_comma_as_a_delimiter(self):
         from open_cake_ir.compiler.metax_toolchain import pointer_parameters
         for separator in (',', ', ', ' ,\n'):
