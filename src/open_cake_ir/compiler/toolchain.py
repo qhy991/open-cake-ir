@@ -536,9 +536,10 @@ def inspect_triton_resources(compilation: TritonCompilation, cuobjdump: str | Pa
     # An AMDGCN compilation has no CUBIN for this utility to read. Say that, rather
     # than failing on a missing artifact key several frames further in.
     if route_for_code_object(compilation.code_object).text_role != "ptx":
+        guidance = ("use inspect_amdgcn_resources" if compilation.code_object == CodeObject.HSACO.value
+                    else f"this inspector cannot read its {compilation.code_object!r} code object")
         raise ValueError(
-            f"target {compilation.target!r} produces no CUBIN; this inspector cannot read "
-            f"its {compilation.code_object!r} code object"
+            f"target {compilation.target!r} produces no CUBIN; {guidance}"
         )
     inspector = str(Path(cuobjdump).resolve(strict=True))
     version = subprocess.check_output([inspector, "--version"], text=True, timeout=20).strip()

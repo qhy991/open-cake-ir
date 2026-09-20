@@ -145,7 +145,7 @@ class JobIdsFollowTheAllocatorThatIssuedThem(unittest.TestCase):
         exclusive = {row.exclusive_job_prefix for row in PLATFORMS.values()} - {None}
         local = {row.local_job_prefix for row in PLATFORMS.values()} - {None}
         self.assertEqual(exclusive, {"gpuq"})
-        self.assertEqual(local, {"cuda", "metal", "hip"})
+        self.assertEqual(local, {"cuda", "metal", "hip", "maca"})
         self.assertEqual(set(LOCAL_KINDS), local)
 
 

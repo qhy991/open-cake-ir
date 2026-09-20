@@ -20,10 +20,10 @@ def _call(api, name: str, *arguments) -> None:
         raise RuntimeError(f"MACA {name} failed with status {status}")
 
 
-def load_runtime():
-    # The admitted MACA PyTorch has already loaded this runtime. The name is the
-    # vendor's ABI, not a generic substitute for CUDA or HIP's runtime.
-    api = ctypes.CDLL("libmcruntime.so")
+def load_runtime(path: str):
+    # Host admission proved this absolute file is the runtime torch already mapped.
+    # Do not resolve the soname again under a potentially different search path.
+    api = ctypes.CDLL(path)
     signatures = {
         "mcModuleLoadData": [ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p],
         "mcModuleGetFunction": [ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p, ctypes.c_char_p],
@@ -62,7 +62,7 @@ class LoadedMetaxCandidate:
                 or manifest.hidden_null_pointer_parameters != 0):
             raise ValueError("MACA device admission differs from the sealed target")
         image = ctypes.create_string_buffer(device_image(payload, target.architecture))
-        runtime = load_runtime() if api is None else api
+        runtime = load_runtime(admission.runtime_library) if api is None else api
         module, function = ctypes.c_void_p(), ctypes.c_void_p()
         _call(runtime, "mcModuleLoadData", ctypes.byref(module), image)
         try:

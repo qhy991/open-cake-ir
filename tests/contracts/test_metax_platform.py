@@ -2,7 +2,9 @@
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
+from unittest.mock import Mock, patch
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
@@ -86,6 +88,19 @@ def candidate(lm, x: cake.Tensor((8, 128), "bf16"), y: cake.Tensor((8, 128), "bf
         host = {"packages": {"flagtree": "0.5.1+metax3.1"}, "runtime": {"triton_version": "3.1.0"}}
         self.assertEqual(triton_version(host), "3.1.0")
         self.assertEqual(triton_version({"packages": {"triton": "3.7.1"}}), "3.7.1")
+
+    def test_worker_refuses_host_drift_before_device_admission_or_evaluation(self):
+        from open_cake_ir.tasks import evaluate as worker
+        executor = SimpleNamespace(admit_host=Mock(side_effect=ValueError("captured host drift")))
+        authority = SimpleNamespace(executor=executor, request={"purpose": "confirmatory"},
+                                    candidate=SimpleNamespace(target="xcore1002"))
+        with patch("open_cake_ir.evaluation.triton_metax.observe_local_metax") as observe, \
+             patch.object(worker, "_evaluate_tile_candidate") as evaluate:
+            with self.assertRaisesRegex(ValueError, "captured host drift"):
+                worker._evaluate_metax_candidate(authority, {}, collect_timing=False)
+            executor.admit_host.assert_called_once()
+            observe.assert_not_called()
+            evaluate.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 import importlib
 import platform
+from pathlib import Path
 
 
 PACKAGES = frozenset({"torch", "flagtree", "packaging", "pybind11", "psutil", "setuptools"})
@@ -63,6 +64,17 @@ def admit_host(host: Mapping, *, executor_id: str = "") -> Mapping:
         raise ValueError("MACA PyTorch or Triton provider differs from capture")
     for row in host["tools"]["build_tools"]:
         _admit_executable(row, "MACA build tool")
-    for row in host["runtime_libraries"]:
-        _admit_shared_library(row, "MACA runtime library")
-    return {"executor_id": executor_id, "kind": "maca", "triton_version": triton.__version__}
+    library = _admit_shared_library(host["runtime_libraries"][0], "MACA runtime library")
+    expected = Path(library["path"]).resolve(strict=True)
+    mapped = set()
+    for line in Path("/proc/self/maps").read_text().splitlines():
+        fields = line.split(maxsplit=5)
+        if len(fields) != 6 or not fields[5].startswith("/"):
+            continue
+        path = Path(fields[5])
+        if path.name == "libmcruntime.so" or path.name.startswith("libmcruntime.so."):
+            mapped.add(path.resolve(strict=True))
+    if mapped != {expected}:
+        raise ValueError("MACA PyTorch has not loaded exactly the captured runtime library")
+    return {"executor_id": executor_id, "kind": "maca", "triton_version": triton.__version__,
+            "runtime_library": str(expected)}

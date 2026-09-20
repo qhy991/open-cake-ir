@@ -432,6 +432,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
 
 def _evaluate_untimed_validation_cases(authority, result, admission):
     """Keep the full Workload distribution contract when a platform has no timer."""
+    from dataclasses import asdict
     cases = validation_case_ids(authority.request["evaluation_protocol"])
     if (cases != authority.workload.case_ids
             or authority.workload.document["validation"].get("all_cases_required") is not True):
@@ -465,6 +466,7 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
     })
     _write_new(authority.request_root / "launch-receipt.json", {
         "job_id": admission.broker_job_id, "gpu_uuid": admission.gpu_uuid,
+        "device_admission": asdict(admission),
         "candidate_sha256": authority.candidate.candidate_sha256,
         "correctness_launches": len(rows), "fallback_calls": 0,
         "allocation_mode": job_mode(admission.broker_job_id), "external_gpu_activity": "not_excluded",
@@ -828,8 +830,11 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
 
     if collect_timing or authority.request["purpose"] == "attribution":
         raise ValueError("MACA timing and profiler coverage are unavailable")
+    host = authority.executor.admit_host()
     if admission is None:
-        admission = observe_local_metax(authority.candidate.target)
+        admission = observe_local_metax(authority.candidate.target, runtime_library=host["runtime_library"])
+    elif admission.runtime_library != host["runtime_library"]:
+        raise ValueError("MACA device admission refers to another runtime library")
     result.update(job_id=admission.broker_job_id, mode=job_mode(admission.broker_job_id), admitted=True)
     _evaluate_tile_candidate(authority, result, None, admission, False, route_calls_per_cohort=None)
 

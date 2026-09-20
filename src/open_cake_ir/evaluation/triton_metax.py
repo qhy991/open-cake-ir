@@ -17,10 +17,11 @@ class MetaxDeviceAdmission:
     device_name: str
     warp_size: int
     pci_bus_id: str
+    runtime_library: str
     gpu_uuid: str | None = None
 
 
-def observe_local_metax(target_id: str) -> MetaxDeviceAdmission:
+def observe_local_metax(target_id: str, *, runtime_library: str) -> MetaxDeviceAdmission:
     from .local_broker import observe_local_job
 
     target = declared_target(target_id)
@@ -40,7 +41,7 @@ def observe_local_metax(target_id: str) -> MetaxDeviceAdmission:
         raise ValueError("MACA framework target differs from the declared device")
     # The compatibility API reports (8,0); the native runtime identifies XCORE1002
     # with (10,2). These are two different API facts, never CUDA target admission.
-    api = ctypes.CDLL("libmcruntime.so")
+    api = ctypes.CDLL(runtime_library)
     query = api.mcDeviceGetAttribute
     query.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_int, ctypes.c_int]
     query.restype = ctypes.c_int
@@ -57,4 +58,4 @@ def observe_local_metax(target_id: str) -> MetaxDeviceAdmission:
         raise ValueError(f"MACA native target {native_arch!r} differs from {target.target_id!r}")
     pci = f"{properties.pci_domain_id:04x}:{properties.pci_bus_id:02x}:{properties.pci_device_id:02x}"
     return MetaxDeviceAdmission(job_id, target_id, native_arch, properties.name,
-                                properties.warp_size, pci)
+                                properties.warp_size, pci, runtime_library)

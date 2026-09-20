@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.evaluation.triton_metax import MetaxDeviceAdmission
 from open_cake_ir.tasks import evaluate as worker
 from open_cake_ir.tasks.normalization.study import evaluation_policy
 from open_cake_ir.tasks.workloads import create_task
@@ -23,7 +24,8 @@ class UntimedValidationCases(unittest.TestCase):
             candidate=SimpleNamespace(candidate_sha256="c" * 64),
             request_root=Path(self.directory.name),
             request={"purpose": "confirmatory", "evaluation_protocol": evaluation_policy(self.workload)})
-        self.admission = SimpleNamespace(broker_job_id="maca-123456789abc", gpu_uuid=None)
+        self.admission = MetaxDeviceAdmission("maca-123456789abc", "xcore1002", "xcore1002",
+            "MetaX C550", 64, "0000:0f:00", "/opt/maca/lib/libmcruntime.so")
         self.result = {"counters": {"module_loads": 0, "kernel_calls": 0, "preflight_calls": 0}}
 
     def test_a_nonprimary_failure_rejects_the_whole_candidate(self):
@@ -50,6 +52,9 @@ class UntimedValidationCases(unittest.TestCase):
         report = json.loads((self.authority.request_root / "correctness-output.json").read_text())
         self.assertEqual(report["metrics"]["output_mismatches"], 1)
         self.assertEqual(len(report["validation_cases"]), len(cases))
+        launch = json.loads((self.authority.request_root / "launch-receipt.json").read_text())
+        self.assertEqual(launch["device_admission"]["pci_bus_id"], "0000:0f:00")
+        self.assertEqual(launch["device_admission"]["runtime_library"], self.admission.runtime_library)
 
     def test_a_missing_distribution_is_refused_before_module_loading(self):
         self.authority.request["evaluation_protocol"]["validation_case_ids"] = ["primary"]
