@@ -25,6 +25,7 @@ retains its original dates and conclusions.
 Start with the system overview, then follow the implementation or evidence relevant to your task.
 
 - [系统概览 / Architecture](ARCHITECTURE.md) · [English](en/ARCHITECTURE.md)
+- [跨硬件优化知识迁移 / Executable optimization knowledge](OPTIMIZATION_TRANSFER.md) · [English](en/OPTIMIZATION_TRANSFER.md) · [消融设计](OPTIMIZATION_TRANSFER_ABLATION.md)
 - [入门与运行 / Getting started](GETTING_STARTED.md)
 - [概念导读 / Wiki](wiki/README.md) · [English](en/wiki/README.md)
 - [当前状态 / Current status](../reports/current/STATUS.md)

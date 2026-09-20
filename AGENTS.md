@@ -201,6 +201,13 @@ The paper states eight. They bind IR changes here.
   states its preconditions, returns a complete candidate or a reason, and is exercised on
   counterexamples that the intended guard -- not an unrelated rule -- refuses.
 
+- In fusion, tiling and memory-hierarchy investigations, distinguish reusable rewrites
+  from target-specific mappings and record the promotion disposition under the existing
+  workflow; the [transfer design](docs/OPTIMIZATION_TRANSFER.md) owns the method. In controlled
+  studies, the Study's material and pass-access treatment takes precedence: do not inject
+  withheld experience or transformations into an ablation arm. This is a research priority,
+  not evidence that transfer works or a requirement to mint a pass.
+
 ## Tick-tock between campaigns and Revisions
 
 - Campaigns run only on frozen code; that is the tock. A compiler or executor change is a

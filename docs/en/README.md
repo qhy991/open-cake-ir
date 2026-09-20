@@ -67,6 +67,11 @@ Metal uses `simd_program_tile` with 32 lanes per threadgroup and runs normalizat
 
 Original documents retain their paths. Chinese reading companions for English originals live under zh-CN; English counterparts to Chinese originals live here. Companions simplify explanations and link full historical tables rather than creating a second authority. Dates, scope, failures, and unverified outcomes retain their original meaning. Source generation, compilation, correctness, and performance remain distinct.
 
+## Research design
+
+[Executable optimization knowledge transfer](OPTIMIZATION_TRANSFER.md) describes the proposed
+cross-hardware mechanism and its explanation-versus-rewrite ablation.
+
 ## Citation
 
 These documents are the English reading edition of Haiyan Qin's open-cake-ir technical report.
