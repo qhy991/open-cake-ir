@@ -84,7 +84,7 @@ def derive_ralph_stop_reason(
         return "active_authoring_time_limit"
     required = {
         "search": searches_per_turn,
-        "confirmatory": 1,
+        "confirmatory": 0,
         "attribution": searches_per_turn if profile_each_search_survivor else 0,
     }
     limits = {

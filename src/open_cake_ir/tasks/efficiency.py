@@ -148,7 +148,7 @@ def campaign_performance(project_root, campaign, report) -> dict:
                 if role not in medians:
                     continue
                 row = score_measurement(work, target, medians[role], cache_protocol=cache)
-                row.update(run_id=audit.run_id, turn=payload["turn"], role=role,
+                row.update(run_id=audit.run_id, turn=payload.get("source_turn", payload.get("turn")), role=role,
                            candidate_id=payload["candidate_sha256"] if role == "candidate" else baseline.get("candidate_sha256"),
                            confirmation_event=event.get("sequence"),
                            speedup=timing.get("speedup") if role == "candidate" else 1.0)

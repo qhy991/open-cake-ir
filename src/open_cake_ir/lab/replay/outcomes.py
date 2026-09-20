@@ -110,10 +110,11 @@ def _replay_terminal(
     receipts: Mapping[tuple[int, str, str], EvaluationReceipt],
     searches_per_turn: int,
     invocation_counts: Mapping[str, int] | None = None,
-    boundary_converted: bool = False,
+    confirmation=None,
+    search_state=None,
 ) -> None:
     """Refuse unless the terminal, checkpoints and Ralph state rederive from the Run's facts."""
-    if not observations and not faults and endpoint_policy(lock.terminal_policy) is None:
+    if not observations and not faults and search_state is None:
         refuse("run_terminal", "a Run with no Turn observation and no fault has no terminal to derive")
     observed_turns = [item.turn for item in observations]
     if observed_turns != list(range(1, len(observations) + 1)):
@@ -132,18 +133,10 @@ def _replay_terminal(
             "provider_tokens": item.provider_tokens,
             "state": item.state,
             "best_candidate_sha256": item.best_candidate_sha256,
-            "best_confirmed_latency_ms": item.best_confirmed_latency_ms,
+            "best_search_latency_ms": item.best_search_latency_ms,
         }
         for item in projected
     ]
-    if boundary_converted and projected[-1].state == "unreached":
-        # F-2026-09-16-002: the conversion exists because a checkpoint had
-        # already settled. A terminal whose own replayed facts leave the final
-        # checkpoint unreached has nothing settled to convert, so the marker
-        # cannot stand -- the fault terminal it displaced does.
-        refuse("run_terminal.payload.boundary_diagnostic",
-               "a boundary conversion with the final checkpoint unreached has nothing settled to convert",
-               observed=projected[-1].state)
     checkpoint_payload = _object(
         checkpoint_events[0].get("payload"), "checkpoints_projected.payload"
     )
@@ -181,25 +174,12 @@ def _replay_terminal(
             refuse("checkpoints_projected.payload.ralph.iteration",
                    "differs from the Turn after the last observed or budgeted one",
                    observed=state_turn, expected=expected_turn)
-    # A converted boundary terminal keeps its fault observation in the ledger
-    # but derives its stop reason like any normal budget terminal; every other
-    # faulted Run reports the adherence it ended with.
-    expected_stop_reason = (
-        audit.protocol_adherence
-        if faults and not boundary_converted
-        else derive_ralph_stop_reason(
-            RalphBudget.from_mapping(budget),
-            turn=state_turn,
-            cumulative_provider_tokens=terminal_tokens,
-            elapsed_wall_seconds=float(elapsed_wall),
-            active_authoring_seconds=float(active_authoring),
-            evaluation_counts=expected_counts,
-            searches_per_turn=searches_per_turn,
-            profile_each_search_survivor=(
-                attribution_evaluation == _ATTRIBUTION_EVALUATION
-            ),
-        )
-    )
+    expected_stop_reason = audit.protocol_adherence if faults else (
+        search_state['terminal_reason'] if search_state else None)
+    if search_state is not None:
+        if (elapsed_wall < search_state['elapsed_wall_seconds']
+            or active_authoring != search_state['active_authoring_seconds']):
+            refuse('checkpoints_projected.payload.ralph', 'terminal time predates search or adds authoring after nomination')
     for field, observed, expected in (
         ("kind", ralph_state.get("kind"), "ralph_state_v1"),
         ("cumulative_provider_tokens", ralph_state.get("cumulative_provider_tokens"), terminal_tokens),
@@ -215,7 +195,7 @@ def _replay_terminal(
     expected_observation, expected_endpoint = matched_endpoint(
         checkpoint=projected[-1], observations=observations,
         terminal_provider_tokens=terminal_tokens, protocol_adherence=audit.protocol_adherence,
-        terminal_reason=expected_stop_reason, analysis=lock.terminal_policy,
+        terminal_reason=expected_stop_reason, analysis=lock.terminal_policy, confirmation=confirmation,
     )
     if audit.endpoint_observation != expected_observation:
         refuse("run_terminal.payload.endpoint_observation",

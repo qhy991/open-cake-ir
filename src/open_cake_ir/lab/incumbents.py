@@ -576,6 +576,7 @@ def promote_task_incumbent(
         event
         for event in events
         if event.get("kind") == "launchable_candidate_sealed"
+        and event["payload"].get("turn") == selected.get("source_turn")
         and _object(event.get("payload"), "launchable event").get(
             "candidate_sha256"
         )
@@ -630,7 +631,7 @@ def promote_task_incumbent(
         or type(receipt.get("kernel_calls")) is not int or receipt["kernel_calls"] <= 0
         or receipt.get("fallback_calls") != 0
         or selected.get("evaluation_receipt_sha256") != receipt_sha256
-        or selected.get("turn") != confirm_payload.get("turn")
+        or selected.get("source_turn") != confirm_payload.get("source_turn")
         or selected.get("confirmed_latency_ms") != medians.get("candidate")
     ):
         raise ValueError("promoted candidate is not a material confirmed win")

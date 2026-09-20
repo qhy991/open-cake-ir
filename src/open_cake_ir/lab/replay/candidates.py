@@ -16,6 +16,7 @@ from ..contracts import CampaignLock
 from ..pairing import comparison_arm, native_backend
 from open_cake_ir.evaluation.paired import paired_protocol
 from ..routing import route_rejection
+from ..evaluation_lifecycle import evaluation_origin
 
 
 def _artifact_outcomes_are_closed(payload: Mapping[str, object]) -> bool:
@@ -74,10 +75,10 @@ def _replay_candidates(
         payload = _object(
             event.get("payload"), "evaluation_attempt_completed.payload"
         )
-        turn = payload.get("turn")
+        turn = evaluation_origin(payload)
         purpose = payload.get("purpose")
         candidate_sha256 = payload.get("candidate_sha256")
-        expected_fields = {"turn", "purpose", "candidate_sha256", "objects"}
+        expected_fields = {"source_turn" if "source_turn" in payload else "turn", "purpose", "candidate_sha256", "objects"}
         if set(payload) != expected_fields:
             refuse(f"{location}.payload", "fields differ", observed=set(payload),
                    expected=expected_fields)
@@ -187,10 +188,10 @@ def _replay_candidates(
                        observed={"turn": turn, "candidate_sha256": candidate_sha256})
             rejected[(turn, candidate_sha256)] = payload
         elif kind == "candidate_evaluated":
-            turn = payload.get("turn")
+            turn = evaluation_origin(payload)
             purpose = payload.get("purpose")
             candidate_sha256 = payload.get("candidate_sha256")
-            expected_fields = {"turn", "purpose", "candidate_sha256", "objects"}
+            expected_fields = {"source_turn" if "source_turn" in payload else "turn", "purpose", "candidate_sha256", "objects"}
             if purpose == "confirmatory":
                 expected_fields.add("elapsed_wall_seconds")
             if set(payload) != expected_fields:

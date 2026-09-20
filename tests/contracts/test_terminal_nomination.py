@@ -1,0 +1,93 @@
+"""Terminal confirmation uses one unchanged artifact after all authoring/search."""
+from copy import deepcopy
+from dataclasses import replace
+from hashlib import sha256
+import json
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
+
+from open_cake_ir.evidence import EvidenceStore
+from open_cake_ir.lab.provider_policy import execution_configuration
+from open_cake_ir.lab.replay import replay_matched_run
+from open_cake_ir.serialization import canonical_json_bytes as encoded
+from tests.contracts import test_run_specification as run_fixture
+from tests.contracts.test_lab import SemanticLabTestCase, FakeEnvironment, FakeEvaluator, RalphFakeProvider
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class EarlierSearchEvaluator(FakeEvaluator):
+    def latency_ms(self, arm, turn, purpose):
+        return (0.4 if turn == 1 else 0.9) if purpose == 'search' else 1.2
+
+
+class NominationTests(SemanticLabTestCase):
+    def execute(self, evaluator_class=EarlierSearchEvaluator):
+        lab,spec = run_fixture.IndependentRunTests.fixture(self)
+        document = spec.document
+        provider = RalphFakeProvider({spec.run_id:lab.task_package(spec,spec.run_id)})
+        provider.configuration = execution_configuration(document['authoring']['provider'])
+        provider.qualification_sha256 = document['authoring']['provider']['qualification']['canonical_sha256']
+        evaluator = evaluator_class(document['evaluation_protocol'],
+            sha256(encoded(document['evaluation_protocol'])).hexdigest(),document['workload']['canonical_sha256'])
+        temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
+        run = lab.execute_run(spec,Path(temporary.name)/'evidence',provider=provider,
+            environment=FakeEnvironment('open_cake',document['authoring']),evaluator=evaluator)
+        audit,replay = lab.audit_run(run)
+        self.assertTrue(replay,replay.refusals)
+        evidence = EvidenceStore.open(run.evidence_root)
+        events = evidence.replay_events(spec.run_id)
+        return lab,spec,run,audit,evidence,events,provider
+
+    def test_earlier_search_winner_is_confirmed_once_after_all_search_at_its_actual_total_cost(self):
+        _,spec,_,audit,_,events,provider = self.execute()
+        nominee = next(e['payload'] for e in events if e['kind']=='candidate_nominated')
+        self.assertEqual(nominee['source_turn'],1)
+        confirmations = [e['payload'] for e in events if e['kind']=='candidate_evaluated'
+                         and e['payload']['purpose']=='confirmatory']
+        self.assertEqual(len(confirmations),1)
+        self.assertEqual(confirmations[0]['source_turn'],1)
+        self.assertNotIn('turn',confirmations[0])
+        self.assertEqual(confirmations[0]['candidate_sha256'],nominee['candidate_sha256'])
+        end = next(i for i,e in enumerate(events) if e['kind']=='search_completed')
+        self.assertTrue(all(e['kind'] not in {'provider_turn_completed','candidate_set_filtered'} for e in events[end+1:]))
+        self.assertEqual(len(provider.requests),2)
+        self.assertTrue(all('confirmed_latency_ms' not in request.feedback for request in provider.requests))
+        self.assertEqual(audit.endpoint['best_confirmed_latency_ms'],1.2)
+        self.assertEqual(audit.endpoint['budget'],160000)
+        checkpoints = next(e['payload']['checkpoints'] for e in events if e['kind']=='checkpoints_projected')
+        self.assertEqual(checkpoints[0]['best_search_latency_ms'],0.4)
+        self.assertNotIn('best_confirmed_latency_ms',checkpoints[0])
+
+    def test_confirmation_failure_does_not_nominate_or_evaluate_a_replacement(self):
+        class Failing(EarlierSearchEvaluator):
+            def evaluate(self,candidate,*,case_id,purpose):
+                if purpose == 'confirmatory':
+                    raise RuntimeError('CPU fixture confirmation unavailable')
+                return super().evaluate(candidate,case_id=case_id,purpose=purpose)
+        _,_,_,audit,_,events,provider = self.execute(Failing)
+        self.assertEqual(audit.protocol_adherence,'broker_fault')
+        self.assertEqual(audit.endpoint_observation,'missing')
+        self.assertEqual(sum(e['kind']=='candidate_nominated' for e in events),1)
+        starts = [e['payload'] for e in events if e['kind']=='evaluation_attempt_started'
+                  and e['payload']['purpose']=='confirmatory']
+        self.assertEqual(len(starts),1)
+        self.assertEqual(starts[0]['source_turn'],1)
+        self.assertEqual(len(provider.requests),2)
+
+    def test_replay_refuses_posthoc_nominee_changes_and_search_after_nomination(self):
+        lab,spec,_,audit,evidence,events,_ = self.execute()
+        for mutation in ('source','artifact','duplicate','resume'):
+            changed = deepcopy(list(events))
+            index = next(i for i,e in enumerate(changed) if e['kind']=='candidate_nominated')
+            if mutation == 'source': changed[index]['payload']['source_turn'] = 2
+            elif mutation == 'artifact': changed[index]['payload']['candidate_record_sha256'] = '0'*64
+            elif mutation == 'duplicate': changed.insert(index+1,deepcopy(changed[index]))
+            else:
+                selected = next(e for e in changed if e['kind']=='candidate_selected')
+                changed.insert(index+1,deepcopy(selected))
+            with self.subTest(mutation=mutation),patch.object(evidence,'replay_events',return_value=changed):
+                replay = replay_matched_run(evidence,audit,spec,project_root=ROOT,
+                    manifest_parser=lab._parse_manifest,task_package=lab.task_package)
+                self.assertFalse(replay)

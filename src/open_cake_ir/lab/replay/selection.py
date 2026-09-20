@@ -329,34 +329,10 @@ def _replay_candidate_selection(
             if selection.get("reason") != expected_reason:
                 refuse(f"{location}.payload.reason", "differs from the rederived selection reason",
                        observed=selection.get("reason"), expected=expected_reason)
-            confirms = [
-                receipt
-                for (candidate_turn, purpose, candidate), receipt in receipts.items()
-                if candidate_turn == turn
-                and purpose == "confirmatory"
-                and candidate == selected
-            ]
-            foreign_confirms = [
-                key
-                for key in receipts
-                if key[0] == turn
-                and key[1] == "confirmatory"
-                and key[2] != selected
-            ]
-            confirm_location = event_location("candidate_evaluated", turn=turn, purpose="confirmatory")
-            if foreign_confirms:
-                refuse(confirm_location, "a confirmatory evaluation of a candidate that was not selected",
-                       observed=[key[2] for key in foreign_confirms], expected=selected)
-            if not qualified_search and confirms:
-                refuse(confirm_location, "a confirmatory evaluation although no search candidate qualified",
-                       observed=len(confirms), expected=0)
             if turn == fault_turn:
                 continue
-            if len(confirms) != (1 if qualified_search else 0):
-                refuse(confirm_location, "confirmatory evaluation count differs",
-                       observed=len(confirms), expected=1 if qualified_search else 0)
-            confirmed = confirms[0] if confirms else None
-            qualified = confirmed is not None and _receipt_qualifies(confirmed)
+            confirmed = receipts.get((turn, 'confirmatory', selected))
+            confirmed_qualified = confirmed is not None and _receipt_qualifies(confirmed)
             attributions = [
                 key
                 for key in receipts
@@ -371,7 +347,7 @@ def _replay_candidate_selection(
                 if attribution_evaluation == _ATTRIBUTION_EVALUATION
                 else (
                     [selected]
-                    if qualified
+                    if confirmed_qualified
                     and attribution_evaluation
                     == _LEGACY_ATTRIBUTION_EVALUATION
                     else []
@@ -390,40 +366,13 @@ def _replay_candidate_selection(
                     turn,
                     cumulative_by_turn[turn],
                     selected,
-                    qualified,
-                    _receipt_latency_ms(confirmed) if qualified else None,
+                    bool(qualified_search),
+                    _receipt_latency_ms(receipts[(turn, "search", selected)]) if qualified_search else None,
                 )
             )
         else:
-            # Historical evidence wrote exactly one candidate per Turn and had no
-            # explicit filter/selection events. Keep that bounded spelling readable;
-            # new evidence must use the candidate-set contract above.
-            if len(provider_candidates) != 1:
-                refuse(event_location("provider_turn_completed", turn=turn),
-                       "a Turn without a candidate set submits exactly one candidate",
-                       observed=len(provider_candidates), expected=1)
-            selected = provider_candidates[0]
-            if turn == fault_turn:
-                continue
-            has_rejection = (turn, selected) in rejected
-            has_evaluation = any(
-                key[0] == turn and key[2] == selected for key in receipts
-            )
-            if has_rejection == has_evaluation:
-                refuse(event_location("provider_turn_completed", turn=turn),
-                       "the Turn's candidate was neither rejected nor evaluated, or both",
-                       observed={"rejected": has_rejection, "evaluated": has_evaluation})
-            confirmed = receipts.get((turn, "confirmatory", selected))
-            qualified = confirmed is not None and _receipt_qualifies(confirmed)
-            observations.append(
-                TurnObservation(
-                    turn,
-                    cumulative_by_turn[turn],
-                    selected,
-                    qualified,
-                    _receipt_latency_ms(confirmed) if qualified else None,
-                )
-            )
+            refuse(event_location('provider_turn_completed', turn=turn),
+                   'current Runs require explicit candidate-set filtering and selection')
 
     if set(filters) != candidate_set_turns - ({fault_turn} if fault_turn else set()):
         # A fault may happen after its filter was written, so the final Turn is the

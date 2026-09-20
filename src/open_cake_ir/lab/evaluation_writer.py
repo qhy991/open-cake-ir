@@ -35,9 +35,12 @@ class EvaluationWriter:
     evaluation_protocol: Mapping[str, object]
     execution: Mapping[str, object]
 
-    def evaluate(self, candidate: LaunchableCandidate, *, purpose: str, turn: int) -> EvaluationReceipt:
+    def evaluate(self, candidate: LaunchableCandidate, *, purpose: str, turn=None, source_turn=None) -> EvaluationReceipt:
+        if (turn is None) == (source_turn is None) or (purpose == 'confirmatory' and source_turn is None):
+            raise ValueError('Evaluation needs one search turn or a terminal nomination source')
+        origin = {'turn': turn} if turn is not None else {'source_turn': source_turn}
         self.ledger.append("evaluation_attempt_started", {
-            "turn": turn, "purpose": purpose, "candidate_sha256": candidate.candidate_sha256,
+            **origin, "purpose": purpose, "candidate_sha256": candidate.candidate_sha256,
         })
         self.ralph.record_evaluation(purpose)
         attempt = self.evaluator.evaluate(candidate, case_id=self.case_id, purpose=purpose)
@@ -45,7 +48,7 @@ class EvaluationWriter:
         self.ledger.append(
             "evaluation_attempt_completed",
             {
-                "turn": turn,
+                **origin,
                 "purpose": purpose,
                 "candidate_sha256": candidate.candidate_sha256,
                 "objects": _archive_logical_attempt(self.evidence, attempt),
@@ -72,7 +75,7 @@ class EvaluationWriter:
         self.ledger.append(
             "candidate_evaluated",
             {
-                "turn": turn,
+                **origin,
                 "purpose": purpose,
                 "candidate_sha256": candidate.candidate_sha256,
                 "objects": references,

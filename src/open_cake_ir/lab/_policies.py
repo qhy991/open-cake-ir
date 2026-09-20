@@ -72,6 +72,8 @@ _MATCHED_EVENT_KINDS_V1 = frozenset(
         "candidate_evaluated",
         "diagnosis_routed",
         "candidate_selected",
+        "search_completed",
+        "candidate_nominated",
         "run_fault",
         "checkpoints_projected",
         "run_terminal",

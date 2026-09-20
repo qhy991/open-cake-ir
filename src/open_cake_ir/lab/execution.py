@@ -24,16 +24,17 @@ from .execution_admission import validate_execution_bindings, validate_run_bindi
 from .candidate_filter import _build_filter_candidates, record_candidate_rejections
 from .diagnoses import rejected_peer_feedback
 from .run_completion import _seal_run, record_run_fault
-from .faults import RunProtocolFault, ReportedProviderUsage, ProviderBoundaryDeclarationFault
+from .faults import RunProtocolFault, ReportedProviderUsage
 from .provider_events import reported_provider_usage, provider_token_delta
-from .checkpoints import TurnObservation, project_checkpoints
+from .checkpoints import TurnObservation
+from .nomination import FinalConfirmation, nominate, nomination_document
 from .run_spec import RunSpecification, RunRef
 from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, TurnRequest
 from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
 from .executor import ExecutorRevision
 from .pairing import comparison_arm, native_backend
-from .ralph import RalphBudget, RalphController
+from .ralph import RalphBudget, RalphController, derive_ralph_stop_reason
 from .selection import (
     _collapse_diagnosis,
     _matched_search_decision,
@@ -225,6 +226,9 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
     cumulative_tokens = 0
     feedback: Mapping[str, object] = MappingProxyType({"kind": "initial"})
     observations: list[TurnObservation] = []
+    selected_by_turn = {}
+    confirmation = None
+    confirmation_source_turn = None
     live_stage = "provider"
     provider_usage_accounted = False
     provider_turn = None
@@ -235,7 +239,6 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
         clock=clock,
     )
     ralph_stop_reason: str | None = None
-    boundary_diagnostic: Mapping[str, object] | None = None
     evaluation_writer = EvaluationWriter(
         evidence=evidence, ledger=ledger, evaluator=evaluator, ralph=ralph,
         case_id=case_id, workload_sha256=workload_sha256,
@@ -485,35 +488,12 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                     },
                 )
 
-                confirmed: EvaluationReceipt | None = None
-                if qualified_search:
-                    confirmed = evaluation_writer.evaluate(
-                        launchable, purpose="confirmatory", turn=turn_number,
-                    )
-                qualified = confirmed is not None and _receipt_qualifies(confirmed)
-                latency = _receipt_latency_ms(confirmed) if qualified else None
-                # The current assay already profiled every correctness-passing
-                # search survivor. The selected profile is feedback, not an
-                # acceptance input. Frozen Studies retain the earlier
-                # selected-after-confirmation operation at this compatibility
-                # edge.
+                qualified = bool(qualified_search)
+                selected_by_turn[turn_number] = selected
                 attribution = selected.attribution
-                if (
-                    not profile_each_search_survivor
-                    and qualified
-                    and attribution_evaluation
-                    == _LEGACY_ATTRIBUTION_EVALUATION
-                ):
-                    attribution = evaluation_writer.evaluate(launchable, purpose="attribution", turn=turn_number)
-                observations.append(
-                    TurnObservation(
-                        turn_number,
-                        cumulative_tokens,
-                        launchable.candidate_sha256,
-                        qualified,
-                        latency,
-                    )
-                )
+                observations.append(TurnObservation(turn_number, cumulative_tokens,
+                    launchable.candidate_sha256, qualified,
+                    _receipt_latency_ms(search) if qualified else None))
                 # A measurement says what this candidate cost; the Environment's
                 # surviving findings say which declared resource is what bounds
                 # it. Only the pair is actionable, so the next Turn gets both.
@@ -521,9 +501,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                     "kind": "evaluation",
                     "candidate_disposition": search.candidate_disposition,
                     "measurement_quality": search.measurement_quality,
-                    "confirmed": qualified,
+                    "search_qualified": qualified,
                     "search_latency_ms": _receipt_latency_ms(search),
-                    "confirmed_latency_ms": latency,
                     "findings": environment_result.feedback.get("findings", []),
                 }
                 if isinstance(search.timing, Mapping):
@@ -554,6 +533,33 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 })
             if cumulative_tokens >= cast(int, budget["limit"]):
                 break
+        # Search closes before nomination; no author/build activity follows this.
+        search_state = dict(ralph.state_card(
+            turn=min(maximum_turns + 1, len(observations) + 1),
+            cumulative_provider_tokens=cumulative_tokens, feedback=feedback))
+        ralph_stop_reason = derive_ralph_stop_reason(ralph_budget,
+            turn=search_state['iteration'], cumulative_provider_tokens=cumulative_tokens,
+            elapsed_wall_seconds=search_state['elapsed_wall_seconds'],
+            active_authoring_seconds=search_state['active_authoring_seconds'],
+            evaluation_counts=search_state['evaluation_counts'],
+            searches_per_turn=ralph.searches_per_turn,
+            profile_each_search_survivor=profile_each_search_survivor)
+        if ralph_stop_reason is None:
+            raise ValueError('search ended without a declared budget stop')
+        search_state['terminal_reason'] = ralph_stop_reason
+        ledger.append('search_completed', {'state': search_state})
+        nominee = nominate(observations, provider_token_limit=budget['limit'])
+        selected = selected_by_turn[nominee.turn] if nominee else None
+        ledger.append('candidate_nominated', nomination_document(nominee, selected.launchable if selected else None))
+        if nominee is not None:
+            confirmation_source_turn = nominee.turn
+            live_stage = 'evaluation'
+            confirmed = evaluation_writer.evaluate(selected.launchable, purpose='confirmatory', source_turn=nominee.turn)
+            qualified = _receipt_qualifies(confirmed)
+            confirmation = FinalConfirmation(nominee.turn, nominee.candidate_sha256, cumulative_tokens,
+                qualified, _receipt_latency_ms(confirmed) if qualified else None)
+            if qualified and attribution_evaluation == _LEGACY_ATTRIBUTION_EVALUATION:
+                evaluation_writer.evaluate(selected.launchable, purpose='attribution', source_turn=nominee.turn)
     except Exception as error:
         pending_usage = live_stage == "provider" and not provider_usage_accounted
         observed_usage = None
@@ -586,29 +592,11 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 previous_tokens=cumulative_tokens)
             if observed_usage is not None:
                 cumulative_tokens += observed_usage.provider_tokens
-        # F-2026-09-16-002: the budget boundary can take the final Turn's
-        # candidate write with it while the CLI still reports success and
-        # the author still declares candidate_written. The fault observation
-        # is retained below either way; but when the checkpoint grid had
-        # already settled an outcome on completed Turns, that settled
-        # observation wins the terminal instead of a post-hoc fault
-        # overwriting it. With nothing settled the fault stands unchanged.
-        boundary_diagnostic = (
-            {"turn": turn_number, "stage": "provider",
-             "diagnostic": "candidate_write_declared_unwitnessed"}
-            if isinstance(error, ProviderBoundaryDeclarationFault)
-            and observations
-            and project_checkpoints(
-                turns=observations,
-                checkpoints=checkpoints,
-                terminal_provider_tokens=cumulative_tokens,
-            )[-1].state != "unreached"
-            else None
-        )
         fault = record_run_fault(
             error=error,
             live_stage=live_stage,
             turn_number=turn_number,
+            source_turn=confirmation_source_turn,
             cumulative_tokens=cumulative_tokens,
             evidence=evidence,
             ledger=ledger,
@@ -617,12 +605,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
             declared_usage=declared_usage,
             artifact_payloads=payloads,
         )
-        if boundary_diagnostic is not None:
-            protocol_adherence = "adhered"
-            ralph_stop_reason = None
-        else:
-            protocol_adherence = fault
-            ralph_stop_reason = fault
+        protocol_adherence = fault
+        ralph_stop_reason = fault
 
     _seal_run(
         ralph_stop_reason=ralph_stop_reason,
@@ -635,5 +619,5 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
         protocol_adherence=protocol_adherence,
         ralph=ralph,
         analysis=specification.terminal_policy,
-        boundary_diagnostic=boundary_diagnostic,
+        confirmation=confirmation,
     )
