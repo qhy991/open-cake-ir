@@ -20,6 +20,15 @@
   "observation": "The adapter only allows status completed for file changes despite retaining failed command/tool statuses. Thus a well-formed failed operation hides the actual file-write failure. Both hosts share the same HOME under /mnt/b300-shared; helper disappearance and resume failure motivate testing explicit node-local Codex state, but do not prove a single root cause. A deterministic sandbox /bin/true probe succeeds on both nodes; M2 also reports stale arg0 cleanup failure. Old 003 has serial GPU evaluation receipts and is not proven stuck.",
   "proposed_change": "Retain failed file-change status without changing payload/lifecycle checks or candidate file postconditions; absent/invalid candidates still fail. Permit a validated, explicitly provisioned per-node codex_home in experiment inputs, forwarded only to that node launcher and preserved across initial/resume. Keep sandbox workspace-write and the current binary/model. Validate with raw replay and a fresh two-turn qualification before new runs. Never rewrite old failed outcomes.",
   "decision": "accepted",
-  "implemented_in": null,
-  "verified_by": null
+  "implemented_in": "2c1f3e64",
+  "verified_by": {
+    "kind": "software and retained original JSONL replay",
+    "source_commit": "2c1f3e64",
+    "tests_passed": 60,
+    "subtests_passed": 1213,
+    "corpus_cases": 164,
+    "raw_replay": "/tmp/open-cake-provider-repair-evidence-20260920/exact-parser-replay.json",
+    "outcome": "Both original raw streams parse with failed file statuses retained; candidate absence still refuses acceptance. Old failures remain failed.",
+    "scope": "Protocol parsing repair only. Node-local state mitigation and live recovery require new qualification."
+  }
 }
