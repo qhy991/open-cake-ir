@@ -94,11 +94,13 @@ def verify_capture(workload, prepared, captured):
     return report
 
 
-def phase_contract(commit, task):
+def phase_contract(commit, task, *, gpu_stage='guard'):
+    if [row['id'] for row in task['stages']] != ['prepare',gpu_stage,'verify']:
+        raise ValueError('replay requires ordered prepare, device and verify stages')
     stages = {row['id']:row for row in task['stages']}
-    if set(stages) != {'prepare','guard','verify'}:
+    if set(stages) != {'prepare',gpu_stage,'verify'}:
         raise ValueError('guard replay requires separate prepare, guard and verify stages')
-    for phase, execution in [('prepare','local'),('guard','broker'),('verify','local')]:
+    for phase, execution in [('prepare','local'),(gpu_stage,'broker'),('verify','local')]:
         admit_judge_source(commit,task,phase)
         if stages[phase]['execution'] != execution:
             raise ValueError('guard replay resource phase differs')
