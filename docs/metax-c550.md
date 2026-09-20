@@ -74,9 +74,11 @@ nerdctl --namespace open-cake-metax exec \
 ```
 
 workspace 必须不存在。`--baseline-only` 构建、封存后退出，不调用 provider，
-也不执行 GPU kernel。执行层的 canonical 接口是
-`load_prepared_baseline` → `CommandBrokerSubmitter` / `BoundedBrokerEvaluator` →
-`evaluation.local_broker` → `tasks.evaluate`；正常 TaskLab 同样使用这条路径。
+也不执行 GPU kernel。构建后的固定 bundle 由 `load_prepared_baseline` 读取，再交给
+`CommandBrokerSubmitter` / `BoundedBrokerEvaluator`。当前本地 Triton TaskLab 使用
+`tasks.evaluate --local-kind maca`：先计算 CPU 输入和原 oracle，再通过
+`evaluation.local_broker.admit_local_job` 获取真实 allocation 并执行。
+上例所用历史源码仍保留原先 broker exec worker 的入口。
 原验证 driver 及它调用的确切输入保存在下述外部证据目录。
 
 ## 验收范围与后续
@@ -190,3 +192,28 @@ MACA 预检还会拒绝当前 Triton API 不接受的非默认 `loop_unroll_fact
 partial-K 仍由 `TRITON_MMA_K_RANGES_UNSUPPORTED` 拒绝，不会落入 NVIDIA inline assembly。
 新增三个正例和两个反例使完整 Corpus 成为 169 项，其中五项检查 xcore1002；
 静态 Corpus、上述设备证据和完整后端能力仍分别报告。
+
+## M17 的一次显式 M tile 优化
+
+在已验收的 FIB `M17/N128/K2048` 固定 baseline 上，仅将 M tile 从 64 改为 32；
+N/K tile 仍为 64，四个执行组和 32 次 K 累积不变。完整解析后的 Schedule 比较
+只改变 M tile、MMA M extent 和三个派生寄存器 buffer 的 M extent，原 Workload、
+输入 ABI、oracle 和测量策略保持。候选编译、执行于 `8c0cad53`，baseline 仍是原
+`5ed6420f` 产物。
+
+一次 search（`maca-4785c930f50c`）通过后，按事先声明的流程进行了独立 confirmatory
+（`maca-f166d55e4231`）。两次均通过全部五 case、所有 fresh-output 检查、原 CV 0.05
+和 materiality 1.05 门槛，候选均赢得 10/10 对；每次保留 500 样本、零 fallback。
+确认阶段 baseline/candidate 中位数为 **72.448 / 58.368 us，1.241228×**，
+20 个 cohort 的 CV 为 0.007220–0.012788，最大绝对误差为 0.03125，输入未改变。
+
+独立 profile `maca-51d9d428f693` 的实际输出同样通过，报告 170 registers/thread 和
+12288 bytes 动态共享内存，原 baseline 为 224 和 16384。函数 local bytes/thread
+均为 0；这没有补齐 MCPTI local reservation、occupancy、带宽或指令计数的资格。
+减少 tile extent、资源变化和速度改善是同一次受控改动的观测；没有计数器证据可以
+把全部收益进一步归因到某种硬件瓶颈。
+
+收益限于这一个固定形状、固定 baseline 和 `local_serialized` 测量范围。
+这是显式 authoring 对照，尚不是完整 provider/Ralph 优化 Campaign；promotion disposition
+为 **No promotion**。原始结果在上述外部证据根的
+`matrix-fib-m17-tile32-{search,confirmatory,attribution}-8c0cad53-v1/`。
