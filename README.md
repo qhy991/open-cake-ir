@@ -10,6 +10,32 @@ A research system for agent-driven GPU kernel search and compiler evolution.
 
 [技术报告 / Technical report](docs/README.md) · [中文文档](docs/zh-CN/README.md) · [English](docs/en/README.md) · [当前状态](reports/current/STATUS.md)
 
+<!-- hardware-results:start -->
+## 按硬件查看成果
+
+2026-09-20 整理：展示已有确认结果与最佳实现维护记录。**加速比 = 各自固定基线耗时 ÷ 候选耗时**，超过 1× 表示更快。
+各平台的输入与计时协议不同，图中各面板使用独立刻度；这些是选定任务的结果，不是跨硬件排名，也不是相对厂商最优库的成绩。
+
+![按硬件分组的代表性确认结果](docs/results/overview.svg)
+
+| 硬件 | 收录范围 | 阅读入口 |
+|---|---|---|
+| NVIDIA B300 / B200 | B300 服务实验 27 个任务、29 次尝试，含 `pairwise_sqdist` 7.646×；另含 CTA 宽度验证与 CAKE 对照。B200 保留正确性边界 | [NVIDIA](docs/RESULTS.md#nvidia) |
+| Apple M1 Pro / M4 / M2 | M1 Pro 固定形状的历史确认、M4 两项晋升记录；M2 未通过稳定性的结果单列 | [Apple](docs/RESULTS.md#apple) |
+| Hygon DCU BW1101 | 29 个任务中 27 个首个合格结果，含加速、变慢、未检出差异及计时分辨能力待查的条目 | [DCU](docs/RESULTS.md#hygon-dcu) |
+| AMD gfx1151 | 两种设备计时器尚未对齐，暂不列合格性能 | [AMD](docs/RESULTS.md#amd) |
+
+[完整任务与证据目录](docs/RESULTS.md) · [可筛选页面源码 / 下载后打开](docs/results/index.html) · [最佳实现如何维护](docs/zh-CN/TASK_INCUMBENTS.md)
+
+目录区分“Campaign 内最佳合格候选”“有晋升记录”“历史确认”和“尚未合格”；每项可追溯到输入、版本、基线与原记录。
+同一 Campaign 的确认历史保留在详情中；当前没有足够的跨代数据为每个任务绘制长期晋升曲线。
+
+### 与原始 CAKE 的距离
+
+TinyGEMM2 在同一 B300 上与 CAKE 的固定 FlashInfer 导出比较，Open-Cake 通过 30/30 严格数值检查，已测配置耗时仍约为 CAKE 的 11–37 倍。
+KDA prefill、KDA decode、Alpha-MoE 尚无完整改写实测。[查看形状、计时协议和演进过程](docs/NVIDIA_CAKE_REPRODUCTION.md)。
+<!-- hardware-results:end -->
+
 ## 快速开始
 
 需要 Python 3.10+，从源码安装：

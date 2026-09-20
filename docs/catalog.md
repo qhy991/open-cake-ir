@@ -1,5 +1,7 @@
 # 文档总目录 / Documentation catalog
 
+[按硬件查看实验结果](RESULTS.md)：NVIDIA、Apple、Hygon DCU、AMD 的结果目录、历史记录与交互筛选页面。
+
 [Triton CTA 宽度特化与 tick-tock 经验总结](TRITON_CTA_WIDTH.md)：显式候选变换、经验归属、适用条件与配对测量。
 
 [任务效率评分](PERFORMANCE_SCORING.md)：固定任务字节数、带宽参考、审计报告与校准覆盖。
@@ -100,4 +102,3 @@ Reading companions explain the material in simpler language. Detailed tables and
 - [Workload contracts](../contracts/workloads/README.md)：精确题目；阅读版见[中文](wiki/workloads.md) / [English](en/wiki/workloads.md)。
 - [Context map](../CONTEXT-MAP.md)：导航职责依据；[中文阅读](zh-CN/CONTEXT-MAP.md)。
 - [Generated current status](../reports/current/STATUS.md)：发布依据的派生视图；不在翻译中手写另一份版本清单。
-
