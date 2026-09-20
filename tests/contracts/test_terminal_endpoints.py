@@ -44,7 +44,7 @@ class TerminalProjectionTests(unittest.TestCase):
                 analysis={"endpoint_policy": NORMAL_BUDGET_TERMINAL},
                 confirmation=FinalConfirmation(2, "b"*64, 60, True, 0.8))
             self.assertEqual(state, "qualified")
-            self.assertEqual(value, {"qualified_by_budget": True, "budget": 60,
+            self.assertEqual(value, {"qualified_by_budget": True, "budget": 60, "budget_exceeded": [],
                 "best_candidate_sha256": "b" * 64, "best_confirmed_latency_ms": 0.8,
                 "terminal_reason": reason, "observation_basis": NORMAL_BUDGET_TERMINAL})
         self.assertEqual(matched_endpoint(checkpoint=checkpoints[-1], observations=turns,
@@ -86,6 +86,8 @@ class TerminalRunTests(unittest.TestCase):
         document["budget"].update(limit=500000, checkpoints=[100000, 500000], maximum_turns=2)
         if limits:
             document["budget"].update(limits)
+            if "wall_time_seconds" in limits and "confirmation_wall_time_seconds" not in limits:
+                document["budget"]["confirmation_wall_time_seconds"] = limits["wall_time_seconds"] / 10
         study = directory / "study.json"
         study.write_text(json.dumps(document))
         lab = TaskLab(ROOT, **({"clock": clock} if clock else {}))
@@ -186,7 +188,7 @@ class TerminalRunTests(unittest.TestCase):
                 report = lab.audit(campaign)
                 self.assertTrue(report.semantic_replay_passed)
                 for audit in report.run_audits:
-                    self.assertEqual(audit.endpoint_observation, "qualified")
+                    self.assertEqual(audit.endpoint_observation, "no_qualified_candidate" if reason in {"wall_time_limit","active_authoring_time_limit"} else "qualified")
                     self.assertEqual(audit.endpoint["terminal_reason"], reason)
                     self.assertEqual(audit.endpoint["budget"], 80000)
 

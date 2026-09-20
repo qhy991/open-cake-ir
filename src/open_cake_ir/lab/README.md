@@ -47,7 +47,15 @@ Ralph 领取额度；没有额度就不调用工具链，并将候选记录为�
 回放从 `compilation_started/completed/refused` 重建计数、顺序和对应候选，拒绝提名前后
 越界调用或把预算拒绝变成可执行产物。`launch_task.py --max-compilations` 显式冻结该限额。
 
-确认专用 wall-time 预留仍待补齐；本任务的完整预算及正式消融验收尚未完成。
+`budget.confirmation_wall_time_seconds` 在总 wall budget 中预留固定确认额度；搜索额度由
+总量减去预留量得到，不能另存一份配置。Ralph 在 Turn 边界停止搜索，关闭后禁止继续作者调用、
+编译或搜索评测。确认阶段从 `search_completed` 开始计时，包含提名、确认、必要归因与归档，
+不能借用提前结束搜索所剩的时间。`launch_task.py --confirmation-seconds` 可指定额度，生成器默认
+预留总量的十分之一并将具体数值冻结到 Run 输入。
+
+Turn 和 Evaluation 的在途操作由既有 adapter timeout 限制，不声称可抢占编译器或 GPU。
+实际超限仍记录；端点的 `budget_exceeded` 明确列出 token、作者、搜索或确认时间超限，禁止
+将其计作预算内成功，阈值报告也遵守同一规则。正式 E/P Study 的冻结分配与统计验收仍待完成。
 
 `replay/__init__.py` 组织独立回放，`artifacts.py`、`attempts.py`、`candidates.py`、
 `provider.py`、`selection.py`、`outcomes.py` 和 `refusals.py` 核对各自的原始记录。

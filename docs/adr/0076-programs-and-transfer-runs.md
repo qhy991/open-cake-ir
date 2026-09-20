@@ -34,6 +34,14 @@ authority that replaces the execution responsibilities of CampaignLock. Engineer
 need no fictitious comparison or estimand. A Study freezes assignments before execution
 and binds the same Runs. Treatment identity cannot affect representation or lowering.
 
+Wall time allocates a fixed confirmation reserve inside the total Run budget. Search
+admission stops at total minus reserve; the confirmation phase begins at search closure
+and cannot borrow unused search time. A search Turn and an Evaluation remain atomic for
+evidence collection, bounded by their existing adapter timeouts. This is a scheduling and
+acceptance contract, not hardware preemption: retain actual overruns, and never classify
+a token, authoring-time, search-time or confirmation-time overrun as success at budget.
+All Study conditions freeze the same allocation and stopping semantics before execution.
+
 Authors submit complete implementations or explicit transform requests. Requests refer
 only to this Run's accepted implementations or authorized baselines. An action is retained
 separately from the immutable resulting candidate. All candidates use the same filtering,

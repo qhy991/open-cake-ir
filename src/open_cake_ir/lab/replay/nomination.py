@@ -44,6 +44,14 @@ def replay_nomination(*, events, observations, launchables, receipts, budget, pr
         profile_each_search_survivor=protocol.get('attribution_evaluation')=='correctness_then_profile_each_search_survivor')
     if reason is None or state.get('terminal_reason') != reason:
         refuse('search_completed.state.terminal_reason', 'search did not stop at its frozen budget')
+    limits = RalphBudget.from_mapping(budget)
+    remaining = _object(state.get('remaining'),'search_completed.state.remaining')
+    for name,expected in (
+        ('search_wall_time_seconds',round(max(0.,limits.search_wall_time_seconds-state['elapsed_wall_seconds']),6)),
+        ('confirmation_wall_time_seconds',limits.confirmation_wall_time_seconds),
+    ):
+        if type(remaining.get(name)) not in {int,float} or remaining[name] != expected:
+            refuse('search_completed.state.remaining.'+name,'phase allocation differs from the frozen budget')
     nominee = nominate(observations,provider_token_limit=budget['limit'])
     candidate = launchables.get((nominee.turn,nominee.candidate_sha256)) if nominee else None
     expected = nomination_document(nominee,candidate)

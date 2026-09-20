@@ -13,7 +13,7 @@ from ..endpoints import endpoint_policy, matched_endpoint
 from .._policies import _ATTRIBUTION_EVALUATION
 from ..checkpoints import TurnObservation, project_checkpoints
 from ..contracts import CampaignLock
-from ..ralph import RalphBudget, derive_ralph_stop_reason
+from ..ralph import RalphBudget, exceeded_run_budgets
 from .refusals import event_location, refuse
 from ..selection import (
     _collapse_diagnosis,
@@ -181,6 +181,17 @@ def _replay_terminal(
         if (elapsed_wall < search_state['elapsed_wall_seconds']
             or active_authoring != search_state['active_authoring_seconds']):
             refuse('checkpoints_projected.payload.ralph', 'terminal time predates search or adds authoring after nomination')
+    time_limits = RalphBudget.from_mapping(budget)
+    search_elapsed = search_state['elapsed_wall_seconds'] if search_state else elapsed_wall
+    confirmation_elapsed = round(elapsed_wall-search_elapsed,6) if search_state else 0.
+    remaining = _object(ralph_state.get('remaining'),'checkpoints_projected.payload.ralph.remaining')
+    for name,expected in (
+        ('wall_time_seconds',round(max(0.,time_limits.wall_time_seconds-elapsed_wall),6)),
+        ('search_wall_time_seconds',round(max(0.,time_limits.search_wall_time_seconds-search_elapsed),6)),
+        ('confirmation_wall_time_seconds',round(max(0.,time_limits.confirmation_wall_time_seconds-confirmation_elapsed),6)),
+    ):
+        if type(remaining.get(name)) not in {int,float} or remaining[name] != expected:
+            refuse('checkpoints_projected.payload.ralph.remaining.'+name,'phase remainder differs from elapsed time')
     for field, observed, expected in (
         ("kind", ralph_state.get("kind"), "ralph_state_v1"),
         ("cumulative_provider_tokens", ralph_state.get("cumulative_provider_tokens"), terminal_tokens),
@@ -199,6 +210,7 @@ def _replay_terminal(
         checkpoint=projected[-1], observations=observations,
         terminal_provider_tokens=terminal_tokens, protocol_adherence=audit.protocol_adherence,
         terminal_reason=expected_stop_reason, analysis=lock.terminal_policy, confirmation=confirmation,
+        budget_exceeded=exceeded_run_budgets(time_limits,search_state=search_state,terminal_state=ralph_state),
     )
     if audit.endpoint_observation != expected_observation:
         refuse("run_terminal.payload.endpoint_observation",

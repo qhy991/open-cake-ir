@@ -34,7 +34,7 @@ from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
 from .executor import ExecutorRevision
 from .pairing import comparison_arm, native_backend
-from .ralph import RalphBudget, RalphController, derive_ralph_stop_reason
+from .ralph import RalphBudget, RalphController
 from .selection import (
     _collapse_diagnosis,
     _matched_search_decision,
@@ -228,6 +228,7 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
     observations: list[TurnObservation] = []
     selected_by_turn = {}
     confirmation = None
+    search_state = None
     confirmation_source_turn = None
     live_stage = "provider"
     provider_usage_accounted = False
@@ -535,20 +536,10 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
             if cumulative_tokens >= cast(int, budget["limit"]):
                 break
         # Search closes before nomination; no author/build activity follows this.
-        search_state = dict(ralph.state_card(
+        search_state = dict(ralph.complete_search(
             turn=min(maximum_turns + 1, len(observations) + 1),
             cumulative_provider_tokens=cumulative_tokens, feedback=feedback))
-        ralph_stop_reason = derive_ralph_stop_reason(ralph_budget,
-            turn=search_state['iteration'], cumulative_provider_tokens=cumulative_tokens,
-            elapsed_wall_seconds=search_state['elapsed_wall_seconds'],
-            active_authoring_seconds=search_state['active_authoring_seconds'],
-            evaluation_counts=search_state['evaluation_counts'],
-            searches_per_turn=ralph.searches_per_turn,
-            profile_each_search_survivor=profile_each_search_survivor,
-            compilation_count=search_state['compilation_count'])
-        if ralph_stop_reason is None:
-            raise ValueError('search ended without a declared budget stop')
-        search_state['terminal_reason'] = ralph_stop_reason
+        ralph_stop_reason = search_state['terminal_reason']
         ledger.append('search_completed', {'state': search_state})
         nominee = nominate(observations, provider_token_limit=budget['limit'])
         selected = selected_by_turn[nominee.turn] if nominee else None
@@ -621,5 +612,5 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
         protocol_adherence=protocol_adherence,
         ralph=ralph,
         analysis=specification.terminal_policy,
-        confirmation=confirmation,
+        confirmation=confirmation, search_state=search_state,
     )

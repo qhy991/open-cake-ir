@@ -218,6 +218,7 @@
     "limit": 150000,
     "maximum_candidates_per_turn": 3,
     "maximum_compilations": 128,
+    "confirmation_wall_time_seconds": 1440.0,
     "maximum_turns": 4,
     "unit": "provider_tokens",
     "wall_time_seconds": 14400,

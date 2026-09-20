@@ -502,8 +502,18 @@ def threshold_view(
             row["status"] = "unverified_archive_or_protocol"
         elif eligible:
             row["status"] = "threshold_not_reached"
+            from .ralph import RalphBudget, exceeded_run_budgets
+            events = evidence.replay_events(run_id)
+            search_state = next((event['payload']['state'] for event in events if event['kind']=='search_completed'),None)
+            terminal_state = next(event['payload']['ralph'] for event in events if event['kind']=='checkpoints_projected')
+            exceeded = exceeded_run_budgets(RalphBudget.from_mapping(campaign.lock.document['resolved_inputs']['budget']),
+                                            search_state=search_state,terminal_state=terminal_state)
+            if exceeded:
+                row.update(status='budget_exceeded',budget_exceeded=list(exceeded))
+                rows.append(row)
+                continue
             tokens = None
-            for event in evidence.replay_events(run_id):
+            for event in events:
                 payload = event["payload"]
                 if event["kind"] == "search_completed":
                     tokens = payload["state"]["cumulative_provider_tokens"]

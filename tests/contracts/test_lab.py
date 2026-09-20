@@ -2832,6 +2832,7 @@ class RalphTaskInterfaceTests(SemanticLabTestCase):
                 "wall_time_seconds": 20,
                 "active_authoring_time_seconds": 10,
                 "maximum_compilations": 128,
+                "confirmation_wall_time_seconds": 2,
                 "evaluation_limits": {
                     "search": 4,
                     "confirmatory": 2,
@@ -2851,7 +2852,7 @@ class RalphTaskInterfaceTests(SemanticLabTestCase):
         started = controller.begin_authoring()
         now[0] += 4
         controller.end_authoring(started)
-        for purpose in ("search", "search", "confirmatory", "attribution", "attribution"):
+        for purpose in ("search", "search", "attribution", "attribution"):
             controller.record_evaluation(purpose)
         card = controller.state_card(
             turn=2,
@@ -2902,7 +2903,6 @@ class RalphTaskInterfaceTests(SemanticLabTestCase):
             "search",
             "search",
             "search",
-            "confirmatory",
             "attribution",
             "attribution",
             "attribution",

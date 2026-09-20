@@ -23,10 +23,16 @@ class EarlierSearchEvaluator(FakeEvaluator):
 
 
 class NominationTests(SemanticLabTestCase):
-    def execute(self, evaluator_class=EarlierSearchEvaluator, *, token_limit=160000):
+    def execute(self, evaluator_class=EarlierSearchEvaluator, *, token_limit=160000,
+                clock=None, budget_updates=None, endpoint_policy=None):
         lab,spec = run_fixture.IndependentRunTests.fixture(self)
+        if clock is not None:
+            lab = type(lab)(ROOT,clock=clock)
         document = spec.document
         document['budget'].update(limit=token_limit,checkpoints=[80000,token_limit])
+        document['budget'].update(budget_updates or {})
+        if endpoint_policy is not None:
+            document['endpoint_policy'] = endpoint_policy
         spec = run_fixture.RunSpecification.from_dict(document)
         provider = RalphFakeProvider({spec.run_id:lab.task_package(spec,spec.run_id)})
         provider.configuration = execution_configuration(document['authoring']['provider'])

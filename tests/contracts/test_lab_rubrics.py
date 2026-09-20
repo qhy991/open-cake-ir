@@ -159,7 +159,7 @@ class RubricContractTests(unittest.TestCase):
 
             provider = CodexRunProvider(qualification=qualification, builders={package.run_id: builder},
                                         task_packages={package.run_id: package}, adapter=Adapter())
-            controller = RalphController(RalphBudget(10_000_000, 20, 1, 100, 100, 20, 20, 20, 128),
+            controller = RalphController(RalphBudget(10_000_000, 20, 1, 100, 100, 20, 20, 20, 128, 10),
                                          searches_per_turn=1, profile_each_search_survivor=True, clock=lambda: 0.0)
             feedbacks = [
                 {"kind": "initial"}, {"stage": "assessment", "error": "unsupported lowering"},

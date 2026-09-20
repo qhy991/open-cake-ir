@@ -544,6 +544,8 @@ def main(argv=None) -> int:
     parser.add_argument("--gpu-run", type=Path, help="existing CUDA broker client (default: gpu-run on PATH)")
     parser.add_argument("--broker-socket", type=Path, help="CUDA broker socket; omit to use the client's default")
     parser.add_argument("--wall-seconds", type=int, default=28800)
+    parser.add_argument("--confirmation-seconds", type=float,
+                        help="fixed confirmation-phase reserve inside total wall budget (default: one tenth)")
     parser.add_argument("--provider-executable", type=Path)
     parser.add_argument("--provider-revision")
     parser.add_argument("--qualification", type=Path)
@@ -605,7 +607,7 @@ def main(argv=None) -> int:
     study = study_template(ROOT, workload, workload_path, source_path, harness=args.harness,
         model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
-        maximum_compilations=args.max_compilations,
+        maximum_compilations=args.max_compilations, confirmation_seconds=args.confirmation_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
         agents_md=args.agents_md)

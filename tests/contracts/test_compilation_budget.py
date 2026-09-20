@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def controller(maximum):
-    return RalphController(RalphBudget(160000,2,2,60,30,4,1,4,maximum),
+    return RalphController(RalphBudget(160000,2,2,60,30,4,1,4,maximum,6),
         searches_per_turn=1,profile_each_search_survivor=False,clock=lambda:0.)
 
 

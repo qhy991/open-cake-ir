@@ -8,7 +8,7 @@ from open_cake_ir.evidence.store import RunLedger
 
 from .checkpoints import TurnObservation, project_checkpoints
 from .faults import RunProtocolFault, ReportedProviderUsage
-from .ralph import RalphController
+from .ralph import RalphController, exceeded_run_budgets
 from .endpoints import matched_endpoint
 
 
@@ -88,6 +88,7 @@ def _seal_run(
     ralph: RalphController,
     analysis: Mapping[str, object] | None = None,
     confirmation=None,
+    search_state=None,
 ) -> None:
     if ralph_stop_reason is None:
         ralph_stop_reason = ralph.stop_reason(
@@ -126,6 +127,8 @@ def _seal_run(
         terminal_provider_tokens=cumulative_tokens, protocol_adherence=protocol_adherence,
         terminal_reason=ralph_stop_reason, analysis=analysis or {},
         confirmation=confirmation,
+        budget_exceeded=exceeded_run_budgets(ralph.budget,search_state=search_state,
+                                            terminal_state=checkpoint_payload['ralph']),
     )
     ledger.seal(
         protocol_adherence=protocol_adherence,
