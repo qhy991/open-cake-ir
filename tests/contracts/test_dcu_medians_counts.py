@@ -50,7 +50,7 @@ WORDS = {0: "no", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"
          7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve",
          13: "thirteen", 14: "fourteen", 15: "fifteen", 26: "twenty-six",
          27: "twenty-seven", 28: "twenty-eight", 29: "twenty-nine", 30: "thirty",
-         67: "sixty-seven"}
+         35: "thirty-five", 67: "sixty-seven"}
 NUMBER = {word: value for value, word in WORDS.items()}
 BYTES_PER = {"fp32": 4, "fp16": 2, "bf16": 2, "fp8e4m3": 1, "i32": 4, "int32": 4, "i64": 8}
 
@@ -303,6 +303,48 @@ class DcuMedianCounts(unittest.TestCase):
                 with self.subTest(record=label, phrase=match.group(0)):
                     self.assertEqual(NUMBER[match.group("n").lower()], spread // step,
                                      "that is not how many steps apart those readings are")
+            # Sizes and readings quoted as a list of added sweep points, and the
+            # resolution the probe reports, which must be the grid this file derives.
+            for match in re.finditer(r"(?P<mib>\d+\.\d{2}) MiB (?P<us>\d+\.\d{3})", text):
+                covered.update((match.span("mib"), match.span("us")))
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(dict(self._sweep()).get(float(match.group("mib"))),
+                                     float(match.group("us")),
+                                     "that size did not read that in the sweep")
+            # A span of the curve stated as "A to B MiB adds N quanta": both endpoints are
+            # sizes the probe sampled, and N is what the readings actually differ by.
+            for match in re.finditer(
+                    r"(?P<a>\d+(?:\.\d+)?) to (?P<b>\d+(?:\.\d+)?) MiB "
+                    r"(?:each step of (?P<step>\d+(?:\.\d+)?) )?adds "
+                    r"(?:exactly )?(?:one|(?P<n>[\w-]+))", text):
+                sizes = dict(self._sweep())
+                quantum = self.data["timer_quantum_ns"] / 1000
+                for group in ("a", "b", "step"):
+                    if match.groupdict().get(group):
+                        covered.add(match.span(group))
+                with self.subTest(record=label, phrase=match.group(0)):
+                    lo, hi = float(match.group("a")), float(match.group("b"))
+                    self.assertIn(lo, sizes, "the probe never sampled that size")
+                    self.assertIn(hi, sizes, "the probe never sampled that size")
+                    if match.groupdict().get("n"):
+                        covered.add(match.span("n"))
+                        self.assertEqual(
+                            NUMBER[match.group("n").lower()],
+                            round((sizes[hi] - sizes[lo]) / quantum),
+                            "that is not how many quanta the readings differ by")
+                    elif match.groupdict().get("step"):
+                        step = float(match.group("step"))
+                        for start in [k for k in sizes if lo <= k < hi]:
+                            if start + step in sizes:
+                                self.assertAlmostEqual(
+                                    sizes[start + step] - sizes[start], quantum, places=6,
+                                    msg=f"{start}->{start + step} MiB is not one quantum")
+            for match in re.finditer(r"resolution_us (?:as )?(?P<v>\d+\.\d+)", text):
+                covered.add(match.span("v"))
+                with self.subTest(record=label, phrase=match.group(0)):
+                    self.assertEqual(float(match.group("v")),
+                                     self.data["timer_quantum_ns"] / 1000,
+                                     "the probe's resolution is not the derived grid")
             for pattern in (r"these kernels cost (?P<v>\d+\.\d+) us",):
                 for match in re.finditer(pattern, text):
                     covered.add(match.span("v"))
@@ -460,7 +502,11 @@ class DcuMedianCounts(unittest.TestCase):
     #: Spans a numeric construction above already judged, so the completeness rules do not
     #: report them as unchecked. Kept beside those constructions deliberately: adding one
     #: without adding it here makes the completeness rule fail, not pass.
-    STEP_PHRASES = (r"which is (\d+) grid steps",
+    STEP_PHRASES = (r"(\d+(?:\.\d+)?) to \d+(?:\.\d+)? MiB",
+                    r"\d+(?:\.\d+)? to (\d+(?:\.\d+)?) MiB",
+                    r"each step of (\d+(?:\.\d+)?) adds",
+                    r"MiB adds ([\w-]+)",
+                    r"which is (\d+) grid steps",
                     r"us, ([\w-]+) steps",
                     r"the ([\w-]+) at the floor are all",
                     r"the ([\w-]+) campaigns at [0-9a-f]{8}")
@@ -511,14 +557,27 @@ class DcuMedianCounts(unittest.TestCase):
                               f"no campaign {task}-20260918-{stamp} on this host")
 
     def test_the_footprint_sweep_is_quoted_in_the_order_it_was_measured(self) -> None:
-        sweep = [s for s in self.two["evidence"]["sites"] if "footprint sweep" in s]
-        self.assertEqual(len(sweep), 1)
-        numbers = [float(n) for n in re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?![\w])", sweep[0])]
-        for mib, us in self._sweep():
+        """The record quotes a subset of the curve -- the sizes its argument turns on --
+        so the rule is that what it quotes is the sweep's and in measured order, not that
+        it quotes every point. A record naming a size the probe never sampled, a reading
+        that size did not produce, or the pairs out of order all fail."""
+        sweep = [s for s in self.two["evidence"]["sites"]
+                 if s.startswith("the footprint sweep on the same device")]
+        self.assertEqual(len(sweep), 1, "the site that quotes the curve moved or split")
+        measured = dict(self._sweep())
+        order = [mib for mib, _ in self._sweep()]
+        quoted = [(float(m.group("mib")), float(m.group("us"))) for m in re.finditer(
+            r"(?P<mib>\d+(?:\.\d+)?) MiB (?:both )?(?P<us>\d+\.\d+)", sweep[0])]
+        self.assertGreaterEqual(len(quoted), 4,
+                                "the sweep site quotes fewer pairs than expected; if the "
+                                "phrasing changed, teach the pattern rather than lowering this")
+        for mib, us in quoted:
             with self.subTest(mib=mib):
-                self.assertIn(mib, numbers)
-                self.assertIn(us, numbers)
-                self.assertLess(numbers.index(mib), numbers.index(us) + 1)
+                self.assertIn(mib, measured, "the probe never sampled that size")
+                self.assertEqual(measured[mib], us, "that size did not read that")
+        positions = [order.index(mib) for mib, _ in quoted]
+        self.assertEqual(positions, sorted(positions),
+                         "the quoted sizes are not in the order they were measured")
 
     def test_the_sweep_is_named_as_a_probe_and_not_as_campaign_evidence(self) -> None:
         """It backs part of F-2026-09-18-002's argument and is the one quantity here that
@@ -527,7 +586,16 @@ class DcuMedianCounts(unittest.TestCase):
         self.assertFalse(sweep["is_campaign_evidence"])
         self.assertTrue((ROOT / "tools/probe_dcu_shape_floor.py").is_file())
         self.assertIn("tools/probe_dcu_shape_floor.py", sweep["source"])
-        self.assertIn("TRANSCRIBED", sweep["source"])
+        # The curve is either read off the device by that tool or copied by hand, and which
+        # one it is decides how much a reader should trust it. It was hand-copied while
+        # bw1100 was unreachable, which is why saying so is a rule rather than a courtesy.
+        self.assertEqual(
+            sum(word in sweep["source"] for word in ("REGENERATED", "TRANSCRIBED")), 1,
+            "the sweep must say exactly one of REGENERATED or TRANSCRIBED")
+        if "REGENERATED" in sweep["source"]:
+            self.assertTrue(sweep.get("device"), "a regenerated curve names its device")
+            self.assertIn(0.16, sweep["resolution_us_reported"],
+                          "the probe did not report the grid this file derives")
 
     def test_the_timer_grid_is_what_the_medians_say_it_is(self) -> None:
         """Every distinct median is an exact multiple of one step, offset by a constant.
@@ -638,6 +706,8 @@ class DcuMedianCounts(unittest.TestCase):
         (r"so ([\w-]+) revisions in it are used by no row", "unused_revisions"),
         (r"the ([\w-]+) that qualified, the", "tasks"),
         (r"the ([\w-]+) that never did", "never_qualified"),
+        (r"for ([\w-]+) of its [\w-]+ cohorts", "grid_cohorts"),
+        (r"of its ([\w-]+) cohorts", "sweep_points"),
         (r"for those ([\w-]+) the comparison", "floor"),
         (r"six of the ([\w-]+)[:,]", "floor"),
         (r"to ([\w-]+) over all", "floor"),
@@ -653,6 +723,7 @@ class DcuMedianCounts(unittest.TestCase):
     def _counts(self) -> dict[str, int]:
         campaigns = self.data["campaign_revisions"]
         row_revisions = self._revisions(self.rows)
+        sweep = self.data["footprint_sweep"]["per_size"]
         return {"floor": len(self._at_floor()), "separated": len(self._separated()),
                 "tasks": len(self.rows), "runs": self.data["qualified_runs"],
                 "material": len(self._material()),
@@ -666,7 +737,13 @@ class DcuMedianCounts(unittest.TestCase):
                                        - set(self.rows)),
                 # Every task that ran except the one blocked by a tolerance no budget
                 # reaches (gemm_bias, F-2026-09-18-004).
-                "can_qualify": len({w.rsplit("-", 2)[0] for w in campaigns}) - 1}
+                "can_qualify": len({w.rsplit("-", 2)[0] for w in campaigns}) - 1,
+                # The probe's own curve: how many sizes it sampled, and how many of those
+                # cohorts reported the grid this file derives from the campaign medians.
+                "sweep_points": len(sweep),
+                "grid_cohorts": sum(1 for row in sweep
+                                    if row["resolution_us"] * 1000
+                                    == self.data["timer_quantum_ns"])}
 
     def test_every_bare_quantity_phrase_names_the_count_the_table_gives(self) -> None:
         counts = self._counts()
