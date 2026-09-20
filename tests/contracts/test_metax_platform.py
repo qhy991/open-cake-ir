@@ -59,7 +59,7 @@ class MetaxPlatformTests(unittest.TestCase):
         with self.assertRaisesRegex(TargetParseError, "no CUDA compute capability"):
             Target.from_dict({**original, "compute_capability": [8, 0]})
 
-    def test_fp8_copy_is_refused_by_the_maca_dtype_rule(self):
+    def test_fp8_copy_preserves_its_storage_type_without_arithmetic(self):
         source = '''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="copy", target="xcore1002", backend="triton", entry_point="copy")
 def candidate(lm, x: cake.Tensor((8, 128), "fp8_e4m3"), y: cake.Tensor((8, 128), "fp8_e4m3", mode="output")):
@@ -70,9 +70,11 @@ def candidate(lm, x: cake.Tensor((8, 128), "fp8_e4m3"), y: cake.Tensor((8, 128),
         lm.store(y[row, 0:128], value, id="store")
 '''
         result = self.compiler.assess(parse(source).document)
-        self.assertFalse(result.lowering_eligible)
-        self.assertIn("MACA_DTYPE_UNQUALIFIED", [f.code for f in result.findings])
-        self.assertNotIn("TARGET_OPERATION_UNSUPPORTED", [f.code for f in result.findings])
+        self.assertTrue(result.lowering_eligible, result.findings)
+        lowering = self.compiler.lower(result)
+        self.assertEqual(dict(lowering.toolchain_requirements["signature"]),
+                         {"x": "*fp8e4nv", "y": "*fp8e4nv"})
+        self.assertNotIn(".to(tl.", lowering.source)
 
     def test_explicit_numeric_conversions_keep_their_tensor_pointer_types(self):
         for source_dtype, destination, pointer in (
