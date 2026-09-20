@@ -20,6 +20,7 @@ from .launch_manifest import WorkloadTensorManifest, tensor_abi_rows
 from .platforms import PLATFORMS, platform_for
 from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
+from .tensor_profiles import TENSOR_PROFILES
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 # The timing an assay may declare: none, or the paired assay of a platform that names a
@@ -269,16 +270,13 @@ class EvaluationReceipt:
                             or launch_raw.get("host") != profile["host"] or launch_raw.get("job_id") != profile["job_id"]
                             or launch_raw.get("instrumented_command") != profile["raw"]["command_buffer"]):
                         raise ValueError("Metal attribution launch differs from instrumented profile")
-                elif profile_document.get("kind") == "hip_dispatch_activity_v1":
-                    from .hip_observations import load_hip_profile
-                    profile = load_hip_profile(self.artifact_payloads["profile"],
+                elif profile_document.get("kind") in TENSOR_PROFILES:
+                    source = TENSOR_PROFILES[profile_document["kind"]]
+                    profile = source.load(self.artifact_payloads["profile"],
                         expected_candidate_sha256=self.candidate_sha256,
                         expected_case_id=self.case_id,
                         expected_protocol_sha256=self.evaluation_protocol_sha256)
-                    if (launch_raw.get("job_id") != profile["job_id"]
-                            or launch_raw.get("gpu_uuid") != profile["gpu_uuid"]):
-                        raise ValueError(
-                            "HIP attribution launch differs from instrumented profile")
+                    source.validate_launch(profile, launch_raw, correctness_raw)
                 elif profile_document.get("kind") != "ncu_kernel_attribution":
                     raise ValueError(
                         "no attribution source declares profile kind "
@@ -411,9 +409,9 @@ class EvaluationReceipt:
                 expected_candidate_sha256=self.candidate_sha256, expected_case_id=self.case_id,
                 expected_protocol_sha256=self.evaluation_protocol_sha256)
             return {"kind": profile["kind"], **profile["summary"]}
-        if kind == "hip_dispatch_activity_v1":
-            from .hip_observations import load_hip_profile, hip_attribution_feedback
-            return hip_attribution_feedback(load_hip_profile(
+        if kind in TENSOR_PROFILES:
+            source = TENSOR_PROFILES[kind]
+            return source.feedback(source.load(
                 self.artifact_payloads["profile"],
                 expected_candidate_sha256=self.candidate_sha256,
                 expected_case_id=self.case_id,
@@ -421,7 +419,7 @@ class EvaluationReceipt:
         if kind != "ncu_kernel_attribution":
             raise ValueError(
                 f"no attribution source declares profile kind {kind!r}; this reader knows "
-                "Nsight Compute, Metal compute-stage timestamps and roctracer activity")
+                "Nsight Compute, Metal timestamps and the registered tensor profile formats")
         profile = load_ncu_attribution_profile(
             self.artifact_payloads["profile"],
             expected_candidate_sha256=self.candidate_sha256,
