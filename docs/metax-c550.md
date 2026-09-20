@@ -6,7 +6,7 @@ Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host ad
 由各自的平台实现负责。
 
 当前范围是 **FP32 / FP16 / BF16 / INT32 缓冲区、load / cast / elementwise / reduce / store、
-完整输出正确性验证**。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
+完整输出正确性验证**，以及下述受限的 E4M3FN 存储和解码。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
 INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
 矩阵路径复用现有 `mma` 与 `triton.dot.fp16_fp32`、`triton.dot.bf16_fp32`、
 `triton.dot.fp32_ieee` 三条契约；FP16、FP32 已有下述正式任务结果，BF16 尚限于
@@ -256,3 +256,14 @@ launch 前后先 view uint8 再复制到 CPU，避免数值转换改变 NaN 编�
 取得标量 FP8 转换的资格。全部原始源码、编译失败、封存参考、NPZ 观察与结果保留于
 上述外部证据根的 `fp8-*` 目录。后继算子需按自己的原 Workload、范围和 oracle 验收；
 这批诊断不构成 FP8 MoE、scaled matrix 或完整后端能力的资格。
+
+三条新增 Corpus 程序还完成了 Compiler 生成路径的设备复验：`e21aeaad` 的
+`xcore1002-fp8-copy`、`xcore1002-fp8-decode-fp16`、`xcore1002-fp8-decode-fp32`
+经正式 assessment、lowering、kernel projection 和 CPU 隔离编译，封存为 `[1,256]` ABI；
+参考仍是上面原封存的全部 256 个编码与解码 word，仅张量形状增加一行维度。
+执行源码 `7e86e8ad` 的 `maca-b1424247b525` 完成四次 native call：复制两次共
+512 byte 精确匹配，两个 decoder 各 254 个有限 word 精确匹配、两个 NaN 分类正确；
+全部输入 bytes 未改变，零 timing samples。复制报告 2 registers/thread，两个 decoder
+各 10；三者 shared/local 均为 0。原始观察在外部证据根的
+`fp8-corpus-gpu-7e86e8ad-v1/`。这验证了生成路径的原语正确性，尚不构成
+完整 MoE、scaled matrix、其他形状或性能资格。
