@@ -69,6 +69,25 @@ class AkaTaskLaunchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "declares K"):
             create_task("aka_row_gather", backend="triton-gfx1151", depth=8)
 
+    def test_momentum_extent_refuses_int32_overflow_before_native_compilation(self):
+        for elements in (2**31, 2**31 + 1):
+            with self.subTest(elements=elements):
+                with self.assertRaisesRegex(ValueError, "signed int32 coordinates"):
+                    create_task("aka_momentum_sgd", backend="triton-gfx1151", rows=1, columns=elements)
+                with self.assertRaisesRegex(ValueError, "signed int32 coordinates"):
+                    aka.workload_document("momentum_sgd", backend="triton-gfx1151", elements=elements)
+        # Keep old B200 contract generation intact, while refusing its new starter.
+        legacy = aka.workload_document("momentum_sgd", elements=2**31)
+        aka.validate_aka_v3_contract(legacy)
+        with self.assertRaisesRegex(ValueError, "signed int32 coordinates"):
+            create_task("aka_momentum_sgd", backend="triton-b200", rows=1, columns=2**31)
+        for elements in (1, 257, 2**31 - 1):
+            document, source = create_task("aka_momentum_sgd", backend="triton-gfx1151", rows=1, columns=elements)
+            assessment = self.compiler.assess(frontend.parse(source).document)
+            with self.subTest(boundary=elements):
+                self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                self.compiler.lower(assessment)
+
     def test_new_launcher_starters_lower_for_the_exact_amd_target_and_write_every_output(self):
         for task in (launch_task.ADD_RMSNORM_TASK, *aka.LAUNCHABLE_TASKS):
             rows, columns = launch_task._default_shape(task, None, None)

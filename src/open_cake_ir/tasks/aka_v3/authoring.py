@@ -12,7 +12,7 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     shape = workload.case(case_id)["shape"]
     backend = backend_for_target(workload.target)
     _admit_starter(name, backend, columns=shape.get("C", shape.get("N", 1)),
-                   depth=shape.get("K", 1))
+                   depth=shape.get("K", 1), elements=shape.get("E", 1))
     args = workload.tensor_abi(case_id)
     if name == "residual_layernorm":
         program = 'row = lm.program(input_a, axis=0, dimension=0, tile=1)'

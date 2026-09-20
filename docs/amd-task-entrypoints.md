@@ -31,7 +31,9 @@ supports distinct source/output counts. For AKA momentum their product is the
 one-dimensional element count. Only AKA NT GEMM accepts `--depth`; the matrix
 launcher's existing depth flag defaults to 256 and explicitly supplies that value.
 Triton row widths and GEMM reduction spans must be powers of two. NT GEMM retains
-the predecessor's M/N divisibility by eight.
+the predecessor's M/N divisibility by eight. The momentum starter bounds its element
+count to signed-int32 coordinates (at most 2**31-1); oversized shapes are refused
+before entering the native compiler, including through the legacy B200 starter.
 
 Both `tools/launch_task.py --task` and explicit `tools/launch_task_matrix.py --task`
 accept these names. The matrix's default task subset remains the existing portable

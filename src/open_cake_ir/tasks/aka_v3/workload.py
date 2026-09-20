@@ -58,9 +58,13 @@ LAUNCHABLE_TASKS = {f"aka_{name}": name for name in (
 )}
 
 
-def _admit_starter(task_name: str, backend: str, *, columns: int, depth: int) -> None:
+def _admit_starter(task_name: str, backend: str, *, columns: int, depth: int, elements: int = 1) -> None:
     if task_name not in LAUNCHABLE_TASKS.values():
         raise ValueError(f"AKA task {task_name!r} has no portable starter")
+    # This starter uses signed-int32 program coordinates and an int32 comparison
+    # against E. The final padded block also stays in range when E <= 2**31-1.
+    if task_name == "momentum_sgd" and elements > 2**31 - 1:
+        raise ValueError("AKA momentum starter extent must fit signed int32 coordinates")
     kinds = ("load", "elementwise", "store")
     if task_name in {"residual_layernorm", "gemm_nt_bias"}:
         kinds += ("reduce",)
@@ -143,7 +147,7 @@ def workload_document(
             output_length, channels, kernel_size, stride, elements)) or type(pad) is not int or pad < 0:
         raise ValueError("AKA v3 task dimensions must be positive integers")
     if revision == "2":
-        _admit_starter(task_name, backend, columns=columns, depth=depth)
+        _admit_starter(task_name, backend, columns=columns, depth=depth, elements=elements)
     if task_name == "gemm_nt_bias" and (rows * depth + columns * depth + rows * columns) * 4 > 2**31 - 1:
         raise ValueError("GEMM buffers exceed the standalone FP32 ABI")
     if task_name != "gemm_nt_bias" and rows * columns * 4 > 2**31 - 1:
