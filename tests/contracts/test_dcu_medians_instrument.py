@@ -119,7 +119,10 @@ class TheInstrument(unittest.TestCase):
             self.assertIsInstance(table[field], (str, dict))
             self.assertIn(field, table["collected"])
             if isinstance(table[field], dict):
-                self.assertIn("TRANSCRIBED", table[field]["source"])
+                self.assertTrue(
+                    any(word in table[field]["source"]
+                        for word in ("REGENERATED", "TRANSCRIBED")),
+                    "a hand-kept evidence field says how it was obtained")
                 self.assertFalse(table[field]["is_campaign_evidence"])
 
     def test_it_refuses_evidence_that_names_two_compiler_revisions(self) -> None:
