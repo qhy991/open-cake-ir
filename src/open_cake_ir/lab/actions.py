@@ -38,6 +38,8 @@ def candidate_program(payload, *, allow_python=True):
     if isinstance(document, Mapping) and set(document) == {'python_source'}:
         if not allow_python:
             raise ValueError('parent Python syntax is outside the authoring environment')
+        if not isinstance(document['python_source'], str):
+            raise ValueError('parent Python source must be text')
         document = parse(document['python_source'], filename='parent.cake.py').document
     return Program.from_dict(document) if 'program_id' in document else Program.from_schedule(document)
 

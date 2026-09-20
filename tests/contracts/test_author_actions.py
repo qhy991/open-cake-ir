@@ -133,6 +133,18 @@ class AuthorActionTests(SemanticLabTestCase):
         self.assertEqual(len(Program.from_dict(json.loads(result.candidate)).stages),1)
         self.assertEqual(result.parent,'baseline:reference')
 
+    def test_malformed_python_parent_is_an_action_refusal_not_a_batch_fault(self):
+        payload = encoded({'python_source':42})
+        parent = sha256(payload).hexdigest()
+        compiler = Mock(side_effect=AssertionError('malformed parent reached Compiler'))
+        results = resolve_action_set((encoded(rewrite(parent)),encoded({'action':'submit','candidate':{'turn':2}})),
+            environment_kind='open_cake',transformations=[PASS],candidates={parent:payload},baselines={},
+            compiler_factory=compiler,allow_python=True)
+        self.assertEqual(results[0].reason,'parent_not_program')
+        self.assertIsNone(results[0].candidate)
+        self.assertEqual(json.loads(results[1].candidate),{'turn':2})
+        compiler.assert_not_called()
+
     def test_replay_rejects_changed_parent_or_result(self):
         lab,run,audit,events,_,_ = self.execute_fixture([PASS])
         from copy import deepcopy
