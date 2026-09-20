@@ -35,6 +35,7 @@ build. These are inspectable authoring inputs, not standalone build bundles or q
 executables. Alpha-MoE uses the later v46 export, explicitly separate from the paper's
 original artifact and measurements. No reference implementation is imported into Compiler.
 
-All 30 tasks have reference material. Nine original launch-plan tasks and four CAKE
+All 30 tasks have reference material. Nine original launch-plan tasks and three CAKE
 paper-family tasks remain explicitly blocked at their authoring/workload integration
-boundaries; source availability does not bypass them.
+boundaries. TinyGEMM has a B300 numeric-authoring seed with a strict external peer;
+this does not qualify its complete physical schedule, dispatcher or serving behavior.

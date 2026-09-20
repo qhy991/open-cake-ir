@@ -14,7 +14,7 @@ class RewriteCollectionTests(unittest.TestCase):
         self.assertEqual(len(rows), 30)
         self.assertEqual(len({row['id'] for row in rows}), 30)
         ready = pack.select_tasks(None)
-        self.assertEqual(len(ready), 17)
+        self.assertEqual(len(ready), 18)
         self.assertEqual(sum(r['reference_kind'] == 'library_dispatch' for r in ready), 1)
         for row in rows:
             self.assertEqual(row['reference_status'], 'available')
@@ -36,7 +36,7 @@ class RewriteCollectionTests(unittest.TestCase):
             workspace = root / 'inputs'
             profile = pack.PACK / 'profiles/b300-m2.example.json'
             manifest = pack.prepare_batch(profile, workspace, root / 'runs')
-            self.assertEqual(len(manifest['tasks']), 17)
+            self.assertEqual(len(manifest['tasks']), 18)
             for row in pack.select_tasks(None):
                 task = workspace / 'tasks' / row['id']
                 config = json.loads((task / 'experiment.json').read_text())
@@ -67,7 +67,7 @@ class RewriteCollectionTests(unittest.TestCase):
                                    root / 'runs', ['020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048'])
             self.assertFalse((root / 'inputs').exists())
 
-    def test_paper_tasks_retain_full_domains_and_cannot_enter_default_launches(self):
+    def test_paper_tasks_retain_full_domains_and_only_qualified_seed_enters_launches(self):
         from tools import rewrite_assessment
         rows = rewrite_assessment.select(pack.catalog(), None)
         self.assertEqual([r['id'] for r in rows], [
@@ -78,6 +78,14 @@ class RewriteCollectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             for row in rows:
+                if row['status'] == 'ready':
+                    self.assertEqual(row['id'],'029_cake_tinygemm2')
+                    manifest = pack.prepare_batch(pack.PACK / 'profiles/b300-m2.example.json', root / 'tiny',
+                                                  root / 'tiny-runs', [row['id']])
+                    config = json.loads((root / 'tiny' / (row['id']+'.json')).read_text())
+                    self.assertEqual(config['cells'][0]['depth'],720)
+                    self.assertEqual(len(manifest['tasks']),1)
+                    continue
                 with self.subTest(task=row['id']), self.assertRaisesRegex(ValueError, row['reason']):
                     pack.prepare_batch(pack.PACK / 'profiles/b300-m2.example.json', root / 'batch',
                                        root / 'runs', [row['id']])

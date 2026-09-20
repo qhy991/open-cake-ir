@@ -882,8 +882,7 @@
     },
     {
       "id": "029_cake_tinygemm2",
-      "status": "blocked",
-      "reason": "external_bitwise_baseline_qualification_pending",
+      "status": "ready",
       "task": "cake_tinygemm2",
       "reference_kind": "cake_generated_kernel_family",
       "references": [
@@ -897,7 +896,7 @@
       "source": "https://github.com/flashinfer-ai/flashinfer PR #4274 at b38a0d686ee0d0be7a07b2ea559f2af14d2adf59",
       "reference_status": "available",
       "objective": "Reproduce bias-enabled BF16 TinyGEMM2 with bit-identical output, 4/8-stage TMA pipelines, PDL variants and shape-dependent dispatch. Compare against the pinned upstream baseline.",
-      "baseline_scope": "pinned_external_reference_unqualified; no starter or performance parity supplied",
+      "baseline_scope": "fixed_partitioned_cake_starter; strict external bitwise oracle; external timing comparison is separate from the Lab baseline bundle",
       "assessment": {
         "reference_access": "known_kernel_reproduction",
         "targets": [
@@ -940,12 +939,16 @@
           "legacy_tinygemm"
         ],
         "next_steps": [
-          "Run the task-owned TinyGEMM reproduction Workload and complete generated starters through GPU Infra, checking the independent CPU math and pinned external bitwise peer.",
-          "Only admit the authoring launcher after an actual baseline passes; retain PDL, faithful pipeline/partition and dispatch as separate mechanism gates.",
-          "Only three published latency fixtures are enumerated here; obtain the original 35/239-row manifests before claiming their coverage."
+          "The B300 typed candidate passed 30/30 development bitwise checks over the three declared shapes and five distributions; authoring starts from the B1/N128/K720 seed and each Campaign requalifies its compiled baseline.",
+          "Preserve independent PDL, faithful TMA/warp partition, dispatch, performance and framework gates; numerical equality does not close them.",
+          "Obtain the original 35/239-row manifests before claiming their coverage; benchmark the other two frozen shapes through explicit cells."
         ],
         "performance_criterion": "Unselected: bind the external baseline, criterion and budget before measurements; report ratios without a parity claim until then."
-      }
+      },
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 128,
+      "depth": 720
     },
     {
       "id": "030_cake_alphamoe",
