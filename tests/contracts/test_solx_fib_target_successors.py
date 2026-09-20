@@ -79,11 +79,8 @@ class ComposedTargetSuccessors(unittest.TestCase):
                 owner.validate_contract(bad)
 
     def test_registry_and_target_operations_own_admission(self):
-        for backend in ('not-registered', 'metal-m1-pro', 'triton-gfx1151'):
+        # Even another NVIDIA target does not inherit B300's operation declarations.
+        for backend in ('not-registered', 'metal-m1-pro', 'triton-gfx1151', 'triton-b200'):
             for owner in (attention, moe):
                 with self.subTest(backend=backend, owner=owner.__name__), self.assertRaises(ValueError):
                     owner.workload_document(next(iter(owner.TASKS)), backend=backend)
-        # Another already-declared Triton Target uses the same successor mechanism.
-        document = attention.workload_document(next(iter(attention.TASKS)), backend='triton-b200')
-        self.assertEqual(document['revision'], '2')
-        self.assertEqual(document['semantics']['target'], 'sm_100a')
