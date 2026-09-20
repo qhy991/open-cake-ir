@@ -27,7 +27,7 @@ from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.tasks.qsa.cuda import LoadedQsaProgram, QsaProgramArtifact, qsa_program_tensors
 from open_cake_ir.lab import BuildRequest, ExecutorRevision
 from open_cake_ir.lab.bindings import CURRENT_RELEASE_BINDING, resolve_executor
-from open_cake_ir.compiler.toolchain import compile_triton, project_triton_kernel
+from open_cake_ir.compiler.toolchain import compile_triton
 from open_cake_ir.lab.build import seal_triton_compilation
 from open_cake_ir.evaluation.program import stage_abi, seal_program_candidate
 from open_cake_ir.evaluation.paired import candidate_identity
@@ -156,8 +156,7 @@ def _compile_node(request: BuildRequest):
     Sealing is shared with Lab; this legacy broker stage does not claim the
     filesystem-isolated author compiler used by ordinary Run runtime assembly.
     """
-    return compile_triton(project_triton_kernel(request.source,request.toolchain_requirements),
-                          request.toolchain_requirements)
+    return compile_triton(request.source,request.toolchain_requirements)
 
 
 def _compile_open_cake(root,candidate_root,candidate,output,*,compiler,target,candidate_sha256):

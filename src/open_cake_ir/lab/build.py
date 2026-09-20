@@ -161,8 +161,11 @@ def seal_triton_compilation(request,compilation,*,workload,case_id):
     """Seal one owned Triton compilation, independent of where compilation ran."""
     requirements = request.toolchain_requirements
     route = triton_route(requirements)
-    expected_source = (project_triton_kernel(request.source,requirements)
-                       if request.source_role=='lowered_source' else request.source)
+    # The broker-owned Compiler path can compile the complete emitted module.
+    # Ordinary author compilers retain their kernel-only projection/validation.
+    # Neither representation permits substituting another compilation's source.
+    expected_source = (request.source if request.source_role!='lowered_source' or compilation.source==request.source
+                       else project_triton_kernel(request.source,requirements))
     if (compilation.source != expected_source or request.target != workload.target
         or requirements.get('compiler') != 'triton' or requirements.get('target') != request.target
         or not set(route.artifact_roles) <= set(compilation.artifacts)):

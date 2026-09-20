@@ -93,12 +93,8 @@ class QsaFeedbackTest(unittest.TestCase):
                 for node in program["nodes"]
             ]}
 
-            from tests.contracts.test_native_triton_pairing import CompilationFixture
-            from open_cake_ir.compiler.toolchain import project_triton_kernel
-            fixture = CompilationFixture()
-            def build(request):
-                return fixture.compile(project_triton_kernel(request.source,request.toolchain_requirements),
-                                       request.toolchain_requirements)
+            from tests.contracts._compiler_emission_fixture import CompilerEmissionFixture
+            build = CompilerEmissionFixture()
 
             with (
                 patch.object(cls.compiler, "check_corpus", return_value=SimpleNamespace(passed=True)),

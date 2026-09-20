@@ -10,12 +10,11 @@ from unittest.mock import patch
 
 from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.target import Target
-from open_cake_ir.compiler.toolchain import project_triton_kernel
 from open_cake_ir.evaluation.program import program_components
 from open_cake_ir.tasks.qsa import evaluate, cake, launch
 from tests.contracts.test_program_rewrites import epilogue_program
 from tests.contracts.test_program_evaluation import workload_for
-from tests.contracts.test_native_triton_pairing import CompilationFixture
+from tests.contracts._compiler_emission_fixture import CompilerEmissionFixture
 from tests.contracts.test_epilogue_fusion import execute, rounded
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,12 +59,10 @@ class QsaCommonProgramTests(unittest.TestCase):
 
     def compile(self,root,program,name):
         candidate = {'schema_version':2,'arm':'open_cake','program':program.document}
-        fixture = CompilationFixture()
-        def build(request):
-            return fixture.compile(project_triton_kernel(request.source,request.toolchain_requirements),request.toolchain_requirements)
+        fixture = CompilerEmissionFixture()
         output = root/name
         with patch.object(evaluate.ProgramContract,'load',return_value=self.reference), \
-             patch.object(evaluate,'_compile_node',side_effect=build):
+             patch.object(evaluate,'_compile_node',side_effect=fixture):
             profile = evaluate._compile_open_cake(ROOT,root,candidate,output,compiler=self.compiler,
                 target=Target.load(ROOT/'compiler/targets/sm_100a.json'),candidate_sha256='a'*64)
         built,manifest,inspection = cake.read_cake_artifact(ROOT,output/'program.json')
@@ -73,6 +70,25 @@ class QsaCommonProgramTests(unittest.TestCase):
         self.assertEqual(len(fixture.requests),len(program.stages))
         self.assertEqual([kernel.kernel_id for kernel in inspection.kernels],[stage.name for stage in program.stages])
         return output,built,manifest
+
+    def test_real_qsa_reference_builds_and_seals_with_its_explicit_legacy_target_binding(self):
+        reference = evaluate.ProgramContract.load(ROOT,ROOT/evaluate._PROGRAM_PATH,self.compiler)
+        binding = cake.QsaWorkloadBinding(reference)
+        self.assertIsNone(binding.document['semantics'].get('target'))
+        self.assertEqual(binding.target,'sm_100a')
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory).resolve()/'candidate'
+            fixture = CompilerEmissionFixture()
+            with patch.object(evaluate,'_compile_node',side_effect=fixture):
+                evaluate._compile_open_cake(ROOT,output.parent,
+                    {'schema_version':2,'arm':'open_cake','program':reference.implementation.document},output,
+                    compiler=self.compiler,target=Target.load(ROOT/'compiler/targets/sm_100a.json'),candidate_sha256='b'*64)
+            candidate,manifest,inspection = cake.read_cake_artifact(ROOT,output/'program.json')
+            manifest.check_workload(binding,'target_t32768')
+            self.assertEqual(manifest.program.document,reference.implementation.document)
+            self.assertEqual(len(fixture.requests),len(reference.implementation.stages))
+            self.assertEqual(candidate.kernels_per_call,len(reference.implementation.stages))
+            self.assertEqual([item.kernel_id for item in inspection.kernels],[stage.name for stage in reference.implementation.stages])
 
     def test_variable_stage_programs_use_common_build_storage_launch_and_oracle(self):
         fused = self.compiler.rewrite_program(self.program,'fuse_pointwise_epilogue',
