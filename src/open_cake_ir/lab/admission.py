@@ -262,16 +262,6 @@ def validate_backend_assay(*,route,evaluation,workload,attribution_evaluation):
             raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
     elif evaluation.get("paired_timing", {}).get("kind") in METAL_KINDS:
         raise ValueError("Metal paired assay cannot evaluate a different backend")
-    elif ("validation_case_ids" in evaluation
-          or workload.document["validation"].get("all_cases_required") is True):
-        if (validation_case_ids(evaluation) != tuple(workload.case_ids)
-                or workload.document["validation"].get("all_cases_required") is not True):
-            raise differs(
-                "CUDA validation case projection differs from Workload validation",
-                expected={"validation_case_ids": tuple(workload.case_ids), "all_cases_required": True},
-                observed={"validation_case_ids": validation_case_ids(evaluation),
-                          "all_cases_required": workload.document["validation"].get("all_cases_required")},
-            )
 
 
 def validate_evaluation(
@@ -317,6 +307,16 @@ def validate_evaluation(
         raise ValueError('Metal task optimization requires a single authoring environment')
     validate_backend_assay(route=route,evaluation=evaluation,workload=workload,
                            attribution_evaluation=attribution_evaluation)
+    # Keep the external Study's existing case-projection policy here. Independent
+    # Run admission separately enforces its Workload's all-cases requirement.
+    if route['backend'] != 'metal' and ("validation_case_ids" in evaluation
+            or single_environment and workload.document['validation'].get('all_cases_required') is True):
+        if (validation_case_ids(evaluation) != tuple(workload.case_ids)
+                or workload.document['validation'].get('all_cases_required') is not True):
+            raise differs('CUDA validation case projection differs from Workload validation',
+                expected={'validation_case_ids':tuple(workload.case_ids),'all_cases_required':True},
+                observed={'validation_case_ids':validation_case_ids(evaluation),
+                          'all_cases_required':workload.document['validation'].get('all_cases_required')})
     execution = study.execution
     expected_execution_fields = {'target', 'executor_revision', 'broker_execution_sha256', 'gpu', 'sandbox'}
     if assay is not None:
