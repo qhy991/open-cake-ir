@@ -76,6 +76,20 @@ def reference_arguments(workload):
     return names
 
 
+def comparison_roles(metadata):
+    roles = {'optimized':'sealed confirmed Cake candidate','starter':'sealed original Cake starter',
+             'external':'unchanged supplied external implementation'}
+    if metadata.get('kind') == 'explicit_alignment_ablation':
+        roles.update(optimized='same-source candidate with guarded AOT alignment variants',
+                     starter='unchanged pre-specialization optimized binary')
+    elif metadata.get('kind') == 'authored_schedule_comparison':
+        control = metadata.get('control_role')
+        if control not in ('optimized','starter'):raise ValueError('authored comparison control role differs')
+        roles.update(optimized='new authored complete Schedule; numerical and timing qualification pending',
+                     starter='unchanged old optimized binary' if control=='optimized' else 'unchanged original Cake starter')
+    return roles
+
+
 def load_reference(root, output, report, cohort_calls, *, prebuilt_library=None):
     spec, paths, file, function = reference_spec(root)
     report['reference'] = spec
@@ -200,9 +214,7 @@ def main():
         admit_judge_source(report['judge_commit'],
             json.loads(Path(os.environ['KERNELINFRA_TASK']).read_bytes()), os.environ['KERNELINFRA_STAGE_ID'])
         report['input'] = json.loads(regular(root, 'comparison.json').read_bytes())
-        if report['input'].get('kind') == 'explicit_alignment_ablation':
-            report['roles'].update(optimized='same-source candidate with guarded AOT alignment variants',
-                                   starter='unchanged pre-specialization optimized binary')
+        report['roles'] = comparison_roles(report['input'])
         workload = WorkloadContract(json.loads(regular(root, 'workload.json').read_bytes()))
         if workload.target != 'sm_103a':
             raise ValueError('comparison binds exact B300 target')

@@ -18,7 +18,7 @@ sys.path[:0] = [str(ROOT),str(ROOT / 'src')]
 
 from tools.check_alignment_candidate import prepare_cases, admit_cases, case_data, phase_contract
 from tools.compare_flashinfer_reference import write
-from tools.compare_rewrite_artifacts import regular, reference_spec, reference_arguments, load_reference, RetainedExternal
+from tools.compare_rewrite_artifacts import regular, reference_spec, reference_arguments, load_reference, RetainedExternal, comparison_roles
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
 from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate, compare_tile_outputs
@@ -155,9 +155,7 @@ def capture(root,output,prepared,workload,commit):
         'evaluation_protocol':policy,'groups':[],'capture_complete':False,
         'roles':{'optimized':'sealed confirmed Cake candidate','starter':'sealed original Cake starter',
                  'external':'unchanged supplied external implementation'}}
-    if report['input'].get('kind') == 'explicit_alignment_ablation':
-        report['roles'].update(optimized='same-source candidate with guarded AOT alignment variants',
-                               starter='unchanged pre-specialization optimized binary')
+    report['roles'] = comparison_roles(report['input'])
     admission = observe_exclusive_cuda('sm_103a')
     report['device'] = {'name':admission.device_name,'job_id':admission.broker_job_id,'gpu_uuid':admission.gpu_uuid}
     library = prepared_library(prepared,preparation)

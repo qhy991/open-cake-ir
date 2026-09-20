@@ -4,10 +4,21 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.compare_rewrite_artifacts import regular, reference_spec
+from tools.compare_rewrite_artifacts import regular, reference_spec, comparison_roles
 
 
 class RewriteArtifactComparisonTests(unittest.TestCase):
+    def test_new_schedule_and_fixed_control_are_not_labeled_as_confirmed_promotion(self):
+        for control,label in [('optimized','unchanged old optimized binary'),
+                              ('starter','unchanged original Cake starter')]:
+            roles = comparison_roles({'kind':'authored_schedule_comparison','control_role':control})
+            self.assertEqual(roles['starter'],label)
+            self.assertIn('qualification pending',roles['optimized'])
+        with self.assertRaisesRegex(ValueError,'control role'):
+            comparison_roles({'kind':'authored_schedule_comparison','control_role':'unknown'})
+        self.assertEqual(comparison_roles({'kind':'explicit_alignment_ablation'})['starter'],
+                         'unchanged pre-specialization optimized binary')
+
     def test_native_reference_preserves_declared_entry_and_source_closure(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
