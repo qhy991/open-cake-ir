@@ -150,12 +150,14 @@ SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
 # so a contract declared for this route cannot be modelled and unemittable at once.
 _ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 
-# One Triton call, two libraries underneath. `tl.extra.libdevice.tanh` emits
+# One Triton call, distinct libraries underneath. `tl.extra.libdevice.tanh` emits
 # __nv_tanhf on an NVIDIA target and __ocml_tanh_f32 on an AMDGCN one, and a contract
 # names the instruction the hardware runs rather than the source line that reached it --
 # so a Target admits the spelling of the library it actually has. The emitter accepts
-# either and writes the same call; which one a Schedule may use is the Target's to say.
-_TRITON_TANH_CONTRACTS = frozenset({"libdevice.tanh.f32", "ocml.tanh.f32"})
+# the named contracts and writes the same call; which one a Schedule may use is the
+# Target's to say. MACA's CUDA-compatible entry maps to its own maca_mathlib, not
+# NVIDIA's implementation, so it carries a separate contract as well.
+_TRITON_TANH_CONTRACTS = frozenset({"libdevice.tanh.f32", "ocml.tanh.f32", "maca.tanh.f32"})
 
 _TRITON_MMA_CONTRACTS = frozenset(
     name for name in contracts_of(ContractKind.MMA) if name.startswith("triton.dot.")
