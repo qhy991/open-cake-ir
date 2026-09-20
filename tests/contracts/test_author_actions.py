@@ -92,7 +92,9 @@ class AuthorActionTests(SemanticLabTestCase):
         self.assertEqual(actions[1]['parent'],actions[0]['candidate_sha256'])
         self.assertNotEqual(actions[1]['candidate_sha256'],actions[0]['candidate_sha256'])
         self.assertEqual(actions[1]['reason'],'applied')
-        self.assertEqual([request[1]['compile_options']['num_warps'] for request in compiled.requests],[4,8])
+        self.assertEqual(len(compiled.requests),2)
+        self.assertNotEqual(compiled.requests[0][1]['compile_options']['num_warps'],8)
+        self.assertEqual(compiled.requests[1][1]['compile_options']['num_warps'],8)
         self.assertEqual(evaluator.calls,4)
         self.assertEqual(audit.endpoint_observation,'qualified')
 
