@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import unittest
 
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.backends import triton
 from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.ir import Schedule
@@ -53,3 +53,32 @@ class MetaxMatrixAdmission(unittest.TestCase):
         # its target changed; an unrelated dtype/interval failure is not the guard.
         self.assertFalse(any(f.blocks_lowering for f in triton.preflight(
             Schedule.from_dict(original), declared_target(original['target']))))
+
+    def test_maca_range_refuses_unsupported_keywords_before_compilation(self):
+        document = frontend.read_schedule(ROOT / 'examples/python/b300_gemm_bias.py').document
+        document['target'] = 'xcore1002'
+        # The register cap has its own existing MACA refusal. Remove it so the
+        # loop keyword under investigation owns each negative result.
+        document.pop('residency')
+        options = document['tile_loops'][0]['range_options']
+        options['disallow_acc_multi_buffer'] = False
+        self.assertEqual(options['num_stages'], 2)
+        self.assertTrue(self.compiler.assess(document).lowering_eligible)
+        source = triton.emit(Schedule.from_dict(document), declared_target('xcore1002')).source
+        self.assertIn('num_stages=2', source)
+        for name, value in (('loop_unroll_factor', 2), ('flatten', True),
+                            ('disallow_acc_multi_buffer', True), ('disable_licm', True)):
+            with self.subTest(option=name):
+                candidate = copy.deepcopy(document)
+                candidate['tile_loops'][0]['range_options'][name] = value
+                assessment = self.compiler.assess(candidate)
+                self.assertFalse(assessment.lowering_eligible)
+                findings = [f for f in assessment.findings
+                            if f.code == 'MACA_LOOP_OPTION_UNSUPPORTED']
+                self.assertEqual(len(findings), 1)
+                self.assertEqual(findings[0].path, f'tile_loops[0].range_options.{name}')
+                with self.assertRaises(EmitError):
+                    triton.emit(Schedule.from_dict(candidate), declared_target('xcore1002'))
+                candidate['target'] = 'sm_103a'
+                self.assertFalse(any(f.blocks_lowering for f in triton.preflight(
+                    Schedule.from_dict(candidate), declared_target('sm_103a'))))
