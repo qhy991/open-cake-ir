@@ -99,7 +99,10 @@ def response_submission(response, *, expected_model=None):
         if any(not isinstance(part, Mapping) or part.get('type') != 'output_text'
                or not isinstance(part.get('text'), str) for part in item['content']):
             raise ValueError('message provider output is not text')
-        if item.get('phase') in {None, 'final'}:
+        phase = item.get('phase')
+        if phase not in {None, 'commentary', 'final_answer'}:
+            raise ValueError('message provider assistant phase differs')
+        if phase in {None, 'final_answer'}:
             finals.append(''.join(part['text'] for part in item['content']))
     if len(finals) != 1:
         raise ValueError('message provider must return exactly one final JSON envelope')

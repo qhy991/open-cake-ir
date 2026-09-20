@@ -44,7 +44,7 @@ class FakeTransport:
                         'candidates':[{'run_id':message['run_id'],'turn':turn}]}
         output = [
             {'type':'reasoning','id':f'rs_{len(self.requests)}','summary':[],'encrypted_content':'opaque-CPU-fixture'},
-            {'type':'message','id':f'msg_{len(self.requests)}','role':'assistant','phase':'final',
+            {'type':'message','id':f'msg_{len(self.requests)}','role':'assistant','phase':'final_answer',
              'content':[{'type':'output_text','text':json.dumps(envelope),'annotations':[]}]},
         ]
         if self.tool_turn == len(self.requests):
@@ -162,6 +162,27 @@ class MessageProviderTests(SemanticLabTestCase):
             ResponsesRunProvider(qualification=qualification,task_packages={})
         with self.assertRaisesRegex(ValueError,'fixture qualification'):
             ResponsesRunProvider(qualification=qualification,task_packages={},transport=ResponsesHTTPTransport(10))
+
+    def test_native_final_answer_phase_keeps_commentary_out_of_submission(self):
+        class CommentaryTransport(FakeTransport):
+            def __call__(self, payload):
+                response = json.loads(super().__call__(payload))
+                response['output'].insert(1, {'type':'message','id':'commentary-'+response['id'],
+                    'role':'assistant','phase':'commentary','content':[{'type':'output_text',
+                    'text':'Checking the supplied task.','annotations':[]}]})
+                return encoded(response)
+        transport = CommentaryTransport()
+        qualification = qualify(CONFIG,transport,fixture=True)
+        first = qualification.document['exchanges'][0]['response']
+        self.assertEqual(json.loads(response_submission(first))['candidates'],[{'qualification_turn':1}])
+        self.assertEqual([item['phase'] for item in transport.requests[1]['input']
+            if item.get('role')=='assistant'],['commentary','final_answer'])
+        first['output'] = [item for item in first['output'] if item.get('phase') != 'commentary']
+        first['output'][-1].pop('phase')
+        self.assertEqual(json.loads(response_submission(first))['candidates'],[{'qualification_turn':1}])
+        first['output'][-1]['phase'] = 'final'
+        with self.assertRaisesRegex(ValueError,'assistant phase'):
+            response_submission(first)
 
     def test_qualification_cli_retains_requests_without_real_network(self):
         from tools.qualify_message_provider import main
