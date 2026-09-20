@@ -61,7 +61,7 @@ class CommittedHostCaptureTests(unittest.TestCase):
                 self.assertEqual(document["schema_version"], 1)
                 self.assertEqual(document["target"], path.stem)
                 host = document["host_environment"]
-                self.assertIn(host.get("kind"), {None, "metal", "hip"})
+                self.assertIn(host.get("kind"), {None, "metal", "hip", "maca"})
                 if host.get("kind") == "metal":
                     self.assertEqual(host["host"]["target"], path.stem)
 

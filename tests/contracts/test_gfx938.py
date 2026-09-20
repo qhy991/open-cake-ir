@@ -175,7 +175,7 @@ class TritonAdmissionTest(unittest.TestCase):
         self.assertEqual(len(refusals), 1, [f.code for f in assessment.findings])
         self.assertEqual(
             refusals[0].message,
-            "the triton backend emits ['cubin', 'hsaco'] and the 'apple_gpu_family9' "
+            "the triton backend emits ['cubin', 'hsaco', 'mcfatbin'] and the 'apple_gpu_family9' "
             "target runs 'metal_binary_archive'")
         self.assertFalse(assessment.lowering_eligible)
 

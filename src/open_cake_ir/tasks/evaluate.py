@@ -471,10 +471,13 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
         "correctness_launches": len(rows), "fallback_calls": 0,
         "allocation_mode": job_mode(admission.broker_job_id), "external_gpu_activity": "not_excluded",
     })
+    # The common receipt retains a timing artifact even when it contains JSON null.
+    # Absence of measurement is explicit; omitting the role breaks broker admission.
+    _write_new(authority.request_root / "timing-samples.json", None)
     result["receipt"] = {"correctness_passed": passed, "correctness": metrics,
         "kernel_calls": 1, "fallback_calls": 0, "timing": None,
         "artifacts": {"correctness_output": "correctness-output.json",
-                      "launch_receipt": "launch-receipt.json"}}
+                      "launch_receipt": "launch-receipt.json", "timing_samples": "timing-samples.json"}}
 
 
 def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
@@ -610,6 +613,10 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
         if collect_timing:
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
+            artifacts['timing_samples'] = timing_path.name
+        elif profile_source is None:
+            timing_path = authority.request_root / 'timing-samples.json'
+            _write_new(timing_path, None)
             artifacts['timing_samples'] = timing_path.name
         # The common receipt describes the final correctness launch; counters and
         # the raw launch artifact retain the separate preflight and timing work.

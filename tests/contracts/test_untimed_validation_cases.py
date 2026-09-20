@@ -1,6 +1,7 @@
 """An untimed platform must still evaluate every required input distribution."""
 
 import json
+from hashlib import sha256
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -8,6 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.evaluation.core import EvaluationReceipt
 from open_cake_ir.evaluation.triton_metax import MetaxDeviceAdmission
 from open_cake_ir.tasks import evaluate as worker
 from open_cake_ir.tasks.normalization.study import evaluation_policy
@@ -55,6 +57,14 @@ class UntimedValidationCases(unittest.TestCase):
         launch = json.loads((self.authority.request_root / "launch-receipt.json").read_text())
         self.assertEqual(launch["device_admission"]["pci_bus_id"], "0000:0f:00")
         self.assertEqual(launch["device_admission"]["runtime_library"], self.admission.runtime_library)
+        payloads = {role: (self.authority.request_root / name).read_bytes()
+                    for role, name in self.result["receipt"]["artifacts"].items()}
+        # Exercise the consumer's real custody/role check, not just the worker dict.
+        receipt = EvaluationReceipt(self.authority.candidate.candidate_sha256,
+            self.workload.canonical_sha256, "a" * 64, "confirmatory", "primary", False,
+            self.result["receipt"]["correctness"], 1, 0,
+            sha256(payloads["launch_receipt"]).hexdigest(), None, artifact_payloads=payloads)
+        self.assertIsNone(json.loads(receipt.artifact_payloads["timing_samples"]))
 
     def test_a_missing_distribution_is_refused_before_module_loading(self):
         self.authority.request["evaluation_protocol"]["validation_case_ids"] = ["primary"]
