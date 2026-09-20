@@ -130,12 +130,17 @@ def validate_run_bindings(specification, *, project_root, workload_loader, provi
     declared = authority['provider']
     reference = declared['qualification']
     configuration = execution_configuration(declared)
+    message_provider = declared.get('harness') == 'responses'
+    if message_provider:
+        from .message_provider import ResponsesRunProvider
+        if not isinstance(provider, ResponsesRunProvider):
+            raise ValueError('message-only authoring requires the owned Responses provider')
     if (qualification.canonical_sha256 != reference['canonical_sha256']
         or qualification.provider_revision != declared['revision']
         or qualification.configuration_sha256 != sha256(_canonical_json_bytes(configuration)).hexdigest()
         or provider.provider_revision != declared['revision']
         or provider.qualification_sha256 != qualification.canonical_sha256
-        or provider.executable_sha256 != qualification.executable_sha256
+        or (not message_provider and provider.executable_sha256 != qualification.executable_sha256)
         or provider.configuration != configuration):
         raise ValueError('Run Provider differs from its frozen qualification and configuration')
     return workload

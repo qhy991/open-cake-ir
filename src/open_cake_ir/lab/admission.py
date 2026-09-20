@@ -43,6 +43,19 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
                               admitted_scopes, require_native_pair=False, evaluation_protocol=None):
     """Check provider receipt, retained qualification evidence and delivered schema."""
     provider_revision = _name(provider.get('revision'), 'provider.revision')
+    if provider_harness(provider) == 'responses':
+        from .message_provider import MessageQualification
+        reference = _object(provider.get('qualification'), 'message provider qualification')
+        if set(reference) != {'path', 'canonical_sha256'}:
+            raise ValueError('message qualification reference fields differ')
+        _, path = _qualification_path(project_root, reference['path'], 'message qualification')
+        qualification = MessageQualification.load(path)
+        if (qualification.canonical_sha256 != reference['canonical_sha256']
+            or qualification.provider_revision != provider_revision
+            or qualification.document['configuration'] != expected_provider_configuration
+            or qualification.scope not in admitted_scopes):
+            raise ValueError('message provider qualification differs from its frozen binding')
+        return qualification
     executable_sha256 = _digest(
         provider.get("executable_sha256"), "study.arms.provider.executable_sha256"
     )
@@ -391,7 +404,8 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
             or 'const' in arm_schema and specification.condition_id != arm_schema['const']):
             raise ValueError('provider output schema excludes the assigned condition id')
     configuration = execution_configuration(provider)
-    scope = ('live_two_turn_current_provider' if configuration.get('event_contract', 'closed_file_change_v1') == 'closed_file_change_v1'
+    scope = ('live_two_turn_message_provider' if provider_harness(provider) == 'responses' else
+             'live_two_turn_current_provider' if configuration.get('event_contract', 'closed_file_change_v1') == 'closed_file_change_v1'
              else 'live_two_turn_tool_rich_provider')
     qualification = validate_provider_binding(provider=provider, project_root=project_root,
         expected_provider_configuration=configuration,

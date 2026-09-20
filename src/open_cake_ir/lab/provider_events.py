@@ -306,7 +306,7 @@ def provider_token_delta(native_tokens: int, *, provider: Mapping[str, object],
             raise ValueError("Codex cumulative thread usage regressed")
         return native_tokens - previous_tokens
     from .claude import CLAUDE_EVENT_CONTRACTS
-    if contract in CLAUDE_EVENT_CONTRACTS:
+    if contract in CLAUDE_EVENT_CONTRACTS or contract == 'responses_messages_v1':
         return native_tokens
     raise ValueError("provider usage contract is unsupported")
 
@@ -318,6 +318,9 @@ def reported_provider_usage(raw_events: bytes, *, provider: Mapping[str, object]
     if not isinstance(raw_events, bytes) or not raw_events:
         return None
     contract = provider.get("event_contract", "closed_file_change_v1")
+    if contract == 'responses_messages_v1':
+        from .message_provider import reported_usage
+        return reported_usage(raw_events, expected_thread_id=expected_thread_id)
     if contract in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
         observed = reported_codex_usage(raw_events, event_contract=contract,
                                          expected_thread_id=expected_thread_id)

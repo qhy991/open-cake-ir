@@ -771,7 +771,6 @@ class RunProvider(Protocol):
 
     provider_revision: str
     qualification_sha256: str
-    executable_sha256: str
     configuration: Mapping[str, object]
 
     def turn(self, request: TurnRequest) -> ProviderTurn:

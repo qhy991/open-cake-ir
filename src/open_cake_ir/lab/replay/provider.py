@@ -63,6 +63,9 @@ def _replay_provider_turns(
     provider_candidate_bytes: dict[tuple[int, str], bytes] = {}
     candidate_set_turns: set[int] = set()
     prior_cumulative = 0
+    message_history = []
+    message_response_ids = set()
+    message_model = provider_authority.get('model') if event_contract == 'responses_messages_v1' else None
     for expected_turn, event in enumerate(provider_events, start=1):
         location = event_location("provider_turn_completed", turn=expected_turn)
         payload = _object(event.get("payload"), "provider_turn.payload")
@@ -250,7 +253,24 @@ def _replay_provider_turns(
         expected_name = (
             "candidate-set.json"
         )
-        if event_contract in CLAUDE_EVENT_CONTRACTS:
+        if event_contract == 'responses_messages_v1':
+            from types import SimpleNamespace
+            from ..message_provider import validate_exchange, usage
+            from ..provider_policy import execution_configuration
+            record, response_bytes = validate_exchange(raw_events,
+                config=execution_configuration(provider_authority), history=message_history, bundle=reference_bundle,
+                run_id=audit.run_id, turn=expected_turn, thread_id=next(iter(threads)) if threads else None,
+                expected_model=message_model)
+            if response_bytes != evidence.read_object(submission_references[0]):
+                refuse(f'{location}.provider_submission_envelope', 'message output differs from retained submission')
+            if record['response']['id'] in message_response_ids:
+                refuse(f'{location}.provider_events', 'native response was replayed as another turn')
+            message_response_ids.add(record['response']['id'])
+            message_model = record['response']['model']
+            message_history = record['request']['input'] + record['response']['output']
+            parsed = SimpleNamespace(thread_id=record['thread_id'], provider_tokens=usage(record['response']),
+                                     candidate_path=None, normalization='single_exact',tool_activity=())
+        elif event_contract in CLAUDE_EVENT_CONTRACTS:
             parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal, event_contract=event_contract)
             if parsed.reported_models != (provider_authority["model"],):
                 refuse(f"{location}.provider_events", "reported models differ from the arm's provider authority",
@@ -283,7 +303,7 @@ def _replay_provider_turns(
             if Path(parsed.candidate_path).name != expected_name:
                 refuse(f"{location}.provider_events", "candidate file name differs",
                        observed=Path(parsed.candidate_path).name, expected=expected_name)
-        elif event_contract != "tool_rich_candidate_v1":
+        elif event_contract not in {"tool_rich_candidate_v1", "responses_messages_v1"}:
             refuse(f"{location}.provider_events", "no candidate write under a contract that requires one",
                    observed=event_contract)
         if payload.get("normalization") != parsed.normalization:

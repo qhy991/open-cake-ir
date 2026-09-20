@@ -409,7 +409,7 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
         if authority["environment_kind"] == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"
         else "Author only Cake IR Schedules; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
         if authority["environment_kind"] == "open_cake"
-        else f"Author only the supplied kernel-only {native_backend(authority["environment_kind"]).label} baseline and declared compile/launch metadata. Host Python is forbidden."
+        else f"Author only the supplied kernel-only {native_backend(authority['environment_kind']).label} baseline and declared compile/launch metadata. Host Python is forbidden."
         if native_backend(authority["environment_kind"]) is not None
         else "Author only direct CUDA/PTX source. Do not access the Open Cake Compiler or a target implementation."
     )
@@ -450,6 +450,15 @@ write surface, reference access, tool permissions, budget, or acceptance authori
 
 {_document_sections({'scaffold.md': documents['scaffold.md']}, access=reference_access(authority, 'arm'))}
 """
+    if authority['provider'].get('harness') == 'responses':
+        task = task.replace('Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:',
+                            'Return exactly one JSON candidate-set envelope in your final response:')
+        task = task.replace('The first Ralph iteration adds it; later iterations update the same\nfile.',
+                            'Return a fresh envelope for each Ralph iteration; no file is written.')
+        agents = agents.replace('Write only `candidate-set.json`; `TASK.md` and `AGENTS.md` are immutable.',
+                                'Return only the JSON candidate envelope. The supplied task and instructions are immutable.')
+        agents = agents.replace('Read `TASK.md` completely before changing the Candidate.',
+                                'Read the complete supplied task before proposing a Candidate.')
     return TaskPackage(run_id, arm, task, agents, authority["environment_kind"])
 
 

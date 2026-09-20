@@ -33,6 +33,9 @@ def provider_configuration(provider: Mapping[str, object], claim_scope: str, *, 
 
 def execution_configuration(provider: Mapping[str, object]) -> dict:
     """Validate provider execution capabilities independently of research assignment."""
+    if provider_harness(provider) == 'responses':
+        from .message_provider import configuration
+        return configuration(provider)
     for name in ("model", "reasoning_effort"):
         value = provider.get(name)
         if not isinstance(value, str) or not value or value != value.strip() or "\x00" in value:

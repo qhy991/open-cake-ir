@@ -133,7 +133,7 @@ class LabCoreArchitectureTests(unittest.TestCase):
             callback.assert_not_called()
 
     def test_explicit_runtime_owner_imports_form_an_acyclic_graph(self):
-        owners = {"core", "contracts", "run_spec", "run_controls", "knowledge", "actions", "_documents", "_policies", "bindings", "preflight", "execution",
+        owners = {"core", "contracts", "run_spec", "run_controls", "knowledge", "actions", "message_provider", "_documents", "_policies", "bindings", "preflight", "execution",
                   "replay", "reporting", "selection", "archive", "environments",
                   "admission", "build", "candidate_filter", "evaluation_writer", "execution_admission",
                   "provider_documents", "provider_events", "provider_invocation", "providers",

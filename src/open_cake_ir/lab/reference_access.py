@@ -63,7 +63,9 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object]) -> None:
         if not isinstance(scaffold, Mapping):
             raise ValueError(f"{prefix}: missing authoring_instructions reference")
         _, path = source_reference_path(root, scaffold.get("path"), "scaffold")
-        if path.read_bytes() != (root / VETTED_REFERENCE_ASSETS[2]).read_bytes():
+        vetted_scaffold = ('contracts/scaffolds/message-author/AGENTS.md'
+                           if arm.get('provider', {}).get('harness') == 'responses' else VETTED_REFERENCE_ASSETS[2])
+        if path.read_bytes() != (root / vetted_scaffold).read_bytes():
             raise ValueError(f"{prefix}: authoring_instructions are not a vetted restricted scaffold")
         if kind == "open_cake":
             reference = arm.get("schedule_skeleton")
