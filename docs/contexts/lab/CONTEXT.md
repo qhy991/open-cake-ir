@@ -77,7 +77,7 @@ Concrete task code and the TaskLab composition root live outside the common engi
 workload loader, schedule preparation, authoring validation and manifest parser.
 Phase functions receive those dependencies explicitly; there is no second context object.
 
-Run parsing occurs once in preflight. Task-specific admission checks the frozen inputs
+Run inputs are parsed and validated at admission. Task-specific admission checks the frozen inputs
 before runtime side effects; legacy Study policy is checked at its input boundary.
 See the [implementation map](../../../src/open_cake_ir/lab/README.md)
 for module ownership and the independent replay package. Historical campaigns replay at their

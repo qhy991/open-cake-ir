@@ -75,7 +75,7 @@ Schedule 留作结构拒绝用例，旧固定源码结果只能在绑定的历�
 
 ### 编译器内部的负责位置
 
-- `core.py` 连接公开接口；`ir/program.py` 拥有程序结构与数据流约束，`program.py` 拥有完整程序改写和 lowering；`revision.py` 加载版本，`corpus.py` 逐项对照预期。
+- `core.py` 连接公开接口并组合 lowering；`ir/program.py` 拥有程序结构与数据流约束，`program.py` 拥有 LoweredProgram 及代码绑定，`program_passes.py` 拥有完整程序改写；`revision.py` 加载版本，`corpus.py` 逐项对照预期。
 - `diagnostics.py` 拥有诊断类型；`verifier/` 拥有四类通用规则。后端专属限制由后端报告，阻止生成，不把可表达的计划误判为结构错误。
 - [backends](../src/open_cake_ir/compiler/backends/__init__.py) 的 `BACKENDS` 是唯一静态后端清单。每个后端实现 `requirements`、`preflight`、`emit`，注册项可声明原始输入检查；Triton 的 `pointer_type(DType)` 负责指针类型拼写。
 - [performance](../src/open_cake_ir/compiler/performance/__init__.py) 归集工作量、驻留、profile、编译资源、经验成本和利用率。同一输入的分析结果计算一次并显式传递，不另设全局缓存。

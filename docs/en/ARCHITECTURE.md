@@ -29,7 +29,7 @@ The dedicated `checked_cuda_asset` route is retired. Its original TinyGEMM2 Sche
 
 ### Internal ownership and adding a backend
 
-`core.py` connects the public interface; `ir/program.py` owns typed composition and dataflow, and `program.py` owns complete-program rewrites and lowering. `revision.py` admits a Revision and `corpus.py` compares observed cases with expectations. Diagnostic types belong to `diagnostics.py`. The four common rule classes belong to `verifier/`; each backend owns its representation and control refusals without turning an expressible Schedule into an IR rejection.
+`core.py` connects the public interface and composes lowering; `ir/program.py` owns typed composition and dataflow, `program.py` owns LoweredProgram and its code binding, and `program_passes.py` owns complete-program rewrites. `revision.py` admits a Revision and `corpus.py` compares observed cases with expectations. Diagnostic types belong to `diagnostics.py`. The four common rule classes belong to `verifier/`; each backend owns its representation and control refusals without turning an expressible Schedule into an IR rejection.
 
 [BACKENDS](../../src/open_cake_ir/compiler/backends/__init__.py) is the single static backend inventory. A backend implements `requirements`, `preflight`, and `emit`; Triton owns `pointer_type(DType)` for its compile signature. To add a backend, define its target, supported inputs and refusal conditions, implement that protocol, and register it once. Test actual supported and refused combinations. The CLI vocabulary view reads this same inventory. Full Corpus gates a successor commit; integration and independent review follow the [branch workflow](../DEVELOPMENT_BRANCHES.md). Registration alone establishes no device support.
 
