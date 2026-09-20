@@ -136,6 +136,11 @@ def main():
     except Exception as error:
         result.update(error=str(error), failure_class=type(error).__name__)
         (args.output / 'failure.txt').write_text(traceback.format_exc())
+        for role, payload in getattr(error, 'artifact_payloads', {}).items():
+            if not isinstance(role, str) or not role.isidentifier() or not isinstance(payload, bytes):
+                raise ValueError('fault artifact role or bytes differ') from error
+            with (args.output / ('fault-' + role + '.bin')).open('xb') as stream:
+                stream.write(payload)
     write(args.output / 'result.json', result)
     print(json.dumps(_json_projection(result), indent=2), flush=True)
     return 0 if result['passed'] else 1

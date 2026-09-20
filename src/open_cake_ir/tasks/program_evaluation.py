@@ -12,6 +12,7 @@ from types import MappingProxyType
 from open_cake_ir.evaluation.core import EvaluationReceipt, compare_tile_output_values
 from open_cake_ir.evaluation.loaders import LifecycleError
 from open_cake_ir.evaluation.torch_tensor_inputs import LoadedTorchTensorInputs, check_cpu_tensor_inputs
+from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.serialization import canonical_json_bytes
 from .launch import parse_launch_manifest
 from .workloads import materialize_tensors, reference_tensors
@@ -58,10 +59,20 @@ def evaluate_program_case(candidate, workload, protocol, admission, *, prepared)
     check_cpu_tensor_inputs(manifest, prepared.inputs)
     loaded = LoadedTorchTensorInputs(candidate, manifest, prepared.inputs, admission)
     primary = None
+    retained = {}
+    before = loaded.loaded.launch_calls
+    diagnostic = {'candidate_sha256': candidate.candidate_sha256,
+                  'manifest_sha256': manifest.canonical_sha256,
+                  'expected_kernel_calls': manifest.kernels_per_call,
+                  'device_admission': asdict(admission)}
     try:
-        before = loaded.loaded.launch_calls
         loaded.launch()
         observed, input_checks = loaded.snapshot()
+        # Freeze completed observations before any count/comparison/teardown check
+        # can fail. A rejected execution retains evidence, never a passing receipt.
+        observation = {'input_checks': input_checks, 'observed_tensors': _output_record(observed),
+                       'expected_tensors': _output_record(prepared.expected)}
+        retained['program_observation'] = canonical_json_bytes(observation)
         count = loaded.loaded.launch_calls - before
         if count != manifest.kernels_per_call:
             raise ValueError('native Program did not execute its exact stage count')
@@ -70,26 +81,32 @@ def evaluate_program_case(candidate, workload, protocol, admission, *, prepared)
         correct, metrics = compare_tile_output_values(workload, expected_values, observed_values)
         metrics = {**metrics, 'inputs_unchanged': all(input_checks.values())}
         passed = correct and metrics['inputs_unchanged']
-        correctness = {'passed': passed, 'metrics': metrics, 'input_checks': input_checks,
-                       'observed_tensors': _output_record(observed), 'expected_tensors': _output_record(prepared.expected)}
+        correctness = {'passed': passed, 'metrics': metrics, **observation}
         resources = loaded.loaded.resources
     except BaseException as error:
         primary = error
-        raise
     finally:
         try:
             loaded.close()
         except BaseException as cleanup:
-            if primary is not None:
-                raise LifecycleError(primary, cleanup) from primary
-            raise
-    if not loaded.loaded.closed:
-        raise ValueError('native tensor modules remain open after teardown')
+            primary = LifecycleError(primary, cleanup) if primary is not None else cleanup
+    if not loaded.loaded.closed and primary is None:
+        primary = ValueError('native tensor modules remain open after teardown')
+    diagnostic.update(kernel_calls=loaded.loaded.launch_calls - before,
+                      module_unloaded=loaded.loaded.closed, resources=loaded.loaded.resources)
+    if primary is not None:
+        retained['program_launch'] = canonical_json_bytes({**diagnostic, 'failure_class': type(primary).__name__,
+                                                          'error': str(primary)})
+        raise RunProtocolFault('harness_fault', str(primary), artifact_payloads=retained) from primary
     launch = {'candidate_sha256': candidate.candidate_sha256, 'kernel_calls': count, 'fallback_calls': 0,
               'manifest_sha256': manifest.canonical_sha256, 'device_admission': asdict(admission),
               'module_unloaded': loaded.loaded.closed, 'resources': resources}
     launch_bytes = canonical_json_bytes(launch)
-    return EvaluationReceipt(candidate.candidate_sha256, workload.canonical_sha256, protocol.canonical_sha256,
-        protocol.purpose, protocol.case_id, passed, metrics, count, 0, sha256(launch_bytes).hexdigest(), None,
-        artifact_payloads={'correctness_output': canonical_json_bytes(correctness),
-                           'launch_receipt': launch_bytes, 'timing_samples': b'null'})
+    try:
+        return EvaluationReceipt(candidate.candidate_sha256, workload.canonical_sha256, protocol.canonical_sha256,
+            protocol.purpose, protocol.case_id, passed, metrics, count, 0, sha256(launch_bytes).hexdigest(), None,
+            artifact_payloads={'correctness_output': canonical_json_bytes(correctness),
+                               'launch_receipt': launch_bytes, 'timing_samples': b'null'})
+    except Exception as error:
+        retained['program_launch'] = launch_bytes
+        raise RunProtocolFault('harness_fault', str(error), artifact_payloads=retained) from error

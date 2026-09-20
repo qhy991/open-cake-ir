@@ -14,6 +14,7 @@ from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
 from open_cake_ir.evaluation.program import program_components
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment, TritonToolchainBuilder
+from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.solx_fib import attention
 from open_cake_ir.tasks.program_evaluation import PreparedProgramCase, evaluate_program_case
 from open_cake_ir.evaluation.torch_tensor_inputs import check_cpu_tensor_inputs
@@ -125,13 +126,23 @@ class TensorOracleReceipt(unittest.TestCase):
         self.assertEqual(receipt.artifact_payloads['timing_samples'], b'null')
         self.assertTrue(json.loads(receipt.artifact_payloads['launch_receipt'])['module_unloaded'])
         with patch.object(Loaded, 'launch', lambda self: None), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
-            with self.assertRaisesRegex(ValueError, 'exact stage count'):
+            with self.assertRaisesRegex(RunProtocolFault, 'exact stage count') as failed:
                 evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
+            self.assertIn('program_observation', failed.exception.artifact_payloads)
+            self.assertEqual(json.loads(failed.exception.artifact_payloads['program_launch'])['kernel_calls'], 0)
         def changed(self):
             return {name: value.clone() for name, value in prepared.expected.items()}, {name: False for name in prepared.inputs}
         with patch.object(Loaded, 'snapshot', changed), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
             receipt = evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
             self.assertFalse(receipt.correctness_passed)
         with patch.object(Loaded, 'close', side_effect=RuntimeError('unload failed')), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
-            with self.assertRaisesRegex(RuntimeError, 'unload failed'):
+            with self.assertRaisesRegex(RunProtocolFault, 'unload failed') as failed:
                 evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
+            raw = json.loads(failed.exception.artifact_payloads['program_observation'])
+            self.assertEqual(set(raw['observed_tensors']), set(prepared.expected))
+            self.assertTrue(all(raw['input_checks'].values()))
+            self.assertFalse(json.loads(failed.exception.artifact_payloads['program_launch'])['module_unloaded'])
+        with patch.object(Loaded, 'close', lambda self: None), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            with self.assertRaisesRegex(RunProtocolFault, 'remain open') as failed:
+                evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
+            self.assertIn('program_observation', failed.exception.artifact_payloads)
