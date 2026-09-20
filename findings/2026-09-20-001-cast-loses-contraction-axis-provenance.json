@@ -28,5 +28,56 @@
     "replayed_evidence": "/Users/haiyan/Documents/cake-experiments/collection-audit-b4948b61/gemm-dot-probes/after-cast-provenance-fix.json",
     "outcome": "All eight explicit FP16-to-FP32 tf32-dot candidates now lower; all eight direct FP16-dot candidates still refuse TARGET_INSTRUCTION_UNSUPPORTED. CPU emitted-source tests sum every K tile including tails and nonidentity cast chains; output-axis, cyclic, shape-changing and ambiguous producer checks remain bounded.",
     "scope": "Software verification only. No GPU correctness, tensor-core qualification or performance claim."
+  },
+  "device_verification": {
+    "source_commit": "967718ea015d7b032f7717340c9125691b96f27e",
+    "target": "sm_103a",
+    "report": "/Users/haiyan/Documents/cake-experiments/all-fib-probes-20260920/all-18-results.json",
+    "cases": 40,
+    "tasks": 8,
+    "runs": [
+      {
+        "host": "B300-M2",
+        "run_id": "cake-fib-authored-probes-081245ad6375",
+        "report_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-mechanism-remaining605-b300-20260907/state/runs/cake-fib-authored-probes-081245ad6375/stages/correctness/checks/report.json"
+      },
+      {
+        "host": "B300-M2",
+        "run_id": "cake-fib-authored-probes-bee28e9ec117",
+        "report_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-mechanism-remaining605-b300-20260907/state/runs/cake-fib-authored-probes-bee28e9ec117/stages/correctness/checks/report.json"
+      },
+      {
+        "host": "B300-M2",
+        "run_id": "cake-fib-authored-probes-19ee2a17fa23",
+        "report_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-mechanism-remaining605-b300-20260907/state/runs/cake-fib-authored-probes-19ee2a17fa23/stages/correctness/checks/report.json"
+      },
+      {
+        "host": "B300-M2",
+        "run_id": "cake-fib-authored-probes-4912a4bcc887",
+        "report_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-mechanism-remaining605-b300-20260907/state/runs/cake-fib-authored-probes-4912a4bcc887/stages/correctness/checks/report.json"
+      },
+      {
+        "host": "B300-M3",
+        "run_id": "cake-fib-authored-probes-4002c0b01ad1",
+        "report_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-fib-authored-probes-4002c0b01ad1/stages/correctness/checks/report.json"
+      },
+      {
+        "host": "B300-M3",
+        "run_id": "cake-fib-authored-probes-5269446e0f7e",
+        "report_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-fib-authored-probes-5269446e0f7e/stages/correctness/checks/report.json"
+      },
+      {
+        "host": "B300-M3",
+        "run_id": "cake-fib-authored-probes-e631637bcf55",
+        "report_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-fib-authored-probes-e631637bcf55/stages/correctness/checks/report.json"
+      },
+      {
+        "host": "B300-M3",
+        "run_id": "cake-fib-authored-probes-5c2d7b4b6231",
+        "report_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-fib-authored-probes-5c2d7b4b6231/stages/correctness/checks/report.json"
+      }
+    ],
+    "outcome": "All eight original explicit-cast TF32 GEMM probes passed their five existing oracle distributions on B300. Same fixed M=1 shapes; input preservation checked.",
+    "scope": "Development GPU correctness, not tensor-core qualification, external-performance parity, full-shape coverage or pass promotion."
   }
 }
