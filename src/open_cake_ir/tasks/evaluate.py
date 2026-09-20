@@ -15,7 +15,6 @@ import os
 import statistics
 import sys
 from copy import deepcopy
-from contextlib import ExitStack
 from types import MappingProxyType
 from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
@@ -38,7 +37,7 @@ from open_cake_ir.evaluation.attempts import job_mode
 from open_cake_ir.evaluation.platforms import ExecutionPlatform, PLATFORMS, platform_for, platform_for_paired_kind
 from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs, _same_tensor_inputs
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case, PreparedTensorCase
-from open_cake_ir.evaluation.local_broker import LOCAL_KINDS, LocalBrokerBusy, local_job
+from open_cake_ir.evaluation.local_broker import LOCAL_KINDS, LocalBrokerBusy, admit_local_job
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
@@ -156,6 +155,8 @@ def _correctness_preparation(authority, case_id):
 
 
 def _prepare_local_tensor_work(authority, kind):
+    if os.environ.get('METAL_BROKER_LOCK_FD') or os.environ.get('GPUQ_JOB_ID'):
+        raise ValueError('CPU preparation cannot start inside an existing allocation')
     if (authority.allocation_mode != 'local_broker'
             or platform_for(authority.candidate.target).local_job_prefix != kind
             or not isinstance(authority.manifest, TensorLaunchManifest)):
@@ -1342,100 +1343,99 @@ def main() -> int:
     # GPUQ_JOB_ID. Before either, the worker carries the cluster placeholder.
     result = _base_result(os.environ.get("METAL_JOB_ID", os.environ.get(
         "GPUQ_JOB_ID", f"{PLATFORMS[CodeObject.CUBIN].exclusive_job_prefix}-000000000000")))
-    with ExitStack() as ownership:
-        try:
-            authority = _load_authority(request_path)
-            if args.local_kind is not None:
-                if args.profile_child or args.profile_admission is not None:
-                    raise ValueError('local CPU preparation cannot run as a profiler child')
-                authority = _prepare_local_tensor_work(authority, args.local_kind)
-                job = ownership.enter_context(local_job(args.local_kind))
-                result = _base_result(job)
-            if os.environ.get("GPUQ_BACKEND"):
-                from open_cake_ir.evaluation.gpuq import observe_allocation
-                _BROKER_ALLOCATION = observe_allocation(authority.candidate.target)
-            purpose = str(authority.request["purpose"])
-            if args.profile_child:
-                if purpose != "attribution" or args.profile_admission is None:
-                    raise ValueError("profile child requires attribution purpose")
-                if not _platform(authority).profiled_child:
+    try:
+        authority = _load_authority(request_path)
+        if args.local_kind is not None:
+            if args.profile_child or args.profile_admission is not None:
+                raise ValueError('local CPU preparation cannot run as a profiler child')
+            authority = _prepare_local_tensor_work(authority, args.local_kind)
+            job = admit_local_job(args.local_kind)
+            result = _base_result(job)
+        if os.environ.get("GPUQ_BACKEND"):
+            from open_cake_ir.evaluation.gpuq import observe_allocation
+            _BROKER_ALLOCATION = observe_allocation(authority.candidate.target)
+        purpose = str(authority.request["purpose"])
+        if args.profile_child:
+            if purpose != "attribution" or args.profile_admission is None:
+                raise ValueError("profile child requires attribution purpose")
+            if not _platform(authority).profiled_child:
+                raise ValueError(
+                    f"{_execution_platform(authority).value!r} has no profiled child launch"
+                )
+            admission_path = _input_path(
+                authority.request_root,
+                args.profile_admission.name,
+                "profile admission",
+            )
+            admission_document = _object(
+                json.loads(admission_path.read_bytes()), "profile admission"
+            )
+            if set(admission_document) != {
+                "schema_version",
+                "device_name",
+                "compute_capability",
+                "gpu_uuid",
+                "broker_job_id",
+                "mode",
+                "output_owner",
+            } or admission_document.get("schema_version") != 1:
+                raise ValueError("profile admission fields differ")
+            from open_cake_ir.lab.ncu_process import profile_output_owner
+            _PROFILE_OUTPUT_OWNER = profile_output_owner(admission_document["output_owner"])
+            capability = admission_document["compute_capability"]
+            if not isinstance(capability, list) or len(capability) != 2:
+                raise ValueError("profile admission capability differs")
+            admission = CudaDeviceAdmission(
+                str(admission_document["device_name"]),
+                (int(capability[0]), int(capability[1])),
+                str(admission_document["gpu_uuid"]),
+                str(admission_document["broker_job_id"]),
+                str(admission_document["mode"]),
+            )
+            _evaluate_candidate(
+                authority,
+                result,
+                collect_timing=False,
+                admission=admission,
+            )
+        elif purpose == "attribution":
+            platform = _platform(authority)
+            if platform.attribution is None:
+                raise ValueError(
+                    f"{_execution_platform(authority).value!r} has no attribution source; a "
+                    "profile is not taken on another platform's behalf"
+                )
+            if platform.attribution == "inside_evaluate":
+                if args.profile_admission is not None:
+                    # Two platforms take their profile inside evaluate now, so this can no
+                    # longer be phrased as Metal's rule: a DCU caller was refused in
+                    # Metal's words for a mistake of its own.
                     raise ValueError(
-                        f"{_execution_platform(authority).value!r} has no profiled child launch"
-                    )
-                admission_path = _input_path(
-                    authority.request_root,
-                    args.profile_admission.name,
-                    "profile admission",
-                )
-                admission_document = _object(
-                    json.loads(admission_path.read_bytes()), "profile admission"
-                )
-                if set(admission_document) != {
-                    "schema_version",
-                    "device_name",
-                    "compute_capability",
-                    "gpu_uuid",
-                    "broker_job_id",
-                    "mode",
-                    "output_owner",
-                } or admission_document.get("schema_version") != 1:
-                    raise ValueError("profile admission fields differ")
-                from open_cake_ir.lab.ncu_process import profile_output_owner
-                _PROFILE_OUTPUT_OWNER = profile_output_owner(admission_document["output_owner"])
-                capability = admission_document["compute_capability"]
-                if not isinstance(capability, list) or len(capability) != 2:
-                    raise ValueError("profile admission capability differs")
-                admission = CudaDeviceAdmission(
-                    str(admission_document["device_name"]),
-                    (int(capability[0]), int(capability[1])),
-                    str(admission_document["gpu_uuid"]),
-                    str(admission_document["broker_job_id"]),
-                    str(admission_document["mode"]),
-                )
-                _evaluate_candidate(
-                    authority,
-                    result,
-                    collect_timing=False,
-                    admission=admission,
-                )
-            elif purpose == "attribution":
-                platform = _platform(authority)
-                if platform.attribution is None:
-                    raise ValueError(
-                        f"{_execution_platform(authority).value!r} has no attribution source; a "
-                        "profile is not taken on another platform's behalf"
-                    )
-                if platform.attribution == "inside_evaluate":
-                    if args.profile_admission is not None:
-                        # Two platforms take their profile inside evaluate now, so this can no
-                        # longer be phrased as Metal's rule: a DCU caller was refused in
-                        # Metal's words for a mistake of its own.
-                        raise ValueError(
-                            f"{_execution_platform(authority).value!r} takes its profile inside "
-                            "evaluate; that admission is supplied by its own Executor")
-                    platform.evaluate(authority, result)
-                elif platform.attribution == "separate":
-                    if args.profile_admission is not None:
-                        raise ValueError("profile admission is internal-only")
-                    _profile_candidate(authority, request_path, result)
-                else:
-                    # Nsight was the fall-through here too. Three sites read this profile and
-                    # two were closed; this is the third, and leaving it meant any future
-                    # attribution value routed a candidate to CUDA's profiler.
-                    raise ValueError(
-                        f"attribution source {platform.attribution!r} is not implemented; a "
-                        "profile is taken inside evaluate or by this platform's own separate "
-                        "profiler, and never on another platform's behalf")
+                        f"{_execution_platform(authority).value!r} takes its profile inside "
+                        "evaluate; that admission is supplied by its own Executor")
+                platform.evaluate(authority, result)
+            elif platform.attribution == "separate":
+                if args.profile_admission is not None:
+                    raise ValueError("profile admission is internal-only")
+                _profile_candidate(authority, request_path, result)
             else:
-                _platform(authority).evaluate(authority, result)
-        except LocalBrokerBusy as error:
-            result = _base_result(error.job_id)
-            result.update(error=str(error), failure_class='admission')
-        except Exception as error:
-            result["error"] = "evaluator_failed"
-            result["failure_class"] = type(error).__name__
-            result["receipt"] = None
-            print(f'{type(error).__name__}: {error}', file=sys.stderr)
+                # Nsight was the fall-through here too. Three sites read this profile and
+                # two were closed; this is the third, and leaving it meant any future
+                # attribution value routed a candidate to CUDA's profiler.
+                raise ValueError(
+                    f"attribution source {platform.attribution!r} is not implemented; a "
+                    "profile is taken inside evaluate or by this platform's own separate "
+                    "profiler, and never on another platform's behalf")
+        else:
+            _platform(authority).evaluate(authority, result)
+    except LocalBrokerBusy as error:
+        result = _base_result(error.job_id)
+        result.update(error=str(error), failure_class='admission')
+    except Exception as error:
+        result["error"] = "evaluator_failed"
+        result["failure_class"] = type(error).__name__
+        result["receipt"] = None
+        print(f'{type(error).__name__}: {error}', file=sys.stderr)
     _write_new(args.output, result)
     return 0
 

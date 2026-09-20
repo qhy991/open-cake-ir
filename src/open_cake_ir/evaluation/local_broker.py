@@ -14,7 +14,6 @@ never for the paired CUPTI assay, which requires the exclusive cluster lease.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager
 import fcntl
 import json
 import os
@@ -80,12 +79,13 @@ class LocalBrokerBusy(BlockingIOError):
         self.job_id = job_id
 
 
-@contextmanager
-def local_job(kind: str):
-    """Own one worker's device phase after its CPU preparation has completed.
+def admit_local_job(kind: str) -> str:
+    """Acquire this process's local job after its CPU preparation completes.
 
-    The same broker lock, identity and observer serve both the exec entry point
-    and a worker that prepares in memory first. No caller selects another lock.
+    Ownership lasts until process exit, exactly as in the exec entry point. The
+    descriptor deliberately remains open through failures and final reporting:
+    a partially constructed device object cannot cause an early in-process unlock.
+    Call only from a short-lived worker's process entry, never a reusable host.
     """
     path = _lock_path(kind)
     if os.environ.get('METAL_BROKER_LOCK_FD') or os.environ.get('GPUQ_JOB_ID'):
@@ -96,18 +96,13 @@ def local_job(kind: str):
         fd = _acquire(path)
     except BlockingIOError as error:
         raise LocalBrokerBusy(kind, job) from error
-    previous = {key: os.environ.get(key) for key in ('METAL_JOB_ID', 'METAL_BROKER_LOCK_FD')}
     try:
         os.set_inheritable(fd, True)
         os.environ.update(METAL_JOB_ID=job, METAL_BROKER_LOCK_FD=str(fd))
-        yield job
-    finally:
+    except BaseException:
         os.close(fd)
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+        raise
+    return job
 
 
 def main(argv=None) -> int:
@@ -123,12 +118,12 @@ def main(argv=None) -> int:
     if not args.request.is_absolute() or not args.output.is_absolute() or args.output.exists():
         parser.error("request/output must be absolute and output must be new")
     try:
-        with local_job(args.kind):
-            # Exec preserves the supervisor-owned process group and lock. Its
-            # timeout kills the worker and native children together as before.
-            from .source_bootstrap import module_command
-            os.execvpe(sys.executable, module_command(sys.executable, args.worker_module,
-                "--request", str(args.request), "--output", str(args.output)), dict(os.environ))
+        admit_local_job(args.kind)
+        # Exec preserves the supervisor-owned process group and lock. Its
+        # timeout kills the worker and native children together as before.
+        from .source_bootstrap import module_command
+        os.execvpe(sys.executable, module_command(sys.executable, args.worker_module,
+            "--request", str(args.request), "--output", str(args.output)), dict(os.environ))
     except LocalBrokerBusy as error:
         result = {"schema_version": 1, "job_id": error.job_id, "mode": "local_serialized", "admitted": False,
                   "error": f"{args.kind}_broker_busy", "failure_class": "admission", "receipt": None,

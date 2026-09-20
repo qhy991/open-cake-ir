@@ -3,6 +3,8 @@ from copy import deepcopy
 from hashlib import sha256
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -52,7 +54,7 @@ class LocalTensorPreparation(unittest.TestCase):
         with self.assertRaises(TypeError):
             prepared.inputs['x'][0] = 1
         with self.assertRaises(TypeError):
-            prepared.expected['y'] = ()
+            prepared.expected['out'] = ()
         with self.assertRaises(ValueError):
             prepared.check(self.workload, 'zeros')
         protocol = EvaluationProtocol('fixture', 'confirmatory', self.workload.canonical_sha256,
@@ -64,7 +66,7 @@ class LocalTensorPreparation(unittest.TestCase):
                 out = {k: list(v) for k, v in prepared.expected.items()}
                 after = deepcopy(inputs)
                 if inner.wrong:
-                    out['y'][-1] += 1
+                    out['out'][-1] += 1
                 if inner.mutate:
                     after['x'][0] += 1
                 return out, after, {'candidate_sha256': candidate.candidate_sha256,
@@ -91,7 +93,11 @@ class LocalTensorPreparation(unittest.TestCase):
         original_write = worker._write_new
         def write(path, value):
             if path == self.output:
-                self.unlocked()  # Final host reporting follows release, including exceptions.
+                if os.environ.get('METAL_BROKER_LOCK_FD'):
+                    with self.assertRaises(BlockingIOError):
+                        local_broker._acquire(self.lock)
+                else:
+                    self.unlocked()
             original_write(path, value)
         with patch.dict(os.environ, {}, clear=True), \
              patch.object(local_broker, '_lock_path', return_value=self.lock), \
@@ -102,7 +108,14 @@ class LocalTensorPreparation(unittest.TestCase):
              patch.object(worker, '_write_new', side_effect=write), \
              patch('sys.argv', ['evaluate', '--request', str(self.request), '--output', str(self.output),
                                 '--local-kind', 'maca']):
-            self.assertEqual(worker.main(), 0)
+            try:
+                self.assertEqual(worker.main(), 0)
+            finally:
+                # This test invokes main in-process. Production releases this
+                # process-owned descriptor at worker exit, not at main's return.
+                fd = os.environ.get('METAL_BROKER_LOCK_FD')
+                if fd is not None:
+                    os.close(int(fd))
         return json.loads(self.output.read_text()), inputs.call_count, gold.call_count
 
     def test_all_cases_are_prepared_once_before_allocation_and_reused_while_owned(self):
@@ -124,7 +137,7 @@ class LocalTensorPreparation(unittest.TestCase):
         self.assertIsNone(result['error'])
         self.unlocked()
 
-    def test_device_exception_releases_without_accepting_a_receipt(self):
+    def test_device_exception_keeps_ownership_until_worker_exit_and_refuses_a_receipt(self):
         def device(authority, result):
             local_broker.observe_local_job('maca')
             raise RuntimeError('device fixture failure')
@@ -145,18 +158,57 @@ class LocalTensorPreparation(unittest.TestCase):
         self.assertEqual(result['counters']['module_loads'], 0)
         self.assertEqual(result['failure_class'], 'ValueError')
 
+    def test_nested_allocation_is_refused_before_bulk_cpu_preparation(self):
+        for key, value in (('METAL_BROKER_LOCK_FD', '7'), ('GPUQ_JOB_ID', 'gpuq-123456789abc')):
+            with self.subTest(key=key), patch.dict(os.environ, {key: value}, clear=True), \
+                 patch.object(worker, 'PreparedTensorCase') as prepare:
+                with self.assertRaisesRegex(ValueError, 'existing allocation'):
+                    worker._prepare_local_tensor_work(self.authority, 'maca')
+                prepare.assert_not_called()
+
     def test_busy_broker_preserves_other_ownership_and_names_its_own_job(self):
         with patch.dict(os.environ, {}, clear=True), \
              patch.object(local_broker, '_lock_path', return_value=self.lock):
             fd = local_broker._acquire(self.lock)
             try:
                 with self.assertRaises(local_broker.LocalBrokerBusy) as caught:
-                    with local_broker.local_job('maca'):
-                        self.fail('busy allocation entered')
+                    local_broker.admit_local_job('maca')
                 self.assertTrue(caught.exception.job_id.startswith('maca-'))
                 with self.assertRaises(BlockingIOError):
                     local_broker._acquire(self.lock)
                 self.assertNotIn('METAL_BROKER_LOCK_FD', os.environ)
             finally:
                 os.close(fd)
+        self.unlocked()
+
+    def test_process_failure_keeps_the_lock_through_reporting_and_releases_at_exit(self):
+        source = """
+from pathlib import Path
+import sys
+from open_cake_ir.evaluation import local_broker
+local_broker._lock_path = lambda kind: Path(sys.argv[1])
+local_broker.admit_local_job('maca')
+try:
+    raise RuntimeError('partial device constructor')
+except RuntimeError:
+    print('reporting', flush=True)
+    sys.stdin.readline()
+raise SystemExit(7)
+"""
+        env = dict(os.environ)
+        for key in ('METAL_JOB_ID', 'METAL_BROKER_LOCK_FD', 'GPUQ_JOB_ID'):
+            env.pop(key, None)
+        process = subprocess.Popen([sys.executable, '-c', source, str(self.lock)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, env=env)
+        try:
+            self.assertEqual(process.stdout.readline().strip(), 'reporting')
+            with self.assertRaises(BlockingIOError):
+                local_broker._acquire(self.lock)
+            process.communicate('finish\n', timeout=10)
+            self.assertEqual(process.returncode, 7)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
         self.unlocked()
