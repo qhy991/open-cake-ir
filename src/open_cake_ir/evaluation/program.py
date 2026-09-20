@@ -129,6 +129,18 @@ def stage_abi(stage):
                  for b in stage.schedule.buffers if b.space is MemorySpace.GLOBAL)
 
 
+def check_triton_launch_record(candidate,manifest,source_sha256):
+    """Bind the physical launch to the Triton builder's existing compile record."""
+    report = json.loads(candidate.artifact_payloads.get('stage_compilation',b'null'))
+    expected = {'schema_version':1,'kind':'triton_stage_compilation',
+        'source_sha256':source_sha256,'target':candidate.target,
+        'kernel_name':candidate.entry_point,'threads_per_cta':manifest.block[0],
+        'dynamic_shared_memory_bytes':manifest.dynamic_shared_memory_bytes,
+        'hidden_null_pointer_parameters':manifest.hidden_null_pointer_parameters,'grid':list(manifest.grid)}
+    if report != expected or manifest.block[1:] != (1,1):
+        raise ValueError('Program kernel launch differs from compiler metadata')
+
+
 def program_components(candidate):
     """Validate the complete executable handoff without loading a module."""
     from .core import TensorLaunchManifest
@@ -162,15 +174,7 @@ def program_components(candidate):
             or child.launch_spec_sha256 != child_manifest.canonical_sha256
             or child.artifact_roles.get('lowered_source') != manifest.lowered_sources[stage.name]):
             raise ValueError(f'Program stage {stage.name!r} artifact or ABI binding differs')
-        report = json.loads(child.artifact_payloads.get('stage_compilation', b'null'))
-        expected_report = {'schema_version': 1, 'kind': 'triton_stage_compilation',
-            'source_sha256': manifest.lowered_sources[stage.name], 'target': child.target,
-            'kernel_name': child.entry_point, 'threads_per_cta': child_manifest.block[0],
-            'dynamic_shared_memory_bytes': child_manifest.dynamic_shared_memory_bytes,
-            'hidden_null_pointer_parameters': child_manifest.hidden_null_pointer_parameters,
-            'grid': list(child_manifest.grid)}
-        if report != expected_report or child_manifest.block[1:] != (1, 1):
-            raise ValueError(f'Program stage {stage.name!r} launch differs from compiler metadata')
+        check_triton_launch_record(child,child_manifest,manifest.lowered_sources[stage.name])
         manifests[stage.name] = child_manifest
     return manifest, children, manifests
 

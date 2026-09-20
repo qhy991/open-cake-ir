@@ -66,12 +66,13 @@ class ProgramEvaluationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
 
-    def build(self, document=None):
+    def build(self, document=None, *, alignment=None):
         document = epilogue_program() if document is None else document
         program = Program.from_dict(document)
         workload = workload_for(program)
         fixture = CompilationFixture()
-        builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=fixture)
+        builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=fixture,
+                                        pointer_alignment=alignment)
         environment = OpenCakeEnvironment(self.compiler, builder, workload=workload, case_id='primary',
             authority_document={'lowering_route': {'backend': 'triton', 'entry_point': 'starter'},
                                 'input_format': 'schedule_or_python_v1'})
@@ -199,7 +200,8 @@ class ProgramEvaluationTests(unittest.TestCase):
                 self.assertFalse(result.launchable.is_program)
                 self.assertEqual(result.launchable.candidate_sha256,submission.sha256)
                 self.assertEqual(len(requests),1)
-                self.assertIsNone(requests[0].tensor_abi)
+                self.assertEqual(requests[0].tensor_abi,
+                    tuple((row.name,row.shape,row.dtype,row.mode) for row in workload.tensor_abi('primary')))
                 self.assertEqual(requests[0].target,program.target)
                 self.assertEqual(requests[0].source,self.compiler.lower_program(program).lowerings[0].source.encode())
 
@@ -226,10 +228,34 @@ class ProgramEvaluationTests(unittest.TestCase):
         self.assertEqual(replay(candidate.artifact_payloads).canonical_sha256,candidate.canonical_sha256)
         with self.assertRaisesRegex(ValueError,'authored Program lowering'):
             replay({**candidate.artifact_payloads,'lowered_source':b'changed source'})
-        manifest = json.loads(candidate.artifact_payloads['launch_manifest'])
-        manifest['grid'][0] += 1
-        with self.assertRaisesRegex(ValueError,'authored Program lowering'):
-            replay({**candidate.artifact_payloads,'launch_manifest':canonical_json_bytes(manifest)})
+        for field,value in [('grid',[99,1,1]),('block',[64,1,1]),
+                            ('dynamic_shared_memory_bytes',16),('hidden_null_pointer_parameters',0)]:
+            manifest = json.loads(candidate.artifact_payloads['launch_manifest'])
+            manifest[field] = value
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'Program lowering|compiler metadata'):
+                replay({**candidate.artifact_payloads,'launch_manifest':canonical_json_bytes(manifest)})
+
+    def test_single_stage_program_keeps_alignment_variant_compilation_and_replay(self):
+        from open_cake_ir.tasks.workloads import create_task
+        from open_cake_ir.evaluation.core import TensorLaunchManifest
+        from open_cake_ir.evaluation.kernel_bundle import alignment_component
+        _,source = create_task('softsign',backend='triton-b200',rows=2,columns=32)
+        program = Program.from_schedule(frontend.parse(source).document)
+        candidate,_,compilation = self.build(program.document,alignment=16)
+        self.assertEqual(len(compilation.requests),2)
+        self.assertFalse(candidate.is_program)
+        self.assertEqual(replay_program_candidate(self.compiler,program,candidate,candidate.artifact_payloads).canonical_sha256,
+                         candidate.canonical_sha256)
+        manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
+        child,leaf = alignment_component(candidate,manifest)
+        changed = leaf.as_dict();changed['dynamic_shared_memory_bytes'] += 16
+        changed = TensorLaunchManifest.from_dict(changed)
+        payloads = {**child.artifact_payloads,'launch_manifest':canonical_json_bytes(changed.as_dict())}
+        forged = LaunchableCandidate(child.candidate_sha256,child.target,child.entry_point,
+            {role:sha256(data).hexdigest() for role,data in payloads.items()},changed.canonical_sha256,payloads)
+        payloads = {**candidate.artifact_payloads,'kernel_bundle':pack_candidates({'aligned':forged})}
+        with self.assertRaisesRegex(ValueError,'compiler metadata'):
+            replay_program_candidate(self.compiler,program,candidate,payloads)
 
     def test_missing_stage_result_is_rejected_by_common_oracle(self):
         candidate, workload, _ = self.build()

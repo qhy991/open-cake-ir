@@ -195,7 +195,10 @@ class OpenCakeEnvironment:
                     compilation=compilation)
             single = single_kernel_lowering(lowered)
             if single is not None:
-                launchable = self._toolchain.build(request(single))
+                from dataclasses import replace
+                # Explicit ABI retains the Triton builder's physical compile record,
+                # including any alignment variant, without requiring a graph adapter.
+                launchable = self._toolchain.build(replace(request(single),tensor_abi=stage_abi(program.stages[0])))
             else:
                 build_stage = getattr(self._toolchain, 'build_stage', None)
                 if not callable(build_stage):

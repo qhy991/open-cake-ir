@@ -94,6 +94,8 @@ class NativeCuTePairingTests(unittest.TestCase):
                 manifest = TensorLaunchManifest.from_dict(json.loads(native.launchable.artifact_payloads['launch_manifest']))
                 manifest.check_workload(self.workload, case_id)
                 self.assertEqual(manifest.hidden_null_pointer_parameters, 0)
+                self.assertEqual(list(manifest.block), [32, 1, 1])
+                self.assertNotEqual(manifest.kernel_name, lowering.route.entry_point)
 
     def test_single_stage_program_replays_the_sdk_binary_symbol_and_compile_contract(self):
         from open_cake_ir.compiler import Program
@@ -111,8 +113,6 @@ class NativeCuTePairingTests(unittest.TestCase):
         payloads.pop('toolchain_resource_report')
         with self.assertRaisesRegex(ValueError,'compilation evidence is incomplete'):
             replay_program_candidate(self.compiler,program,candidate,payloads)
-                self.assertEqual(list(manifest.block), [32, 1, 1])
-                self.assertNotEqual(manifest.kernel_name, lowering.route.entry_point)
 
     def test_python_example_preserves_real_workload_binding_and_source_locations(self):
         source = (ROOT / 'examples/python/b300_cute_gemm_bias.py').read_text()

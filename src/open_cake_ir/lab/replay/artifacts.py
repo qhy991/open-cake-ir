@@ -118,6 +118,17 @@ def _replay_launchable_candidate(
                     raise ValueError('single-kernel CuTe launch ABI differs')
             elif candidate.entry_point != single.toolchain_requirements.get('kernel_entry_point',single.route.entry_point):
                 raise ValueError('single-kernel entry point differs from its authored Program lowering')
+            if single.route.backend is LoweringBackend.TRITON:
+                from open_cake_ir.evaluation.program import check_triton_launch_record
+                check_triton_launch_record(candidate,manifest,single.source_sha256)
+                if manifest.aligned_variant:
+                    from open_cake_ir.evaluation.kernel_bundle import alignment_component
+                    child,child_manifest = alignment_component(candidate,manifest)
+                    check_triton_launch_record(child,child_manifest,single.source_sha256)
+            elif single.route.backend is LoweringBackend.METAL:
+                if (list(manifest.block) != single.toolchain_requirements['threads_per_threadgroup']
+                    or manifest.threadgroup_memory_bytes != single.toolchain_requirements['threadgroup_memory_bytes']):
+                    raise ValueError('single-kernel Metal launch differs from its authored Program lowering')
         elif program.document != manifest.program.document:
             raise ValueError('Program manifest differs from the archived author candidate')
     if candidate.is_program:
