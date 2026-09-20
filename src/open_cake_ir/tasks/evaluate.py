@@ -14,7 +14,8 @@ import json
 import os
 import statistics
 import sys
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import asdict, dataclass
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping, cast
@@ -33,7 +34,7 @@ from open_cake_ir.compiler.target import CodeObject
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda, observe_local_cuda
 from open_cake_ir.evaluation.attempts import job_mode
 from open_cake_ir.evaluation.platforms import ExecutionPlatform, PLATFORMS, platform_for, platform_for_paired_kind
-from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs
+from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs, _same_tensor_inputs
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
@@ -260,9 +261,12 @@ def _observe_cuda(authority: _Authority):
     return observe(authority.candidate.target)
 
 
-def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
-                       samples_per_cohort, route_calls_per_cohort):
-    """The single retained CUPTI path for both historical and paired tensor assays."""
+def capture_tile_cohort(loaded, strict_cupti, *, samples_per_cohort, route_calls_per_cohort):
+    """Capture one cohort, retaining every argument set for subsequent validation.
+
+    No correctness or acceptance is returned here. The caller must observe and
+    validate every retained input and output, either now or in a later CPU phase.
+    """
     arguments = loaded.fresh_argument_sets(route_calls_per_cohort)
     used = 0
     def launch_fresh():
@@ -277,11 +281,24 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
         raise ValueError('worker CUPTI sample count differs')
     if used != len(arguments):
         raise RuntimeError('retained CUPTI helper invocation count differs')
-    check = {'checked_launches': used, 'passed': True, 'output_mismatches': 0,
+    return samples, arguments
+
+
+def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
+                       samples_per_cohort, route_calls_per_cohort):
+    """The retained capture path followed by complete immediate numerical checks."""
+    validation_inputs = getattr(loaded, 'validation_inputs', inputs)
+    if validation_inputs is not inputs and not _same_tensor_inputs(inputs, validation_inputs):
+        raise ValueError('retained validation inputs differ from the Workload case')
+    samples, arguments = capture_tile_cohort(loaded, strict_cupti,
+        samples_per_cohort=samples_per_cohort, route_calls_per_cohort=route_calls_per_cohort)
+    check = {'checked_launches': len(arguments), 'passed': True, 'output_mismatches': 0,
              'max_abs_error': 0.0, 'inputs_unchanged': True}
+    # A loaded tensor candidate retained a value-identical native CPU array at
+    # admission. Generic callables keep their original input representation.
     for values in arguments:
         observed, after = loaded.snapshot(values)
-        correct, observation = compare_tile_outputs(workload, inputs, expected, observed, after)
+        correct, observation = compare_tile_outputs(workload, validation_inputs, expected, observed, after)
         check['passed'] = check['passed'] and correct
         check['output_mismatches'] += observation['output_mismatches']
         check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
@@ -359,7 +376,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
         for role in protocol.arms:
             for case_id in cases:
                 loaded[(role, case_id)] = LoadedTorchTensorCandidate(candidates[role], manifests[role], input_cases[case_id], admission)
-                counters['module_loads'] += 1
+                counters['module_loads'] += loaded[(role, case_id)].module_count
             correctness(role, 'preflight')
             counters['preflight_calls'] += len(cases)
         if passed:
@@ -384,20 +401,29 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
                     seen = getattr(assays[role], 'non_target_dispatches', None)
                     if seen is not None:
                         row['arms'][role]['non_target_dispatches'] = seen
+                    activity = getattr(assays[role], 'last_activity', None)
+                    if activity is not None:
+                        row['arms'][role]['native_activity'] = deepcopy(activity)
                 measurements.append(row)
             for role in protocol.arms:
                 correctness(role, 'postflight')
         identities = {role: candidate_identity(item) for role, item in candidates.items()}
+        allocation = {'allocation_mode': job_mode(admission.broker_job_id)}
+        if allocation['allocation_mode'] == 'local_serialized':
+            allocation['external_gpu_activity'] = 'not_excluded'
         # The assay the Study declared, not the one this producer was written against.
         # It read PAIRED_KIND, which was true while CUPTI was the only source a tensor
         # pair could be timed by; the Metal producer below already reads the declaration,
         # and the receipt validator compares the two, so a third source turned a
         # hardcoded name into 'paired raw kind differs from the declared assay'.
         raw = {'kind': evaluation['paired_timing']['kind'],
+            **allocation,
             'evaluation_protocol': authority.request['evaluation_protocol'],
             'participants': identities, 'workload_sha256': authority.workload.canonical_sha256,
             'case_id': authority.case_id, 'purpose': authority.request['purpose'],
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'device_admission': asdict(admission),
+            'launch_manifests': {role: manifest.as_dict() for role, manifest in manifests.items()},
             'measurements': measurements}
         if not measurements:
             raw['not_measured'] = 'correctness_rejected'
@@ -406,7 +432,9 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
         _write_new(authority.request_root / 'correctness-output.json', {
             'passed': passed, 'metrics': metrics, 'participants': checks})
         _write_new(authority.request_root / 'launch-receipt.json', {
+            **allocation,
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'device_admission': asdict(admission),
             'candidate_sha256': authority.candidate.candidate_sha256, 'participants': identities,
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
             'resources': {role: loaded[(role, authority.case_id)].loaded.resources for role in protocol.arms}})
@@ -444,7 +472,7 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
         authority.manifest.check_validation_case(authority.workload, case_id)
         inputs = materialize_case(authority.workload, case_id)
         loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
-        counters["module_loads"] += 1
+        counters["module_loads"] += loaded.module_count
         try:
             protocol = EvaluationProtocol("workload-tensor-worker-correctness", authority.request["purpose"],
                 authority.workload.canonical_sha256, case_id, "none")
@@ -481,7 +509,7 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
 
 
 def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
-                             *, route_calls_per_cohort, profile_source=None):
+                             *, route_calls_per_cohort, profile_source=None, profile_format=None):
     """Use the common oracle and one loaded module across correctness and timing.
 
     `benchmark` is the timing source itself, not the host it came from: a callable taking
@@ -501,6 +529,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     receipt carries no profile rather than an empty one. It takes the single-dispatch
     launch and the kernel name, and returns the raw activity its own profiler saw.
     """
+    if (profile_source is None) != (profile_format is None):
+        raise ValueError("a tensor profile collector and its format must be bound together")
     if collect_timing and benchmark is None:
         raise ValueError("a timed tile evaluation requires its timing source")
     if (not collect_timing and profile_source is None and authority.request["purpose"] != "attribution"
@@ -509,7 +539,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     inputs = materialize_case(authority.workload, authority.case_id)
     loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
     counters = result['counters']
-    counters['module_loads'] = 1
+    counters['module_loads'] = loaded.module_count
     # Attribution's child supplies correctness; the parent adds the profiler assay.
     purpose = 'confirmatory' if authority.request['purpose'] == 'attribution' else authority.request['purpose']
     protocol = EvaluationProtocol('workload-tensor-worker-correctness', purpose,
@@ -579,26 +609,39 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                 "instrumented dispatch requires the candidate to pass the external oracle")
         correctness_path = authority.request_root / 'correctness-output.json'
         launch_path = authority.request_root / 'launch-receipt.json'
-        _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
+        correctness_document = {'passed': passed, 'metrics': metrics,
             'preflight': dict(preflight.correctness), 'correctness_launches': correctness_calls,
-            'timed_output_checks': timed_checks})
-        _write_new(launch_path, {'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'timed_output_checks': timed_checks}
+        # Preserve the loaded launch's manifest and device binding. Reconstructing a
+        # smaller envelope here discarded facts the native profile reader must check.
+        launch_document = {**json.loads(preflight.artifact_payloads['launch_receipt']),
+            'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
             'candidate_sha256': authority.candidate.candidate_sha256,
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
-            'resources': loaded.loaded.resources})
+            'resources': loaded.loaded.resources}
         artifacts = {'correctness_output': correctness_path.name, 'launch_receipt': launch_path.name}
         if profile_source is not None:
             # One separate instrumented dispatch, after correctness and outside every
             # cohort. It is attribution, not a sample: no device-state reset precedes it
             # and the record says so, so nobody compares it to a cohort median.
-            from open_cake_ir.evaluation.hip_observations import (
-                HIP_PROFILE_KIND, hip_profile_summary)
             instrumented = loaded.fresh_argument_sets(1)[0]
             raw = profile_source(lambda: loaded.launch(instrumented),
                                  authority.manifest.kernel_name)
+            observed, after = loaded.snapshot(instrumented)
+            expected = reference_outputs(authority.workload, authority.case_id, inputs)
+            correct, instrumented_metrics = compare_tile_outputs(
+                authority.workload, inputs, expected, observed, after)
+            if not correct:
+                raise ValueError('instrumented dispatch output failed the external oracle')
+            correctness_document['instrumented'] = {'passed': correct, 'metrics': instrumented_metrics}
+            correctness_document['correctness_launches'] += 1
+            launch_document['correctness_launches'] += 1
+            metrics['output_mismatches'] += instrumented_metrics['output_mismatches']
+            metrics['max_abs_error'] = max(metrics['max_abs_error'], instrumented_metrics['max_abs_error'])
+            metrics['inputs_unchanged'] &= instrumented_metrics['inputs_unchanged']
             profile_path = authority.request_root / 'profile.json'
             _write_new(profile_path, {
-                'kind': HIP_PROFILE_KIND,
+                'kind': profile_format.kind,
                 'candidate_sha256': authority.candidate.candidate_sha256,
                 'case_id': authority.case_id,
                 'kernel_name': authority.manifest.kernel_name,
@@ -608,8 +651,10 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                 'external_gpu_activity': 'not_excluded',
                 'separate_instrumented_launch': True,
                 'evaluation_protocol': authority.request['evaluation_protocol'],
-                'raw': raw, 'summary': hip_profile_summary(raw)})
+                'raw': raw, 'summary': profile_format.summary(raw)})
             artifacts['profile'] = profile_path.name
+        _write_new(correctness_path, correctness_document)
+        _write_new(launch_path, launch_document)
         if collect_timing:
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
@@ -796,7 +841,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     absent rather than implying none was possible.
     """
     from open_cake_ir.evaluation.hip_benchmark import HipDispatchBenchmark
-    from open_cake_ir.evaluation.hip_observations import collect_hip_dispatch_activity
+    from open_cake_ir.evaluation.hip_observations import collect_hip_dispatch_activity, HIP_PROFILE
     from open_cake_ir.evaluation.triton_hip import observe_local_hip
 
     if admission is None:
@@ -817,7 +862,7 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
         _evaluate_tile_candidate(
             authority, result, None, admission, False,
             route_calls_per_cohort=_route_calls_per_cohort(authority),
-            profile_source=collect_hip_dispatch_activity)
+            profile_source=collect_hip_dispatch_activity, profile_format=HIP_PROFILE)
         return
     if authority.baseline is not None and collect_timing:
         # A Study with a paired policy sends both participants, and the assay is one per
@@ -834,15 +879,30 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
 
 def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=None):
     from open_cake_ir.evaluation.triton_metax import observe_local_metax
+    from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+    from open_cake_ir.evaluation.metax_observations import collect_maca_activity, MACA_PROFILE
+    from open_cake_ir.compiler.target import declared_target
 
-    if collect_timing or authority.request["purpose"] == "attribution":
-        raise ValueError("MACA timing and profiler coverage are unavailable")
     host = authority.executor.admit_host()
     if admission is None:
         admission = observe_local_metax(authority.candidate.target, runtime_library=host["runtime_library"])
     elif admission.runtime_library != host["runtime_library"]:
         raise ValueError("MACA device admission refers to another runtime library")
     result.update(job_id=admission.broker_job_id, mode=job_mode(admission.broker_job_id), admitted=True)
+    if authority.request['purpose'] == 'attribution':
+        _evaluate_tile_candidate(authority, result, None, admission, False,
+            route_calls_per_cohort=None, profile_format=MACA_PROFILE,
+            profile_source=lambda launch, name: collect_maca_activity(launch, name,
+                manifest=authority.manifest, admission=admission, activity_library=host['activity_library']))
+        return
+    if collect_timing:
+        if authority.baseline is None:
+            raise ValueError('MACA timing requires the declared paired baseline')
+        _evaluate_paired_tile(authority, result,
+            lambda role, manifest: McptiDispatchBenchmark(manifest,
+                activity_library=host['activity_library'],
+                l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes), admission)
+        return
     _evaluate_tile_candidate(authority, result, None, admission, False, route_calls_per_cohort=None)
 
 

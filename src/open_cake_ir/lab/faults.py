@@ -9,7 +9,12 @@ from typing import Mapping
 
 @dataclass(frozen=True)
 class ReportedProviderUsage:
-    """Complete native usage observed for one invocation, independent of acceptance."""
+    """A complete usage witness, independent of candidate acceptance.
+
+    At the native adapter this follows the provider counter (Codex thread total,
+    Claude invocation usage). Execution converts it to the invocation delta before
+    retaining run_fault.provider_usage; replay performs the same conversion.
+    """
 
     event_contract: str
     thread_id: str

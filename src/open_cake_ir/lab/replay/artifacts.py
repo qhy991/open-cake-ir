@@ -69,6 +69,8 @@ def _replay_launchable_candidate(
         refuse(f"{location}.payload.objects", "launchable candidate lacks its launch manifest",
                observed=set(artifact_roles))
     manifest = manifest_parser(json.loads(artifact_payloads["launch_manifest"]))
+    if hasattr(manifest, 'check_complete_domain'):
+        manifest.check_complete_domain()
     if not _arm_artifact_roles(arm, manifest.target) <= set(artifact_roles):
         refuse(f"{location}.payload.objects", "launchable candidate arm artifact roles differ",
                observed=set(artifact_roles), expected=_arm_artifact_roles(arm, manifest.target))

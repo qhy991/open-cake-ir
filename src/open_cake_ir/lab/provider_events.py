@@ -24,7 +24,7 @@ from .provider_documents import (
 
 
 def _reconnect_notice(event: Mapping[str, object]) -> bool:
-    """The bounded native 0.153.4 notice observed in F-2026-09-20-002.
+    """Native reconnect notices observed in F-2026-09-20-002 and F-2026-09-20-008.
 
     This only recognizes syntax. Recovery is established by the surrounding
     complete turn and its normal terminal, lifecycle, usage and candidate checks.
@@ -32,9 +32,10 @@ def _reconnect_notice(event: Mapping[str, object]) -> bool:
     """
     message = event.get("message")
     return (set(event) == {"type", "message"} and isinstance(message, str)
-            and re.fullmatch(
-                r"Reconnecting\.\.\. [1-5]/5 \(stream disconnected before completion: [^\r\n]+\)",
-                message) is not None)
+            and (message == "Reconnecting... waiting for network (Connection failed: error sending request)"
+                 or re.fullmatch(
+                     r"Reconnecting\.\.\. [1-5]/5 \(stream disconnected before completion: [^\r\n]+\)",
+                     message) is not None))
 
 
 def parse_codex_turn_events(
@@ -289,15 +290,45 @@ def reported_codex_usage(raw_events: bytes, *, event_contract: str,
         return None
 
 
+def provider_token_delta(native_tokens: int, *, provider: Mapping[str, object],
+                         previous_tokens: int) -> int:
+    """Convert a native counter to this invocation's spend, once at the boundary.
+
+    Codex turn.completed reports the resumed thread's cumulative usage. Claude's
+    result reports invocation usage. Execution and replay use the same rule;
+    cached input and reasoning output remain subsets, never added a second time.
+    """
+    if any(type(value) is not int or value < 0 for value in (native_tokens, previous_tokens)):
+        raise ValueError("provider usage counters must be non-negative integers")
+    contract = provider.get("event_contract", "closed_file_change_v1")
+    if contract in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
+        if native_tokens < previous_tokens:
+            raise ValueError("Codex cumulative thread usage regressed")
+        return native_tokens - previous_tokens
+    from .claude import CLAUDE_EVENT_CONTRACTS
+    if contract in CLAUDE_EVENT_CONTRACTS:
+        return native_tokens
+    raise ValueError("provider usage contract is unsupported")
+
+
 def reported_provider_usage(raw_events: bytes, *, provider: Mapping[str, object],
-                            expected_thread_id: str | None = None) -> ReportedProviderUsage | None:
+                            expected_thread_id: str | None = None,
+                            previous_tokens: int = 0) -> ReportedProviderUsage | None:
     """Dispatch reported invocation usage using its frozen native provider contract."""
     if not isinstance(raw_events, bytes) or not raw_events:
         return None
     contract = provider.get("event_contract", "closed_file_change_v1")
     if contract in {"closed_file_change_v1", "tool_rich_candidate_v1"}:
-        return reported_codex_usage(raw_events, event_contract=contract,
-                                    expected_thread_id=expected_thread_id)
+        observed = reported_codex_usage(raw_events, event_contract=contract,
+                                         expected_thread_id=expected_thread_id)
+        if observed is None:
+            return None
+        try:
+            delta = provider_token_delta(observed.provider_tokens, provider=provider,
+                                         previous_tokens=previous_tokens)
+        except ValueError:
+            return None
+        return ReportedProviderUsage(contract, observed.thread_id, delta)
     from .claude import CLAUDE_EVENT_CONTRACTS, reported_claude_usage
     if contract in CLAUDE_EVENT_CONTRACTS:
         return reported_claude_usage(raw_events, expected_model=provider.get("model"),

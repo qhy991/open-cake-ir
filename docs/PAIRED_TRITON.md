@@ -25,6 +25,18 @@ HOME/cache、网络 namespace，只有构建目录可写。协调器不 import n
 可信 launcher 复用既有 CUDA Driver 生命周期。共同 correctness assay 使用独立 materializer/
 oracle，逐元素比较并验证输入不变；真实性能仍需共同的 fresh confirmation、CUPTI 与 profiler。
 
+Triton AOT 的可选 `runtime.toolchain.pointer_alignment`（或启动参数
+`--pointer-alignment 16`）是明确的编译实验条件。开启后，同一源码同时封存通用与对齐
+两个二进制，每次调用检查所有实际输入和输出地址，再选择对应版本；不满足对齐的合法
+连续视图仍执行通用版本。对齐 leaf 携带自己的指针约束，不能单独替代完整 Workload。
+两个模块在计时前加载，每次调用只执行一个 kernel；原始记录保留实际分派和两组资源。
+固定 starter 默认仍按原 v1 编译，不因候选实验选项而变化。这个选项不证明某个地址表达式
+天然对齐，也不代表加速成立，必须继续通过原 oracle、完整输入分布和共同计时验收。
+
+输入不变检查在主机端使用保留精确值的 double 数组，避免为每个矩阵元素反复创建 Python
+对象。signed zero、数值变化及 NaN 拒绝行为保持原义，每份计时输出仍逐一验证。这一改动
+缩短主机校验开销，不改变 GPU 计时范围或计时样本数。
+
 `Lab.audit` 的 paired view 包括所有预先安排的 repetition，保留失败、未资格和 missing。
 `lab audit --threshold-ms <数值>` 从已审计 Evidence 提取首次 fresh confirmation 达到阈值的
 turn、provider tokens 和已有 wall-time 观察；历史数据没有时间戳时返回 unknown。该查询是

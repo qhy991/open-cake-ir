@@ -127,15 +127,15 @@ def candidate(lm, x: cake.Tensor((8, 128), "{source_dtype}"), y: cake.Tensor((8,
                 self.assertFalse(refused.lowering_eligible)
                 self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED", [f.code for f in refused.findings])
 
-    def test_missing_timer_is_a_coverage_limitation_and_preserves_all_cases(self):
+    def test_native_timer_policy_preserves_all_cases_and_owns_its_profile(self):
         document, _ = create_task("rmsnorm", backend="triton-metax", rows=8, columns=128)
         workload = WorkloadContract(document)
         policy = evaluation_policy(workload)
         self.assertEqual(tuple(policy["validation_case_ids"]), workload.case_ids)
-        self.assertEqual(policy["search_evaluation"], "correctness_only")
-        self.assertNotIn("paired_timing", policy)
-        self.assertIsNone(platform_for("xcore1002").measurement_source)
-        self.assertEqual(platform_for("xcore1002").attribution, "unavailable")
+        self.assertEqual(policy["search_evaluation"], "correctness_then_paired_mcpti_dispatch")
+        self.assertEqual(policy['paired_timing']['route_calls_per_cohort'], 36)
+        self.assertEqual(platform_for("xcore1002").measurement_source, 'mcpti_dispatch')
+        self.assertEqual(platform_for("xcore1002").attribution, "inside_evaluate")
 
     def test_flagtree_distribution_version_is_not_used_as_triton_api_version(self):
         host = {"packages": {"flagtree": "0.5.1+metax3.1"}, "runtime": {"triton_version": "3.1.0"}}

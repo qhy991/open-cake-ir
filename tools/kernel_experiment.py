@@ -65,7 +65,11 @@ def validate(config):
         raise ValueError("at least one exact target cell is required")
     ids, destinations = set(), set()
     for cell in config["cells"]:
-        object_fields(cell, {"id", "task", "backend", "rows", "columns", "node"}, {"depth", "fixed_baseline_bundle"})
+        object_fields(cell, {"id", "task", "backend", "rows", "columns", "node"}, {"depth", "fixed_baseline_bundle", "pointer_alignment"})
+        if 'pointer_alignment' in cell:
+            value = cell['pointer_alignment']
+            if type(value) is not int or value <= 0 or value & (value - 1):
+                raise ValueError('pointer alignment specialization must be a positive power of two')
         if "fixed_baseline_bundle" in cell:
             absolute(cell["fixed_baseline_bundle"])
         if (not isinstance(cell["id"], str) or re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", cell["id"]) is None
@@ -172,7 +176,7 @@ if "provider_executable" in n:
 for field in ("qualification", "qualification_anchor"):
     if field in n:
         args += ["--" + field.replace("_", "-"), n[field]]
-for name in ("task", "backend", "rows", "columns", "depth", "fixed_baseline_bundle"):
+for name in ("task", "backend", "rows", "columns", "depth", "fixed_baseline_bundle", "pointer_alignment"):
     if name in p["cell"]:
         args += ["--" + name.replace("_", "-"), str(p["cell"][name])]
 for group in (p["provider"], p["budget"]):

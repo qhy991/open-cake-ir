@@ -648,6 +648,40 @@ class ProviderContractTests(unittest.TestCase):
                 normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
                     expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
 
+    def test_waiting_for_network_notice_requires_recovered_turn_and_valid_candidate(self):
+        from copy import deepcopy
+        message = "Reconnecting... waiting for network (Connection failed: error sending request)"
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate-set.json"
+            self._write_schedule_set(candidate, 1)
+            terminal, original = self._notice_bracketed_events(candidate)
+            original.insert(6, {"type": "error", "message": message})
+            raw = b"\n".join(json.dumps(e).encode() for e in original)
+            turn = normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
+                expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+            self.assertEqual(turn.provider_tokens, 120)
+            self.assertEqual(turn.raw_events, raw)
+            self.assertEqual(turn.candidates, (b'{"schedule":1}',))
+            self.assertIn(("jsonl:6", "transport_reconnect", "recovered"),
+                          [(a.item_id, a.item_type, a.status) for a in turn.tool_activity])
+            variants = [original[:-1], original + [original[6]],
+                        original[:-1] + [{"type": "turn.failed", "error": {"message": "network"}}]]
+            for bad in ("Reconnecting... waiting for network (Authentication failed)",
+                        message + "\n", message.replace("network", "quota")):
+                events = deepcopy(original); events[6]["message"] = bad; variants.append(events)
+            events = deepcopy(original); events[6]["fatal"] = True; variants.append(events)
+            for values in variants:
+                with self.subTest(events=values), self.assertRaises(ValueError):
+                    parse_codex_turn_events(b"\n".join(json.dumps(e).encode() for e in values),
+                        expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1")
+            with self.assertRaises(ValueError):
+                parse_codex_turn_events(raw, expected_terminal_message=terminal,
+                                       event_contract="closed_file_change_v1")
+            candidate.write_text('{"schema_version":1,"arm":"open_cake","candidates":[]}')
+            with self.assertRaises(ValueError):
+                normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
+                    expected_terminal_message=terminal, event_contract="tool_rich_candidate_v1", arm="open_cake")
+
     def test_reconnect_notice_cannot_hide_fatal_or_incomplete_turns(self):
         from copy import deepcopy
         terminal, original = self._notice_bracketed_events(Path('/cpu-fixture/candidate-set.json'))
@@ -1197,7 +1231,7 @@ class ProviderContractTests(unittest.TestCase):
                     ).encode()
                     return ProviderTurn(
                         thread_id="01234567-89ab-cdef-0123-456789abcdef",
-                        provider_tokens=100,
+                        provider_tokens=(100, 240, 200)[len(self.invocations) - 1],
                         candidates=(payload,),
                         raw_submission=candidate_path.read_bytes(),
                         candidate_sha256s=(sha256(payload).hexdigest(),),
@@ -1268,6 +1302,11 @@ class ProviderContractTests(unittest.TestCase):
             self.assertNotEqual(first_bundle['state_card'], second_bundle['state_card'])
             self.assertIn("resume", adapter.invocations[1].argv)
             self.assertNotEqual(first.candidate_sha256s, second.candidate_sha256s)
+            self.assertEqual((first.provider_tokens, second.provider_tokens), (100, 140))
+            with self.assertRaisesRegex(RunProtocolFault, "cumulative thread usage regressed"):
+                provider.turn(SimpleNamespace(run_id="open_cake-1", arm="open_cake", turn=3,
+                    cumulative_provider_tokens=240, thread_id=first.thread_id, feedback={},
+                    maximum_candidates_per_turn=2, state_card=state))
             bundle = json.loads(second.reference_bundle)
             self.assertEqual(bundle["task_markdown"], package.task_markdown)
             self.assertEqual(bundle["agents_markdown"], package.agents_markdown)
@@ -1279,7 +1318,7 @@ class ProviderContractTests(unittest.TestCase):
                 provider.turn(SimpleNamespace(run_id='open_cake-1', arm='open_cake', turn=3,
                     cumulative_provider_tokens=200, thread_id=first.thread_id, feedback={},
                     maximum_candidates_per_turn=2, state_card=state))
-            self.assertEqual(len(adapter.invocations), 2)
+            self.assertEqual(len(adapter.invocations), 3)
 
 
 

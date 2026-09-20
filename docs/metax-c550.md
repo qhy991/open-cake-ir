@@ -8,9 +8,9 @@ Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host ad
 当前范围是 **FP32 / FP16 / BF16 / INT32 缓冲区、load / cast / elementwise / reduce / store、
 完整输出正确性验证**。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
 INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
-FP8、专用矩阵指令、计时和 profiler 尚未启用。
-这些输入会被具体的 Target/backend rule 拒绝，或明确报告 measurement coverage
-unavailable。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
+FP8 和专用矩阵指令尚未准入。原生 MCPTI 成对计时和独立 profiler 已接入；
+测量质量不通过时明确返回 `measurement_quality_failed`，不作为有效性能结果。
+历史的无计时策略仍可回放。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
 
 ## 三种身份分别检查
 
@@ -23,8 +23,8 @@ unavailable。没有 CUDA/HIP fallback，没有借用其他设备的校准或性
 `0.5.1+metax3.1`，其提供的 Triton **API 版本为 3.1.0**。系统 Python 不等于
 该环境：实际解释器是 `/opt/conda/bin/python3`。
 [`runtime/hosts/xcore1002.json`](../runtime/hosts/xcore1002.json) 由 canonical capture
-命令生成并绑定解释器、包、构建工具和 MACA runtime。每个 worker 都重新 admission；
-实际已映射的 runtime 必须是捕获的绝对库路径。
+命令生成并绑定解释器、包、构建工具、MACA runtime、MCPTI 库及其 API 版本。
+每个 worker 都重新 admission；实际已映射的库必须是捕获的绝对路径。
 
 ## 编译与执行
 
@@ -43,7 +43,7 @@ PCI 标识和 runtime 路径。无计时收据使用 JSON `null` 的 `timing_sam
 MACA 通过已有 local broker 的 `maca` kind 执行。容器必须与宿主共享同一个
 `/tmp/open-cake-ir-maca-<uid>.lock` inode，并只暴露一个选定设备；不能在每个
 容器里各自建一个私有锁。这个分配模式只声明本用户任务串行，外部活动没有被排除，
-因此当前没有任何性能或独占设备结论。
+计时收据保留 `local_serialized` 和 `external_gpu_activity=not_excluded`，不声称物理设备独占。
 
 ## 现有 C550 开发环境
 
@@ -112,6 +112,35 @@ GEMM 最大绝对误差为 `0.5`，在原容差内通过，不能描述为 bit e
 任务累计有 255 个 case 的 C550 结果。这是上述固定形状的验收，不是全部 batch/shape
 或完整模型的资格。各批原始源码身份分别保留；逐项源码兼容性检查不替代新设备运行。
 
-下一阶段仍需单独接入原生 timer / profiler。
+## 原生计时与归因
+
+MCPTI API 18 的并发 kernel record 提供原生 start/end 时间戳；样本是单次目标
+dispatch 的 end−start，不包含 host launch 或前置 reset。每个样本前，同一 stream
+写入一个四倍于 Target 所声明 L2 的 FP32 缓冲区（C550 为 32 MiB）。这是明确的
+reset 操作，不是“所有缓存已清空”的证明。收据保留独立 reset 校准、每次原生活动、
+API/kernel correlation 和 sealed manifest；丢失／额外 dispatch、跨 cohort 换校准、
+错误设备或样本与原始时间戳不一致都会被拒绝。
+
+正式成对流程仍检查全部 Workload cases，并验证每次 warmup／timed 调用的新输出。
+独立 profile 另做预检和 instrumented 输出检查，反馈 dispatch、寄存器、共享内存及
+函数 local-memory 需求。`function_local_bytes_per_thread` 来自已绑定的函数属性；
+`mcpti_reported_local_bytes_per_thread` 仅保留 MCPTI 原值。后者曾在函数报告 492 bytes/thread
+时报告 0，故 `local_memory_reservation` 明确列为 `not_qualified`，不推断 padding、
+实际零用量或两个 API 量相等。occupancy、bandwidth 和 instruction counters 未采集。
+
+在冻结执行源码 `66dcc472`，GEMM-bias `M=8,N=8,K=4096` 的显式四执行组版本
+通过全部五 case、完整 fresh-output 检查及 500 个计时样本；20 个 cohort 的 CV 为
+0.006988–0.015165，低于原 0.05 门槛。相同 artifact 的两 arm 中位数均为 26.368 us，
+判定 `close_null`；这是该形状上的测量控制，不是优化收益。该 artifact 编译于
+`becb3bb1`，只把原 Schedule 的 `execution_groups=[0]` 改为 `[0,1,2,3]`。
+默认一组的 K4096 artifact 曾发生 native launch 拒绝，不能宣称它已被这个结果验证。
+
+RMSNorm `128×1024`、LayerNorm `8×128`、GEMM-bias `8×8×32` 的正式正确性和
+独立 profile 均通过，但它们在原 0.05 CV 门槛下的成对测量均失败。记录全部保留，
+没有重试取最好值或放宽门槛；以上较长 kernel 的通过也不外推到这些短 kernel。
+这批收据与失败诊断位于 `c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/`，
+本地镜像及审查在 `open-cake-ir-evidence/metax-parity-20260920/RESULTS.md`。
+
+矩阵、FP8、更多形状及完整 provider 优化闭环仍需后续验收。
 FlashInfer GQA/MLA/MoE 和其他精确绑定 B200/B300 的合同仍需各自的后继验证，
 不能只改 target 字符串后宣称可用。

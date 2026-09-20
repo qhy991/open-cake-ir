@@ -20,6 +20,7 @@ from .launch_manifest import WorkloadTensorManifest, tensor_abi_rows
 from .platforms import PLATFORMS, platform_for
 from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
+from .tensor_profiles import TENSOR_PROFILES
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 # The timing an assay may declare: none, or the paired assay of a platform that names a
@@ -106,6 +107,22 @@ class LaunchableCandidate:
             "artifact_payloads",
             MappingProxyType(dict(self.artifact_payloads)),
         )
+        # Historical identity-only and opaque legacy records remain valid. A
+        # composed manifest, once bytes are present, must be a complete bundle at
+        # construction as well as at paired evaluation and archive replay.
+        document = None
+        if 'launch_manifest' in self.artifact_payloads:
+            try:
+                document = json.loads(self.artifact_payloads['launch_manifest'])
+            except (ValueError, UnicodeError):
+                pass
+        bundled = 'kernel_bundle' in self.artifact_payloads
+        declares_variant = isinstance(document, Mapping) and document.get('aligned_variant') is not None
+        if bundled or declares_variant:
+            if not bundled or not isinstance(document, Mapping):
+                raise ValueError('aligned candidate requires its complete sealed kernel bundle')
+            from .kernel_bundle import alignment_component
+            alignment_component(self, TensorLaunchManifest.from_dict(document))
 
     @property
     def canonical_sha256(self) -> str:
@@ -239,6 +256,8 @@ class EvaluationReceipt:
                 raise ValueError("EvaluationReceipt raw artifacts are not JSON") from error
             if self.purpose == "attribution":
                 profile_document = json.loads(self.artifact_payloads["profile"])
+                if not isinstance(profile_document, Mapping):
+                    raise ValueError('attribution profile must be an object')
                 if profile_document.get("kind") == "metal_compute_stage_timestamps_v1":
                     from .metal_observations import load_metal_profile
                     profile = load_metal_profile(self.artifact_payloads["profile"],
@@ -253,16 +272,13 @@ class EvaluationReceipt:
                             or launch_raw.get("host") != profile["host"] or launch_raw.get("job_id") != profile["job_id"]
                             or launch_raw.get("instrumented_command") != profile["raw"]["command_buffer"]):
                         raise ValueError("Metal attribution launch differs from instrumented profile")
-                elif profile_document.get("kind") == "hip_dispatch_activity_v1":
-                    from .hip_observations import load_hip_profile
-                    profile = load_hip_profile(self.artifact_payloads["profile"],
+                elif profile_document.get("kind") in TENSOR_PROFILES:
+                    source = TENSOR_PROFILES[profile_document["kind"]]
+                    profile = source.load(self.artifact_payloads["profile"],
                         expected_candidate_sha256=self.candidate_sha256,
                         expected_case_id=self.case_id,
                         expected_protocol_sha256=self.evaluation_protocol_sha256)
-                    if (launch_raw.get("job_id") != profile["job_id"]
-                            or launch_raw.get("gpu_uuid") != profile["gpu_uuid"]):
-                        raise ValueError(
-                            "HIP attribution launch differs from instrumented profile")
+                    source.validate_launch(profile, launch_raw, correctness_raw)
                 elif profile_document.get("kind") != "ncu_kernel_attribution":
                     raise ValueError(
                         "no attribution source declares profile kind "
@@ -395,17 +411,18 @@ class EvaluationReceipt:
                 expected_candidate_sha256=self.candidate_sha256, expected_case_id=self.case_id,
                 expected_protocol_sha256=self.evaluation_protocol_sha256)
             return {"kind": profile["kind"], **profile["summary"]}
-        if kind == "hip_dispatch_activity_v1":
-            from .hip_observations import load_hip_profile, hip_attribution_feedback
-            return hip_attribution_feedback(load_hip_profile(
+        if kind in TENSOR_PROFILES:
+            source = TENSOR_PROFILES[kind]
+            return source.feedback(source.load(
                 self.artifact_payloads["profile"],
                 expected_candidate_sha256=self.candidate_sha256,
                 expected_case_id=self.case_id,
-                expected_protocol_sha256=self.evaluation_protocol_sha256))
+                expected_protocol_sha256=self.evaluation_protocol_sha256),
+                json.loads(self.artifact_payloads['launch_receipt']))
         if kind != "ncu_kernel_attribution":
             raise ValueError(
                 f"no attribution source declares profile kind {kind!r}; this reader knows "
-                "Nsight Compute, Metal compute-stage timestamps and roctracer activity")
+                "Nsight Compute, Metal timestamps and the registered tensor profile formats")
         profile = load_ncu_attribution_profile(
             self.artifact_payloads["profile"],
             expected_candidate_sha256=self.candidate_sha256,
@@ -444,6 +461,8 @@ class TensorLaunchManifest(WorkloadTensorManifest):
 
     dynamic_shared_memory_bytes: int
     hidden_null_pointer_parameters: int
+    pointer_alignments: Mapping[str, int] = field(default_factory=dict)
+    aligned_variant: str | None = None
 
     abi = 'workload_tensors_v1'
     workload_mismatch = 'sealed launch ABI differs from the selected Workload'
@@ -451,15 +470,21 @@ class TensorLaunchManifest(WorkloadTensorManifest):
     @classmethod
     def from_dict(cls, document: object) -> 'TensorLaunchManifest':
         from .cuda_manifest import CudaKernelSpec
-        if not isinstance(document, Mapping) or set(document) != {
+        fields = {
             'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi',
             'target', 'kernel_name', 'grid', 'block', 'dynamic_shared_memory_bytes',
             'hidden_null_pointer_parameters',
-        } or document.get('schema_version') != 1 or document.get('abi') != cls.abi:
+        }
+        if not isinstance(document, Mapping) or document.get('abi') != cls.abi:
+            raise ValueError('Workload tensor launch manifest fields differ')
+        extra = set(document) - fields
+        if (not fields <= set(document) or extra not in (set(), {'pointer_alignments'}, {'aligned_variant'})
+                or document['schema_version'] != (2 if extra else 1)):
             raise ValueError('Workload tensor launch manifest fields differ')
         launch = CudaKernelSpec.from_dict({
             key: value for key, value in document.items()
-            if key not in {'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi'}
+            if key not in {'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi',
+                           'pointer_alignments', 'aligned_variant'}
         })
         rows = document['tensor_abi']
         if (not isinstance(document['workload_sha256'], str)
@@ -471,14 +496,24 @@ class TensorLaunchManifest(WorkloadTensorManifest):
                               ascii_names=False,
                               row_error='Workload tensor launch ABI differs',
                               order_error='Workload tensor launch ABI order differs')
+        alignments = document.get('pointer_alignments', {})
+        if (not isinstance(alignments, Mapping) or ('pointer_alignments' in extra and not alignments)
+                or any(name not in {r[0] for r in abi} or type(value) is not int
+                       or value <= 0 or value & (value - 1) for name, value in alignments.items())):
+            raise ValueError('sealed pointer alignment contract differs')
+        variant = document.get('aligned_variant')
+        if 'aligned_variant' in extra and variant != 'aligned':
+            raise ValueError('sealed aligned variant must name the sole aligned kernel')
         return cls(document['workload_sha256'], document['case_id'], abi,
                    launch.target, launch.kernel_name, launch.grid, launch.block,
-                   launch.dynamic_shared_memory_bytes, launch.hidden_null_pointer_parameters)
+                   launch.dynamic_shared_memory_bytes, launch.hidden_null_pointer_parameters,
+                   MappingProxyType(dict(alignments)), variant)
 
     @classmethod
     def for_workload(cls, workload: WorkloadContract, case_id: str, **launch: object) -> 'TensorLaunchManifest':
         from dataclasses import asdict
-        manifest = cls.from_dict({'schema_version': 1, 'abi': cls.abi,
+        version = 2 if 'pointer_alignments' in launch or 'aligned_variant' in launch else 1
+        manifest = cls.from_dict({'schema_version': version, 'abi': cls.abi,
             'workload_sha256': workload.canonical_sha256, 'case_id': case_id,
             'tensor_abi': [{**asdict(t), 'shape': list(t.shape)} for t in workload.tensor_abi(case_id)],
             **launch})
@@ -502,12 +537,26 @@ class TensorLaunchManifest(WorkloadTensorManifest):
         return tuple((name, shape, dtypes[dtype]) for name, shape, dtype, _ in self.tensor_abi)
 
     def as_dict(self) -> dict[str, object]:
-        return {'schema_version': 1, 'abi': self.abi,
+        specialization = ({'pointer_alignments': dict(self.pointer_alignments)} if self.pointer_alignments
+                          else {'aligned_variant': self.aligned_variant} if self.aligned_variant else {})
+        return {'schema_version': 2 if specialization else 1, 'abi': self.abi,
             'workload_sha256': self.workload_sha256, 'case_id': self.case_id,
             'tensor_abi': [dict(name=n, shape=list(s), dtype=d, mode=m) for n, s, d, m in self.tensor_abi],
             'target': self.target, 'kernel_name': self.kernel_name, 'grid': list(self.grid),
             'block': list(self.block), 'dynamic_shared_memory_bytes': self.dynamic_shared_memory_bytes,
-            'hidden_null_pointer_parameters': self.hidden_null_pointer_parameters}
+            'hidden_null_pointer_parameters': self.hidden_null_pointer_parameters, **specialization}
+
+    def check_complete_domain(self):
+        if self.pointer_alignments:
+            raise ValueError('alignment-restricted leaf cannot replace the complete Workload candidate')
+
+    @property
+    def module_count(self):
+        return 2 if self.aligned_variant else 1
+
+    @property
+    def kernels_per_call(self):
+        return 1
 
 
 
@@ -518,13 +567,25 @@ def _same_tensor_inputs(before, after):
     Preserve the existing signed-zero/bit-pattern check and reject any changed
     field, length or value before accepting an unchanged-input observation.
     """
+    from array import array
     import struct
     if not isinstance(before, Mapping) or not isinstance(after, Mapping) or set(before) != set(after):
         return False
-    return all(len(after[name]) == len(values) and all(
-        a == b and struct.pack('>d', float(a)) == struct.pack('>d', float(b))
-        for a, b in zip(values, after[name], strict=True))
-        for name, values in before.items())
+    for name, values in before.items():
+        actual = after[name]
+        if len(actual) != len(values):
+            return False
+        if (isinstance(values, array) and isinstance(actual, array)
+                and values.typecode == actual.typecode == 'd'):
+            # Native double-array comparison keeps NaN != NaN; byte comparison
+            # additionally preserves signed zero. Neither makes Python objects or
+            # calls struct.pack once per matrix element.
+            if values != actual or values.tobytes() != actual.tobytes():
+                return False
+        elif not all(a == b and struct.pack('>d', float(a)) == struct.pack('>d', float(b))
+                     for a, b in zip(values, actual, strict=True)):
+            return False
+    return True
 
 def compare_tile_outputs(workload, before, expected, observed, after):
     """One comparison owner for fresh and already-recorded tensor launches."""
@@ -608,11 +669,12 @@ class LoadedTorchTensorCandidate:
     """One Workload-shaped argument set and admitted module for preflight/timing/postflight."""
 
     def __init__(self, candidate, manifest, inputs, admission):
+        from array import array
         import torch
         self.candidate = candidate
         self.manifest = manifest
         self.admission = admission
-        self.inputs = {name: list(values) for name, values in inputs.items()}
+        self.inputs = {name: array('d', values) for name, values in inputs.items()}
         dtype_names = {'fp32': 'float32', 'bf16': 'bfloat16', 'fp16': 'float16',
                        'fp8_e4m3': 'float8_e4m3fn', 'int32': 'int32'}
         dtypes = {}
@@ -640,7 +702,15 @@ class LoadedTorchTensorCandidate:
             raise ValueError(
                 f'{candidate.target!r} builds a {executable.value!r}, which this '
                 'tensor-tile path has no driver for')
-        self.loaded = loader(candidate, manifest, admission)
+        if manifest.aligned_variant:
+            from .kernel_bundle import LoadedAlignmentCandidate
+            self.loaded = LoadedAlignmentCandidate(candidate, manifest, admission, loader, torch.cuda.synchronize)
+        else:
+            self.loaded = loader(candidate, manifest, admission)
+
+    @property
+    def module_count(self):
+        return self.manifest.module_count
 
     def fresh_argument_sets(self, count):
         """Prepare non-reusable outputs and finish their initialization outside timing."""
@@ -660,12 +730,26 @@ class LoadedTorchTensorCandidate:
                            stream=torch.cuda.current_stream().cuda_stream)
 
     def snapshot(self, arguments=None):
+        from array import array
+        import ctypes
+        import torch
         arguments = self.arguments if arguments is None else arguments
         observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
                     in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'output'}
-        after = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
-                 in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'input'}
+        after = {}
+        for (name, _, _, mode), value in zip(self.manifest.tensor_abi, arguments, strict=True):
+            if mode != 'input':
+                continue
+            host = value.detach().to(device='cpu', dtype=torch.float64).contiguous()
+            values = array('d')
+            values.frombytes(ctypes.string_at(host.data_ptr(), host.numel() * host.element_size()))
+            after[name] = values
         return observed, after
+
+    @property
+    def validation_inputs(self):
+        """Private pre-launch CPU copy, checked against each materialized case at preflight."""
+        return self.inputs
 
     def launch_tensors(self, candidate, manifest, inputs):
         from dataclasses import asdict
