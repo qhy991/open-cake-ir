@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-20-007 — Codex tool-rich progress prose is mistaken for a terminal despite a complete candidate write and exact final marker; preserve commentary as auxiliary evidence while retaining final-message and candidate gates (protocol, fixed and verified by original-stream/candidate replay, 99 CPU contracts and unchanged 164-case Corpus; a fresh Codex 0.155.1 / gpt-6-astra two-turn qualification also passed).
+
 - F-2026-09-20-003 — live composition rejects a canonical external AGENTS.md already admitted by the Study; scaffold custody must use the same external-file rule at execution (protocol, fixed at 0bd562c1 and closed by original bound-scaffold replay, 55 CPU tests and unchanged Corpus Gate; successor campaign outcome is separate).
 
 - F-2026-09-20-002 — a recovered Codex stream emits a top-level reconnect error before completing successfully; the Lab rejects the event vocabulary even though first-turn candidate output matches. The bounded recovered-notice path retains full turn/candidate checks and diagnostics (protocol, implemented at 0e3c0f87; closed at 1b51db28 by exact original-stream replay and fresh two-turn live qualification, alongside 103 CPU contracts and 164 unchanged Corpus cases; no network-reliability claim).
