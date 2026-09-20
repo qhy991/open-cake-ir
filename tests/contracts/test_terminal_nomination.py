@@ -146,7 +146,6 @@ class NominationTests(SemanticLabTestCase):
         from open_cake_ir.lab.replay.attempts import _replay_evaluation_attempt_event
         from open_cake_ir.lab.replay.artifacts import _replay_launchable_candidate
         from open_cake_ir.lab.replay.refusals import ReplayRefusal
-        from open_cake_ir.evaluation import EvaluationReceipt
         from open_cake_ir.lab.replay.artifacts import _replay_evaluation_receipt
         lab,spec,_,_,evidence,events,_ = self.execute()
         nomination = next(e['payload'] for e in events if e['kind']=='candidate_nominated')
@@ -171,6 +170,14 @@ class NominationTests(SemanticLabTestCase):
             with self.subTest(field=field),self.assertRaisesRegex(ReplayRefusal,'worker request authority'):
                 _replay_evaluation_attempt_event(evidence,{**payload,'purpose':'search'} if field=='purpose' else payload,
                     used_job_ids=set(),**{**arguments,**({'case_id':'foreign-case'} if field=='case_id' else {})})
+        ledger_ref = next(ref for ref in payload['objects'] if ref['role']=='broker_attempt_ledger')
+        ledger = json.loads(evidence.read_object(ledger_ref))
+        original_read = evidence.read_object
+        for invalid in (None,7):
+            with self.subTest(attempts=invalid),patch.object(evidence,'read_object',side_effect=
+                    lambda ref:encoded({**ledger,'attempts':invalid}) if ref==ledger_ref else original_read(ref)):
+                with self.assertRaisesRegex(ReplayRefusal,'cardinality'):
+                    _replay_evaluation_attempt_event(evidence,payload,used_job_ids=set(),**arguments)
 
     def test_confirmation_timestamp_stays_between_search_end_and_run_end(self):
         lab,spec,_,audit,evidence,events,_ = self.execute()

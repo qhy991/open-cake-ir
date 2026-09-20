@@ -368,9 +368,6 @@ def _replay_evaluation_attempt_event(
         ),
         "broker_attempt_ledger",
     )
-    jobs = [item.get('job_id') for item in document.get('attempts', []) if isinstance(item, Mapping)]
-    if any(not isinstance(job,str) for job in jobs) or used_job_ids.intersection(jobs):
-        refuse(location, 'broker job was reused across Evaluation invocations')
     _replay_broker_attempt_ledger(
         evidence,
         cast(list[object], references),
@@ -382,4 +379,7 @@ def _replay_evaluation_attempt_event(
         purpose=payload['purpose'], case_id=case_id,
         location=location,
     )
+    jobs = [item['job_id'] for item in document['attempts']]
+    if used_job_ids.intersection(jobs):
+        refuse(location, 'broker job was reused across Evaluation invocations')
     used_job_ids.update(jobs)
