@@ -9,7 +9,6 @@ import json
 import math
 import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import traceback
@@ -28,6 +27,7 @@ from open_cake_ir.evaluation.paired import validate_pair_candidates
 from open_cake_ir.evaluation.profiler import NCU_ATTRIBUTION_METRICS
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab.bindings import load_baseline_bundle
+from open_cake_ir.lab.ncu_process import profile_output_owner, run_ncu, write_new
 from open_cake_ir.source_identity import checkout_commit
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
 
@@ -61,8 +61,7 @@ def parse_metrics(raw):
     return list(kernels.values())
 
 
-def child(role, output):
-    root = Path(os.environ['KERNELINFRA_CANDIDATE_DIR'])
+def child(role, output, root, owner):
     admission = observe_exclusive_cuda('sm_103a')
     import torch
     torch.set_num_threads(4)
@@ -75,7 +74,8 @@ def child(role, output):
                   for r in ('optimized', 'starter')}
     manifests = validate_pair_candidates(candidates['optimized'], candidates['starter'], workload, 'primary')
     report = {'role': role, 'roles': {'external': 'unchanged supplied external implementation'}, 'cases': [],
-              'allocation': observe_allocation('sm_103a'), 'comparison': json.loads((root / 'comparison.json').read_text())}
+              'broker_job_id': admission.broker_job_id,
+              'comparison': json.loads((root / 'comparison.json').read_text())}
     loaded = None
     try:
         if role == 'external':
@@ -118,19 +118,25 @@ def child(role, output):
     finally:
         if role != 'external' and loaded is not None:
             loaded.close()
-        write(output / 'child.json', report)
+        write_new(output / 'child.json', (json.dumps(report, indent=2, allow_nan=False) + '\n').encode(), owner)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--child', choices=['optimized', 'starter', 'external'])
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--input', type=Path)
+    parser.add_argument('--task-document', type=Path)
+    parser.add_argument('--stage-id')
+    parser.add_argument('--owner', type=int, nargs=2)
     args = parser.parse_args()
     commit = checkout_commit(ROOT)
-    admit_judge_source(commit, json.loads(Path(os.environ['KERNELINFRA_TASK']).read_bytes()),
-                       os.environ['KERNELINFRA_STAGE_ID'])
+    task_path = args.task_document if args.child else Path(os.environ['KERNELINFRA_TASK'])
+    stage_id = args.stage_id if args.child else os.environ['KERNELINFRA_STAGE_ID']
+    admit_judge_source(commit, json.loads(task_path.read_bytes()), stage_id)
     if args.child:
-        child(args.child, args.output)
+        owner = profile_output_owner({'uid': args.owner[0], 'gid': args.owner[1]})
+        child(args.child, args.output, args.input, owner)
         return 0
     output = Path(os.environ['KERNELINFRA_STAGE_DIR'])
     report = {'scope': 'separate NCU attribution; not performance timing or promotion',
@@ -138,8 +144,10 @@ def main():
     valid = False
     try:
         report['allocation'] = observe_allocation('sm_103a')
-        observe_exclusive_cuda('sm_103a')
-        ncu = shutil.which('ncu') or '/usr/local/cuda/bin/ncu'
+        # Device admission belongs to each child before it initializes CUDA; the
+        # parent must not create a context that would make that check see a peer.
+        host = json.loads((ROOT / 'runtime/hosts/sm_103a.json').read_text())
+        ncu = host['host_environment']['nsight_compute']['path']
         probe = subprocess.run([ncu, '--version'], capture_output=True, text=True, timeout=20, check=True)
         report['ncu_version'] = probe.stdout
         for role in ('optimized', 'starter', 'external'):
@@ -149,10 +157,13 @@ def main():
                        '--target-processes', 'application-only', '--replay-mode', 'kernel',
                        '--cache-control', 'all', '--metrics', ','.join(METRICS),
                        sys.executable, str(Path(__file__).resolve()), '--child', role,
-                       '--output', str(directory)]
+                       '--output', str(directory), '--input', os.environ['KERNELINFRA_CANDIDATE_DIR'],
+                       '--task-document', str(task_path), '--stage-id', stage_id,
+                       '--owner', str(os.geteuid()), str(os.getegid())]
             # Do not cap launch count: a reference's multi-kernel callable must remain visible.
-            with (directory / 'stdout.log').open('x') as stdout, (directory / 'stderr.log').open('x') as stderr:
-                result = subprocess.run(command, stdout=stdout, stderr=stderr, timeout=600)
+            result = run_ncu(command, cwd=ROOT, environment=dict(os.environ), timeout_seconds=600)
+            write_new(directory / 'stdout.log', result.stdout)
+            write_new(directory / 'stderr.log', result.stderr)
             row = {'command': command, 'returncode': result.returncode}
             report['roles'][role] = row
             if result.returncode:
