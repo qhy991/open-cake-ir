@@ -263,8 +263,17 @@ def validate_paired_activity(raw, protocol) -> None:
 
 
 def validate_loaded_resources(resources, kernel) -> None:
-    if not isinstance(resources, Mapping) or any(resources.get(a) != kernel[b] for a, b in (
-            ('registers_per_thread', 'registers_per_thread'), ('local_bytes', 'local_bytes_per_thread'),
+    # mcFuncGetAttribute reports the function's local-memory requirement. MCPTI's
+    # reservation field remained zero for a function reporting 492 bytes/thread
+    # (retained C550 job maca-7cd39fba6d44). They are distinct API quantities, and
+    # no equality or conversion between them is qualified. Keep each source's raw
+    # value, validate the function requirement's representation, and compare only
+    # the register/shared quantities whose relationship has device evidence.
+    if (not isinstance(resources, Mapping) or type(resources.get('local_bytes')) is not int
+            or resources['local_bytes'] < 0):
+        raise ValueError('MACA loaded function local-memory requirement differs')
+    if any(resources.get(a) != kernel[b] for a, b in (
+            ('registers_per_thread', 'registers_per_thread'),
             ('dynamic_shared_bytes', 'dynamic_shared_bytes'))):
         raise ValueError('MACA observed resources differ from the loaded kernel')
 

@@ -216,6 +216,17 @@ class MacaProfileRepresentation(unittest.TestCase):
         launch['resources']['registers_per_thread']=32
         with self.assertRaisesRegex(ValueError,'resources'):MACA_PROFILE.validate_launch(profile,launch,self.correctness)
 
+    def test_nonzero_function_local_requirement_is_not_equated_with_mcpti_reservation(self):
+        from open_cake_ir.evaluation.metax_benchmark import validate_loaded_resources
+        # Actual C550 width4 K4096 observation: function requirement492, activity0.
+        function={'registers_per_thread':256,'dynamic_shared_bytes':1024,'local_bytes':492}
+        activity={'registers_per_thread':256,'dynamic_shared_bytes':1024,'local_bytes_per_thread':0}
+        validate_loaded_resources(function,activity)
+        for key,value in (('local_bytes',-1),('local_bytes',True),('local_bytes',None),
+                          ('registers_per_thread',255),('dynamic_shared_bytes',512)):
+            with self.subTest(key=key,value=value),self.assertRaises(ValueError):
+                validate_loaded_resources({**function,key:value},activity)
+
     def test_recomputed_profile_cannot_change_the_loaded_manifest_or_device(self):
         import json
         from open_cake_ir.evaluation.metax_observations import MACA_PROFILE, MCPTI_PROFILE_KIND
@@ -262,7 +273,7 @@ class MacaProfileRepresentation(unittest.TestCase):
             'raw':self.raw,'summary':MACA_PROFILE.summary(self.raw)}
         launch={'job_id':profile['job_id'],'gpu_uuid':None,'candidate_sha256':'a'*64,
             'manifest_sha256':self.manifest.canonical_sha256,'device_admission':self.raw['device_admission'],
-            'correctness_launches':2,'resources':{'registers_per_thread':16,'local_bytes':0,'dynamic_shared_bytes':0}}
+            'correctness_launches':2,'resources':{'registers_per_thread':16,'local_bytes':492,'dynamic_shared_bytes':0}}
         metrics={'output_mismatches':0,'inputs_unchanged':True,'max_abs_error':0.0}
         correctness={**self.correctness,'passed':True,'metrics':metrics}
         def receipt():
@@ -271,7 +282,11 @@ class MacaProfileRepresentation(unittest.TestCase):
             return EvaluationReceipt('a'*64,self.manifest.workload_sha256,sha256(encoded(policy)).hexdigest(),
                 'attribution','primary',True,metrics,1,0,sha256(payloads['launch_receipt']).hexdigest(),
                 None,artifact_payloads=payloads)
-        self.assertEqual(receipt().attribution_feedback['kind'],'maca_dispatch_attribution')
+        feedback=receipt().attribution_feedback
+        self.assertEqual(feedback['kind'],'maca_dispatch_attribution')
+        self.assertEqual(feedback['function_local_bytes_per_thread'],492)
+        self.assertEqual(feedback['mcpti_reported_local_bytes_per_thread'],0)
+        self.assertEqual(feedback['not_qualified'],['local_memory_reservation'])
         del correctness['preflight']
         with self.assertRaisesRegex(ValueError,'preflight'):receipt()
         correctness['preflight'] = {**metrics, 'output_mismatches': 1}

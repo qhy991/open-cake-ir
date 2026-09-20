@@ -1,8 +1,9 @@
 """One separately instrumented MACA launch with raw MCPTI records and resources.
 
-This is attribution, never a cohort latency. Report allocated registers/shared/local
-storage, observed launch geometry and dispatch time; occupancy, bandwidth and ISA
-counters are explicitly outside the current collection coverage.
+This is attribution, never a cohort latency. Report observed registers/shared memory
+and the independently queried function-local requirement. MCPTI's local reservation
+counter has no qualified interpretation; preserve its raw value without presenting
+it as the function's usage. Occupancy, bandwidth and ISA counters are uncollected.
 """
 from dataclasses import asdict
 import math
@@ -69,14 +70,15 @@ def maca_profile_summary(raw: Mapping) -> dict:
         raise ValueError('MACA profile is not the sealed module launch')
     if kernel['dynamic_shared_bytes'] != manifest.dynamic_shared_memory_bytes:
         raise ValueError('MACA profile shared memory differs from its native dispatch')
-    return {'coverage': 'one_device_dispatch_and_allocated_resources', 'device_time_us': samples[0] * 1000,
+    return {'coverage': 'one_device_dispatch_and_reported_resources', 'device_time_us': samples[0] * 1000,
         'correlation': kernel['correlation'], 'grid': kernel['grid'], 'block': kernel['block'],
         'registers_per_thread': kernel['registers_per_thread'],
         'static_shared_bytes': kernel['static_shared_bytes'],
         'dynamic_shared_bytes': kernel['dynamic_shared_bytes'],
-        'local_bytes_per_thread': kernel['local_bytes_per_thread'],
+        'mcpti_reported_local_bytes_per_thread': kernel['local_bytes_per_thread'],
         'non_target_dispatches': 0, 'pci_bus_id': admission['pci_bus_id'],
-        'not_collected': list(NOT_COLLECTED), 'timing_use': 'attribution_only'}
+        'not_collected': list(NOT_COLLECTED), 'not_qualified': ['local_memory_reservation'],
+        'timing_use': 'attribution_only'}
 
 
 def load_maca_profile(payload: bytes, *, expected_candidate_sha256, expected_case_id,
@@ -94,8 +96,9 @@ def load_maca_profile(payload: bytes, *, expected_candidate_sha256, expected_cas
     return profile
 
 
-def maca_attribution_feedback(profile):
-    return {'kind': 'maca_dispatch_attribution', 'kernel_name': profile['kernel_name'], **profile['summary']}
+def maca_attribution_feedback(profile, launch):
+    return {'kind': 'maca_dispatch_attribution', 'kernel_name': profile['kernel_name'], **profile['summary'],
+            'function_local_bytes_per_thread': launch['resources']['local_bytes']}
 
 
 def _validate_launch(profile, launch, correctness):
