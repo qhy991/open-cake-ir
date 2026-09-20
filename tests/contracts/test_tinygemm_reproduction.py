@@ -80,6 +80,18 @@ class TinyGemmReproduction(unittest.TestCase):
                         self.assertIn('tl.bfloat16', lowering.source)
                         self.assertIn(f'num_stages={stages}', lowering.source)
 
+    def test_partitioned_short_shapes_have_no_single_trip_loop(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        for batch, columns, depth in ((1, 128, 720), (16, 1024, 1024), (64, 4096, 3072)):
+            workload = WorkloadContract(task.workload_document(rows=batch, columns=columns, depth=depth))
+            for stages in (4, 8):
+                document = frontend.parse(task.partitioned_source(workload, stages=stages)).document
+                with self.subTest(depth=depth, stages=stages):
+                    assessment = compiler.assess(document)
+                    self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                    self.assertEqual(bool(document.get('tile_loops')), depth > 1024)
+                    self.assertTrue(compiler.lower(assessment).source)
+
     def test_partitioned_lowering_keeps_each_quarter_and_accumulates_across_trips(self):
         import numpy as np
         class LogicalTL:

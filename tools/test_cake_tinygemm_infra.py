@@ -80,6 +80,7 @@ def qualify(output, compiler, torch):
                 after = {name: value.cpu().reshape(-1).tolist() for name, value in inputs.items()}
                 passed, metrics = compare_tile_outputs(workload, before, expected, observed, after)
                 row = {'shape': shape['id'], 'case_id': case_id, 'stages': stages,
+                       'applied_loop_stages': stages if shape['input_features'] > 1024 else None,
                        'passed': passed, 'metrics': metrics, 'elements': result.numel()}
                 rows.append(row)
                 # Whole outputs are retained for independent replay, including failures.

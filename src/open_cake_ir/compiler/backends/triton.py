@@ -492,10 +492,11 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 # carry. This bounded NVIDIA extension emits a K256 quarter of each
                 # K1024 input tile, accumulating that same quarter across the K loop.
                 # It does not select a partition or change an authored reduction tree.
-                quarter_carry = (
+                quarter_selection = (
                     target.target_id == 'sm_103a' and tile is not None
-                    and tile[2] == 1024 and p.selected_k == 256 and carried
-                    and len(schedule.enclosing_loops(operation)) == 1
+                    and tile[2] == 1024 and p.selected_k == 256
+                    and (not schedule.enclosing_loops(operation)
+                         or carried and len(schedule.enclosing_loops(operation)) == 1)
                     and p.contribution_ranges in tuple(((start, start + 256),)
                                                        for start in range(0, 1024, 256))
                 )
@@ -505,7 +506,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                     and instruction.shape is None and instruction.cta_group is None
                     and instruction.operand_source is None and instruction.operand_major is None
                     and tile is not None
-                    and ((tile[2] == 128 and p.selected_k == 64 and not carried) or quarter_carry)
+                    and ((tile[2] == 128 and p.selected_k == 64 and not carried) or quarter_selection)
                     and all(extent >= 16 and extent & (extent - 1) == 0 for extent in tile[:2])
                     and len(operands) == 2 and all(b is not None and b.space is MemorySpace.REGISTER
                                                                and b.dtype is DType.BF16 for b in operands)
@@ -518,7 +519,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                     f"operations[{index}].parameters.k_ranges",
                     "selected K requires NVIDIA sm_100a/sm_103a BF16 register dot, full input K128, "
                     "selected K64 without carry, or sm_103a K1024 with one aligned K256 quarter "
-                    "carried across one contraction loop; power-of-two M/N >=16 and one FP32 result")
+                    "without a loop or carried across one contraction loop; power-of-two M/N >=16 and one FP32 result")
             add(
                 instruction is not None,
                 "BACKEND_MMA_INSTRUCTION_REQUIRED",

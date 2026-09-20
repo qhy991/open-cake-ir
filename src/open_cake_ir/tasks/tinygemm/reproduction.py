@@ -150,50 +150,57 @@ def reference_outputs(workload, case_id, inputs):
     return peer
 
 
-def starter_source(workload, case_id='primary', *, stages=4):
-    """Complete typed BF16 contraction; its peer parity is a gate, not an assumption."""
+
+def _source(workload, case_id, stages, partitioned):
     validate_contract(workload.document)
     if type(stages) is not int or stages not in (4, 8):
         raise ValueError('TinyGEMM starter stages must be 4 or 8')
+    if partitioned and workload.target != 'sm_103a':
+        raise ValueError('partitioned TinyGEMM is currently bounded to sm_103a')
     args = workload.tensor_abi(case_id)
     declarations = [f'{a.name}: cake.Tensor({a.shape!r}, "{a.dtype}"' +
                     (', mode="output")' if a.mode == 'output' else ')') for a in args]
-    return f'''from open_cake_ir.compiler import frontend as cake
+    tile = 1024 if partitioned else 16
+    iterative = workload.case(case_id)['shape']['K'] > tile
+    lines = ['from open_cake_ir.compiler import frontend as cake', '',
+             f'@cake.schedule(name="{workload.workload_id}-s{stages}", target="{workload.target}", backend="triton",',
+             f'               entry_point="cake_tinygemm2", metadata={{"workload_contract_sha256": "{workload.canonical_sha256}"}})',
+             f'def candidate(lm, {", ".join(declarations)}):',
+             '    compute = lm.role(execution_groups=[0, 1, 2, 3])',
+             '    row = lm.program(x, axis=0, dimension=0, tile=16)',
+             '    column = lm.program(weight, axis=1, dimension=0, tile=16)']
+    if iterative:
+        lines.extend([f'    for k in lm.range(x, name="k_loop", dimension=1, tile={tile}, num_stages={stages}, disallow_acc_multi_buffer=True):',
+                      '        with compute:'])
+        pad = '            '
+    else:
+        # A unit K grid preserves masking without a fictitious single-trip loop.
+        lines.extend([f'    k = lm.program(x, axis=2, dimension=1, tile={tile})', '    with compute:'])
+        pad = '        '
+    lines.extend([pad+'a = lm.load(x[row, k], id="load_x")',
+                  pad+'b = lm.load(weight[column, k], id="load_weight")'])
+    for i in range(4 if partitioned else 1):
+        name = f'acc{i}' if partitioned else 'acc'
+        ranges = f', k_ranges=[[{i*256}, {(i+1)*256}]]' if partitioned else ''
+        lines.append(pad+f'{name} = lm.mma(a, b, instruction={{"contract": "triton.dot.bf16_fp32"}}, '
+                     f'tile_shape=(16, 16, {tile}){ranges}, id="dot{i}")')
+    lines.extend(['    with compute:', '        raw_bias = lm.load(bias[column], id="load_bias")',
+                  '        bias32 = lm.cast(raw_bias, to="fp32", id="bias32")'])
+    accumulator = 'acc'
+    if partitioned:
+        lines.append('        combined = ((acc0 + acc1) + acc2) + acc3')
+        accumulator = 'combined'
+    lines.extend([f'        result = {accumulator} + lm.broadcast(bias32, axis=1)',
+                  '        rounded = lm.cast(result, to="bf16", id="round_out")',
+                  '        lm.store(out[row, column], rounded, id="store_out")'])
+    return '\n'.join(lines)+'\n'
 
-@cake.schedule(name="{workload.workload_id}-s{stages}", target="{workload.target}", backend="triton",
-               entry_point="cake_tinygemm2", metadata={{"workload_contract_sha256": "{workload.canonical_sha256}"}})
-def candidate(lm, {', '.join(declarations)}):
-    compute = lm.role(execution_groups=[0, 1, 2, 3])
-    row = lm.program(x, axis=0, dimension=0, tile=16)
-    column = lm.program(weight, axis=1, dimension=0, tile=16)
-    for k in lm.range(x, name="k_loop", dimension=1, tile=16, num_stages={stages}, disallow_acc_multi_buffer=True):
-        with compute:
-            a = lm.load(x[row, k], id="load_x")
-            b = lm.load(weight[column, k], id="load_weight")
-            acc = lm.mma(a, b, instruction={{"contract": "triton.dot.bf16_fp32"}}, tile_shape=(16, 16, 16), id="dot")
-    with compute:
-        raw_bias = lm.load(bias[column], id="load_bias")
-        bias32 = lm.cast(raw_bias, to="fp32", id="bias32")
-        result = acc + lm.broadcast(bias32, axis=1)
-        rounded = lm.cast(result, to="bf16", id="round_out")
-        lm.store(out[row, column], rounded, id="store_out")
-'''
+
+def starter_source(workload, case_id='primary', *, stages=4):
+    """Complete typed contraction; peer parity is a gate, not an assumption."""
+    return _source(workload, case_id, stages, False)
 
 
 def partitioned_source(workload, case_id='primary', *, stages=4):
-    """Explicitly retain the reference's four K256 lanes per K1024 iteration.
-
-    This candidate tests arithmetic grouping, not faithful TMA/warp-role lowering.
-    GPU peer comparison still decides bitwise correctness.
-    """
-    if workload.target != 'sm_103a':
-        raise ValueError('partitioned TinyGEMM is currently bounded to sm_103a')
-    source = starter_source(workload, case_id, stages=stages)
-    source = source.replace('dimension=1, tile=16, num_stages=', 'dimension=1, tile=1024, num_stages=')
-    original = '            acc = lm.mma(a, b, instruction={"contract": "triton.dot.bf16_fp32"}, tile_shape=(16, 16, 16), id="dot")'
-    partials = '\n'.join(
-        f'            acc{i} = lm.mma(a, b, instruction={{"contract": "triton.dot.bf16_fp32"}}, '
-        f'tile_shape=(16, 16, 1024), k_ranges=[[{i*256}, {(i+1)*256}]], id="dot{i}")'
-        for i in range(4))
-    source = source.replace(original, partials)
-    return source.replace('        result = acc +', '        combined = ((acc0 + acc1) + acc2) + acc3\n        result = combined +')
+    """Retain four K256 partials per K1024 cycle; no warp/TMA equivalence claim."""
+    return _source(workload, case_id, stages, True)
