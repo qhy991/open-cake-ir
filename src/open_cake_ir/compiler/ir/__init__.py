@@ -108,3 +108,5 @@ from .schedule import (
     _SCHEDULE_OPTIONAL,
     _SCHEDULE_REQUIRED,
 )
+
+from .program import Program, ProgramBinding, ProgramStage, ProgramTensor
