@@ -90,6 +90,21 @@ class MetaxDriverTests(unittest.TestCase):
             self.load()
         self.assertEqual(self.api.loads, [])
 
+    def test_fp8_requires_the_actual_e4m3fn_dtype_and_one_byte_storage(self):
+        self.manifest.tensor_abi = (("x", (128,), "fp8_e4m3", "input"),)
+        loaded = self.load()
+        for dtype, width in (("torch.uint8", 1), ("torch.float16", 2),
+                             ("torch.float8_e4m3fnuz", 1), ("torch.float8_e5m2", 1),
+                             ("torch.float8_e4m3fn", 2)):
+            with self.subTest(dtype=dtype, width=width), self.assertRaises(ValueError):
+                loaded.launch([self.argument(dtype=dtype, element_size=lambda: width)],
+                              tensor_contract=self.manifest)
+        self.assertEqual(self.api.launches, [])
+        loaded.launch([self.argument(dtype="torch.float8_e4m3fn", element_size=lambda: 1)],
+                      tensor_contract=self.manifest)
+        self.assertEqual(loaded.launch_calls, 1)
+        loaded.close()
+
     def test_an_inherited_cuda_hidden_pointer_count_is_rejected(self):
         self.manifest.hidden_null_pointer_parameters = 2
         with self.assertRaises(ValueError):
