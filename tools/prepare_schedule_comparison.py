@@ -64,7 +64,7 @@ def prepare(source, input_root, output, runtime_path, control_role, mechanism):
     (artifacts/'candidate.json').write_text(json.dumps({'candidate':candidate_identity(candidate),'artifact_paths':paths})+'\n')
     metadata = {'kind':'authored_schedule_comparison','source_commit':checkout_commit(ROOT),
         'source_input':str(input_root),'authored_input':str(source),'control_role':control_role,
-        'mechanism':mechanism,'qualification':'not yet GPU checked or measured',
+        'mechanism':mechanism,'preparation_scope':'CPU compilation only; no GPU qualification is inferred',
         'original_task_starter':str(input_root/'starter/candidate.json'),
         'findings':dict(result.feedback)}
     (output/'comparison.json').write_text(json.dumps(metadata,indent=2)+'\n')

@@ -13,7 +13,7 @@ class RewriteArtifactComparisonTests(unittest.TestCase):
                               ('starter','unchanged original Cake starter')]:
             roles = comparison_roles({'kind':'authored_schedule_comparison','control_role':control})
             self.assertEqual(roles['starter'],label)
-            self.assertIn('qualification pending',roles['optimized'])
+            self.assertEqual(roles['optimized'],'new authored complete Cake Schedule')
         with self.assertRaisesRegex(ValueError,'control role'):
             comparison_roles({'kind':'authored_schedule_comparison','control_role':'unknown'})
         self.assertEqual(comparison_roles({'kind':'explicit_alignment_ablation'})['starter'],

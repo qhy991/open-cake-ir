@@ -85,7 +85,7 @@ def comparison_roles(metadata):
     elif metadata.get('kind') == 'authored_schedule_comparison':
         control = metadata.get('control_role')
         if control not in ('optimized','starter'):raise ValueError('authored comparison control role differs')
-        roles.update(optimized='new authored complete Schedule; numerical and timing qualification pending',
+        roles.update(optimized='new authored complete Cake Schedule',
                      starter='unchanged old optimized binary' if control=='optimized' else 'unchanged original Cake starter')
     return roles
 
