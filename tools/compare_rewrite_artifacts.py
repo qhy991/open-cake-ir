@@ -65,6 +65,9 @@ def reference_spec(root):
 
 def load_reference(root, output, report, cohort_calls):
     spec, paths, file, function = reference_spec(root)
+    report['reference'] = spec
+    if spec.get('derived_from'):
+        report['roles']['external'] = 'derived external reference; source correction recorded in reference metadata'
     if spec['kind'] == 'python':
         sys.path.insert(0, str(root / 'reference'))
         module = load_module('comparison_reference', root / 'reference' / file)
@@ -99,9 +102,6 @@ def load_reference(root, output, report, cohort_calls):
     references = [getattr(item, function) for item in modules]
     if any(not callable(reference) for reference in references):
         raise ValueError('reference entry is not callable')
-    report['reference'] = spec
-    if spec.get('derived_from'):
-        report['roles']['external'] = 'derived external reference; source correction recorded in reference metadata'
     report['external_instance_count'] = len(modules)
     report['external_instance_policy'] = ('Independent copies of one compiled native module; '
         'each cached output is warmed and poisoned before the cohort, then used once. '

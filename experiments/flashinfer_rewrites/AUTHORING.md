@@ -33,6 +33,13 @@ marker is also allowed on the successor frontend and erases into the same canoni
 operation. Broadcast remains an explicit operand relation; it is not a materialized
 splat, reshape, arbitrary Python alias or standalone value to store.
 
+## Reductions and real loops
+
+For a single row tile, use `across_loop=False`. For a reduction that carries over a real
+K loop, omit `across_loop` to select the existing default; explicit `True` is not the
+canonical serialized spelling. Keep the reduction axis on K, and fix the actual owning
+refusal before trying another candidate.
+
 ## Preserve the structure being compared
 
 Compare at least two complete work partitions: for example one row per program and
