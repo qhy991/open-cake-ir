@@ -33,6 +33,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - 001 aligned AOT timing is qualified: 2.304 us versus the unchanged old optimized binary at 2.496 us (1.083x; latency -7.69%). The supplied external is 2.336 us, classified close_null under the original 5% materiality threshold. All 2550 snapshots passed; 002 and 025 remain pending CPU verification.
 - All three alignment runs now pass 7650/7650 snapshots. Qualified external edges: 001 close_null (2.304/2.336 us), 002 faster (3.008/3.296 us, 1.096x), 025 close_null (2.720/2.720 us). The direct new/old edges for 002 and 025 fail CV; their nominal gains are not published as qualified speedups. No blanket promotion.
 - Work-assignment follow-up: 6/7 runs have passed all 15300 complete snapshots; 1 remains pending CPU verification. 003 w1 is a qualified compiler-floor close_null; w4/w16 improve over the frozen old optimized control by 1.463x/2.125x. Their external edges fail CV. 022 w4 beats the external by a qualified 1.164x, with no qualified improvement over the original starter. Failed edges remain descriptive; no promotion.
+- Final work-assignment verification: all 7 runs and 17,850 complete snapshots pass numerically. The previously pending 003 w8 edge beats the frozen old optimized control by a qualified 1.398x (10.368/14.496 us), while its external edge fails CV. Only 003 w1 has all three timing edges quality-passing; the other six complete reports fail measurement quality. No blanket promotion.
 
 | 设备 / 集合 | Task | 输入 / Workload | 基线 µs | 候选 µs | 加速比 | 状态 | 详情 |
 |---|---|---|---:|---:|---:|---|---|
@@ -106,8 +107,8 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 | B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 1 execution groups; generic AOT | 3.040 | 14.272 | 0.213× | Correct; second_arm_faster | [nvidia-assignment-003-w1-optimized_vs_external-20260920](#nvidia-assignment-003-w1-optimized_vs_external-20260920) |
 | B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 4 execution groups; generic AOT | 14.656 | 10.016 | 1.463× | Correct; first_arm_faster | [nvidia-assignment-003-w4-optimized_vs_starter-20260920](#nvidia-assignment-003-w4-optimized_vs_starter-20260920) |
 | B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 4 execution groups; generic AOT | 3.104 | 10.016 | — | Correct; measurement_quality_failed | [nvidia-assignment-003-w4-optimized_vs_external-20260920](#nvidia-assignment-003-w4-optimized_vs_external-20260920) |
-| B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 8 execution groups; generic AOT | — | — | — | Pending CPU verification | [nvidia-assignment-003-w8-optimized_vs_starter-20260920](#nvidia-assignment-003-w8-optimized_vs_starter-20260920) |
-| B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 8 execution groups; generic AOT | — | — | — | Pending CPU verification | [nvidia-assignment-003-w8-optimized_vs_external-20260920](#nvidia-assignment-003-w8-optimized_vs_external-20260920) |
+| B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 8 execution groups; generic AOT | 14.496 | 10.368 | 1.398× | Correct; first_arm_faster | [nvidia-assignment-003-w8-optimized_vs_starter-20260920](#nvidia-assignment-003-w8-optimized_vs_starter-20260920) |
+| B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 8 execution groups; generic AOT | 3.072 | 10.368 | — | Correct; measurement_quality_failed | [nvidia-assignment-003-w8-optimized_vs_external-20260920](#nvidia-assignment-003-w8-optimized_vs_external-20260920) |
 | B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 16 execution groups; generic AOT | 14.688 | 6.912 | 2.125× | Correct; first_arm_faster | [nvidia-assignment-003-w16-optimized_vs_starter-20260920](#nvidia-assignment-003-w16-optimized_vs_starter-20260920) |
 | B300 / work-assignment ablation | `003_fused_add_rmsnorm_h7168` | R=64, H=7168, BF16; 16 execution groups; generic AOT | 3.103 | 6.944 | — | Correct; measurement_quality_failed | [nvidia-assignment-003-w16-optimized_vs_external-20260920](#nvidia-assignment-003-w16-optimized_vs_external-20260920) |
 | B300 / work-assignment ablation | `022_rmsnorm_h512` | R=539, H=512, BF16; 1 execution groups; generic AOT | 2.336 | 2.336 | — | Correct; measurement_quality_failed | [nvidia-assignment-022-w1-optimized_vs_starter-20260920](#nvidia-assignment-022-w1-optimized_vs_starter-20260920) |
@@ -949,23 +950,23 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 
 ### nvidia-assignment-003-w8-optimized_vs_starter-20260920
 
-**B300 / work-assignment ablation · 003_fused_add_rmsnorm_h7168** — 2026-09-20 / Pending CPU verification
+**B300 / work-assignment ablation · 003_fused_add_rmsnorm_h7168** — 2026-09-20 / Correct; first_arm_faster
 
 - Workload：`R=64, H=7168, BF16; 8 execution groups; generic AOT`；目标：`sm_103a`；版本：`compiler/judge ba4537fd`。
-- 基线：Frozen old optimized binary；比值口径：`pending`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/f1bf6497ac0659e2eff8a5ee952d591cd8cd22fe/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
-- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-c3bed83a0d53/state.json`。
-- GPU capture is complete; numerical and timing acceptance remain pending. 003 control is the old optimized binary; 022 control is the original one-row starter. Width one separates compiler-floor movement. Other widths retain the authored operation graph, accesses, loops and grid. Each edge keeps its own CV decision; the full report may fail quality. No new profiler, model E2E, official leaderboard or promotion claim.
+- 基线：Frozen old optimized binary；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/230ae65a5d6f62b14639b72f3d87c94ddc78a28f/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-c3bed83a0d53/stages/verify/comparison-report.json`。
+- All 2550 complete snapshots passed. 003 control is the old optimized binary; 022 control is the original one-row starter. Width one separates compiler-floor movement. Other widths retain the authored operation graph, accesses, loops and grid. Each edge keeps its own CV decision; the full report may fail quality. No new profiler, model E2E, official leaderboard or promotion claim.
 
 ### nvidia-assignment-003-w8-optimized_vs_external-20260920
 
-**B300 / work-assignment ablation · 003_fused_add_rmsnorm_h7168** — 2026-09-20 / Pending CPU verification
+**B300 / work-assignment ablation · 003_fused_add_rmsnorm_h7168** — 2026-09-20 / Correct; measurement_quality_failed
 
 - Workload：`R=64, H=7168, BF16; 8 execution groups; generic AOT`；目标：`sm_103a`；版本：`compiler/judge ba4537fd`。
-- 基线：Derived external reference (Graph host-argument correction)；比值口径：`pending`。
-- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/f1bf6497ac0659e2eff8a5ee952d591cd8cd22fe/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
-- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-c3bed83a0d53/state.json`。
-- GPU capture is complete; numerical and timing acceptance remain pending. 003 control is the old optimized binary; 022 control is the original one-row starter. Width one separates compiler-floor movement. Other widths retain the authored operation graph, accesses, loops and grid. Each edge keeps its own CV decision; the full report may fail quality. No new profiler, model E2E, official leaderboard or promotion claim.
+- 基线：Derived external reference (Graph host-argument correction)；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/230ae65a5d6f62b14639b72f3d87c94ddc78a28f/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-work-assignment-comparison-20260920-c3bed83a0d53/stages/verify/comparison-report.json`。
+- All 2550 complete snapshots passed. 003 control is the old optimized binary; 022 control is the original one-row starter. Width one separates compiler-floor movement. Other widths retain the authored operation graph, accesses, loops and grid. Each edge keeps its own CV decision; the full report may fail quality. No new profiler, model E2E, official leaderboard or promotion claim.
 
 ### nvidia-assignment-003-w16-optimized_vs_starter-20260920
 
