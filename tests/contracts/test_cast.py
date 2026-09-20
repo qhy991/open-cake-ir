@@ -28,7 +28,7 @@ class CastPrimitiveTest(unittest.TestCase):
 
     def integer_cast(self, source_dtype="int32", output_dtype="fp32"):
         source = f'''from open_cake_ir.compiler import frontend as cake
-@cake.schedule(name="integer-cast", target="gfx1151", backend="triton", entry_point="run")
+@cake.schedule(name="integer-cast", target="gfx1151", backend="triton", entry_point="run", grid=(1, 1, 1))
 def candidate(lm, x: cake.Tensor((32,), "{source_dtype}"),
               y: cake.Tensor((32,), "{output_dtype}", mode="output")):
     compute = lm.role(execution_groups=[0])
