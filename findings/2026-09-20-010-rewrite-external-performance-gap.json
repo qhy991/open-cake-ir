@@ -1307,5 +1307,129 @@
     "boundary": "Original five cases and all 2550 input/output snapshots per run; CPU prepare, continuous exclusive GPU capture for all three paired edges, CPU verification after worker exit. Cold-L2 CUPTI and the original 5% CV/materiality gates. The external is still the explicitly derived Graph-host-argument correction. Fixed controls are intermediate sealed candidates, not the initial task starter, which stays at its historical path.",
     "interpretation": "Whole-row versus sliced w16 is a qualified 1.896x improvement (3.713/7.040 us). Its separate external edge remains 23.158 percent slower (3.744/3.040 us), with all three timing edges quality-passing. The alignment successor passes every numerical snapshot but both new/control and new/external timing edges fail CV; 3.360 us and its nominal 1.114x are descriptive only. Do not multiply ratios from separate runs. No new IR primitive or isolated profiler attribution is established.",
     "promotion_disposition": "No promotion. Preserve the guarded candidate and failed timing edges; do not repeat failed comparisons merely to pass CV. Route the structural lesson to authoring recipes and retain the generic whole-row qualified evidence. Independent profiler attribution remains pending."
+  },
+  "gemm_006_followup": {
+    "results": [
+      {
+        "variant": "floor-w1",
+        "run_id": "nvidia-gemm-006-compact-comparison-20260921-0de237d7455f",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-006-compact-comparison-20260921-0de237d7455f",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-006-20260921/floor-w1.json",
+        "mechanism": "Unchanged original starter Schedule recompiled by current frozen compiler; compiler-floor control.",
+        "source_commit": "eb1080c43fd42cc6f5bd92a0df43a807d2363bfd",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 94376940,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 9.1685,
+            "right_us": 8.512,
+            "right_over_left": 0.928396138954028,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.030324670310098
+          },
+          "starter_vs_external": {
+            "left_us": 9.184,
+            "right_us": 8.512,
+            "right_over_left": 0.926829268292683,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.039925118937736
+          },
+          "optimized_vs_starter": {
+            "left_us": 9.152000000000001,
+            "right_us": 9.216000000000001,
+            "right_over_left": 1.006993006993007,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.035890246914314
+          }
+        }
+      },
+      {
+        "variant": "width-w4",
+        "run_id": "nvidia-gemm-006-compact-comparison-20260921-763b9f7dd3b9",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-006-compact-comparison-20260921-763b9f7dd3b9",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-006-20260921/width-w4.json",
+        "mechanism": "Only execution_groups 1 to 4; same complete reduction, accesses and grid; no alignment treatment.",
+        "source_commit": "eb1080c43fd42cc6f5bd92a0df43a807d2363bfd",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 94376940,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 8.543999999999999,
+            "right_us": 8.5755,
+            "right_over_left": 1.003686797752809,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.033241706522726
+          },
+          "starter_vs_external": {
+            "left_us": 9.2005,
+            "right_us": 8.543999999999999,
+            "right_over_left": 0.928645182327047,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.032503787992194
+          },
+          "optimized_vs_starter": {
+            "left_us": 8.543999999999999,
+            "right_us": 9.216999999999999,
+            "right_over_left": 1.07876872659176,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.039548887101122
+          }
+        }
+      },
+      {
+        "variant": "columns4-w4",
+        "run_id": "nvidia-gemm-006-compact-comparison-20260921-962158f62a39",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-006-compact-comparison-20260921-962158f62a39",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-006-20260921/columns4-w4.json",
+        "mechanism": "Four output columns per CTA with explicit A-vector broadcast, complete K=4096 reduction and four execution groups. Structural alternative, not split-K/last-arriver reproduction. No alignment treatment.",
+        "source_commit": "eb1080c43fd42cc6f5bd92a0df43a807d2363bfd",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 94376940,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 10.256,
+            "right_us": 8.576500000000001,
+            "right_over_left": 0.836242199687988,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.026927595339357
+          },
+          "starter_vs_external": {
+            "left_us": 9.216000000000001,
+            "right_us": 8.543999999999999,
+            "right_over_left": 0.927083333333333,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.036671123979537
+          },
+          "optimized_vs_starter": {
+            "left_us": 10.24,
+            "right_us": 9.248,
+            "right_over_left": 0.903125,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.036519920586944
+          }
+        }
+      }
+    ],
+    "correctness_snapshot_count": 7650,
+    "scope": "M=1, N=2048, K=4096, FP16; original Workload/oracle and frozen starter binary from the cancelled older workspace. The old cancellation remains unchanged. No promotion or full upstream batch-axis/host-wall claim.",
+    "reference": "Original stitch_attempt_9.cu, native fused split-K at M=1 (256 CTAs), not the large-M library path. Only C++20 build compatibility changed; exact-reference C++17 failure/C++20 object success is retained at /mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-006-20260921/reference-build-probe/build-probe.json. Upstream reported scores are not imported.",
+    "measurement": "All nine paired edges pass original CV quality; cold-L2 CUPTI, continuous paired allocation, CPU prepare/verify outside the lease. Each run retains all 2550 snapshots via reviewed lossless input references, with every output literal and every input/output checked. Actual encoded file size 94,376,940 bytes per run; raw representation would require 42,813,235,200 bytes.",
+    "interpretation": "Current-compiler floor versus old starter is close_null (1.007x). Width four improves over the old starter by 1.079x and is close_null against the supplied external (8.544/8.5755 us). Four columns per CTA regress versus the old starter (10.240/9.248 us; speedup 0.903125) and the external (10.256/8.5765 us). Do not choose row/column packing merely for logical reuse. These are candidate choices using existing IR, not evidence of a new Compiler mechanism or faithful split-K/last-arriver reproduction.",
+    "promotion_disposition": "No promotion. Retain width four as the leading tested candidate at this fixed shape; preserve the slower structural alternative and all original controls. Independent profiler attribution remains pending."
   }
 }
