@@ -239,6 +239,7 @@ def _bubblewrap(host) -> str:
 
 def _triton_toolchain_config(executor):
     """One explicit configuration for baseline preparation and the runtime builder."""
+    from open_cake_ir.lab.executor import triton_version
     host = executor.document["host_environment"]
     interpreter = Path(str(host["python"]["invocation_path"]))
     # A HIP host declares the environment its toolchain needs inside the jail; a CUDA
@@ -249,7 +250,7 @@ def _triton_toolchain_config(executor):
     return {"python": str(interpreter), "bubblewrap": _bubblewrap(host),
             "runtime_roots": _triton_runtime_roots(interpreter, declared),
             "build_environment": environment,
-            "triton_version": host["packages"]["triton"], "timeout_seconds": 600}
+            "triton_version": triton_version(host), "timeout_seconds": 600}
 
 
 def _triton_builder(executor, workload):
@@ -528,7 +529,8 @@ def main(argv=None) -> int:
                         help="contracted K extent; only a contraction task declares one")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
     parser.add_argument("--turns", type=int, default=32)
-    parser.add_argument("--token-budget", type=int, default=3000000)
+    parser.add_argument("--token-budget", type=int, default=3000000,
+                        help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
     parser.add_argument("--maximum-cv", type=float,
@@ -545,6 +547,8 @@ def main(argv=None) -> int:
     parser.add_argument("--qualification", type=Path)
     parser.add_argument("--qualification-anchor", type=Path)
     parser.add_argument("--fixed-baseline-bundle", type=Path)
+    parser.add_argument('--pointer-alignment', type=int,
+                        help='Compile guarded aligned and generic author candidates; preserve the fixed baseline')
     parser.add_argument("--prepared-baseline", type=Path,
                         help="reuse the exact baseline and selection sealed by --baseline-only")
     parser.add_argument(
@@ -615,7 +619,16 @@ def main(argv=None) -> int:
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
                                kernelctl=args.kernelctl, infra_socket=args.infra_socket))
     if runtime is not None:
+        if args.pointer_alignment is not None:
+            from open_cake_ir.lab.toolchains import toolchain_for
+            if ('pointer_alignment' not in toolchain_for(route).optional_runtime_fields
+                    or args.pointer_alignment <= 0
+                    or args.pointer_alignment & (args.pointer_alignment - 1)):
+                raise ValueError('this toolchain requires a supported power-of-two alignment specialization')
+            runtime['toolchain']['pointer_alignment'] = args.pointer_alignment
         _admit_allocator(runtime)
+    elif args.pointer_alignment is not None:
+        raise ValueError('pointer alignment specializes author candidates, not baseline-only preparation')
     baseline_selection: dict[str, object]
     if args.prepared_baseline is not None:
         baseline_path, baseline, baseline_selection = load_prepared_baseline(

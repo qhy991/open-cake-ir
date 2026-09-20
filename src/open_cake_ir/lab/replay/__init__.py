@@ -290,7 +290,7 @@ def _replay_matched_run(
         fault_stage = fault_payload.get("stage")
         fault_terminal_value = fault_payload.get("terminal_provider_tokens")
         usage_delta = replay_fault_usage(payload=fault_payload, evidence=evidence,
-            provider=provider_authority,
+            provider=provider_authority, previous_tokens=prior_cumulative,
             expected_thread_id=provider_events[-1]["payload"]["thread_id"])
         if fault_terminal_value != prior_cumulative + usage_delta:
             refuse("run_fault.payload.terminal_provider_tokens",

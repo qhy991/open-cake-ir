@@ -150,12 +150,14 @@ SUPPORTED_OPERATION_KINDS = frozenset(OUTSIDE_LOOP_EMITTERS) | frozenset(
 # so a contract declared for this route cannot be modelled and unemittable at once.
 _ATOMIC_RMW_CONTRACT = "triton.atomic_add.i32.relaxed.gpu"
 
-# One Triton call, two libraries underneath. `tl.extra.libdevice.tanh` emits
+# One Triton call, distinct libraries underneath. `tl.extra.libdevice.tanh` emits
 # __nv_tanhf on an NVIDIA target and __ocml_tanh_f32 on an AMDGCN one, and a contract
 # names the instruction the hardware runs rather than the source line that reached it --
 # so a Target admits the spelling of the library it actually has. The emitter accepts
-# either and writes the same call; which one a Schedule may use is the Target's to say.
-_TRITON_TANH_CONTRACTS = frozenset({"libdevice.tanh.f32", "ocml.tanh.f32"})
+# the named contracts and writes the same call; which one a Schedule may use is the
+# Target's to say. MACA's CUDA-compatible entry maps to its own maca_mathlib, not
+# NVIDIA's implementation, so it carries a separate contract as well.
+_TRITON_TANH_CONTRACTS = frozenset({"libdevice.tanh.f32", "ocml.tanh.f32", "maca.tanh.f32"})
 
 _TRITON_MMA_CONTRACTS = frozenset(
     name for name in contracts_of(ContractKind.MMA) if name.startswith("triton.dot.")
@@ -192,7 +194,7 @@ def validate_input(document: Mapping[str, object]) -> None:
                 raise EmitError(f"tile_loops[{index}].body must be a list of non-empty strings")
 
 
-CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO})
+CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN})
 
 
 def _power_of_two(value: int) -> bool:
@@ -216,6 +218,8 @@ def target_route_facts(target: Target) -> dict[str, object]:
         architecture: object = major * 10 + minor
     elif target.code_object is CodeObject.HSACO:
         architecture = target.target_id
+    elif target.code_object is CodeObject.MCFATBIN:
+        architecture = target.triton_arch
     else:
         raise EmitError(
             f"the Triton backend emits no {target.code_object.value!r} code object"
@@ -224,6 +228,8 @@ def target_route_facts(target: Target) -> dict[str, object]:
         "code_object": target.code_object.value,
         "triton_arch": architecture,
         "warp_size": target.warp_size,
+        **({"codegen_arch": target.architecture}
+           if target.code_object is CodeObject.MCFATBIN else {}),
     }
 
 
@@ -275,6 +281,9 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
     """
 
     findings = list(requirements(schedule))
+    if target.code_object is CodeObject.MCFATBIN:
+        from .metax import preflight as metax_preflight
+        findings.extend(metax_preflight(schedule, target))
     if findings:
         return tuple(findings)
 

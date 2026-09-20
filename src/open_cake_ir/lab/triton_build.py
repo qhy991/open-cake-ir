@@ -29,7 +29,7 @@ class IsolatedTritonCompiler(IsolatedCompiler):
 
     def __init__(self, *, python: str, bubblewrap: str, runtime_roots: list[str],
                  triton_version: str, timeout_seconds: int = 600,
-                 build_environment: Mapping[str, str] | None = None):
+                 build_environment: Mapping[str, str] | None = None, pointer_alignment: int | None = None):
         super().__init__(python=python, bubblewrap=bubblewrap, runtime_roots=runtime_roots,
                          timeout_seconds=timeout_seconds)
         if not triton_version:
@@ -51,13 +51,18 @@ class IsolatedTritonCompiler(IsolatedCompiler):
                for part in declared_paths):
             raise ValueError("isolated Triton build environment names a path outside every mount")
         self.triton_version = triton_version
+        if pointer_alignment is not None and (type(pointer_alignment) is not int
+                or pointer_alignment <= 0 or pointer_alignment & (pointer_alignment - 1)):
+            raise ValueError('pointer alignment specialization must be a positive power of two')
+        self.pointer_alignment = pointer_alignment
 
     def check_executor(self, executor, *, author_workspace: str | Path) -> None:
         """Bind the isolated invocation to the already-admitted runtime owner."""
         host = executor.document["host_environment"]
         invocation = Path(host["python"]["invocation_path"])
         expected_python = Path(os.path.abspath(invocation))
-        if self.python != expected_python or self.triton_version != host["packages"]["triton"]:
+        from .executor import triton_version
+        if self.python != expected_python or self.triton_version != triton_version(host):
             raise ValueError("isolated Triton runtime differs from the frozen Executor")
         workspace = Path(author_workspace).resolve()
         checkout = Path(__file__).resolve().parents[3]
@@ -73,7 +78,8 @@ class IsolatedTritonCompiler(IsolatedCompiler):
                 "bubblewrap_sha256": self._bubblewrap_sha256(),
                 "runtime_roots": self._runtime_mount_identity(),
                 "build_environment": dict(sorted(self.build_environment.items())),
-                "triton_version": self.triton_version, "timeout_seconds": self.timeout_seconds}
+                "triton_version": self.triton_version, "timeout_seconds": self.timeout_seconds,
+                **({'pointer_alignment': self.pointer_alignment} if self.pointer_alignment is not None else {})}
 
     def _request(self, source: bytes, requirements: Mapping[str, object]) -> dict[str, object]:
         return {"source": source.decode(), "requirements": dict(requirements),
@@ -137,9 +143,10 @@ def _compile_failure(error: Exception) -> tuple[bool, str]:
 
 def _worker(path: str) -> int:
     """Trusted supervisor entry; input is validated again before any candidate import."""
-    import importlib.metadata
+    from open_cake_ir.compiler.toolchain import route_for_code_object
     request = json.loads(Path(path).read_text())
-    if importlib.metadata.version('triton') != request['triton_version']:
+    route = route_for_code_object(request['requirements']['code_object'])
+    if route.compiler_version() != request['triton_version']:
         raise ValueError('pinned Triton version differs')
     source = request['source'].encode()
     validate_triton_kernel(source, request['requirements'])
