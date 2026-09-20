@@ -79,7 +79,7 @@ class FamilyRegistrationTests(unittest.TestCase):
         self.assertEqual(set(launchable_tasks()), set(TASKS))
         for task in launchable_tasks():
             self.assertEqual(admitting_backends(task),
-                             ("triton-b200", "triton-b300", "triton-gfx1151"), task)
+                             ("triton-b200", "triton-b300", "triton-gfx1151", "triton-metax"), task)
 
     def test_partitioned_rows_cover_each_element_exactly_once(self):
         for task in PARTITIONED_TASKS:

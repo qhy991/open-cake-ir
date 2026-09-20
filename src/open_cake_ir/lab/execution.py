@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
@@ -25,7 +25,7 @@ from .candidate_filter import _build_filter_candidates, record_candidate_rejecti
 from .diagnoses import rejected_peer_feedback
 from .run_completion import _seal_run, record_run_fault
 from .faults import RunProtocolFault, ReportedProviderUsage, ProviderBoundaryDeclarationFault
-from .provider_events import reported_provider_usage
+from .provider_events import reported_provider_usage, provider_token_delta
 from .checkpoints import TurnObservation, project_checkpoints
 from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, TurnRequest
 from .custody import admit_new_campaign_path
@@ -504,6 +504,13 @@ def execute_campaign(
             payloads = dict(error.artifact_payloads) if isinstance(error, RunProtocolFault) else {}
             if pending_usage:
                 declared_usage = error.reported_usage if isinstance(error, RunProtocolFault) else None
+                if declared_usage is not None:
+                    try:
+                        declared_usage = replace(declared_usage, provider_tokens=provider_token_delta(
+                            declared_usage.provider_tokens, provider=provider_document,
+                            previous_tokens=cumulative_tokens))
+                    except ValueError:
+                        declared_usage = None
                 if provider_turn is not None:
                     # Preserve the native statement even when the returned Turn's
                     # bundle, identity or candidate envelope failed validation.
@@ -518,7 +525,8 @@ def execute_campaign(
                         except (AttributeError, TypeError, ValueError):
                             declared_usage = None
                 observed_usage = reported_provider_usage(payloads.get("provider_stdout", b""),
-                    provider=provider_document, expected_thread_id=thread_id)
+                    provider=provider_document, expected_thread_id=thread_id,
+                    previous_tokens=cumulative_tokens)
                 if observed_usage is not None:
                     cumulative_tokens += observed_usage.provider_tokens
             # F-2026-09-16-002: the budget boundary can take the final Turn's
