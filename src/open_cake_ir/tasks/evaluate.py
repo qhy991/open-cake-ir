@@ -397,12 +397,16 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             for role in protocol.arms:
                 correctness(role, 'postflight')
         identities = {role: candidate_identity(item) for role, item in candidates.items()}
+        allocation = {'allocation_mode': job_mode(admission.broker_job_id)}
+        if allocation['allocation_mode'] == 'local_serialized':
+            allocation['external_gpu_activity'] = 'not_excluded'
         # The assay the Study declared, not the one this producer was written against.
         # It read PAIRED_KIND, which was true while CUPTI was the only source a tensor
         # pair could be timed by; the Metal producer below already reads the declaration,
         # and the receipt validator compares the two, so a third source turned a
         # hardcoded name into 'paired raw kind differs from the declared assay'.
         raw = {'kind': evaluation['paired_timing']['kind'],
+            **allocation,
             'evaluation_protocol': authority.request['evaluation_protocol'],
             'participants': identities, 'workload_sha256': authority.workload.canonical_sha256,
             'case_id': authority.case_id, 'purpose': authority.request['purpose'],
@@ -417,6 +421,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
         _write_new(authority.request_root / 'correctness-output.json', {
             'passed': passed, 'metrics': metrics, 'participants': checks})
         _write_new(authority.request_root / 'launch-receipt.json', {
+            **allocation,
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
             'device_admission': asdict(admission),
             'candidate_sha256': authority.candidate.candidate_sha256, 'participants': identities,
@@ -593,16 +598,16 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                 "instrumented dispatch requires the candidate to pass the external oracle")
         correctness_path = authority.request_root / 'correctness-output.json'
         launch_path = authority.request_root / 'launch-receipt.json'
-        _write_new(correctness_path, {'passed': passed, 'metrics': metrics,
+        correctness_document = {'passed': passed, 'metrics': metrics,
             'preflight': dict(preflight.correctness), 'correctness_launches': correctness_calls,
-            'timed_output_checks': timed_checks})
+            'timed_output_checks': timed_checks}
         # Preserve the loaded launch's manifest and device binding. Reconstructing a
         # smaller envelope here discarded facts the native profile reader must check.
-        _write_new(launch_path, {**json.loads(preflight.artifact_payloads['launch_receipt']),
+        launch_document = {**json.loads(preflight.artifact_payloads['launch_receipt']),
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
             'candidate_sha256': authority.candidate.candidate_sha256,
             'correctness_launches': correctness_calls, 'fallback_calls': 0,
-            'resources': loaded.loaded.resources})
+            'resources': loaded.loaded.resources}
         artifacts = {'correctness_output': correctness_path.name, 'launch_receipt': launch_path.name}
         if profile_source is not None:
             # One separate instrumented dispatch, after correctness and outside every
@@ -611,6 +616,18 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             instrumented = loaded.fresh_argument_sets(1)[0]
             raw = profile_source(lambda: loaded.launch(instrumented),
                                  authority.manifest.kernel_name)
+            observed, after = loaded.snapshot(instrumented)
+            expected = reference_outputs(authority.workload, authority.case_id, inputs)
+            correct, instrumented_metrics = compare_tile_outputs(
+                authority.workload, inputs, expected, observed, after)
+            if not correct:
+                raise ValueError('instrumented dispatch output failed the external oracle')
+            correctness_document['instrumented'] = {'passed': correct, 'metrics': instrumented_metrics}
+            correctness_document['correctness_launches'] += 1
+            launch_document['correctness_launches'] += 1
+            metrics['output_mismatches'] += instrumented_metrics['output_mismatches']
+            metrics['max_abs_error'] = max(metrics['max_abs_error'], instrumented_metrics['max_abs_error'])
+            metrics['inputs_unchanged'] &= instrumented_metrics['inputs_unchanged']
             profile_path = authority.request_root / 'profile.json'
             _write_new(profile_path, {
                 'kind': profile_format.kind,
@@ -625,6 +642,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                 'evaluation_protocol': authority.request['evaluation_protocol'],
                 'raw': raw, 'summary': profile_format.summary(raw)})
             artifacts['profile'] = profile_path.name
+        _write_new(correctness_path, correctness_document)
+        _write_new(launch_path, launch_document)
         if collect_timing:
             timing_path = authority.request_root / 'timing-samples.json'
             _write_new(timing_path, {'cohorts_ms': cohorts} if cohorts else {'not_measured': 'correctness_rejected'})
