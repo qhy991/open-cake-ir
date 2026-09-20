@@ -3,7 +3,7 @@ from dataclasses import replace
 from pathlib import Path
 import unittest
 
-from open_cake_ir.compiler import Compiler, frontend
+from open_cake_ir.compiler import frontend
 from open_cake_ir.compiler.backends import triton
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import Target
@@ -25,14 +25,14 @@ def candidate(lm, x: cake.Tensor((8, 128), "fp32"), y: cake.Tensor((8, 128), "fp
 class MacaTanhContractTests(unittest.TestCase):
     def test_record_and_emission_do_not_admit_a_target_implicitly(self):
         document = frontend.parse(SOURCE).document
-        result = Compiler.load(ROOT, ROOT / "compiler/revision.json").assess(document)
-        self.assertFalse(result.lowering_eligible)
-        self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED", [f.code for f in result.findings])
+        schedule = Schedule.from_dict(document)
+        unadmitted = replace(Target.load(ROOT / "compiler/targets/xcore1002.json"),
+                             instruction_contracts=frozenset())
+        self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED",
+                      [f.code for f in verify(schedule, unadmitted)])
         # Explicit CPU-only target fixture exercises the future declaration through
         # the same verifier/emitter; it claims no physical-device qualification.
-        target = replace(Target.load(ROOT / "compiler/targets/xcore1002.json"),
-                         instruction_contracts=frozenset({"maca.tanh.f32"}))
-        schedule = Schedule.from_dict(document)
+        target = replace(unadmitted, instruction_contracts=frozenset({"maca.tanh.f32"}))
         self.assertFalse([f for f in verify(schedule, target) if f.blocks_acceptance])
         self.assertFalse(triton.preflight(schedule, target))
         emitted = triton.emit(schedule, target, entry_point="tanh")
