@@ -10,6 +10,29 @@ A research system for agent-driven GPU kernel search and compiler evolution.
 
 [技术报告 / Technical report](docs/README.md) · [中文文档](docs/zh-CN/README.md) · [English](docs/en/README.md) · [当前状态](reports/current/STATUS.md)
 
+<!-- hardware-results:start -->
+## 按硬件查看成果
+
+各硬件分支独立维护发布数据，main 汇总已经合入的版本。**加速比 = 各自固定基线耗时 ÷ 候选耗时**，超过 1× 表示更快。
+各平台的输入与计时协议不同，图中各面板使用独立刻度；不作跨硬件排名，也不将任务基线当作厂商最优库。
+
+![按硬件分组的代表性确认结果](docs/results/overview.svg)
+
+| 硬件 | 维护分支 | 已收录观察 | 独立数据与页面 |
+|---|---|---:|---|
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 43 | [B300 多任务与 CAKE 对照；B200 正确性记录](docs/results/nvidia/README.md) |
+| Apple | [metal](https://github.com/qhy991/open-cake-ir/tree/metal/docs/results/metal) | 4 | [M1 Pro / M4 / M2；历史确认、晋升与稳定性边界](docs/results/metal/README.md) |
+| Hygon DCU | [dcu](https://github.com/qhy991/open-cake-ir/tree/dcu/docs/results/dcu) | 32 | [BW1101；首个合格结果、后续运行与失败记录](docs/results/dcu/README.md) |
+| AMD | [amd](https://github.com/qhy991/open-cake-ir/tree/amd/docs/results/amd) | 1 | [gfx1151；计时边界待解决](docs/results/amd/README.md) |
+
+观察数包含同一任务的不同形状、实验集合与历史尝试，不是任务总数。平台页注明数据日期和验证边界。
+
+[main 完整汇总](docs/RESULTS.md) · [交互目录源码 / 下载后打开](docs/results/index.html) · [平台更新与汇总流程](docs/RESULTS_MAINTENANCE.md)
+
+目录区分 Campaign 内最佳合格候选、历史晋升、正确性记录与未合格结果，保留确认历史和固定来源链接。
+NVIDIA 页面单列 [CAKE 对照与改写进度](docs/NVIDIA_CAKE_REPRODUCTION.md)；原始实验与端到端验证范围见该报告。
+<!-- hardware-results:end -->
+
 ## 快速开始
 
 需要 Python 3.10+，从源码安装：
