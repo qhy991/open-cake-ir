@@ -106,8 +106,20 @@ class LaunchableCandidate:
             "artifact_payloads",
             MappingProxyType(dict(self.artifact_payloads)),
         )
-        if 'kernel_bundle' in self.artifact_payloads:
-            document = json.loads(self.artifact_payloads['launch_manifest'])
+        # Historical identity-only and opaque legacy records remain valid. A
+        # composed manifest, once bytes are present, must be a complete bundle at
+        # construction as well as at paired evaluation and archive replay.
+        document = None
+        if 'launch_manifest' in self.artifact_payloads:
+            try:
+                document = json.loads(self.artifact_payloads['launch_manifest'])
+            except (ValueError, UnicodeError):
+                pass
+        bundled = 'kernel_bundle' in self.artifact_payloads
+        declares_variant = isinstance(document, Mapping) and document.get('aligned_variant') is not None
+        if bundled or declares_variant:
+            if not bundled or not isinstance(document, Mapping):
+                raise ValueError('aligned candidate requires its complete sealed kernel bundle')
             from .kernel_bundle import alignment_component
             alignment_component(self, TensorLaunchManifest.from_dict(document))
 

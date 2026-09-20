@@ -84,6 +84,21 @@ class RuntimeConfigTests(unittest.TestCase):
         document["toolchain"]["runtime_roots"] = []
         self.assertEqual(self.parse(document)["toolchain"]["runtime_roots"], [])
 
+    def test_alignment_specialization_is_explicit_and_only_a_triton_runtime_choice(self):
+        document = runtime_document()
+        self.assertNotIn('pointer_alignment', self.parse(document)['toolchain'])
+        document['toolchain']['pointer_alignment'] = 16
+        self.assertEqual(self.parse(document)['toolchain']['pointer_alignment'], 16)
+        for value in (True, 0, -16, 3, '16', None):
+            document['toolchain']['pointer_alignment'] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.parse(document)
+        for kind in ('nvcc', 'cutlass_cute_dsl'):
+            document = runtime_document(kind)
+            document['toolchain']['pointer_alignment'] = 16
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'toolchain'):
+                self.parse(document,kind)
+
     def test_nvcc_preserves_both_paths_without_injecting_builder_defaults(self):
         document = runtime_document("nvcc")
         parsed = self.parse(document, "nvcc")

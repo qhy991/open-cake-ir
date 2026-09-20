@@ -1,11 +1,12 @@
 import json
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.toolchain import TritonCompilation, pointer_alignment_attributes, triton_route
-from open_cake_ir.evaluation.core import TensorLaunchManifest
+from open_cake_ir.evaluation.core import LaunchableCandidate, TensorLaunchManifest
 from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission, LoadedCudaCandidate
 from open_cake_ir.evaluation.kernel_bundle import LoadedAlignmentCandidate, alignment_component
 from open_cake_ir.evaluation.paired import validate_pair_candidates, participant_work, candidate_identity
@@ -87,6 +88,12 @@ class AlignmentVariants(unittest.TestCase):
         try:
             loaded.launch(args,tensor_contract=manifest,stream=0)
             self.assertEqual(loaded.last_variant,'aligned')
+            with self.assertRaisesRegex(ValueError, 'tensor contract differs'):
+                loaded.aligned.launch(args,tensor_contract=manifest,stream=0)
+            changed = replace(loaded.aligned_manifest,
+                tensor_abi=tuple(reversed(loaded.aligned_manifest.tensor_abi)))
+            with self.assertRaisesRegex(ValueError, 'tensor contract differs'):
+                loaded.aligned.launch(args,tensor_contract=changed,stream=0)
             for index in range(len(args)):
                 for offset in (2,4,8):
                     args[index]._pointer += offset
@@ -105,3 +112,31 @@ class AlignmentVariants(unittest.TestCase):
         finally:
             loaded.close(synchronize=lambda:None)
         self.assertTrue(loaded.closed)
+
+    def test_incomplete_bundle_refuses_at_construction_before_any_evaluation(self):
+        candidate, _, _ = self.build(16)
+        payloads = dict(candidate.artifact_payloads)
+        payloads.pop('kernel_bundle')
+        with self.assertRaisesRegex(ValueError, 'complete sealed kernel bundle'):
+            replace(candidate, artifact_payloads=payloads,
+                    artifact_roles={k: sha256(v).hexdigest() for k,v in payloads.items()})
+        # Old identity-only records do not pretend to contain launchable bytes.
+        LaunchableCandidate(candidate.candidate_sha256, candidate.target, candidate.entry_point,
+                            candidate.artifact_roles, candidate.launch_spec_sha256)
+
+    def test_generic_contract_and_source_cannot_change_in_the_aligned_component(self):
+        from open_cake_ir.evaluation.kernel_bundle import pack_candidates
+        from open_cake_ir.serialization import canonical_json_bytes
+        candidate, manifest, _ = self.build(16)
+        child, leaf = alignment_component(candidate,manifest)
+        for field, value in [('grid',[2,1,1]), ('hidden_null_pointer_parameters',3)]:
+            raw = {**leaf.as_dict(),field:value}
+            spec = canonical_json_bytes(raw)
+            child_payloads = {**child.artifact_payloads, 'launch_manifest':spec}
+            changed = replace(child, artifact_payloads=child_payloads,
+                artifact_roles={k:sha256(v).hexdigest() for k,v in child_payloads.items()},
+                launch_spec_sha256=sha256(spec).hexdigest())
+            payloads = {**candidate.artifact_payloads,'kernel_bundle':pack_candidates({'aligned':changed})}
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError,'preserve source'):
+                replace(candidate,artifact_payloads=payloads,
+                        artifact_roles={k:sha256(v).hexdigest() for k,v in payloads.items()})

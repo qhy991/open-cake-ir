@@ -49,6 +49,8 @@ def alignment_component(parent, manifest):
             or other.tensor_abi != manifest.tensor_abi or other.target != manifest.target
             or other.workload_sha256 != manifest.workload_sha256 or other.case_id != manifest.case_id
             or other.kernel_name != manifest.kernel_name or child.entry_point != parent.entry_point
+            or other.grid != manifest.grid
+            or other.hidden_null_pointer_parameters != manifest.hidden_null_pointer_parameters
             or child.candidate_sha256 != parent.candidate_sha256
             or child.launch_spec_sha256 != other.canonical_sha256
             or 'kernel_bundle' in child.artifact_roles):
