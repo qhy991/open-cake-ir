@@ -1,5 +1,6 @@
 """Python starter projection through the existing Lab task package; no execution."""
 import json
+from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -125,7 +126,8 @@ class PythonTaskReferenceTests(unittest.TestCase):
                 "execution": {"target": "apple_gpu_family8"}, "evaluation_protocol": {"case_id": "primary"},
                 "resolved_inputs": {"budget": {}, "run_protocol": {}}})
             arm = {"environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "input_format": "schedule_or_python_v1",
-                "schedule_skeleton": {"path": "starter.py"}, "scaffold": {"path": "scaffold.md"},
+                "schedule_skeleton": {"path": "starter.py"},
+                "scaffold": {"path": "scaffold.md", "sha256": sha256(b"fixture").hexdigest()},
                 "lowering_route": self.document["lowering"]}
             lock.document["resolved_inputs"]["arm_environments"] = {"open_cake": arm}
             def prepare(document, workload, case_id, authority):
