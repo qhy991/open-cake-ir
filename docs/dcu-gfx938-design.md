@@ -236,6 +236,10 @@ working rather than a gap
 which also separates these two from the four that fail only on turn budget). This
 paragraph cited F-2026-09-18-004 for both, which was never that record's claim.
 
+What the campaigns produced is read in [dcu-gfx938-results.md](dcu-gfx938-results.md),
+rendered from the retained medians rather than written; the host is driven per
+[dcu-gfx938-runbook.md](dcu-gfx938-runbook.md).
+
 ## Measurement: per-dispatch timing and L2
 
 **`torch.cuda.Event` is not the CUPTI peer.** Its empty-interval overhead measures min
