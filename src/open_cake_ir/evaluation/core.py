@@ -589,6 +589,18 @@ def _same_tensor_inputs(before, after):
 
 def compare_tile_outputs(workload, before, expected, observed, after):
     """One comparison owner for fresh and already-recorded tensor launches."""
+    correct, metrics = compare_tile_output_values(workload, expected, observed)
+    unchanged = _same_tensor_inputs(before, after)
+    return correct and unchanged, {**metrics, 'inputs_unchanged': unchanged}
+
+
+def compare_tile_output_values(workload, expected, observed):
+    """Check every output against the oracle; input effects are a separate check.
+
+    The combined entry point above retains both checks. Retained lossless input
+    references can reuse their established input verdict while still checking
+    every observed output here, without inventing another numerical comparator.
+    """
     import struct
     validation = workload.document['validation']
     comparisons = None
@@ -633,9 +645,7 @@ def compare_tile_outputs(workload, before, expected, observed, after):
                     mismatch += (abs(value) > 3.4028234663852886e38 or struct.pack('>f', value) != struct.pack('>f', reference))
                 else:
                     mismatch += error > rule['atol'] + rule['rtol'] * abs(reference)
-    unchanged = _same_tensor_inputs(before, after)
-    metrics = {'output_mismatches': mismatch, 'max_abs_error': maximum_error, 'inputs_unchanged': unchanged}
-    return mismatch == 0 and unchanged, metrics
+    return mismatch == 0, {'output_mismatches': mismatch, 'max_abs_error': maximum_error}
 
 
 def _load_cubin(candidate, manifest, admission):
