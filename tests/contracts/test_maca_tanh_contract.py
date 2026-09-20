@@ -41,11 +41,16 @@ class MacaTanhContractTests(unittest.TestCase):
         self.assertNotIn("ocml", emitted.source)
 
     def test_the_maca_name_does_not_admit_another_elementwise_operation(self):
-        target = replace(Target.load(ROOT / "compiler/targets/xcore1002.json"),
-                         instruction_contracts=frozenset({"maca.tanh.f32"}))
         document = frontend.parse(SOURCE).document
         operation = next(op for op in document["operations"] if op["id"] == "tanh")
         operation["parameters"]["op"] = "exp"
+        with self.assertRaisesRegex(ValueError, "instruction has no defined effect for exp"):
+            Schedule.from_dict(document)
+
+    def test_a_declared_maca_contract_still_requires_fp32_operands(self):
+        target = replace(Target.load(ROOT / "compiler/targets/xcore1002.json"),
+                         instruction_contracts=frozenset({"maca.tanh.f32"}))
+        document = frontend.parse(SOURCE.replace('"fp32"', '"fp16"')).document
         findings = verify(Schedule.from_dict(document), target)
-        self.assertTrue(any(f.blocks_acceptance for f in findings), findings)
+        self.assertIn("ELEMENTWISE_INSTRUCTION_DTYPE_DIFFERS", [f.code for f in findings])
         self.assertNotIn("TARGET_INSTRUCTION_UNSUPPORTED", [f.code for f in findings])
