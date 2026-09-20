@@ -30,6 +30,7 @@ Start with the system overview, then follow the implementation or evidence relev
 - [当前状态 / Current status](../reports/current/STATUS.md)
 - [研究路线 / Roadmap](ROADMAP.md)
 - [平台与分支维护 / Development branches](DEVELOPMENT_BRANCHES.md)
+- [MetaX C550：当前可用路径与验收边界](metax-c550.md)
 - [设计决策 / Decisions](adr/README.md)
 - [完整阅读目录与历史材料 / Full catalog and history](catalog.md)
 
