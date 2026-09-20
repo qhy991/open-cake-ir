@@ -37,7 +37,7 @@ class IndependentRunTests(SemanticLabTestCase):
         declared['qualification'] = {'path': str(receipt_path), 'canonical_sha256': qualification.canonical_sha256}
         return lab, RunSpecification.from_dict(document)
 
-    def run_fixture(self, *, condition=None):
+    def run_fixture(self, *, condition=None, via_cli=False):
         lab, specification = self.fixture(condition=condition)
         document = specification.document
         provider = RalphFakeProvider({specification.run_id: lab.task_package(specification, specification.run_id)})
@@ -53,8 +53,25 @@ class IndependentRunTests(SemanticLabTestCase):
             # No fake Study is loaded or assigned to the engineering execution.
             with patch.object(StudyContract, 'load', side_effect=AssertionError('Study required at runtime')):
                 specification = lab.preflight_run(source)
-                run = lab.execute_run(specification, Path(directory)/'evidence', provider=provider,
-                    environment=FakeEnvironment('open_cake', document['authoring']), evaluator=evaluator)
+                components = {'provider':provider,'environment':FakeEnvironment('open_cake',document['authoring']),
+                              'evaluator':evaluator}
+                if via_cli:
+                    import io
+                    from contextlib import redirect_stdout
+                    from open_cake_ir.cli import main
+                    from open_cake_ir.lab import RunRef
+                    output = io.StringIO()
+                    runtime = Path(directory)/'runtime.json';runtime.write_text('{}')
+                    with patch('open_cake_ir.tasks.compose.run_runtime_factory',return_value=lambda spec,path:components),redirect_stdout(output):
+                        self.assertEqual(main(['--project-root',str(ROOT),'lab','run','execute','--run',str(source),
+                            '--runtime-config',str(runtime),'--evidence-root',str(Path(directory)/'evidence')]),0)
+                    self.assertEqual(json.loads(output.getvalue())['audit']['endpoint_observation'],'qualified')
+                    run = RunRef(specification,Path(directory)/'evidence')
+                    with redirect_stdout(io.StringIO()):
+                        self.assertEqual(main(['--project-root',str(ROOT),'lab','run','audit','--run',str(source),
+                            '--evidence-root',str(run.evidence_root)]),0)
+                else:
+                    run = lab.execute_run(specification,Path(directory)/'evidence',**components)
                 audit, replay = lab.audit_run(run)
             self.assertTrue(audit.archive_integrity)
             self.assertTrue(replay, replay.refusals)
@@ -67,6 +84,9 @@ class IndependentRunTests(SemanticLabTestCase):
 
     def test_ordinary_run_executes_and_replays_without_study_or_estimand(self):
         self.assertEqual(self.run_fixture(), 'qualified')
+
+    def test_independent_cli_executes_and_audits_the_same_run_engine(self):
+        self.assertEqual(self.run_fixture(via_cli=True),'qualified')
 
     def test_campaign_input_retains_its_report_with_independently_assembled_runs(self):
         from open_cake_ir.lab.provider_policy import execution_configuration
@@ -86,9 +106,23 @@ class IndependentRunTests(SemanticLabTestCase):
             campaign = lab.execute_campaign_with_factory(lock,Path(directory)/'evidence',runtime_factory=runtime)
             report = lab.audit(campaign)
         self.assertTrue(report.archive_integrity_passed)
+        self.assertTrue(all(report.descriptive['semantic_replay_by_run'].values()))
         self.assertEqual(len(providers),len(lock.run_order))
         self.assertTrue(all(provider.requests for provider in providers))
         self.assertEqual(len({id(provider) for provider in providers}),len(lock.run_order))
+
+    def test_campaign_adapter_refuses_changed_matched_controls_before_runtime(self):
+        from open_cake_ir.lab import CampaignLock
+        from unittest.mock import Mock
+        lab = TaskLab(ROOT)
+        lock = lab.preflight(ROOT/'contracts/studies/matched-search-system-qualification-ralph-template.json')
+        document = json.loads(canonical_json_bytes(lock.document))
+        arms = document['resolved_inputs']['arm_environments']
+        comparison = next(name for name in arms if name != 'open_cake')
+        arms[comparison]['provider']['model'] = 'changed-model'
+        document['resolved_inputs']['arm_environment_sha256'][comparison] = sha256(canonical_json_bytes(arms[comparison])).hexdigest()
+        with self.assertRaisesRegex(ValueError,'provider or scaffold'):
+            CampaignLock.from_dict(document)
 
     def test_independent_cli_preflight_uses_no_study_and_prints_the_run(self):
         import io
