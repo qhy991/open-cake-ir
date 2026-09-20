@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-21-001 — native-source admission refuses existing Triton MoE/QSA selection calls before compilation; shared source-boundary repair, no target capability or device qualification.
+
 - F-2026-09-20-008 — recovered Codex waiting-for-network notices rejected a completed candidate turn; exact notice admission verified by original-stream and candidate replay.
 - F-2026-09-20-009 — resumed Codex thread totals were summed as invocation spend; success, failure and semantic replay now use the same delta, with regressing counters refused.
 
