@@ -1431,5 +1431,192 @@
     "measurement": "All nine paired edges pass original CV quality; cold-L2 CUPTI, continuous paired allocation, CPU prepare/verify outside the lease. Each run retains all 2550 snapshots via reviewed lossless input references, with every output literal and every input/output checked. Actual encoded file size 94,376,940 bytes per run; raw representation would require 42,813,235,200 bytes.",
     "interpretation": "Current-compiler floor versus old starter is close_null (1.007x). Width four improves over the old starter by 1.079x and is close_null against the supplied external (8.544/8.5755 us). Four columns per CTA regress versus the old starter (10.240/9.248 us; speedup 0.903125) and the external (10.256/8.5765 us). Do not choose row/column packing merely for logical reuse. These are candidate choices using existing IR, not evidence of a new Compiler mechanism or faithful split-K/last-arriver reproduction.",
     "promotion_disposition": "No promotion. Retain width four as the leading tested candidate at this fixed shape; preserve the slower structural alternative and all original controls. Independent profiler attribution remains pending."
+  },
+  "gemm_007_008_followup": {
+    "results": [
+      {
+        "task": "007_gemm_n4096_k4096",
+        "variant": "width-w4",
+        "run_id": "nvidia-gemm-007-008-comparison-20260921-425a55c43e72",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-425a55c43e72",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/007_gemm_n4096_k4096/width-w4.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/007_gemm_n4096_k4096/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 188707820,
+        "input_check_counts": {
+          "literal": 10,
+          "reference": 5090
+        },
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 13.056,
+            "right_us": 11.712,
+            "right_over_left": 0.897058823529412,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.147692205455527
+          },
+          "starter_vs_external": {
+            "left_us": 13.568,
+            "right_us": 11.649,
+            "right_over_left": 0.858564268867924,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.100200935856364
+          },
+          "optimized_vs_starter": {
+            "left_us": 13.088000000000001,
+            "right_us": 13.632,
+            "right_over_left": 1.041564792176039,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.024016819878797
+          }
+        }
+      },
+      {
+        "task": "007_gemm_n4096_k4096",
+        "variant": "width-w8",
+        "run_id": "nvidia-gemm-007-008-comparison-20260921-3f37f1636a9b",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-3f37f1636a9b",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/007_gemm_n4096_k4096/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/007_gemm_n4096_k4096/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 188707820,
+        "input_check_counts": {
+          "literal": 10,
+          "reference": 5090
+        },
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 12.319999999999999,
+            "right_us": 11.648,
+            "right_over_left": 0.945454545454546,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.118206176901454
+          },
+          "starter_vs_external": {
+            "left_us": 13.6,
+            "right_us": 11.616,
+            "right_over_left": 0.854117647058824,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.131595196760077
+          },
+          "optimized_vs_starter": {
+            "left_us": 12.352,
+            "right_us": 13.552,
+            "right_over_left": 1.097150259067357,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.019159144593744
+          }
+        }
+      },
+      {
+        "task": "008_gemm_n4096_k14336",
+        "variant": "width-w8",
+        "run_id": "nvidia-gemm-007-008-comparison-20260921-6ad3ee78b525",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-6ad3ee78b525",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/008_gemm_n4096_k14336/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/008_gemm_n4096_k14336/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 608240620,
+        "input_check_counts": {
+          "literal": 10,
+          "reference": 5090
+        },
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 41.0405,
+            "right_us": 26.8155,
+            "right_over_left": 0.653391162388372,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.017538573141604
+          },
+          "starter_vs_external": {
+            "left_us": 43.105,
+            "right_us": 26.752000000000002,
+            "right_over_left": 0.620624057533929,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.017951985120779
+          },
+          "optimized_vs_starter": {
+            "left_us": 40.993,
+            "right_us": 43.1525,
+            "right_over_left": 1.052679725806845,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.010586268882729
+          }
+        }
+      },
+      {
+        "task": "008_gemm_n4096_k14336",
+        "variant": "masked-k-program-w8",
+        "run_id": "nvidia-gemm-007-008-comparison-20260921-2d57b3a1d6dc",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-2d57b3a1d6dc",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/008_gemm_n4096_k14336/masked-k-program-w8.py",
+        "control_role": "optimized",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/008_gemm_n4096_k14336/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 608240620,
+        "input_check_counts": {
+          "literal": 10,
+          "reference": 5090
+        },
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 51.104499999999994,
+            "right_us": 26.752000000000002,
+            "right_over_left": 0.523476406187322,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.016447234100738
+          },
+          "starter_vs_external": {
+            "left_us": 41.216,
+            "right_us": 26.688,
+            "right_over_left": 0.647515527950311,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.014573306737708
+          },
+          "optimized_vs_starter": {
+            "left_us": 51.136,
+            "right_us": 41.185,
+            "right_over_left": 0.805401282853567,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.008688664337898
+          }
+        }
+      }
+    ],
+    "correctness_snapshot_count": 10200,
+    "scope": "FP16 M=1 only: 007 N4096 K4096; 008 N4096 K14336. Previously these tasks had unexecuted configurations but no baseline bundle. Original template starters were newly built and frozen through canonical launch_task --baseline-only at 5b85e313. These are candidate comparisons, not an old-Compiler-floor comparison. No promotion, upstream full-shape or model E2E claim.",
+    "references": "Original CUDA sources preserved. 007 invokes its cuBLASLt/at::mm library selector at M=1; library internals are not reproduced. 008 invokes its custom two-stage split-K at M=1; both launches are inside the CUPTI callable activity span. Both exact-reference C++17 failure/C++20 object-success probes are retained under each task/reference-build-probe in cake-experiments/nvidia-gemm-007-008-20260921. Only the build standard changed; upstream reported scores are not inherited.",
+    "measurement": "All four runs completed CPU prepare -> exclusive GPU capture -> CPU verify. Each retains 2550 observations, with every output literal and every input/output checked against the original policy. Each verify records 10 literal input checks and 5090 first-input references. Cold-L2 CUPTI and all paired edges share a continuous exclusive interval. 007 compact files are 188707820 bytes/run; 008 files are 608240620 bytes/run. Eight of twelve timing edges pass; all four failed edges involve 007 external comparisons and remain failed.",
+    "interpretation": "007 width4/control 13.088/13.632 us is qualified close_null (1.041565x); width8/control 12.352/13.552 us is qualified 1.097150x. Both variants have failed external and control/external CV edges, so their nominal external ratios do not support a qualified performance comparison. 008 sliced-width8/control 40.993/43.1525 us is qualified 1.052680x, while 41.0405/26.8155 us versus external remains 53.048% higher latency. The masked-K ProgramMap variant regresses: 51.136/41.185 us versus sliced-width8 (0.805401x), and 51.1045/26.752 us versus external (0.523476x). Widening work assignment and combining the K domain do not reproduce external split-K parallelism. Independent profiler attribution is still pending; static lowering alone does not establish the hardware cause of regression.",
+    "authoring": "Width changes alter only execution_groups. The 008 masked ProgramMap uses axis2 tile16384 with grid-z1, explicit tail zero fill and CTA reduction to cover K14336. Prior explicit across_loop=True and single-trip TileLoop inputs remain retained with their original canonical-form refusals; the final ProgramMap is legal with unchanged Compiler gates.",
+    "promotion_disposition": "No promotion. Keep original starters, width8 candidates, masked-K regression and failed quality edges. Do not multiply ratios across experiments, treat close_null as improvement, or remeasure failed CV edges merely to obtain acceptance."
   }
 }
