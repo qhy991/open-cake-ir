@@ -8,6 +8,10 @@ merge into their platform branch, then into `main`; shared changes go through `m
 Every branch contains the complete repository. Platform names describe maintenance
 responsibility, not separate copies of the Compiler or a hardware qualification.
 
+硬件实验的发布数据按同样的分支归属维护：每个平台负责 `docs/results/<平台>/`，
+`main` 汇总已合入的版本。数据入口、生成命令与检查范围见
+[硬件结果维护流程](RESULTS_MAINTENANCE.md)；不在多个分支分别手写总览成绩。
+
 ## 六条长期分支
 
 | 分支 | 职责 | 任务分支示例 | 任务 PR 的目标 |
