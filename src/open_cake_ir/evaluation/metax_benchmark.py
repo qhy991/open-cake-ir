@@ -244,12 +244,18 @@ def validate_paired_activity(raw, protocol) -> None:
             raise ValueError('MACA native activity manifest differs from its sealed participant')
         manifests[role] = manifest
     previous_end = None
+    calibrations = {}
     for measurement in raw['measurements']:
         for role in measurement['order']:
             if role not in manifests:
                 raise ValueError('MACA measurement has an unknown participant')
             record = measurement['arms'][role]
             validate_cohort(record, manifests[role], sample_count=protocol.samples_per_cohort)
+            native = record['native_activity']
+            calibration = (native['reset_activity'], native['reset_record'])
+            if role in calibrations and calibration != calibrations[role]:
+                raise ValueError('MACA participant changed reset calibration or execution stream')
+            calibrations[role] = calibration
             kernels = kernel_records(record['native_activity']['activity'])
             if previous_end is not None and kernels[0]['start_ns'] < previous_end:
                 raise ValueError('MACA cohort order differs from native execution')

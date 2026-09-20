@@ -137,6 +137,14 @@ class MacaPairedReceipts(unittest.TestCase):
         value = deepcopy(raw);value['launch_manifests']['candidate']['workload_sha256'] = 'f'*64;mutations.append(value)
         value = deepcopy(raw);value['device_admission']['pci_bus_id'] = '0000:10:00';mutations.append(value)
         value = deepcopy(raw);value['measurements'][1]['arms'] = deepcopy(value['measurements'][0]['arms']);mutations.append(value)
+        value = deepcopy(raw)
+        native = value['measurements'][2]['arms']['candidate']['native_activity']
+        for activity in (native['activity'], native['reset_activity']):
+            for row in activity['records']:
+                if row['kind'] == 10:
+                    row.update(context=7, stream=9)
+        native['reset_record'].update(context=7, stream=9)
+        mutations.append(value)
         for index,value in enumerate(mutations):
             with self.subTest(mutation=index), self.assertRaises(ValueError):
                 self.receipt({**self.payloads, 'timing_samples':encoded(value)})
