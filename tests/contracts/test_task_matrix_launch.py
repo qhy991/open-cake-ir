@@ -152,7 +152,8 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         # vacuously on the day none is left. When this moves a third time, check
         # whether any refused pair remains before rewriting it: if none does, this test
         # has nothing left to assert and should say so instead of being re-aimed.
-        self.assertIsNone(devices.BACKENDS['triton-gfx1151']['tanh_contract'])
+        with self.assertRaisesRegex(ValueError, 'no admitted tanh'):
+            devices.tanh_contract('triton-gfx1151')
         args = self.args('silu','gelu_tanh')
         args[args.index('--backend')+1] = 'triton-gfx1151'
         with self.assertRaises(SystemExit),patch.object(matrix.subprocess,'run') as run:
@@ -167,7 +168,7 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         rather than the previous case silently being re-aimed at a different target.
         """
         self.assertEqual(
-            devices.BACKENDS['triton-dcu']['tanh_contract'], 'ocml.tanh.f32')
+            devices.tanh_contract('triton-dcu'), 'ocml.tanh.f32')
 
 
 if __name__ == "__main__":

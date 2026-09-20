@@ -240,6 +240,7 @@ class CodeObjectRoute:
     """
 
     gpu_backend: str
+    architecture_type: type
     artifact_roles: tuple[str, ...]
     binary_role: str
     text_role: str
@@ -270,6 +271,7 @@ class CodeObjectRoute:
 _CODE_OBJECT_ROUTES: Mapping[CodeObject, CodeObjectRoute] = MappingProxyType({
     CodeObject.CUBIN: CodeObjectRoute(
         gpu_backend="cuda",
+        architecture_type=int,
         artifact_roles=("source", "ttir", "ttgir", "llir", "ptx", "cubin"),
         binary_role="cubin",
         text_role="ptx",
@@ -277,6 +279,7 @@ _CODE_OBJECT_ROUTES: Mapping[CodeObject, CodeObjectRoute] = MappingProxyType({
     ),
     CodeObject.HSACO: CodeObjectRoute(
         gpu_backend="hip",
+        architecture_type=str,
         artifact_roles=("source", "ttir", "ttgir", "llir", "amdgcn", "hsaco"),
         binary_role="hsaco",
         text_role="amdgcn",
@@ -332,13 +335,11 @@ def triton_route(requirements: Mapping[str, object]) -> TritonRoute:
             or type(warp_size) is not int or warp_size <= 0):
         raise ValueError("Triton compile contract differs")
     route = route_for_code_object(code_object)
-    # The architecture Triton's `GPUTarget` takes is an integer capability for CUDA
-    # and the bare ISA name for AMDGPU; either shape on the wrong route is a differing
-    # contract, not something to coerce.
-    if route.gpu_backend == "cuda":
-        if type(architecture) is not int or architecture <= 0:
-            raise ValueError("Triton compile contract differs")
-    elif not isinstance(architecture, str) or not architecture:
+    # The type belongs to this toolchain route, not to a vendor. MACA also takes an
+    # integer architecture through GPUTarget without producing a CUDA code object.
+    if (type(architecture) is not route.architecture_type
+            or (isinstance(architecture, int) and architecture <= 0)
+            or (isinstance(architecture, str) and not architecture)):
         raise ValueError("Triton compile contract differs")
     return TritonRoute(
         gpu_backend=route.gpu_backend,
