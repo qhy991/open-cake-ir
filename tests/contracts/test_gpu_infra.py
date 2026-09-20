@@ -233,10 +233,26 @@ class ExperimentInputTests(unittest.TestCase):
         receipt = json.loads((output / "launches/b300/transport.json").read_bytes())
         self.assertEqual(receipt["observation"], "failed_or_unknown_no_retry")
 
+    def test_codex_home_binding_is_absolute_and_provider_specific(self):
+        for home in ("relative", ""):
+            config = deepcopy(self.config)
+            config["cells"][0]["node"]["codex_home"] = home
+            with self.assertRaises(ValueError):
+                kernel_experiment.validate(config)
+        config = deepcopy(self.config)
+        config["cells"][0]["node"]["codex_home"] = "/tmp/node-codex"
+        kernel_experiment.validate(config)
+        config["provider"]["harness"] = "claude-code"
+        with self.assertRaisesRegex(ValueError, "only valid for the Codex"):
+            kernel_experiment.validate(config)
+
     def test_node_bootstrap_passes_explicit_native_provider(self):
         node = deepcopy(self.config["cells"][0]["node"])
         node["provider_executable"] = "/opt/codex/bin/codex"
         node["http_proxy"] = "http://127.0.0.1:17990"
+        codex_home = self.root / "node-codex-home"
+        codex_home.mkdir()
+        node["codex_home"] = str(codex_home)
         node["qualification"] = "/external/receipt.json"
         node["qualification_anchor"] = "/external/anchor.json"
         payload = {"cell": {**self.config["cells"][0], "node": node},
@@ -252,6 +268,7 @@ class ExperimentInputTests(unittest.TestCase):
         self.assertEqual(command[command.index("--provider-executable") + 1], "/opt/codex/bin/codex")
         self.assertEqual(command[command.index("--qualification") + 1], "/external/receipt.json")
         self.assertEqual(command[command.index("--qualification-anchor") + 1], "/external/anchor.json")
+        self.assertEqual(execute.call_args.kwargs["env"]["CODEX_HOME"], str(codex_home))
         for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
             self.assertEqual(execute.call_args.kwargs["env"][key], node["http_proxy"])
 

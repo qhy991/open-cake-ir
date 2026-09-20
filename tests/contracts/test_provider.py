@@ -941,6 +941,31 @@ class ProviderContractTests(unittest.TestCase):
         )
 
 
+    def test_failed_file_change_is_retained_but_never_supplies_a_missing_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory) / "candidate-set.json"
+            events = [json.loads(line) for line in self._events(candidate, duplicate=False).splitlines()]
+            for event in events:
+                if event.get("type") == "item.completed" and event.get("item", {}).get("type") == "file_change":
+                    event["item"]["status"] = "failed"
+            raw = b"".join(json.dumps(event).encode() + b"\n" for event in events)
+            parsed = parse_codex_turn_events(raw, expected_terminal_message='{"candidate_written":true}',
+                                            event_contract="tool_rich_candidate_v1")
+            self.assertEqual(parsed.tool_activity[0].status, "failed")
+            with self.assertRaises(FileNotFoundError):
+                normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
+                    expected_terminal_message='{"candidate_written":true}',
+                    event_contract="tool_rich_candidate_v1", arm="open_cake")
+            # A recovered scratch failure does not invalidate a separately produced artifact.
+            self._write_schedule_set(candidate, 1)
+            turn = normalize_codex_turn(raw, candidate_path=candidate, expected_change="add",
+                expected_terminal_message='{"candidate_written":true}',
+                event_contract="tool_rich_candidate_v1", arm="open_cake")
+            self.assertEqual(turn.tool_activity[0].status, "failed")
+            with self.assertRaises(ValueError):
+                parse_codex_turn_events(raw, expected_terminal_message='{"candidate_written":true}',
+                                        event_contract="closed_file_change_v1")
+
     def test_tool_rich_scratch_file_change_requires_a_complete_stable_lifecycle(
         self,
     ) -> None:
