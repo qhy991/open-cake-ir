@@ -91,19 +91,23 @@ def load_reference(root, output, report, cohort_calls):
             raise ValueError('cached output isolation requires native modules loaded locally')
         instances = output / 'external-instances'
         instances.mkdir()
-        # Distinct loader paths give each unchanged native module independent static
-        # Graph/output state. Runtime output-pointer checks, not this assumption, gate timing.
+        # Both paths and qualified import names must differ: pybind11 caches module
+        # objects by spec.name even when a different shared library is loaded. Keep
+        # the final name component unchanged for the native PyInit symbol.
         for index in range(1, cohort_calls):
             directory = instances / str(index)
             directory.mkdir()
             path = directory / Path(module.__file__).name
             shutil.copyfile(module.__file__, path)
-            modules.append(load_module(module.__name__, path))
+            instance = load_module(f'cake_external_instance_{index}.{module.__name__}', path)
+            if any(instance is previous for previous in modules):
+                raise ValueError('external native loader reused a module instance')
+            modules.append(instance)
     references = [getattr(item, function) for item in modules]
     if any(not callable(reference) for reference in references):
         raise ValueError('reference entry is not callable')
     report['external_instance_count'] = len(modules)
-    report['external_instance_policy'] = ('Independent copies of one compiled native module; '
+    report['external_instance_policy'] = ('Independent paths and qualified import names for copies of one compiled native module; '
         'each cached output is warmed and poisoned before the cohort, then used once. '
         'Original Graph replay is retained; this does not measure natural host/cache lifecycle costs.'
         if len(modules) > 1 else 'Original callable with unique retained outputs per cohort')
