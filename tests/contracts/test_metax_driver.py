@@ -71,6 +71,19 @@ class MetaxDriverTests(unittest.TestCase):
         self.assertEqual(self.api.launches, [])
         loaded.close()
 
+    def test_narrow_and_integer_tensor_abis_keep_their_declared_runtime_dtype(self):
+        for dtype, runtime_dtype in (("fp16", "torch.float16"), ("bf16", "torch.bfloat16"),
+                                     ("int32", "torch.int32")):
+            with self.subTest(dtype=dtype):
+                self.manifest.tensor_abi = (("x", (128,), dtype, "input"),)
+                loaded = self.load()
+                before = len(self.api.launches)
+                loaded.launch([self.argument(dtype=runtime_dtype)], tensor_contract=self.manifest)
+                with self.assertRaises(ValueError):
+                    loaded.launch([self.argument()], tensor_contract=self.manifest)
+                self.assertEqual(len(self.api.launches), before + 1)
+                loaded.close()
+
     def test_another_native_device_is_not_admitted_by_its_compatibility_capability(self):
         self.admission.device_arch = "xcore1000"
         with self.assertRaisesRegex(ValueError, "device admission differs"):

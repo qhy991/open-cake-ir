@@ -6,14 +6,17 @@ from ..target import Target
 from .common import refusal
 
 
+_BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32})
+
+
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     findings = []
     for index, buffer in enumerate(schedule.buffers):
-        if buffer.dtype is not DType.FP32:
+        if buffer.dtype not in _BUFFER_DTYPES:
             findings.append(refusal(
                 "MACA_DTYPE_UNQUALIFIED", f"buffers[{index}].dtype",
-                "this MACA route is bounded to FP32 buffers; mixed-precision and integer "
-                "tensor ABIs require their own device qualification",
+                "this MACA route admits FP32, FP16, BF16 and INT32 buffers; "
+                "other tensor representations require their own device qualification",
             ))
     if schedule.residency is not None and schedule.residency.registers_per_thread is not None:
         findings.append(refusal(
