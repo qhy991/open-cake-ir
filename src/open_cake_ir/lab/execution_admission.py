@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from hashlib import sha256
+import json
 
 from open_cake_ir.evaluation.paired import paired_protocol
 
@@ -133,10 +134,23 @@ def validate_run_bindings(specification, *, project_root, workload_loader, provi
         or getattr(environment, 'canonical_sha256', None) != sha256(_canonical_json_bytes(authority)).hexdigest()):
         raise ValueError('Run Authoring Environment differs from its frozen authority')
     declared = authority['provider']
+    from .admission import validate_provider_binding
     reference = declared['qualification']
-    _, path = _qualification_path(project_root, reference['path'], 'run.provider.qualification')
-    qualification = ProviderQualificationReceipt.load(path)
+    if 'output_schema' in declared:
+        _, schema_path = source_reference_path(project_root, declared['output_schema']['path'], 'run.provider.output_schema')
+        schema = json.loads(schema_path.read_bytes())
+        arm_schema = schema.get('properties', {}).get('arm', {})
+        if (arm_schema.get('type') != 'string'
+            or 'enum' in arm_schema and specification.condition_id not in arm_schema['enum']
+            or 'const' in arm_schema and specification.condition_id != arm_schema['const']):
+            raise ValueError('provider output schema excludes the assigned condition id')
     configuration = execution_configuration(declared)
+    event_contract = configuration.get('event_contract', 'closed_file_change_v1')
+    live_scope = ('live_two_turn_current_provider' if event_contract == 'closed_file_change_v1'
+                  else 'live_two_turn_tool_rich_provider')
+    qualification = validate_provider_binding(
+        provider=declared, project_root=project_root, expected_provider_configuration=configuration,
+        admitted_scopes={'zero_gpu_contract_fixture_only', live_scope})
     if (qualification.canonical_sha256 != reference['canonical_sha256']
         or qualification.provider_revision != declared['revision']
         or qualification.configuration_sha256 != sha256(_canonical_json_bytes(configuration)).hexdigest()

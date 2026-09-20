@@ -252,7 +252,6 @@ def _replay_matched_run(
     )
     provider = _replay_provider_turns(
         arm=arm,
-        environment_kind=lock.environment_kind,
         audit=audit,
         event_contract=event_contract,
         evidence=evidence,

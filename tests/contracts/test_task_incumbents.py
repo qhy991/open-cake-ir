@@ -116,6 +116,7 @@ class TaskIncumbentTests(unittest.TestCase):
         lock = SimpleNamespace(
             claim_scope="artifact_optimization_only",
             canonical_sha256=lock_sha,
+            run_specification=lambda run_id: SimpleNamespace(canonical_sha256=lock_sha),
             document=lock_document,
         )
         run = evidence.start_run(

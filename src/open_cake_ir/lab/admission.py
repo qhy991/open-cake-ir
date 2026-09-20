@@ -28,11 +28,21 @@ from .provider_policy import provider_configuration, provider_harness
 
 
 def validate_provider(*, open_cake, policy, project_root, study):
-    """Validate provider qualification and declared authoring capabilities."""
-    provider = _object(open_cake.get("provider"), "study.arms.provider")
-    provider_revision = _name(provider.get("revision"), "study.arms.provider.revision")
-    claim_scope = cast(str, study.document["claim_scope"])
-    expected_provider_configuration = provider_configuration(provider, claim_scope, arms=study.document["arms"])
+    """Matched-Study input policy; runtime qualification has an independent owner."""
+    provider = _object(open_cake.get('provider'), 'study.arms.provider')
+    claim_scope = str(study.document['claim_scope'])
+    configuration = provider_configuration(provider, claim_scope, arms=study.document['arms'])
+    validate_provider_binding(provider=provider, project_root=project_root,
+        expected_provider_configuration=configuration,
+        admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
+        require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
+    return claim_scope
+
+
+def validate_provider_binding(*, provider, project_root, expected_provider_configuration,
+                              admitted_scopes, require_native_pair=False, evaluation_protocol=None):
+    """Check provider receipt, retained qualification evidence and delivered schema."""
+    provider_revision = _name(provider.get('revision'), 'provider.revision')
     executable_sha256 = _digest(
         provider.get("executable_sha256"), "study.arms.provider.executable_sha256"
     )
@@ -53,10 +63,6 @@ def validate_provider(*, open_cake, policy, project_root, study):
     qualification = ProviderQualificationReceipt.load(qualification_path)
     expected_configuration_sha256 = sha256(
         _canonical_json_bytes(expected_provider_configuration)).hexdigest()
-    admitted_scopes = {
-        "zero_gpu_contract_fixture_only",
-        required_live_provider_qualification_scope(claim_scope),
-    }
     expected_qualification = {
         "provider_revision": provider_revision, "executable_sha256": executable_sha256,
         "configuration_sha256": expected_configuration_sha256,
@@ -88,8 +94,8 @@ def validate_provider(*, open_cake, policy, project_root, study):
             "provider qualification bytes or capability",
             expected=expected_qualification, observed=observed_qualification,
         )
-    if (policy is not None and qualification.scope != 'zero_gpu_contract_fixture_only'
-        and paired_protocol(study.document['evaluation_protocol']) is None):
+    if (require_native_pair and qualification.scope != 'zero_gpu_contract_fixture_only'
+        and paired_protocol(evaluation_protocol) is None):
         raise ValueError('new live native Campaign requires explicit fixed-baseline paired policy')
     qualification_anchor = provider.get("qualification_anchor")
     if qualification.scope == "zero_gpu_contract_fixture_only":
@@ -168,7 +174,7 @@ def validate_provider(*, open_cake, policy, project_root, study):
                 f"Study Contract provider {field} bytes differ",
                 expected=expected_sha256, observed=observed_sha256,
             )
-    return claim_scope
+    return qualification
 
 
 def validate_evaluation(

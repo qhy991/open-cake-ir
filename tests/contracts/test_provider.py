@@ -1167,7 +1167,7 @@ class ProviderContractTests(unittest.TestCase):
             schema.write_text("{}")
             package = TaskPackage(
                 "open_cake-1",
-                "open_cake",
+                "E0P0",
                 "# TASK.md\n\nImplement the frozen task.\n",
                 "# AGENTS.md\n\nWrite only candidate-set.json.\n",
             )
@@ -1210,6 +1210,7 @@ class ProviderContractTests(unittest.TestCase):
                     event_contract,
                     submission_contract,
                     arm,
+                    environment_kind,
                     maximum_candidates_per_turn,
                 ):
                     self.invocations.append(invocation)
@@ -1259,7 +1260,7 @@ class ProviderContractTests(unittest.TestCase):
             first = provider.turn(
                 SimpleNamespace(
                     run_id="open_cake-1",
-                    arm="open_cake",
+                    arm="E0P0",
                     turn=1,
                     cumulative_provider_tokens=0,
                     thread_id=None,
@@ -1271,7 +1272,7 @@ class ProviderContractTests(unittest.TestCase):
             second = provider.turn(
                 SimpleNamespace(
                     run_id="open_cake-1",
-                    arm="open_cake",
+                    arm="E0P0",
                     turn=2,
                     cumulative_provider_tokens=100,
                     thread_id=first.thread_id,
@@ -1304,7 +1305,7 @@ class ProviderContractTests(unittest.TestCase):
             self.assertNotEqual(first.candidate_sha256s, second.candidate_sha256s)
             self.assertEqual((first.provider_tokens, second.provider_tokens), (100, 140))
             with self.assertRaisesRegex(RunProtocolFault, "cumulative thread usage regressed"):
-                provider.turn(SimpleNamespace(run_id="open_cake-1", arm="open_cake", turn=3,
+                provider.turn(SimpleNamespace(run_id="open_cake-1", arm="E0P0", turn=3,
                     cumulative_provider_tokens=240, thread_id=first.thread_id, feedback={},
                     maximum_candidates_per_turn=2, state_card=state, environment_kind="open_cake"))
             bundle = json.loads(second.reference_bundle)

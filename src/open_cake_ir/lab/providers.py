@@ -209,7 +209,8 @@ class QualifiedRunProvider:
         builder = self._builders.get(request.run_id)
         if (
             builder is None
-            or request.arm not in {"open_cake", "direct_cuda", "native_triton", "native_cute_dsl"}
+            or not isinstance(request.arm, str) or not request.arm
+            or request.environment_kind not in {"open_cake", "direct_cuda", "native_triton", "native_cute_dsl"}
             or request.turn <= 0
             or not isinstance(request.maximum_candidates_per_turn, int)
             or isinstance(request.maximum_candidates_per_turn, bool)

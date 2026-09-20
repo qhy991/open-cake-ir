@@ -93,6 +93,13 @@ class LabCoreArchitectureTests(unittest.TestCase):
             {"kind": "run_terminal", "payload": {"protocol_adherence": "harness_fault",
                 "endpoint_observation": "missing", "endpoint": None}},
         ]
+        specification = SimpleNamespace(
+            run_id=audit.run_id, condition_id='open_cake', environment_kind='open_cake', terminal_policy={},
+            document={'compiler_revision': lock.document['compiler_revision'], 'sequence': 1,
+                      'budget': budget, 'evidence_policy': copy.deepcopy(_MATCHED_RALPH_EVIDENCE_POLICY_V1),
+                      'authoring': {'candidate_selection': 'must not resolve'},
+                      'execution': lock.document['execution']})
+        lock.run_specification = lambda run_id: specification
         evidence = SimpleNamespace(replay_events=Mock(return_value=events))
         from open_cake_ir.lab.bindings import load_compiler_reference
         with patch("open_cake_ir.lab.bindings.load_compiler_reference", wraps=load_compiler_reference) as compiler_dependency, \

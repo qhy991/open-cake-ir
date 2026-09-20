@@ -1,11 +1,12 @@
 """Engineering and research assignments execute through one Run lifecycle."""
 import json
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
 
-from open_cake_ir.lab import RunSpecification
+from open_cake_ir.lab import RunSpecification, ProviderQualificationReceipt
 from open_cake_ir.lab.contracts import StudyContract
 from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks.runtime import TaskLab
@@ -22,18 +23,36 @@ class IndependentRunTests(SemanticLabTestCase):
         document['run_id'] = 'arbitrary-run-identity'
         document['assignment'] = (None if condition is None else
             {'study_id': 'transfer-study', 'study_sha256': '1'*64, 'condition_id': condition})
+        # Bind the generic condition schema and a clearly labeled CPU-only receipt.
+        # A provider qualified against an enum-limited schema cannot author new labels.
+        from open_cake_ir.lab.provider_policy import execution_configuration
+        declared = document['authoring']['provider']
+        schema_path = 'contracts/providers/run-turn-output-schema-v1.json'
+        declared['output_schema'] = {'path': schema_path, 'sha256': sha256((ROOT/schema_path).read_bytes()).hexdigest()}
+        qualification = ProviderQualificationReceipt.load(ROOT/declared['qualification']['path'])
+        qualification = replace(qualification, configuration_sha256=sha256(canonical_json_bytes(execution_configuration(declared))).hexdigest())
+        temporary = tempfile.TemporaryDirectory(); self.addCleanup(temporary.cleanup)
+        receipt_path = Path(temporary.name).resolve()/'qualification.json'
+        receipt_path.write_bytes(canonical_json_bytes(qualification.document))
+        declared['qualification'] = {'path': str(receipt_path), 'canonical_sha256': qualification.canonical_sha256}
         return lab, RunSpecification.from_dict(document)
 
     def run_fixture(self, *, condition=None):
         lab, specification = self.fixture(condition=condition)
         document = specification.document
         provider = RalphFakeProvider({specification.run_id: lab.task_package(specification, specification.run_id)})
+        provider.qualification_sha256 = document['authoring']['provider']['qualification']['canonical_sha256']
+        from open_cake_ir.lab.provider_policy import execution_configuration
+        provider.configuration = execution_configuration(document['authoring']['provider'])
         evaluator = FakeEvaluator(document['evaluation_protocol'],
             sha256(canonical_json_bytes(document['evaluation_protocol'])).hexdigest(),
             document['workload']['canonical_sha256'])
         with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'run.json'
+            source.write_bytes(canonical_json_bytes(document))
             # No fake Study is loaded or assigned to the engineering execution.
             with patch.object(StudyContract, 'load', side_effect=AssertionError('Study required at runtime')):
+                specification = lab.preflight_run(source)
                 run = lab.execute_run(specification, Path(directory)/'evidence', provider=provider,
                     environment=FakeEnvironment('open_cake', document['authoring']), evaluator=evaluator)
                 audit, replay = lab.audit_run(run)

@@ -70,6 +70,10 @@ class Lab:
     def _validate_run(self, specification: RunSpecification) -> None:
         """Task-owned target/evaluation admission, independent of Study policy."""
 
+    def preflight_run(self, run_path: str | Path) -> RunSpecification:
+        return preflight.preflight_run(run_path, project_root=self._root,
+                                       workload_loader=self._load_workload, validate_run=self._validate_run)
+
     def execute_run(self, specification: RunSpecification, evidence_root: str | Path, *,
                     provider, environment, evaluator) -> RunRef:
         return execution.execute_run(

@@ -43,7 +43,6 @@ def _expected_terminal_message(arm: str, turn: int, event_contract: str) -> str:
 def _replay_provider_turns(
     *,
     arm: str,
-    environment_kind: str,
     audit: RunAudit,
     event_contract: str,
     evidence: EvidenceStore,
@@ -170,7 +169,7 @@ def _replay_provider_turns(
             projected_candidates = _project_candidate_submission(
                 evidence.read_object(submission_references[0]),
                 submission_contract=CANDIDATE_SET_ENVELOPE_V1,
-                arm=arm, environment_kind=environment_kind,
+                arm=arm, environment_kind=expected_task_package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
         except (UnicodeError, ValueError) as error:

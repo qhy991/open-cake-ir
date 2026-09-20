@@ -138,7 +138,7 @@ def execute_campaign(
     expected_protocol_sha256 = sha256(
         _canonical_json_bytes(evaluation_protocol)
     ).hexdigest()
-    arms, provider_document = validate_execution_bindings(
+    validate_execution_bindings(
         lock=lock,
         resolved_inputs=resolved_inputs,
         evaluation_protocol=evaluation_protocol,
@@ -162,13 +162,13 @@ def execute_campaign(
 def execute_run(specification: RunSpecification, evidence_root, *, project_root,
                 workload_loader, clock, provider, environment, evaluator, validate_run=None):
     """Execute a frozen engineering or Study-assigned Run through the same engine."""
+    root = admit_new_campaign_path(project_root, evidence_root, role='Run Evidence root')
     specification = RunSpecification.from_dict(specification.document)
     if validate_run is not None:
         validate_run(specification)
     validate_run_bindings(specification, project_root=project_root,
                           workload_loader=workload_loader, provider=provider,
                           environment=environment, evaluator=evaluator)
-    root = admit_new_campaign_path(project_root, evidence_root, role='Run Evidence root')
     evidence = EvidenceStore.create(root)
     _execute_run(specification, evidence=evidence, clock=clock, provider=provider,
                  environment=environment, evaluator=evaluator)
