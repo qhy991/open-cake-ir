@@ -20,6 +20,7 @@
       "version": "3.12.11"
     },
     "runtime": {
+      "activity_api_version": 18,
       "backend": "maca",
       "build_environment": {
         "LD_LIBRARY_PATH": "/opt/maca/lib:/opt/maca/mxgpu_llvm/lib",
@@ -31,6 +32,12 @@
       "triton_version": "3.1.0"
     },
     "runtime_libraries": [
+      {
+        "path": "/opt/maca/lib/libmcpti.so",
+        "sha256": "864aea6628fc3a629ec38a863002c557fb3db463d8b0422da6a79b2a13b6038d",
+        "size_bytes": 5154144,
+        "soname": "libmcpti.so"
+      },
       {
         "path": "/opt/maca/lib/libmcruntime.so",
         "sha256": "62fd2491271e89390bc328831a0e9a3862a83e81bb4b3d369c30d54008e602d1",

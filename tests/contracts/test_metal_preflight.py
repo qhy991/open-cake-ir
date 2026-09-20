@@ -7,6 +7,7 @@ No live receipt, Executor descriptor or Campaign Lock is published by these test
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -20,7 +21,8 @@ from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.lab import preflight, admission
 from open_cake_ir.lab.incumbents import TaskIncumbentKey
 from open_cake_ir.lab.provider_policy import provider_configuration
-from open_cake_ir.tasks.normalization.study import canonical, study_template, SCAFFOLD
+from open_cake_ir.tasks.normalization.study import (
+    METAL_SCAFFOLD, SCAFFOLD, canonical, study_template)
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.workloads import create_task
 
@@ -180,16 +182,61 @@ class MetalPreflightTests(unittest.TestCase):
                 self.assertIn('schedule-starter.py',package.task_markdown)
                 self.assertIn('```python',package.task_markdown)
                 self.assertEqual(study['arms']['open_cake']['scaffold']['path'],
-                                 'contracts/scaffolds/python-artifact-optimization-v2.md')
+                                 'contracts/scaffolds/python-artifact-optimization-metal-v3.md')
                 # The package owner delivers the frozen scaffold in AGENTS.md and
                 # references it from TASK.md; do not require a second body copy.
-                self.assertIn((ROOT/SCAFFOLD).read_text().strip(), package.agents_markdown)
-                self.assertNotIn((ROOT/SCAFFOLD).read_text().strip(), package.task_markdown)
+                self.assertIn((ROOT/METAL_SCAFFOLD).read_text().strip(), package.agents_markdown)
+                self.assertNotIn((ROOT/METAL_SCAFFOLD).read_text().strip(), package.task_markdown)
                 self.assertIn('AGENTS.md', package.task_markdown)
                 self.assertIn('execution_groups=[0]', package.task_markdown)
+                self.assertIn('execution_groups=[0, 1]', package.agents_markdown)
                 self.assertIn('tile=1', package.task_markdown)
                 self.assertIn('coalesced=False', package.task_markdown)
                 self.assertFalse((directory/'campaign-lock.json').exists())
+
+    def test_default_scaffold_follows_route_and_metal_example_lowers(self):
+        compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            for backend, expected in (
+                ('metal-m2', METAL_SCAFFOLD),
+                ('triton-b200', SCAFFOLD),
+            ):
+                with self.subTest(backend=backend):
+                    document, source = create_task('silu', backend=backend, rows=2, columns=8)
+                    workload = WorkloadContract(document)
+                    workload_path = directory/f'{backend}-workload.json'
+                    starter = directory/f'{backend}-starter.py'
+                    workload_path.write_bytes(canonical(document)); starter.write_text(source)
+                    study = study_template(ROOT, workload, workload_path, starter,
+                                           harness='codex', model='exact-test-model',
+                                           effort='high')
+                    self.assertEqual(study['arms']['open_cake']['scaffold']['path'], expected)
+
+            override = directory/'AGENTS.md'
+            override.write_text('explicit task rules')
+            document, source = create_task('silu', backend='metal-m2', rows=2, columns=8)
+            workload = WorkloadContract(document)
+            workload_path = directory/'override-workload.json'
+            starter = directory/'override-starter.py'
+            workload_path.write_bytes(canonical(document)); starter.write_text(source)
+            study = study_template(ROOT, workload, workload_path, starter, harness='codex',
+                                   model='exact-test-model', effort='high', agents_md=override)
+            self.assertEqual(study['arms']['open_cake']['scaffold']['path'], str(override))
+
+        scaffold = (ROOT/METAL_SCAFFOLD).read_text()
+        scaffold_words = ' '.join(scaffold.split())
+        self.assertIn('group count alone does not satisfy the required structural alternative',
+                      scaffold_words)
+        self.assertIn('timestamp-only profiling does not measure physical registers, spills or '
+                      'occupancy', scaffold_words)
+        examples = re.findall(r'```python\n(.*?)\n```', scaffold, flags=re.DOTALL)
+        self.assertEqual(len(examples), 1)
+        assessment = compiler.assess(frontend.parse(examples[0]).document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        lowering = compiler.lower(assessment)
+        self.assertIn('fma(', lowering.source)
+        self.assertEqual(assessment.analysis['total_execution_groups'], 2)
 
     def test_full_preflight_refuses_a_baseline_from_different_lowered_source(self):
         with tempfile.TemporaryDirectory() as temporary:

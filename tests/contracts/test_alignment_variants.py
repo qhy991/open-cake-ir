@@ -35,7 +35,9 @@ class AlignmentVariants(unittest.TestCase):
                 route = triton_route(requirements)
                 artifacts = {role: b'fixture-' + role.encode() + label for role in route.artifact_roles}
                 artifacts['cubin'] = b'\x7fELF' + artifacts['cubin']
-                artifacts['source'] = source
+                # Real Triton exposes expanded compiler IR here, including the
+                # alignment attributes and per-compilation source locations.
+                artifacts['source'] = b'expanded-ir-' + label
                 return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'],
                     artifacts, requirements['compile_options']['num_warps'] * 32,
                     16 if label == b'aligned' else 0, 'fixture', 'cubin')
@@ -69,6 +71,8 @@ class AlignmentVariants(unittest.TestCase):
         self.assertEqual(leaf.dynamic_shared_memory_bytes,16)
         self.assertEqual(manifest.dynamic_shared_memory_bytes,0)
         self.assertEqual(leaf.tensor_abi,old.tensor_abi)
+        self.assertNotEqual(child.artifact_roles['compiler_expanded_source'],
+                            candidate.artifact_roles['compiler_expanded_source'])
         validate_pair_candidates(candidate,baseline,self.workload,'primary')
         with self.assertRaisesRegex(ValueError,'restricted leaf'):
             validate_pair_candidates(child,baseline,self.workload,'primary')
@@ -141,6 +145,13 @@ class AlignmentVariants(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(ValueError,'preserve source'):
                 replace(candidate,artifact_payloads=payloads,
                         artifact_roles={k:sha256(v).hexdigest() for k,v in payloads.items()})
+        child_payloads = {**child.artifact_payloads,'lowered_source':b'different authored program'}
+        changed = replace(child,artifact_payloads=child_payloads,
+                          artifact_roles={k:sha256(v).hexdigest() for k,v in child_payloads.items()})
+        payloads = {**candidate.artifact_payloads,'kernel_bundle':pack_candidates({'aligned':changed})}
+        with self.assertRaisesRegex(ValueError,'changes its source program'):
+            replace(candidate,artifact_payloads=payloads,
+                    artifact_roles={k:sha256(v).hexdigest() for k,v in payloads.items()})
 
     def test_partial_teardown_can_resume_and_all_failures_are_preserved(self):
         from open_cake_ir.evaluation.loaders import LifecycleError

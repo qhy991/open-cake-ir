@@ -20,6 +20,7 @@ from .launch_manifest import WorkloadTensorManifest, tensor_abi_rows
 from .platforms import PLATFORMS, platform_for
 from .profiler import load_ncu_attribution_profile, ncu_attribution_feedback
 from .workload import WorkloadContract
+from .tensor_profiles import TENSOR_PROFILES
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 # The timing an assay may declare: none, or the paired assay of a platform that names a
@@ -274,6 +275,8 @@ class EvaluationReceipt:
                 raise ValueError("EvaluationReceipt raw artifacts are not JSON") from error
             if self.purpose == "attribution":
                 profile_document = json.loads(self.artifact_payloads["profile"])
+                if not isinstance(profile_document, Mapping):
+                    raise ValueError('attribution profile must be an object')
                 if profile_document.get("kind") == "metal_compute_stage_timestamps_v1":
                     from .metal_observations import load_metal_profile
                     profile = load_metal_profile(self.artifact_payloads["profile"],
@@ -288,16 +291,13 @@ class EvaluationReceipt:
                             or launch_raw.get("host") != profile["host"] or launch_raw.get("job_id") != profile["job_id"]
                             or launch_raw.get("instrumented_command") != profile["raw"]["command_buffer"]):
                         raise ValueError("Metal attribution launch differs from instrumented profile")
-                elif profile_document.get("kind") == "hip_dispatch_activity_v1":
-                    from .hip_observations import load_hip_profile
-                    profile = load_hip_profile(self.artifact_payloads["profile"],
+                elif profile_document.get("kind") in TENSOR_PROFILES:
+                    source = TENSOR_PROFILES[profile_document["kind"]]
+                    profile = source.load(self.artifact_payloads["profile"],
                         expected_candidate_sha256=self.candidate_sha256,
                         expected_case_id=self.case_id,
                         expected_protocol_sha256=self.evaluation_protocol_sha256)
-                    if (launch_raw.get("job_id") != profile["job_id"]
-                            or launch_raw.get("gpu_uuid") != profile["gpu_uuid"]):
-                        raise ValueError(
-                            "HIP attribution launch differs from instrumented profile")
+                    source.validate_launch(profile, launch_raw, correctness_raw)
                 elif profile_document.get('kind') == 'ncu_program_attribution':
                     from .profiler import load_ncu_program_profile
                     profile = load_ncu_program_profile(self.artifact_payloads['profile'],
@@ -436,13 +436,14 @@ class EvaluationReceipt:
                 expected_candidate_sha256=self.candidate_sha256, expected_case_id=self.case_id,
                 expected_protocol_sha256=self.evaluation_protocol_sha256)
             return {"kind": profile["kind"], **profile["summary"]}
-        if kind == "hip_dispatch_activity_v1":
-            from .hip_observations import load_hip_profile, hip_attribution_feedback
-            return hip_attribution_feedback(load_hip_profile(
+        if kind in TENSOR_PROFILES:
+            source = TENSOR_PROFILES[kind]
+            return source.feedback(source.load(
                 self.artifact_payloads["profile"],
                 expected_candidate_sha256=self.candidate_sha256,
                 expected_case_id=self.case_id,
-                expected_protocol_sha256=self.evaluation_protocol_sha256))
+                expected_protocol_sha256=self.evaluation_protocol_sha256),
+                json.loads(self.artifact_payloads['launch_receipt']))
         if kind == 'ncu_program_attribution':
             from .profiler import load_ncu_program_profile
             profile = load_ncu_program_profile(self.artifact_payloads['profile'],
@@ -452,7 +453,7 @@ class EvaluationReceipt:
         if kind != "ncu_kernel_attribution":
             raise ValueError(
                 f"no attribution source declares profile kind {kind!r}; this reader knows "
-                "Nsight Compute, Metal compute-stage timestamps and roctracer activity")
+                "Nsight Compute, Metal timestamps and the registered tensor profile formats")
         profile = load_ncu_attribution_profile(
             self.artifact_payloads["profile"],
             expected_candidate_sha256=self.candidate_sha256,
@@ -619,6 +620,18 @@ def _same_tensor_inputs(before, after):
 
 def compare_tile_outputs(workload, before, expected, observed, after):
     """One comparison owner for fresh and already-recorded tensor launches."""
+    correct, metrics = compare_tile_output_values(workload, expected, observed)
+    unchanged = _same_tensor_inputs(before, after)
+    return correct and unchanged, {**metrics, 'inputs_unchanged': unchanged}
+
+
+def compare_tile_output_values(workload, expected, observed):
+    """Check every output against the oracle; input effects are a separate check.
+
+    The combined entry point above retains both checks. Retained lossless input
+    references can reuse their established input verdict while still checking
+    every observed output here, without inventing another numerical comparator.
+    """
     import struct
     validation = workload.document['validation']
     comparisons = None
@@ -663,9 +676,7 @@ def compare_tile_outputs(workload, before, expected, observed, after):
                     mismatch += (abs(value) > 3.4028234663852886e38 or struct.pack('>f', value) != struct.pack('>f', reference))
                 else:
                     mismatch += error > rule['atol'] + rule['rtol'] * abs(reference)
-    unchanged = _same_tensor_inputs(before, after)
-    metrics = {'output_mismatches': mismatch, 'max_abs_error': maximum_error, 'inputs_unchanged': unchanged}
-    return mismatch == 0 and unchanged, metrics
+    return mismatch == 0, {'output_mismatches': mismatch, 'max_abs_error': maximum_error}
 
 
 def _load_cubin(candidate, manifest, admission):
