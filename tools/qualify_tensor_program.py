@@ -83,6 +83,7 @@ def evaluate(args, result):
     candidate = candidate_from_identity(identity, payloads)
     workload = load_workload(workspace / 'workload.json')
     manifest = parse_launch_manifest(json.loads(payloads['launch_manifest']))
+    manifest.check_complete_domain()
     manifest.check_validation_case(workload, args.case)
     if platform_for(workload.target).code_object is not CodeObject.MCFATBIN:
         raise ValueError('this local tensor qualification command currently implements the MACA allocation adapter')
@@ -121,6 +122,8 @@ def main():
         command.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     args.output = args.output.resolve()
+    if args.output == ROOT or ROOT in args.output.parents:
+        parser.error('generated qualification artifacts must stay outside the checkout')
     args.output.mkdir(parents=True, exist_ok=False)
     result = {'source_commit': checkout_commit(ROOT), 'phase': 'admission', 'passed': False,
               'scope': 'sealed Program construction or original-case correctness only'}

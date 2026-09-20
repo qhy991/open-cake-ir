@@ -83,6 +83,8 @@ def evaluate_program_case(candidate, workload, protocol, admission, *, prepared)
             if primary is not None:
                 raise LifecycleError(primary, cleanup) from primary
             raise
+    if not loaded.loaded.closed:
+        raise ValueError('native tensor modules remain open after teardown')
     launch = {'candidate_sha256': candidate.candidate_sha256, 'kernel_calls': count, 'fallback_calls': 0,
               'manifest_sha256': manifest.canonical_sha256, 'device_admission': asdict(admission),
               'module_unloaded': loaded.loaded.closed, 'resources': resources}
