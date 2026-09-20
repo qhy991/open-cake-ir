@@ -417,7 +417,8 @@ class EvaluationReceipt:
                 self.artifact_payloads["profile"],
                 expected_candidate_sha256=self.candidate_sha256,
                 expected_case_id=self.case_id,
-                expected_protocol_sha256=self.evaluation_protocol_sha256))
+                expected_protocol_sha256=self.evaluation_protocol_sha256),
+                json.loads(self.artifact_payloads['launch_receipt']))
         if kind != "ncu_kernel_attribution":
             raise ValueError(
                 f"no attribution source declares profile kind {kind!r}; this reader knows "

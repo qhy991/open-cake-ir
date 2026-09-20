@@ -106,7 +106,7 @@ def load_hip_profile(payload: bytes, *, expected_candidate_sha256: str, expected
         expected_protocol_sha256=expected_protocol_sha256)
 
 
-def hip_attribution_feedback(profile: Mapping[str, object]) -> Mapping[str, object]:
+def hip_attribution_feedback(profile: Mapping[str, object], launch: Mapping | None = None) -> Mapping[str, object]:
     """Project only bounded actionable facts into the next authoring Turn."""
 
     summary = profile.get("summary")
