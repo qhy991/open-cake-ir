@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / 'src')]
 
 from tools.compare_rewrite_artifacts import (
-    RetainedExternal, load_reference, reference_arguments, regular,
+    RetainedExternal, load_reference, reference_arguments, regular, comparison_roles,
 )
 from tools.compare_flashinfer_reference import write
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda
@@ -109,6 +109,7 @@ def child(role, output, root, prepared, owner):
     names = reference_arguments(workload)
     candidates, manifests = load_participants(root, workload)
     report = {'role':role, 'broker_job_id':admission.broker_job_id,
+              'roles':comparison_roles(json.loads(regular(root, 'comparison.json').read_text())),
               'workload_sha256':workload.canonical_sha256, 'byteorder':sys.byteorder,
               'snapshot_encoding':INPUT_REFERENCES, 'observations':[], 'capture_complete':False}
     primary = loaded = None
@@ -246,7 +247,7 @@ def verify(root, output, prepared, captured, workload, commit):
             passed, metrics = compare_tile_outputs(workload, before, expected, observed, after)
             checks.append({**row, 'passed':passed, 'metrics':metrics})
             report['correctness_passed'] &= passed
-        report['roles'][role] = {'checks':checks}
+        report['roles'][role] = {'checks':checks, 'participant_roles':child_report['roles']}
         if 'compiled_resources' in child_report:
             report['roles'][role]['compiled_resources'] = child_report['compiled_resources']
     # Invalid outputs never produce an accepted attribution report. Raw profiler

@@ -114,7 +114,7 @@ class PhasedProfileTests(unittest.TestCase):
             for role in profile.ROLES:
                 d = captured/role;d.mkdir()
                 child = {'capture_complete':True,'role':role,'workload_sha256':workload.canonical_sha256,
-                         'byteorder':sys.byteorder,'snapshot_encoding':INPUT_REFERENCES,'observations':plan}
+                         'byteorder':sys.byteorder,'snapshot_encoding':INPUT_REFERENCES,'observations':plan,'roles':{}}
                 (d/'child.json').write_text(json.dumps(child))
                 metrics = [[str(i),'kernel_'+str(i),m,
                             '' if m in {'launch__block_size','launch__grid_size'} else 'count','1']
@@ -149,6 +149,39 @@ class PhasedProfileTests(unittest.TestCase):
                 last.write_bytes(valid)
                 child_file=captured/'external'/'child.json';child=json.loads(child_file.read_text());child['observations']=plan[:-1];child_file.write_text(json.dumps(child))
                 with self.assertRaisesRegex(ValueError,'required observations'):verify()
+
+    def test_derived_reference_reaches_capture_with_control_roles_preserved(self):
+        import json
+        import os
+        from pathlib import Path
+        import sys
+        import tempfile
+        from unittest.mock import patch
+        from tools import profile_rewrite_artifacts as profile
+        document,_=create_task('fib_rmsnorm_h2048',backend='triton-b300',rows=1,columns=2048)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve();(root/'reference').mkdir();output=root/'output';output.mkdir()
+            (root/'workload.json').write_text(json.dumps(document))
+            (root/'comparison.json').write_text(json.dumps({'kind':'authored_schedule_comparison','control_role':'optimized'}))
+            spec={'kind':'python','files':['ref.py'],'entry_point':'ref.py::run','derived_from':'preserved upstream fixture'}
+            (root/'reference/reference.json').write_text(json.dumps(spec));(root/'reference/ref.py').write_text('def run(*args): return None\n')
+            torch=SimpleNamespace(__version__='fixture',set_num_threads=lambda n:None)
+            original_path=list(sys.path);original_bytecode=sys.dont_write_bytecode
+            try:
+                with patch.dict(sys.modules,{'torch':torch}), \
+                     patch.object(profile,'observe_exclusive_cuda',return_value=SimpleNamespace(broker_job_id='owned')), \
+                     patch.object(profile,'preparation_metadata',return_value={'torch':'fixture','reference':spec,'native_library':None}), \
+                     patch.object(profile,'load_participants',return_value=({},{})), \
+                     patch.object(profile,'case_data',side_effect=RuntimeError('reference loaded; capture boundary')):
+                    with self.assertRaisesRegex(RuntimeError,'reference loaded'):
+                        profile.child('external',output,root,root,(os.geteuid(),os.getegid()))
+            finally:
+                sys.path[:]=original_path;sys.dont_write_bytecode=original_bytecode
+                sys.modules.pop('comparison_reference',None)
+            report=json.loads((output/'child.json').read_text())
+            self.assertIn('derived external',report['roles']['external'])
+            self.assertEqual(report['roles']['starter'],'unchanged old optimized binary')
+            self.assertFalse(report['capture_complete'])
 
     def test_profile_phases_do_not_allow_a_cpu_stage_to_hold_a_lease(self):
         from tools.check_alignment_candidate import phase_contract
