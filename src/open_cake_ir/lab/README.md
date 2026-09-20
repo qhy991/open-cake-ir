@@ -88,6 +88,11 @@ changes the identity of future execution; it does not rewrite historical evidenc
 旧 Study 模板仅投影共同的任务控制项，普通任务不再写入 Study 或 Campaign Lock。
 `report_task_efficiency.py` 可读取新 Run workspace，也保留旧 Campaign 的 opt-in 报告约束。
 
+`promote_task_incumbent.py --run <run.json>` 对工程 Run 完成独立审计后，沿用现有实质收益、
+receipt、custody 和当前基线链检查追加晋升；`--campaign-lock` 保留旧输入。新旧记录可以在
+同一 registry 链上读取，完整 Program 与原生 kernel 均可供下一轮准备使用。`confirmed_artifact`
+只是报告中的已确认产物，不表示已写入 registry 或取得预算内成功。Study 分配仍由其研究策略负责。
+
 ## Preassigned E/P Studies
 
 `StudyPlan` 保留 `matched_search` 类型，冻结四个 E/P 组合、知识版本、源发现/目标适配/测试划分，
@@ -124,7 +129,7 @@ stage，计时覆盖完整有序调用；NCU 输出按 dispatch 保留各 stage 
 需要多次 launch、非 identity 绑定或视图映射的 Program，目前使用 Triton/CUDA 组合适配；
 其他 code object 对这些组合仍明确拒绝。静态表示和上述单 kernel 路径不受此组合适配范围
 限制。软件合同测试不赋予实机正确性、计时或跨架构收益资格。显式动作、知识授权与消息作者
-隔离见下节；QSA 候选消费者和独立 Run 的 incumbent 晋升入口仍在迁移，正式硬件消融尚未验证。
+隔离见下节；QSA 候选消费者仍在迁移，正式硬件消融尚未验证。
 
 ## Knowledge and explicit author actions
 

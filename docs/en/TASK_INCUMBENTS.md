@@ -1,25 +1,30 @@
 # Reusing the best verified task implementation
 
-Task incumbents let the next artifact-optimization Campaign compete against the best
+Task incumbents let the next engineering Run compete against the best
 verified implementation for the same exact cell. They do not change scientific reference
 baselines.
 
 ## Promote a result
 
-Promotion reads an original custody-bearing Campaign, audits it and writes one sealed Run
-to an external incumbent registry:
+Promotion reads an original custody-bearing engineering Run, audits it and appends a
+sealed promotion to an external incumbent registry:
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python tools/promote_task_incumbent.py \
   --project-root /absolute/open-cake-ir \
   --registry-root /absolute/external/task-incumbents \
-  --campaign-lock /absolute/campaign/campaign-lock.json \
-  --evidence-root /absolute/campaign/campaign-evidence
+  --run /absolute/task/run.json \
+  --evidence-root /absolute/task/run-evidence
 ```
+
+Retained artifact-optimization Campaigns use `--campaign-lock` with their original evidence
+root. Study-assigned Runs cannot use the engineering entrypoint to bypass their Study
+promotion policy. Both inputs use the same material-win and append-only registry writer;
+existing records remain unchanged.
 
 The selected candidate must have a correctness-passing, measurement-quality-passing,
 materially faster confirmation. A copied Git archive has no Filesystem Custody and cannot
-promote. After the first promotion, the Campaign's fixed baseline must be the current
+promote. After the first promotion, the Run's fixed baseline must be the current
 incumbent, preventing a side experiment from overwriting a stronger result.
 Historical Campaigns are audited through their own Executor-bound Python and source tree,
 not through the current TaskPackage renderer.
@@ -41,11 +46,12 @@ python tools/launch_task_matrix.py ... \
 ```
 
 Each task resolves a key containing Workload identity, case, exact target, backend and
-Evaluation Protocol. An exact match becomes the Campaign's fixed black-box baseline. A
+Evaluation Protocol. An exact match becomes the Run's fixed black-box baseline. A
 missing registry or key explicitly falls back to the starter reference; the first material
 confirmation can then create generation zero through the promotion command. The workspace records this in
-`baseline-selection.json`; the Campaign Lock freezes the actual candidate identity and
-bundle path.
+`baseline-selection.json`; `run.json` freezes the actual candidate identity and bundle
+path. A registry-current Program or native kernel uses its own audited execution contract;
+starter/reference baselines retain their source and launch matching checks.
 
 ## What does not happen
 

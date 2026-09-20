@@ -8,8 +8,13 @@ it to a new external file before reviewing it for publication in the results gal
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
 import json
 from pathlib import Path
+import sys
+
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
+from open_cake_ir.serialization import canonical_json_bytes
 
 
 def read_workspace(workspace: Path) -> dict:
@@ -23,6 +28,9 @@ def read_workspace(workspace: Path) -> dict:
             raise ValueError('Run report audit or replay fields differ')
         audits = [audit]
         verified = (report.get('run_id')==lock['run_id']==audit.get('run_id')==replay.get('run_id')
+                    # This handoff must bind the report to this exact authority:
+                    # default Run ids are reused across task workspaces.
+                    and audit.get('authority_sha256')==sha256(canonical_json_bytes(lock)).hexdigest()
                     and audit.get('archive_integrity') is True and audit.get('filesystem_custody_verified') is True
                     and replay.get('refusals')==[])
         performance = report.get('performance',{})

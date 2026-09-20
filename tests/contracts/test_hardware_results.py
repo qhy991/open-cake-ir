@@ -44,8 +44,11 @@ class ReportProjectionTests(unittest.TestCase):
                 "execution": {"target": "sm_103a", "fixed_baseline": {
                     "selection": {"source": "starter_reference"}}}}
         if independent:
+            from hashlib import sha256
+            from open_cake_ir.serialization import canonical_json_bytes
             lock['run_id'] = 'open_cake-1'
             report = {'run_id':lock['run_id'],'audit':{**report['run_audits'][0],
+                'authority_sha256':sha256(canonical_json_bytes(lock)).hexdigest(),
                 'archive_integrity':True,'filesystem_custody_verified':custody},
                 'replay':{'run_id':lock['run_id'],'refusals':[]},'performance':report['descriptive']['performance']}
         (root / "report.json").write_text(json.dumps(report))
@@ -59,6 +62,15 @@ class ReportProjectionTests(unittest.TestCase):
             self.assertEqual(row['status'],'reported_qualified')
             self.assertEqual(row['baseline_ms'],.004)
             original = json.loads((root/'report.json').read_text())
+            original_authority = json.loads((root/'run.json').read_text())
+            for field,value in [('workload',{'workload_id':'different-task'}),
+                                ('execution',{**original_authority['execution'],'target':'gfx1151'}),
+                                ('compiler_revision',{'revision_id':'different-commit'})]:
+                (root/'run.json').write_text(json.dumps({**original_authority,field:value}))
+                row = reader.read_workspace(root)['runs'][0]
+                self.assertEqual(row['status'],'not_qualified')
+                self.assertIsNone(row['candidate_ms'])
+            (root/'run.json').write_text(json.dumps(original_authority))
             for replay in ({'run_id':'other-run','refusals':[]},
                            {'run_id':'open_cake-1','refusals':[{'message':'not verified'}]}):
                 (root/'report.json').write_text(json.dumps({**original,'replay':replay}))
