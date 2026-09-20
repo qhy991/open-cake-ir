@@ -592,10 +592,23 @@ class DcuMedianCounts(unittest.TestCase):
         self.assertEqual(
             sum(word in sweep["source"] for word in ("REGENERATED", "TRANSCRIBED")), 1,
             "the sweep must say exactly one of REGENERATED or TRANSCRIBED")
-        if "REGENERATED" in sweep["source"]:
-            self.assertTrue(sweep.get("device"), "a regenerated curve names its device")
-            self.assertIn(0.16, sweep["resolution_us_reported"],
+        # The claim is decided by what the field carries, not by which word it chose.
+        # Only a probe run produces per-size resolution_us and a device name, so a field
+        # holding those cannot call itself hand-copied to dodge the checks below -- that
+        # mutation passed until this was written.
+        from_probe = {"device", "per_size", "resolution_us_reported"} <= set(sweep)
+        self.assertEqual(
+            from_probe, "REGENERATED" in sweep["source"],
+            "the sweep's provenance word does not match what it carries: only a probe run "
+            "produces device, per_size and resolution_us_reported")
+        if from_probe:
+            self.assertTrue(sweep["device"], "a regenerated curve names its device")
+            self.assertIn(self.data["timer_quantum_ns"] / 1000,
+                          sweep["resolution_us_reported"],
                           "the probe did not report the grid this file derives")
+            self.assertEqual([[r["mib_moved"], r["median_us"]] for r in sweep["per_size"]],
+                             sweep["pairs_mib_us"],
+                             "the quoted curve and the per-size rows disagree")
 
     def test_the_timer_grid_is_what_the_medians_say_it_is(self) -> None:
         """Every distinct median is an exact multiple of one step, offset by a constant.
@@ -975,10 +988,23 @@ class DcuMedianCounts(unittest.TestCase):
                     continue
                 with self.subTest(record=label, sha=sha,
                                   near=text[max(0, match.start() - 60):match.end() + 40]):
+                    # Three admissible classes, and nothing else: a commit a campaign
+                    # ran at, a stamp the record retracts, or the version of an instrument
+                    # the record names. The third must still be a real commit here -- the
+                    # rule is against a fabricated hash, not against citing a tool.
+                    instrument = re.search(rf"\.py at open-cake-ir@{sha}", text)
                     self.assertTrue(
-                        sha in ran_at or sha in self.RETRACTED_STAMPS,
-                        f"{label} names commit {sha}, which no campaign ran at and which "
-                        "is not one of the stamps these records retract")
+                        sha in ran_at or sha in self.RETRACTED_STAMPS or instrument,
+                        f"{label} names commit {sha}, which no campaign ran at, which is "
+                        "not one of the stamps these records retract, and which is not "
+                        "given as the version of a named instrument")
+                    if instrument:
+                        import subprocess
+                        found = subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+                                               cwd=ROOT, capture_output=True)
+                        self.assertEqual(found.returncode, 0,
+                                         f"{label} names instrument commit {sha}, which is "
+                                         "not a commit in this repository")
             for match in re.finditer(r"open-cake-ir@(?P<sha>[0-9a-f]{8}), a commit no "
                                      r"campaign in the table ran at", text):
                 with self.subTest(record=label, phrase=match.group(0)):
