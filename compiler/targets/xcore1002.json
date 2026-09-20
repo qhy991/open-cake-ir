@@ -9,7 +9,7 @@
   "warp_size": 64,
   "l2_cache_bytes": 8388608,
   "memory_spaces": ["global", "shared", "register"],
-  "operation_kinds": ["load", "cast", "elementwise", "reduce", "store"],
+  "operation_kinds": ["load", "cast", "elementwise", "mma", "reduce", "store"],
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_shared_memory_bytes": 65536,
@@ -21,9 +21,14 @@
     "shared_memory_per_multiprocessor_bytes": 65536,
     "maximum_threads_per_multiprocessor": 2048
   },
-  "instruction_contracts": ["maca.tanh.f32"],
+  "instruction_contracts": ["maca.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "device_observation",
+      "source": "c550-1, MACA 3.5.3 / FlagTree 0.5.1+metax3.1, source 66dcc472, 2026-09-20",
+      "locator": "Standalone native-loader matrix diagnostic, 64x64x64 and four execution groups: FP16, BF16 and FP32 IEEE tl.dot each passed five finite input distributions with unchanged input bits and complete 4096-element outputs per case against a presealed CPU float64 dot rounded to FP32 (atol 0.001, rtol 0.0001). Maximum absolute errors were 6.103515625e-05, 6.103515625e-05 and 0.000152587890625, respectively. This is bounded instruction/ABI evidence, not all shapes, looped accumulation, timing or registered-task qualification. Raw arrays/specs and independent scalar-reference review: open-cake-ir-evidence/metax-parity-20260920/matrix-numerics-gpu-66dcc472-v1/ and matrix-numerics-prepared-66dcc472-v1/. TF32 failed its separate RNE10 hypothesis and remains unadmitted; direct FP8 dot failed LLVM lowering. Neither mode is substituted for IEEE."
+    },
     {
       "kind": "device_observation",
       "source": "c550-1, native MACA device attribute and activity discovery, 2026-09-20",
