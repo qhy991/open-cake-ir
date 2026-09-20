@@ -49,6 +49,20 @@ The existing Study facade remains an input boundary. Independent Runs carry thei
 authority and use the same engine and independent replay. A new source commit
 changes the identity of future execution; it does not rewrite historical evidence.
 
+## Complete Program candidates
+
+Cake 作者可以提交完整 `Program`。公共 ABI 在 Workload 边界绑定一次，叶子 Schedule
+只描述自己的参数；Triton builder 为每个 stage 保留独立编译产物和实际 launch metadata。
+父候选封存 stage bundle，回放核对原始作者 Program、冻结 Compiler lowering 和编译产物。
+
+Program 与单 kernel 共用 oracle 和 Evaluation receipt。物理 kernel/module 计数来自封存
+stage，计时覆盖完整有序调用；NCU 输出按 dispatch 保留各 stage 的指标，不把逐 stage
+指标冒充整体性能估计。每个计时 cohort 结束后释放它自己的输出与中间张量。
+
+当前完整 Program 执行适配实现于 Triton/CUDA 路径；其他 code object 在构建及执行入口
+明确拒绝，静态 Program 表示不因这个适配范围受限。软件合同测试不赋予实机正确性、
+计时或跨架构收益资格。显式作者变换动作与 E/P 权限接线仍在本任务中实施。
+
 ## Agent-led reproduction
 
 For reference-kernel reproduction, bind the reusable
