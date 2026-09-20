@@ -22,7 +22,9 @@ from tools.compare_flashinfer_reference import write
 from tools.compare_rewrite_artifacts import regular, reference_spec, reference_arguments, load_reference, RetainedExternal, comparison_roles
 from open_cake_ir.evaluation.admission import observe_exclusive_cuda
 from open_cake_ir.evaluation.benchmark import StrictCuptiBenchmark
-from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate, compare_tile_outputs
+from open_cake_ir.evaluation.core import (
+    LoadedTorchTensorCandidate, compare_tile_outputs, compare_tile_output_values, _same_tensor_inputs,
+)
 from open_cake_ir.evaluation.paired import candidate_identity, paired_protocol, paired_summary, validate_pair_candidates
 from open_cake_ir.evaluation.timing import summarize_cohort
 from open_cake_ir.evaluation.workload import WorkloadContract
@@ -135,6 +137,7 @@ class SnapshotReader:
         self.inputs = {}
 
     def read(self, case):
+        self.reference_inputs = set();self.first_inputs = set()
         if self.encoding is None:return read_snapshot(self.stream,self.workload,case)
         before,observed = {},{}
         for arg in self.workload.tensor_abi(case):
@@ -143,6 +146,7 @@ class SnapshotReader:
                 tag = self.stream.read(1)
                 if tag==b'R':
                     if key not in self.inputs:raise ValueError('input reference precedes its literal')
+                    self.reference_inputs.add(arg.name)
                     before[arg.name] = self.inputs[key];continue
                 if tag!=b'L':raise ValueError('invalid or truncated input snapshot tag')
             size = math.prod(arg.shape)*WIDTHS[arg.dtype]
@@ -151,7 +155,8 @@ class SnapshotReader:
             values = decode_values(payload,arg.dtype)
             if arg.mode=='input':
                 before[arg.name] = values
-                if key not in self.inputs:self.inputs[key] = values
+                if key not in self.inputs:
+                    self.inputs[key] = values;self.first_inputs.add(arg.name)
             else:observed[arg.name] = list(values)
         return observed,before
 
@@ -335,6 +340,11 @@ def verify(root,output,prepared,captured,workload):
             'roles':{'candidate':left,'baseline':right},'measurements':[{'pair_index':i,'order':list(order),'arms':{}}
                 for i,order in enumerate(protocol.pair_order)]}
     all_correct = True
+    # Both maps are private to this replay. The decoder and comparators do not
+    # mutate prepared inputs or decoded first literals. Only explicit R records
+    # reuse the verdict for that exact case/argument; changed literals never do.
+    first_input_verdicts = {}
+    input_checks = {'literal':0,'reference':0}
     with regular(captured,'snapshots.bin').open('rb') as stream:
         reader = SnapshotReader(stream,workload,raw.get('snapshot_encoding'))
         for row in raw['groups']:
@@ -343,7 +353,26 @@ def verify(root,output,prepared,captured,workload):
                      'max_abs_error':0.0,'inputs_unchanged':True}
             for _ in range(observation['count']):
                 observed,after = reader.read(case)
-                correct,metrics = compare_tile_outputs(workload,cases[case],expected[case],observed,after)
+                if reader.encoding is None:
+                    correct,metrics = compare_tile_outputs(workload,cases[case],expected[case],observed,after)
+                else:
+                    output_correct,metrics = compare_tile_output_values(workload,expected[case],observed)
+                    before = cases[case]
+                    unchanged = set(before)==set(after)
+                    for name,values in after.items():
+                        key = case,name
+                        if name in reader.reference_inputs:
+                            if key not in first_input_verdicts:
+                                raise ValueError('input reference lacks a checked first literal')
+                            same = first_input_verdicts[key]
+                            input_checks['reference'] += 1
+                        else:
+                            same = name in before and _same_tensor_inputs({name:before[name]},{name:values})
+                            input_checks['literal'] += 1
+                            if name in reader.first_inputs:first_input_verdicts[key] = same
+                        unchanged &= same
+                    metrics = {**metrics,'inputs_unchanged':unchanged}
+                    correct = output_correct and unchanged
                 check['passed'] &= correct
                 check['output_mismatches'] += metrics['output_mismatches']
                 check['max_abs_error'] = max(check['max_abs_error'],metrics['max_abs_error'])
@@ -357,6 +386,7 @@ def verify(root,output,prepared,captured,workload):
                 report['cases'].append({**observation,**check})
         if stream.read(1):raise ValueError('snapshot stream contains unbound trailing data')
     report['correctness_passed'] = all_correct
+    if raw.get('snapshot_encoding')==INPUT_REFERENCES:report['input_check_counts'] = input_checks
     # Failed numerical data never receives an accepted timing summary.
     if all_correct:
         for comparison in report['comparisons'].values():comparison['timing'] = paired_summary(comparison)
