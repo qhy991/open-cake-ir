@@ -14,6 +14,7 @@ never for the paired CUPTI assay, which requires the exclusive cluster lease.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import fcntl
 import json
 import os
@@ -73,6 +74,42 @@ def observe_local_metal_job() -> str:
     return observe_local_job("metal")
 
 
+class LocalBrokerBusy(BlockingIOError):
+    def __init__(self, kind: str, job_id: str):
+        super().__init__(f"{kind}_broker_busy")
+        self.job_id = job_id
+
+
+@contextmanager
+def local_job(kind: str):
+    """Own one worker's device phase after its CPU preparation has completed.
+
+    The same broker lock, identity and observer serve both the exec entry point
+    and a worker that prepares in memory first. No caller selects another lock.
+    """
+    path = _lock_path(kind)
+    if os.environ.get('METAL_BROKER_LOCK_FD') or os.environ.get('GPUQ_JOB_ID'):
+        raise ValueError('a local job cannot nest an existing allocation')
+    job = f"{kind}-" + uuid.uuid4().hex[:12]
+    print(f"[{kind}-run] accepted job {job}", file=sys.stderr, flush=True)
+    try:
+        fd = _acquire(path)
+    except BlockingIOError as error:
+        raise LocalBrokerBusy(kind, job) from error
+    previous = {key: os.environ.get(key) for key in ('METAL_JOB_ID', 'METAL_BROKER_LOCK_FD')}
+    try:
+        os.set_inheritable(fd, True)
+        os.environ.update(METAL_JOB_ID=job, METAL_BROKER_LOCK_FD=str(fd))
+        yield job
+    finally:
+        os.close(fd)
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--worker-module", required=True)
@@ -85,24 +122,20 @@ def main(argv=None) -> int:
         parser.error("worker must be a bound open_cake_ir module")
     if not args.request.is_absolute() or not args.output.is_absolute() or args.output.exists():
         parser.error("request/output must be absolute and output must be new")
-    job = f"{args.kind}-" + uuid.uuid4().hex[:12]
-    print(f"[{args.kind}-run] accepted job {job}", file=sys.stderr, flush=True)
     try:
-        fd = _acquire(_lock_path(args.kind))
-    except BlockingIOError:
-        result = {"schema_version": 1, "job_id": job, "mode": "local_serialized", "admitted": False,
+        with local_job(args.kind):
+            # Exec preserves the supervisor-owned process group and lock. Its
+            # timeout kills the worker and native children together as before.
+            from .source_bootstrap import module_command
+            os.execvpe(sys.executable, module_command(sys.executable, args.worker_module,
+                "--request", str(args.request), "--output", str(args.output)), dict(os.environ))
+    except LocalBrokerBusy as error:
+        result = {"schema_version": 1, "job_id": error.job_id, "mode": "local_serialized", "admitted": False,
                   "error": f"{args.kind}_broker_busy", "failure_class": "admission", "receipt": None,
                   "counters": {name: 0 for name in ("compiler_invocations", "module_loads", "preflight_calls", "kernel_calls", "timing_samples", "fallback_calls")}}
         with args.output.open("x") as stream:
             json.dump(result, stream)
         return 0
-    # Exec preserves the supervisor-owned process group and this lock. A timeout
-    # in the existing supervisor kills the worker and its native children together.
-    os.set_inheritable(fd, True)
-    environment = dict(os.environ, METAL_JOB_ID=job, METAL_BROKER_LOCK_FD=str(fd))
-    from .source_bootstrap import module_command
-    os.execvpe(sys.executable, module_command(sys.executable, args.worker_module,
-        "--request", str(args.request), "--output", str(args.output)), environment)
     return 1  # exec never returns normally
 
 

@@ -365,9 +365,13 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
             raise ValueError(
                 "the local_broker allocation requires the local job kind the target's "
                 "execution platform declares")
-        command = module_command(python, "open_cake_ir.evaluation.local_broker",
-                                 "--kind", local_kind,
-                                 "--worker-module", "open_cake_ir.tasks.evaluate")
+        if route == "triton":
+            # Task-owned CPU inputs/oracles precede the broker's device phase.
+            command = module_command(python, "open_cake_ir.tasks.evaluate", "--local-kind", local_kind)
+        else:
+            command = module_command(python, "open_cake_ir.evaluation.local_broker",
+                                     "--kind", local_kind,
+                                     "--worker-module", "open_cake_ir.tasks.evaluate")
         timeout = 1800
     elif allocation == "gpu_run":
         discovered = shutil.which(str(gpu_run) if gpu_run is not None else "gpu-run")

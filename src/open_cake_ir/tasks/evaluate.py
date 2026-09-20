@@ -15,7 +15,9 @@ import os
 import statistics
 import sys
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from contextlib import ExitStack
+from types import MappingProxyType
+from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping, cast
@@ -35,7 +37,8 @@ from open_cake_ir.evaluation.admission import observe_exclusive_cuda, observe_lo
 from open_cake_ir.evaluation.attempts import job_mode
 from open_cake_ir.evaluation.platforms import ExecutionPlatform, PLATFORMS, platform_for, platform_for_paired_kind
 from open_cake_ir.evaluation.core import EvaluationProtocol, LoadedTorchTensorCandidate, TensorLaunchManifest, compare_tile_outputs, _same_tensor_inputs
-from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case
+from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload, evaluate_tile_validation_case, PreparedTensorCase
+from open_cake_ir.evaluation.local_broker import LOCAL_KINDS, LocalBrokerBusy, local_job
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
 from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
@@ -123,6 +126,48 @@ class _Authority:
     # The worker admits under that allocator and no other (D6); an authority that states
     # none is refused at admission rather than admitted under a default.
     allocation_mode: str | None = None
+    prepared_cases: Mapping[str, PreparedTensorCase] | None = None
+
+
+def _prepared_case(authority, case_id):
+    cases = getattr(authority, 'prepared_cases', None)
+    if cases is None:
+        return None
+    case = cases[case_id]
+    case.check(authority.workload, case_id)
+    return case
+
+
+def _inputs_for(authority, case_id):
+    prepared = _prepared_case(authority, case_id)
+    return (materialize_case(authority.workload, case_id) if prepared is None
+            else prepared.inputs)
+
+
+def _reference_for(authority, case_id, inputs):
+    prepared = _prepared_case(authority, case_id)
+    return (reference_outputs(authority.workload, case_id, inputs) if prepared is None
+            else prepared.expected)
+
+
+def _correctness_preparation(authority, case_id):
+    prepared = _prepared_case(authority, case_id)
+    return {} if prepared is None else {'prepared': prepared}
+
+
+def _prepare_local_tensor_work(authority, kind):
+    if (authority.allocation_mode != 'local_broker'
+            or platform_for(authority.candidate.target).local_job_prefix != kind
+            or not isinstance(authority.manifest, TensorLaunchManifest)):
+        raise ValueError('local CPU preparation requires its declared tensor allocation route')
+    policy = authority.request['evaluation_protocol']
+    cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
+             else validation_case_ids(policy) if 'validation_case_ids' in policy
+             else (authority.case_id,))
+    # No device APIs, module loading or allocation occurs in this phase. The
+    # original task creates both inputs and references once per required case.
+    prepared = {case: PreparedTensorCase(authority.workload, case) for case in cases}
+    return replace(authority, prepared_cases=MappingProxyType(prepared))
 
 
 def _load_authority(request_path: Path) -> _Authority:
@@ -333,9 +378,9 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
         if all_cases:
             for manifest in manifests.values():
                 manifest.check_validation_case(authority.workload, case_id)
-    input_cases = {case_id: materialize_case(authority.workload, case_id) for case_id in cases}
+    input_cases = {case_id: _inputs_for(authority, case_id) for case_id in cases}
     inputs = input_cases[authority.case_id]
-    expected = reference_outputs(authority.workload, authority.case_id, inputs)
+    expected = _reference_for(authority, authority.case_id, inputs)
     loaded = {}
     checks = {role: {'preflight': None, 'postflight': None, 'timed_output_checks': []}
               for role in protocol.arms}
@@ -360,7 +405,8 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
                 authority.request['purpose'], authority.workload.canonical_sha256, case_id, 'none')
             evaluate = evaluate_tile_validation_case if all_cases else evaluate_tile_workload
             receipt = evaluate(candidates[role], authority.workload,
-                               correctness_protocol, loaded[(role, case_id)])
+                               correctness_protocol, loaded[(role, case_id)],
+                               **_correctness_preparation(authority, case_id))
             values = dict(receipt.correctness)
             launches.append({'input_case_id': case_id, 'passed': receipt.correctness_passed, 'metrics': values})
             combined['output_mismatches'] += values['output_mismatches']
@@ -470,13 +516,14 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
     counters = result["counters"]
     for case_id in cases:
         authority.manifest.check_validation_case(authority.workload, case_id)
-        inputs = materialize_case(authority.workload, case_id)
+        inputs = _inputs_for(authority, case_id)
         loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
         counters["module_loads"] += loaded.module_count
         try:
             protocol = EvaluationProtocol("workload-tensor-worker-correctness", authority.request["purpose"],
                 authority.workload.canonical_sha256, case_id, "none")
-            receipt = evaluate_tile_validation_case(authority.candidate, authority.workload, protocol, loaded)
+            receipt = evaluate_tile_validation_case(authority.candidate, authority.workload, protocol, loaded,
+                **_correctness_preparation(authority, case_id))
             counters["preflight_calls"] += 1
             values = dict(receipt.correctness)
             metrics["output_mismatches"] += values["output_mismatches"]
@@ -536,7 +583,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     if (not collect_timing and profile_source is None and authority.request["purpose"] != "attribution"
             and "validation_case_ids" in authority.request["evaluation_protocol"]):
         return _evaluate_untimed_validation_cases(authority, result, admission)
-    inputs = materialize_case(authority.workload, authority.case_id)
+    inputs = _inputs_for(authority, authority.case_id)
     loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
     counters = result['counters']
     counters['module_loads'] = loaded.module_count
@@ -548,14 +595,15 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     non_target = []
     timed_checks = []
     try:
-        preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded)
+        preflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded,
+                **_correctness_preparation(authority, authority.case_id))
         counters['preflight_calls'] = 1
         passed = preflight.correctness_passed
         metrics = dict(preflight.correctness)
         timing = None
         correctness_calls = 1
         if collect_timing and passed:
-            expected = reference_outputs(authority.workload, authority.case_id, inputs)
+            expected = _reference_for(authority, authority.case_id, inputs)
             for _ in range(5):
                 samples, check = _fresh_tile_cohort(loaded, benchmark, authority.workload,
                     inputs, expected, samples_per_cohort=25,
@@ -573,7 +621,8 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
                 metrics['output_mismatches'] += check['output_mismatches']
                 metrics['max_abs_error'] = max(metrics['max_abs_error'], check['max_abs_error'])
                 metrics['inputs_unchanged'] = metrics['inputs_unchanged'] and check['inputs_unchanged']
-            postflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded)
+            postflight = evaluate_tile_workload(authority.candidate, authority.workload, protocol, loaded,
+                **_correctness_preparation(authority, authority.case_id))
             correctness_calls += 1
             passed = passed and postflight.correctness_passed
             metrics['output_mismatches'] += postflight.correctness['output_mismatches']
@@ -628,7 +677,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
             raw = profile_source(lambda: loaded.launch(instrumented),
                                  authority.manifest.kernel_name)
             observed, after = loaded.snapshot(instrumented)
-            expected = reference_outputs(authority.workload, authority.case_id, inputs)
+            expected = _reference_for(authority, authority.case_id, inputs)
             correct, instrumented_metrics = compare_tile_outputs(
                 authority.workload, inputs, expected, observed, after)
             if not correct:
@@ -1282,6 +1331,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--local-kind", choices=LOCAL_KINDS,
+                        help="prepare tensor inputs/oracles before requesting this local broker")
     parser.add_argument("--profile-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--profile-admission", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
@@ -1291,90 +1342,100 @@ def main() -> int:
     # GPUQ_JOB_ID. Before either, the worker carries the cluster placeholder.
     result = _base_result(os.environ.get("METAL_JOB_ID", os.environ.get(
         "GPUQ_JOB_ID", f"{PLATFORMS[CodeObject.CUBIN].exclusive_job_prefix}-000000000000")))
-    try:
-        authority = _load_authority(request_path)
-        if os.environ.get("GPUQ_BACKEND"):
-            from open_cake_ir.evaluation.gpuq import observe_allocation
-            _BROKER_ALLOCATION = observe_allocation(authority.candidate.target)
-        purpose = str(authority.request["purpose"])
-        if args.profile_child:
-            if purpose != "attribution" or args.profile_admission is None:
-                raise ValueError("profile child requires attribution purpose")
-            if not _platform(authority).profiled_child:
-                raise ValueError(
-                    f"{_execution_platform(authority).value!r} has no profiled child launch"
-                )
-            admission_path = _input_path(
-                authority.request_root,
-                args.profile_admission.name,
-                "profile admission",
-            )
-            admission_document = _object(
-                json.loads(admission_path.read_bytes()), "profile admission"
-            )
-            if set(admission_document) != {
-                "schema_version",
-                "device_name",
-                "compute_capability",
-                "gpu_uuid",
-                "broker_job_id",
-                "mode",
-                "output_owner",
-            } or admission_document.get("schema_version") != 1:
-                raise ValueError("profile admission fields differ")
-            from open_cake_ir.lab.ncu_process import profile_output_owner
-            _PROFILE_OUTPUT_OWNER = profile_output_owner(admission_document["output_owner"])
-            capability = admission_document["compute_capability"]
-            if not isinstance(capability, list) or len(capability) != 2:
-                raise ValueError("profile admission capability differs")
-            admission = CudaDeviceAdmission(
-                str(admission_document["device_name"]),
-                (int(capability[0]), int(capability[1])),
-                str(admission_document["gpu_uuid"]),
-                str(admission_document["broker_job_id"]),
-                str(admission_document["mode"]),
-            )
-            _evaluate_candidate(
-                authority,
-                result,
-                collect_timing=False,
-                admission=admission,
-            )
-        elif purpose == "attribution":
-            platform = _platform(authority)
-            if platform.attribution is None:
-                raise ValueError(
-                    f"{_execution_platform(authority).value!r} has no attribution source; a "
-                    "profile is not taken on another platform's behalf"
-                )
-            if platform.attribution == "inside_evaluate":
-                if args.profile_admission is not None:
-                    # Two platforms take their profile inside evaluate now, so this can no
-                    # longer be phrased as Metal's rule: a DCU caller was refused in
-                    # Metal's words for a mistake of its own.
+    with ExitStack() as ownership:
+        try:
+            authority = _load_authority(request_path)
+            if args.local_kind is not None:
+                if args.profile_child or args.profile_admission is not None:
+                    raise ValueError('local CPU preparation cannot run as a profiler child')
+                authority = _prepare_local_tensor_work(authority, args.local_kind)
+                job = ownership.enter_context(local_job(args.local_kind))
+                result = _base_result(job)
+            if os.environ.get("GPUQ_BACKEND"):
+                from open_cake_ir.evaluation.gpuq import observe_allocation
+                _BROKER_ALLOCATION = observe_allocation(authority.candidate.target)
+            purpose = str(authority.request["purpose"])
+            if args.profile_child:
+                if purpose != "attribution" or args.profile_admission is None:
+                    raise ValueError("profile child requires attribution purpose")
+                if not _platform(authority).profiled_child:
                     raise ValueError(
-                        f"{_execution_platform(authority).value!r} takes its profile inside "
-                        "evaluate; that admission is supplied by its own Executor")
-                platform.evaluate(authority, result)
-            elif platform.attribution == "separate":
-                if args.profile_admission is not None:
-                    raise ValueError("profile admission is internal-only")
-                _profile_candidate(authority, request_path, result)
+                        f"{_execution_platform(authority).value!r} has no profiled child launch"
+                    )
+                admission_path = _input_path(
+                    authority.request_root,
+                    args.profile_admission.name,
+                    "profile admission",
+                )
+                admission_document = _object(
+                    json.loads(admission_path.read_bytes()), "profile admission"
+                )
+                if set(admission_document) != {
+                    "schema_version",
+                    "device_name",
+                    "compute_capability",
+                    "gpu_uuid",
+                    "broker_job_id",
+                    "mode",
+                    "output_owner",
+                } or admission_document.get("schema_version") != 1:
+                    raise ValueError("profile admission fields differ")
+                from open_cake_ir.lab.ncu_process import profile_output_owner
+                _PROFILE_OUTPUT_OWNER = profile_output_owner(admission_document["output_owner"])
+                capability = admission_document["compute_capability"]
+                if not isinstance(capability, list) or len(capability) != 2:
+                    raise ValueError("profile admission capability differs")
+                admission = CudaDeviceAdmission(
+                    str(admission_document["device_name"]),
+                    (int(capability[0]), int(capability[1])),
+                    str(admission_document["gpu_uuid"]),
+                    str(admission_document["broker_job_id"]),
+                    str(admission_document["mode"]),
+                )
+                _evaluate_candidate(
+                    authority,
+                    result,
+                    collect_timing=False,
+                    admission=admission,
+                )
+            elif purpose == "attribution":
+                platform = _platform(authority)
+                if platform.attribution is None:
+                    raise ValueError(
+                        f"{_execution_platform(authority).value!r} has no attribution source; a "
+                        "profile is not taken on another platform's behalf"
+                    )
+                if platform.attribution == "inside_evaluate":
+                    if args.profile_admission is not None:
+                        # Two platforms take their profile inside evaluate now, so this can no
+                        # longer be phrased as Metal's rule: a DCU caller was refused in
+                        # Metal's words for a mistake of its own.
+                        raise ValueError(
+                            f"{_execution_platform(authority).value!r} takes its profile inside "
+                            "evaluate; that admission is supplied by its own Executor")
+                    platform.evaluate(authority, result)
+                elif platform.attribution == "separate":
+                    if args.profile_admission is not None:
+                        raise ValueError("profile admission is internal-only")
+                    _profile_candidate(authority, request_path, result)
+                else:
+                    # Nsight was the fall-through here too. Three sites read this profile and
+                    # two were closed; this is the third, and leaving it meant any future
+                    # attribution value routed a candidate to CUDA's profiler.
+                    raise ValueError(
+                        f"attribution source {platform.attribution!r} is not implemented; a "
+                        "profile is taken inside evaluate or by this platform's own separate "
+                        "profiler, and never on another platform's behalf")
             else:
-                # Nsight was the fall-through here too. Three sites read this profile and
-                # two were closed; this is the third, and leaving it meant any future
-                # attribution value routed a candidate to CUDA's profiler.
-                raise ValueError(
-                    f"attribution source {platform.attribution!r} is not implemented; a "
-                    "profile is taken inside evaluate or by this platform's own separate "
-                    "profiler, and never on another platform's behalf")
-        else:
-            _platform(authority).evaluate(authority, result)
-    except Exception as error:
-        result["error"] = "evaluator_failed"
-        result["failure_class"] = type(error).__name__
-        result["receipt"] = None
-        print(f'{type(error).__name__}: {error}', file=sys.stderr)
+                _platform(authority).evaluate(authority, result)
+        except LocalBrokerBusy as error:
+            result = _base_result(error.job_id)
+            result.update(error=str(error), failure_class='admission')
+        except Exception as error:
+            result["error"] = "evaluator_failed"
+            result["failure_class"] = type(error).__name__
+            result["receipt"] = None
+            print(f'{type(error).__name__}: {error}', file=sys.stderr)
     _write_new(args.output, result)
     return 0
 
