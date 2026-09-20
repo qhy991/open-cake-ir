@@ -38,3 +38,71 @@ class RewriteArtifactComparisonTests(unittest.TestCase):
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     regular(root, value)
             self.assertEqual(regular(root, 'source.py'), root / 'source.py')
+
+
+class CachedOutputObservationTests(unittest.TestCase):
+    def pool(self, outputs, functions=None):
+        from types import SimpleNamespace
+        from tools.compare_rewrite_artifacts import RetainedExternal
+        loaded = object.__new__(RetainedExternal)
+        loaded.cached_output = True
+        loaded.seen = set()
+        loaded.torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: None))
+        loaded.launches = functions or [(lambda values, out, tensor=tensor: tensor) for tensor in outputs]
+        loaded.launch_function = loaded.launches[0]
+        return loaded
+
+    def parent_patches(self):
+        from contextlib import ExitStack
+        from unittest.mock import patch
+        from tools.compare_rewrite_artifacts import LoadedCallable
+        stack = ExitStack()
+        stack.enter_context(patch.object(LoadedCallable, 'fresh_argument_sets',
+            lambda self, count: [{'inputs': {}, 'out': None, 'result': None} for _ in range(count)]))
+        def launch(self, arguments):
+            arguments['result'] = self.launch_function(arguments['inputs'], arguments['out'])
+        stack.enter_context(patch.object(LoadedCallable, 'launch', launch))
+        return stack
+
+    def test_shared_buffers_and_changed_timed_buffer_are_refused(self):
+        one, two = FakeOutput(1), FakeOutput(2)
+        with self.parent_patches():
+            with self.assertRaisesRegex(ValueError, 'share an output'):
+                self.pool([one, one]).fresh_argument_sets(2)
+            loaded = self.pool([one])
+            arguments = loaded.fresh_argument_sets(1)
+            loaded.launches = [lambda values, out: two]
+            with self.assertRaisesRegex(ValueError, 'differs from poisoned'):
+                loaded.launch(arguments[0])
+
+    def test_no_write_cannot_reuse_correct_warm_output(self):
+        import math
+        from open_cake_ir.evaluation.core import compare_tile_outputs
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.tasks.workloads import create_task, materialize_case, reference_outputs
+        document, _ = create_task('rmsnorm', backend='triton-b300', rows=1, columns=1)
+        workload = WorkloadContract(document)
+        inputs = materialize_case(workload, 'primary')
+        expected = reference_outputs(workload, 'primary', inputs)
+        tensor = FakeOutput(1)
+        tensor.value = expected['out'][0]
+        with self.parent_patches():
+            loaded = self.pool([tensor])
+            arguments = loaded.fresh_argument_sets(1)
+            self.assertTrue(math.isnan(tensor.value))
+            loaded.launch(arguments[0])  # Reference returns its buffer but writes nothing.
+            passed, _ = compare_tile_outputs(workload, inputs, expected,
+                                             {'out': [arguments[0]['result'].value]}, inputs)
+            self.assertFalse(passed)
+
+
+class FakeOutput:
+    def __init__(self, pointer):
+        self.pointer = pointer
+        self.value = 1.0
+
+    def data_ptr(self):
+        return self.pointer
+
+    def fill_(self, value):
+        self.value = value

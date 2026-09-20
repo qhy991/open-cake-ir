@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 import sys
 import traceback
@@ -62,7 +63,7 @@ def reference_spec(root):
     return spec, paths, file, function
 
 
-def load_reference(root, output, report):
+def load_reference(root, output, report, cohort_calls):
     spec, paths, file, function = reference_spec(root)
     if spec['kind'] == 'python':
         sys.path.insert(0, str(root / 'reference'))
@@ -81,12 +82,73 @@ def load_reference(root, output, report):
                       extra_cuda_cflags=flags.get('cuda_cflags', []),
                       extra_ldflags=flags.get('ld_flags', []),
                       build_directory=str(build), verbose=True)
-    reference = getattr(module, function)
-    if not callable(reference):
+    modules = [module]
+    if spec.get('cached_output', False):
+        if spec['kind'] != 'cuda_cpp' or sys.getdlopenflags() & os.RTLD_GLOBAL:
+            raise ValueError('cached output isolation requires native modules loaded locally')
+        instances = output / 'external-instances'
+        instances.mkdir()
+        # Distinct loader paths give each unchanged native module independent static
+        # Graph/output state. Runtime output-pointer checks, not this assumption, gate timing.
+        for index in range(1, cohort_calls):
+            directory = instances / str(index)
+            directory.mkdir()
+            path = directory / Path(module.__file__).name
+            shutil.copyfile(module.__file__, path)
+            modules.append(load_module(module.__name__, path))
+    references = [getattr(item, function) for item in modules]
+    if any(not callable(reference) for reference in references):
         raise ValueError('reference entry is not callable')
     report['reference'] = spec
-    return reference
+    report['external_instance_count'] = len(modules)
+    report['external_instance_policy'] = ('Independent copies of one compiled native module; '
+        'each cached output is warmed and poisoned before the cohort, then used once. '
+        'Original Graph replay is retained; this does not measure natural host/cache lifecycle costs.'
+        if len(modules) > 1 else 'Original callable with unique retained outputs per cohort')
+    return references
 
+
+
+class RetainedExternal(LoadedCallable):
+    """Retain distinct outputs; cached native wrappers get one instance per call."""
+    def __init__(self, workload, values, launches, torch, cached_output=False):
+        super().__init__(workload, values, launches[0], torch)
+        self.launches = launches
+        self.cached_output = cached_output
+        self.seen = set()
+
+    def fresh_argument_sets(self, count):
+        arguments = super().fresh_argument_sets(count)
+        self.seen = set()
+        if self.cached_output:
+            if count > len(self.launches):
+                raise ValueError('not enough independent reference instances')
+            pointers = set()
+            for index, argument in enumerate(arguments):
+                argument['instance'] = index
+                self.launch_function = self.launches[index]
+                super().launch(argument)
+                result = argument['result']
+                pointer = result.data_ptr()
+                if pointer in pointers:
+                    raise ValueError('external native instances share an output buffer')
+                pointers.add(pointer)
+                argument['warm_output'] = result
+                argument['expected_pointer'] = pointer
+                result.fill_(float('nan'))
+                argument['result'] = None
+            self.torch.cuda.synchronize()
+        return arguments
+
+    def launch(self, arguments):
+        self.launch_function = self.launches[arguments.get('instance', 0)]
+        super().launch(arguments)
+        pointer = arguments['result'].data_ptr()
+        if self.cached_output and pointer != arguments['expected_pointer']:
+            raise ValueError('external timed output differs from poisoned warm buffer')
+        if pointer in self.seen:
+            raise ValueError('external output reused within a timed cohort')
+        self.seen.add(pointer)
 
 def correctness(loaded, workload, inputs, expected):
     import torch
@@ -135,14 +197,17 @@ def main():
         torch.set_num_threads(4)
         sys.dont_write_bytecode = True
         report['device'] = {'name': admission.device_name, 'job_id': admission.broker_job_id}
-        external = load_reference(root, output, report)
+        policy = evaluation_policy(workload)
+        protocol = paired_protocol(policy)
+        external = load_reference(root, output, report, protocol.route_calls_per_cohort)
         cases = {case: materialize_case(workload, case) for case in workload.case_ids}
         expected = {case: reference_outputs(workload, case, values) for case, values in cases.items()}
-        reference_launch = lambda values, out: external(*(values[name] for name in names))
+        reference_launches = [lambda values, out, fn=fn: fn(*(values[name] for name in names)) for fn in external]
         for case, values in cases.items():
             for role in ('optimized', 'starter'):
                 loaded[role, case] = LoadedTorchTensorCandidate(participants[role], manifests[role], values, admission)
-            loaded['external', case] = LoadedCallable(workload, values, reference_launch, torch)
+            loaded['external', case] = RetainedExternal(workload, values, reference_launches, torch,
+                cached_output=report['reference'].get('cached_output', False))
         def check_all(phase):
             for case, values in cases.items():
                 for role in ('external', 'starter', 'optimized'):
@@ -151,8 +216,6 @@ def main():
                     if not result['passed']:
                         raise ArithmeticError(f'{role} failed {case}; external source and tolerances unchanged')
         check_all('preflight')
-        policy = evaluation_policy(workload)
-        protocol = paired_protocol(policy)
         strict = StrictCuptiBenchmark(timer)
         # A matched pair for every edge of the three-way comparison. The same sealed
         # objects and external callable remain loaded throughout this allocation.
@@ -180,8 +243,9 @@ def main():
         report['correctness_passed'] = True
         report['measurement_quality_passed'] = all(c['timing']['measurement_quality_passed'] for c in report['comparisons'].values())
         report['status'] = 'passed' if report['measurement_quality_passed'] else 'measurement_quality_failed'
-        report['timed_interval'] = ('CUPTI device kernel intervals; cold L2 per sample; no timer graph/event fallback. '
-            'Original external Graph replay is retained when present. Compilation, allocation, autotuning and host work are excluded.')
+        report['timed_interval'] = ('CUPTI device-activity span of the unmodified call; cold L2 per sample; no timer graph/event fallback. '
+            'No validation memcpy/memset is inserted in the timed call. Original external Graph replay is retained. '
+            'Compilation, cohort preparation and host time are excluded; device work issued by the reference call is included.')
         validity = 'valid'
     except Exception as error:
         report.update(status='failed', error=f'{type(error).__name__}: {error}', traceback=traceback.format_exc())
