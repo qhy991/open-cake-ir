@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-20-008",
+  "kind": "capacity",
+  "date": "2026-09-20",
+  "title": "Offline Triton code lacks pointer-alignment facts needed to vectorize retained normalization kernels",
+  "backend": "Triton offline compilation and tensor ABI",
+  "target": "sm_103a observed",
+  "compiler_revision_id": "open-cake-ir@2812dd95 retained lowered programs; toolchain path inspected at ebbeec28",
+  "executor_revision": "CPU-only probe with Torch 2.11.0+cu130 and Triton 3.6.0; no device execution",
+  "evidence": {
+    "related_finding": "F-2026-09-20-007",
+    "run": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-alignment-compile-probe-20260920-d09c9d8abf03",
+    "input_root": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/alignment-compile-probe-20260920",
+    "compiler_source": "src/open_cake_ir/compiler/toolchain.py: compile_triton path builds ASTSource(kernel, signature, constants) without attrs",
+    "retained_sources": "full-reference-comparison-20260920/inputs/{001_fused_add_rmsnorm_h2048,002_fused_add_rmsnorm_h4096,025_rmsnorm_h4096}/optimized/lowered_source.bin and launch_manifest.bin",
+    "probe": {
+      "scope": "CPU-only compiler mechanism probe; hypothetical pointer alignment is not an admitted ABI and no GPU result is claimed",
+      "torch": "2.11.0+cu130",
+      "triton": "3.6.0",
+      "target": "cuda arch103 warp32",
+      "rows": [
+        {
+          "task": "001_fused_add_rmsnorm_h2048",
+          "compile_options": {
+            "num_warps": 8,
+            "num_stages": 1
+          },
+          "arms": {
+            "current_no_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.b16": 24,
+                "st.global.b16": 8
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [1], threadsPerWarp = [32], warpsPerCTA = [8], order = [0]}>"
+            },
+            "hypothetical_16byte_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.v4.b32": 3,
+                "st.global.v4.b32": 1
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [8], threadsPerWarp = [32], warpsPerCTA = [8], order = [0]}>"
+            }
+          }
+        },
+        {
+          "task": "002_fused_add_rmsnorm_h4096",
+          "compile_options": {
+            "num_warps": 16,
+            "num_stages": 1
+          },
+          "arms": {
+            "current_no_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.cg.b16": 16,
+                "ld.global.b16": 8,
+                "st.global.b16": 8
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [1], threadsPerWarp = [32], warpsPerCTA = [16], order = [0]}>"
+            },
+            "hypothetical_16byte_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.cg.v4.b32": 2,
+                "ld.global.v4.b32": 1,
+                "st.global.v4.b32": 1
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [8], threadsPerWarp = [32], warpsPerCTA = [16], order = [0]}>"
+            }
+          }
+        },
+        {
+          "task": "025_rmsnorm_h4096",
+          "compile_options": {
+            "num_warps": 4,
+            "num_stages": 1
+          },
+          "arms": {
+            "current_no_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.b16": 64,
+                "st.global.b16": 32
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [1], threadsPerWarp = [32], warpsPerCTA = [4], order = [0]}>"
+            },
+            "hypothetical_16byte_alignment": {
+              "ptx_memory_instruction_counts": {
+                "ld.global.v4.b32": 8,
+                "st.global.v4.b32": 4
+              },
+              "layout": "#blocked = #ttg.blocked<{sizePerThread = [8], threadsPerWarp = [32], warpsPerCTA = [4], order = [0]}>"
+            }
+          }
+        }
+      ],
+      "cuda_initialized": false,
+      "passed": true
+    }
+  },
+  "observation": "The retained optimized kernels have no pointer tt.divisibility attributes in TTGIR and scalar b16 PTX memory instructions. 002 already emits .cg for its streamed inputs, so another input-cache-hint change would not test this gap. In three CPU-only compilations, holding the retained program, target and compile options fixed while hypothetically adding tt.divisibility=16 to pointer arguments changes sizePerThread from 1 to 8 and changes scalar b16 loads/stores to v4.b32 vector operations. Static load/store instruction counts change from 24/8 to 3/1 in 001 and 002, and from 64/32 to 8/4 in 025. CUDA was not initialized. This demonstrates a code-generation mechanism, not an eightfold runtime speedup or GPU correctness.",
+  "proposed_change": "Design one evidence-gated pointer-alignment contract across authoring/compile and launch admission, then project admitted facts into ASTSource attrs. Do not hardcode 16-byte alignment for every pointer: contiguous offset views can be unaligned. Preserve the unconstrained ABI until the applicable contract actually guarantees alignment, verify actual input and output addresses, and exercise intentionally unaligned views and lower-alignment cases before adoption. Shared ABI/Compiler changes go through main with complete verification and independent review; fresh B300 correctness and matched timing are required after implementation. No first-class layout algebra is proposed.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "promotion_disposition": "No promotion. The hypothetical aligned outputs were only compiled, never launched or installed as candidates."
+}
