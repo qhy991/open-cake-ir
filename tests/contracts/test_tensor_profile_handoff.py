@@ -57,6 +57,12 @@ class TensorProfileHandoffTests(unittest.TestCase):
     def test_unknown_kinds_are_not_interpreted_as_nvidia_or_hip(self):
         with self.assertRaisesRegex(ValueError,'no attribution source'):self.receipt()
 
+    def test_nonobject_profiles_are_shape_refusals_before_source_dispatch(self):
+        for value in (None, [], 7):
+            self.profile = value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError,'profile must be an object'):
+                self.receipt()
+
     def test_collector_and_format_must_arrive_together_before_device_work(self):
         from open_cake_ir.tasks.evaluate import _evaluate_tile_candidate
         for kwargs in ({'profile_source':lambda *args:{}},{'profile_format':self.source}):

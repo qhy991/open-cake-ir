@@ -347,117 +347,134 @@ class CommandBrokerSubmitter:
                         "broker_result": worker_result_bytes,
                     },
                 )
-            worker_result = json.loads(worker_result_bytes)
-            result = worker_result
-            if not isinstance(result, Mapping) or set(result) != {
-                "schema_version",
-                "job_id",
-                "mode",
-                "admitted",
-                "error",
-                "failure_class",
-                "counters",
-                "receipt",
-            } or result.get("schema_version") != 1:
-                raise ValueError("evaluator command result fields differ")
-            job_observations = _BROKER_JOB_OBSERVATION.findall(completed.stderr)
-            if len(job_observations) != 1:
-                raise ValueError("broker job observation coverage differs")
-            observed_job_id = job_observations[0].decode("ascii")
-            if result.get("job_id") not in {observed_job_id, _WORKER_JOB_PLACEHOLDER if observed_job_id.startswith("gpuq-") else observed_job_id}:
-                raise ValueError("worker and broker job identities differ")
-            result = dict(result)
-            result["job_id"] = observed_job_id
-            result_bytes = canonical_json_bytes(result)
-            counters = result["counters"]
-            if not isinstance(counters, Mapping) or set(counters) != {
-                "compiler_invocations",
-                "module_loads",
-                "preflight_calls",
-                "kernel_calls",
-                "timing_samples",
-                "fallback_calls",
-            }:
-                raise ValueError("evaluator command counters differ")
-            receipt: EvaluationReceipt | None = None
-            receipt_value = result["receipt"]
-            if receipt_value is not None:
-                if not isinstance(receipt_value, Mapping) or set(receipt_value) != {
-                    "correctness_passed",
-                    "correctness",
+            # Receipt rejection must retain the bytes before TemporaryDirectory
+            # removes the worker's output. Only custody-checked artifacts enter this
+            # fault; unsafe paths are never opened to improve a diagnostic.
+            fault_artifacts = {
+                "evaluator_request": canonical_json_bytes(evaluator_arguments),
+                "broker_stdout": completed.stdout,
+                "broker_stderr": completed.stderr,
+                "broker_result": worker_result_bytes,
+            }
+            try:
+                worker_result = json.loads(worker_result_bytes)
+                result = worker_result
+                if not isinstance(result, Mapping) or set(result) != {
+                    "schema_version",
+                    "job_id",
+                    "mode",
+                    "admitted",
+                    "error",
+                    "failure_class",
+                    "counters",
+                    "receipt",
+                } or result.get("schema_version") != 1:
+                    raise ValueError("evaluator command result fields differ")
+                job_observations = _BROKER_JOB_OBSERVATION.findall(completed.stderr)
+                if len(job_observations) != 1:
+                    raise ValueError("broker job observation coverage differs")
+                observed_job_id = job_observations[0].decode("ascii")
+                if result.get("job_id") not in {observed_job_id, _WORKER_JOB_PLACEHOLDER if observed_job_id.startswith("gpuq-") else observed_job_id}:
+                    raise ValueError("worker and broker job identities differ")
+                result = dict(result)
+                result["job_id"] = observed_job_id
+                result_bytes = canonical_json_bytes(result)
+                counters = result["counters"]
+                if not isinstance(counters, Mapping) or set(counters) != {
+                    "compiler_invocations",
+                    "module_loads",
+                    "preflight_calls",
                     "kernel_calls",
+                    "timing_samples",
                     "fallback_calls",
-                    "timing",
-                    "artifacts",
                 }:
-                    raise ValueError("evaluator receipt fields differ")
-                artifact_refs = receipt_value["artifacts"]
-                expected_artifacts = (
-                    {"correctness_output", "launch_receipt", "profile"}
-                    if purpose == "attribution"
-                    else {"correctness_output", "launch_receipt", "timing_samples"}
-                )
-                if (
-                    not isinstance(artifact_refs, Mapping)
-                    or set(artifact_refs) != expected_artifacts
-                ):
-                    raise ValueError("evaluator receipt artifact roles differ")
-                payloads = {
-                    str(role): self._read_output_artifact(root, path, str(role))
-                    for role, path in artifact_refs.items()
-                }
-                correctness = receipt_value["correctness"]
-                timing = receipt_value["timing"]
-                if not isinstance(correctness, Mapping) or (
-                    timing is not None and not isinstance(timing, Mapping)
-                ):
-                    raise ValueError("evaluator receipt observation fields differ")
-                receipt = EvaluationReceipt(
-                    candidate_sha256=candidate.candidate_sha256,
-                    workload_sha256=self._workload_sha256,
-                    evaluation_protocol_sha256=self._protocol_sha256,
-                    purpose=purpose,
-                    case_id=case_id,
-                    correctness_passed=receipt_value["correctness_passed"] is True,
-                    correctness=dict(correctness),
-                    kernel_calls=int(receipt_value["kernel_calls"]),
-                    fallback_calls=int(receipt_value["fallback_calls"]),
-                    launch_receipt_sha256=sha256(payloads["launch_receipt"]).hexdigest(),
-                    timing=dict(timing) if timing is not None else None,
-                    artifact_payloads=payloads,
-                )
-                if self._protocol is not None:
-                    validate_receipt_policy(receipt, self._protocol,
-                        candidate_identity(self._baseline) if self._baseline is not None else None,
-                        candidate)
-                validate_paired_broker(receipt, observed_job_id, counters)
+                    raise ValueError("evaluator command counters differ")
+                receipt: EvaluationReceipt | None = None
+                receipt_value = result["receipt"]
+                if receipt_value is not None:
+                    if not isinstance(receipt_value, Mapping) or set(receipt_value) != {
+                        "correctness_passed",
+                        "correctness",
+                        "kernel_calls",
+                        "fallback_calls",
+                        "timing",
+                        "artifacts",
+                    }:
+                        raise ValueError("evaluator receipt fields differ")
+                    artifact_refs = receipt_value["artifacts"]
+                    expected_artifacts = (
+                        {"correctness_output", "launch_receipt", "profile"}
+                        if purpose == "attribution"
+                        else {"correctness_output", "launch_receipt", "timing_samples"}
+                    )
+                    if (
+                        not isinstance(artifact_refs, Mapping)
+                        or set(artifact_refs) != expected_artifacts
+                    ):
+                        raise ValueError("evaluator receipt artifact roles differ")
+                    payloads = {}
+                    for role, path in artifact_refs.items():
+                        payload = self._read_output_artifact(root, path, str(role))
+                        payloads[str(role)] = payload
+                        fault_artifacts[f"receipt_{role}"] = payload
+                    correctness = receipt_value["correctness"]
+                    timing = receipt_value["timing"]
+                    if not isinstance(correctness, Mapping) or (
+                        timing is not None and not isinstance(timing, Mapping)
+                    ):
+                        raise ValueError("evaluator receipt observation fields differ")
+                    receipt = EvaluationReceipt(
+                        candidate_sha256=candidate.candidate_sha256,
+                        workload_sha256=self._workload_sha256,
+                        evaluation_protocol_sha256=self._protocol_sha256,
+                        purpose=purpose,
+                        case_id=case_id,
+                        correctness_passed=receipt_value["correctness_passed"] is True,
+                        correctness=dict(correctness),
+                        kernel_calls=int(receipt_value["kernel_calls"]),
+                        fallback_calls=int(receipt_value["fallback_calls"]),
+                        launch_receipt_sha256=sha256(payloads["launch_receipt"]).hexdigest(),
+                        timing=dict(timing) if timing is not None else None,
+                        artifact_payloads=payloads,
+                    )
+                    if self._protocol is not None:
+                        validate_receipt_policy(receipt, self._protocol,
+                            candidate_identity(self._baseline) if self._baseline is not None else None,
+                            candidate)
+                    validate_paired_broker(receipt, observed_job_id, counters)
 
-            evaluator_authority = dict(evaluator_arguments)
-            evaluator_authority.pop("attempt")
-            evaluator_arguments_sha256 = sha256(
-                canonical_json_bytes(evaluator_authority)
-            ).hexdigest()
-            return BrokerAttempt(
-                job_id=str(result["job_id"]),
-                mode=str(result["mode"]),
-                candidate_sha256=candidate.candidate_sha256,
-                manifest_sha256=candidate.launch_spec_sha256,
-                policy_sha256=self._protocol_sha256,
-                evaluator_arguments_sha256=evaluator_arguments_sha256,
-                admitted=result["admitted"] is True,
-                error=str(result["error"]) if result["error"] is not None else None,
-                compiler_invocations=int(counters["compiler_invocations"]),
-                module_loads=int(counters["module_loads"]),
-                preflight_calls=int(counters["preflight_calls"]),
-                kernel_calls=int(counters["kernel_calls"]),
-                timing_samples=int(counters["timing_samples"]),
-                fallback_calls=int(counters["fallback_calls"]),
-                receipt=receipt,
-                artifact_payloads={
-                    "evaluator_request": canonical_json_bytes(evaluator_arguments),
-                    "broker_record": result_bytes,
-                    "evaluator_result": worker_result_bytes,
-                    "stdout": completed.stdout,
-                    "stderr": completed.stderr,
-                },
-            )
+                evaluator_authority = dict(evaluator_arguments)
+                evaluator_authority.pop("attempt")
+                evaluator_arguments_sha256 = sha256(
+                    canonical_json_bytes(evaluator_authority)
+                ).hexdigest()
+                return BrokerAttempt(
+                    job_id=str(result["job_id"]),
+                    mode=str(result["mode"]),
+                    candidate_sha256=candidate.candidate_sha256,
+                    manifest_sha256=candidate.launch_spec_sha256,
+                    policy_sha256=self._protocol_sha256,
+                    evaluator_arguments_sha256=evaluator_arguments_sha256,
+                    admitted=result["admitted"] is True,
+                    error=str(result["error"]) if result["error"] is not None else None,
+                    compiler_invocations=int(counters["compiler_invocations"]),
+                    module_loads=int(counters["module_loads"]),
+                    preflight_calls=int(counters["preflight_calls"]),
+                    kernel_calls=int(counters["kernel_calls"]),
+                    timing_samples=int(counters["timing_samples"]),
+                    fallback_calls=int(counters["fallback_calls"]),
+                    receipt=receipt,
+                    artifact_payloads={
+                        "evaluator_request": canonical_json_bytes(evaluator_arguments),
+                        "broker_record": result_bytes,
+                        "evaluator_result": worker_result_bytes,
+                        "stdout": completed.stdout,
+                        "stderr": completed.stderr,
+                    },
+                )
+            except (ValueError, TypeError, KeyError, OSError) as error:
+                raise RunProtocolFault(
+                    "broker_fault",
+                    f"evaluator evidence rejected ({type(error).__name__}): {error}",
+                    artifact_payloads=fault_artifacts,
+                ) from error
