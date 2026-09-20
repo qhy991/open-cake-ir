@@ -1054,10 +1054,11 @@ class LabContractTests(SemanticLabTestCase):
         )
         self.assertTrue(
             all(
-                artifact["source_turn"] == 2
+                artifact["source_turn"] == 1  # Turn 2 crossed this fixture's 150k token limit.
                 for artifact in report.descriptive["promoted_artifacts"].values()
             )
         )
+        self.assertTrue(all(audit.endpoint_observation == 'no_qualified_candidate' for audit in report.run_audits))
         self.assertIsNone(report.estimand)
         self.assertFalse(report.estimand_available)
         self.assertIsNone(report.estimate)
