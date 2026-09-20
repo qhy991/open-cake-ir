@@ -157,7 +157,7 @@ def _correctness_preparation(authority, case_id):
 def _prepare_local_tensor_work(authority, kind):
     if os.environ.get('METAL_BROKER_LOCK_FD') or os.environ.get('GPUQ_JOB_ID'):
         raise ValueError('CPU preparation cannot start inside an existing allocation')
-    if (authority.allocation_mode != 'local_broker'
+    if (authority.allocation_mode != 'local_serialized'
             or platform_for(authority.candidate.target).local_job_prefix != kind
             or not isinstance(authority.manifest, TensorLaunchManifest)):
         raise ValueError('local CPU preparation requires its declared tensor allocation route')

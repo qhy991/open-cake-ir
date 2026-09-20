@@ -16,6 +16,7 @@ from open_cake_ir.evaluation.core import EvaluationProtocol, LaunchableCandidate
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks import evaluate as worker, workloads
+from open_cake_ir.tasks.devices import allocation_mode
 from open_cake_ir.tasks.normalization.study import evaluation_policy
 from open_cake_ir.tasks.tiles.evaluation import PreparedTensorCase, evaluate_tile_validation_case
 
@@ -43,7 +44,7 @@ class LocalTensorPreparation(unittest.TestCase):
             {'purpose': 'confirmatory', 'evaluation_protocol': evaluation_policy(self.workload)},
             self.root, None, self.workload, self.manifest, self.candidate,
             self.candidate.artifact_payloads, 'primary', self.candidate,
-            allocation_mode='local_broker')
+            allocation_mode=allocation_mode(self.candidate.target))
 
     def unlocked(self):
         fd = local_broker._acquire(self.lock)
