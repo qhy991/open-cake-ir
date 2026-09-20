@@ -68,7 +68,7 @@ def prepare_batch(profile_path, workspace, run_root, ids=None):
     rows = select_tasks(ids)
     commit = checkout_commit(ROOT)
     profile = json.loads(profile_path.read_text())
-    kernel_experiment.object_fields(profile, {'schema_version', 'provider', 'budget', 'node'})
+    kernel_experiment.object_fields(profile, {'schema_version', 'provider', 'budget', 'node'}, {'pointer_alignment'})
     if type(profile['schema_version']) is not int or profile['schema_version'] != 1:
         raise ValueError('profile schema_version must be 1')
     workspace = workspace.absolute()
@@ -91,6 +91,9 @@ def prepare_batch(profile_path, workspace, run_root, ids=None):
                              'backend': row['backend'], 'rows': row['rows'],
                              'columns': row['columns'], 'node': node}]}
         kernel_experiment.validate(config)
+        if 'pointer_alignment' in profile:
+            config['cells'][0]['pointer_alignment'] = profile['pointer_alignment']
+            kernel_experiment.validate(config)
         configs.append((row, config))
     # All selected input contracts must pass before creating the batch.
     workspace.mkdir(parents=True, exist_ok=False)
@@ -102,6 +105,7 @@ def prepare_batch(profile_path, workspace, run_root, ids=None):
         kernel_experiment.prepare(config_path, path)
         with (path / 'scaffold.md').open('a') as stream:
             stream.write(AUTHORING.format(**row))
+            stream.write('\n\n' + (PACK / 'AUTHORING.md').read_text())
         manifest['tasks'].append({'id': row['id'], 'cell_id': config['cells'][0]['id']})
     kernel_experiment.write(workspace / 'manifest.json', json.dumps(manifest, indent=2) + '\n')
     return manifest

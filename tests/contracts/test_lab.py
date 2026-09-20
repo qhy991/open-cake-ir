@@ -204,7 +204,7 @@ class FakeProvider:
                 },
                 {
                     "type": "turn.completed",
-                    "usage": {"input_tokens": 70000, "output_tokens": 10000},
+                    "usage": {"input_tokens": request.cumulative_provider_tokens + 70000, "output_tokens": 10000},
                 },
             )
         ) + b"\n"
@@ -836,7 +836,7 @@ class LabContractTests(SemanticLabTestCase):
                 observed = super().turn(request)
                 events = [json.loads(line) for line in observed.raw_events.splitlines()]
                 events[-1]["usage"] = {
-                    "input_tokens": 60000,
+                    "input_tokens": request.cumulative_provider_tokens + 60000,
                     "output_tokens": 10000,
                 }
                 raw_events = b"".join(

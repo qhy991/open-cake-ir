@@ -635,7 +635,7 @@ class _Builder:
                     self.fail(node, "variables are single-assignment; use an explicit out buffer for effects")
                 result = self.value(node.value, name)
                 if name not in self.symbols:
-                    if isinstance(result, (_Ref, _Access, _Broadcast)):
+                    if isinstance(result, (_Ref, _Access)):
                         self.fail(node, "assign an operation result or a declaration, not an alias")
                     self.symbols[name] = result
             elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):

@@ -1,0 +1,29 @@
+--- a/candidate.cu
++++ b/candidate.cu
+@@ -257,9 +257,8 @@
+     const void*      arg_residual = nullptr;
+     const void*      arg_weight   = nullptr;
+     void*            arg_output   = nullptr;
+-    int              arg_M        = 0;
+     float            arg_eps      = 0.0f;
+-    void*            arg_addrs[6] = {nullptr};
++    void*            arg_addrs[5] = {nullptr};
+     cudaKernelNodeParams params{};
+ };
+ 
+@@ -339,14 +338,12 @@
+     e.arg_residual = rp;
+     e.arg_weight   = wp;
+     e.arg_output   = op;
+-    e.arg_M        = e.M;
+     e.arg_eps      = eps;
+     e.arg_addrs[0] = &e.arg_hidden;
+     e.arg_addrs[1] = &e.arg_residual;
+     e.arg_addrs[2] = &e.arg_weight;
+     e.arg_addrs[3] = &e.arg_output;
+-    e.arg_addrs[4] = &e.arg_M;
+-    e.arg_addrs[5] = &e.arg_eps;
++    e.arg_addrs[4] = &e.arg_eps;
+     e.params.kernelParams = e.arg_addrs;
+     e.params.extra        = nullptr;
+ 

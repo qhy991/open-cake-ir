@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from hashlib import sha256
 from typing import Callable, Mapping
 
@@ -20,6 +21,16 @@ from open_cake_ir.serialization import canonical_json_bytes
 
 ATTRIBUTION_EVALUATIONS = frozenset({
     "correctness_then_profile", "correctness_then_profile_each_search_survivor"})
+
+
+@dataclass(frozen=True)
+class TensorProfileFormat:
+    """A source owns its profile representation, validation and feedback projection."""
+    kind: str
+    summary: Callable
+    load: Callable
+    feedback: Callable  # receives the profile and its already-validated launch record
+    validate_launch: Callable
 
 
 def load_instrumented_profile(payload: bytes, *, kind: str, job_prefix: str, label: str,

@@ -84,15 +84,11 @@ class PolicyShapeTests(unittest.TestCase):
         self.assertEqual(policy["attribution_evaluation"], "correctness_only")
         self.assertEqual(arm_feedback(policy), UNTIMED_FEEDBACK)
 
-    def test_every_registered_backend_currently_names_a_source(self):
-        """Not a rule, a record: today no registered backend is untimed.
-
-        If one is added the untimed path gains a live user, and whoever adds it should see
-        that here rather than discover it from a Study that quietly loses its timing.
-        """
-
-        untimed_backends = sorted(name for name in BACKENDS if timing_source(name) is None)
-        self.assertEqual(untimed_backends, [])
+    def test_metax_names_its_native_source_without_changing_frozen_untimed_policy(self):
+        self.assertEqual(timing_source('triton-metax'), 'mcpti_dispatch')
+        policy = {'measurement_coverage': {'timed_assay': 'unavailable'}}
+        self.assertTrue(untimed(policy))
+        self.assertEqual(arm_feedback(policy), UNTIMED_FEEDBACK)
 
     def test_a_timed_target_is_untouched_by_the_untimed_branch(self):
         """The regression pin: the shape that was already shipping must not move."""

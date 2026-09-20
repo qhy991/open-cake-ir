@@ -6,17 +6,27 @@ Paths below are relative to `src/open_cake_ir/` unless they start with `tests/`,
 ## Branch and worktree routing
 
 Follow [Development branches](docs/DEVELOPMENT_BRANCHES.md), the canonical owner of the
-five maintained branches, task naming, shared-code routing, integration and synchronization.
+maintained branches, task naming, shared-code routing, integration and synchronization.
 New work uses `task/<platform-or-core>-<subject>` without a `codex/` prefix and its own
 worktree. Inspect existing worktrees before editing; preserve other tasks' local branches
 and active checkouts. Merged task branches are removed from GitHub; archive tags retain historical
-work outside the five maintained branches. A platform branch is a maintenance boundary,
+work outside the maintained branches. A platform branch is a maintenance boundary,
 not a fork of the shared Compiler.
+
+## GPU resource discipline
+
+Before preparing, launching or releasing GPU Evaluation work, read and apply the
+installed `gpu-infra` skill's
+[GPU lease lifecycle](https://github.com/qhy991/gpu-infra/blob/main/skills/gpu-infra/SKILL.md#gpu-lease-lifecycle).
+That skill owns allocation and release procedure; keep its rules in that one place.
+For this repository, a phase-boundary change is an Executor/source change: implement
+and validate it in a successor commit before a new Campaign, preserving the Workload,
+oracle and measurement contract. Existing frozen Campaigns retain their original code.
 
 ## Targets are peers, and the shared layers are vendor-neutral
 
-Four vendors are declared as peers -- NVIDIA, Apple, AMD and Hygon, the closed `Vendor`
-set in `compiler/target.py` -- across seven declared targets. Where this section
+Five vendors are declared as peers -- NVIDIA, Apple, AMD, Hygon and MetaX, the closed `Vendor`
+set in `compiler/target.py` -- across eight declared targets. Where this section
 conflicts with another rule in this file, this section wins. It adds no portability: the
 exact target match, a refusal that never steps a Schedule down, and the absence of a layout
 algebra all stand. Each invariant names the code that holds it and the test that pins it,
@@ -25,7 +35,7 @@ in `findings/`, not here.
 
 - **A same-vendor target is a document.** `tests/contracts/test_target_documents.py::
   SameVendorTargetIsADocumentTest` loads a synthetic `sm_120a` and a synthetic
-  `apple_gpu_family10` beside the seven declared documents, lowers one through Triton and
+  `apple_gpu_family10` beside the declared documents, lowers one through Triton and
   one through Metal with no shared-code edit, routes the Triton emission offline, and
   checks that `sm_120a` refuses what it does not declare. A new vendor is that plus its
   own platform package and a `Vendor` member.
@@ -39,7 +49,9 @@ in `findings/`, not here.
 - **Vendor identity is declared; no vendor lives in the `else`.** `Vendor` and
   `CodeObject` are closed enums (D2). Field admission in the parser keys on the code
   object, not the vendor: `compute_capability` and `warps_per_warpgroup` exist exactly on
-  `cubin` documents. `test_vendor_neutrality.py::NoVendorInTheElseTest` fails on a shared
+  `cubin` documents. MACA's `triton_arch` is an explicit compatibility API value, distinct
+  from its physical target and native codegen family (`test_metax_platform.py`).
+  `test_vendor_neutrality.py::NoVendorInTheElseTest` fails on a shared
   rule that reads the presence of a CUDA field as identity, and the rest of that file
   holds the shared layers against a synthetic third-vendor fixture bound by no Revision.
 - **An undeclared fact is reported, never substituted and never dereferenced.** A limit
@@ -61,7 +73,8 @@ in `findings/`, not here.
   `test_register_split_ownership.py` pins it.
 - **Route facts ride the emission, and the offline jail opens no document (D3).**
   `backends.triton.target_route_facts(target)` writes `code_object`, `triton_arch` and
-  `warp_size` into the toolchain requirements; `toolchain.triton_route(requirements)`
+  `warp_size` into the toolchain requirements, plus the declared native `codegen_arch`
+  where it differs from the API architecture; `toolchain.triton_route(requirements)`
   derives everything else from the code object and refuses a missing key. No backend or
   toolchain module keeps a table of target ids, a compute-capability pair, or a lane
   width the document already declares. `test_vendor_neutrality.py::
@@ -87,7 +100,8 @@ in `findings/`, not here.
   test_an_unlisted_target_is_refused_not_stepped_down`).
 - **A backend is an emission mechanism, not a vendor.** `LoweringBackend` has four
   members, and the Triton route serves sm_100a, sm_103a, gfx938 and gfx1151 from one of
-  them. A new vendor reaching an existing emitter adds a Target document and, where
+  them, and the MACA route serves xcore1002 through the same emitter. A new vendor
+  reaching an existing emitter adds a Target document and, where
   needed, that backend's own preflight, calibration and tests -- no `LoweringBackend`
   member. `test_backend_boundaries.py` holds the registry equal to the enum and every
   backend's `CODE_OBJECTS` declared.
@@ -200,6 +214,13 @@ The paper states eight. They bind IR changes here.
   legality to the verifier, missing expressibility to IR or lowering. A promoted pass
   states its preconditions, returns a complete candidate or a reason, and is exercised on
   counterexamples that the intended guard -- not an unrelated rule -- refuses.
+
+- In fusion, tiling and memory-hierarchy investigations, distinguish reusable rewrites
+  from target-specific mappings and record the promotion disposition under the existing
+  workflow; the [transfer design](docs/OPTIMIZATION_TRANSFER.md) owns the method. In controlled
+  studies, the Study's material and pass-access treatment takes precedence: do not inject
+  withheld experience or transformations into an ablation arm. This is a research priority,
+  not evidence that transfer works or a requirement to mint a pass.
 
 ## Tick-tock between campaigns and Revisions
 
