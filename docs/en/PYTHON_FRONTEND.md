@@ -29,7 +29,7 @@ def fma(lm, a: cake.Tensor((8, 128), "fp32"), b: cake.Tensor((8, 128), "fp32"),
 
 Tensor parameters declare fixed shapes, dtype, and mode. A role owns the operations in its with block; program selects row work. Loads establish data dependencies, fma computes the result, and store writes output. Intermediate register shapes and types are inferred.
 
-`lm.fma` preserves the existing single RN-even rounding contract. `a*b+c` constructs two independent operations. `lm.broadcast(value,axis=...)` uses the existing broadcast_axis relation, not a new splat or reshape.
+`lm.fma` preserves the existing single RN-even rounding contract. `a*b+c` constructs two independent operations. `lm.broadcast(value,axis=...)` uses the existing broadcast_axis relation, not a new splat or reshape. A broadcast marker may be named before use; the name is erased into the same canonical relation. The axis is the retained vector axis: for [R,C], weights [C] use axis=1 and row reductions [R] use axis=0.
 
 ## Check and generate without a GPU
 

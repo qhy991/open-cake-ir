@@ -323,7 +323,8 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             "TRITON_ARANGE_RANGE_UNSUPPORTED",
             path,
             f"Triton arange [{start}, {end}) requires 32-bit endpoints and a "
-            "positive power-of-two span no larger than 1048576",
+            "positive power-of-two span no larger than 1048576; use a power-of-two "
+            "tiled program coordinate for masked tails, or exact power-of-two slices",
         )
 
     if schedule.program_map is not None:

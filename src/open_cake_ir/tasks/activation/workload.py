@@ -13,9 +13,9 @@ value is `relu(x) + relu(-x)`, and SELU's two arms come from `relu(x)` and `x - 
 rather than from a conditional. `AKA_PARENTS` carries the derived parent id into each
 frozen document's provenance so the lineage stays inspectable.
 
-The mathematics is device-independent. A backend binds one Target, one lowering route and
-that route's own instruction contracts, and `open_cake_ir.tasks.devices` owns that table,
-so the same task freezes for an Apple device or an NVIDIA one without being rewritten.
+The mathematics is device-independent. The device registry binds a Target and a lowering
+route; instruction admission is read from that Target's typed contract declarations.
+The same task freezes for each admitted device without duplicating those declarations.
 
 The Ralph engine owns search and evaluation; these functions neither import candidates
 nor launch a device.

@@ -117,7 +117,11 @@ class MetalPreflightTests(unittest.TestCase):
                 self.assertIn('```python',package.task_markdown)
                 self.assertEqual(study['arms']['open_cake']['scaffold']['path'],
                                  'contracts/scaffolds/python-artifact-optimization-v2.md')
-                self.assertIn((ROOT/SCAFFOLD).read_text().strip(), package.task_markdown)
+                # The package owner delivers the frozen scaffold in AGENTS.md and
+                # references it from TASK.md; do not require a second body copy.
+                self.assertIn((ROOT/SCAFFOLD).read_text().strip(), package.agents_markdown)
+                self.assertNotIn((ROOT/SCAFFOLD).read_text().strip(), package.task_markdown)
+                self.assertIn('AGENTS.md', package.task_markdown)
                 self.assertIn('execution_groups=[0]', package.task_markdown)
                 self.assertIn('tile=1', package.task_markdown)
                 self.assertIn('coalesced=False', package.task_markdown)

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-20-005",
+  "kind": "bug",
+  "date": "2026-09-20",
+  "title": "GEMM host array inputs differ from identical driver list snapshots",
+  "backend": "shared evaluation",
+  "target": "sm_103a observed; shared contract repair",
+  "compiler_revision_id": "open-cake-ir@2812dd95",
+  "executor_revision": "sm_103a@2812dd95",
+  "evidence": {
+    "workspace": "B300:/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-{m2,m3}",
+    "runs": "004_gemm_n128_k2048,005_gemm_n256_k7168",
+    "events": "campaign-evidence/runs/open_cake-1/events; provider_turn_completed and candidate_rejected; evaluator_request retained by run_fault",
+    "local_source_replay": "/tmp/cake-rejected-submissions-20260920.json"
+  },
+  "observation": "The exact fib_gemm_n128_k2048 zeros materializer returns array.array. LoadedTorchTensorCandidate stores lists, so its inputs != self.inputs check refuses equal values. compare_tile_outputs repeats the container equality mistake: zero output_mismatches but inputs_unchanged=false for identical data. Both 004 and 005 retained GPU workers failed with loaded tensor assay input or candidate differs.",
+  "proposed_change": "Compare tensor values and lengths across admitted host sequence containers, preserving signed-zero bit checks, candidate/manifest identity and input mutation refusal. No Workload, tolerance or kernel change.",
+  "decision": "accepted",
+  "implemented_in": "3bb1d22a",
+  "verified_by": {
+    "source_commit": "3bb1d22a",
+    "kind": "CPU reproduction of actual GEMM array materialization and focused shared contracts",
+    "outcome": "Unchanged array/list inputs now pass both loaded-assay and post-launch input checks; changed values, signed zero, lengths, keys and candidate/manifest identities still refuse.",
+    "focused_tests": "61 passed, 4 environment skips, 67 subtests",
+    "corpus_cases": 164,
+    "scope": "Software repair verified; fresh Common Evaluation replay remains separately reported."
+  },
+  "principles": "Tensor ABI owns values, shapes and precision; Python sequence container type is not a tensor fact."
+}

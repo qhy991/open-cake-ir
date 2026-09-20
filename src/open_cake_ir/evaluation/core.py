@@ -510,6 +510,22 @@ class TensorLaunchManifest(WorkloadTensorManifest):
             'hidden_null_pointer_parameters': self.hidden_null_pointer_parameters}
 
 
+
+def _same_tensor_inputs(before, after):
+    """Compare admitted tensor values, not the host sequence container spelling.
+
+    Workloads may materialize array.array while driver snapshots return lists.
+    Preserve the existing signed-zero/bit-pattern check and reject any changed
+    field, length or value before accepting an unchanged-input observation.
+    """
+    import struct
+    if not isinstance(before, Mapping) or not isinstance(after, Mapping) or set(before) != set(after):
+        return False
+    return all(len(after[name]) == len(values) and all(
+        a == b and struct.pack('>d', float(a)) == struct.pack('>d', float(b))
+        for a, b in zip(values, after[name], strict=True))
+        for name, values in before.items())
+
 def compare_tile_outputs(workload, before, expected, observed, after):
     """One comparison owner for fresh and already-recorded tensor launches."""
     import struct
@@ -556,10 +572,7 @@ def compare_tile_outputs(workload, before, expected, observed, after):
                     mismatch += (abs(value) > 3.4028234663852886e38 or struct.pack('>f', value) != struct.pack('>f', reference))
                 else:
                     mismatch += error > rule['atol'] + rule['rtol'] * abs(reference)
-    unchanged = after == before and all(
-        struct.pack('>d', float(a)) == struct.pack('>d', float(b))
-        for name in before for a, b in zip(after[name], before[name], strict=True)
-    )
+    unchanged = _same_tensor_inputs(before, after)
     metrics = {'output_mismatches': mismatch, 'max_abs_error': maximum_error, 'inputs_unchanged': unchanged}
     return mismatch == 0 and unchanged, metrics
 
@@ -652,7 +665,7 @@ class LoadedTorchTensorCandidate:
         from dataclasses import asdict
         if (candidate.canonical_sha256 != self.candidate.canonical_sha256
             or manifest.canonical_sha256 != self.manifest.canonical_sha256
-            or inputs != self.inputs):
+            or not _same_tensor_inputs(self.inputs, inputs)):
             raise ValueError('loaded tensor assay input or candidate differs')
         for (_, _, dtype, mode), argument in zip(manifest.tensor_abi, self.arguments, strict=True):
             if mode == 'output':

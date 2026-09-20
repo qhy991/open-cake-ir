@@ -17,10 +17,8 @@ down instead of being spread through each family's authoring code:
   Study for it is refused rather than declared against whichever source the code reaches
   by falling through. A DCU has no CUPTI, and a study that said `paired_cupti` on one
   would have labelled its evidence with a profiler that is not installed;
-* the instruction contract for `tanh`, which each Target names in its own vocabulary --
-  `metal.precise.tanh.f32` against Metal's named-precision function, `libdevice.tanh.f32`
-  against the CUDA one. They are different functions and neither Target admits the other's
-  spelling, which is the point of naming a contract at all;
+* instruction contracts come from each Target document and the typed IR registry;
+  this task registry does not keep a second copy of their admission;
 * whether the route can tile a row whose width is not a power of two. The Metal emitter
   stripes any width over 32 lanes; Triton's `tl.arange` requires a positive power-of-two
   span, so a Workload frozen at an odd width has no Triton Schedule to compare against
@@ -48,49 +46,37 @@ BACKENDS = {
     "metal-m1-pro": {"target": "apple_gpu_family7", "device_name": "Apple M1 Pro",
                      "provenance_token": "M1_Pro", "route": "metal",
                      "allocation": "local_broker",
-                     "tanh_contract": "metal.precise.tanh.f32", "timing_source": "metal",
+                     "timing_source": "metal",
                     "power_of_two_width": False},
     "metal-m2": {"target": "apple_gpu_family8", "device_name": "Apple M2",
                  "provenance_token": "M2", "route": "metal",
                  "allocation": "local_broker",
-                 "tanh_contract": "metal.precise.tanh.f32", "timing_source": "metal",
+                 "timing_source": "metal",
                     "power_of_two_width": False},
     "metal-m4": {"target": "apple_gpu_family9", "device_name": "Apple M4",
                  "provenance_token": "M4", "route": "metal",
                  "allocation": "local_broker",
-                 "tanh_contract": "metal.precise.tanh.f32", "timing_source": "metal",
+                 "timing_source": "metal",
                     "power_of_two_width": False},
     "triton-b200": {"target": "sm_100a", "device_name": "NVIDIA B200",
                     "provenance_token": "B200", "route": "triton",
                     "allocation": "gpu_run",
-                    "tanh_contract": "libdevice.tanh.f32", "timing_source": "cupti",
+                    "timing_source": "cupti",
                     "power_of_two_width": True},
     "triton-b300": {"target": "sm_103a", "device_name": "NVIDIA B300",
                     "provenance_token": "B300", "route": "triton",
                     "allocation": "gpu_run",
-                    "tanh_contract": "libdevice.tanh.f32", "timing_source": "cupti",
+                    "timing_source": "cupti",
                     "power_of_two_width": True},
-    # Hygon DCU. `tanh_contract` was None while gfx938 declared no tanh contract: on ROCm
-    # Triton's `libdevice` resolves to ocml, and reusing the CUDA spelling would have
-    # claimed NVIDIA libdevice numerics for a different function. The device now declares
-    # its own, `ocml.tanh.f32`, measured on a BW1101 at ~1 ulp of fp32 against torch.tanh
-    # across the saturating tails -- so the family is admitted here under the spelling of
-    # the library that actually answers, not borrowed under another vendor's. The
-    # measurement and what it replaced are in docs/dcu-gfx938-design.md; the pointer was
-    # dropped once while that document still said the opposite, which is worse than a
-    # stale reference because nothing then leads a reader to the page that needs fixing.
+    # Hygon DCU. Instruction contracts are read from its Target document.
     "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
                    "provenance_token": "BW1101", "route": "triton",
                    "allocation": "local_broker",
-                   "tanh_contract": "ocml.tanh.f32", "timing_source": "hip_dispatch",
+                   "timing_source": "hip_dispatch",
                    "power_of_two_width": True},
     # Strix Halo, an RDNA3.5 iGPU on ROCm 7.2.1. It reaches its device the way the DCU
     # does -- one visible device on one machine, serialized by the local broker -- and
     # lowers through Triton like a B200, which is why those two axes are separate rows.
-    # `tanh_contract` is None for the same reason gfx938's is: this Target declares no
-    # instruction contracts, and ROCm Triton's `libdevice` resolves to ocml, so the CUDA
-    # spelling would claim NVIDIA numerics for a different function.
-    #
     # `timing_source` was None until something measured on this device. `HipDispatchBenchmark`
     # was then run here against the gfx1151-rmsnorm-b8-smoke kernel, ROCm 7.2.1, torch
     # 2.9.1: 25 dispatches with the device reset before each, median 31.858us, min 31.217,
@@ -106,7 +92,7 @@ BACKENDS = {
     "triton-gfx1151": {"target": "gfx1151", "device_name": "AMD Radeon Graphics",
                        "provenance_token": "gfx1151", "route": "triton",
                        "allocation": "local_broker",
-                       "tanh_contract": None, "timing_source": "hip_dispatch",
+                       "timing_source": "hip_dispatch",
                        "power_of_two_width": True},
 }
 
@@ -220,13 +206,28 @@ def tanh_contract(backend: str) -> str:
     Target's spelling and finding out at lowering, or worse, lowering against numerics
     nobody measured on this hardware.
     """
-    contract = BACKENDS[backend]["tanh_contract"]
-    if contract is None:
+    from open_cake_ir.compiler.ir.instruction_contracts import contract
+    from open_cake_ir.compiler.ir.vocabulary import DType, ElementwiseOp
+    from open_cake_ir.compiler.target import Target
+
+    root = Path(__file__).resolve().parents[3]
+    target_id = BACKENDS[backend]["target"]
+    target = Target.load(root / "compiler" / "targets" / f"{target_id}.json")
+    names = []
+    for name in sorted(target.instruction_contracts):
+        record = contract(name)
+        if (record is not None and record.elementwise_op is ElementwiseOp.TANH
+                and record.elementwise_dtype is DType.FP32):
+            names.append(name)
+    if not names:
         raise ValueError(
             f"{backend} has no admitted tanh instruction contract, so no task in this "
             "family that needs one has a Schedule on it; admitting one is a Target "
             "change with its own hardware evidence")
-    return contract
+    if len(names) != 1:
+        raise ValueError(f"{backend} admits multiple FP32 tanh contracts {names!r}; "
+                         "the task needs an explicit instruction choice")
+    return names[0]
 
 
 def admit_cohort_payload(workload, case_id: str, route_calls_per_cohort: int) -> None:
