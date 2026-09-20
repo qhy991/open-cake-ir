@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-20-005",
+  "kind": "protocol",
+  "date": "2026-09-20",
+  "title": "Tool-rich Codex progress prose is rejected as a malformed structured terminal",
+  "backend": "Codex tool_rich_candidate_v1; codex-cli 0.155.1; gpt-6-astra xhigh",
+  "target": "gfx1151 qualification; zero GPU execution",
+  "compiler_revision_id": "open-cake-ir@b0c3ab075a22e35d19d0799b79d3ebf2daee005f",
+  "executor_revision": "none instantiated; provider qualification only",
+  "evidence": {
+    "workspace": "infplane:/home/wwxq/oci-lab/amd-lab-launch-20260920/provider-qualification-r4-workspace",
+    "evidence_root": "infplane:/home/wwxq/oci-lab/amd-lab-launch-20260920/provider-qualification-r4-evidence",
+    "run_id": "amd-codex-01551-default-deadline",
+    "event": "runs/amd-codex-01551-default-deadline/events/000000000000.json",
+    "objects": "provider_stdout and provider_stderr references in that event",
+    "event_indices": "Original stdout index 2 is plain progress prose, index 13 is the exact expected structured terminal, and index 14 completes the turn with usage. The candidate file was written."
+  },
+  "observation": "The complete CLI turn writes its candidate and ends with the required JSON marker, but the adapter treats every completed agent_message as a terminal and rejects the leading progress prose. Network timeouts and the earlier unsupported CLI 0.146.0 are separate retained failures, not this finding.",
+  "proposed_change": "In tool-rich mode retain non-JSON progress messages as native auxiliary evidence. Require the final agent_message to be a structured terminal after functional work; keep JSON-like frames in the existing strict normalization. Preserve the closed research contract, usage checks, candidate postconditions and raw streams.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
