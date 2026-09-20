@@ -60,6 +60,11 @@ def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> i
         # replays through. Reading it from the artifact here would restate a settled
         # relation on a path nothing has reported a problem with.
         return 2
+    if route.gpu_backend == "maca":
+        from open_cake_ir.compiler.metax_toolchain import pointer_parameters
+        if pointer_parameters(stages[route.text_role]) != tensor_count:
+            raise ValueError("MACA kernel arguments differ from the Workload tensors")
+        return 0
     if route.gpu_backend != "hip":
         raise ValueError(f"no kernel argument inspector is registered for {route.gpu_backend!r}")
     from open_cake_ir.evaluation.triton_hip import amdgcn_kernarg_pointers

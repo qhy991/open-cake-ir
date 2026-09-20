@@ -115,7 +115,9 @@ def commit_project(root):
 
     run("init", "-q")
     run("add", "-A")
-    run("-c", "user.name=fixture", "-c", "user.email=fixture@invalid",
+    # The throwaway repository may be removed as soon as this function returns;
+    # a detached automatic-maintenance writer would race that strict cleanup.
+    run("-c", "maintenance.auto=false", "-c", "user.name=fixture", "-c", "user.email=fixture@invalid",
         "commit", "-q", "-m", "fixture checkout", "--allow-empty")
     # A fixture keeps generating into its project after this point -- a frozen Study,
     # a provider stub, a captured run. Those are outputs, not the source the commit

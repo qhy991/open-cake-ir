@@ -97,6 +97,7 @@ def parse_codex_turn_events(
 
     file_events: list[tuple[int, Mapping[str, object], Mapping[str, object]]] = []
     messages: list[tuple[int, str]] = []
+    last_agent_message_index: int | None = None
     auxiliary_events: dict[
         str, list[tuple[str, Mapping[str, object]]]
     ] = {}
@@ -143,7 +144,17 @@ def parse_codex_turn_events(
             text = item.get("text")
             if not isinstance(item_id, str) or not item_id or not isinstance(text, str):
                 raise ValueError("provider terminal message differs")
-            messages.append((index, text))
+            last_agent_message_index = index
+            if (event_contract == "tool_rich_candidate_v1"
+                    and text != expected_terminal_message
+                    and not text.lstrip().startswith(("{", "["))):
+                # Native JSONL has no phase field for agent_message. Plain progress
+                # prose is retained as auxiliary evidence, never functional activity
+                # or a structured terminal. JSON-like frames retain the strict checks.
+                auxiliary_events.setdefault(item_id, []).append((event_type, item))
+                auxiliary_positions.setdefault(item_id, index)
+            else:
+                messages.append((index, text))
         elif event_contract == "tool_rich_candidate_v1" and item_type in auxiliary_types:
             item_id = item.get("id")
             if not isinstance(item_id, str) or not item_id:
@@ -201,6 +212,9 @@ def parse_codex_turn_events(
     elif event_contract == "closed_file_change_v1":
         raise ValueError("provider must emit one complete file-change lifecycle")
 
+    if (event_contract == "tool_rich_candidate_v1"
+            and (not messages or messages[-1][0] != last_agent_message_index)):
+        raise ValueError("provider final agent message is not a structured terminal")
     normalization = _normalize_terminal_messages(
         messages, expected_terminal_message, start_index, stop_index,
     )

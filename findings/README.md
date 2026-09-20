@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-20-007 — Codex tool-rich progress prose is mistaken for a terminal despite a complete candidate write and exact final marker; preserve commentary as auxiliary evidence while retaining final-message and candidate gates (protocol, fixed and verified by original-stream/candidate replay, 99 CPU contracts and unchanged 164-case Corpus; a fresh Codex 0.155.1 / gpt-6-astra two-turn qualification also passed).
+
 - F-2026-09-20-003 — live composition rejects a canonical external AGENTS.md already admitted by the Study; scaffold custody must use the same external-file rule at execution (protocol, fixed at 0bd562c1 and closed by original bound-scaffold replay, 55 CPU tests and unchanged Corpus Gate; successor campaign outcome is separate).
 
 - F-2026-09-20-002 — a recovered Codex stream emits a top-level reconnect error before completing successfully; the Lab rejects the event vocabulary even though first-turn candidate output matches. The bounded recovered-notice path retains full turn/candidate checks and diagnostics (protocol, implemented at 0e3c0f87; closed at 1b51db28 by exact original-stream replay and fresh two-turn live qualification, alongside 103 CPU contracts and 164 unchanged Corpus cases; no network-reliability claim).
@@ -120,3 +122,6 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-18-005 — three DCU campaigns confirmed a candidate faster than its fixed baseline, per_channel_moments by 1.405 with both arms above the dispatch floor and above the declared 1.05 materiality; this corrects an earlier reading of the same evidence that said every discriminating run showed the candidate losing. Two more are nominally faster and inside the declared 1.05 materiality, so five are ahead and three by enough to say so; one further run -- gelu_tanh's discarded second campaign, which the record counts as the one that would have made four -- clears materiality with its candidate on the floor and is excluded for that reason. Candidate-versus-baseline inside one task under artifact_optimization_only, not a speedup against any external reference (behavior, proposed)
 
 - F-2026-09-20-004 — failed native file operations must retain failure status rather than masquerade as malformed lifecycles; explicit node-local Codex state is a bounded mitigation to qualify against helper loss and resume failure (protocol, original failed-event parsing replayed; new node-local two-turn qualification passed on M2 and M3; old failures unchanged).
+
+- F-2026-09-20-005 — equal GEMM array/list inputs were refused by container identity in the loader and output checker (bug, verification pending).
+- F-2026-09-20-006 — named broadcast markers were refused before shape checking; masked whole-row tails already use existing tiled program coordinates (capacity, verification pending; no new IR or pass).

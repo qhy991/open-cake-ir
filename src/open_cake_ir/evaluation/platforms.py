@@ -116,6 +116,24 @@ _ROWS = (
         attribution="inside_evaluate",
         profiled_child=False,
     ),
+    ExecutionPlatform(
+        code_object=CodeObject.MCFATBIN,
+        host_kind="maca",
+        build_roles=frozenset({"compiler_expanded_source", "ttir", "ttgir", "mcfatbin", "launch_manifest"}),
+        allowed_artifact_roles=frozenset({
+            "authored_source", "lowered_source", "compiler_expanded_source", "ttir", "ttgir",
+            "mcfatbin", "launch_manifest",
+        }),
+        launch_abi="workload_tensors_v1",
+        measurement_source=None,
+        paired_kinds=frozenset(),
+        protocol_timing=None,
+        route_calls_per_cohort=None,
+        exclusive_job_prefix=None,
+        local_job_prefix="maca",
+        attribution="unavailable",
+        profiled_child=False,
+    ),
 )
 
 PLATFORMS: Mapping[CodeObject, ExecutionPlatform] = MappingProxyType(

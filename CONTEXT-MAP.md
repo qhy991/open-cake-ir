@@ -57,6 +57,10 @@ merge to `main` can change Compiler semantics (ADR 0065).
 
 ## Where new information goes
 
+[Optimization knowledge transfer](docs/OPTIMIZATION_TRANSFER.md) owns the proposed transfer
+mechanism; its [method appendix](docs/OPTIMIZATION_TRANSFER_ABLATION.md) owns the planned E/P
+ablation. Executed study assignments and results remain owned by Study contracts and Evidence.
+
 | New information | Destination | Stable docs changed? |
 | --- | --- | --- |
 | Candidate or evaluation result | Campaign Evidence and Evaluation Receipt | No |

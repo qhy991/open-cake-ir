@@ -8,6 +8,10 @@ Agent 用 Python 编写显式执行计划，在固定任务与编译器版本下
 
 A research system for agent-driven GPU kernel search and compiler evolution.
 
+框架提出[跨硬件的可执行优化知识迁移](docs/OPTIMIZATION_TRANSFER.md)：将 Agent 发现的优化机制
+沉淀为带前提的显式变换，在目标平台重新选择参数并验证；通过机制材料与变换调用的消融，
+研究经验如何降低后续探索成本。已有有限 pass 作为基础，迁移效果仍待受控实验验证。
+
 [技术报告 / Technical report](docs/README.md) · [中文文档](docs/zh-CN/README.md) · [English](docs/en/README.md) · [当前状态](reports/current/STATUS.md)
 
 <!-- hardware-results:start -->
