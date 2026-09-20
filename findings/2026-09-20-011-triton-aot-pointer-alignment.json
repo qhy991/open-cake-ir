@@ -101,7 +101,7 @@
   "decision": "proposed",
   "implemented_in": "88aab6b27e8fdd350d0e8c1d5d57beebaba23dfc",
   "verified_by": null,
-  "promotion_disposition": "No performance promotion. Guarded AOT source binding is implemented and three real CPU builds succeeded; all 180 GPU pointer-guard/output checks passed on B300 in the prepare/local -> guard/broker -> verify/local flow. Each GPU worker exited before CPU verification. Matched GPU timing versus the unchanged control and external reference, and successor authoring campaigns, remain pending.",
+  "promotion_disposition": "001 now has qualified same-source AOT timing: 2.304 us aligned versus 2.496 us old optimized binary (1.0833x, 7.69 percent latency reduction). The external is 2.336 us and the unchanged 5 percent policy classifies that edge close_null, not a material external win. All 2550 snapshots passed. 002 and 025 bulk verification and successor authoring campaigns remain pending; no blanket performance promotion.",
   "renumbered_from": {
     "id": "F-2026-09-20-008",
     "path": "findings/2026-09-20-008-triton-aot-pointer-alignment.json",
@@ -274,5 +274,84 @@
     ],
     "total_checks_passed": 180,
     "performance_measured": false
-  }
+  },
+  "performance_replays": [
+    {
+      "task": "001_fused_add_rmsnorm_h2048",
+      "run_id": "nvidia-staged-alignment-comparison-20260920-df5de212bcdd",
+      "evidence_path": "B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-df5de212bcdd/stages/verify/comparison-report.json",
+      "judge_commit": "d31c551a8fbd4a947ad5b09053ded1787a3c0ac8",
+      "complete_snapshots_checked": 2550,
+      "correctness_passed": true,
+      "measurement_quality_passed": true,
+      "timed_interval": "Unchanged CUPTI device-activity span, cold L2 per sample, no timer fallback; all three edges in one exclusive allocation. CPU preparation precedes it; required preflight numerical gates stay before timing. Every timed/postflight tensor is retained in its original dtype for complete CPU verification after device worker exit.",
+      "roles": {
+        "optimized": "same-source candidate with guarded AOT alignment variants",
+        "starter": "unchanged pre-specialization optimized binary",
+        "external": "unchanged supplied external implementation"
+      },
+      "edges": {
+        "optimized_vs_external": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.002304,
+          "pooled_medians_ms": {
+            "candidate": 0.002304,
+            "baseline": 0.002336
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 9,
+            "baseline": 0
+          },
+          "tied_pairs": 1,
+          "speedup": 1.013888888888889,
+          "classification": "close_null"
+        },
+        "starter_vs_external": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.002496,
+          "pooled_medians_ms": {
+            "candidate": 0.002496,
+            "baseline": 0.002336
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 0,
+            "baseline": 10
+          },
+          "tied_pairs": 0,
+          "speedup": 0.935897435897436,
+          "classification": "second_arm_faster"
+        },
+        "optimized_vs_starter": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.002304,
+          "pooled_medians_ms": {
+            "candidate": 0.002304,
+            "baseline": 0.002496
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 10,
+            "baseline": 0
+          },
+          "tied_pairs": 0,
+          "speedup": 1.083333333333333,
+          "classification": "first_arm_faster"
+        }
+      }
+    }
+  ]
 }
