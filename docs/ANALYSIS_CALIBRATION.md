@@ -8,7 +8,7 @@
 > **Where the instruments went (2026-09-18).** The three calibration plans
 > (`contracts/calibrations/*.json`), their measurements (`evidence/calibration/`) and the
 > drivers `tools/check_ranking_calibration.py`, `tools/calibrate_gemm_ranking_interleaved.py`
-> and `tools/calibrate_ranking_at_scale.py` now live on the `history` branch at their
+> and `tools/calibrate_ranking_at_scale.py` now live under the `history` tag at their
 > original paths (`git show history:<path>`); the Compiler Revisions they were bound to are
 > indexed by `docs/history/identities.json`. No further ranking calibration is planned and
 > the Compiler's ranking and `tools/calibrate_wave_term.py` now live on `history`, so the paths below are historical references, not current entry points. The

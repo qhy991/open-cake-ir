@@ -22,6 +22,11 @@ responsibility, not separate copies of the Compiler or a hardware qualification.
 Git 不能同时建立 `metal/<事项>`，其他平台同理。任务完成后合入表中的目标，平台成熟改动
 再通过平台到 `main` 的 PR 集成。`main` 的公共更新在需要时同步回平台分支。
 
+GitHub 的长期分支只有这五条；临时分支只在任务或 PR 尚未完成时保留。合并完成后自动
+删除任务的远端分支。五条长期分支由仓库规则禁止删除和改写历史，所以平台到 `main`
+的合并不会自动删除平台分支。仍有独有提交的旧工作先保留为归档标签，再删除远端分支；
+本机其他任务正在使用的分支与 worktree 不随远端清理移动。
+
 ```mermaid
 flowchart LR
     TM["task/metal-事项"] --> M[metal]
@@ -118,18 +123,30 @@ CI 的触发范围由 [CPU contracts](../.github/workflows/ci.yml) 和
 
 ## 历史工作与迁移
 
-2026-09-20 开始采用五条维护分支。新的平台维护线从当时的统一 `main` 建立，旧工作
-完整保留；创建分支不代表旧实验或未合入改动已经通过当前版本验收。
+2026-09-20 建立五条维护分支后，owner 进一步要求清理 GitHub 的历史分支。
+已在主线祖先中的旧远端分支直接删除；仍有独有提交的旧远端分支先发布同提交的
+`archive/branches-20260920/<原分支名>` 标签，再删除分支。删除前另保留完整 Git bundle
+和分支到提交的清单。标签是历史定位点，不表示其内容已通过当前版本验收。
 
-| 旧入口 | 保留方式与后续去向 |
+| 旧入口 | 保留位置与后续去向 |
 | --- | --- |
-| 原 `metal` | 保留为 `archive/metal-before-platform-20260920`。其中旧设计、实验和代码可用于历史查阅；需要继续的部分从新 `metal` 创建任务，逐项迁入。原有 M1 Pro 集成见 [PR #76](https://github.com/qhy991/open-cake-ir/pull/76)。 |
-| `codex/amd-gfx1151-consolidated` 及早期 AMD 同步分支 | 保留原名；仍有价值且尚未进入当前实现的内容迁入新的 AMD 任务，公共改动走 `main`。 |
-| `dcu-amd-support`、`dcu-gfx938-*` | 保留原分支与工作目录；后续 DCU 工作进入新 `dcu` 的任务分支，不能把旧树整体覆盖到当前公共实现。 |
-| `codex/b300-*`、`codex/native-*`、`codex/cute-*` | 保留原名和证据；待续工作按职责迁入 NVIDIA 或共享任务。 |
-| `codex/kda-decode-cake-vs-internal-r1` | 保留早期 recurrent-state 与比较方案；继续时先检查当前接口、Corpus 与证据边界。 |
-| `history` | 继续按现有历史存储约定保存退役材料，不属于五条开发维护线。 |
+| 原 `metal` | 同名归档标签 `archive/metal-before-platform-20260920`；需要继续的部分从新 `metal` 创建任务，逐项迁入。原有 M1 Pro 集成见 [PR #76](https://github.com/qhy991/open-cake-ir/pull/76)。 |
+| `codex/amd-gfx1151-consolidated` 及未合入的 AMD 同步分支 | `archive/branches-20260920/<原分支名>` 标签；后续工作迁入 AMD 任务，公共改动走 `main`。 |
+| `dcu-amd-support`、`dcu-amd-support-r11` | `archive/branches-20260920/<原分支名>` 标签；本地原分支与工作目录继续保留，后续工作从新 `dcu` 创建任务。 |
+| 已合入的 `codex/b300-*`、`codex/native-*`、`codex/cute-*` 等 | 已有提交保留在主线历史中，远端旧分支删除；仍在本机使用的工作目录保留。 |
+| `codex/kda-decode-cake-vs-internal-r1` | `archive/branches-20260920/codex/kda-decode-cake-vs-internal-r1` 标签；继续时先检查当前接口、Corpus 与证据边界。 |
+| `history` | 同名不可变标签保留退役材料，`git show history:<path>` 的读取方式不变；见 [ADR 0067 的后续约定](adr/0067-retired-release-outputs-live-on-the-history-branch.md)。 |
 
-其他旧任务、同步和集成分支也保留。是否已经集成以祖先关系、实际补丁与 PR 为准；
-`git branch --merged main` 只能证明祖先关系，不能识别所有经过 squash 或重写的等价改动。
-分支和 worktree 的删除属于单独清理，不随本次组织调整执行。
+需要在新 clone 中读取退役材料时，先取得命名标签：
+
+```bash
+git fetch origin tag history
+git show history:runtime/executors/open-cake-ir-b200-v6.json
+```
+
+`docs/history/identities.json` 的历史字段名 `history_branch` 保持兼容，值现在解析到同名标签。
+记录中的原始提交、路径与内容不变。新的历史归档使用新的版本标签，不移动已发布标签。
+
+未合入的开放 PR 保留临时分支，处理完成后再删除；远端删除不会自动删除本地分支或
+worktree。是否已经集成以祖先关系、实际补丁与 PR 为准；`git branch --merged main`
+不能识别所有经过 squash 或重写的等价改动，不能据此丢弃独有内容。

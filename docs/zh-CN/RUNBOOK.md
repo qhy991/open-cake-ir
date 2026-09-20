@@ -33,7 +33,7 @@
 
 ### 外部 AKA 数据（已结束）
 
-AKA 是拿来提出问题的外部题库，不能直接当作编译器的正式验收语料。这项审查已经结束：审查工具（`tools/audit_aka_corpus.py`、`tools/review_aka_expressibility.py`、各个 `tools/run_aka_*.py` 及其契约测试）保留在 `history` 分支的原路径上（`git show history:tools/<name>.py`），已发布的数据集仍在 `docs/data/` 下，由 `tools/verify_aka_qualified_review_export.py` 和 `tools/verify_aka_fma_v41_reaudit.py` 校验。
+AKA 是拿来提出问题的外部题库，不能直接当作编译器的正式验收语料。这项审查已经结束：审查工具（`tools/audit_aka_corpus.py`、`tools/review_aka_expressibility.py`、各个 `tools/run_aka_*.py` 及其契约测试）保留在 `history` 标签的原路径上（`git show history:tools/<name>.py`），已发布的数据集仍在 `docs/data/` 下，由 `tools/verify_aka_qualified_review_export.py` 和 `tools/verify_aka_fma_v41_reaudit.py` 校验。
 
 模型说“可以表达”，还只是审查者的判断。保留下来的结果仍是 `semantic_binding=reviewer_claimed`、`gpu_test=not_run`，不能仅凭一轮模型回答宣布需要新操作。
 
