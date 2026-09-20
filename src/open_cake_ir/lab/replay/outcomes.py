@@ -193,6 +193,8 @@ def _replay_terminal(
         if type(remaining.get(name)) not in {int,float} or remaining[name] != expected:
             refuse('checkpoints_projected.payload.ralph.remaining.'+name,'phase remainder differs from elapsed time')
     for field, observed, expected in (
+        ('budget_exceeded',ralph_state.get('budget_exceeded'),
+         list(exceeded_run_budgets(time_limits,search_state=search_state,terminal_state=ralph_state))),
         ("kind", ralph_state.get("kind"), "ralph_state_v1"),
         ("cumulative_provider_tokens", ralph_state.get("cumulative_provider_tokens"), terminal_tokens),
         ("remaining.provider_tokens", ralph_state.get("remaining", {}).get("provider_tokens"),

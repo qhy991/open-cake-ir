@@ -16,7 +16,7 @@ from tests.contracts.test_lab import SemanticLabTestCase
 
 
 class ConfirmationTimeBudgetTests(SemanticLabTestCase):
-    def execute(self, *, search_seconds, confirmation_seconds, turns=2, reserve_seconds=4.):
+    def execute(self, *, search_seconds, confirmation_seconds, turns=2, reserve_seconds=4., fail_at=None):
         class Clock:
             value = 0.
             def __call__(self): return self.value
@@ -25,6 +25,8 @@ class ConfirmationTimeBudgetTests(SemanticLabTestCase):
             def evaluate(self,candidate,*,case_id,purpose):
                 result = super().evaluate(candidate,case_id=case_id,purpose=purpose)
                 clock.value += search_seconds if purpose=='search' else confirmation_seconds if purpose=='confirmatory' else 0.
+                if purpose == fail_at:
+                    raise RuntimeError('CPU timed evaluation interruption')
                 return result
         return fixture.NominationTests.execute(self,Evaluator,clock=clock,
             budget_updates={'wall_time_seconds':10.,'confirmation_wall_time_seconds':reserve_seconds,
@@ -59,26 +61,45 @@ class ConfirmationTimeBudgetTests(SemanticLabTestCase):
         _,_,_,audit,_,_,_ = self.execute(search_seconds=1.,confirmation_seconds=.1,turns=1,reserve_seconds=1/3)
         self.assertEqual(audit.endpoint_observation,'qualified')
 
-    def test_threshold_projection_retains_overrun_cost_without_claiming_success(self):
+    def threshold_projection(self,spec,run,audit):
         from open_cake_ir.lab.reporting import threshold_view
+        self.assertTrue(audit.archive_integrity)
+        self.assertTrue(audit.filesystem_custody_verified)
+        campaign = SimpleNamespace(evidence_root=run.evidence_root,lock=SimpleNamespace(
+            study_kind='matched_search',run_order=(spec.run_id,),
+            document={'resolved_inputs':{'budget':spec.document['budget']}}))
+        # This adapter carries the legacy Campaign-shaped view input. The Run
+        # above has actually passed independent replay; it invents no Study.
+        report = SimpleNamespace(run_audits=(audit,),semantic_replay_passed=True)
+        return threshold_view(campaign,2.,audit_campaign=lambda _:report)['runs'][0]
+
+    def test_threshold_projection_retains_overrun_cost_without_claiming_success(self):
         with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,
-                {'OPEN_CAKE_CUSTODY_DIRECTORY':str(Path(directory)/'registry')}):
+                {'OPEN_CAKE_CUSTODY_DIRECTORY':str(Path(directory).resolve()/'registry')}):
             _,spec,run,audit,_,_,_ = self.execute(search_seconds=7.,confirmation_seconds=1.)
-            self.assertTrue(audit.archive_integrity)
-            self.assertTrue(audit.filesystem_custody_verified)
-            campaign = SimpleNamespace(evidence_root=run.evidence_root,lock=SimpleNamespace(
-                study_kind='matched_search',run_order=(spec.run_id,),
-                document={'resolved_inputs':{'budget':spec.document['budget']}}))
-            # The view consumes the real independently audited Run; this adapter
-            # carries only the legacy Campaign-shaped report input, no new Study.
-            report = SimpleNamespace(run_audits=(audit,),semantic_replay_passed=True)
-            view = threshold_view(campaign,2.,audit_campaign=lambda _:report)
-        row = view['runs'][0]
+            row = self.threshold_projection(spec,run,audit)
         self.assertEqual(row['status'],'budget_exceeded')
         self.assertEqual(row['budget_exceeded'],['search_wall_time'])
         self.assertEqual(row['observed_provider_tokens'],80000)
         self.assertEqual(row['observed_wall_seconds'],8.)
         self.assertIsNone(row['confirmed_latency_ms'])
+
+    def test_search_and_confirmation_faults_keep_observed_overruns_without_inventing_results(self):
+        for phase,search,confirmation,reason in [('search',7.,0.,'search_wall_time'),
+                                                ('confirmatory',1.,6.,'confirmation_wall_time')]:
+            with self.subTest(phase=phase),tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,
+                    {'OPEN_CAKE_CUSTODY_DIRECTORY':str(Path(directory).resolve()/'registry')}):
+                _,spec,run,audit,_,events,_ = self.execute(search_seconds=search,confirmation_seconds=confirmation,
+                                                         turns=1,fail_at=phase)
+                self.assertEqual(audit.protocol_adherence,'broker_fault')
+                self.assertEqual(audit.endpoint_observation,'missing')
+                self.assertIsNone(audit.endpoint)
+                self.assertEqual(events[-2]['payload']['ralph']['budget_exceeded'],[reason])
+                row = self.threshold_projection(spec,run,audit)
+                self.assertEqual(row['status'],'protocol_fault')
+                self.assertEqual(row['budget_exceeded'],[reason])
+                self.assertEqual(row['observed_wall_seconds'],7.)
+                self.assertIsNone(row['confirmed_latency_ms'])
 
     def test_replay_refuses_forged_remaining_reserve_and_overrun_success(self):
         lab,spec,_,audit,evidence,events,_ = self.execute(search_seconds=7.,confirmation_seconds=1.)

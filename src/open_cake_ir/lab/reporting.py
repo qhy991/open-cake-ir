@@ -142,11 +142,16 @@ def audit_campaign(
                 event.get("kind") == "candidate_evaluated" for event in events)
             checkpoint = next(event["payload"] for event in events
                               if event.get("kind") == "checkpoints_projected")
+            fault = next((event['payload'] for event in events if event['kind']=='run_fault'),{})
             terminal_observations[audit.run_id] = {
                 "protocol_adherence": audit.protocol_adherence,
                 "endpoint_observation": audit.endpoint_observation,
                 "terminal_reason": checkpoint.get("ralph", {}).get("terminal_reason"),
                 "logical_evaluation_invocation_counts": checkpoint.get("ralph", {}).get("evaluation_counts"),
+                'budget_exceeded':checkpoint['ralph']['budget_exceeded'],
+                'observed_provider_tokens':checkpoint['ralph']['cumulative_provider_tokens'],
+                'observed_provider_tokens_scope':fault.get('terminal_provider_tokens_scope','observed_total'),
+                'observed_wall_seconds':checkpoint['ralph']['elapsed_wall_seconds'],
                 "token_limit_checkpoint_state": checkpoint["checkpoints"][-1]["state"],
                 "observation_basis": campaign.lock.analysis_plan.get("endpoint_policy", "token_limit_checkpoint"),
                 "missing_reason": ("protocol_fault" if audit.protocol_adherence != "adhered" else
@@ -496,22 +501,25 @@ def threshold_view(
                "nominee_source_turn": None, "provider_tokens": None,
                "elapsed_wall_seconds": None, "candidate_sha256": None,
                "confirmed_latency_ms": None, "status": "missing"}
-        eligible = (audit is not None and audit.archive_integrity and audit.filesystem_custody_verified
-                    and audit.protocol_adherence == "adhered" and report.semantic_replay_passed)
-        if audit is not None and not eligible:
-            row["status"] = "unverified_archive_or_protocol"
-        elif eligible:
-            row["status"] = "threshold_not_reached"
-            from .ralph import RalphBudget, exceeded_run_budgets
+        readable = (audit is not None and audit.archive_integrity and audit.filesystem_custody_verified
+                    and report.semantic_replay_passed)
+        if audit is not None and not readable:
+            row['status'] = 'unverified_archive_or_protocol'
+        elif readable:
+            row['status'] = 'threshold_not_reached'
             events = evidence.replay_events(run_id)
-            search_state = next((event['payload']['state'] for event in events if event['kind']=='search_completed'),None)
             terminal_state = next(event['payload']['ralph'] for event in events if event['kind']=='checkpoints_projected')
+            fault = next((event['payload'] for event in events if event['kind']=='run_fault'),{})
             row.update(observed_provider_tokens=terminal_state['cumulative_provider_tokens'],
-                       observed_wall_seconds=terminal_state['elapsed_wall_seconds'])
-            exceeded = exceeded_run_budgets(RalphBudget.from_mapping(campaign.lock.document['resolved_inputs']['budget']),
-                                            search_state=search_state,terminal_state=terminal_state)
-            if exceeded:
-                row.update(status='budget_exceeded',budget_exceeded=list(exceeded))
+                       observed_provider_tokens_scope=fault.get('terminal_provider_tokens_scope','observed_total'),
+                       observed_wall_seconds=terminal_state['elapsed_wall_seconds'],
+                       budget_exceeded=terminal_state['budget_exceeded'])
+            if audit.protocol_adherence != 'adhered':
+                row['status'] = 'protocol_fault'
+                rows.append(row)
+                continue
+            if terminal_state['budget_exceeded']:
+                row['status'] = 'budget_exceeded'
                 rows.append(row)
                 continue
             tokens = None

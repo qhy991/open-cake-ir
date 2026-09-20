@@ -351,7 +351,10 @@ class FailedProviderConsumerTests(unittest.TestCase):
         self.assertEqual(state["cumulative_provider_tokens"], 286257)
         self.assertEqual(state["remaining"]["provider_tokens"], 0)
         self.assertEqual(state["terminal_reason"], "provider_fault")
-        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+        self.assertIn("provider_tokens",state["budget_exceeded"])
+        report = self.lab.audit(campaign)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertIn("provider_tokens",report.descriptive["terminal_observations"]["open_cake-1"]["budget_exceeded"])
 
     def test_observed_quota_attribution_is_retained_and_replays(self):
         quota = {"status": "allowed_warning", "rateLimitType": "seven_day",
@@ -424,7 +427,10 @@ class FailedProviderConsumerTests(unittest.TestCase):
         self.assertEqual(fault["terminal_provider_tokens_scope"], "known_subtotal")
         self.assertNotIn("objects", fault)
         self.assertEqual(events[-2]["payload"]["ralph"]["cumulative_provider_tokens"], 94758)
-        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
+        report = self.lab.audit(campaign)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertEqual(report.descriptive['terminal_observations']['open_cake-1']['observed_provider_tokens_scope'],
+                         'known_subtotal')
 
     def test_zero_completed_turn_fault_uses_native_usage_and_independent_replay(self):
         campaign, store, events = self.campaign(fault_turn=1)

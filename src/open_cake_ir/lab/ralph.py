@@ -127,10 +127,11 @@ def exceeded_run_budgets(budget, *, search_state, terminal_state):
     Native call timeouts remain with their adapters; these are scheduling and
     acceptance limits, not a claim to preempt an in-flight compiler or GPU job.
     """
-    if search_state is None:
-        return ()  # A fault before search closure has no normal endpoint.
-    search = search_state['elapsed_wall_seconds']
     terminal = terminal_state['elapsed_wall_seconds']
+    # Before search closure, even a fault has observed authoring/search cost.
+    # Token totals may be a known subtotal; an exceeded subtotal still proves
+    # an overrun, while absence from this list never proves complete accounting.
+    search = search_state['elapsed_wall_seconds'] if search_state is not None else terminal
     return tuple(name for name, exceeded in (
         ('provider_tokens',terminal_state['cumulative_provider_tokens'] > budget.provider_token_limit),
         ('active_authoring_time',terminal_state['active_authoring_seconds'] > budget.active_authoring_time_seconds),
@@ -279,4 +280,6 @@ class RalphController:
             "previous_feedback": dict(feedback),
             "terminal_reason": terminal_reason,
         }
+        document['budget_exceeded'] = list(exceeded_run_budgets(self.budget,terminal_state=document,
+            search_state={'elapsed_wall_seconds':self._search_closed_at} if self._search_closed_at is not None else None))
         return MappingProxyType(document)

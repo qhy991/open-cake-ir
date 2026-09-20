@@ -54,8 +54,10 @@ Ralph 领取额度；没有额度就不调用工具链，并将候选记录为�
 预留总量的十分之一并将具体数值冻结到 Run 输入。
 
 Turn 和 Evaluation 的在途操作由既有 adapter timeout 限制，不声称可抢占编译器或 GPU。
-实际超限仍记录；端点的 `budget_exceeded` 明确列出 token、作者、搜索或确认时间超限，禁止
-将其计作预算内成功，阈值报告也遵守同一规则。正式 E/P Study 的冻结分配与统计验收仍待完成。
+实际超限始终记录在 Ralph 的 `budget_exceeded` 中，列出已观察到的 token、作者、搜索或确认
+时间超限；正常端点据此禁止预算内成功。故障 Run 保持结果缺失，同时保留预算诊断和实际成本，
+token 用量未知时区分已知小计。阈值报告使用经过审计的同一投影。正式 E/P Study 的冻结分配与
+统计验收仍待完成。
 
 `replay/__init__.py` 组织独立回放，`artifacts.py`、`attempts.py`、`candidates.py`、
 `provider.py`、`selection.py`、`outcomes.py` 和 `refusals.py` 核对各自的原始记录。

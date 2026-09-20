@@ -3,7 +3,7 @@ import math
 from open_cake_ir.serialization import canonical_json_bytes
 
 from ..nomination import FinalConfirmation, nominate, nomination_document
-from ..ralph import RalphBudget, derive_ralph_stop_reason
+from ..ralph import RalphBudget, derive_ralph_stop_reason, exceeded_run_budgets
 from ..selection import _receipt_qualifies, _receipt_latency_ms
 from .refusals import refuse
 from .._documents import _object
@@ -45,6 +45,8 @@ def replay_nomination(*, events, observations, launchables, receipts, budget, pr
     if reason is None or state.get('terminal_reason') != reason:
         refuse('search_completed.state.terminal_reason', 'search did not stop at its frozen budget')
     limits = RalphBudget.from_mapping(budget)
+    if state.get('budget_exceeded') != list(exceeded_run_budgets(limits,search_state=state,terminal_state=state)):
+        refuse('search_completed.state.budget_exceeded','observed overruns differ from frozen limits')
     remaining = _object(state.get('remaining'),'search_completed.state.remaining')
     for name,expected in (
         ('search_wall_time_seconds',round(max(0.,limits.search_wall_time_seconds-state['elapsed_wall_seconds']),6)),

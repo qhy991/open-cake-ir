@@ -612,5 +612,5 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
         protocol_adherence=protocol_adherence,
         ralph=ralph,
         analysis=specification.terminal_policy,
-        confirmation=confirmation, search_state=search_state,
+        confirmation=confirmation,
     )
