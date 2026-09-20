@@ -13,6 +13,16 @@ and active checkouts. Merged task branches are removed from GitHub; archive tags
 work outside the maintained branches. A platform branch is a maintenance boundary,
 not a fork of the shared Compiler.
 
+## GPU resource discipline
+
+Before preparing, launching or releasing GPU Evaluation work, read and apply the
+installed `gpu-infra` skill's
+[GPU lease lifecycle](https://github.com/qhy991/gpu-infra/blob/main/skills/gpu-infra/SKILL.md#gpu-lease-lifecycle).
+That skill owns allocation and release procedure; keep its rules in that one place.
+For this repository, a phase-boundary change is an Executor/source change: implement
+and validate it in a successor commit before a new Campaign, preserving the Workload,
+oracle and measurement contract. Existing frozen Campaigns retain their original code.
+
 ## Targets are peers, and the shared layers are vendor-neutral
 
 Five vendors are declared as peers -- NVIDIA, Apple, AMD, Hygon and MetaX, the closed `Vendor`
