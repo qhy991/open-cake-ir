@@ -162,3 +162,48 @@ class RejectedCaptureEvidence(unittest.TestCase):
         self.assertEqual(benchmark.last_activity['activity'],raw)
         self.assertIsNone(benchmark.non_target_dispatches)
         self.assertIsNone(benchmark.resolution_us)
+
+
+class MacaProfileRepresentation(unittest.TestCase):
+    def setUp(self):
+        from dataclasses import asdict
+        from open_cake_ir.evaluation.core import TensorLaunchManifest
+        from open_cake_ir.evaluation.triton_metax import MetaxDeviceAdmission
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.tasks.workloads import create_task
+        from open_cake_ir.evaluation.metax_observations import NOT_COLLECTED
+        doc,_=create_task('rmsnorm',backend='triton-metax',rows=8,columns=128)
+        self.manifest=TensorLaunchManifest.for_workload(WorkloadContract(doc),'primary',
+            target='xcore1002',kernel_name='cake',grid=[8,1,1],block=[64,1,1],
+            dynamic_shared_memory_bytes=0,hidden_null_pointer_parameters=0)
+        admission=MetaxDeviceAdmission('maca-123456789abc','xcore1002','xcore1002',
+            'MetaX C550',64,'0000:0f:00','/opt/maca-3.5.3/lib/libmcruntime.so')
+        self.raw={'activity':capture(kernel('cake',1,1000)),'manifest':self.manifest.as_dict(),
+                  'device_admission':asdict(admission),'not_collected':list(NOT_COLLECTED)}
+
+    def test_one_actual_dispatch_projects_resources_and_states_missing_counters(self):
+        from open_cake_ir.evaluation.metax_observations import maca_profile_summary
+        result=maca_profile_summary(self.raw)
+        self.assertEqual(result['device_time_us'],2.048)
+        self.assertEqual(result['registers_per_thread'],16)
+        self.assertEqual(result['pci_bus_id'],'0000:0f:00')
+        self.assertEqual(result['timing_use'],'attribution_only')
+        self.assertIn('bandwidth',result['not_collected'])
+
+    def test_manifest_geometry_and_native_device_identity_are_checked(self):
+        from open_cake_ir.evaluation.metax_observations import maca_profile_summary
+        for field,value in (('target','xcore1000'),('device_arch','xcore1000'),
+                            ('device_name','NVIDIA B200'),('warp_size',32),('pci_bus_id','')):
+            raw=deepcopy(self.raw);raw['device_admission'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):maca_profile_summary(raw)
+        raw=deepcopy(self.raw);raw['activity']['records'][0]['grid']=[9,1,1]
+        with self.assertRaises(ValueError):maca_profile_summary(raw)
+
+    def test_loaded_function_resources_are_not_replaced_with_a_different_profile(self):
+        from open_cake_ir.evaluation.metax_observations import MACA_PROFILE,maca_profile_summary
+        profile={'job_id':'maca-123456789abc','gpu_uuid':None,'summary':maca_profile_summary(self.raw)}
+        launch={'job_id':profile['job_id'],'gpu_uuid':None,
+                'resources':{'registers_per_thread':16,'local_bytes':0,'dynamic_shared_bytes':0}}
+        MACA_PROFILE.validate_launch(profile,launch,{})
+        launch['resources']['registers_per_thread']=32
+        with self.assertRaisesRegex(ValueError,'resources'):MACA_PROFILE.validate_launch(profile,launch,{})
