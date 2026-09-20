@@ -76,14 +76,21 @@ def reference_arguments(workload):
     return names
 
 
-def load_reference(root, output, report, cohort_calls):
+def load_reference(root, output, report, cohort_calls, *, prebuilt_library=None):
     spec, paths, file, function = reference_spec(root)
     report['reference'] = spec
     if spec.get('derived_from'):
         report['roles']['external'] = 'derived external reference; source correction recorded in reference metadata'
     if spec['kind'] == 'python':
+        if prebuilt_library is not None:
+            raise ValueError('Python references have no prepared native library')
         sys.path.insert(0, str(root / 'reference'))
         module = load_module('comparison_reference', root / 'reference' / file)
+    elif prebuilt_library is not None:
+        if prebuilt_library.is_symlink() or not prebuilt_library.is_file():
+            raise ValueError('prepared native reference must be a regular file')
+        module = load_module('cake_external_reference',prebuilt_library)
+        report['native_build_phase'] = 'preceding CPU preparation stage'
     else:
         from torch.utils.cpp_extension import load
         flags = spec['compile_options']
