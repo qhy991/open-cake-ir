@@ -168,6 +168,11 @@ def validate_pair_candidates(candidate, baseline, workload, case_id):
             raise ValueError('paired policy requires the explicit Workload tensor ABI')
         manifest = spellings[document['abi']].from_dict(document)
         manifest.check_workload(workload, case_id)
+        if hasattr(manifest, 'check_complete_domain'):
+            manifest.check_complete_domain()
+        if getattr(manifest, 'aligned_variant', None):
+            from .kernel_bundle import alignment_component
+            alignment_component(item, manifest)
         if (item.target != manifest.target or item.entry_point != manifest.kernel_name
             or item.launch_spec_sha256 != manifest.canonical_sha256):
             raise ValueError('paired participant and launch manifest differ')
@@ -289,6 +294,7 @@ def validate_paired_receipt(receipt, raw, correctness, launch, *, evaluation=Non
         raise ValueError('paired receipt partner is missing')
     for role in protocol.arms:
         candidate_from_identity(participants[role])
+    participant_work(raw)
     # Five distinct facts, each said by name. As one condition this reported that
     # something about the participants or the allocation differed and left the reader to
     # find which, from a worker whose artifacts are gone by the time anyone reads it.
@@ -448,6 +454,28 @@ def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
         evaluation=evaluation, baseline=baseline, candidate=candidate)
 
 
+def participant_work(raw):
+    """Derive physical work from manifest bytes bound by participant identities."""
+    participants = raw['participants']
+    declarations = raw.get('launch_manifests')
+    if declarations is None:
+        if any('kernel_bundle' in item['artifact_roles'] for item in participants.values()):
+            raise ValueError('composed participant requires its sealed launch manifest for work accounting')
+        return {role: {'modules': 1, 'kernels': 1} for role in participants}
+    if not isinstance(declarations, Mapping) or set(declarations) != set(participants):
+        raise ValueError('paired launch manifest coverage differs')
+    result = {}
+    for role, document in declarations.items():
+        manifest = _manifest_spellings()[document['abi']].from_dict(document)
+        if manifest.canonical_sha256 != participants[role]['launch_spec_sha256']:
+            raise ValueError('paired launch manifest differs from its participant seal')
+        if hasattr(manifest, 'check_complete_domain'):
+            manifest.check_complete_domain()
+        result[role] = {'modules': getattr(manifest, 'module_count', 1),
+                        'kernels': getattr(manifest, 'kernels_per_call', 1)}
+    return result
+
+
 def validate_paired_broker(receipt, job_id, counters):
     """Tie a paired receipt to its actual broker allocation and complete work count."""
     if receipt.purpose == 'attribution' or not receipt.artifact_payloads:
@@ -460,9 +488,13 @@ def validate_paired_broker(receipt, job_id, counters):
     cases = (len(validation_case_ids(raw['evaluation_protocol']))
              if raw['kind'] in METAL_KINDS or 'validation_case_ids' in raw['evaluation_protocol'] else 1)
     correctness_calls = (4 if cohorts else 2) * cases
-    expected = {'compiler_invocations': 0, 'module_loads': 2 if raw['kind'] in METAL_KINDS else 2 * cases,
+    work = participant_work(raw)
+    kernel_sum = sum(item['kernels'] for item in work.values())
+    kernel_calls = kernel_sum * ((2 if cohorts else 1) * cases
+                                + (len(protocol.pair_order) * protocol.route_calls_per_cohort if cohorts else 0))
+    expected = {'compiler_invocations': 0, 'module_loads': 2 if raw['kind'] in METAL_KINDS else sum(item['modules'] for item in work.values()) * cases,
         'preflight_calls': 2 * cases,
-        'kernel_calls': correctness_calls + cohorts * protocol.route_calls_per_cohort,
+        'kernel_calls': kernel_calls,
         'timing_samples': cohorts * protocol.samples_per_cohort, 'fallback_calls': 0}
     launch = json.loads(receipt.artifact_payloads['launch_receipt'])
     # No allocator's zero placeholder is a job: the worker writes one before any broker
