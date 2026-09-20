@@ -36,7 +36,7 @@ GPU 构建、运行和测量需要对应目标的工具链与设备环境。
 
 ## 参与与引用
 
-[贡献说明](CONTRIBUTING.md) · [安全问题](SECURITY.md) · [引用信息](CITATION.cff)
+[贡献说明](CONTRIBUTING.md) · [平台与分支维护](docs/DEVELOPMENT_BRANCHES.md) · [安全问题](SECURITY.md) · [引用信息](CITATION.cff)
 
 现有中英文文档共同构成本仓库的技术报告，作者为秦海岩（Haiyan Qin）。
 报告入口提供推荐引用和 BibTeX；引用具体章节时使用提交永久链接。

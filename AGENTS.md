@@ -3,6 +3,14 @@
 Paths below are relative to `src/open_cake_ir/` unless they start with `tests/`, `tools/`,
 `compiler/targets/`, `corpus/` or `docs/`.
 
+## Branch and worktree routing
+
+Follow [Development branches](docs/DEVELOPMENT_BRANCHES.md), the canonical owner of the
+five maintained branches, task naming, shared-code routing, integration and synchronization.
+New work uses `task/<platform-or-core>-<subject>` without a `codex/` prefix and its own
+worktree. Inspect existing worktrees before editing; preserve legacy branches and active
+checkouts. A platform branch is a maintenance boundary, not a fork of the shared Compiler.
+
 ## Targets are peers, and the shared layers are vendor-neutral
 
 Four vendors are declared as peers -- NVIDIA, Apple, AMD and Hygon, the closed `Vendor`

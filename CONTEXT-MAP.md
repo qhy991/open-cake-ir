@@ -10,6 +10,9 @@ The [reading entry](docs/README.md) gives the short route, the [catalog](docs/ca
 retains detailed and historical reading links, and the [ADR index](docs/adr/README.md)
 is the single complete decision list. Language gateways link to these owners.
 
+[Development branches](docs/DEVELOPMENT_BRANCHES.md) owns platform maintenance,
+task naming, worktree isolation and the flow into `main`; Git owns the live branch state.
+
 ## Documentation lifecycle
 
 | Class | Contains | Update rule | Location |

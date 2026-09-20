@@ -7,6 +7,10 @@ the target; attach only the evidence needed to reproduce the issue.
 
 ## Development
 
+Start with the [branch and worktree guide](docs/DEVELOPMENT_BRANCHES.md): platform tasks
+target their platform branch, shared changes target `main`, and each task has its own
+worktree. The guide owns branch names and the integration flow.
+
 Use a clean Git checkout with Python 3.10 or newer:
 
 ```bash
@@ -47,10 +51,11 @@ does not qualify a real parent kernel or establish custody.
 ## Propose a change
 
 Read [AGENTS.md](AGENTS.md) and the nearest applicable design decision before editing.
-Compiler changes and new primitives require the independent review and release procedure
-in [ADR 0052](docs/adr/0052-independent-agent-release-review.md). Check the frozen source
-closures before changing implementation, examples, or corpus inputs; historical releases
-and expectations are not edited to make a new change pass.
+Compiler changes and new primitives follow the Corpus Gate and commit-based identity
+procedure in [ADR 0065](docs/adr/0065-source-identity-is-the-commit.md), with independent
+review before integration into `main` under the branch workflow. Historical records replay
+at their producing commits; historical releases and expectations are not edited to make
+a new change pass.
 
 Use a focused branch and pull request. Explain the behavior changed, its purpose, and the
 relevant validation. Keep generated experiment directories outside the checkout. A new
