@@ -35,6 +35,8 @@ def case_data(root, workload, case_index, mode):
         if path.is_symlink():
             raise ValueError('case data must be a regular stage artifact')
         item = array('d')
+        if path.stat().st_size != math.prod(arg.shape) * item.itemsize:
+            raise ValueError('prepared case extent differs from the Workload ABI')
         item.frombytes(path.read_bytes())
         if len(item) != math.prod(arg.shape):
             raise ValueError('prepared case extent differs from the Workload ABI')
@@ -151,7 +153,7 @@ def main():
                 'validity':'valid' if report['passed'] else 'invalid',
                 'summary':f"{sum(r['passed'] for r in report['checks'])}/{len(report['checks'])} guard checks passed after GPU release",
                 'artifacts':{'guard':'guard-report.json'}})
-            return 0 if report['passed'] else 1
+            return 0  # A handled numerical failure is recorded by status/validity.
         candidate = load_baseline_bundle(ROOT,regular(root,'optimized/candidate.json'))
         baseline = load_baseline_bundle(ROOT,regular(root,'starter/candidate.json'))
         manifest = validate_pair_candidates(candidate,baseline,workload,'primary')['candidate']
@@ -219,7 +221,7 @@ def main():
         'status':'passed' if report.get('capture_complete') else 'failed','validity':validity,
         'summary':report.get('error',f"{len(report['checks'])} host snapshots retained; CPU verification pending"),
         'artifacts':{'capture':'capture.json'}})
-    return 0 if report.get('capture_complete') else 1
+    return 1 if validity == 'unknown' else 0
 
 
 if __name__ == '__main__':

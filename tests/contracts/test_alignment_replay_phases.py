@@ -53,7 +53,7 @@ class AlignmentReplayPhases(unittest.TestCase):
     def test_cpu_work_cannot_be_assigned_a_broker_lease_by_the_replay_contract(self):
         commit = 'a' * 40
         task = {'stages':[{'id':name,'execution':execution,'judge':{'identity':'open-cake-ir@'+commit}}
-                          for name,execution in [('prepare','local'),('guard','broker'),('verify','local') ]}
+                          for name,execution in [('prepare','local'),('guard','broker'),('verify','local')]]}
         phase_contract(commit,task)
         task['stages'][0]['execution'] = 'broker'
         with self.assertRaisesRegex(ValueError,'resource phase'):
