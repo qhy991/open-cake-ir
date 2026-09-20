@@ -2,35 +2,18 @@
   "schema_version": 1,
   "target_id": "xcore1002",
   "architecture": "xcore1000",
-  "device_names": [
-    "MetaX C550"
-  ],
+  "device_names": ["MetaX C550"],
   "vendor": "metax",
   "code_object": "mcfatbin",
   "triton_arch": 80,
   "warp_size": 64,
   "l2_cache_bytes": 8388608,
-  "memory_spaces": [
-    "global",
-    "shared",
-    "register"
-  ],
-  "operation_kinds": [
-    "load",
-    "cast",
-    "elementwise",
-    "mma",
-    "reduce",
-    "store"
-  ],
+  "memory_spaces": ["global", "shared", "register"],
+  "operation_kinds": ["load", "cast", "elementwise", "mma", "reduce", "store"],
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_shared_memory_bytes": 65536,
-    "grid": {
-      "x": 2147483647,
-      "y": 2147483647,
-      "z": 2147483647
-    }
+    "grid": {"x": 2147483647, "y": 2147483647, "z": 2147483647}
   },
   "occupancy": {
     "multiprocessor_count": 104,
@@ -38,12 +21,7 @@
     "shared_memory_per_multiprocessor_bytes": 65536,
     "maximum_threads_per_multiprocessor": 2048
   },
-  "instruction_contracts": [
-    "maca.tanh.f32",
-    "triton.dot.fp16_fp32",
-    "triton.dot.bf16_fp32",
-    "triton.dot.fp32_ieee"
-  ],
+  "instruction_contracts": ["maca.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
   "synchronization_contracts": [],
   "citations": [
     {
