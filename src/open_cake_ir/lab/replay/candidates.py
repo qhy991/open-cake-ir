@@ -99,6 +99,7 @@ def _replay_candidates(
                    observed={"turn": turn, "purpose": purpose, "candidate_sha256": candidate_sha256})
         attempt_payloads[key] = payload
     replayed_attempts: set[tuple[int, str, str]] = set()
+    used_job_ids = set()
     launchable_events = [
         event for event in events if event.get("kind") == "launchable_candidate_sealed"
     ]
@@ -239,6 +240,7 @@ def _replay_candidates(
                 protocol_sha256=protocol_sha256,
                 compiler_reference=lock.document["compiler_revision"],
                 final_receipt=validated_receipt,
+                case_id=case_id, used_job_ids=used_job_ids,
                 location=event_location("evaluation_attempt_completed", turn=turn, purpose=purpose,
                                         candidate=candidate_sha256),
             )
@@ -269,6 +271,7 @@ def _replay_candidates(
             protocol_sha256=protocol_sha256,
             compiler_reference=lock.document["compiler_revision"],
             final_receipt=None,
+            case_id=case_id, used_job_ids=used_job_ids,
             location=location,
         )
 

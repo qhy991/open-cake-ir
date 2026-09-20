@@ -5,7 +5,8 @@ readers reconstruct those decisions from the retained artifacts.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import json
 from typing import Callable, Mapping
 
 from open_cake_ir.evaluation import EvaluationReceipt, LaunchableCandidate
@@ -16,7 +17,10 @@ from .archive import (
     _archive_evaluation_receipt,
     _archive_logical_attempt,
     _validate_receipt_authority,
+    _logical_attempt_document, _evaluation_receipt_document,
 )
+from ._documents import _canonical_json_bytes
+from .faults import RunProtocolFault
 from .contracts import RunEvaluator
 from .ralph import RalphController
 
@@ -34,6 +38,7 @@ class EvaluationWriter:
     protocol_sha256: str
     evaluation_protocol: Mapping[str, object]
     execution: Mapping[str, object]
+    _job_ids: set = field(default_factory=set, repr=False)
 
     def evaluate(self, candidate: LaunchableCandidate, *, purpose: str, turn=None, source_turn=None) -> EvaluationReceipt:
         if (turn is None) == (source_turn is None) or (purpose == 'confirmatory' and source_turn is None):
@@ -45,6 +50,23 @@ class EvaluationWriter:
         self.ralph.record_evaluation(purpose)
         attempt = self.evaluator.evaluate(candidate, case_id=self.case_id, purpose=purpose)
         receipt = attempt.final_receipt
+        try:
+            jobs = [item.job_id for item in attempt.attempts]
+            if len(jobs) != len(set(jobs)) or self._job_ids.intersection(jobs):
+                raise ValueError('Evaluation reused an earlier broker job')
+            for item in attempt.attempts:
+                request = json.loads(item.artifact_payloads['evaluator_request'])
+                if request.get('purpose') != purpose or request.get('case_id') != self.case_id:
+                    raise ValueError('Evaluation worker purpose or case differs from this invocation')
+        except (ValueError, KeyError, TypeError, AttributeError) as error:
+            payloads = {'rejected_attempt_ledger':_canonical_json_bytes(_logical_attempt_document(attempt))}
+            for index,item in enumerate(attempt.attempts,1):
+                payloads.update({f'rejected_attempt_{index}_{role}':raw for role,raw in item.artifact_payloads.items()})
+            if receipt is not None:
+                payloads['rejected_evaluation_receipt'] = _canonical_json_bytes(_evaluation_receipt_document(receipt))
+                payloads.update({f'rejected_receipt_{role}':raw for role,raw in receipt.artifact_payloads.items()})
+            raise RunProtocolFault('harness_fault',str(error),artifact_payloads=payloads) from error
+        self._job_ids.update(jobs)
         self.ledger.append(
             "evaluation_attempt_completed",
             {
@@ -79,7 +101,7 @@ class EvaluationWriter:
                 "purpose": purpose,
                 "candidate_sha256": candidate.candidate_sha256,
                 "objects": references,
-                **({"elapsed_wall_seconds": self.ralph.elapsed_wall_seconds}
+                **({"elapsed_wall_seconds": round(self.ralph.elapsed_wall_seconds, 6)}
                    if purpose == "confirmatory" else {}),
             },
         )

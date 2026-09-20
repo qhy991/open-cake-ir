@@ -362,31 +362,20 @@ class FailedProviderConsumerTests(unittest.TestCase):
         self.assertEqual(fault["provider_usage"]["provider_tokens"], 191499)
         self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
 
-    def test_settled_checkpoint_outlives_a_budget_boundary_declaration_fault(self):
-        """F-2026-09-16-002: the boundary fault converts only what already settled.
-
-        The fault observation stays in the ledger; the terminal goes to the
-        settled checkpoint with the conversion named on the terminal event and
-        the natural budget stop reason. This synthetic campaign is
-        Codex-contract, so semantic replay must refuse the converted marker
-        here: the marker belongs to the Claude contract whose adapter can raise
-        the fault, which is exactly what the refusal asserts.
-        """
-        limit = self.lock.document["resolved_inputs"]["budget"]["limit"]
+    def test_search_checkpoint_cannot_replace_missing_terminal_confirmation(self):
+        """A provider boundary failure now precedes any independent confirmation."""
+        limit = self.lock.document['resolved_inputs']['budget']['limit']
         campaign, store, events = self.campaign(boundary=True, tokens=limit - 94758)
-        fault = next(event["payload"] for event in events if event["kind"] == "run_fault")
-        self.assertEqual(fault["fault"], "provider_fault")
-        self.assertEqual(fault["exception_type"], "ProviderBoundaryDeclarationFault")
-        self.assertEqual(fault["terminal_provider_tokens"], limit)
-        state = events[-2]["payload"]["ralph"]
-        self.assertEqual(state["terminal_reason"], "provider_token_limit")
-        terminal = events[-1]["payload"]
-        self.assertEqual(terminal["protocol_adherence"], "adhered")
-        self.assertEqual(terminal["boundary_diagnostic"],
-                         {"turn": 2, "stage": "provider",
-                          "diagnostic": "candidate_write_declared_unwitnessed"})
-        self.assertEqual(terminal["endpoint_observation"], "qualified")
-        self.assertFalse(self.lab.audit(campaign).semantic_replay_passed)
+        fault = next(event['payload'] for event in events if event['kind']=='run_fault')
+        self.assertEqual(fault['terminal_provider_tokens'],limit)
+        self.assertEqual(fault['exception_type'],'ProviderBoundaryDeclarationFault')
+        self.assertEqual(events[-2]['payload']['ralph']['terminal_reason'],'provider_fault')
+        terminal = events[-1]['payload']
+        self.assertEqual(terminal['protocol_adherence'],'provider_fault')
+        self.assertEqual(terminal['endpoint_observation'],'missing')
+        self.assertNotIn('boundary_diagnostic',terminal)
+        self.assertFalse(any(e['kind']=='candidate_nominated' for e in events))
+        self.assertTrue(self.lab.audit(campaign).semantic_replay_passed)
 
     def test_boundary_declaration_without_a_settled_checkpoint_stays_a_fault(self):
         """The declaration check still fails closed with nothing settled."""

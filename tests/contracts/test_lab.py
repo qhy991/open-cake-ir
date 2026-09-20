@@ -483,6 +483,16 @@ class FindingRoutingContractTests(SemanticLabTestCase):
 
 
 class LabContractTests(SemanticLabTestCase):
+    def two_turn_lock(self, lab):
+        # This scientific fixture allocates the CPU provider's exact 2 x 80k
+        # tokens. Budget overruns are tested separately as nonqualifying.
+        document = json.loads((ROOT/'contracts/studies/matched-search-infrastructure-template.json').read_text())
+        document['budget'].update(limit=160000,checkpoints=[80000,160000])
+        directory = enter_context(self,tempfile.TemporaryDirectory())
+        path = Path(directory)/'two-turn-study.json'
+        path.write_text(json.dumps(document))
+        return lab.preflight(path)
+
 
     def test_provider_fault_does_not_resolve_evaluation_only_fields(self) -> None:
         class FaultProvider(FakeProvider):
@@ -1044,7 +1054,7 @@ class LabContractTests(SemanticLabTestCase):
         )
         self.assertTrue(
             all(
-                artifact["turn"] == 2
+                artifact["source_turn"] == 2
                 for artifact in report.descriptive["promoted_artifacts"].values()
             )
         )
@@ -1295,7 +1305,7 @@ class LabContractTests(SemanticLabTestCase):
 
     def test_lab_owns_two_turn_resume_budget_evaluation_and_terminal(self) -> None:
         lab = TaskLab(ROOT)
-        lock = lab.preflight(ROOT / "contracts/studies/matched-search-infrastructure-template.json")
+        lock = self.two_turn_lock(lab)
         provider = FakeProvider()
         resolved = lock.document["resolved_inputs"]
         arm_environments = resolved["arm_environments"]
@@ -1360,9 +1370,7 @@ class LabContractTests(SemanticLabTestCase):
                 return super().build(submission)
 
         lab = TaskLab(ROOT)
-        lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-template.json"
-        )
+        lock = self.two_turn_lock(lab)
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(
@@ -1410,9 +1418,7 @@ class LabContractTests(SemanticLabTestCase):
                 return super().turn(request)
 
         lab = TaskLab(ROOT)
-        lock = lab.preflight(
-            ROOT / "contracts/studies/matched-search-infrastructure-template.json"
-        )
+        lock = self.two_turn_lock(lab)
         resolved = lock.document["resolved_inputs"]
         protocol_sha256 = sha256(
             json.dumps(

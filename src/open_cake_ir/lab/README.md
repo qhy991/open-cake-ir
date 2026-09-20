@@ -33,6 +33,16 @@ Run 冻结公共评测、预算、作者环境、参考材料和终点规则；�
 `execution.py::_execute_run` 是独立 Run 与 Study 分配 Run 共用的唯一执行循环。`evaluation_writer.py` 负责一次评测的归档事务；
 选择策略、预算和故障阶段仍归调用方所有。`provider_documents.py` 拥有协议常量，内部使用者直接导入。
 
+每轮只产生搜索观察与反馈。`search_completed` 冻结搜索停止时的预算状态；随后
+`candidate_nominated` 按搜索延迟选择一个预算内候选，同值取较早轮次。确认重用该候选的
+封存产物，产生一份新鲜收据；确认失败或无收益不再换候选。没有合格搜索候选时明确记录空提名。
+终态确认事件使用 `source_turn` 指向原始轮次，不伪造新的作者 Turn。搜索 checkpoint 只报告
+`best_search_latency_ms`；最终端点和产物晋升使用独立确认。阈值视图记录全部搜索消耗和确认完成
+时间，不把较早候选的生成成本当作整个 Run 的成功成本。
+
+现有逻辑评测计数已随终态协议迁移。确认专用 wall-time 预留与实际编译调用预算仍待补齐；
+本任务的完整预算及正式消融验收尚未完成。
+
 `replay/__init__.py` 组织独立回放，`artifacts.py`、`attempts.py`、`candidates.py`、
 `provider.py`、`selection.py`、`outcomes.py` 和 `refusals.py` 核对各自的原始记录。
 它们不能调用 live execution 或 Evaluation writer 来证明自身正确。
@@ -79,7 +89,7 @@ P0 在解析父程序和调用 Compiler 之前拒绝变换。直接提交的既�
 改写与构建时间计入同一 Run 的 wall budget。
 
 服务端调用权限与材料交付不等同于证明 CLI 作者无法读取主机文件。受限作者使用下面的消息
-入口；正式 E/P Study 的冻结分配、统计分析和统一终态确认尚未完成。
+入口；正式 E/P Study 的冻结分配、统计分析和完整预算协议尚未完成。
 
 ## Message-only authoring
 

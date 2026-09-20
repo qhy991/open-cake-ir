@@ -61,6 +61,13 @@ def replay_nomination(*, events, observations, launchables, receipts, budget, pr
         return None,state
     if len(confirmations) != 1 or confirmations[0][0] != key:
         refuse('candidate_evaluated', 'confirmation differs from the unique nominated artifact')
+    confirmation_event = next(event['payload'] for event in events if event['kind']=='candidate_evaluated'
+                              and event['payload']['purpose']=='confirmatory')
+    terminal_state = next(event['payload']['ralph'] for event in events if event['kind']=='checkpoints_projected')
+    elapsed = confirmation_event['elapsed_wall_seconds']
+    end = terminal_state.get('elapsed_wall_seconds')
+    if type(end) not in {int,float} or not math.isfinite(end) or not state['elapsed_wall_seconds'] <= elapsed <= end:
+        refuse('candidate_evaluated.elapsed_wall_seconds', 'confirmation time lies outside search completion and Run terminal')
     receipt = confirmations[0][1]
     qualified = _receipt_qualifies(receipt)
     return FinalConfirmation(nominee.turn,nominee.candidate_sha256,terminal_tokens,qualified,

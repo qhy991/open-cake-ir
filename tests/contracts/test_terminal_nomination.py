@@ -23,9 +23,11 @@ class EarlierSearchEvaluator(FakeEvaluator):
 
 
 class NominationTests(SemanticLabTestCase):
-    def execute(self, evaluator_class=EarlierSearchEvaluator):
+    def execute(self, evaluator_class=EarlierSearchEvaluator, *, token_limit=160000):
         lab,spec = run_fixture.IndependentRunTests.fixture(self)
         document = spec.document
+        document['budget'].update(limit=token_limit,checkpoints=[80000,token_limit])
+        spec = run_fixture.RunSpecification.from_dict(document)
         provider = RalphFakeProvider({spec.run_id:lab.task_package(spec,spec.run_id)})
         provider.configuration = execution_configuration(document['authoring']['provider'])
         provider.qualification_sha256 = document['authoring']['provider']['qualification']['canonical_sha256']
@@ -114,3 +116,71 @@ class NominationTests(SemanticLabTestCase):
                 replay = replay_matched_run(evidence,audit,spec,project_root=ROOT,
                     manifest_parser=lab._parse_manifest,task_package=lab.task_package)
                 self.assertFalse(replay)
+
+    def test_overspending_cannot_claim_success_at_the_earlier_nominees_token_cost(self):
+        _,_,_,audit,_,events,_ = self.execute(token_limit=150000)
+        self.assertEqual(audit.endpoint_observation,'no_qualified_candidate')
+        nominee = next(e['payload'] for e in events if e['kind']=='candidate_nominated')
+        self.assertEqual(nominee['source_turn'],1)
+        self.assertEqual(events[-2]['payload']['ralph']['cumulative_provider_tokens'],160000)
+
+    def test_live_writer_rejects_a_search_job_relabelled_as_fresh_confirmation(self):
+        class Cached(EarlierSearchEvaluator):
+            def evaluate(self,candidate,*,case_id,purpose):
+                if purpose != 'confirmatory':
+                    result = super().evaluate(candidate,case_id=case_id,purpose=purpose)
+                    if purpose == 'search' and candidate.entry_point.endswith('_turn_1'):
+                        self.cached = result
+                    return result
+                receipt = replace(self.cached.final_receipt,purpose='confirmatory')
+                return replace(self.cached,final_receipt=receipt,
+                    attempts=(replace(self.cached.attempts[0],receipt=receipt),))
+        _,_,_,audit,_,events,_ = self.execute(Cached)
+        self.assertEqual(audit.protocol_adherence,'harness_fault')
+        self.assertEqual(audit.endpoint_observation,'missing')
+        fault = next(e['payload'] for e in events if e['kind']=='run_fault')
+        self.assertIn('reused an earlier broker job',fault['exception_message'])
+        self.assertIn('rejected_evaluation_receipt',{ref['role'] for ref in fault['objects']})
+
+    def test_raw_confirmation_request_and_job_identity_are_independently_checked(self):
+        from open_cake_ir.lab.replay.attempts import _replay_evaluation_attempt_event
+        from open_cake_ir.lab.replay.artifacts import _replay_launchable_candidate
+        from open_cake_ir.lab.replay.refusals import ReplayRefusal
+        from open_cake_ir.evaluation import EvaluationReceipt
+        from open_cake_ir.lab.replay.artifacts import _replay_evaluation_receipt
+        lab,spec,_,_,evidence,events,_ = self.execute()
+        nomination = next(e['payload'] for e in events if e['kind']=='candidate_nominated')
+        candidate = _replay_launchable_candidate(evidence,
+            [e for e in events if e['kind']=='launchable_candidate_sealed'],turn=nomination['source_turn'],
+            candidate_sha256=nomination['candidate_sha256'],arm='open_cake',manifest_parser=lab._parse_manifest)
+        evaluated = next(e['payload'] for e in events if e['kind']=='candidate_evaluated' and e['payload']['purpose']=='confirmatory')
+        protocol_sha = sha256(encoded(spec.document['evaluation_protocol'])).hexdigest()
+        case_id = spec.document['evaluation_protocol']['case_id']
+        receipt = _replay_evaluation_receipt(evidence,evaluated,launchable=candidate,
+            candidate_sha256=candidate.candidate_sha256,workload_sha256=spec.document['workload']['canonical_sha256'],
+            protocol_sha256=protocol_sha,case_id=case_id,purpose='confirmatory',
+            evaluation_protocol=spec.document['evaluation_protocol'],fixed_baseline=None,location='test')
+        payload = next(e['payload'] for e in events if e['kind']=='evaluation_attempt_completed' and e['payload']['purpose']=='confirmatory')
+        jobs = set()
+        arguments = dict(candidate=candidate,protocol_sha256=protocol_sha,
+            compiler_reference=spec.document['compiler_revision'],final_receipt=receipt,case_id=case_id)
+        _replay_evaluation_attempt_event(evidence,payload,used_job_ids=jobs,**arguments)
+        with self.assertRaisesRegex(ReplayRefusal,'reused across'):
+            _replay_evaluation_attempt_event(evidence,payload,used_job_ids=jobs,**arguments)
+        for field in ('purpose','case_id'):
+            with self.subTest(field=field),self.assertRaisesRegex(ReplayRefusal,'worker request authority'):
+                _replay_evaluation_attempt_event(evidence,{**payload,'purpose':'search'} if field=='purpose' else payload,
+                    used_job_ids=set(),**{**arguments,**({'case_id':'foreign-case'} if field=='case_id' else {})})
+
+    def test_confirmation_timestamp_stays_between_search_end_and_run_end(self):
+        lab,spec,_,audit,evidence,events,_ = self.execute()
+        end = events[-2]['payload']['ralph']['elapsed_wall_seconds']
+        for elapsed in (0,end+1):
+            changed = deepcopy(list(events))
+            next(e['payload'] for e in changed if e['kind']=='candidate_evaluated'
+                 and e['payload']['purpose']=='confirmatory')['elapsed_wall_seconds'] = elapsed
+            with self.subTest(elapsed=elapsed),patch.object(evidence,'replay_events',return_value=changed):
+                replay = replay_matched_run(evidence,audit,spec,project_root=ROOT,
+                    manifest_parser=lab._parse_manifest,task_package=lab.task_package)
+            self.assertFalse(replay)
+            self.assertIn('confirmation time lies outside',str(replay.refusals[0]))
