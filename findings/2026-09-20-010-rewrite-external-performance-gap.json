@@ -1173,5 +1173,139 @@
       }
     },
     "interpretation": "003 width eight also beats the frozen old optimized control on a qualified edge: 10.368 versus 14.496 us, 1.398x. Its external edge fails CV. Width-dependent improvement is not monotonic. All seven runs now pass their 2550 complete numerical snapshots; only 003 width one has all three timing edges quality-passing. Six full reports remain measurement_quality_failed. Individual qualified edges retain their own scope. No promotion."
+  },
+  "whole_row_followup": {
+    "results": [
+      {
+        "mechanism": "structure",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-whole-row-comparison-20260921-66e2f67c5ab3",
+        "run_id": "nvidia-whole-row-comparison-20260921-66e2f67c5ab3",
+        "source_commit": "ba4537fd1e0fed9014105f32aa92c0e2a37f2c27",
+        "input": {
+          "kind": "authored_schedule_comparison",
+          "source_commit": "ba4537fd1e0fed9014105f32aa92c0e2a37f2c27",
+          "source_input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/003_fused_add_rmsnorm_h7168-w16",
+          "authored_input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-whole-row-20260921/003-whole-row-w16.py",
+          "control_role": "optimized",
+          "mechanism": "Masked whole-row 8192 reduction and reuse versus sliced reduction/reload TileLoop; both 16 execution groups, same generic AOT, original Workload/oracle and derived external Graph reference.",
+          "preparation_scope": "CPU compilation only; no GPU qualification is inferred",
+          "original_task_starter": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-work-assignment-20260920/inputs/003_fused_add_rmsnorm_h7168-w16/starter/candidate.json",
+          "findings": {
+            "stage": "built",
+            "findings": []
+          }
+        },
+        "control": "Frozen sliced 16-group candidate",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "status": "passed",
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 3.7439999999999998,
+            "right_us": 3.04,
+            "right_over_left": 0.811965811965812,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.044715581889566,
+            "cohorts_above_cv_limit": 0
+          },
+          "starter_vs_external": {
+            "left_us": 7.04,
+            "right_us": 3.04,
+            "right_over_left": 0.431818181818182,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.043442526286797,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 3.713,
+            "right_us": 7.04,
+            "right_over_left": 1.896040937247509,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.030092003146517,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "mechanism": "alignment",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-whole-row-alignment-comparison-20260921-4a7ffebc7903",
+        "run_id": "nvidia-whole-row-alignment-comparison-20260921-4a7ffebc7903",
+        "source_commit": "ba4537fd1e0fed9014105f32aa92c0e2a37f2c27",
+        "input": {
+          "kind": "explicit_alignment_ablation",
+          "compiler_commit": "ba4537fd1e0fed9014105f32aa92c0e2a37f2c27",
+          "source_input": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-whole-row-20260921/input",
+          "original_task_starter": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-whole-row-20260921/input/starter/candidate.json",
+          "comparison_baseline": "unchanged retained optimized binary, relabeled starter only for existing comparison input ABI",
+          "treatment": "same source, constants and grid; runtime-guarded alignment variants",
+          "pointer_alignment": 16,
+          "compile_options": {
+            "num_warps": 16
+          },
+          "ptx_global_instructions": {
+            "old": {
+              "ld.global.b16": 48,
+              "st.global.b16": 16
+            },
+            "generic": {
+              "ld.global.b16": 48,
+              "st.global.b16": 16
+            },
+            "aligned": {
+              "ld.global.v4.b32": 6,
+              "st.global.v4.b32": 2
+            }
+          },
+          "gpu_correctness": "not_run",
+          "performance": "not_measured"
+        },
+        "control": "Frozen generic whole-row candidate",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "status": "measurement_quality_failed",
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 3.3600000000000003,
+            "right_us": 3.04,
+            "right_over_left": 0.904761904761905,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.056068467770498,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 3.7439999999999998,
+            "right_us": 3.04,
+            "right_over_left": 0.811965811965812,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.041898904732523,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 3.3600000000000003,
+            "right_us": 3.7439999999999998,
+            "right_over_left": 1.114285714285714,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.05404479762583,
+            "cohorts_above_cv_limit": 1
+          }
+        }
+      }
+    ],
+    "mechanisms": "003 uses the existing masked 8192-element ProgramMap at 16 execution groups. Structure replaces sliced reduction/reloading with one row reduction and reuse; the subsequent alignment ablation keeps that source, constants and grid and uses the reviewed runtime-guarded generic/aligned bundle.",
+    "guard_evidence": {
+      "run_id": "nvidia-whole-row-alignment-guards-20260921-3eae51494b3c",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-whole-row-alignment-guards-20260921-3eae51494b3c/stages/verify/guard-report.json",
+      "passed_checks": 65,
+      "performance_measured": false
+    },
+    "boundary": "Original five cases and all 2550 input/output snapshots per run; CPU prepare, continuous exclusive GPU capture for all three paired edges, CPU verification after worker exit. Cold-L2 CUPTI and the original 5% CV/materiality gates. The external is still the explicitly derived Graph-host-argument correction. Fixed controls are intermediate sealed candidates, not the initial task starter, which stays at its historical path.",
+    "interpretation": "Whole-row versus sliced w16 is a qualified 1.896x improvement (3.713/7.040 us). Its separate external edge remains 23.158 percent slower (3.744/3.040 us), with all three timing edges quality-passing. The alignment successor passes every numerical snapshot but both new/control and new/external timing edges fail CV; 3.360 us and its nominal 1.114x are descriptive only. Do not multiply ratios from separate runs. No new IR primitive or isolated profiler attribution is established.",
+    "promotion_disposition": "No promotion. Preserve the guarded candidate and failed timing edges; do not repeat failed comparisons merely to pass CV. Route the structural lesson to authoring recipes and retain the generic whole-row qualified evidence. Independent profiler attribution remains pending."
   }
 }
