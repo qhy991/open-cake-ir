@@ -3,13 +3,31 @@ from array import array
 from types import SimpleNamespace
 import unittest
 
-from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate, compare_tile_outputs, _same_tensor_inputs
+from open_cake_ir.evaluation.core import (
+    LoadedTorchTensorCandidate, compare_tile_outputs, compare_tile_output_values, _same_tensor_inputs,
+)
 from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.workloads import create_task, materialize_case
 
 
 class TensorInputSequences(unittest.TestCase):
+    def test_output_only_entry_keeps_numerics_and_combined_entry_keeps_input_effects(self):
+        workload = SimpleNamespace(document={'validation':{
+            'comparison':'elementwise_atol_rtol','atol':0.0,'rtol':0.0}})
+        expected = {'out':[1.0,-0.0]}
+        for observed in (expected, {'out':[2.0,0.0]}, {'out':[float('nan'),0.0]}, {}, {'out':[1.0]}):
+            with self.subTest(observed=observed):
+                passed, metrics = compare_tile_output_values(workload,expected,observed)
+                full, combined = compare_tile_outputs(workload,{'x':[1.0]},expected,observed,{'x':[1.0]})
+                self.assertEqual(passed,full)
+                self.assertEqual(combined,{**metrics,'inputs_unchanged':True})
+                self.assertNotIn('inputs_unchanged',metrics)
+        full,metrics = compare_tile_outputs(workload,{'x':[-0.0]},expected,expected,{'x':[0.0]})
+        self.assertFalse(full)
+        self.assertFalse(metrics['inputs_unchanged'])
+        self.assertEqual(metrics['output_mismatches'],0)
+
     def test_native_double_arrays_preserve_bit_checks_and_nan_refusal(self):
         for before, after, expected in [
             ([1.0, -0.0], [1.0, -0.0], True),
