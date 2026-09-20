@@ -56,7 +56,13 @@ def alignment_component(parent, manifest):
             or child.launch_spec_sha256 != other.canonical_sha256
             or 'kernel_bundle' in child.artifact_roles):
         raise ValueError('aligned kernel must preserve source, target and Workload ABI')
-    for role in ('lowered_source', 'authored_source', 'compiler_expanded_source'):
+    # Triton's asm['source'] is already compiler IR: pointer attributes and
+    # temporary source locations legitimately differ between compilations.
+    # Bind the authoring input, while sealing each compiler output separately.
+    source_roles = ('lowered_source', 'authored_source')
+    if not any(role in parent.artifact_roles for role in source_roles):
+        raise ValueError('alignment bundle requires its declared source program')
+    for role in source_roles:
         if child.artifact_roles.get(role) != parent.artifact_roles.get(role):
             raise ValueError('aligned kernel changes its source program')
     return child, other
