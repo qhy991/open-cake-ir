@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-20-004",
+  "kind": "protocol",
+  "date": "2026-09-20",
+  "title": "Failed native file operations are misclassified as malformed lifecycles; shared provider state needs explicit node binding",
+  "backend": "Codex tool_rich_candidate_v1 and experiment node transport",
+  "target": "B300-M2 and B300-M3; sm_103a",
+  "compiler_revision_id": "open-cake-ir@89fe3157",
+  "executor_revision": "sm_103a@89fe3157",
+  "evidence": {
+    "old_run": "B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/agent-rewrite-batch-20260920-r2/runs/021_rmsnorm_h128",
+    "event": "campaign-evidence/runs/open_cake-1/events/000000000001.json",
+    "successor_failures": [
+      "rewrites-allrefs-20260920-m3/runs/002_fused_add_rmsnorm_h4096/qualification-evidence",
+      "rewrites-allrefs-20260920-m2/runs/001_fused_add_rmsnorm_h2048/qualification-evidence"
+    ],
+    "event_indices": "Old 021 stdout indices 4/5, 6/7, 8/9 are stable started/completed file_change pairs with final status failed; candidate file was not produced. M3 successor repeats failed file operations and reports an absent .codex/tmp/arg0/.../codex-linux-sandbox. M2 resumed qualification exits with list_turns is not supported yet (code -32601)."
+  },
+  "observation": "The adapter only allows status completed for file changes despite retaining failed command/tool statuses. Thus a well-formed failed operation hides the actual file-write failure. Both hosts share the same HOME under /mnt/b300-shared; helper disappearance and resume failure motivate testing explicit node-local Codex state, but do not prove a single root cause. A deterministic sandbox /bin/true probe succeeds on both nodes; M2 also reports stale arg0 cleanup failure. Old 003 has serial GPU evaluation receipts and is not proven stuck.",
+  "proposed_change": "Retain failed file-change status without changing payload/lifecycle checks or candidate file postconditions; absent/invalid candidates still fail. Permit a validated, explicitly provisioned per-node codex_home in experiment inputs, forwarded only to that node launcher and preserved across initial/resume. Keep sandbox workspace-write and the current binary/model. Validate with raw replay and a fresh two-turn qualification before new runs. Never rewrite old failed outcomes.",
+  "decision": "accepted",
+  "implemented_in": null,
+  "verified_by": null
+}

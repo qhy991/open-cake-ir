@@ -76,7 +76,7 @@ def validate(config):
         create_task(cell["task"], backend=cell["backend"], rows=cell["rows"],
                     columns=cell["columns"], depth=cell.get("depth"))
         node = cell["node"]
-        object_fields(node, {"transport", "project_root", "python", "kernelctl", "socket", "workspace"}, {"host", "provider_executable", "http_proxy", "qualification", "qualification_anchor"})
+        object_fields(node, {"transport", "project_root", "python", "kernelctl", "socket", "workspace"}, {"host", "provider_executable", "http_proxy", "qualification", "qualification_anchor", "codex_home"})
         if ("qualification" in node) != ("qualification_anchor" in node):
             raise ValueError("qualification receipt and anchor must be supplied together")
         for key in ("qualification", "qualification_anchor"):
@@ -84,6 +84,10 @@ def validate(config):
                 absolute(node[key])
         if "provider_executable" in node:
             absolute(node["provider_executable"])
+        if "codex_home" in node:
+            absolute(node["codex_home"])
+            if provider["harness"] != "codex":
+                raise ValueError("node.codex_home is only valid for the Codex provider")
         if "http_proxy" in node:
             proxy = urlsplit(node["http_proxy"])
             if (proxy.scheme not in {"http", "https"} or not proxy.hostname or proxy.port is None
@@ -175,6 +179,11 @@ for group in (p["provider"], p["budget"]):
     for name, value in group.items():
         args += ["--" + name.replace("_", "-"), str(value)]
 environment = dict(os.environ)
+if "codex_home" in n:
+    home = pathlib.Path(n["codex_home"])
+    if not home.is_dir() or home.resolve() != home:
+        raise ValueError("node.codex_home must be an existing canonical directory")
+    environment["CODEX_HOME"] = str(home)
 if "http_proxy" in n:
     for name in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
         environment[name] = n["http_proxy"]

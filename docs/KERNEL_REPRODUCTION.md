@@ -106,3 +106,12 @@ worktree 验证，再用后继 Campaign 测量。无需新建 Study kind 或第�
 规范是 authoring treatment。修改规范后启动新任务并保留旧输入，不重标历史结果。
 被传入请求的内容可核对，但传入本身不证明模型遵循了它；结构、正确性和性能仍由
 实际候选及外部评测证据判断。
+
+
+## 多节点 Codex 状态目录
+
+可在 cell 的 node 中显式绑定 `codex_home`，指向该节点上已准备好的绝对目录。
+入口仅为该 cell 的 launcher 设置 `CODEX_HOME`，initial/resume 及资格验证共享此绑定。
+使用节点本地目录可隔离跨主机共享 HOME 下的临时 helper 和会话状态；它不会关闭 sandbox，
+也不会自动复制凭据、修复旧运行或创建目录。身份与初始/恢复行为仍需新的两轮 qualification。
+旧运行的失败记录不重分类；换绑定后必须准备新实验输入与运行目录。

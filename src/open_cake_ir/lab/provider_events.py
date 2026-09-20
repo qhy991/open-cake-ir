@@ -371,12 +371,14 @@ def _auxiliary_activity(auxiliary_events):
         first = lifecycle[0][1]
         final = lifecycle[-1][1]
         if next(iter(item_types)) == "file_change":
+            # A failed native file operation still has a complete lifecycle.
+            # Retain its status; candidate postconditions decide submission validity.
             if (
                 event_types != ["item.started", "item.completed"]
                 or set(first) != {"id", "type", "changes", "status"}
                 or set(final) != {"id", "type", "changes", "status"}
                 or first.get("status") != "in_progress"
-                or final.get("status") != "completed"
+                or final.get("status") not in {"completed", "failed"}
                 or first.get("changes") != final.get("changes")
             ):
                 raise ValueError("provider auxiliary file-change lifecycle differs")
