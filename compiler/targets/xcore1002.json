@@ -8,7 +8,7 @@
   "triton_arch": 80,
   "warp_size": 64,
   "memory_spaces": ["global", "shared", "register"],
-  "operation_kinds": ["load", "elementwise", "reduce", "store"],
+  "operation_kinds": ["load", "cast", "elementwise", "reduce", "store"],
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_shared_memory_bytes": 65536,
