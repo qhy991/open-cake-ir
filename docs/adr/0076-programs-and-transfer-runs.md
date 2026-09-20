@@ -20,6 +20,12 @@ contract. Every intermediate has a producer and consumer. The only initial view 
 explicit insertion/removal of singleton axes with unchanged storage order and dtype.
 This accommodates QSA's actual boundary without introducing a layout algebra.
 
+An identity-bound single stage with the exact public tensor ABI uses its existing
+single-kernel builder. The original Program remains the candidate identity; no binding
+or kernel is renamed to make it fit. Replay checks its Compiler lowering and physical
+launch against the backend's existing compilation evidence, including alignment variants.
+Programs that require actual composition retain explicit adapter capability admission.
+
 Program syntax, use-def legality and per-stage Compiler assessment have one owner.
 Device adapters must verify contiguous storage, nonaliasing and view identity before launch.
 A transformation selects named stages in a complete Program, proves its own applicability,

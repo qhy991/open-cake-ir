@@ -98,13 +98,19 @@ Cake 作者可以提交完整 `Program`。公共 ABI 在 Workload 边界绑定�
 只描述自己的参数；Triton builder 为每个 stage 保留独立编译产物和实际 launch metadata。
 父候选封存 stage bundle，回放核对原始作者 Program、冻结 Compiler lowering 和编译产物。
 
+只有一个 stage、无视图或重命名绑定且参数顺序与公开 ABI 完全一致时，复用该平台已有的
+单 kernel builder，保留原始 Program 候选身份。Triton 的普通和 alignment 变体保留同一
+编译记录；CuTe 的二进制符号由已有编译合同验证；Metal 保留原 lowering 的线程和共享存储
+声明。回放同时核对作者程序、生成源码、公开 ABI 与物理 launch，不能只凭封存完整性接受。
+
 Program 与单 kernel 共用 oracle 和 Evaluation receipt。物理 kernel/module 计数来自封存
 stage，计时覆盖完整有序调用；NCU 输出按 dispatch 保留各 stage 的指标，不把逐 stage
 指标冒充整体性能估计。每个计时 cohort 结束后释放它自己的输出与中间张量。
 
-当前完整 Program 执行适配实现于 Triton/CUDA 路径；其他 code object 在构建及执行入口
-明确拒绝，静态 Program 表示不因这个适配范围受限。软件合同测试不赋予实机正确性、
-计时或跨架构收益资格。显式动作、知识授权与消息作者隔离见下节；正式消融仍在本任务中实施。
+需要多次 launch、非 identity 绑定或视图映射的 Program，目前使用 Triton/CUDA 组合适配；
+其他 code object 对这些组合仍明确拒绝。静态表示和上述单 kernel 路径不受此组合适配范围
+限制。软件合同测试不赋予实机正确性、计时或跨架构收益资格。显式动作、知识授权与消息作者
+隔离见下节；生产运行装配与正式硬件消融仍未完成。
 
 ## Knowledge and explicit author actions
 
