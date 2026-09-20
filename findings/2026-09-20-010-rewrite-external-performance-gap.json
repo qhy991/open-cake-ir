@@ -2169,5 +2169,18 @@
       "source_wording_correction": "Original planning report says 42 cohorts; this means 42 calls per cohort. The comparison has60 timed cohorts plus30 pre/postflight calls (2550 total). Budget numbers are unchanged."
     },
     "promotion_disposition": "No promotion; CPU artifact reach only. Begin with a complete bounded012 integration before expanding; budget018/019/020 preparation and snapshots before concurrency."
+  },
+  "profiler_phase_followup": {
+    "implemented_in": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+    "scope": "The existing NVIDIA rewrite profiler now uses CPU prepare -> exclusive NCU profile -> CPU verify. This is independent attribution, not a CUPTI timing rerun or promotion. Native reference compilation, input/oracle generation and all numerical comparison occur outside the GPU lease. Every participant retains all five validation observations plus the profiled primary, including all inputs/outputs; all18 observations must pass before metrics are accepted. NCU cold kernel replay, all callable launches and the existing ncu_process privilege/custody boundary remain unchanged.",
+    "verified_by": [
+      "Fixed34f04b40:27 tests and19 subtests across rewrite_profile,staged_rewrite_comparison,ncu_process,tensor_profile_handoff; F821/F401 pass.",
+      "Independent review found missing roles in the initial79734e57 child;34f04b40 restores comparison_roles and exercises the actual derived_from loader path, preserving intermediate-control labels. Re-review passed.",
+      "PR156:all three Python contract CI jobs pass before merge; four input/task preparations independently checked."
+    ],
+    "runtime_evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-phased-profiles-20260921/submissions.json",
+    "device_verification_at_publication": "First003 pipeline verification submitted; no accepted device profile is inferred from CPU/CI checks. Remaining prepared008/009/026profiles wait for that result.",
+    "interpretation_limits": "An independent009 profile runs its original runtime selector anew; its branch observation cannot identify the earlier timing process branch.026profiling cannot upgrade failed external CV edges. NCU metrics do not replace original paired performance results.",
+    "promotion_disposition": "No promotion. Retain any capture, permission, numerical or metrics failure as separate evidence; do not patch a running frozen source."
   }
 }
