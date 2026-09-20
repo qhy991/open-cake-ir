@@ -1,5 +1,6 @@
 """The task's mathematical tolerance must never replace its bitwise peer gate."""
 from copy import deepcopy
+import ast
 from pathlib import Path
 import tempfile
 import unittest
@@ -78,3 +79,45 @@ class TinyGemmReproduction(unittest.TestCase):
                         lowering = compiler.lower(assessment)
                         self.assertIn('tl.bfloat16', lowering.source)
                         self.assertIn(f'num_stages={stages}', lowering.source)
+
+    def test_partitioned_lowering_keeps_each_quarter_and_accumulates_across_trips(self):
+        import numpy as np
+        class LogicalTL:
+            float32 = np.float32
+            arange = staticmethod(np.arange)
+            broadcast_to = staticmethod(np.broadcast_to)
+            trans = staticmethod(np.transpose)
+            gather = staticmethod(lambda a, i, axis: np.take_along_axis(a, i, axis))
+            dot = staticmethod(lambda a, b, acc, **kw: acc + a @ b)
+            inline_asm_elementwise = staticmethod(lambda *a, args, **kw: args[0])
+        workload = WorkloadContract(task.workload_document(rows=16, columns=16, depth=3072))
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        document = frontend.parse(task.partitioned_source(workload)).document
+        assessment = compiler.assess(document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        tree = ast.parse(compiler.lower(assessment).source)
+        loop = next(n for n in ast.walk(tree) if isinstance(n, ast.For))
+        assignments = [n for n in loop.body if isinstance(n, ast.Assign)
+                       and isinstance(n.targets[0], ast.Name) and n.targets[0].id in {'acc0','acc1','acc2','acc3'}]
+        self.assertEqual(len(assignments), 8)
+        rng = np.random.default_rng(7)
+        inputs = [(rng.integers(-2, 3, (16, 1024)).astype(np.float32),
+                   rng.integers(-2, 3, (16, 1024)).astype(np.float32)) for _ in range(3)]
+        env = {'tl': LogicalTL, **{f'acc{i}': np.full((16, 16), i + 1, np.float32) for i in range(4)}}
+        for a, b in inputs:
+            env.update(a=a, b=b)
+            for node in assignments:
+                exec(compile(ast.Module(body=[node], type_ignores=[]), '<selected K carry>', 'exec'), env)
+        for i in range(4):
+            expected = np.full((16, 16), i + 1, np.float32)
+            for a, b in inputs:
+                expected += a[:,i*256:(i+1)*256] @ b[:,i*256:(i+1)*256].T
+            np.testing.assert_array_equal(env[f'acc{i}'], expected)
+        # This checks selected coordinates/carry, not GPU instruction rounding.
+        for change in ('target', 'unaligned_quarter'):
+            bad = deepcopy(document)
+            if change == 'target': bad['target'] = 'sm_100a'
+            else:
+                next(op for op in bad['operations'] if op['id']=='dot0')['parameters']['k_ranges'] = [[1,257]]
+            refused = compiler.assess(bad)
+            self.assertIn('TRITON_MMA_K_RANGES_UNSUPPORTED', [f.code for f in refused.findings])

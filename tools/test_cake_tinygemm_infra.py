@@ -48,7 +48,7 @@ def qualify(output, compiler, torch):
         (folder / 'workload.json').write_text(json.dumps(document, indent=2) + '\n')
         entries = {}
         for stages in (4, 8):
-            source = task.starter_source(workload, stages=stages)
+            source = task.partitioned_source(workload, stages=stages)
             assessment = compiler.assess(frontend.parse(source).document)
             (folder / f'assessment-s{stages}.json').write_text(json.dumps(
                 [f.to_dict() for f in assessment.findings], indent=2) + '\n')

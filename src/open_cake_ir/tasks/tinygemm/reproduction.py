@@ -178,3 +178,22 @@ def candidate(lm, {', '.join(declarations)}):
         rounded = lm.cast(result, to="bf16", id="round_out")
         lm.store(out[row, column], rounded, id="store_out")
 '''
+
+
+def partitioned_source(workload, case_id='primary', *, stages=4):
+    """Explicitly retain the reference's four K256 lanes per K1024 iteration.
+
+    This candidate tests arithmetic grouping, not faithful TMA/warp-role lowering.
+    GPU peer comparison still decides bitwise correctness.
+    """
+    if workload.target != 'sm_103a':
+        raise ValueError('partitioned TinyGEMM is currently bounded to sm_103a')
+    source = starter_source(workload, case_id, stages=stages)
+    source = source.replace('dimension=1, tile=16, num_stages=', 'dimension=1, tile=1024, num_stages=')
+    original = '            acc = lm.mma(a, b, instruction={"contract": "triton.dot.bf16_fp32"}, tile_shape=(16, 16, 16), id="dot")'
+    partials = '\n'.join(
+        f'            acc{i} = lm.mma(a, b, instruction={{"contract": "triton.dot.bf16_fp32"}}, '
+        f'tile_shape=(16, 16, 1024), k_ranges=[[{i*256}, {(i+1)*256}]], id="dot{i}")'
+        for i in range(4))
+    source = source.replace(original, partials)
+    return source.replace('        result = acc +', '        combined = ((acc0 + acc1) + acc2) + acc3\n        result = combined +')
