@@ -33,7 +33,7 @@ class TileGpuWorkerTests(unittest.TestCase):
         from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission
         self.admission = CudaDeviceAdmission('NVIDIA B200', (10, 0), 'fixture-uuid', 'gpuq-123456789abc', 'exclusive')
 
-    def assay(self, *, fail_preflight=False, mutate_after_timing=False, timing_error=False, write_once=False):
+    def assay(self, *, fail_preflight=False, mutate_after_timing=False, timing_error=False, write_once=False, profile=False):
         workload = self.workload
         instances = []
 
@@ -103,6 +103,33 @@ class TileGpuWorkerTests(unittest.TestCase):
             # so the double is handed in rather than patched over a constructor that is
             # no longer called.
             with mock.patch.object(worker, 'LoadedTorchTensorCandidate', Loaded):
+                if profile:
+                    authority.request = {'purpose': 'attribution', 'evaluation_protocol': {
+                        'case_id': 'tiny', 'attribution_evaluation': 'correctness_then_profile'}}
+                    def collect(launch, name):
+                        launch()
+                        return {'observed': name}
+                    def evaluate_profile():
+                        worker._evaluate_tile_candidate(authority, result, None, self.admission, False,
+                            route_calls_per_cohort=None, profile_source=collect,
+                            profile_format=SimpleNamespace(kind='fixture_profile', summary=dict))
+                    if write_once:
+                        with self.assertRaisesRegex(ValueError, 'instrumented dispatch output'):
+                            evaluate_profile()
+                        self.assertIsNone(result['receipt'])
+                    else:
+                        evaluate_profile()
+                        correctness = json.loads((root / 'correctness-output.json').read_bytes())
+                        launch = json.loads((root / 'launch-receipt.json').read_bytes())
+                        self.assertTrue(correctness['instrumented']['passed'])
+                        self.assertEqual(correctness['correctness_launches'], 2)
+                        self.assertEqual(launch['correctness_launches'], 2)
+                        self.assertEqual(launch['manifest_sha256'], self.candidate.launch_spec_sha256)
+                        self.assertIsNone(result['receipt']['timing'])
+                    self.assertEqual(result['counters']['kernel_calls'], 2)
+                    self.assertEqual(result['counters']['timing_samples'], 0)
+                    self.assertTrue(instances[0].closed)
+                    return
                 if timing_error:
                     with self.assertRaisesRegex(RuntimeError, 'CUPTI failure'):
                         worker._evaluate_tile_candidate(
@@ -160,6 +187,12 @@ class TileGpuWorkerTests(unittest.TestCase):
 
     def test_worker_preflight_timing_postflight_forms_a_valid_common_receipt(self):
         self.assay()
+
+    def test_instrumented_output_has_its_own_oracle_check(self):
+        self.assay(profile=True)
+
+    def test_passing_preflight_cannot_hide_unwritten_instrumented_outputs(self):
+        self.assay(profile=True, write_once=True)
 
     def test_wrong_preflight_does_not_enter_timing(self):
         self.assay(fail_preflight=True)
