@@ -110,7 +110,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
 
     def test_the_registry_is_closed_and_every_record_says_what_it_is(self) -> None:
         """Sixteen records; each kind carries exactly the fields its analyses read."""
-        self.assertEqual(len(CONTRACTS), 17)
+        self.assertEqual(len(CONTRACTS), 18)
         for name, record in CONTRACTS.items():
             with self.subTest(contract=name):
                 self.assertEqual(record.name, name)
