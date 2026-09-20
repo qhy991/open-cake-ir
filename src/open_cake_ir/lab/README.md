@@ -75,6 +75,23 @@ The existing Study facade remains an input boundary. Independent Runs carry thei
 authority and use the same engine and independent replay. A new source commit
 changes the identity of future execution; it does not rewrite historical evidence.
 
+## Preassigned E/P Studies
+
+`StudyPlan` 保留 `matched_search` 类型，冻结四个 E/P 组合、知识版本、源发现/目标适配/测试划分，
+以及各测试任务的 Run 模板。标签只是分配身份，不选择候选语言或后端。准备阶段校验共享控制、
+同一 operator 的 family 标签一致性和 canonical workload/case 去重；未见形状与未见算子族分别报告。
+机制文本是否包含测试答案仍属于内容审查，结构检查不代替该判断。
+
+`Lab.prepare_study` 在外部目录写入计划及每个预分配 Run；`execute_study` 通过调用方提供的
+runtime factory 调用同一个 `execute_run`，不引入另一套搜索状态。已尝试分配不得覆盖或自动替换，
+启动前失败也有绑定原 Run 身份的记录。`audit_study` 只采用匹配预分配且通过独立回放的结果。
+`tools/transfer_study.py prepare/audit` 提供准备和审计入口；生产 runtime factory 接线仍待完成。
+
+报告按任务等权计算材料、pass 与交互的成功率差，缺失保留在分母并给出范围与已观测子集敏感性。
+配对 task bootstrap 需要预注册的先导依据和最小任务数，单任务及软件资格测试不生成总体区间。
+首次正确成本来自真实评测完成事件；材料交付与显式 pass 使用分别报告。`system_qualification_only`
+只产生协议描述，不能输出科学主估计量。发现、适配和维护成本以原始证据引用报告，缺失不当作零。
+
 ## Complete Program candidates
 
 Cake 作者可以提交完整 `Program`。公共 ABI 在 Workload 边界绑定一次，叶子 Schedule
@@ -105,7 +122,7 @@ P0 在解析父程序和调用 Compiler 之前拒绝变换。直接提交的既�
 改写与构建时间计入同一 Run 的 wall budget。
 
 服务端调用权限与材料交付不等同于证明 CLI 作者无法读取主机文件。受限作者使用下面的消息
-入口；正式 E/P Study 的冻结分配、统计分析和完整预算协议尚未完成。
+入口；E/P 分配和分析使用上述 StudyPlan，真实迁移收益仍需正式实验验证。
 
 ## Message-only authoring
 

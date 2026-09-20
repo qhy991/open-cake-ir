@@ -2,10 +2,12 @@
 from copy import deepcopy
 from hashlib import sha256
 import json
+import io
 import os
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
+from contextlib import redirect_stdout
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.lab import StudyPlan, read_study
@@ -181,6 +183,22 @@ class TransferStudyTests(SemanticLabTestCase):
         with self.assertRaisesRegex(ValueError,'one-task'):task_bootstrap([[0.,1.,0.,1.]],draws=1000,seed=1)
         self.assertEqual(task_bootstrap([[0.,0.,0.,0.],[1.,1.,1.,1.]],draws=1000,seed=7),
                          {name:[0.,0.] for name in ('experience','passes','interaction')})
+
+    def test_prepare_and_audit_cli_create_reviewable_inputs_without_running_providers(self):
+        from tools.transfer_study import main
+        _,plan,_,_,_,root = self.fixture()
+        path = root/'plan.json';path.write_bytes(encoded(plan.document))
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(main(['prepare','--plan',str(path),'--output',str(root/'prepared')]),0)
+        prepared = json.loads(output.getvalue())
+        self.assertEqual(prepared['allocated_runs'],4)
+        self.assertEqual(prepared['executed_runs'],0)
+        output = io.StringIO()
+        with redirect_stdout(output): self.assertEqual(main(['audit','--study',str(root/'prepared')]),0)
+        report = json.loads(output.getvalue())
+        self.assertFalse(report['complete'])
+        self.assertTrue(all(row['reason']=='not_started' for row in report['runs']))
 
     def test_effects_use_task_weights_and_keep_missing_runs_in_denominators(self):
         _,plan,_,_,_,_ = self.fixture()

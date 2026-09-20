@@ -103,14 +103,17 @@ def _read_outcome(study,allocation, *, audit_run):
            'replicate':allocation.replicate,'status':'missing','reason':'not_started','terminal':False,
            'pipeline_verified':False,'confirmed_speedup':None,'performance_eligible':False,
            'first_correct':None,'first_correct_status':'unknown',
-           'transform_requests':0,'transforms_applied':0,'transforms_refused':0}
+           'transform_requests':None,'transforms_applied':None,'transforms_refused':None,
+           'delivered_materials':None,'allocated_transformations':spec.document['knowledge']['transformations']}
     failure_path = directory/'failure.json'
     failure = None
     if failure_path.exists():
         failure = json.loads(failure_path.read_bytes())
         if (set(failure) != {'schema_version','run_id','run_specification_sha256','exception_type','message'}
-            or failure['schema_version'] != 1 or failure['run_id'] != allocation.run_id
-            or failure['run_specification_sha256'] != spec.canonical_sha256):
+            or type(failure['schema_version']) is not int or failure['schema_version'] != 1
+            or failure['run_id'] != allocation.run_id or failure['run_specification_sha256'] != spec.canonical_sha256
+            or not isinstance(failure['exception_type'],str) or not failure['exception_type']
+            or not isinstance(failure['message'],str) or len(failure['message']) > 2048):
             raise ValueError('allocation failure belongs to a different frozen Run')
         row.update(terminal=True,reason='pre_execution_or_unsealed_failure',failure=failure)
     if not (directory/'evidence').exists():
@@ -127,9 +130,12 @@ def _read_outcome(study,allocation, *, audit_run):
     if failure is not None:
         raise ValueError('a sealed audited Run cannot also be a failed allocation')
     row.update(pipeline_verified=True,run_endpoint=audit.endpoint_observation,
-               protocol_adherence=audit.protocol_adherence)
+               protocol_adherence=audit.protocol_adherence,transform_requests=0,transforms_applied=0,transforms_refused=0)
     evidence = EvidenceStore.open(directory/'evidence')
     events = evidence.replay_events(allocation.run_id)
+    if any(event['kind']=='provider_turn_completed' for event in events):
+        row['delivered_materials'] = [{'knowledge_id':unit['knowledge_id'],'version':unit['version']}
+                                      for unit in spec.document['knowledge']['materials']]
     state = next(event['payload']['ralph'] for event in events if event['kind']=='checkpoints_projected')
     fault = next((event['payload'] for event in events if event['kind']=='run_fault'),{})
     row.update(provider_tokens=state['cumulative_provider_tokens'],
@@ -202,15 +208,17 @@ def audit_study(study, *, audit_run, validate_inputs):
             rows.append({'run_id':allocation.run_id,'task_id':allocation.task_id,'condition_id':allocation.condition_id,
                 'replicate':allocation.replicate,'status':'missing','reason':'unverified_allocation',
                 'terminal':False,'pipeline_verified':False,'diagnostic':str(error),
-                'confirmed_speedup':None,'performance_eligible':False})
+                'confirmed_speedup':None,'performance_eligible':False,'first_correct':None,'first_correct_status':'unknown'})
     complete = all(row['terminal'] for row in rows)
     scientific = study.plan.document['claim_scope']=='scientific_matched_search'
-    summary = summarize_cells(study.plan,rows,intervals=complete and scientific)
+    analysis_verified = not any(row['reason'] in {'unverified_run','unverified_allocation'} for row in rows)
+    available = complete and scientific and analysis_verified
+    summary = summarize_cells(study.plan,rows,intervals=available)
     costs = study.plan.document['upstream_costs']
     return {'study_id':study.plan.study_id,'claim_scope':study.plan.document['claim_scope'],
             'complete':complete,'allocated':len(rows),'pipeline_verified':sum(row['pipeline_verified'] for row in rows),
-            'estimand_available':complete and scientific,
-            'primary':summary if complete and scientific else None,
+            'analysis_verified':analysis_verified,'estimand_available':available,
+            'primary':summary if available else None,
             'descriptive':summary,'runs':rows,
             'upstream_costs':{phase:{'evidence':refs,'coverage':'referenced' if refs else 'unreported_not_zero'}
                               for phase,refs in costs.items()},

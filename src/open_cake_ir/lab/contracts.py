@@ -277,9 +277,10 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class StudyContract:
-    """Matched-search execution and data-use authority.
+    """External paired-study input, adapted to independent Run specifications.
 
-    `load` is the one place a Study document's shape is decided. The typed projections
+    `load` owns this input spelling. New E/P allocation uses StudyPlan; neither
+    spelling owns a second execution loop. The typed projections
     below read the document, so `dataclasses.replace(study, document=...)` with resolved
     binding leaves keeps them current.
     """

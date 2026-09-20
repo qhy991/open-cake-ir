@@ -99,11 +99,11 @@ def read_study(root):
 
 def validate_prepared_study(study):
     retained = StudyPlan.load(study.root/'study.json')
-    if retained.document != study.plan.document:
+    if canonical_json_bytes(retained.document) != canonical_json_bytes(study.plan.document):
         raise ValueError('prepared Study changed after freezing')
     for allocation in study.plan.allocations():
         spec = RunSpecification.load(study.root/'runs'/allocation.run_id/'run.json')
-        if spec.document != study.plan.run_specification(allocation).document:
+        if canonical_json_bytes(spec.document) != canonical_json_bytes(study.plan.run_specification(allocation).document):
             raise ValueError('prepared Run differs from its predeclared Study allocation')
 
 
