@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from ._documents import _name, _digest, _object, _canonical_json_bytes
 from ._policies import _matched_evidence_policy_version
 from .endpoints import endpoint_policy
-from .ralph import RalphBudget
+from .run_controls import validate_run_controls
 from .reference_access import validate_declarations
 
 
@@ -58,6 +58,8 @@ class RunSpecification:
         authoring = _object(document['authoring'], 'run.authoring')
         if authoring.get('environment_kind') not in {'open_cake', 'direct_cuda', 'native_triton', 'native_cute_dsl'}:
             raise ValueError('Run Authoring Environment kind differs')
+        if 'compiler_revision' in authoring and authoring['compiler_revision'] != compiler:
+            raise ValueError('authoring Compiler reference differs from the Run Compiler')
         validate_declarations({'author': authoring})
         references = _object(document['reference_inputs'], 'run.reference_inputs')
         expected_references = {'baseline_schedule'} if authoring['environment_kind'] in {'native_triton', 'native_cute_dsl'} else set()
@@ -69,29 +71,13 @@ class RunSpecification:
             _name(reference['path'], 'run.reference.path')
             _digest(reference['canonical_sha256'], 'run.reference.canonical_sha256')
         _object(authoring.get('provider'), 'run.authoring.provider')
-        budget = _object(document['budget'], 'run.budget')
-        parsed_budget = RalphBudget.from_mapping(budget)
-        checkpoints = budget.get('checkpoints')
-        if (budget.get('unit') != 'provider_tokens' or not isinstance(checkpoints, list) or not checkpoints
-            or any(type(n) is not int or n <= 0 for n in checkpoints)
-            or checkpoints != sorted(set(checkpoints)) or checkpoints[-1] != parsed_budget.provider_token_limit):
-            raise ValueError('Run budget checkpoints must be sorted positive counts ending at the token limit')
-        protocol = _object(document['run_protocol'], 'run.run_protocol')
-        required = {'independent_thread': True, 'workspace_seed': 'task_agents_only',
-                    'automatic_retries': 0, 'replacement_runs': 0}
-        if any(protocol.get(k) != v for k, v in required.items()):
-            raise ValueError('Run protocol must use an independent thread without retries or replacement')
+        validate_run_controls(document)
         interface = _object(document['agent_interface'], 'run.agent_interface')
         if interface != {'schema_version': 1, 'kind': 'task_agents_ralph_v1'}:
             raise ValueError('Run author interface differs')
         _matched_evidence_policy_version(_object(document['evidence_policy'], 'run.evidence_policy'), 'run.evidence_policy')
         evaluation = _object(document['evaluation_protocol'], 'run.evaluation_protocol')
         _name(evaluation.get('case_id'), 'run.evaluation_protocol.case_id')
-        searches = evaluation.get('searches_per_turn', 1)
-        if type(searches) is not int or not 1 <= searches <= parsed_budget.maximum_candidates_per_turn:
-            raise ValueError('Run searches_per_turn exceeds its candidate budget')
-        if parsed_budget.search_evaluations < searches:
-            raise ValueError('Run search budget cannot admit a complete turn')
         execution = _object(document['execution'], 'run.execution')
         _name(execution.get('target'), 'run.execution.target')
         executor = _object(execution.get('executor_revision'), 'run.execution.executor_revision')

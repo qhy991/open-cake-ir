@@ -71,6 +71,42 @@ class IndependentRunTests(SemanticLabTestCase):
     def test_condition_rename_does_not_change_candidate_representation(self):
         self.assertEqual(self.run_fixture(condition='E0P0'), self.run_fixture(condition='named-treatment'))
 
+    def test_execute_revalidates_dependencies_before_any_run_side_effect(self):
+        from unittest.mock import Mock
+        lab, specification = self.fixture()
+        mutations = (
+            lambda d: d['execution'].update(target='sm_103a'),
+            lambda d: d['execution']['gpu'].update(count=2),
+            lambda d: d['execution'].update(broker_execution_sha256='invalid'),
+            lambda d: d['execution'].update(sandbox='unbound'),
+            lambda d: d['authoring']['schedule_skeleton'].update(canonical_sha256='0'*64),
+        )
+        for mutate in mutations:
+            document = specification.document; mutate(document)
+            changed = RunSpecification.from_dict(document)
+            provider = Mock()
+            evaluator = Mock(protocol=document['evaluation_protocol'],
+                protocol_sha256=sha256(canonical_json_bytes(document['evaluation_protocol'])).hexdigest())
+            with tempfile.TemporaryDirectory() as directory, patch('open_cake_ir.lab.execution.EvidenceStore.create') as create:
+                with self.assertRaises(ValueError):
+                    lab.execute_run(changed, Path(directory)/'evidence', provider=provider,
+                                    environment=Mock(), evaluator=evaluator)
+                create.assert_not_called(); provider.turn.assert_not_called()
+
+    def test_bad_execution_policy_and_conflicting_compiler_refuse_at_construction(self):
+        _, specification = self.fixture()
+        mutations = (
+            lambda d: d['evaluation_protocol'].update(attribution_evaluation='invented'),
+            lambda d: d['evaluation_protocol'].update(search_evaluation='skip_oracle'),
+            lambda d: d['evaluation_protocol'].update(confirmatory_evaluation='reuse_search'),
+            lambda d: d['evaluation_protocol'].pop('search_materiality_ratio'),
+            lambda d: d['budget']['evaluation_limits'].update(attribution=1),
+            lambda d: d['authoring']['compiler_revision'].update(revision_id='foreign'),
+        )
+        for mutate in mutations:
+            document = specification.document; mutate(document)
+            with self.assertRaises(ValueError): RunSpecification.from_dict(document)
+
     def test_frozen_run_cannot_be_mutated_via_input_or_projection(self):
         _, specification = self.fixture()
         document = specification.document

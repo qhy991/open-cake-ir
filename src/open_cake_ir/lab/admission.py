@@ -321,3 +321,77 @@ def validate_evaluation(
         "study.execution.broker_execution_sha256",
     )
     return evaluation, execution
+
+
+def admit_run_inputs(specification, *, project_root, workload_loader):
+    """The complete Run dependency boundary, before provider/Evidence side effects."""
+    from .executor import ExecutorRevision
+    from .provider_policy import execution_configuration
+    from .bindings import load_baseline_bundle
+    from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates, validation_case_ids, paired_protocol
+
+    from .bindings import _resolve_compiler_reference
+    from .reference_access import validate_reference_handoff
+
+    document = specification.document
+    _resolve_compiler_reference(project_root, document['compiler_revision'], 'run.compiler_revision', template=False)
+    ExecutorRevision.load_reference(project_root, document['execution']['executor_revision'], 'run.executor')
+    _, workload_path = source_reference_path(project_root, document['workload']['path'], 'run.workload.path')
+    workload = workload_loader(workload_path)
+    if workload.canonical_sha256 != document['workload']['canonical_sha256']:
+        raise ValueError('Run Workload bytes differ')
+    protocol, execution, authoring = (document[field] for field in ('evaluation_protocol', 'execution', 'authoring'))
+    workload.case(protocol['case_id'])
+    if execution['target'] != workload.target or execution.get('sandbox') != authoring['provider'].get('sandbox'):
+        raise ValueError('Run target or author sandbox differs from its Workload and provider')
+    target = Target.load(project_root / f"compiler/targets/{execution['target']}.json")
+    gpu = execution.get('gpu')
+    if (not isinstance(gpu, dict) or set(gpu) != {'name', 'count', 'mode'}
+        or gpu['name'] not in target.device_names or type(gpu['count']) is not int or gpu['count'] != 1
+        or gpu['mode'] not in {'local_serialized', 'exclusive'}):
+        raise ValueError('Run device admission differs from its exact Target')
+    _digest(execution.get('broker_execution_sha256'), 'run.execution.broker_execution_sha256')
+    if workload.document['validation'].get('all_cases_required') is True:
+        if validation_case_ids(protocol) != tuple(workload.case_ids):
+            raise ValueError('Run evaluation omits Workload validation cases')
+    if paired_protocol(protocol) is not None:
+        fixed = _object(execution.get('fixed_baseline'), 'run.execution.fixed_baseline')
+        baseline = load_baseline_bundle(project_root, fixed.get('bundle_path'))
+        if candidate_identity(baseline) != fixed.get('candidate'):
+            raise ValueError('Run baseline artifact differs from its frozen selection')
+        validate_pair_candidates(baseline, baseline, workload, protocol['case_id'])
+    validate_reference_handoff(project_root, {'author': authoring})
+    from .python_reference import read_skeleton_reference
+    for name in ('scaffold', * (('launch_contract', 'candidate_skeleton') if specification.environment_kind == 'direct_cuda' else ())):
+        reference = _object(authoring.get(name), f'run.authoring.{name}')
+        if set(reference) != {'path', 'sha256'}:
+            raise ValueError(f'Run {name} reference fields differ')
+        _, path = source_reference_path(project_root, reference['path'], f'run.authoring.{name}')
+        if sha256(path.read_bytes()).hexdigest() != reference['sha256']:
+            raise ValueError(f'Run {name} bytes differ')
+    if specification.environment_kind == 'open_cake':
+        _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
+        if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
+            raise ValueError('Run Schedule skeleton target or lowering route differs')
+    for name, reference in document['reference_inputs'].items():
+        _, skeleton = read_skeleton_reference(project_root, reference, f'Run {name}')
+        from .pairing import native_backend
+        if (skeleton.get('target') != execution['target']
+            or skeleton.get('lowering', {}).get('backend') != native_backend(specification.environment_kind).backend):
+            raise ValueError('Run baseline Schedule target or backend differs')
+    provider = authoring['provider']
+    if 'output_schema' in provider:
+        _, schema_path = source_reference_path(project_root, provider['output_schema']['path'], 'run.provider.output_schema')
+        schema = json.loads(schema_path.read_bytes())
+        arm_schema = schema.get('properties', {}).get('arm', {})
+        if (arm_schema.get('type') != 'string'
+            or 'enum' in arm_schema and specification.condition_id not in arm_schema['enum']
+            or 'const' in arm_schema and specification.condition_id != arm_schema['const']):
+            raise ValueError('provider output schema excludes the assigned condition id')
+    configuration = execution_configuration(provider)
+    scope = ('live_two_turn_current_provider' if configuration.get('event_contract', 'closed_file_change_v1') == 'closed_file_change_v1'
+             else 'live_two_turn_tool_rich_provider')
+    qualification = validate_provider_binding(provider=provider, project_root=project_root,
+        expected_provider_configuration=configuration,
+        admitted_scopes={'zero_gpu_contract_fixture_only', scope})
+    return workload, qualification

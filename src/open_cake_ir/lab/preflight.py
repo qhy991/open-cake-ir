@@ -32,7 +32,8 @@ def task_package(
     workload_loader: Callable,
     prepare_schedule: Callable,
 ) -> TaskPackage:
-    specification = lock.run_specification(run_id) if isinstance(lock, CampaignLock) else lock
+    from .run_spec import RunSpecification
+    specification = lock.run_specification(run_id) if isinstance(lock, CampaignLock) else RunSpecification.from_dict(lock.document)
     workload = workload_loader(project_root / str(specification.document["workload"]["path"]))
     return render_task_package(
         project_root,
@@ -290,48 +291,10 @@ def preflight_run(run_path, *, project_root, workload_loader, validate_run=None)
     allowed to survive into a Run.
     """
     from .run_spec import RunSpecification
-    from .executor import ExecutorRevision
-    from .provider_policy import execution_configuration
-    from .admission import validate_provider_binding
-    from .bindings import load_baseline_bundle
-    from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates, validation_case_ids, paired_protocol
+    from .admission import admit_run_inputs
 
     specification = RunSpecification.load(run_path)
     if validate_run is not None:
         validate_run(specification)
-    document = specification.document
-    _resolve_compiler_reference(project_root, document['compiler_revision'], 'run.compiler_revision', template=False)
-    ExecutorRevision.load_reference(project_root, document['execution']['executor_revision'], 'run.executor')
-    _, workload_path = source_reference_path(project_root, document['workload']['path'], 'run.workload.path')
-    workload = workload_loader(workload_path)
-    if workload.canonical_sha256 != document['workload']['canonical_sha256']:
-        raise ValueError('Run Workload bytes differ')
-    protocol, execution, authoring = (document[field] for field in ('evaluation_protocol', 'execution', 'authoring'))
-    workload.case(protocol['case_id'])
-    if execution['target'] != workload.target or execution.get('sandbox') != authoring['provider'].get('sandbox'):
-        raise ValueError('Run target or author sandbox differs from its Workload and provider')
-    target = Target.load(project_root / f"compiler/targets/{execution['target']}.json")
-    gpu = execution.get('gpu')
-    if (not isinstance(gpu, dict) or set(gpu) != {'name', 'count', 'mode'}
-        or gpu['name'] not in target.device_names or type(gpu['count']) is not int or gpu['count'] != 1
-        or gpu['mode'] not in {'local_serialized', 'exclusive'}):
-        raise ValueError('Run device admission differs from its exact Target')
-    _digest(execution.get('broker_execution_sha256'), 'run.execution.broker_execution_sha256')
-    if workload.document['validation'].get('all_cases_required') is True:
-        if validation_case_ids(protocol) != tuple(workload.case_ids):
-            raise ValueError('Run evaluation omits Workload validation cases')
-    if paired_protocol(protocol) is not None:
-        fixed = _object(execution.get('fixed_baseline'), 'run.execution.fixed_baseline')
-        baseline = load_baseline_bundle(project_root, fixed.get('bundle_path'))
-        if candidate_identity(baseline) != fixed.get('candidate'):
-            raise ValueError('Run baseline artifact differs from its frozen selection')
-        validate_pair_candidates(baseline, baseline, workload, protocol['case_id'])
-    validate_reference_handoff(project_root, {'author': authoring})
-    provider = authoring['provider']
-    configuration = execution_configuration(provider)
-    scope = ('live_two_turn_current_provider' if configuration.get('event_contract', 'closed_file_change_v1') == 'closed_file_change_v1'
-             else 'live_two_turn_tool_rich_provider')
-    validate_provider_binding(provider=provider, project_root=project_root,
-        expected_provider_configuration=configuration,
-        admitted_scopes={'zero_gpu_contract_fixture_only', scope})
+    admit_run_inputs(specification, project_root=project_root, workload_loader=workload_loader)
     return specification

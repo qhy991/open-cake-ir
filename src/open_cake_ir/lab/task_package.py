@@ -25,6 +25,7 @@ TASK_AGENTS_RALPH_V1 = "task_agents_ralph_v1"
 
 
 from .run_spec import RunSpecification
+from .python_reference import read_skeleton_reference
 
 
 def _canonical_json(value: object) -> str:
@@ -132,12 +133,10 @@ def build_run_reference_documents(
     environment_kind = arm.get("environment_kind")
     if environment_kind == "open_cake":
         skeleton_ref = _object(arm["schedule_skeleton"], "arm.schedule_skeleton")
-        skeleton_bytes = _read_relative(root, skeleton_ref["path"], "schedule_skeleton")
-        python_starter = str(skeleton_ref["path"]).endswith(".py")
-        skeleton = (
-            frontend.parse(skeleton_bytes.decode("utf-8"), filename=str(skeleton_ref["path"])).document
-            if python_starter else json.loads(skeleton_bytes)
-        )
+        skeleton_bytes, skeleton = read_skeleton_reference(root, skeleton_ref)
+        python_starter = str(skeleton_ref['path']).endswith('.py')
+        if skeleton.get('lowering') != arm.get('lowering_route'):
+            raise ValueError('Schedule skeleton lowering route differs')
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
         skeleton = prepare_schedule(skeleton, workload_contract, case_id, arm)
         if python_starter:
@@ -159,7 +158,8 @@ def build_run_reference_documents(
     elif environment_kind != "direct_cuda" and (policy := native_backend(environment_kind)) is not None:
         skeleton_ref = resolved["reference_inputs"]["baseline_schedule"]
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
-        baseline = bind_baseline(json.loads(_read_relative(root, skeleton_ref["path"], "schedule_skeleton")), workload_contract, case_id)
+        _, baseline_document = read_skeleton_reference(root, skeleton_ref, "native baseline Schedule")
+        baseline = bind_baseline(baseline_document, workload_contract, case_id)
         compiler_instance = Compiler.load(root, root / str(compiler["path"]))
         lowering = compiler_instance.lower(compiler_instance.assess(baseline))
         documents[policy.baseline_file] = _canonical_json(native_baseline(lowering)).encode()

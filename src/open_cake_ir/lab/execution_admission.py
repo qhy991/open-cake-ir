@@ -112,45 +112,24 @@ def validate_execution_bindings(
 
 def validate_run_bindings(specification, *, project_root, workload_loader, provider, environment, evaluator):
     """Resolve the live closure for one Run before evidence or process side effects."""
-    from .bindings import load_compiler_reference, source_reference_path
-    from .executor import ExecutorRevision
+    from .bindings import source_reference_path
     from .provider_policy import execution_configuration
-    from .reference_access import validate_reference_handoff
+    from .admission import admit_run_inputs
 
     document = specification.document
     protocol = document['evaluation_protocol']
     if (getattr(evaluator, 'protocol', None) != protocol
         or getattr(evaluator, 'protocol_sha256', None) != sha256(_canonical_json_bytes(protocol)).hexdigest()):
         raise ValueError('Run Evaluator differs from its frozen protocol')
-    load_compiler_reference(project_root, document['compiler_revision'], 'run.compiler_revision')
-    ExecutorRevision.load_reference(project_root, document['execution']['executor_revision'], 'run.executor')
-    _, path = source_reference_path(project_root, document['workload']['path'], 'run.workload.path')
-    workload = workload_loader(path)
-    if workload.canonical_sha256 != document['workload']['canonical_sha256']:
-        raise ValueError('Run Workload differs from its frozen reference')
+    workload, qualification = admit_run_inputs(specification, project_root=project_root,
+                                               workload_loader=workload_loader)
     authority = document['authoring']
-    validate_reference_handoff(project_root, {'author': authority})
     if (getattr(environment, 'authority_document', None) != authority
         or getattr(environment, 'canonical_sha256', None) != sha256(_canonical_json_bytes(authority)).hexdigest()):
         raise ValueError('Run Authoring Environment differs from its frozen authority')
     declared = authority['provider']
-    from .admission import validate_provider_binding
     reference = declared['qualification']
-    if 'output_schema' in declared:
-        _, schema_path = source_reference_path(project_root, declared['output_schema']['path'], 'run.provider.output_schema')
-        schema = json.loads(schema_path.read_bytes())
-        arm_schema = schema.get('properties', {}).get('arm', {})
-        if (arm_schema.get('type') != 'string'
-            or 'enum' in arm_schema and specification.condition_id not in arm_schema['enum']
-            or 'const' in arm_schema and specification.condition_id != arm_schema['const']):
-            raise ValueError('provider output schema excludes the assigned condition id')
     configuration = execution_configuration(declared)
-    event_contract = configuration.get('event_contract', 'closed_file_change_v1')
-    live_scope = ('live_two_turn_current_provider' if event_contract == 'closed_file_change_v1'
-                  else 'live_two_turn_tool_rich_provider')
-    qualification = validate_provider_binding(
-        provider=declared, project_root=project_root, expected_provider_configuration=configuration,
-        admitted_scopes={'zero_gpu_contract_fixture_only', live_scope})
     if (qualification.canonical_sha256 != reference['canonical_sha256']
         or qualification.provider_revision != declared['revision']
         or qualification.configuration_sha256 != sha256(_canonical_json_bytes(configuration)).hexdigest()
