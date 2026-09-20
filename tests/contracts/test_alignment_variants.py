@@ -129,7 +129,8 @@ class AlignmentVariants(unittest.TestCase):
         from open_cake_ir.serialization import canonical_json_bytes
         candidate, manifest, _ = self.build(16)
         child, leaf = alignment_component(candidate,manifest)
-        for field, value in [('grid',[2,1,1]), ('hidden_null_pointer_parameters',3)]:
+        for field, value in [('grid',[2,1,1]),
+                             ('hidden_null_pointer_parameters',(leaf.hidden_null_pointer_parameters + 1) % 3)]:
             raw = {**leaf.as_dict(),field:value}
             spec = canonical_json_bytes(raw)
             child_payloads = {**child.artifact_payloads, 'launch_manifest':spec}
