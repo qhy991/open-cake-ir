@@ -157,9 +157,11 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
     owns a third extent because its output column count is unrolled by the Schedule.
     """
     if task_name == tinygemm_reproduction.TASK:
+        if backend != 'triton-b300':
+            raise ValueError('TinyGEMM reproduction authoring is currently admitted on triton-b300 only')
         document = tinygemm_reproduction.workload_document(
             backend=backend, rows=rows, columns=columns, depth=720 if depth is None else depth)
-        return document, tinygemm_reproduction.starter_source(WorkloadContract(document), case_id)
+        return document, tinygemm_reproduction.partitioned_source(WorkloadContract(document), case_id)
     if task_name in solx_fib_gemm.TASKS:
         document = solx_fib_gemm.workload_document(task_name, rows=rows, columns=columns,
                                                   depth=depth, backend=backend)

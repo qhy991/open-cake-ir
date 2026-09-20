@@ -78,6 +78,15 @@ class TinyGemmReproduction(unittest.TestCase):
             path.write_text(json.dumps(document))
             self.assertEqual(load_workload(path).workload_id, document['workload_id'])
 
+    def test_public_factory_uses_the_partitioned_starter_and_bounds_authoring_target(self):
+        from tools import launch_task
+        self.assertEqual(launch_task._default_shape(task.TASK,None,None),(1,128))
+        _, source = create_task(task.TASK,backend='triton-b300',rows=1,columns=128,depth=720)
+        document = frontend.parse(source).document
+        self.assertEqual(sum(op['kind']=='mma' for op in document['operations']),4)
+        with self.assertRaisesRegex(ValueError,'triton-b300 only'):
+            create_task(task.TASK,backend='triton-b200',rows=1,columns=128,depth=720)
+
     def test_all_public_shapes_and_both_stage_choices_lower_without_gpu_or_peer_calls(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         with patch.object(task, 'peer_reference', side_effect=AssertionError('preparation must be CPU-only')):

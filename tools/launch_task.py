@@ -44,6 +44,7 @@ from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.reporting import primary_summary
 from open_cake_ir.tasks.workloads import create_task, load_workload
+from open_cake_ir.tasks.tinygemm.reproduction import TASK as TINYGEMM_TASK
 from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates
 
 # The launcher offers whatever the activation family registers, so a migrated AKA
@@ -476,6 +477,8 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
     lane-owned storage bound must refuse (F-2026-09-10-014). The contraction contract's
     own extents keep that operand inside the bound; explicit flags still win.
     """
+    if task == TINYGEMM_TASK:
+        return 1 if rows is None else rows, 128 if columns is None else columns
     if task in CONTRACTION_TASKS:
         return 1024 if rows is None else rows, 64 if columns is None else columns
     if task in FIB_GEMM_SPECS:
@@ -505,7 +508,7 @@ def main(argv=None) -> int:
                                           *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS,
                                           *OPTIMIZER_TASKS, *CONTRACTION_TASKS,
                                           *SOLX_FIB_TASKS, *FIB_GEMM_TASKS,
-                                          "gemm_bias"), required=True)
+                                          "gemm_bias", TINYGEMM_TASK), required=True)
     parser.add_argument("--backend", choices=tuple(DEVICE_BACKENDS), required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)

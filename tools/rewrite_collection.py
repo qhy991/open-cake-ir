@@ -90,6 +90,8 @@ def prepare_batch(profile_path, workspace, run_root, ids=None):
                   'cells': [{'id': row['id'].replace('_', '-'), 'task': row['task'],
                              'backend': row['backend'], 'rows': row['rows'],
                              'columns': row['columns'], 'node': node}]}
+        if 'depth' in row:
+            config['cells'][0]['depth'] = row['depth']
         kernel_experiment.validate(config)
         configs.append((row, config))
     # All selected input contracts must pass before creating the batch.
