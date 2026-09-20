@@ -868,15 +868,30 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
 
 def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=None):
     from open_cake_ir.evaluation.triton_metax import observe_local_metax
+    from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+    from open_cake_ir.evaluation.metax_observations import collect_maca_activity, MACA_PROFILE
+    from open_cake_ir.compiler.target import declared_target
 
-    if collect_timing or authority.request["purpose"] == "attribution":
-        raise ValueError("MACA timing and profiler coverage are unavailable")
     host = authority.executor.admit_host()
     if admission is None:
         admission = observe_local_metax(authority.candidate.target, runtime_library=host["runtime_library"])
     elif admission.runtime_library != host["runtime_library"]:
         raise ValueError("MACA device admission refers to another runtime library")
     result.update(job_id=admission.broker_job_id, mode=job_mode(admission.broker_job_id), admitted=True)
+    if authority.request['purpose'] == 'attribution':
+        _evaluate_tile_candidate(authority, result, None, admission, False,
+            route_calls_per_cohort=None, profile_format=MACA_PROFILE,
+            profile_source=lambda launch, name: collect_maca_activity(launch, name,
+                manifest=authority.manifest, admission=admission, activity_library=host['activity_library']))
+        return
+    if collect_timing:
+        if authority.baseline is None:
+            raise ValueError('MACA timing requires the declared paired baseline')
+        _evaluate_paired_tile(authority, result,
+            lambda role, manifest: McptiDispatchBenchmark(manifest,
+                activity_library=host['activity_library'],
+                l2_cache_bytes=declared_target(manifest.target).l2_cache_bytes), admission)
+        return
     _evaluate_tile_candidate(authority, result, None, admission, False, route_calls_per_cohort=None)
 
 

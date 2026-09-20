@@ -118,6 +118,7 @@ class McptiDispatchBenchmark:
         self._collector = activity_collector(activity_library)
         self._reset = None
         self._reset_record = None
+        self._reset_activity = None
         self.last_activity = None
         self.non_target_dispatches = None
         self.resolution_us = None
@@ -159,6 +160,7 @@ class McptiDispatchBenchmark:
             if len(records) != 1 or records[0]["name"] == self.manifest.kernel_name:
                 raise ValueError("MACA reset is not one independently identified device fill")
             self._reset_record = records[0]
+            self._reset_activity = activity
 
     def __call__(self, function, *, dry_run_iters, repeat_iters, cold_l2_cache, use_cuda_graph):
         import torch
@@ -181,10 +183,103 @@ class McptiDispatchBenchmark:
         reset = self._reset_record if cold_l2_cache else None
         self.last_activity = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
             "l2_cache_bytes": self.l2_cache_bytes, "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
-            "reset_record": reset, "activity": activity}
+            "reset_record": reset, "reset_activity": self._reset_activity if cold_l2_cache else None,
+            "activity": activity}
         samples = dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
             grid=self.manifest.grid, block=self.manifest.block, repeats=repeat_iters, reset_record=reset)
         self.non_target_dispatches = 0  # Proven above; any extra device activity is refused.
         unique = sorted(set(int(round(sample * 1e6)) for sample in samples))
         self.resolution_us = min((b - a for a, b in zip(unique, unique[1:])), default=0) / 1000 or None
         return samples
+
+
+def validate_cohort(record, manifest, *, sample_count: int) -> None:
+    """Reconstruct a sealed participant's samples from complete native observations."""
+    from open_cake_ir.compiler.target import CodeObject, declared_target
+    target = declared_target(manifest.target)
+    native = record.get('native_activity')
+    if (target.code_object is not CodeObject.MCFATBIN or manifest.hidden_null_pointer_parameters != 0
+            or manifest.aligned_variant or not isinstance(native, Mapping)
+            or target.l2_cache_bytes is None or native.get('timer') != TIMER
+            or native.get('cache_policy') != RESET or native.get('l2_cache_bytes') != target.l2_cache_bytes
+            or native.get('reset_bytes') != 4 * target.l2_cache_bytes):
+        raise ValueError('MACA paired timer, reset or single-kernel manifest differs')
+    reset = kernel_records(native.get('reset_activity'))
+    if len(reset) != 1 or reset[0] != native.get('reset_record'):
+        raise ValueError('MACA reset identity differs from its independent native capture')
+    reset_launches = [row for row in native['reset_activity']['records']
+                     if row['kind'] == 5 and row['cbid'] in _SINGLE_LAUNCH_CBIDS]
+    if len(reset_launches) != 1 or reset_launches[0]['cbid'] != 56:
+        raise ValueError('MACA reset calibration is not its runtime fill launch')
+    samples = dispatch_samples(native.get('activity'), kernel_name=manifest.kernel_name,
+        grid=manifest.grid, block=manifest.block, repeats=sample_count, reset_record=reset[0])
+    if record.get('samples_ms') != samples or record.get('non_target_dispatches') != 0:
+        raise ValueError('MACA paired samples differ from native activity')
+    kernels = kernel_records(native['activity'])
+    if kernels[0]['start_ns'] < reset[0]['end_ns']:
+        raise ValueError('MACA samples precede reset calibration')
+    launches = {row['correlation']: row['cbid'] for row in native['activity']['records']
+                if row['kind'] == 5 and row['cbid'] in _SINGLE_LAUNCH_CBIDS}
+    for index, kernel in enumerate(kernels):
+        if launches[kernel['correlation']] != (56 if index % 2 == 0 else 60):
+            raise ValueError('MACA sample must pair a runtime reset with a sealed module launch')
+        if index % 2 and kernel['dynamic_shared_bytes'] != manifest.dynamic_shared_memory_bytes:
+            raise ValueError('MACA sample shared memory differs from its sealed manifest')
+
+
+def validate_paired_activity(raw, protocol) -> None:
+    from .core import TensorLaunchManifest
+    documents = raw.get('launch_manifests')
+    participants = raw.get('participants')
+    if (not isinstance(documents, Mapping) or set(documents) != set(protocol.arms)
+            or not isinstance(participants, Mapping) or set(participants) != set(protocol.arms)):
+        raise ValueError('MACA paired activity requires both sealed manifests')
+    manifests = {}
+    for role in protocol.arms:
+        manifest = TensorLaunchManifest.from_dict(documents[role])
+        if (manifest.canonical_sha256 != participants[role].get('launch_spec_sha256')
+                or manifest.target != participants[role].get('target')
+                or manifest.workload_sha256 != raw.get('workload_sha256')
+                or manifest.case_id != raw.get('case_id')):
+            raise ValueError('MACA native activity manifest differs from its sealed participant')
+        manifests[role] = manifest
+    previous_end = None
+    for measurement in raw['measurements']:
+        for role in measurement['order']:
+            if role not in manifests:
+                raise ValueError('MACA measurement has an unknown participant')
+            record = measurement['arms'][role]
+            validate_cohort(record, manifests[role], sample_count=protocol.samples_per_cohort)
+            kernels = kernel_records(record['native_activity']['activity'])
+            if previous_end is not None and kernels[0]['start_ns'] < previous_end:
+                raise ValueError('MACA cohort order differs from native execution')
+            previous_end = kernels[-1]['end_ns']
+
+
+def validate_loaded_resources(resources, kernel) -> None:
+    if not isinstance(resources, Mapping) or any(resources.get(a) != kernel[b] for a, b in (
+            ('registers_per_thread', 'registers_per_thread'), ('local_bytes', 'local_bytes_per_thread'),
+            ('dynamic_shared_bytes', 'dynamic_shared_bytes'))):
+        raise ValueError('MACA observed resources differ from the loaded kernel')
+
+
+def validate_paired_device(raw, launch, participants) -> None:
+    from .triton_metax import validate_maca_admission
+    admission = raw.get('device_admission')
+    validate_maca_admission(admission, target_id=participants['candidate']['target'], job_id=raw.get('job_id'))
+    if (participants['baseline']['target'] != participants['candidate']['target']
+            or launch.get('job_id') != raw['job_id']
+            or launch.get('device_admission') != admission
+            or raw.get('gpu_uuid') is not None or launch.get('gpu_uuid') is not None
+            or raw.get('allocation_mode') != 'local_serialized'
+            or launch.get('allocation_mode') != 'local_serialized'
+            or raw.get('external_gpu_activity') != 'not_excluded'
+            or launch.get('external_gpu_activity') != 'not_excluded'):
+        raise ValueError('MACA paired launch and device identity differ')
+    resources = launch.get('resources')
+    if not isinstance(resources, Mapping) or set(resources) != set(participants):
+        raise ValueError('MACA paired loaded resource coverage differs')
+    for measurement in raw.get('measurements', ()):
+        for role, record in measurement['arms'].items():
+            for kernel in kernel_records(record.get('native_activity', {}).get('activity'))[1::2]:
+                validate_loaded_resources(resources[role], kernel)

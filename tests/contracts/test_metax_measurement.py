@@ -180,6 +180,8 @@ class MacaProfileRepresentation(unittest.TestCase):
             'MetaX C550',64,'0000:0f:00','/opt/maca-3.5.3/lib/libmcruntime.so')
         self.raw={'activity':capture(kernel('cake',1,1000)),'manifest':self.manifest.as_dict(),
                   'device_admission':asdict(admission),'not_collected':list(NOT_COLLECTED)}
+        self.correctness={'correctness_launches':2,'instrumented':{'passed':True,'metrics':{
+            'output_mismatches':0,'inputs_unchanged':True,'max_abs_error':0.0}}}
 
     def test_one_actual_dispatch_projects_resources_and_states_missing_counters(self):
         from open_cake_ir.evaluation.metax_observations import maca_profile_summary
@@ -206,10 +208,11 @@ class MacaProfileRepresentation(unittest.TestCase):
         launch={'job_id':profile['job_id'],'gpu_uuid':None,
                 'candidate_sha256':'a'*64,'manifest_sha256':self.manifest.canonical_sha256,
                 'device_admission':self.raw['device_admission'],
+                'correctness_launches':2,
                 'resources':{'registers_per_thread':16,'local_bytes':0,'dynamic_shared_bytes':0}}
-        MACA_PROFILE.validate_launch(profile,launch,{})
+        MACA_PROFILE.validate_launch(profile,launch,self.correctness)
         launch['resources']['registers_per_thread']=32
-        with self.assertRaisesRegex(ValueError,'resources'):MACA_PROFILE.validate_launch(profile,launch,{})
+        with self.assertRaisesRegex(ValueError,'resources'):MACA_PROFILE.validate_launch(profile,launch,self.correctness)
 
     def test_recomputed_profile_cannot_change_the_loaded_manifest_or_device(self):
         import json
@@ -221,6 +224,7 @@ class MacaProfileRepresentation(unittest.TestCase):
             'evaluation_protocol':{'case_id':'primary','attribution_evaluation':'correctness_then_profile'}}
         launch={'job_id':profile['job_id'],'gpu_uuid':None,'candidate_sha256':'a'*64,
                 'manifest_sha256':self.manifest.canonical_sha256,
+                'correctness_launches':2,
                 'device_admission':deepcopy(self.raw['device_admission']),
                 'resources':{'registers_per_thread':16,'local_bytes':0,'dynamic_shared_bytes':0}}
         mutations = (
@@ -241,4 +245,30 @@ class MacaProfileRepresentation(unittest.TestCase):
                 document={**profile,'raw':raw,'summary':MACA_PROFILE.summary(raw)}
                 loaded=MACA_PROFILE.load(json.dumps(document).encode(),
                     expected_candidate_sha256='a'*64,expected_case_id='primary')
-                MACA_PROFILE.validate_launch(loaded,launch,{})
+                MACA_PROFILE.validate_launch(loaded,launch,self.correctness)
+
+    def test_registered_profile_reaches_receipt_feedback_and_requires_instrumented_correctness(self):
+        from hashlib import sha256
+        from open_cake_ir.evaluation.core import EvaluationReceipt
+        from open_cake_ir.evaluation.metax_observations import MACA_PROFILE
+        from open_cake_ir.serialization import canonical_json_bytes as encoded
+        policy={'case_id':'primary','attribution_evaluation':'correctness_then_profile'}
+        profile={'kind':MACA_PROFILE.kind,'candidate_sha256':'a'*64,'case_id':'primary',
+            'kernel_name':'cake','job_id':'maca-123456789abc','gpu_uuid':None,
+            'allocation_mode':'local_serialized','external_gpu_activity':'not_excluded',
+            'separate_instrumented_launch':True,'evaluation_protocol':policy,
+            'raw':self.raw,'summary':MACA_PROFILE.summary(self.raw)}
+        launch={'job_id':profile['job_id'],'gpu_uuid':None,'candidate_sha256':'a'*64,
+            'manifest_sha256':self.manifest.canonical_sha256,'device_admission':self.raw['device_admission'],
+            'correctness_launches':2,'resources':{'registers_per_thread':16,'local_bytes':0,'dynamic_shared_bytes':0}}
+        metrics={'output_mismatches':0,'inputs_unchanged':True,'max_abs_error':0.0}
+        correctness={**self.correctness,'passed':True,'metrics':metrics}
+        def receipt():
+            payloads={'profile':encoded(profile),'launch_receipt':encoded(launch),
+                      'correctness_output':encoded(correctness)}
+            return EvaluationReceipt('a'*64,self.manifest.workload_sha256,sha256(encoded(policy)).hexdigest(),
+                'attribution','primary',True,metrics,1,0,sha256(payloads['launch_receipt']).hexdigest(),
+                None,artifact_payloads=payloads)
+        self.assertEqual(receipt().attribution_feedback['kind'],'maca_dispatch_attribution')
+        correctness.pop('instrumented')
+        with self.assertRaisesRegex(ValueError,'instrumented output'):receipt()

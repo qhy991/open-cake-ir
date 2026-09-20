@@ -43,6 +43,7 @@ PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
 # the others are: what the interval includes and what resets the device are part of the
 # policy, and a successor states its own.
 PAIRED_HIP_KIND = 'fixed_baseline_paired_hip_dispatch_v1'
+PAIRED_MACA_KIND = 'fixed_baseline_paired_mcpti_dispatch_v1'
 METAL_KINDS = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].paired_kinds
 PAIRED_KINDS = frozenset().union(*(row.paired_kinds for row in PLATFORMS.values()))
 # How many times a cohort calls the route, per measurement source that declares it on its
@@ -109,6 +110,8 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
     # has no calibration callbacks of its own, which is where CUPTI's extra six go.
     if value['kind'] == PAIRED_HIP_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from the HIP dispatch invocation contract')
+    if value['kind'] == PAIRED_MACA_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
+        raise ValueError('paired policy differs from the MACA dispatch invocation contract')
     if kind in METAL_KINDS:
         if protocol.route_calls_per_cohort <= protocol.samples_per_cohort:
             raise ValueError('Metal assay requires declared warmup calls before timestamp samples')
@@ -196,6 +199,9 @@ def paired_summary(raw):
             or type(record.get('position')) is not int for record in arms.values()):
             raise ValueError('paired position must be an integer')
     kind = raw['evaluation_protocol']['paired_timing']['kind']
+    if kind == PAIRED_MACA_KIND:
+        from .metax_benchmark import validate_paired_activity
+        validate_paired_activity(raw, protocol)
     if kind in METAL_KINDS:
         from .metal_observations import METAL_TIMER, METAL_CACHE, validate_command_samples
         if raw.get('timer') != METAL_TIMER or raw.get('cache_policy') != METAL_CACHE:
@@ -268,6 +274,9 @@ def admit_device_identity(raw, launch, participants) -> None:
                 or raw['job_id'] == f'{row.local_job_prefix}-000000000000'))
                 or launch.get('gpu_uuid') != raw['gpu_uuid']):
             raise ValueError('paired AMDGCN device/host identity differs')
+    elif raw['kind'] == PAIRED_MACA_KIND:
+        from .metax_benchmark import validate_paired_device
+        validate_paired_device(raw, launch, participants)
     else:
         # Every declared kind is checked by name above. Reaching here means a policy kind
         # was admitted upstream that nothing here knows how to check, which is not the

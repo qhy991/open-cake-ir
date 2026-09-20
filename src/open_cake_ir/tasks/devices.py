@@ -97,7 +97,7 @@ BACKENDS = {
     "triton-metax": {"target": "xcore1002", "device_name": "MetaX C550",
                      "provenance_token": "C550", "route": "triton",
                      "allocation": "local_broker",
-                     "timing_source": None,
+                     "timing_source": "mcpti_dispatch",
                      "power_of_two_width": True},
 }
 

@@ -5,14 +5,13 @@ storage, observed launch geometry and dispatch time; occupancy, bandwidth and IS
 counters are explicitly outside the current collection coverage.
 """
 from dataclasses import asdict
-from pathlib import Path
-import re
 from typing import Mapping
 
-from open_cake_ir.compiler.target import CodeObject, declared_target
+from open_cake_ir.compiler.target import declared_target
 from .attribution import TensorProfileFormat, load_instrumented_profile
 from .metax_activity import activity_collector
-from .metax_benchmark import dispatch_samples, kernel_records
+from .metax_benchmark import dispatch_samples, kernel_records, validate_loaded_resources
+from .triton_metax import validate_maca_admission
 
 MCPTI_PROFILE_KIND = 'maca_dispatch_activity_v1'
 NOT_COLLECTED = ('achieved_occupancy', 'bandwidth', 'instruction_counters')
@@ -58,17 +57,15 @@ def maca_profile_summary(raw: Mapping) -> dict:
         raise ValueError('MACA profile declares unsupported hidden launch parameters')
     target = declared_target(manifest.target)
     admission = raw.get('device_admission')
-    if (target.code_object is not CodeObject.MCFATBIN or not isinstance(admission, Mapping)
-            or admission.get('target') != target.target_id or admission.get('device_arch') != target.target_id
-            or admission.get('device_name') not in target.device_names or admission.get('warp_size') != target.warp_size
-            or not isinstance(admission.get('pci_bus_id'), str)
-            or re.fullmatch(r'[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}', admission['pci_bus_id']) is None
-            or not isinstance(admission.get('runtime_library'), str)
-            or not Path(admission['runtime_library']).is_absolute()):
-        raise ValueError('MACA profile device identity differs')
+    validate_maca_admission(admission, target_id=target.target_id,
+                           job_id=admission.get('broker_job_id') if isinstance(admission, Mapping) else None)
     samples = dispatch_samples(raw.get('activity'), kernel_name=manifest.kernel_name,
         grid=manifest.grid, block=manifest.block, repeats=1, reset_record=None)
     kernel = kernel_records(raw['activity'])[0]
+    launches = [row for row in raw['activity']['records']
+                if row['kind'] == 5 and row['correlation'] == kernel['correlation']]
+    if len(launches) != 1 or launches[0]['cbid'] != 60:
+        raise ValueError('MACA profile is not the sealed module launch')
     if kernel['dynamic_shared_bytes'] != manifest.dynamic_shared_memory_bytes:
         raise ValueError('MACA profile shared memory differs from its native dispatch')
     return {'coverage': 'one_device_dispatch_and_allocated_resources', 'device_time_us': samples[0] * 1000,
@@ -109,14 +106,16 @@ def _validate_launch(profile, launch, correctness):
             or launch.get('manifest_sha256') != manifest.canonical_sha256
             or launch.get('device_admission') != profile['raw']['device_admission']):
         raise ValueError('MACA profile manifest or device differs from the loaded launch')
+    instrumented = correctness.get('instrumented')
+    if (not isinstance(instrumented, Mapping) or instrumented.get('passed') is not True
+            or not isinstance(instrumented.get('metrics'), Mapping)
+            or instrumented['metrics'].get('output_mismatches') != 0
+            or instrumented['metrics'].get('inputs_unchanged') is not True
+            or correctness.get('correctness_launches') != 2 or launch.get('correctness_launches') != 2):
+        raise ValueError('MACA profile lacks the instrumented output oracle check')
     # The producer's preflight and separately captured native resource queries must
     # agree with the instrumented native record rather than borrowing a compiler estimate.
-    resources = launch.get('resources')
-    summary = profile['summary']
-    if not isinstance(resources, Mapping) or any(resources.get(a) != summary[b] for a, b in (
-            ('registers_per_thread','registers_per_thread'), ('local_bytes','local_bytes_per_thread'),
-            ('dynamic_shared_bytes','dynamic_shared_bytes'))):
-        raise ValueError('MACA instrumented resources differ from the loaded kernel')
+    validate_loaded_resources(launch.get('resources'), profile['summary'])
 
 
 MACA_PROFILE = TensorProfileFormat(MCPTI_PROFILE_KIND, maca_profile_summary, load_maca_profile,
