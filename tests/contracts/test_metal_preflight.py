@@ -69,6 +69,25 @@ class MetalPreflightTests(unittest.TestCase):
                 self.assertEqual(specification.document['execution']['fixed_baseline']['selection'],selection)
                 self.assertEqual(specification.document['authoring']['toolchain_sha256'],'1'*64)
                 self.assertNotIn('analysis_plan',specification.document)
+                original_attribution = inputs['evaluation_protocol']['attribution_evaluation']
+                inputs['evaluation_protocol']['attribution_evaluation'] = None
+                with self.assertRaisesRegex(ValueError,'Metal optimization'):
+                    prepare()
+                inputs['evaluation_protocol']['attribution_evaluation'] = original_attribution
+                from open_cake_ir.tasks.normalization.study import evaluation_policy
+                cuda_workload,_ = create_task('silu',backend='triton-b200',rows=2,columns=8)
+                original_evaluation = inputs['evaluation_protocol']
+                inputs['evaluation_protocol'] = evaluation_policy(WorkloadContract(cuda_workload))
+                with self.assertRaisesRegex(ValueError,'Metal optimization'):
+                    prepare()
+                inputs['evaluation_protocol'] = original_evaluation
+                payloads = {**candidate.artifact_payloads,'lowered_source':candidate.artifact_payloads['lowered_source']+b'\n// other source'}
+                changed = LaunchableCandidate(candidate.candidate_sha256,candidate.target,candidate.entry_point,
+                    {role:sha256(value).hexdigest() for role,value in payloads.items()},candidate.launch_spec_sha256,payloads)
+                with patch.object(bindings,'load_baseline_bundle',return_value=changed), \
+                     patch.object(admission,'load_baseline_bundle',return_value=changed):
+                    with self.assertRaisesRegex(ValueError,'fixed baseline differs from the frozen Compiler'):
+                        prepare()
                 inputs['evaluation_protocol']['validation_case_ids'].pop()
                 with self.assertRaisesRegex(ValueError,'omits Workload validation'):
                     prepare()

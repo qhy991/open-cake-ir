@@ -190,6 +190,90 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
     return qualification
 
 
+def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,baseline_lowering,manifest_parser):
+    """One owner for the selected baseline's source, launch and incumbent relation."""
+    fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
+    sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
+    validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
+    selection = fixed.get('selection')
+    incumbent_baseline = False
+    if selection is not None:
+        incumbent_baseline = admit_baseline_selection(
+            selection, candidate=fixed['candidate'], workload=workload,
+            case_id=str(evaluation['case_id']), backend=str(route['backend']),
+            evaluation_protocol=evaluation,
+        )
+    requirements = baseline_lowering.toolchain_requirements
+    source = sealed_baseline.artifact_payloads.get('lowered_source')
+    if source is None:
+        raise ValueError('fixed baseline requires retained Compiler lowering source')
+    manifest = manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
+    if route["backend"] == "metal":
+        source_matches = source == baseline_lowering.source.encode()
+        grid, block = requirements["threadgroups_per_grid"], tuple(requirements["threads_per_threadgroup"])
+    else:
+        expected_source = native_source(baseline_lowering.source.encode(), requirements)
+        observed_source = native_source(source, requirements)
+        source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
+        # The width comes from the Target that declares it. Reading a shared 32 here
+        # refused every wave64 baseline, and said the Compiler kernel differed.
+        _, target_path = source_reference_path(
+            project_root, f"compiler/targets/{workload.target}.json",
+            'paired baseline target')
+        grid = requirements['grid']
+        block = tuple(native_block(
+            requirements, warp_size=Target.load(target_path).warp_size))
+        # How many pointers the kernel takes beyond its tensors is the kernel's own
+        # fact, not a per-backend constant. For AMDGCN it is in the sealed assembly's
+        # `.amdgpu_metadata`; the table's 2 was right for every Triton target there
+        # was when it was written, and is still the CUDA route's. The route is read
+        # from the frozen Compiler kernel's own compile contract, which carries the
+        # code object, architecture and lane width of the Target it was lowered for.
+        if route["backend"] == "triton":
+            expected_hidden = _hidden_pointers(
+                triton_route(requirements), sealed_baseline.artifact_payloads,
+                len(workload.tensor_abi(str(evaluation['case_id']))))
+        else:
+            expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
+        if manifest.hidden_null_pointer_parameters != expected_hidden:
+            raise differs(
+                'fixed baseline hidden pointer commitments differ',
+                expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters,
+            )
+    reference_differs = (not source_matches or list(manifest.grid) != list(grid)
+                         or manifest.block != block)
+    if (fixed['candidate'] != candidate_identity(sealed_baseline)
+            or (not incumbent_baseline and reference_differs)):
+        raise differs(
+            'fixed baseline differs from the frozen Compiler kernel or launch commitments',
+            expected={'candidate': fixed['candidate'], 'source_matches': True,
+                      'grid': list(grid), 'block': block},
+            observed={'candidate': candidate_identity(sealed_baseline), 'source_matches': source_matches,
+                      'grid': list(manifest.grid), 'block': manifest.block},
+        )
+
+
+def validate_backend_assay(*,route,evaluation,workload,attribution_evaluation):
+    """Check task timing, validation coverage and attribution against its backend."""
+    if route["backend"] == "metal":
+        if (evaluation.get("paired_timing", {}).get("kind") not in METAL_KINDS
+                or validation_case_ids(evaluation) != tuple(workload.case_ids)
+                or attribution_evaluation != _ATTRIBUTION_EVALUATION):
+            raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
+    elif evaluation.get("paired_timing", {}).get("kind") in METAL_KINDS:
+        raise ValueError("Metal paired assay cannot evaluate a different backend")
+    elif ("validation_case_ids" in evaluation
+          or workload.document["validation"].get("all_cases_required") is True):
+        if (validation_case_ids(evaluation) != tuple(workload.case_ids)
+                or workload.document["validation"].get("all_cases_required") is not True):
+            raise differs(
+                "CUDA validation case projection differs from Workload validation",
+                expected={"validation_case_ids": tuple(workload.case_ids), "all_cases_required": True},
+                observed={"validation_case_ids": validation_case_ids(evaluation),
+                          "all_cases_required": workload.document["validation"].get("all_cases_required")},
+            )
+
+
 def validate_evaluation(
     *,
     attribution_evaluation,
@@ -229,23 +313,10 @@ def validate_evaluation(
                 "campaign that selects on latency does."
             )
         raise ValueError("single-environment optimization requires an explicit fixed-baseline paired assay")
-    if route["backend"] == "metal":
-        if (not single_environment or evaluation.get("paired_timing", {}).get("kind") not in METAL_KINDS
-                or validation_case_ids(evaluation) != tuple(workload.case_ids)
-                or attribution_evaluation != _ATTRIBUTION_EVALUATION):
-            raise ValueError("Metal optimization must bind its paired assay, all Workload cases and attribution")
-    elif evaluation.get("paired_timing", {}).get("kind") in METAL_KINDS:
-        raise ValueError("Metal paired assay cannot evaluate a different backend")
-    elif ("validation_case_ids" in evaluation
-          or single_environment and workload.document["validation"].get("all_cases_required") is True):
-        if (validation_case_ids(evaluation) != tuple(workload.case_ids)
-                or workload.document["validation"].get("all_cases_required") is not True):
-            raise differs(
-                "CUDA validation case projection differs from Workload validation",
-                expected={"validation_case_ids": tuple(workload.case_ids), "all_cases_required": True},
-                observed={"validation_case_ids": validation_case_ids(evaluation),
-                          "all_cases_required": workload.document["validation"].get("all_cases_required")},
-            )
+    if route['backend']=='metal' and not single_environment:
+        raise ValueError('Metal task optimization requires a single authoring environment')
+    validate_backend_assay(route=route,evaluation=evaluation,workload=workload,
+                           attribution_evaluation=attribution_evaluation)
     execution = study.execution
     expected_execution_fields = {'target', 'executor_revision', 'broker_execution_sha256', 'gpu', 'sandbox'}
     if assay is not None:
@@ -256,65 +327,8 @@ def validate_evaluation(
             expected=sorted(expected_execution_fields), observed=sorted(execution),
         )
     if assay is not None:
-        fixed = _object(execution['fixed_baseline'], 'execution.fixed_baseline')
-        sealed_baseline = load_baseline_bundle(project_root, fixed['bundle_path'])
-        validate_pair_candidates(sealed_baseline, sealed_baseline, workload, str(evaluation['case_id']))
-        selection = fixed.get('selection')
-        incumbent_baseline = False
-        if selection is not None:
-            incumbent_baseline = admit_baseline_selection(
-                selection, candidate=fixed['candidate'], workload=workload,
-                case_id=str(evaluation['case_id']), backend=str(route['backend']),
-                evaluation_protocol=evaluation,
-            )
-        requirements = baseline_lowering.toolchain_requirements
-        source = sealed_baseline.artifact_payloads.get('lowered_source')
-        if source is None:
-            raise ValueError('fixed baseline requires retained Compiler lowering source')
-        manifest = manifest_parser(json.loads(sealed_baseline.artifact_payloads['launch_manifest']))
-        if route["backend"] == "metal":
-            source_matches = source == baseline_lowering.source.encode()
-            grid, block = requirements["threadgroups_per_grid"], tuple(requirements["threads_per_threadgroup"])
-        else:
-            expected_source = native_source(baseline_lowering.source.encode(), requirements)
-            observed_source = native_source(source, requirements)
-            source_matches = ast.dump(ast.parse(observed_source)) == ast.dump(ast.parse(expected_source))
-            # The width comes from the Target that declares it. Reading a shared 32 here
-            # refused every wave64 baseline, and said the Compiler kernel differed.
-            _, target_path = source_reference_path(
-                project_root, f"compiler/targets/{workload.target}.json",
-                'paired baseline target')
-            grid = requirements['grid']
-            block = tuple(native_block(
-                requirements, warp_size=Target.load(target_path).warp_size))
-            # How many pointers the kernel takes beyond its tensors is the kernel's own
-            # fact, not a per-backend constant. For AMDGCN it is in the sealed assembly's
-            # `.amdgpu_metadata`; the table's 2 was right for every Triton target there
-            # was when it was written, and is still the CUDA route's. The route is read
-            # from the frozen Compiler kernel's own compile contract, which carries the
-            # code object, architecture and lane width of the Target it was lowered for.
-            if route["backend"] == "triton":
-                expected_hidden = _hidden_pointers(
-                    triton_route(requirements), sealed_baseline.artifact_payloads,
-                    len(workload.tensor_abi(str(evaluation['case_id']))))
-            else:
-                expected_hidden = backend_policy(route["backend"]).hidden_null_pointer_parameters
-            if manifest.hidden_null_pointer_parameters != expected_hidden:
-                raise differs(
-                    'fixed baseline hidden pointer commitments differ',
-                    expected=expected_hidden, observed=manifest.hidden_null_pointer_parameters,
-                )
-        reference_differs = (not source_matches or list(manifest.grid) != list(grid)
-                             or manifest.block != block)
-        if (fixed['candidate'] != candidate_identity(sealed_baseline)
-                or (not incumbent_baseline and reference_differs)):
-            raise differs(
-                'fixed baseline differs from the frozen Compiler kernel or launch commitments',
-                expected={'candidate': fixed['candidate'], 'source_matches': True,
-                          'grid': list(grid), 'block': block},
-                observed={'candidate': candidate_identity(sealed_baseline), 'source_matches': source_matches,
-                          'grid': list(manifest.grid), 'block': manifest.block},
-            )
+        validate_paired_baseline(project_root=project_root,workload=workload,evaluation=evaluation,
+            execution=execution,route=route,baseline_lowering=baseline_lowering,manifest_parser=manifest_parser)
     provider_sandbox = study.arms["open_cake"]["provider"].get("sandbox")
     if (
         execution.get("target") != workload.target

@@ -87,7 +87,7 @@ class EfficiencyReportingTests(unittest.TestCase):
 
     def test_real_projection_reports_missing_coverage_for_unqualified_audit(self):
         policy = {"performance_reporting": TASK_EFFICIENCY_V1}
-        campaign = SimpleNamespace(lock=SimpleNamespace(analysis_plan=policy,
+        campaign = SimpleNamespace(evidence_root=ROOT/'must-not-read-unqualified-evidence',lock=SimpleNamespace(analysis_plan=policy,
             claim_scope="artifact_optimization_only", workload_id="fixture",
             document={"analysis_plan": policy, "execution": {"target": "apple_gpu_family7"},
                       "workload":{"workload_id":"fixture"},
@@ -118,7 +118,7 @@ class EfficiencyReportingTests(unittest.TestCase):
             audit.assert_not_called()
 
     def test_run_workspace_reporting_needs_no_campaign_or_analysis_policy(self):
-        from open_cake_ir.lab import RunSpecification, RunRef
+        from open_cake_ir.lab import RunSpecification, RunRef, CampaignLock
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory).resolve()
             (workspace/'run.json').write_text('{}')
