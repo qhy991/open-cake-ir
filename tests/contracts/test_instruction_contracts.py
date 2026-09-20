@@ -82,8 +82,8 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             "apple_gpu_family7": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
             "apple_gpu_family8": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
             "apple_gpu_family9": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
-            # gfx1151 admits nothing yet; gfx938 admits the two measured contractions.
-            "gfx1151": {},
+            # gfx1151 admits its measured OCML tanh; gfx938 also admits contractions.
+            "gfx1151": {"elementwise": ["ocml.tanh.f32"]},
             "gfx938": {"elementwise": ["ocml.tanh.f32"],
                        "mma": ["triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
                                "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"]},
@@ -189,14 +189,16 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
             "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "apple_gpu_family8": ["metal.precise.tanh.f32"],
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
+            "gfx1151": ["ocml.tanh.f32"],
             "sm_103a": ["libdevice.tanh.f32", "ptx.fma.rn.f32",
                         "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp32_ieee",
                         "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_block_scale_fp32"],
         })
-        self.assertEqual(sum(len(v) for v in unreached.values()), 11)
-        # The two AMDGCN targets and sm_100a are absent because every declaration they
-        # carry is reached. Asserted so a regression shows up here too.
-        for target in ("gfx938", "gfx1151", "sm_100a"):
+        # gfx1151's new tanh admission has a device probe and task-specific contract
+        # tests, but no Corpus case. Report that extra gap rather than claiming the
+        # full Gate exercises it or rewriting existing Corpus expectations.
+        self.assertEqual(sum(len(v) for v in unreached.values()), 12)
+        for target in ("gfx938", "sm_100a"):
             self.assertNotIn(target, unreached)
 
     def test_a_python_schedule_is_read_rather_than_skipped(self) -> None:
