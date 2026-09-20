@@ -53,6 +53,9 @@ def maca_profile_summary(raw: Mapping) -> dict:
     if not isinstance(raw, Mapping) or list(raw.get('not_collected') or ()) != list(NOT_COLLECTED):
         raise ValueError('MACA profile coverage differs')
     manifest = TensorLaunchManifest.from_dict(raw.get('manifest'))
+    manifest.check_complete_domain()
+    if manifest.hidden_null_pointer_parameters != 0:
+        raise ValueError('MACA profile declares unsupported hidden launch parameters')
     target = declared_target(manifest.target)
     admission = raw.get('device_admission')
     if (target.code_object is not CodeObject.MCFATBIN or not isinstance(admission, Mapping)
@@ -66,6 +69,8 @@ def maca_profile_summary(raw: Mapping) -> dict:
     samples = dispatch_samples(raw.get('activity'), kernel_name=manifest.kernel_name,
         grid=manifest.grid, block=manifest.block, repeats=1, reset_record=None)
     kernel = kernel_records(raw['activity'])[0]
+    if kernel['dynamic_shared_bytes'] != manifest.dynamic_shared_memory_bytes:
+        raise ValueError('MACA profile shared memory differs from its native dispatch')
     return {'coverage': 'one_device_dispatch_and_allocated_resources', 'device_time_us': samples[0] * 1000,
         'correlation': kernel['correlation'], 'grid': kernel['grid'], 'block': kernel['block'],
         'registers_per_thread': kernel['registers_per_thread'],
@@ -96,8 +101,14 @@ def maca_attribution_feedback(profile):
 
 
 def _validate_launch(profile, launch, correctness):
+    from .core import TensorLaunchManifest
     if launch.get('job_id') != profile['job_id'] or launch.get('gpu_uuid') != profile.get('gpu_uuid'):
         raise ValueError('MACA attribution launch differs from instrumented profile')
+    manifest = TensorLaunchManifest.from_dict(profile['raw']['manifest'])
+    if (launch.get('candidate_sha256') != profile['candidate_sha256']
+            or launch.get('manifest_sha256') != manifest.canonical_sha256
+            or launch.get('device_admission') != profile['raw']['device_admission']):
+        raise ValueError('MACA profile manifest or device differs from the loaded launch')
     # The producer's preflight and separately captured native resource queries must
     # agree with the instrumented native record rather than borrowing a compiler estimate.
     resources = launch.get('resources')

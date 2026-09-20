@@ -201,9 +201,44 @@ class MacaProfileRepresentation(unittest.TestCase):
 
     def test_loaded_function_resources_are_not_replaced_with_a_different_profile(self):
         from open_cake_ir.evaluation.metax_observations import MACA_PROFILE,maca_profile_summary
-        profile={'job_id':'maca-123456789abc','gpu_uuid':None,'summary':maca_profile_summary(self.raw)}
+        profile={'job_id':'maca-123456789abc','gpu_uuid':None,'candidate_sha256':'a'*64,
+                 'raw':self.raw,'summary':maca_profile_summary(self.raw)}
         launch={'job_id':profile['job_id'],'gpu_uuid':None,
+                'candidate_sha256':'a'*64,'manifest_sha256':self.manifest.canonical_sha256,
+                'device_admission':self.raw['device_admission'],
                 'resources':{'registers_per_thread':16,'local_bytes':0,'dynamic_shared_bytes':0}}
         MACA_PROFILE.validate_launch(profile,launch,{})
         launch['resources']['registers_per_thread']=32
         with self.assertRaisesRegex(ValueError,'resources'):MACA_PROFILE.validate_launch(profile,launch,{})
+
+    def test_recomputed_profile_cannot_change_the_loaded_manifest_or_device(self):
+        import json
+        from open_cake_ir.evaluation.metax_observations import MACA_PROFILE, MCPTI_PROFILE_KIND
+        profile={'kind':MCPTI_PROFILE_KIND,'candidate_sha256':'a'*64,'case_id':'primary',
+            'kernel_name':'cake','job_id':'maca-123456789abc','gpu_uuid':None,
+            'allocation_mode':'local_serialized','external_gpu_activity':'not_excluded',
+            'separate_instrumented_launch':True,
+            'evaluation_protocol':{'case_id':'primary','attribution_evaluation':'correctness_then_profile'}}
+        launch={'job_id':profile['job_id'],'gpu_uuid':None,'candidate_sha256':'a'*64,
+                'manifest_sha256':self.manifest.canonical_sha256,
+                'device_admission':deepcopy(self.raw['device_admission']),
+                'resources':{'registers_per_thread':16,'local_bytes':0,'dynamic_shared_bytes':0}}
+        mutations = (
+            ('manifest', 'workload_sha256', 'b'*64),
+            ('manifest', 'hidden_null_pointer_parameters', 2),
+            ('manifest', 'dynamic_shared_memory_bytes', 32768),
+            ('device_admission', 'pci_bus_id', '0000:10:00'),
+            ('device_admission', 'runtime_library', '/other/libmcruntime.so'),
+        )
+        raws = []
+        for section, key, value in mutations:
+            raw=deepcopy(self.raw);raw[section][key]=value
+            raws.append((key,raw))
+        raw=deepcopy(self.raw);raw['manifest']['tensor_abi'][0]['shape'][0]=16
+        raws.append(('tensor shape',raw))
+        for label,raw in raws:
+            with self.subTest(field=label),self.assertRaises(ValueError):
+                document={**profile,'raw':raw,'summary':MACA_PROFILE.summary(raw)}
+                loaded=MACA_PROFILE.load(json.dumps(document).encode(),
+                    expected_candidate_sha256='a'*64,expected_case_id='primary')
+                MACA_PROFILE.validate_launch(loaded,launch,{})
