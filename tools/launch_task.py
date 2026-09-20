@@ -546,6 +546,8 @@ def main(argv=None) -> int:
     parser.add_argument("--qualification", type=Path)
     parser.add_argument("--qualification-anchor", type=Path)
     parser.add_argument("--fixed-baseline-bundle", type=Path)
+    parser.add_argument('--pointer-alignment', type=int,
+                        help='Compile guarded aligned and generic author candidates; preserve the fixed baseline')
     parser.add_argument("--prepared-baseline", type=Path,
                         help="reuse the exact baseline and selection sealed by --baseline-only")
     parser.add_argument(
@@ -616,7 +618,16 @@ def main(argv=None) -> int:
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
                                kernelctl=args.kernelctl, infra_socket=args.infra_socket))
     if runtime is not None:
+        if args.pointer_alignment is not None:
+            from open_cake_ir.lab.toolchains import toolchain_for
+            if ('pointer_alignment' not in toolchain_for(route).optional_runtime_fields
+                    or args.pointer_alignment <= 0
+                    or args.pointer_alignment & (args.pointer_alignment - 1)):
+                raise ValueError('this toolchain requires a supported power-of-two alignment specialization')
+            runtime['toolchain']['pointer_alignment'] = args.pointer_alignment
         _admit_allocator(runtime)
+    elif args.pointer_alignment is not None:
+        raise ValueError('pointer alignment specializes author candidates, not baseline-only preparation')
     baseline_selection: dict[str, object]
     if args.prepared_baseline is not None:
         baseline_path, baseline, baseline_selection = load_prepared_baseline(

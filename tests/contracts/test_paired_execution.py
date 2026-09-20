@@ -145,6 +145,7 @@ class PairedExecutionTests(unittest.TestCase):
     def execute(self):
         owner = self
         class FakeLoaded:
+            module_count = 1
             def __init__(self, candidate, manifest, inputs, admission):
                 if len(owner.created) == owner.fail_load_at:
                     raise owner.load_error

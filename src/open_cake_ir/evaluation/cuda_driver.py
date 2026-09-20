@@ -396,6 +396,9 @@ class LoadedCudaCandidate:
         if tensor_contract.target != self.candidate.target:
             raise ValueError("persistent candidate tensor Target differs")
         observed, pointers = _tensor_contract(arguments, tensor_contract)
+        from .launch_manifest import check_pointer_alignments
+        check_pointer_alignments(dict(zip((row[0] for row in tensor_contract.tensors), pointers, strict=True)),
+                                 getattr(self.manifest, 'pointer_alignments', {}))
         self._modules.check_open()
         devices = {
             str(cast(Mapping[str, object], value)["device"])

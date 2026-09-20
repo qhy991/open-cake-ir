@@ -364,7 +364,7 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
         for role in protocol.arms:
             for case_id in cases:
                 loaded[(role, case_id)] = LoadedTorchTensorCandidate(candidates[role], manifests[role], input_cases[case_id], admission)
-                counters['module_loads'] += 1
+                counters['module_loads'] += loaded[(role, case_id)].module_count
             correctness(role, 'preflight')
             counters['preflight_calls'] += len(cases)
         if passed:
@@ -404,6 +404,8 @@ def _evaluate_paired_tile(authority, result, benchmark_for, admission):
             'case_id': authority.case_id, 'purpose': authority.request['purpose'],
             'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
             'measurements': measurements}
+        if any(getattr(manifest, 'aligned_variant', None) for manifest in manifests.values()):
+            raw['launch_manifests'] = {role: manifest.as_dict() for role, manifest in manifests.items()}
         if not measurements:
             raw['not_measured'] = 'correctness_rejected'
         timing = paired_summary(raw) if measurements else None
@@ -449,7 +451,7 @@ def _evaluate_untimed_validation_cases(authority, result, admission):
         authority.manifest.check_validation_case(authority.workload, case_id)
         inputs = materialize_case(authority.workload, case_id)
         loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
-        counters["module_loads"] += 1
+        counters["module_loads"] += loaded.module_count
         try:
             protocol = EvaluationProtocol("workload-tensor-worker-correctness", authority.request["purpose"],
                 authority.workload.canonical_sha256, case_id, "none")
@@ -514,7 +516,7 @@ def _evaluate_tile_candidate(authority, result, benchmark, admission, collect_ti
     inputs = materialize_case(authority.workload, authority.case_id)
     loaded = LoadedTorchTensorCandidate(authority.candidate, authority.manifest, inputs, admission)
     counters = result['counters']
-    counters['module_loads'] = 1
+    counters['module_loads'] = loaded.module_count
     # Attribution's child supplies correctness; the parent adds the profiler assay.
     purpose = 'confirmatory' if authority.request['purpose'] == 'attribution' else authority.request['purpose']
     protocol = EvaluationProtocol('workload-tensor-worker-correctness', purpose,

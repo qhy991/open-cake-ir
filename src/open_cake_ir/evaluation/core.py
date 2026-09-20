@@ -106,6 +106,11 @@ class LaunchableCandidate:
             "artifact_payloads",
             MappingProxyType(dict(self.artifact_payloads)),
         )
+        if self.artifact_payloads and 'launch_manifest' in self.artifact_payloads:
+            document = json.loads(self.artifact_payloads['launch_manifest'])
+            if 'kernel_bundle' in self.artifact_payloads or document.get('aligned_variant'):
+                from .kernel_bundle import alignment_component
+                alignment_component(self, TensorLaunchManifest.from_dict(document))
 
     @property
     def canonical_sha256(self) -> str:
@@ -444,6 +449,8 @@ class TensorLaunchManifest(WorkloadTensorManifest):
 
     dynamic_shared_memory_bytes: int
     hidden_null_pointer_parameters: int
+    pointer_alignments: Mapping[str, int] = field(default_factory=dict)
+    aligned_variant: str | None = None
 
     abi = 'workload_tensors_v1'
     workload_mismatch = 'sealed launch ABI differs from the selected Workload'
@@ -451,15 +458,21 @@ class TensorLaunchManifest(WorkloadTensorManifest):
     @classmethod
     def from_dict(cls, document: object) -> 'TensorLaunchManifest':
         from .cuda_manifest import CudaKernelSpec
-        if not isinstance(document, Mapping) or set(document) != {
+        fields = {
             'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi',
             'target', 'kernel_name', 'grid', 'block', 'dynamic_shared_memory_bytes',
             'hidden_null_pointer_parameters',
-        } or document.get('schema_version') != 1 or document.get('abi') != cls.abi:
+        }
+        if not isinstance(document, Mapping) or document.get('abi') != cls.abi:
+            raise ValueError('Workload tensor launch manifest fields differ')
+        extra = set(document) - fields
+        if (not fields <= set(document) or extra not in (set(), {'pointer_alignments'}, {'aligned_variant'})
+                or document['schema_version'] != (2 if extra else 1)):
             raise ValueError('Workload tensor launch manifest fields differ')
         launch = CudaKernelSpec.from_dict({
             key: value for key, value in document.items()
-            if key not in {'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi'}
+            if key not in {'schema_version', 'abi', 'workload_sha256', 'case_id', 'tensor_abi',
+                           'pointer_alignments', 'aligned_variant'}
         })
         rows = document['tensor_abi']
         if (not isinstance(document['workload_sha256'], str)
@@ -471,14 +484,24 @@ class TensorLaunchManifest(WorkloadTensorManifest):
                               ascii_names=False,
                               row_error='Workload tensor launch ABI differs',
                               order_error='Workload tensor launch ABI order differs')
+        alignments = document.get('pointer_alignments', {})
+        if (not isinstance(alignments, Mapping) or ('pointer_alignments' in extra and not alignments)
+                or any(name not in {r[0] for r in abi} or type(value) is not int
+                       or value <= 0 or value & (value - 1) for name, value in alignments.items())):
+            raise ValueError('sealed pointer alignment contract differs')
+        variant = document.get('aligned_variant')
+        if 'aligned_variant' in extra and variant != 'aligned':
+            raise ValueError('sealed aligned variant must name the sole aligned kernel')
         return cls(document['workload_sha256'], document['case_id'], abi,
                    launch.target, launch.kernel_name, launch.grid, launch.block,
-                   launch.dynamic_shared_memory_bytes, launch.hidden_null_pointer_parameters)
+                   launch.dynamic_shared_memory_bytes, launch.hidden_null_pointer_parameters,
+                   MappingProxyType(dict(alignments)), variant)
 
     @classmethod
     def for_workload(cls, workload: WorkloadContract, case_id: str, **launch: object) -> 'TensorLaunchManifest':
         from dataclasses import asdict
-        manifest = cls.from_dict({'schema_version': 1, 'abi': cls.abi,
+        version = 2 if 'pointer_alignments' in launch or 'aligned_variant' in launch else 1
+        manifest = cls.from_dict({'schema_version': version, 'abi': cls.abi,
             'workload_sha256': workload.canonical_sha256, 'case_id': case_id,
             'tensor_abi': [{**asdict(t), 'shape': list(t.shape)} for t in workload.tensor_abi(case_id)],
             **launch})
@@ -502,12 +525,26 @@ class TensorLaunchManifest(WorkloadTensorManifest):
         return tuple((name, shape, dtypes[dtype]) for name, shape, dtype, _ in self.tensor_abi)
 
     def as_dict(self) -> dict[str, object]:
-        return {'schema_version': 1, 'abi': self.abi,
+        specialization = ({'pointer_alignments': dict(self.pointer_alignments)} if self.pointer_alignments
+                          else {'aligned_variant': self.aligned_variant} if self.aligned_variant else {})
+        return {'schema_version': 2 if specialization else 1, 'abi': self.abi,
             'workload_sha256': self.workload_sha256, 'case_id': self.case_id,
             'tensor_abi': [dict(name=n, shape=list(s), dtype=d, mode=m) for n, s, d, m in self.tensor_abi],
             'target': self.target, 'kernel_name': self.kernel_name, 'grid': list(self.grid),
             'block': list(self.block), 'dynamic_shared_memory_bytes': self.dynamic_shared_memory_bytes,
-            'hidden_null_pointer_parameters': self.hidden_null_pointer_parameters}
+            'hidden_null_pointer_parameters': self.hidden_null_pointer_parameters, **specialization}
+
+    def check_complete_domain(self):
+        if self.pointer_alignments:
+            raise ValueError('alignment-restricted leaf cannot replace the complete Workload candidate')
+
+    @property
+    def module_count(self):
+        return 2 if self.aligned_variant else 1
+
+    @property
+    def kernels_per_call(self):
+        return 1
 
 
 
@@ -653,7 +690,15 @@ class LoadedTorchTensorCandidate:
             raise ValueError(
                 f'{candidate.target!r} builds a {executable.value!r}, which this '
                 'tensor-tile path has no driver for')
-        self.loaded = loader(candidate, manifest, admission)
+        if manifest.aligned_variant:
+            from .kernel_bundle import LoadedAlignmentCandidate
+            self.loaded = LoadedAlignmentCandidate(candidate, manifest, admission, loader, torch.cuda.synchronize)
+        else:
+            self.loaded = loader(candidate, manifest, admission)
+
+    @property
+    def module_count(self):
+        return self.manifest.module_count
 
     def fresh_argument_sets(self, count):
         """Prepare non-reusable outputs and finish their initialization outside timing."""
