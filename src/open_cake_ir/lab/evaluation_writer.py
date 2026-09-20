@@ -101,8 +101,7 @@ class EvaluationWriter:
                 "purpose": purpose,
                 "candidate_sha256": candidate.candidate_sha256,
                 "objects": references,
-                **({"elapsed_wall_seconds": round(self.ralph.elapsed_wall_seconds, 6)}
-                   if purpose == "confirmatory" else {}),
+                'elapsed_wall_seconds':round(self.ralph.elapsed_wall_seconds,6),
             },
         )
         return receipt

@@ -192,9 +192,7 @@ def _replay_candidates(
             turn = evaluation_origin(payload)
             purpose = payload.get("purpose")
             candidate_sha256 = payload.get("candidate_sha256")
-            expected_fields = {"source_turn" if "source_turn" in payload else "turn", "purpose", "candidate_sha256", "objects"}
-            if purpose == "confirmatory":
-                expected_fields.add("elapsed_wall_seconds")
+            expected_fields = {"source_turn" if "source_turn" in payload else "turn", "purpose", "candidate_sha256", "objects",'elapsed_wall_seconds'}
             if set(payload) != expected_fields:
                 refuse(f"{location}.payload", "fields differ", observed=set(payload),
                        expected=expected_fields)

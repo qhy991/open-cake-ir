@@ -1,12 +1,11 @@
 """Reconstruct native compilation permits separately from candidate counts."""
-import math
 from collections.abc import Mapping
 
 from .refusals import refuse
 
 
 def replay_compilations(events, *, candidates_by_turn, maximum, target):
-    count, active, last_time = 0, None, 0.0
+    count, active = 0, None
     filtered = set()
     available = {}
     denied = set()
@@ -37,9 +36,6 @@ def replay_compilations(events, *, candidates_by_turn, maximum, target):
                 or type(remaining.get('compilations')) is not int
                 or remaining.get('compilations') != maximum-count):
                 refuse(kind, 'compilation budget does not derive from native invocation starts')
-            if (type(state.get('elapsed_wall_seconds')) not in {int,float}
-                or not math.isfinite(state['elapsed_wall_seconds']) or state['elapsed_wall_seconds'] < last_time):
-                refuse(kind, 'Run clock predates its native compilation observations')
             closed = True
         if not kind.startswith('compilation_'):
             if active is not None:
@@ -74,10 +70,6 @@ def replay_compilations(events, *, candidates_by_turn, maximum, target):
                 or payload.get('outcome') not in {'returned','raised'}):
                 refuse(kind,'native compilation completion differs from its unique start')
             active = None
-        elapsed = payload.get('elapsed_wall_seconds')
-        if type(elapsed) not in {int,float} or not math.isfinite(elapsed) or elapsed < last_time:
-            refuse(kind,'native compilation clock is nonfinite or runs backwards')
-        last_time = elapsed
     if active is not None:
         refuse('compilation_started','native compiler invocation is unfinished')
     return count

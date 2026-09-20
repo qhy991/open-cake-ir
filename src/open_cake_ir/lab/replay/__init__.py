@@ -13,7 +13,7 @@ from .._policies import _MATCHED_EVENT_KINDS_V1, _matched_evidence_policy_versio
 from ..run_spec import RunSpecification
 from ..executor import ExecutorRevision
 from ..endpoints import endpoint_policy
-from ..evaluation_lifecycle import replay_evaluation_invocations
+from ..evaluation_lifecycle import replay_evaluation_invocations, replay_elapsed_clock
 from ..selection import _EmpiricalSelection, _empirical_context
 from .candidates import _artifact_outcomes_are_closed, _replay_candidates
 from .outcomes import _replay_terminal
@@ -171,6 +171,7 @@ def _replay_matched_run(
     if turns != sorted(turns):
         refuse("events", "Turn-bearing events are not in Turn order",
                observed=[f"events[{index}]:turn={turn}" for index, turn in turn_events])
+    replay_elapsed_clock(events)
     provider_events = [event for event in events if event.get("kind") == "provider_turn_completed"]
     checkpoint_events = [event for event in events if event.get("kind") == "checkpoints_projected"]
     if not provider_events:

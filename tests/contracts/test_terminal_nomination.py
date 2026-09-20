@@ -196,4 +196,4 @@ class NominationTests(SemanticLabTestCase):
                 replay = replay_matched_run(evidence,audit,spec,project_root=ROOT,
                     manifest_parser=lab._parse_manifest,task_package=lab.task_package)
             self.assertFalse(replay)
-            self.assertIn('confirmation time lies outside',str(replay.refusals[0]))
+            self.assertIn('Run clock',str(replay.refusals[0]))

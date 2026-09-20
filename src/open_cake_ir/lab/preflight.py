@@ -293,7 +293,8 @@ def preflight_run(run_path, *, project_root, workload_loader, validate_run=None)
     from .run_spec import RunSpecification
     from .admission import admit_run_inputs
 
-    specification = RunSpecification.load(run_path)
+    specification = (RunSpecification.from_dict(run_path.document) if isinstance(run_path,RunSpecification)
+                     else RunSpecification.load(run_path))
     if validate_run is not None:
         validate_run(specification)
     admit_run_inputs(specification, project_root=project_root, workload_loader=workload_loader)

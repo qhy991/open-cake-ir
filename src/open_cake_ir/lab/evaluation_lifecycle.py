@@ -3,6 +3,28 @@ from __future__ import annotations
 
 from ._documents import _DIGEST
 from .selection import _matched_search_plan, _receipt_qualifies
+import math
+from collections.abc import Mapping
+
+
+def replay_elapsed_clock(events):
+    """One Run clock orders compiler calls, measured receipts and phase boundaries."""
+    previous = 0.
+    for event in events:
+        kind,payload = event['kind'],event['payload']
+        if kind in {'candidate_evaluated','compilation_started','compilation_completed'}:
+            value = payload.get('elapsed_wall_seconds')
+        elif kind == 'search_completed':
+            state = payload.get('state')
+            value = state.get('elapsed_wall_seconds') if isinstance(state,Mapping) else None
+        elif kind == 'checkpoints_projected':
+            state = payload.get('ralph')
+            value = state.get('elapsed_wall_seconds') if isinstance(state,Mapping) else None
+        else:
+            continue
+        if type(value) not in {int,float} or not math.isfinite(value) or value < previous:
+            raise ValueError(f'{kind}: recorded Run clock is not finite and monotone')
+        previous = value
 
 
 def evaluation_origin(payload):

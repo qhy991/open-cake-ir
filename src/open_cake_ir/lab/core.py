@@ -70,9 +70,28 @@ class Lab:
     def _validate_run(self, specification: RunSpecification) -> None:
         """Task-owned target/evaluation admission, independent of Study policy."""
 
-    def preflight_run(self, run_path: str | Path) -> RunSpecification:
+    def preflight_run(self, run_path: RunSpecification | str | Path) -> RunSpecification:
         return preflight.preflight_run(run_path, project_root=self._root,
                                        workload_loader=self._load_workload, validate_run=self._validate_run)
+
+    def _validate_study_plan(self,plan):
+        from .study_execution import validate_study_inputs
+        validate_study_inputs(plan,project_root=self._root,workload_loader=self._load_workload,
+                              preflight_run=self.preflight_run,task_package=self.task_package)
+
+    def prepare_study(self,plan,output_root):
+        from .study_execution import prepare_study
+        return prepare_study(plan,output_root,project_root=self._root,workload_loader=self._load_workload,
+                             preflight_run=self.preflight_run,task_package=self.task_package)
+
+    def execute_study(self,study,*,runtime_factory):
+        from .study_execution import execute_study
+        self._validate_study_plan(study.plan)
+        return execute_study(study,execute_run=self.execute_run,runtime_factory=runtime_factory)
+
+    def audit_study(self,study):
+        from .study_analysis import audit_study
+        return audit_study(study,audit_run=self.audit_run,validate_inputs=self._validate_study_plan)
 
     def execute_run(self, specification: RunSpecification, evidence_root: str | Path, *,
                     provider, environment, evaluator) -> RunRef:
