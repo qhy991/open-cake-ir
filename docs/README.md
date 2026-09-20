@@ -29,6 +29,7 @@ Start with the system overview, then follow the implementation or evidence relev
 - [概念导读 / Wiki](wiki/README.md) · [English](en/wiki/README.md)
 - [当前状态 / Current status](../reports/current/STATUS.md)
 - [研究路线 / Roadmap](ROADMAP.md)
+- [平台与分支维护 / Development branches](DEVELOPMENT_BRANCHES.md)
 - [设计决策 / Decisions](adr/README.md)
 - [完整阅读目录与历史材料 / Full catalog and history](catalog.md)
 

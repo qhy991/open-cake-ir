@@ -26,7 +26,8 @@ relationships only.
   program safety, and backend lowering preconditions.
 - Report modeled analysis coverage without presenting estimates as GPU truth.
 - Deterministically lower eligible Schedules to inspectable source for a current backend.
-- Gate semantic changes with the full Corpus; independent review is recommended before `main`.
+- Gate semantic changes with the full Corpus; integration and independent review follow
+  the current [branch workflow](../../DEVELOPMENT_BRANCHES.md).
 
 The Compiler does not own Workload semantics, input materialization, correctness oracles,
 providers, Campaigns, GPU allocation, Evaluation, Evidence, or claims.

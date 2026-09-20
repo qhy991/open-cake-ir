@@ -6,6 +6,11 @@ Status: superseded by [ADR 0065](0065-source-identity-is-the-commit.md), 2026-09
 independent review at the merge to `main` is advice, not a gate. Originally: supersedes
 the human-only interpretation of ADR 0030; its external-writer boundary stays.
 
+Later workflow, 2026-09-20: the owner selected platform branches and task-based integration.
+[Development branches](../DEVELOPMENT_BRANCHES.md) owns the current review and merge
+procedure, replacing D9's direct-commit default without restoring this retired release
+approval mechanism. The contract below remains the historical decision.
+
 ## Contract
 
 The owner permits a new reviewer session using Opus 5, Fable 5, Fable 5.1, or GPT-6 Astra
