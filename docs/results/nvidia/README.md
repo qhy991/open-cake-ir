@@ -14,7 +14,7 @@
 
 | 平台 | 维护分支 | 数据日期 | 观察条目 | 发布数据 |
 |---|---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-20 | 62 | [nvidia/records.json](records.json) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-20 | 66 | [nvidia/records.json](records.json) |
 
 观察条目数不等于任务数：同一任务可以有不同形状、实验集合和历史尝试。
 
@@ -31,6 +31,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - With 005, 023 (h1536) and 024, ten tasks have three-way comparisons and all 300 pre/postflight checks pass. The three new external timing edges fail the unchanged CV gate. The qualified starter edges show 2.475x for 024 and 0.944x for 005; keep the faster 005 starter.
 - Guarded AOT validation now passes 180/180 checks on B300: 001=65, 002=65, 025=50. CPU preparation and numerical verification run without a GPU lease; the device stage only launches and retains snapshots. Performance comparison of these new binaries remains pending.
 - 001 aligned AOT timing is qualified: 2.304 us versus the unchanged old optimized binary at 2.496 us (1.083x; latency -7.69%). The supplied external is 2.336 us, classified close_null under the original 5% materiality threshold. All 2550 snapshots passed; 002 and 025 remain pending CPU verification.
+- All three alignment runs now pass 7650/7650 snapshots. Qualified external edges: 001 close_null (2.304/2.336 us), 002 faster (3.008/3.296 us, 1.096x), 025 close_null (2.720/2.720 us). The direct new/old edges for 002 and 025 fail CV; their nominal gains are not published as qualified speedups. No blanket promotion.
 
 | 设备 / 集合 | Task | 输入 / Workload | 基线 µs | 候选 µs | 加速比 | 状态 | 详情 |
 |---|---|---|---:|---:|---:|---|---|
@@ -96,6 +97,10 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 | B300 / guarded AOT validation | `025_rmsnorm_h4096` | Retained exact shape / BF16 / five distributions / aligned and each pointer offset 2, 4, 8 bytes | — | — | — | Correctness only: 50 checks passed | [nvidia-alignment-guard-025-20260920](#nvidia-alignment-guard-025-20260920) |
 | B300 / AOT alignment ablation | `001_fused_add_rmsnorm_h2048` | R=79, H=2048, BF16; same source/grid/options, alignment treatment only | 2.496 | 2.304 | 1.083× | Correct; timing qualified; first_arm_faster | [nvidia-alignment-001-optimized_vs_starter-20260920](#nvidia-alignment-001-optimized_vs_starter-20260920) |
 | B300 / AOT alignment ablation | `001_fused_add_rmsnorm_h2048` | R=79, H=2048, BF16; same source/grid/options, alignment treatment only | 2.336 | 2.304 | 1.014× | Correct; timing qualified; close_null | [nvidia-alignment-001-optimized_vs_external-20260920](#nvidia-alignment-001-optimized_vs_external-20260920) |
+| B300 / AOT alignment ablation | `002_fused_add_rmsnorm_h4096` | R=170, H=4096, BF16; same source/grid/options, alignment treatment only | 3.296 | 3.008 | 1.096× | Correct; first_arm_faster | [nvidia-alignment-002-optimized_vs_external-20260920](#nvidia-alignment-002-optimized_vs_external-20260920) |
+| B300 / AOT alignment ablation | `002_fused_add_rmsnorm_h4096` | R=170, H=4096, BF16; same source/grid/options, alignment treatment only | 3.648 | 3.024 | — | Correct; measurement_quality_failed | [nvidia-alignment-002-optimized_vs_starter-20260920](#nvidia-alignment-002-optimized_vs_starter-20260920) |
+| B300 / AOT alignment ablation | `025_rmsnorm_h4096` | R=170, H=4096, BF16; same source/grid/options, alignment treatment only | 2.720 | 2.720 | 1.000× | Correct; close_null | [nvidia-alignment-025-optimized_vs_external-20260920](#nvidia-alignment-025-optimized_vs_external-20260920) |
+| B300 / AOT alignment ablation | `025_rmsnorm_h4096` | R=170, H=4096, BF16; same source/grid/options, alignment treatment only | 3.136 | 2.720 | — | Correct; measurement_quality_failed | [nvidia-alignment-025-optimized_vs_starter-20260920](#nvidia-alignment-025-optimized_vs_starter-20260920) |
 
 ## 演进与更新
 
@@ -846,3 +851,43 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/8c97440e90a1d55e14160269d93f412b709e8472/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-df5de212bcdd/stages/verify/comparison-report.json`。
 - All 2550 complete snapshots passed, including 30 pre/post checks and 2520 fresh cohort calls. All timing-quality gates passed. Cold L2 CUPTI, 10 ordered pairs and 25 samples/cohort; all three edges in one exclusive allocation. The external edge is close_null under the unchanged 5 percent materiality threshold, not a material external win. No official leaderboard or model E2E claim.
+
+### nvidia-alignment-002-optimized_vs_external-20260920
+
+**B300 / AOT alignment ablation · 002_fused_add_rmsnorm_h4096** — 2026-09-20 / Correct; first_arm_faster
+
+- Workload：`R=170, H=4096, BF16; same source/grid/options, alignment treatment only`；目标：`sm_103a`；版本：`compiler 88aab6b2; judge d31c551a`。
+- 基线：Supplied external implementation；比值口径：`paired`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/b7abaf3e9e386f56da27f26e5fc940f515541078/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-69481876670f/stages/verify/comparison-report.json`。
+- All 2550 complete snapshots passed. Each comparison edge retains its own quality decision. The overall three-edge report fails quality because the new/old-control edge fails the unchanged CV gate; it is not a blanket promotion. Cold L2 CUPTI, 10 ordered pairs, 25 samples per cohort, one continuous paired allocation. No model E2E or official leaderboard claim.
+
+### nvidia-alignment-002-optimized_vs_starter-20260920
+
+**B300 / AOT alignment ablation · 002_fused_add_rmsnorm_h4096** — 2026-09-20 / Correct; measurement_quality_failed
+
+- Workload：`R=170, H=4096, BF16; same source/grid/options, alignment treatment only`；目标：`sm_103a`；版本：`compiler 88aab6b2; judge d31c551a`。
+- 基线：Unchanged pre-specialization optimized binary；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/b7abaf3e9e386f56da27f26e5fc940f515541078/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-69481876670f/stages/verify/comparison-report.json`。
+- All 2550 complete snapshots passed. Each comparison edge retains its own quality decision. The overall three-edge report fails quality because the new/old-control edge fails the unchanged CV gate; it is not a blanket promotion. Cold L2 CUPTI, 10 ordered pairs, 25 samples per cohort, one continuous paired allocation. No model E2E or official leaderboard claim.
+
+### nvidia-alignment-025-optimized_vs_external-20260920
+
+**B300 / AOT alignment ablation · 025_rmsnorm_h4096** — 2026-09-20 / Correct; close_null
+
+- Workload：`R=170, H=4096, BF16; same source/grid/options, alignment treatment only`；目标：`sm_103a`；版本：`compiler 88aab6b2; judge d31c551a`。
+- 基线：Supplied external implementation；比值口径：`paired`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/b7abaf3e9e386f56da27f26e5fc940f515541078/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-68716e4d66e1/stages/verify/comparison-report.json`。
+- All 2550 complete snapshots passed. Each comparison edge retains its own quality decision. The overall three-edge report fails quality because the new/old-control edge fails the unchanged CV gate; it is not a blanket promotion. Cold L2 CUPTI, 10 ordered pairs, 25 samples per cohort, one continuous paired allocation. No model E2E or official leaderboard claim.
+
+### nvidia-alignment-025-optimized_vs_starter-20260920
+
+**B300 / AOT alignment ablation · 025_rmsnorm_h4096** — 2026-09-20 / Correct; measurement_quality_failed
+
+- Workload：`R=170, H=4096, BF16; same source/grid/options, alignment treatment only`；目标：`sm_103a`；版本：`compiler 88aab6b2; judge d31c551a`。
+- 基线：Unchanged pre-specialization optimized binary；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/b7abaf3e9e386f56da27f26e5fc940f515541078/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-staged-alignment-comparison-20260920-68716e4d66e1/stages/verify/comparison-report.json`。
+- All 2550 complete snapshots passed. Each comparison edge retains its own quality decision. The overall three-edge report fails quality because the new/old-control edge fails the unchanged CV gate; it is not a blanket promotion. Cold L2 CUPTI, 10 ordered pairs, 25 samples per cohort, one continuous paired allocation. No model E2E or official leaderboard claim.
