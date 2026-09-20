@@ -5,6 +5,7 @@ storage, observed launch geometry and dispatch time; occupancy, bandwidth and IS
 counters are explicitly outside the current collection coverage.
 """
 from dataclasses import asdict
+import math
 from typing import Mapping
 
 from open_cake_ir.compiler.target import declared_target
@@ -113,6 +114,18 @@ def _validate_launch(profile, launch, correctness):
             or instrumented['metrics'].get('inputs_unchanged') is not True
             or correctness.get('correctness_launches') != 2 or launch.get('correctness_launches') != 2):
         raise ValueError('MACA profile lacks the instrumented output oracle check')
+    preflight = correctness.get('preflight')
+    checks = (preflight, instrumented['metrics'])
+    if any(not isinstance(check, Mapping)
+           or type(check.get('output_mismatches')) is not int or check['output_mismatches'] != 0
+           or check.get('inputs_unchanged') is not True
+           or type(check.get('max_abs_error')) not in (int, float)
+           or not math.isfinite(check['max_abs_error']) or check['max_abs_error'] < 0 for check in checks):
+        raise ValueError('MACA profile preflight or instrumented oracle metrics differ')
+    combined = {'output_mismatches': 0, 'inputs_unchanged': True,
+                'max_abs_error': max(check['max_abs_error'] for check in checks)}
+    if correctness.get('passed') is not True or correctness.get('metrics') != combined:
+        raise ValueError('MACA profile correctness aggregate differs from both oracle checks')
     # The producer's preflight and separately captured native resource queries must
     # agree with the instrumented native record rather than borrowing a compiler estimate.
     validate_loaded_resources(launch.get('resources'), profile['summary'])

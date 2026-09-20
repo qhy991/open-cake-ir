@@ -182,6 +182,8 @@ class MacaProfileRepresentation(unittest.TestCase):
                   'device_admission':asdict(admission),'not_collected':list(NOT_COLLECTED)}
         self.correctness={'correctness_launches':2,'instrumented':{'passed':True,'metrics':{
             'output_mismatches':0,'inputs_unchanged':True,'max_abs_error':0.0}}}
+        self.correctness.update(passed=True,metrics=deepcopy(self.correctness['instrumented']['metrics']),
+                                preflight=deepcopy(self.correctness['instrumented']['metrics']))
 
     def test_one_actual_dispatch_projects_resources_and_states_missing_counters(self):
         from open_cake_ir.evaluation.metax_observations import maca_profile_summary
@@ -270,5 +272,12 @@ class MacaProfileRepresentation(unittest.TestCase):
                 'attribution','primary',True,metrics,1,0,sha256(payloads['launch_receipt']).hexdigest(),
                 None,artifact_payloads=payloads)
         self.assertEqual(receipt().attribution_feedback['kind'],'maca_dispatch_attribution')
+        del correctness['preflight']
+        with self.assertRaisesRegex(ValueError,'preflight'):receipt()
+        correctness['preflight'] = {**metrics, 'output_mismatches': 1}
+        with self.assertRaisesRegex(ValueError,'preflight'):receipt()
+        correctness['preflight'] = dict(metrics)
+        correctness['instrumented'] = {'passed':True,'metrics':{**metrics,'max_abs_error':1.0}}
+        with self.assertRaisesRegex(ValueError,'aggregate'):receipt()
         correctness.pop('instrumented')
         with self.assertRaisesRegex(ValueError,'instrumented output'):receipt()
