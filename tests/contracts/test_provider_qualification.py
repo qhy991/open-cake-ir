@@ -81,8 +81,9 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 if resumed and arguments[-2] != thread_id:
                     raise SystemExit(34)
                 schema_path = Path(arguments[arguments.index("--output-schema") + 1])
-                allowed_arms = json.loads(schema_path.read_text())["properties"]["arm"]["enum"]
-                if arm not in allowed_arms:
+                arm_schema = json.loads(schema_path.read_text())["properties"]["arm"]
+                allowed_arms = arm_schema.get("enum")
+                if arm_schema.get("type") != "string" or allowed_arms is not None and arm not in allowed_arms:
                     raise SystemExit(37)
                 turn = 2 if resumed else 1
                 if projection["state_card"] != {{"turn": turn}}:
