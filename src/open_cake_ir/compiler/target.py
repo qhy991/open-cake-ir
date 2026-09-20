@@ -45,6 +45,7 @@ class Vendor(str, Enum):
     # who built the hardware; that distinction is why vendor and code-object family are
     # two fields here and not one.
     HYGON = "hygon"
+    METAX = "metax"
 
 
 class CodeObject(str, Enum):
@@ -61,6 +62,7 @@ class CodeObject(str, Enum):
     CUBIN = "cubin"
     METAL_BINARY_ARCHIVE = "metal_binary_archive"
     HSACO = "hsaco"
+    MCFATBIN = "mcfatbin"
 
 
 def declared_target(target_id: str) -> "Target":
@@ -235,7 +237,7 @@ _TARGET_FIELDS = frozenset({
 })
 # `compute_capability` and `warps_per_warpgroup` are admitted by code object below.
 _OPTIONAL_TARGET_FIELDS = frozenset({
-    "occupancy", "peak", "compute_capability", "warps_per_warpgroup",
+    "occupancy", "peak", "compute_capability", "warps_per_warpgroup", "triton_arch",
 })
 
 
@@ -363,6 +365,10 @@ class Target:
     # a role's slot range rather than a preference. Declared beside its citation like
     # `warp_size`, and absent -- not zero, not a borrowed four -- on an ISA without it.
     warps_per_warpgroup: int | None = None
+    # MACA's Triton compatibility architecture is an API fact, distinct from both
+    # the physical xcore target and its native code-generation family. It is not a
+    # CUDA compute capability and may not confer CUDA contracts or instructions.
+    triton_arch: int | None = None
 
     @classmethod
     def load(cls, path: str | Path) -> "Target":
@@ -419,6 +425,12 @@ class Target:
             raise TargetParseError("target.compute_capability must be a nonnegative integer pair")
         if not cubin and "warps_per_warpgroup" in value:
             raise TargetParseError(f"{code_object.value} targets have no warps_per_warpgroup")
+        if code_object is CodeObject.MCFATBIN:
+            triton_arch = _int_field(value.get("triton_arch"), "target.triton_arch")
+        else:
+            if "triton_arch" in value:
+                raise TargetParseError(f"{code_object.value} derives its Triton architecture from existing Target facts")
+            triton_arch = None
 
         try:
             spaces = frozenset(
@@ -467,4 +479,5 @@ class Target:
             ),
             peak=peak,
             warps_per_warpgroup=warpgroup,
+            triton_arch=triton_arch,
         )

@@ -22,6 +22,7 @@ def _evaluate_tile(candidate, workload, protocol, launcher, *, validation_case):
     if protocol.workload_sha256 != workload.canonical_sha256 or protocol.timing != 'none' or protocol.purpose == 'attribution':
         raise ValueError('tile correctness Evaluation protocol differs')
     manifest = TensorLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
+    manifest.check_complete_domain()
     if validation_case:
         manifest.check_validation_case(workload, protocol.case_id)
     else:

@@ -895,6 +895,28 @@ def _no_captured_target(host: Mapping[str, object]) -> None:
     return None
 
 
+def _validate_metax_host(host: Mapping[str, object]) -> None:
+    from .metax_host import validate_host
+    validate_host(host)
+
+
+def _admit_metax_host(host: Mapping[str, object], *, executor_id: str = "") -> object:
+    from .metax_host import admit_host
+    return admit_host(host, executor_id=executor_id)
+
+
+def triton_version(host: Mapping[str, object]) -> str:
+    """Module version for a declared provider, or the original triton distribution.
+
+    FlagTree's distribution version is not the Triton API version it supplies. Both
+    are captured and admitted by that host; CUDA/HIP captures retain their old form.
+    """
+    runtime = host.get("runtime", {})
+    if isinstance(runtime, Mapping) and "triton_version" in runtime:
+        return str(runtime["triton_version"])
+    return str(host["packages"]["triton"])
+
+
 @dataclass(frozen=True)
 class HostKind:
     """What one declared host kind owns at the Executor boundary.
@@ -940,6 +962,13 @@ _HOST_VALIDATORS: Mapping[str | None, HostKind] = MappingProxyType({
         admit_profiler=_admit_metal_profiler,
         admits_through="admit_host",
         captured_target=_metal_captured_target,
+    ),
+    "maca": HostKind(
+        validate=_validate_metax_host,
+        admit=_admit_metax_host,
+        admit_profiler=None,
+        admits_through="admit_host",
+        captured_target=_no_captured_target,
     ),
 })
 

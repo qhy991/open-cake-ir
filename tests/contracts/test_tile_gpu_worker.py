@@ -37,6 +37,7 @@ class TileGpuWorkerTests(unittest.TestCase):
         instances = []
 
         class Loaded:
+            module_count = 1
             def __init__(self, candidate, manifest, inputs, admission):
                 self.loaded = SimpleNamespace(launch_calls=0, resources={})
                 self.inputs = inputs
@@ -172,9 +173,20 @@ class TileGpuWorkerTests(unittest.TestCase):
             def cpu(self): return self
             def tolist(self): return list(self.values)
             def fill_(self, value): self.values[:] = [value] * len(self.values)
+            def detach(self): return self
+            def contiguous(self): return self
+            def to(self, **_):
+                import ctypes
+                self.storage = (ctypes.c_double * len(self.values))(*self.values)
+                return self
+            def numel(self): return len(self.values)
+            def element_size(self): return 8
+            def data_ptr(self):
+                import ctypes
+                return ctypes.addressof(self.storage)
 
         import math
-        fake_torch = SimpleNamespace(float32='fp32', bfloat16='bf16', float16='fp16', int32='int32',
+        fake_torch = SimpleNamespace(float32='fp32', bfloat16='bf16', float16='fp16', int32='int32', float64='fp64',
             tensor=lambda values, **_: Tensor(values),
             full=lambda shape, value, **_: Tensor([value] * math.prod(shape)),
             full_like=lambda tensor, value: Tensor([value] * len(tensor.values)),

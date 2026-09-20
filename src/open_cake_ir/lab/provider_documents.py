@@ -159,6 +159,7 @@ class ProviderTurn:
 
     thread_id: str
     provider_tokens: int
+    """Native counter at adapter output; QualifiedRunProvider returns an invocation delta."""
     candidates: tuple[bytes, ...]
     """Every candidate this Turn wrote, in the order the provider wrote them.
 

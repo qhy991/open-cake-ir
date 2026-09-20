@@ -34,6 +34,11 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-20-008 — recovered Codex waiting-for-network notices rejected a completed candidate turn; exact notice admission verified by original-stream and candidate replay.
+- F-2026-09-20-009 — resumed Codex thread totals were summed as invocation spend; success, failure and semantic replay now use the same delta, with regressing counters refused.
+
+- F-2026-09-20-007 — Codex tool-rich progress prose is mistaken for a terminal despite a complete candidate write and exact final marker; preserve commentary as auxiliary evidence while retaining final-message and candidate gates (protocol, fixed and verified by original-stream/candidate replay, 99 CPU contracts and unchanged 164-case Corpus; a fresh Codex 0.155.1 / gpt-6-astra two-turn qualification also passed).
+
 - F-2026-09-20-003 — live composition rejects a canonical external AGENTS.md already admitted by the Study; scaffold custody must use the same external-file rule at execution (protocol, fixed at 0bd562c1 and closed by original bound-scaffold replay, 55 CPU tests and unchanged Corpus Gate; successor campaign outcome is separate).
 
 - F-2026-09-20-002 — a recovered Codex stream emits a top-level reconnect error before completing successfully; the Lab rejects the event vocabulary even though first-turn candidate output matches. The bounded recovered-notice path retains full turn/candidate checks and diagnostics (protocol, implemented at 0e3c0f87; closed at 1b51db28 by exact original-stream replay and fresh two-turn live qualification, alongside 103 CPU contracts and 164 unchanged Corpus cases; no network-reliability claim).
@@ -124,6 +129,6 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-20-005 — equal GEMM array/list inputs were refused by container identity in the loader and output checker (bug, verification pending).
 - F-2026-09-20-006 — named broadcast markers were refused before shape checking; masked whole-row tails already use existing tiled program coordinates (capacity, verification pending; no new IR or pass).
 
-- F-2026-09-20-007 — seven fixed-shape external comparisons and six three-way NCU profiles separate starter gains from reference gaps: 003 remains 4.73x slower despite a 1.54x starter gain; 022 row packing reduces observed concurrency, while its starter beats the supplied reference. Six external timing edges retain CV failures. Existing width/load-reuse mechanisms should be isolated before new IR; no promotion (behavior, proposed).
+- F-2026-09-20-010 — seven fixed-shape external comparisons and six three-way NCU profiles separate starter gains from reference gaps: 003 remains 4.73x slower despite a 1.54x starter gain; 022 row packing reduces observed concurrency, while its starter beats the supplied reference. Six external timing edges retain CV failures. Existing width/load-reuse mechanisms should be isolated before new IR; no promotion (behavior, proposed).
 
-- F-2026-09-20-008 — three retained normalization kernels compile to scalar b16 memory operations without pointer attributes; a CPU-only 16-byte-alignment hypothesis switches them to v4.b32 vector operations. The ABI does not yet guarantee this assumption, so it is not launched or promoted; align compile facts with launch checks before GPU qualification (capacity, proposed).
+- F-2026-09-20-011 — three retained normalization kernels compile to scalar b16 memory operations without pointer attributes; a CPU-only 16-byte-alignment hypothesis switches them to v4.b32 vector operations. The ABI does not yet guarantee this assumption, so it is not launched or promoted; align compile facts with launch checks before GPU qualification (capacity, proposed). Software implementation: PR #108; GPU verification pending.

@@ -80,6 +80,7 @@ def cake_candidate(root, workload, default_source):
 class LoadedCallable:
     """Use the common fresh-output cohort checker with task-owned Python launchers."""
     def __init__(self, workload, values, launch, torch):
+        from array import array
         self.launch_function = launch
         self.torch = torch
         self.abi = workload.tensor_abi("primary")
@@ -92,6 +93,7 @@ class LoadedCallable:
         self.inputs = {a.name: torch.tensor(values[a.name], dtype=dtypes[a.dtype],
             device="cuda:0").reshape(a.shape) for a in self.abi if a.mode == "input"}
         self.output_shape = outputs[0].shape
+        self.validation_inputs = {name:array('d', value) for name,value in values.items()}
 
     def fresh_argument_sets(self, count):
         return [{"inputs": {k: v.clone() for k, v in self.inputs.items()},
@@ -110,8 +112,9 @@ class LoadedCallable:
         arguments["result"] = result
 
     def snapshot(self, arguments):
+        from array import array
         observed = {"out": arguments["result"].cpu().flatten().tolist()}
-        after = {k: v.cpu().flatten().tolist() for k, v in arguments["inputs"].items()}
+        after = {k: array('d',v.cpu().flatten().tolist()) for k, v in arguments["inputs"].items()}
         return observed, after
 
 

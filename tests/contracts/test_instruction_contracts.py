@@ -84,6 +84,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             "apple_gpu_family9": {"elementwise": ["metal.fma.f32", "metal.precise.tanh.f32"]},
             # gfx1151 admits nothing yet; gfx938 admits the two measured contractions.
             "gfx1151": {},
+            "xcore1002": {"elementwise": ["maca.tanh.f32"]},
             "gfx938": {"elementwise": ["ocml.tanh.f32"],
                        "mma": ["triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
                                "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"]},
@@ -109,7 +110,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
 
     def test_the_registry_is_closed_and_every_record_says_what_it_is(self) -> None:
         """Sixteen records; each kind carries exactly the fields its analyses read."""
-        self.assertEqual(len(CONTRACTS), 17)
+        self.assertEqual(len(CONTRACTS), 18)
         for name, record in CONTRACTS.items():
             with self.subTest(contract=name):
                 self.assertEqual(record.name, name)
@@ -186,6 +187,7 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
         # metal_fma.py reaches its fma, and sm_100a has none because its atomic is bound
         # implicitly.
         self.assertEqual(unreached, {
+            "xcore1002": ["maca.tanh.f32"],
             "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "apple_gpu_family8": ["metal.precise.tanh.f32"],
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
@@ -193,7 +195,7 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
                         "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp32_ieee",
                         "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_block_scale_fp32"],
         })
-        self.assertEqual(sum(len(v) for v in unreached.values()), 11)
+        self.assertEqual(sum(len(v) for v in unreached.values()), 12)
         # The two AMDGCN targets and sm_100a are absent because every declaration they
         # carry is reached. Asserted so a regression shows up here too.
         for target in ("gfx938", "gfx1151", "sm_100a"):

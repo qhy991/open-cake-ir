@@ -127,6 +127,14 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 
 具体任务的代码现集中在 `src/open_cake_ir/tasks/`。任务层提供合同校验、参考实现和准备函数；通用 Lab 与 Evaluation 不导入具体任务。见[任务目录说明](TASKS.md)。
 
+### 跨硬件的可执行优化知识
+
+框架进一步提出将 Agent 在 fusion、tiling 和 memory hierarchy optimization 中发现的机制，
+提炼为带适用条件的显式变换；目标后端承接硬件差异，Lab 重新选择参数并验证收益。
+机制材料与变换调用分别作为可消融变量，底层编译能力、正确性与测量流程保持一致。
+这是待验证的研究设计；现有有限 pass 提供实现基础。见[机制与图示](OPTIMIZATION_TRANSFER.md)
+及[实验设计](OPTIMIZATION_TRANSFER_ABLATION.md)。
+
 ## 8. Lab 内部怎样分工
 
 `lab/core.py` 只连接公开接口。它仍保存原来的六项依赖：项目目录、时钟、工作负载读取、
