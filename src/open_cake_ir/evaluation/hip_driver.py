@@ -239,6 +239,9 @@ class LoadedHipModuleCandidate:
             if tuple(argument.shape) != tuple(shape):
                 raise ValueError(f"tensor {name!r} shape differs from the sealed ABI")
             pointers.append(ctypes.c_void_p(argument.data_ptr()))
+        from .launch_manifest import check_pointer_alignments
+        check_pointer_alignments({row[0]: pointer.value for row, pointer in zip(abi, pointers, strict=True)},
+                                 getattr(self.manifest, 'pointer_alignments', {}))
         # Triton appends one hidden null pointer per scratch buffer its options declare;
         # the manifest carries how many, sealed from the route rather than assumed.
         pointers.extend(

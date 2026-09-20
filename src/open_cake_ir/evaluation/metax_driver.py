@@ -102,6 +102,10 @@ class LoadedMetaxCandidate:
             if type(pointer) is not int or pointer <= 0:
                 raise ValueError(f"MACA tensor {name!r} has no device address")
             pointers.append(ctypes.c_void_p(pointer))
+        from .launch_manifest import check_pointer_alignments
+        check_pointer_alignments({row[0]: pointer.value for row, pointer
+                                  in zip(self.manifest.tensor_abi, pointers, strict=True)},
+                                 getattr(self.manifest, 'pointer_alignments', {}))
         pointers.extend(ctypes.c_void_p(0) for _ in range(self.manifest.hidden_null_pointer_parameters))
         slots = (ctypes.c_void_p * len(pointers))(
             *(ctypes.cast(ctypes.pointer(pointer), ctypes.c_void_p) for pointer in pointers))

@@ -3,13 +3,45 @@ from array import array
 from types import SimpleNamespace
 import unittest
 
-from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate, compare_tile_outputs
+from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate, compare_tile_outputs, _same_tensor_inputs
 from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.workloads import create_task, materialize_case
 
 
 class TensorInputSequences(unittest.TestCase):
+    def test_native_double_arrays_preserve_bit_checks_and_nan_refusal(self):
+        for before, after, expected in [
+            ([1.0, -0.0], [1.0, -0.0], True),
+            ([1.0, -0.0], [1.0, 0.0], False),
+            ([1.0], [2.0], False), ([1.0], [1.0, 2.0], False),
+            ([float('nan')], [float('nan')], False),
+            ([float('inf')], [float('inf')], True),
+        ]:
+            with self.subTest(before=before, after=after):
+                self.assertEqual(_same_tensor_inputs({'a':array('d',before)},
+                                                    {'a':array('d',after)}), expected)
+
+    def test_cpu_tensor_snapshot_retains_exact_values_without_python_scalar_lists(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest('CPU Torch is required to exercise tensor snapshots')
+        for dtype in [torch.float16, torch.bfloat16, torch.float32, torch.int32]:
+            with self.subTest(dtype=dtype):
+                loaded = object.__new__(LoadedTorchTensorCandidate)
+                loaded.manifest = SimpleNamespace(tensor_abi=(('x',(2,),str(dtype),'input'),
+                                                              ('out',(2,),str(dtype),'output')))
+                x = torch.tensor([1,0],dtype=dtype)
+                loaded.arguments = [x, x.clone()]
+                _, after = loaded.snapshot()
+                self.assertIsInstance(after['x'],array)
+                self.assertEqual(after['x'].typecode,'d')
+                self.assertTrue(_same_tensor_inputs({'x':array('d',[1,0])},after))
+        loaded.arguments[0][0] = 2
+        _, after = loaded.snapshot()
+        self.assertFalse(_same_tensor_inputs({'x':array('d',[1,0])},after))
+
     def test_actual_gemm_array_inputs_match_list_snapshots_without_losing_mutation_checks(self):
         document, _ = create_task('fib_gemm_n128_k2048', backend='triton-b300', rows=1, columns=128)
         workload = WorkloadContract(document)

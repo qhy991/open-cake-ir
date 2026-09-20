@@ -34,6 +34,27 @@ def codex_report(tokens, thread=THREAD):
 
 
 class ReportedProviderUsageTests(unittest.TestCase):
+    def test_cumulative_codex_counter_is_differenced_and_claude_is_per_invocation(self):
+        from open_cake_ir.lab.provider_events import provider_token_delta, reported_provider_usage
+        from open_cake_ir.lab.claude import CLAUDE_EVENT_CONTRACTS
+        provider = {"event_contract": "tool_rich_candidate_v1"}
+        totals = (266187, 535235, 872461, 1270198, 1737381)
+        previous, deltas = 0, []
+        for total in totals:
+            deltas.append(provider_token_delta(total, provider=provider, previous_tokens=previous))
+            previous += deltas[-1]
+        self.assertEqual(deltas, [266187, 269048, 337226, 397737, 467183])
+        self.assertEqual(sum(deltas), 1737381)
+        self.assertEqual(provider_token_delta(535235, provider=provider, previous_tokens=535235), 0)
+        for native, previous in ((12, 13), (True, 0), (12, -1), (12, True)):
+            with self.subTest(native=native, previous=previous), self.assertRaises(ValueError):
+                provider_token_delta(native, provider=provider, previous_tokens=previous)
+        self.assertIsNone(reported_provider_usage(codex_report(12), provider=provider,
+                                                  previous_tokens=13))
+        for contract in CLAUDE_EVENT_CONTRACTS:
+            self.assertEqual(provider_token_delta(12, provider={"event_contract": contract},
+                                                   previous_tokens=100), 12)
+
     def test_usage_requires_complete_typed_native_envelope_but_not_candidate_acceptance(self):
         for tokens in (0, 191499):
             witness = reported_codex_usage(codex_report(tokens), event_contract=CONTRACT)
@@ -269,11 +290,11 @@ class FailedProviderConsumerTests(unittest.TestCase):
             def turn(inner, request):
                 if request.turn == fault_turn and stage == "provider" and not returned_identity_refusal:
                     thread = request.thread_id or THREAD
-                    raw = b"truncated stdout" if unknown else codex_report(tokens, thread)
+                    raw = b"truncated stdout" if unknown else codex_report(request.cumulative_provider_tokens + tokens, thread)
                     witness = reported_codex_usage(raw, event_contract=CONTRACT,
                                                    expected_thread_id=request.thread_id)
                     if mismatch:
-                        witness = ReportedProviderUsage(CONTRACT, thread, tokens + 1)
+                        witness = ReportedProviderUsage(CONTRACT, thread, request.cumulative_provider_tokens + tokens + 1)
                     if boundary:
                         # F-2026-09-16-002: the boundary fault's own type at the
                         # provider seam; the harness keeps a Codex usage stream so
@@ -290,8 +311,8 @@ class FailedProviderConsumerTests(unittest.TestCase):
                 result = super().turn(request)
                 events = [json.loads(line) for line in result.raw_events.splitlines()]
                 rejected_return = returned_identity_refusal and request.turn == fault_turn
-                events[-1]["usage"] = ({"input_tokens": tokens, "output_tokens": 0} if rejected_return
-                                        else {"input_tokens": 94700, "output_tokens": 58})
+                events[-1]["usage"] = ({"input_tokens": request.cumulative_provider_tokens + tokens, "output_tokens": 0} if rejected_return
+                                        else {"input_tokens": request.cumulative_provider_tokens + 94700, "output_tokens": 58})
                 raw = b"\n".join(json.dumps(event).encode() for event in events)
                 return replace(result, provider_tokens=tokens if rejected_return else 94758, raw_events=raw,
                                raw_events_sha256="f" * 64 if rejected_return else sha256(raw).hexdigest())

@@ -67,7 +67,7 @@ def _candidate_artifact_media_type(role: str) -> str:
         return "application/x-elf"
     if role == "metal_binary_archive":
         return "application/octet-stream"
-    if role in {"launch_manifest", "metal_build_report"}:
+    if role in {"launch_manifest", "metal_build_report", "kernel_bundle"}:
         return "application/json"
     return "text/plain"
 
