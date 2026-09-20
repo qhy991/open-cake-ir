@@ -105,7 +105,7 @@ class Lab:
     def execute_campaign_with_factory(self,lock,evidence_root,*,runtime_factory):
         return execution.execute_campaign_with_factory(lock,evidence_root,project_root=self._root,
             workload_loader=self._load_workload,clock=self._clock,runtime_factory=runtime_factory,
-            task_package=self.task_package,validate_run=self._validate_run)
+            task_package=self.task_package,validate_run=self._validate_run,validate_authoring=self._validate_authoring)
 
     def reference_campaign(
         self,

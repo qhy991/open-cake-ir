@@ -177,10 +177,15 @@ def execute_run(specification: RunSpecification, evidence_root, *, project_root,
 
 
 def execute_campaign_with_factory(lock,evidence_root,*,project_root,workload_loader,clock,
-                                  runtime_factory,task_package,validate_run):
+                                  runtime_factory,task_package,validate_run,validate_authoring):
     """Keep the external Campaign archive while assembling independent Run adapters."""
     lock = CampaignLock.from_dict(lock.document)
     root = admit_new_campaign_path(project_root,evidence_root,role='Campaign Evidence root')
+    from .execution_admission import campaign_provider_binding
+    from .bindings import source_reference_path
+    campaign_provider_binding(lock,project_root)
+    _,workload_path = source_reference_path(project_root,lock.document['workload']['path'],'Campaign Workload')
+    validate_authoring(workload_loader(workload_path),lock.document['resolved_inputs']['arm_environments'])
     from .preflight import preflight_run
     specifications = [preflight_run(lock.run_specification(run_id),project_root=project_root,
                       workload_loader=workload_loader,validate_run=validate_run) for run_id in lock.run_order]

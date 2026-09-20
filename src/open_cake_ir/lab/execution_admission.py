@@ -18,6 +18,32 @@ from .providers import (
 from .provider_policy import provider_configuration
 
 
+def campaign_provider_binding(lock,project_root):
+    """Retain matched-Campaign policy at its external input boundary."""
+    arms = lock.document['resolved_inputs']['arm_environments']
+    evaluation_protocol = lock.document['evaluation_protocol']
+    first_arm = _object(arms["open_cake"], "arm_environments.open_cake")
+    provider_document = _object(
+        first_arm["provider"], "arm_environments.open_cake.provider"
+    )
+    qualification_ref = _object(
+        provider_document["qualification"],
+        "arm_environments.open_cake.provider_qualification",
+    )
+    _, qualification_path = _qualification_path(
+        project_root,
+        qualification_ref["path"],
+        "arm_environments.open_cake.provider_qualification.path",
+    )
+    qualification = ProviderQualificationReceipt.load(qualification_path)
+    if (native_backend(comparison_arm(arms)) is not None and qualification.scope != 'zero_gpu_contract_fixture_only'
+        and (paired_protocol(evaluation_protocol) is None
+             or provider_document['disabled_features'] != list(CODEX_DISABLED_FEATURES))):
+        raise ValueError('new live native execution requires paired policy and current closed provider surface')
+    configuration = provider_configuration(provider_document,lock.claim_scope,arms=arms)
+    return provider_document,qualification_ref,qualification,configuration
+
+
 def validate_execution_bindings(
     *,
     lock,
@@ -69,28 +95,9 @@ def validate_execution_bindings(
         or qualification_digests != {getattr(provider, "qualification_sha256", None)}
     ):
         raise ValueError("Run Provider does not match the Campaign Lock")
-    first_arm = _object(arms["open_cake"], "arm_environments.open_cake")
-    provider_document = _object(
-        first_arm["provider"], "arm_environments.open_cake.provider"
-    )
-    qualification_ref = _object(
-        provider_document["qualification"],
-        "arm_environments.open_cake.provider_qualification",
-    )
-    _, qualification_path = _qualification_path(
-        project_root,
-        qualification_ref["path"],
-        "arm_environments.open_cake.provider_qualification.path",
-    )
-    qualification = ProviderQualificationReceipt.load(qualification_path)
-    if (native_backend(comparison_arm(arms)) is not None and qualification.scope != 'zero_gpu_contract_fixture_only'
-        and (paired_protocol(evaluation_protocol) is None
-             or provider_document['disabled_features'] != list(CODEX_DISABLED_FEATURES))):
-        raise ValueError('new live native execution requires paired policy and current closed provider surface')
+    provider_document,qualification_ref,qualification,expected_provider_configuration = campaign_provider_binding(lock,project_root)
     if getattr(provider, "executable_sha256", None) != qualification.executable_sha256:
         raise ValueError("Run Provider executable does not match its qualification")
-    expected_provider_configuration = provider_configuration(
-        provider_document, lock.claim_scope, arms=arms)
     if (
         getattr(provider, "configuration", None) != expected_provider_configuration
         or qualification.canonical_sha256
