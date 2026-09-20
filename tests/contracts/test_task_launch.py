@@ -243,10 +243,10 @@ class TaskLaunchTests(unittest.TestCase):
                     self.workspace, executor, Path('/unit-test/provider'), 'triton',
                     allocation='local_broker')
         command = runtime['broker']['command']
-        self.assertIn('open_cake_ir.evaluation.local_broker', command)
+        self.assertIn('open_cake_ir.tasks.evaluate', command)
         self.assertNotIn('gpu-run', ' '.join(command))
         # Its own lock and its own job prefix; a DCU run is not recorded as a Metal one.
-        self.assertEqual(command[command.index('--kind') + 1], 'hip')
+        self.assertEqual(command[command.index('--local-kind') + 1], 'hip')
         # The toolchain is still Triton's, because the route did not change.
         self.assertEqual(runtime['toolchain']['triton_version'], '3.6.0')
         self.assertNotIn('output_root', runtime['toolchain'])
