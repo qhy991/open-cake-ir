@@ -22,10 +22,19 @@ catalog row's `references` are delivered. A library dispatcher is not its librar
 internal kernel; Graph replay, persistent buffers, pointer caches and runtime timing
 are not silently imported as candidate semantics or measured speedups.
 
-The supplied materials do not include separate redistribution-license documents. This
+The first 26 supplied materials do not include separate redistribution-license documents. This
 repository does not assert an upstream license for them or relicense them under the
 project's Apache-2.0 grant. Existing notices and source attribution remain in force.
 Collection README performance claims are not imported as qualified measurements.
 
-All 26 tasks now have reference material. Nine launch-plan tasks remain explicitly
-blocked at the authoring integration boundary; source availability does not bypass it.
+027–030 are selected public FlashInfer sources from the four CAKE paper-cited PRs.
+Their original Apache-2.0 file notices are retained. Each `reference.json` records the
+exact commit and repository path. TinyGEMM additionally retains the upstream baseline;
+KDA decode retains seven representative generated variants, not the complete 23-module
+build. These are inspectable authoring inputs, not standalone build bundles or qualified
+executables. Alpha-MoE uses the later v46 export, explicitly separate from the paper's
+original artifact and measurements. No reference implementation is imported into Compiler.
+
+All 30 tasks have reference material. Nine original launch-plan tasks and four CAKE
+paper-family tasks remain explicitly blocked at their authoring/workload integration
+boundaries; source availability does not bypass them.
