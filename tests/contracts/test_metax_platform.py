@@ -59,10 +59,10 @@ class MetaxPlatformTests(unittest.TestCase):
         with self.assertRaisesRegex(TargetParseError, "no CUDA compute capability"):
             Target.from_dict({**original, "compute_capability": [8, 0]})
 
-    def test_non_fp32_copy_is_refused_by_the_maca_dtype_rule(self):
+    def test_fp8_copy_is_refused_by_the_maca_dtype_rule(self):
         source = '''from open_cake_ir.compiler import frontend as cake
 @cake.schedule(name="copy", target="xcore1002", backend="triton", entry_point="copy")
-def candidate(lm, x: cake.Tensor((8, 128), "bf16"), y: cake.Tensor((8, 128), "bf16", mode="output")):
+def candidate(lm, x: cake.Tensor((8, 128), "fp8_e4m3"), y: cake.Tensor((8, 128), "fp8_e4m3", mode="output")):
     compute = lm.role(execution_groups=[0])
     row = lm.program(x, axis=0, dimension=0, tile=1)
     with compute:
@@ -73,6 +73,59 @@ def candidate(lm, x: cake.Tensor((8, 128), "bf16"), y: cake.Tensor((8, 128), "bf
         self.assertFalse(result.lowering_eligible)
         self.assertIn("MACA_DTYPE_UNQUALIFIED", [f.code for f in result.findings])
         self.assertNotIn("TARGET_OPERATION_UNSUPPORTED", [f.code for f in result.findings])
+
+    def test_explicit_numeric_conversions_keep_their_tensor_pointer_types(self):
+        for source_dtype, destination, pointer in (
+            ("fp16", "fp32", "*fp16"), ("bf16", "fp32", "*bf16"),
+            ("fp32", "fp16", "*fp32"), ("fp32", "bf16", "*fp32"),
+            ("int32", "fp32", "*i32"),
+        ):
+            source = f'''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="convert", target="xcore1002", backend="triton", entry_point="convert")
+def candidate(lm, x: cake.Tensor((8, 128), "{source_dtype}"), y: cake.Tensor((8, 128), "{destination}", mode="output")):
+    compute = lm.role(execution_groups=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        value = lm.load(x[row, :], id="load")
+        converted = lm.cast(value, to="{destination}", id="cast")
+        lm.store(y[row, :], converted, id="store")
+'''
+            with self.subTest(source=source_dtype, destination=destination):
+                assessment = self.compiler.assess(parse(source).document)
+                self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                lowering = self.compiler.lower(assessment)
+                self.assertEqual(lowering.toolchain_requirements["signature"]["x"], pointer)
+                self.assertIn(".to(tl.", lowering.source)
+                # Admitting INT32 buffers does not admit an unspecified float-to-int cast.
+                document = parse(source.replace(f'to="{destination}"', 'to="int32"')
+                                 .replace(f'y: cake.Tensor((8, 128), "{destination}"',
+                                          'y: cake.Tensor((8, 128), "int32"')).document
+                if source_dtype != "int32":
+                    refused = self.compiler.assess(document)
+                    self.assertIn("CAST_DTYPE_UNSUPPORTED", [f.code for f in refused.findings])
+
+    def test_existing_mixed_precision_and_integer_tasks_reach_the_platform(self):
+        for task in ("add_rmsnorm_bf16", "aka_row_gather", "aka_momentum_sgd"):
+            with self.subTest(task=task):
+                _, source = create_task(task, backend="triton-metax", rows=8, columns=128)
+                assessment = self.compiler.assess(parse(source).document)
+                self.assertTrue(assessment.lowering_eligible, assessment.findings)
+                self.assertEqual(self.compiler.lower(assessment).target, "xcore1002")
+
+    def test_gelu_uses_the_declared_maca_math_contract_and_refuses_borrowed_names(self):
+        for task in ("gelu_tanh", "gelu_tanh_backward"):
+            _, source = create_task(task, backend="triton-metax", rows=8, columns=128)
+            document = parse(source).document
+            assessment = self.compiler.assess(document)
+            self.assertTrue(assessment.lowering_eligible, assessment.findings)
+            self.assertIn("libdevice.tanh(", self.compiler.lower(assessment).source)
+            operation = next(op for op in document["operations"] if op["id"] == "tanh")
+            self.assertEqual(operation["parameters"]["instruction"]["contract"], "maca.tanh.f32")
+            for borrowed in ("libdevice.tanh.f32", "ocml.tanh.f32"):
+                operation["parameters"]["instruction"]["contract"] = borrowed
+                refused = self.compiler.assess(document)
+                self.assertFalse(refused.lowering_eligible)
+                self.assertIn("TARGET_INSTRUCTION_UNSUPPORTED", [f.code for f in refused.findings])
 
     def test_missing_timer_is_a_coverage_limitation_and_preserves_all_cases(self):
         document, _ = create_task("rmsnorm", backend="triton-metax", rows=8, columns=128)
