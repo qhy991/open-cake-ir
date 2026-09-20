@@ -48,7 +48,7 @@ def replay_nomination(*, events, observations, launchables, receipts, budget, pr
     remaining = _object(state.get('remaining'),'search_completed.state.remaining')
     for name,expected in (
         ('search_wall_time_seconds',round(max(0.,limits.search_wall_time_seconds-state['elapsed_wall_seconds']),6)),
-        ('confirmation_wall_time_seconds',limits.confirmation_wall_time_seconds),
+        ('confirmation_wall_time_seconds',round(limits.confirmation_wall_time_seconds,6)),
     ):
         if type(remaining.get(name)) not in {int,float} or remaining[name] != expected:
             refuse('search_completed.state.remaining.'+name,'phase allocation differs from the frozen budget')

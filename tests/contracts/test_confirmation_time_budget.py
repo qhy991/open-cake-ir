@@ -2,6 +2,10 @@
 from copy import deepcopy
 from dataclasses import replace
 from unittest.mock import patch
+import os
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 
 from open_cake_ir.lab import RunSpecification
 from open_cake_ir.lab.endpoints import NORMAL_BUDGET_TERMINAL
@@ -12,7 +16,7 @@ from tests.contracts.test_lab import SemanticLabTestCase
 
 
 class ConfirmationTimeBudgetTests(SemanticLabTestCase):
-    def execute(self, *, search_seconds, confirmation_seconds, turns=2):
+    def execute(self, *, search_seconds, confirmation_seconds, turns=2, reserve_seconds=4.):
         class Clock:
             value = 0.
             def __call__(self): return self.value
@@ -23,7 +27,7 @@ class ConfirmationTimeBudgetTests(SemanticLabTestCase):
                 clock.value += search_seconds if purpose=='search' else confirmation_seconds if purpose=='confirmatory' else 0.
                 return result
         return fixture.NominationTests.execute(self,Evaluator,clock=clock,
-            budget_updates={'wall_time_seconds':10.,'confirmation_wall_time_seconds':4.,
+            budget_updates={'wall_time_seconds':10.,'confirmation_wall_time_seconds':reserve_seconds,
                             'active_authoring_time_seconds':8.,'maximum_turns':turns},
             endpoint_policy=NORMAL_BUDGET_TERMINAL)
 
@@ -50,6 +54,31 @@ class ConfirmationTimeBudgetTests(SemanticLabTestCase):
         self.assertEqual(events[-2]['payload']['ralph']['elapsed_wall_seconds'],5.5)
         self.assertEqual(audit.endpoint_observation,'no_qualified_candidate')
         self.assertEqual(audit.endpoint['budget_exceeded'],['confirmation_wall_time'])
+
+    def test_fractional_reserve_replays_at_the_writers_clock_precision(self):
+        _,_,_,audit,_,_,_ = self.execute(search_seconds=1.,confirmation_seconds=.1,turns=1,reserve_seconds=1/3)
+        self.assertEqual(audit.endpoint_observation,'qualified')
+
+    def test_threshold_projection_retains_overrun_cost_without_claiming_success(self):
+        from open_cake_ir.lab.reporting import threshold_view
+        with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,
+                {'OPEN_CAKE_CUSTODY_DIRECTORY':str(Path(directory)/'registry')}):
+            _,spec,run,audit,_,_,_ = self.execute(search_seconds=7.,confirmation_seconds=1.)
+            self.assertTrue(audit.archive_integrity)
+            self.assertTrue(audit.filesystem_custody_verified)
+            campaign = SimpleNamespace(evidence_root=run.evidence_root,lock=SimpleNamespace(
+                study_kind='matched_search',run_order=(spec.run_id,),
+                document={'resolved_inputs':{'budget':spec.document['budget']}}))
+            # The view consumes the real independently audited Run; this adapter
+            # carries only the legacy Campaign-shaped report input, no new Study.
+            report = SimpleNamespace(run_audits=(audit,),semantic_replay_passed=True)
+            view = threshold_view(campaign,2.,audit_campaign=lambda _:report)
+        row = view['runs'][0]
+        self.assertEqual(row['status'],'budget_exceeded')
+        self.assertEqual(row['budget_exceeded'],['search_wall_time'])
+        self.assertEqual(row['observed_provider_tokens'],80000)
+        self.assertEqual(row['observed_wall_seconds'],8.)
+        self.assertIsNone(row['confirmed_latency_ms'])
 
     def test_replay_refuses_forged_remaining_reserve_and_overrun_success(self):
         lab,spec,_,audit,evidence,events,_ = self.execute(search_seconds=7.,confirmation_seconds=1.)

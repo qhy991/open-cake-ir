@@ -506,6 +506,8 @@ def threshold_view(
             events = evidence.replay_events(run_id)
             search_state = next((event['payload']['state'] for event in events if event['kind']=='search_completed'),None)
             terminal_state = next(event['payload']['ralph'] for event in events if event['kind']=='checkpoints_projected')
+            row.update(observed_provider_tokens=terminal_state['cumulative_provider_tokens'],
+                       observed_wall_seconds=terminal_state['elapsed_wall_seconds'])
             exceeded = exceeded_run_budgets(RalphBudget.from_mapping(campaign.lock.document['resolved_inputs']['budget']),
                                             search_state=search_state,terminal_state=terminal_state)
             if exceeded:
