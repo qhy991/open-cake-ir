@@ -1,0 +1,36 @@
+{
+  "name": "kersor_b300_016_gqa_ragged_prefill_causal_h32_kv4_d128",
+  "definition": "016_gqa_ragged_prefill_causal_h32_kv4_d128",
+  "author": "qinhaiyan",
+  "spec": {
+    "languages": [
+      "cuda_cpp"
+    ],
+    "target_hardware": [
+      "LOCAL"
+    ],
+    "entry_point": "astra_iter_1.cu::run",
+    "dependencies": [],
+    "destination_passing_style": false,
+    "binding": "torch",
+    "compile_options": {
+      "cflags": [
+        "-std=c++17",
+        "-O3"
+      ],
+      "cuda_cflags": [
+        "-std=c++17",
+        "-O3",
+        "--use_fast_math"
+      ],
+      "ld_flags": []
+    }
+  },
+  "description": "016_gqa_ragged_prefill_causal_h32_kv4_d128 optimized CUDA kernel for NVIDIA B300 SXM6 (sm_103). Measured 35.0116x geomean over the task's full 15-workload set (15/15 PASS). Produced by the astra workflow in the KerSor/FlashInfer-Bench sweep, 2026-09.",
+  "source_paths": [
+    "astra_iter_1.cu"
+  ],
+  "source_package": "flashinfer-bench-b300-individual-20260918",
+  "source_file": "016_gqa_ragged_prefill_causal_h32_kv4_d128/solution.json",
+  "verification": "User-supplied source; reported performance not independently verified or imported."
+}

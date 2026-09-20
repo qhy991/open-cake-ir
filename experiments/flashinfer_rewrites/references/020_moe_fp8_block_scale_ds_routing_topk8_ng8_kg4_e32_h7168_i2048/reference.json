@@ -1,0 +1,21 @@
+{
+  "source_package": "flashinfer-bench-collection-best-20260715",
+  "source_file": "020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/submission.py",
+  "entry_point": "run",
+  "compile_options": {
+    "cuda_cflags": [
+      "-O3",
+      "-std=c++17",
+      "-DCCCL_DISABLE_CTK_COMPATIBILITY_CHECK",
+      "--use_fast_math"
+    ],
+    "cflags": [
+      "-std=c++17"
+    ]
+  },
+  "source_paths": [
+    "kernel.cu"
+  ],
+  "extraction": "Static AST literal decoding only; wrapper was not executed.",
+  "verification": "Unqualified reference source; no imported performance claim."
+}

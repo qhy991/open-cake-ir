@@ -1,8 +1,7 @@
 {
   "schema_version": 1,
-  "collection": "flashinfer-bench-collection-0706",
-  "source_author": "kersor",
-  "scope": "reference-guided agent authoring; starter-relative inner loop; external parity requires separate measurement",
+  "collection": "flashinfer-reference-rewrites",
+  "scope": "26 source-available reference tasks; launch eligibility is separate from reference availability; starter-relative inner loop",
   "tasks": [
     {
       "id": "001_fused_add_rmsnorm_h2048",
@@ -13,10 +12,13 @@
       "columns": 2048,
       "reference_kind": "authored_kernel",
       "references": [
-        "references/001_fused_add_rmsnorm_h2048/submission.py",
-        "references/001_fused_add_rmsnorm_h2048/best_kernel.py"
+        "references/001_fused_add_rmsnorm_h2048/reference.json",
+        "references/001_fused_add_rmsnorm_h2048/cudallm_iter_0_sample_1.cu"
       ],
-      "objective": "Reproduce the selected four-row small-batch CTA, weight reuse and rounding. Compare a distinct complete work partition; the large-batch prefetch branch is outside this shape."
+      "objective": "Reproduce the fused CUDA residual-add/RMSNorm work assignment at R=79, C=2048, epsilon=1e-6. Preserve FP32 addition and reduction with BF16 output; compare a structurally distinct complete row partition.",
+      "source": "flashinfer-bench-b300-individual-20260918/001_fused_add_rmsnorm_h2048/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "002_fused_add_rmsnorm_h4096",
@@ -27,10 +29,13 @@
       "columns": 4096,
       "reference_kind": "authored_kernel",
       "references": [
-        "references/002_fused_add_rmsnorm_h4096/submission.py",
-        "references/002_fused_add_rmsnorm_h4096/kernel.py"
+        "references/002_fused_add_rmsnorm_h4096/reference.json",
+        "references/002_fused_add_rmsnorm_h4096/kernel.cu"
       ],
-      "objective": "Reproduce the selected two-row CTA and weight reuse. Compare a distinct complete row assignment. The persistent branch above 512 rows is not exercised here."
+      "objective": "Reproduce the fused CUDA row kernel at R=170, C=4096, epsilon=1e-5. CUDA Graph caching and output-buffer reuse are host mechanisms, not a kernel speedup claim; preserve current-input evaluation and compare complete row partitions.",
+      "source": "flashinfer-bench-b300-individual-20260918/002_fused_add_rmsnorm_h4096/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "003_fused_add_rmsnorm_h7168",
@@ -41,30 +46,81 @@
       "columns": 7168,
       "reference_kind": "authored_kernel",
       "references": [
-        "references/003_fused_add_rmsnorm_h7168/submission.py",
-        "references/003_fused_add_rmsnorm_h7168/candidate_v0.py"
+        "references/003_fused_add_rmsnorm_h7168/reference.json",
+        "references/003_fused_add_rmsnorm_h7168/candidate.cu"
       ],
-      "objective": "Reproduce the 7168-wide masked reduction and rounding. Compare padded-8192 and chunked reduction structures when expressible."
+      "objective": "Reproduce the fused masked C=7168 row reduction at R=64, epsilon=1e-6. Compare exact-slice and whole-row structures where admitted. Graph replay, alignment checks and output reuse in the reference do not relax the Cake ABI.",
+      "source": "flashinfer-bench-b300-individual-20260918/003_fused_add_rmsnorm_h7168/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "004_gemm_n128_k2048",
-      "status": "skipped",
-      "reason": "missing_optimized_source"
+      "status": "ready",
+      "references": [
+        "references/004_gemm_n128_k2048/reference.json",
+        "references/004_gemm_n128_k2048/ksearch_c1_a4.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/004_gemm_n128_k2048/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "At M=1 the external run selects gemv_small_m, not its larger-M cluster branch. Reproduce B-row CTA partitioning, vectorized loads, FP32 partial reductions and final FP16 conversion. Compare a distinct complete partition; do not claim cluster or cp.async benefits at this shape.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gemm_n128_k2048",
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 128,
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "005_gemm_n256_k7168",
-      "status": "skipped",
-      "reason": "missing_optimized_source"
+      "status": "ready",
+      "references": [
+        "references/005_gemm_n256_k7168/reference.json",
+        "references/005_gemm_n256_k7168/ksearch_c1_a2.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/005_gemm_n256_k7168/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "At M=1 examine resolve_cfg and its split-K last-writer reduction. Preserve FP16 inputs/output and FP32 accumulation required by this task. Identify unsupported atomic/ticket or persistent-state mechanisms instead of bypassing legality; compare complete admitted alternatives.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gemm_n256_k7168",
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 256,
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "006_gemm_n2048_k4096",
-      "status": "skipped",
-      "reason": "missing_optimized_source"
+      "status": "ready",
+      "references": [
+        "references/006_gemm_n2048_k4096/reference.json",
+        "references/006_gemm_n2048_k4096/stitch_attempt_9.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/006_gemm_n2048_k4096/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "At M=1 the reference selects the skinny fused split-K CUDA path. Map tile ownership, K partitions and last-arriver epilogue to explicit Cake mechanisms; keep fresh output and complete K coverage. The large-M library fallback is outside this shape.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gemm_n2048_k4096",
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 2048,
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "007_gemm_n4096_k4096",
-      "status": "skipped",
-      "reason": "missing_optimized_source"
+      "status": "ready",
+      "references": [
+        "references/007_gemm_n4096_k4096/reference.json",
+        "references/007_gemm_n4096_k4096/candidate.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/007_gemm_n4096_k4096/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "This reference is a cuBLASLt/cuBLAS algorithm-selection implementation, not visible library kernel code. Analyze the M=1 dispatch and author complete Cake GEMM alternatives; do not claim reproduction of unseen library internals or inherit its tuning measurements.",
+      "reference_kind": "library_dispatch",
+      "task": "fib_gemm_n4096_k4096",
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 4096,
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "008_gemm_n4096_k14336",
@@ -73,12 +129,15 @@
       "backend": "triton-b300",
       "rows": 1,
       "columns": 4096,
-      "reference_kind": "library_wrapper",
+      "reference_kind": "authored_kernel",
       "references": [
-        "references/008_gemm_n4096_k14336/submission.py",
-        "references/008_gemm_n4096_k14336/best_kernel.py"
+        "references/008_gemm_n4096_k14336/reference.json",
+        "references/008_gemm_n4096_k14336/kernel.cu"
       ],
-      "objective": "Use the supplied torch.compile/matmul wrapper as a library reference. Author a complete Cake GEMM; compare explicit reduction and a supported tiled contraction. Do not claim to have reproduced unseen cuBLAS or Inductor internals."
+      "objective": "At M=1 the reference selects two-stage split-K GEMV. Reproduce K partitioning and final reduction where representable, or name the exact launch-composition gap and submit a complete single-Schedule alternative. The prior Python library wrapper is superseded by this CUDA reference.",
+      "source": "flashinfer-bench-b300-individual-20260918/008_gemm_n4096_k14336/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "009_gemm_n5120_k2048",
@@ -87,12 +146,15 @@
       "backend": "triton-b300",
       "rows": 1,
       "columns": 5120,
-      "reference_kind": "library_wrapper",
+      "reference_kind": "kernel_library_composition",
       "references": [
-        "references/009_gemm_n5120_k2048/submission.py",
-        "references/009_gemm_n5120_k2048/solution.py"
+        "references/009_gemm_n5120_k2048/reference.json",
+        "references/009_gemm_n5120_k2048/candidate.cu"
       ],
-      "objective": "Use the supplied torch.mm(out=...) implementation as a library reference. Author and compare complete Cake GEMM structures; its library call does not expose a hand-authored kernel design."
+      "objective": "Analyze the M=1 runtime-selected split-K/custom-or-cuBLAS dispatch. Separate visible custom kernels from runtime benchmarking and library fallback. Author complete deterministic Cake candidates; do not copy runtime benchmarking into a candidate or assume which external branch wins without a measured trace.",
+      "source": "flashinfer-bench-b300-individual-20260918/009_gemm_n5120_k2048/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "010_gemm_n6144_k4096",
@@ -103,60 +165,165 @@
       "columns": 6144,
       "reference_kind": "authored_kernel",
       "references": [
-        "references/010_gemm_n6144_k4096/submission.py",
-        "references/010_gemm_n6144_k4096/n1a1-num_stages4.py"
+        "references/010_gemm_n6144_k4096/reference.json",
+        "references/010_gemm_n6144_k4096/cudallm_iter_1_sample_1.cu"
       ],
-      "objective": "Analyze the actual submission entry n1a1-num_stages4.py, including its M<=8 branch at M=1. Reproduce GEMV partitioning/reduction, compare a distinct complete structure, and preserve FP16 accumulation/output semantics. Do not substitute the inactive alternative files or the M>=9 library fallback."
+      "objective": "At M=1 the selected CUDA reference launches custom warp GEMV for M<=4. Preserve FP16 inputs/output and FP32 accumulation. Compare a distinct complete work partition; direct cuBLAS for M>=5 is outside this shape.",
+      "source": "flashinfer-bench-b300-individual-20260918/010_gemm_n6144_k4096/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "011_gemm_n28672_k4096",
-      "status": "skipped",
-      "reason": "missing_optimized_source"
+      "status": "ready",
+      "references": [
+        "references/011_gemm_n28672_k4096/reference.json",
+        "references/011_gemm_n28672_k4096/ksearch_c1_a2.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/011_gemm_n28672_k4096/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "At M=1 the reference transposes B and calls a library GEMM with a pointer-based transpose cache. Reproduce computation for current A and B; pointer equality or allocator stride does not prove unchanged B contents. Do not import that cache assumption. Compare explicit complete Cake contractions without claiming unseen library internals.",
+      "reference_kind": "kernel_library_composition",
+      "task": "fib_gemm_n28672_k4096",
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 28672,
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "012_gqa_paged_decode_h32_kv4_d128_ps1",
       "status": "skipped",
-      "reason": "authoring_route_not_integrated"
+      "reason": "authoring_route_not_integrated",
+      "references": [
+        "references/012_gqa_paged_decode_h32_kv4_d128_ps1/reference.json",
+        "references/012_gqa_paged_decode_h32_kv4_d128_ps1/ksearch_c0_a4.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/012_gqa_paged_decode_h32_kv4_d128_ps1/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "Reproduce paged GQA decode: runtime KV page gathers, grouped-query reuse, softmax and both output/base-2 LSE. Preserve empty-row semantics and compare complete launch plans once candidate-plan authoring is integrated.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gqa_paged_decode_h32_kv4_d128_ps1",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "013_gqa_paged_decode_h32_kv8_d128_ps1",
       "status": "skipped",
-      "reason": "authoring_route_not_integrated"
+      "reason": "authoring_route_not_integrated",
+      "references": [
+        "references/013_gqa_paged_decode_h32_kv8_d128_ps1/reference.json",
+        "references/013_gqa_paged_decode_h32_kv8_d128_ps1/stitch_attempt_3.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/013_gqa_paged_decode_h32_kv8_d128_ps1/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "Reproduce paged GQA decode KV8: inspect direct versus split-KV dispatch, gather indices and cross-stage reduction. Preserve both outputs and runtime inputs. Candidate-plan authoring must be integrated before a Run can launch.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gqa_paged_decode_h32_kv8_d128_ps1",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "014_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
       "status": "skipped",
-      "reason": "authoring_route_not_integrated"
+      "reason": "authoring_route_not_integrated",
+      "references": [
+        "references/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/reference.json",
+        "references/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/ksearch_c1_a1.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "Reproduce causal paged prefill KV4: on-device metadata, tiling, split-KV partials and complete softmax/LSE reduction. Preserve variable sequence boundaries. Candidate-plan authoring must be integrated before launch.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "015_gqa_paged_prefill_causal_h32_kv8_d128_ps1",
       "status": "skipped",
-      "reason": "missing_optimized_source"
+      "reason": "authoring_route_not_integrated",
+      "references": [
+        "references/015_gqa_paged_prefill_causal_h32_kv8_d128_ps1/reference.json",
+        "references/015_gqa_paged_prefill_causal_h32_kv8_d128_ps1/candidate.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/015_gqa_paged_prefill_causal_h32_kv8_d128_ps1/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "Reproduce causal paged prefill KV8: metadata construction and fused attention kernel with runtime page mapping, causal alignment and base-2 LSE. Keep complete output writes. Candidate-plan authoring must be integrated before launch.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gqa_paged_prefill_causal_h32_kv8_d128_ps1",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "016_gqa_ragged_prefill_causal_h32_kv4_d128",
       "status": "skipped",
-      "reason": "authoring_route_not_integrated"
+      "reason": "authoring_route_not_integrated",
+      "references": [
+        "references/016_gqa_ragged_prefill_causal_h32_kv4_d128/reference.json",
+        "references/016_gqa_ragged_prefill_causal_h32_kv4_d128/astra_iter_1.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/016_gqa_ragged_prefill_causal_h32_kv4_d128/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "Reproduce causal ragged prefill KV4: multirow query tiles, shared KV staging and online softmax. Preserve runtime indptr, scale and both outputs. Candidate-plan authoring must be integrated before launch.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gqa_ragged_prefill_causal_h32_kv4_d128",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "017_gqa_ragged_prefill_causal_h32_kv8_d128",
       "status": "skipped",
-      "reason": "missing_optimized_source"
+      "reason": "authoring_route_not_integrated",
+      "references": [
+        "references/017_gqa_ragged_prefill_causal_h32_kv8_d128/reference.json",
+        "references/017_gqa_ragged_prefill_causal_h32_kv8_d128/candidate.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/017_gqa_ragged_prefill_causal_h32_kv8_d128/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "Reproduce causal ragged prefill KV8: metadata construction and tiled attention, preserving empty/masked rows and base-2 LSE. Candidate-plan authoring must be integrated before launch.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_gqa_ragged_prefill_causal_h32_kv8_d128",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "018_mla_paged_decode_h16_ckv512_kpe64_ps1",
       "status": "skipped",
-      "reason": "missing_optimized_source"
+      "reason": "authoring_route_not_integrated",
+      "references": [
+        "references/018_mla_paged_decode_h16_ckv512_kpe64_ps1/reference.json",
+        "references/018_mla_paged_decode_h16_ckv512_kpe64_ps1/sol_t0.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/018_mla_paged_decode_h16_ckv512_kpe64_ps1/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "Reproduce MLA paged decode: inspect small-length versus split-KV paths, cached KV gathers and full partial-result merge; preserve output and LSE. Candidate-plan authoring must be integrated before launch.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_mla_paged_decode_h16_ckv512_kpe64_ps1",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
       "status": "skipped",
-      "reason": "missing_optimized_source"
+      "reason": "authoring_route_not_integrated",
+      "references": [
+        "references/019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1/reference.json",
+        "references/019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1/sol_t0.cu"
+      ],
+      "source": "flashinfer-bench-b300-individual-20260918/019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1/solution.json; author qinhaiyan",
+      "reference_status": "available",
+      "objective": "Reproduce MLA causal paged prefill with content and positional components, complete softmax normalization and LSE. Preserve runtime page and query boundaries. Candidate-plan authoring must be integrated before launch.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048",
       "status": "skipped",
-      "reason": "missing_optimized_source"
+      "reason": "authoring_route_not_integrated",
+      "source": "flashinfer-bench-collection-best-20260715/020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048; user-supplied reference",
+      "references": [
+        "references/020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/reference.json",
+        "references/020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/kernel.cu"
+      ],
+      "reference_status": "available",
+      "objective": "Reference uses custom expert scatter, fused FP8 block-scale dequantization and scaled scatter, with ATen/cuBLAS expert math. Preserve routing, 32 local experts, runtime local offset/factor and second-half SiLU semantics. Do not claim native FP8 tensor-core compute. Candidate-plan authoring must be integrated before launch.",
+      "reference_kind": "kernel_library_composition",
+      "task": "fib_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "021_rmsnorm_h128",
@@ -170,7 +337,10 @@
         "references/021_rmsnorm_h128/submission.py",
         "references/021_rmsnorm_h128/kernel.py"
       ],
-      "objective": "Analyze the selected persistent multirow traversal. Compare faithful work assignment with one-row or row-tiled alternatives. A function name containing TMA is not instruction evidence."
+      "objective": "Analyze the selected persistent multirow traversal. Compare faithful work assignment with one-row or row-tiled alternatives. A function name containing TMA is not instruction evidence.",
+      "source": "flashinfer-bench-collection-0706/021_rmsnorm_h128; author kersor",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "022_rmsnorm_h512",
@@ -184,7 +354,10 @@
         "references/022_rmsnorm_h512/submission.py",
         "references/022_rmsnorm_h512/rmsnorm_h512.py"
       ],
-      "objective": "Analyze dispatch at B=539, persistent traversal and weight reuse. Compare a distinct complete work partition without inventing target constants."
+      "objective": "Analyze dispatch at B=539, persistent traversal and weight reuse. Compare a distinct complete work partition without inventing target constants.",
+      "source": "flashinfer-bench-collection-0706/022_rmsnorm_h512; author kersor",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "023_rmsnorm_h1536",
@@ -198,7 +371,10 @@
         "references/023_rmsnorm_h1536/submission.py",
         "references/023_rmsnorm_h1536/kernel.py"
       ],
-      "objective": "Reproduce the selected 1024+512 reduction decomposition and weight reuse. Compare a distinct padded whole-row structure if supported."
+      "objective": "Reproduce the selected 1024+512 reduction decomposition and weight reuse. Compare a distinct padded whole-row structure if supported.",
+      "source": "flashinfer-bench-collection-0706/023_rmsnorm_h1536; author kersor",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "024_rmsnorm_h2048",
@@ -212,17 +388,44 @@
         "references/024_rmsnorm_h2048/submission.py",
         "references/024_rmsnorm_h2048/kernel.py"
       ],
-      "objective": "Reproduce the row-packed RMSNorm structure and FP32 reduction with one final BF16 conversion. Compare distinct complete row assignments; width-only tuning does not satisfy the structural-alternative requirement."
+      "objective": "Reproduce the row-packed RMSNorm structure and FP32 reduction with one final BF16 conversion. Compare distinct complete row assignments; width-only tuning does not satisfy the structural-alternative requirement.",
+      "source": "flashinfer-bench-collection-0706/024_rmsnorm_h2048; author kersor",
+      "reference_status": "available",
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "025_rmsnorm_h4096",
-      "status": "skipped",
-      "reason": "reference_epsilon_conflict"
+      "status": "ready",
+      "source": "flashinfer-bench-collection-best-20260715/025_rmsnorm_h4096; user-supplied reference",
+      "references": [
+        "references/025_rmsnorm_h4096/submission.py",
+        "references/025_rmsnorm_h4096/kernel.py"
+      ],
+      "reference_status": "available",
+      "objective": "Use the supplied best-20260715 reference with EPS=1e-5, matching the existing task. At R=170 it selects one program per row; the persistent/autotuned branch at batch>=512 is outside this shape. Preserve FP32 reduction, BF16 output and compare complete row partitions.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_rmsnorm_h4096",
+      "backend": "triton-b300",
+      "rows": 170,
+      "columns": 4096,
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     },
     {
       "id": "026_rmsnorm_h7168",
-      "status": "skipped",
-      "reason": "missing_optimized_source"
+      "status": "ready",
+      "source": "flashinfer-bench-collection-best-20260715/026_rmsnorm_h7168; user-supplied reference",
+      "references": [
+        "references/026_rmsnorm_h7168/submission.py",
+        "references/026_rmsnorm_h7168/kernel.py"
+      ],
+      "reference_status": "available",
+      "objective": "Reproduce the C=7168 masked-8192 single-pass RMSNorm with FP32 register-held x across reduction and epilogue, epsilon=1e-6. The wrapper allocates the DPS output. Compare exact-slice versus masked whole-row approaches only when admitted.",
+      "reference_kind": "authored_kernel",
+      "task": "fib_rmsnorm_h7168",
+      "backend": "triton-b300",
+      "rows": 64,
+      "columns": 7168,
+      "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
     }
   ]
 }

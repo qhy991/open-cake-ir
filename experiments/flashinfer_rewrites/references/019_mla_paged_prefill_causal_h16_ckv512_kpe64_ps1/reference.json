@@ -1,0 +1,36 @@
+{
+  "name": "kersor_b300_019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
+  "definition": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
+  "author": "qinhaiyan",
+  "spec": {
+    "languages": [
+      "cuda_cpp"
+    ],
+    "target_hardware": [
+      "LOCAL"
+    ],
+    "entry_point": "sol_t0.cu::run",
+    "dependencies": [],
+    "destination_passing_style": false,
+    "binding": "torch",
+    "compile_options": {
+      "cflags": [
+        "-std=c++17",
+        "-O3"
+      ],
+      "cuda_cflags": [
+        "-std=c++17",
+        "-O3",
+        "--use_fast_math"
+      ],
+      "ld_flags": []
+    }
+  },
+  "description": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1 optimized CUDA kernel for NVIDIA B300 SXM6 (sm_103). Measured 721.7117x geomean over the task's full 38-workload set (38/38 PASS). Produced by the cuda-agent workflow in the KerSor/FlashInfer-Bench sweep, 2026-09.",
+  "source_paths": [
+    "sol_t0.cu"
+  ],
+  "source_package": "flashinfer-bench-b300-individual-20260918",
+  "source_file": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1/solution.json",
+  "verification": "User-supplied source; reported performance not independently verified or imported."
+}
