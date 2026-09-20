@@ -172,7 +172,7 @@ The 29 tasks the launcher exposes reach gfx938 through one device registry row:
 ```
 "triton-dcu": {"target": "gfx938", "device_name": "BW1101",
                "provenance_token": "BW1101", "route": "triton",
-               "tanh_contract": "ocml.tanh.f32", "power_of_two_width": True}
+               "power_of_two_width": True}
 ```
 
 Adding the row was not enough, because five of the 29 were not portable to begin with.
@@ -191,9 +191,11 @@ devices:
 | check | question it asks | example refusal |
 | --- | --- | --- |
 | `admit_width` | can this route tile this row width? | `triton-b200 tiles a row with tl.arange, which requires a positive power-of-two span` |
-| `tanh_contract` | does this Target admit a tanh instruction contract? | `triton-gfx1151 has no admitted tanh instruction contract` -- `triton-dcu` produced this until gfx938 declared `ocml.tanh.f32`, and gfx1151 is now the only backend that does |
+| `tanh_contract()` | which typed FP32 tanh contract does the Target document admit? | `triton-gfx1151 has no admitted tanh instruction contract` -- `triton-dcu` produced this until gfx938 declared `ocml.tanh.f32`, and gfx1151 is now the only backend that does |
 | `admit_dtype` | can this route name this dtype? | `metal-m4 lowers through metal, which cannot name dtype 'bf16'` |
 | `admit_operations` | does this Target admit this body's operation kinds? | `triton-dcu targets gfx938, which does not admit operation kind 'cast'` |
+
+The task helper now reads the Target document and the typed instruction registry directly. `BACKENDS` no longer stores a second `tanh_contract` field; changing a Target's admission therefore does not require a duplicate device-table edit.
 
 Every existing frozen Workload and starter is unchanged: all 280 (task, backend, case)
 combinations that produced a document before produce byte-identical bytes after, and the
