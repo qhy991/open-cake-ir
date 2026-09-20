@@ -82,10 +82,19 @@ def _hidden_pointers(route, stages: Mapping[str, bytes], tensor_count: int) -> i
 class TritonToolchainBuilder:
     """Compile the canonical parametric Triton lowering to its exact CUDA CUBIN."""
 
-    def __init__(self, *, workload, case_id, isolated_compiler=None):
+    def __init__(self, *, workload, case_id, isolated_compiler=None, pointer_alignment=None):
         self._workload = workload
         self._case_id = case_id
         self._isolated = isolated_compiler
+        bound_alignment = getattr(isolated_compiler, 'pointer_alignment', None)
+        if pointer_alignment is None:
+            pointer_alignment = bound_alignment
+        elif bound_alignment is not None and pointer_alignment != bound_alignment:
+            raise ValueError('builder pointer alignment differs from its bound runtime')
+        if pointer_alignment is not None and (type(pointer_alignment) is not int
+                or pointer_alignment <= 0 or pointer_alignment & (pointer_alignment - 1)):
+            raise ValueError('pointer alignment specialization must be a positive power of two')
+        self._pointer_alignment = pointer_alignment
         if workload is None or case_id is None:
             raise ValueError("Triton builder Workload and case must be bound together")
 
@@ -111,13 +120,31 @@ class TritonToolchainBuilder:
                          if request.source_role == "lowered_source" else request.source)
         validate_triton_kernel(kernel_source, requirements)
         compilation = self._isolated.compile(kernel_source, requirements)
+        generic = self._seal(request, requirements, route, compilation)
+        if self._pointer_alignment is None:
+            return generic
+        alignments = {name: self._pointer_alignment for name in requirements['signature']}
+        aligned_requirements = {**requirements, 'pointer_alignments': alignments}
+        specialized = self._isolated.compile(kernel_source, aligned_requirements)
+        aligned = self._seal(request, aligned_requirements, route, specialized)
+        from open_cake_ir.evaluation.kernel_bundle import pack_candidates
+        manifest = TensorLaunchManifest.from_dict(json.loads(generic.artifact_payloads['launch_manifest']))
+        document = {**manifest.as_dict(), 'schema_version': 2, 'aligned_variant': 'aligned'}
+        manifest_bytes = canonical_json_bytes(TensorLaunchManifest.from_dict(document).as_dict())
+        payloads = {**generic.artifact_payloads, 'launch_manifest': manifest_bytes,
+                    'kernel_bundle': pack_candidates({'aligned': aligned})}
+        return LaunchableCandidate(request.candidate_sha256, request.target, generic.entry_point,
+            {role: sha256(value).hexdigest() for role, value in payloads.items()},
+            sha256(manifest_bytes).hexdigest(), payloads)
+
+    def _seal(self, request, requirements, route, compilation):
         if (compilation.target != request.target
             or compilation.entry_point != requirements.get('kernel_entry_point')):
             raise ValueError("Triton compilation target or entry point differs from its request")
         stages = compilation.artifacts
         kernel_name = compilation.entry_point
         launch = {
-            "target": request.target, "kernel_name": kernel_name, "grid": grid,
+            "target": request.target, "kernel_name": kernel_name, "grid": requirements['grid'],
             "block": [compilation.threads_per_cta, 1, 1],
             "dynamic_shared_memory_bytes": compilation.dynamic_shared_bytes,
             # How many pointers the kernel takes beyond its tensors is the kernel's own
@@ -130,6 +157,8 @@ class TritonToolchainBuilder:
             "hidden_null_pointer_parameters": _hidden_pointers(
                 route, stages, len(self._workload.tensor_abi(self._case_id))),
         }
+        if requirements.get('pointer_alignments'):
+            launch['pointer_alignments'] = dict(requirements['pointer_alignments'])
         manifest = (TensorLaunchManifest.for_workload(self._workload, self._case_id, **launch))
         manifest_bytes = canonical_json_bytes(manifest.as_dict())
         # The route names the artifacts its backend produces -- ptx/cubin for CUDA,

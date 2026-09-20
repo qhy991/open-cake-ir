@@ -88,6 +88,21 @@ def _fp32_fma_call(node: ast.AST, requirements: Mapping[str, object]) -> bool:
     )
 
 
+def pointer_alignment_attributes(requirements: Mapping[str, object]) -> dict:
+    """Compile-time assumptions; the sealed launch contract must enforce this map."""
+    alignments = requirements.get('pointer_alignments', {})
+    signature = requirements.get('signature', {})
+    if not isinstance(alignments, Mapping) or not isinstance(signature, Mapping):
+        raise ValueError('Triton pointer alignment contract differs')
+    for name, value in alignments.items():
+        if (name not in signature or not isinstance(signature[name], str)
+                or not signature[name].startswith('*') or type(value) is not int
+                or value <= 0 or value & (value - 1)):
+            raise ValueError('Triton pointer alignment must name a pointer and positive power of two')
+    names = list(signature)
+    return {(names.index(name),): [('tt.divisibility', value)] for name, value in alignments.items()}
+
+
 def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) -> None:
     """Admit one kernel-only module without importing or evaluating any source.
 
@@ -124,6 +139,7 @@ def validate_triton_kernel(source: bytes, requirements: Mapping[str, object]) ->
     constants = requirements.get("compile_constants")
     if not isinstance(signature, Mapping) or not isinstance(constants, Mapping):
         raise ValueError("native Triton signature or constants differ")
+    pointer_alignment_attributes(requirements)
     if (len(args.args) != len(signature) + len(constants)
         or [arg.arg for arg in args.args[:len(signature)]] != list(signature)
         or {arg.arg for arg in args.args[len(signature):]} != set(constants)):
@@ -413,8 +429,10 @@ def compile_triton(source: bytes, requirements: Mapping[str, object]) -> TritonC
         kernel = getattr(module, name, None)
         if kernel is None:
             raise ValueError("Triton lowering kernel entry point is missing")
+        attributes = pointer_alignment_attributes(requirements)
         compiled = triton_compile(
-            ASTSource(kernel, dict(signature), dict(constants)),
+            ASTSource(kernel, dict(signature), dict(constants),
+                      **({'attrs': attributes} if attributes else {})),
             target=GPUTarget(route.gpu_backend, route.architecture, route.warp_size),
             options=dict(options),
         )
