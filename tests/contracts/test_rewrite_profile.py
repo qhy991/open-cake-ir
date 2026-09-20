@@ -60,7 +60,8 @@ class ProfileCsvTests(unittest.TestCase):
         return '==PROF== capture\n' + stream.getvalue()
 
     def test_multiple_launches_remain_separate_and_incomplete_metrics_refuse(self):
-        rows = [[str(i), 'kernel_' + str(i), metric, 'count', '1']
+        rows = [[str(i), 'kernel_' + str(i), metric,
+                 '' if metric in {'launch__block_size', 'launch__grid_size'} else 'count', '1']
                 for i in range(2) for metric in METRICS]
         self.assertEqual(len(parse_metrics(self.csv(rows))), 2)
         for broken in [rows[:-1], rows + [rows[0]],

@@ -52,8 +52,11 @@ def parse_metrics(raw):
         key = row['ID']
         kernel = kernels.setdefault(key, {'kernel': row['Kernel Name'], 'metrics': {}})
         value = float(row['Metric Value'].replace(',', ''))
+        # NCU prints these two dimensionless launch counts with an empty unit.
+        unitless_count = name in {'launch__block_size', 'launch__grid_size'}
         if (kernel['kernel'] != row['Kernel Name'] or name in kernel['metrics']
-                or not math.isfinite(value) or value < 0 or not row['Metric Unit']):
+                or not math.isfinite(value) or value < 0
+                or (not row['Metric Unit'] and not unitless_count)):
             raise ValueError('NCU metric identity, value or unit differs')
         kernel['metrics'][name] = {'value': value, 'unit': row['Metric Unit']}
     if not kernels or any(set(k['metrics']) != set(METRICS) for k in kernels.values()):
