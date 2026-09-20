@@ -116,6 +116,10 @@ def _replay_candidates(
         if key in launchables:
             refuse(location, "a second sealed launchable for one Turn and candidate",
                    observed={"turn": turn, "candidate_sha256": candidate_sha256})
+        if candidate_sha256 not in provider_candidates_by_turn.get(turn, ()):
+            refuse(location, 'launchable candidate was not submitted in this Turn')
+        if provider_candidate_bytes is not None and key not in provider_candidate_bytes:
+            refuse(location, 'archived author candidate bytes are missing')
         launchables[key] = _replay_launchable_candidate(
             evidence,
             launchable_events,
