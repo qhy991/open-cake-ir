@@ -2160,12 +2160,13 @@
     "remaining": "Normal task launcher/catalog remains blocked for012-020. Common Program GPU Evaluation and external comparison remain unexecuted. Reuse existing task/Program owners; bind Workload-driven multiple outputs and mixed dtype/scalar/index arguments before external evaluation. CPU sealing is not agent launch, correctness, performance or promotion.",
     "resource_plan": {
       "evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/program-storage-budget.json",
-      "scope": "CPU shape-derived planning only; not an admitted protocol, peak RSS bound or observed GPU memory. 2550 observations/42 cohorts illustrate the current single-output comparison pattern. Public input clones used by external adapters, compiler/runtime caches, host decoded arrays and device module overhead are additional. All Program intermediates are retained per argument set by the current common adapter.",
+      "scope": "CPU shape-derived planning only; not an admitted protocol, peak RSS bound or observed GPU memory. 2550 observations, 42 calls per cohort illustrate the current single-output comparison pattern. Public input clones used by external adapters, compiler/runtime caches, host decoded arrays and device module overhead are additional. All Program intermediates are retained per argument set by the current common adapter.",
       "large_prepared_cpu_f64_bytes": {
         "018_mla_paged_decode_h16_ckv512_kpe64_ps1 / captured": 22802671160,
         "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1 / captured": 22824975000,
         "020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048 / captured": 67650579168
-      }
+      },
+      "source_wording_correction": "Original planning report says 42 cohorts; this means 42 calls per cohort. The comparison has60 timed cohorts plus30 pre/postflight calls (2550 total). Budget numbers are unchanged."
     },
     "promotion_disposition": "No promotion; CPU artifact reach only. Begin with a complete bounded012 integration before expanding; budget018/019/020 preparation and snapshots before concurrency."
   }
