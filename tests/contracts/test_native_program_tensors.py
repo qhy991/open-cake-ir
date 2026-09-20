@@ -1,0 +1,127 @@
+"""CPU contracts for native Program custody; fixtures are not executable GPU code."""
+from dataclasses import dataclass
+import importlib.util
+import json
+from pathlib import Path
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+from open_cake_ir.compiler import Compiler, Program
+from open_cake_ir.compiler.toolchain import TritonCompilation, triton_route
+from open_cake_ir.evaluation.core import EvaluationProtocol
+from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
+from open_cake_ir.evaluation.program import program_components
+from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment, TritonToolchainBuilder
+from open_cake_ir.tasks.solx_fib import attention
+from open_cake_ir.tasks.program_evaluation import PreparedProgramCase, evaluate_program_case
+from open_cake_ir.evaluation.torch_tensor_inputs import check_cpu_tensor_inputs
+from tests.contracts.test_ordered_launch_plan import document
+import tests.contracts.test_program_evaluation as program_fixtures
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+class McaCompilationFixture:
+    def compile(self, source, requirements):
+        route = triton_route(requirements)
+        artifacts = {role: b'CPU fixture; not executable' for role in route.artifact_roles}
+        artifacts['source'] = source
+        params = ', '.join(f'%arg{i}: !tt.ptr<f32>' for i in range(len(requirements['signature'])))
+        artifacts['ttgir'] = f'tt.func public @fixture({params}) attributes {{}}'.encode()
+        return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'], artifacts,
+            requirements['compile_options']['num_warps'] * requirements['warp_size'], 0, 'CPU fixture', route.code_object.value)
+
+
+def build(program, workload, compiler):
+    builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=McaCompilationFixture())
+    environment = OpenCakeEnvironment(compiler, builder, workload=workload, case_id='primary',
+        authority_document={'lowering_route': {'backend': 'triton', 'entry_point': program.stages[0].schedule.lowering.entry_point},
+                            'input_format': 'schedule_or_python_v1'})
+    result = environment.build(CandidateSubmission.seal(environment.media_type, program.document_bytes))
+    if result.disposition != 'launchable':
+        raise AssertionError(result.feedback)
+    return result.launchable
+
+
+class NativeProgramCustody(unittest.TestCase):
+    def test_maca_sealed_stages_use_the_existing_program_order_and_lifecycle(self):
+        raw = document()
+        raw['target'] = 'xcore1002'
+        for stage in raw['stages']:
+            stage['schedule']['target'] = 'xcore1002'
+        program = Program.from_dict(raw)
+        workload = program_fixtures.workload_for(program)
+        candidate = build(program, workload, Compiler.load(ROOT, ROOT / 'compiler/revision.json'))
+        loaded, manifest, tensor, calls, children = program_fixtures.ProgramEvaluationTests().loaded(candidate)
+        arguments = [tensor([1, 2, 3, 4], (4,), 'fp32'), tensor([float('nan')]*4, (4,), 'fp32')]
+        loaded.prepare_arguments(arguments)
+        loaded.launch(arguments, tensor_contract=manifest, stream='fixed-stream')
+        self.assertEqual(arguments[1].data, [3, 4, 5, 6])
+        self.assertEqual(calls, ['first', 'second'])
+        self.assertEqual(loaded.launch_calls, 2)
+        loaded.close(synchronize=lambda: None)
+        self.assertTrue(all(child.closed for child in children.values()))
+        _, _, manifests = program_components(candidate)
+        self.assertTrue(all(m.hidden_null_pointer_parameters == 0 for m in manifests.values()))
+        with patch('open_cake_ir.evaluation.metax_benchmark.activity_collector') as collector:
+            with self.assertRaisesRegex(ValueError, 'Program timing is not qualified'):
+                McptiDispatchBenchmark(manifest, activity_library='not-loaded', l2_cache_bytes=8388608)
+            collector.assert_not_called()
+
+
+@unittest.skipUnless(importlib.util.find_spec('torch'), 'tensor CPU contracts require Torch')
+class TensorOracleReceipt(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        cls.workload = WorkloadContract(attention.workload_document(next(iter(attention.TASKS)),
+                                        variant='boundary', backend='triton-metax'))
+        cls.candidate = build(attention.launch_plan(cls.workload), cls.workload, cls.compiler)
+        cls.manifest = program_components(cls.candidate)[0]
+
+    def test_cpu_preparation_is_outside_allocation_and_uses_the_original_tensor_oracle(self):
+        with patch.dict('os.environ', {'METAL_BROKER_LOCK_FD': '123'}):
+            with self.assertRaisesRegex(ValueError, 'precede GPU allocation'):
+                PreparedProgramCase(self.workload, 'primary')
+        case = PreparedProgramCase(self.workload, 'zeros')
+        check_cpu_tensor_inputs(self.manifest, case.inputs)
+        bad = dict(case.inputs)
+        bad['q'] = bad['q'].float()
+        with self.assertRaisesRegex(ValueError, 'dtype'):
+            check_cpu_tensor_inputs(self.manifest, bad)
+
+    def test_complete_ieee_outputs_input_effects_counts_and_cleanup_decide_the_receipt(self):
+        prepared = PreparedProgramCase(self.workload, 'segmented')
+        protocol = EvaluationProtocol('cpu-tensor-fixture', 'confirmatory', self.workload.canonical_sha256, 'segmented', 'none')
+        @dataclass
+        class Admission:
+            target: str = 'xcore1002'
+        owner = self
+        class Loaded:
+            def __init__(self, *args):
+                self.loaded = SimpleNamespace(launch_calls=0, resources={'CPU_fixture': True}, closed=False)
+            def launch(self):
+                self.loaded.launch_calls += owner.manifest.kernels_per_call
+            def snapshot(self):
+                return {name: value.clone() for name, value in prepared.expected.items()}, {name: True for name in prepared.inputs}
+            def close(self):
+                self.loaded.closed = True
+        with patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            receipt = evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
+        self.assertTrue(receipt.correctness_passed)
+        self.assertEqual(receipt.kernel_calls, 4)
+        self.assertEqual(receipt.artifact_payloads['timing_samples'], b'null')
+        self.assertTrue(json.loads(receipt.artifact_payloads['launch_receipt'])['module_unloaded'])
+        with patch.object(Loaded, 'launch', lambda self: None), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            with self.assertRaisesRegex(ValueError, 'exact stage count'):
+                evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
+        def changed(self):
+            return {name: value.clone() for name, value in prepared.expected.items()}, {name: False for name in prepared.inputs}
+        with patch.object(Loaded, 'snapshot', changed), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            receipt = evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
+            self.assertFalse(receipt.correctness_passed)
+        with patch.object(Loaded, 'close', side_effect=RuntimeError('unload failed')), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            with self.assertRaisesRegex(RuntimeError, 'unload failed'):
+                evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
