@@ -43,14 +43,18 @@ class MetaxMatrixAdmission(unittest.TestCase):
         document = json.loads((ROOT / 'examples/schedules/triton/kmeans-partials.json').read_text())
         original = copy.deepcopy(document)
         document['target'] = 'xcore1002'
+        # Isolate selected-K from the separately refused MACA loop keyword.
+        # Keeping the NVIDIA-only hint would stop at that earlier owner.
+        for loop in document['tile_loops']:
+            loop['range_options']['disallow_acc_multi_buffer'] = False
         schedule = Schedule.from_dict(document)
         target = declared_target('xcore1002')
         findings = triton.preflight(schedule, target)
         self.assertIn('TRITON_MMA_K_RANGES_UNSUPPORTED', [f.code for f in findings])
         with self.assertRaises(EmitError):
             triton.emit(schedule, target)
-        # This negative is the otherwise supported original refinement, with only
-        # its target changed; an unrelated dtype/interval failure is not the guard.
+        # The original NVIDIA refinement is supported, and no unrelated
+        # dtype/interval failure is being used as the selected-K guard.
         self.assertFalse(any(f.blocks_lowering for f in triton.preflight(
             Schedule.from_dict(original), declared_target(original['target']))))
 
