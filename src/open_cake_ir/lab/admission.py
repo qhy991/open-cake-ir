@@ -203,6 +203,13 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
             case_id=str(evaluation['case_id']), backend=str(route['backend']),
             evaluation_protocol=evaluation,
         )
+    if fixed['candidate'] != candidate_identity(sealed_baseline):
+        raise ValueError('fixed baseline identity differs from its sealed artifact')
+    if incumbent_baseline:
+        # Its complete executable contract was audited before promotion and its
+        # exact current registry identity and Workload ABI were checked above.
+        # It may be a Program or native kernel, independent of the starter source.
+        return
     requirements = baseline_lowering.toolchain_requirements
     source = sealed_baseline.artifact_payloads.get('lowered_source')
     if source is None:
@@ -242,8 +249,7 @@ def validate_paired_baseline(*,project_root,workload,evaluation,execution,route,
             )
     reference_differs = (not source_matches or list(manifest.grid) != list(grid)
                          or manifest.block != block)
-    if (fixed['candidate'] != candidate_identity(sealed_baseline)
-            or (not incumbent_baseline and reference_differs)):
+    if reference_differs:
         raise differs(
             'fixed baseline differs from the frozen Compiler kernel or launch commitments',
             expected={'candidate': fixed['candidate'], 'source_matches': True,

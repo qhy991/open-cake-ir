@@ -94,8 +94,12 @@ class TaskIncumbentTests(unittest.TestCase):
         classification: str = "first_arm_faster",
         speedup: float = 1.2,
         independent: bool = False,
+        implementation=None,
+        workload=None,
+        backend='metal',
+        authoring_kind='open_cake',
     ):
-        candidate, payloads = self.candidate(character)
+        candidate, payloads = self.candidate(character) if implementation is None else implementation
         evidence = EvidenceStore.create(self.base / f"evidence-{name}")
         lock_document = {
             "workload": {
@@ -103,17 +107,19 @@ class TaskIncumbentTests(unittest.TestCase):
                 "canonical_sha256": "1" * 64,
             },
             "execution": {
-                "target": "apple_gpu_family9",
+                "target": candidate.target,
                 "executor_revision":{"executor_id":"fixture","path":"runtime/fixture.json"},
                 "fixed_baseline": {"candidate": dict(baseline)},
             },
             "evaluation_protocol": self.protocol,
             "resolved_inputs": {
                 "arm_environments": {
-                    "open_cake": {"lowering_route": {"backend": "metal"}}
+                    "open_cake": {"lowering_route": {"backend": backend}}
                 }
             },
         }
+        if workload is not None:
+            lock_document['workload'] = {'workload_id':workload.workload_id,'canonical_sha256':workload.canonical_sha256}
         authority = {"fixture": name}
         lock_sha = sha256(canonical_json_bytes(authority)).hexdigest()
         lock = SimpleNamespace(
@@ -128,7 +134,7 @@ class TaskIncumbentTests(unittest.TestCase):
             # are explicit doubles; artifact custody/receipt/chain checks are real.
             authority = {key:value for key,value in lock_document.items() if key!='resolved_inputs'}
             authority.update(run_id='open_cake-1',assignment=None,
-                authoring={'environment_kind':'open_cake','lowering_route':{'backend':'metal'}})
+                authoring={'environment_kind':authoring_kind,'lowering_route':{'backend':backend}})
             lock = RunSpecification(canonical_json_bytes(authority))
             lock_sha = lock.canonical_sha256
         run = evidence.start_run(
@@ -166,7 +172,7 @@ class TaskIncumbentTests(unittest.TestCase):
                 "candidate_sha256": candidate.candidate_sha256,
                 "purpose": "confirmatory",
                 "correctness_passed": True,
-                "kernel_calls": 1,
+                "kernel_calls": candidate.kernels_per_call,
                 "fallback_calls": 0,
                 "timing": timing,
             }
@@ -247,6 +253,86 @@ class TaskIncumbentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Study-assigned'):
             self.promote_run(assigned)
         self.assertFalse(self.registry.exists())
+
+    def test_program_and_native_winners_materialize_and_prepare_the_next_task_run(self):
+        from open_cake_ir.compiler import Compiler, Program, frontend
+        from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment, NativeTritonEnvironment, TritonToolchainBuilder
+        from open_cake_ir.lab import admission, bindings
+        from open_cake_ir.lab.executor import ExecutorRevision
+        from open_cake_ir.lab.pairing import native_baseline
+        from open_cake_ir.tasks.normalization.study import task_run_inputs
+        from open_cake_ir.tasks.preparation import prepare_task_run
+        from open_cake_ir.tasks.workloads import load_workload
+        from tests.contracts.test_metal_preflight import MetalPreflightTests
+        from tests.contracts.test_native_triton_pairing import CompilationFixture
+        from tests.contracts.test_runtime_config import runtime_document
+        from tests.contracts._executor_fixture import compiler_reference
+        inputs_root = self.base/'inputs';inputs_root.mkdir()
+        _,study,executor,receipt,_ = MetalPreflightTests.fixture(self,inputs_root,'claude-code',backend='triton-b200')
+        workload = load_workload(inputs_root/'workload.json')
+        source = (inputs_root/'starter.py').read_text()
+        schedule = frontend.parse(source).document
+        compiler = Compiler.load(ROOT,ROOT/'compiler/revision.json')
+        builder = TritonToolchainBuilder(workload=workload,case_id='primary',isolated_compiler=CompilationFixture())
+        authority = {'lowering_route':schedule['lowering'],'input_format':'schedule_or_python_v1'}
+        environment = OpenCakeEnvironment(compiler,builder,authority_document=authority,workload=workload,case_id='primary')
+        starter = environment.build(CandidateSubmission.seal(environment.media_type,canonical_json_bytes({'python_source':source}))).launchable
+        copy = frontend.parse('''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="copy", target="sm_100a", backend="triton", entry_point="copy")
+def candidate(lm, x: cake.Tensor((2, 8), "fp32"), intermediate: cake.Tensor((2, 8), "fp32", mode="output")):
+    compute = lm.role(execution_groups=[0])
+    row = lm.program(x, axis=0, dimension=0, tile=1)
+    with compute:
+        value = lm.load(x[row, 0:8], id="load")
+        lm.store(intermediate[row, 0:8], value, id="store")
+''').document
+        document = Program.from_schedule(schedule).document
+        document['tensors']['intermediate'] = dict(document['tensors']['x'])
+        document['stages'][0]['bindings']['x'] = 'intermediate'
+        document['stages'].insert(0,{'name':'copy','schedule':copy,'bindings':{'x':'x','intermediate':'intermediate'}})
+        result = environment.build(CandidateSubmission.seal(environment.media_type,canonical_json_bytes(document)))
+        self.assertEqual(result.disposition,'launchable',result.feedback)
+        program = result.launchable
+        self.assertTrue(program.is_program)
+        self.assertNotIn('lowered_source',program.artifact_roles)
+        lowering = compiler.lower(compiler.assess(schedule))
+        native_environment = NativeTritonEnvironment(builder,toolchain_requirements=lowering.toolchain_requirements,
+            authority_document={'environment_kind':'native_triton'},workload=workload,case_id='primary')
+        native_result = native_environment.build(CandidateSubmission.seal(native_environment.media_type,
+            canonical_json_bytes(native_baseline(lowering))))
+        self.assertEqual(native_result.disposition,'launchable',native_result.feedback)
+        self.assertIn('authored_source',native_result.launchable.artifact_roles)
+        self.protocol = study['evaluation_protocol']
+        previous = candidate_identity(starter)
+        executable = inputs_root/'provider';executable.write_bytes(b'CPU provider fixture; never executed')
+        receipt.executable_sha256 = sha256(executable.read_bytes()).hexdigest()
+        runtime = runtime_document('triton')
+        runtime['provider'] = {'executable':str(executable),'workspace_root':str(self.base/'actors')}
+        runtime['broker']['cwd'] = str(ROOT)
+        runtime_path = self.base/'runtime.json';runtime_path.write_bytes(canonical_json_bytes(runtime))
+        toolchain = SimpleNamespace(canonical_sha256='1'*64,check_executor=lambda *args,**kwargs:None)
+        for index,(kind,candidate) in enumerate((('open_cake',program),('native_triton',native_result.launchable))):
+            with self.subTest(kind=kind):
+                # Synthetic timing/audit acceptance only; builder, Program seal,
+                # registry custody, materialization and next-Run admission are real.
+                fixture = self.campaign('structured-'+str(index),'a',previous,independent=True,
+                    implementation=(candidate,candidate.artifact_payloads),workload=workload,backend='triton',authoring_kind=kind)
+                record = self.promote_run(fixture)
+                key = TaskIncumbentKey.from_run(fixture[0])
+                bundle,_ = TaskIncumbentRegistry.open(self.registry).materialize(key,self.base/('next-'+str(index)))
+                selection = {'schema_version':1,'policy':'exact_incumbent_or_reference','source':'task_incumbent',
+                    'incumbent_key':key.as_dict(),'promotion_run_id':record['run_id'],'registry_root':str(self.registry)}
+                inputs = task_run_inputs(ROOT,workload,inputs_root/'workload.json',inputs_root/'starter.py',
+                    harness='claude-code',model='exact-test-model',effort='high',turns=2)
+                with patch.object(admission.ProviderQualificationReceipt,'load',return_value=receipt), \
+                     patch.object(ExecutorRevision,'load_reference',return_value=executor), \
+                     patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler',return_value=toolchain), \
+                     patch.object(bindings,'broker_execution_sha256',return_value='2'*64):
+                    next_run = prepare_task_run(ROOT,inputs,compiler_reference=compiler_reference(ROOT),executor=executor,
+                        qualification_path=inputs_root/'receipt-double.json',qualification_anchor_path=inputs_root/'anchor-double.json',
+                        runtime_config_path=runtime_path,baseline_path=bundle,baseline_selection=selection)
+                self.assertEqual(next_run.document['execution']['fixed_baseline']['candidate'],record['candidate'])
+                previous = record['candidate']
 
     def test_run_promotion_cli_uses_the_source_bound_run_audit_command(self):
         import contextlib
