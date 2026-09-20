@@ -84,6 +84,44 @@ class StagedComparisonTests(unittest.TestCase):
                 self.assertTrue(result['measurement_quality_passed'])
                 self.assertEqual(len(result['cases']),2*len(workload.case_ids)*3)
                 self.assertEqual(result['snapshot_count'],2550)
+                # The successor's lossless encoding must feed the same common
+                # verifier, including a changed input late in the timed plan.
+                budget = staged.snapshot_storage_budget(workload,protocol)
+                def encode(change=None):
+                    compact = io.BytesIO()
+                    encoder = staged.SnapshotEncoder(compact,workload,budget['byte_limit'])
+                    legacy = io.BytesIO(stream.getvalue());count = 0
+                    for observation in plan:
+                        case = observation['case']
+                        for _ in range(observation['count']):
+                            payloads = []
+                            for arg in workload.tensor_abi(case):
+                                payload = legacy.read(math.prod(arg.shape)*staged.WIDTHS[arg.dtype])
+                                if count==1000 and arg.mode==change:
+                                    payload = struct.pack('=f',struct.unpack_from('=f',payload)[0]+1)+payload[4:]
+                                    change = None
+                                payloads.append(payload)
+                            encoder.append(case,payloads);count += 1
+                    self.assertEqual(encoder.count,2550)
+                    return compact.getvalue()
+                raw['snapshot_encoding'] = staged.INPUT_REFERENCES
+                header.write_text(json.dumps(raw))
+                encoded = encode();self.assertEqual(len(encoded),budget['unchanged_input_bytes'])
+                self.assertLess(len(encoded),len(stream.getvalue()))
+                snapshots.write_bytes(encoded)
+                compact_result = verify()
+                self.assertEqual(compact_result['comparisons'],result['comparisons'])
+                self.assertEqual(compact_result['cases'],result['cases'])
+                for mode in ('input','output'):
+                    snapshots.write_bytes(encode(mode))
+                    failed = verify()
+                    self.assertFalse(failed['correctness_passed'])
+                    self.assertTrue(all('timing' not in row for row in failed['comparisons'].values()))
+                snapshots.write_bytes(encoded+b'extra')
+                with self.assertRaisesRegex(ValueError,'trailing'):verify()
+                snapshots.write_bytes(encoded[:-1])
+                with self.assertRaisesRegex(ValueError,'truncated'):verify()
+                del raw['snapshot_encoding'];header.write_text(json.dumps(raw))
                 for mode in ('input','output'):
                     changed = bytearray(stream.getvalue());offset = 0
                     for arg in workload.tensor_abi('primary'):
@@ -102,3 +140,34 @@ class StagedComparisonTests(unittest.TestCase):
                 raw['groups'].pop();header.write_text(json.dumps(raw))
                 with self.assertRaisesRegex(ValueError,'every prescribed call'):
                     verify()
+
+    def test_reference_cache_is_per_case_and_argument_and_preserves_signed_zero(self):
+        document,_ = create_task('rmsnorm',backend='triton-b300',rows=1,columns=2)
+        workload = WorkloadContract(document);case = workload.case_ids[0]
+        args = workload.tensor_abi(case)
+        original = [struct.pack('=ff',-0.,float(i)) for i,_ in enumerate(args)]
+        changed = list(original);changed[0] = struct.pack('=ff',0.,0.)
+        output = io.BytesIO();encoder = staged.SnapshotEncoder(output,workload,10000)
+        for which,payloads in [(case,original),(case,changed),(case,original),(workload.case_ids[1],original)]:
+            encoder.append(which,payloads)
+        reader = staged.SnapshotReader(io.BytesIO(output.getvalue()),workload,staged.INPUT_REFERENCES)
+        for which,sign in [(case,-1),(case,1),(case,-1),(workload.case_ids[1],-1)]:
+            observed,after = reader.read(which)
+            self.assertEqual(math.copysign(1,after[args[0].name][0]),sign)
+            for i,arg in enumerate(args):
+                self.assertEqual((after if arg.mode=='input' else observed)[arg.name][1],float(i))
+        self.assertEqual(reader.stream.read(),b'')
+
+    def test_malformed_references_and_storage_exhaustion_are_not_accepted(self):
+        document,_ = create_task('rmsnorm',backend='triton-b300',rows=1,columns=2)
+        workload = WorkloadContract(document);case = workload.case_ids[0]
+        with self.assertRaisesRegex(ValueError,'unknown snapshot encoding'):
+            staged.SnapshotReader(io.BytesIO(),workload,'invented')
+        for payload,message in [(b'R','precedes'),(b'X','tag'),(b'','tag'),(b'L','truncated')]:
+            with self.subTest(payload=payload),self.assertRaisesRegex(ValueError,message):
+                staged.SnapshotReader(io.BytesIO(payload),workload,staged.INPUT_REFERENCES).read(case)
+        stream = io.BytesIO();encoder = staged.SnapshotEncoder(stream,workload,1)
+        with self.assertRaisesRegex(OSError,'budget exceeded'):
+            encoder.append(case,[struct.pack('=ff',1.,2.) for _ in workload.tensor_abi(case)])
+        self.assertEqual(encoder.count,0)
+        self.assertLessEqual(len(stream.getvalue()),1)
