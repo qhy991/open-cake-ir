@@ -271,31 +271,36 @@ def _fresh_tile_cohort(loaded, strict_cupti, workload, inputs, expected, *,
     if validation_inputs is not inputs and not _same_tensor_inputs(inputs, validation_inputs):
         raise ValueError('retained validation inputs differ from the Workload case')
     arguments = loaded.fresh_argument_sets(route_calls_per_cohort)
-    used = 0
-    def launch_fresh():
-        nonlocal used
-        if used >= len(arguments):
-            raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
-        loaded.launch(arguments[used])
-        used += 1
-    samples = [float(value) for value in strict_cupti(launch_fresh,
-        dry_run_iters=11, repeat_iters=samples_per_cohort, cold_l2_cache=True, use_cuda_graph=False)]
-    if len(samples) != samples_per_cohort:
-        raise ValueError('worker CUPTI sample count differs')
-    if used != len(arguments):
-        raise RuntimeError('retained CUPTI helper invocation count differs')
-    check = {'checked_launches': used, 'passed': True, 'output_mismatches': 0,
-             'max_abs_error': 0.0, 'inputs_unchanged': True}
-    # A loaded tensor candidate retained a value-identical native CPU array at
-    # admission. Generic callables keep their original input representation.
-    for values in arguments:
-        observed, after = loaded.snapshot(values)
-        correct, observation = compare_tile_outputs(workload, validation_inputs, expected, observed, after)
-        check['passed'] = check['passed'] and correct
-        check['output_mismatches'] += observation['output_mismatches']
-        check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
-        check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
-    return samples, check
+    try:
+        used = 0
+        def launch_fresh():
+            nonlocal used
+            if used >= len(arguments):
+                raise RuntimeError('CUPTI invocation budget exceeded; output reuse is forbidden')
+            loaded.launch(arguments[used])
+            used += 1
+        samples = [float(value) for value in strict_cupti(launch_fresh,
+            dry_run_iters=11, repeat_iters=samples_per_cohort, cold_l2_cache=True, use_cuda_graph=False)]
+        if len(samples) != samples_per_cohort:
+            raise ValueError('worker CUPTI sample count differs')
+        if used != len(arguments):
+            raise RuntimeError('retained CUPTI helper invocation count differs')
+        check = {'checked_launches': used, 'passed': True, 'output_mismatches': 0,
+                 'max_abs_error': 0.0, 'inputs_unchanged': True}
+        # A loaded tensor candidate retained a value-identical native CPU array at
+        # admission. Generic callables keep their original input representation.
+        for values in arguments:
+            observed, after = loaded.snapshot(values)
+            correct, observation = compare_tile_outputs(workload, validation_inputs, expected, observed, after)
+            check['passed'] = check['passed'] and correct
+            check['output_mismatches'] += observation['output_mismatches']
+            check['max_abs_error'] = max(check['max_abs_error'], observation['max_abs_error'])
+            check['inputs_unchanged'] = check['inputs_unchanged'] and observation['inputs_unchanged']
+        return samples, check
+    finally:
+        release = getattr(loaded, 'release_argument_sets', None)
+        if release is not None:
+            release(arguments)
 
 
 def _evaluate_paired_tile(authority, result, benchmark_for, admission):

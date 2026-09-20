@@ -742,7 +742,15 @@ class LoadedTorchTensorCandidate:
                 allocate=allocate, view=lambda t, shape: t.view(shape),
                 storage_span=lambda t: (str(t.device), t.data_ptr(), t.data_ptr() + t.numel() * t.element_size()),
                 stream=torch.cuda.current_stream().cuda_stream)
-            self.loaded.prepare_arguments(self.arguments)
+            try:
+                self.loaded.prepare_arguments(self.arguments)
+            except BaseException as primary:
+                try:
+                    self.loaded.close(synchronize=torch.cuda.synchronize)
+                except BaseException as teardown:
+                    from .loaders import LifecycleError
+                    raise LifecycleError(primary, teardown) from primary
+                raise
         elif manifest.aligned_variant:
             from .kernel_bundle import LoadedAlignmentCandidate
             self.loaded = LoadedAlignmentCandidate(candidate, manifest, admission, loader, torch.cuda.synchronize)
@@ -767,6 +775,13 @@ class LoadedTorchTensorCandidate:
                 self.loaded.prepare_arguments(arguments)
         torch.cuda.synchronize()
         return sets
+
+    def release_argument_sets(self, sets):
+        if self.candidate.is_program:
+            import torch
+            torch.cuda.synchronize()
+            for arguments in sets:
+                self.loaded.release_arguments(arguments)
 
     def launch(self, arguments=None):
         import torch

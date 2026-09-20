@@ -639,13 +639,18 @@ def promote_task_incumbent(
         cast(str, reference["role"]): source_store.read_object(reference)
         for reference in candidate_refs
     }
-    from open_cake_ir.evaluation.paired import _manifest_spellings
     launch_document = json.loads(artifact_payloads['launch_manifest'])
-    launch_manifest = _manifest_spellings()[launch_document['abi']].from_dict(launch_document)
+    if 'program_bundle' in artifact_payloads:
+        from open_cake_ir.evaluation.program import ProgramLaunchManifest
+        manifest = ProgramLaunchManifest.from_dict(launch_document)
+        target, entry_point = manifest.target, manifest.kernel_name
+    else:
+        # Retained opaque single-kernel records keep their existing input boundary.
+        target, entry_point = launch_document['target'], launch_document['kernel_name']
     candidate_identity = {
         "candidate_sha256": candidate_sha,
-        "target": launch_manifest.target,
-        "entry_point": launch_manifest.kernel_name,
+        "target": target,
+        "entry_point": entry_point,
         "artifact_roles": {
             role: sha256(payload).hexdigest()
             for role, payload in sorted(artifact_payloads.items())

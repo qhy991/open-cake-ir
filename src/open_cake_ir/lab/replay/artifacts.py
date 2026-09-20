@@ -24,6 +24,7 @@ def _replay_launchable_candidate(
     arm: str,
     manifest_parser: Callable,
     compiler_factory=None,
+    authored_bytes=None,
 ) -> LaunchableCandidate:
     """Rebuild one sealed launchable and enforce its arm-owned artifact contract."""
 
@@ -88,10 +89,20 @@ def _replay_launchable_candidate(
     if candidate.is_program:
         if compiler_factory is None:
             raise ValueError('Program replay requires its exact Compiler')
+        from open_cake_ir.compiler import Program
+        if authored_bytes is None or Program.from_dict(json.loads(authored_bytes)).document != manifest.program.document:
+            raise ValueError('Program manifest differs from the archived author candidate')
         lowered = compiler_factory().lower_program(manifest.program)
         if manifest.lowered_sources != {stage.name: lowering.source_sha256
                 for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True)}:
             raise ValueError('Program stage source differs from its pinned Compiler lowering')
+        from open_cake_ir.evaluation.program import program_components
+        _, children, manifests = program_components(candidate)
+        for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True):
+            requirements = lowering.toolchain_requirements
+            if (children[stage.name].entry_point != requirements['kernel_entry_point']
+                or list(manifests[stage.name].grid) != list(requirements['grid'])):
+                raise ValueError('Program stage launch differs from its pinned Compiler lowering')
     if payload.get("candidate_record_sha256") != candidate.canonical_sha256:
         refuse(f"{location}.payload.candidate_record_sha256", "launchable candidate record seal differs")
     return candidate

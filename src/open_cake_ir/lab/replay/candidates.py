@@ -58,6 +58,7 @@ def _replay_candidates(
     provider_candidates_by_turn: Mapping[int, tuple[str, ...]],
     workload_sha256: str,
     compiler_factory=None,
+    provider_candidate_bytes=None,
 ) -> tuple[
     dict[tuple[int, str], LaunchableCandidate],
     dict[tuple[int, str, str], EvaluationReceipt],
@@ -122,6 +123,7 @@ def _replay_candidates(
             candidate_sha256=candidate_sha256,
             arm=arm,
             manifest_parser=manifest_parser, compiler_factory=compiler_factory,
+            authored_bytes=provider_candidate_bytes[(turn, candidate_sha256)] if provider_candidate_bytes is not None else None,
         )
 
     receipts: dict[tuple[int, str, str], EvaluationReceipt] = {}
@@ -185,10 +187,7 @@ def _replay_candidates(
             purpose = payload.get("purpose")
             candidate_sha256 = payload.get("candidate_sha256")
             expected_fields = {"turn", "purpose", "candidate_sha256", "objects"}
-            if purpose == "confirmatory" and (
-                native_backend(lock.environment_kind) is not None
-                or paired_protocol(lock.document["evaluation_protocol"]) is not None
-            ):
+            if purpose == "confirmatory":
                 expected_fields.add("elapsed_wall_seconds")
             if set(payload) != expected_fields:
                 refuse(f"{location}.payload", "fields differ", observed=set(payload),

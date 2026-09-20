@@ -192,9 +192,6 @@ def _execute_run(specification: RunSpecification, *, evidence, clock, provider, 
     provider_document = document['authoring']['provider']
     case_id = evaluation_protocol['case_id']
     workload_sha256 = document['workload']['canonical_sha256']
-    record_confirmation_time = (native_backend(specification.environment_kind) is not None
-                                or paired_protocol(evaluation_protocol) is not None)
-    run_started_at = clock() if record_confirmation_time else None
     arm = specification.condition_id
     kind = specification.environment_kind
     empirical_enabled = "candidate_selection" in document["authoring"]
@@ -233,7 +230,6 @@ def _execute_run(specification: RunSpecification, *, evidence, clock, provider, 
         case_id=case_id, workload_sha256=workload_sha256,
         protocol_sha256=expected_protocol_sha256, evaluation_protocol=evaluation_protocol,
         execution=document['execution'],
-        clock=clock, run_started_at=run_started_at,
     )
     try:
         for turn_number in range(1, maximum_turns + 1):

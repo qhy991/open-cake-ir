@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import json
+import math
 from types import MappingProxyType
 from threading import Lock
 from collections.abc import Mapping
@@ -109,6 +110,7 @@ def stage_abi(stage):
 def program_components(candidate):
     """Validate the complete executable handoff without loading a module."""
     from .core import TensorLaunchManifest
+    from .artifacts import required_build_roles
     from .kernel_bundle import unpack_candidate_bundle
     if set(candidate.artifact_roles) != PROGRAM_ROLES or set(candidate.artifact_payloads) != PROGRAM_ROLES:
         raise ValueError('Program candidate requires its complete sealed bundle')
@@ -116,12 +118,15 @@ def program_components(candidate):
     if (candidate.target != manifest.target or candidate.entry_point != manifest.kernel_name
         or candidate.launch_spec_sha256 != manifest.canonical_sha256):
         raise ValueError('Program candidate and launch manifest differ')
+    admit_program_execution(candidate.target)
     children = unpack_candidate_bundle(candidate.artifact_payloads['program_bundle'], target=candidate.target)
     if set(children) != {stage.name for stage in manifest.program.stages}:
         raise ValueError('Program bundle must bind every stage exactly once')
     manifests = {}
     for stage in manifest.program.stages:
         child = children[stage.name]
+        if not (required_build_roles(child.target) | {'lowered_source', 'stage_compilation'}) <= set(child.artifact_roles):
+            raise ValueError(f'Program stage {stage.name!r} build evidence is incomplete')
         if child.is_program or 'kernel_bundle' in child.artifact_roles:
             raise ValueError('Program stages require single-kernel artifacts without dispatch variants')
         child_manifest = TensorLaunchManifest.from_dict(json.loads(child.artifact_payloads['launch_manifest']))
@@ -135,6 +140,15 @@ def program_components(candidate):
             or child.launch_spec_sha256 != child_manifest.canonical_sha256
             or child.artifact_roles.get('lowered_source') != manifest.lowered_sources[stage.name]):
             raise ValueError(f'Program stage {stage.name!r} artifact or ABI binding differs')
+        report = json.loads(child.artifact_payloads.get('stage_compilation', b'null'))
+        expected_report = {'schema_version': 1, 'kind': 'triton_stage_compilation',
+            'source_sha256': manifest.lowered_sources[stage.name], 'target': child.target,
+            'kernel_name': child.entry_point, 'threads_per_cta': child_manifest.block[0],
+            'dynamic_shared_memory_bytes': child_manifest.dynamic_shared_memory_bytes,
+            'hidden_null_pointer_parameters': child_manifest.hidden_null_pointer_parameters,
+            'grid': list(child_manifest.grid)}
+        if report != expected_report or child_manifest.block[1:] != (1, 1):
+            raise ValueError(f'Program stage {stage.name!r} launch differs from compiler metadata')
         manifests[stage.name] = child_manifest
     return manifest, children, manifests
 
@@ -150,8 +164,12 @@ def seal_program_candidate(lowered, children, *, candidate_sha256, workload, cas
         raise ValueError('Program build did not produce every stage')
     for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True):
         child = children[stage.name]
+        child_manifest = json.loads(child.artifact_payloads['launch_manifest'])
+        requirements = lowering.toolchain_requirements
         if (child.artifact_roles.get('lowered_source') != lowering.source_sha256
-            or child.target != lowering.target):
+            or child.target != lowering.target
+            or child.entry_point != requirements['kernel_entry_point']
+            or child_manifest.get('grid') != list(requirements['grid'])):
             raise ValueError(f'Program build replaced stage {stage.name!r} lowering')
     payloads = {'launch_manifest': canonical_json_bytes(manifest.as_dict()),
                 'program_bundle': pack_candidates(children)}
@@ -182,7 +200,8 @@ class LoadedProgram:
                 try:
                     child.close(synchronize=lambda: None)
                 except BaseException as error:
-                    cleanup = error
+                    from .loaders import LifecycleError
+                    cleanup = error if cleanup is None else LifecycleError(cleanup, error)
             if cleanup is not None:
                 raise primary from cleanup
             raise
@@ -231,6 +250,14 @@ class LoadedProgram:
     @property
     def resources(self):
         return {'kind': 'ordered_program', 'stages': {name: child.resources for name, child in self._children.items()}}
+
+    def release_arguments(self, arguments):
+        """Drop one fully checked cohort's output/intermediate ownership."""
+        with self._lock:
+            record = self._prepared.get(id(arguments))
+            if record is None or record[0] is not arguments:
+                raise ValueError('Program argument set is not retained')
+            del self._prepared[id(arguments)]
 
     def launch(self, arguments, *, tensor_contract, stream):
         with self._lock:

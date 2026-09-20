@@ -186,6 +186,15 @@ class TritonToolchainBuilder:
             **{role: stages[role] for role in route.artifact_roles if role != "source"},
             "launch_manifest": manifest_bytes,
         }
+        if request.tensor_abi is not None:
+            payloads['stage_compilation'] = canonical_json_bytes({
+                'schema_version': 1, 'kind': 'triton_stage_compilation',
+                'source_sha256': request.source_sha256,
+                'target': compilation.target, 'kernel_name': compilation.entry_point,
+                'threads_per_cta': compilation.threads_per_cta,
+                'dynamic_shared_memory_bytes': compilation.dynamic_shared_bytes,
+                'hidden_null_pointer_parameters': launch['hidden_null_pointer_parameters'],
+                'grid': list(requirements['grid'])})
         return LaunchableCandidate(
             candidate_sha256=request.candidate_sha256,
             target=request.target,

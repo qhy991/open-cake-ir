@@ -126,6 +126,10 @@ class RalphController:
         self._active_authoring = 0.0
         self._counts = {"search": 0, "confirmatory": 0, "attribution": 0}
 
+    @property
+    def elapsed_wall_seconds(self) -> float:
+        return self._elapsed()
+
     def _elapsed(self) -> float:
         return max(0.0, self._clock() - self._started)
 

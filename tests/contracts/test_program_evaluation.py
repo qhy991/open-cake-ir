@@ -10,7 +10,9 @@ import unittest
 from unittest.mock import patch
 
 from open_cake_ir.compiler import Compiler, Program
-from open_cake_ir.evaluation.core import EvaluationProtocol, LaunchableCandidate
+from open_cake_ir.evaluation.core import EvaluationProtocol, LaunchableCandidate, LoadedTorchTensorCandidate
+from open_cake_ir.evaluation.loaders import LifecycleError
+from open_cake_ir.compiler.target import CodeObject
 from open_cake_ir.evaluation.program import ProgramLaunchManifest, LoadedProgram, program_components
 from open_cake_ir.evaluation.kernel_bundle import pack_candidates
 from open_cake_ir.evaluation.paired import validate_pair_candidates, candidate_identity, participant_work
@@ -157,6 +159,80 @@ class ProgramEvaluationTests(unittest.TestCase):
                     {k:sha256(v).hexdigest() for k,v in payloads.items()}, candidate.launch_spec_sha256, payloads)
         self.assertEqual(manifest.program.inputs, ('a','b','bias'))
 
+    def test_modified_launch_or_incomplete_child_evidence_refuses(self):
+        candidate, _, _ = self.build()
+        manifest, children, _ = program_components(candidate)
+        original = children['producer']
+        for field, value in (('grid', [1,1,1]), ('block', [64,2,1]),
+                             ('kernel_name', 'unbound_entry'), ('dynamic_shared_memory_bytes', 32),
+                             ('hidden_null_pointer_parameters', 0)):
+            payloads = dict(original.artifact_payloads)
+            document = json.loads(payloads['launch_manifest']);document[field] = value
+            payloads['launch_manifest'] = canonical_json_bytes(document)
+            child = LaunchableCandidate(original.candidate_sha256, original.target, document['kernel_name'],
+                {role:sha256(payload).hexdigest() for role,payload in payloads.items()},
+                sha256(payloads['launch_manifest']).hexdigest(), payloads)
+            altered = {**candidate.artifact_payloads, 'program_bundle': pack_candidates({**children, 'producer':child})}
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'compiler metadata'):
+                LaunchableCandidate(candidate.candidate_sha256,candidate.target,candidate.entry_point,
+                    {role:sha256(payload).hexdigest() for role,payload in altered.items()},candidate.launch_spec_sha256,altered)
+        payloads = {role:payload for role,payload in original.artifact_payloads.items() if role != 'ptx'}
+        child = LaunchableCandidate(original.candidate_sha256,original.target,original.entry_point,
+            {role:sha256(payload).hexdigest() for role,payload in payloads.items()},original.launch_spec_sha256,payloads)
+        altered = {**candidate.artifact_payloads, 'program_bundle':pack_candidates({**children,'producer':child})}
+        with self.assertRaisesRegex(ValueError,'build evidence'):
+            LaunchableCandidate(candidate.candidate_sha256,candidate.target,candidate.entry_point,
+                {role:sha256(payload).hexdigest() for role,payload in altered.items()},candidate.launch_spec_sha256,altered)
+
+    def test_cohort_release_drops_tensors_but_keeps_correctness_arguments(self):
+        import gc, weakref
+        candidate, _, _ = self.build()
+        loaded, manifest, tensor, _, _ = self.loaded(candidate)
+        def arguments():
+            return [tensor([0.]*math.prod(shape),shape,dtype) for _,shape,dtype,_ in manifest.tensor_abi]
+        initial = arguments(); loaded.prepare_arguments(initial)
+        try:
+            for _ in range(3):
+                fresh = arguments(); output = weakref.ref(fresh[-1]); loaded.prepare_arguments(fresh)
+                loaded.release_arguments(fresh); del fresh; gc.collect()
+                self.assertIsNone(output())
+                self.assertEqual(len(loaded._prepared),1)
+        finally: loaded.close(synchronize=lambda:None)
+
+    def test_initial_preparation_failure_closes_every_loaded_module(self):
+        candidate, _, _ = self.build()
+        manifest, _, _ = program_components(candidate)
+        closed = []
+        class FakeTensor:
+            device = 'cuda:0'
+            def __init__(self, shape): self.shape = shape
+            def reshape(self, shape): self.shape=shape; return self
+        def full(shape, *args, **kw):
+            if tuple(shape) == (2,8) and closed == ['modules_loaded']:
+                raise MemoryError('intermediate allocation')
+            return FakeTensor(shape)
+        loads = []
+        class Kernel:
+            launch_calls = 0
+            resources = {}
+            closed = False
+            def close(self, *, synchronize):
+                synchronize(); closed.append('closed');self.closed=True
+        def loader(*args):
+            loads.append(Kernel())
+            if len(loads)==2: closed.append('modules_loaded')
+            return loads[-1]
+        torch = SimpleNamespace(float32='fp32',bfloat16='bf16',
+            tensor=lambda values, **kw:FakeTensor((len(values),)),full=full,
+            cuda=SimpleNamespace(current_stream=lambda:SimpleNamespace(cuda_stream=0),synchronize=lambda:None))
+        inputs = {'a':[0.]*16,'b':[0.]*64,'bias':[0.]*8}
+        with patch.dict('sys.modules',{'torch':torch}), \
+             patch.dict('open_cake_ir.evaluation.core._MODULE_LOADERS',{CodeObject.CUBIN:loader}):
+            with self.assertRaisesRegex(MemoryError,'intermediate allocation'):
+                LoadedTorchTensorCandidate(candidate,manifest,inputs,None)
+        self.assertEqual(closed,['modules_loaded','closed','closed'])
+        self.assertTrue(all(kernel.closed for kernel in loads))
+
     def test_changed_stream_unprepared_arguments_and_replaced_public_tensor_refuse(self):
         candidate, _, _ = self.build()
         loaded, manifest, tensor, calls, _ = self.loaded(candidate)
@@ -187,6 +263,6 @@ class ProgramEvaluationTests(unittest.TestCase):
             ncu_version='CPU-fixture', ncu_executable_sha256='a'*64, stdout='\n'.join(lines).encode(), stderr=b'')
         profile = load_ncu_program_profile(payload, expected_candidate_sha256=candidate.candidate_sha256, expected_case_id='primary')
         self.assertEqual([row['stage'] for row in profile['stages']], ['producer','epilogue'])
-        profile['stages'][0]['summary']['resources']['registers_per_thread'] = 999
+        profile['stages'][0]['summary']['occupancy']['registers_per_thread'] = 999
         with self.assertRaises(ValueError):
             load_ncu_program_profile(canonical_json_bytes(profile), expected_candidate_sha256=candidate.candidate_sha256, expected_case_id='primary')

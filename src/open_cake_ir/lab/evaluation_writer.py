@@ -34,8 +34,6 @@ class EvaluationWriter:
     protocol_sha256: str
     evaluation_protocol: Mapping[str, object]
     execution: Mapping[str, object]
-    clock: Callable[[], float]
-    run_started_at: float | None
 
     def evaluate(self, candidate: LaunchableCandidate, *, purpose: str, turn: int) -> EvaluationReceipt:
         self.ledger.append("evaluation_attempt_started", {
@@ -78,8 +76,8 @@ class EvaluationWriter:
                 "purpose": purpose,
                 "candidate_sha256": candidate.candidate_sha256,
                 "objects": references,
-                **({"elapsed_wall_seconds": self.clock() - self.run_started_at}
-                   if purpose == "confirmatory" and self.run_started_at is not None else {}),
+                **({"elapsed_wall_seconds": self.ralph.elapsed_wall_seconds}
+                   if purpose == "confirmatory" else {}),
             },
         )
         return receipt

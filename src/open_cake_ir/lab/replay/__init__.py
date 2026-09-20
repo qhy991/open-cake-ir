@@ -362,6 +362,7 @@ def _replay_matched_run(
         lock=lock,
         manifest_parser=manifest_parser,
         compiler_factory=lambda: Compiler.load(project_root, project_root / compiler_ref["path"]),
+        provider_candidate_bytes=provider_candidate_bytes,
         protocol_sha256=protocol_sha256,
         provider_candidates_by_turn=provider_candidates_by_turn,
         workload_sha256=workload_sha256,

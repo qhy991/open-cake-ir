@@ -68,7 +68,7 @@ _ROWS = (
         build_roles=frozenset({"compiler_expanded_source", "ptx", "cubin", "launch_manifest"}),
         allowed_artifact_roles=frozenset({
             "authored_source", "lowered_source", "compiler_expanded_source", "ttir", "ttgir",
-            "llir", "ptx", "cubin", "sass", "toolchain_resource_report", "launch_manifest", "kernel_bundle",
+            "llir", "ptx", "cubin", "sass", "toolchain_resource_report", "launch_manifest", "kernel_bundle", "stage_compilation",
         }),
         launch_abi="workload_tensors_v1",
         measurement_source="cupti",
