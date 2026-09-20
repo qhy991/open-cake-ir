@@ -19,14 +19,16 @@ current TinyGEMM kernel. FlashInfer supplies its recorded JIT SDK and dependenci
 This is an external reference, not a candidate backend or opaque Compiler escape.
 The three published shape fixtures are owned by the collection specification. The
 unpublished 35/239-row matrix, PDL, original dispatch policy, faithful warp/TMA scheduling,
-performance and model serving require separate evidence.
+broader-shape performance and model serving require separate evidence.
 
 `tools/test_cake_tinygemm_infra.py` is a development correctness judge, run only as a
 frozen GPU Infra task with one exclusive B300 allocation. It checks three shapes, five
 input distributions and two generated schedules, preserving complete outputs and
-reporting numeric failure as invalid rather than infrastructure unknown. It starts no
-provider, measures no latency and issues no Campaign promotion. The collection keeps
-029 blocked until external correctness and mechanism qualification are complete.
+reporting numeric failure as invalid rather than infrastructure unknown. Explicit
+`benchmark: true` enables the matched timing described below after correctness passes.
+It starts no provider and issues no Campaign promotion. Collection task 029 is ready
+for the integrated authoring path after the 30/30 checks; this status does not establish
+mechanism equivalence or performance parity.
 
 ## Observed reduction-order gap and bounded lowering proposal
 
