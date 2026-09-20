@@ -1,0 +1,663 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-20-007",
+  "kind": "behavior",
+  "date": "2026-09-20",
+  "title": "Starter-relative gains leave external-reference gaps and incomplete work-assignment reproduction",
+  "backend": "Triton candidates; CUDA C++ and Triton external references",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@2812dd95 retained normalization candidates; open-cake-ir@1848f80d successor 004",
+  "executor_revision": "Per-comparison judge_commit and per-profile source_commit below; sealed cubins remain unchanged",
+  "evidence": {
+    "comparisons": [
+      {
+        "task": "001_fused_add_rmsnorm_h2048",
+        "run_id": "cake-reference-cxx20-20260920-e34e7a1aeb6a",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-reference-cxx20-20260920-e34e7a1aeb6a",
+        "judge_commit": "cb673fbac5a70dd34a2ae8ef9d6d72f49e82b5c3",
+        "candidate_source": {
+          "task_id": "001_fused_add_rmsnorm_h2048",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/001_fused_add_rmsnorm_h2048",
+          "source_commit": "2812dd951363bc9b5164218b0881db3bef6dc8e8",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/001_fused_add_rmsnorm_h2048/campaign-evidence/runs/open_cake-1/events/000000000004.json",
+          "selected_turn": 1,
+          "reference_source": "flashinfer-bench-b300-individual-20260918/001_fused_add_rmsnorm_h2048/solution.json; author qinhaiyan",
+          "selection": "retained report promoted_artifacts best confirmed candidate; original starter cubin unchanged"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 2.496,
+            "right_us": 2.336,
+            "right_over_left": 0.935897435897436,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.051861815808675,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 9.088000000000001,
+            "right_us": 2.336,
+            "right_over_left": 0.257042253521127,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.047411741113142,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 2.496,
+            "right_us": 9.088000000000001,
+            "right_over_left": 3.641025641025641,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.040030036626495,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "002_fused_add_rmsnorm_h4096",
+        "run_id": "cake-native-isolation-comparison-20260920-0fc73116ae8d",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-native-isolation-comparison-20260920-0fc73116ae8d",
+        "judge_commit": "1848f80dfaf60d89581f98c01659243a44df7b50",
+        "candidate_source": {
+          "task_id": "002_fused_add_rmsnorm_h4096",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m3/runs/002_fused_add_rmsnorm_h4096",
+          "source_commit": "2812dd951363bc9b5164218b0881db3bef6dc8e8",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m3/runs/002_fused_add_rmsnorm_h4096/campaign-evidence/runs/open_cake-1/events/000000000024.json",
+          "selected_turn": 2,
+          "reference_source": "flashinfer-bench-b300-individual-20260918/002_fused_add_rmsnorm_h4096/solution.json; author qinhaiyan",
+          "selection": "retained report promoted_artifacts best confirmed candidate; original starter cubin unchanged"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 3.712,
+            "right_us": 3.296,
+            "right_over_left": 0.887931034482759,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.051341626299621,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 7.424,
+            "right_us": 3.296,
+            "right_over_left": 0.443965517241379,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.056691750197279,
+            "cohorts_above_cv_limit": 1
+          },
+          "optimized_vs_starter": {
+            "left_us": 3.712,
+            "right_us": 7.455500000000001,
+            "right_over_left": 2.00848599137931,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.042953004743697,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "003_fused_add_rmsnorm_h7168",
+        "run_id": "cake-native-isolation-comparison-20260920-167e275db2a8",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-native-isolation-comparison-20260920-167e275db2a8",
+        "judge_commit": "1848f80dfaf60d89581f98c01659243a44df7b50",
+        "candidate_source": {
+          "task_id": "003_fused_add_rmsnorm_h7168",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/003_fused_add_rmsnorm_h7168",
+          "source_commit": "2812dd951363bc9b5164218b0881db3bef6dc8e8",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/003_fused_add_rmsnorm_h7168/campaign-evidence/runs/open_cake-1/events/000000000008.json",
+          "selected_turn": 2,
+          "reference_source": "flashinfer-bench-b300-individual-20260918/003_fused_add_rmsnorm_h7168/solution.json; author qinhaiyan",
+          "selection": "retained report promoted_artifacts best confirmed candidate; original starter cubin unchanged"
+        },
+        "external_role": "derived external reference; source correction recorded in reference metadata",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 14.368,
+            "right_us": 3.04,
+            "right_over_left": 0.211581291759465,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.048987199657756,
+            "cohorts_above_cv_limit": 0
+          },
+          "starter_vs_external": {
+            "left_us": 22.064,
+            "right_us": 3.04,
+            "right_over_left": 0.137781000725163,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.045001580745799,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 14.336,
+            "right_us": 22.112,
+            "right_over_left": 1.542410714285714,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.02416859130463,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "004_gemm_n128_k2048",
+        "run_id": "nvidia-gap-analysis-20260920-comparison-89bd3818cbba",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-analysis-20260920-comparison-89bd3818cbba",
+        "judge_commit": "beb875dfb4ec01bc3750e24b0e95e8bc4a82f761",
+        "candidate_source": {
+          "task_id": "004_gemm_n128_k2048",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rewrite-successor-20260920-m3/runs/004_gemm_n128_k2048",
+          "source_commit": "open-cake-ir@1848f80dfaf60d89581f98c01659243a44df7b50",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rewrite-successor-20260920-m3/runs/004_gemm_n128_k2048/campaign-evidence/runs/open_cake-1/events/000000000003.json",
+          "selected_turn": 1,
+          "reference_source": "flashinfer-bench-b300-individual-20260918/004_gemm_n128_k2048/solution.json; author qinhaiyan",
+          "selection": "report-qualified best confirmed candidate; unchanged predecessor starter artifact"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 2.6879999999999997,
+            "right_us": 2.368,
+            "right_over_left": 0.880952380952381,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.062346664727636,
+            "cohorts_above_cv_limit": 4
+          },
+          "starter_vs_external": {
+            "left_us": 3.712,
+            "right_us": 2.337,
+            "right_over_left": 0.62957974137931,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.058122060145043,
+            "cohorts_above_cv_limit": 2
+          },
+          "optimized_vs_starter": {
+            "left_us": 2.6879999999999997,
+            "right_us": 3.712,
+            "right_over_left": 1.380952380952381,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.04645449609566,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "021_rmsnorm_h128",
+        "run_id": "cake-full-reference-comparison-20260920-01473a3ec07b",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-full-reference-comparison-20260920-01473a3ec07b",
+        "judge_commit": "40c4876bb119ca1c69188b9f3f38c180f4235a41",
+        "candidate_source": {
+          "task_id": "021_rmsnorm_h128",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m3/runs/021_rmsnorm_h128",
+          "source_commit": "2812dd951363bc9b5164218b0881db3bef6dc8e8",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m3/runs/021_rmsnorm_h128/campaign-evidence/runs/open_cake-1/events/000000000004.json",
+          "selected_turn": 1,
+          "reference_source": "flashinfer-bench-collection-0706/021_rmsnorm_h128; author kersor",
+          "selection": "retained report promoted_artifacts best confirmed candidate; original starter cubin unchanged"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 2.912,
+            "right_us": 2.5604999999999998,
+            "right_over_left": 0.879292582417582,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.054327992283349,
+            "cohorts_above_cv_limit": 3
+          },
+          "starter_vs_external": {
+            "left_us": 2.912,
+            "right_us": 2.56,
+            "right_over_left": 0.879120879120879,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.05397400553389,
+            "cohorts_above_cv_limit": 1
+          },
+          "optimized_vs_starter": {
+            "left_us": 2.912,
+            "right_us": 2.912,
+            "right_over_left": 1.0,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 1,
+              "baseline": 1
+            },
+            "maximum_cohort_cv": 0.046234529310641,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      },
+      {
+        "task": "022_rmsnorm_h512",
+        "run_id": "cake-full-reference-comparison-20260920-213dc1d85874",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-full-reference-comparison-20260920-213dc1d85874",
+        "judge_commit": "40c4876bb119ca1c69188b9f3f38c180f4235a41",
+        "candidate_source": {
+          "task_id": "022_rmsnorm_h512",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/022_rmsnorm_h512",
+          "source_commit": "2812dd951363bc9b5164218b0881db3bef6dc8e8",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/022_rmsnorm_h512/campaign-evidence/runs/open_cake-1/events/000000000014.json",
+          "selected_turn": 3,
+          "reference_source": "flashinfer-bench-collection-0706/022_rmsnorm_h512; author kersor",
+          "selection": "retained report promoted_artifacts best confirmed candidate; original starter cubin unchanged"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 5.152,
+            "right_us": 2.72,
+            "right_over_left": 0.527950310559006,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.057226714006005,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 2.336,
+            "right_us": 2.6879999999999997,
+            "right_over_left": 1.150684931506849,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.047068079437076,
+            "cohorts_above_cv_limit": 0
+          },
+          "optimized_vs_starter": {
+            "left_us": 5.152,
+            "right_us": 2.336,
+            "right_over_left": 0.453416149068323,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.054122480225125,
+            "cohorts_above_cv_limit": 1
+          }
+        }
+      },
+      {
+        "task": "025_rmsnorm_h4096",
+        "run_id": "cake-full-reference-comparison-20260920-26982f378ab5",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/cake-full-reference-comparison-20260920-26982f378ab5",
+        "judge_commit": "40c4876bb119ca1c69188b9f3f38c180f4235a41",
+        "candidate_source": {
+          "task_id": "025_rmsnorm_h4096",
+          "source_run": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m3/runs/025_rmsnorm_h4096",
+          "source_commit": "2812dd951363bc9b5164218b0881db3bef6dc8e8",
+          "sealed_candidate_event": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m3/runs/025_rmsnorm_h4096/campaign-evidence/runs/open_cake-1/events/000000000003.json",
+          "selected_turn": 1,
+          "reference_source": "flashinfer-bench-collection-best-20260715/025_rmsnorm_h4096; user-supplied reference",
+          "selection": "retained report promoted_artifacts best confirmed candidate; original starter cubin unchanged"
+        },
+        "external_role": "unchanged supplied external implementation",
+        "correctness_checks_passed": 30,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 3.1679999999999997,
+            "right_us": 2.7520000000000002,
+            "right_over_left": 0.868686868686869,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.051224972015826,
+            "cohorts_above_cv_limit": 1
+          },
+          "starter_vs_external": {
+            "left_us": 5.872,
+            "right_us": 2.7520000000000002,
+            "right_over_left": 0.46866485013624,
+            "quality_passed": false,
+            "pair_wins": {
+              "candidate": 0,
+              "baseline": 10
+            },
+            "maximum_cohort_cv": 0.051582290801318,
+            "cohorts_above_cv_limit": 1
+          },
+          "optimized_vs_starter": {
+            "left_us": 3.2,
+            "right_us": 5.888,
+            "right_over_left": 1.84,
+            "quality_passed": true,
+            "pair_wins": {
+              "candidate": 10,
+              "baseline": 0
+            },
+            "maximum_cohort_cv": 0.049534145924877,
+            "cohorts_above_cv_limit": 0
+          }
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "task": "001",
+        "run_id": "nvidia-gap-attribution-rest-20260920-823fca037818",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-attribution-rest-20260920-823fca037818",
+        "source_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f",
+        "participants": {
+          "optimized": {
+            "kernel": "_cake_solx_fib_fused_add_rmsnorm_h2048_bf16_kernel",
+            "threads_per_block": 256.0,
+            "blocks": 79.0,
+            "registers_per_thread": 32.0,
+            "active_warps_pct": 2.43,
+            "l2_bytes": 2205120.0,
+            "long_scoreboard_stall_pct": 42.22,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "starter": {
+            "kernel": "_cake_solx_fib_fused_add_rmsnorm_h2048_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 79.0,
+            "registers_per_thread": 80.0,
+            "active_warps_pct": 0.6,
+            "l2_bytes": 2342752.0,
+            "long_scoreboard_stall_pct": 79.57,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "external": {
+            "kernel": "fused_add_rmsnorm_h2048_kernel(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, float)",
+            "threads_per_block": 256.0,
+            "blocks": 79.0,
+            "registers_per_thread": 27.0,
+            "active_warps_pct": 1.91,
+            "l2_bytes": 1841472.0,
+            "long_scoreboard_stall_pct": 38.47,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          }
+        }
+      },
+      {
+        "task": "002",
+        "run_id": "nvidia-gap-attribution-rest-20260920-1953c4b1fdb1",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-attribution-rest-20260920-1953c4b1fdb1",
+        "source_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f",
+        "participants": {
+          "optimized": {
+            "kernel": "_cake_solx_fib_fused_add_rmsnorm_h4096_bf16_kernel",
+            "threads_per_block": 512.0,
+            "blocks": 170.0,
+            "registers_per_thread": 32.0,
+            "active_warps_pct": 11.08,
+            "l2_bytes": 9447712.0,
+            "long_scoreboard_stall_pct": 27.71,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "starter": {
+            "kernel": "_cake_solx_fib_fused_add_rmsnorm_h4096_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 170.0,
+            "registers_per_thread": 168.0,
+            "active_warps_pct": 1.26,
+            "l2_bytes": 9233376.0,
+            "long_scoreboard_stall_pct": 42.93,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "external": {
+            "kernel": "<unnamed>::fused_add_rmsnorm_h4096_kernel(const __nv_bfloat16 *, const __nv_bfloat16 *, const __nv_bfloat16 *, __nv_bfloat16 *, int, float)",
+            "threads_per_block": 512.0,
+            "blocks": 170.0,
+            "registers_per_thread": 24.0,
+            "active_warps_pct": 11.23,
+            "l2_bytes": 7295040.0,
+            "long_scoreboard_stall_pct": 31.24,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          }
+        }
+      },
+      {
+        "task": "003",
+        "run_id": "nvidia-gap-attribution-r2-20260920-attribution-652fd0ece96a",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-attribution-r2-20260920-attribution-652fd0ece96a",
+        "source_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f",
+        "participants": {
+          "optimized": {
+            "kernel": "_cake_solx_fib_fused_add_rmsnorm_h7168_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 64.0,
+            "registers_per_thread": 128.0,
+            "active_warps_pct": 0.55,
+            "l2_bytes": 6322016.0,
+            "long_scoreboard_stall_pct": 46.62,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "starter": {
+            "kernel": "_cake_solx_fib_fused_add_rmsnorm_h7168_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 64.0,
+            "registers_per_thread": 64.0,
+            "active_warps_pct": 0.57,
+            "l2_bytes": 6243840.0,
+            "long_scoreboard_stall_pct": 77.35,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "external": {
+            "kernel": "<unnamed>::fused_add_rmsnorm_h7168_kernel(const uint4 *, const uint4 *, const uint4 *, uint4 *, float)",
+            "threads_per_block": 448.0,
+            "blocks": 64.0,
+            "registers_per_thread": 39.0,
+            "active_warps_pct": 3.32,
+            "l2_bytes": 4960352.0,
+            "long_scoreboard_stall_pct": 44.19,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          }
+        }
+      },
+      {
+        "task": "021",
+        "run_id": "nvidia-gap-attribution-rest-20260920-027f6ae9a286",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-attribution-rest-20260920-027f6ae9a286",
+        "source_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f",
+        "participants": {
+          "optimized": {
+            "kernel": "_cake_solx_fib_rmsnorm_h128_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 2528.0,
+            "registers_per_thread": 21.0,
+            "active_warps_pct": 5.59,
+            "l2_bytes": 2559328.0,
+            "long_scoreboard_stall_pct": 40.22,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "starter": {
+            "kernel": "_cake_solx_fib_rmsnorm_h128_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 2528.0,
+            "registers_per_thread": 21.0,
+            "active_warps_pct": 5.46,
+            "l2_bytes": 2562464.0,
+            "long_scoreboard_stall_pct": 41.09,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "external": {
+            "kernel": "_rmsnorm_persistent_tma_kernel",
+            "threads_per_block": 64.0,
+            "blocks": 592.0,
+            "registers_per_thread": 25.0,
+            "active_warps_pct": 6.38,
+            "l2_bytes": 2371808.0,
+            "long_scoreboard_stall_pct": 53.76,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          }
+        }
+      },
+      {
+        "task": "022",
+        "run_id": "nvidia-gap-attribution-r2-20260920-attribution-d198cd41854c",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-attribution-r2-20260920-attribution-d198cd41854c",
+        "source_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f",
+        "participants": {
+          "optimized": {
+            "kernel": "_cake_solx_fib_rmsnorm_h512_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 135.0,
+            "registers_per_thread": 80.0,
+            "active_warps_pct": 0.89,
+            "l2_bytes": 2186304.0,
+            "long_scoreboard_stall_pct": 52.66,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "starter": {
+            "kernel": "_cake_solx_fib_rmsnorm_h512_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 539.0,
+            "registers_per_thread": 45.0,
+            "active_warps_pct": 1.84,
+            "l2_bytes": 2287328.0,
+            "long_scoreboard_stall_pct": 39.48,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "external": {
+            "kernel": "_rmsnorm_persistent_kernel",
+            "threads_per_block": 128.0,
+            "blocks": 296.0,
+            "registers_per_thread": 32.0,
+            "active_warps_pct": 4.75,
+            "l2_bytes": 2011040.0,
+            "long_scoreboard_stall_pct": 45.28,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          }
+        }
+      },
+      {
+        "task": "025",
+        "run_id": "nvidia-gap-attribution-rest-20260920-3d65ccb647aa",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-attribution-rest-20260920-3d65ccb647aa",
+        "source_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f",
+        "participants": {
+          "optimized": {
+            "kernel": "_cake_solx_fib_rmsnorm_h4096_bf16_kernel",
+            "threads_per_block": 128.0,
+            "blocks": 170.0,
+            "registers_per_thread": 77.0,
+            "active_warps_pct": 2.95,
+            "l2_bytes": 5875008.0,
+            "long_scoreboard_stall_pct": 43.88,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "starter": {
+            "kernel": "_cake_solx_fib_rmsnorm_h4096_bf16_kernel",
+            "threads_per_block": 32.0,
+            "blocks": 170.0,
+            "registers_per_thread": 167.0,
+            "active_warps_pct": 1.21,
+            "l2_bytes": 5674048.0,
+            "long_scoreboard_stall_pct": 45.57,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          },
+          "external": {
+            "kernel": "_rmsnorm_small_kernel",
+            "threads_per_block": 128.0,
+            "blocks": 170.0,
+            "registers_per_thread": 62.0,
+            "active_warps_pct": 2.71,
+            "l2_bytes": 5082144.0,
+            "long_scoreboard_stall_pct": 35.87,
+            "local_load_sectors": 0.0,
+            "local_store_sectors": 0.0
+          }
+        }
+      }
+    ],
+    "raw_reports": "The node-owned paths below retain raw samples, correctness, source and NCU CSV. This Finding is curated interpretation, not another evaluation or promotion ledger."
+  },
+  "observation": "Seven fixed-shape three-way comparisons passed all 210 numerical pre/postflight checks. 003 has a stable external gap: 14.368 us Cake versus 3.040 us derived external, while the separate optimized/starter edge is 1.542x. Its sealed source changes BLOCK_COLUMNS 1024 to 2048 but keeps one warp and 64 CTAs; NCU observes 0.55% active warps versus 3.32% for the external 448-thread CTA, with zero local-memory load/store sectors in both. 022 packs four rows into one 32-thread CTA: 135 CTAs, 80 registers/thread and 0.89% active warps, versus starter 539 CTAs, 45 registers/thread and 1.84%. The 022 starter beats its supplied reference by a quality-passing 1.151x; the selected rewrite is slower in the retained descriptive measurements. 001/002/025 match the external block/grid geometry after width tuning, but measured L2 traffic is respectively about 20%, 30% and 16% higher. Their external timing edges fail the original CV gate, so these are attribution leads rather than qualified exact slowdown claims. 021 retains the starter work assignment and has a quality-passing null result against it. All 18 profiled participants launch one kernel and show zero local-memory sectors: no evidence here attributes the gaps to extra kernel launches or spills.",
+  "proposed_change": "Keep the original starter artifacts as cross-version anchors and judge external parity separately. First isolate 003 CTA width with existing specialize_triton_warps, then compare the existing masked whole-row formulation against its sliced reduction. For 022, retain the faster starter as an incumbent and evaluate row packing jointly with execution groups. For 001/002/025, test existing LoadReuse streamed/reused declarations and inspect emitted vector loads/stores before proposing new IR; keep precision and output gates fixed. Do not equate a report-qualified candidate with a speedup or promotion. No new Compiler primitive/pass is justified by this snapshot alone, and profiler correlation is not an isolated causal ablation.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "measurement_boundary": {
+    "timing": "Three independent paired edges; 10 alternating pairs, 25 samples per arm/cohort, 42 checked calls per cohort; strict CUPTI device-activity span and cold L2; maximum cohort CV 0.05 unchanged. Host dispatch, compilation and preparation are excluded.",
+    "correctness": "Five task-owned distributions for all three participants before and after timing; 30 checks per task. NCU separately checks five cases and its profiled output for each participant.",
+    "external_changes": "001/002/004 keep supplied source, using explicitly recorded C++20 build compatibility. 003 is a separately identified host Graph-argument correction; original 003 remains failed. 021/022/025 keep supplied Python source.",
+    "profile": "Separate NCU 2025.4.1 kernel replay with cache-control all. Counters support attribution; profiler duration is not substituted for paired timing. Six tasks x three participants; 90 case checks plus 18 profiled-output checks.",
+    "scope": "One fixed shape per task, one retained comparison run, no serving claim, no leaderboard aggregate, no provider-arm comparison and no promotion. 005/023/024/026 successors and 012-020 multi-stage authoring are outside this completed comparison set."
+  },
+  "interpretation_reference": "https://docs.nvidia.com/nsight-compute/ProfilingGuide/",
+  "promotion_disposition": "No promotion; existing Compiler mechanisms and Lab selection are the next experimental owners."
+}
