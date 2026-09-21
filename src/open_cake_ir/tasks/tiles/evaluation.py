@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from types import MappingProxyType
 from typing import Mapping
-from open_cake_ir.evaluation.core import EvaluationProtocol,EvaluationReceipt,LaunchableCandidate,TensorLaunchManifest,compare_tile_outputs,_canonical_json_bytes
+from open_cake_ir.evaluation.core import EvaluationProtocol,EvaluationReceipt,LaunchableCandidate,TensorLaunchManifest,compare_tile_outputs,_canonical_json_bytes,_is_torch_tensor
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 
@@ -21,13 +21,14 @@ class PreparedTensorCase:
     expected: Mapping
 
     def __init__(self, workload: WorkloadContract, case_id: str):
-        from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
-        inputs = materialize_case(workload, case_id)
-        expected = reference_outputs(workload, case_id, inputs)
+        from open_cake_ir.tasks.workloads import materialize_evaluation_case
+        inputs, expected = materialize_evaluation_case(workload, case_id)
         object.__setattr__(self, 'workload_sha256', workload.canonical_sha256)
         object.__setattr__(self, 'case_id', case_id)
-        object.__setattr__(self, 'inputs', MappingProxyType({k: tuple(v) for k, v in inputs.items()}))
-        object.__setattr__(self, 'expected', MappingProxyType({k: tuple(v) for k, v in expected.items()}))
+        object.__setattr__(self, 'inputs', MappingProxyType({k: v if _is_torch_tensor(v) else tuple(v)
+                                                         for k, v in inputs.items()}))
+        object.__setattr__(self, 'expected', MappingProxyType({k: tuple(v.reshape(-1).tolist()) if _is_torch_tensor(v) else tuple(v)
+                                                           for k, v in expected.items()}))
 
     def check(self, workload: WorkloadContract, case_id: str):
         if self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id:
@@ -63,8 +64,8 @@ def _evaluate_tile(candidate, workload, protocol, launcher, *, validation_case, 
     if not isinstance(prepared, PreparedTensorCase):
         raise ValueError('tensor preparation must come from the task-owned CPU constructor')
     prepared.check(workload, protocol.case_id)
-    inputs = {name: list(values) for name, values in prepared.inputs.items()}
-    before = {name: list(values) for name, values in inputs.items()}
+    inputs = {name: values if _is_torch_tensor(values) else list(values) for name, values in prepared.inputs.items()}
+    before = {name: values if _is_torch_tensor(values) else list(values) for name, values in inputs.items()}
     expected = prepared.expected
     observed, after, launch = launcher.launch_tensors(candidate, manifest, inputs)
     passed, metrics = compare_tile_outputs(workload, before, expected, observed, after)

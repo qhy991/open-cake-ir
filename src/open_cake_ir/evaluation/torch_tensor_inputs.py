@@ -65,16 +65,22 @@ class LoadedTorchTensorInputs:
         self.loaded.launch(self.arguments, tensor_contract=self.manifest,
                            stream=torch.cuda.current_stream().cuda_stream)
 
+    def snapshot_values(self, arguments=None):
+        """Read native CPU tensor values without changing their storage encoding."""
+        import torch
+        outputs, inputs = {}, {}
+        for (name, shape, dtype, mode), value in zip(self.manifest.tensor_abi,
+                self.arguments if arguments is None else arguments, strict=True):
+            raw = value.detach().view(torch.uint8).cpu()
+            (inputs if mode == 'input' else outputs)[name] = raw.view(value.dtype).reshape(shape)
+        return outputs, inputs
+
     def snapshot(self):
         """Return complete CPU outputs and exact public input byte-effect checks."""
         import torch
-        outputs, checks = {}, {}
-        for (name, shape, dtype, mode), value in zip(self.manifest.tensor_abi, self.arguments, strict=True):
-            raw = value.detach().view(torch.uint8).cpu()
-            if mode == 'input':
-                checks[name] = bool(torch.equal(raw, self.inputs[name].view(torch.uint8)))
-            else:
-                outputs[name] = raw.view(value.dtype).reshape(shape)
+        outputs, inputs = self.snapshot_values()
+        checks = {name: bool(torch.equal(value.view(torch.uint8), self.inputs[name].view(torch.uint8)))
+                  for name, value in inputs.items()}
         return outputs, checks
 
     def close(self):

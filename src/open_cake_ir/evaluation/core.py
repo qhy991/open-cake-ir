@@ -591,6 +591,12 @@ class TensorLaunchManifest(WorkloadTensorManifest):
 
 
 
+def _is_torch_tensor(value):
+    import sys
+    torch = sys.modules.get('torch')
+    return torch is not None and isinstance(value, getattr(torch, 'Tensor', ()))
+
+
 def _same_tensor_inputs(before, after):
     """Compare admitted tensor values, not the host sequence container spelling.
 
@@ -604,6 +610,15 @@ def _same_tensor_inputs(before, after):
         return False
     for name, values in before.items():
         actual = after[name]
+        if _is_torch_tensor(values) or _is_torch_tensor(actual):
+            import torch
+            if (not _is_torch_tensor(values) or not _is_torch_tensor(actual)
+                    or values.device.type != 'cpu' or actual.device.type != 'cpu'
+                    or values.dtype != actual.dtype or values.shape != actual.shape
+                    or not values.is_contiguous() or not actual.is_contiguous()
+                    or not torch.equal(values.view(torch.uint8), actual.view(torch.uint8))):
+                return False
+            continue
         if len(actual) != len(values):
             return False
         if (isinstance(values, array) and isinstance(actual, array)
@@ -760,6 +775,14 @@ class LoadedTorchTensorCandidate:
         self.candidate = candidate
         self.manifest = manifest
         self.admission = admission
+        self._native_inputs = None
+        if any(_is_torch_tensor(value) for value in inputs.values()):
+            from .torch_tensor_inputs import LoadedTorchTensorInputs
+            self._native_inputs = LoadedTorchTensorInputs(candidate, manifest, inputs, admission)
+            self.inputs = self._native_inputs.inputs
+            self.arguments = self._native_inputs.arguments
+            self.loaded = self._native_inputs.loaded
+            return
         self.inputs = {name: array('d', values) for name, values in inputs.items()}
         dtype_names = _TORCH_DTYPE_NAMES
         dtypes = {}
@@ -805,7 +828,8 @@ class LoadedTorchTensorCandidate:
         if not isinstance(count, int) or isinstance(count, bool) or count <= 0:
             raise ValueError('fresh tensor argument count differs')
         sets = [[argument if mode == 'input' else torch.full_like(argument,
-                    float('nan') if dtype != 'int32' else -(2**31))
+                    (torch.finfo(argument.dtype).max if self._native_inputs is not None else float('nan'))
+                    if dtype != 'int32' else -(2**31))
                  for (_, _, dtype, mode), argument in zip(self.manifest.tensor_abi, self.arguments, strict=True)]
                 for _ in range(count)]
         if self.candidate.is_program:
@@ -831,6 +855,9 @@ class LoadedTorchTensorCandidate:
         import ctypes
         import torch
         arguments = self.arguments if arguments is None else arguments
+        if self._native_inputs is not None:
+            observed, after = self._native_inputs.snapshot_values(arguments)
+            return {name: value.reshape(-1).tolist() for name, value in observed.items()}, after
         observed = {name: value.cpu().reshape(-1).tolist() for (name, _, _, mode), value
                     in zip(self.manifest.tensor_abi, arguments, strict=True) if mode == 'output'}
         after = {}
@@ -856,7 +883,9 @@ class LoadedTorchTensorCandidate:
             raise ValueError('loaded tensor assay input or candidate differs')
         for (_, _, dtype, mode), argument in zip(manifest.tensor_abi, self.arguments, strict=True):
             if mode == 'output':
-                argument.fill_(float('nan') if dtype != 'int32' else -(2**31))
+                import torch
+                argument.fill_((torch.finfo(argument.dtype).max if self._native_inputs is not None else float('nan'))
+                               if dtype != 'int32' else -(2**31))
         before = self.loaded.launch_calls
         self.launch()
         observed, after = self.snapshot()
