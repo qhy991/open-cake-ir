@@ -50,6 +50,7 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         task = matrix.launch_task.TINYGEMM_TASK
         for requested, expected in ((3072, 3072), (None, 720)):
             with self.subTest(requested=requested), tempfile.TemporaryDirectory() as directory:
+                directory = Path(directory).resolve()
                 args = self.args(task)
                 args[args.index('--backend') + 1] = 'triton-b300'
                 args[args.index('--workspace-root') + 1] = str(Path(directory)/'matrix')
