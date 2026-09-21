@@ -27,6 +27,7 @@ Start with the system overview, then follow the implementation or evidence relev
 - [系统概览 / Architecture](ARCHITECTURE.md) · [English](en/ARCHITECTURE.md)
 - [跨硬件优化知识迁移 / Executable optimization knowledge](OPTIMIZATION_TRANSFER.md) · [English](en/OPTIMIZATION_TRANSFER.md) · [消融设计](OPTIMIZATION_TRANSFER_ABLATION.md)
 - [入门与运行 / Getting started](GETTING_STARTED.md)
+- [Lab 任务用途与处理流程 / Lab task purposes and execution](wiki/experiments.md) · [English](en/wiki/experiments.md)
 - [概念导读 / Wiki](wiki/README.md) · [English](en/wiki/README.md)
 - [当前状态 / Current status](../reports/current/STATUS.md)
 - [按硬件查看实验结果 / Results by hardware](RESULTS.md)：任务结果、历史晋升、CAKE 对照与原始证据定位。

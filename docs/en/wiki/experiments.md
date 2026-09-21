@@ -6,6 +6,58 @@ Freeze the problem and judging rules first, let AI revise candidates, then retai
 
 [Guide index](README.md) · [Results](results.md)
 
+## Choose an entry by purpose
+
+Workload owns mathematics and the oracle; Compiler owns complete Programs, leaf Schedules
+and explicit rewrites; Run freezes execution permissions and budgets; Study preassigns
+Runs and analyzes their outcomes. Evaluation observes correctness and measurement, and
+Evidence retains the original records. Engineering and research share one Run engine;
+CampaignLock is a legacy input adapter.
+
+There are three execution entries: fixed-candidate Evaluation for qualification and
+diagnosis, an independent Run for bounded agent search and fresh confirmation, and Study
+for preassigned repeated comparisons. The following are purposes, not new runtime modes:
+
+| Purpose | Inputs | Question answered |
+| --- | --- | --- |
+| Optimize an existing implementation | Workload, starter/incumbent, exact target, baseline and budget | Can the agent produce a confirmed improvement on this task and target? |
+| Reproduce an external implementation in Cake | Original semantics/oracle, declared reference and a separately bound external baseline | Can Cake recover its important structure, and what explains the remaining gap? |
+| Generate from the specification | Specification, oracle, hardware/API contract and restricted reference access | What can the agent discover without a complete target implementation? |
+| Transfer engineering knowledge | Destination task plus authorized mechanism material, evidence and transform grants | Does the mechanism apply and help after destination-specific adaptation? |
+| Controlled comparison or ablation | Frozen assignments, splits, model, budgets, repetitions and analysis | Which treatment explains the observed effect? |
+| Capability assessment and diagnosis | Fixed Program, reference mechanism or component probes | Is the gap in expression, lowering, toolchain, correctness or measurement? |
+
+Ordinary task batches use independent Runs. External reproductions first check capability;
+transfer discovery and destination adaptation precede frozen held-out studies. A Compiler
+gap becomes a Finding and a separately verified successor commit between Runs, never a
+silent change to a running experiment's compiler, oracle or measurement policy.
+
+Reference permissions are orthogonal: clean_start excludes complete target implementations,
+known_kernel_reproduction permits declared references, and direct_low_level governs native
+authoring. The ordinary launcher supplies a starter and defaults to known_kernel_reproduction;
+it is not clean-start evidence. Material and tool isolation must be enforced, not merely requested.
+
+E/P Studies independently control extra mechanism material and explicit transform calls.
+All four cells share base IR/backend capabilities and validation. P0 may manually construct
+the same optimization; P1's API itself contains knowledge. The
+[ablation protocol](../../OPTIMIZATION_TRANSFER_ABLATION.md) owns exact statistical rules.
+
+## Implementation and acceptance scope
+
+Existing single-kernel routes remain target-specific. Complete-Program correctness uses
+CUBIN, HSACO and MCFATBIN loaders; ordinary Run measurement still requires an implemented
+whole-program adapter. Standalone MACA Program profiling is attribution, not a latency
+sample or permission to reuse a single-dispatch timer. Platform records and original
+evidence own remaining Metal composition, measurement and transfer-effect limitations.
+
+Use launch_task.py for one task, launch_task_matrix.py for a batch, kernel_experiment.py
+for explicit multi-node organization, lab run preflight/execute/audit for frozen Runs,
+and transfer_study.py for E/P Studies. rewrite_collection.py assess is component-only;
+qualify_tensor_program.py build/evaluate/profile handles admitted native Program assays.
+Keep outputs outside source. A smoke or system-qualification report separates entrypoint
+completion, correctness, measurement validity, baseline improvement and final confirmation;
+it establishes no scientific transfer effect by itself.
+
 ## Two improvement loops
 
 Candidate evolution changes tiling, roles, or composition for the same problem under one frozen Compiler. Compiler evolution fixes an expressibility or checking gap, updating types, rules, analysis, and lowering before a successor release. Changing the question, compiler, and timing together loses attribution.

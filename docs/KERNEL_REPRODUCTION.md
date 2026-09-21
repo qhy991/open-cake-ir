@@ -42,6 +42,10 @@ socket；在节点创建固定 commit 的独立 worktree，然后调用现有 `l
 }
 ```
 
+Claude-compatible 网关若有已核对的响应模型别名，可在 `provider` 中明确声明
+`response_model_aliases` 列表；入口将其逐个传给单任务 launcher，沿用已有 qualification
+与回放校验。请求模型仍必须精确匹配，别名不从名称猜测，也不绕过模型或工具权限检查。
+
 可添加 `metal-m1-pro`、`triton-dcu`、`triton-gfx1151` 等已声明且该任务支持的 cell。
 本机节点使用 `transport: local` 并省略 `host`。源 commit 必须已存在于节点仓库，节点
 Python 和 host capture 必须满足对应 Executor；不自动把任务改投另一架构。
