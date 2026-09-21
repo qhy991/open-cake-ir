@@ -177,8 +177,9 @@ class OpenCakeEnvironment:
     def _build_program(self, submission, parsed, *, compilation=None):
         from open_cake_ir.compiler.ir import Program
         from open_cake_ir.evaluation.program import (
-            stage_abi, seal_program_candidate, admit_program_execution, single_kernel_lowering,
+            admit_program_execution, single_kernel_lowering,
         )
+        from .build import build_program_candidate
         try:
             program = Program.from_dict(parsed)
             public = {name: ('global', tensor.dtype.value, list(tensor.shape), mode)
@@ -189,25 +190,14 @@ class OpenCakeEnvironment:
             if any(stage.schedule.lowering.backend.value != self._route['backend'] for stage in program.stages):
                 raise ValueError('Program stage backend is outside the authoring environment')
             lowered = self._compiler.lower_program(program)
-            def request(lowering):
-                return BuildRequest(submission.sha256, lowering.source.encode(), 'lowered_source',
-                    lowering.source_sha256, lowering.target, lowering.route.entry_point, lowering.toolchain_requirements,
-                    compilation=compilation)
             single = single_kernel_lowering(lowered)
-            if single is not None:
-                from dataclasses import replace
-                # Explicit ABI retains the Triton builder's physical compile record,
-                # including any alignment variant, without requiring a graph adapter.
-                launchable = self._toolchain.build(replace(request(single),tensor_abi=stage_abi(program.stages[0])))
-            else:
-                build_stage = getattr(self._toolchain, 'build_stage', None)
-                if not callable(build_stage):
-                    raise ValueError('this toolchain has no Program stage build capability')
-                admit_program_execution(program.target)
-                children = {stage.name:build_stage(request(lowering),stage_abi(stage))
-                            for stage,lowering in zip(program.stages,lowered.lowerings,strict=True)}
-                launchable = seal_program_candidate(lowered, children, candidate_sha256=submission.sha256,
-                                                   workload=self._workload, case_id=self._case_id)
+            if single is None:
+                # Optimization environments must support their full measurement
+                # loop. Correctness-only Program handoffs use the Evaluation API.
+                admit_program_execution(program.target, timing=True, attribution=True)
+            launchable = build_program_candidate(lowered, self._toolchain,
+                candidate_sha256=submission.sha256, workload=self._workload,
+                case_id=self._case_id, compilation=compilation)
             return EnvironmentResult('launchable', submission.sha256, launchable,
                 {'stage': 'built', 'program_stages': [stage.name for stage in program.stages],
                  'cost_model_coverage': 'whole_program_unmodeled'})

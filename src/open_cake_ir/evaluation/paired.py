@@ -458,6 +458,14 @@ def validate_metal_correctness_checks(check, case_ids, *, timed=False):
 def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
     if candidate is not None and receipt.kernel_calls != candidate.kernels_per_call:
         raise ValueError('receipt physical kernel count differs from its sealed candidate')
+    if candidate is not None and candidate.is_program:
+        from .program import admit_program_execution
+        admit_program_execution(candidate.target, timing=receipt.timing is not None or paired_protocol(evaluation) is not None,
+                                attribution=receipt.purpose == 'attribution')
+    if (baseline is not None and 'program_bundle' in baseline['artifact_roles']
+            and paired_protocol(evaluation) is not None):
+        from .program import admit_program_execution
+        admit_program_execution(baseline['target'], timing=True)
     if candidate is not None and candidate.is_program and receipt.purpose == 'attribution':
         from .program import program_components
         manifest, children, _ = program_components(candidate)
@@ -479,6 +487,7 @@ def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
 
 def participant_work(raw):
     """Derive physical work from manifest bytes bound by participant identities."""
+    from .program import ProgramLaunchManifest, admit_program_execution
     participants = raw['participants']
     declarations = raw.get('launch_manifests')
     if declarations is None:
@@ -492,6 +501,8 @@ def participant_work(raw):
         manifest = _manifest_spellings()[document['abi']].from_dict(document)
         if manifest.canonical_sha256 != participants[role]['launch_spec_sha256']:
             raise ValueError('paired launch manifest differs from its participant seal')
+        if isinstance(manifest, ProgramLaunchManifest):
+            admit_program_execution(manifest.target, timing=True)
         if hasattr(manifest, 'check_complete_domain'):
             manifest.check_complete_domain()
         result[role] = {'modules': getattr(manifest, 'module_count', 1),

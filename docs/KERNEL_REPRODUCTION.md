@@ -134,11 +134,11 @@ Write these generated Workload and Program documents outside the checkout.
 Triton builder and sealed Program bundle. Run build in the captured CPU-only compilation
 environment. No provider or GPU execution occurs in this command.
 
-The local MACA correctness adapter is
+The local HIP/MACA correctness adapter is
 `tools/qualify_tensor_program.py evaluate --built <build-directory> --case <case-id>
 --output <new-result-directory>`. Invoke it once for every original Workload case, using a
 new output directory each time. The process materializes one original CPU tensor case and
-computes its original oracle before acquiring the existing MACA broker allocation. Keeping
+computes its original oracle before acquiring its Target's existing local broker allocation. Keeping
 one case per process avoids holding all MoE weight cases in memory at once. Inputs cross
 the device boundary as raw bytes and retain their declared tensor dtype; they are never
 expanded into Python float lists. The existing Program loader owns ordered native dispatch,
@@ -151,5 +151,7 @@ passing receipt. The worker holds its real allocation through process exit. All 
 software, host and review gates must pass before any device invocation.
 
 These commands qualify construction or correctness only. They do not create an optimization
-Run endpoint or measured speedup. MACA multi-stage timing is explicitly refused by the
-existing single-dispatch timer until its interval and profiler coverage are qualified.
+Run endpoint or measured speedup. HIP/MACA multi-stage timing and attribution remain
+explicitly refused until whole-program interval and profiler coverage are qualified.
+The build command uses the shared `build_program_candidate` source/ABI handoff; it does
+not construct an optimization environment whose measurement loop it cannot satisfy.
