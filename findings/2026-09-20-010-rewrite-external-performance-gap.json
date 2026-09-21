@@ -3083,5 +3083,12 @@
     "remaining_tasks": "011 lacks a qualified general-input reference comparison because the original pointer-keyed transpose cache has not been validated for content changes.012–020 have17CPU-sealed Programs/72leaf stages, but task launcher and full common GPU/external comparisons remain uncompleted.",
     "prepared_unrun": "026 sliced-width8 alignment variant sealed at34f04b40 in cake-experiments/nvidia-rmsnorm-026-alignment-20260921/input; no submitted guard or performance run. Same source/constants/grid, runtime alignment dispatch; no GPU claim.",
     "promotion_disposition": "No new promotion. Preserve all historical candidate, starter, quality-failed and infrastructure-fault evidence."
+  },
+  "subsequent_026_alignment_result": {
+    "owner": "findings/2026-09-20-011-triton-aot-pointer-alignment.json",
+    "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891/stages/verify/comparison-report.json",
+    "scope": "New guarded-alignment treatment after50/50offsetchecks; not a rerun intended to upgrade old failedCV.",
+    "observation": "Newcandidate/control is qualified1.081x;newcandidate/external stillCVfailed. Newgenericcontrol/external edge passesquality at6.4005/2.656us. The subsequent task-level status can therefore use that explicit genericcontrol as a qualifiedslower representative for026,while the faster alignedcandidate remains unqualifiedagainstexternal. Previous2/6/3/5 status and all historical failededges remain as their dated observations.",
+    "promotion_disposition": "No promotion; no cross-run ratio multiplication."
   }
 }
