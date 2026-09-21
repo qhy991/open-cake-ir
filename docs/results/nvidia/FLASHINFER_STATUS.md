@@ -20,7 +20,7 @@
 
 这不是挑选最小延迟后建立的全局排名：005/023显式使用原starter的独立合格边，新候选的失败边仍保留；022没有证明4组候选优于原starter。003后续对齐候选虽然数值正确，其性能质量失败，不能继承整行generic的合格结论。不同实验的比值不相乘，也不求跨任务几何平均值。
 
-截至2026-09-21本次节点核对，本任务已提交的009/010/026七项比较、四项新NCU均为completed；M3节点active_runs=0、queue=0，7/8GPU空闲。其他GPU占用不是本任务未释放。随后026新对齐实验已完成50/50guards和2550数值快照；新candidate/control边通过，candidate/external边仍CV失败。008新的完整split-K Program已提交，当前尚无验收结果；排队、采集、CPU验证应以原submissions和节点state为准。
+截至2026-09-21本次节点核对，本任务已提交的009/010/026七项比较、四项新NCU均为completed；M3节点active_runs=0、queue=0，7/8GPU空闲。其他GPU占用不是本任务未释放。随后026新对齐实验已完成50/50guards和2550数值快照；新candidate/control边通过，candidate/external边仍CV失败。008新的完整split-K Program随后也已完成，2550份快照数值通过，但两条候选计时边CV失败；不能据此宣称收益或合格回退。排队、采集、CPU验证仍以原submissions和节点state为准。
 
 ## 与外部实现的逐任务结果
 
@@ -85,6 +85,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 | 006 4组 / 四列4组 | 旧原starter | 1.079× / 0.903×；保留4组候选与四列负结果 |
 | 007 8组 | 本轮canonical baseline-only新冻结原模板 | 1.097×；不是旧Compiler floor |
 | 008 sliced8组 / masked整K | 新冻结原模板 / 中间sliced8组 | 1.053× / 0.805×；整K回退 |
+| 008两阶段split-K Program | 中间sliced8组 | 55.073/41.152µs，CV失败，仅描述；2550快照正确 |
 | 009 4组 / 8组 | 新冻结原模板 | 1.096× / close_null |
 | 010 4组 / 8组 | 新冻结原模板 | 1.081× / 1.116× |
 | 021原结构候选 | 原starter | close_null，未证明改写改善 |
@@ -112,6 +113,18 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 
 003的静态生成代码还显示整行与切片的归约/同步结构不同。静态指令site数量不等于动态执行次数或流量；若下一步分离“归约合并”和“保留值避免重读”，必须先检查编译器确实生成了不同的消融产物。
 
+### 008完整Program后继结果
+
+新候选使用已有Program/IR表达完整split-K：第一阶段2048CTA，第二阶段256CTA，FP32partial经完整求和后输出FP16。原CPU oracle与全部输入不变检查通过，说明完整双阶段产物已实际执行。它并非外部算法的忠实复现，也没有新IR原语。
+
+| 本轮配对边 | 左/右 µs | 最大cohort CV | 接受结论 |
+|---|---:|---:|---|
+| 新Program / 固定sliced-w8 | 55.073 / 41.152 | 0.068561 | 计时质量失败；名义0.747×仅描述 |
+| 新Program / 外部 | 55.072 / 26.688 | 0.054530 | 计时质量失败；名义0.485×仅描述 |
+| 固定sliced-w8 / 外部 | 41.1845 / 26.624 | 0.014607 | 外部更快，质量通过 |
+
+三边分别对应[发布记录](README.md#nvidia-008-splitk-program-optimized_vs_starter-20260921)、[外部边](README.md#nvidia-008-splitk-program-optimized_vs_external-20260921)和[control边](README.md#nvidia-008-splitk-program-starter_vs_external-20260921)。不将“stage-result passed”当作计时质量通过；原始报告整体为measurement_quality_failed。保留此前sliced-w8的合格性能代表，本候选不晋升。旧NCU采样的是其他候选，不能直接用来解释这个新Program的因果机制。
+
 ## 差距的原因与应该修改的层
 
 1. **AOT访存信息是已验证的Compiler/工具链问题。** 运行时检查对齐并保留通用路径，解决“为了vectorization而假设所有指针16B对齐”的错误边界。001/002/025已有正确性及部分合格性能证据；003对齐性能未合格。026 sliced8的新对齐产物已通过50guards和2550快照，对generic对照合格改善1.081×但新候选external边CV失败：相同源码/常量/grid，通用PTX为36条b16 load和4条b16 store，对齐leaf为3条v4.b32加15条v2.b32 load、7条v2.b32 store；这些静态变化本身不等于速度提升；本次性能结论来自独立的配对测量。
@@ -119,7 +132,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 3. **公共运行路径仍有工程缺口。** 012–020需要正常task launcher、混合dtype/多输出外部适配和共同Evaluation。Compiler Program已存在，重复创建Lab私有图或临时GPU runner会造成第二套所有权。
 4. **参考语义与测量质量也是未完成项。** 011的指针缓存不证明B内容不变；007及026新aligned候选的外部CV失败不是数值失败或已证实性能优劣；026的generic对照另有本轮独立合格边。需要记录输入刷新验证或具体测量波动原因，不能通过放宽门槛或重复运行直到绿色来补结论。
 
-优先顺序：收齐已提交008完整两阶段split-K Program的原oracle/计时结果；先闭合012的正常入口与完整公共输出验证；对011先完成参考有效性检查。026对齐已完成本轮受控比较，保留失败external边，不重测刷通过。上述未完成事项不作为已有性能结论。
+优先顺序：008完整Program已取得数值正确性，但尚无合格性能收益；下一步依据具体结构假说改进候选，不重复同候选刷CV。先闭合012的正常入口与完整公共输出验证；对011先完成参考有效性检查。026对齐已完成本轮受控比较，保留失败external边，不重测刷通过。上述未完成事项不作为已有性能结论。
 
 ## 测量、资源与历史边界
 
@@ -127,7 +140,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 - CPU准备/原生编译在租约外，GPU采集保留每次完整输出与输入观测，批量验证在worker退出后执行。lossless输入引用只在逐字节相等时引用首值，每个新literal保留并按原规则检查；每次输出仍完整保留。
 - 026 floor的节点时间显示capture阶段约17.4秒、随后的CPU verify约746.9秒；这是stage wall time，不是kernel耗时，也不是旧1800秒timeout的因果重放。
 - 最近009/010/026七实验：17,850份数值快照通过、21条计时边15条quality通过。四NCU是另72份观测，不能混作新的配对样本。
-- 018/019 captured的当前f64 CPU准备文件约22.803/22.825GB，020约67.651GB；另外还要计快照、解码缓存和外部参数组。资源规划中的42指**每cohort的调用数**，不是42个cohort；原规划用词错误已在Finding中澄清。不要无预算并发所有大shape。
+- 最新节点检查时共享状态盘只剩约3.52GB；没有因此清理历史证据或立即提交另一个大准备。018/019 captured的当前f64 CPU准备文件约22.803/22.825GB，020约67.651GB；另外还要计快照、解码缓存和外部参数组。资源规划中的42指**每cohort的调用数**，不是42个cohort；原规划用词错误已在Finding中澄清。不要无预算并发所有大shape。
 - 旧006评测取消记录不变。旧026 M2 `cake-sm-103a-ec2f473ce604`是1800秒run_timeout/exit124、缺judge result、broker_fault、无endpoint/晋升。新026的completed数据是独立后继证据，不追认旧失败为成功。
 - 003外部是明确标识的Graph主机参数修正派生参考；不是未改动原文。其余CUDA的C++20适配保留原源码及逐文件C++17失败/C++20成功probe。007/009是含库/运行时选择器的完整调用，不声称重建不可见库内部。
 
@@ -149,7 +162,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 | 新NCU | `nvidia-phased-profiles-20260921/submissions.json` | 003/008/009/026四项，已完成 |
 | 012–020 Program封存 | `flashinfer-program-sealing-20260921/complete-route/sealing-results.json` | 仅CPU封存与readback |
 | 026新对齐 | `nvidia-rmsnorm-026-alignment-20260921/guard-submissions.json`、`comparison-submissions.json` | 50guards通过；2550快照通过；三边质量分别记录 |
-| 008新split-K Program | `nvidia-gemm-008-splitk-program-20260921/submissions.json` | 已提交，最终验收待定 |
+| 008新split-K Program | `nvidia-gemm-008-splitk-program-20260921/submissions.json` | completed；2550数值通过；两candidate计时边CV失败 |
 
 发布顺序与source identity遵循[开发分支](../../DEVELOPMENT_BRANCHES.md)。结果PR与源码PR只在独立审查及对应CI通过后合入；报告中的版本不替换运行时冻结的提交。所有历史失败与baseline保留。
 
@@ -161,4 +174,4 @@ The qualified original starter matters: task 005's faster retained starter still
 
 Four independent NCU evaluations passed 72 complete input/output observations and captured 13 kernel instances. No local-memory traffic was observed in these instances. Task 008's whole-K version uses 80 versus 32 registers and has lower active-warps percentage than sliced-w8, which is consistent with register/residency pressure but does not establish unique causality or spilling. Task 009's profiler process selected `sk_kernel<1,1>`; that cannot identify its earlier timing process's runtime choice. Profiles do not repair CV failures or replace paired CUPTI timings.
 
-All 17 complete Programs for 012–020 were CPU-built and independently reloaded, covering 72 leaf stages. Ordinary task entry points, complete common GPU evaluation and Workload-driven multi-output/mixed-dtype external bindings remain unfinished. The system already owns Program composition; add missing behavior at its existing owner rather than a second runner. No full upstream shape suite, model E2E, inherited upstream score or automatic promotion is claimed. Cite the report commit together with each experiment's own source revision, target, workload and original evidence locator.
+All 17 complete Programs for 012–020 were CPU-built and independently reloaded, covering 72 leaf stages. Ordinary task entry points, complete common GPU evaluation and Workload-driven multi-output/mixed-dtype external bindings remain unfinished. The system already owns Program composition; add missing behavior at its existing owner rather than a second runner. A new complete two-stage008split-K Program now passes2,550 numerical observations, but both candidate/control and candidate/external timing edges failCV. Its nominally slower latency is descriptive, not a qualified regression; no performance improvement or promotion is accepted. No full upstream shape suite, model E2E, inherited upstream score or automatic promotion is claimed. Cite the report commit together with each experiment's own source revision, target, workload and original evidence locator.
