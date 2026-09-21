@@ -3182,5 +3182,12 @@
     "performance_attribution": "No independent profiler for this new Program. Prior profiles describe different whole-K/sliced artifacts and cannot be transplanted. Retained function resource attributes are not a hardware-causal proof.",
     "promotion_disposition": "No promotion. Keep existing sliced-w8 performance representative and this quality-failed structural attempt; do not repeat the same candidate merely to obtain lowerCV. Refine a concrete structural hypothesis only after preflight/resource planning.",
     "storage_observation": "At2026-09-21T03:20Z resumed M3inspection, sharedstatefree3518455808bytes. This is not sufficient headroom for another large preparation+capture. No evidence cleanup or newlargeGPUrun initiated."
+  },
+  "subsequent_008_program_alignment_result": {
+    "owner": "findings/2026-09-20-011-triton-aot-pointer-alignment.json",
+    "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-alignment-008-comparison-20260921-f2e809292860/stages/verify/comparison-report.json",
+    "scope": "New guarded per-stage alignment treatment of the complete two-stage 008 Program, with fixed unaligned Program control. Not a rerun of the old sliced comparison.",
+    "observation": "60/60 public/private address guards and all2550 public input/output observations pass. All three timing edges fail CV: no accepted improvement and no qualified regression. Keep the previously qualified sliced-w8 external representative and the existing 2/6/4/4 task-level summary unchanged.",
+    "promotion_disposition": "No promotion; static vectorization is not a performance result."
   }
 }
