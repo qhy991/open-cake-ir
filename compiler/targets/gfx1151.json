@@ -29,7 +29,9 @@
       "z": 65535
     }
   },
-  "instruction_contracts": [],
+  "instruction_contracts": [
+    "ocml.tanh.f32"
+  ],
   "synchronization_contracts": [],
   "citations": [
     {
@@ -45,7 +47,7 @@
     {
       "kind": "device_observation",
       "source": "the same earlier delivery's compiler/targets/gfx1151.json",
-      "locator": "That document declared instruction contract libdevice.tanh.f32. It is not carried here: on ROCm Triton's libdevice resolves to ocml, so the CUDA spelling would claim NVIDIA libdevice numerics for a different function. This target declares no instruction contracts, as gfx938 does, until one is measured on the device."
+      "locator": "That document declared instruction contract libdevice.tanh.f32. It is not carried here: on ROCm Triton's libdevice resolves to ocml, so the CUDA spelling would claim NVIDIA libdevice numerics for a different function. At that earlier admission neither this target nor gfx938 declared an instruction contract. The later gfx1151 OCML measurement is recorded below."
     },
     {
       "kind": "device_observation",
@@ -56,6 +58,11 @@
       "kind": "corpus_observation",
       "source": "corpus/manifest.json and corpus/schedules, at the commit that added `cast` here",
       "locator": "`cast` is declared here and exercised by no gfx1151 Corpus case. This Target has one case, `gfx1151-rmsnorm-accepted`, whose schedule contains load, elementwise, reduce and store only. The Corpus does exercise `cast` in six cases -- `cast-b8-accepted`, `cast-b8-result-drift`, `python-cast`, `qsa-score-topk-t32768-accepted`, `residency-register-cap-drift` and `store-access-rank-drift`, found by reading schedule content rather than case-id spelling -- and all six are sm_100a. A passing 151/151 Gate therefore says nothing about this declaration, and the Gate report carries nothing from this document, so a reader of the Gate does not meet this note: it is recorded in F-2026-09-17-004 as well. Recorded rather than closed by minting a case, which AGENTS.md asks for. The device evidence for the declaration is the SoL rmsnorm_h4096 run cited above, outside this repository and unverified by any reviewer here."
+    },
+    {
+      "kind": "device_observation",
+      "source": "infplane AMD Radeon Graphics gfx1151, ROCm 7.2.1, Triton 3.5.1; observed 2026-09-20",
+      "locator": "OCML tanh native probe at open-cake-ir@17dc841364f39572b5986dde840cf35a1c312824 under the existing HIP local serializer: /home/wwxq/oci-lab/amd-tanh-admission-20260920/tanh_probe_r1.py, probe-preparation.json, probe-result.json and tanh-probe-values.npz. One dispatch, 196915 FP32 inputs across [-160,160], a dense [-12,12] interval, random inputs, normal/subnormal powers, signed zeros, infinities and NaN, compared with CPU FP64 tanh rounded to FP32. Maximum absolute error 5.960464477539063e-08 against a predeclared 2^-23 limit; maximum normal-output ULP 1; signed zero and nonfinite checks passed. This admits ocml.tanh.f32, not NVIDIA libdevice or Metal precision semantics; no timing or serving claim."
     }
   ]
 }

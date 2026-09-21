@@ -38,6 +38,10 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         ordinary = matrix._command(args, "rmsnorm", self.root / "a", None)
         contraction = matrix._command(args, "gemm", self.root / "b", None)
         legacy = matrix._command(args, "gemm_bias", self.root / "c", None)
+        args.response_model_alias = ["vendor/m"]
+        declared = matrix._command(args, "rmsnorm", self.root / "alias", None)
+        self.assertEqual(declared[declared.index("--response-model-alias") + 1], "vendor/m")
+        self.assertNotIn("--response-model-alias", ordinary)
         self.assertNotIn("--depth", ordinary)
         for command in (contraction, legacy):
             self.assertEqual(command[command.index("--depth") + 1], "17")
@@ -141,25 +145,15 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         self.assertEqual(command[command.index('--broker-socket')+1], '/unit-test/gpu.sock')
         self.assertNotIn('--dispatches-per-sample', command)
 
-    def test_unsupported_requested_factory_fails_before_workspace_or_provider(self):
-        # This case needs one pair the matrix still refuses for a stated capability
-        # reason, and it has now moved twice because the reason stopped being true:
-        # first rmsnorm on triton-b300, when the normalization family read an
-        # Apple-only registry; then gelu_tanh on triton-dcu, until gfx938 measured and
-        # declared ocml.tanh.f32. It is gfx1151 that admits no tanh contract today.
-        #
-        # The pair is named rather than searched for because a search would pass
-        # vacuously on the day none is left. When this moves a third time, check
-        # whether any refused pair remains before rewriting it: if none does, this test
-        # has nothing left to assert and should say so instead of being re-aimed.
-        with self.assertRaisesRegex(ValueError, 'no admitted tanh'):
-            devices.tanh_contract('triton-gfx1151')
-        args = self.args('silu','gelu_tanh')
+    def test_gfx1151_gelu_pair_now_reaches_baseline_preparation(self):
+        # The last unsupported pair in the default matrix is now admitted. Exercise
+        # its real preparation path; do not invent another refused pair for this test.
+        self.assertEqual(devices.tanh_contract('triton-gfx1151'), 'ocml.tanh.f32')
+        args = self.args('gelu_tanh', 'gelu_tanh_backward')
         args[args.index('--backend')+1] = 'triton-gfx1151'
-        with self.assertRaises(SystemExit),patch.object(matrix.subprocess,'run') as run:
+        with patch.object(matrix.subprocess, 'run', side_effect=RuntimeError('baseline boundary')), \
+                self.assertRaisesRegex(RuntimeError, 'baseline boundary'):
             matrix.main(args)
-        run.assert_not_called()
-        self.assertFalse(self.root.exists())
 
     def test_the_pair_this_case_used_to_rest_on_is_supported_now(self):
         """gelu_tanh on triton-dcu is admitted, so it cannot carry the refusal case.

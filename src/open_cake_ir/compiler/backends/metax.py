@@ -19,6 +19,15 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                 "other tensor representations require their own device qualification",
             ))
     for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.TOP_K:
+            source = schedule.buffer(operation.reads[0]) if operation.reads else None
+            if (source is None or source.dtype is not DType.FP32
+                    or operation.parameters.across_loop):
+                findings.append(refusal(
+                    "MACA_TOP_K_UNQUALIFIED", f"operations[{index}]",
+                    "the MACA top_k route is qualified for a resident FP32 tile; "
+                    "integer scores and loop-carried selection require their own device qualification",
+                ))
         operands = [schedule.buffer(name) for name in (*operation.reads, *operation.writes)]
         if not any(buffer is not None and buffer.dtype is DType.FP8_E4M3 for buffer in operands):
             continue

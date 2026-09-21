@@ -111,6 +111,9 @@ def dispatch_samples(activity: Mapping, *, kernel_name: str, grid, block,
 
 class McptiDispatchBenchmark:
     def __init__(self, manifest, *, activity_library: str, l2_cache_bytes: int):
+        from .program import ProgramLaunchManifest
+        if isinstance(manifest, ProgramLaunchManifest):
+            raise ValueError('MACA ordered Program timing is not qualified; the timer admits one native dispatch')
         if type(l2_cache_bytes) is not int or l2_cache_bytes <= 0 or l2_cache_bytes % 4:
             raise ValueError("MACA timing requires a declared positive FP32-aligned L2 capacity")
         self.manifest = manifest

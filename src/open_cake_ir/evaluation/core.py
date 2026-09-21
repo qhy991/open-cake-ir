@@ -714,15 +714,31 @@ def load_torch_program(candidate,manifest,arguments,admission,loader):
     """Prepare already materialized public tensors through common Program ownership."""
     import torch
     from .program import LoadedProgram
+    device_index = torch.cuda.current_device()
+    if type(device_index) is not int or device_index != 0:
+        raise ValueError('Program requires the one admitted visible device at index zero')
+    device = f'cuda:{device_index}'
+    def check_tensor(tensor, spec):
+        if (torch.cuda.current_device() != device_index or str(tensor.device) != device
+            or tuple(tensor.shape) != spec.shape
+            or not hasattr(torch, _TORCH_DTYPE_NAMES[spec.dtype.value])
+            or tensor.dtype != getattr(torch, _TORCH_DTYPE_NAMES[spec.dtype.value])
+            or not tensor.is_contiguous()):
+            raise ValueError('Program tensor shape, dtype, device or contiguity differs')
+    public = manifest.program.inputs + manifest.program.outputs
+    if len(arguments) != len(public):
+        raise ValueError('Program argument count differs')
+    for name, tensor in zip(public, arguments, strict=True):
+        check_tensor(tensor, manifest.program.tensors[name])
     def allocate(spec):
         return torch.full(spec.shape,float('nan') if spec.dtype.value!='int32' else -(2**31),
-            dtype=getattr(torch,_TORCH_DTYPE_NAMES[spec.dtype.value]),device=arguments[0].device)
+            dtype=getattr(torch,_TORCH_DTYPE_NAMES[spec.dtype.value]),device=device)
     def span(tensor):
         if not tensor.is_contiguous():
             raise ValueError('Program tensors must have contiguous storage')
         return (str(tensor.device),tensor.data_ptr(),tensor.data_ptr()+tensor.numel()*tensor.element_size())
     loaded = LoadedProgram(candidate,manifest,admission,loader,allocate=allocate,
-        view=lambda tensor,shape:tensor.view(shape),storage_span=span,
+        view=lambda tensor,shape:tensor.view(shape),check_tensor=check_tensor,storage_span=span,
         stream=torch.cuda.current_stream().cuda_stream)
     try:
         return loaded,loaded.prepare_arguments(arguments)

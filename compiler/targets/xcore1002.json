@@ -9,7 +9,7 @@
   "warp_size": 64,
   "l2_cache_bytes": 8388608,
   "memory_spaces": ["global", "shared", "register"],
-  "operation_kinds": ["load", "cast", "elementwise", "mma", "reduce", "store"],
+  "operation_kinds": ["load", "cast", "coordinate", "compare", "select", "elementwise", "mma", "reduce", "top_k", "store"],
   "resource_limits": {
     "maximum_threads_per_cta": 1024,
     "maximum_shared_memory_bytes": 65536,
@@ -24,6 +24,11 @@
   "instruction_contracts": ["maca.tanh.f32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "device_observation",
+      "source": "c550-1, MACA 3.5.3 / FlagTree 0.5.1+metax3.1, source 49f707f5, 2026-09-21",
+      "locator": "Job maca-f2c4ba1f66a2 executed the original MoE four-stage routing composition at its fixed shapes and all six original cases: 24 native calls, 48 expert IDs exact, 48 FP32 weights within predeclared atol=rtol=2e-6 (maximum absolute error 5.960464477539063e-08). All external and 54 per-stage input tensors retained their bytes. This exercises integer program/range coordinates, integer equality, FP32 selection with negative-infinity masking and resident FP32 top-k at widths32/8/256 and k2/4/8. Integer-score and loop-carried top-k remain unqualified; no expert GEMM, full MoE, arbitrary-shape or performance qualification. Raw observations: open-cake-ir-evidence/metax-parity-20260920/moe-routing-gpu-49f707f5-v1/; independent review: reviews/moe-routing-device-49f707f5.md."
+    },
     {
       "kind": "device_observation",
       "source": "c550-1, MACA 3.5.3 / FlagTree 0.5.1+metax3.1, source 6d997c3d, 2026-09-21",

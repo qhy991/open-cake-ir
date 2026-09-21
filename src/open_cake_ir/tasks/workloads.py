@@ -129,6 +129,9 @@ def _tensor_math(workload: WorkloadContract):
         return solx_fib_gemm
     if operator in {name for name, _ in solx_fib_math.TASKS.values()}:
         return solx_fib_math
+    for owner in (solx_fib_attention, solx_fib_moe):
+        if operator in {name for name, _ in owner.TASKS.values()}:
+            return owner
     if operator in {"rmsnorm_fp32", "gemm_bias_bf16_fp32", "indexed_gather_bf16"}:
         validate_tile_contract(workload.document)
         return tile_math
@@ -136,11 +139,31 @@ def _tensor_math(workload: WorkloadContract):
 
 
 def materialize_case(workload: WorkloadContract, case_id: str):
-    return _tensor_math(workload).materialize_case(workload, case_id)
+    owner = _tensor_math(workload)
+    if not hasattr(owner, 'materialize_case'):
+        raise ValueError('this Workload requires tensor-native materialization')
+    return owner.materialize_case(workload, case_id)
 
 
 def reference_outputs(workload: WorkloadContract, case_id: str, inputs):
-    return _tensor_math(workload).reference_outputs(workload, case_id, inputs)
+    owner = _tensor_math(workload)
+    if not hasattr(owner, 'reference_outputs'):
+        raise ValueError('this Workload requires its tensor-native oracle')
+    return owner.reference_outputs(workload, case_id, inputs)
+
+
+def materialize_tensors(workload: WorkloadContract, case_id: str):
+    owner = _tensor_math(workload)
+    if not hasattr(owner, 'materialize_tensors'):
+        raise ValueError('this Workload has no tensor-native materializer')
+    return owner.materialize_tensors(workload, case_id)
+
+
+def reference_tensors(workload: WorkloadContract, case_id: str, inputs):
+    owner = _tensor_math(workload)
+    if not hasattr(owner, 'reference_tensors'):
+        raise ValueError('this Workload has no tensor-native oracle')
+    return owner.reference_tensors(workload, case_id, inputs)
 
 
 def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 128,
