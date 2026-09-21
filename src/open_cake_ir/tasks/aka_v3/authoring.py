@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.devices import BACKENDS, backend_for_target
-from .workload import _admit_starter, _name_for, validate_aka_v3_contract
+from .workload import _admit_starter, _admit_selection_geometry, _name_for, validate_aka_v3_contract
 
 
 def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     validate_aka_v3_contract(workload.document)
     name = _name_for(workload.document)
     shape = workload.case(case_id)["shape"]
+    _admit_selection_geometry(name, shape, workload.document['semantics'].get('window'))
     backend = backend_for_target(workload.target)
     _admit_starter(name, backend, columns=shape.get("C", shape.get("N", 1)),
                    depth=shape.get("K", 1), elements=shape.get("E", 1))
@@ -54,8 +55,6 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
             'lm.store(output[row, :], values, coalesced=False, id="store_output")',
         ]
     elif name == 'histogram':
-        if shape['B'] & (shape['B'] - 1) or shape['B'] > 2**24 or shape['E'] > 2**24:
-            raise ValueError('histogram starter requires power-of-two bins and exact FP32 counts')
         program = 'bin = lm.program(counts, axis=0, dimension=0, tile=1)'
         body = ['samples = lm.load(values[:], id="load_values")',
                 'bin_index = lm.coordinate(source="program", name="bin")',

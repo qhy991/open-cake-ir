@@ -48,3 +48,11 @@ class SelectionStarters(unittest.TestCase):
             with self.assertRaises(ValueError): aka.workload_document('histogram', backend='triton-metax', **kwargs)
         with self.assertRaises(ValueError):
             aka.workload_document('max_pool1d', backend='triton-metax', kernel_size=1, pad=1, output_length=9)
+        with self.assertRaisesRegex(ValueError, 'signed int32 linear'):
+            aka.workload_document('max_pool1d', backend='triton-metax', batch=2**25)
+        # Historical mathematical contracts remain loadable, but their new starter
+        # must reject the same unrepresentable address domain.
+        from open_cake_ir.tasks.aka_v3.authoring import starter_source
+        old = WorkloadContract(aka.workload_document('max_pool1d', batch=2**25))
+        with self.assertRaisesRegex(ValueError, 'signed int32 linear'):
+            starter_source(old)
