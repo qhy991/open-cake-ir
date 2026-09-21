@@ -59,3 +59,10 @@ The design builds on explicit transformations such as
 [MLIR Transform](https://mlir.llvm.org/docs/Tutorials/transform/) and prior schedule reuse such
 as [Transfer-Tuning](https://arxiv.org/abs/2201.05587v2), focusing on agent-produced experience,
 destination qualification and controlled attribution of its effects.
+
+
+The [Croqtile engineering comparison](CROQTILE_COMPARISON.md) recognizes its DSL, compiler
+transformations, agent tuner and skill/example reuse. These shared capabilities alone do not
+establish novelty here. Our proposed study separates material and callable-transform access,
+and tests destination applicability, benefit and cost under common validation. Implemented
+protocols are not evidence of superior performance or effective cross-hardware transfer.

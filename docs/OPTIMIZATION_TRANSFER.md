@@ -63,3 +63,9 @@ Metal 组合尚未接入。跨硬件迁移收益仍待受控实验，自动机�
 可组合变换与调度复用已有明确基础，包括 [MLIR Transform](https://mlir.llvm.org/docs/Tutorials/transform/)
 和 [Transfer-Tuning](https://arxiv.org/abs/2201.05587v2)。本设计聚焦 Agent 经验如何经显式改写与目标验证
 持续积累，并用受控实验区分材料、工具和二者交互的贡献。
+
+
+[Croqtile 工程对照](CROQTILE_COMPARISON.md)说明它已有 DSL、编译器变换、Agent tuner
+和 skill/案例复用，不能以这些共同能力单独主张新颖性。本研究拟比较的是显式机制在目标
+任务上的适用性、材料与调用权限的独立处理，以及相同验证条件下的收益和成本；相关协议
+已有实现，优势与跨硬件效果仍需实验。当前对照是源码审查，不是性能排名。
