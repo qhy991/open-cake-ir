@@ -141,6 +141,20 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 
 三条边见[新旧Program](README.md#nvidia-008-program-alignment-optimized_vs_starter-20260921)、[新Program/外部](README.md#nvidia-008-program-alignment-optimized_vs_external-20260921)、[control/外部](README.md#nvidia-008-program-alignment-starter_vs_external-20260921)。本轮control是旧完整Program，不能误称sliced-w8或最初starter。该能力已获得完整Program正确性证据，尚无接受的性能改善；观测较慢也不写成合格回退。此前sliced-w8的合格external代表与2/6/4/4统计均保留，不重复同候选刷CV。下一步分别检查Program调用开销和编译kernel；本轮没有新的NCU结论。
 
+### 008执行器后继：正确性通过，候选计时仍未合格
+
+CPU诊断定位了主机重复工作：同一个已绑定manifest在对齐分派及受限CUDA leaf中反复canonical序列化。修复只省略对象与自身的重复比较；不同对象仍检查原canonical值，每次实际指针、ABI、上下文、CUBIN和leaf对齐检查均保留。真实封存Program与FakeDriver的CPU探针中，aligned阶段间隔中位数从78.9765变为31.373µs；这不是GPU加速比。详见[F011的CPU诊断与修复](../../../findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+
+新执行器`3bc753a4`使用完全相同的candidate `b5e1c34b`和完整unaligned Program control `65742cbb`，没有重编kernel。先完成新的[60/60设备guards](README.md#nvidia-008-program-dispatch-guards-20260921)，再唯一提交正式比较；全部2,550份公共输入／输出观测通过，计时结果为：
+
+| 新执行器下的配对 | 两者中位数 µs | 最大cohort CV | 接受结论 |
+|---|---:|---:|---|
+| aligned Program / unaligned Program | 46.240 / 55.072 | 0.141390 | CV失败；10/10 pair wins仍不构成合格加速 |
+| aligned Program / 外部 | 45.824 / 26.688 | 0.153932 | CV失败，仅描述 |
+| unaligned Program / 外部 | 55.040 / 26.624 | 0.031967 | 质量通过；外部更快 |
+
+对应[候选/control](README.md#nvidia-008-program-dispatch-optimized_vs_starter-20260921)、[候选/外部](README.md#nvidia-008-program-dispatch-optimized_vs_external-20260921)、[control/外部](README.md#nvidia-008-program-dispatch-starter_vs_external-20260921)。候选两边的CV失败不能由独立control边修复。旧执行器和新执行器是两次独立运行，不能把约96µs到约46µs的描述值直接换成合格的Executor GPU加速比。相同二进制的CPU运行路径已简化，设备正确性也通过；GPU候选收益与外部资格仍未验收，没有新NCU或唯一硬件因果结论。本节不改变旧sliced-w8代表、已有任务统计或任何旧记录。
+
 ## 差距的原因与应该修改的层
 
 1. **AOT访存信息是已验证的Compiler/工具链问题。** 运行时检查对齐并保留通用路径，解决“为了vectorization而假设所有指针16B对齐”的错误边界。001/002/025已有正确性及部分合格性能证据；003对齐性能未合格。026 sliced8的新对齐产物已通过50guards和2550快照，对generic对照合格改善1.081×但新候选external边CV失败：相同源码/常量/grid，通用PTX为36条b16 load和4条b16 store，对齐leaf为3条v4.b32加15条v2.b32 load、7条v2.b32 store；这些静态变化本身不等于速度提升；本次性能结论来自独立的配对测量。
@@ -148,7 +162,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 3. **公共运行路径仍有工程缺口。** 012–020需要正常task launcher、混合dtype/多输出外部适配和共同Evaluation。Compiler Program已存在，重复创建Lab私有图或临时GPU runner会造成第二套所有权。
 4. **参考语义与测量质量也是未完成项。** 011的指针缓存不证明B内容不变；007及026新aligned候选的外部CV失败不是数值失败或已证实性能优劣；026的generic对照另有本轮独立合格边。需要记录输入刷新验证或具体测量波动原因，不能通过放宽门槛或重复运行直到绿色来补结论。
 
-优先顺序：008完整Program及stage对齐后继均已取得数值正确性，但尚无合格性能收益；下一步先区分完整Program的调用开销与kernel变化，再选择结构后继，不重复同候选刷CV。先闭合012的正常入口与完整公共输出验证；对011先完成参考有效性检查。026对齐已完成本轮受控比较，保留失败external边，不重测刷通过。上述未完成事项不作为已有性能结论。
+优先顺序：008完整Program及stage对齐后继均已取得数值正确性，但尚无合格性能收益；主机重复序列化已修复并经过设备正确性复验，但候选计时仍高波动；后续需独立区分阶段执行、主机间隙与测量波动，再选择不同的后继，不重复同候选刷CV。先闭合012的正常入口与完整公共输出验证；对011先完成参考有效性检查。026对齐已完成本轮受控比较，保留失败external边，不重测刷通过。上述未完成事项不作为已有性能结论。
 
 ## 测量、资源与历史边界
 
@@ -180,6 +194,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 | 026新对齐 | `nvidia-rmsnorm-026-alignment-20260921/guard-submissions.json`、`comparison-submissions.json` | 50guards通过；2550快照通过；三边质量分别记录 |
 | 008新split-K Program | `nvidia-gemm-008-splitk-program-20260921/submissions.json` | completed；2550数值通过；两candidate计时边CV失败 |
 | 008 Program stage对齐 | `nvidia-program-alignment-008-20260921/guard-submissions.json`、`comparison-submissions.json` | 60guards与2550数值通过；三计时边均CV失败 |
+| 008 Executor后继 | `nvidia-program-dispatch-008-20260921/guard-submissions.json`、`comparison-submissions.json` | 新60guards与2550数值通过；两candidate边CV失败，仅完整unaligned control/external边质量通过 |
 
 发布顺序与source identity遵循[开发分支](../../DEVELOPMENT_BRANCHES.md)。结果PR与源码PR只在独立审查及对应CI通过后合入；报告中的版本不替换运行时冻结的提交。所有历史失败与baseline保留。
 
@@ -194,3 +209,5 @@ Four independent NCU evaluations passed 72 complete input/output observations an
 All 17 complete Programs for 012–020 were CPU-built and independently reloaded, covering 72 leaf stages. Ordinary task entry points, complete common GPU evaluation and Workload-driven multi-output/mixed-dtype external bindings remain unfinished. The system already owns Program composition; add missing behavior at its existing owner rather than a second runner. A new complete two-stage008split-K Program now passes2,550 numerical observations, but both candidate/control and candidate/external timing edges failCV. Its nominally slower latency is descriptive, not a qualified regression; no performance improvement or promotion is accepted. No full upstream shape suite, model E2E, inherited upstream score or automatic promotion is claimed. Cite the report commit together with each experiment's own source revision, target, workload and original evidence locator.
 
 The subsequent per-stage alignment treatment of the complete008 Program passed60 public/private pointer guards and2,550 full public observations. Its aligned/unaligned Program edge is96.785/55.041us and aligned/external edge95.552/26.721us; all three paired edges fail the original CV gate. These are descriptive latencies, not an accepted gain or qualified regression. The fixed control is the previous complete unaligned Program, not sliced-w8 or the original starter. No representative or promotion changes; static vector load-site reduction does not imply a performance improvement.
+
+Executor3bc subsequently reuses the exact same aligned and unaligned Program binaries, passes60 fresh device guards and2,550 full observations, and retains the original timing gates. Aligned/unaligned46.240/55.072us and aligned/external45.824/26.688us failCV; only unaligned Program/external55.040/26.624us passesquality. The CPU dispatch simplification is implemented and device-correctness checked, but no qualified candidate GPU speedup, external qualification or promotion follows. Neither the descriptive cross-run latency change nor ten pair wins bypasses the CV requirement.
