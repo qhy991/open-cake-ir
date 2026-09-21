@@ -631,5 +631,28 @@
     },
     "scope": "CPUimplementation/build evidence only. Staticinstruction sitechanges are not an8x speedup,deviceguard,profile,fullshape orpromotion. CompleteProgram costmodel remainsunmodeled. Stagealignment must receive realpublic/privatepointercounterexample andcompleteProgramGPUvalidation before performance acceptance.",
     "promotion_disposition": "No promotion. Codegate may integrate afterCI;realdevicevalidation pending. SharedM3statefreeabout1.82GBafterCPUprobe (concurrentstateactivity not attributed);no newlargeGPUpreparation,nohistorycleanup."
+  },
+  "program_guard_pipeline": {
+    "implemented_in": "b44ce7c1",
+    "verified_by": [
+      "Finaltestsource2316a7c6687b80d83da07552a664874417054a8d:22tests/33subtests andF821/F401 pass.",
+      "Independentcode review andactualinput/task/budget admission review passed.",
+      "CPUreplayofretained006width-w4 captureat2316a7c6:all2550observations,cases/comparisons/status/numerical/quality decisionsunchanged,10literal+5090referenceinputchecks;verifyfunction10.022seconds,notGPUorend-to-end speedup. Evidence:/mnt/b300-shared/home/qinhaiyan/cake-experiments/program-guard-snapshot-replay-20260921/replay-result.json."
+    ],
+    "contract": "Extend existingcheck_alignment_candidate prepare/local->guard/broker->verify/local entry to completePrograms. Instrument the existingProgramallocator callback only to realize namedprivateoffset,restoreonallpaths,retain originalProgrambinding/checks/launch/teardown. Check actual perstage guardedaddresses andrestrictedleaf refusal beforeanydispatch,then fullstagecount/actualdispatcherchoice. Allpublicinputs/outputs retained losslessly,CPUoriginaloracleafterworkerexit; referenceverdicthelperextractedunchanged foronecomparisonowner.",
+    "coverage": "For008all5cases:aligned plusa/b/out FP16offset2/4/8 andFP32partialoffset4/8=60observations. Everyguardedstage parameterhas16Bcondition,eachlegalcounterexamplechecked;unsupportedpartialpointercontractsrefusedbyprobe. Private contentsare intermediates,notpublicoracleoutputs; privateaddressesandcompletepublicresultsbothchecked.",
+    "candidate_scope": "CandidateProgramcompiledb5e1c34b;judgefrozen2316a7c6. Controlisprevious65742cbb unalignedcomplete2stageProgram,notmiddleslicedw8ororiginalstarter. Programdocument,stagesources,grid,blockidentical;referenceunchanged.",
+    "runtime_evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-program-alignment-008-20260921/",
+    "resource_budget": {
+      "guard_checks": 60,
+      "guard_normal_bytes": 587837560,
+      "guard_limit_bytes": 705314936,
+      "comparison_normal_bytes": 608240620,
+      "comparison_limit_bytes": 725717996,
+      "prepared_f64_bytes_per_run": 2349547520,
+      "note": "Nativebuild/copiedartifacts/cache/GPUargumentsetsadditional;refreshcapacitybeforeactualsubmission."
+    },
+    "device_status": "Not submitted at this source publication; CI/integration and realguardacceptance precedeperformance. No devicequalification orspeedclaim.",
+    "promotion_disposition": "No promotion; retain oldCV failures and all historical evidence."
   }
 }
