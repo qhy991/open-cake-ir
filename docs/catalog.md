@@ -15,6 +15,7 @@ Original paths and dated conclusions stay intact. Reading companions do not crea
 | 主题 / Topic | 中文 | English |
 | --- | --- | --- |
 | 验收规则：做到什么，才可以进入下一步 | [阅读](zh-CN/ACCEPTANCE_GATES.md) | [Read](ACCEPTANCE_GATES.md) |
+| 相关工程：Croqtile 与 Open-Cake | [阅读](CROQTILE_COMPARISON.md) | [Read](en/CROQTILE_COMPARISON.md) |
 | 系统全貌：怎样把一个想法变成可验证的 GPU 程序 | [阅读](ARCHITECTURE.md) | [Read](en/ARCHITECTURE.md) |
 | 第一次使用：先看懂一个乘加计划 | [阅读](GETTING_STARTED.md) | [Read](en/GETTING_STARTED.md) |
 | 术语表：英文名与普通话解释 | [阅读](GLOSSARY.md) | [Read](en/GLOSSARY.md) |
