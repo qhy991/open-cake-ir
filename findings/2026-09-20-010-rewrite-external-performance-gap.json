@@ -2978,5 +2978,110 @@
     "observed": "003 whole/sliced both512threads/grid64:registers51/39,DRAMreads1,857,024/1,859,584bytes,L2bytes6,256,032/5,832,960. 008 whole/sliced both256threads/grid4096:registers80/32,activewarps30.46/76.62percent;DRAMreads approximately117.49MB each. External008 has a256thread1024CTA stage1 plus256thread16CTA stage2. 009 profile selector chose sk_kernel<1,1> with160CTAs; currentCake has5120CTAs. 026 whole/sliced both256threads/grid64:registers48/28,L2bytes3,697,952/4,124,096. No local-memory load/store sectors observed in any of these13 instances.",
     "interpretation": "008 whole-K regression is consistent with higher register usage and lower active warps, not proof of spilling or a uniquely established cause. 003 speedup is not explained by lower DRAM bytes; reduction/dependency structure is a live hypothesis. 026 lower L2 bytes did not imply a faster candidate. Occupancy limits are theoretical resource limits, stall percentages are not absolute waiting time, and static instruction sites are not dynamic traffic. The009 observed branch belongs only to this profile process, not its earlier timing selector.",
     "promotion_disposition": "No promotion. Preserve existing performance gates/results; use profiles to select controlled structural follow-ups instead of retesting failed CV until accepted."
+  },
+  "systematic_status_20260921": {
+    "scope": "Task-level retrospective reading of original paired reports, not a new run, selector or promotion. Each task is represented once, including qualified original starter edges when candidate edges are unqualified. Newer failed edges never inherit older acceptance.",
+    "covered_tasks": [
+      "001",
+      "002",
+      "003",
+      "004",
+      "005",
+      "006",
+      "007",
+      "008",
+      "009",
+      "010",
+      "021",
+      "022",
+      "023",
+      "024",
+      "025",
+      "026"
+    ],
+    "representative_external_classification": {
+      "faster": [
+        "002",
+        "022"
+      ],
+      "close_null": [
+        "001",
+        "006",
+        "009",
+        "010",
+        "023",
+        "025"
+      ],
+      "slower": [
+        "003",
+        "005",
+        "008"
+      ],
+      "no_qualified_external_edge": [
+        "004",
+        "007",
+        "021",
+        "024",
+        "026"
+      ]
+    },
+    "retrospective_starter_edges": [
+      {
+        "task": "005",
+        "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-2126e322eb9c/stages/comparison/comparison-report.json",
+        "timing": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.008672,
+          "pooled_medians_ms": {
+            "candidate": 0.008672,
+            "baseline": 0.006928
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 0,
+            "baseline": 10
+          },
+          "tied_pairs": 0,
+          "speedup": 0.798892988929889,
+          "classification": "second_arm_faster"
+        },
+        "correctness_passed": true,
+        "judge_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f"
+      },
+      {
+        "task": "023",
+        "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-c2e26eb06cd5/stages/comparison/comparison-report.json",
+        "timing": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.004032,
+          "pooled_medians_ms": {
+            "candidate": 0.004032,
+            "baseline": 0.004064
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 5,
+            "baseline": 4
+          },
+          "tied_pairs": 1,
+          "speedup": 1.007936507936508,
+          "classification": "close_null"
+        },
+        "correctness_passed": true,
+        "judge_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f"
+      }
+    ],
+    "interpretation": "005 original starter is qualified slower than external at8.672/6.928us, while its rewrite is slower than starter and has failed external CV.023 original starter is qualified close_null at4.032/4.064us; the2.880us rewrite external lead remains unqualified.022 original starter already has a qualified external lead; width4 has no qualified improvement over that starter. These distinctions prevent reporting invalid rewrites as accepted incumbents.",
+    "remaining_tasks": "011 lacks a qualified general-input reference comparison because the original pointer-keyed transpose cache has not been validated for content changes.012–020 have17CPU-sealed Programs/72leaf stages, but task launcher and full common GPU/external comparisons remain uncompleted.",
+    "prepared_unrun": "026 sliced-width8 alignment variant sealed at34f04b40 in cake-experiments/nvidia-rmsnorm-026-alignment-20260921/input; no submitted guard or performance run. Same source/constants/grid, runtime alignment dispatch; no GPU claim.",
+    "promotion_disposition": "No new promotion. Preserve all historical candidate, starter, quality-failed and infrastructure-fault evidence."
   }
 }
