@@ -56,6 +56,37 @@ class ToolchainBuilder(Protocol):
         """Build with the Campaign-pinned toolchain and retain artifact roles."""
 
 
+def build_program_candidate(lowered, toolchain, *, candidate_sha256, workload, case_id, compilation=None):
+    """One source/ABI handoff for optimization and correctness qualification.
+
+    The caller owns measurement admission; this function owns the complete build.
+    """
+    from open_cake_ir.evaluation.program import (
+        admit_program_execution, program_tensor_abi, seal_program_candidate,
+        single_kernel_lowering, stage_abi,
+    )
+    lowered.validate_binding()
+    program = lowered.program
+    expected = tuple((arg.name, tuple(arg.shape), arg.dtype, arg.mode) for arg in workload.tensor_abi(case_id))
+    if program.target != workload.target or program_tensor_abi(program) != expected:
+        raise ValueError('Program public ABI or target differs from the Workload')
+    def request(lowering):
+        return BuildRequest(candidate_sha256, lowering.source.encode(), 'lowered_source',
+            lowering.source_sha256, lowering.target, lowering.route.entry_point,
+            lowering.toolchain_requirements, compilation=compilation)
+    single = single_kernel_lowering(lowered)
+    if single is not None:
+        return toolchain.build(replace(request(single), tensor_abi=stage_abi(program.stages[0])))
+    build_stage = getattr(toolchain, 'build_stage', None)
+    if not callable(build_stage):
+        raise ValueError('this toolchain has no Program stage build capability')
+    admit_program_execution(program.target)
+    children = {stage.name: build_stage(request(lowering), stage_abi(stage))
+                for stage, lowering in zip(program.stages, lowered.lowerings, strict=True)}
+    return seal_program_candidate(lowered, children, candidate_sha256=candidate_sha256,
+                                  workload=workload, case_id=case_id)
+
+
 def invoke_compiler(request, *, compiler, variant, operation):
     """Each source-to-artifact compiler entry call obtains its Run permit here."""
     if request.compilation is None:

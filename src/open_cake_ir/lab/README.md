@@ -134,8 +134,9 @@ singleton views；启动前重新检查类型及存储身份，防止同一 tens
 完整 Program 的计时及 attribution 目前仍只有 Triton/CUDA 路径。HIP/MACA 的既有仪器
 只覆盖单次 dispatch，不能借给多 stage 程序。优化环境在编译前拒绝这些组合；设备 worker
 与 receipt reader 同样拒绝候选或基线借用单 kernel 测量。非 CUDA 组合可通过
-`Compiler.lower_program` → `TritonToolchainBuilder.build_stage` → `seal_program_candidate` →
-公共 `evaluate_tile_workload` 验证正确性。它尚未接入计时优化 Run，也不改变 Target 的单
+`Compiler.lower_program` → 共享的 `build_program_candidate` → 公共 Evaluation 验证正确性。
+该构建接口同时服务优化环境与 `tools/qualify_tensor_program.py` 的原生张量验证；它只拥有
+source/ABI/封存，不决定测量策略。非 CUDA 组合尚未接入计时优化 Run，也不改变 Target 的单
 kernel timer 声明。Metal 组合继续明确拒绝。软件合同测试不赋予实机正确性、计时或迁移
 收益资格。显式动作、知识授权与消息作者
 隔离见下节。QSA Cake 候选已使用同一 Program 构建、封存与执行路径；其旧节点描述只作输入
