@@ -19,26 +19,38 @@ retains its original dates and conclusions.
 
 [中文阅读入口](zh-CN/README.md) · [English reading guide](en/README.md)
 
-## 章节与材料 / Chapters and supporting material
+## 从哪里开始 / Choose a reading path
 
-当前状态由源码生成；历史报告保留其当时的结论。
-Start with the system overview, then follow the implementation or evidence relevant to your task.
+| 阅读目的 / Purpose | 路线 / Route |
+|---|---|
+| 初次了解 / First visit | [项目 README](../README.md) → [系统概览](ARCHITECTURE.md) → [无需 GPU 的入门](GETTING_STARTED.md) |
+| 查实验与外部差距 / Inspect evidence | [硬件结果](RESULTS.md) → [FlashInfer 逐任务综述](results/nvidia/FLASHINFER_STATUS.md) → 各行的 Finding 与原始报告 |
+| 编写或优化 Kernel / Author a kernel | [Python 前端](zh-CN/PYTHON_FRONTEND.md) → [IR 指南](IR_GUIDE.md) → [Lab 任务流程](wiki/experiments.md) |
+| 研究或引用 / Research and citation | 下方章节 → [研究设计](OPTIMIZATION_TRANSFER_ABLATION.md) → [引用方式](#引用--citation) |
+| 维护代码 / Contribute | [职责地图](../CONTEXT-MAP.md) → [开发分支](DEVELOPMENT_BRANCHES.md) → [贡献说明](../CONTRIBUTING.md) |
 
-- [系统概览 / Architecture](ARCHITECTURE.md) · [English](en/ARCHITECTURE.md)
-- [跨硬件优化知识迁移 / Executable optimization knowledge](OPTIMIZATION_TRANSFER.md) · [English](en/OPTIMIZATION_TRANSFER.md) · [消融设计](OPTIMIZATION_TRANSFER_ABLATION.md)
-- [入门与运行 / Getting started](GETTING_STARTED.md)
-- [Lab 任务用途与处理流程 / Lab task purposes and execution](wiki/experiments.md) · [English](en/wiki/experiments.md)
-- [概念导读 / Wiki](wiki/README.md) · [English](en/wiki/README.md)
-- [当前状态 / Current status](../reports/current/STATUS.md)
-- [按硬件查看实验结果 / Results by hardware](RESULTS.md)：任务结果、历史晋升、CAKE 对照与原始证据定位。
-- [FlashInfer-Bench 改写与外部实现：实验综述 / External-reference comparison](results/nvidia/FLASHINFER_STATUS.md)：26项逐任务状态、starter边界、配对计时与独立profiler。
-- [研究路线 / Roadmap](ROADMAP.md)
-- [平台与分支维护 / Development branches](DEVELOPMENT_BRANCHES.md)
-- [MetaX C550：当前可用路径与验收边界](metax-c550.md)
-- [设计决策 / Decisions](adr/README.md)
-- [完整阅读目录与历史材料 / Full catalog and history](catalog.md)
+## 报告章节 / Report chapters
 
-术语由 [Glossary](GLOSSARY.md) 定义，文档归属见 [Context map](../CONTEXT-MAP.md)。
+| 章节 / Chapter | 中文入口 | English | 内容范围 / Scope |
+|---|---|---|---|
+| 系统架构 / Architecture | [系统概览](ARCHITECTURE.md) | [Architecture](en/ARCHITECTURE.md) | Compiler、Lab、Evaluation、Evidence 的职责与依赖 |
+| IR 与编写 / IR and authoring | [IR 指南](IR_GUIDE.md) · [Python](zh-CN/PYTHON_FRONTEND.md) | [IR guide](en/IR_GUIDE.md) · [Python](en/PYTHON_FRONTEND.md) | Schedule、Program、数据与执行计划；精确字段见 [Authoring Contract](../compiler/AUTHORING_CONTRACT.md) |
+| 检查与验收 / Verification | [验收规则](zh-CN/ACCEPTANCE_GATES.md) · [结果导读](wiki/results.md) | [Acceptance](ACCEPTANCE_GATES.md) · [Results](en/wiki/results.md) | 合法性、编译、正确性、计时质量与结论边界 |
+| 实验方法 / Experiment methods | [Lab 流程](wiki/experiments.md) · [改写指南](KERNEL_REPRODUCTION.md) | [Lab workflow](en/wiki/experiments.md) | 任务用途、参考访问、材料与变换授权、预算和评测 |
+| 优化知识迁移 / Optimization knowledge | [机制设计](OPTIMIZATION_TRANSFER.md) · [消融方法](OPTIMIZATION_TRANSFER_ABLATION.md) | [Transfer design](en/OPTIMIZATION_TRANSFER.md) | 带前提的显式变换、目标参数选择与待验证的迁移收益 |
+| 实验结果 / Experimental results | [硬件汇总](RESULTS.md) · [FlashInfer 综述](results/nvidia/FLASHINFER_STATUS.md) | [English summary](results/nvidia/FLASHINFER_STATUS.md#english-reading-summary) | 固定 Workload、starter 身份、配对结果、失败记录和 profiler 证据 |
+| 实现与维护 / Implementation | [当前状态](../reports/current/STATUS.md) · [分支流程](DEVELOPMENT_BRANCHES.md) | [Context map](../CONTEXT-MAP.md) | 源码与执行绑定、平台维护、模块负责位置 |
+| 研究路线 / Roadmap | [后续目标](ROADMAP.md) | [Roadmap](en/ROADMAP.md) | 迁移、优化复用与端到端验证的研究目标 |
+
+## 详细材料 / Detailed references
+
+- **按平台运行：** [文档总目录](catalog.md)集中列出 NVIDIA、Apple、AMD、Hygon DCU、MetaX 的指南和结果入口。
+- **查概念与算子：** [中文 Wiki](wiki/README.md) · [English Wiki](en/wiki/README.md) · [统一术语表](GLOSSARY.md)。
+- **查设计原因：** [ADR 目录](adr/README.md)是完整设计决策索引。
+- **查历史调查与数据：** [总目录](catalog.md)保留日期、原路径及中英文对照；历史观察不替代[当前状态](../reports/current/STATUS.md)。
+
+本页组织章节，完整专题与历史清单由总目录维护；文档归属见 [Context map](../CONTEXT-MAP.md)。
+The report entry organizes chapters; the catalog owns detailed reading links and historical material.
 
 ## 引用 / Citation
 
