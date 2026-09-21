@@ -487,6 +487,7 @@ def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
 
 def participant_work(raw):
     """Derive physical work from manifest bytes bound by participant identities."""
+    from .program import ProgramLaunchManifest, admit_program_execution
     participants = raw['participants']
     declarations = raw.get('launch_manifests')
     if declarations is None:
@@ -500,6 +501,8 @@ def participant_work(raw):
         manifest = _manifest_spellings()[document['abi']].from_dict(document)
         if manifest.canonical_sha256 != participants[role]['launch_spec_sha256']:
             raise ValueError('paired launch manifest differs from its participant seal')
+        if isinstance(manifest, ProgramLaunchManifest):
+            admit_program_execution(manifest.target, timing=True)
         if hasattr(manifest, 'check_complete_domain'):
             manifest.check_complete_domain()
         result[role] = {'modules': getattr(manifest, 'module_count', 1),

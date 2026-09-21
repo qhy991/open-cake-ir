@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 from open_cake_ir.compiler import Compiler, Program, frontend
 from open_cake_ir.compiler.toolchain import TritonCompilation, triton_route
 from open_cake_ir.evaluation.core import EvaluationProtocol, load_torch_program, _MODULE_LOADERS
-from open_cake_ir.evaluation.paired import candidate_identity, validate_receipt_policy
+from open_cake_ir.evaluation.paired import candidate_identity, participant_work, validate_receipt_policy
 from open_cake_ir.evaluation.platforms import platform_for
 from open_cake_ir.evaluation.program import (
     admit_program_execution, program_components, seal_program_candidate, stage_abi)
@@ -241,6 +241,12 @@ class PortableProgramEvaluation(unittest.TestCase):
             receipt.kernel_calls = 1
             with self.assertRaisesRegex(ValueError, 'ordered Program timing'):
                 validate_receipt_policy(receipt, evaluation_policy(workload), candidate_identity(candidate), single)
+            manifest, _, _ = program_components(candidate)
+            # Raw receipt validation also uses this owner, before live candidate
+            # objects are available. It must not infer timing support from counts.
+            with self.assertRaisesRegex(ValueError, 'ordered Program timing'):
+                participant_work({'participants': {'candidate': candidate_identity(candidate)},
+                                  'launch_manifests': {'candidate': manifest.as_dict()}})
             toolchain = Mock()
             environment = OpenCakeEnvironment(self.compiler, toolchain, workload=workload, case_id='primary',
                 authority_document={'lowering_route': program.document['stages'][0]['schedule']['lowering']})
