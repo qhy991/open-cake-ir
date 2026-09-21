@@ -106,7 +106,10 @@ class LoadedAlignmentCandidate:
                 'dispatch_counts': dict(self.dispatch_counts), 'last_variant': self.last_variant}
 
     def launch(self, arguments, *, tensor_contract, stream):
-        if tensor_contract.canonical_sha256 != self.manifest.canonical_sha256:
+        # The bound object already names this manifest. Serialize only a distinct
+        # contract; actual addresses and all driver checks still run every call.
+        if (tensor_contract is not self.manifest
+                and tensor_contract.canonical_sha256 != self.manifest.canonical_sha256):
             raise ValueError('aligned program tensor contract differs from the sealed parent')
         pointers = {name: value.data_ptr() for (name, _, _, _), value
                     in zip(self.manifest.tensor_abi, arguments, strict=True)}
