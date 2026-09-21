@@ -1,6 +1,10 @@
 """Complete reset/Program/synchronization sequences, CPU activity fixtures."""
 from copy import deepcopy
 from types import SimpleNamespace
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -111,3 +115,39 @@ class ProgramTiming(unittest.TestCase):
         with patch.dict('sys.modules', {'torch': torch}), self.assertRaisesRegex(ValueError, 'reset'):
             benchmark(lambda: None, dry_run_iters=1, repeat_iters=1, cold_l2_cache=True, use_cuda_graph=False)
         self.assertEqual(benchmark.last_activity['reset_activity'], bad)
+
+    def test_measurement_composer_preserves_cohorts_on_final_check_failure(self):
+        from open_cake_ir.lab.faults import RunProtocolFault
+        fixture = profile_fixtures.ProgramProfile
+        root = Path(__file__).resolve().parents[2]
+        spec = importlib.util.spec_from_file_location('measure_fixture', root / 'tools/qualify_tensor_program.py')
+        tool = importlib.util.module_from_spec(spec); spec.loader.exec_module(tool)
+        preflight = SimpleNamespace(correctness_passed=True, artifact_payloads={'correctness_output': b'{"fixture":true}'})
+        resources = {'kind': 'ordered_program', 'stages': {name: {'registers_per_thread': 16,
+            'dynamic_shared_bytes': item.dynamic_shared_memory_bytes, 'local_bytes': 0}
+            for name, item in fixture.manifests.items()}}
+        native = SimpleNamespace(launch_calls=0, closed=False, resources=resources)
+        def close(): native.closed = True
+        loaded = SimpleNamespace(loaded=native, close=close)
+        benchmark = SimpleNamespace(last_activity={'activity': self.raw['activity']})
+        def cohort(*args, **kwargs):
+            native.launch_calls += 36 * fixture.manifest.kernels_per_call
+            return [0.1] * 25, {'passed': True, 'checked_launches': 36, 'output_mismatches': 0,
+                                'max_abs_error': 0.0, 'inputs_unchanged': True}
+        fault = RunProtocolFault('harness_fault', 'postflight failed', artifact_payloads={'postflight_raw': b'kept'})
+        with tempfile.TemporaryDirectory() as directory, patch.object(tool, 'evaluate_program_case', side_effect=[preflight, fault]), patch(
+                'open_cake_ir.evaluation.core.LoadedTorchTensorCandidate', return_value=loaded), patch(
+                'open_cake_ir.evaluation.metax_program_benchmark.McptiProgramBenchmark', return_value=benchmark), patch(
+                'open_cake_ir.tasks.evaluate._fresh_tile_cohort', side_effect=cohort):
+            output = Path(directory)
+            with self.assertRaisesRegex(RunProtocolFault, 'postflight failed') as caught:
+                tool.measure_program(SimpleNamespace(output=output), fixture.candidate, fixture.workload,
+                    SimpleNamespace(case_id='primary'), fixture.admission, SimpleNamespace(inputs={}), {},
+                    {'activity_library': 'fixture'}, {})
+            diagnostic = json.loads((output / 'measurement-diagnostic.json').read_text())
+            self.assertEqual(len(diagnostic['cohorts']), 5)
+            self.assertEqual(diagnostic['kernel_calls'], 720)
+            self.assertTrue(diagnostic['module_unloaded'])
+            self.assertFalse(diagnostic['passed'])
+            self.assertEqual(caught.exception.artifact_payloads['postflight_raw'], b'kept')
+            self.assertEqual(len(list(output.glob('cohort-*.json'))), 5)
