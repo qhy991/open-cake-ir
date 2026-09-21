@@ -6,7 +6,7 @@
 
 ## 当前结论
 
-26个任务中，**16个已有固定shape的三方数值比较，另10个还没有完整外部性能结论**（已追加026新对齐比较）。已测任务均保留原始starter、改写产物与外部参考；“有结果”不等于“改写更快”，也不等于全部上游shape、框架端到端或模型性能已通过。
+26个FlashInfer任务中，**16个已有固定shape的三方数值比较，另10个还没有完整外部性能结论**（已追加026与008完整Program的新对齐比较）。已测任务均保留原始starter、改写产物与外部参考；“有结果”不等于“改写更快”，也不等于全部上游shape、框架端到端或模型性能已通过。
 
 下面明确列出的代表产物/原starter，对外部的任务级结论为：
 
@@ -125,6 +125,22 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 
 三边分别对应[发布记录](README.md#nvidia-008-splitk-program-optimized_vs_starter-20260921)、[外部边](README.md#nvidia-008-splitk-program-optimized_vs_external-20260921)和[control边](README.md#nvidia-008-splitk-program-starter_vs_external-20260921)。不将“stage-result passed”当作计时质量通过；原始报告整体为measurement_quality_failed。保留此前sliced-w8的合格性能代表，本候选不晋升。旧NCU采样的是其他候选，不能直接用来解释这个新Program的因果机制。
 
+### 008完整Program的stage对齐后继
+
+共享封存与加载路径现已支持每个stage的generic/aligned变体，并依据实际公共、私有地址分派。新产物与旧完整Program保持相同源码、常量、grid、block和8组；第一阶段静态load site从136条b16变为17条v4.b32，不据此推导速度。
+
+真实门禁[60/60通过](README.md#nvidia-008-program-alignment-guards-20260921)：五个case各含aligned、a/b/out各2/4/8B偏移及private FP32 partial的4/8B偏移。共120次stage launch、65次受限leaf提前拒绝，最终公共输出与输入不变全部通过。FP32的2B偏移不满足元素对齐，不列为合法输入；private内容不是新增独立公共oracle输出。
+
+门禁最终验收后唯一提交正式比较，2,550份完整观测数值通过，但三条计时边均失败：
+
+| 本轮配对角色 | 两者中位数 µs | 最大cohort CV | 接受结论 |
+|---|---:|---:|---|
+| 新aligned Program / 固定unaligned Program | 96.785 / 55.041 | 0.076709 | CV失败，仅描述 |
+| 新aligned Program / 外部 | 95.552 / 26.721 | 0.097674 | CV失败，仅描述 |
+| 固定unaligned Program / 外部 | 55.072 / 26.625 | 0.061629 | CV失败，仅描述 |
+
+三条边见[新旧Program](README.md#nvidia-008-program-alignment-optimized_vs_starter-20260921)、[新Program/外部](README.md#nvidia-008-program-alignment-optimized_vs_external-20260921)、[control/外部](README.md#nvidia-008-program-alignment-starter_vs_external-20260921)。本轮control是旧完整Program，不能误称sliced-w8或最初starter。该能力已获得完整Program正确性证据，尚无接受的性能改善；观测较慢也不写成合格回退。此前sliced-w8的合格external代表与2/6/4/4统计均保留，不重复同候选刷CV。下一步分别检查Program调用开销和编译kernel；本轮没有新的NCU结论。
+
 ## 差距的原因与应该修改的层
 
 1. **AOT访存信息是已验证的Compiler/工具链问题。** 运行时检查对齐并保留通用路径，解决“为了vectorization而假设所有指针16B对齐”的错误边界。001/002/025已有正确性及部分合格性能证据；003对齐性能未合格。026 sliced8的新对齐产物已通过50guards和2550快照，对generic对照合格改善1.081×但新候选external边CV失败：相同源码/常量/grid，通用PTX为36条b16 load和4条b16 store，对齐leaf为3条v4.b32加15条v2.b32 load、7条v2.b32 store；这些静态变化本身不等于速度提升；本次性能结论来自独立的配对测量。
@@ -132,7 +148,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 3. **公共运行路径仍有工程缺口。** 012–020需要正常task launcher、混合dtype/多输出外部适配和共同Evaluation。Compiler Program已存在，重复创建Lab私有图或临时GPU runner会造成第二套所有权。
 4. **参考语义与测量质量也是未完成项。** 011的指针缓存不证明B内容不变；007及026新aligned候选的外部CV失败不是数值失败或已证实性能优劣；026的generic对照另有本轮独立合格边。需要记录输入刷新验证或具体测量波动原因，不能通过放宽门槛或重复运行直到绿色来补结论。
 
-优先顺序：008完整Program已取得数值正确性，但尚无合格性能收益；下一步依据具体结构假说改进候选，不重复同候选刷CV。先闭合012的正常入口与完整公共输出验证；对011先完成参考有效性检查。026对齐已完成本轮受控比较，保留失败external边，不重测刷通过。上述未完成事项不作为已有性能结论。
+优先顺序：008完整Program及stage对齐后继均已取得数值正确性，但尚无合格性能收益；下一步先区分完整Program的调用开销与kernel变化，再选择结构后继，不重复同候选刷CV。先闭合012的正常入口与完整公共输出验证；对011先完成参考有效性检查。026对齐已完成本轮受控比较，保留失败external边，不重测刷通过。上述未完成事项不作为已有性能结论。
 
 ## 测量、资源与历史边界
 
@@ -163,6 +179,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 | 012–020 Program封存 | `flashinfer-program-sealing-20260921/complete-route/sealing-results.json` | 仅CPU封存与readback |
 | 026新对齐 | `nvidia-rmsnorm-026-alignment-20260921/guard-submissions.json`、`comparison-submissions.json` | 50guards通过；2550快照通过；三边质量分别记录 |
 | 008新split-K Program | `nvidia-gemm-008-splitk-program-20260921/submissions.json` | completed；2550数值通过；两candidate计时边CV失败 |
+| 008 Program stage对齐 | `nvidia-program-alignment-008-20260921/guard-submissions.json`、`comparison-submissions.json` | 60guards与2550数值通过；三计时边均CV失败 |
 
 发布顺序与source identity遵循[开发分支](../../DEVELOPMENT_BRANCHES.md)。结果PR与源码PR只在独立审查及对应CI通过后合入；报告中的版本不替换运行时冻结的提交。所有历史失败与baseline保留。
 
@@ -175,3 +192,5 @@ The qualified original starter matters: task 005's faster retained starter still
 Four independent NCU evaluations passed 72 complete input/output observations and captured 13 kernel instances. No local-memory traffic was observed in these instances. Task 008's whole-K version uses 80 versus 32 registers and has lower active-warps percentage than sliced-w8, which is consistent with register/residency pressure but does not establish unique causality or spilling. Task 009's profiler process selected `sk_kernel<1,1>`; that cannot identify its earlier timing process's runtime choice. Profiles do not repair CV failures or replace paired CUPTI timings.
 
 All 17 complete Programs for 012–020 were CPU-built and independently reloaded, covering 72 leaf stages. Ordinary task entry points, complete common GPU evaluation and Workload-driven multi-output/mixed-dtype external bindings remain unfinished. The system already owns Program composition; add missing behavior at its existing owner rather than a second runner. A new complete two-stage008split-K Program now passes2,550 numerical observations, but both candidate/control and candidate/external timing edges failCV. Its nominally slower latency is descriptive, not a qualified regression; no performance improvement or promotion is accepted. No full upstream shape suite, model E2E, inherited upstream score or automatic promotion is claimed. Cite the report commit together with each experiment's own source revision, target, workload and original evidence locator.
+
+The subsequent per-stage alignment treatment of the complete008 Program passed60 public/private pointer guards and2,550 full public observations. Its aligned/unaligned Program edge is96.785/55.041us and aligned/external edge95.552/26.721us; all three paired edges fail the original CV gate. These are descriptive latencies, not an accepted gain or qualified regression. The fixed control is the previous complete unaligned Program, not sliced-w8 or the original starter. No representative or promotion changes; static vector load-site reduction does not imply a performance improvement.
