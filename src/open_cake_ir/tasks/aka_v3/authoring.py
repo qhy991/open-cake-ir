@@ -53,6 +53,44 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
             'values = lm.load(input[selected, :], id="load_selected_row")',
             'lm.store(output[row, :], values, coalesced=False, id="store_output")',
         ]
+    elif name == 'histogram':
+        if shape['B'] & (shape['B'] - 1) or shape['B'] > 2**24 or shape['E'] > 2**24:
+            raise ValueError('histogram starter requires power-of-two bins and exact FP32 counts')
+        program = 'bin = lm.program(counts, axis=0, dimension=0, tile=1)'
+        body = ['samples = lm.load(values[:], id="load_values")',
+                'bin_index = lm.coordinate(source="program", name="bin")',
+                'bin_float = lm.cast(bin_index, to="fp32")',
+                f'lower = bin_float * {8.0 / shape["B"]!r} - 4.0',
+                f'upper = lower + {8.0 / shape["B"]!r}',
+                'above = lm.compare(samples, lower, op="ge")',
+                'below = lm.compare(samples, upper, op="lt")',
+                'below_inclusive = lm.compare(samples, upper, op="le")',
+                f'last = lm.compare(bin_index, {shape["B"]-1}, op="eq")',
+                'upper_member = lm.select(last, below_inclusive, below)',
+                'zero = samples * 0.0', 'one = zero + 1.0',
+                'lower_member = lm.select(above, one, 0.0)',
+                'members = lm.select(upper_member, lower_member, 0.0)',
+                'count = lm.reduce(members, op="sum", axis=0, scope="cta", across_loop=False)',
+                'lm.store(counts[bin], count, coalesced=False)']
+    elif name == 'max_pool1d':
+        program = ('batch = lm.program(input, axis=0, dimension=0, tile=1)\n    '
+                   'destination = lm.program(output, axis=1, dimension=1, tile=1)')
+        window = workload.document['semantics']['window']
+        body = ['position = lm.coordinate(source="program", name="destination")',
+                f'begin = position * {window["stride"]} - {window["pad"]}']
+        for offset in range(window['kernel_size']):
+            body += [f'index_{offset} = begin + {offset}',
+                     f'valid_lo_{offset} = lm.compare(index_{offset}, 0, op="ge")',
+                     f'valid_hi_{offset} = lm.compare(index_{offset}, {shape["X"]}, op="lt")',
+                     f'valid_{offset} = valid_lo_{offset} * valid_hi_{offset}',
+                     f'value_{offset} = lm.load(input[batch, index_{offset}, :])',
+                     f'masked_{offset} = lm.select(valid_{offset}, value_{offset}, "negative_infinity")']
+            if offset:
+                body += [f'greater_{offset} = lm.compare(masked_{offset}, best_{offset-1}, op="gt")',
+                         f'best_{offset} = lm.select(greater_{offset}, masked_{offset}, best_{offset-1})']
+            else:
+                body[-1] = body[-1].replace('masked_0 =', 'best_0 =')
+        body += [f'result = lm.reduce(best_{window["kernel_size"]-1}, op="max", axis=0, scope="cta", across_loop=False)', 'lm.store(output[batch, destination, :], result, coalesced=False)']
     else:  # _admit_starter has closed this branch to momentum_sgd.
         tile = min(256, 1 << (shape["E"].bit_length() - 1))
         program = f'block = lm.program(param, axis=0, dimension=0, tile={tile})'

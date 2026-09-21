@@ -54,7 +54,7 @@ TASKS = {
 # Only these contracts have a complete starter on the common tensor execution path.
 # The prefix distinguishes the AKA ABI from similarly named, different Workloads.
 LAUNCHABLE_TASKS = {f"aka_{name}": name for name in (
-    "residual_layernorm", "gemm_nt_bias", "row_gather", "momentum_sgd",
+    "residual_layernorm", "gemm_nt_bias", "row_gather", "momentum_sgd", "histogram", "max_pool1d",
 )}
 
 
@@ -70,11 +70,16 @@ def _admit_starter(task_name: str, backend: str, *, columns: int, depth: int, el
         kinds += ("reduce",)
     if task_name == "momentum_sgd":
         kinds += ("cast",)
+    if task_name in {"histogram", "max_pool1d"}:
+        kinds += ("compare", "select", "coordinate", "reduce")
+    if task_name == "histogram":
+        kinds += ("cast",)
+        admit_width(backend, elements)
     admit_operations(backend, kinds)
     admit_dtype(backend, "fp32")
     if task_name in {"row_gather", "momentum_sgd"}:
         admit_dtype(backend, "int32")
-    if task_name != "momentum_sgd":
+    if task_name not in {"momentum_sgd", "histogram"}:
         admit_width(backend, columns)
     if task_name == "gemm_nt_bias":
         admit_width(backend, depth)
@@ -147,7 +152,10 @@ def workload_document(
             output_length, channels, kernel_size, stride, elements)) or type(pad) is not int or pad < 0:
         raise ValueError("AKA v3 task dimensions must be positive integers")
     if revision == "2":
-        _admit_starter(task_name, backend, columns=columns, depth=depth, elements=elements)
+        _admit_starter(task_name, backend, columns=channels if task_name == 'max_pool1d' else columns,
+                       depth=depth, elements=elements)
+        if task_name == 'histogram' and (bins & (bins - 1) or bins > 2**24 or elements > 2**24):
+            raise ValueError('histogram starter requires power-of-two bins and exact FP32 counts')
     if task_name == "gemm_nt_bias" and (rows * depth + columns * depth + rows * columns) * 4 > 2**31 - 1:
         raise ValueError("GEMM buffers exceed the standalone FP32 ABI")
     if task_name != "gemm_nt_bias" and rows * columns * 4 > 2**31 - 1:
@@ -211,6 +219,9 @@ def workload_document(
     elif task_name == "max_pool1d":
         if output_length != (input_length + 2 * pad - kernel_size) // stride + 1:
             raise ValueError("max-pool output length must match the declared window geometry")
+        if revision == '2' and (pad >= kernel_size or (output_length - 1) * stride - pad >= input_length
+                               or max(input_length, output_length * stride + kernel_size, pad) >= 2**31):
+            raise ValueError('max-pool starter requires nonempty windows and signed int32 indices')
         tensors = {
             "input": {"shape": ["N", "X", "C"], "max_abs": 2.0},
             "output": {"shape": ["N", "Y", "C"]},
