@@ -2,6 +2,8 @@
 from hashlib import sha256
 import json
 from pathlib import Path
+import os
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -19,7 +21,7 @@ from open_cake_ir.lab.build import BuildRequest
 from open_cake_ir.tasks import evaluate as worker
 from open_cake_ir.tasks.normalization.study import evaluation_policy
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
-from open_cake_ir.tasks.workloads import create_task
+from open_cake_ir.tasks.workloads import create_task, reference_outputs
 from tests.contracts.test_epilogue_fusion import execute
 from tests.contracts.test_program_evaluation import replay_program_candidate
 from tests.contracts.test_qsa_common_program import Torch
@@ -245,6 +247,42 @@ class PortableProgramEvaluation(unittest.TestCase):
             self.assertNotEqual(result.disposition, 'launchable')
             self.assertIn('one dispatch', str(result.feedback))
             toolchain.build_stage.assert_not_called()
+
+    def test_local_worker_prepares_complete_program_oracles_and_refuses_timing_before_lock(self):
+        for backend in BACKENDS:
+            workload, program, candidate, _ = self.build(backend)
+            manifest, _, _ = program_components(candidate)
+            kind = platform_for(candidate.target).local_job_prefix
+            policy = {'validation_case_ids': list(workload.case_ids)}
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                request, output = root/'request.json', root/'result.json'
+                request.write_text('{}')
+                authority = worker._Authority({'purpose': 'confirmatory', 'evaluation_protocol': policy},
+                    root, None, workload, manifest, candidate, candidate.artifact_payloads, 'primary',
+                    timed_assay_available=False, allocation_mode='local_serialized')
+                with patch.dict(os.environ, {}, clear=True):
+                    prepared = worker._prepare_local_tensor_work(authority, kind)
+                self.assertEqual(tuple(prepared.prepared_cases), workload.case_ids)
+                for case_id, case in prepared.prepared_cases.items():
+                    self.assertEqual({name: list(values) for name, values in case.expected.items()},
+                                     reference_outputs(workload, case_id, case.inputs))
+                # The actual CLI must reject this timed request before acquiring
+                # the local device lock, rather than fail later inside the timer.
+                from dataclasses import replace
+                with patch.dict(os.environ, {}, clear=True), \
+                     patch.object(worker, '_load_authority', return_value=replace(authority, timed_assay_available=True)), \
+                     patch.object(worker, 'admit_local_job') as admission, \
+                     patch.object(worker, 'PreparedTensorCase') as prepare, \
+                     patch('sys.argv', ['evaluate', '--request', str(request), '--output', str(output),
+                                        '--local-kind', kind]):
+                    worker.main()
+                admission.assert_not_called(); prepare.assert_not_called()
+                result = json.loads(output.read_text())
+                self.assertFalse(result['admitted'])
+                self.assertIsNone(result['receipt'])
+                self.assertEqual(result['counters']['module_loads'], 0)
+                self.assertIn('ordered Program timing', result['error'])
 
     def test_metal_composition_still_refuses_without_a_native_program_adapter(self):
         with self.assertRaisesRegex(ValueError, 'metal_binary_archive'):

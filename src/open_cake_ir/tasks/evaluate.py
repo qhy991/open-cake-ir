@@ -114,7 +114,7 @@ class _Authority:
     request_root: Path
     executor: ExecutorRevision
     workload: WorkloadContract
-    manifest: CudaLaunchManifest | TensorLaunchManifest | MetalTensorLaunchManifest
+    manifest: CudaLaunchManifest | TensorLaunchManifest | MetalTensorLaunchManifest | ProgramLaunchManifest
     candidate: LaunchableCandidate
     payloads: Mapping[str, bytes]
     case_id: str
@@ -160,8 +160,10 @@ def _prepare_local_tensor_work(authority, kind):
         raise ValueError('CPU preparation cannot start inside an existing allocation')
     if (authority.allocation_mode != 'local_serialized'
             or platform_for(authority.candidate.target).local_job_prefix != kind
-            or not isinstance(authority.manifest, TensorLaunchManifest)):
+            or not isinstance(authority.manifest, (TensorLaunchManifest, ProgramLaunchManifest))):
         raise ValueError('local CPU preparation requires its declared tensor allocation route')
+    _admit_program_assay(authority, collect_timing=authority.timed_assay_available
+                         and authority.request['purpose'] != 'attribution')
     policy = authority.request['evaluation_protocol']
     cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'
              else validation_case_ids(policy) if 'validation_case_ids' in policy
