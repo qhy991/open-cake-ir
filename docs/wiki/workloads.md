@@ -23,6 +23,7 @@ Workload 是一道题的完整约定：给什么输入，必须输出什么，�
 | [RMSNorm FP32 v2](../../contracts/workloads/rmsnorm-fp32-v2.json) | 同一数学定义与 6 个用例，明确绑定 B300 `sm_103a`。 |
 | [GEMM+bias BF16/FP32 v2](../../contracts/workloads/gemm-bias-bf16-fp32-v2.json) | 同一数学定义与 5 个用例，明确绑定 B300 `sm_103a`。 |
 | [Indexed gather BF16 v2](../../contracts/workloads/indexed-gather-bf16-v2.json) | 同一索引语义与 4 个用例，明确绑定 B300 `sm_103a`。 |
+| [Indexed gather BF16 v3](../../contracts/workloads/indexed-gather-bf16-v3.json) | 同一索引语义与 4 个用例，分别按各自 ABI 构建，明确绑定 C550 `xcore1002`。 |
 
 B300 的 Python 起点和单独的实验资格要求见 [B300 指南](../B300.md)。
 
