@@ -109,8 +109,12 @@ class ProgramEvaluationTests(unittest.TestCase):
         def loader(child, spec, admission):
             kernel = Kernel(by_entry[child.entry_point]); kernels[kernel.stage.name] = kernel
             return kernel
+        def check_tensor(tensor, spec):
+            if tensor.shape != spec.shape or tensor.dtype != spec.dtype.value:
+                raise ValueError('fixture tensor type differs')
         loaded = LoadedProgram(candidate, manifest, None, loader, allocate=allocate,
             view=lambda t, shape: Tensor(t.data, shape, t.dtype, t.address),
+            check_tensor=check_tensor,
             storage_span=lambda t: ('fixture', t.address, t.address + math.prod(t.shape)*(2 if t.dtype=='bf16' else 4)),
             stream='fixed-stream')
         return loaded, manifest, tensor, calls, kernels
@@ -340,12 +344,13 @@ class ProgramEvaluationTests(unittest.TestCase):
         closed = []
         class FakeTensor:
             device = 'cuda:0'
-            def __init__(self, shape): self.shape = shape
+            def __init__(self, shape, dtype): self.shape = shape;self.dtype = dtype
             def reshape(self, shape): self.shape=shape; return self
+            def is_contiguous(self): return True
         def full(shape, *args, **kw):
             if tuple(shape) == (2,8) and closed == ['modules_loaded']:
                 raise MemoryError('intermediate allocation')
-            return FakeTensor(shape)
+            return FakeTensor(shape, kw['dtype'])
         loads = []
         class Kernel:
             launch_calls = 0
@@ -358,8 +363,8 @@ class ProgramEvaluationTests(unittest.TestCase):
             if len(loads)==2: closed.append('modules_loaded')
             return loads[-1]
         torch = SimpleNamespace(float32='fp32',bfloat16='bf16',
-            tensor=lambda values, **kw:FakeTensor((len(values),)),full=full,
-            cuda=SimpleNamespace(current_stream=lambda:SimpleNamespace(cuda_stream=0),synchronize=lambda:None))
+            tensor=lambda values, **kw:FakeTensor((len(values),),kw['dtype']),full=full,
+            cuda=SimpleNamespace(current_device=lambda:0,current_stream=lambda:SimpleNamespace(cuda_stream=0),synchronize=lambda:None))
         inputs = {'a':[0.]*16,'b':[0.]*64,'bias':[0.]*8}
         with patch.dict('sys.modules',{'torch':torch}), \
              patch.dict('open_cake_ir.evaluation.core._MODULE_LOADERS',{CodeObject.CUBIN:loader}):

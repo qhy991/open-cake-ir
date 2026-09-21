@@ -278,8 +278,10 @@ def _replay_provider_turns(
             parsed = SimpleNamespace(thread_id=record['thread_id'], provider_tokens=usage(record['response']),
                                      candidate_path=None, normalization='single_exact',tool_activity=())
         elif event_contract in CLAUDE_EVENT_CONTRACTS:
-            parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal, event_contract=event_contract)
-            if parsed.reported_models != (provider_authority["model"],):
+            parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal,
+                                              event_contract=event_contract,
+                                              response_aliases=provider_authority.get("response_model_aliases", ()))
+            if parsed.reported_models[0] != provider_authority["model"]:
                 refuse(f"{location}.provider_events", "reported models differ from the arm's provider authority",
                        observed=parsed.reported_models, expected=(provider_authority["model"],))
             if expected_change == "add" and parsed.write_tools[0] != "Write":

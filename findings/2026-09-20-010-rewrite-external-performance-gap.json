@@ -3083,5 +3083,19 @@
     "remaining_tasks": "011 lacks a qualified general-input reference comparison because the original pointer-keyed transpose cache has not been validated for content changes.012–020 have17CPU-sealed Programs/72leaf stages, but task launcher and full common GPU/external comparisons remain uncompleted.",
     "prepared_unrun": "026 sliced-width8 alignment variant sealed at34f04b40 in cake-experiments/nvidia-rmsnorm-026-alignment-20260921/input; no submitted guard or performance run. Same source/constants/grid, runtime alignment dispatch; no GPU claim.",
     "promotion_disposition": "No new promotion. Preserve all historical candidate, starter, quality-failed and infrastructure-fault evidence."
+  },
+  "program_comparison_preparation_followup": {
+    "implemented_in": "65742cbbb66cbfe428b64b8aafddba774d636eaa",
+    "scope": "Existing NVIDIA comparison preparation now accepts canonical JSON Programs, uses the canonical OpenCakeEnvironment/TritonToolchainBuilder, seals every stage and preserves the unchanged selected control/reference. New metadata identifies a complete Program rather than mislabeling it a Schedule. No new Compiler primitive, Python Program syntax, oracle or timing policy.",
+    "verified_by": [
+      "Fixed65742cbb:31tests/36subtests across comparison preparation,profile,staged capture and Program evaluation; F821/F401 pass.",
+      "Independent code review and actual two-stage008 input/task/ABI/control review passed; PR164 allthreePythonCIjobs passed before platform merge.",
+      "Actual CPU preparation of008 splitK at65742cbb returned bothstages built, whole_program_unmodeled; existingCPUProgram previouslysealed at34f04b40."
+    ],
+    "candidate": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-008-splitk-program-20260921/comparison-input",
+    "runtime_evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-008-splitk-program-20260921/submissions.json",
+    "candidate_scope": "M1N4096K14336FP16:8partial domains of2048 (lastzero),16columns/CTA,8groups,FP32partial[8,4096],two complete kernels. Stage1grid[8,256,1],stage2grid[1,256,1];control is middle sliced-w8,not originalstarter. Initialstatic0indexandbroadcastaxis0refusals remain retained; corrections use existing scalar_index and retainedaxis1 without Compilerrelaxation.",
+    "device_verification_at_publication": "First Program comparison submitted; numerical/timing verdict pending. CPU sealing, entry adaptation and complete callable accounting do not establish speed or promotion.",
+    "promotion_disposition": "No promotion. Keep originalbaseline,external,priorwholeKregression and current completeProgram evidence separate; wholeProgram cost model remains unmodeled."
   }
 }

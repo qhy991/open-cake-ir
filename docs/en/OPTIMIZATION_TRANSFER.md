@@ -44,9 +44,11 @@ Existing [bounded passes](../../src/open_cake_ir/compiler/passes.py) and
 The prototype now connects complete Programs, independent Runs, controlled material/pass
 access, shared Run runtime assembly, preassigned E/P Studies and audited analysis. Software tests exercise these protocol
 paths. Ordinary tasks, incumbents and QSA Cake candidates now use the common path.
-Actual multi-stage composition currently uses Triton/CUDA; other
-targets retain their existing single-kernel routes. Cross-target composition and measured
-transfer benefits remain to be qualified. Automatic mechanism extraction is outside the current implementation.
+The shared correctness-only composition path now binds CUBIN, HSACO and MCFATBIN modules.
+Complete-program timing and attribution remain limited to Triton/CUDA; Metal composition
+is not yet implemented. Non-CUDA composed candidates cannot borrow the existing single-kernel
+instruments to enter timed optimization Runs. The new paths have software-contract coverage;
+measured cross-hardware benefits and automatic mechanism extraction remain outstanding.
 The design builds on explicit transformations such as
 [MLIR Transform](https://mlir.llvm.org/docs/Tutorials/transform/) and prior schedule reuse such
 as [Transfer-Tuning](https://arxiv.org/abs/2201.05587v2), focusing on agent-produced experience,

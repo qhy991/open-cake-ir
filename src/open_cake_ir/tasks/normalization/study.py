@@ -145,7 +145,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    searches_per_turn: int = 2, wall_seconds: int = 14400, confirmation_seconds: float | None = None,
                    dispatches_per_sample: int | None = None,
                    maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
-                   agents_md: Path | None = None) -> dict:
+                   agents_md: Path | None = None, response_aliases=()) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -179,6 +179,11 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                 "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 **{name: dict(CAMPAIGN_BINDING) for name in ("revision", "executable_sha256", "qualification", "qualification_anchor")}}
+    if response_aliases:
+        if harness != "claude-code":
+            raise ValueError("response model aliases require Claude Code")
+        from open_cake_ir.lab.claude import response_model_aliases
+        provider["response_model_aliases"] = list(response_model_aliases(model, response_aliases))
     if harness == "claude-code":
         provider.update(harness=harness, permission_mode="acceptEdits", sandbox="none", safe_mode=True,
                         tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT, terminal_schema=terminal_schema())
