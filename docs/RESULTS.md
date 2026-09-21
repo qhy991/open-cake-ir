@@ -12,7 +12,7 @@
 
 | 平台 | 维护分支 | 数据日期 | 观察条目 | 发布数据 |
 |---|---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-20 | 90 | [nvidia/records.json](results/nvidia/records.json) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-20 | 113 | [nvidia/records.json](results/nvidia/records.json) |
 | Apple | [metal](https://github.com/qhy991/open-cake-ir/tree/metal/docs/results/metal) | 2026-09-20 | 4 | [metal/records.json](results/metal/records.json) |
 | Hygon DCU | [dcu](https://github.com/qhy991/open-cake-ir/tree/dcu/docs/results/dcu) | 2026-09-20 | 32 | [dcu/records.json](results/dcu/records.json) |
 | AMD | [amd](https://github.com/qhy991/open-cake-ir/tree/amd/docs/results/amd) | 2026-09-20 | 1 | [amd/records.json](results/amd/records.json) |
@@ -37,6 +37,8 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - Final work-assignment verification: all 7 runs and 17,850 complete snapshots pass numerically. The previously pending 003 w8 edge beats the frozen old optimized control by a qualified 1.398x (10.368/14.496 us), while its external edge fails CV. Only 003 w1 has all three timing edges quality-passing; the other six complete reports fail measurement quality. No blanket promotion.
 - 003 whole-row at 16 groups passes all 2550 snapshots and all three quality edges: 1.896x versus sliced w16 (3.713/7.040 us), still 23.158% slower than the derived external (3.744/3.040 us). Subsequent guarded alignment passes 65 pointer checks and another 2550 snapshots, but new/control and new/external edges fail CV; its nominal 1.114x is not a qualified gain. No new IR primitive, profiler attribution or promotion.
 - 006 M1N2048K4096 FP16 now has three completed comparisons: 7650 snapshots and all nine timing edges pass. Compiler floor is close_null. Width four gives 1.079x versus the frozen old starter and close_null against the native split-K external (8.544/8.5755 us). Four-column packing regresses (0.903x versus starter). Actual lossless snapshot files are 94.4MB per run; no full-shape, faithful algorithm reproduction or promotion claim.
+- 007/008: four completed fixed-M1 comparisons, 10200 numerical snapshots passed. 007 width8 improves 1.097x over its newly frozen original starter; both 007 external comparisons fail CV and remain unqualified. 008 sliced width8 improves 1.053x over its original starter but remains 53.05% slower than the external two-stage split-K callable; a masked whole-K variant regresses to 0.805x versus sliced width8. These are candidate changes, not Compiler-floor movement; no promotion or full-shape claim.
+- 009/010/026:17850 numerical snapshots pass. Qualified starter gains:009w4 1.096x,010w8 1.116x,026w8 1.787x;009w4 and010w8 are close_null versus their supplied callables. 026 whole-row regresses versus intermediate sliced-w8; every026 external edge fails CV. No promotion. Separately012–020 have17 complete CPU-sealed Programs/72 stages, still no common GPU evaluation or external performance claim.
 
 | 设备 / 集合 | Task | 输入 / Workload | 基线 µs | 候选 µs | 加速比 | 状态 | 详情 |
 |---|---|---|---:|---:|---:|---|---|
@@ -130,6 +132,29 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 | B300 / GEMM work assignment | `006_gemm_n2048_k4096 / width-w4` | M=1, N=2048, K=4096, FP16 | 8.575 | 8.544 | 1.004× | Correct; close_null | [nvidia-006-width-w4-optimized_vs_external-20260921](#nvidia-006-width-w4-optimized_vs_external-20260921) |
 | B300 / GEMM work assignment | `006_gemm_n2048_k4096 / columns4-w4` | M=1, N=2048, K=4096, FP16 | 9.248 | 10.240 | 0.903× | Correct; second_arm_faster | [nvidia-006-columns4-w4-optimized_vs_starter-20260921](#nvidia-006-columns4-w4-optimized_vs_starter-20260921) |
 | B300 / GEMM work assignment | `006_gemm_n2048_k4096 / columns4-w4` | M=1, N=2048, K=4096, FP16 | 8.577 | 10.256 | 0.836× | Correct; second_arm_faster | [nvidia-006-columns4-w4-optimized_vs_external-20260921](#nvidia-006-columns4-w4-optimized_vs_external-20260921) |
+| B300 / GEMM work assignment | `007_gemm_n4096_k4096 / width-w4` | M=1, N=4096, K=4096, FP16 | 13.632 | 13.088 | 1.042× | Correct; close_null | [nvidia-007-width-w4-optimized_vs_starter-20260921](#nvidia-007-width-w4-optimized_vs_starter-20260921) |
+| B300 / GEMM work assignment | `007_gemm_n4096_k4096 / width-w4` | M=1, N=4096, K=4096, FP16 | 11.712 | 13.056 | — | Correct; measurement_quality_failed | [nvidia-007-width-w4-optimized_vs_external-20260921](#nvidia-007-width-w4-optimized_vs_external-20260921) |
+| B300 / GEMM work assignment | `007_gemm_n4096_k4096 / width-w8` | M=1, N=4096, K=4096, FP16 | 13.552 | 12.352 | 1.097× | Correct; first_arm_faster | [nvidia-007-width-w8-optimized_vs_starter-20260921](#nvidia-007-width-w8-optimized_vs_starter-20260921) |
+| B300 / GEMM work assignment | `007_gemm_n4096_k4096 / width-w8` | M=1, N=4096, K=4096, FP16 | 11.648 | 12.320 | — | Correct; measurement_quality_failed | [nvidia-007-width-w8-optimized_vs_external-20260921](#nvidia-007-width-w8-optimized_vs_external-20260921) |
+| B300 / GEMM work assignment | `008_gemm_n4096_k14336 / width-w8` | M=1, N=4096, K=14336, FP16 | 43.153 | 40.993 | 1.053× | Correct; first_arm_faster | [nvidia-008-width-w8-optimized_vs_starter-20260921](#nvidia-008-width-w8-optimized_vs_starter-20260921) |
+| B300 / GEMM work assignment | `008_gemm_n4096_k14336 / width-w8` | M=1, N=4096, K=14336, FP16 | 26.816 | 41.041 | 0.653× | Correct; second_arm_faster | [nvidia-008-width-w8-optimized_vs_external-20260921](#nvidia-008-width-w8-optimized_vs_external-20260921) |
+| B300 / GEMM work assignment | `008_gemm_n4096_k14336 / masked-k-program-w8` | M=1, N=4096, K=14336, FP16 | 41.185 | 51.136 | 0.805× | Correct; second_arm_faster | [nvidia-008-masked-k-program-w8-optimized_vs_starter-20260921](#nvidia-008-masked-k-program-w8-optimized_vs_starter-20260921) |
+| B300 / GEMM work assignment | `008_gemm_n4096_k14336 / masked-k-program-w8` | M=1, N=4096, K=14336, FP16 | 26.752 | 51.104 | 0.523× | Correct; second_arm_faster | [nvidia-008-masked-k-program-w8-optimized_vs_external-20260921](#nvidia-008-masked-k-program-w8-optimized_vs_external-20260921) |
+| B300 / work assignment and row structure | `009_gemm_n5120_k2048 / width-w4` | M=1, N=5120, K=2048, FP16 | 9.504 | 8.672 | 1.096× | Correct; first_arm_faster | [nvidia-009-width-w4-optimized_vs_starter-20260921](#nvidia-009-width-w4-optimized_vs_starter-20260921) |
+| B300 / work assignment and row structure | `009_gemm_n5120_k2048 / width-w4` | M=1, N=5120, K=2048, FP16 | 8.720 | 8.672 | 1.005× | Correct; close_null | [nvidia-009-width-w4-optimized_vs_external-20260921](#nvidia-009-width-w4-optimized_vs_external-20260921) |
+| B300 / work assignment and row structure | `009_gemm_n5120_k2048 / width-w8` | M=1, N=5120, K=2048, FP16 | 9.504 | 9.184 | 1.035× | Correct; close_null | [nvidia-009-width-w8-optimized_vs_starter-20260921](#nvidia-009-width-w8-optimized_vs_starter-20260921) |
+| B300 / work assignment and row structure | `009_gemm_n5120_k2048 / width-w8` | M=1, N=5120, K=2048, FP16 | 8.704 | 9.184 | 0.948× | Correct; second_arm_faster | [nvidia-009-width-w8-optimized_vs_external-20260921](#nvidia-009-width-w8-optimized_vs_external-20260921) |
+| B300 / work assignment and row structure | `010_gemm_n6144_k4096 / width-w4` | M=1, N=6144, K=4096, FP16 | 19.649 | 18.177 | 1.081× | Correct; first_arm_faster | [nvidia-010-width-w4-optimized_vs_starter-20260921](#nvidia-010-width-w4-optimized_vs_starter-20260921) |
+| B300 / work assignment and row structure | `010_gemm_n6144_k4096 / width-w4` | M=1, N=6144, K=4096, FP16 | 17.296 | 18.240 | 0.948× | Correct; second_arm_faster | [nvidia-010-width-w4-optimized_vs_external-20260921](#nvidia-010-width-w4-optimized_vs_external-20260921) |
+| B300 / work assignment and row structure | `010_gemm_n6144_k4096 / width-w8` | M=1, N=6144, K=4096, FP16 | 19.616 | 17.584 | 1.116× | Correct; first_arm_faster | [nvidia-010-width-w8-optimized_vs_starter-20260921](#nvidia-010-width-w8-optimized_vs_starter-20260921) |
+| B300 / work assignment and row structure | `010_gemm_n6144_k4096 / width-w8` | M=1, N=6144, K=4096, FP16 | 17.280 | 17.568 | 0.984× | Correct; close_null | [nvidia-010-width-w8-optimized_vs_external-20260921](#nvidia-010-width-w8-optimized_vs_external-20260921) |
+| B300 / work assignment and row structure | `026_rmsnorm_h7168 / floor-w1` | R=64, C=7168, BF16, epsilon=1e-6 | 11.584 | 11.680 | 0.992× | Correct; close_null | [nvidia-026-floor-w1-optimized_vs_starter-20260921](#nvidia-026-floor-w1-optimized_vs_starter-20260921) |
+| B300 / work assignment and row structure | `026_rmsnorm_h7168 / floor-w1` | R=64, C=7168, BF16, epsilon=1e-6 | 2.656 | 11.648 | — | Correct; measurement_quality_failed | [nvidia-026-floor-w1-optimized_vs_external-20260921](#nvidia-026-floor-w1-optimized_vs_external-20260921) |
+| B300 / work assignment and row structure | `026_rmsnorm_h7168 / width-w8` | R=64, C=7168, BF16, epsilon=1e-6 | 11.552 | 6.464 | 1.787× | Correct; first_arm_faster | [nvidia-026-width-w8-optimized_vs_starter-20260921](#nvidia-026-width-w8-optimized_vs_starter-20260921) |
+| B300 / work assignment and row structure | `026_rmsnorm_h7168 / width-w8` | R=64, C=7168, BF16, epsilon=1e-6 | 2.720 | 6.464 | — | Correct; measurement_quality_failed | [nvidia-026-width-w8-optimized_vs_external-20260921](#nvidia-026-width-w8-optimized_vs_external-20260921) |
+| B300 / work assignment and row structure | `026_rmsnorm_h7168 / whole-row-w8` | R=64, C=7168, BF16, epsilon=1e-6 | 6.400 | 7.392 | 0.866× | Correct; second_arm_faster | [nvidia-026-whole-row-w8-optimized_vs_starter-20260921](#nvidia-026-whole-row-w8-optimized_vs_starter-20260921) |
+| B300 / work assignment and row structure | `026_rmsnorm_h7168 / whole-row-w8` | R=64, C=7168, BF16, epsilon=1e-6 | 2.656 | 7.392 | — | Correct; measurement_quality_failed | [nvidia-026-whole-row-w8-optimized_vs_external-20260921](#nvidia-026-whole-row-w8-optimized_vs_external-20260921) |
+| CPU sealing for B300 | `012–020 /17complete Programs,72leaf stages` | 012–019captured/boundary;020captured | — | — | — | CPU sealed; GPU evaluation not run | [nvidia-012-020-program-cpu-sealing-20260921](#nvidia-012-020-program-cpu-sealing-20260921) |
 
 ## Apple
 
@@ -1226,6 +1251,236 @@ gfx1151 的两种设备计时器尚未对齐。保留支持状态与调查入口
 - 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/5ba4201d009f8e8873acc91adfcfffd2909cf6bb/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-006-compact-comparison-20260921-962158f62a39/stages/verify/comparison-report.json`。
 - All 2550 snapshots and all three paired quality edges passed. Original oracle, cold L2 and continuous paired allocation. The old cancelled run is unchanged. Lossless input references retain every observation; outputs remain literal. No full batch-axis, host-wall, faithful split-K reproduction or promotion claim.
+
+### nvidia-007-width-w4-optimized_vs_starter-20260921
+
+**B300 / GEMM work assignment · 007_gemm_n4096_k4096 / width-w4** — 2026-09-21 / Correct; close_null
+
+- Workload：`M=1, N=4096, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
+- 基线：Newly frozen original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-425a55c43e72/stages/verify/comparison-report.json`。
+- This edge passes the original CV quality gate. Other external edges in this 007 run fail quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
+
+### nvidia-007-width-w4-optimized_vs_external-20260921
+
+**B300 / GEMM work assignment · 007_gemm_n4096_k4096 / width-w4** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`M=1, N=4096, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
+- 基线：Supplied cuBLASLt/at::mm CUDA selector；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-425a55c43e72/stages/verify/comparison-report.json`。
+- This edge fails the original CV quality gate; displayed latencies are descriptive only, with no qualified speedup. Other external edges in this 007 run fail quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
+
+### nvidia-007-width-w8-optimized_vs_starter-20260921
+
+**B300 / GEMM work assignment · 007_gemm_n4096_k4096 / width-w8** — 2026-09-21 / Correct; first_arm_faster
+
+- Workload：`M=1, N=4096, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
+- 基线：Newly frozen original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-3f37f1636a9b/stages/verify/comparison-report.json`。
+- This edge passes the original CV quality gate. Other external edges in this 007 run fail quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
+
+### nvidia-007-width-w8-optimized_vs_external-20260921
+
+**B300 / GEMM work assignment · 007_gemm_n4096_k4096 / width-w8** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`M=1, N=4096, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
+- 基线：Supplied cuBLASLt/at::mm CUDA selector；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-3f37f1636a9b/stages/verify/comparison-report.json`。
+- This edge fails the original CV quality gate; displayed latencies are descriptive only, with no qualified speedup. Other external edges in this 007 run fail quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
+
+### nvidia-008-width-w8-optimized_vs_starter-20260921
+
+**B300 / GEMM work assignment · 008_gemm_n4096_k14336 / width-w8** — 2026-09-21 / Correct; first_arm_faster
+
+- Workload：`M=1, N=4096, K=14336, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
+- 基线：Newly frozen original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-6ad3ee78b525/stages/verify/comparison-report.json`。
+- This edge passes the original CV quality gate. All three timing edges in this 008 run pass quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
+
+### nvidia-008-width-w8-optimized_vs_external-20260921
+
+**B300 / GEMM work assignment · 008_gemm_n4096_k14336 / width-w8** — 2026-09-21 / Correct; second_arm_faster
+
+- Workload：`M=1, N=4096, K=14336, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
+- 基线：Supplied two-stage split-K CUDA callable；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-6ad3ee78b525/stages/verify/comparison-report.json`。
+- This edge passes the original CV quality gate. All three timing edges in this 008 run pass quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
+
+### nvidia-008-masked-k-program-w8-optimized_vs_starter-20260921
+
+**B300 / GEMM work assignment · 008_gemm_n4096_k14336 / masked-k-program-w8** — 2026-09-21 / Correct; second_arm_faster
+
+- Workload：`M=1, N=4096, K=14336, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
+- 基线：Frozen sliced-width8 Cake candidate；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-2d57b3a1d6dc/stages/verify/comparison-report.json`。
+- This edge passes the original CV quality gate. All three timing edges in this 008 run pass quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
+
+### nvidia-008-masked-k-program-w8-optimized_vs_external-20260921
+
+**B300 / GEMM work assignment · 008_gemm_n4096_k14336 / masked-k-program-w8** — 2026-09-21 / Correct; second_arm_faster
+
+- Workload：`M=1, N=4096, K=14336, FP16`；目标：`sm_103a`；版本：`compiler/judge 5b85e313`。
+- 基线：Supplied two-stage split-K CUDA callable；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/9bcc8e36091ca7c4cccfaf4632783a3a836388fc/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-2d57b3a1d6dc/stages/verify/comparison-report.json`。
+- This edge passes the original CV quality gate. All three timing edges in this 008 run pass quality. All 2550 snapshots pass. Original oracle, cold L2, continuous paired allocation and complete callable activity span. C++20 reference build compatibility only. No old-Compiler-floor, full-shape, hardware-causal or promotion claim.
+
+### nvidia-009-width-w4-optimized_vs_starter-20260921
+
+**B300 / work assignment and row structure · 009_gemm_n5120_k2048 / width-w4** — 2026-09-21 / Correct; first_arm_faster
+
+- Workload：`M=1, N=5120, K=2048, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Newly frozen original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-c729a4205261/stages/verify/comparison-report.json`。
+- This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-009-width-w4-optimized_vs_external-20260921
+
+**B300 / work assignment and row structure · 009_gemm_n5120_k2048 / width-w4** — 2026-09-21 / Correct; close_null
+
+- Workload：`M=1, N=5120, K=2048, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Supplied runtime-selecting CUDA callable；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-c729a4205261/stages/verify/comparison-report.json`。
+- This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-009-width-w8-optimized_vs_starter-20260921
+
+**B300 / work assignment and row structure · 009_gemm_n5120_k2048 / width-w8** — 2026-09-21 / Correct; close_null
+
+- Workload：`M=1, N=5120, K=2048, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Newly frozen original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-decf02d08ed4/stages/verify/comparison-report.json`。
+- This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-009-width-w8-optimized_vs_external-20260921
+
+**B300 / work assignment and row structure · 009_gemm_n5120_k2048 / width-w8** — 2026-09-21 / Correct; second_arm_faster
+
+- Workload：`M=1, N=5120, K=2048, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Supplied runtime-selecting CUDA callable；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-decf02d08ed4/stages/verify/comparison-report.json`。
+- This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-010-width-w4-optimized_vs_starter-20260921
+
+**B300 / work assignment and row structure · 010_gemm_n6144_k4096 / width-w4** — 2026-09-21 / Correct; first_arm_faster
+
+- Workload：`M=1, N=6144, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Newly frozen original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-65f2811ce33c/stages/verify/comparison-report.json`。
+- This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-010-width-w4-optimized_vs_external-20260921
+
+**B300 / work assignment and row structure · 010_gemm_n6144_k4096 / width-w4** — 2026-09-21 / Correct; second_arm_faster
+
+- Workload：`M=1, N=6144, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Supplied CUDA GEMV/dispatch callable；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-65f2811ce33c/stages/verify/comparison-report.json`。
+- This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-010-width-w8-optimized_vs_starter-20260921
+
+**B300 / work assignment and row structure · 010_gemm_n6144_k4096 / width-w8** — 2026-09-21 / Correct; first_arm_faster
+
+- Workload：`M=1, N=6144, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Newly frozen original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-2b7f4f07851e/stages/verify/comparison-report.json`。
+- This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-010-width-w8-optimized_vs_external-20260921
+
+**B300 / work assignment and row structure · 010_gemm_n6144_k4096 / width-w8** — 2026-09-21 / Correct; close_null
+
+- Workload：`M=1, N=6144, K=4096, FP16`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Supplied CUDA GEMV/dispatch callable；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-2b7f4f07851e/stages/verify/comparison-report.json`。
+- This edge passes original quality. All three timing edges in this run pass quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-026-floor-w1-optimized_vs_starter-20260921
+
+**B300 / work assignment and row structure · 026_rmsnorm_h7168 / floor-w1** — 2026-09-21 / Correct; close_null
+
+- Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Frozen old original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-cd0519f984bb/stages/verify/comparison-report.json`。
+- This edge passes original quality. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-026-floor-w1-optimized_vs_external-20260921
+
+**B300 / work assignment and row structure · 026_rmsnorm_h7168 / floor-w1** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Supplied masked8192 Python/Triton callable；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-cd0519f984bb/stages/verify/comparison-report.json`。
+- Failed CV; displayed latencies are descriptive, with no qualified speedup. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-026-width-w8-optimized_vs_starter-20260921
+
+**B300 / work assignment and row structure · 026_rmsnorm_h7168 / width-w8** — 2026-09-21 / Correct; first_arm_faster
+
+- Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Frozen old original Cake starter；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-9eb8c7412df2/stages/verify/comparison-report.json`。
+- This edge passes original quality. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-026-width-w8-optimized_vs_external-20260921
+
+**B300 / work assignment and row structure · 026_rmsnorm_h7168 / width-w8** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Supplied masked8192 Python/Triton callable；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-9eb8c7412df2/stages/verify/comparison-report.json`。
+- Failed CV; displayed latencies are descriptive, with no qualified speedup. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-026-whole-row-w8-optimized_vs_starter-20260921
+
+**B300 / work assignment and row structure · 026_rmsnorm_h7168 / whole-row-w8** — 2026-09-21 / Correct; second_arm_faster
+
+- Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Frozen sliced-width8 Cake candidate；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-c46f642cc623/stages/verify/comparison-report.json`。
+- This edge passes original quality. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-026-whole-row-w8-optimized_vs_external-20260921
+
+**B300 / work assignment and row structure · 026_rmsnorm_h7168 / whole-row-w8** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`R=64, C=7168, BF16, epsilon=1e-6`；目标：`sm_103a`；版本：`compiler/judge5b85e313`。
+- 基线：Supplied masked8192 Python/Triton callable；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-c46f642cc623/stages/verify/comparison-report.json`。
+- Failed CV; displayed latencies are descriptive, with no qualified speedup. All external comparisons in this026run fail quality. All2550 snapshots pass; original oracle, cold L2 and continuous paired allocation. Only026floor is an old-Compiler-floor probe. Whole-row control is intermediate sliced-w8. No unobserved runtime-branch or hardware attribution, full-shape or promotion claim.
+
+### nvidia-012-020-program-cpu-sealing-20260921
+
+**CPU sealing for B300 · 012–020 /17complete Programs,72leaf stages** — 2026-09-21 / CPU sealed; GPU evaluation not run
+
+- Workload：`012–019captured/boundary;020captured`；目标：`sm_103a`；版本：`compiler204d87e3`。
+- 基线：Existing task-authored complete Programs；比值口径：`not_measured`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/55104a56abb41910154e69a46765686da0f8ace5/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/sealing-results.json`。
+- Canonical Lab build and independent bundle/ABI readback passed. Normal launcher, common device validation and multiple-output external comparison remain incomplete. No timing or promotion claim; large input preparation requires capacity planning.
 
 ### metal-result-044
 

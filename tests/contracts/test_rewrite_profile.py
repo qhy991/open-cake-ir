@@ -87,5 +87,111 @@ class ProfileCsvTests(unittest.TestCase):
                 parse_metrics(self.csv(broken))
 
 
+class PhasedProfileTests(unittest.TestCase):
+    def test_replay_checks_every_output_and_input_after_device_capture(self):
+        from array import array
+        import json
+        from pathlib import Path
+        import sys
+        import tempfile
+        from unittest.mock import patch
+        from tools import profile_rewrite_artifacts as profile
+        from tools.check_alignment_candidate import prepare_cases, case_data
+        from tools.staged_rewrite_comparison import SnapshotEncoder, INPUT_REFERENCES
+        document,_ = create_task('rmsnorm', backend='triton-b300', rows=1, columns=4)
+        workload = WorkloadContract(document)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve();prepared = root/'prepare';captured = root/'profile'
+            prepared.mkdir();captured.mkdir();prepare_cases(workload, prepared)
+            metadata = {'reference':{'kind':'python'}}
+            (prepared/'preparation.json').write_text(json.dumps(metadata))
+            raw = {'capture_complete':True, 'source_commit':'frozen',
+                   'workload_sha256':workload.canonical_sha256, 'reference':metadata['reference'],
+                   'participants':{'optimized':'optimized','starter':'starter'},
+                   'roles':{r:{'returncode':0} for r in profile.ROLES}, 'ncu_version':'fixture'}
+            (captured/'capture.json').write_text(json.dumps(raw))
+            plan = profile.snapshot_plan(workload)
+            for role in profile.ROLES:
+                d = captured/role;d.mkdir()
+                child = {'capture_complete':True,'role':role,'workload_sha256':workload.canonical_sha256,
+                         'byteorder':sys.byteorder,'snapshot_encoding':INPUT_REFERENCES,'observations':plan,'roles':{}}
+                (d/'child.json').write_text(json.dumps(child))
+                metrics = [[str(i),'kernel_'+str(i),m,
+                            '' if m in {'launch__block_size','launch__grid_size'} else 'count','1']
+                           for i in range(2) for m in profile.METRICS]
+                (d/'stdout.log').write_text(ProfileCsvTests().csv(metrics))
+                for index,row in enumerate(plan):
+                    case=row['case'];number=workload.case_ids.index(case)
+                    values={**case_data(prepared,workload,number,'input'),**case_data(prepared,workload,number,'output')}
+                    with (d/f'{index}.bin').open('wb') as stream:
+                        encoder=SnapshotEncoder(stream,workload,profile.snapshot_bytes(workload,case))
+                        encoder.append(case,[array('f',values[arg.name]).tobytes() for arg in workload.tensor_abi(case)])
+            serial=0
+            def verify():
+                nonlocal serial
+                out=root/str(serial);out.mkdir();serial+=1
+                return profile.verify(root,out,prepared,captured,workload,'frozen')
+            with patch.object(profile,'load_participants',return_value=({'optimized':'optimized','starter':'starter'},{})), \
+                 patch.object(profile,'candidate_identity',side_effect=lambda c:c):
+                report=verify();self.assertTrue(report['correctness_passed'])
+                self.assertTrue(all(len(r['checks'])==6 and len(r['kernels'])==2 for r in report['roles'].values()))
+                last=captured/'external'/f'{len(plan)-1}.bin';valid=last.read_bytes()
+                # A changed input in the profiled call fails even with correct outputs.
+                changed=bytearray(valid);changed[1:5]=array('f',[999.0]).tobytes();last.write_bytes(changed)
+                report=verify();self.assertFalse(report['correctness_passed'])
+                self.assertTrue(all('kernels' not in r for r in report['roles'].values()))
+                # The final output of the final call is checked too.
+                changed=bytearray(valid);changed[-4:]=array('f',[999.0]).tobytes();last.write_bytes(changed)
+                self.assertFalse(verify()['correctness_passed'])
+                for broken,diagnostic in [(valid[:-1],'truncated'),(valid+b'x','trailing')]:
+                    last.write_bytes(broken)
+                    with self.assertRaisesRegex(ValueError,diagnostic):verify()
+                last.write_bytes(valid)
+                child_file=captured/'external'/'child.json';child=json.loads(child_file.read_text());child['observations']=plan[:-1];child_file.write_text(json.dumps(child))
+                with self.assertRaisesRegex(ValueError,'required observations'):verify()
+
+    def test_derived_reference_reaches_capture_with_control_roles_preserved(self):
+        import json
+        import os
+        from pathlib import Path
+        import sys
+        import tempfile
+        from unittest.mock import patch
+        from tools import profile_rewrite_artifacts as profile
+        document,_=create_task('fib_rmsnorm_h2048',backend='triton-b300',rows=1,columns=2048)
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve();(root/'reference').mkdir();output=root/'output';output.mkdir()
+            (root/'workload.json').write_text(json.dumps(document))
+            (root/'comparison.json').write_text(json.dumps({'kind':'authored_schedule_comparison','control_role':'optimized'}))
+            spec={'kind':'python','files':['ref.py'],'entry_point':'ref.py::run','derived_from':'preserved upstream fixture'}
+            (root/'reference/reference.json').write_text(json.dumps(spec));(root/'reference/ref.py').write_text('def run(*args): return None\n')
+            torch=SimpleNamespace(__version__='fixture',set_num_threads=lambda n:None)
+            original_path=list(sys.path);original_bytecode=sys.dont_write_bytecode
+            try:
+                with patch.dict(sys.modules,{'torch':torch}), \
+                     patch.object(profile,'observe_exclusive_cuda',return_value=SimpleNamespace(broker_job_id='owned')), \
+                     patch.object(profile,'preparation_metadata',return_value={'torch':'fixture','reference':spec,'native_library':None}), \
+                     patch.object(profile,'load_participants',return_value=({},{})), \
+                     patch.object(profile,'case_data',side_effect=RuntimeError('reference loaded; capture boundary')):
+                    with self.assertRaisesRegex(RuntimeError,'reference loaded'):
+                        profile.child('external',output,root,root,(os.geteuid(),os.getegid()))
+            finally:
+                sys.path[:]=original_path;sys.dont_write_bytecode=original_bytecode
+                sys.modules.pop('comparison_reference',None)
+            report=json.loads((output/'child.json').read_text())
+            self.assertIn('derived external',report['roles']['external'])
+            self.assertEqual(report['roles']['starter'],'unchanged old optimized binary')
+            self.assertFalse(report['capture_complete'])
+
+    def test_profile_phases_do_not_allow_a_cpu_stage_to_hold_a_lease(self):
+        from tools.check_alignment_candidate import phase_contract
+        task={'stages':[{'id':name,'execution':mode,'judge':{'identity':'open-cake-ir@fixed'}}
+                        for name,mode in [('prepare','local'),('profile','broker'),('verify','local')]]}
+        phase_contract('fixed',task,gpu_stage='profile')
+        task['stages'][2]['execution']='broker'
+        with self.assertRaisesRegex(ValueError,'resource phase'):
+            phase_contract('fixed',task,gpu_stage='profile')
+
+
 if __name__ == '__main__':
     unittest.main()
