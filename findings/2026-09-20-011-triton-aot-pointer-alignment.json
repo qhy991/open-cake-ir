@@ -507,5 +507,54 @@
         }
       }
     }
-  ]
+  ],
+  "rmsnorm_026_alignment_followup": {
+    "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+    "task": "026_rmsnorm_h7168",
+    "scope": "R64 C7168 BF16 epsilon1e-6. Same retained sliced-w8 lowered source, constants, grid[64,1,1] and block256. Runtime-guarded16B leaf plus generic fallback; fixed control is previous generic sliced-w8 binary, not initial starter. Original Workload/oracle/external Python reference retained.",
+    "guard": {
+      "run_id": "nvidia-rmsnorm-026-alignment-guards-20260921-d943010943b9",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-guards-20260921-d943010943b9/stages/verify/guard-report.json",
+      "passed": true,
+      "checks": 50,
+      "coverage": "All5cases:aligned plus each public input/output at2/4/8B offset; restricted leaf rejects beforelaunch,dispatcher selects generic for unaligned; all output/input checks pass."
+    },
+    "comparison": {
+      "run_id": "nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891/stages/verify/comparison-report.json",
+      "status": "measurement_quality_failed",
+      "correctness_passed": true,
+      "snapshot_count": 2550,
+      "snapshot_bytes": 2344299500,
+      "edges": {
+        "optimized_vs_external": {
+          "candidate_us": 5.92,
+          "baseline_us": 2.656,
+          "speedup": 0.448648648648649,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.070369911144105
+        },
+        "starter_vs_external": {
+          "candidate_us": 6.4005,
+          "baseline_us": 2.656,
+          "speedup": 0.414967580657761,
+          "quality_passed": true,
+          "classification": "second_arm_faster",
+          "maximum_cohort_cv": 0.049736607009941
+        },
+        "optimized_vs_starter": {
+          "candidate_us": 5.92,
+          "baseline_us": 6.4005,
+          "speedup": 1.08116554054054,
+          "quality_passed": true,
+          "classification": "first_arm_faster",
+          "maximum_cohort_cv": 0.035526863575206
+        }
+      }
+    },
+    "interpretation": "Guarded alignment improves versus the fixed generic sliced-w8 by a qualified1.08116554x (5.920/6.4005us). Candidate/external5.920/2.656us failsCV(max0.07037),so no accepted external candidate speedup. In this new experiment the separately paired generic control/external6.4005/2.656us passesquality(max0.049737),establishing a2.409827x latency ratio for that retained generic binary only. This does not retroactively repair old026CV failures,qualify the new aligned external edge or multiply olderstarter ratios.",
+    "measurement": "CPU preparation and full numerical verification outside lease; original paired CUPTI coldL2,all2550snapshots and continuous exclusive capture unchanged. Guard completion preceded comparison submission.",
+    "promotion_disposition": "No promotion. Retain guarded candidate as a qualified improvement over the fixed intermediatecontrol,keep the failed external edge and all old evidence."
+  }
 }
