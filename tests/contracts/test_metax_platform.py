@@ -148,7 +148,7 @@ def candidate(lm, x: cake.Tensor((8, 128), "{source_dtype}"), y: cake.Tensor((8,
         from open_cake_ir.tasks import evaluate as worker
         executor = SimpleNamespace(admit_host=Mock(side_effect=ValueError("captured host drift")))
         authority = SimpleNamespace(executor=executor, request={"purpose": "confirmatory"},
-                                    candidate=SimpleNamespace(target="xcore1002"))
+                                    candidate=SimpleNamespace(target="xcore1002", is_program=False), baseline=None)
         with patch("open_cake_ir.evaluation.triton_metax.observe_local_metax") as observe, \
              patch.object(worker, "_evaluate_tile_candidate") as evaluate:
             with self.assertRaisesRegex(ValueError, "captured host drift"):
