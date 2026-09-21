@@ -40,7 +40,7 @@ retains its original dates and conclusions.
 | 优化知识迁移 / Optimization knowledge | [机制设计](OPTIMIZATION_TRANSFER.md) · [消融方法](OPTIMIZATION_TRANSFER_ABLATION.md) | [Transfer design](en/OPTIMIZATION_TRANSFER.md) | 带前提的显式变换、目标参数选择与待验证的迁移收益 |
 | 实验结果 / Experimental results | [硬件汇总](RESULTS.md) · [FlashInfer 综述](results/nvidia/FLASHINFER_STATUS.md) | [English summary](results/nvidia/FLASHINFER_STATUS.md#english-reading-summary) | 固定 Workload、starter 身份、配对结果、失败记录和 profiler 证据 |
 | 实现与维护 / Implementation | [当前状态](../reports/current/STATUS.md) · [分支流程](DEVELOPMENT_BRANCHES.md) | [Context map](../CONTEXT-MAP.md) | 源码与执行绑定、平台维护、模块负责位置 |
-| 研究路线 / Roadmap | [后续目标](ROADMAP.md) | [Roadmap](en/ROADMAP.md) | 迁移、优化复用与端到端验证的研究目标 |
+| 研究路线 / Roadmap | [后续目标](ROADMAP.md) | [Roadmap (Chinese)](ROADMAP.md) | 迁移、优化复用与端到端验证的研究目标 |
 
 ## 详细材料 / Detailed references
 

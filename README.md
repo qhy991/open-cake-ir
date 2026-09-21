@@ -107,10 +107,13 @@ python3 -m venv .venv
 | [src/open_cake_ir/lab/](src/open_cake_ir/lab/) | Agent 与实验组织；[模块导航](src/open_cake_ir/lab/README.md) |
 | [src/open_cake_ir/evaluation/](src/open_cake_ir/evaluation/) · [evidence/](src/open_cake_ir/evidence/) | 公共评测、执行与证据存储；[职责地图](CONTEXT-MAP.md) |
 | [src/open_cake_ir/tasks/](src/open_cake_ir/tasks/) · [contracts/](contracts/) | 具体任务实现与语义契约；[任务目录](docs/wiki/workloads.md) |
-| [compiler/targets/](compiler/targets/) · [runtime/hosts/](runtime/hosts/) | 精确硬件声明与主机环境 |
+| [compiler/](compiler/) · [runtime/](runtime/) | 编译与执行配置；[硬件声明](compiler/targets/) · [主机环境](runtime/hosts/) |
 | [tools/](tools/) · [tests/](tests/) · [corpus/](corpus/) | CLI 工具、合同测试和编译器验证用例；[贡献说明](CONTRIBUTING.md) |
 | [docs/](docs/README.md) | 技术报告和使用文档；[完整目录](docs/catalog.md) · [概念与算子导读](docs/wiki/README.md) |
-| [findings/](findings/) · [reports/current/](reports/current/STATUS.md) | 问题与改进记录、从权威输入生成的当前状态 |
+| [findings/](findings/) · [reports/](reports/) | 问题与改进记录、报告与[生成的当前状态](reports/current/STATUS.md) |
+| [examples/](examples/) · [experiments/](experiments/) | 示例与实验输入；[FlashInfer 改写任务包](experiments/flashinfer_rewrites/README.md)，具体范围见各目录说明 |
+| [evidence/](evidence/README.md) · [inventory/](inventory/) · [migration/](migration/README.md) | 保留的证据、调查与迁移材料；[历史阅读索引](docs/catalog.md) |
+| [skills/](skills/) · [.github/](.github/) | 项目操作流程与 CI；[Agent 开发约定](AGENTS.md) |
 
 README 提供快速入口；[报告首页](docs/README.md)组织章节与引用；[文档总目录](docs/catalog.md)收纳详细专题与历史材料。
 文档职责由 [Context map](CONTEXT-MAP.md)维护，新增内容按已有负责位置补充。
