@@ -171,18 +171,18 @@ def render_figure(rows, datasets=None):
 
 def readme_block(datasets):
     out = ["<!-- hardware-results:start -->", "## 按硬件查看成果", "",
-           "各硬件分支独立维护发布数据，main 汇总已经合入的版本。**加速比 = 各自固定基线耗时 ÷ 候选耗时**，超过 1× 表示更快。",
-           "各平台的输入与计时协议不同，图中各面板使用独立刻度；不作跨硬件排名，也不将任务基线当作厂商最优库。", "",
-           "![按硬件分组的代表性确认结果](docs/results/overview.svg)", "",
-           "| 硬件 | 维护分支 | 已收录观察 | 独立数据与页面 |", "|---|---|---:|---|"]
+           "各平台维护自己的发布数据，main 汇总已合入的版本。观察条目包括形状、实验集合和历史尝试，**不是任务总数**。", "",
+           "| 硬件 | 维护分支 | 已收录观察 | 结果页面 |", "|---|---|---:|---|"]
     for data in datasets:
         branch = data["branch"]
         out.append(f"| {data['platform']} | [{branch}]({REPOSITORY}/tree/{branch}/docs/results/{branch}) | {len(data['records'])} | [{data['card']}](docs/results/{branch}/README.md) |")
-    out += ["", "观察数包含同一任务的不同形状、实验集合与历史尝试，不是任务总数。平台页注明数据日期和验证边界。", "",
-            "[main 完整汇总](docs/RESULTS.md) · [交互目录源码 / 下载后打开](docs/results/index.html) · [平台更新与汇总流程](docs/RESULTS_MAINTENANCE.md)", "",
-            "目录区分 Campaign 内最佳合格候选、历史晋升、正确性记录与未合格结果，保留确认历史和固定来源链接。",
-            "NVIDIA 页面单列 [CAKE 对照与改写进度](docs/NVIDIA_CAKE_REPRODUCTION.md)；原始实验与端到端验证范围见该报告。",
-            "<!-- hardware-results:end -->"]
+    out += ["", "[完整结果与原始证据](docs/RESULTS.md) · [FlashInfer 逐任务对比](docs/results/nvidia/FLASHINFER_STATUS.md) · [CAKE 对照与改写](docs/NVIDIA_CAKE_REPRODUCTION.md)", "",
+            "[交互目录（下载后打开）](docs/results/index.html) · [发布数据维护流程](docs/RESULTS_MAINTENANCE.md)", "",
+            "**加速比 = 各自固定基线耗时 ÷ 候选耗时**，超过 1× 表示更快。正确性、计时质量与性能收益分别记录；各平台协议不同，不作跨硬件排名。", "",
+            "<details>", "<summary>展开代表结果图（各平台独立刻度）</summary>", "",
+            "![按硬件分组的代表性确认结果](docs/results/overview.svg)", "",
+            "图表展示选定的历史观察；完整表格保留失败、无显著差异和未实测记录。各自任务基线不等于厂商最优库。", "",
+            "</details>", "<!-- hardware-results:end -->"]
     return "\n".join(out)
 
 

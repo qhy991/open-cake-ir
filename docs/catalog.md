@@ -1,28 +1,14 @@
 # 文档总目录 / Documentation catalog
 
-[跨硬件的可执行优化知识迁移](OPTIMIZATION_TRANSFER.md) · [English](en/OPTIMIZATION_TRANSFER.md)：框架研究设计、机制图与[消融方法](OPTIMIZATION_TRANSFER_ABLATION.md)。
+[项目首页](../README.md) · [技术报告与引用](README.md) · [中文入门](zh-CN/README.md) · [English start](en/README.md)
 
-[按硬件查看实验结果](RESULTS.md)：NVIDIA、Apple、Hygon DCU、AMD 的结果目录、历史记录与交互筛选页面。
+本页按主题收纳详细文档与历史材料。首次访问先读项目 README 或技术报告首页；查找具体接口、实验方法和原始报告时使用本目录。
+This catalog groups detailed references and dated material. Use the repository README or report entry for a short reading route.
 
-[Triton CTA 宽度特化与 tick-tock 经验总结](TRITON_CTA_WIDTH.md)：显式候选变换、经验归属、适用条件与配对测量。
+**目录：** [入门与使用](#入门与使用--guides) · [实验与硬件](#实验与硬件--experiments-and-hardware) · [模块职责](#模块职责--contexts) · [设计记录](#设计记录--decisions) · [历史调查](#历史调查与报告--historical-surveys-and-reports) · [数据说明](#数据说明--dataset-notes)
 
-[任务效率评分](PERFORMANCE_SCORING.md)：固定任务字节数、带宽参考、审计报告与校准覆盖。
-
-[Claude artifact-only v4](CLAUDE_PROVIDER_V4.md)：上下文压缩记录、精确终态请求与旧契约兼容。
-
-原生 CUDA/PTX：[中文](zh-CN/NATIVE_CUDA.md) · [English](NATIVE_CUDA.md)
-
-[中文入门](zh-CN/README.md) · [English start](en/README.md) · [职责与文档归属](../CONTEXT-MAP.md)
-
-B300： [中文](B300.md) · [English](en/B300.md)
-
-这里把原始 Markdown 文档对应到中文和英文阅读入口。初学者先按语言首页的路线读，不需要从第一份历史报告读到最后一份。
-
-This catalog pairs original Markdown documents with Chinese and English reading routes. Start with a language home rather than reading the archive sequentially.
-
-中文阅读版用例子解释背景、规则和结果；长篇技术表、精确来源和逐项证据保留在链接的原始材料中，并非逐句译本。英文原文不搬迁，已有中文正文不重复复制；翻译和导读不成为第二份合同或实验结论。术语仍由 [GLOSSARY](GLOSSARY.md) 负责，当前发布只看[生成状态](../reports/current/STATUS.md)。
-
-Reading companions explain the material in simpler language. Detailed tables and evidence locators remain in the linked original. Original paths and dated conclusions stay intact; translations do not create new contracts or claims.
+章节沿用原路径。阅读版可以解释或摘要，但不会创建第二份合同或实验结论；术语由 [GLOSSARY](GLOSSARY.md)维护，当前能力见[生成状态页](../reports/current/STATUS.md)。
+Original paths and dated conclusions stay intact. Reading companions do not create independent contracts or evidence.
 
 ## 入门与使用 / Guides
 
@@ -51,6 +37,26 @@ Reading companions explain the material in simpler language. Detailed tables and
 | Triton TileLoop：两层循环的作用域、累积与写回 | [阅读](TRITON_LOOP_SCOPES.md) | [Read](en/TRITON_LOOP_SCOPES.md) |
 | 同后端 Triton 配对：共同基线、隔离构建与 Evaluation | [阅读](PAIRED_TRITON.md) | [Read](en/PAIRED_TRITON.md) |
 | 每个任务的已验证最佳实现怎样成为下一轮 baseline | [阅读](zh-CN/TASK_INCUMBENTS.md) | [Read](en/TASK_INCUMBENTS.md) |
+
+## 实验与硬件 / Experiments and hardware
+
+| 查找内容 / Topic | 文档与数据入口 / References |
+|---|---|
+| 各平台已发布观察、失败与历史结果 | [完整硬件汇总](RESULTS.md) · [交互目录（下载后打开）](results/index.html) · [发布维护流程](RESULTS_MAINTENANCE.md) |
+| FlashInfer 改写、starter 与外部实现的差距 | [逐任务实验综述及 English summary](results/nvidia/FLASHINFER_STATUS.md) · [改写任务包](../experiments/flashinfer_rewrites/README.md) |
+| CAKE 参考机制与本地实现边界 | [NVIDIA CAKE 对照](NVIDIA_CAKE_REPRODUCTION.md) · [已有 Kernel 改写](KERNEL_REPRODUCTION.md) |
+| NVIDIA B200 / B300 | [B300 中文](B300.md) · [English](en/B300.md) · [发布记录](results/nvidia/README.md) |
+| Apple Metal | [中文指南](metal.zh-CN.md) · [English](metal.md) · [发布记录](results/metal/README.md) |
+| AMD | [任务入口](amd-task-entrypoints.md) · [发布记录](results/amd/README.md) |
+| Hygon DCU | [设计与运行](dcu-gfx938-design.md) · [设备结果](dcu-gfx938-results.md) · [发布记录](results/dcu/README.md) |
+| MetaX C550 | [当前路径与验收范围](metax-c550.md) · [bring-up 记录](metax-c550-bringup.md) |
+| 原生 CUDA / PTX 与 CuTe DSL | [CUDA 中文](zh-CN/NATIVE_CUDA.md) · [CUDA English](NATIVE_CUDA.md) · [CuTe 中文](zh-CN/PAIRED_CUTE.md) · [CuTe English](en/PAIRED_CUTE.md) |
+| 优化知识迁移与受控消融 | [机制设计](OPTIMIZATION_TRANSFER.md) · [English](en/OPTIMIZATION_TRANSFER.md) · [消融方法](OPTIMIZATION_TRANSFER_ABLATION.md) |
+| 显式变换与性能解释 | [CTA 宽度](TRITON_CTA_WIDTH.md) · [输出列特化](OUTPUT_COLUMN_SPECIALIZATION_PASS.md) · [Epilogue fusion](EPILOGUE_FUSION_PASS.md) · [效率评分](PERFORMANCE_SCORING.md) |
+| Agent、预算与实验操作 | [Lab 用途与流程](wiki/experiments.md) · [English](en/wiki/experiments.md) · [执行手册](RUNBOOK.md) · [Claude artifact-only v4](CLAUDE_PROVIDER_V4.md) |
+| 实验输入与可复查依据 | [Workload 定义](../contracts/workloads/README.md) · [问题与改进记录](../findings/README.md) · [当前状态](../reports/current/STATUS.md) |
+
+具体结果只在各自绑定的源码、硬件、输入与协议内解释；指南入口不表示全部路径已获设备或性能验收。
 
 ## 模块职责 / Contexts
 
