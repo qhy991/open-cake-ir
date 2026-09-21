@@ -27,8 +27,7 @@ class PreparedTensorCase:
         object.__setattr__(self, 'case_id', case_id)
         object.__setattr__(self, 'inputs', MappingProxyType({k: v if _is_torch_tensor(v) else tuple(v)
                                                          for k, v in inputs.items()}))
-        object.__setattr__(self, 'expected', MappingProxyType({k: tuple(v.reshape(-1).tolist()) if _is_torch_tensor(v) else tuple(v)
-                                                           for k, v in expected.items()}))
+        object.__setattr__(self, 'expected', MappingProxyType({k: tuple(v) for k, v in expected.items()}))
 
     def check(self, workload: WorkloadContract, case_id: str):
         if self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id:

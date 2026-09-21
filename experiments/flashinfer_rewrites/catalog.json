@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "collection": "flashinfer-reference-rewrites",
-  "scope": "26 source-available reference tasks; launch eligibility is separate from reference availability; starter-relative inner loop",
+  "scope": "26 FlashInfer-Bench reference tasks plus four CAKE paper-family capability-assessment tasks; launch eligibility and reference availability remain separate",
   "tasks": [
     {
       "id": "001_fused_add_rmsnorm_h2048",
@@ -426,6 +426,621 @@
       "rows": 64,
       "columns": 7168,
       "baseline_scope": "fixed_cake_starter; external performance baseline not qualified"
+    },
+    {
+      "id": "027_cake_kda_prefill",
+      "status": "blocked",
+      "reason": "full_workload_oracle_and_authoring_not_integrated",
+      "task": "cake_kda_prefill",
+      "reference_kind": "cake_generated_kernel_family",
+      "references": [
+        "references/027_cake_kda_prefill/reference.json",
+        "references/027_cake_kda_prefill/csrc/kda/flashkda_bf16_fused_m128.cu",
+        "references/027_cake_kda_prefill/csrc/kda/flashkda_bf16_fused_m64.cu",
+        "references/027_cake_kda_prefill/csrc/kda/flashkda_bf16_fused_m128_binding.cu",
+        "references/027_cake_kda_prefill/csrc/kda/flashkda_bf16_fused_m64_binding.cu",
+        "references/027_cake_kda_prefill/csrc/kda/flashkda_binding_common.cuh",
+        "references/027_cake_kda_prefill/flashinfer/kda_prefill.py",
+        "references/027_cake_kda_prefill/benchmarks/bench_recurrent_kda_prefill.py",
+        "references/027_cake_kda_prefill/tests/kda/test_recurrent_kda_prefill.py"
+      ],
+      "source": "https://github.com/flashinfer-ai/flashinfer PR #4262 at e835e0f5565b5b9786c987e00c6b39a26bfecca5",
+      "reference_status": "available",
+      "objective": "Reproduce the FlashKDA-compatible multi-token BF16 recurrent prefill family through typed Cake: preserve chunk state, M64/M128 ownership, fused gate/QK preparation and packed/tail behavior.",
+      "baseline_scope": "pinned_external_reference_unqualified; no starter or performance parity supplied",
+      "assessment": {
+        "reference_access": "known_kernel_reproduction",
+        "targets": [
+          "sm_100a"
+        ],
+        "shape_scope": "Required evaluation inputs; preparation specification, not an admitted Workload Contract.",
+        "benchmark_rows": [
+          {
+            "id": "h96_fixed",
+            "heads": 96,
+            "sequence_lengths": [
+              8192
+            ],
+            "dtype": "bf16",
+            "head_dim": 128
+          },
+          {
+            "id": "h96_mixed",
+            "heads": 96,
+            "sequence_lengths": [
+              1300,
+              547,
+              2048,
+              963,
+              271,
+              3063
+            ],
+            "dtype": "bf16",
+            "head_dim": 128
+          },
+          {
+            "id": "h96_uniform",
+            "heads": 96,
+            "sequence_lengths": [
+              1024,
+              1024,
+              1024,
+              1024,
+              1024,
+              1024,
+              1024,
+              1024
+            ],
+            "dtype": "bf16",
+            "head_dim": 128
+          },
+          {
+            "id": "h64_fixed",
+            "heads": 64,
+            "sequence_lengths": [
+              8192
+            ],
+            "dtype": "bf16",
+            "head_dim": 128
+          },
+          {
+            "id": "h64_mixed",
+            "heads": 64,
+            "sequence_lengths": [
+              1300,
+              547,
+              2048,
+              963,
+              271,
+              3063
+            ],
+            "dtype": "bf16",
+            "head_dim": 128
+          },
+          {
+            "id": "h64_uniform",
+            "heads": 64,
+            "sequence_lengths": [
+              1024,
+              1024,
+              1024,
+              1024,
+              1024,
+              1024,
+              1024,
+              1024
+            ],
+            "dtype": "bf16",
+            "head_dim": 128
+          }
+        ],
+        "abi_and_semantics": "BF16 Q/K/V/G/beta and state; FP32 A_log/dt_bias; D=128; in-kernel Q/K L2 norm, gate and sigmoid beta; finite negative lower_bound; scale=1/sqrt(128). Include fixed and packed offsets, output, final state and state-pool preservation. No conv/RMSNorm wrapper substitution.",
+        "correctness": "Public FlashKDA comparison uses atol=rtol=1e-2 on every output/state element; the paper bitwise statement is not this peer gate. Freeze reference rounding and both output/state obligations before running.",
+        "mechanisms": [
+          "Persistent recurrent state across 32-token chunks with TMEM residency.",
+          "Overlapped preparation, TMA, MMA, compute and epilogue roles with a five-slot pipeline.",
+          "M64 only for fixed B=1,H=64; M128 otherwise; packed sequence ordering.",
+          "Exact-full-range state alias and direct in-place update; reject partial overlap."
+        ],
+        "probes": [
+          "state_triton",
+          "state_cute",
+          "state_native",
+          "native_pipeline4",
+          "native_role_registers",
+          "cute_tmem"
+        ],
+        "next_steps": [
+          "New prefill contract, independent recurrence oracle and authoring route.",
+          "Cross-chunk state lifecycle and exact alias support in the selected lowering.",
+          "Six-shape public API baseline adapter and graph/stream/state reset coverage."
+        ],
+        "performance_criterion": "Unselected: bind the external baseline, criterion and budget before measurements; report ratios without a parity claim until then."
+      }
+    },
+    {
+      "id": "028_cake_kda_decode",
+      "status": "blocked",
+      "reason": "full_workload_oracle_and_authoring_not_integrated",
+      "task": "cake_kda_decode",
+      "reference_kind": "cake_generated_kernel_family",
+      "references": [
+        "references/028_cake_kda_decode/reference.json",
+        "references/028_cake_kda_decode/csrc/kda/flashkda_decode_d128_t1_precomputed_direct_split16.cu",
+        "references/028_cake_kda_decode/csrc/kda/flashkda_decode_d128_t1_precomputed_direct_split8.cu",
+        "references/028_cake_kda_decode/csrc/kda/flashkda_decode_d128_t2_precomputed_split4.cu",
+        "references/028_cake_kda_decode/csrc/kda/flashkda_decode_d128_t3_lower_bound_split4.cu",
+        "references/028_cake_kda_decode/csrc/kda/flashkda_decode_d128_t4_precomputed_split2.cu",
+        "references/028_cake_kda_decode/csrc/kda/flashkda_decode_d128_t5_precomputed_gram_split1.cu",
+        "references/028_cake_kda_decode/csrc/kda/flashkda_decode_d128_t6_precomputed_gram_split1.cu",
+        "references/028_cake_kda_decode/flashinfer/kda_kernels/recurrent_kda.py",
+        "references/028_cake_kda_decode/benchmarks/bench_recurrent_kda_decode_export.py"
+      ],
+      "source": "https://github.com/flashinfer-ai/flashinfer PR #4279 at 2eb10cb88ef91d25a22c16832e859914599d46cd",
+      "reference_status": "available",
+      "objective": "Reproduce recurrent KDA T=1..6 as a complete stateful family: direct single-warp T1 and coefficient-Gram multi-token schedules, preserving every speculative checkpoint.",
+      "baseline_scope": "pinned_external_reference_unqualified; no starter or performance parity supplied",
+      "assessment": {
+        "reference_access": "known_kernel_reproduction",
+        "targets": [
+          "sm_100a"
+        ],
+        "shape_scope": "Required evaluation inputs; preparation specification, not an admitted Workload Contract.",
+        "benchmark_rows": [
+          {
+            "id": "t1_n8",
+            "tokens": 1,
+            "sequences": 8,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t1_n16",
+            "tokens": 1,
+            "sequences": 16,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t1_n32",
+            "tokens": 1,
+            "sequences": 32,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t1_n64",
+            "tokens": 1,
+            "sequences": 64,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t1_n128",
+            "tokens": 1,
+            "sequences": 128,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t2_n8",
+            "tokens": 2,
+            "sequences": 8,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t2_n16",
+            "tokens": 2,
+            "sequences": 16,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t2_n32",
+            "tokens": 2,
+            "sequences": 32,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t2_n64",
+            "tokens": 2,
+            "sequences": 64,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t2_n128",
+            "tokens": 2,
+            "sequences": 128,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t3_n1",
+            "tokens": 3,
+            "sequences": 1,
+            "qk_heads": 16,
+            "value_heads": 16,
+            "head_dim": 128,
+            "gate": "raw_lower_bound"
+          },
+          {
+            "id": "t3_n2",
+            "tokens": 3,
+            "sequences": 2,
+            "qk_heads": 16,
+            "value_heads": 16,
+            "head_dim": 128,
+            "gate": "raw_lower_bound"
+          },
+          {
+            "id": "t3_n4",
+            "tokens": 3,
+            "sequences": 4,
+            "qk_heads": 16,
+            "value_heads": 16,
+            "head_dim": 128,
+            "gate": "raw_lower_bound"
+          },
+          {
+            "id": "t3_n8",
+            "tokens": 3,
+            "sequences": 8,
+            "qk_heads": 16,
+            "value_heads": 16,
+            "head_dim": 128,
+            "gate": "raw_lower_bound"
+          },
+          {
+            "id": "t3_n16",
+            "tokens": 3,
+            "sequences": 16,
+            "qk_heads": 16,
+            "value_heads": 16,
+            "head_dim": 128,
+            "gate": "raw_lower_bound"
+          },
+          {
+            "id": "t4_n8",
+            "tokens": 4,
+            "sequences": 8,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t4_n16",
+            "tokens": 4,
+            "sequences": 16,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t4_n32",
+            "tokens": 4,
+            "sequences": 32,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t4_n64",
+            "tokens": 4,
+            "sequences": 64,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t4_n128",
+            "tokens": 4,
+            "sequences": 128,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t5_n8",
+            "tokens": 5,
+            "sequences": 8,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t5_n16",
+            "tokens": 5,
+            "sequences": 16,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t5_n32",
+            "tokens": 5,
+            "sequences": 32,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t5_n64",
+            "tokens": 5,
+            "sequences": 64,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t5_n128",
+            "tokens": 5,
+            "sequences": 128,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t6_n8",
+            "tokens": 6,
+            "sequences": 8,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t6_n16",
+            "tokens": 6,
+            "sequences": 16,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t6_n32",
+            "tokens": 6,
+            "sequences": 32,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t6_n64",
+            "tokens": 6,
+            "sequences": 64,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          },
+          {
+            "id": "t6_n128",
+            "tokens": 6,
+            "sequences": 128,
+            "qk_heads": 16,
+            "value_heads": 32,
+            "head_dim": 128,
+            "gate": "precomputed"
+          }
+        ],
+        "abi_and_semantics": "BF16 D128; T1 standard decode; T2/4/5/6 packed speculative API with precomputed gate and beta; T3 H=HV=16 with raw gate, A_log/dt_bias and negative lower_bound. GQA grouping and state/gate outer strides follow the pinned API.",
+        "correctness": "Compare complete output and mutated state to pinned CuTe reference at atol=rtol=1e-2. Unselected state slots and padding remain unchanged. T3 has a different contract; do not attribute its speed difference solely to token count.",
+        "mechanisms": [
+          "T1 direct register-held recurrence, vectorized state traffic and warp reductions.",
+          "T2/T4 WY-style schedules and T5/T6 coefficient-Gram plus triangular residual solve.",
+          "Value partition and CTA-wave selection depend on N*HV and measured device SM count.",
+          "All T checkpoint states, accepted-token selection and padded/invalid state slots."
+        ],
+        "probes": [
+          "state_triton",
+          "state_cute",
+          "state_native",
+          "cute_register_mma"
+        ],
+        "next_steps": [
+          "New recurrent/speculative contract with independent complete-state/checkpoint oracle.",
+          "Registered task starter and stateful authoring/evaluation integration.",
+          "Qualify 30 public API rows plus low-wave dispatch branches; headline T5/T6 rows exercise split1 only."
+        ],
+        "performance_criterion": "Unselected: bind the external baseline, criterion and budget before measurements; report ratios without a parity claim until then."
+      }
+    },
+    {
+      "id": "029_cake_tinygemm2",
+      "status": "ready",
+      "task": "cake_tinygemm2",
+      "reference_kind": "cake_generated_kernel_family",
+      "references": [
+        "references/029_cake_tinygemm2/reference.json",
+        "references/029_cake_tinygemm2/csrc/tinygemm2_sm100.cu",
+        "references/029_cake_tinygemm2/flashinfer/gemm/routergemm.py",
+        "references/029_cake_tinygemm2/tests/model_optimizations/test_tinygemm2_sm100.py",
+        "references/029_cake_tinygemm2/baseline/csrc/tinygemm2.cu",
+        "references/029_cake_tinygemm2/baseline/csrc/tvm_ffi_utils.h"
+      ],
+      "source": "https://github.com/flashinfer-ai/flashinfer PR #4274 at b38a0d686ee0d0be7a07b2ea559f2af14d2adf59",
+      "reference_status": "available",
+      "objective": "Reproduce bias-enabled BF16 TinyGEMM2 with bit-identical output, 4/8-stage TMA pipelines, PDL variants and shape-dependent dispatch. Compare against the pinned upstream baseline.",
+      "baseline_scope": "fixed_partitioned_cake_starter; strict external bitwise oracle; external timing comparison is separate from the Lab baseline bundle",
+      "assessment": {
+        "reference_access": "known_kernel_reproduction",
+        "targets": [
+          "sm_100a",
+          "sm_103a"
+        ],
+        "shape_scope": "Required evaluation inputs; preparation specification, not an admitted Workload Contract.",
+        "benchmark_rows": [
+          {
+            "id": "b1_n128_k720",
+            "batch": 1,
+            "output_features": 128,
+            "input_features": 720
+          },
+          {
+            "id": "b16_n1024_k1024",
+            "batch": 16,
+            "output_features": 1024,
+            "input_features": 1024
+          },
+          {
+            "id": "b64_n4096_k3072",
+            "batch": 64,
+            "output_features": 4096,
+            "input_features": 3072
+          }
+        ],
+        "abi_and_semantics": "Input[B,K], weight[N,K], bias[N], output[B,N] are BF16. FP32 accumulators and the pinned baseline reduction/cast order own bitwise parity. Bias-free path remains outside the exported optimized family.",
+        "correctness": "Require torch.equal against the pinned tinygemm2 baseline, plus an independent numerical oracle. Do not replace bitwise parity with the legacy Workload tolerance. Validate batches 1,2,4,7,8,13,16,64 and PDL repeated launches.",
+        "mechanisms": [
+          "Four-stage versus eight-stage shared-memory rings and explicit loader/compute roles.",
+          "Shallow when K<=1024 or CTA grid>2*SM count; freeze shape crossover before reporting.",
+          "PDL on/off with programmatic stream serialization.",
+          "Batch 1..7 TMA zero fill and masked output; preserve accumulator/reduction ordering."
+        ],
+        "probes": [
+          "native_pipeline4",
+          "native_pipeline8",
+          "cute_register_mma",
+          "legacy_tinygemm"
+        ],
+        "next_steps": [
+          "The B300 typed candidate passed 30/30 development bitwise checks over the three declared shapes and five distributions; authoring starts from the B1/N128/K720 seed and each Campaign requalifies its compiled baseline.",
+          "Preserve independent PDL, faithful TMA/warp partition, dispatch, performance and framework gates; numerical equality does not close them.",
+          "Obtain the original 35/239-row manifests before claiming their coverage; benchmark the other two frozen shapes through explicit cells."
+        ],
+        "performance_criterion": "Unselected: bind the external baseline, criterion and budget before measurements; report ratios without a parity claim until then."
+      },
+      "backend": "triton-b300",
+      "rows": 1,
+      "columns": 128,
+      "depth": 720
+    },
+    {
+      "id": "030_cake_alphamoe",
+      "status": "blocked",
+      "reason": "full_workload_oracle_and_authoring_not_integrated",
+      "task": "cake_alphamoe",
+      "reference_kind": "cake_generated_kernel_family",
+      "references": [
+        "references/030_cake_alphamoe/reference.json",
+        "references/030_cake_alphamoe/csrc/alphamoe_sm100.cu",
+        "references/030_cake_alphamoe/flashinfer/fused_moe/alphamoe_sm100.py",
+        "references/030_cake_alphamoe/tests/moe/test_alphamoe_sm100.py"
+      ],
+      "source": "https://github.com/flashinfer-ai/flashinfer PR #4287 at 106dede4b7f5ce283e279beb3cca80487ff74b6d",
+      "reference_status": "available",
+      "objective": "Reproduce the post-paper W8A8 fused expert-compute export with routed gather, gate/up, SwiGLU, intermediate FP8 quantization, down projection and weighted BF16 accumulation in one device program.",
+      "baseline_scope": "pinned_external_reference_unqualified; no starter or performance parity supplied",
+      "assessment": {
+        "reference_access": "known_kernel_reproduction",
+        "targets": [
+          "sm_100a",
+          "sm_103a"
+        ],
+        "shape_scope": "Required evaluation inputs; preparation specification, not an admitted Workload Contract.",
+        "benchmark_rows": [
+          {
+            "id": "qwen_m8",
+            "tokens": 8,
+            "hidden": 2048,
+            "intermediate": 128,
+            "experts": 512,
+            "top_k": 10,
+            "shared_expert": false,
+            "block_m": 8,
+            "routed_scaling_factor": 1.0
+          },
+          {
+            "id": "qwen_m128",
+            "tokens": 128,
+            "hidden": 2048,
+            "intermediate": 128,
+            "experts": 512,
+            "top_k": 10,
+            "shared_expert": false,
+            "block_m": 8,
+            "routed_scaling_factor": 1.0
+          },
+          {
+            "id": "large_hidden_m8",
+            "tokens": 8,
+            "hidden": 7168,
+            "intermediate": 128,
+            "experts": 257,
+            "top_k": 9,
+            "shared_expert": true,
+            "block_m": 8,
+            "routed_scaling_factor": 2.5
+          },
+          {
+            "id": "large_hidden_m128",
+            "tokens": 128,
+            "hidden": 7168,
+            "intermediate": 128,
+            "experts": 257,
+            "top_k": 9,
+            "shared_expert": true,
+            "block_m": 8,
+            "routed_scaling_factor": 2.5
+          }
+        ],
+        "abi_and_semantics": "Prequantized E4M3 activation codes/scales and expert weights, prealigned route plan with valid extent and route weights, BF16 output accumulator. Input quantization, route construction and offline weight conversion are separate boundaries. Preserve every scale, zero-activation and accumulate-into-out rule.",
+        "correctness": "Freeze an independent oracle preserving the pinned FP8 quantization/scaling/accumulation contract. Pin the existing order-aware error rule before execution, report all errors, and require separate real-model correctness; equal benchmark score is not bitwise output parity.",
+        "mechanisms": [
+          "Offline gate/up weight and scale interleave aligned to TMA boxes.",
+          "TMA gather, FP8 tensor-core compute, on-chip SwiGLU/requantization and down projection.",
+          "Asynchronous weighted BF16 output reduce-add with caller-owned accumulator semantics.",
+          "Later export splits output columns in Z for M<=8,K>=4096; keep its evidence separate from paper data."
+        ],
+        "probes": [
+          "native_pipeline4",
+          "native_fp8",
+          "atomic_triton",
+          "atomic_cute",
+          "atomic_native"
+        ],
+        "next_steps": [
+          "New W8A8 prealigned-compute contract, full numerical oracle and complete typed authoring route.",
+          "FP8 MMA/requantization/gather and BF16 reduction lowering evidence; INT32 atomic support alone is insufficient.",
+          "Requalify the later reference on the exact target; old paper 4-6x API ratios are not a GPU-time acceptance threshold."
+        ],
+        "performance_criterion": "Unselected: bind the external baseline, criterion and budget before measurements; report ratios without a parity claim until then."
+      }
     }
   ]
 }

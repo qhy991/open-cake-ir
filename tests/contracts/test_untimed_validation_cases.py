@@ -43,7 +43,7 @@ class UntimedValidationCases(unittest.TestCase):
                 correctness={"output_mismatches": int(failed), "max_abs_error": float(failed),
                              "inputs_unchanged": True})
         with patch.object(worker, "LoadedTorchTensorCandidate", side_effect=loaded), \
-             patch.object(worker, "materialize_case", return_value={}), \
+             patch.object(worker, "materialize_evaluation_inputs", return_value={}), \
              patch.object(worker, "evaluate_tile_validation_case", side_effect=evaluate):
             worker._evaluate_tile_candidate(self.authority, self.result, None, self.admission,
                                             False, route_calls_per_cohort=None)
@@ -89,7 +89,7 @@ class UntimedValidationCases(unittest.TestCase):
         admission = CudaDeviceAdmission("NVIDIA B300", (10, 3), "GPU-synthetic",
                                         "gpuq-123456789abc", "exclusive")
         with patch.object(worker, "LoadedTorchTensorCandidate", return_value=loaded), \
-             patch.object(worker, "materialize_case", return_value={}), \
+             patch.object(worker, "materialize_evaluation_inputs", return_value={}), \
              patch.object(worker, "evaluate_tile_workload", return_value=receipt) as evaluate, \
              patch.object(worker, "evaluate_tile_validation_case") as all_cases:
             worker._evaluate_tile_candidate(self.authority, self.result, None, admission,

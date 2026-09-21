@@ -1,0 +1,21 @@
+{
+  "repository": "https://github.com/flashinfer-ai/flashinfer",
+  "pull_request": "https://github.com/flashinfer-ai/flashinfer/pull/4279",
+  "source_commit": "2eb10cb88ef91d25a22c16832e859914599d46cd",
+  "source_files": [
+    "csrc/kda/flashkda_decode_d128_t1_precomputed_direct_split16.cu",
+    "csrc/kda/flashkda_decode_d128_t1_precomputed_direct_split8.cu",
+    "csrc/kda/flashkda_decode_d128_t2_precomputed_split4.cu",
+    "csrc/kda/flashkda_decode_d128_t3_lower_bound_split4.cu",
+    "csrc/kda/flashkda_decode_d128_t4_precomputed_split2.cu",
+    "csrc/kda/flashkda_decode_d128_t5_precomputed_gram_split1.cu",
+    "csrc/kda/flashkda_decode_d128_t6_precomputed_gram_split1.cu",
+    "flashinfer/kda_kernels/recurrent_kda.py",
+    "benchmarks/bench_recurrent_kda_decode_export.py"
+  ],
+  "reference_access": "known_kernel_reproduction",
+  "license": "Apache-2.0; original file notices retained",
+  "role": "reference_source_only",
+  "completeness": "Seven representative device variants, dispatcher and benchmark; not the entire 23-module build closure.",
+  "paper_relation": "Paper-cited PR export. No local GPU qualification is inherited."
+}

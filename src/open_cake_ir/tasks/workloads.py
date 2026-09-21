@@ -33,8 +33,10 @@ from .solx_fib import attention as solx_fib_attention, moe as solx_fib_moe
 from .solx_fib import gemm as solx_fib_gemm
 from .solx_fib import workload as solx_fib_math
 from .solx_fib.authoring import starter_source as solx_fib_starter_source
+from .tinygemm import reproduction as tinygemm_reproduction
 
 _TASKS = {
+    tinygemm_reproduction.OPERATOR: (tinygemm_reproduction.validate_contract, WorkloadContract),
     add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
     "flash_kmeans_assign": (_validate_flash_contract, FlashWorkloadContract),
     "tinygemm2_bf16_linear": (_validate_tinygemm_contract, WorkloadContract),
@@ -104,6 +106,8 @@ def load_workload(path) -> WorkloadContract:
 def _tensor_math(workload: WorkloadContract):
     """Task-owned routing for the common tensor Evaluation input/oracle interface."""
     operator = workload.document["operator"]
+    if operator == tinygemm_reproduction.OPERATOR:
+        return tinygemm_reproduction
     if operator == add_rmsnorm.TASK:
         return add_rmsnorm
     if (operator in {"layernorm_fp32", "residual_rmsnorm_fp32", "softmax_fp32"}
@@ -166,14 +170,26 @@ def reference_tensors(workload: WorkloadContract, case_id: str, inputs):
     return owner.reference_tensors(workload, case_id, inputs)
 
 
-def materialize_evaluation_case(workload: WorkloadContract, case_id: str):
-    """Use the registered owner's original representation and oracle together."""
+def materialize_evaluation_inputs(workload: WorkloadContract, case_id: str):
+    """Keep the registered task's original input representation."""
     owner = _tensor_math(workload)
     if hasattr(owner, 'materialize_case'):
-        inputs = materialize_case(workload, case_id)
-        return inputs, reference_outputs(workload, case_id, inputs)
-    inputs = materialize_tensors(workload, case_id)
-    return inputs, reference_tensors(workload, case_id, inputs)
+        return materialize_case(workload, case_id)
+    return materialize_tensors(workload, case_id)
+
+
+def reference_evaluation_outputs(workload: WorkloadContract, case_id: str, inputs):
+    """Project the original oracle's complete outputs for the common comparator."""
+    owner = _tensor_math(workload)
+    if hasattr(owner, 'materialize_case'):
+        return reference_outputs(workload, case_id, inputs)
+    return {name: value.reshape(-1).tolist()
+            for name, value in reference_tensors(workload, case_id, inputs).items()}
+
+
+def materialize_evaluation_case(workload: WorkloadContract, case_id: str):
+    inputs = materialize_evaluation_inputs(workload, case_id)
+    return inputs, reference_evaluation_outputs(workload, case_id, inputs)
 
 
 def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 128,
@@ -200,6 +216,14 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
                       if name == "momentum_sgd" else {"rows": rows, "columns": columns})
         document = aka_v3_math.workload_document(name, backend=backend, **dimensions)
         return document, aka_v3_starter_source(WorkloadContract(document), case_id)
+
+
+    if task_name == tinygemm_reproduction.TASK:
+        if backend != 'triton-b300':
+            raise ValueError('TinyGEMM reproduction authoring is currently admitted on triton-b300 only')
+        document = tinygemm_reproduction.workload_document(
+            backend=backend, rows=rows, columns=columns, depth=720 if depth is None else depth)
+        return document, tinygemm_reproduction.partitioned_source(WorkloadContract(document), case_id)
     if task_name in solx_fib_gemm.TASKS:
         document = solx_fib_gemm.workload_document(task_name, rows=rows, columns=columns,
                                                   depth=depth, backend=backend)

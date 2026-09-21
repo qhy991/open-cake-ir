@@ -47,9 +47,9 @@ def single_kernel_lowering(lowered):
 def admit_program_execution(target, *, timing=False, attribution=False):
     """Admit execution separately from a complete Program's measurement coverage.
 
-    HIP and MACA module drivers share ordered execution, but their existing timers
-    and attribution readers describe one dispatch. They cannot measure a Program
-    by passing its logical name to that single-kernel instrument.
+    HIP and MACA module drivers share ordered execution, but the optimization Run
+    instruments still describe one dispatch. Standalone MACA Program attribution
+    has its own source; it does not grant admission to the Run's measurement loop.
     """
     from open_cake_ir.compiler.target import CodeObject
     from .platforms import platform_for

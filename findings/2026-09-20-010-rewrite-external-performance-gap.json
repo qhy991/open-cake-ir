@@ -3104,5 +3104,83 @@
     "scope": "New guarded-alignment treatment after50/50offsetchecks; not a rerun intended to upgrade old failedCV.",
     "observation": "Newcandidate/control is qualified1.081x;newcandidate/external stillCVfailed. Newgenericcontrol/external edge passesquality at6.4005/2.656us. The subsequent task-level status can therefore use that explicit genericcontrol as a qualifiedslower representative for026,while the faster alignedcandidate remains unqualifiedagainstexternal. Previous2/6/3/5 status and all historical failededges remain as their dated observations.",
     "promotion_disposition": "No promotion; no cross-run ratio multiplication."
+  },
+  "splitk_008_program_completion": {
+    "source_commit": "65742cbbb66cbfe428b64b8aafddba774d636eaa",
+    "run_id": "nvidia-gemm-008-splitk-program-comparison-20260921-6ada50580f4f",
+    "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-008-splitk-program-comparison-20260921-6ada50580f4f/stages/verify/comparison-report.json",
+    "status": "measurement_quality_failed",
+    "correctness_passed": true,
+    "snapshot_count": 2550,
+    "snapshot_bytes": 608240620,
+    "input_check_counts": {
+      "literal": 10,
+      "reference": 5090
+    },
+    "edges": {
+      "optimized_vs_external": {
+        "candidate_us": 55.072,
+        "baseline_us": 26.688,
+        "speedup": 0.484601975595584,
+        "quality_passed": false,
+        "classification": "measurement_quality_failed",
+        "maximum_cohort_cv": 0.054529578267354
+      },
+      "starter_vs_external": {
+        "candidate_us": 41.1845,
+        "baseline_us": 26.624,
+        "speedup": 0.646456798067234,
+        "quality_passed": true,
+        "classification": "second_arm_faster",
+        "maximum_cohort_cv": 0.014606620893262
+      },
+      "optimized_vs_starter": {
+        "candidate_us": 55.073,
+        "baseline_us": 41.152,
+        "speedup": 0.747226408584969,
+        "quality_passed": false,
+        "classification": "measurement_quality_failed",
+        "maximum_cohort_cv": 0.068561044892935
+      }
+    },
+    "scope": "M1N4096K14336 FP16; complete two-stage Program:8split domains of2048 (lastallzero),16columns/CTA,8groups,FP32partial[8,4096]. Compare with fixed intermediate sliced-w8 and original supplied two-stage callable. Every public input/output observed, originaloracle unchanged, completecallable coldL2CUPTI under continuous exclusive allocation; prepare/verify local. No faithfulexternal,fullshape or E2Eclaim.",
+    "interpretation": "CompleteProgram executed and all2550numerical observations pass. New/control55.073/41.152us has failedquality(maxCV.068561),and new/external55.072/26.688us has failedquality(maxCV.054530); their nominal ratios0.747226/0.484602 are descriptive only,not qualifiedregressions or gains. Control/external41.1845/26.624us passesquality(maxCV.014607),independently confirming the retained sliced control remains slower. This advances measured Program execution/correctness reach,not accepted performance improvement.",
+    "compiled_resources": {
+      "optimized": {
+        "kind": "ordered_program",
+        "stages": {
+          "gemm_split_partials": {
+            "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+            "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 384,
+            "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+            "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+          },
+          "gemm_split_finalize": {
+            "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+            "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+            "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+            "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+            "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+          }
+        }
+      },
+      "starter": {
+        "CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES": 0,
+        "CU_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK": 1024,
+        "CU_FUNC_ATTRIBUTE_BINARY_VERSION": 103,
+        "CU_FUNC_ATTRIBUTE_CLUSTER_SIZE_MUST_BE_SET": 0,
+        "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_WIDTH": 0,
+        "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_HEIGHT": 0,
+        "CU_FUNC_ATTRIBUTE_REQUIRED_CLUSTER_DEPTH": 0
+      }
+    },
+    "performance_attribution": "No independent profiler for this new Program. Prior profiles describe different whole-K/sliced artifacts and cannot be transplanted. Retained function resource attributes are not a hardware-causal proof.",
+    "promotion_disposition": "No promotion. Keep existing sliced-w8 performance representative and this quality-failed structural attempt; do not repeat the same candidate merely to obtain lowerCV. Refine a concrete structural hypothesis only after preflight/resource planning.",
+    "storage_observation": "At2026-09-21T03:20Z resumed M3inspection, sharedstatefree3518455808bytes. This is not sufficient headroom for another large preparation+capture. No evidence cleanup or newlargeGPUrun initiated."
   }
 }

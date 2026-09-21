@@ -300,7 +300,7 @@ class ExperimentInputTests(unittest.TestCase):
         args = SimpleNamespace(backend="triton-b300", harness="codex", model="fixture", effort="high",
             turns=2, token_budget=10000, max_candidates=1, searches_per_turn=1, wall_seconds=120,
             maximum_cv=None, required_pair_wins=None, dispatches_per_sample=None, gpu_run=None,
-            broker_socket=None, rows=2, columns=8, provider_executable=None, provider_revision=None,
+            broker_socket=None, rows=2, columns=8, depth=None, provider_executable=None, provider_revision=None,
             incumbent_registry=None, agents_md=Path("/rules/AGENTS.md"), kernelctl=Path("/bin/kernelctl"),
             infra_socket=Path("/tmp/kernel.sock"))
         command = launch_task_matrix._command(args, "rmsnorm", self.root / "run", None)

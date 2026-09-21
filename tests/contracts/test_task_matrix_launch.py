@@ -46,6 +46,26 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         for command in (contraction, legacy):
             self.assertEqual(command[command.index("--depth") + 1], "17")
 
+    def test_tinygemm_depth_matches_preflight_command_and_record(self):
+        task = matrix.launch_task.TINYGEMM_TASK
+        for requested, expected in ((3072, 3072), (None, 720)):
+            with self.subTest(requested=requested), tempfile.TemporaryDirectory() as directory:
+                directory = Path(directory).resolve()
+                args = self.args(task)
+                args[args.index('--backend') + 1] = 'triton-b300'
+                args[args.index('--workspace-root') + 1] = str(Path(directory)/'matrix')
+                if requested is not None: args += ['--depth', str(requested)]
+                with patch.object(matrix.launch_task, 'create_task', wraps=matrix.launch_task.create_task) as factory, \
+                     patch.object(matrix.subprocess, 'run', return_value=subprocess.CompletedProcess([],1,b'',b'bounded CPU stop')) as run:
+                    self.assertEqual(matrix.main(args), 1)
+                self.assertEqual(factory.call_args.kwargs['depth'], requested)
+                command = run.call_args.args[0]
+                if requested is None: self.assertNotIn('--depth', command)
+                else: self.assertEqual(command[command.index('--depth')+1], str(requested))
+                record = json.loads((Path(directory)/'matrix/matrix.json').read_text())
+                self.assertEqual(record['task_shapes'][task]['K'], expected)
+        self.assertEqual(matrix._depth('gemm', None), 256)
+
     def test_registry_is_one_matrix_input_but_each_task_resolves_its_own_cell(self):
         registry = self.root.parent / "incumbents"
         args = type("Args", (), dict(backend="metal-m4", harness="claude-code",
