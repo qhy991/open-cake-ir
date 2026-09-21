@@ -9,7 +9,7 @@ from open_cake_ir.evaluation.metax_program_benchmark import (
     McptiProgramBenchmark, PROGRAM_TIMER, SYNCHRONIZATION, program_samples,
 )
 from open_cake_ir.evaluation.paired import candidate_identity
-from tests.contracts.test_metax_program_profile import ProgramProfile
+from tests.contracts import test_metax_program_profile as profile_fixtures
 from tests.contracts.test_metax_measurement import capture, kernel
 
 
@@ -20,10 +20,10 @@ def sync(correlation, start, end):
 class ProgramTiming(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        ProgramProfile.setUpClass()
+        profile_fixtures.ProgramProfile.setUpClass()
 
     def setUp(self):
-        fixture = ProgramProfile
+        fixture = profile_fixtures.ProgramProfile
         calibration = kernel('fill', 90, 1000, grid=(32768, 1, 1), block=(256, 1, 1))
         reset_capture = capture(calibration)
         reset_capture['records'][-1]['cbid'] = 56
@@ -70,7 +70,7 @@ class ProgramTiming(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(ValueError): program_samples(raw, repeats=2)
 
     def test_sampling_reuses_collector_reset_and_exact_fresh_call_budget(self):
-        fixture = ProgramProfile
+        fixture = profile_fixtures.ProgramProfile
         with patch('open_cake_ir.evaluation.metax_benchmark.activity_collector'):
             benchmark = McptiProgramBenchmark(fixture.candidate, activity_library='CPU fixture', l2_cache_bytes=8388608)
         events = []
