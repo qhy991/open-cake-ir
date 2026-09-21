@@ -26,7 +26,7 @@ def pointer_parameters(ttgir: bytes) -> int:
     signatures = re.findall(r"tt\.func public @\w+\((.*?)\)\s*attributes", text, re.S)
     if len(signatures) != 1:
         raise ValueError("MACA TTGIR must declare exactly one public kernel")
-    types = re.findall(r"%[\w.]+\s*:\s*([^\s]+)", signatures[0])
+    types = re.findall(r"%[\w.]+\s*:\s*([^\s,]+)", signatures[0])
     if not types or any(re.fullmatch(r"!tt\.ptr<\w+>", value) is None for value in types):
         raise ValueError("MACA kernel ABI is not a nonempty pointer-only signature")
     return len(types)

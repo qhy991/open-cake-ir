@@ -24,7 +24,7 @@ A research system for agent-driven GPU kernel search and compiler evolution.
 
 | 硬件 | 维护分支 | 已收录观察 | 独立数据与页面 |
 |---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 90 | [B300 多任务与 CAKE 对照；B200 正确性记录](docs/results/nvidia/README.md) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 119 | [B300 多任务与 CAKE 对照；B200 正确性记录](docs/results/nvidia/README.md) |
 | Apple | [metal](https://github.com/qhy991/open-cake-ir/tree/metal/docs/results/metal) | 4 | [M1 Pro / M4 / M2；历史确认、晋升与稳定性边界](docs/results/metal/README.md) |
 | Hygon DCU | [dcu](https://github.com/qhy991/open-cake-ir/tree/dcu/docs/results/dcu) | 32 | [BW1101；首个合格结果、后续运行与失败记录](docs/results/dcu/README.md) |
 | AMD | [amd](https://github.com/qhy991/open-cake-ir/tree/amd/docs/results/amd) | 1 | [gfx1151；计时边界待解决](docs/results/amd/README.md) |

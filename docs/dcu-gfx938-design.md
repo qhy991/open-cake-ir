@@ -191,7 +191,7 @@ devices:
 | check | question it asks | example refusal |
 | --- | --- | --- |
 | `admit_width` | can this route tile this row width? | `triton-b200 tiles a row with tl.arange, which requires a positive power-of-two span` |
-| `tanh_contract()` | which typed FP32 tanh contract does the Target document admit? | `triton-gfx1151 has no admitted tanh instruction contract` -- `triton-dcu` produced this until gfx938 declared `ocml.tanh.f32`, and gfx1151 is now the only backend that does |
+| `tanh_contract()` | which typed FP32 tanh contract does the Target document admit? | a Target without a typed FP32 TANH declaration is refused; gfx938 and gfx1151 now each have their own OCML device evidence |
 | `admit_dtype` | can this route name this dtype? | `metal-m4 lowers through metal, which cannot name dtype 'bf16'` |
 | `admit_operations` | does this Target admit this body's operation kinds? | `triton-dcu targets gfx938, which does not admit operation kind 'cast'` |
 

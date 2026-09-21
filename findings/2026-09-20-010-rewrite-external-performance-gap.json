@@ -1431,5 +1431,1671 @@
     "measurement": "All nine paired edges pass original CV quality; cold-L2 CUPTI, continuous paired allocation, CPU prepare/verify outside the lease. Each run retains all 2550 snapshots via reviewed lossless input references, with every output literal and every input/output checked. Actual encoded file size 94,376,940 bytes per run; raw representation would require 42,813,235,200 bytes.",
     "interpretation": "Current-compiler floor versus old starter is close_null (1.007x). Width four improves over the old starter by 1.079x and is close_null against the supplied external (8.544/8.5755 us). Four columns per CTA regress versus the old starter (10.240/9.248 us; speedup 0.903125) and the external (10.256/8.5765 us). Do not choose row/column packing merely for logical reuse. These are candidate choices using existing IR, not evidence of a new Compiler mechanism or faithful split-K/last-arriver reproduction.",
     "promotion_disposition": "No promotion. Retain width four as the leading tested candidate at this fixed shape; preserve the slower structural alternative and all original controls. Independent profiler attribution remains pending."
+  },
+  "gemm_007_008_followup": {
+    "results": [
+      {
+        "task": "007_gemm_n4096_k4096",
+        "variant": "width-w4",
+        "run_id": "nvidia-gemm-007-008-comparison-20260921-425a55c43e72",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-425a55c43e72",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/007_gemm_n4096_k4096/width-w4.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/007_gemm_n4096_k4096/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 188707820,
+        "input_check_counts": {
+          "literal": 10,
+          "reference": 5090
+        },
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 13.056,
+            "right_us": 11.712,
+            "right_over_left": 0.897058823529412,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.147692205455527
+          },
+          "starter_vs_external": {
+            "left_us": 13.568,
+            "right_us": 11.649,
+            "right_over_left": 0.858564268867924,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.100200935856364
+          },
+          "optimized_vs_starter": {
+            "left_us": 13.088000000000001,
+            "right_us": 13.632,
+            "right_over_left": 1.041564792176039,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.024016819878797
+          }
+        }
+      },
+      {
+        "task": "007_gemm_n4096_k4096",
+        "variant": "width-w8",
+        "run_id": "nvidia-gemm-007-008-comparison-20260921-3f37f1636a9b",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-3f37f1636a9b",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/007_gemm_n4096_k4096/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/007_gemm_n4096_k4096/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 188707820,
+        "input_check_counts": {
+          "literal": 10,
+          "reference": 5090
+        },
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 12.319999999999999,
+            "right_us": 11.648,
+            "right_over_left": 0.945454545454546,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.118206176901454
+          },
+          "starter_vs_external": {
+            "left_us": 13.6,
+            "right_us": 11.616,
+            "right_over_left": 0.854117647058824,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.131595196760077
+          },
+          "optimized_vs_starter": {
+            "left_us": 12.352,
+            "right_us": 13.552,
+            "right_over_left": 1.097150259067357,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.019159144593744
+          }
+        }
+      },
+      {
+        "task": "008_gemm_n4096_k14336",
+        "variant": "width-w8",
+        "run_id": "nvidia-gemm-007-008-comparison-20260921-6ad3ee78b525",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-6ad3ee78b525",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/008_gemm_n4096_k14336/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/008_gemm_n4096_k14336/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 608240620,
+        "input_check_counts": {
+          "literal": 10,
+          "reference": 5090
+        },
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 41.0405,
+            "right_us": 26.8155,
+            "right_over_left": 0.653391162388372,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.017538573141604
+          },
+          "starter_vs_external": {
+            "left_us": 43.105,
+            "right_us": 26.752000000000002,
+            "right_over_left": 0.620624057533929,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.017951985120779
+          },
+          "optimized_vs_starter": {
+            "left_us": 40.993,
+            "right_us": 43.1525,
+            "right_over_left": 1.052679725806845,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.010586268882729
+          }
+        }
+      },
+      {
+        "task": "008_gemm_n4096_k14336",
+        "variant": "masked-k-program-w8",
+        "run_id": "nvidia-gemm-007-008-comparison-20260921-2d57b3a1d6dc",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-007-008-comparison-20260921-2d57b3a1d6dc",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/008_gemm_n4096_k14336/masked-k-program-w8.py",
+        "control_role": "optimized",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-007-008-20260921/008_gemm_n4096_k14336/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 608240620,
+        "input_check_counts": {
+          "literal": 10,
+          "reference": 5090
+        },
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 51.104499999999994,
+            "right_us": 26.752000000000002,
+            "right_over_left": 0.523476406187322,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.016447234100738
+          },
+          "starter_vs_external": {
+            "left_us": 41.216,
+            "right_us": 26.688,
+            "right_over_left": 0.647515527950311,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.014573306737708
+          },
+          "optimized_vs_starter": {
+            "left_us": 51.136,
+            "right_us": 41.185,
+            "right_over_left": 0.805401282853567,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.008688664337898
+          }
+        }
+      }
+    ],
+    "correctness_snapshot_count": 10200,
+    "scope": "FP16 M=1 only: 007 N4096 K4096; 008 N4096 K14336. Previously these tasks had unexecuted configurations but no baseline bundle. Original template starters were newly built and frozen through canonical launch_task --baseline-only at 5b85e313. These are candidate comparisons, not an old-Compiler-floor comparison. No promotion, upstream full-shape or model E2E claim.",
+    "references": "Original CUDA sources preserved. 007 invokes its cuBLASLt/at::mm library selector at M=1; library internals are not reproduced. 008 invokes its custom two-stage split-K at M=1; both launches are inside the CUPTI callable activity span. Both exact-reference C++17 failure/C++20 object-success probes are retained under each task/reference-build-probe in cake-experiments/nvidia-gemm-007-008-20260921. Only the build standard changed; upstream reported scores are not inherited.",
+    "measurement": "All four runs completed CPU prepare -> exclusive GPU capture -> CPU verify. Each retains 2550 observations, with every output literal and every input/output checked against the original policy. Each verify records 10 literal input checks and 5090 first-input references. Cold-L2 CUPTI and all paired edges share a continuous exclusive interval. 007 compact files are 188707820 bytes/run; 008 files are 608240620 bytes/run. Eight of twelve timing edges pass; all four failed edges involve 007 external comparisons and remain failed.",
+    "interpretation": "007 width4/control 13.088/13.632 us is qualified close_null (1.041565x); width8/control 12.352/13.552 us is qualified 1.097150x. Both variants have failed external and control/external CV edges, so their nominal external ratios do not support a qualified performance comparison. 008 sliced-width8/control 40.993/43.1525 us is qualified 1.052680x, while 41.0405/26.8155 us versus external remains 53.048% higher latency. The masked-K ProgramMap variant regresses: 51.136/41.185 us versus sliced-width8 (0.805401x), and 51.1045/26.752 us versus external (0.523476x). Widening work assignment and combining the K domain do not reproduce external split-K parallelism. Independent profiler attribution is still pending; static lowering alone does not establish the hardware cause of regression.",
+    "authoring": "Width changes alter only execution_groups. The 008 masked ProgramMap uses axis2 tile16384 with grid-z1, explicit tail zero fill and CTA reduction to cover K14336. Prior explicit across_loop=True and single-trip TileLoop inputs remain retained with their original canonical-form refusals; the final ProgramMap is legal with unchanged Compiler gates.",
+    "promotion_disposition": "No promotion. Keep original starters, width8 candidates, masked-K regression and failed quality edges. Do not multiply ratios across experiments, treat close_null as improvement, or remeasure failed CV edges merely to obtain acceptance."
+  },
+  "gemm_009_010_norm_026_followup": {
+    "scope": "009 M1 N5120 K2048 FP16; 010 M1 N6144 K4096 FP16; 026 R64 C7168 BF16 epsilon1e-6. Seven runs, 17850 numerical snapshots pass. Fifteen of twenty-one timing edges pass; all six failed edges are 026 external comparisons. Original Workloads and oracle policies retained; no promotion or full upstream shape claim.",
+    "results": [
+      {
+        "task": "009_gemm_n5120_k2048",
+        "variant": "width-w4",
+        "run_id": "nvidia-gemm-009-010-comparison-20260921-c729a4205261",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-c729a4205261",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/009_gemm_n5120_k2048/width-w4.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/009_gemm_n5120_k2048/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 130995180,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 8.6725,
+            "right_us": 8.72,
+            "right_over_left": 1.005477082732776,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.031418907683118
+          },
+          "starter_vs_external": {
+            "left_us": 9.504,
+            "right_us": 8.671999999999999,
+            "right_over_left": 0.912457912457912,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.026869311859125
+          },
+          "optimized_vs_starter": {
+            "left_us": 8.671999999999999,
+            "right_us": 9.504,
+            "right_over_left": 1.095940959409594,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.023867529482647
+          }
+        }
+      },
+      {
+        "task": "009_gemm_n5120_k2048",
+        "variant": "width-w8",
+        "run_id": "nvidia-gemm-009-010-comparison-20260921-decf02d08ed4",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-decf02d08ed4",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/009_gemm_n5120_k2048/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/009_gemm_n5120_k2048/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 130995180,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 9.184,
+            "right_us": 8.704,
+            "right_over_left": 0.947735191637631,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.027996740245308
+          },
+          "starter_vs_external": {
+            "left_us": 9.472,
+            "right_us": 8.671999999999999,
+            "right_over_left": 0.91554054054054,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.025898718080584
+          },
+          "optimized_vs_starter": {
+            "left_us": 9.184,
+            "right_us": 9.504,
+            "right_over_left": 1.034843205574913,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.026813898981544
+          }
+        }
+      },
+      {
+        "task": "010_gemm_n6144_k4096",
+        "variant": "width-w4",
+        "run_id": "nvidia-gemm-009-010-comparison-20260921-65f2811ce33c",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-65f2811ce33c",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/010_gemm_n6144_k4096/width-w4.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/010_gemm_n6144_k4096/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 283038700,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 18.24,
+            "right_us": 17.296,
+            "right_over_left": 0.948245614035088,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.031971981534851
+          },
+          "starter_vs_external": {
+            "left_us": 19.68,
+            "right_us": 17.184,
+            "right_over_left": 0.873170731707317,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.030132119931535
+          },
+          "optimized_vs_starter": {
+            "left_us": 18.177,
+            "right_us": 19.649,
+            "right_over_left": 1.080981460086923,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.016718859295506
+          }
+        }
+      },
+      {
+        "task": "010_gemm_n6144_k4096",
+        "variant": "width-w8",
+        "run_id": "nvidia-gemm-009-010-comparison-20260921-2b7f4f07851e",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-2b7f4f07851e",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/010_gemm_n6144_k4096/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/010_gemm_n6144_k4096/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 283038700,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 17.568,
+            "right_us": 17.2805,
+            "right_over_left": 0.983635018214936,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.027843332774889
+          },
+          "starter_vs_external": {
+            "left_us": 19.695500000000003,
+            "right_us": 17.215999999999998,
+            "right_over_left": 0.874108298849991,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.029426749807378
+          },
+          "optimized_vs_starter": {
+            "left_us": 17.5845,
+            "right_us": 19.6165,
+            "right_over_left": 1.115556313799084,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.019367028453294
+          }
+        }
+      },
+      {
+        "task": "026_rmsnorm_h7168",
+        "variant": "floor-w1",
+        "run_id": "nvidia-rmsnorm-026-comparison-20260921-cd0519f984bb",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-cd0519f984bb",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rmsnorm-026-20260921/floor-w1.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/026_rmsnorm_h7168",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 2344299500,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 11.648,
+            "right_us": 2.656,
+            "right_over_left": 0.228021978021978,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.068955610806036
+          },
+          "starter_vs_external": {
+            "left_us": 11.551499999999999,
+            "right_us": 2.64,
+            "right_over_left": 0.228541747824958,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.050581237472367
+          },
+          "optimized_vs_starter": {
+            "left_us": 11.68,
+            "right_us": 11.5835,
+            "right_over_left": 0.99173801369863,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.024781482374081
+          }
+        }
+      },
+      {
+        "task": "026_rmsnorm_h7168",
+        "variant": "width-w8",
+        "run_id": "nvidia-rmsnorm-026-comparison-20260921-9eb8c7412df2",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-9eb8c7412df2",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rmsnorm-026-20260921/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/026_rmsnorm_h7168",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 2344299500,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 6.464,
+            "right_us": 2.72,
+            "right_over_left": 0.420792079207921,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.087886748503869
+          },
+          "starter_vs_external": {
+            "left_us": 11.552,
+            "right_us": 2.72,
+            "right_over_left": 0.235457063711911,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.052266546449427
+          },
+          "optimized_vs_starter": {
+            "left_us": 6.464,
+            "right_us": 11.552,
+            "right_over_left": 1.787128712871287,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.030993254028949
+          }
+        }
+      },
+      {
+        "task": "026_rmsnorm_h7168",
+        "variant": "whole-row-w8",
+        "run_id": "nvidia-rmsnorm-026-comparison-20260921-c46f642cc623",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-c46f642cc623",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rmsnorm-026-20260921/whole-row-w8.json",
+        "control_role": "optimized",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/026_rmsnorm_h7168",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 2344299500,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 7.392,
+            "right_us": 2.656,
+            "right_over_left": 0.359307359307359,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.077687030540009
+          },
+          "starter_vs_external": {
+            "left_us": 6.4165,
+            "right_us": 2.656,
+            "right_over_left": 0.413932829424141,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.051504799788747
+          },
+          "optimized_vs_starter": {
+            "left_us": 7.392,
+            "right_us": 6.4,
+            "right_over_left": 0.865800865800866,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.044584993055325
+          }
+        }
+      }
+    ],
+    "measurement": "Frozen source5b85e313; CPU prepare, one continuous exclusive paired GPU capture, CPU verify. Every output and input effect checked, CUPTI cold L2 and original CV/materiality gates unchanged. Encoded snapshot files per run:009 130995180 bytes,010 283038700 bytes,026 2344299500 bytes. All worker lifecycles completed; completion does not upgrade failed timing edges.",
+    "controls_and_references": "009/010 original template starters were newly frozen with canonical baseline-only; these are not old-Compiler-floor comparisons. The original CUDA callables are retained, with per-file C++17 failure/C++20 object-success probes and build-standard-only adaptation. 009 runtime selection is unobserved: compare the complete selector callable, not an assumed custom/cuBLAS branch. 010 preserves its aligned custom GEMV and library fallback. 026 uses the old original frozen starter for floor/width and intermediate sliced-w8 for whole-row; its supplied Python reference and epsilon are unchanged. No alignment treatment.",
+    "interpretation": "009 w4/control8.672/9.504us=1.095941x qualifies; w4/external8.6725/8.720us is close_null. 009w8/control9.184/9.504us is close_null and external9.184/8.704us is faster. 010w4/control18.177/19.649us=1.080981x qualifies but external18.240/17.296us is faster; w8/control17.5845/19.6165us=1.115556x qualifies and external17.568/17.2805us is close_null. 026floor/control11.680/11.5835us is close_null; width8/control6.464/11.552us=1.787129x qualifies; whole-row/control7.392/6.400us=0.865801x regresses. All 026 external edges fail CV: nominal external timings cannot establish an accepted gap or speedup. Whole-row changes reduction structure and reuse together; no hardware cause is asserted before independent profiling.",
+    "historical_outcomes": "The old006 cancellation and old026 M2 broker_fault remain unchanged. Old026 event32/33, cake-sm-103a-ec2f473ce604:1800s run_timeout/exit124, missing judge result, no endpoint or promotion. New026 phased runs are separate evidence, not a relabeling or timeout-only rerun.",
+    "promotion_disposition": "No promotion. Retain w4 for009, w8 for010 and026 as leading measured candidates at these fixed shapes. Preserve close_null, failed external quality and the026 whole-row regression. Do not multiply comparisons across experiments or repeat failed CV edges until accepted."
+  },
+  "program_012_020_sealing_followup": {
+    "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+    "evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/sealing-results.json",
+    "status": "CPU sealed; device evaluation not run",
+    "program_count": 17,
+    "leaf_stage_count": 72,
+    "results": [
+      {
+        "task": "012_gqa_paged_decode_h32_kv4_d128_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/012_gqa_paged_decode_h32_kv4_d128_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "012_gqa_paged_decode_h32_kv4_d128_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/012_gqa_paged_decode_h32_kv4_d128_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "013_gqa_paged_decode_h32_kv8_d128_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/013_gqa_paged_decode_h32_kv8_d128_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "013_gqa_paged_decode_h32_kv8_d128_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/013_gqa_paged_decode_h32_kv8_d128_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "014_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "014_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "015_gqa_paged_prefill_causal_h32_kv8_d128_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/015_gqa_paged_prefill_causal_h32_kv8_d128_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "015_gqa_paged_prefill_causal_h32_kv8_d128_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/015_gqa_paged_prefill_causal_h32_kv8_d128_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "016_gqa_ragged_prefill_causal_h32_kv4_d128",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/016_gqa_ragged_prefill_causal_h32_kv4_d128/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "016_gqa_ragged_prefill_causal_h32_kv4_d128",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/016_gqa_ragged_prefill_causal_h32_kv4_d128/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "017_gqa_ragged_prefill_causal_h32_kv8_d128",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/017_gqa_ragged_prefill_causal_h32_kv8_d128/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "017_gqa_ragged_prefill_causal_h32_kv8_d128",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/017_gqa_ragged_prefill_causal_h32_kv8_d128/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "018_mla_paged_decode_h16_ckv512_kpe64_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/018_mla_paged_decode_h16_ckv512_kpe64_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "018_mla_paged_decode_h16_ckv512_kpe64_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/018_mla_paged_decode_h16_ckv512_kpe64_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 8,
+        "kernels_per_call": 8,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      }
+    ],
+    "verification": "Canonical OpenCakeEnvironment/TritonToolchainBuilder compiled complete Programs. Independent review reloaded all17 via load_baseline_bundle/program_components, checked public ABI for primary/all validation cases and all72 stage counts/manifests. Attention has BF16 output and FP32 lse; MoE BF16 output[1,7168]. No Torch import or GPU module loading in the readback review.",
+    "initial_refusal": "Parent directory retains the17 initial caller refusals caused by an omitted route.entry_point. complete-route successor supplies the existing complete route; no Compiler change and no Compiler defect claim.",
+    "remaining": "Normal task launcher/catalog remains blocked for012-020. Common Program GPU Evaluation and external comparison remain unexecuted. Reuse existing task/Program owners; bind Workload-driven multiple outputs and mixed dtype/scalar/index arguments before external evaluation. CPU sealing is not agent launch, correctness, performance or promotion.",
+    "resource_plan": {
+      "evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/program-storage-budget.json",
+      "scope": "CPU shape-derived planning only; not an admitted protocol, peak RSS bound or observed GPU memory. 2550 observations, 42 calls per cohort illustrate the current single-output comparison pattern. Public input clones used by external adapters, compiler/runtime caches, host decoded arrays and device module overhead are additional. All Program intermediates are retained per argument set by the current common adapter.",
+      "large_prepared_cpu_f64_bytes": {
+        "018_mla_paged_decode_h16_ckv512_kpe64_ps1 / captured": 22802671160,
+        "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1 / captured": 22824975000,
+        "020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048 / captured": 67650579168
+      },
+      "source_wording_correction": "Original planning report says 42 cohorts; this means 42 calls per cohort. The comparison has60 timed cohorts plus30 pre/postflight calls (2550 total). Budget numbers are unchanged."
+    },
+    "promotion_disposition": "No promotion; CPU artifact reach only. Begin with a complete bounded012 integration before expanding; budget018/019/020 preparation and snapshots before concurrency."
+  },
+  "profiler_phase_followup": {
+    "implemented_in": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+    "scope": "The existing NVIDIA rewrite profiler now uses CPU prepare -> exclusive NCU profile -> CPU verify. This is independent attribution, not a CUPTI timing rerun or promotion. Native reference compilation, input/oracle generation and all numerical comparison occur outside the GPU lease. Every participant retains all five validation observations plus the profiled primary, including all inputs/outputs; all18 observations must pass before metrics are accepted. NCU cold kernel replay, all callable launches and the existing ncu_process privilege/custody boundary remain unchanged.",
+    "verified_by": [
+      "Fixed34f04b40:27 tests and19 subtests across rewrite_profile,staged_rewrite_comparison,ncu_process,tensor_profile_handoff; F821/F401 pass.",
+      "Independent review found missing roles in the initial79734e57 child;34f04b40 restores comparison_roles and exercises the actual derived_from loader path, preserving intermediate-control labels. Re-review passed.",
+      "PR156:all three Python contract CI jobs pass before merge; four input/task preparations independently checked."
+    ],
+    "runtime_evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-phased-profiles-20260921/submissions.json",
+    "device_verification_at_publication": "First003 pipeline verification submitted; no accepted device profile is inferred from CPU/CI checks. Remaining prepared008/009/026profiles wait for that result.",
+    "interpretation_limits": "An independent009 profile runs its original runtime selector anew; its branch observation cannot identify the earlier timing process branch.026profiling cannot upgrade failed external CV edges. NCU metrics do not replace original paired performance results.",
+    "promotion_disposition": "No promotion. Retain any capture, permission, numerical or metrics failure as separate evidence; do not patch a running frozen source."
+  },
+  "phased_profile_completion": {
+    "date": "2026-09-21",
+    "results": [
+      {
+        "label": "003-whole-row",
+        "run_id": "nvidia-phased-profile-20260921-0ecf19d6dcf3",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-phased-profile-20260921-0ecf19d6dcf3/stages/verify/profile-report.json",
+        "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+        "status": "completed; numerical and NCU validation passed",
+        "complete_call_observations": 18,
+        "roles": {
+          "optimized": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_solx_fib_fused_add_rmsnorm_h7168_bf16_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 512.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 51.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1088.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 2.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 4.81,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 1857024.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 6256032.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 39.37,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "starter": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_solx_fib_fused_add_rmsnorm_h7168_bf16_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 512.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 39.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1088.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 3.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 6.54,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 1859584.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 5832960.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 67.0,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "external": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "derived external reference; source correction recorded in reference metadata"
+            },
+            "kernels": [
+              {
+                "name": "<unnamed>::fused_add_rmsnorm_h7168_kernel(const uint4 *, const uint4 *, const uint4 *, uint4 *, float)",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 448.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 39.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1080.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 3.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 3.76,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 1856512.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 4877280.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 48.41,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "label": "008-masked-k",
+        "run_id": "nvidia-phased-profile-20260921-81d82b0abd0d",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-phased-profile-20260921-81d82b0abd0d/stages/verify/profile-report.json",
+        "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+        "status": "completed; numerical and NCU validation passed",
+        "complete_call_observations": 18,
+        "roles": {
+          "optimized": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_gemm_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 4096.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 80.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 3.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 30.46,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 117488640.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 221018560.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 66.4,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "starter": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_gemm_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 4096.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 32.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 8.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 76.62,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 117485568.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 227450656.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 64.49,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "external": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "void <unnamed>::gemv_splitk_stage1<1>(const __half *, const __half *, float *, int, int)",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 1024.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 47.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1024.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 5.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 35.14,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 117483264.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 195969344.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 83.88,
+                    "unit": "%"
+                  }
+                }
+              },
+              {
+                "name": "<unnamed>::gemv_splitk_stage2(const float *, __half *, int)",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 16.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 16.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1024.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 16.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 0.31,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 68352.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 256608.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 57.54,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "label": "009-width-w4",
+        "run_id": "nvidia-phased-profile-20260921-f705eefa1439",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-phased-profile-20260921-f705eefa1439/stages/verify/profile-report.json",
+        "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+        "status": "completed; numerical and NCU validation passed",
+        "complete_call_observations": 18,
+        "roles": {
+          "optimized": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged original Cake starter",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_gemm_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 128.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 5120.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 32.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1040.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 16.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 47.02,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 20980480.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 41988800.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 44.87,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "starter": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged original Cake starter",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_gemm_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 32.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 5120.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 64.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1024.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 32.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 20.96,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 20983808.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 43287648.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 36.09,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "external": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged original Cake starter",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "void sk_kernel<1, 1>(const __half *, const __half *, float *, __half *, int)",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 128.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 160.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 62.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 76288.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 8.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 3.15,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 20982784.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 33072832.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 20.33,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "label": "026-whole-row",
+        "run_id": "nvidia-phased-profile-20260921-44408e01ea5e",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-phased-profile-20260921-44408e01ea5e/stages/verify/profile-report.json",
+        "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+        "status": "completed; numerical and NCU validation passed",
+        "complete_call_observations": 18,
+        "roles": {
+          "optimized": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_026_whole_row_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 48.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 5.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 3.65,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 941312.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 3697952.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 73.86,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "starter": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_solx_fib_rmsnorm_h7168_bf16_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 28.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 8.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 3.58,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 941568.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 4124096.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 64.69,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "external": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_rmsnorm_fused_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 62.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 4.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 2.18,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 938752.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 3478048.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 35.96,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "complete_call_observations": 72,
+    "profiled_kernel_instances": 13,
+    "scope": "Four independent NCU evaluations completed on B300. All72 retained public-call observations pass original output and input-effect checks; all13 profiled kernel instances have complete metrics. CPU preparation/verification ran outside exclusive device stages. These observations are independent of previous CUPTI paired timings and cannot upgrade failed timing quality or authorize promotion.",
+    "observed": "003 whole/sliced both512threads/grid64:registers51/39,DRAMreads1,857,024/1,859,584bytes,L2bytes6,256,032/5,832,960. 008 whole/sliced both256threads/grid4096:registers80/32,activewarps30.46/76.62percent;DRAMreads approximately117.49MB each. External008 has a256thread1024CTA stage1 plus256thread16CTA stage2. 009 profile selector chose sk_kernel<1,1> with160CTAs; currentCake has5120CTAs. 026 whole/sliced both256threads/grid64:registers48/28,L2bytes3,697,952/4,124,096. No local-memory load/store sectors observed in any of these13 instances.",
+    "interpretation": "008 whole-K regression is consistent with higher register usage and lower active warps, not proof of spilling or a uniquely established cause. 003 speedup is not explained by lower DRAM bytes; reduction/dependency structure is a live hypothesis. 026 lower L2 bytes did not imply a faster candidate. Occupancy limits are theoretical resource limits, stall percentages are not absolute waiting time, and static instruction sites are not dynamic traffic. The009 observed branch belongs only to this profile process, not its earlier timing selector.",
+    "promotion_disposition": "No promotion. Preserve existing performance gates/results; use profiles to select controlled structural follow-ups instead of retesting failed CV until accepted."
+  },
+  "systematic_status_20260921": {
+    "scope": "Task-level retrospective reading of original paired reports, not a new run, selector or promotion. Each task is represented once, including qualified original starter edges when candidate edges are unqualified. Newer failed edges never inherit older acceptance.",
+    "covered_tasks": [
+      "001",
+      "002",
+      "003",
+      "004",
+      "005",
+      "006",
+      "007",
+      "008",
+      "009",
+      "010",
+      "021",
+      "022",
+      "023",
+      "024",
+      "025",
+      "026"
+    ],
+    "representative_external_classification": {
+      "faster": [
+        "002",
+        "022"
+      ],
+      "close_null": [
+        "001",
+        "006",
+        "009",
+        "010",
+        "023",
+        "025"
+      ],
+      "slower": [
+        "003",
+        "005",
+        "008"
+      ],
+      "no_qualified_external_edge": [
+        "004",
+        "007",
+        "021",
+        "024",
+        "026"
+      ]
+    },
+    "retrospective_starter_edges": [
+      {
+        "task": "005",
+        "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-2126e322eb9c/stages/comparison/comparison-report.json",
+        "timing": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.008672,
+          "pooled_medians_ms": {
+            "candidate": 0.008672,
+            "baseline": 0.006928
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 0,
+            "baseline": 10
+          },
+          "tied_pairs": 0,
+          "speedup": 0.798892988929889,
+          "classification": "second_arm_faster"
+        },
+        "correctness_passed": true,
+        "judge_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f"
+      },
+      {
+        "task": "023",
+        "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-c2e26eb06cd5/stages/comparison/comparison-report.json",
+        "timing": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.004032,
+          "pooled_medians_ms": {
+            "candidate": 0.004032,
+            "baseline": 0.004064
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 5,
+            "baseline": 4
+          },
+          "tied_pairs": 1,
+          "speedup": 1.007936507936508,
+          "classification": "close_null"
+        },
+        "correctness_passed": true,
+        "judge_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f"
+      }
+    ],
+    "interpretation": "005 original starter is qualified slower than external at8.672/6.928us, while its rewrite is slower than starter and has failed external CV.023 original starter is qualified close_null at4.032/4.064us; the2.880us rewrite external lead remains unqualified.022 original starter already has a qualified external lead; width4 has no qualified improvement over that starter. These distinctions prevent reporting invalid rewrites as accepted incumbents.",
+    "remaining_tasks": "011 lacks a qualified general-input reference comparison because the original pointer-keyed transpose cache has not been validated for content changes.012–020 have17CPU-sealed Programs/72leaf stages, but task launcher and full common GPU/external comparisons remain uncompleted.",
+    "prepared_unrun": "026 sliced-width8 alignment variant sealed at34f04b40 in cake-experiments/nvidia-rmsnorm-026-alignment-20260921/input; no submitted guard or performance run. Same source/constants/grid, runtime alignment dispatch; no GPU claim.",
+    "promotion_disposition": "No new promotion. Preserve all historical candidate, starter, quality-failed and infrastructure-fault evidence."
+  },
+  "program_comparison_preparation_followup": {
+    "implemented_in": "65742cbbb66cbfe428b64b8aafddba774d636eaa",
+    "scope": "Existing NVIDIA comparison preparation now accepts canonical JSON Programs, uses the canonical OpenCakeEnvironment/TritonToolchainBuilder, seals every stage and preserves the unchanged selected control/reference. New metadata identifies a complete Program rather than mislabeling it a Schedule. No new Compiler primitive, Python Program syntax, oracle or timing policy.",
+    "verified_by": [
+      "Fixed65742cbb:31tests/36subtests across comparison preparation,profile,staged capture and Program evaluation; F821/F401 pass.",
+      "Independent code review and actual two-stage008 input/task/ABI/control review passed; PR164 allthreePythonCIjobs passed before platform merge.",
+      "Actual CPU preparation of008 splitK at65742cbb returned bothstages built, whole_program_unmodeled; existingCPUProgram previouslysealed at34f04b40."
+    ],
+    "candidate": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-008-splitk-program-20260921/comparison-input",
+    "runtime_evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-008-splitk-program-20260921/submissions.json",
+    "candidate_scope": "M1N4096K14336FP16:8partial domains of2048 (lastzero),16columns/CTA,8groups,FP32partial[8,4096],two complete kernels. Stage1grid[8,256,1],stage2grid[1,256,1];control is middle sliced-w8,not originalstarter. Initialstatic0indexandbroadcastaxis0refusals remain retained; corrections use existing scalar_index and retainedaxis1 without Compilerrelaxation.",
+    "device_verification_at_publication": "First Program comparison submitted; numerical/timing verdict pending. CPU sealing, entry adaptation and complete callable accounting do not establish speed or promotion.",
+    "promotion_disposition": "No promotion. Keep originalbaseline,external,priorwholeKregression and current completeProgram evidence separate; wholeProgram cost model remains unmodeled."
   }
 }
