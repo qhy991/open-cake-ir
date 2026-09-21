@@ -155,8 +155,10 @@ NaN/Inf output rules remain the Workload's own. An execution or teardown error p
 passing receipt. The worker holds its real allocation through process exit. All source,
 software, host and review gates must pass before any device invocation.
 
-These commands qualify construction or correctness only. They do not create an optimization
-Run endpoint or measured speedup. HIP/MACA multi-stage timing and attribution remain
-explicitly refused until whole-program interval and profiler coverage are qualified.
+The build/evaluate commands qualify construction or correctness only. A separate MACA
+`profile` command retains every stage's native activity and checks both preflight and
+instrumented outputs; its intervals and gaps are attribution observations, not latency
+samples. HIP Program profiling and ordinary HIP/MACA optimization Run measurement remain
+refused. No command here establishes a measured speedup.
 The build command uses the shared `build_program_candidate` source/ABI handoff; it does
 not construct an optimization environment whose measurement loop it cannot satisfy.

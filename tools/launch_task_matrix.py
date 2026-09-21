@@ -28,7 +28,15 @@ ALL_TASKS = (
     *launch_task.REDUCTION_TASKS, *launch_task.OPTIMIZER_TASKS,
     *launch_task.CONTRACTION_TASKS, "gemm_bias",
 )
-DEPTH_TASKS = frozenset((*launch_task.CONTRACTION_TASKS, "gemm_bias", "aka_gemm_nt_bias"))
+DEPTH_TASKS = frozenset((*launch_task.CONTRACTION_TASKS, "gemm_bias", "aka_gemm_nt_bias", launch_task.TINYGEMM_TASK))
+
+
+def _depth(task, requested):
+    if task not in DEPTH_TASKS:
+        return None
+    if requested is not None or task == launch_task.TINYGEMM_TASK:
+        return requested  # TinyGEMM's factory owns its default K.
+    return 256  # Retain the existing portable-matrix contraction default.
 
 
 def _now() -> str:
@@ -76,8 +84,9 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
     for flag, value in (("--rows", args.rows), ("--columns", args.columns)):
         if value is not None:
             command.extend((flag, str(value)))
-    if task in DEPTH_TASKS:
-        command.extend(("--depth", str(args.depth)))
+    depth = _depth(task, args.depth)
+    if depth is not None:
+        command.extend(("--depth", str(depth)))
     if args.provider_executable is not None:
         command.extend(("--provider-executable", str(args.provider_executable)))
     for alias in getattr(args, "response_model_alias", ()):
@@ -116,8 +125,8 @@ def main(argv=None) -> int:
     )
     parser.add_argument("--rows", type=int)
     parser.add_argument("--columns", type=int)
-    parser.add_argument("--depth", type=int, default=256,
-                        help="K extent for contraction and gemm_bias tasks")
+    parser.add_argument("--depth", type=int,
+                        help="K override; portable contractions default to256, TinyGEMM keeps its task default")
     parser.add_argument("--turns", type=int, default=32)
     parser.add_argument("--token-budget", type=int, default=3000000,
                         help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
@@ -136,16 +145,18 @@ def main(argv=None) -> int:
         root = launch_task._new_workspace(args.workspace_root)
     except (OSError, ValueError) as error:
         parser.error(str(error))
-    if type(args.depth) is not int or args.depth <= 0:
+    if args.depth is not None and (type(args.depth) is not int or args.depth <= 0):
         parser.error("--depth must be a positive integer")
     # Every factory owns its supported backends and shape contract. Resolve the
     # whole requested subset before writing a workspace or spending provider work;
     # do not silently omit an explicitly requested unsupported operator.
+    task_shapes = {}
     for task in selected:
         rows, columns = launch_task._default_shape(task, args.rows, args.columns)
         try:
-            launch_task.create_task(task, backend=args.backend, rows=rows, columns=columns,
-                                    depth=args.depth if task in DEPTH_TASKS else None, case_id="primary")
+            document, _ = launch_task.create_task(task, backend=args.backend, rows=rows, columns=columns,
+                                    depth=_depth(task, args.depth), case_id="primary")
+            task_shapes[task] = next(case['shape'] for case in document['cases'] if case['case_id'] == 'primary')
         except (TypeError, ValueError) as error:
             parser.error(f"task {task!r} cannot run on {args.backend!r}: {error}; select an explicit supported subset")
     root.mkdir(mode=0o750, parents=True)
@@ -160,6 +171,7 @@ def main(argv=None) -> int:
                    "searches_per_turn": args.searches_per_turn,
                    "wall_seconds_per_task": args.wall_seconds},
         "shape": {"rows": args.rows, "columns": args.columns, "depth": args.depth},
+        "task_shapes": task_shapes,
         "timing_overrides": {"maximum_cv": args.maximum_cv, "required_pair_wins": args.required_pair_wins},
         "qualification_policy": "qualify_first_task_then_reuse_exact_receipt",
         "baseline_policy": (
