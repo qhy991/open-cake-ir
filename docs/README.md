@@ -30,6 +30,7 @@ Start with the system overview, then follow the implementation or evidence relev
 - [概念导读 / Wiki](wiki/README.md) · [English](en/wiki/README.md)
 - [当前状态 / Current status](../reports/current/STATUS.md)
 - [按硬件查看实验结果 / Results by hardware](RESULTS.md)：任务结果、历史晋升、CAKE 对照与原始证据定位。
+- [FlashInfer-Bench 改写与外部实现：实验综述 / External-reference comparison](results/nvidia/FLASHINFER_STATUS.md)：26项逐任务状态、starter边界、配对计时与独立profiler。
 - [研究路线 / Roadmap](ROADMAP.md)
 - [平台与分支维护 / Development branches](DEVELOPMENT_BRANCHES.md)
 - [MetaX C550：当前可用路径与验收边界](metax-c550.md)

@@ -267,3 +267,31 @@ launch 前后先 view uint8 再复制到 CPU，避免数值转换改变 NaN 编�
 各 10；三者 shared/local 均为 0。原始观察在外部证据根的
 `fp8-corpus-gpu-7e86e8ad-v1/`。这验证了生成路径的原语正确性，尚不构成
 完整 MoE、scaled matrix、其他形状或性能资格。
+
+## 路由操作与四阶段原生验证
+
+Target 现声明 `coordinate`、`compare`、`select` 和 `top_k`。前端、类型检查及
+Triton emitter 复用共享实现；MACA 当前仅准入 resident FP32 tile 的 top-k，
+整数 score 与跨循环累积选择由 `MACA_TOP_K_UNQUALIFIED` 拒绝。其他目标的
+选择实现不变，未声明的新操作仍由 Target 拒绝。
+
+执行源码 `49f707f5`、job `maca-f2c4ba1f66a2` 对原 MoE 的四个路由阶段进行了
+原生组合诊断：group scores、group selection、expert selection、route weights。
+保留原始 shape 与六个 case 的输入生成和 CPU `routing_reference`；专家权重
+只在 CPU 输入生成时创建，GPU 未执行专家投影、激活或最终组合。
+
+六个 case 共 24 次 native call。48 个 expert ID 全部相等；48 个 FP32 权重在
+预先声明的 `atol=rtol=2e-6` 内通过，最大绝对误差为 `5.960464477539063e-08`，
+其中 21 个权重 word 与 gold 不同。所有外部输入和 54 份逐阶段输入张量的 bytes
+保持，24 份中间输出均通过初始化、有限值或整数域检查。独立复核还检查了
+选组与实际 group scores 的稳定排序一致，选出的 expert 均属于所选组。
+
+四个模块的 registers/thread 依次为 20、22、30、13，动态共享内存为
+192、48、256、0 bytes，local 均为 0；没有 timing samples。原始数据及
+独立复核在外部证据根的 `moe-routing-gpu-49f707f5-v1/` 和
+`reviews/moe-routing-device-49f707f5.md`。这些是固定 shape 的路由证据，
+不代表任意 top-k 形式、专家 GEMM、完整 MoE、正式多阶段 Workload 收据或性能资格。
+
+操作准入后的静态检查可以降低八项 GQA/MLA 的 32 个阶段和 MoE 的八个阶段。
+该检查仅迁移阶段结构，原 Workload 仍精确绑定 B300；后继 C550 合同、原生多阶段
+封存与统一 Evaluation 尚需完成，不能把静态通过计作九个任务已验收。

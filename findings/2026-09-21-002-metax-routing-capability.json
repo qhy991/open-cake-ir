@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-21-002",
+  "date": "2026-09-21",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@49f707f5c624edb24a76f0d16cc8b7cc3e88e553",
+  "executor_revision": "xcore1002@49f707f5c624edb24a76f0d16cc8b7cc3e88e553",
+  "title": "C550 routing operations have native evidence but complete task and launch-plan qualification remains open",
+  "decision": "proposed",
+  "implemented_in": "d933fd25f043750968967b8ad2e7ff36d01d5242",
+  "verified_by": {
+    "primitive_evidence": "open-cake-ir-evidence/metax-parity-20260920/moe-routing-gpu-49f707f5-v1/ and reviews/moe-routing-device-49f707f5.md",
+    "scope": "Prior-source native discovery and initial software admission only; this capacity finding remains open for successor C550 Workloads and canonical multi-stage Evaluation campaigns."
+  },
+  "evidence": {
+    "workspace": "c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/moe-routing-gpu-49f707f5-v1",
+    "job": "maca-f2c4ba1f66a2",
+    "prepared": "moe-routing-prepared-49f707f5-v2",
+    "objects": [
+      "result.json",
+      "stage-0.npz through stage-23.npz",
+      "final-0.npz through final-5.npz"
+    ]
+  },
+  "observation": "Four original MoE routing stages completed all six original input cases:24 native calls,48 exact expert IDs,48 weights within frozen atol=rtol=2e-6,maximum absolute error5.960464477539063e-08. All external and54 stage input tensors preserved their bytes. The first three stages were still publicly refused for undeclared coordinate/compare/select/top_k; the fourth weights stage was already lowerable. This native discovery is not a full MoE or canonical multi-stage Workload receipt.",
+  "proposed_change": "Declare the measured routing operation kinds on C550 and admit resident FP32 top-k while retaining integer-score and loop-carried refusals. Preserve existing IR/emitter semantics and original B300 Workloads. Complete lawful C550 successor contracts and native multi-stage sealing/Evaluation before qualifying the nine registered attention/MoE tasks."
+}

@@ -48,7 +48,7 @@ def admit_program_execution(target):
     """The implemented Program adapter domain; this is not device qualification."""
     from open_cake_ir.compiler.target import CodeObject
     from .platforms import platform_for
-    if platform_for(target).code_object is not CodeObject.CUBIN:
+    if platform_for(target).code_object not in {CodeObject.CUBIN, CodeObject.MCFATBIN}:
         raise ValueError('ordered Program execution is not implemented for this code object')
 
 

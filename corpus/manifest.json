@@ -2358,6 +2358,60 @@
         "schedule_sha256": "17ab61fd2bb39ef2b45362faacd2f7815822eaa315f69af31e3b2f930de2e013",
         "lowering_source_sha256": null
       }
+    },
+    {
+      "case_id": "xcore1002-routing-group-scores",
+      "schedule": "corpus/schedules/xcore1002-routing-group-scores.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "ef816685be1cc9b0edc4e1c564ea239c01b3b86b0553f3a3396cb6730a72a606",
+        "lowering_source_sha256": "ca3fadb4c78e1e365747c78b13b84f7ecede3d396f6a8fd4832947c4edf81a57"
+      }
+    },
+    {
+      "case_id": "xcore1002-routing-expert-selection",
+      "schedule": "corpus/schedules/xcore1002-routing-expert-selection.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "c61f176bc91dcde652619d5781bc34e6104bc39c06a9ae8f0f6fdabb2bb17e62",
+        "lowering_source_sha256": "ef2a449c88dd0c77f92787f60664b6de3a99f4c518c599ff9739369415cb4d31"
+      }
+    },
+    {
+      "case_id": "xcore1002-routing-integer-topk-unqualified",
+      "schedule": "corpus/schedules/xcore1002-routing-integer-topk-unqualified.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "MACA_TOP_K_UNQUALIFIED"
+        ],
+        "schedule_sha256": "1f25fa6aea1f376493d555c28f8174025365614485e20e2b7e3ab907c46a1872",
+        "lowering_source_sha256": null
+      }
+    },
+    {
+      "case_id": "xcore1002-routing-loop-topk-unqualified",
+      "schedule": "corpus/schedules/xcore1002-routing-loop-topk-unqualified.py",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": false,
+        "finding_codes": [
+          "RESIDENCY_BOUND",
+          "MACA_TOP_K_UNQUALIFIED"
+        ],
+        "schedule_sha256": "81475c550772f32f8c000f1b241de016dc0fc0f5811140247298592bf60292e5",
+        "lowering_source_sha256": null
+      }
     }
   ]
 }

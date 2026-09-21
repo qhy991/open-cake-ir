@@ -119,3 +119,37 @@ worktree 验证，再用后继 Campaign 测量。无需新建 Study kind 或第�
 使用节点本地目录可隔离跨主机共享 HOME 下的临时 helper 和会话状态；它不会关闭 sandbox，
 也不会自动复制凭据、修复旧运行或创建目录。身份与初始/恢复行为仍需新的两轮 qualification。
 旧运行的失败记录不重分类；换绑定后必须准备新实验输入与运行目录。
+
+## Native tensor Program correctness qualification
+
+Composed FlashInfer attention and MoE factories accept an explicit `backend`, for example
+`attention.workload_document(task, backend="triton-metax", variant="boundary")`. The default
+B300 revision-1 documents remain unchanged; another admitted target receives a revision-2
+identity while preserving the original mathematics, input distributions, oracle and tolerances.
+The existing `owner.launch_plan(WorkloadContract(document))` returns a Compiler `Program`.
+Write these generated Workload and Program documents outside the checkout.
+
+`tools/qualify_tensor_program.py build --workload <workload.json> --program <program.json>
+--output <new-build-directory>` uses the existing Compiler, source admission, isolated
+Triton builder and sealed Program bundle. Run build in the captured CPU-only compilation
+environment. No provider or GPU execution occurs in this command.
+
+The local MACA correctness adapter is
+`tools/qualify_tensor_program.py evaluate --built <build-directory> --case <case-id>
+--output <new-result-directory>`. Invoke it once for every original Workload case, using a
+new output directory each time. The process materializes one original CPU tensor case and
+computes its original oracle before acquiring the existing MACA broker allocation. Keeping
+one case per process avoids holding all MoE weight cases in memory at once. Inputs cross
+the device boundary as raw bytes and retain their declared tensor dtype; they are never
+expanded into Python float lists. The existing Program loader owns ordered native dispatch,
+intermediate storage, alias checks, module lifetime and stream identity.
+
+Each result retains a common `EvaluationReceipt`, full observed/expected output bytes,
+input-effect verdicts, the true native stage count, and JSON-null timing samples. IEEE
+NaN/Inf output rules remain the Workload's own. An execution or teardown error prevents a
+passing receipt. The worker holds its real allocation through process exit. All source,
+software, host and review gates must pass before any device invocation.
+
+These commands qualify construction or correctness only. They do not create an optimization
+Run endpoint or measured speedup. MACA multi-stage timing is explicitly refused by the
+existing single-dispatch timer until its interval and profiler coverage are qualified.
