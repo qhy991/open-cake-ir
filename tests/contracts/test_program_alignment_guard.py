@@ -113,6 +113,39 @@ def candidate(lm,partial:cake.Tensor((1,8),"fp32"),out:cake.Tensor((1,8),"fp32",
             changed=deepcopy(raw);changed['checks'][-1]['kernel_calls']=1;header.write_text(json.dumps(changed))
             with self.assertRaisesRegex(ValueError,'stage count'):verify()
 
+    def test_actual_stage_guard_refuses_private_partial_before_either_dispatch(self):
+        from open_cake_ir.evaluation.cuda_driver import CudaDeviceAdmission, LoadedCudaCandidate
+        from open_cake_ir.evaluation.program import LoadedProgram
+        from test_cuda_driver import FakeDriver, FakeTensor
+        import math
+        admission=CudaDeviceAdmission('NVIDIA B300',(10,3),'CPUfixture','gpuq-123456789abc','exclusive')
+        public=self.program.inputs+self.program.outputs
+        for changed in (None,'partial','out'):
+            with self.subTest(changed=changed):
+                tensors={name:FakeTensor(spec.shape,'torch.float32',(i+1)*1048576+(4 if name==changed else 0))
+                         for i,(name,spec) in enumerate(self.program.tensors.items())}
+                drivers=[]
+                def loader(child,spec,admitted):
+                    driver=FakeDriver();driver.attributes[6]=103;drivers.append(driver)
+                    return LoadedCudaCandidate.load(child,child.artifact_payloads['cubin'],spec,admitted,driver=driver)
+                def check_tensor(value,spec):
+                    if tuple(value.shape)!=spec.shape or value.dtype!='torch.float32':raise ValueError('CPUfixtureABI')
+                loaded=LoadedProgram(self.candidate,self.manifest,admission,loader,
+                    allocate=lambda spec:tensors['partial'],view=lambda value,shape:value,
+                    check_tensor=check_tensor,storage_span=lambda value:('cuda:0',value.data_ptr(),value.data_ptr()+math.prod(value.shape)*4),stream=0)
+                arguments=[tensors[name] for name in public]
+                try:
+                    bound=loaded.prepare_arguments(arguments)
+                    selected,rejected=guard.check_stage_guards(loaded,self.manifest,bound,changed,0)
+                    self.assertEqual((selected,rejected),guard.expected_stage_checks(self.manifest,changed))
+                    self.assertEqual(loaded.launch_calls,0)
+                    self.assertFalse(any(call[0]=='cuLaunchKernel' for driver in drivers for call in driver.calls))
+                    loaded.launch(arguments,tensor_contract=self.manifest,stream=0)
+                    self.assertEqual(loaded.launch_calls,2)
+                    self.assertEqual({name:item.last_variant for name,item in loaded._children.items()},selected)
+                finally:loaded.close(synchronize=lambda:None)
+                self.assertTrue(loaded.closed)
+
     def test_private_allocator_instrumentation_restores_owner_and_checks_coverage(self):
         seen=[]
         def original(spec):seen.append(spec);return 'allocated'
