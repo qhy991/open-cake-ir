@@ -1618,5 +1618,569 @@
     "interpretation": "007 width4/control 13.088/13.632 us is qualified close_null (1.041565x); width8/control 12.352/13.552 us is qualified 1.097150x. Both variants have failed external and control/external CV edges, so their nominal external ratios do not support a qualified performance comparison. 008 sliced-width8/control 40.993/43.1525 us is qualified 1.052680x, while 41.0405/26.8155 us versus external remains 53.048% higher latency. The masked-K ProgramMap variant regresses: 51.136/41.185 us versus sliced-width8 (0.805401x), and 51.1045/26.752 us versus external (0.523476x). Widening work assignment and combining the K domain do not reproduce external split-K parallelism. Independent profiler attribution is still pending; static lowering alone does not establish the hardware cause of regression.",
     "authoring": "Width changes alter only execution_groups. The 008 masked ProgramMap uses axis2 tile16384 with grid-z1, explicit tail zero fill and CTA reduction to cover K14336. Prior explicit across_loop=True and single-trip TileLoop inputs remain retained with their original canonical-form refusals; the final ProgramMap is legal with unchanged Compiler gates.",
     "promotion_disposition": "No promotion. Keep original starters, width8 candidates, masked-K regression and failed quality edges. Do not multiply ratios across experiments, treat close_null as improvement, or remeasure failed CV edges merely to obtain acceptance."
+  },
+  "gemm_009_010_norm_026_followup": {
+    "scope": "009 M1 N5120 K2048 FP16; 010 M1 N6144 K4096 FP16; 026 R64 C7168 BF16 epsilon1e-6. Seven runs, 17850 numerical snapshots pass. Fifteen of twenty-one timing edges pass; all six failed edges are 026 external comparisons. Original Workloads and oracle policies retained; no promotion or full upstream shape claim.",
+    "results": [
+      {
+        "task": "009_gemm_n5120_k2048",
+        "variant": "width-w4",
+        "run_id": "nvidia-gemm-009-010-comparison-20260921-c729a4205261",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-c729a4205261",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/009_gemm_n5120_k2048/width-w4.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/009_gemm_n5120_k2048/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 130995180,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 8.6725,
+            "right_us": 8.72,
+            "right_over_left": 1.005477082732776,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.031418907683118
+          },
+          "starter_vs_external": {
+            "left_us": 9.504,
+            "right_us": 8.671999999999999,
+            "right_over_left": 0.912457912457912,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.026869311859125
+          },
+          "optimized_vs_starter": {
+            "left_us": 8.671999999999999,
+            "right_us": 9.504,
+            "right_over_left": 1.095940959409594,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.023867529482647
+          }
+        }
+      },
+      {
+        "task": "009_gemm_n5120_k2048",
+        "variant": "width-w8",
+        "run_id": "nvidia-gemm-009-010-comparison-20260921-decf02d08ed4",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-decf02d08ed4",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/009_gemm_n5120_k2048/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/009_gemm_n5120_k2048/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 130995180,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 9.184,
+            "right_us": 8.704,
+            "right_over_left": 0.947735191637631,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.027996740245308
+          },
+          "starter_vs_external": {
+            "left_us": 9.472,
+            "right_us": 8.671999999999999,
+            "right_over_left": 0.91554054054054,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.025898718080584
+          },
+          "optimized_vs_starter": {
+            "left_us": 9.184,
+            "right_us": 9.504,
+            "right_over_left": 1.034843205574913,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.026813898981544
+          }
+        }
+      },
+      {
+        "task": "010_gemm_n6144_k4096",
+        "variant": "width-w4",
+        "run_id": "nvidia-gemm-009-010-comparison-20260921-65f2811ce33c",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-65f2811ce33c",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/010_gemm_n6144_k4096/width-w4.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/010_gemm_n6144_k4096/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 283038700,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 18.24,
+            "right_us": 17.296,
+            "right_over_left": 0.948245614035088,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.031971981534851
+          },
+          "starter_vs_external": {
+            "left_us": 19.68,
+            "right_us": 17.184,
+            "right_over_left": 0.873170731707317,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.030132119931535
+          },
+          "optimized_vs_starter": {
+            "left_us": 18.177,
+            "right_us": 19.649,
+            "right_over_left": 1.080981460086923,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.016718859295506
+          }
+        }
+      },
+      {
+        "task": "010_gemm_n6144_k4096",
+        "variant": "width-w8",
+        "run_id": "nvidia-gemm-009-010-comparison-20260921-2b7f4f07851e",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-009-010-comparison-20260921-2b7f4f07851e",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/010_gemm_n6144_k4096/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-009-010-20260921/010_gemm_n6144_k4096/initial-baseline",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "passed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 283038700,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 17.568,
+            "right_us": 17.2805,
+            "right_over_left": 0.983635018214936,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.027843332774889
+          },
+          "starter_vs_external": {
+            "left_us": 19.695500000000003,
+            "right_us": 17.215999999999998,
+            "right_over_left": 0.874108298849991,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.029426749807378
+          },
+          "optimized_vs_starter": {
+            "left_us": 17.5845,
+            "right_us": 19.6165,
+            "right_over_left": 1.115556313799084,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.019367028453294
+          }
+        }
+      },
+      {
+        "task": "026_rmsnorm_h7168",
+        "variant": "floor-w1",
+        "run_id": "nvidia-rmsnorm-026-comparison-20260921-cd0519f984bb",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-cd0519f984bb",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rmsnorm-026-20260921/floor-w1.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/026_rmsnorm_h7168",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 2344299500,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 11.648,
+            "right_us": 2.656,
+            "right_over_left": 0.228021978021978,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.068955610806036
+          },
+          "starter_vs_external": {
+            "left_us": 11.551499999999999,
+            "right_us": 2.64,
+            "right_over_left": 0.228541747824958,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.050581237472367
+          },
+          "optimized_vs_starter": {
+            "left_us": 11.68,
+            "right_us": 11.5835,
+            "right_over_left": 0.99173801369863,
+            "quality_passed": true,
+            "classification": "close_null",
+            "maximum_cohort_cv": 0.024781482374081
+          }
+        }
+      },
+      {
+        "task": "026_rmsnorm_h7168",
+        "variant": "width-w8",
+        "run_id": "nvidia-rmsnorm-026-comparison-20260921-9eb8c7412df2",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-9eb8c7412df2",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rmsnorm-026-20260921/width-w8.json",
+        "control_role": "starter",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/026_rmsnorm_h7168",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 2344299500,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 6.464,
+            "right_us": 2.72,
+            "right_over_left": 0.420792079207921,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.087886748503869
+          },
+          "starter_vs_external": {
+            "left_us": 11.552,
+            "right_us": 2.72,
+            "right_over_left": 0.235457063711911,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.052266546449427
+          },
+          "optimized_vs_starter": {
+            "left_us": 6.464,
+            "right_us": 11.552,
+            "right_over_left": 1.787128712871287,
+            "quality_passed": true,
+            "classification": "first_arm_faster",
+            "maximum_cohort_cv": 0.030993254028949
+          }
+        }
+      },
+      {
+        "task": "026_rmsnorm_h7168",
+        "variant": "whole-row-w8",
+        "run_id": "nvidia-rmsnorm-026-comparison-20260921-c46f642cc623",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-comparison-20260921-c46f642cc623",
+        "schedule": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-rmsnorm-026-20260921/whole-row-w8.json",
+        "control_role": "optimized",
+        "baseline_workspace": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/rewrites-allrefs-20260920-repaired-m2/runs/026_rmsnorm_h7168",
+        "source_commit": "5b85e313486652c41c49b4515a662e5f1edae90d",
+        "status": "measurement_quality_failed",
+        "correctness_passed": true,
+        "snapshot_count": 2550,
+        "snapshot_bytes": 2344299500,
+        "edges": {
+          "optimized_vs_external": {
+            "left_us": 7.392,
+            "right_us": 2.656,
+            "right_over_left": 0.359307359307359,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.077687030540009
+          },
+          "starter_vs_external": {
+            "left_us": 6.4165,
+            "right_us": 2.656,
+            "right_over_left": 0.413932829424141,
+            "quality_passed": false,
+            "classification": "measurement_quality_failed",
+            "maximum_cohort_cv": 0.051504799788747
+          },
+          "optimized_vs_starter": {
+            "left_us": 7.392,
+            "right_us": 6.4,
+            "right_over_left": 0.865800865800866,
+            "quality_passed": true,
+            "classification": "second_arm_faster",
+            "maximum_cohort_cv": 0.044584993055325
+          }
+        }
+      }
+    ],
+    "measurement": "Frozen source5b85e313; CPU prepare, one continuous exclusive paired GPU capture, CPU verify. Every output and input effect checked, CUPTI cold L2 and original CV/materiality gates unchanged. Encoded snapshot files per run:009 130995180 bytes,010 283038700 bytes,026 2344299500 bytes. All worker lifecycles completed; completion does not upgrade failed timing edges.",
+    "controls_and_references": "009/010 original template starters were newly frozen with canonical baseline-only; these are not old-Compiler-floor comparisons. The original CUDA callables are retained, with per-file C++17 failure/C++20 object-success probes and build-standard-only adaptation. 009 runtime selection is unobserved: compare the complete selector callable, not an assumed custom/cuBLAS branch. 010 preserves its aligned custom GEMV and library fallback. 026 uses the old original frozen starter for floor/width and intermediate sliced-w8 for whole-row; its supplied Python reference and epsilon are unchanged. No alignment treatment.",
+    "interpretation": "009 w4/control8.672/9.504us=1.095941x qualifies; w4/external8.6725/8.720us is close_null. 009w8/control9.184/9.504us is close_null and external9.184/8.704us is faster. 010w4/control18.177/19.649us=1.080981x qualifies but external18.240/17.296us is faster; w8/control17.5845/19.6165us=1.115556x qualifies and external17.568/17.2805us is close_null. 026floor/control11.680/11.5835us is close_null; width8/control6.464/11.552us=1.787129x qualifies; whole-row/control7.392/6.400us=0.865801x regresses. All 026 external edges fail CV: nominal external timings cannot establish an accepted gap or speedup. Whole-row changes reduction structure and reuse together; no hardware cause is asserted before independent profiling.",
+    "historical_outcomes": "The old006 cancellation and old026 M2 broker_fault remain unchanged. Old026 event32/33, cake-sm-103a-ec2f473ce604:1800s run_timeout/exit124, missing judge result, no endpoint or promotion. New026 phased runs are separate evidence, not a relabeling or timeout-only rerun.",
+    "promotion_disposition": "No promotion. Retain w4 for009, w8 for010 and026 as leading measured candidates at these fixed shapes. Preserve close_null, failed external quality and the026 whole-row regression. Do not multiply comparisons across experiments or repeat failed CV edges until accepted."
+  },
+  "program_012_020_sealing_followup": {
+    "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+    "evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/sealing-results.json",
+    "status": "CPU sealed; device evaluation not run",
+    "program_count": 17,
+    "leaf_stage_count": 72,
+    "results": [
+      {
+        "task": "012_gqa_paged_decode_h32_kv4_d128_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/012_gqa_paged_decode_h32_kv4_d128_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "012_gqa_paged_decode_h32_kv4_d128_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/012_gqa_paged_decode_h32_kv4_d128_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "013_gqa_paged_decode_h32_kv8_d128_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/013_gqa_paged_decode_h32_kv8_d128_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "013_gqa_paged_decode_h32_kv8_d128_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/013_gqa_paged_decode_h32_kv8_d128_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "014_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "014_gqa_paged_prefill_causal_h32_kv4_d128_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/014_gqa_paged_prefill_causal_h32_kv4_d128_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "015_gqa_paged_prefill_causal_h32_kv8_d128_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/015_gqa_paged_prefill_causal_h32_kv8_d128_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "015_gqa_paged_prefill_causal_h32_kv8_d128_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/015_gqa_paged_prefill_causal_h32_kv8_d128_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "016_gqa_ragged_prefill_causal_h32_kv4_d128",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/016_gqa_ragged_prefill_causal_h32_kv4_d128/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "016_gqa_ragged_prefill_causal_h32_kv4_d128",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/016_gqa_ragged_prefill_causal_h32_kv4_d128/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "017_gqa_ragged_prefill_causal_h32_kv8_d128",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/017_gqa_ragged_prefill_causal_h32_kv8_d128/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "017_gqa_ragged_prefill_causal_h32_kv8_d128",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/017_gqa_ragged_prefill_causal_h32_kv8_d128/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "018_mla_paged_decode_h16_ckv512_kpe64_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/018_mla_paged_decode_h16_ckv512_kpe64_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "018_mla_paged_decode_h16_ckv512_kpe64_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/018_mla_paged_decode_h16_ckv512_kpe64_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1",
+        "variant": "boundary",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 4,
+        "kernels_per_call": 4,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1/boundary/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      },
+      {
+        "task": "020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048",
+        "variant": "captured",
+        "source_commit": "204d87e364a34322eac7fc892d45ac83b2ad5c30",
+        "device_evaluation": "not_run",
+        "status": "sealed",
+        "stages": 8,
+        "kernels_per_call": 8,
+        "bundle": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048/captured/baseline/candidate.json",
+        "artifact_roles": [
+          "launch_manifest",
+          "program_bundle"
+        ]
+      }
+    ],
+    "verification": "Canonical OpenCakeEnvironment/TritonToolchainBuilder compiled complete Programs. Independent review reloaded all17 via load_baseline_bundle/program_components, checked public ABI for primary/all validation cases and all72 stage counts/manifests. Attention has BF16 output and FP32 lse; MoE BF16 output[1,7168]. No Torch import or GPU module loading in the readback review.",
+    "initial_refusal": "Parent directory retains the17 initial caller refusals caused by an omitted route.entry_point. complete-route successor supplies the existing complete route; no Compiler change and no Compiler defect claim.",
+    "remaining": "Normal task launcher/catalog remains blocked for012-020. Common Program GPU Evaluation and external comparison remain unexecuted. Reuse existing task/Program owners; bind Workload-driven multiple outputs and mixed dtype/scalar/index arguments before external evaluation. CPU sealing is not agent launch, correctness, performance or promotion.",
+    "resource_plan": {
+      "evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/flashinfer-program-sealing-20260921/complete-route/program-storage-budget.json",
+      "scope": "CPU shape-derived planning only; not an admitted protocol, peak RSS bound or observed GPU memory. 2550 observations, 42 calls per cohort illustrate the current single-output comparison pattern. Public input clones used by external adapters, compiler/runtime caches, host decoded arrays and device module overhead are additional. All Program intermediates are retained per argument set by the current common adapter.",
+      "large_prepared_cpu_f64_bytes": {
+        "018_mla_paged_decode_h16_ckv512_kpe64_ps1 / captured": 22802671160,
+        "019_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1 / captured": 22824975000,
+        "020_moe_fp8_block_scale_ds_routing_topk8_ng8_kg4_e32_h7168_i2048 / captured": 67650579168
+      },
+      "source_wording_correction": "Original planning report says 42 cohorts; this means 42 calls per cohort. The comparison has60 timed cohorts plus30 pre/postflight calls (2550 total). Budget numbers are unchanged."
+    },
+    "promotion_disposition": "No promotion; CPU artifact reach only. Begin with a complete bounded012 integration before expanding; budget018/019/020 preparation and snapshots before concurrency."
+  },
+  "profiler_phase_followup": {
+    "implemented_in": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+    "scope": "The existing NVIDIA rewrite profiler now uses CPU prepare -> exclusive NCU profile -> CPU verify. This is independent attribution, not a CUPTI timing rerun or promotion. Native reference compilation, input/oracle generation and all numerical comparison occur outside the GPU lease. Every participant retains all five validation observations plus the profiled primary, including all inputs/outputs; all18 observations must pass before metrics are accepted. NCU cold kernel replay, all callable launches and the existing ncu_process privilege/custody boundary remain unchanged.",
+    "verified_by": [
+      "Fixed34f04b40:27 tests and19 subtests across rewrite_profile,staged_rewrite_comparison,ncu_process,tensor_profile_handoff; F821/F401 pass.",
+      "Independent review found missing roles in the initial79734e57 child;34f04b40 restores comparison_roles and exercises the actual derived_from loader path, preserving intermediate-control labels. Re-review passed.",
+      "PR156:all three Python contract CI jobs pass before merge; four input/task preparations independently checked."
+    ],
+    "runtime_evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-phased-profiles-20260921/submissions.json",
+    "device_verification_at_publication": "First003 pipeline verification submitted; no accepted device profile is inferred from CPU/CI checks. Remaining prepared008/009/026profiles wait for that result.",
+    "interpretation_limits": "An independent009 profile runs its original runtime selector anew; its branch observation cannot identify the earlier timing process branch.026profiling cannot upgrade failed external CV edges. NCU metrics do not replace original paired performance results.",
+    "promotion_disposition": "No promotion. Retain any capture, permission, numerical or metrics failure as separate evidence; do not patch a running frozen source."
   }
 }
