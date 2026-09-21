@@ -132,8 +132,8 @@ class ProgramEvaluationTests(unittest.TestCase):
                 return observed, after, {'candidate_sha256': bound.candidate_sha256,
                     'kernel_calls': loaded.launch_calls, 'fallback_calls': 0}
         try:
-            with patch('open_cake_ir.tasks.workloads.materialize_case', return_value=deepcopy(inputs)), \
-                 patch('open_cake_ir.tasks.workloads.reference_outputs', return_value=expected):
+            with patch('open_cake_ir.tasks.workloads.materialize_evaluation_case',
+                       return_value=(deepcopy(inputs), expected)):
                 receipt = evaluate_tile_workload(candidate, workload,
                     EvaluationProtocol('cpu-fixture', 'confirmatory', workload.canonical_sha256, 'primary', 'none'), Launcher())
             return receipt, calls
