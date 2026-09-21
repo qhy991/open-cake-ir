@@ -117,3 +117,79 @@ class FakeOutput:
 
     def fill_(self, value):
         self.value = value
+
+
+class ProgramComparisonPreparationTests(unittest.TestCase):
+    def test_program_preparation_seals_all_stages_and_keeps_the_selected_control(self):
+        from copy import deepcopy
+        from unittest.mock import patch
+        from open_cake_ir.compiler import Compiler, Program, frontend
+        from open_cake_ir.compiler.toolchain import TritonCompilation, triton_route
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.evaluation.paired import candidate_identity
+        from open_cake_ir.evaluation.program import program_components
+        from open_cake_ir.lab.build import TritonToolchainBuilder
+        from open_cake_ir.lab.environments import OpenCakeEnvironment, CandidateSubmission
+        from open_cake_ir.lab.bindings import load_baseline_bundle
+        from open_cake_ir.tasks.workloads import create_task
+        from open_cake_ir.serialization import canonical_json_bytes
+        from tools import prepare_schedule_comparison as preparation
+        class CPUCompiler:
+            def check_executor(self,*args,**kwargs): pass
+            def compile(self,source,requirements):
+                route=triton_route(requirements)
+                payloads={role:b'CPU fixture; not executable' for role in route.artifact_roles}
+                payloads['source']=b'CPU compiler expansion\n'+source
+                payloads['cubin']=b'\x7fELF CPU fixture'
+                return TritonCompilation(source,requirements['target'],requirements['kernel_entry_point'],
+                    payloads,requirements['compile_options']['num_warps']*32,0,'CPU fixture','cubin')
+        document,source=create_task('rmsnorm',backend='triton-b300',rows=1,columns=8)
+        workload=WorkloadContract(document);schedule=frontend.parse(source).document
+        compiler=Compiler.load(preparation.ROOT,preparation.ROOT/'compiler/revision.json')
+        builder=TritonToolchainBuilder(workload=workload,case_id='primary',isolated_compiler=CPUCompiler())
+        environment=OpenCakeEnvironment(compiler,builder,workload=workload,case_id='primary',
+            authority_document={'input_format':'schedule_or_python_v1','lowering_route':schedule['lowering']})
+        control=environment.build(CandidateSubmission.seal(environment.media_type,canonical_json_bytes(schedule))).launchable
+        self.assertIsNotNone(control)
+        program=Program.from_schedule(schedule).document
+        program['tensors']['partial']=deepcopy(program['tensors']['out'])
+        program['stages'][0]['bindings']['out']='partial'
+        copy_source='''from open_cake_ir.compiler import frontend as cake
+@cake.schedule(name="copy-final",target="sm_103a",backend="triton",entry_point="copy_final")
+def candidate(lm,partial:cake.Tensor((1,8),"fp32"),out:cake.Tensor((1,8),"fp32",mode="output")):
+    compute=lm.role(execution_groups=[0])
+    row=lm.program(out,axis=0,dimension=0,tile=1)
+    with compute:
+        value=lm.load(partial[row,:])
+        lm.store(out[row,:],value,coalesced=False)
+'''
+        program['stages'].append({'name':'finalize','schedule':frontend.parse(copy_source).document,
+                                  'bindings':{'partial':'partial','out':'out'}})
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory).resolve();input_root=root/'input';input_root.mkdir()
+            (input_root/'workload.json').write_text(json.dumps(document));ref=input_root/'reference';ref.mkdir()
+            (ref/'ref.py').write_text('def run(*args): pass\n')
+            (ref/'reference.json').write_text(json.dumps({'kind':'python','files':['ref.py'],'entry_point':'ref.py::run'}))
+            sealed=input_root/'optimized';sealed.mkdir();paths={}
+            for role,payload in control.artifact_payloads.items():paths[role]=role+'.bin';(sealed/paths[role]).write_bytes(payload)
+            (sealed/'candidate.json').write_text(json.dumps({'candidate':candidate_identity(control),'artifact_paths':paths}))
+            runtime=root/'runtime.json';runtime.write_text(json.dumps({'toolchain':{}}))
+            authored=root/'program.json';authored.write_text(json.dumps(program))
+            out=root/'comparison'
+            with patch.object(preparation,'IsolatedTritonCompiler',return_value=CPUCompiler()):
+                metadata=preparation.prepare(authored,input_root,out,runtime,'optimized','CPU composition fixture')
+                candidate=load_baseline_bundle(preparation.ROOT,out/'optimized/candidate.json')
+                manifest,children,_=program_components(candidate)
+                self.assertEqual(candidate.kernels_per_call,2)
+                self.assertEqual(len(children),2)
+                manifest.check_workload(workload,'primary')
+                self.assertEqual((out/'starter/candidate.json').read_bytes(),(sealed/'candidate.json').read_bytes())
+                self.assertEqual(json.loads((out/'authored-program.json').read_text()),program)
+                self.assertEqual(metadata['kind'],'authored_program_comparison')
+                roles=comparison_roles(metadata)
+                self.assertEqual(roles['optimized'],'new authored complete Cake Program')
+                self.assertEqual(roles['starter'],'unchanged old optimized binary')
+                incomplete=deepcopy(program);incomplete['stages'].pop();authored.write_text(json.dumps(incomplete))
+                with self.assertRaises(ValueError):
+                    preparation.prepare(authored,input_root,root/'incomplete',runtime,'optimized','missing writer')
+                self.assertFalse((root/'incomplete').exists())
