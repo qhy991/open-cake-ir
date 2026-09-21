@@ -309,3 +309,65 @@ class PortableProgramEvaluation(unittest.TestCase):
     def test_metal_composition_still_refuses_without_a_native_program_adapter(self):
         with self.assertRaisesRegex(ValueError, 'metal_binary_archive'):
             admit_program_execution('apple_gpu_family8')
+
+    def test_native_qualification_command_builds_without_an_optimization_environment(self):
+        from tools import qualify_tensor_program as tool
+        for backend in BACKENDS:
+            workload, program = task_program(backend)
+            with self.subTest(backend=backend), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                workload_path, program_path = root/'workload.json', root/'program.json'
+                workload_path.write_text(json.dumps(workload.document))
+                program_path.write_bytes(program.document_bytes)
+                output = root/'build'; output.mkdir()
+                compilation = NativeCompiler()
+                compilation.check_executor = Mock()
+                executor = SimpleNamespace(admit_host=lambda: {})
+                with patch.object(tool, 'resolve_executor', return_value=executor), \
+                     patch('launch_task._triton_toolchain_config', return_value={}), \
+                     patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler', return_value=compilation), \
+                     patch.object(OpenCakeEnvironment, 'build', side_effect=AssertionError('qualification used optimization policy')):
+                    result = {}
+                    tool.build(SimpleNamespace(workload=workload_path, program=program_path, output=output), result)
+                self.assertTrue(result['passed'])
+                self.assertEqual(result['kernels_per_call'], 2)
+                self.assertEqual(json.loads((output/'build-feedback.json').read_text())['stage'], 'built')
+                compilation.check_executor.assert_called_once()
+                self.assertEqual(len(compilation.requests), 2)
+
+    def test_native_qualification_selects_target_allocation_after_cpu_preparation(self):
+        from tools import qualify_tensor_program as tool
+        from open_cake_ir.serialization import canonical_json_bytes
+        for backend in BACKENDS:
+            workload, program, candidate, _ = self.build(backend)
+            receipt, _ = self.assay(workload, program, candidate)
+            kind = platform_for(candidate.target).local_job_prefix
+            events = []
+            with self.subTest(backend=backend), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); output = root/'result'; output.mkdir()
+                (root/'workload.json').write_text(json.dumps(workload.document))
+                (root/'candidate.json').write_bytes(canonical_json_bytes(candidate_identity(candidate)))
+                for role, payload in candidate.artifact_payloads.items():
+                    (root/(role+'.bin')).write_bytes(payload)
+                with (root/'allocation-fixture').open('wb') as lock:
+                    def prepare(*args): events.append('prepare'); return 'prepared-fixture'
+                    def admit(actual_kind):
+                        self.assertEqual(events, ['prepare']); self.assertEqual(actual_kind, kind)
+                        events.append('admit')
+                        os.environ['METAL_BROKER_LOCK_FD'] = str(lock.fileno())
+                        return f'{kind}-123456789abc'
+                    with patch.dict(os.environ, {}, clear=True), \
+                         patch.object(tool, 'PreparedProgramCase', side_effect=prepare), \
+                         patch.object(tool, 'admit_local_job', side_effect=admit), \
+                         patch.object(tool, 'resolve_executor', return_value=SimpleNamespace(admit_host=lambda: {'runtime_library': 'fixture'})), \
+                         patch('open_cake_ir.evaluation.triton_hip.observe_local_hip', return_value='hip-admission') as hip, \
+                         patch('open_cake_ir.evaluation.triton_metax.observe_local_metax', return_value='maca-admission') as maca, \
+                         patch.object(tool, 'evaluate_program_case', return_value=receipt) as evaluate:
+                        result = {}
+                        tool.evaluate(SimpleNamespace(built=root, case='primary', output=output), result)
+                    expected = 'maca-admission' if kind == 'maca' else 'hip-admission'
+                    self.assertEqual(evaluate.call_args.args[3], expected)
+                    self.assertEqual(evaluate.call_args.kwargs['prepared'], 'prepared-fixture')
+                    self.assertEqual((hip.call_count, maca.call_count), (0,1) if kind=='maca' else (1,0))
+                    self.assertEqual(result['timing_samples'], 0)
+                    self.assertTrue(result['passed'])
