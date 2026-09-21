@@ -203,7 +203,9 @@ class OpenCakeEnvironment:
                 build_stage = getattr(self._toolchain, 'build_stage', None)
                 if not callable(build_stage):
                     raise ValueError('this toolchain has no Program stage build capability')
-                admit_program_execution(program.target)
+                # Optimization environments must support their full measurement
+                # loop. Correctness-only Program handoffs use the Evaluation API.
+                admit_program_execution(program.target, timing=True, attribution=True)
                 children = {stage.name:build_stage(request(lowering),stage_abi(stage))
                             for stage,lowering in zip(program.stages,lowered.lowerings,strict=True)}
                 launchable = seal_program_candidate(lowered, children, candidate_sha256=submission.sha256,

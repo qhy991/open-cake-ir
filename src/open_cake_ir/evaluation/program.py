@@ -44,12 +44,22 @@ def single_kernel_lowering(lowered):
     return lowered.lowerings[0]
 
 
-def admit_program_execution(target):
-    """The implemented Program adapter domain; this is not device qualification."""
+def admit_program_execution(target, *, timing=False, attribution=False):
+    """Admit execution separately from a complete Program's measurement coverage.
+
+    HIP and MACA module drivers share ordered execution, but their existing timers
+    and attribution readers describe one dispatch. They cannot measure a Program
+    by passing its logical name to that single-kernel instrument.
+    """
     from open_cake_ir.compiler.target import CodeObject
     from .platforms import platform_for
-    if platform_for(target).code_object is not CodeObject.CUBIN:
-        raise ValueError('ordered Program execution is not implemented for this code object')
+    code_object = platform_for(target).code_object
+    if code_object not in {CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN}:
+        raise ValueError(f'ordered Program execution is not implemented for {code_object.value}')
+    if code_object is not CodeObject.CUBIN and (timing or attribution):
+        purpose = 'attribution' if attribution else 'timing'
+        raise ValueError(f'ordered Program {purpose} is not implemented for {code_object.value}; '
+                         'the existing instrument covers one dispatch')
 
 
 @dataclass(frozen=True)
@@ -206,17 +216,20 @@ def seal_program_candidate(lowered, children, *, candidate_sha256, workload, cas
 class LoadedProgram:
     """Retain all modules and prepared storage; one call launches the ordered stages."""
 
-    def __init__(self, candidate, manifest, admission, loader, *, allocate, view, storage_span, stream):
+    def __init__(self, candidate, manifest, admission, loader, *, allocate, view, check_tensor, storage_span, stream):
         checked, children, manifests = program_components(candidate)
         if checked.as_dict() != manifest.as_dict():
             raise ValueError('loaded Program manifest differs')
         self.manifest = checked
         self._allocate, self._view, self._span = allocate, view, storage_span
+        self._check_tensor = check_tensor
         self._stream = stream
         self._prepared = {}
         self._lock = Lock()
         self._children = {}
         self._manifests = manifests
+        self._stage_buffers = {stage.name: {b.name: b for b in stage.schedule.buffers}
+                               for stage in checked.program.stages}
         try:
             for stage in checked.program.stages:
                 self._children[stage.name] = loader(children[stage.name], manifests[stage.name], admission)
@@ -244,6 +257,7 @@ class LoadedProgram:
                 tensors[name] = self._allocate(spec)
         spans = []
         for name, tensor in tensors.items():
+            self._check_tensor(tensor, program.tensors[name])
             device, start, end = self._span(tensor)
             if (type(start) is not int or type(end) is not int or start <= 0
                 or end - start != program.tensors[name].nbytes
@@ -261,9 +275,11 @@ class LoadedProgram:
                     value = self._view(value, shape)
                     if self._span(value) != self._span(tensors[binding.tensor]):
                         raise ValueError('Program singleton view copied or changed storage')
+                self._check_tensor(value, self._stage_buffers[stage.name][local])
                 args.append(value)
             stage_arguments[stage.name] = args
-        self._prepared[id(arguments)] = (arguments, tuple(id(value) for value in arguments), tensors, stage_arguments)
+        self._prepared[id(arguments)] = (arguments, tuple(id(value) for value in arguments), tensors,
+                                        stage_arguments, tuple(spans))
         return MappingProxyType(tensors)
 
     @property
@@ -296,6 +312,18 @@ class LoadedProgram:
         prepared = self._prepared.get(id(arguments))
         if prepared is None or prepared[0] is not arguments or prepared[1] != tuple(id(value) for value in arguments):
             raise ValueError('Program arguments must be prepared outside the timed interval')
+        # A tensor object can be rebound in place after preparation. Recheck the
+        # entire argument graph before the first dispatch, including retained views.
+        for (name, tensor), span in zip(prepared[2].items(), prepared[4], strict=True):
+            self._check_tensor(tensor, self.manifest.program.tensors[name])
+            if self._span(tensor) != span:
+                raise ValueError('Program tensor storage changed after preparation')
+        for stage in self.manifest.program.stages:
+            for (local, _, _, _), tensor in zip(self._manifests[stage.name].tensor_abi,
+                                               prepared[3][stage.name], strict=True):
+                self._check_tensor(tensor, self._stage_buffers[stage.name][local])
+                if self._span(tensor) != self._span(prepared[2][stage.bindings[local].tensor]):
+                    raise ValueError('Program stage view storage changed after preparation')
         for stage in self.manifest.program.stages:
             if boundary is not None:
                 boundary(stage.name,'before')

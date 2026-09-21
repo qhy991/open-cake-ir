@@ -458,6 +458,14 @@ def validate_metal_correctness_checks(check, case_ids, *, timed=False):
 def validate_receipt_policy(receipt, evaluation, baseline, candidate=None):
     if candidate is not None and receipt.kernel_calls != candidate.kernels_per_call:
         raise ValueError('receipt physical kernel count differs from its sealed candidate')
+    if candidate is not None and candidate.is_program:
+        from .program import admit_program_execution
+        admit_program_execution(candidate.target, timing=receipt.timing is not None or paired_protocol(evaluation) is not None,
+                                attribution=receipt.purpose == 'attribution')
+    if (baseline is not None and 'program_bundle' in baseline['artifact_roles']
+            and paired_protocol(evaluation) is not None):
+        from .program import admit_program_execution
+        admit_program_execution(baseline['target'], timing=True)
     if candidate is not None and candidate.is_program and receipt.purpose == 'attribution':
         from .program import program_components
         manifest, children, _ = program_components(candidate)

@@ -263,6 +263,15 @@ def _load_authority(request_path: Path) -> _Authority:
     )
 
 
+def _admit_program_assay(authority, *, collect_timing):
+    """Neither participant may borrow its platform's single-dispatch instrument."""
+    from open_cake_ir.evaluation.program import admit_program_execution
+    for candidate in (authority.candidate, authority.baseline):
+        if candidate is not None and candidate.is_program:
+            admit_program_execution(candidate.target, timing=collect_timing,
+                                    attribution=authority.request['purpose'] == 'attribution')
+
+
 def _execution_platform(authority: _Authority) -> CodeObject:
     """The declared object that selects how this candidate is executed.
 
@@ -903,6 +912,8 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     from open_cake_ir.evaluation.hip_observations import collect_hip_dispatch_activity, HIP_PROFILE
     from open_cake_ir.evaluation.triton_hip import observe_local_hip
 
+    _admit_program_assay(authority, collect_timing=collect_timing)
+
     if admission is None:
         try:
             admission = observe_local_hip(authority.candidate.target)
@@ -942,6 +953,7 @@ def _evaluate_metax_candidate(authority, result, *, collect_timing, admission=No
     from open_cake_ir.evaluation.metax_observations import collect_maca_activity, MACA_PROFILE
     from open_cake_ir.compiler.target import declared_target
 
+    _admit_program_assay(authority, collect_timing=collect_timing)
     host = authority.executor.admit_host()
     if admission is None:
         admission = observe_local_metax(authority.candidate.target, runtime_library=host["runtime_library"])
