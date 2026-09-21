@@ -386,3 +386,9 @@ class PortableProgramEvaluation(unittest.TestCase):
                     self.assertEqual((hip.call_count, maca.call_count), (0,1) if kind=='maca' else (1,0))
                     self.assertEqual(result['timing_samples'], 0)
                     self.assertTrue(result['passed'])
+                    if kind == 'hip':
+                        with patch.object(tool, 'PreparedProgramCase') as prepare, patch.object(tool, 'admit_local_job') as admit:
+                            with self.assertRaisesRegex(ValueError, 'only MACA attribution'):
+                                tool.evaluate(SimpleNamespace(command='profile', built=root, case='primary', output=output), {})
+                        prepare.assert_not_called()
+                        admit.assert_not_called()
