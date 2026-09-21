@@ -14,7 +14,7 @@
 
 | 平台 | 维护分支 | 数据日期 | 观察条目 | 发布数据 |
 |---|---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-21 | 123 | [nvidia/records.json](records.json) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-21 | 126 | [nvidia/records.json](records.json) |
 
 观察条目数不等于任务数：同一任务可以有不同形状、实验集合和历史尝试。
 
@@ -22,6 +22,7 @@
 
 B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版本，不混成一个榜。B200 单列正确性证据。
 
+- 008完整两阶段split-K已结束，2550数值快照通过；new/control55.073/41.152µs和new/external55.072/26.688µs都CV失败，不能称合格改善或合格回退。独立control/external41.1845/26.624µs质量通过。保留sliced-w8代表，不晋升、不重测刷绿；本轮证明完整Program设备正确性，不证明性能收益。
 - 026新对齐比较完成：50guards/2550快照通过，对固定generic sliced-w8为合格1.081×；新候选external边CV失败。同一新实验的generic control/external边质量通过，6.4005/2.656µs，仅据这个明确generic代表，最新任务级计数为2领先/6close_null/4落后/4无合格外部边，另10未完成。旧CV失败不改写，不跨实验相乘。
 - 历史综述快照：截至2026-09-21的逐任务系统综述见 docs/results/nvidia/FLASHINFER_STATUS.md。16项已有三方数值比较；按明确列出的代表产物/原starter，外部边为2项合格领先、6项close_null、3项合格落后、5项暂无合格结论。011和012–020仍未完成外部性能闭环。以下较早说明是按实验推进保留的历史快照，pending、旧差距和旧覆盖数不表示当前状态。
 - 历史阶段说明：B300 服务实验投影保留每个 Campaign 的最佳合格候选及确认历史；不是远端 registry 的当前冠军。
@@ -167,6 +168,9 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 | B300 / guarded AOT alignment | `026_rmsnorm_h7168 / sliced-w8 alignment` | R=64,C=7168,BF16,epsilon=1e-6 | 2.656 | 5.920 | — | Correct; measurement_quality_failed | [nvidia-026-alignment-optimized_vs_external-20260921](#nvidia-026-alignment-optimized_vs_external-20260921) |
 | B300 / guarded AOT alignment | `026_rmsnorm_h7168 / sliced-w8 alignment / retained generic control` | R=64,C=7168,BF16,epsilon=1e-6 | 2.656 | 6.401 | 0.415× | Correct; second_arm_faster | [nvidia-026-alignment-starter_vs_external-20260921](#nvidia-026-alignment-starter_vs_external-20260921) |
 | B300 / guarded AOT alignment | `026_rmsnorm_h7168 / sliced-w8 alignment` | R=64,C=7168,BF16,epsilon=1e-6 | 6.401 | 5.920 | 1.081× | Correct; first_arm_faster | [nvidia-026-alignment-optimized_vs_starter-20260921](#nvidia-026-alignment-optimized_vs_starter-20260921) |
+| B300 / complete two-stage Program | `008_gemm_n4096_k14336 / splitK8 columns16 groups8` | M=1,N=4096,K=14336,FP16 | 26.688 | 55.072 | — | Correct; measurement_quality_failed | [nvidia-008-splitk-program-optimized_vs_external-20260921](#nvidia-008-splitk-program-optimized_vs_external-20260921) |
+| B300 / complete two-stage Program | `008_gemm_n4096_k14336 / retained sliced-w8 control` | M=1,N=4096,K=14336,FP16 | 26.624 | 41.184 | 0.646× | Correct; second_arm_faster | [nvidia-008-splitk-program-starter_vs_external-20260921](#nvidia-008-splitk-program-starter_vs_external-20260921) |
+| B300 / complete two-stage Program | `008_gemm_n4096_k14336 / splitK8 columns16 groups8` | M=1,N=4096,K=14336,FP16 | 41.152 | 55.073 | — | Correct; measurement_quality_failed | [nvidia-008-splitk-program-optimized_vs_starter-20260921](#nvidia-008-splitk-program-optimized_vs_starter-20260921) |
 
 ## 演进与更新
 
@@ -1527,3 +1531,33 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/720c8dadd4067fc723010e1e047ddb0ff743235a/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891/stages/verify/comparison-report.json; optimized_vs_starter`。
 - Qualified edge. All2550snapshots and preceding50guards pass. Old026CV failures stay unchanged. No originalstarter gain,cross-run multiplication or promotion.
+
+### nvidia-008-splitk-program-optimized_vs_external-20260921
+
+**B300 / complete two-stage Program · 008_gemm_n4096_k14336 / splitK8 columns16 groups8** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`M=1,N=4096,K=14336,FP16`；目标：`sm_103a`；版本：`judge/compiler65742cbb`。
+- 基线：Original supplied complete split-K CUDA callable；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/1d15c72b9a86f45512df5aaf85c3963ff158fe79/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-008-splitk-program-comparison-20260921-6ada50580f4f/stages/verify/comparison-report.json; optimized_vs_external`。
+- Candidate is the complete two-stage Program; bothcandidate edges failCV,latencies descriptive. All2550publicinput/output observations pass. Originaloracle and coldL2CUPTI/fullcallable preserved. No originalstarter ratio,fullshape,hardware attribution orpromotion.
+
+### nvidia-008-splitk-program-starter_vs_external-20260921
+
+**B300 / complete two-stage Program · 008_gemm_n4096_k14336 / retained sliced-w8 control** — 2026-09-21 / Correct; second_arm_faster
+
+- Workload：`M=1,N=4096,K=14336,FP16`；目标：`sm_103a`；版本：`judge/compiler65742cbb`。
+- 基线：Original supplied complete split-K CUDA callable；比值口径：`paired`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/1d15c72b9a86f45512df5aaf85c3963ff158fe79/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-008-splitk-program-comparison-20260921-6ada50580f4f/stages/verify/comparison-report.json; starter_vs_external`。
+- Candidate column denotes the retained generic slicedcontrol,not newProgram. All2550publicinput/output observations pass. Originaloracle and coldL2CUPTI/fullcallable preserved. No originalstarter ratio,fullshape,hardware attribution orpromotion.
+
+### nvidia-008-splitk-program-optimized_vs_starter-20260921
+
+**B300 / complete two-stage Program · 008_gemm_n4096_k14336 / splitK8 columns16 groups8** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`M=1,N=4096,K=14336,FP16`；目标：`sm_103a`；版本：`judge/compiler65742cbb`。
+- 基线：Frozen intermediate sliced-w8 binary；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/1d15c72b9a86f45512df5aaf85c3963ff158fe79/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-008-splitk-program-comparison-20260921-6ada50580f4f/stages/verify/comparison-report.json; optimized_vs_starter`。
+- Candidate is the complete two-stage Program; bothcandidate edges failCV,latencies descriptive. All2550publicinput/output observations pass. Originaloracle and coldL2CUPTI/fullcallable preserved. No originalstarter ratio,fullshape,hardware attribution orpromotion.
