@@ -46,7 +46,7 @@ class NativeTensorWorker(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             authority = worker._Authority({'purpose': 'confirmatory', 'evaluation_protocol': evaluation_policy(workload)},
                 Path(directory), None, workload, manifest, candidate, candidate.artifact_payloads,
-                'primary', allocation_mode='local_serialized')
+                'primary', allocation_mode='local_serialized', timed_assay_available=False)
             with patch.object(workloads, 'materialize_case', side_effect=AssertionError('flat inputs used')), patch.object(
                     workloads, 'reference_outputs', side_effect=AssertionError('flat reference used')):
                 authority = worker._prepare_local_tensor_work(authority, 'maca')
