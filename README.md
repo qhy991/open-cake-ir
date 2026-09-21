@@ -105,7 +105,7 @@ python3 -m venv .venv
 |---|---|
 | [src/open_cake_ir/compiler/](src/open_cake_ir/compiler/) | IR、Verifier、后端、pass 与性能分析；[实现导读](docs/IR_GUIDE.md) |
 | [src/open_cake_ir/lab/](src/open_cake_ir/lab/) | Agent 与实验组织；[模块导航](src/open_cake_ir/lab/README.md) |
-| [src/open_cake_ir/evaluation/](src/open_cake_ir/evaluation/) · [evidence/](src/open_cake_ir/evidence/) | 公共评测、执行与证据存储；[职责地图](CONTEXT-MAP.md) |
+| [src/open_cake_ir/evaluation/](src/open_cake_ir/evaluation/) · [src/open_cake_ir/evidence/](src/open_cake_ir/evidence/) | 公共评测、执行与证据存储；[职责地图](CONTEXT-MAP.md) |
 | [src/open_cake_ir/tasks/](src/open_cake_ir/tasks/) · [contracts/](contracts/) | 具体任务实现与语义契约；[任务目录](docs/wiki/workloads.md) |
 | [compiler/](compiler/) · [runtime/](runtime/) | 编译与执行配置；[硬件声明](compiler/targets/) · [主机环境](runtime/hosts/) |
 | [tools/](tools/) · [tests/](tests/) · [corpus/](corpus/) | CLI 工具、合同测试和编译器验证用例；[贡献说明](CONTRIBUTING.md) |

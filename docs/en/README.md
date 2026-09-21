@@ -24,8 +24,6 @@ A Workload defines the problem, a Schedule describes workers and data, the Compi
 
 These dated notes retain their original scope. Current status and results are linked above.
 
-
-
 - **2026-09-16 — the Hygon DCU (gfx938) is a third target that runs.** A Triton-lowered kernel
   compiles to an HSACO inside the DTK container, loads through `evaluation/hip_driver.py`,
   launches on a BW1101 and passes the external CPU oracle: `output_mismatches: 0`,
