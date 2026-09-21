@@ -147,6 +147,25 @@ class TensorOracleReceipt(unittest.TestCase):
         self.assertEqual(receipt.kernel_calls, 4)
         self.assertEqual(receipt.artifact_payloads['timing_samples'], b'null')
         self.assertTrue(json.loads(receipt.artifact_payloads['launch_receipt'])['module_unloaded'])
+        activity = {'source': 'CPU observer fixture', 'records': [1, 2, 3, 4]}
+        def observe(launch):
+            launch()
+            return activity
+        with patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            receipt = evaluate_program_case(self.candidate, self.workload, protocol, Admission(),
+                                            prepared=prepared, observe=observe)
+        self.assertEqual(json.loads(receipt.artifact_payloads['correctness_output'])['native_activity'], activity)
+        self.assertEqual(receipt.kernel_calls, 4)
+        with patch.object(Loaded, 'snapshot', side_effect=ValueError('snapshot failed')), patch(
+                'open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            with self.assertRaisesRegex(RunProtocolFault, 'snapshot failed') as failed:
+                evaluate_program_case(self.candidate, self.workload, protocol, Admission(),
+                                      prepared=prepared, observe=observe)
+            self.assertEqual(json.loads(failed.exception.artifact_payloads['program_activity']), activity)
+        with patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            with self.assertRaisesRegex(RunProtocolFault, 'exact stage count'):
+                evaluate_program_case(self.candidate, self.workload, protocol, Admission(),
+                                      prepared=prepared, observe=lambda launch: activity)
         with patch.object(Loaded, 'launch', lambda self: None), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
             with self.assertRaisesRegex(RunProtocolFault, 'exact stage count') as failed:
                 evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
