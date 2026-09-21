@@ -62,9 +62,19 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
                 'bin_float = lm.cast(bin_index, to="fp32")',
                 f'lower = bin_float * {8.0 / shape["B"]!r} - 4.0',
                 f'upper = lower + {8.0 / shape["B"]!r}',
-                'above = lm.compare(samples, lower, op="ge")',
-                'below = lm.compare(samples, upper, op="lt")',
-                'below_inclusive = lm.compare(samples, upper, op="le")',
+                # The frozen oracle adds 4 in binary64. Immediately below the
+                # zero bin boundary, -2**-52 is the tie rounding upward to 4.
+                # Other internal power-of-two bin edges have FP32 spacing larger
+                # than this binary64 rounding interval and retain their exact edge.
+                'scalar_zero = bin_float * 0.0',
+                f'center_edge = scalar_zero + {-2.0**-52!r}',
+                'lower_is_zero = lm.compare(lower, 0.0, op="eq")',
+                'upper_is_zero = lm.compare(upper, 0.0, op="eq")',
+                'effective_lower = lm.select(lower_is_zero, center_edge, lower)',
+                'effective_upper = lm.select(upper_is_zero, center_edge, upper)',
+                'above = lm.compare(samples, effective_lower, op="ge")',
+                'below = lm.compare(samples, effective_upper, op="lt")',
+                'below_inclusive = lm.compare(samples, effective_upper, op="le")',
                 f'last = lm.compare(bin_index, {shape["B"]-1}, op="eq")',
                 'upper_member = lm.select(last, below_inclusive, below)',
                 'zero = samples * 0.0', 'one = zero + 1.0',

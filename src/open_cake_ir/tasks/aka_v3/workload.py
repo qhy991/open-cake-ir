@@ -77,7 +77,7 @@ def _admit_starter(task_name: str, backend: str, *, columns: int, depth: int, el
         admit_width(backend, elements)
     admit_operations(backend, kinds)
     admit_dtype(backend, "fp32")
-    if task_name in {"row_gather", "momentum_sgd"}:
+    if task_name in {"row_gather", "momentum_sgd", "histogram", "max_pool1d"}:
         admit_dtype(backend, "int32")
     if task_name not in {"momentum_sgd", "histogram"}:
         admit_width(backend, columns)
