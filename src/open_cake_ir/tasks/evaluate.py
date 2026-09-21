@@ -160,7 +160,7 @@ def _prepare_local_tensor_work(authority, kind):
         raise ValueError('CPU preparation cannot start inside an existing allocation')
     if (authority.allocation_mode != 'local_serialized'
             or platform_for(authority.candidate.target).local_job_prefix != kind
-            or not isinstance(authority.manifest, TensorLaunchManifest)):
+            or not isinstance(authority.manifest, (TensorLaunchManifest, ProgramLaunchManifest))):
         raise ValueError('local CPU preparation requires its declared tensor allocation route')
     policy = authority.request['evaluation_protocol']
     cases = ((authority.case_id,) if authority.request['purpose'] == 'attribution'

@@ -48,6 +48,7 @@ class TensorInputSequences(unittest.TestCase):
         for dtype in [torch.float16, torch.bfloat16, torch.float32, torch.int32]:
             with self.subTest(dtype=dtype):
                 loaded = object.__new__(LoadedTorchTensorCandidate)
+                loaded._native_inputs = None
                 loaded.manifest = SimpleNamespace(tensor_abi=(('x',(2,),str(dtype),'input'),
                                                               ('out',(2,),str(dtype),'output')))
                 x = torch.tensor([1,0],dtype=dtype)
@@ -79,6 +80,7 @@ class TensorInputSequences(unittest.TestCase):
 
     def test_loaded_assay_compares_contents_and_keeps_candidate_and_manifest_guards(self):
         loaded = object.__new__(LoadedTorchTensorCandidate)
+        loaded._native_inputs = None
         loaded.candidate = SimpleNamespace(canonical_sha256='candidate', candidate_sha256='source')
         loaded.manifest = SimpleNamespace(canonical_sha256='manifest', tensor_abi=())
         loaded.inputs = {'a': [1.0, -0.0]}
