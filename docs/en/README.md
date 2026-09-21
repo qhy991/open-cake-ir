@@ -38,6 +38,8 @@ A Workload defines the problem, a Schedule describes workers and data, the Compi
 
 The [English guide](wiki/README.md) also links every learning page. Use the [Glossary](GLOSSARY.md) as a lookup.
 
+The [FlashInfer-Bench experimental status](../results/nvidia/FLASHINFER_STATUS.md) includes all 26 tasks, fixed-shape external comparisons, original-starter boundaries, independent NCU evidence and an English summary.
+
 ## Continue by purpose
 
 | Purpose | English page |
