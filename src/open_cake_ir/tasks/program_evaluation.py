@@ -43,7 +43,7 @@ def _output_record(tensors):
             for name, value in tensors.items()}
 
 
-def evaluate_program_case(candidate, workload, protocol, admission, *, prepared):
+def evaluate_program_case(candidate, workload, protocol, admission, *, prepared, observe=None):
     """Check one complete same-ABI case under its original oracle and tolerance."""
     import json
     if (protocol.workload_sha256 != workload.canonical_sha256 or protocol.timing != 'none'
@@ -66,12 +66,20 @@ def evaluate_program_case(candidate, workload, protocol, admission, *, prepared)
                   'expected_kernel_calls': manifest.kernels_per_call,
                   'device_admission': asdict(admission)}
     try:
-        loaded.launch()
+        if observe is None:
+            loaded.launch()
+        else:
+            # The observation source owns instrumentation, while this assay still
+            # owns exact call count, original output checks and native teardown.
+            # Retain acquired activity before snapshots or later validation fail.
+            retained['program_activity'] = canonical_json_bytes(observe(loaded.launch))
         observed, input_checks = loaded.snapshot()
         # Freeze completed observations before any count/comparison/teardown check
         # can fail. A rejected execution retains evidence, never a passing receipt.
         observation = {'input_checks': input_checks, 'observed_tensors': _output_record(observed),
                        'expected_tensors': _output_record(prepared.expected)}
+        if 'program_activity' in retained:
+            observation['native_activity'] = json.loads(retained['program_activity'])
         retained['program_observation'] = canonical_json_bytes(observation)
         count = loaded.loaded.launch_calls - before
         if count != manifest.kernels_per_call:
@@ -84,6 +92,9 @@ def evaluate_program_case(candidate, workload, protocol, admission, *, prepared)
         correctness = {'passed': passed, 'metrics': metrics, **observation}
         resources = loaded.loaded.resources
     except BaseException as error:
+        for role, payload in getattr(error, 'artifact_payloads', {}).items():
+            if isinstance(role, str) and role.isidentifier() and isinstance(payload, bytes):
+                retained[role] = payload
         primary = error
     finally:
         try:
