@@ -292,6 +292,67 @@ Triton emitter 复用共享实现；MACA 当前仅准入 resident FP32 tile 的 
 `reviews/moe-routing-device-49f707f5.md`。这些是固定 shape 的路由证据，
 不代表任意 top-k 形式、专家 GEMM、完整 MoE、正式多阶段 Workload 收据或性能资格。
 
-操作准入后的静态检查可以降低八项 GQA/MLA 的 32 个阶段和 MoE 的八个阶段。
-该检查仅迁移阶段结构，原 Workload 仍精确绑定 B300；后继 C550 合同、原生多阶段
-封存与统一 Evaluation 尚需完成，不能把静态通过计作九个任务已验收。
+操作准入后的静态检查最初只覆盖阶段结构。随后新增了各自精确绑定 C550 的
+revision-2 Workload，保留原 B300 合同的数学定义、形状、case、输入、oracle 和容差。
+其完整程序验收范围见下一节；旧路由诊断仍保持原来的源码身份和范围。
+
+## 完整 GQA、MLA 和 FP8 MoE 的正确性
+
+执行源码 `315bbcb4920397ac3b5b75223fdc05976526b1e9` 完成了六项 GQA、两项 MLA
+和一项完整 MoE 的设备正确性。八项 attention 各有 captured、boundary 两个固定
+Workload，每个五类原始输入；MoE 为原 `T=1,E=256,local_E=32,H=7168,I=2048`
+Workload 的六类输入。共 **17 个 Workload 变体、86/86 case、368 次原生 kernel 调用**。
+
+GQA 包括 KV heads 为 4/8 的 paged decode、paged causal prefill 和 ragged causal
+prefill；MLA 包括 paged decode 与 paged causal prefill。attention 每次调用执行
+metadata、scores、normalize、values 四阶段；MoE 每次调用执行选组、选专家、路由权重、
+两次专家投影、SwiGLU 与最终组合的原八阶段。结果保留了原 oracle、逐输出容差和 IEEE
+规则，没有把中间阶段通过计作完整输出通过。
+
+独立复核重放所有 86 份普通 EvaluationReceipt，检查了 **3,376,608 个输出元素**，
+零不匹配，其中包括原合同要求的 65,536 个对应 NaN 和 6,368 个同号 infinity。
+MoE 的 43,008 个 BF16 输出全部满足原 `atol=rtol=0.01`；七个 word 与参考不同，
+最大绝对误差 `0.00048828125`。专家计算使用原生成程序的 FP8 解码和 FP32 缩放归约，
+这不等于原生 FP8 MMA 已验收。
+
+所有 case 的 590 个公开输入字节检查 verdict 均为 true，调用数与封存阶段数一致，
+零 fallback、模块正常关闭。归档保存完整输出与参考 bytes，以及输入检查 verdict；
+没有把不存在的原始输入快照描述为已重新核对。首项 GQA 的两个程序保留编译源码
+`a40d9f06`，其余十五个保留 `315bbcb4`；所有执行身份仍为 `315bbcb4`。
+
+完整原始记录位于外部证据根 `metax-parity-20260920/complete-program-cases-315bbcb4-v1/`
+与首例 `gqa-first-captured-primary-315bbcb4-v1/`，独立逐 case 重算及形状表在
+`reviews/native-program-device-315bbcb4.md` 和同名 replay JSON。实际能力范围是上述
+固定 Workload 的完整正确性，计时均为 null。多阶段计时、自动优化流程、其他形状
+和完整模型推理仍分别需要验收。
+
+## 多阶段 profiler
+
+`tools/qualify_tensor_program.py profile --built <sealed-build> --case primary --output <new-path>`
+复用上述 CPU 准备与 MACA allocation，先检查完整原始输出，再单独采集一次完整
+Program，并再次验证实际输出。新的 `maca_program_activity_v1` 通过普通收据和
+attribution feedback 返回逐阶段资源、设备执行时间及阶段间隔。reader 核对全部
+stage、原生 API、顺序、同一 stream、封存启动参数和实际资源；不完整采集保留原始行并拒绝。
+
+执行源码 `c5a7499b822b7d7d091db457d5fcc9a0681cf598` 分别完成以下两次原生独立采集。
+表中的数值来自单次 instrumented Program 的完整 MCPTI 记录，均为 **attribution only**，
+没有冷缓存成对测量、性能样本、稳定性结论或加速比。
+
+| 固定 primary Workload | 实际 job | instrumented 阶段数 / 全部 native calls | 阶段设备时间之和 | 首阶段开始至末阶段结束 |
+| --- | --- | ---: | ---: | ---: |
+| GQA paged decode、KV heads 4、captured | `maca-73a77add6591` | 4 / 8 | 13.056 us | 194.816 us |
+| 完整 FP8 block-scaled MoE、captured | `maca-176780b3f007` | 8 / 16 | 2238.208 us | 2473.472 us |
+
+每次均先执行完整 preflight，再采集并验证一次独立 Program。GQA 两次输出的最大绝对
+误差为 `2.384185791015625e-7`；MoE 为 `0.00048828125`，均在原逐元素容差内通过，
+所有输入检查为 true，模块已卸载，零 fallback、零额外 dispatch。完整原始 API/kernel
+correlation、每阶段启动参数、资源、两份完整输出和参考 bytes 保留在外部证据根的
+`gqa-program-profile-c5a7499b-v1/` 与 `moe-program-profile-c5a7499b-v1/`。
+GQA 编译身份仍为 `a40d9f06`，MoE 为 `315bbcb4`，两次执行身份均为 `c5a7499b`。
+
+GQA 记录的三个阶段间隔为 70.4、52.224、59.136 us，不能把其 13.056 us 的阶段时间
+之和描述为完整程序延迟。MoE 的两个专家投影阶段分别报告 1502.464、711.424 us，
+可用于选择后续优化方向；采集本身不证明具体瓶颈或某项改写会加速，promotion disposition
+为 **No promotion**。现有单 dispatch timer 继续拒绝 Program；多阶段的正式成对计时与
+自动优化仍需后继验收。occupancy、带宽、指令计数和 local-memory reservation 的限制
+与前述单 kernel 路径相同。

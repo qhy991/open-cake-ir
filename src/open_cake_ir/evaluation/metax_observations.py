@@ -110,6 +110,13 @@ def _validate_launch(profile, launch, correctness):
             or launch.get('manifest_sha256') != manifest.canonical_sha256
             or launch.get('device_admission') != profile['raw']['device_admission']):
         raise ValueError('MACA profile manifest or device differs from the loaded launch')
+    validate_profile_correctness(launch, correctness)
+    # Compare only device-verified function/activity quantities.
+    validate_loaded_resources(launch.get('resources'), profile['summary'])
+
+
+def validate_profile_correctness(launch, correctness):
+    """Both single-kernel and ordered-Program profiles require two full checks."""
     instrumented = correctness.get('instrumented')
     if (not isinstance(instrumented, Mapping) or instrumented.get('passed') is not True
             or not isinstance(instrumented.get('metrics'), Mapping)
@@ -129,9 +136,6 @@ def _validate_launch(profile, launch, correctness):
                 'max_abs_error': max(check['max_abs_error'] for check in checks)}
     if correctness.get('passed') is not True or correctness.get('metrics') != combined:
         raise ValueError('MACA profile correctness aggregate differs from both oracle checks')
-    # The producer's preflight and separately captured native resource queries must
-    # agree with the instrumented native record rather than borrowing a compiler estimate.
-    validate_loaded_resources(launch.get('resources'), profile['summary'])
 
 
 MACA_PROFILE = TensorProfileFormat(MCPTI_PROFILE_KIND, maca_profile_summary, load_maca_profile,
