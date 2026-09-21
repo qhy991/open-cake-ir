@@ -303,6 +303,9 @@ def specialize_output_columns(compiler: Compiler, schedule: Mapping, *,
     so the original Workload binding stays valid. Only the Metal route is admitted:
     capability evidence exists on Apple family7 and family9 targets alone, and this
     pass never claims a speedup -- Lab selection chooses between the two schedules.
+    A semantically accepted input refused only for Metal private storage may also
+    enter: reducing that storage is this transformation's purpose. The resulting
+    candidate must still pass every ordinary admission and lowering check.
     """
     def refused(reason: str, message: str) -> SpecializationResult:
         return SpecializationResult(None, reason, message)
@@ -310,9 +313,11 @@ def specialize_output_columns(compiler: Compiler, schedule: Mapping, *,
     try:
         copied = deepcopy(dict(schedule))
         assessed = compiler.assess(copied)
-        if not assessed.lowering_eligible:
-            return refused('input_refused', ', '.join(
-                f.code for f in assessed.findings if f.blocks_lowering or f.blocks_acceptance))
+        blockers = [f for f in assessed.findings if f.blocks_lowering or f.blocks_acceptance]
+        storage_only = (assessed.accepted and bool(blockers)
+                        and all(f.code == 'METAL_PRIVATE_STORAGE_LIMIT' for f in blockers))
+        if not assessed.lowering_eligible and not storage_only:
+            return refused('input_refused', ', '.join(f.code for f in blockers))
     except (CompilerError, ScheduleParseError, TypeError, ValueError) as error:
         return refused('input_refused', f'{error}')
     s = Schedule.from_dict(copied)

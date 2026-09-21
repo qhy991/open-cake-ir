@@ -94,6 +94,36 @@ class CompleteProgramRewriteTests(unittest.TestCase):
         for name in ('inputs', 'outputs', 'tensors', 'target'):
             self.assertEqual(observed[name], document[name])
 
+    def test_output_column_rescue_is_reachable_through_the_complete_program(self):
+        from tests.contracts.test_output_column_specialization import wide_document
+        program = Program.from_schedule(wide_document())
+        stage_name = program.stages[0].name
+        parameters = {'stage': stage_name, 'schedule_id': 'rescued_columns', 'entry_point': 'rescued_columns'}
+        result = self.compiler.rewrite_program(program, 'specialize_output_columns', parameters)
+        self.assertTrue(result.applied, result.message)
+        self.assertEqual(result.program.inputs, program.inputs)
+        self.assertEqual(result.program.outputs, program.outputs)
+        self.assertTrue(self.compiler.assess(result.program.stages[0].schedule).lowering_eligible)
+        self.compiler.lower_program(result.program)
+
+        wrong = wide_document()
+        wrong['lowering']['entry_point'] = 'float4'
+        refused = self.compiler.rewrite_program(Program.from_schedule(wrong), 'specialize_output_columns', parameters)
+        self.assertFalse(refused.applied)
+        self.assertEqual(refused.reason, 'input_refused')
+        self.assertIn('METAL_ENTRY_POINT_UNSUPPORTED', refused.message)
+
+        original = program.document
+        other = deepcopy(original['stages'][0]); other['name'] = 'unselected_wide'
+        output = program.outputs[0]
+        other['bindings'][output] = 'other_output'
+        original['tensors']['other_output'] = deepcopy(original['tensors'][output])
+        original['outputs'].append('other_output'); original['stages'].append(other)
+        refused = self.compiler.rewrite_program(Program.from_dict(original), 'specialize_output_columns', parameters)
+        self.assertFalse(refused.applied)
+        self.assertEqual(refused.region, ('unselected_wide',))
+        self.assertIn('METAL_PRIVATE_STORAGE_LIMIT', refused.message)
+
     def test_public_typed_input_cannot_bypass_program_legality(self):
         program = Program.from_dict(scalar_program())
         changed = replace(program, outputs=('x',))
