@@ -98,3 +98,16 @@ class ProgramTiming(unittest.TestCase):
             benchmark(lambda: None, dry_run_iters=1, repeat_iters=2, cold_l2_cache=True, use_cuda_graph=False)
         self.assertEqual(benchmark.last_activity['activity'], error.activity_snapshot)
         self.assertIsNone(benchmark.non_target_dispatches)
+
+    def test_invalid_reset_capture_is_retained_before_validation(self):
+        fixture = profile_fixtures.ProgramProfile
+        with patch('open_cake_ir.evaluation.metax_benchmark.activity_collector'):
+            benchmark = McptiProgramBenchmark(fixture.candidate, activity_library='fixture', l2_cache_bytes=8388608)
+        bad = capture(kernel('fill', 1, 1000), kernel('unexpected', 2, 5000))
+        benchmark._collect = lambda function: bad
+        tensor = SimpleNamespace(fill_=lambda value: None)
+        torch = SimpleNamespace(float32='fixture', empty=lambda *args, **kwargs: tensor,
+            cuda=SimpleNamespace(get_device_properties=lambda index: SimpleNamespace(L2_cache_size=8388608)))
+        with patch.dict('sys.modules', {'torch': torch}), self.assertRaisesRegex(ValueError, 'reset'):
+            benchmark(lambda: None, dry_run_iters=1, repeat_iters=1, cold_l2_cache=True, use_cuda_graph=False)
+        self.assertEqual(benchmark.last_activity['reset_activity'], bad)

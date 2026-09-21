@@ -140,6 +140,9 @@ class _McptiBenchmark:
             self._reset = torch.empty(self.l2_cache_bytes, dtype=torch.float32, device="cuda:0")
             self._reset.fill_(1.0)
             activity = self._collect(lambda: self._reset.fill_(1.0))
+            self._reset_activity = activity
+            if self.last_activity is not None:
+                self.last_activity['reset_activity'] = activity
             records = kernel_records(activity)
             if len(records) != 1 or records[0]["name"] in self.kernel_names:
                 raise ValueError("MACA reset is not one independently identified device fill")
@@ -159,8 +162,17 @@ class _McptiBenchmark:
             raise ValueError("MACA dispatch timing does not measure graph replay")
         if type(cold_l2_cache) is not bool or any(type(v) is not int or v <= 0 for v in (dry_run_iters, repeat_iters)):
             raise ValueError("MACA timing iteration or reset contract differs")
+        self.last_activity = {"timer": self.timer, "cache_policy": RESET if cold_l2_cache else "none",
+            "l2_cache_bytes": self.l2_cache_bytes, "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
+            "reset_record": None, "reset_activity": None, "activity": None, **self._capture_fields()}
         if cold_l2_cache:
-            self._prepare_reset()
+            try:
+                self._prepare_reset()
+            except BaseException as error:
+                if self.last_activity['reset_activity'] is None:
+                    self.last_activity['reset_activity'] = getattr(error, 'activity_snapshot', None)
+                raise
+            self.last_activity.update(reset_record=self._reset_record, reset_activity=self._reset_activity)
         for _ in range(dry_run_iters):
             function()
         torch.cuda.synchronize()
