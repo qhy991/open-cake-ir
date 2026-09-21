@@ -1,5 +1,6 @@
 """Complete non-CUDA Programs through real software boundaries, CPU substitutes only."""
 from hashlib import sha256
+from io import StringIO
 import json
 from pathlib import Path
 import os
@@ -267,6 +268,19 @@ class PortableProgramEvaluation(unittest.TestCase):
                 for case_id, case in prepared.prepared_cases.items():
                     self.assertEqual({name: list(values) for name, values in case.expected.items()},
                                      reference_outputs(workload, case_id, case.inputs))
+                def evaluate(prepared_authority, result):
+                    self.assertEqual(tuple(prepared_authority.prepared_cases), workload.case_ids)
+                    self.assertEqual(prepared_authority.manifest.program.document, program.document)
+                    result['admitted'] = True
+                with patch.dict(os.environ, {}, clear=True), \
+                     patch.object(worker, '_load_authority', return_value=authority), \
+                     patch.object(worker, 'admit_local_job', return_value=f'{kind}-123456789abc') as admit, \
+                     patch.object(worker, '_platform', return_value=SimpleNamespace(evaluate=evaluate)), \
+                     patch('sys.argv', ['evaluate', '--request', str(request), '--output', str(root/'correctness.json'),
+                                        '--local-kind', kind]):
+                    self.assertEqual(worker.main(), 0)
+                admit.assert_called_once_with(kind)
+                self.assertTrue(json.loads((root/'correctness.json').read_text())['admitted'])
                 # The actual CLI must reject this timed request before acquiring
                 # the local device lock, rather than fail later inside the timer.
                 from dataclasses import replace
@@ -274,6 +288,7 @@ class PortableProgramEvaluation(unittest.TestCase):
                      patch.object(worker, '_load_authority', return_value=replace(authority, timed_assay_available=True)), \
                      patch.object(worker, 'admit_local_job') as admission, \
                      patch.object(worker, 'PreparedTensorCase') as prepare, \
+                     patch('sys.stderr', new_callable=StringIO) as stderr, \
                      patch('sys.argv', ['evaluate', '--request', str(request), '--output', str(output),
                                         '--local-kind', kind]):
                     worker.main()
@@ -282,7 +297,8 @@ class PortableProgramEvaluation(unittest.TestCase):
                 self.assertFalse(result['admitted'])
                 self.assertIsNone(result['receipt'])
                 self.assertEqual(result['counters']['module_loads'], 0)
-                self.assertIn('ordered Program timing', result['error'])
+                self.assertEqual(result['failure_class'], 'ValueError')
+                self.assertIn('ordered Program timing', stderr.getvalue())
 
     def test_metal_composition_still_refuses_without_a_native_program_adapter(self):
         with self.assertRaisesRegex(ValueError, 'metal_binary_archive'):
