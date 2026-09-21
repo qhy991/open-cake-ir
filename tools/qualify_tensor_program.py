@@ -39,6 +39,12 @@ def write(path, value):
         stream.write(canonical_json_bytes(_json_projection(value)))
 
 
+def _admit_captured_host(executor):
+    if executor.document['host_environment'].get('kind') == 'hip':
+        return executor.admit_hip_host()
+    return executor.admit_host()
+
+
 def build(args, result):
     from launch_task import _triton_toolchain_config
     from open_cake_ir.lab.build import TritonToolchainBuilder, build_program_candidate
@@ -51,7 +57,7 @@ def build(args, result):
     if not gate.passed:
         raise ValueError('Compiler Corpus Gate failed')
     executor = resolve_executor(ROOT, CURRENT_RELEASE_BINDING, 'tensor Program build', template=True, target=workload.target)
-    executor.admit_host()
+    _admit_captured_host(executor)
     isolated = IsolatedTritonCompiler(**_triton_toolchain_config(executor))
     isolated.check_executor(executor, author_workspace=args.output)
     builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=isolated)
@@ -97,7 +103,7 @@ def evaluate(args, result):
                   external_gpu_activity='not_excluded')
     lock = os.fstat(int(os.environ['METAL_BROKER_LOCK_FD']))
     result['lock'] = {'device': lock.st_dev, 'inode': lock.st_ino, 'uid': lock.st_uid, 'nlink': lock.st_nlink}
-    host = executor.admit_host()
+    host = _admit_captured_host(executor)
     if platform.code_object is CodeObject.HSACO:
         from open_cake_ir.evaluation.triton_hip import observe_local_hip
         admission = observe_local_hip(workload.target)

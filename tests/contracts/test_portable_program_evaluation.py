@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import os
 import tempfile
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -82,6 +82,16 @@ def candidate(lm, x: cake.Tensor((2,8), "fp32"), out: cake.Tensor((2,8), "fp32",
                    {'name': 'copy', 'schedule': copy,
                     'bindings': {'x': {'tensor': 'middle', 'view': 'singleton_axes'}, 'out': 'out'}}]})
     return workload, program
+
+
+def captured_executor(target):
+    """Use real Executor method dispatch; replace only host-machine verification."""
+    from open_cake_ir.lab.executor import ExecutorRevision
+    host = json.loads((ROOT/f'runtime/hosts/{target}.json').read_text())['host_environment']
+    executor = SimpleNamespace(document={'host_environment': host}, executor_id=f'{target}@CPU-fixture')
+    executor.admit_host = MethodType(ExecutorRevision.admit_host, executor)
+    executor.admit_hip_host = MethodType(ExecutorRevision.admit_hip_host, executor)
+    return executor
 
 
 class PortableProgramEvaluation(unittest.TestCase):
@@ -322,8 +332,9 @@ class PortableProgramEvaluation(unittest.TestCase):
                 output = root/'build'; output.mkdir()
                 compilation = NativeCompiler()
                 compilation.check_executor = Mock()
-                executor = SimpleNamespace(admit_host=lambda: {})
+                executor = captured_executor(workload.target)
                 with patch.object(tool, 'resolve_executor', return_value=executor), \
+                     patch('open_cake_ir.lab.executor.admit_host_environment', return_value={}) as host, \
                      patch('launch_task._triton_toolchain_config', return_value={}), \
                      patch('open_cake_ir.lab.triton_build.IsolatedTritonCompiler', return_value=compilation), \
                      patch.object(OpenCakeEnvironment, 'build', side_effect=AssertionError('qualification used optimization policy')):
@@ -334,6 +345,9 @@ class PortableProgramEvaluation(unittest.TestCase):
                 self.assertEqual(json.loads((output/'build-feedback.json').read_text())['stage'], 'built')
                 compilation.check_executor.assert_called_once()
                 self.assertEqual(len(compilation.requests), 2)
+                self.assertEqual(host.call_args.args[0], executor.document['host_environment'])
+                self.assertEqual(host.call_args.kwargs, {} if backend=='triton-metax'
+                                 else {'executor_id': executor.executor_id})
 
     def test_native_qualification_selects_target_allocation_after_cpu_preparation(self):
         from tools import qualify_tensor_program as tool
@@ -359,7 +373,8 @@ class PortableProgramEvaluation(unittest.TestCase):
                     with patch.dict(os.environ, {}, clear=True), \
                          patch.object(tool, 'PreparedProgramCase', side_effect=prepare), \
                          patch.object(tool, 'admit_local_job', side_effect=admit), \
-                         patch.object(tool, 'resolve_executor', return_value=SimpleNamespace(admit_host=lambda: {'runtime_library': 'fixture'})), \
+                         patch.object(tool, 'resolve_executor', return_value=captured_executor(workload.target)), \
+                         patch('open_cake_ir.lab.executor.admit_host_environment', return_value={'runtime_library': 'fixture'}), \
                          patch('open_cake_ir.evaluation.triton_hip.observe_local_hip', return_value='hip-admission') as hip, \
                          patch('open_cake_ir.evaluation.triton_metax.observe_local_metax', return_value='maca-admission') as maca, \
                          patch.object(tool, 'evaluate_program_case', return_value=receipt) as evaluate:
