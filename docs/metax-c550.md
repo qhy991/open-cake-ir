@@ -356,3 +356,29 @@ GQA 记录的三个阶段间隔为 70.4、52.224、59.136 us，不能把其 13.0
 为 **No promotion**。现有单 dispatch timer 继续拒绝 Program；多阶段的正式成对计时与
 自动优化仍需后继验收。occupancy、带宽、指令计数和 local-memory reservation 的限制
 与前述单 kernel 路径相同。
+
+## Indexed gather 的完整原始 case 正确性
+
+源码 `b88ce8fb843609248fb193cfe48084650553f47f` 增加了明确绑定 `xcore1002` 的
+`indexed-gather-bf16-v3`。它保留 B300 v2 的数学定义、四个 case、输入生成、独立
+oracle、正零越界行为和 BF16 bitwise 判定。四个 case 的全局 tensor shape 不同，
+所以编译阶段从同一规范 Schedule 分别生成并密封四个 ABI 对应的 `mcfatbin`，不把
+primary 产物当作其他 case 的可变形状实现。
+
+四次普通 confirmatory Evaluation 均由已有 `maca` 本地 broker 串行持锁，且在分配前
+完成 task-owned CPU 输入与 oracle 准备：
+
+| 原始 case | 实际 job | module / preflight / native call | 结果 |
+| --- | --- | ---: | --- |
+| `primary` | `maca-b830c91aad90` | 1 / 1 / 1 | 0 mismatch，输入不变 |
+| `tiny` | `maca-891628b16a0e` | 1 / 1 / 1 | 0 mismatch，输入不变 |
+| `index_boundaries` | `maca-fe89d7f16490` | 1 / 1 / 1 | 0 mismatch，输入不变 |
+| `repeated_indices` | `maca-64e895e001b7` | 1 / 1 / 1 | 0 mismatch，输入不变 |
+
+四个收据均被公共 Evaluation 接受，最大绝对误差为 0，零 fallback。编译与设备原始记录
+保留在 `c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/` 的
+`indexed-gather-build-b88ce8fb-v3/`、`indexed-gather-device-b88ce8fb-v2/`，本地外部
+证据根另存 `metax-parity-20260920/indexed-gather-b88ce8fb-evidence.tar.gz`。
+
+这建立的是上述四个固定 Workload case 的 C550 编译与原始 oracle 正确性。所有收据的
+timing 均为 null；尚未完成成对计时、profiler、目标框架端到端验收、其他 shape 或性能资格。
