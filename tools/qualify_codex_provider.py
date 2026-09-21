@@ -246,11 +246,13 @@ def _validate_invocation_pair(
         raise ValueError("Codex initial and resume environments differ")
 
 
-def _reported_models(turn, *, harness: str, requested_model: str, event_contract: str) -> list[str]:
+def _reported_models(turn, *, harness: str, requested_model: str, event_contract: str,
+                     response_aliases=()) -> list[str]:
     if harness != "claude-code":
         return []
-    parsed = parse_claude_turn_events(turn.raw_events, expected_terminal_message=turn.terminal_message, event_contract=event_contract)
-    if set(parsed.reported_models) != {requested_model}:
+    parsed = parse_claude_turn_events(turn.raw_events, expected_terminal_message=turn.terminal_message,
+                                     event_contract=event_contract, response_aliases=response_aliases)
+    if parsed.reported_models[0] != requested_model:
         raise RunProtocolFault("provider_fault", "Claude reported model differs from the exact requested model",
                                artifact_payloads={"provider_stdout": turn.raw_events})
     return list(parsed.reported_models)
@@ -350,6 +352,7 @@ def main() -> int:
     parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--model", required=True)
+    parser.add_argument("--response-model-alias", action="append", default=[])
     parser.add_argument(
         "--reasoning-effort",
         required=True,
@@ -375,6 +378,10 @@ def main() -> int:
         default=None,
     )
     args = parser.parse_args()
+    from open_cake_ir.lab.claude import response_model_aliases
+    aliases = response_model_aliases(args.model, args.response_model_alias)
+    if aliases and args.harness != "claude-code":
+        parser.error("response model aliases require Claude Code")
 
     executable = args.executable.resolve(strict=True)
     output_schema = args.output_schema.resolve(strict=True)
@@ -523,6 +530,8 @@ def main() -> int:
         "turns": ["initial_add", "same_thread_resume_update"],
         "gpu_execution_authorized": False,
     }
+    if aliases:
+        authority["response_model_aliases"] = list(aliases)
     if args.harness == "codex":
         authority.update(code_mode_host=code_mode_host, service_tier=args.service_tier)
     authority["submission_contract"] = submission_contract
@@ -543,7 +552,8 @@ def main() -> int:
     )
     try:
         adapter_type = CodexProviderAdapter if args.harness == "codex" else ClaudeProviderAdapter
-        adapter = adapter_type(timeout_seconds=args.timeout_seconds)
+        adapter = adapter_type(timeout_seconds=args.timeout_seconds,
+                               **({"response_aliases": aliases} if args.harness == "claude-code" else {}))
         observations: dict[str, dict[str, object]] = {}
         configuration_sha256s: set[str] = set()
         for arm in qualification_arms:
@@ -555,7 +565,7 @@ def main() -> int:
                 removed_environment=removed_environment)
             if args.harness == "claude-code":
                 builder = ClaudeInvocationBuilder(
-                    **common_builder_args, cli_options=advertised_options(executable))
+                    **common_builder_args, cli_options=advertised_options(executable), response_aliases=aliases)
             else:
                 builder = CodexInvocationBuilder(**common_builder_args,
                     code_mode_host=code_mode_host, service_tier=args.service_tier,
@@ -585,7 +595,7 @@ def main() -> int:
                 arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
-            initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model, event_contract=event_contract)
+            initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model, event_contract=event_contract, response_aliases=aliases)
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
@@ -621,7 +631,7 @@ def main() -> int:
                 arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
-            resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model, event_contract=event_contract)
+            resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model, event_contract=event_contract, response_aliases=aliases)
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )

@@ -215,6 +215,84 @@ class ClaudeProviderContracts(unittest.TestCase):
         args.update(kwargs)
         return normalize_claude_turn(self.raw() if raw is None else raw, **args)
 
+    def test_response_alias_is_explicit_and_preserves_raw_identity_and_usage(self):
+        alias = "vendor/exact-requested-model"
+        events = self.events(); events[1]["message"]["model"] = alias
+        raw = self.raw(events)
+        with self.assertRaisesRegex(ValueError, "model identity"):
+            self.normalize(raw)
+        parsed = parse_claude_turn_events(raw, expected_terminal_message=TERMINAL, response_aliases=(alias,))
+        self.assertEqual(parsed.reported_models, ("exact-requested-model", alias))
+        accepted = self.normalize(raw, response_aliases=(alias,))
+        self.assertEqual(accepted.raw_events, raw)
+        self.assertEqual(accepted.raw_submission, self.submission)
+        self.assertEqual(accepted.provider_tokens, 205)
+        self.assertEqual(accepted.candidates, self.normalize().candidates)
+        changed = self.events(); changed[1]["message"]["model"] = "unrelated/exact-requested-model"
+        with self.assertRaisesRegex(ValueError, "model identity"):
+            self.normalize(self.raw(changed), response_aliases=(alias,))
+        for mutate in (lambda e: e.pop(2), lambda e: e[-1]["structured_output"].update(turn=2),
+                       lambda e: e[-1].update(is_error=True)):
+            bad = copy.deepcopy(events); mutate(bad)
+            with self.assertRaises(ValueError):
+                self.normalize(self.raw(bad), response_aliases=(alias,))
+        # modelUsage stays owned by the exact requested model, not by an alias.
+        bad = copy.deepcopy(events)
+        bad[-1]["modelUsage"][alias] = bad[-1]["modelUsage"].pop("exact-requested-model")
+        with self.assertRaisesRegex(ValueError, "modelUsage"):
+            self.normalize(self.raw(bad), response_aliases=(alias,))
+
+    def test_alias_configuration_binds_receipt_and_fault_usage(self):
+        from open_cake_ir.lab.provider_events import reported_provider_usage
+        alias = "vendor/exact-requested-model"
+        ordinary = self.builder(); declared = self.builder(response_aliases=(alias,))
+        self.assertNotIn("response_model_aliases", ordinary.configuration)
+        self.assertEqual(declared.configuration["response_model_aliases"], [alias])
+        self.assertNotEqual(ordinary.configuration, declared.configuration)
+        invocation = declared.build("task", thread_id=SESSION)
+        self.assertEqual(invocation.argv[invocation.argv.index("--model") + 1], "exact-requested-model")
+        events = self.events(); events[1]["message"]["model"] = alias
+        completed = subprocess.CompletedProcess(invocation.argv, 0, self.raw(events), b"")
+        with patch("open_cake_ir.lab.claude.run_supervised", return_value=completed):
+            turn = ClaudeProviderAdapter(response_aliases=(alias,)).execute(invocation,
+                candidate_path=self.candidate, expected_change="update", expected_terminal_message=TERMINAL, arm="open_cake")
+        self.assertEqual(turn.provider_tokens, 205)
+        events[-1].pop("structured_output")
+        provider = {"model": "exact-requested-model", "event_contract": CLAUDE_EVENT_CONTRACT}
+        self.assertIsNone(reported_provider_usage(self.raw(events), provider=provider))
+        observed = reported_provider_usage(self.raw(events), provider={**provider, "response_model_aliases": [alias]})
+        self.assertEqual(observed.provider_tokens, 205)
+        changed = copy.deepcopy(events); changed[0]["model"] = alias
+        self.assertIsNone(reported_provider_usage(self.raw(changed), provider={**provider, "response_model_aliases": [alias]}))
+        for invalid in (alias, [alias, alias], ["exact-requested-model"], [None], [""], [" x"], ["x\x00"]):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                self.builder(response_aliases=invalid)
+
+    def test_replay_uses_the_frozen_response_alias_allowlist(self):
+        from hashlib import sha256
+        from types import SimpleNamespace
+        from open_cake_ir.lab.replay.provider import _replay_provider_turns
+        from open_cake_ir.lab.task_package import TaskPackage
+        alias = "vendor/exact-requested-model"
+        package = TaskPackage("open_cake-1", "open_cake", "task", "rules")
+        events = self.events(); events[1]["message"]["model"] = alias
+        raw = self.raw(events); turn = self.normalize(raw, response_aliases=(alias,))
+        state = {"kind": "ralph_state_v1", "iteration": 1, "cumulative_provider_tokens": 0, "terminal_reason": None}
+        objects = {"provider_events": raw, "provider_reference_bundle": package.evidence_bundle(state),
+                   "provider_submission_envelope": self.submission, "candidate_submission_0000": turn.candidates[0]}
+        payload = {"turn": 1, "thread_id": SESSION, "turn_provider_tokens": 205, "cumulative_provider_tokens": 205,
+                   "normalization": turn.normalization, "candidate_count": 1,
+                   "objects": [{"role": k, "sha256": sha256(v).hexdigest()} for k,v in objects.items()],
+                   "auxiliary_activity": [dict(a.document) for a in turn.tool_activity]}
+        args = dict(arm="open_cake", audit=SimpleNamespace(run_id="open_cake-1"),
+            evidence=SimpleNamespace(read_object=lambda ref: objects[ref["role"]]), expected_task_package=package,
+            maximum_candidates_per_turn=1, provider_events=[{"payload": payload}], event_contract=CLAUDE_EVENT_CONTRACT)
+        authority = {"model": "exact-requested-model", "event_contract": CLAUDE_EVENT_CONTRACT, "response_model_aliases": [alias]}
+        self.assertEqual(_replay_provider_turns(**args, provider_authority=authority)[0], {1:205})
+        for value in ([], ["unrelated/exact-requested-model"]):
+            with self.assertRaisesRegex(ValueError, "model identity"):
+                _replay_provider_turns(**args, provider_authority={**authority, "response_model_aliases":value})
+
     def test_native_stream_projects_existing_python_envelope_and_raw_evidence(self):
         raw = self.raw()
         parsed = parse_claude_turn_events(raw, expected_terminal_message=TERMINAL)

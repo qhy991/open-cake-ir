@@ -80,6 +80,8 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
         command.extend(("--depth", str(args.depth)))
     if args.provider_executable is not None:
         command.extend(("--provider-executable", str(args.provider_executable)))
+    for alias in getattr(args, "response_model_alias", ()):
+        command.extend(("--response-model-alias", alias))
     if args.provider_revision is not None:
         command.extend(("--provider-revision", args.provider_revision))
     if args.incumbent_registry is not None and prepared_baseline is None:
@@ -100,6 +102,7 @@ def main(argv=None) -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
+    parser.add_argument("--response-model-alias", action="append", default=[])
     parser.add_argument("--workspace-root", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path)
     parser.add_argument("--kernelctl", type=Path)
@@ -150,7 +153,8 @@ def main(argv=None) -> int:
     _write(root / "matrix.json", json.dumps({
         "schema_version": 1, "tasks": list(selected), "backend": args.backend,
         "provider": {"harness": args.harness, "model": args.model, "effort": args.effort,
-                     "revision": args.provider_revision},
+                     "revision": args.provider_revision,
+                     **({"response_model_aliases": args.response_model_alias} if args.response_model_alias else {})},
         "budget": {"turns": args.turns, "provider_tokens_per_task": args.token_budget,
                    "maximum_candidates_per_turn": args.max_candidates,
                    "searches_per_turn": args.searches_per_turn,
