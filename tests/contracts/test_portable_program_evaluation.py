@@ -379,10 +379,16 @@ class PortableProgramEvaluation(unittest.TestCase):
                          patch('open_cake_ir.evaluation.triton_metax.observe_local_metax', return_value='maca-admission') as maca, \
                          patch.object(tool, 'evaluate_program_case', return_value=receipt) as evaluate:
                         result = {}
-                        tool.evaluate(SimpleNamespace(built=root, case='primary', output=output), result)
+                        tool.evaluate(SimpleNamespace(command='evaluate', built=root, case='primary', output=output), result)
                     expected = 'maca-admission' if kind == 'maca' else 'hip-admission'
                     self.assertEqual(evaluate.call_args.args[3], expected)
                     self.assertEqual(evaluate.call_args.kwargs['prepared'], 'prepared-fixture')
                     self.assertEqual((hip.call_count, maca.call_count), (0,1) if kind=='maca' else (1,0))
                     self.assertEqual(result['timing_samples'], 0)
                     self.assertTrue(result['passed'])
+                    if kind == 'hip':
+                        with patch.object(tool, 'PreparedProgramCase') as prepare, patch.object(tool, 'admit_local_job') as admit:
+                            with self.assertRaisesRegex(ValueError, 'only MACA attribution'):
+                                tool.evaluate(SimpleNamespace(command='profile', built=root, case='primary', output=output), {})
+                        prepare.assert_not_called()
+                        admit.assert_not_called()

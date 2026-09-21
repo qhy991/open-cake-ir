@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Build a sealed Program and qualify tensor-oracle cases with native HIP or MACA execution.
 
-Build runs in the captured CPU-only compilation environment. Each evaluate command
+Build runs in the captured CPU-only compilation environment. Each device command
 prepares exactly one original CPU case before acquiring the existing local broker;
-the process retains the allocation to exit. No timer, profiler or Run promotion is
-implied by these correctness receipts.
+the process retains the allocation to exit. Profile captures one separate complete
+Program invocation with its own full output check; it is not performance timing.
 """
 import argparse
 from dataclasses import fields
@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import sys
 import traceback
+from hashlib import sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tools')]
@@ -20,7 +21,7 @@ sys.path[:0] = [str(ROOT / 'src'), str(ROOT / 'tools')]
 from open_cake_ir.cli import _json_projection
 from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.target import CodeObject
-from open_cake_ir.evaluation.core import EvaluationProtocol
+from open_cake_ir.evaluation.core import EvaluationProtocol, EvaluationReceipt
 from open_cake_ir.evaluation.local_broker import admit_local_job
 from open_cake_ir.evaluation.paired import candidate_from_identity, candidate_identity
 from open_cake_ir.evaluation.platforms import platform_for
@@ -37,6 +38,54 @@ from open_cake_ir.tasks.workloads import load_workload
 def write(path, value):
     with path.open('xb') as stream:
         stream.write(canonical_json_bytes(_json_projection(value)))
+
+
+def profile_program(candidate, workload, protocol, admission, prepared, host):
+    """Compose the existing correctness assay and native Program attribution source."""
+    from open_cake_ir.evaluation.metax_program_profile import capture_program_activity, MACA_PROGRAM_PROFILE
+    from open_cake_ir.evaluation.program import program_components
+    from open_cake_ir.lab.faults import RunProtocolFault
+    manifest, children, _ = program_components(candidate)
+    if protocol.case_id != manifest.case_id:
+        raise ValueError('Program attribution uses the sealed primary case')
+    retained = {}
+    try:
+        preflight = evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared)
+        retained.update({'preflight_' + role: payload for role, payload in preflight.artifact_payloads.items()})
+        if not preflight.correctness_passed:
+            raise ValueError('Program profile requires a passing original oracle preflight')
+        instrumented = evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared,
+            observe=lambda launch: capture_program_activity(launch, candidate=candidate, admission=admission,
+                                                             activity_library=host['activity_library']))
+        retained.update({'instrumented_' + role: payload for role, payload in instrumented.artifact_payloads.items()})
+        if not instrumented.correctness_passed:
+            raise ValueError('instrumented Program output failed the original oracle')
+        first = json.loads(preflight.artifact_payloads['correctness_output'])
+        second = json.loads(instrumented.artifact_payloads['correctness_output'])
+        raw = second.pop('native_activity')
+        metrics = {**dict(instrumented.correctness),
+                   'max_abs_error': max(preflight.correctness['max_abs_error'], instrumented.correctness['max_abs_error'])}
+        correctness = {'passed': True, 'metrics': metrics, 'correctness_launches': 2,
+            'preflight': dict(preflight.correctness), 'instrumented': {'passed': True, 'metrics': dict(instrumented.correctness)},
+            'observations': {'preflight': first, 'instrumented': second}}
+        launch = {**json.loads(instrumented.artifact_payloads['launch_receipt']),
+            'correctness_launches': 2, 'job_id': admission.broker_job_id, 'gpu_uuid': admission.gpu_uuid,
+            'stage_candidates': {name: candidate_identity(child) for name, child in children.items()}}
+        policy = {'case_id': protocol.case_id, 'attribution_evaluation': 'correctness_then_profile'}
+        profile = {'kind': MACA_PROGRAM_PROFILE.kind, 'candidate_sha256': candidate.candidate_sha256,
+            'case_id': protocol.case_id, 'kernel_name': manifest.kernel_name, 'job_id': admission.broker_job_id,
+            'gpu_uuid': admission.gpu_uuid, 'allocation_mode': 'local_serialized', 'external_gpu_activity': 'not_excluded',
+            'separate_instrumented_launch': True, 'evaluation_protocol': policy,
+            'raw': raw, 'summary': MACA_PROGRAM_PROFILE.summary(raw)}
+        payloads = {role: canonical_json_bytes(document) for role, document in (
+            ('correctness_output', correctness), ('launch_receipt', launch), ('profile', profile))}
+        retained.update(payloads)
+        return EvaluationReceipt(candidate.candidate_sha256, workload.canonical_sha256,
+            sha256(canonical_json_bytes(policy)).hexdigest(), 'attribution', protocol.case_id, True, metrics,
+            manifest.kernels_per_call, 0, sha256(payloads['launch_receipt']).hexdigest(), None, artifact_payloads=payloads)
+    except Exception as error:
+        retained.update(getattr(error, 'artifact_payloads', {}))
+        raise RunProtocolFault('harness_fault', str(error), artifact_payloads=retained) from error
 
 
 def _admit_captured_host(executor):
@@ -94,6 +143,8 @@ def evaluate(args, result):
     platform = platform_for(workload.target)
     if platform.code_object not in {CodeObject.HSACO, CodeObject.MCFATBIN}:
         raise ValueError('this local tensor qualification command implements HIP and MACA allocation adapters')
+    if args.command == 'profile' and platform.code_object is not CodeObject.MCFATBIN:
+        raise ValueError('this Program profile source implements only MACA attribution')
     protocol = EvaluationProtocol('tensor-program-correctness', 'confirmatory', workload.canonical_sha256,
                                   args.case, 'none')
     result.update(phase='cpu_preparation', target=workload.target, workload_id=workload.workload_id, case_id=args.case)
@@ -107,10 +158,12 @@ def evaluate(args, result):
     if platform.code_object is CodeObject.HSACO:
         from open_cake_ir.evaluation.triton_hip import observe_local_hip
         admission = observe_local_hip(workload.target)
-    else:
+    elif platform.code_object is CodeObject.MCFATBIN:
         from open_cake_ir.evaluation.triton_metax import observe_local_metax
         admission = observe_local_metax(workload.target, runtime_library=host['runtime_library'])
-    receipt = evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared)
+    receipt = (profile_program(candidate, workload, protocol, admission, prepared, host)
+               if args.command == 'profile' else
+               evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared))
     for role, payload in receipt.artifact_payloads.items():
         with (args.output / (role + '.json')).open('xb') as stream:
             stream.write(payload)
@@ -118,6 +171,9 @@ def evaluate(args, result):
           for field in fields(receipt) if field.name != 'artifact_payloads'})
     result.update(phase='device_complete', passed=receipt.correctness_passed,
                   kernel_calls=receipt.kernel_calls, correctness=receipt.correctness, timing_samples=0)
+    if args.command == 'profile':
+        result.update(scope='separate Program attribution with preflight and instrumented correctness; not performance timing',
+                      native_kernel_calls=2 * receipt.kernel_calls, attribution=receipt.attribution_feedback)
 
 
 def main():
@@ -127,9 +183,11 @@ def main():
     builder.add_argument('--workload', type=Path, required=True)
     builder.add_argument('--program', type=Path, required=True)
     runner = sub.add_parser('evaluate')
-    runner.add_argument('--built', type=Path, required=True)
-    runner.add_argument('--case', required=True)
-    for command in (builder, runner):
+    profiler = sub.add_parser('profile')
+    for command in (runner, profiler):
+        command.add_argument('--built', type=Path, required=True)
+        command.add_argument('--case', required=True)
+    for command in (builder, runner, profiler):
         command.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     args.output = args.output.resolve()
