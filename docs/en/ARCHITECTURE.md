@@ -68,3 +68,51 @@ pure calculations do not replace either trust boundary. A first-provider fault r
 before task-package or empirical-model resolution. Authority checks precede Evidence
 creation, and reporting invokes replay callbacks only when needed. Concrete tasks and
 task wiring remains in `TaskLab`; public imports remain `open_cake_ir.lab`.
+
+## Platform capabilities and representative evidence
+
+This is a reading projection of the 2026-09-21 report snapshot. Declared targets, source
+lowering, device correctness, valid timing and complete agent optimization runs have separate
+qualification boundaries. Device observations retain their own source commits and fixed
+workloads; they are not reruns of every platform at the current report commit.
+
+| Platform | Execution and measurement evidence | Remaining boundary / owner |
+| --- | --- | --- |
+| NVIDIA | B300 single kernels and selected complete Programs; agent Runs, paired confirmation and separate NCU; B200 records remain separate | Admission is per route and task, with failed timing edges retained; [NVIDIA status](../results/nvidia/FLASHINFER_STATUS.md) |
+| Apple | Fixed operators on qualified devices and TaskLab optimization records | No claim for every Apple family; complete Program composition remains unavailable; [Metal results](../results/metal/README.md) |
+| Hygon DCU | BW1101 task records include gains, regressions, null results and timing-resolution limitations | Short-kernel limitations prevent some performance comparisons; [DCU results](../results/dcu/README.md) |
+| AMD | gfx1151 device survey and smoke evidence | Absolute readings from two device timers remain unaligned; published records establish no qualified speedup or full agent-loop result; [AMD results](../results/amd/README.md) |
+| MetaX | Fixed single-kernel correctness, complete GQA/MLA/MoE and indexed-gather outputs; single-kernel MCPTI paired timing and profiling, bounded tile optimization, separate Program attribution | Ordinary whole-Program performance Runs and a complete C550 provider/Ralph loop still require qualification; [C550 chapter](../metax-c550.md) |
+
+Three cases illustrate different claims:
+
+- **Explicit tiling on C550.** At `8c0cad53`, FP16 GEMM M17/N128/K2048 changed M tile
+  64 to 32. Independent confirmation measured 72.448 versus 58.368 μs (1.241×), within
+  the fixed baseline and `local_serialized` scope. This is an authoring comparison, not
+  a complete agent Run or knowledge-transfer result; see the [C550 record](../metax-c550.md).
+- **Guarded alignment on B300.** The 026 RMSNorm aligned artifact achieved a qualified
+  1.081× against its fixed generic sliced-w8 control with the same source/constants/grid.
+  Its external-reference edge failed CV. This supports a bounded compiler/execution
+  improvement, not external parity; see [F-2026-09-20-011](../../findings/2026-09-20-011-triton-aot-pointer-alignment.json).
+- **Complete programs without a speedup claim.** The 008 two-stage B300 Program passed
+  complete-output checks, while multiple candidate/control timing edges failed quality.
+  Expressibility and execution do not establish a performance benefit; see the
+  [task-level evidence](../results/nvidia/FLASHINFER_STATUS.md).
+
+## Limitations and remaining research
+
+Platform support and local improvements establish an experimental foundation. Controlled E/P
+comparisons, independent repetitions and held-out tasks are still needed to establish whether
+mechanism explanations or callable passes reduce search cost on another architecture.
+Automatic mechanism extraction is not implemented.
+
+Compiler evolution occurs outside frozen Runs under a maintenance agent or researcher.
+Candidate errors return to candidate authoring; demonstrated expressibility/lowering gaps
+motivate changes whose typing and analyses must evolve together. A performance gap alone
+is not a reason to add a primitive or pass; `No promotion` is a valid recorded disposition.
+
+Remaining boundaries include whole-Program measurement across platforms, particular dtypes
+and instructions, profiler coverage, broader shapes and target-framework end-to-end checks.
+Queue state, provider success and source/component checks are not final experimental results.
+Engineering launches default to token accounting without a token cap; Studies preregister
+common resource constraints under the [method appendix](../OPTIMIZATION_TRANSFER_ABLATION.md).

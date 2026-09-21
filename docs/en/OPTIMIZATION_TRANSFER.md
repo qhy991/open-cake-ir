@@ -39,6 +39,12 @@ adaptation cost are reported separately. The [method appendix](../OPTIMIZATION_T
 owns assignment, isolation, estimands and failure handling; these are proposed experiments,
 not results of existing artifact-only campaigns.
 
+Matched resource limits default to turns, time, and compilation/evaluation counts, with
+tokens retained as observed search cost. A Study may instead explicitly add the same token
+cap and checkpoints to every condition; uncapped comparisons do not imply equal token use.
+Existing device correctness or local optimization gains establish destination execution
+evidence, not E/P treatment effects or cross-hardware knowledge-transfer benefits.
+
 Existing [bounded passes](../../src/open_cake_ir/compiler/passes.py) and
 [experience-material preparation](../OMOE_TRANSFER.md) provide implementation foundations.
 The prototype now connects complete Programs, independent Runs, controlled material/pass

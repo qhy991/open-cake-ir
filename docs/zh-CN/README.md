@@ -15,7 +15,7 @@
 
 | 目的 | 入口 |
 |---|---|
-| 查看结果和外部差距 | [硬件结果](../RESULTS.md) · [FlashInfer 逐任务综述](../results/nvidia/FLASHINFER_STATUS.md) |
+| 查看结果和外部差距 | [硬件结果](../RESULTS.md) · [FlashInfer 逐任务综述](../results/nvidia/FLASHINFER_STATUS.md) · [MetaX C550](../metax-c550.md) |
 | 选择硬件或实验方法 | [按主题查指南](../catalog.md) · [Lab 任务流程](../wiki/experiments.md) |
 | 查完整章节或引用报告 | [技术报告首页](../README.md) · [完整中英文目录](../catalog.md) |
 | 找代码与维护流程 | [源码导航](../../README.md#源码与文档结构) · [开发分支](../DEVELOPMENT_BRANCHES.md) |

@@ -19,6 +19,26 @@ retains its original dates and conclusions.
 
 [中文阅读入口](zh-CN/README.md) · [English reading guide](en/README.md)
 
+## 研究定位与当前证据 / Research position and evidence
+
+本报告研究 Agent 如何通过显式 GPU 程序表示和外部反馈，同时推进 Kernel 优化与编译能力演进。
+核心设计包括：在固定 Compiler 下搜索并确认候选；将诊断归属到候选、分析或表达能力，
+通过独立提交与后继实验验证系统变化；将可复用机制表示为带适用条件的显式变换，
+并用独立的材料与工具权限研究其跨硬件复用。前两者已有软件实现和有明确范围的设备案例；
+迁移协议已有实现，自动机制提炼及跨硬件迁移收益仍待验证。
+
+报告正文新增[平台能力与代表案例](ARCHITECTURE.md#9-平台能力与代表案例)，分别说明
+编译、正确性、测量及完整优化闭环。MetaX 的设备结果由 [C550 专题](metax-c550.md)维护；
+其单 kernel 优化证据不代表完整 Program 的自动优化或跨硬件迁移已经验收。
+
+The report studies agent-driven kernel optimization and compiler evolution through explicit GPU
+programs and external feedback. It connects frozen-compiler search, diagnosis-driven implementation
+changes validated in successor runs, and reusable guarded transformations with independently
+controlled explanation and tool access. Software paths and bounded device cases exist; automated
+mechanism extraction and controlled cross-hardware transfer benefits remain unverified.
+See the [platform/evidence overview](en/ARCHITECTURE.md#platform-capabilities-and-representative-evidence)
+and the [C550 evidence chapter](metax-c550.md) for the distinct qualification boundaries.
+
 ## 从哪里开始 / Choose a reading path
 
 | 阅读目的 / Purpose | 路线 / Route |
@@ -38,7 +58,7 @@ retains its original dates and conclusions.
 | 检查与验收 / Verification | [验收规则](zh-CN/ACCEPTANCE_GATES.md) · [结果导读](wiki/results.md) | [Acceptance](ACCEPTANCE_GATES.md) · [Results](en/wiki/results.md) | 合法性、编译、正确性、计时质量与结论边界 |
 | 实验方法 / Experiment methods | [Lab 流程](wiki/experiments.md) · [改写指南](KERNEL_REPRODUCTION.md) | [Lab workflow](en/wiki/experiments.md) | 任务用途、参考访问、材料与变换授权、预算和评测 |
 | 优化知识迁移 / Optimization knowledge | [机制设计](OPTIMIZATION_TRANSFER.md) · [消融方法](OPTIMIZATION_TRANSFER_ABLATION.md) | [Transfer design](en/OPTIMIZATION_TRANSFER.md) | 带前提的显式变换、目标参数选择与待验证的迁移收益 |
-| 实验结果 / Experimental results | [硬件汇总](RESULTS.md) · [FlashInfer 综述](results/nvidia/FLASHINFER_STATUS.md) | [English summary](results/nvidia/FLASHINFER_STATUS.md#english-reading-summary) | 固定 Workload、starter 身份、配对结果、失败记录和 profiler 证据 |
+| 实验结果 / Experimental results | [硬件汇总](RESULTS.md) · [FlashInfer 综述](results/nvidia/FLASHINFER_STATUS.md) · [MetaX C550](metax-c550.md) | [English evidence overview](en/ARCHITECTURE.md#platform-capabilities-and-representative-evidence) · [NVIDIA summary](results/nvidia/FLASHINFER_STATUS.md#english-reading-summary) | 固定 Workload、starter 身份、配对结果、失败记录和 profiler 证据 |
 | 实现与维护 / Implementation | [当前状态](../reports/current/STATUS.md) · [分支流程](DEVELOPMENT_BRANCHES.md) | [Context map](../CONTEXT-MAP.md) | 源码与执行绑定、平台维护、模块负责位置 |
 | 研究路线 / Roadmap | [后续目标](ROADMAP.md) | [Roadmap (Chinese)](ROADMAP.md) | 迁移、优化复用与端到端验证的研究目标 |
 

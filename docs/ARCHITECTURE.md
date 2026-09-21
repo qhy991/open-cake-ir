@@ -152,3 +152,40 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 具体任务接线仍留在 `TaskLab`；公共导入仍使用 `open_cake_ir.lab`。
 
 各 Python 后端声明自己的命名空间，公共检查器只实现检查算法。原生比较环境通过 `NativeAdapter` 绑定工厂、源码准入与启动参数投影；新增实现无需修改 Triton/CuTe 二选一分支。见 [ADR 0072](adr/0072-backend-owned-input-and-native-adapters.md)。
+
+## 9. 平台能力与代表案例
+
+以下是 2026-09-21 报告快照的阅读投影。已声明 Target、能生成源码、设备算对、
+计时有效和完成 Agent 优化闭环分别验收；表中的设备结果仍属于各自绑定的历史提交和
+固定 Workload，不等于当前提交已在所有硬件重跑。具体能力与数值由链接的专题和原始记录负责。
+
+| 平台 / 路径 | 已有执行与正确性证据 | 测量与优化证据 | 当前结论边界 |
+| --- | --- | --- | --- |
+| NVIDIA / CUDA、Triton、CuTe DSL | B300 单 kernel 与部分完整 Program；B200 另有各自记录 | 已有 Agent Run、配对确认和独立 NCU；部分比较仍未通过质量门 | 路线和任务分别准入，不概括为所有 CUDA/CuTe 程序均支持；见 [NVIDIA 综述](results/nvidia/FLASHINFER_STATUS.md) |
+| Apple / Metal | 已验收设备上的固定算子 | 已有 TaskLab 优化记录，设备与计时口径分别保留 | 不外推到全部 Apple family；完整 Program 组合尚未接入；见 [Metal 结果](results/metal/README.md) |
+| Hygon DCU / Triton、HSACO | 已有 BW1101 固定任务结果 | 保留确认加速、变慢、无显著差异与测量分辨能力待查的记录 | 多项短 kernel 不能给出可靠性能优劣；见 [DCU 结果](results/dcu/README.md) |
+| AMD / Triton、HSACO | gfx1151 有设备调查与 smoke 记录 | 两种设备计时器的绝对时间未对齐 | 已发布记录不支持合格加速比或完整 Agent 闭环结论；见 [AMD 结果](results/amd/README.md) |
+| MetaX / MACA Triton、MCFATBIN | 固定单 kernel，以及 GQA/MLA/MoE 和 indexed gather 的完整输出记录 | 单 kernel MCPTI 配对计时与 profiler 已接入，并有固定形状 tile 优化；完整 Program 有独立 attribution | 完整 Program 的普通 Run 性能测量、C550 上完整 provider/Ralph 闭环仍待验收；见 [C550 专题](metax-c550.md) |
+
+下列案例各回答一个问题，不合并成跨平台成绩：
+
+| 案例 | 已观察结果 | 支持的结论与限制 |
+| --- | --- | --- |
+| C550 FP16 GEMM，M17/N128/K2048 | 执行源码 `8c0cad53`：M tile 从 64 改为 32，独立确认 72.448 → 58.368 μs，1.241× | 显式 tiling 能在这个固定基线上产生通过质量门的收益；属于 `local_serialized` 范围的 authoring 对照，尚非完整 Agent Run 或迁移效果；[来源](metax-c550.md#m17-的一次显式-m-tile-优化) |
+| B300 026 RMSNorm 的守卫式对齐 | 相同源码/常量/grid 的新对齐产物，相对固定 generic sliced-w8 对照取得合格 1.081×；新候选的 external 边未通过 CV | 支持这个编译/执行条件下的局部改善，仍需保留通用地址路径；不能据此声称追平外部参考；[来源](results/nvidia/FLASHINFER_STATUS.md)与 [Finding](../findings/2026-09-20-011-triton-aot-pointer-alignment.json) |
+| B300 008 完整两阶段 Program | 完整输出检查通过，候选与对照的多条计时边未通过质量门 | 表达和运行完整程序，与证明性能收益是不同验收；保留失败而不以重测挑选代替判断；[来源](results/nvidia/FLASHINFER_STATUS.md) |
+
+## 10. 当前限制与研究验证
+
+平台接入和单次优化案例提供了实验基础，跨硬件的收益归因仍需要冻结的 E/P 对照、
+独立重复和未参与机制开发的测试任务。当前没有实测结果证明“加入机制材料或 pass
+即可普遍降低其他硬件上的搜索成本”；自动机制提炼也尚未实现。
+
+Compiler 演进由运行之外的维护 Agent 或研究者根据具体诊断实施。候选写法错误先修候选；
+缺少合法表达或 lowering 才进入对应能力改动，primitive、类型和分析共同验证后启动后继 Run。
+发现性能差距本身不要求新增 pass；每轮保留 promotion disposition，`No promotion` 是有效结论。
+
+待完成的边界包括各平台的完整 Program 测量、部分 dtype/指令及 profiler 指标、
+更广形状和目标框架端到端验证。排队、模型调用成功、源码生成或组件通过不作为最终实验结果。
+普通工程 Run 默认不限制 token，用量持续记录；研究比较的共同资源约束由 Study 预注册，
+详见 [Lab 方法](wiki/experiments.md)及 [消融协议](OPTIMIZATION_TRANSFER_ABLATION.md)。
