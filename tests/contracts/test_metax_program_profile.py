@@ -99,6 +99,27 @@ class ProgramProfile(unittest.TestCase):
         raw = deepcopy(self.raw); raw['activity']['records'][-1]['cbid'] = 56
         with self.assertRaises(ValueError): program_profile_summary(raw)
 
+    def test_collector_snapshot_precedes_the_next_session_after_release(self):
+        import threading
+        from open_cake_ir.evaluation.metax_activity import McptiActivity
+        for dropped in (0, 1):
+            collector = object.__new__(McptiActivity)
+            collector.version = 18; collector._rows = [{'old_session': True}]
+            collector._errors = []; collector._dropped = dropped
+            collector._buffers = {}; collector._enabled = []; collector._active = True
+            collector._owner_thread = threading.get_ident(); collector._call = lambda *args: None
+            def next_session():
+                collector._rows = [{'next_session': True}]
+                collector._dropped = 0; collector._errors = []
+            collector._session = SimpleNamespace(release=next_session)
+            if dropped:
+                with self.assertRaises(ValueError) as caught: collector.finish()
+                snapshot = caught.exception.activity_snapshot
+            else:
+                snapshot = collector.finish()
+            self.assertEqual(snapshot['records'], [{'old_session': True}])
+            self.assertEqual(snapshot['dropped_records'], dropped)
+
     @unittest.skipUnless(importlib.util.find_spec('torch'), 'requires CPU Torch')
     def test_real_profile_composer_checks_outputs_and_retains_failed_capture(self):
         import torch

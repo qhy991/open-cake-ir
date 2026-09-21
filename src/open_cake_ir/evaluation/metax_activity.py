@@ -207,14 +207,17 @@ class McptiActivity:
             failure = error
         finally:
             self._disable()
+            # Freeze this session while still holding ownership. A subsequent
+            # begin() may replace the collector's rows immediately after release.
+            snapshot = {"source": "mcpti_activity", "api_version": self.version,
+                        "dropped_records": self._dropped, "pending_buffers": len(self._buffers),
+                        "records": list(self._rows)}
+            if failure is not None:
+                snapshot['collection_errors'] = [*self._errors, str(failure)]
             self._active = False
             self._owner_thread = None
             self._session.release()
-        snapshot = {"source": "mcpti_activity", "api_version": self.version,
-                    "dropped_records": self._dropped, "pending_buffers": len(self._buffers),
-                    "records": list(self._rows)}
         if failure is not None:
-            snapshot['collection_errors'] = [*self._errors, str(failure)]
             failure.activity_snapshot = snapshot
             raise failure
         return snapshot
