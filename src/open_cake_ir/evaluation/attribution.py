@@ -39,6 +39,7 @@ def load_instrumented_profile(payload: bytes, *, kind: str, job_prefix: str, lab
                               expected_protocol_sha256: str | None,
                               identity: Callable[[Mapping], bool] = lambda document: True,
                               policy: Callable[[Mapping], bool] = lambda evaluation: True,
+                              name_valid: Callable[[str], bool] = str.isidentifier,
                               ) -> dict:
     """Read a retained in-evaluate profile, refusing one that is not this candidate's.
 
@@ -51,7 +52,7 @@ def load_instrumented_profile(payload: bytes, *, kind: str, job_prefix: str, lab
             or document.get("candidate_sha256") != expected_candidate_sha256
             or document.get("case_id") != expected_case_id
             or not isinstance(document.get("kernel_name"), str)
-            or not document["kernel_name"].isidentifier()
+            or not name_valid(document["kernel_name"])
             or not isinstance(document.get("job_id"), str)
             or re.fullmatch(rf"{job_prefix}-[0-9a-f]{{12}}", document["job_id"]) is None
             or document["job_id"] == f"{job_prefix}-000000000000"
