@@ -1,6 +1,7 @@
 """C550 successor keeps the frozen gather contract and specializes every case ABI."""
 from pathlib import Path
 import json
+import subprocess
 import unittest
 
 from examples.paired_triton.prepare import baseline_schedule
@@ -29,6 +30,13 @@ class IndexedGatherMetax(unittest.TestCase):
                          {k:v for k,v in old_semantics.items() if k != 'target'})
         self.assertEqual(self.new.target, 'xcore1002')
         self.assertEqual(self.new.document['revision'], '3')
+        parent = next(row for row in self.new.document['provenance']
+                      if row['kind'] == 'target_adaptation_parent')
+        retained = subprocess.run(
+            ['git', 'show', f"{parent['source_commit']}:{parent['path']}"],
+            cwd=ROOT, check=True, capture_output=True,
+        ).stdout
+        self.assertEqual(json.loads(retained), self.old.document)
 
     def test_every_case_has_its_own_complete_lowerable_schedule_and_same_oracle(self):
         self.assertEqual(self.new.case_ids, self.old.case_ids)

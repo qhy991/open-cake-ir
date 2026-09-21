@@ -13,7 +13,7 @@
     {
       "kind": "target_adaptation_parent",
       "path": "contracts/workloads/indexed-gather-bf16-v2.json",
-      "source_commit": "0c21d3974b994cde0badbb3a040bd164bf01263a",
+      "source_commit": "b15f118867373ec5b5a599090c449d3827c117c1",
       "scope": "same_mathematics_cases_oracle_and_tolerances_with_explicit_C550_target"
     }
   ],
