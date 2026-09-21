@@ -66,6 +66,11 @@ A search fixes task and budget, obtains candidates, checks and compiles, compare
 
 AI reads TASK.md and AGENTS.md and submits candidates. External Evaluation judges; Ralph tracks time, tokens, and attempt limits. Budget exhaustion can be a normal end.
 
+Ordinary launches default to turn, time, compilation and evaluation limits. Provider tokens
+remain recorded but do not stop or disqualify a Run unless `--token-budget` is supplied.
+The frozen representation is `budget.limit: null` and an empty `checkpoints` list.
+Already frozen Runs and their historical outcomes retain their original policy.
+
 ## Before running
 
 | Check | Authority |

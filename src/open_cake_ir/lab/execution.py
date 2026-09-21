@@ -557,7 +557,7 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                     **feedback,
                     "candidate_selection": {**selection_summary, "order": filter_rows},
                 })
-            if cumulative_tokens >= cast(int, budget["limit"]):
+            if budget["limit"] is not None and cumulative_tokens >= budget["limit"]:
                 break
         # Search closes before nomination; no author/build activity follows this.
         search_state = dict(ralph.complete_search(
