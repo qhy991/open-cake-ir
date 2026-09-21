@@ -166,6 +166,16 @@ def reference_tensors(workload: WorkloadContract, case_id: str, inputs):
     return owner.reference_tensors(workload, case_id, inputs)
 
 
+def materialize_evaluation_case(workload: WorkloadContract, case_id: str):
+    """Use the registered owner's original representation and oracle together."""
+    owner = _tensor_math(workload)
+    if hasattr(owner, 'materialize_case'):
+        inputs = materialize_case(workload, case_id)
+        return inputs, reference_outputs(workload, case_id, inputs)
+    inputs = materialize_tensors(workload, case_id)
+    return inputs, reference_tensors(workload, case_id, inputs)
+
+
 def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 128,
                 columns: int = 1024, depth: int | None = None,
                 case_id: str = "primary") -> tuple[dict, str]:
