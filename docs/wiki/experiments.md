@@ -39,6 +39,9 @@ Study 预分配多个 Run 并分析结果。Evaluation 负责判对、测量和�
 参考权限是另一个维度：`clean_start` 不允许读取完整目标低层实现，
 `known_kernel_reproduction` 允许读取声明的参考，`direct_low_level` 约束直接低层编写。
 当前普通 launcher 提供 starter，默认属于 `known_kernel_reproduction`，不能作为从零生成证据。
+显式使用 `--reference-access clean_start` 时，作者改为接收从 Workload ABI 生成的空
+Schedule、数学定义和 API 文档；完整 starter 只留在评测侧用于固定基线验证。
+该入口检查材料交付权限；实机作者进程还需隔离参考实现、历史会话和其他任务的文件访问。
 源代码路径、材料文本和 pass 权限均需实际绑定，提示词本身不证明隔离。
 
 E/P 迁移研究分别控制额外机制材料与显式变换权限，形成 E0P0、E1P0、E0P1、E1P1。

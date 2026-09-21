@@ -35,7 +35,20 @@ def validate_declarations(arms: Mapping[str, object]) -> None:
         reference_access(arm, f"arms.{name}")
 
 
-def validate_reference_handoff(root: Path, arms: Mapping[str, object]) -> None:
+def incomplete_schedule(workload, case_id: str, lowering_route: Mapping[str, object]) -> dict:
+    """A task's ABI and route, with no implementation or scheduling decisions."""
+    return {
+        'schema_version': 2, 'schedule_id': 'open-cake-clean-start-v1', 'target': workload.target,
+        'roles': [], 'allocations': [], 'pipelines': [], 'barriers': [], 'operations': [],
+        'buffers': [{'name': arg.name, 'space': 'global', 'dtype': arg.dtype,
+                     'shape': list(arg.shape), 'mode': arg.mode} for arg in workload.tensor_abi(case_id)],
+        'outputs': [arg.name for arg in workload.tensor_abi(case_id) if arg.mode in {'output', 'inout'}],
+        'metadata': {'workload_contract_sha256': workload.canonical_sha256},
+        'lowering': dict(lowering_route),
+    }
+
+
+def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, workload=None, case_id=None) -> None:
     """Apply the same policy to local, external and inherited reference slots.
 
     The vetted bytes are part of the successor Executor closure. JSON stubs are
@@ -72,7 +85,10 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object]) -> None:
             if not isinstance(reference, Mapping):
                 raise ValueError(f"{prefix}: missing target reference")
             _, path = source_reference_path(root, reference.get("path"), "schedule_skeleton")
-            if path.suffix == ".py" or read_skeleton(path) != read_skeleton(root / VETTED_REFERENCE_ASSETS[0]):
+            expected = (incomplete_schedule(workload, case_id, arm['lowering_route'])
+                        if workload is not None and arm.get('input_format') == 'schedule_or_python_v1'
+                        else read_skeleton(root / VETTED_REFERENCE_ASSETS[0]))
+            if path.suffix == ".py" or read_skeleton(path) != expected:
                 raise ValueError(f"{prefix}: target_implementation or unreviewed target reference is forbidden; require vetted incomplete_target_stub")
         elif kind == "direct_cuda":
             reference = arm.get("candidate_skeleton")

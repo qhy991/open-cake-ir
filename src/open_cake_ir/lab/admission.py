@@ -393,7 +393,7 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if candidate_identity(baseline) != fixed.get('candidate'):
             raise ValueError('Run baseline artifact differs from its frozen selection')
         validate_pair_candidates(baseline, baseline, workload, protocol['case_id'])
-    validate_reference_handoff(project_root, {'author': authoring})
+    validate_reference_handoff(project_root, {'author': authoring}, workload=workload, case_id=protocol['case_id'])
     from .python_reference import read_skeleton_reference
     for name in ('scaffold', * (('launch_contract', 'candidate_skeleton') if specification.environment_kind == 'direct_cuda' else ())):
         reference = _object(authoring.get(name), f'run.authoring.{name}')

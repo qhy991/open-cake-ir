@@ -91,7 +91,7 @@ def preflight(
     single_environment = comparison is None
     open_cake = arms["open_cake"]
     direct_cuda = arms[comparison] if comparison is not None else {}
-    validate_reference_handoff(project_root, arms)
+    validate_reference_handoff(project_root, arms, workload=workload, case_id=study.evaluation_protocol['case_id'])
     validate_authoring(workload, arms, empirical_cost_model_path=empirical_cost_model_path)
     has_empirical_policy = "candidate_selection" in open_cake
     # The document's half of this rule is `StudyContract.load`'s; the model path is an

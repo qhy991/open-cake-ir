@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.cli import _json_projection
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
 from open_cake_ir.lab.environments import CandidateSubmission
@@ -536,6 +536,9 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
+                        default='known_kernel_reproduction',
+                        help='clean_start delivers only a task ABI stub, mathematics and API contracts; the baseline remains private')
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument("--rows", type=int)
@@ -619,13 +622,19 @@ def main(argv=None) -> int:
     if route == "metal":
         admit_cohort_payload(workload, args.case,
                              _ROUTE_CALLS_PER_COHORT)
-    inputs = task_run_inputs(ROOT, workload, workload_path, source_path, harness=args.harness,
+    authoring_source_path = source_path
+    if args.reference_access == 'clean_start':
+        from open_cake_ir.lab.reference_access import incomplete_schedule
+        authoring_source_path = workspace / 'authoring-skeleton.json'
+        _write(authoring_source_path, canonical(incomplete_schedule(
+            workload, args.case, frontend.parse(source).document['lowering'])))
+    inputs = task_run_inputs(ROOT, workload, workload_path, authoring_source_path, harness=args.harness,
         model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         maximum_compilations=args.max_compilations, confirmation_seconds=args.confirmation_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
-        agents_md=args.agents_md)
+        agents_md=args.agents_md, reference_access=args.reference_access)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     # The runtime config binds the provider and the allocator, both of which belong to
     # stages `--baseline-only` stops before; it is written only on the path that reaches
@@ -750,7 +759,7 @@ def main(argv=None) -> int:
     _write(runtime_path, canonical(runtime))
     specification = prepare_task_run(ROOT,inputs,compiler_reference=compiler_reference,executor=executor,
         qualification_path=receipt_path,qualification_anchor_path=anchor_path,runtime_config_path=runtime_path,
-        baseline_path=baseline_path,baseline_selection=baseline_selection)
+        baseline_path=baseline_path,baseline_selection=baseline_selection,baseline_source_path=source_path)
     _write(workspace / "run.json",canonical(specification.document))
     if args.preflight_only:
         print(workspace / "run.json")
