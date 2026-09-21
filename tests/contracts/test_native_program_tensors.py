@@ -18,6 +18,7 @@ from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
 from open_cake_ir.evaluation.program import program_components
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment, TritonToolchainBuilder
+from open_cake_ir.lab.build import build_program_candidate
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.solx_fib import attention
 from open_cake_ir.tasks.program_evaluation import PreparedProgramCase, evaluate_program_case
@@ -41,13 +42,9 @@ class McaCompilationFixture:
 
 def build(program, workload, compiler):
     builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=McaCompilationFixture())
-    environment = OpenCakeEnvironment(compiler, builder, workload=workload, case_id='primary',
-        authority_document={'lowering_route': {'backend': 'triton', 'entry_point': program.stages[0].schedule.lowering.entry_point},
-                            'input_format': 'schedule_or_python_v1'})
-    result = environment.build(CandidateSubmission.seal(environment.media_type, program.document_bytes))
-    if result.disposition != 'launchable':
-        raise AssertionError(result.feedback)
-    return result.launchable
+    submission = CandidateSubmission.seal(OpenCakeEnvironment.media_type, program.document_bytes)
+    return build_program_candidate(compiler.lower_program(program), builder,
+        candidate_sha256=submission.sha256, workload=workload, case_id='primary')
 
 
 class NativeProgramCustody(unittest.TestCase):
@@ -147,6 +144,25 @@ class TensorOracleReceipt(unittest.TestCase):
         self.assertEqual(receipt.kernel_calls, 4)
         self.assertEqual(receipt.artifact_payloads['timing_samples'], b'null')
         self.assertTrue(json.loads(receipt.artifact_payloads['launch_receipt'])['module_unloaded'])
+        activity = {'source': 'CPU observer fixture', 'records': [1, 2, 3, 4]}
+        def observe(launch):
+            launch()
+            return activity
+        with patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            receipt = evaluate_program_case(self.candidate, self.workload, protocol, Admission(),
+                                            prepared=prepared, observe=observe)
+        self.assertEqual(json.loads(receipt.artifact_payloads['correctness_output'])['native_activity'], activity)
+        self.assertEqual(receipt.kernel_calls, 4)
+        with patch.object(Loaded, 'snapshot', side_effect=ValueError('snapshot failed')), patch(
+                'open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            with self.assertRaisesRegex(RunProtocolFault, 'snapshot failed') as failed:
+                evaluate_program_case(self.candidate, self.workload, protocol, Admission(),
+                                      prepared=prepared, observe=observe)
+            self.assertEqual(json.loads(failed.exception.artifact_payloads['program_activity']), activity)
+        with patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
+            with self.assertRaisesRegex(RunProtocolFault, 'exact stage count'):
+                evaluate_program_case(self.candidate, self.workload, protocol, Admission(),
+                                      prepared=prepared, observe=lambda launch: activity)
         with patch.object(Loaded, 'launch', lambda self: None), patch('open_cake_ir.tasks.program_evaluation.LoadedTorchTensorInputs', Loaded):
             with self.assertRaisesRegex(RunProtocolFault, 'exact stage count') as failed:
                 evaluate_program_case(self.candidate, self.workload, protocol, Admission(), prepared=prepared)
