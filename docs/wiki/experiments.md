@@ -7,6 +7,64 @@
 
 [返回 Wiki](README.md) · [结果解释](results.md)
 
+## 按任务目的选择入口
+
+核心架构区分任务数学、完整实现、单次执行和研究设计：Workload 拥有语义与 oracle，
+Compiler 拥有 Program、叶子 Schedule 和显式改写，Run 冻结一次优化的权限与预算，
+Study 预分配多个 Run 并分析结果。Evaluation 负责判对、测量和归因，Evidence 保存原始记录。
+普通优化和研究分组共用一个 Run 引擎，旧 CampaignLock 只作输入适配。
+
+| 系统入口 | 目的 | 结果边界 |
+| --- | --- | --- |
+| 固定候选的 Evaluation | 构建、正确性检查或独立 profiler，确认下一步是否能优化 | 封存产物、完整输出及测量/归因记录；不自动形成性能胜出或研究结论 |
+| 独立 Run | Agent 在固定 Compiler、权限和预算下，通过 Ralph 搜索、过滤、评测和确认候选 | 经独立确认与审计的产物；按已有规则才可晋升 incumbent |
+| Study | 预先固定实验分组、重复次数与统计方法，再执行相同的 Run | 受声明范围约束的研究报告；工程运行不能事后重标为消融组 |
+
+下面是任务用途分类，不是六套执行器，也不是新增的 `mode` 字段。
+
+| 任务用途 | 输入 | 处理目的与验收 |
+| --- | --- | --- |
+| 已有实现优化 | Workload、Cake starter/incumbent、目标、固定基线与预算 | 探索 fusion、tiling、工作划分和存储；确认在本机基线上是否有可靠改进 |
+| 优秀外部实现的 Cake 复现 | 原任务/oracle、参考实现、结构分析；外部比较另需其固定可执行基线 | 恢复关键计算结构，验证语义并解释性能差距；只有 starter 时只能称 starter 优化 |
+| 自主生成 | 数学定义、oracle、硬件/API 合同和受限参考材料 | 检查 Agent 在没有完整目标实现时的探索能力；必须满足 clean-start 访问边界 |
+| 跨架构工程迁移 | 目标任务、获准使用的机制说明、源证据和可调用 pass | 判断适用性，重选目标参数，在目标设备重新验证；来源加速比不继承 |
+| 受控比较与消融 | 冻结 Study、任务划分、模型/预算、处理条件和重复次数 | 区分方法、材料与工具的贡献，保留全部已分配 Run 和失败/缺失结果 |
+| 能力摸底与诊断 | 固定 Program、参考机制或最小组件探针 | 定位表达、lowering、工具链、正确性或测量缺口；静态 lowering 不是实机资格 |
+
+日常大量任务优先走独立优化 Run；外部优秀实现先做能力摸底，再进入参考复现。
+迁移机制先在源平台发现、在目标开发集适配，冻结后才进入独立测试集消融。
+发现 Compiler 缺口时记录 Finding，在运行之外修改并验证后继提交，再启动新 Run。
+正在运行的冻结 Compiler、Workload、oracle 和测量规则不随维护工作改变。
+
+参考权限是另一个维度：`clean_start` 不允许读取完整目标低层实现，
+`known_kernel_reproduction` 允许读取声明的参考，`direct_low_level` 约束直接低层编写。
+当前普通 launcher 提供 starter，默认属于 `known_kernel_reproduction`，不能作为从零生成证据。
+源代码路径、材料文本和 pass 权限均需实际绑定，提示词本身不证明隔离。
+
+E/P 迁移研究分别控制额外机制材料与显式变换权限，形成 E0P0、E1P0、E0P1、E1P1。
+四组保持基础 IR、后端、oracle 与测量一致；P0 仍允许手动构造同样的优化。
+E0P1 的接口也携带知识，因此 E 衡量额外说明的作用。具体协议以
+[消融设计](../OPTIMIZATION_TRANSFER_ABLATION.md)为准，不在这里复制统计规则。
+
+## 实现与验收范围
+
+单 kernel 使用各目标已有的执行路径。完整 Program 的公共正确性路径覆盖 CUBIN、HSACO
+和 MCFATBIN；普通优化 Run 的完整程序测量仍受其实际适配器约束。MACA 的独立 Program
+profile 提供归因观察，不能借给单 dispatch timer 或普通 Run 宣称完整程序延迟。
+Metal 多 stage、目标测量缺口和跨硬件收益实验的状态分别由平台记录与原始证据负责。
+
+入口与权威对应如下，全部运行输出放在仓库外：
+
+- 普通任务：`tools/launch_task.py`；批量任务：`tools/launch_task_matrix.py`。
+- 多节点复现组织：`tools/kernel_experiment.py`，见[复现指南](../KERNEL_REPRODUCTION.md)。
+- 已冻结 Run：`open-cake-ir lab run preflight|execute|audit --run ...`。
+- E/P Study：`tools/transfer_study.py prepare|execute|audit`。
+- 组件能力摸底：`tools/rewrite_collection.py assess`；固定原生 Program：
+  `tools/qualify_tensor_program.py build|evaluate|profile`，按实际目标能力准入。
+
+一次系统验收应分别报告：入口是否接通、候选是否正确、测量是否有效、是否优于固定基线、
+是否通过最终确认。跨模式接线或少量任务成功，不能代替正式重复实验和迁移效果结论。
+
 ## 先区分两种改进
 
 - **改候选：** 算同一道题，调整切块、分工或操作组合，编译器版本保持固定。
