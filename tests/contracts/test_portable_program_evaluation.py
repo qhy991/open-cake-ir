@@ -49,7 +49,7 @@ class NativeCompiler:
                 f'{entries}\n    .kernarg_segment_size: {(count + 2) * 8}\n    .name: k\n...\n'
                 '\t.end_amdgpu_metadata\n').encode()
         else:
-            parameters = ', '.join(f'%arg{index}: !tt.ptr<f32>' for index in range(count))
+            parameters = ', '.join(f'%arg{index}: !tt.ptr<f32> ' for index in range(count))
             artifacts['ttgir'] = f'tt.func public @k({parameters}) attributes {{}}'.encode()
         return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'],
             artifacts, requirements['compile_options']['num_warps'] * requirements['warp_size'],

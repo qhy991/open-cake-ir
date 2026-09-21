@@ -126,9 +126,18 @@ Program 与单 kernel 共用 oracle 和 Evaluation receipt。物理 kernel/modul
 stage，计时覆盖完整有序调用；NCU 输出按 dispatch 保留各 stage 的指标，不把逐 stage
 指标冒充整体性能估计。每个计时 cohort 结束后释放它自己的输出与中间张量。
 
-需要多次 launch、非 identity 绑定或视图映射的 Program，目前使用 Triton/CUDA 组合适配；
-其他 code object 对这些组合仍明确拒绝。静态表示和上述单 kernel 路径不受此组合适配范围
-限制。软件合同测试不赋予实机正确性、计时或跨架构收益资格。显式动作、知识授权与消息作者
+需要多次 launch、非 identity 绑定或视图映射的 Program，在公共 Evaluation 中使用同一
+构建封存、存储与顺序执行路径，现有模块 loader 覆盖 CUBIN、HSACO 和 MCFATBIN。
+公共 Torch 接口在加载前检查公开张量的形状、dtype、设备与连续性，准备时检查中间值和
+singleton views；启动前重新检查类型及存储身份，防止同一 tensor 对象被重新绑定。
+
+完整 Program 的计时及 attribution 目前仍只有 Triton/CUDA 路径。HIP/MACA 的既有仪器
+只覆盖单次 dispatch，不能借给多 stage 程序。优化环境在编译前拒绝这些组合；设备 worker
+与 receipt reader 同样拒绝候选或基线借用单 kernel 测量。非 CUDA 组合可通过
+`Compiler.lower_program` → `TritonToolchainBuilder.build_stage` → `seal_program_candidate` →
+公共 `evaluate_tile_workload` 验证正确性。它尚未接入计时优化 Run，也不改变 Target 的单
+kernel timer 声明。Metal 组合继续明确拒绝。软件合同测试不赋予实机正确性、计时或迁移
+收益资格。显式动作、知识授权与消息作者
 隔离见下节。QSA Cake 候选已使用同一 Program 构建、封存与执行路径；其旧节点描述只作输入
 适配，原生 CUDA 参考保留自己的固定 ABI。QSA 的真实参考形状与视图已通过 CPU 编译替身和
 虚拟存储合同检查，另有小型融合 oracle 回归；正式硬件消融尚未验证。
