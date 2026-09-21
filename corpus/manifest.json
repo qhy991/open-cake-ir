@@ -1223,6 +1223,19 @@
       }
     },
     {
+      "case_id": "indexed-gather-b8-smoke-metax",
+      "schedule": "corpus/schedules/indexed-gather-b8-smoke-metax.json",
+      "expected": {
+        "accepted": true,
+        "lowering_eligible": true,
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
+        "schedule_sha256": "fae25ee361da839ed2ab06ad0dffe771514cd1e8fe9c4852fbcb3e47f3472a4c",
+        "lowering_source_sha256": "987e8476bf79c925b85d782fff16874f8fd2069299c9737c83752cae31313933"
+      }
+    },
+    {
       "case_id": "b300-cute-target-refusal",
       "schedule": "corpus/schedules/b300-cute-target-refusal.json",
       "expected": {
