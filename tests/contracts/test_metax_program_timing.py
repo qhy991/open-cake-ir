@@ -70,6 +70,7 @@ class ProgramTiming(unittest.TestCase):
         raw = deepcopy(self.raw); raw['reset_record']['name'] = 'other'; mutations.append(raw)
         raw = deepcopy(self.raw); raw['activity']['dropped_records'] = 1; mutations.append(raw)
         raw = deepcopy(self.raw); raw['synchronization'] = 'none'; mutations.append(raw)
+        raw = deepcopy(self.raw); raw['activity']['records'].append(deepcopy(raw['activity']['records'][-1])); mutations.append(raw)
         for raw in mutations:
             with self.subTest(raw=raw), self.assertRaises(ValueError): program_samples(raw, repeats=2)
 

@@ -45,8 +45,11 @@ def program_samples(native, *, repeats):
     width = len(manifests) + 1
     if len(records) != repeats * width or records[0]['start_ns'] < reset_records[0]['end_ns']:
         raise ValueError('MACA Program sample/reset count or calibration order differs')
-    apis = {row['correlation']: row for row in native['activity']['records'] if row['kind'] == 5}
-    syncs = sorted((row for row in apis.values() if row['cbid'] == _DEVICE_SYNCHRONIZE),
+    api_rows = [row for row in native['activity']['records'] if row['kind'] == 5]
+    apis = {row['correlation']: row for row in api_rows}
+    if len(apis) != len(api_rows):
+        raise ValueError('MACA Program API correlations must be unique')
+    syncs = sorted((row for row in api_rows if row['cbid'] == _DEVICE_SYNCHRONIZE),
                    key=lambda row: row['start_ns'])
     # Two per invocation plus the collector's final completed-device drain.
     if len(syncs) != 2 * repeats + 1:
