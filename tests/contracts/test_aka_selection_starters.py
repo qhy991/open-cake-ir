@@ -1,6 +1,10 @@
 """Exact target successors and boundary-preserving complete selection starters."""
 from pathlib import Path
+from contextlib import ExitStack
+import operator
+import struct
 import unittest
+from unittest.mock import patch
 
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.evaluation.workload import WorkloadContract
@@ -12,6 +16,29 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SelectionStarters(unittest.TestCase):
+    def test_emitted_memory_operations_match_original_oracles_and_center_rounding(self):
+        from tests.contracts.test_epilogue_fusion import execute, _Tile
+        with ExitStack() as stack:
+            for method, operation in [('__ge__', operator.ge), ('__le__', operator.le),
+                                      ('__gt__', operator.gt), ('__ne__', operator.ne)]:
+                stack.enter_context(patch.object(_Tile, method, lambda a, b, op=operation: a.binary(b, op)))
+            for task, rows, columns in [('histogram', 1024, 16), ('max_pool1d', 2, 8)]:
+                document, source = create_task('aka_' + task, backend='triton-metax', rows=rows, columns=columns)
+                workload = WorkloadContract(document)
+                schedule = frontend.parse(source).document
+                for case in workload.case_ids:
+                    inputs = aka.materialize_case(workload, case)
+                    observed, _ = execute(schedule, inputs)
+                    self.assertEqual(observed, aka.reference_outputs(workload, case, inputs))
+            # Reproduce the exact oracle discrepancy found at zero, including
+            # negative subnormal input. Exercise emitted source, not a copied bin formula.
+            document, source = create_task('aka_histogram', backend='triton-metax', rows=1, columns=16)
+            workload = WorkloadContract(document)
+            for value in [-2**-149, -2**-54, -2**-52, -2**-51, 0.0, 2**-149]:
+                inputs = {'values': [struct.unpack('<f', struct.pack('<f', value))[0]]}
+                observed, _ = execute(frontend.parse(source).document, inputs)
+                self.assertEqual(observed, aka.reference_outputs(workload, 'primary', inputs))
+
     def test_c550_successors_preserve_all_original_cases_and_oracles(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         for name in ('histogram', 'max_pool1d'):
