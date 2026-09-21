@@ -18,6 +18,7 @@ from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark
 from open_cake_ir.evaluation.program import program_components
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment, TritonToolchainBuilder
+from open_cake_ir.lab.build import build_program_candidate
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.solx_fib import attention
 from open_cake_ir.tasks.program_evaluation import PreparedProgramCase, evaluate_program_case
@@ -41,13 +42,9 @@ class McaCompilationFixture:
 
 def build(program, workload, compiler):
     builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=McaCompilationFixture())
-    environment = OpenCakeEnvironment(compiler, builder, workload=workload, case_id='primary',
-        authority_document={'lowering_route': {'backend': 'triton', 'entry_point': program.stages[0].schedule.lowering.entry_point},
-                            'input_format': 'schedule_or_python_v1'})
-    result = environment.build(CandidateSubmission.seal(environment.media_type, program.document_bytes))
-    if result.disposition != 'launchable':
-        raise AssertionError(result.feedback)
-    return result.launchable
+    submission = CandidateSubmission.seal(OpenCakeEnvironment.media_type, program.document_bytes)
+    return build_program_candidate(compiler.lower_program(program), builder,
+        candidate_sha256=submission.sha256, workload=workload, case_id='primary')
 
 
 class NativeProgramCustody(unittest.TestCase):

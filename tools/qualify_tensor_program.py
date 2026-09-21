@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a sealed Program and qualify tensor-oracle cases with native MACA execution.
+"""Build a sealed Program and qualify tensor-oracle cases with native HIP or MACA execution.
 
 Build runs in the captured CPU-only compilation environment. Each device command
 prepares exactly one original CPU case before acquiring the existing local broker;
@@ -88,9 +88,15 @@ def profile_program(candidate, workload, protocol, admission, prepared, host):
         raise RunProtocolFault('harness_fault', str(error), artifact_payloads=retained) from error
 
 
+def _admit_captured_host(executor):
+    if executor.document['host_environment'].get('kind') == 'hip':
+        return executor.admit_hip_host()
+    return executor.admit_host()
+
+
 def build(args, result):
     from launch_task import _triton_toolchain_config
-    from open_cake_ir.lab.build import TritonToolchainBuilder
+    from open_cake_ir.lab.build import TritonToolchainBuilder, build_program_candidate
     from open_cake_ir.lab.triton_build import IsolatedTritonCompiler
     workload = load_workload(args.workload)
     program = Program.from_dict(json.loads(args.program.read_text()))
@@ -100,20 +106,20 @@ def build(args, result):
     if not gate.passed:
         raise ValueError('Compiler Corpus Gate failed')
     executor = resolve_executor(ROOT, CURRENT_RELEASE_BINDING, 'tensor Program build', template=True, target=workload.target)
-    executor.admit_host()
+    _admit_captured_host(executor)
     isolated = IsolatedTritonCompiler(**_triton_toolchain_config(executor))
     isolated.check_executor(executor, author_workspace=args.output)
     builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=isolated)
-    route = program.stages[0].schedule.lowering
-    environment = OpenCakeEnvironment(compiler, builder, workload=workload, case_id='primary',
-        authority_document={'lowering_route': {'backend': route.backend.value, 'entry_point': route.entry_point},
-                            'input_format': 'schedule_or_python_v1'})
-    submission = CandidateSubmission.seal(environment.media_type, program.document_bytes)
-    built = environment.build(submission)
-    write(args.output / 'build-feedback.json', built.feedback)
-    if built.disposition != 'launchable':
-        raise ValueError('Program build was refused; see build-feedback.json')
-    candidate = built.launchable
+    submission = CandidateSubmission.seal(OpenCakeEnvironment.media_type, program.document_bytes)
+    try:
+        candidate = build_program_candidate(compiler.lower_program(program), builder,
+            candidate_sha256=submission.sha256, workload=workload, case_id='primary')
+    except Exception as error:
+        write(args.output / 'build-feedback.json', {'stage': 'build', 'error': str(error)})
+        raise
+    write(args.output / 'build-feedback.json', {'stage': 'built',
+        'program_stages': [stage.name for stage in program.stages],
+        'cost_model_coverage': 'whole_program_unmodeled'})
     write(args.output / 'workload.json', workload.document)
     write(args.output / 'program.json', program.document)
     for role, payload in candidate.artifact_payloads.items():
@@ -134,20 +140,27 @@ def evaluate(args, result):
     manifest = parse_launch_manifest(json.loads(payloads['launch_manifest']))
     manifest.check_complete_domain()
     manifest.check_validation_case(workload, args.case)
-    if platform_for(workload.target).code_object is not CodeObject.MCFATBIN:
-        raise ValueError('this local tensor qualification command currently implements the MACA allocation adapter')
+    platform = platform_for(workload.target)
+    if platform.code_object not in {CodeObject.HSACO, CodeObject.MCFATBIN}:
+        raise ValueError('this local tensor qualification command implements HIP and MACA allocation adapters')
+    if args.command == 'profile' and platform.code_object is not CodeObject.MCFATBIN:
+        raise ValueError('this Program profile source implements only MACA attribution')
     protocol = EvaluationProtocol('tensor-program-correctness', 'confirmatory', workload.canonical_sha256,
                                   args.case, 'none')
     result.update(phase='cpu_preparation', target=workload.target, workload_id=workload.workload_id, case_id=args.case)
     prepared = PreparedProgramCase(workload, args.case)
     executor = resolve_executor(ROOT, CURRENT_RELEASE_BINDING, 'tensor Program evaluation', template=True, target=workload.target)
-    result.update(phase='device', job_id=admit_local_job('maca'), allocation_mode='local_serialized',
+    result.update(phase='device', job_id=admit_local_job(platform.local_job_prefix), allocation_mode='local_serialized',
                   external_gpu_activity='not_excluded')
     lock = os.fstat(int(os.environ['METAL_BROKER_LOCK_FD']))
     result['lock'] = {'device': lock.st_dev, 'inode': lock.st_ino, 'uid': lock.st_uid, 'nlink': lock.st_nlink}
-    host = executor.admit_host()
-    from open_cake_ir.evaluation.triton_metax import observe_local_metax
-    admission = observe_local_metax(workload.target, runtime_library=host['runtime_library'])
+    host = _admit_captured_host(executor)
+    if platform.code_object is CodeObject.HSACO:
+        from open_cake_ir.evaluation.triton_hip import observe_local_hip
+        admission = observe_local_hip(workload.target)
+    elif platform.code_object is CodeObject.MCFATBIN:
+        from open_cake_ir.evaluation.triton_metax import observe_local_metax
+        admission = observe_local_metax(workload.target, runtime_library=host['runtime_library'])
     receipt = (profile_program(candidate, workload, protocol, admission, prepared, host)
                if args.command == 'profile' else
                evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared))

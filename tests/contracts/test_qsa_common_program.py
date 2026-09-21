@@ -36,7 +36,7 @@ class Tensor:
 
 class Torch:
     float32='fp32';bfloat16='bf16';int32='int32'
-    cuda = SimpleNamespace(current_stream=lambda:SimpleNamespace(cuda_stream=7),synchronize=lambda:None)
+    cuda = SimpleNamespace(current_device=lambda:0,current_stream=lambda:SimpleNamespace(cuda_stream=7),synchronize=lambda:None)
     def __init__(self): self.position=1024;self.allocations=[]
     def full(self,shape,value,*,dtype,device):
         tensor = Tensor(tuple(shape),dtype,[value]*math.prod(shape),self.position)
