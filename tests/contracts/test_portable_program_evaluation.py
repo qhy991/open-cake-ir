@@ -254,7 +254,7 @@ class PortableProgramEvaluation(unittest.TestCase):
             workload, program, candidate, _ = self.build(backend)
             manifest, _, _ = program_components(candidate)
             kind = platform_for(candidate.target).local_job_prefix
-            policy = {'validation_case_ids': list(workload.case_ids)}
+            policy = {'case_id': 'primary', 'validation_case_ids': list(workload.case_ids)}
             with tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 request, output = root/'request.json', root/'result.json'
