@@ -103,7 +103,7 @@ class CompleteProgramRewriteTests(unittest.TestCase):
         self.assertTrue(result.applied, result.message)
         self.assertEqual(result.program.inputs, program.inputs)
         self.assertEqual(result.program.outputs, program.outputs)
-        self.assertTrue(self.compiler.assess(result.program.stages[0].schedule).lowering_eligible)
+        self.assertTrue(self.compiler.assess(result.program.document['stages'][0]['schedule']).lowering_eligible)
         self.compiler.lower_program(result.program)
 
         wrong = wide_document()

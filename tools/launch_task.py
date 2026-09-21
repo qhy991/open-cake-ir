@@ -47,6 +47,7 @@ from open_cake_ir.tasks.normalization.workload import BACKENDS
 from open_cake_ir.tasks.runtime import TaskLab
 from open_cake_ir.tasks.reporting import primary_summary
 from open_cake_ir.tasks.workloads import create_task, load_workload
+from open_cake_ir.tasks.tinygemm.reproduction import TASK as TINYGEMM_TASK
 from open_cake_ir.evaluation.paired import candidate_identity, validate_pair_candidates
 
 # The launcher offers whatever the activation family registers, so a migrated AKA
@@ -66,7 +67,7 @@ FIB_GEMM_TASKS = tuple(FIB_GEMM_SPECS)
 TASKS = ("rmsnorm", "layernorm", "residual_rmsnorm", "softmax",
          *ACTIVATION_TASKS, *ROWWISE_TASKS, *REDUCTION_TASKS, *OPTIMIZER_TASKS,
          *CONTRACTION_TASKS, *SOLX_FIB_TASKS, *FIB_GEMM_TASKS, "gemm_bias",
-         ADD_RMSNORM_TASK, *AKA_TASKS)
+         ADD_RMSNORM_TASK, *AKA_TASKS, TINYGEMM_TASK)
 
 
 def _provider_executable(harness: str, requested: Path | None) -> Path:
@@ -495,6 +496,8 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
         return 8 if rows is None else rows, 256 if columns is None else columns
     if task == ADD_RMSNORM_TASK:
         return 128 if rows is None else rows, 2560 if columns is None else columns
+    if task == TINYGEMM_TASK:
+        return 1 if rows is None else rows, 128 if columns is None else columns
     if task in CONTRACTION_TASKS:
         return 1024 if rows is None else rows, 64 if columns is None else columns
     if task in FIB_GEMM_SPECS:
