@@ -91,7 +91,8 @@ def build_run_reference_documents(
     resolved = lock.document
     if arm != resolved["authoring"]:
         raise ValueError("task package Authoring Environment differs from the frozen arm")
-    validate_reference_handoff(root, {"author": arm})
+    validate_reference_handoff(root, {"author": arm}, workload=workload_contract,
+                               case_id=lock.document['evaluation_protocol']['case_id'])
     # External task instructions may change after preflight. Verify the actual
     # payload once at delivery, against the existing frozen reference, and reuse
     # those bytes below rather than reopening the file after the check.

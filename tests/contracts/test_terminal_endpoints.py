@@ -125,6 +125,25 @@ class TerminalRunTests(unittest.TestCase):
             environments={arm: Environment(arm, authority) for arm, authority in arms.items()}, evaluator=evaluator)
         return lab, campaign, provider
 
+    def test_unlimited_tokens_keep_confirmation_audit_and_usage_without_token_checkpoints(self):
+        lab, campaign, _ = self.run_campaign(limits={"limit": None, "checkpoints": [], "maximum_turns": 3})
+        report = lab.audit(campaign)
+        self.assertTrue(report.semantic_replay_passed)
+        self.assertTrue(report.estimand_available)
+        store = EvidenceStore.open(campaign.evidence_root)
+        for audit in report.run_audits:
+            self.assertEqual(audit.endpoint_observation, "qualified")
+            self.assertEqual(audit.endpoint["terminal_reason"], "maximum_turns")
+            self.assertEqual(audit.endpoint["budget"], 240000)
+            self.assertEqual(audit.endpoint["budget_exceeded"], [])
+            projection = next(e["payload"] for e in store.replay_events(audit.run_id)
+                              if e["kind"] == "checkpoints_projected")
+            self.assertEqual(projection["checkpoints"], [])
+            self.assertIsNone(projection["ralph"]["remaining"]["provider_tokens"])
+            self.assertIsNone(report.descriptive["terminal_observations"][audit.run_id]["token_limit_checkpoint_state"])
+        with self.assertRaisesRegex(ValueError, "normal terminal observation"):
+            self.run_campaign(policy=False, limits={"limit": None, "checkpoints": []})
+
     def test_actual_normal_turn_stop_observes_endpoint_without_checkpoint_backfill(self):
         for policy in (False, True):
             for rejected in (False, True):

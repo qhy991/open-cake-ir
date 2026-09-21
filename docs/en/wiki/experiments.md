@@ -36,6 +36,10 @@ Reference permissions are orthogonal: clean_start excludes complete target imple
 known_kernel_reproduction permits declared references, and direct_low_level governs native
 authoring. The ordinary launcher supplies a starter and defaults to known_kernel_reproduction;
 it is not clean-start evidence. Material and tool isolation must be enforced, not merely requested.
+`--reference-access clean_start` delivers an empty Schedule derived from the Workload ABI,
+mathematics and API documentation. The evaluator privately retains the complete starter
+for fixed-baseline validation. Live author processes also need file access isolation
+from reference implementations, prior sessions and other tasks.
 
 E/P Studies independently control extra mechanism material and explicit transform calls.
 All four cells share base IR/backend capabilities and validation. P0 may manually construct
@@ -65,6 +69,11 @@ Candidate evolution changes tiling, roles, or composition for the same problem u
 A search fixes task and budget, obtains candidates, checks and compiles, compares complete required outputs, measures under the frozen protocol, preserves diagnostics, and either continues within budget or audits a terminal Run. Invalid candidates never proceed to timing. Cost ranking requires an explicitly bound empirical model with matching context; otherwise author order is retained. Estimates cannot replace measurement.
 
 AI reads TASK.md and AGENTS.md and submits candidates. External Evaluation judges; Ralph tracks time, tokens, and attempt limits. Budget exhaustion can be a normal end.
+
+Ordinary launches default to turn, time, compilation and evaluation limits. Provider tokens
+remain recorded but do not stop or disqualify a Run unless `--token-budget` is supplied.
+The frozen representation is `budget.limit: null` and an empty `checkpoints` list.
+Already frozen Runs and their historical outcomes retain their original policy.
 
 ## Before running
 

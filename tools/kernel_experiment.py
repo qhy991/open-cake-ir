@@ -56,8 +56,9 @@ def validate(config):
         if provider['harness'] != 'claude-code':
             raise ValueError('response model aliases require the Claude provider')
         response_model_aliases(provider['model'], provider['response_model_aliases'])
-    object_fields(config["budget"], {"turns", "token_budget", "wall_seconds"})
-    if any(type(v) is not int or v <= 0 for v in config["budget"].values()):
+    object_fields(config["budget"], {"turns", "wall_seconds"}, {"token_budget"})
+    if any(type(v) is not int or v <= 0 for k, v in config["budget"].items()
+           if not (k == "token_budget" and v is None)):
         raise ValueError("positive per-cell budgets are required")
     if not isinstance(config["references"], list) or not config["references"]:
         raise ValueError("reproduction requires explicit reference files")
@@ -189,7 +190,7 @@ for group in (p["provider"], p["budget"]):
         if name == "response_model_aliases":
             for alias in value:
                 args += ["--response-model-alias", alias]
-        else:
+        elif value is not None:
             args += ["--" + name.replace("_", "-"), str(value)]
 environment = dict(os.environ)
 if "codex_home" in n:

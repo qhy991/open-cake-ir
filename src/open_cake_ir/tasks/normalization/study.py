@@ -141,11 +141,12 @@ def _allocation_mode(target: object) -> str:
 
 def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Path, *,
                    harness: str, model: str, effort: str, turns: int = 4,
-                   token_budget: int = 150000, maximum_candidates: int = 3, maximum_compilations: int = 128,
+                   token_budget: int | None = None, maximum_candidates: int = 3, maximum_compilations: int = 128,
                    searches_per_turn: int = 2, wall_seconds: int = 14400, confirmation_seconds: float | None = None,
                    dispatches_per_sample: int | None = None,
                    maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
-                   agents_md: Path | None = None, response_aliases=()) -> dict:
+                   agents_md: Path | None = None, response_aliases=(),
+                   reference_access: str = 'known_kernel_reproduction') -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -153,11 +154,13 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     """
     from open_cake_ir.tasks.workloads import validate_workload_document
     validate_workload_document(workload.document)
+    if reference_access not in {'clean_start', 'known_kernel_reproduction'}:
+        raise ValueError('Cake task authoring requires clean_start or known_kernel_reproduction')
     if harness not in {"codex", "claude-code"} or any(not isinstance(v, str) or not v.strip() or v != v.strip() for v in (model, effort)):
         raise ValueError("exact harness, model and effort are required")
     if type(searches_per_turn) is not int or type(maximum_candidates) is not int or not 1 <= searches_per_turn <= maximum_candidates:
         raise ValueError("searches per Turn must fit the candidate budget")
-    budget = {"unit": "provider_tokens", "limit": token_budget, "checkpoints": [token_budget],
+    budget = {"unit": "provider_tokens", "limit": token_budget, "checkpoints": [] if token_budget is None else [token_budget],
               "maximum_turns": turns, "maximum_candidates_per_turn": maximum_candidates,
               "maximum_compilations": maximum_compilations,
               "confirmation_wall_time_seconds": wall_seconds / 10 if confirmation_seconds is None else confirmation_seconds,
@@ -169,6 +172,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     default_scaffold = (METAL_SCAFFOLD
                         if backend is not None and BACKENDS[backend]["route"] == "metal"
                         else SCAFFOLD)
+    if reference_access == 'clean_start':
+        default_scaffold = 'contracts/scaffolds/matched-search-v1.md'
     scaffold_name, scaffold_path = source_reference_path(
         root, str(agents_md) if agents_md is not None else default_scaffold, "scaffold")
     scaffold_bytes = scaffold_path.read_bytes()
@@ -202,7 +207,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         "agent_interface": {"schema_version": 1, "kind": "task_agents_ralph_v1"},
         "workload": {"workload_id": workload.workload_id,"path": str(workload_path), "canonical_sha256": workload.canonical_sha256},
         "authoring": {
-            "environment_kind": "open_cake", "reference_access": "known_kernel_reproduction", "provider": provider,
+            "environment_kind": "open_cake", "reference_access": reference_access, "provider": provider,
             "scaffold": {"path": scaffold_name, "sha256": sha256(scaffold_bytes).hexdigest()},
             "compiler_revision": dict(CURRENT_RELEASE_BINDING),
             "lowering_route": source.document["lowering"],

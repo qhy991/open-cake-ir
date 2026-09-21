@@ -66,10 +66,10 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
         "--task", task, "--backend", args.backend,
         "--harness", args.harness, "--model", args.model, "--effort", args.effort,
         "--workspace", str(workspace), "--turns", str(args.turns),
-        "--token-budget", str(args.token_budget), "--max-candidates", str(args.max_candidates),
+        "--max-candidates", str(args.max_candidates),
         "--searches-per-turn", str(args.searches_per_turn),
         "--wall-seconds", str(args.wall_seconds)]
-    for flag, value in (("--maximum-cv", args.maximum_cv), ("--required-pair-wins", args.required_pair_wins)):
+    for flag, value in (("--token-budget", args.token_budget), ("--maximum-cv", args.maximum_cv), ("--required-pair-wins", args.required_pair_wins)):
         if value is not None:
             command.extend((flag, str(value)))
     if args.dispatches_per_sample is not None:
@@ -128,8 +128,8 @@ def main(argv=None) -> int:
     parser.add_argument("--depth", type=int,
                         help="K override; portable contractions default to256, TinyGEMM keeps its task default")
     parser.add_argument("--turns", type=int, default=32)
-    parser.add_argument("--token-budget", type=int, default=3000000,
-                        help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
+    parser.add_argument("--token-budget", type=int,
+                        help="optional per-task token threshold; omitted means usage accounting only")
     parser.add_argument("--max-candidates", type=int, default=3)
     parser.add_argument("--searches-per-turn", type=int, default=2)
     parser.add_argument("--maximum-cv", type=float)

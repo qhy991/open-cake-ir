@@ -109,7 +109,7 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         with patch.object(matrix.subprocess, "run", side_effect=run):
             self.assertEqual(matrix.main(self.args("rmsnorm", "layernorm")), 1)
         self.assertEqual(len(calls), 2)
-        self.assertEqual(calls[0][calls[0].index('--token-budget')+1], '3000000')
+        self.assertNotIn('--token-budget', calls[0])
         self.assertEqual(calls[0][calls[0].index('--turns')+1], '32')
         self.assertEqual(calls[0][calls[0].index('--wall-seconds')+1], '28800')
         self.assertNotIn("--qualification", calls[0])

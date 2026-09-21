@@ -39,6 +39,9 @@ Study 预分配多个 Run 并分析结果。Evaluation 负责判对、测量和�
 参考权限是另一个维度：`clean_start` 不允许读取完整目标低层实现，
 `known_kernel_reproduction` 允许读取声明的参考，`direct_low_level` 约束直接低层编写。
 当前普通 launcher 提供 starter，默认属于 `known_kernel_reproduction`，不能作为从零生成证据。
+显式使用 `--reference-access clean_start` 时，作者改为接收从 Workload ABI 生成的空
+Schedule、数学定义和 API 文档；完整 starter 只留在评测侧用于固定基线验证。
+该入口检查材料交付权限；实机作者进程还需隔离参考实现、历史会话和其他任务的文件访问。
 源代码路径、材料文本和 pass 权限均需实际绑定，提示词本身不证明隔离。
 
 E/P 迁移研究分别控制额外机制材料与显式变换权限，形成 E0P0、E1P0、E0P1、E1P1。
@@ -92,6 +95,11 @@ flowchart LR
 AI 看到 `TASK.md` 中的题目和预算，以及 `AGENTS.md` 中的工具与行为规则。
 它提交候选后，外部评测器核对答案；Ralph 控制器记录剩余时间、token 和尝试次数。
 预算到期可以正常结束，不必靠不断重试掩盖失败。
+
+普通任务默认只按轮数、时间、编译和评测次数停止，token 持续记录但不设上限，
+也不作为资格门槛。`--token-budget` 可为确实需要固定 token 额度的实验显式启用；
+冻结 Run 中 `budget.limit: null` 与空 `checkpoints` 表示没有 token 限额。
+这不会改变已启动 Run 或历史结果的预算和判定。
 
 ## 运行前看什么
 
