@@ -21,6 +21,10 @@ def capture_program_activity(launch, *, candidate, admission, activity_library):
     from .program import program_components
     from .paired import candidate_identity
     manifest, children, manifests = program_components(candidate)
+    facts = {'manifest': manifest.as_dict(),
+             'stage_manifests': {name: item.as_dict() for name, item in manifests.items()},
+             'stage_candidates': {name: candidate_identity(item) for name, item in children.items()}}
+    program_launch_manifests(facts)
     collector = activity_collector(activity_library)
     primary = None
     activity = None
@@ -29,9 +33,7 @@ def capture_program_activity(launch, *, candidate, admission, activity_library):
     except BaseException as error:
         primary = error
         activity = getattr(error, 'activity_snapshot', None)
-    raw = {'activity': activity, 'manifest': manifest.as_dict(),
-           'stage_manifests': {name: item.as_dict() for name, item in manifests.items()},
-           'stage_candidates': {name: candidate_identity(item) for name, item in children.items()},
+    raw = {'activity': activity, **facts,
            'device_admission': asdict(admission), 'not_collected': list(NOT_COLLECTED)}
     if primary is not None:
         error = RuntimeError(str(primary))

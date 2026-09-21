@@ -93,6 +93,9 @@ class McptiProgramBenchmark(_McptiBenchmark):
             'stage_manifests': {name: spec.as_dict() for name, spec in manifests.items()},
             'stage_candidates': {name: candidate_identity(child) for name, child in children.items()},
             'synchronization': SYNCHRONIZATION}
+        # The portable Program owner may admit runtime alignment dispatchers;
+        # this timer's exact single-entry stage contract does not.
+        program_launch_manifests(self._facts)
         self._kernel_names = tuple(spec.kernel_name for spec in manifests.values())
         super().__init__(manifest, activity_library=activity_library, l2_cache_bytes=l2_cache_bytes)
 
