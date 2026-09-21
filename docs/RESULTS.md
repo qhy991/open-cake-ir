@@ -12,7 +12,7 @@
 
 | 平台 | 维护分支 | 数据日期 | 观察条目 | 发布数据 |
 |---|---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-21 | 126 | [nvidia/records.json](results/nvidia/records.json) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-21 | 130 | [nvidia/records.json](results/nvidia/records.json) |
 | Apple | [metal](https://github.com/qhy991/open-cake-ir/tree/metal/docs/results/metal) | 2026-09-20 | 4 | [metal/records.json](results/metal/records.json) |
 | Hygon DCU | [dcu](https://github.com/qhy991/open-cake-ir/tree/dcu/docs/results/dcu) | 2026-09-20 | 32 | [dcu/records.json](results/dcu/records.json) |
 | AMD | [amd](https://github.com/qhy991/open-cake-ir/tree/amd/docs/results/amd) | 2026-09-20 | 1 | [amd/records.json](results/amd/records.json) |
@@ -43,6 +43,7 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 - 历史阶段说明：007/008: four completed fixed-M1 comparisons, 10200 numerical snapshots passed. 007 width8 improves 1.097x over its newly frozen original starter; both 007 external comparisons fail CV and remain unqualified. 008 sliced width8 improves 1.053x over its original starter but remains 53.05% slower than the external two-stage split-K callable; a masked whole-K variant regresses to 0.805x versus sliced width8. These are candidate changes, not Compiler-floor movement; no promotion or full-shape claim.
 - 历史阶段说明：009/010/026:17850 numerical snapshots pass. Qualified starter gains:009w4 1.096x,010w8 1.116x,026w8 1.787x;009w4 and010w8 are close_null versus their supplied callables. 026 whole-row regresses versus intermediate sliced-w8; every026 external edge fails CV. No promotion. Separately012–020 have17 complete CPU-sealed Programs/72 stages, still no common GPU evaluation or external performance claim.
 - 新增独立NCU：003/008/009/026四项全部完成，72份完整调用观测数值通过，13个kernel实例metrics完整；它们不替代CUPTI计时，也不修复旧CV失败。005和023的原starter外部边已从旧报告单列：005仍慢25.17%，023为close_null；不是新测量或改写晋升。
+- 008完整Program的stage对齐后继：60/60公共与私有地址guards及2550快照数值通过；新aligned/旧unaligned Program为96.785/55.041us，aligned/external为95.552/26.721us，三条边均CV失败，只保留描述值。未获得合格改善，也不宣称合格回退或晋升；继续保留旧sliced-w8的合格external代表。
 
 | 设备 / 集合 | Task | 输入 / Workload | 基线 µs | 候选 µs | 加速比 | 状态 | 详情 |
 |---|---|---|---:|---:|---:|---|---|
@@ -172,6 +173,10 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 | B300 / complete two-stage Program | `008_gemm_n4096_k14336 / splitK8 columns16 groups8` | M=1,N=4096,K=14336,FP16 | 26.688 | 55.072 | — | Correct; measurement_quality_failed | [nvidia-008-splitk-program-optimized_vs_external-20260921](#nvidia-008-splitk-program-optimized_vs_external-20260921) |
 | B300 / complete two-stage Program | `008_gemm_n4096_k14336 / retained sliced-w8 control` | M=1,N=4096,K=14336,FP16 | 26.624 | 41.184 | 0.646× | Correct; second_arm_faster | [nvidia-008-splitk-program-starter_vs_external-20260921](#nvidia-008-splitk-program-starter_vs_external-20260921) |
 | B300 / complete two-stage Program | `008_gemm_n4096_k14336 / splitK8 columns16 groups8` | M=1,N=4096,K=14336,FP16 | 41.152 | 55.073 | — | Correct; measurement_quality_failed | [nvidia-008-splitk-program-optimized_vs_starter-20260921](#nvidia-008-splitk-program-optimized_vs_starter-20260921) |
+| B300 / complete Program stage alignment | `008_gemm_n4096_k14336 / guarded split-K Program` | M=1,N=4096,K=14336,FP16; FP32 partial[8,4096] | — | — | — | Correctness only:60/60 Program guards passed | [nvidia-008-program-alignment-guards-20260921](#nvidia-008-program-alignment-guards-20260921) |
+| B300 / complete Program stage alignment | `008_gemm_n4096_k14336 / guarded aligned complete Program` | M=1,N=4096,K=14336,FP16; FP32 partial[8,4096] | 26.721 | 95.552 | — | Correct; measurement_quality_failed | [nvidia-008-program-alignment-optimized_vs_external-20260921](#nvidia-008-program-alignment-optimized_vs_external-20260921) |
+| B300 / complete Program stage alignment | `008_gemm_n4096_k14336 / fixed unaligned complete Program` | M=1,N=4096,K=14336,FP16; FP32 partial[8,4096] | 26.625 | 55.072 | — | Correct; measurement_quality_failed | [nvidia-008-program-alignment-starter_vs_external-20260921](#nvidia-008-program-alignment-starter_vs_external-20260921) |
+| B300 / complete Program stage alignment | `008_gemm_n4096_k14336 / guarded aligned complete Program` | M=1,N=4096,K=14336,FP16; FP32 partial[8,4096] | 55.041 | 96.785 | — | Correct; measurement_quality_failed | [nvidia-008-program-alignment-optimized_vs_starter-20260921](#nvidia-008-program-alignment-optimized_vs_starter-20260921) |
 
 ## Apple
 
@@ -1628,6 +1633,46 @@ gfx1151 的两种设备计时器尚未对齐。保留支持状态与调查入口
 - 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/1d15c72b9a86f45512df5aaf85c3963ff158fe79/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gemm-008-splitk-program-comparison-20260921-6ada50580f4f/stages/verify/comparison-report.json; optimized_vs_starter`。
 - Candidate is the complete two-stage Program; bothcandidate edges failCV,latencies descriptive. All2550publicinput/output observations pass. Originaloracle and coldL2CUPTI/fullcallable preserved. No originalstarter ratio,fullshape,hardware attribution orpromotion.
+
+### nvidia-008-program-alignment-guards-20260921
+
+**B300 / complete Program stage alignment · 008_gemm_n4096_k14336 / guarded split-K Program** — 2026-09-21 / Correctness only:60/60 Program guards passed
+
+- Workload：`M=1,N=4096,K=14336,FP16; FP32 partial[8,4096]`；目标：`sm_103a`；版本：`candidate compiler b5e1c34b; judge2316a7c6; unaligned Program control65742cbb`。
+- 基线：Original Workload oracle; public and private address guards；比值口径：`correctness_only`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/ff4cb2e423b019b18fcd90c398c695599a89fcff/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-alignment-008-guards-20260921-e91b5c45ba1c/stages/verify/guard-report.json`。
+- Five cases cover each public FP16 pointer at2/4/8B and privateFP32 partial at4/8B. 120stage launches,65restricted-leaf refusals before launch,10private checks; all public input/output checks pass. No performance measurement or independent private-content oracle claim.
+
+### nvidia-008-program-alignment-optimized_vs_external-20260921
+
+**B300 / complete Program stage alignment · 008_gemm_n4096_k14336 / guarded aligned complete Program** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`M=1,N=4096,K=14336,FP16; FP32 partial[8,4096]`；目标：`sm_103a`；版本：`candidate compiler b5e1c34b; judge2316a7c6; unaligned Program control65742cbb`。
+- 基线：Original supplied complete split-K CUDA callable；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/ff4cb2e423b019b18fcd90c398c695599a89fcff/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-alignment-008-comparison-20260921-f2e809292860/stages/verify/comparison-report.json; optimized_vs_external`。
+- All2550 public input/output observations pass. This edge fails the original CV gate; reported latencies are descriptive, with no qualified speedup or regression. The control is the prior unaligned complete Program, not sliced-w8 or initialstarter. Original full-callable CUPTI/coldL2 preserved. No promotion.
+
+### nvidia-008-program-alignment-starter_vs_external-20260921
+
+**B300 / complete Program stage alignment · 008_gemm_n4096_k14336 / fixed unaligned complete Program** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`M=1,N=4096,K=14336,FP16; FP32 partial[8,4096]`；目标：`sm_103a`；版本：`candidate compiler b5e1c34b; judge2316a7c6; unaligned Program control65742cbb`。
+- 基线：Original supplied complete split-K CUDA callable；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/ff4cb2e423b019b18fcd90c398c695599a89fcff/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-alignment-008-comparison-20260921-f2e809292860/stages/verify/comparison-report.json; starter_vs_external`。
+- All2550 public input/output observations pass. This edge fails the original CV gate; reported latencies are descriptive, with no qualified speedup or regression. The control is the prior unaligned complete Program, not sliced-w8 or initialstarter. Original full-callable CUPTI/coldL2 preserved. No promotion.
+
+### nvidia-008-program-alignment-optimized_vs_starter-20260921
+
+**B300 / complete Program stage alignment · 008_gemm_n4096_k14336 / guarded aligned complete Program** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`M=1,N=4096,K=14336,FP16; FP32 partial[8,4096]`；目标：`sm_103a`；版本：`candidate compiler b5e1c34b; judge2316a7c6; unaligned Program control65742cbb`。
+- 基线：Frozen unaligned complete two-stage Program；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/ff4cb2e423b019b18fcd90c398c695599a89fcff/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-alignment-008-comparison-20260921-f2e809292860/stages/verify/comparison-report.json; optimized_vs_starter`。
+- All2550 public input/output observations pass. This edge fails the original CV gate; reported latencies are descriptive, with no qualified speedup or regression. The control is the prior unaligned complete Program, not sliced-w8 or initialstarter. Original full-callable CUPTI/coldL2 preserved. No promotion.
 
 ### metal-result-044
 
