@@ -493,6 +493,10 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
     own extents keep that operand inside the bound; explicit flags still win.
     """
     if task in AKA_TASKS:
+        if task == 'aka_histogram':
+            return 1024 if rows is None else rows, 16 if columns is None else columns
+        if task == 'aka_max_pool1d':
+            return 2 if rows is None else rows, 8 if columns is None else columns
         return 8 if rows is None else rows, 256 if columns is None else columns
     if task == ADD_RMSNORM_TASK:
         return 128 if rows is None else rows, 2560 if columns is None else columns

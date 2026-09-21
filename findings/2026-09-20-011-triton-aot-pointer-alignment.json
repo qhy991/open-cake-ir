@@ -721,5 +721,78 @@
     "measurement": "Guard final CPU acceptance preceded the one comparison submission. CPU prepare and full verify remain outside the continuous exclusive paired capture; original full-callable CUPTI span, cold L2, Workload oracle, input invariance and every public output retained. No repeated run to upgrade CV.",
     "promotion_disposition": "No promotion. Retain all generic and aligned artifacts, original starter, original external and failed timing edges. Do not multiply cross-run ratios or attribute the descriptive slowdown to a hardware bottleneck without independent evidence.",
     "next_diagnostic": "Inspect the complete Program host dispatch path and compiled kernels separately before selecting a successor. The existing phased NCU task is prepared but not submitted because this round has no qualified candidate timing edge; no new NCU conclusion is claimed."
+  },
+  "program_dispatch_identity_followup": {
+    "implemented_in": "3bc753a49e52f3450400c95fae2532766c57a347",
+    "observation": "LoadedAlignmentCandidate and the restricted CUDA leaf each compare a launch contract canonical value with their bound manifest value. For the identical object this reconstructs identical JSON and hashes at every stage launch. A real sealed008 Program with FakeDriver exposes this CPU work without executing a GPU.",
+    "change": "Only identical-object comparisons skip redundant canonical serialization. Distinct contracts retain the prior canonical comparison, accepting equal clones and refusing modified clones. Each launch still reads actual pointers and checks ABI, target, alignment, module/context and CUBIN identity. No cache, numerical change, new IR or timing policy change.",
+    "evidence_root": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-program-alignment-008-20260921",
+    "before": {
+      "source_commit": "2316a7c6687b80d83da07552a664874417054a8d",
+      "report": "cpu-dispatch-profile-canonical-admission/result.json",
+      "observations": {
+        "starter": {
+          "samples": 200,
+          "cpu_call_median_us": 441.869,
+          "fake_stage_dispatch_gap_median_us": 27.490000000000002,
+          "stage_variant_last": {
+            "gemm_split_partials": "generic",
+            "gemm_split_finalize": "generic"
+          }
+        },
+        "optimized": {
+          "samples": 200,
+          "cpu_call_median_us": 556.6400000000001,
+          "fake_stage_dispatch_gap_median_us": 78.97649999999999,
+          "stage_variant_last": {
+            "gemm_split_partials": "aligned",
+            "gemm_split_finalize": "aligned"
+          }
+        }
+      },
+      "canonical_json_calls_per_50_program_calls": {
+        "starter": 100,
+        "optimized": 500
+      },
+      "leaf_manifest_canonical_calls_optimized": 400
+    },
+    "after": {
+      "source_commit": "3bc753a49e52f3450400c95fae2532766c57a347",
+      "report": "cpu-dispatch-profile-3bc753a4/result.json",
+      "observations": {
+        "starter": {
+          "samples": 200,
+          "cpu_call_median_us": 436.728,
+          "fake_stage_dispatch_gap_median_us": 27.557499999999997,
+          "stage_variant_last": {
+            "gemm_split_partials": "generic",
+            "gemm_split_finalize": "generic"
+          }
+        },
+        "optimized": {
+          "samples": 200,
+          "cpu_call_median_us": 442.4415,
+          "fake_stage_dispatch_gap_median_us": 31.372999999999998,
+          "stage_variant_last": {
+            "gemm_split_partials": "aligned",
+            "gemm_split_finalize": "aligned"
+          }
+        }
+      },
+      "canonical_json_calls_per_50_program_calls": {
+        "starter": 100,
+        "optimized": 100
+      },
+      "leaf_manifest_canonical_calls_optimized": 0
+    },
+    "verified_by": {
+      "fixed_commit": "3bc753a49e52f3450400c95fae2532766c57a347",
+      "local": "7 affected modules:52 tests,95 subtests pass;1 optional Torch test skips. F821 passes.",
+      "M3_CPU": "Same7 modules with CUDA hidden:53 tests pass, including the local Torch skip; cpu-tests-3bc753a4/stdout.log and stderr.log. No GPU launched.",
+      "review": "Independent review of semantic equivalence and dynamic refusal boundaries passed."
+    },
+    "limits": "These are CPU observations with fake CUDA calls, synthetic tensor metadata and real sealed Programs. They do not establish GPU latency, unique cause of the prior CUPTI gap or an accepted GPU speedup. The Program-level canonical comparisons before the first stage are unchanged; each source retains its own original measurement evidence.",
+    "probe_failure": "The first CPU diagnostic used a noncanonical device_name and was refused before loading a fake module; cpu-dispatch-profile/failure.json and original probe remain. Its successor uses the canonical NVIDIA B300 fixture. This was a probe input error, not a Compiler defect.",
+    "promotion_disposition": "Shared runtime simplification only. No kernel promotion or GPU performance claim. A successor device guard and formal paired comparison require final source acceptance and the existing broker."
   }
 }
