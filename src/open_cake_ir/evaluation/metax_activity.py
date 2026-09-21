@@ -194,6 +194,7 @@ class McptiActivity:
     def finish(self):
         if not self._active or self._owner_thread != threading.get_ident():
             raise RuntimeError("MCPTI activity collection must finish on its owning thread")
+        failure = None
         try:
             self._call("mcptiActivityFlushAll", 1)
             self._disable()
@@ -202,14 +203,21 @@ class McptiActivity:
                 self._errors.append("MCPTI retained activity buffers after forced drain")
             if self._errors or self._dropped:
                 raise ValueError(f"MCPTI incomplete activity: dropped={self._dropped}, errors={self._errors}")
-            return {"source": "mcpti_activity", "api_version": self.version,
-                    "dropped_records": self._dropped, "pending_buffers": len(self._buffers),
-                    "records": list(self._rows)}
+        except BaseException as error:
+            failure = error
         finally:
             self._disable()
             self._active = False
             self._owner_thread = None
             self._session.release()
+        snapshot = {"source": "mcpti_activity", "api_version": self.version,
+                    "dropped_records": self._dropped, "pending_buffers": len(self._buffers),
+                    "records": list(self._rows)}
+        if failure is not None:
+            snapshot['collection_errors'] = [*self._errors, str(failure)]
+            failure.activity_snapshot = snapshot
+            raise failure
+        return snapshot
 
 
 

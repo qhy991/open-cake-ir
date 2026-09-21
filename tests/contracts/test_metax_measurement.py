@@ -89,6 +89,7 @@ class McptiMeasurements(unittest.TestCase):
     def test_forced_end_drain_refuses_buffers_the_sdk_did_not_return(self):
         import threading
         collector=object.__new__(McptiActivity)
+        collector.version=18
         collector._buffers={1:object()};collector._errors=[];collector._rows=[];collector._dropped=0
         collector._enabled=[];collector._active=True;collector._owner_thread=threading.get_ident();collector._session=threading.Lock()
         collector._session.acquire();calls=[]

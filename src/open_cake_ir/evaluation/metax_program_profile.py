@@ -39,6 +39,7 @@ def capture_program_activity(launch, *, candidate, admission, activity_library):
     try:
         activity = collector.finish()
     except BaseException as cleanup:
+        activity = getattr(cleanup, 'activity_snapshot', None)
         primary = LifecycleError(primary, cleanup) if primary is not None else cleanup
     raw = {'activity': activity, 'manifest': manifest.as_dict(),
            'stage_manifests': {name: item.as_dict() for name, item in manifests.items()},

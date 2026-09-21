@@ -76,6 +76,26 @@ class ProgramProfile(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError): program_profile_summary(raw)
         raw = deepcopy(self.raw); raw['stage_candidates'].pop(name)
         with self.assertRaises(ValueError): program_profile_summary(raw)
+
+    def test_incomplete_collector_retains_raw_rows_and_stays_rejected(self):
+        import threading
+        from open_cake_ir.evaluation.metax_activity import McptiActivity
+        from open_cake_ir.evaluation.metax_benchmark import kernel_records
+        collector = object.__new__(McptiActivity)
+        collector.version = 18
+        collector._rows = deepcopy(self.raw['activity']['records'])
+        collector._errors = ['callback failed']; collector._dropped = 2
+        collector._buffers = {}; collector._enabled = []; collector._active = True
+        collector._owner_thread = threading.get_ident(); collector._session = threading.Lock()
+        collector._session.acquire(); collector._call = lambda *args: None
+        with self.assertRaises(ValueError) as caught: collector.finish()
+        raw = caught.exception.activity_snapshot
+        self.assertEqual(raw['records'], self.raw['activity']['records'])
+        self.assertEqual(raw['dropped_records'], 2)
+        self.assertIn('callback failed', raw['collection_errors'])
+        self.assertFalse(collector._active)
+        with self.assertRaises(ValueError): kernel_records(raw)
+        with self.assertRaises(ValueError): kernel_records({**raw, 'dropped_records': 0})
         raw = deepcopy(self.raw); raw['activity']['records'][-1]['cbid'] = 56
         with self.assertRaises(ValueError): program_profile_summary(raw)
 

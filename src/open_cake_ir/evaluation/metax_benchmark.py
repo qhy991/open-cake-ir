@@ -28,6 +28,7 @@ def kernel_records(activity: Mapping) -> list[dict]:
             or activity.get("api_version") != 18 or activity.get("dropped_records") != 0
             or type(activity.get("dropped_records")) is not int
             or type(activity.get("pending_buffers")) is not int or activity["pending_buffers"] != 0
+            or activity.get('collection_errors')
             or not isinstance(activity.get("records"), (list, tuple))):
         raise ValueError("MACA activity source, ABI or dropped-record coverage differs")
     kernels, correlations, launches = [], set(), {}
