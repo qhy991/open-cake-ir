@@ -6,7 +6,7 @@ from typing import Mapping
 
 from .provider_documents import CANDIDATE_SET_ENVELOPE_V1, CODEX_DISABLED_FEATURES
 from ._documents import _canonical_json_bytes
-from .claude import CLAUDE_EVENT_CONTRACTS, CLAUDE_AUTHORING_TOOLS, terminal_schema
+from .claude import CLAUDE_EVENT_CONTRACTS, CLAUDE_AUTHORING_TOOLS, terminal_schema, response_model_aliases
 
 _AUTHORITY = {"revision", "qualification", "qualification_anchor", "executable_sha256"}
 _COMMON = {"model", "reasoning_effort", "removed_environment", "sandbox", "cwd_policy", "reference_visibility"}
@@ -46,14 +46,19 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
         raise ValueError("Study Contract provider configuration workspace/environment differs")
     harness = provider_harness(provider)
     if harness == "claude-code":
-        if (set(provider) != _AUTHORITY | _CLAUDE
+        fields = _CLAUDE | ({"response_model_aliases"} if "response_model_aliases" in provider else set())
+        aliases = provider.get("response_model_aliases", ())
+        response_model_aliases(provider["model"], aliases)
+        if "response_model_aliases" in provider and (not isinstance(aliases, list) or not aliases):
+            raise ValueError("Claude response aliases must be a nonempty explicit list")
+        if (set(provider) != _AUTHORITY | fields
                 or provider.get("sandbox") != "none" or provider.get("permission_mode") != "acceptEdits"
                 or provider.get("safe_mode") is not True or provider.get("tools") != list(CLAUDE_AUTHORING_TOOLS)
                 or provider.get("event_contract") not in CLAUDE_EVENT_CONTRACTS
                 or _canonical_json_bytes(provider.get("terminal_schema")) != _canonical_json_bytes(terminal_schema())
                 or provider["reasoning_effort"] not in {"low", "medium", "high", "xhigh", "max"}):
             raise ValueError("Study Contract Claude provider configuration or authoring scope differs")
-        return {**{name: provider[name] for name in _CLAUDE}, "submission_contract": CANDIDATE_SET_ENVELOPE_V1}
+        return {**{name: provider[name] for name in fields}, "submission_contract": CANDIDATE_SET_ENVELOPE_V1}
     if harness != "codex" or frozenset(provider) not in {
         frozenset(_AUTHORITY | _CODEX | {"web_search"}),
         frozenset(_AUTHORITY | _CODEX | {"event_contract"}),

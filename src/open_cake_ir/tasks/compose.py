@@ -234,9 +234,10 @@ def run_runtime_factory(project_root, runtime_config_path):
                 workspace=author_workspace,removed_environment=tuple(declared_provider['removed_environment']))
             if harness=='claude-code':
                 invocation = ClaudeInvocationBuilder(**common,cli_options=advertised_options(executable),
-                    event_contract=declared_provider['event_contract'])
+                    event_contract=declared_provider['event_contract'],
+                    response_aliases=declared_provider.get('response_model_aliases', ()))
                 provider = ClaudeRunProvider(qualification=qualification,builders={specification.run_id:invocation},
-                    task_packages=packages,adapter=ClaudeProviderAdapter())
+                    task_packages=packages,adapter=ClaudeProviderAdapter(response_aliases=invocation.response_aliases))
             else:
                 schema = _raw_reference_path(root,declared_provider['output_schema'],'provider.output_schema')
                 invocation = CodexInvocationBuilder(**common,code_mode_host=declared_provider['code_mode_host'],

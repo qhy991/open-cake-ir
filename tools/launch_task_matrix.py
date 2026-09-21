@@ -80,6 +80,8 @@ def _command(args, task: str, workspace: Path, qualification: tuple[Path, Path] 
         command.extend(("--depth", str(args.depth)))
     if args.provider_executable is not None:
         command.extend(("--provider-executable", str(args.provider_executable)))
+    for alias in getattr(args, "response_model_alias", ()):
+        command.extend(("--response-model-alias", alias))
     if args.provider_revision is not None:
         command.extend(("--provider-revision", args.provider_revision))
     if args.incumbent_registry is not None and prepared_baseline is None:
@@ -100,6 +102,7 @@ def main(argv=None) -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
+    parser.add_argument("--response-model-alias", action="append", default=[])
     parser.add_argument("--workspace-root", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path)
     parser.add_argument("--kernelctl", type=Path)

@@ -355,9 +355,23 @@ def claude_model_usage(terminal: Mapping, main_model: str, *, allow_zero: bool =
     return total, tuple(activities)
 
 
+def response_model_aliases(model: str, aliases=()) -> tuple[str, ...]:
+    """Validate explicitly declared response names; never infer equivalence by spelling.
+
+    The request/init model and modelUsage owner remain exact. This allowlist applies
+    only to assistant response metadata, whose original names remain in raw evidence.
+    """
+    if (not isinstance(aliases, (list, tuple)) or any(
+            not isinstance(name, str) or not name or name != name.strip() or "\x00" in name
+            or name == model for name in aliases) or len(set(aliases)) != len(aliases)):
+        raise ValueError("Claude response model aliases differ")
+    return tuple(aliases)
+
+
 def reported_claude_usage(raw_events: bytes, *, expected_model: str,
                           expected_thread_id: str | None = None,
-                          event_contract: str = CLAUDE_EVENT_CONTRACT) -> ReportedProviderUsage | None:
+                          event_contract: str = CLAUDE_EVENT_CONTRACT,
+                          response_aliases=()) -> ReportedProviderUsage | None:
     """Observe a complete native usage statement without accepting its candidate.
 
     Invalid/partial or unbound reporting remains unavailable, not zero. A reported
@@ -379,12 +393,13 @@ def reported_claude_usage(raw_events: bytes, *, expected_model: str,
                 or terminal.get("type") != "result" or not isinstance(terminal.get("subtype"), str)
                 or not terminal["subtype"] or type(terminal.get("is_error")) is not bool):
             return None
+        admitted_models = {expected_model, *response_model_aliases(expected_model, response_aliases)}
         for event in events[1:-1]:
             if event.get("type") == "result" or (event.get("type") == "system" and event.get("subtype") == "init"):
                 return None
             if event.get("type") == "assistant" and event.get("parent_tool_use_id") is None:
                 message = event.get("message")
-                if not isinstance(message, Mapping) or message.get("model") != expected_model:
+                if not isinstance(message, Mapping) or message.get("model") not in admitted_models:
                     return None
         tokens, _ = claude_model_usage(terminal, expected_model, allow_zero=True)
         return ReportedProviderUsage(event_contract, thread_id, tokens)
@@ -415,7 +430,8 @@ class ClaudeCandidateWriteUnwitnessed(ValueError):
 
 
 def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: str,
-                            event_contract: str = CLAUDE_EVENT_CONTRACT) -> ParsedClaudeTurnEvents:
+                            event_contract: str = CLAUDE_EVENT_CONTRACT,
+                            response_aliases=()) -> ParsedClaudeTurnEvents:
     """Require one completed native stream, coherent session and successful writes."""
     if event_contract not in CLAUDE_EVENT_CONTRACTS:
         raise ValueError("Claude event contract differs")
@@ -572,7 +588,8 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
         raise ValueError("Claude candidate write lifecycle is incomplete")
     if terminal_tool_failed and not terminal_tool_completed:
         raise ValueError("Claude schema terminal tool did not recover")
-    if len(models) != 1 or models[0] != initial.get("model"):
+    admitted_models = {initial.get("model"), *response_model_aliases(initial.get("model"), response_aliases)}
+    if not models or models[0] != initial.get("model") or not set(models) <= admitted_models:
         raise ValueError("Claude main conversation model identity differs")
     tokens, model_activity = claude_model_usage(terminal, models[0])
     return ParsedClaudeTurnEvents(
@@ -585,7 +602,8 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
 
 
 def candidate_write_declared_unwitnessed(raw_events: bytes, *, expected_terminal_message: str,
-                                         event_contract: str = CLAUDE_EVENT_CONTRACT) -> bool:
+                                         event_contract: str = CLAUDE_EVENT_CONTRACT,
+                                         response_aliases=()) -> bool:
     """Whether a retained stream is exactly the declared-but-unwitnessed boundary.
 
     Replay's check, not a live decision: the fault payload's exception type is a
@@ -594,7 +612,7 @@ def candidate_write_declared_unwitnessed(raw_events: bytes, *, expected_terminal
     """
     try:
         parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal_message,
-                                 event_contract=event_contract)
+                                 event_contract=event_contract, response_aliases=response_aliases)
     except ClaudeCandidateWriteUnwitnessed:
         return True
     except (UnicodeError, ValueError, TypeError, OverflowError, RecursionError):
@@ -606,12 +624,13 @@ def normalize_claude_turn(raw_events: bytes, *, candidate_path: Path, expected_c
                           expected_terminal_message: str, expected_thread_id: str | None = None,
                           event_contract: str = CLAUDE_EVENT_CONTRACT,
                           submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
+                          response_aliases=(),
                           arm: str | None = None, environment_kind: str = "open_cake", maximum_candidates_per_turn: int = 1) -> ProviderTurn:
     """Seal the existing candidate envelope; Python remains source inside its member."""
     if event_contract not in CLAUDE_EVENT_CONTRACTS or expected_change not in {"add", "update"}:
         raise ValueError("Claude event or candidate lifecycle contract differs")
     parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal_message,
-                                     event_contract=event_contract)
+                                     event_contract=event_contract, response_aliases=response_aliases)
     if (parsed.candidate_path != str(candidate_path.absolute()) or
             expected_change == "add" and parsed.write_tools[0] != "Write"):
         raise ValueError("Claude candidate path or initial write differs")
@@ -670,7 +689,8 @@ class ClaudeInvocationBuilder:
     def __init__(self, *, executable: Path, provider_revision: str, model: str,
                  reasoning_effort: str, workspace: Path, removed_environment: tuple[str, ...],
                  cli_options: frozenset[str] | set[str] | tuple[str, ...],
-                 event_contract: str = CLAUDE_EVENT_CONTRACT) -> None:
+                 event_contract: str = CLAUDE_EVENT_CONTRACT, response_aliases=()) -> None:
+        self.response_aliases = response_model_aliases(model, response_aliases)
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
             raise ValueError("Claude builder event contract differs")
         self._event_contract = event_contract
@@ -712,7 +732,8 @@ class ClaudeInvocationBuilder:
 
     @property
     def configuration(self) -> Mapping[str, object]:
-        return {"harness": "claude-code", "model": self._model, "reasoning_effort": self._effort,
+        return {**({"response_model_aliases": list(self.response_aliases)} if self.response_aliases else {}),
+                "harness": "claude-code", "model": self._model, "reasoning_effort": self._effort,
                 "permission_mode": "acceptEdits", "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 "removed_environment": list(self._removed_environment), "event_contract": self._event_contract,
@@ -786,10 +807,11 @@ class ClaudeInvocationBuilder:
 class ClaudeProviderAdapter:
     """One already-authorized invocation through the shared Lab supervisor."""
 
-    def __init__(self, *, timeout_seconds: int = 1800) -> None:
+    def __init__(self, *, timeout_seconds: int = 1800, response_aliases=()) -> None:
         if type(timeout_seconds) is not int or timeout_seconds <= 0:
             raise ValueError("Claude provider timeout must be positive")
         self._timeout_seconds = timeout_seconds
+        self.response_aliases = response_model_aliases(None, response_aliases)
 
     def execute(self, invocation: ProviderInvocation, *, candidate_path: Path, expected_change: str,
                 expected_terminal_message: str, event_contract: str = CLAUDE_EVENT_CONTRACT,
@@ -826,20 +848,21 @@ class ClaudeProviderAdapter:
             raise RunProtocolFault("provider_fault", str(error), artifact_payloads={
                 "provider_stdout": error.stdout, "provider_stderr": error.stderr},
                 reported_usage=reported_claude_usage(error.stdout, expected_model=requested_model,
-                    expected_thread_id=invocation.thread_id, event_contract=event_contract)) from error
+                    expected_thread_id=invocation.thread_id, event_contract=event_contract,
+                    response_aliases=self.response_aliases)) from error
         except OSError as error:
             raise RunProtocolFault("provider_fault", str(error)) from error
         try:
             if completed.returncode != 0:
                 raise ValueError(f"Claude process failed with exit code {completed.returncode}")
             parsed = parse_claude_turn_events(completed.stdout, expected_terminal_message=expected_terminal_message,
-                                             event_contract=event_contract)
-            if parsed.reported_models != (requested_model,):
+                                             event_contract=event_contract, response_aliases=self.response_aliases)
+            if parsed.reported_models[0] != requested_model:
                 raise ValueError("Claude reported model differs from the exact requested model")
             return normalize_claude_turn(completed.stdout, candidate_path=candidate_path,
                 expected_change=expected_change, expected_terminal_message=expected_terminal_message,
                 expected_thread_id=invocation.thread_id, event_contract=event_contract,
-                submission_contract=submission_contract, arm=arm, environment_kind=environment_kind,
+                response_aliases=self.response_aliases, submission_contract=submission_contract, arm=arm, environment_kind=environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn)
         except ClaudeCandidateWriteUnwitnessed as error:
             # F-2026-09-16-002: the boundary shape gets its own fault type so the
@@ -848,13 +871,15 @@ class ClaudeProviderAdapter:
             raise ProviderBoundaryDeclarationFault(str(error), artifact_payloads={
                 "provider_stdout": completed.stdout, "provider_stderr": completed.stderr},
                 reported_usage=reported_claude_usage(completed.stdout, expected_model=requested_model,
-                    expected_thread_id=invocation.thread_id, event_contract=event_contract),
+                    expected_thread_id=invocation.thread_id, event_contract=event_contract,
+                    response_aliases=self.response_aliases),
                 observed_quota=observed_claude_quota_at_fault(completed.stdout)) from error
         except (OSError, ValueError, TypeError, OverflowError, RecursionError) as error:
             raise RunProtocolFault("provider_fault", str(error), artifact_payloads={
                 "provider_stdout": completed.stdout, "provider_stderr": completed.stderr},
                 reported_usage=reported_claude_usage(completed.stdout, expected_model=requested_model,
-                    expected_thread_id=invocation.thread_id, event_contract=event_contract),
+                    expected_thread_id=invocation.thread_id, event_contract=event_contract,
+                    response_aliases=self.response_aliases),
                 observed_quota=observed_claude_quota_at_fault(completed.stdout)) from error
 
 
@@ -874,5 +899,11 @@ class ClaudeRunProvider(QualifiedRunProvider):
         if any(builder.configuration.get("harness") != "claude-code" or
                builder.configuration.get("event_contract") not in CLAUDE_EVENT_CONTRACTS for builder in builders.values()):
             raise ValueError("Claude Run builder event contract differs")
+        aliases = {builder.response_aliases for builder in builders.values()}
+        if len(aliases) != 1:
+            raise ValueError("Claude response aliases differ across Run builders")
+        declared_aliases = next(iter(aliases))
+        if adapter is not None and adapter.response_aliases != declared_aliases:
+            raise ValueError("Claude adapter response aliases differ from qualification")
         super().__init__(qualification=qualification, builders=builders, task_packages=task_packages,
-                         adapter=adapter or ClaudeProviderAdapter())
+                         adapter=adapter or ClaudeProviderAdapter(response_aliases=declared_aliases))
