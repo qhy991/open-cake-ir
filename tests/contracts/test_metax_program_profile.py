@@ -16,7 +16,7 @@ from open_cake_ir.evaluation.metax_program_profile import (
 from open_cake_ir.evaluation.metax_observations import NOT_COLLECTED
 from open_cake_ir.evaluation.paired import candidate_identity
 from open_cake_ir.evaluation.program import program_components
-from open_cake_ir.evaluation.triton_metax import MacaDeviceAdmission
+from open_cake_ir.evaluation.triton_metax import MetaxDeviceAdmission
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.lab.faults import RunProtocolFault
 from open_cake_ir.tasks.program_evaluation import PreparedProgramCase
@@ -35,7 +35,7 @@ class ProgramProfile(unittest.TestCase):
         cls.candidate = build(attention.launch_plan(cls.workload), cls.workload,
                               Compiler.load(ROOT, ROOT / 'compiler/revision.json'))
         cls.manifest, cls.children, cls.manifests = program_components(cls.candidate)
-        cls.admission = MacaDeviceAdmission('xcore1002', 'maca-123456789abc', 'xcore1002',
+        cls.admission = MetaxDeviceAdmission('maca-123456789abc', 'xcore1002', 'xcore1002',
             'MetaX C550', 64, '0000:0f:00', '/opt/maca-3.5.3/lib/libmcruntime.so')
         records = []
         for index, stage in enumerate(cls.manifest.program.stages):
