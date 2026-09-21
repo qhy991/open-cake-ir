@@ -14,7 +14,6 @@ from open_cake_ir.evaluation.torch_tensor_inputs import LoadedTorchTensorInputs
 from open_cake_ir.evaluation.triton_metax import MetaxDeviceAdmission
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks import evaluate as worker, workloads
-from open_cake_ir.tasks.normalization.study import evaluation_policy
 from open_cake_ir.tasks.solx_fib import attention
 from tests.contracts.test_native_program_tensors import build
 
@@ -44,7 +43,8 @@ class NativeTensorWorker(unittest.TestCase):
         admission = MetaxDeviceAdmission('maca-123456789abc', 'xcore1002', 'xcore1002',
                                         'MetaX C550', 64, '0000:0f:00', '/opt/maca-3.5.3/lib/libmcruntime.so')
         with tempfile.TemporaryDirectory() as directory:
-            authority = worker._Authority({'purpose': 'confirmatory', 'evaluation_protocol': evaluation_policy(workload)},
+            policy = {'case_id': 'primary', 'validation_case_ids': list(workload.case_ids)}
+            authority = worker._Authority({'purpose': 'confirmatory', 'evaluation_protocol': policy},
                 Path(directory), None, workload, manifest, candidate, candidate.artifact_payloads,
                 'primary', allocation_mode='local_serialized', timed_assay_available=False)
             with patch.object(workloads, 'materialize_case', side_effect=AssertionError('flat inputs used')), patch.object(
