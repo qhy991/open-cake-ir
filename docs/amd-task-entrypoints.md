@@ -43,8 +43,10 @@ selector is owned by the single-task launcher, rather than duplicated in the mat
 executing GPU kernels. A successful build does not establish device correctness or
 performance; those require the ordinary task evaluation against every input case.
 
-The gfx1151 GELU tasks still require an admitted `tanh` contract. AKA histogram and
-max-pool have CPU contracts but no portable starters. DeepSeek-V4 routing, full
+The gfx1151 GELU tasks use the Target's measured `ocml.tanh.f32` declaration. Its
+196,915-input pointwise device probe is cited in `compiler/targets/gfx1151.json`;
+full task correctness and performance remain separate evaluations. AKA histogram
+and max-pool have CPU contracts but no portable starters. DeepSeek-V4 routing, full
 SoL/FIB Attention/MoE and the legacy specialized tasks retain their own execution
 contracts. These are remaining adaptation work, not implied support from a renamed
 backend or a successful unrelated kernel.
