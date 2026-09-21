@@ -59,7 +59,7 @@ class ProgramProfile(unittest.TestCase):
     def test_missing_extra_reordered_or_other_stream_stage_is_refused(self):
         variants = []
         for key, value in [('name', 'another_kernel'), ('stream', 1), ('grid', [999, 1, 1]),
-                           ('dynamic_shared_bytes', 4096), ('end_ns', 9000)]:
+                           ('dynamic_shared_bytes', 4096), ('end_ns', 9001)]:
             raw = deepcopy(self.raw); raw['activity']['records'][1][key] = value; variants.append(raw)
         raw = deepcopy(self.raw); raw['activity']['records'].pop(1); variants.append(raw)
         raw = deepcopy(self.raw); raw['activity']['records'] += capture(kernel('extra', 99, 20000))['records']; variants.append(raw)
