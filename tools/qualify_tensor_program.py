@@ -94,6 +94,77 @@ def _admit_captured_host(executor):
     return executor.admit_host()
 
 
+def measure_program(args, candidate, workload, protocol, admission, prepared, expected_values, host, result):
+    """Bounded timer discovery, with the ordinary fresh-output check on every call.
+
+    No paired policy or timing EvaluationReceipt is minted by this command.
+    """
+    from open_cake_ir.compiler.target import declared_target
+    from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate
+    from open_cake_ir.evaluation.metax_program_benchmark import McptiProgramBenchmark
+    from open_cake_ir.evaluation.timing import summarize_cohort
+    from open_cake_ir.evaluation.loaders import LifecycleError
+    from open_cake_ir.tasks.evaluate import _fresh_tile_cohort
+    from open_cake_ir.lab.faults import RunProtocolFault
+    manifest = parse_launch_manifest(json.loads(candidate.artifact_payloads['launch_manifest']))
+    preflight = evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared)
+    for role, payload in preflight.artifact_payloads.items():
+        (args.output / ('preflight-' + role + '.json')).write_bytes(payload)
+    if not preflight.correctness_passed:
+        raise ValueError('Program timer discovery requires a passing original oracle')
+    diagnostic = {'scope': 'native Program timer discovery; not paired performance or Run qualification',
+                  'candidate': candidate_identity(candidate), 'case_id': protocol.case_id, 'cohorts': [],
+                  'maximum_cv': 0.05, 'passed': False}
+    loaded = None
+    benchmark = None
+    primary = None
+    try:
+        loaded = LoadedTorchTensorCandidate(candidate, manifest, prepared.inputs, admission)
+        benchmark = McptiProgramBenchmark(candidate, activity_library=host['activity_library'],
+            l2_cache_bytes=declared_target(candidate.target).l2_cache_bytes)
+        for index in range(5):
+            samples, checks = _fresh_tile_cohort(loaded, benchmark, workload, prepared.inputs, expected_values,
+                samples_per_cohort=25, route_calls_per_cohort=36)
+            row = {'cohort': index, 'samples_ms': samples, 'summary': summarize_cohort(samples),
+                   'output_check': checks, 'native_activity': benchmark.last_activity}
+            write(args.output / ('cohort-' + str(index) + '.json'), row)
+            diagnostic['cohorts'].append({key: value for key, value in row.items() if key != 'native_activity'})
+            if not checks['passed']:
+                raise ValueError('Program timer fresh output failed the original oracle')
+        diagnostic['resources'] = loaded.loaded.resources
+    except BaseException as error:
+        primary = error
+        diagnostic.update(error=str(error), failure_class=type(error).__name__,
+                          rejected_activity=None if benchmark is None else benchmark.last_activity,
+                          partial_activity=getattr(error, 'activity_snapshot', None))
+    finally:
+        if loaded is not None:
+            diagnostic['kernel_calls'] = loaded.loaded.launch_calls
+            try:
+                loaded.close()
+                if not loaded.loaded.closed:
+                    raise ValueError('Program timer modules remain open')
+            except BaseException as cleanup:
+                primary = LifecycleError(primary, cleanup) if primary is not None else cleanup
+            diagnostic['module_unloaded'] = loaded.loaded.closed
+    if primary is None:
+        postflight = evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared)
+        for role, payload in postflight.artifact_payloads.items():
+            (args.output / ('postflight-' + role + '.json')).write_bytes(payload)
+        diagnostic.update(correctness_passed=postflight.correctness_passed,
+            measurement_quality_passed=all(row['summary']['cv'] <= 0.05 for row in diagnostic['cohorts']))
+        diagnostic['passed'] = diagnostic['correctness_passed'] and diagnostic['measurement_quality_passed']
+    write(args.output / 'measurement-diagnostic.json', diagnostic)
+    if primary is not None:
+        raise RunProtocolFault('harness_fault', str(primary),
+            artifact_payloads={'measurement_diagnostic': canonical_json_bytes(_json_projection(diagnostic))}) from primary
+    result.update(phase='device_complete', scope=diagnostic['scope'], passed=diagnostic['passed'],
+                  correctness_passed=diagnostic['correctness_passed'],
+                  measurement_quality_passed=diagnostic['measurement_quality_passed'],
+                  kernel_calls=diagnostic['kernel_calls'] + 2 * manifest.kernels_per_call,
+                  timing_samples=125)
+
+
 def build(args, result):
     from launch_task import _triton_toolchain_config
     from open_cake_ir.lab.build import TritonToolchainBuilder, build_program_candidate
@@ -143,12 +214,16 @@ def evaluate(args, result):
     platform = platform_for(workload.target)
     if platform.code_object not in {CodeObject.HSACO, CodeObject.MCFATBIN}:
         raise ValueError('this local tensor qualification command implements HIP and MACA allocation adapters')
-    if args.command == 'profile' and platform.code_object is not CodeObject.MCFATBIN:
+    if args.command in {'profile', 'measure'} and platform.code_object is not CodeObject.MCFATBIN:
         raise ValueError('this Program profile source implements only MACA attribution')
+    if args.command == 'measure' and (not candidate.is_program or args.case != manifest.case_id):
+        raise ValueError('Program timer discovery requires a sealed primary Program')
     protocol = EvaluationProtocol('tensor-program-correctness', 'confirmatory', workload.canonical_sha256,
                                   args.case, 'none')
     result.update(phase='cpu_preparation', target=workload.target, workload_id=workload.workload_id, case_id=args.case)
     prepared = PreparedProgramCase(workload, args.case)
+    expected_values = ({name: value.reshape(-1).tolist() for name, value in prepared.expected.items()}
+                       if args.command == 'measure' else None)
     executor = resolve_executor(ROOT, CURRENT_RELEASE_BINDING, 'tensor Program evaluation', template=True, target=workload.target)
     result.update(phase='device', job_id=admit_local_job(platform.local_job_prefix), allocation_mode='local_serialized',
                   external_gpu_activity='not_excluded')
@@ -161,6 +236,8 @@ def evaluate(args, result):
     elif platform.code_object is CodeObject.MCFATBIN:
         from open_cake_ir.evaluation.triton_metax import observe_local_metax
         admission = observe_local_metax(workload.target, runtime_library=host['runtime_library'])
+    if args.command == 'measure':
+        return measure_program(args, candidate, workload, protocol, admission, prepared, expected_values, host, result)
     receipt = (profile_program(candidate, workload, protocol, admission, prepared, host)
                if args.command == 'profile' else
                evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared))
@@ -184,10 +261,11 @@ def main():
     builder.add_argument('--program', type=Path, required=True)
     runner = sub.add_parser('evaluate')
     profiler = sub.add_parser('profile')
-    for command in (runner, profiler):
+    measurement = sub.add_parser('measure', help='bounded native timer discovery, not a paired performance qualification')
+    for command in (runner, profiler, measurement):
         command.add_argument('--built', type=Path, required=True)
         command.add_argument('--case', required=True)
-    for command in (builder, runner, profiler):
+    for command in (builder, runner, profiler, measurement):
         command.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     args.output = args.output.resolve()

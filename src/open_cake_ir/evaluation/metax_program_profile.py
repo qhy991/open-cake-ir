@@ -8,7 +8,7 @@ from typing import Mapping
 
 from open_cake_ir.serialization import canonical_json_bytes
 from .attribution import TensorProfileFormat, load_instrumented_profile
-from .metax_activity import activity_collector
+from .metax_activity import activity_collector, collect_activity
 from .metax_benchmark import kernel_records, validate_loaded_resources
 from .metax_observations import NOT_COLLECTED, validate_profile_correctness
 from .triton_metax import validate_maca_admission
@@ -20,27 +20,15 @@ def capture_program_activity(launch, *, candidate, admission, activity_library):
     import torch
     from .program import program_components
     from .paired import candidate_identity
-    from .loaders import LifecycleError
     manifest, children, manifests = program_components(candidate)
     collector = activity_collector(activity_library)
-    torch.cuda.synchronize()
-    collector.begin()
     primary = None
     activity = None
     try:
-        launch()
-        torch.cuda.synchronize()
+        activity = collect_activity(collector, launch, synchronize=torch.cuda.synchronize)
     except BaseException as error:
         primary = error
-        try:
-            torch.cuda.synchronize()
-        except BaseException as cleanup:
-            primary = LifecycleError(primary, cleanup)
-    try:
-        activity = collector.finish()
-    except BaseException as cleanup:
-        activity = getattr(cleanup, 'activity_snapshot', None)
-        primary = LifecycleError(primary, cleanup) if primary is not None else cleanup
+        activity = getattr(error, 'activity_snapshot', None)
     raw = {'activity': activity, 'manifest': manifest.as_dict(),
            'stage_manifests': {name: item.as_dict() for name, item in manifests.items()},
            'stage_candidates': {name: candidate_identity(item) for name, item in children.items()},
@@ -53,29 +41,21 @@ def capture_program_activity(launch, *, candidate, admission, activity_library):
     return raw
 
 
-def program_profile_summary(raw):
+def program_launch_manifests(raw):
+    """Read the existing sealed parent/child launch facts for profile or timing."""
     from .core import TensorLaunchManifest
     from .program import ProgramLaunchManifest, stage_abi
     from .paired import candidate_from_identity
-    if not isinstance(raw, Mapping) or list(raw.get('not_collected') or ()) != list(NOT_COLLECTED):
-        raise ValueError('MACA Program profile coverage differs')
+    if not isinstance(raw, Mapping):
+        raise ValueError('MACA Program launch facts differ')
     manifest = ProgramLaunchManifest.from_dict(raw.get('manifest'))
     names = [stage.name for stage in manifest.program.stages]
     if (not isinstance(raw.get('stage_manifests'), Mapping)
             or not isinstance(raw.get('stage_candidates'), Mapping)
             or set(raw['stage_manifests']) != set(names) or set(raw['stage_candidates']) != set(names)):
         raise ValueError('MACA Program profile must bind every sealed stage')
-    admission = raw.get('device_admission')
-    validate_maca_admission(admission, target_id=manifest.target,
-                           job_id=admission.get('broker_job_id') if isinstance(admission, Mapping) else None)
-    records = kernel_records(raw.get('activity'))
-    if len(records) != len(names):
-        raise ValueError('MACA Program profile dispatch count differs')
-    launches = {row['correlation']: row for row in raw['activity']['records'] if row['kind'] == 5}
-    stages = []
-    previous = None
-    stream = None
-    for stage, kernel in zip(manifest.program.stages, records, strict=True):
+    manifests = {}
+    for stage in manifest.program.stages:
         child = candidate_from_identity(raw['stage_candidates'][stage.name])
         spec = TensorLaunchManifest.from_dict(raw['stage_manifests'][stage.name])
         spec.check_complete_domain()
@@ -84,8 +64,20 @@ def program_profile_summary(raw):
                 or child.target != spec.target or child.entry_point != spec.kernel_name
                 or child.launch_spec_sha256 != spec.canonical_sha256
                 or child.artifact_roles.get('lowered_source') != manifest.lowered_sources[stage.name]
-                or spec.hidden_null_pointer_parameters != 0 or spec.aligned_variant
-                or kernel['name'] != spec.kernel_name or tuple(kernel['grid']) != spec.grid
+                or spec.hidden_null_pointer_parameters != 0 or spec.aligned_variant):
+            raise ValueError('MACA Program stage differs from its sealed native launch')
+        manifests[stage.name] = spec
+    return manifest, manifests
+
+
+def validate_program_dispatches(records, launches, manifests):
+    """One complete ordered invocation, already decoded by kernel_records."""
+    if len(records) != len(manifests):
+        raise ValueError('MACA Program profile dispatch count differs')
+    previous = None
+    stream = None
+    for spec, kernel in zip(manifests.values(), records, strict=True):
+        if (kernel['name'] != spec.kernel_name or tuple(kernel['grid']) != spec.grid
                 or tuple(kernel['block']) != spec.block
                 or kernel['dynamic_shared_bytes'] != spec.dynamic_shared_memory_bytes
                 or launches[kernel['correlation']]['cbid'] != 60):
@@ -95,13 +87,29 @@ def program_profile_summary(raw):
             raise ValueError('MACA Program stages changed stream or context')
         if previous is not None and kernel['start_ns'] < previous:
             raise ValueError('MACA ordered Program stages overlap')
-        stages.append({'stage': stage.name, 'kernel_name': spec.kernel_name,
+        previous, stream = kernel['end_ns'], current
+
+
+def program_profile_summary(raw):
+    if not isinstance(raw, Mapping) or list(raw.get('not_collected') or ()) != list(NOT_COLLECTED):
+        raise ValueError('MACA Program profile coverage differs')
+    manifest, manifests = program_launch_manifests(raw)
+    admission = raw.get('device_admission')
+    validate_maca_admission(admission, target_id=manifest.target,
+                           job_id=admission.get('broker_job_id') if isinstance(admission, Mapping) else None)
+    records = kernel_records(raw.get('activity'))
+    launches = {row['correlation']: row for row in raw['activity']['records'] if row['kind'] == 5}
+    validate_program_dispatches(records, launches, manifests)
+    stages = []
+    previous = None
+    for name, kernel in zip(manifests, records, strict=True):
+        stages.append({'stage': name, 'kernel_name': manifests[name].kernel_name,
             'device_time_us': (kernel['end_ns'] - kernel['start_ns']) / 1000,
             'preceding_gap_us': 0 if previous is None else (kernel['start_ns'] - previous) / 1000,
             **{key: kernel[key] for key in ('correlation', 'grid', 'block', 'registers_per_thread',
                                            'static_shared_bytes', 'dynamic_shared_bytes')},
             'mcpti_reported_local_bytes_per_thread': kernel['local_bytes_per_thread']})
-        previous, stream = kernel['end_ns'], current
+        previous = kernel['end_ns']
     return {'coverage': 'one_ordered_program_and_all_stage_resources', 'stages': stages,
             'program_span_us': (records[-1]['end_ns'] - records[0]['start_ns']) / 1000,
             'summed_stage_time_us': sum(row['device_time_us'] for row in stages),
