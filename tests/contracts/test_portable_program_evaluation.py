@@ -379,7 +379,7 @@ class PortableProgramEvaluation(unittest.TestCase):
                          patch('open_cake_ir.evaluation.triton_metax.observe_local_metax', return_value='maca-admission') as maca, \
                          patch.object(tool, 'evaluate_program_case', return_value=receipt) as evaluate:
                         result = {}
-                        tool.evaluate(SimpleNamespace(built=root, case='primary', output=output), result)
+                        tool.evaluate(SimpleNamespace(command='evaluate', built=root, case='primary', output=output), result)
                     expected = 'maca-admission' if kind == 'maca' else 'hip-admission'
                     self.assertEqual(evaluate.call_args.args[3], expected)
                     self.assertEqual(evaluate.call_args.kwargs['prepared'], 'prepared-fixture')
