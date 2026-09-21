@@ -82,10 +82,11 @@ def comparison_roles(metadata):
     if metadata.get('kind') == 'explicit_alignment_ablation':
         roles.update(optimized='same-source candidate with guarded AOT alignment variants',
                      starter='unchanged pre-specialization optimized binary')
-    elif metadata.get('kind') == 'authored_schedule_comparison':
+    elif metadata.get('kind') in {'authored_schedule_comparison', 'authored_program_comparison'}:
         control = metadata.get('control_role')
         if control not in ('optimized','starter'):raise ValueError('authored comparison control role differs')
-        roles.update(optimized='new authored complete Cake Schedule',
+        kind = 'Program' if metadata['kind']=='authored_program_comparison' else 'Schedule'
+        roles.update(optimized='new authored complete Cake '+kind,
                      starter='unchanged old optimized binary' if control=='optimized' else 'unchanged original Cake starter')
     return roles
 
