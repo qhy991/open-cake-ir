@@ -102,6 +102,7 @@ def measure_program(args, candidate, workload, protocol, admission, prepared, ex
     from open_cake_ir.compiler.target import declared_target
     from open_cake_ir.evaluation.core import LoadedTorchTensorCandidate
     from open_cake_ir.evaluation.metax_program_benchmark import McptiProgramBenchmark
+    from open_cake_ir.evaluation.metax_benchmark import kernel_records, validate_loaded_resources
     from open_cake_ir.evaluation.timing import summarize_cohort
     from open_cake_ir.evaluation.loaders import LifecycleError
     from open_cake_ir.tasks.evaluate import _fresh_tile_cohort
@@ -129,8 +130,15 @@ def measure_program(args, candidate, workload, protocol, admission, prepared, ex
                    'output_check': checks, 'native_activity': benchmark.last_activity}
             write(args.output / ('cohort-' + str(index) + '.json'), row)
             diagnostic['cohorts'].append({key: value for key, value in row.items() if key != 'native_activity'})
+            records = kernel_records(benchmark.last_activity['activity'])
+            width = manifest.kernels_per_call + 1
+            for start in range(0, len(records), width):
+                for stage, kernel in zip(manifest.program.stages, records[start + 1:start + width], strict=True):
+                    validate_loaded_resources(loaded.loaded.resources['stages'][stage.name], kernel)
             if not checks['passed']:
                 raise ValueError('Program timer fresh output failed the original oracle')
+        if loaded.loaded.launch_calls != 5 * 36 * manifest.kernels_per_call:
+            raise ValueError('Program timer native call count differs from the fresh invocation budget')
         diagnostic['resources'] = loaded.loaded.resources
     except BaseException as error:
         primary = error
@@ -148,16 +156,20 @@ def measure_program(args, candidate, workload, protocol, admission, prepared, ex
                 primary = LifecycleError(primary, cleanup) if primary is not None else cleanup
             diagnostic['module_unloaded'] = loaded.loaded.closed
     if primary is None:
-        postflight = evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared)
-        for role, payload in postflight.artifact_payloads.items():
-            (args.output / ('postflight-' + role + '.json')).write_bytes(payload)
-        diagnostic.update(correctness_passed=postflight.correctness_passed,
-            measurement_quality_passed=all(row['summary']['cv'] <= 0.05 for row in diagnostic['cohorts']))
-        diagnostic['passed'] = diagnostic['correctness_passed'] and diagnostic['measurement_quality_passed']
+        try:
+            postflight = evaluate_program_case(candidate, workload, protocol, admission, prepared=prepared)
+            for role, payload in postflight.artifact_payloads.items():
+                (args.output / ('postflight-' + role + '.json')).write_bytes(payload)
+            diagnostic.update(correctness_passed=postflight.correctness_passed,
+                measurement_quality_passed=all(row['summary']['cv'] <= 0.05 for row in diagnostic['cohorts']))
+            diagnostic['passed'] = diagnostic['correctness_passed'] and diagnostic['measurement_quality_passed']
+        except Exception as error:
+            primary = error
     write(args.output / 'measurement-diagnostic.json', diagnostic)
     if primary is not None:
         raise RunProtocolFault('harness_fault', str(primary),
-            artifact_payloads={'measurement_diagnostic': canonical_json_bytes(_json_projection(diagnostic))}) from primary
+            artifact_payloads={**getattr(primary, 'artifact_payloads', {}),
+                'measurement_diagnostic': canonical_json_bytes(_json_projection(diagnostic))}) from primary
     result.update(phase='device_complete', scope=diagnostic['scope'], passed=diagnostic['passed'],
                   correctness_passed=diagnostic['correctness_passed'],
                   measurement_quality_passed=diagnostic['measurement_quality_passed'],
