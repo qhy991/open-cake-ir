@@ -38,6 +38,10 @@ class TaskMatrixLaunchTests(unittest.TestCase):
         ordinary = matrix._command(args, "rmsnorm", self.root / "a", None)
         contraction = matrix._command(args, "gemm", self.root / "b", None)
         legacy = matrix._command(args, "gemm_bias", self.root / "c", None)
+        args.response_model_alias = ["vendor/m"]
+        declared = matrix._command(args, "rmsnorm", self.root / "alias", None)
+        self.assertEqual(declared[declared.index("--response-model-alias") + 1], "vendor/m")
+        self.assertNotIn("--response-model-alias", ordinary)
         self.assertNotIn("--depth", ordinary)
         for command in (contraction, legacy):
             self.assertEqual(command[command.index("--depth") + 1], "17")

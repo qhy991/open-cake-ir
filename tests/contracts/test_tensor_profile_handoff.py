@@ -50,6 +50,22 @@ class TensorProfileHandoffTests(unittest.TestCase):
             self.profile['raw']={'value':8}
             with self.assertRaisesRegex(ValueError,'synthetic raw'):self.receipt()
 
+    def test_program_source_checks_its_logical_name_without_relaxing_native_names(self):
+        self.profile['kernel_name'] = 'sealed-attention-program'
+        arguments = dict(kind=self.kind, job_prefix='synthetic', label='synthetic',
+            summary=lambda raw: raw, raw_name='record', expected_candidate_sha256='a'*64,
+            expected_case_id='primary', expected_protocol_sha256=self.policy_id)
+        payload = canonical_json_bytes(self.profile)
+        with self.assertRaisesRegex(ValueError, 'identity differs'):
+            load_instrumented_profile(payload, **arguments)
+        result = load_instrumented_profile(payload, **arguments,
+            name_valid=lambda name: name == 'sealed-attention-program')
+        self.assertEqual(result['kernel_name'], 'sealed-attention-program')
+        self.profile['kernel_name'] = 'another-program'
+        with self.assertRaisesRegex(ValueError, 'identity differs'):
+            load_instrumented_profile(canonical_json_bytes(self.profile), **arguments,
+                name_valid=lambda name: name == 'sealed-attention-program')
+
     def test_platform_launch_binding_cannot_be_skipped_by_the_shared_reader(self):
         with patch('open_cake_ir.evaluation.core.TENSOR_PROFILES',{self.kind:self.source}):
             self.launch['observed_device']='another device'

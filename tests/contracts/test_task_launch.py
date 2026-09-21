@@ -535,7 +535,8 @@ class TaskLaunchTests(unittest.TestCase):
     def test_qualification_uses_shared_entry_with_exact_model_effort_and_python_source(self):
         self.workspace.mkdir()
         args = SimpleNamespace(qualification=None,harness="claude-code",model="exact-test-model",effort="high",
-                               provider_revision=None,max_candidates=3,wall_seconds=900)
+                               provider_revision=None,max_candidates=3,wall_seconds=900,
+                               response_model_alias=["vendor/exact-test-model"])
         source = self.workspace/'starter.py'
         source.write_text('# high-level CPU fixture source\n')
         version = SimpleNamespace(stdout='Claude fixture version',returncode=0)
@@ -545,7 +546,8 @@ class TaskLaunchTests(unittest.TestCase):
         command = process.call_args_list[1].args[0]
         self.assertEqual(command[1],str(ROOT/'tools/qualify_codex_provider.py'))
         for flag,expected in (('--harness','claude-code'),('--model','exact-test-model'),('--reasoning-effort','high'),
-                              ('--python-source',str(source)),('--feature-policy','provider_defaults_optimization')):
+                              ('--python-source',str(source)),('--feature-policy','provider_defaults_optimization'),
+                              ('--response-model-alias','vendor/exact-test-model')):
             self.assertEqual(command[command.index(flag)+1],expected)
         self.assertNotIn('--fixture-only',command)
         self.assertEqual(receipt,self.workspace/'provider-qualification.json')

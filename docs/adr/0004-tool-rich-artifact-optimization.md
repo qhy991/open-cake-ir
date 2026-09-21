@@ -45,3 +45,15 @@ Receipts.
 - Multi-agent token usage remains the provider's reported Turn usage; maximum Turns provides an independent hard
   bound, and no scientific token-budget claim is permitted for this scope.
 - A promoted Candidate becomes a KernelSeed only through a later explicit freeze; Portfolio remains unchanged.
+
+## Declared response model aliases
+
+A gateway can accept one request model name while returning a namespaced identifier
+in assistant message metadata. `--response-model-alias` explicitly declares each
+additional response identifier for the Claude harness. The nonempty allowlist is
+frozen in provider configuration and the live two-turn qualification; a receipt
+without that declaration cannot authorize it. The request, init event and primary
+modelUsage key remain the exact requested model. Raw response names and events are
+retained. Unknown names, namespace guesses and wildcard matches are refused. The
+same declaration applies to live parsing, failed-call usage and semantic replay.
+This does not attest to server-side model weights or permit changing a frozen run.

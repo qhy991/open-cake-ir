@@ -445,6 +445,8 @@ def _qualify(root, workspace, args, executable, source_path):
                "--workspace", str(workspace / "qualification-workspace"), "--receipt-output", str(receipt),
                "--anchor-output", str(anchor), "--evidence-root", str(workspace / "qualification-evidence"),
                "--run-id", "task-provider-qualification"]
+    for alias in args.response_model_alias:
+        command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
     _write(workspace / "qualification.stdout", completed.stdout.encode())
     _write(workspace / "qualification.stderr", completed.stderr.encode())
@@ -522,6 +524,8 @@ def main(argv=None) -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--effort", required=True)
+    parser.add_argument("--response-model-alias", action="append", default=[],
+                        help="explicit additional assistant-response model name for Claude; request/init/usage model stays exact")
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
@@ -609,7 +613,7 @@ def main(argv=None) -> int:
         admit_cohort_payload(workload, args.case,
                              _ROUTE_CALLS_PER_COHORT)
     inputs = task_run_inputs(ROOT, workload, workload_path, source_path, harness=args.harness,
-        model=args.model, effort=args.effort, turns=args.turns, token_budget=args.token_budget,
+        model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         maximum_compilations=args.max_compilations, confirmation_seconds=args.confirmation_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
