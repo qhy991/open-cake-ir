@@ -2182,5 +2182,920 @@
     "device_verification_at_publication": "First003 pipeline verification submitted; no accepted device profile is inferred from CPU/CI checks. Remaining prepared008/009/026profiles wait for that result.",
     "interpretation_limits": "An independent009 profile runs its original runtime selector anew; its branch observation cannot identify the earlier timing process branch.026profiling cannot upgrade failed external CV edges. NCU metrics do not replace original paired performance results.",
     "promotion_disposition": "No promotion. Retain any capture, permission, numerical or metrics failure as separate evidence; do not patch a running frozen source."
+  },
+  "phased_profile_completion": {
+    "date": "2026-09-21",
+    "results": [
+      {
+        "label": "003-whole-row",
+        "run_id": "nvidia-phased-profile-20260921-0ecf19d6dcf3",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-phased-profile-20260921-0ecf19d6dcf3/stages/verify/profile-report.json",
+        "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+        "status": "completed; numerical and NCU validation passed",
+        "complete_call_observations": 18,
+        "roles": {
+          "optimized": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_solx_fib_fused_add_rmsnorm_h7168_bf16_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 512.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 51.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1088.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 2.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 4.81,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 1857024.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 6256032.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 39.37,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "starter": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_solx_fib_fused_add_rmsnorm_h7168_bf16_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 512.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 39.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1088.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 3.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 6.54,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 1859584.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 5832960.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 67.0,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "external": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "derived external reference; source correction recorded in reference metadata"
+            },
+            "kernels": [
+              {
+                "name": "<unnamed>::fused_add_rmsnorm_h7168_kernel(const uint4 *, const uint4 *, const uint4 *, uint4 *, float)",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 448.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 39.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1080.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 3.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 3.76,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 1856512.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 4877280.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 48.41,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "label": "008-masked-k",
+        "run_id": "nvidia-phased-profile-20260921-81d82b0abd0d",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-phased-profile-20260921-81d82b0abd0d/stages/verify/profile-report.json",
+        "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+        "status": "completed; numerical and NCU validation passed",
+        "complete_call_observations": 18,
+        "roles": {
+          "optimized": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_gemm_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 4096.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 80.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 3.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 30.46,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 117488640.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 221018560.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 66.4,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "starter": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_gemm_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 4096.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 32.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 8.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 76.62,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 117485568.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 227450656.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 64.49,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "external": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "void <unnamed>::gemv_splitk_stage1<1>(const __half *, const __half *, float *, int, int)",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 1024.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 47.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1024.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 5.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 35.14,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 117483264.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 195969344.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 83.88,
+                    "unit": "%"
+                  }
+                }
+              },
+              {
+                "name": "<unnamed>::gemv_splitk_stage2(const float *, __half *, int)",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 16.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 16.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1024.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 16.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 0.31,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 68352.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 256608.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 57.54,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "label": "009-width-w4",
+        "run_id": "nvidia-phased-profile-20260921-f705eefa1439",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-phased-profile-20260921-f705eefa1439/stages/verify/profile-report.json",
+        "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+        "status": "completed; numerical and NCU validation passed",
+        "complete_call_observations": 18,
+        "roles": {
+          "optimized": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged original Cake starter",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_gemm_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 128.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 5120.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 32.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1040.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 16.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 47.02,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 20980480.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 41988800.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 44.87,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "starter": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged original Cake starter",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_gemm_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 32.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 5120.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 64.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1024.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 32.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 20.96,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 20983808.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 43287648.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 36.09,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "external": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged original Cake starter",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "void sk_kernel<1, 1>(const __half *, const __half *, float *, __half *, int)",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 128.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 160.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 62.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 76288.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 8.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 3.15,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 20982784.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 33072832.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 20.33,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "label": "026-whole-row",
+        "run_id": "nvidia-phased-profile-20260921-44408e01ea5e",
+        "evidence_path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-phased-profile-20260921-44408e01ea5e/stages/verify/profile-report.json",
+        "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+        "status": "completed; numerical and NCU validation passed",
+        "complete_call_observations": 18,
+        "roles": {
+          "optimized": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_fib_026_whole_row_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 48.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 5.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 3.65,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 941312.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 3697952.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 73.86,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "starter": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_cake_solx_fib_rmsnorm_h7168_bf16_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 28.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 8.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 3.58,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 941568.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 4124096.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 64.69,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          },
+          "external": {
+            "participant_roles": {
+              "optimized": "new authored complete Cake Schedule",
+              "starter": "unchanged old optimized binary",
+              "external": "unchanged supplied external implementation"
+            },
+            "kernels": [
+              {
+                "name": "_rmsnorm_fused_kernel",
+                "metrics": {
+                  "launch__block_size": {
+                    "value": 256.0,
+                    "unit": ""
+                  },
+                  "launch__grid_size": {
+                    "value": 64.0,
+                    "unit": ""
+                  },
+                  "launch__registers_per_thread": {
+                    "value": 62.0,
+                    "unit": "register/thread"
+                  },
+                  "launch__shared_mem_per_block": {
+                    "value": 1056.0,
+                    "unit": "byte/block"
+                  },
+                  "launch__occupancy_limit_registers": {
+                    "value": 4.0,
+                    "unit": "block"
+                  },
+                  "sm__warps_active.avg.pct_of_peak_sustained_elapsed": {
+                    "value": 2.18,
+                    "unit": "%"
+                  },
+                  "dram__bytes_read.sum": {
+                    "value": 938752.0,
+                    "unit": "byte"
+                  },
+                  "lts__t_bytes.sum": {
+                    "value": 3478048.0,
+                    "unit": "byte"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_ld.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "l1tex__t_sectors_pipe_lsu_mem_local_op_st.sum": {
+                    "value": 0.0,
+                    "unit": "sector"
+                  },
+                  "smsp__warp_issue_stalled_long_scoreboard_per_warp_active.pct": {
+                    "value": 35.96,
+                    "unit": "%"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "complete_call_observations": 72,
+    "profiled_kernel_instances": 13,
+    "scope": "Four independent NCU evaluations completed on B300. All72 retained public-call observations pass original output and input-effect checks; all13 profiled kernel instances have complete metrics. CPU preparation/verification ran outside exclusive device stages. These observations are independent of previous CUPTI paired timings and cannot upgrade failed timing quality or authorize promotion.",
+    "observed": "003 whole/sliced both512threads/grid64:registers51/39,DRAMreads1,857,024/1,859,584bytes,L2bytes6,256,032/5,832,960. 008 whole/sliced both256threads/grid4096:registers80/32,activewarps30.46/76.62percent;DRAMreads approximately117.49MB each. External008 has a256thread1024CTA stage1 plus256thread16CTA stage2. 009 profile selector chose sk_kernel<1,1> with160CTAs; currentCake has5120CTAs. 026 whole/sliced both256threads/grid64:registers48/28,L2bytes3,697,952/4,124,096. No local-memory load/store sectors observed in any of these13 instances.",
+    "interpretation": "008 whole-K regression is consistent with higher register usage and lower active warps, not proof of spilling or a uniquely established cause. 003 speedup is not explained by lower DRAM bytes; reduction/dependency structure is a live hypothesis. 026 lower L2 bytes did not imply a faster candidate. Occupancy limits are theoretical resource limits, stall percentages are not absolute waiting time, and static instruction sites are not dynamic traffic. The009 observed branch belongs only to this profile process, not its earlier timing selector.",
+    "promotion_disposition": "No promotion. Preserve existing performance gates/results; use profiles to select controlled structural follow-ups instead of retesting failed CV until accepted."
+  },
+  "systematic_status_20260921": {
+    "scope": "Task-level retrospective reading of original paired reports, not a new run, selector or promotion. Each task is represented once, including qualified original starter edges when candidate edges are unqualified. Newer failed edges never inherit older acceptance.",
+    "covered_tasks": [
+      "001",
+      "002",
+      "003",
+      "004",
+      "005",
+      "006",
+      "007",
+      "008",
+      "009",
+      "010",
+      "021",
+      "022",
+      "023",
+      "024",
+      "025",
+      "026"
+    ],
+    "representative_external_classification": {
+      "faster": [
+        "002",
+        "022"
+      ],
+      "close_null": [
+        "001",
+        "006",
+        "009",
+        "010",
+        "023",
+        "025"
+      ],
+      "slower": [
+        "003",
+        "005",
+        "008"
+      ],
+      "no_qualified_external_edge": [
+        "004",
+        "007",
+        "021",
+        "024",
+        "026"
+      ]
+    },
+    "retrospective_starter_edges": [
+      {
+        "task": "005",
+        "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-2126e322eb9c/stages/comparison/comparison-report.json",
+        "timing": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.008672,
+          "pooled_medians_ms": {
+            "candidate": 0.008672,
+            "baseline": 0.006928
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 0,
+            "baseline": 10
+          },
+          "tied_pairs": 0,
+          "speedup": 0.798892988929889,
+          "classification": "second_arm_faster"
+        },
+        "correctness_passed": true,
+        "judge_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f"
+      },
+      {
+        "task": "023",
+        "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-c2e26eb06cd5/stages/comparison/comparison-report.json",
+        "timing": {
+          "kind": "fixed_baseline_paired_cupti_v1",
+          "measurement_quality_passed": true,
+          "pooled_median_ms": 0.004032,
+          "pooled_medians_ms": {
+            "candidate": 0.004032,
+            "baseline": 0.004064
+          },
+          "pooled_sample_counts": {
+            "candidate": 250,
+            "baseline": 250
+          },
+          "pair_wins": {
+            "candidate": 5,
+            "baseline": 4
+          },
+          "tied_pairs": 1,
+          "speedup": 1.007936507936508,
+          "classification": "close_null"
+        },
+        "correctness_passed": true,
+        "judge_commit": "76cf8762f6fbb39a88ad3de8215f0eb891b58e5f"
+      }
+    ],
+    "interpretation": "005 original starter is qualified slower than external at8.672/6.928us, while its rewrite is slower than starter and has failed external CV.023 original starter is qualified close_null at4.032/4.064us; the2.880us rewrite external lead remains unqualified.022 original starter already has a qualified external lead; width4 has no qualified improvement over that starter. These distinctions prevent reporting invalid rewrites as accepted incumbents.",
+    "remaining_tasks": "011 lacks a qualified general-input reference comparison because the original pointer-keyed transpose cache has not been validated for content changes.012–020 have17CPU-sealed Programs/72leaf stages, but task launcher and full common GPU/external comparisons remain uncompleted.",
+    "prepared_unrun": "026 sliced-width8 alignment variant sealed at34f04b40 in cake-experiments/nvidia-rmsnorm-026-alignment-20260921/input; no submitted guard or performance run. Same source/constants/grid, runtime alignment dispatch; no GPU claim.",
+    "promotion_disposition": "No new promotion. Preserve all historical candidate, starter, quality-failed and infrastructure-fault evidence."
+  },
+  "program_comparison_preparation_followup": {
+    "implemented_in": "65742cbbb66cbfe428b64b8aafddba774d636eaa",
+    "scope": "Existing NVIDIA comparison preparation now accepts canonical JSON Programs, uses the canonical OpenCakeEnvironment/TritonToolchainBuilder, seals every stage and preserves the unchanged selected control/reference. New metadata identifies a complete Program rather than mislabeling it a Schedule. No new Compiler primitive, Python Program syntax, oracle or timing policy.",
+    "verified_by": [
+      "Fixed65742cbb:31tests/36subtests across comparison preparation,profile,staged capture and Program evaluation; F821/F401 pass.",
+      "Independent code review and actual two-stage008 input/task/ABI/control review passed; PR164 allthreePythonCIjobs passed before platform merge.",
+      "Actual CPU preparation of008 splitK at65742cbb returned bothstages built, whole_program_unmodeled; existingCPUProgram previouslysealed at34f04b40."
+    ],
+    "candidate": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-008-splitk-program-20260921/comparison-input",
+    "runtime_evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-gemm-008-splitk-program-20260921/submissions.json",
+    "candidate_scope": "M1N4096K14336FP16:8partial domains of2048 (lastzero),16columns/CTA,8groups,FP32partial[8,4096],two complete kernels. Stage1grid[8,256,1],stage2grid[1,256,1];control is middle sliced-w8,not originalstarter. Initialstatic0indexandbroadcastaxis0refusals remain retained; corrections use existing scalar_index and retainedaxis1 without Compilerrelaxation.",
+    "device_verification_at_publication": "First Program comparison submitted; numerical/timing verdict pending. CPU sealing, entry adaptation and complete callable accounting do not establish speed or promotion.",
+    "promotion_disposition": "No promotion. Keep originalbaseline,external,priorwholeKregression and current completeProgram evidence separate; wholeProgram cost model remains unmodeled."
   }
 }

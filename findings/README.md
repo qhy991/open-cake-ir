@@ -34,6 +34,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.
 - F-2026-09-21-003 — MACA pointer-count inspection rejected comma-adjacent TTGIR pointer types; parser repair with closed-pointer CPU replay.
 
 - F-2026-09-21-002 — C550 routing primitive evidence and bounded admission; successor Workloads and canonical multi-stage Evaluation remain open (capacity, proposed).

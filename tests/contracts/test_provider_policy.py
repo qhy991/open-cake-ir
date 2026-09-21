@@ -38,6 +38,17 @@ class ProviderPolicyTests(unittest.TestCase):
             "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
             "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]}
 
+    def test_response_alias_is_optional_frozen_and_claude_only(self):
+        p = self.claude(); p["response_model_aliases"] = ["vendor/claude-fable-5"]
+        config = provider_configuration(p, "artifact_optimization_only", arms={"open_cake"})
+        self.assertEqual(config["response_model_aliases"], p["response_model_aliases"])
+        for aliases in ([], "vendor/claude-fable-5", ["claude-fable-5"], ["x", "x"], [""], [1]):
+            with self.subTest(aliases=aliases), self.assertRaises(ValueError):
+                provider_configuration({**p,"response_model_aliases":aliases}, "artifact_optimization_only", arms={"open_cake"})
+        codex=json.loads((ROOT / "contracts/studies/artifact-optimization-ralph-template.json").read_text())["arms"]["open_cake"]["provider"]
+        with self.assertRaises(ValueError):
+            provider_configuration({**codex,"response_model_aliases":["x"]}, "artifact_optimization_only", arms={"open_cake"})
+
     def test_claude_is_only_admitted_as_declared_python_artifact_author(self):
         p = self.claude()
         config = provider_configuration(p, "artifact_optimization_only", arms={"open_cake"})
