@@ -12,7 +12,7 @@
 
 | 平台 | 维护分支 | 数据日期 | 观察条目 | 发布数据 |
 |---|---|---|---:|---|
-| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-21 | 119 | [nvidia/records.json](results/nvidia/records.json) |
+| NVIDIA | [nvidia](https://github.com/qhy991/open-cake-ir/tree/nvidia/docs/results/nvidia) | 2026-09-21 | 123 | [nvidia/records.json](results/nvidia/records.json) |
 | Apple | [metal](https://github.com/qhy991/open-cake-ir/tree/metal/docs/results/metal) | 2026-09-20 | 4 | [metal/records.json](results/metal/records.json) |
 | Hygon DCU | [dcu](https://github.com/qhy991/open-cake-ir/tree/dcu/docs/results/dcu) | 2026-09-20 | 32 | [dcu/records.json](results/dcu/records.json) |
 | AMD | [amd](https://github.com/qhy991/open-cake-ir/tree/amd/docs/results/amd) | 2026-09-20 | 1 | [amd/records.json](results/amd/records.json) |
@@ -23,7 +23,8 @@
 
 B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版本，不混成一个榜。B200 单列正确性证据。
 
-- 截至2026-09-21的逐任务系统综述见 docs/results/nvidia/FLASHINFER_STATUS.md。16项已有三方数值比较；按明确列出的代表产物/原starter，外部边为2项合格领先、6项close_null、3项合格落后、5项暂无合格结论。011和012–020仍未完成外部性能闭环。以下较早说明是按实验推进保留的历史快照，pending、旧差距和旧覆盖数不表示当前状态。
+- 026新对齐比较完成：50guards/2550快照通过，对固定generic sliced-w8为合格1.081×；新候选external边CV失败。同一新实验的generic control/external边质量通过，6.4005/2.656µs，仅据这个明确generic代表，最新任务级计数为2领先/6close_null/4落后/4无合格外部边，另10未完成。旧CV失败不改写，不跨实验相乘。
+- 历史综述快照：截至2026-09-21的逐任务系统综述见 docs/results/nvidia/FLASHINFER_STATUS.md。16项已有三方数值比较；按明确列出的代表产物/原starter，外部边为2项合格领先、6项close_null、3项合格落后、5项暂无合格结论。011和012–020仍未完成外部性能闭环。以下较早说明是按实验推进保留的历史快照，pending、旧差距和旧覆盖数不表示当前状态。
 - 历史阶段说明：B300 服务实验投影保留每个 Campaign 的最佳合格候选及确认历史；不是远端 registry 的当前冠军。
 - 历史阶段说明：CTA 宽度验证与 CAKE 对照分别保留自身基线、版本及协议。
 - 历史阶段说明：FlashInfer新增7项固定shape三方对比：210/210数值检查通过。003仍比派生外部参考慢4.73倍；其余外部候选边保留CV失败，不发布合格加速比。022的原starter另以质量通过的1.151倍胜过外部参考。
@@ -163,6 +164,10 @@ B300 的服务实验、CTA 宽度验证与 CAKE 改写各自保留基线和版�
 | B300 / independent NCU | `026-whole-row / independent attribution` | Same fixed Workload and sealed participants as the cited paired comparison | — | — | — | NCU verified; 18 complete observations passed | [nvidia-profile-026-whole-row-20260921](#nvidia-profile-026-whole-row-20260921) |
 | B300 / FlashInfer comparison | `005_gemm_n256_k7168 / original starter` | fib_gemm_n256_k7168 / R=1, C=256 / FP16 | 6.928 | 8.672 | 0.799× | Correct; second_arm_faster | [nvidia-fib-external-005-starter-reviewed-20260921](#nvidia-fib-external-005-starter-reviewed-20260921) |
 | B300 / FlashInfer comparison | `023_rmsnorm_h1536 / original starter` | fib_rmsnorm_h1536 / R=539, C=1536 / BF16 | 4.064 | 4.032 | 1.008× | Correct; close_null | [nvidia-fib-external-023-starter-reviewed-20260921](#nvidia-fib-external-023-starter-reviewed-20260921) |
+| B300 / guarded AOT alignment | `026_rmsnorm_h7168 / sliced-w8 alignment` | R=64,C=7168,BF16,epsilon=1e-6 | — | — | — | Correctness only:50/50guards passed | [nvidia-026-alignment-guards-20260921](#nvidia-026-alignment-guards-20260921) |
+| B300 / guarded AOT alignment | `026_rmsnorm_h7168 / sliced-w8 alignment` | R=64,C=7168,BF16,epsilon=1e-6 | 2.656 | 5.920 | — | Correct; measurement_quality_failed | [nvidia-026-alignment-optimized_vs_external-20260921](#nvidia-026-alignment-optimized_vs_external-20260921) |
+| B300 / guarded AOT alignment | `026_rmsnorm_h7168 / sliced-w8 alignment / retained generic control` | R=64,C=7168,BF16,epsilon=1e-6 | 2.656 | 6.401 | 0.415× | Correct; second_arm_faster | [nvidia-026-alignment-starter_vs_external-20260921](#nvidia-026-alignment-starter_vs_external-20260921) |
+| B300 / guarded AOT alignment | `026_rmsnorm_h7168 / sliced-w8 alignment` | R=64,C=7168,BF16,epsilon=1e-6 | 6.401 | 5.920 | 1.081× | Correct; first_arm_faster | [nvidia-026-alignment-optimized_vs_starter-20260921](#nvidia-026-alignment-optimized_vs_starter-20260921) |
 
 ## Apple
 
@@ -1549,6 +1554,46 @@ gfx1151 的两种设备计时器尚未对齐。保留支持状态与调查入口
 - 来源：[findings/2026-09-20-010-rewrite-external-performance-gap.json](https://github.com/qhy991/open-cake-ir/blob/6455a307049761cfd5ccb1f6403140f4b8d7bb1f/findings/2026-09-20-010-rewrite-external-performance-gap.json)。
 - 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-gap-successors-20260920-comparison-c2e26eb06cd5/stages/comparison/comparison-report.json; starter_vs_external`。
 - Retrospective projection of the existing original starter/external edge, not a rerun. Rewritten candidate/external timing fails quality and is retained separately. No rewrite improvement or promotion is inferred.
+
+### nvidia-026-alignment-guards-20260921
+
+**B300 / guarded AOT alignment · 026_rmsnorm_h7168 / sliced-w8 alignment** — 2026-09-21 / Correctness only:50/50guards passed
+
+- Workload：`R=64,C=7168,BF16,epsilon=1e-6`；目标：`sm_103a`；版本：`judge/compiler34f04b40`。
+- 基线：Original Workload oracle；比值口径：`not_measured`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/720c8dadd4067fc723010e1e047ddb0ff743235a/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-guards-20260921-d943010943b9/stages/verify/guard-report.json`。
+- Every public input/output offset2/4/8,aligned dispatch,genericfallback and restrictedleaf refusal checked; no performance measurement.
+
+### nvidia-026-alignment-optimized_vs_external-20260921
+
+**B300 / guarded AOT alignment · 026_rmsnorm_h7168 / sliced-w8 alignment** — 2026-09-21 / Correct; measurement_quality_failed
+
+- Workload：`R=64,C=7168,BF16,epsilon=1e-6`；目标：`sm_103a`；版本：`judge/compiler34f04b40`。
+- 基线：Original supplied masked8192 Python/Triton callable；比值口径：`descriptive_quality_failed`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/720c8dadd4067fc723010e1e047ddb0ff743235a/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891/stages/verify/comparison-report.json; optimized_vs_external`。
+- CV failed; latencies descriptive,no accepted external gain. All2550snapshots and preceding50guards pass. Old026CV failures stay unchanged. No originalstarter gain,cross-run multiplication or promotion.
+
+### nvidia-026-alignment-starter_vs_external-20260921
+
+**B300 / guarded AOT alignment · 026_rmsnorm_h7168 / sliced-w8 alignment / retained generic control** — 2026-09-21 / Correct; second_arm_faster
+
+- Workload：`R=64,C=7168,BF16,epsilon=1e-6`；目标：`sm_103a`；版本：`judge/compiler34f04b40`。
+- 基线：Original supplied masked8192 Python/Triton callable；比值口径：`paired`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/720c8dadd4067fc723010e1e047ddb0ff743235a/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891/stages/verify/comparison-report.json; starter_vs_external`。
+- Qualified edge. Candidate column denotes retained genericcontrol,not new alignedcandidate. All2550snapshots and preceding50guards pass. Old026CV failures stay unchanged. No originalstarter gain,cross-run multiplication or promotion.
+
+### nvidia-026-alignment-optimized_vs_starter-20260921
+
+**B300 / guarded AOT alignment · 026_rmsnorm_h7168 / sliced-w8 alignment** — 2026-09-21 / Correct; first_arm_faster
+
+- Workload：`R=64,C=7168,BF16,epsilon=1e-6`；目标：`sm_103a`；版本：`judge/compiler34f04b40`。
+- 基线：Frozen generic sliced-w8 binary；比值口径：`paired`。
+- 来源：[findings/2026-09-20-011-triton-aot-pointer-alignment.json](https://github.com/qhy991/open-cake-ir/blob/720c8dadd4067fc723010e1e047ddb0ff743235a/findings/2026-09-20-011-triton-aot-pointer-alignment.json)。
+- 原记录 / 实现定位：`B300-M3:/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891/stages/verify/comparison-report.json; optimized_vs_starter`。
+- Qualified edge. All2550snapshots and preceding50guards pass. Old026CV failures stay unchanged. No originalstarter gain,cross-run multiplication or promotion.
 
 ### metal-result-044
 
