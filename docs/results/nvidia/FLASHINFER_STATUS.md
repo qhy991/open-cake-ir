@@ -6,7 +6,7 @@
 
 ## 当前结论
 
-26个任务中，**16个已有固定shape的三方数值比较，另10个还没有完整外部性能结论**。已测任务均保留原始starter、改写产物与外部参考；“有结果”不等于“改写更快”，也不等于全部上游shape、框架端到端或模型性能已通过。
+26个任务中，**16个已有固定shape的三方数值比较，另10个还没有完整外部性能结论**（已追加026新对齐比较）。已测任务均保留原始starter、改写产物与外部参考；“有结果”不等于“改写更快”，也不等于全部上游shape、框架端到端或模型性能已通过。
 
 下面明确列出的代表产物/原starter，对外部的任务级结论为：
 
@@ -14,13 +14,13 @@
 |---|---:|---|
 | Cake领先 | 2 | 002、022 |
 | close_null：未检出满足原门槛的实质差异 | 6 | 001、006、009、010、023（仅原starter）、025 |
-| Cake落后 | 3 | 003、005（保留较快原starter）、008 |
-| 暂无合格外部边 | 5 | 004、007、021、024、026 |
+| Cake落后 | 4 | 003、005（保留较快原starter）、008、026（新实验中的generic control） |
+| 暂无合格外部边 | 4 | 004、007、021、024 |
 | 尚未闭合外部性能比较 | 10 | 011、012–020 |
 
 这不是挑选最小延迟后建立的全局排名：005/023显式使用原starter的独立合格边，新候选的失败边仍保留；022没有证明4组候选优于原starter。003后续对齐候选虽然数值正确，其性能质量失败，不能继承整行generic的合格结论。不同实验的比值不相乘，也不求跨任务几何平均值。
 
-截至2026-09-21本次节点核对，本任务已提交的009/010/026七项比较、四项新NCU均为completed；M3节点active_runs=0、queue=0，7/8GPU空闲。其他GPU占用不是本任务未释放。026新对齐产物仅完成CPU封存，目录无提交记录，不计作排队、执行或通过。
+截至2026-09-21本次节点核对，本任务已提交的009/010/026七项比较、四项新NCU均为completed；M3节点active_runs=0、queue=0，7/8GPU空闲。其他GPU占用不是本任务未释放。随后026新对齐实验已完成50/50guards和2550数值快照；新candidate/control边通过，candidate/external边仍CV失败。008新的完整split-K Program已提交，当前尚无验收结果；排队、采集、CPU验证应以原submissions和节点state为准。
 
 ## 与外部实现的逐任务结果
 
@@ -43,12 +43,12 @@
 | 023 | R539/H1536 BF16 | 原starter（新候选未合格） | 4.0320 | 4.0640 | close_null（仅原starter） | [记录](README.md#nvidia-fib-external-023-starter-reviewed-20260921) |
 | 024 | R79/H2048 BF16 | 保留改写候选 | 2.4640 | 2.2720 | CV失败，描述值 | [记录](README.md#nvidia-fib-external-024-20260920) |
 | 025 | R170/H4096 BF16 | 对齐变体 | 2.7200 | 2.7200 | close_null | [记录](README.md#nvidia-alignment-025-optimized_vs_external-20260920) |
-| 026 | R64/H7168 BF16 | sliced、8组候选 | 6.4640 | 2.7200 | CV失败，描述值 | [记录](README.md#nvidia-026-width-w8-optimized_vs_external-20260921) |
+| 026 | R64/H7168 BF16 | 本轮generic sliced-w8对照 | 6.4005 | 2.6560 | 落后140.98%；仅generic对照 | [记录](README.md#nvidia-026-alignment-starter_vs_external-20260921) |
 
 - **005：**改写9.152µs对原starter8.6405µs是合格回退（0.944×），因此保留starter。表中starter/external的8.672/6.928µs来自另一条自己的配对边，不能混用8.6405计算外部差距。
 - **022：**原starter已经以2.336/2.688µs合格领先外部1.151×。4组候选对外部1.164×合格，但对原starter的比较未通过CV，所以不能据此替换starter。
 - **023：**原starter4.032/4.064µs是close_null。新候选2.880/4.095µs仅为描述，其对starter与external两边均CV失败；不能宣称1.42×收益。
-- **026：**6.464/2.720µs的名义差距很大，但external边CV失败，尚不能定量宣称已经证明2.38倍落后。对旧starter的1.787×改善是另一条合格比较。
+- **026：**旧6.464/2.720µs外部边仍CV失败。新的对齐候选对固定generic对照5.920/6.4005µs为合格1.081×，但candidate/external5.920/2.656µs再次CV失败。本轮独立generic-control/external6.4005/2.656µs通过质量门禁，表格仅据此标记generic产物落后；没有将该资格赋予更快的aligned候选，也不与旧1.787×相乘。
 
 ### 尚未完成的十个任务
 
@@ -93,6 +93,7 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 | 024改写 | 原starter | 2.496/6.177µs，2.475×；external仍CV失败 |
 | 026同结构floor / sliced8组 | 旧原starter | close_null / 1.787× |
 | 026 whole-row8组 | 中间sliced8组 | 7.392/6.400µs，0.866×，明确回退 |
+| 026 guarded alignment | 固定generic sliced8组 | 5.920/6.4005µs，1.081×合格；新候选external边仍失败 |
 
 “starter”在旧比较工具的字段中有时只是**对照槽位名**。对齐消融和结构后继会把旧optimized产物放到该槽位；本报告按真实角色标明它，不将中间control称为最初starter。
 
@@ -113,12 +114,12 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 
 ## 差距的原因与应该修改的层
 
-1. **AOT访存信息是已验证的Compiler/工具链问题。** 运行时检查对齐并保留通用路径，解决“为了vectorization而假设所有指针16B对齐”的错误边界。001/002/025已有正确性及部分合格性能证据；003对齐性能未合格。026 sliced8的新对齐产物只CPU封存：相同源码/常量/grid，通用PTX为36条b16 load和4条b16 store，对齐leaf为3条v4.b32加15条v2.b32 load、7条v2.b32 store；这些静态变化不等于速度提升，offset guard/GPU比较尚未启动。
+1. **AOT访存信息是已验证的Compiler/工具链问题。** 运行时检查对齐并保留通用路径，解决“为了vectorization而假设所有指针16B对齐”的错误边界。001/002/025已有正确性及部分合格性能证据；003对齐性能未合格。026 sliced8的新对齐产物已通过50guards和2550快照，对generic对照合格改善1.081×但新候选external边CV失败：相同源码/常量/grid，通用PTX为36条b16 load和4条b16 store，对齐leaf为3条v4.b32加15条v2.b32 load、7条v2.b32 store；这些静态变化本身不等于速度提升；本次性能结论来自独立的配对测量。
 2. **工作划分与完整算法结构仍是主要候选差距。** 009从1组到4组接近外部，但8组反而无实质改善；008的一CTA一输出全K方案没有复现外部split-K的完整两阶段结构。现有IR能够表达合法masked ProgramMap，Program也已支持多阶段封存，所以下一步应先写完整候选并测量，不能仅据性能差距断言缺少IR原语。只有现有结构无法合法表达时，才给出具体Compiler/IR/Pass缺口与反例。
 3. **公共运行路径仍有工程缺口。** 012–020需要正常task launcher、混合dtype/多输出外部适配和共同Evaluation。Compiler Program已存在，重复创建Lab私有图或临时GPU runner会造成第二套所有权。
-4. **参考语义与测量质量也是未完成项。** 011的指针缓存不证明B内容不变；007/026等外部CV失败不是数值失败或已证实性能优劣。需要记录输入刷新验证或具体测量波动原因，不能通过放宽门槛或重复运行直到绿色来补结论。
+4. **参考语义与测量质量也是未完成项。** 011的指针缓存不证明B内容不变；007及026新aligned候选的外部CV失败不是数值失败或已证实性能优劣；026的generic对照另有本轮独立合格边。需要记录输入刷新验证或具体测量波动原因，不能通过放宽门槛或重复运行直到绿色来补结论。
 
-优先顺序：闭合026新对齐的guard后再做受控比较；用现有Program路径构造008完整split-K结构；先闭合012的正常入口与完整公共输出验证；对011先完成参考有效性检查。上述是后续工作，本文不将它们写成已经实现或已提交的实验。
+优先顺序：收齐已提交008完整两阶段split-K Program的原oracle/计时结果；先闭合012的正常入口与完整公共输出验证；对011先完成参考有效性检查。026对齐已完成本轮受控比较，保留失败external边，不重测刷通过。上述未完成事项不作为已有性能结论。
 
 ## 测量、资源与历史边界
 
@@ -147,15 +148,16 @@ attention公共输出为`output:bf16`和`lse:fp32`；外部调用还涉及索引
 | 026 | `nvidia-rmsnorm-026-20260921/submissions.json` | 三项比较 |
 | 新NCU | `nvidia-phased-profiles-20260921/submissions.json` | 003/008/009/026四项，已完成 |
 | 012–020 Program封存 | `flashinfer-program-sealing-20260921/complete-route/sealing-results.json` | 仅CPU封存与readback |
-| 026新对齐 | `nvidia-rmsnorm-026-alignment-20260921/input/` | CPU产物，未提交GPU |
+| 026新对齐 | `nvidia-rmsnorm-026-alignment-20260921/guard-submissions.json`、`comparison-submissions.json` | 50guards通过；2550快照通过；三边质量分别记录 |
+| 008新split-K Program | `nvidia-gemm-008-splitk-program-20260921/submissions.json` | 已提交，最终验收待定 |
 
 发布顺序与source identity遵循[开发分支](../../DEVELOPMENT_BRANCHES.md)。结果PR与源码PR只在独立审查及对应CI通过后合入；报告中的版本不替换运行时冻结的提交。所有历史失败与baseline保留。
 
 ## English reading summary
 
-Sixteen of the 26 tasks have fixed-shape three-way numerical comparisons. With each representative artifact or original starter explicitly identified above, two tasks have a qualified external lead, six are close_null, three remain slower, and five lack a qualified external edge. Task 011 and tasks 012–020 have no complete external performance conclusion. This is a descriptive evidence projection, not a portfolio selector or cross-task leaderboard.
+Sixteen of the 26 tasks have fixed-shape three-way numerical comparisons. With each representative artifact or original starter explicitly identified above, two tasks have a qualified external lead, six are close_null, four remain slower, and four lack a qualified external edge. Task026 uses the retained generic control edge from the new alignment experiment; its faster aligned candidate still lacks a qualified external edge. Task 011 and tasks 012–020 have no complete external performance conclusion. This is a descriptive evidence projection, not a portfolio selector or cross-task leaderboard.
 
-The qualified original starter matters: task 005's faster retained starter still loses to the external implementation; task 023's starter is close_null while its nominally faster rewrite remains unqualified. Task 022 already has a qualified starter lead, so the four-group candidate is not automatically promoted. Whole-row structure helps 003 but regresses 008 and 026. Newer failed quality edges inherit no earlier acceptance.
+The qualified original starter matters: task 005's faster retained starter still loses to the external implementation; task 023's starter is close_null while its nominally faster rewrite remains unqualified. Task 022 already has a qualified starter lead, so the four-group candidate is not automatically promoted. Whole-row structure helps 003 but regresses 008 and 026. Newer failed quality edges inherit no earlier acceptance. The026alignment experiment passed50guards and2550numerical snapshots, with a qualified1.081x gain against its fixed generic control. Its own external timing failsCV; the independently paired generic-control/external edge passes and remains distinct.
 
 Four independent NCU evaluations passed 72 complete input/output observations and captured 13 kernel instances. No local-memory traffic was observed in these instances. Task 008's whole-K version uses 80 versus 32 registers and has lower active-warps percentage than sliced-w8, which is consistent with register/residency pressure but does not establish unique causality or spilling. Task 009's profiler process selected `sk_kernel<1,1>`; that cannot identify its earlier timing process's runtime choice. Profiles do not repair CV failures or replace paired CUPTI timings.
 
