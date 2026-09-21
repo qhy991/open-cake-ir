@@ -111,13 +111,18 @@ def program_profile_summary(raw):
 
 def load_program_profile(payload, *, expected_candidate_sha256, expected_case_id,
                          expected_protocol_sha256=None):
+    import json
     from .program import ProgramLaunchManifest
+    document = json.loads(payload)
+    if not isinstance(document, Mapping) or not isinstance(document.get('raw'), Mapping):
+        raise ValueError('MACA Program profile must contain its sealed Program')
+    manifest = ProgramLaunchManifest.from_dict(document['raw'].get('manifest'))
     profile = load_instrumented_profile(payload, kind=KIND, job_prefix='maca', label='MACA Program',
         summary=program_profile_summary, raw_name='MCPTI Program activity',
         expected_candidate_sha256=expected_candidate_sha256, expected_case_id=expected_case_id,
-        expected_protocol_sha256=expected_protocol_sha256)
+        expected_protocol_sha256=expected_protocol_sha256,
+        name_valid=lambda name: name == manifest.kernel_name)
     raw = profile['raw']
-    manifest = ProgramLaunchManifest.from_dict(raw['manifest'])
     if (profile['kernel_name'] != manifest.kernel_name or expected_case_id != manifest.case_id
             or raw['device_admission']['broker_job_id'] != profile['job_id']
             or raw['device_admission'].get('gpu_uuid') != profile.get('gpu_uuid')
