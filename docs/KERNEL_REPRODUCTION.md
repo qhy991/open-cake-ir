@@ -4,6 +4,11 @@
 它要求 Agent 自主拆解参考实现、建立结构对应、选择候选、诊断缺口归属，并提出或执行
 其权限范围内的 Compiler 演进。研究者不需要逐次决定失败属于 IR、后端还是候选。
 
+可移植任务集合与 CAKE 原框架能力评估见
+[改写任务包](../experiments/flashinfer_rewrites/README.md)。其中 027–030 对应论文的
+KDA prefill/decode、TinyGEMM2 和 Alpha-MoE；`rewrite_collection.py assess` 生成
+源码绑定的组件探针结果和管理任务包，完整 GPU 改写仍需逐项完成其 Workload 与验收接入。
+
 ## 多架构实验入口
 
 `tools/kernel_experiment.py prepare --config /absolute/experiment-input.json --workspace /absolute/new-experiment`
@@ -150,8 +155,10 @@ NaN/Inf output rules remain the Workload's own. An execution or teardown error p
 passing receipt. The worker holds its real allocation through process exit. All source,
 software, host and review gates must pass before any device invocation.
 
-These commands qualify construction or correctness only. They do not create an optimization
-Run endpoint or measured speedup. HIP/MACA multi-stage timing and attribution remain
-explicitly refused until whole-program interval and profiler coverage are qualified.
+The build/evaluate commands qualify construction or correctness only. A separate MACA
+`profile` command retains every stage's native activity and checks both preflight and
+instrumented outputs; its intervals and gaps are attribution observations, not latency
+samples. HIP Program profiling and ordinary HIP/MACA optimization Run measurement remain
+refused. No command here establishes a measured speedup.
 The build command uses the shared `build_program_candidate` source/ABI handoff; it does
 not construct an optimization environment whose measurement loop it cannot satisfy.

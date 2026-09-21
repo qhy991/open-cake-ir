@@ -158,9 +158,9 @@ class OmoeCommonEvaluationTests(unittest.TestCase):
         self.assertTrue(evaluate_tile_workload(candidate,workload,protocol,launcher).correctness_passed)
         launcher.corrupt = True
         self.assertFalse(evaluate_tile_workload(candidate,workload,protocol,launcher).correctness_passed)
-        inputs = worker.materialize_case(workload, 'rounding_ties')
+        inputs = worker.materialize_evaluation_inputs(workload, 'rounding_ties')
         self.assertEqual(inputs, materialize_case(workload, 'rounding_ties'))
-        self.assertEqual(worker.reference_outputs(workload, 'rounding_ties',inputs)['residual_out'][0],1.0)
+        self.assertEqual(worker.reference_evaluation_outputs(workload, 'rounding_ties',inputs)['residual_out'][0],1.0)
 
 
 class TransferRepairTests(unittest.TestCase):

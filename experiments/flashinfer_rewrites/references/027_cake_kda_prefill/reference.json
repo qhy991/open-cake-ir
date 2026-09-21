@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/flashinfer-ai/flashinfer",
+  "pull_request": "https://github.com/flashinfer-ai/flashinfer/pull/4262",
+  "source_commit": "e835e0f5565b5b9786c987e00c6b39a26bfecca5",
+  "source_files": [
+    "csrc/kda/flashkda_bf16_fused_m128.cu",
+    "csrc/kda/flashkda_bf16_fused_m64.cu",
+    "csrc/kda/flashkda_bf16_fused_m128_binding.cu",
+    "csrc/kda/flashkda_bf16_fused_m64_binding.cu",
+    "csrc/kda/flashkda_binding_common.cuh",
+    "flashinfer/kda_prefill.py",
+    "benchmarks/bench_recurrent_kda_prefill.py",
+    "tests/kda/test_recurrent_kda_prefill.py"
+  ],
+  "reference_access": "known_kernel_reproduction",
+  "license": "Apache-2.0; original file notices retained",
+  "role": "reference_source_only",
+  "completeness": "Selected device, integration and validation sources; not a standalone build closure.",
+  "paper_relation": "Paper-cited PR export. No local GPU qualification is inherited."
+}

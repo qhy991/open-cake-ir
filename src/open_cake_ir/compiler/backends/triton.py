@@ -496,12 +496,27 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                     "the full input and result tile domains must match A[M,K], B[N,K] and result[M,N]")
             if operation.parameters.k_ranges is not None:
                 p = operation.parameters
+                carried = any(schedule.mma_accumulates_over(operation, loop)
+                              for loop in schedule.enclosing_loops(operation))
+                # The existing IR already owns selected contributions and contraction
+                # carry. This bounded NVIDIA extension emits a K256 quarter of each
+                # K1024 input tile, accumulating that same quarter across the K loop.
+                # It does not select a partition or change an authored reduction tree.
+                quarter_selection = (
+                    target.target_id == 'sm_103a' and tile is not None
+                    and tile[2] == 1024 and p.selected_k == 256
+                    and (not schedule.enclosing_loops(operation)
+                         or carried and len(schedule.enclosing_loops(operation)) == 1)
+                    and p.contribution_ranges in tuple(((start, start + 256),)
+                                                       for start in range(0, 1024, 256))
+                )
                 supported = (
                     schedule.target == target.target_id and target.target_id in _K_RANGES_EVIDENCE
                     and instruction is not None and instruction.contract == "triton.dot.bf16_fp32"
                     and instruction.shape is None and instruction.cta_group is None
                     and instruction.operand_source is None and instruction.operand_major is None
-                    and tile is not None and tile[2] == 128 and p.selected_k == 64
+                    and tile is not None
+                    and ((tile[2] == 128 and p.selected_k == 64 and not carried) or quarter_selection)
                     and all(extent >= 16 and extent & (extent - 1) == 0 for extent in tile[:2])
                     and len(operands) == 2 and all(b is not None and b.space is MemorySpace.REGISTER
                                                                and b.dtype is DType.BF16 for b in operands)
@@ -509,13 +524,12 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                     and (result := schedule.buffer(operation.writes[0])) is not None
                     and result.space is MemorySpace.REGISTER
                     and result.dtype is DType.FP32
-                    and not any(schedule.mma_accumulates_over(operation, loop)
-                                for loop in schedule.enclosing_loops(operation))
                 )
                 add(supported, "TRITON_MMA_K_RANGES_UNSUPPORTED",
                     f"operations[{index}].parameters.k_ranges",
                     "selected K requires NVIDIA sm_100a/sm_103a BF16 register dot, full input K128, "
-                    "selected K64, power-of-two M/N >=16, one FP32 result and no contraction-loop carry")
+                    "selected K64 without carry, or sm_103a K1024 with one aligned K256 quarter "
+                    "without a loop or carried across one contraction loop; power-of-two M/N >=16 and one FP32 result")
             add(
                 instruction is not None,
                 "BACKEND_MMA_INSTRUCTION_REQUIRED",
@@ -1833,8 +1847,9 @@ class _TritonEmitter:
                 for name in tiles
             ]
             output = operation.writes[0]
+            accumulator = f', acc={output}' if self._accumulating(operation) else ''
             self.line(
-                f"{pad}{output} = tl.dot({selected[0]}, tl.trans({selected[1]}), out_dtype=tl.float32)",
+                f"{pad}{output} = tl.dot({selected[0]}, tl.trans({selected[1]}){accumulator}, out_dtype=tl.float32)",
                 declares=(output,),
             )
             # An explicit partial result must survive dot-accumulator fusion. The

@@ -507,5 +507,129 @@
         }
       }
     }
-  ]
+  ],
+  "rmsnorm_026_alignment_followup": {
+    "source_commit": "34f04b4043cb05a940b853afed0cd559dffcb3a9",
+    "task": "026_rmsnorm_h7168",
+    "scope": "R64 C7168 BF16 epsilon1e-6. Same retained sliced-w8 lowered source, constants, grid[64,1,1] and block256. Runtime-guarded16B leaf plus generic fallback; fixed control is previous generic sliced-w8 binary, not initial starter. Original Workload/oracle/external Python reference retained.",
+    "guard": {
+      "run_id": "nvidia-rmsnorm-026-alignment-guards-20260921-d943010943b9",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-guards-20260921-d943010943b9/stages/verify/guard-report.json",
+      "passed": true,
+      "checks": 50,
+      "coverage": "All5cases:aligned plus each public input/output at2/4/8B offset; restricted leaf rejects beforelaunch,dispatcher selects generic for unaligned; all output/input checks pass."
+    },
+    "comparison": {
+      "run_id": "nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-rmsnorm-026-alignment-comparison-20260921-af7bb55e4891/stages/verify/comparison-report.json",
+      "status": "measurement_quality_failed",
+      "correctness_passed": true,
+      "snapshot_count": 2550,
+      "snapshot_bytes": 2344299500,
+      "edges": {
+        "optimized_vs_external": {
+          "candidate_us": 5.92,
+          "baseline_us": 2.656,
+          "speedup": 0.448648648648649,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.070369911144105
+        },
+        "starter_vs_external": {
+          "candidate_us": 6.4005,
+          "baseline_us": 2.656,
+          "speedup": 0.414967580657761,
+          "quality_passed": true,
+          "classification": "second_arm_faster",
+          "maximum_cohort_cv": 0.049736607009941
+        },
+        "optimized_vs_starter": {
+          "candidate_us": 5.92,
+          "baseline_us": 6.4005,
+          "speedup": 1.08116554054054,
+          "quality_passed": true,
+          "classification": "first_arm_faster",
+          "maximum_cohort_cv": 0.035526863575206
+        }
+      }
+    },
+    "interpretation": "Guarded alignment improves versus the fixed generic sliced-w8 by a qualified1.08116554x (5.920/6.4005us). Candidate/external5.920/2.656us failsCV(max0.07037),so no accepted external candidate speedup. In this new experiment the separately paired generic control/external6.4005/2.656us passesquality(max0.049737),establishing a2.409827x latency ratio for that retained generic binary only. This does not retroactively repair old026CV failures,qualify the new aligned external edge or multiply olderstarter ratios.",
+    "measurement": "CPU preparation and full numerical verification outside lease; original paired CUPTI coldL2,all2550snapshots and continuous exclusive capture unchanged. Guard completion preceded comparison submission.",
+    "promotion_disposition": "No promotion. Retain guarded candidate as a qualified improvement over the fixed intermediatecontrol,keep the failed external edge and all old evidence."
+  },
+  "program_stage_alignment_implementation": {
+    "implemented_in": "b5e1c34b0acaaa986045f2d543c57073fedeeefc",
+    "trigger": "After008completeProgram GPU numerical acceptance, retainedstage1PTX has136ld.global.b16sites. TritonToolchainBuilder.build_stage explicitly refuses pointer alignment variants, even though single-kernel runtime guarded alignment is implemented. This is a bounded composition capability gap, not proof that vectorization alone explains timing.",
+    "contract": "Reuse the existing per-kernel alignment component and dispatcher for each complete Program stage. Public and private stage pointers select a checkedaligned leaf or unrestrictedgeneric implementation on everycall. Generic stages cannot be replaced by restrictedleaves. Check source/ABI/physicalcompile records for bothvariants. Keep orderedstage execution, originaloracle and existing timing policy.",
+    "representation": "No IR/layout addition. Programs withoutstagevariants retain exactschema1manifestshape. Variant-bearingmanifest schema2declares orderedaligned_stages projectedfromsealedchildren;admission verifiesit againstbundles. This projection is necessary for moduleaccounting withoutbinaryaccess:loadedmodules=stagecount+variantstagecount,executedkernels=stagecount. Childsource/compilefacts remainownedbychildartifacts.",
+    "verified_by": [
+      "Fixedb5e1c34b:61tests/112subtests passed;2optionalTorchtests skippedlocally thenbothpassed inexistingM3CPUenvironment withCUDAhidden.",
+      "Compilationbudget/nativepairing/frozenreplay29tests/43subtests passed;unchanged178CorpusGate andF821/F401 passed.",
+      "Independentcode review passed forschemas,replay,modulevsdispatchcounts,allpublic/private2/4/8offsetfallback,restrictedleafrefusal,corruptcompilerecordrejection andpartial-loadcleanup.",
+      "RealCPUisolatedbuildofsame008Program,bothstagessealed,sourceunchanged;resultat/mnt/b300-shared/home/qinhaiyan/cake-experiments/program-alignment-008-cpu-20260921/result.json."
+    ],
+    "cpu_probe": {
+      "source_commit": "b5e1c34b0acaaa986045f2d543c57073fedeeefc",
+      "cuda_initialized": false,
+      "modules": 4,
+      "kernels_per_call": 2,
+      "stages": [
+        {
+          "name": "gemm_split_partials",
+          "grid": [
+            8,
+            256,
+            1
+          ],
+          "block": [
+            256,
+            1,
+            1
+          ],
+          "same_lowered_source": true,
+          "pointer_alignments": {
+            "a": 16,
+            "b": 16,
+            "partial": 16
+          },
+          "generic_ptx": {
+            "ld.global.b16": 136,
+            "st.global.b32": 1
+          },
+          "aligned_ptx": {
+            "ld.global.v4.b32": 17,
+            "st.global.b32": 1
+          }
+        },
+        {
+          "name": "gemm_split_finalize",
+          "grid": [
+            1,
+            256,
+            1
+          ],
+          "block": [
+            256,
+            1,
+            1
+          ],
+          "same_lowered_source": true,
+          "pointer_alignments": {
+            "partial": 16,
+            "out": 16
+          },
+          "generic_ptx": {
+            "ld.global.b32": 1,
+            "st.global.b16": 1
+          },
+          "aligned_ptx": {
+            "ld.global.b32": 1,
+            "st.global.b16": 1
+          }
+        }
+      ]
+    },
+    "scope": "CPUimplementation/build evidence only. Staticinstruction sitechanges are not an8x speedup,deviceguard,profile,fullshape orpromotion. CompleteProgram costmodel remainsunmodeled. Stagealignment must receive realpublic/privatepointercounterexample andcompleteProgramGPUvalidation before performance acceptance.",
+    "promotion_disposition": "No promotion. Codegate may integrate afterCI;realdevicevalidation pending. SharedM3statefreeabout1.82GBafterCPUprobe (concurrentstateactivity not attributed);no newlargeGPUpreparation,nohistorycleanup."
+  }
 }

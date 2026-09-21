@@ -1,8 +1,9 @@
 # NVIDIA CAKE reproduction support
 
 This page retains the measured snapshot from [NVIDIA support PR #82](https://github.com/qhy991/open-cake-ir/pull/82).
-Implementation and collection-readiness statements below refer to that task branch;
-publishing this report in the cross-hardware gallery does not integrate its code into `main`.
+The reference collection, component assessment and bounded TinyGEMM implementation are
+now integrated into `main`. Measurements below remain the original task-branch snapshot;
+integration does not establish current-main device correctness or performance.
 
 Development belongs to `nvidia`, through `task/nvidia-cake-support`. The collection
 and its four preparation specifications remain in

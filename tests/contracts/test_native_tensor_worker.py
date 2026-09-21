@@ -22,6 +22,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @unittest.skipUnless(importlib.util.find_spec('torch'), 'requires CPU Torch')
 class NativeTensorWorker(unittest.TestCase):
+    def test_unprepared_cuda_worker_keeps_native_inputs_and_original_oracle(self):
+        import torch
+        workload = WorkloadContract(attention.workload_document(next(iter(attention.TASKS)),
+                                    variant='boundary', backend='triton-b300'))
+        authority = SimpleNamespace(workload=workload, prepared_cases=None)
+        with patch.object(workloads, 'materialize_case', side_effect=AssertionError('flat inputs used')), \
+             patch.object(workloads, 'reference_outputs', side_effect=AssertionError('flat oracle used')):
+            inputs = worker._inputs_for(authority, 'primary')
+            observed = worker._reference_for(authority, 'primary', inputs)
+        self.assertTrue(all(isinstance(value, torch.Tensor) and value.device.type == 'cpu'
+                            for value in inputs.values()))
+        expected = workloads.reference_tensors(workload, 'primary', inputs)
+        self.assertEqual(set(observed), set(expected))
+        for name, tensor in expected.items():
+            torch.testing.assert_close(torch.tensor(observed[name], dtype=tensor.dtype).reshape(tensor.shape),
+                                       tensor, rtol=0, atol=0, equal_nan=True)
+
     def test_input_equality_preserves_fp8_storage_dtype_shape_and_signed_zero(self):
         import torch
         values = torch.arange(256, dtype=torch.uint8).view(torch.float8_e4m3fn)

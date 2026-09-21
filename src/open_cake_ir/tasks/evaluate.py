@@ -41,7 +41,7 @@ from open_cake_ir.evaluation.local_broker import LOCAL_KINDS, LocalBrokerBusy, a
 from open_cake_ir.tasks.launch import parse_launch_manifest
 from open_cake_ir.evaluation.program import ProgramLaunchManifest
 from open_cake_ir.evaluation.metal_manifest import MetalTensorLaunchManifest
-from open_cake_ir.tasks.workloads import materialize_case, reference_outputs
+from open_cake_ir.tasks.workloads import materialize_evaluation_inputs, reference_evaluation_outputs
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
 from open_cake_ir.evaluation.paired import (
     METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
@@ -140,13 +140,13 @@ def _prepared_case(authority, case_id):
 
 def _inputs_for(authority, case_id):
     prepared = _prepared_case(authority, case_id)
-    return (materialize_case(authority.workload, case_id) if prepared is None
+    return (materialize_evaluation_inputs(authority.workload, case_id) if prepared is None
             else prepared.inputs)
 
 
 def _reference_for(authority, case_id, inputs):
     prepared = _prepared_case(authority, case_id)
-    return (reference_outputs(authority.workload, case_id, inputs) if prepared is None
+    return (reference_evaluation_outputs(authority.workload, case_id, inputs) if prepared is None
             else prepared.expected)
 
 

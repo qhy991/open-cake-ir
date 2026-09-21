@@ -45,10 +45,10 @@ The prototype now connects complete Programs, independent Runs, controlled mater
 access, shared Run runtime assembly, preassigned E/P Studies and audited analysis. Software tests exercise these protocol
 paths. Ordinary tasks, incumbents and QSA Cake candidates now use the common path.
 The shared correctness-only composition path now binds CUBIN, HSACO and MCFATBIN modules.
-Complete-program timing and attribution remain limited to Triton/CUDA; Metal composition
-is not yet implemented. Non-CUDA composed candidates cannot borrow the existing single-kernel
-instruments to enter timed optimization Runs. The new paths have software-contract coverage;
-measured cross-hardware benefits and automatic mechanism extraction remain outstanding.
+MACA has a separate complete-Program attribution entry with bounded device observations
+in the [C550 report](../metax-c550.md). Whole-program measurement in ordinary optimization
+Runs remains limited to Triton/CUDA, and Metal composition is not yet implemented.
+Controlled cross-hardware transfer benefits and automatic mechanism extraction remain outstanding.
 The design builds on explicit transformations such as
 [MLIR Transform](https://mlir.llvm.org/docs/Tutorials/transform/) and prior schedule reuse such
 as [Transfer-Tuning](https://arxiv.org/abs/2201.05587v2), focusing on agent-produced experience,

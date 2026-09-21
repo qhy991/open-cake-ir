@@ -8,12 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 import json
-import math
 from types import MappingProxyType
 from threading import Lock
 from collections.abc import Mapping
 
-from open_cake_ir.compiler.ir import Program, BufferMode, MemorySpace
+from open_cake_ir.compiler.ir import Program, MemorySpace
 from open_cake_ir.serialization import canonical_json_bytes
 from .launch_manifest import WorkloadTensorManifest
 
@@ -47,9 +46,9 @@ def single_kernel_lowering(lowered):
 def admit_program_execution(target, *, timing=False, attribution=False):
     """Admit execution separately from a complete Program's measurement coverage.
 
-    HIP and MACA module drivers share ordered execution, but their existing timers
-    and attribution readers describe one dispatch. They cannot measure a Program
-    by passing its logical name to that single-kernel instrument.
+    HIP and MACA module drivers share ordered execution, but the optimization Run
+    instruments still describe one dispatch. Standalone MACA Program attribution
+    has its own source; it does not grant admission to the Run's measurement loop.
     """
     from open_cake_ir.compiler.target import CodeObject
     from .platforms import platform_for
@@ -68,15 +67,17 @@ class ProgramLaunchManifest:
     case_id: str
     program: Program
     lowered_sources: Mapping[str, str]
+    aligned_stages: tuple[str, ...] = ()
 
     abi = 'ordered_program_v1'
     workload_mismatch = 'sealed Program public ABI differs from the selected Workload'
 
     @classmethod
     def from_dict(cls, document):
-        if (not isinstance(document, Mapping)
-            or set(document) != {'schema_version', 'abi', 'workload_sha256', 'case_id', 'program', 'lowered_sources'}
-            or type(document['schema_version']) is not int or document['schema_version'] != 1
+        fields = {'schema_version', 'abi', 'workload_sha256', 'case_id', 'program', 'lowered_sources'}
+        version = document.get('schema_version') if isinstance(document, Mapping) else None
+        if (type(version) is not int or version not in (1, 2)
+            or set(document) != fields | ({'aligned_stages'} if version == 2 else set())
             or document['abi'] != cls.abi):
             raise ValueError('Program launch manifest fields differ')
         digest = document['workload_sha256']
@@ -89,11 +90,19 @@ class ProgramLaunchManifest:
             or any(not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value)
                    for value in sources.values())):
             raise ValueError('Program lowering references must bind every stage')
-        return cls(digest, document['case_id'], program, MappingProxyType(dict(sources)))
+        aligned = document.get('aligned_stages', [])
+        ordered = [stage.name for stage in program.stages if stage.name in aligned] if isinstance(aligned, list) else []
+        if (not isinstance(aligned, list) or any(not isinstance(name, str) for name in aligned)
+            or aligned != ordered or version == 2 and not aligned):
+            raise ValueError('Program aligned stages must be a nonempty ordered subset')
+        return cls(digest, document['case_id'], program, MappingProxyType(dict(sources)), tuple(aligned))
 
     def as_dict(self):
-        return {'schema_version': 1, 'abi': self.abi, 'workload_sha256': self.workload_sha256,
-                'case_id': self.case_id, 'program': self.program.document, 'lowered_sources': dict(self.lowered_sources)}
+        result = {'schema_version': 2 if self.aligned_stages else 1, 'abi': self.abi,
+                  'workload_sha256': self.workload_sha256, 'case_id': self.case_id,
+                  'program': self.program.document, 'lowered_sources': dict(self.lowered_sources)}
+        if self.aligned_stages:result['aligned_stages'] = list(self.aligned_stages)
+        return result
 
     @property
     def canonical_sha256(self):
@@ -126,7 +135,7 @@ class ProgramLaunchManifest:
 
     @property
     def module_count(self):
-        return len(self.program.stages)
+        return len(self.program.stages) + len(self.aligned_stages)
 
     @property
     def kernels_per_call(self):
@@ -155,7 +164,7 @@ def program_components(candidate):
     """Validate the complete executable handoff without loading a module."""
     from .core import TensorLaunchManifest
     from .artifacts import required_build_roles
-    from .kernel_bundle import unpack_candidate_bundle
+    from .kernel_bundle import unpack_candidate_bundle, alignment_component
     if set(candidate.artifact_roles) != PROGRAM_ROLES or set(candidate.artifact_payloads) != PROGRAM_ROLES:
         raise ValueError('Program candidate requires its complete sealed bundle')
     manifest = ProgramLaunchManifest.from_dict(json.loads(candidate.artifact_payloads['launch_manifest']))
@@ -171,20 +180,24 @@ def program_components(candidate):
         child = children[stage.name]
         if not (required_build_roles(child.target) | {'lowered_source', 'stage_compilation'}) <= set(child.artifact_roles):
             raise ValueError(f'Program stage {stage.name!r} build evidence is incomplete')
-        if child.is_program or 'kernel_bundle' in child.artifact_roles:
-            raise ValueError('Program stages require single-kernel artifacts without dispatch variants')
+        if child.is_program:
+            raise ValueError('Program stages cannot contain nested Programs')
         child_manifest = TensorLaunchManifest.from_dict(json.loads(child.artifact_payloads['launch_manifest']))
         if (child.candidate_sha256 != candidate.candidate_sha256
             or child_manifest.workload_sha256 != manifest.workload_sha256
             or child_manifest.case_id != manifest.case_id
             or child_manifest.tensor_abi != stage_abi(stage)
             or child_manifest.target != stage.schedule.target
-            or child_manifest.pointer_alignments or child_manifest.aligned_variant
+            or child_manifest.pointer_alignments
+            or bool(child_manifest.aligned_variant) != (stage.name in manifest.aligned_stages)
             or child.entry_point != child_manifest.kernel_name
             or child.launch_spec_sha256 != child_manifest.canonical_sha256
             or child.artifact_roles.get('lowered_source') != manifest.lowered_sources[stage.name]):
             raise ValueError(f'Program stage {stage.name!r} artifact or ABI binding differs')
         check_triton_launch_record(child,child_manifest,manifest.lowered_sources[stage.name])
+        if child_manifest.aligned_variant:
+            aligned, aligned_manifest = alignment_component(child, child_manifest)
+            check_triton_launch_record(aligned, aligned_manifest, manifest.lowered_sources[stage.name])
         manifests[stage.name] = child_manifest
     return manifest, children, manifests
 
@@ -193,8 +206,14 @@ def seal_program_candidate(lowered, children, *, candidate_sha256, workload, cas
     from .core import LaunchableCandidate
     from .kernel_bundle import pack_candidates
     lowered.validate_binding()
+    # Variant presence rides the sealed manifest so common work accounting can
+    # distinguish loaded modules from executed kernels without opening binaries.
+    # program_components checks this projection against every stage's own bundle.
+    aligned_stages = tuple(stage.name for stage in lowered.program.stages
+                           if stage.name in children and 'kernel_bundle' in children[stage.name].artifact_roles)
     manifest = ProgramLaunchManifest(workload.canonical_sha256, case_id, lowered.program,
-        MappingProxyType({stage.name: lowering.source_sha256 for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True)}))
+        MappingProxyType({stage.name: lowering.source_sha256 for stage, lowering in zip(lowered.program.stages, lowered.lowerings, strict=True)}),
+        aligned_stages)
     manifest.check_workload(workload, case_id)
     if set(children) != {stage.name for stage in lowered.program.stages}:
         raise ValueError('Program build did not produce every stage')
@@ -232,7 +251,16 @@ class LoadedProgram:
                                for stage in checked.program.stages}
         try:
             for stage in checked.program.stages:
-                self._children[stage.name] = loader(children[stage.name], manifests[stage.name], admission)
+                child, spec = children[stage.name], manifests[stage.name]
+                if spec.aligned_variant:
+                    from .kernel_bundle import LoadedAlignmentCandidate
+                    # Nothing has launched during construction. The Program owns
+                    # stream synchronization at teardown; the variant owner
+                    # retains both modules and checks actual addresses per call.
+                    loaded = LoadedAlignmentCandidate(child, spec, admission, loader, lambda: None)
+                else:
+                    loaded = loader(child, spec, admission)
+                self._children[stage.name] = loaded
         except BaseException as primary:
             cleanup = None
             for child in reversed(tuple(self._children.values())):

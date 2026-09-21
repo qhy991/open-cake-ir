@@ -9,6 +9,7 @@ evidence, not GPU, timing or performance qualification.
 
 from copy import deepcopy
 import json
+import itertools
 import math
 from pathlib import Path
 import random
@@ -58,6 +59,19 @@ def gemm_silu_document():
     text = _HEADER.format(name='gemm-silu-row-programmed', entry='cake_gemm_silu_rows',
         metadata='', rows=ROWS, width=WIDTH, columns=COLUMNS, extra_args='', axes='', body=_SILU[1], final=_SILU[0])
     return frontend.parse(text).document
+
+
+def wide_document(width=256, columns=64, coupled=False, silu=False):
+    final, body = _SILU if silu else _PLAIN_STORE
+    extra = ''
+    if coupled:
+        extra = ', rowsum: cake.Tensor((1,), "fp32", mode="output")'
+        body += '''        summed = lm.reduce(totals, op="sum", axis=0, scope="cta", across_loop=False)
+        lm.store(rowsum[row], summed, coalesced=False)
+'''
+    return frontend.parse(_HEADER.format(name='wide-row-contraction', entry='cake_wide_rows',
+        metadata='', rows=1, width=width, columns=columns, extra_args=extra, axes='',
+        body=body, final=final)).document
 
 
 def coupled_document():
@@ -191,6 +205,51 @@ class OutputColumnSpecializationTests(unittest.TestCase):
                     self.assertEqual(len(expected), ROWS*COLUMNS)
                     for got, want in zip(observed, expected):
                         self.assertLessEqual(abs(got - want), 1e-5 * max(1.0, abs(want)))
+
+    def test_storage_refused_rows_can_produce_fully_admitted_columns(self):
+        for columns, silu in itertools.product((64, 128, 256), (False, True)):
+            document = wide_document(columns=columns, silu=silu)
+            before = deepcopy(document)
+            assessment = self.compiler.assess(document)
+            self.assertTrue(assessment.accepted)
+            self.assertFalse(assessment.lowering_eligible)
+            self.assertEqual({f.code for f in assessment.findings
+                              if f.blocks_lowering or f.blocks_acceptance}, {'METAL_PRIVATE_STORAGE_LIMIT'})
+            result = self.specialize(document)
+            self.assertTrue(result.applied, result.message)
+            self.assertEqual(document, before)
+            self.assertTrue(self.compiler.assess(result.schedule).lowering_eligible)
+
+    def test_rescued_column_body_matches_independent_dot_oracle(self):
+        width, columns = 256, 64
+        result = self.specialize(wide_document(width=width, columns=columns))
+        self.assertTrue(result.applied, result.message)
+        a = [(k % 7 - 3) / 8 for k in range(width)]
+        b = [((k + n) % 5 - 2) / 4 for k in range(width) for n in range(columns)]
+        bias = [(n % 3 - 1) / 2 for n in range(columns)]
+        expected = [math.fsum(a[k] * b[k * columns + n] for k in range(width)) + bias[n]
+                    for n in range(columns)]
+        observed = self.execute_body(result.schedule, {'a': a, 'b': b, 'bias': bias})['out']
+        self.assertEqual(observed, expected)
+
+    def test_storage_refusal_does_not_mask_other_invalid_input(self):
+        document = wide_document()
+        document['lowering']['entry_point'] = 'float4'
+        codes = {f.code for f in self.compiler.assess(document).findings if f.blocks_lowering}
+        self.assertIn('METAL_PRIVATE_STORAGE_LIMIT', codes)
+        self.assertIn('METAL_ENTRY_POINT_UNSUPPORTED', codes)
+        result = self.specialize(document)
+        self.assertEqual(result.reason, 'input_refused')
+        self.assertIsNone(result.schedule)
+
+    def test_rescue_keeps_coupled_output_guard_and_final_resource_gate(self):
+        coupled = self.specialize(wide_document(coupled=True))
+        self.assertEqual(coupled.reason, 'coupled_output_axis')
+        self.assertIsNone(coupled.schedule)
+        oversized = self.specialize(wide_document(width=32768, columns=2))
+        self.assertEqual(oversized.reason, 'result_refused')
+        self.assertIn('METAL_PRIVATE_STORAGE_LIMIT', oversized.message)
+        self.assertIsNone(oversized.schedule)
 
     def test_refused_coupling_is_exactly_the_reassociating_epilogue(self):
         self.assert_refused(coupled_document(), 'coupled_output_axis')

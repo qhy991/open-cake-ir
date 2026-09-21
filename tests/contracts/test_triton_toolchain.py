@@ -26,6 +26,24 @@ REQUIREMENTS = {
 
 
 class TritonToolchainAdmissionTests(unittest.TestCase):
+    def test_selected_k_materialization_reaches_public_admission_without_arbitrary_asm(self):
+        from open_cake_ir.tasks.tinygemm import reproduction as task
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        for batch,n,k in ((1,128,720),(16,1024,1024),(64,4096,3072)):
+            workload = WorkloadContract(task.workload_document(rows=batch,columns=n,depth=k))
+            lowering = compiler.lower(compiler.assess(frontend.parse(task.partitioned_source(workload)).document))
+            source = project_triton_kernel(lowering.source.encode(),lowering.toolchain_requirements)
+            validate_triton_kernel(source,lowering.toolchain_requirements)
+            self.assertIn(b'mov.b32 $0, $1;',source)
+            for old,new in ((b'mov.b32 $0, $1;',b'ld.global.f32 $0, [$1];'),
+                            (b'=f,f',b'=f,l'),(b'is_pure=True',b'is_pure=False'),
+                            (b'pack=1',b'pack=2')):
+                with self.subTest(change=new), self.assertRaisesRegex(ValueError,'exact FP32 FMA contract'):
+                    validate_triton_kernel(source.replace(old,new),lowering.toolchain_requirements)
+            with self.assertRaisesRegex(ValueError,'exact FP32 FMA contract'):
+                validate_triton_kernel(source,{**lowering.toolchain_requirements,'code_object':'hsaco'})
+
     def test_fma_and_loop_max_lowering_reach_public_source_admission(self):
         from tests.contracts.test_triton_loop_scopes import _reduction
 

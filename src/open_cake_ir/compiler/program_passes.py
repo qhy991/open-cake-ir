@@ -127,6 +127,10 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
         # A complete candidate has no unassessed side region. Keep findings localized
         # even when the requested rewrite happens to select different stages.
         for stage in program.stages:
+            if transformation == 'specialize_output_columns' and stage.name == parameters['stage']:
+                # The selected pass owns its input domain, including the specific
+                # storage refusal it can repair. Other regions still need to lower.
+                continue
             assessment = compiler.assess(json.loads(stage.schedule_bytes))
             if not assessment.lowering_eligible:
                 return _refuse('input_refused', ', '.join(f.code for f in assessment.findings), (stage.name,))
