@@ -165,6 +165,7 @@ def measure_program(args, candidate, workload, protocol, admission, prepared, ex
             diagnostic['passed'] = diagnostic['correctness_passed'] and diagnostic['measurement_quality_passed']
         except Exception as error:
             primary = error
+            diagnostic.update(error=str(error), failure_class=type(error).__name__, failure_phase='postflight')
     write(args.output / 'measurement-diagnostic.json', diagnostic)
     if primary is not None:
         raise RunProtocolFault('harness_fault', str(primary),
