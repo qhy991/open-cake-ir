@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-21-003",
+  "date": "2026-09-21",
+  "kind": "protocol",
+  "title": "Gateway response model alias rejects a successful Kimi resume qualification",
+  "backend": "Claude Code 2.1.203 via Infini Anthropic Messages gateway",
+  "target": "gfx1151 provider preparation; no GPU task launched",
+  "compiler_revision_id": "open-cake-ir@a9e968d2437ac80c4ab51b4a558b50c359bb1d9c",
+  "executor_revision": "gfx1151@a9e968d2437ac80c4ab51b4a558b50c359bb1d9c",
+  "evidence": {
+    "workspace": "infplane:/home/wwxq/oci-lab/amd-kimi-k3-20260921",
+    "run": "provider-evidence/runs/amd-kimi-k3-live-qualification",
+    "role": "provider_stdout",
+    "observation": "Resumed stream init.model and result.modelUsage name kimi-k3, assistant response index1 names moonshotai/kimi-k3, later responses name kimi-k3. Structured output and both planned candidate updates succeeded. Original failed qualification is retained.",
+    "gateway": "https://cloud.infini-ai.com/maas",
+    "model_list_observation": "Authenticated /v1/models returned exact request id kimi-k3; no token is retained in this finding."
+  },
+  "observation": "Exact response name equality rejects an otherwise complete invocation. Accepting aliases by basename would hide undeclared model changes.",
+  "proposed_change": "Caller-declared response-model allowlist is frozen in provider configuration and qualification; request/init/primary modelUsage remain exact. Preserve native names and all candidate/lifecycle guards. Apply identical authority to fault usage and replay.",
+  "decision": "accepted",
+  "implemented_in": "1ebb9b4ba",
+  "verified_by": {
+    "original_replay": "infplane:/home/wwxq/oci-lab/amd-kimi-k3-20260921/alias-original-replay-r1.json",
+    "result": "Original failed stream rejects without declaration, accepts only with moonshotai/kimi-k3 explicitly declared; two retained candidates, 30364 tokens, raw events unchanged.",
+    "scope": "Software protocol replay; no retroactive qualification or GPU performance claim."
+  }
+}

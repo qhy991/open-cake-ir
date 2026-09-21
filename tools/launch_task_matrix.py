@@ -153,7 +153,8 @@ def main(argv=None) -> int:
     _write(root / "matrix.json", json.dumps({
         "schema_version": 1, "tasks": list(selected), "backend": args.backend,
         "provider": {"harness": args.harness, "model": args.model, "effort": args.effort,
-                     "revision": args.provider_revision},
+                     "revision": args.provider_revision,
+                     **({"response_model_aliases": args.response_model_alias} if args.response_model_alias else {})},
         "budget": {"turns": args.turns, "provider_tokens_per_task": args.token_budget,
                    "maximum_candidates_per_turn": args.max_candidates,
                    "searches_per_turn": args.searches_per_turn,
