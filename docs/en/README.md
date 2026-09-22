@@ -86,7 +86,10 @@ Original documents retain their paths. Chinese reading companions for English or
 ## Research design
 
 [Executable optimization knowledge transfer](OPTIMIZATION_TRANSFER.md) describes the proposed
-cross-hardware mechanism and its explanation-versus-rewrite ablation.
+cross-hardware mechanism and its explanation-versus-rewrite ablation. Domestic-accelerator work
+is separated into target admission, direct target-architecture optimization, and the measured
+incremental value of NVIDIA-derived mechanism material; none of these claims is implied by the
+others.
 
 ## Citation
 

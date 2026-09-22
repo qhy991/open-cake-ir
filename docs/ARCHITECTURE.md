@@ -56,6 +56,61 @@ flowchart LR
 
 ## 4. 编译器怎样处理计划
 
+### Cake IR、DSL 与 Triton 的层级
+
+本项目的 Cake IR 是**带类型、显式硬件执行计划的领域专用表示**。受限 Python 前端是
+它的 DSL 编写形式，JSON 是同一 Schedule 的文档形式；二者进入同一 typed IR，Python
+前端不编译任意 Python 程序。整个 open-cake-ir 还包含 Compiler、Lab、Evaluation 与
+Evidence，因此项目的范围大于一种 DSL。本项目独立探索 [CAKE 论文](https://arxiv.org/html/2608.12629v1)
+的思路，下面描述本仓库实现，不把论文实现或性能归给本仓库。
+
+| 层级 | 表示与负责的决策 | 尚未决定的事情 |
+| --- | --- | --- |
+| 任务语义 | Workload 与外部 oracle 固定输入输出、数学和数值验收 | 如何分块、融合或调度 |
+| 完整程序 IR | Program 固定公共张量、stage 顺序与绑定；每个 stage 包含完整 Schedule | 不是任意模型图的自动优化前端；当前组合是静态、同 stream 的程序 |
+| kernel 调度 IR | Schedule 声明操作、Buffer、执行分组、访问坐标、循环、存储与同步承诺 | 不直接给出全部物理寄存器、最终机器指令与实测时延 |
+| 生成源码 | backend 将合法 Schedule 翻译成 Triton Python、CUDA/C++、CuTe DSL 或 Metal | 生成成功仍需对应工具链编译 |
+| 工具链与执行 | 对应工具链生成精确目标的代码对象，Executor 加载并评测 | 编译通过不能代替外部正确性与性能确认 |
+
+所以 Schedule 是 **kernel 的调度级 IR**：比只写数学算子的图更具体，通常比最终机器码
+更抽象。不能简单说它在所有维度上都比 Triton 更高层。Triton 路线将部分物理布局、
+寄存器分配和指令选择交给 Triton；原生路线可以表达更细的目标指令、存储和同步承诺。
+统一的是表示与验证接口，各路线接受的 Schedule 子集和硬件控制粒度不同。
+
+```mermaid
+flowchart TD
+    A["受限 Python / JSON"] --> S["Typed Schedule：单 kernel 执行计划"]
+    P["Program：stage 与张量绑定"] --> S
+    S --> V["Compiler：Target 检查、诊断与 backend preflight"]
+    V --> T["Triton Python → 对应厂商 Triton 工具链"]
+    V --> N["CUDA/C++ 或 CuTe DSL → 对应 NVIDIA 工具链"]
+    V --> M["Metal → Apple 工具链"]
+    T --> B["精确目标代码对象 → Executor → 外部验证"]
+    N --> B
+    M --> B
+```
+
+**Triton 是可选的生成路线和下游编译基础，不是 Cake IR 的格式。**
+`Compiler.lower()` 调用后端生成可检查源码；Triton 路线随后由 `compile_triton()` 使用
+`ASTSource` 和 `GPUTarget` 编译，并不是把 Cake IR 直接交给 Triton 读取，也不是直接
+生成 Triton 的 MLIR dialect。普通 NVIDIA 路线保留 TTIR、TTGIR、LLIR、PTX、CUBIN；
+其他厂商保留其工具链实际提供的产物，不能假定均经过 PTX。
+
+复用 Triton 的工程价值是让 CAKE 专注于显式计划、合法性、变换与诊断，利用下游已有的
+block 运算实现、指令选择及机器代码生成。代价是这条路线的表达和优化空间受该版本
+Triton/backend 约束：例如 `triton.dot` 的物理 placement 由下游决定，CAKE 不能承诺
+它不会兑现的 placement。需要更细硬件控制时，应在有实际需求和验证的前提下完善相应
+原生路线；当前四个后端不是可随意互换、能力等价的实现。
+
+定义与实现分别见 [Python 前端](../src/open_cake_ir/compiler/frontend.py)、
+[Program](../src/open_cake_ir/compiler/ir/program.py)、[Schedule](../src/open_cake_ir/compiler/ir/schedule.py)、
+[后端清单](../src/open_cake_ir/compiler/backends/__init__.py)、
+[Triton emitter](../src/open_cake_ir/compiler/backends/triton.py)和
+[工具链](../src/open_cake_ir/compiler/toolchain.py)。国产卡接入、机制迁移与目标架构优化的
+阶段和证据边界由[迁移章节](OPTIMIZATION_TRANSFER.md#国产卡迁移与目标架构协同优化)说明。
+
+### 从计划到源码的检查
+
 ```text
 检查格式与类型
   → 检查依赖、地址、资源和硬件规则

@@ -23,6 +23,65 @@ For row normalization, Workload fixes mathematics, reference and tolerance. Sche
 
 ## The compiler path
 
+### Cake IR, DSL, and Triton layers
+
+Cake IR is a **typed, hardware-explicit schedule representation**. The restricted Python
+frontend is a DSL authoring surface for the same Schedule document; JSON and Python reach one
+typed IR, and the Python frontend does not compile arbitrary Python control flow. The whole
+open-cake-ir project is larger than this DSL: it also contains the Compiler, Lab, Evaluation,
+and Evidence layers. This repository independently explores ideas from the
+[CAKE paper](https://arxiv.org/html/2608.12629v1); the description here is of this repository,
+not an attribution of the paper's implementation or results to it.
+
+| Layer | Representation and owned decisions | What remains open |
+| --- | --- | --- |
+| Workload semantics | Workload and oracle fix inputs, mathematics, and numerical acceptance | Tiling, fusion, and scheduling |
+| Complete-program IR | Program fixes public tensors, stage order, and bindings; each stage contains a Schedule | It is not an automatic model-graph optimizer; current composition is static and same-stream |
+| Kernel schedule IR | Schedule declares operations, buffers, execution groups, access coordinates, loops, storage, and synchronization | All physical registers, final machine instructions, and measured latency |
+| Generated source | A backend translates an eligible Schedule to Triton Python, CUDA/C++, CuTe DSL, or Metal | Toolchain compilation is still required |
+| Toolchain and execution | The target toolchain produces the exact code object, which the Executor loads and evaluates | Compilation does not replace external correctness or performance evidence |
+
+Schedule is therefore a **kernel-scheduling IR**: more concrete than a mathematical operator
+graph and more abstract than final machine code. It is not simply higher-level than Triton in
+every dimension. The Triton route leaves parts of physical layout, register allocation, and
+instruction selection to Triton; a native route can expose finer target instruction, storage,
+and synchronization commitments. The shared boundary is the representation and verification
+interface, not equal control or capability across all backends.
+
+```mermaid
+flowchart TD
+    A["Restricted Python / JSON"] --> S["Typed Schedule: one kernel plan"]
+    P["Program: stages and tensor bindings"] --> S
+    S --> V["Compiler: Target checks, findings, backend preflight"]
+    V --> T["Triton Python → vendor Triton toolchain"]
+    V --> N["CUDA/C++ or CuTe DSL → NVIDIA toolchain"]
+    V --> M["Metal → Apple toolchain"]
+    T --> B["Exact code object → Executor → external validation"]
+    N --> B
+    M --> B
+```
+
+**Triton is an optional source-generation route and downstream compiler foundation, not the
+Cake IR format.** `Compiler.lower()` first emits inspectable source. The Triton route then uses
+`ASTSource` and `GPUTarget` in `compile_triton()`; Cake IR is not passed directly to Triton, nor
+is this repository a direct producer of Triton's internal MLIR dialect. NVIDIA routes retain
+TTIR, TTGIR, LLIR, PTX, and CUBIN where the toolchain provides them; other vendors retain the
+artifacts their own toolchain actually produces and must not be assumed to pass through PTX.
+
+Using Triton lets CAKE focus on explicit plans, legality, rewrites, and diagnostics while
+reusing an existing block-program implementation and machine-code path. The trade-off is that
+the route is bounded by the selected Triton/backend version: for example, `triton.dot` owns
+physical placement in that route, so Cake cannot promise placement that the backend does not
+honor. Finer control belongs in a native route when a real use case and evidence justify it;
+the four backends are not interchangeable implementations.
+
+See the [Python frontend](../../src/open_cake_ir/compiler/frontend.py),
+[Program](../../src/open_cake_ir/compiler/ir/program.py), [Schedule](../../src/open_cake_ir/compiler/ir/schedule.py),
+[backend inventory](../../src/open_cake_ir/compiler/backends/__init__.py),
+[Triton emitter](../../src/open_cake_ir/compiler/backends/triton.py), and
+[toolchain](../../src/open_cake_ir/compiler/toolchain.py). The [transfer chapter](OPTIMIZATION_TRANSFER.md#porting-to-domestic-accelerators-and-co-optimizing-the-target-architecture)
+defines the domestic-accelerator stages and evidence boundaries.
+
 Format/type checks precede dependency, address, resource, and hardware checks. Assessment separates structural acceptance from backend eligibility and contains localized Findings. Each Finding retains its contract category, severity, and separate acceptance/lowering dispositions. `Assessment.findings` retains the blocking/report observations checked by the existing Corpus Gate; `Assessment.guidance` carries nonblocking hints. CLI, Lab, and profile reports expose both without treating hints as acceptance evidence or GPU measurements. Eligible plans generate source through `triton`, `cutlass_cute_dsl`, `native_cuda`, or `metal`.
 
 The dedicated `checked_cuda_asset` route is retired. Its original TinyGEMM2 Schedules remain explicit structure-refusal cases; replay old fixed-source observations at their pinned Git revision. Current `Lowering.generated` is true, while historical values retain their meaning. Analysis covers declared rules only: backend registers or implicit shared memory require compiled or device evidence.

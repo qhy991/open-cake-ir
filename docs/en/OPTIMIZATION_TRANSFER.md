@@ -26,7 +26,88 @@ fusing Add and SiLU may eliminate a private BF16 intermediate's global store/rel
 preserving its rounding boundary. Tile sizes and execution groups are selected again on
 the destination; a source speedup is not a destination result.
 
-The proposed 2×2 study controls **E**, extra mechanism explanations and cases, and **P**,
+### Porting to domestic accelerators and co-optimizing the target architecture
+
+**The endpoint of porting is a target-owned Kernel–Compiler optimization loop.** NVIDIA
+knowledge is a useful starting input, not a prerequisite that every target must complete first.
+Platform admission, benefit from transferred mechanisms, and discovery of new target-specific
+optimizations are separate claims and require separate evidence.
+
+#### What a new domestic target must own
+
+The [architecture chapter](ARCHITECTURE.md#cake-ir-dsl-and-triton-layers) separates Program,
+Schedule, generated source, and toolchain. A new target should reuse common Workloads, typed IR,
+general legality rules, and experiment protocols where possible. It must declare and validate its
+exact Target, instruction and numerical contracts, code object, compiler, loader/launch ABI,
+host admission, timer, profiler, and measurement quality rules. A Target document does not create
+those implementations by itself.
+
+| Existing target | Current route | Facts that cannot be inferred from compatibility |
+| --- | --- | --- |
+| Hygon BW1101, `gfx938` | Schedule → Triton source → DTK/HCU Triton → AMDGCN/HSACO → HIP | Sharing parts of HIP/HSACO with AMD does not share limits, numerical qualification, timing calibration, or performance |
+| MetaX C550, `xcore1002` | Schedule → Triton source → MACA Triton → native ELF in MCFATBIN → MACA loader | `GPUTarget("maca", 80, 64)` uses a compatibility API value; `80` is not NVIDIA SM80; physical target, codegen family, and API identity are checked separately |
+
+These routes use the existing Triton emitter but invoke each vendor's compiler and runtime; they
+do **not** copy NVIDIA PTX/CUBIN onto a domestic device. The MetaX route retains TTIR, TTGIR,
+and mcfatbin where those artifacts are supplied and does not invent LLVM/PTX files. A new target
+may add a Target and platform adapter when the existing emitter expresses the needed behavior;
+when it does not, a new generation mechanism needs an evidence-backed use case. Triton is not a
+mandatory path for every future device.
+
+#### What transfers from NVIDIA, and what must be redone
+
+| Knowledge or artifact | Transfer treatment | Must be reselected or revalidated on the target |
+| --- | --- | --- |
+| Algorithm and semantics | Reuse workload mathematics, dependencies, oracle, and numerical obligations | Target dtype, rounding, atomic behavior, and complete outputs |
+| Fusion, tiling, and reuse mechanisms | Supply mechanism explanations or guarded transformation passes | Privacy/lifetime, legality, resource realization, and benefit against the local baseline |
+| Tuned parameters | Use as hypotheses or search candidates | Tile, execution groups, pipeline depth, and fusion boundary |
+| NVIDIA instruction/resource protocol | Preserve intent and re-express it with target capabilities; otherwise refuse | `tcgen05`, TMA, TMEM, and `setmaxnreg` do not become domestic instructions by renaming a Target |
+| Diagnostics | Reuse the method of locating dataflow, synchronization, and bottlenecks | Metric definitions, observability, timer interval, and cache/state reset |
+| Source performance | Retain as provenance and context | Target correctness, measurement quality, local baseline, and performance |
+
+For example, “fuse a private intermediate to remove a global store/reload” can transfer as a
+dataflow rewrite with its rounding, consumer, and lifetime conditions. On C550 or DCU it may
+increase register pressure and reduce occupancy, so the unfused incumbent must remain available.
+The direction is not permanently NVIDIA-to-domestic: a target can discover a mechanism that later
+becomes another platform's candidate.
+
+#### From admission to direct target optimization
+
+The sequence below refines the roadmap without adding a second runtime mode. Existing evidence
+is reused at its stated scope; the table is not a claim that every step is complete everywhere.
+
+| Stage | Work | Question answered |
+| --- | --- | --- |
+| 1. Baseline and observability | Compile, load, and check complete outputs; declare timer interval, reset, noise gate, and profiler coverage | Can this workload run and be compared reliably on this target? |
+| 2. Mechanism instantiation | Import an allowed mechanism or guarded pass, reselect parameters, and run Target/backend preflight | Is this mechanism expressible and correct on this target? |
+| 3. Direct target search | Freeze Compiler, Workload, and toolchain; generate distinct Schedules/Programs; filter statically; validate, measure, profile, and confirm independently | Does the local kernel improve over the local baseline, at what cost, and why? |
+| 4. System evolution | Outside the frozen Run, update Target, lowering, verifier, calibration, or a reusable pass in a successor commit | Which observed gap did the system change resolve? |
+| 5. Application expansion | Validate more shapes, tails, dispatch/fallback, then the target framework | Does a complete Program, model, or service benefit? |
+
+Stages 3 and 4 alternate as two loops: the inner loop optimizes programs on the target hardware;
+the outer loop improves the system that makes those optimizations expressible, diagnosable, and
+verifiable. Direct target optimization therefore does not wait for every NVIDIA mechanism to be
+ported. A target may begin from its own workload and hardware evidence.
+
+The earliest divergence chooses the owner: candidate parameters return to Schedule/Program;
+backend expressibility to lowering and preflight; recurring illegal behavior to the verifier;
+missing vocabulary to a jointly typed primitive, effect, analysis, and lowering; systematic model
+error to target calibration; and a repeatable semantic rewrite to a guarded pass. A performance
+gap alone does not justify a new IR primitive. Hardware-specific facts stay with the Target,
+backend, platform implementation, and evidence that admits them; the shared Compiler is not
+copied per vendor. Changes to a vendor's Triton/SDK are separate toolchain work and version
+identity, not an automatic capability of this repository.
+
+The current snapshot provides substantial DCU execution and local optimization records, with
+short-kernel timing-resolution limits, and C550 fixed-kernel/selected Program correctness plus
+single-kernel timing/profiling and a bounded M17 tile case. Those observations establish platform
+paths and local examples, not completed full-program optimization or effective knowledge transfer.
+The hypothesis that NVIDIA mechanism material reduces domestic-target search cost remains to be
+tested with common frozen Compiler/toolchain, baseline, author, and budget, comparing extra
+material and transform access. The protocol below separates that attribution from ordinary local
+optimization and from later compiler-capability work.
+
+## The proposed 2×2 study controls **E**, extra mechanism explanations and cases, and **P**,
 permission to invoke a frozen transformation. E0P0 supplies neither; E1P0 supplies explanations
 for manual rewriting; E0P1 supplies only the callable interface and its necessary contract;
 E1P1 supplies both. P1 inherently carries some knowledge, so E estimates the incremental
