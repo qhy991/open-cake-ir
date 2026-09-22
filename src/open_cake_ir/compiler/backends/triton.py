@@ -196,6 +196,13 @@ def validate_input(document: Mapping[str, object]) -> None:
 
 CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN})
 
+# C550 can compile the same FP32 GEMM+bias source at 1/2/4/8 warps, while the
+# 16-warp launch reaches MACA's mcErrorRecompile before its first kernel call.
+# This is a route qualification boundary, not the physical Target maximum (which
+# remains 16 warps); keep it here so an unqualified author choice is refused before
+# GPU allocation and can be routed back to the candidate.
+_METAX_QUALIFIED_MAX_WARPS = 8
+
 
 def _power_of_two(value: int) -> bool:
     """What `tl.arange` and `tl.topk` require of an extent: a positive power of two."""
@@ -424,6 +431,14 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             f"the declared role has {warp_count} warps. Choose the role explicitly; "
             "the Compiler does not round the launch size.",
         )
+        if target.target_id == "xcore1002" and warp_count > _METAX_QUALIFIED_MAX_WARPS:
+            findings.append(refusal(
+                "MACA_WARP_COUNT_UNQUALIFIED",
+                "roles[0].execution_groups",
+                "C550 evidence qualifies Triton launches through 8 warps; larger MetaX "
+                "launches are refused before device allocation until a successor route "
+                "qualifies them",
+            ))
 
     counts = {
         kind: sum(operation.kind is kind for operation in schedule.operations)
