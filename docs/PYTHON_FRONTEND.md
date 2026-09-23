@@ -25,15 +25,15 @@ Compiler 变更需通过完整 Corpus Gate；后继正式发布仍消费外部�
 
 ## 运行
 
-使用项目的 Python 3.10 或更新环境。在开发分支中，`compiler/revision.json` 指定当前待审草案；
-正式发布后使用 `compiler/revision.json`。已有发布锁不适用于改过绑定源码的开发分支。
+使用项目的 Python 3.10 或更新环境，在仓库根目录运行。作者无需填写 JSON 路径；
+编译器默认读取当前项目的目标与版本配置。需要检查另一份明确指定的版本时，仍可使用 `--revision`。
 
 ```bash
 PYTHONPATH=src python3 -m open_cake_ir.cli compiler assess \
-  --revision compiler/revision.json examples/python/fma.py --format text
+  examples/python/fma.py --format text
 
 PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
-  --revision compiler/revision.json examples/python/fma.py \
+  examples/python/fma.py \
   --output /tmp/cake-fma-generated.py --format text
 ```
 
@@ -90,7 +90,7 @@ load 的显式读取和依赖，重复使用同一个索引不会产生重复读
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import read_schedule
 
-compiler = Compiler.load(".", "compiler/revision.json")
+compiler = Compiler.load()
 authored = read_schedule("examples/python/fma.py")
 assessment = compiler.assess(authored.document)
 for finding in assessment.findings + assessment.guidance:

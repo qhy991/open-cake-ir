@@ -239,19 +239,19 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import read_schedule
 from open_cake_ir.compiler.ir import Schedule
 
-schedule = Schedule.load("corpus/schedules/fma-b8-smoke.json")
+authored = read_schedule("examples/python/fma.py")
+schedule = Schedule.from_dict(authored.document)
 assert schedule.buffer("a").shape == (8, 128)
 print([(op.op_id, op.kind.value) for op in schedule.operations])
 
-compiler = Compiler.load(".", "compiler/revision.json")
-authored = read_schedule("examples/python/fma.py")
+compiler = Compiler.load()
 assessment = compiler.assess(authored.document)
 assert assessment.accepted and assessment.lowering_eligible, assessment.findings
 lowering = compiler.lower(assessment)
 assert "fma.rn.f32" in lowering.source
 ```
 
-这个例子使用仓库中的 [FMA Python](../examples/python/fma.py) 和 [FMA JSON](../corpus/schedules/fma-b8-smoke.json)，不复制另一份完整计划。三个 load 产生寄存器 tile，FMA 读三个 tile 并生成结果，store 按 `y` 的 AccessMap 写回；角色、地址与数据流相互独立又必须一致。
+这个例子只读取 [FMA Python](../examples/python/fma.py)；[JSON 版本](../corpus/schedules/fma-b8-smoke.json) 留作 Corpus 回归和查看规范序列化，不是编写算子的必需输入。三个 load 产生寄存器 tile，FMA 读三个 tile 并生成结果，store 按 `y` 的 AccessMap 写回；角色、地址与数据流相互独立又必须一致。
 
 各检查层的边界如下：
 

@@ -23,29 +23,30 @@ def fma(lm, a: cake.Tensor((8, 128), "fp32"), b: cake.Tensor((8, 128), "fp32"),
         a_tile = lm.load(a[batch, :], reuse="streamed", id="load_a")
         b_tile = lm.load(b[batch, :], reuse="streamed", id="load_b")
         c_tile = lm.load(c[batch, :], reuse="streamed", id="load_c")
-        y_tile = lm.fma(a_tile, b_tile, c_tile, id="fma")
+        y_tile = lm.fma(a_tile, b_tile, c_tile,
+                        instruction={"contract": "ptx.fma.rn.f32"}, id="fma")
         lm.store(y[batch, :], y_tile, id="store_y")
 ```
 
 Tensor parameters declare fixed shapes, dtype, and mode. A role owns the operations in its with block; program selects row work. Loads establish data dependencies, fma computes the result, and store writes output. Intermediate register shapes and types are inferred.
 
-`lm.fma` preserves the existing single RN-even rounding contract. `a*b+c` constructs two independent operations. `lm.broadcast(value,axis=...)` uses the existing broadcast_axis relation, not a new splat or reshape. A broadcast marker may be named before use; the name is erased into the same canonical relation. The axis is the retained vector axis: for [R,C], weights [C] use axis=1 and row reductions [R] use axis=0.
+`lm.fma` explicitly names the target's single RN-even rounding contract. `a*b+c` constructs two independent operations. `lm.broadcast(value,axis=...)` uses the existing broadcast_axis relation, not a new splat or reshape. A broadcast marker may be named before use; the name is erased into the same canonical relation. The axis is the retained vector axis: for [R,C], weights [C] use axis=1 and row reductions [R] use axis=0.
 
 ## Check and generate without a GPU
 
-Use the project environment from [Getting started](GETTING_STARTED.md), running at the repository root. These commands use the released lock and a new external output:
+Use the project environment from [Getting started](GETTING_STARTED.md), running at the repository root. These commands use the current project's Compiler configuration and a new external output:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler assess \
-  --revision compiler/revision.json examples/python/fma.py --format text
+  examples/python/fma.py --format text
 
 CAKE_PYTHON_OUTPUT=$(mktemp -d)
 PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler lower \
-  --revision compiler/revision.json examples/python/fma.py \
+  examples/python/fma.py \
   --output "$CAKE_PYTHON_OUTPUT/fma.py" --format text
 ```
 
-Text output currently reports Chinese structural acceptance and generation eligibility. The commands produce source, not GPU binaries, numerical checks, or performance measurements. Existing output files are refused. The canonical contract also describes using revision.json for an unreleased development draft; do not mix changed bound sources with an old released lock.
+Text output currently reports Chinese structural acceptance and generation eligibility. The commands produce source, not GPU binaries, numerical checks, or performance measurements. Existing output files are refused. An explicit `--revision` can select another configuration; running a historical frozen experiment still requires its own matching source and execution bindings.
 
 ## Supported authoring contract
 
