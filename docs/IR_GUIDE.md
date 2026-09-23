@@ -59,6 +59,9 @@ flowchart TD
 ```
 
 [Python frontend](../src/open_cake_ir/compiler/frontend.py) 是编辑入口，最终也产生同一份 Schedule 文档。它支持受限的 Python AST，不能据此推断任意 Python 控制流都可编译。JSON 和 Python 最终经过同一 Compiler；源码位置是用于展示诊断的附加信息。
+多阶段作者可使用 [Program Python 前端](../src/open_cake_ir/compiler/program_frontend.py)
+静态组合这些完整 Schedule；张量绑定与阶段顺序仍由同一个 typed `Program` 检查，
+不需要手写 Program JSON。
 
 顶层对象由以下部分组成。列表字段即使没有条目也需要保留，标为可选的字段除外。
 

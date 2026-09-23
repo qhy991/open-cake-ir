@@ -7,6 +7,7 @@ from hashlib import sha256
 
 from .._documents import _canonical_json_bytes
 from ..actions import resolve_action_set
+from ..provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
 from .refusals import refuse, event_location
 
 
@@ -53,7 +54,8 @@ def replay_actions(*, specification, events, evidence, provider_candidates_by_tu
             transformations=document['knowledge']['transformations'], candidates=prior,
             baselines=baselines, compiler_factory=compiler_factory,
             allow_python=document["authoring"].get("input_format") in {"schedule_or_python_v1", "python_source_v1"},
-            python_only=document["authoring"].get("input_format") == "python_source_v1")
+            python_only=document["authoring"].get("input_format") == "python_source_v1",
+            source_bundle=document['authoring'].get('provider', {}).get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1)
         if not isinstance(rows, list) or len(rows) != len(derived):
             refuse(location, 'action coverage differs from the author submission')
         current = {}

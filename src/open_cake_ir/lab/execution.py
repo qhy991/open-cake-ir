@@ -33,6 +33,7 @@ from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, Tur
 from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
 from .reference_access import require_qualified_clean_start_execution
+from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
 from .executor import ExecutorRevision
 from .pairing import comparison_arm, native_backend
 from .ralph import RalphBudget, RalphController
@@ -341,7 +342,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
                 environment_kind=kind, transformations=document['knowledge']['transformations'],
                 candidates=prior_candidates, baselines=baselines, compiler_factory=compiler_factory,
                 allow_python=document["authoring"].get("input_format") in {"schedule_or_python_v1", "python_source_v1"},
-                python_only=document["authoring"].get("input_format") == "python_source_v1")
+                python_only=document["authoring"].get("input_format") == "python_source_v1",
+                source_bundle=document['authoring'].get('provider', {}).get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1)
             action_rows = []
             resolved_candidates = {}
             for ordinal, resolution in enumerate(resolutions):

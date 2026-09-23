@@ -5,6 +5,9 @@ Write one `candidate-set.py` file. Import the Cake frontend once, then put compl
 Each function is one candidate. When this Run grants a Compiler rewrite, place a
 static `cake.transform(parent="...", transformation="...", parameters={...})`
 declaration at its desired position; use the candidate ids returned in feedback.
+To propose a multi-stage implementation, use static `cake.program(...)` with ordered
+`cake.stage(...)` bindings to complete Schedule functions in the same file. That
+Program counts as one candidate; its referenced stage functions do not count again.
 Do not execute this file or write Schedule/Program JSON. The Lab parses its AST,
 seals the raw UTF-8 bytes and derives the ordered candidate/action set.
 

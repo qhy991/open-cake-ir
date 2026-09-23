@@ -14,9 +14,6 @@ from collections.abc import Mapping
 from open_cake_ir.serialization import canonical_json_bytes
 
 
-_IMPORT = 'from open_cake_ir.compiler import frontend as cake\n'
-
-
 def _json_literal(node: ast.AST):
     def reject_duplicate_keys(item: ast.AST):
         if isinstance(item, ast.Dict):
@@ -72,11 +69,55 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
         or first.level != 0 or len(first.names) != 1
         or first.names[0].name != 'frontend' or first.names[0].asname != 'cake'):
         raise ValueError('Python candidate bundle requires the Cake frontend import')
-    # AST line numbers count physical line endings, not Unicode separators such
-    # as U+2028 inside a comment or string. Split only on LF to keep slices exact.
-    if '\r' in source.replace('\r\n', ''):
-        raise ValueError('Python candidate bundle requires LF or CRLF line endings')
-    lines = source.split('\n')
+    program_nodes = [node for node in body[1:]
+                     if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                         and isinstance(node.value.func, ast.Attribute)
+                         and isinstance(node.value.func.value, ast.Name)
+                         and node.value.func.value.id == 'cake'
+                         and node.value.func.attr == 'program')]
+    referenced_stages = set()
+    program_ids = {}
+    program_sources = {}
+    if program_nodes:
+        from open_cake_ir.compiler.frontend import source_node_text
+        functions = {node.name: node for node in body[1:] if isinstance(node, ast.FunctionDef)}
+        seen_program_ids = set()
+        for node in program_nodes:
+            fields = {key.arg: key.value for key in node.value.keywords if key.arg is not None}
+            if (node.value.args or len(fields) != len(node.value.keywords)
+                or 'program_id' not in fields):
+                raise ValueError('Python Program declaration fields differ')
+            program_id = _json_literal(fields['program_id'])
+            if not isinstance(program_id, str) or program_id in seen_program_ids:
+                raise ValueError('Python Program ids must be unique strings')
+            seen_program_ids.add(program_id)
+            stages_node = fields.get('stages')
+            if not isinstance(stages_node, (ast.Tuple, ast.List)):
+                raise ValueError('Python Program requires ordered stages')
+            stage_names = []
+            for stage_call in stages_node.elts:
+                if not isinstance(stage_call, ast.Call):
+                    raise ValueError('Python Program stage declaration differs')
+                schedule_names = [key.value.id for key in stage_call.keywords
+                                  if key.arg == 'schedule' and isinstance(key.value, ast.Name)]
+                if len(schedule_names) != 1:
+                    raise ValueError('Python Program stage must reference one Schedule function')
+                stage_names.extend(schedule_names)
+            stage_sources = []
+            for name in dict.fromkeys(stage_names):
+                function = functions.get(name)
+                if function is None:
+                    # Program legality belongs to the individual candidate build.
+                    # An unrelated Schedule in this Turn can still be evaluated.
+                    continue
+                stage_sources.append(source_node_text(source, function,
+                    start_lineno=function.decorator_list[0].lineno))
+            program_source = ('from open_cake_ir.compiler import frontend as cake\n\n'
+                              + '\n\n'.join(stage_sources) + '\n\n'
+                              + source_node_text(source, node))
+            program_ids[id(node)] = program_id
+            program_sources[id(node)] = program_source
+            referenced_stages.update(stage_names)
     candidates = []
     names = set()
     for node in body[1:]:
@@ -90,12 +131,15 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
                 or decorator[0].func.attr != 'schedule'):
                 raise ValueError('Python candidate function must have one Cake schedule decorator')
             names.add(node.name)
-            start = decorator[0].lineno - 1
-            snippet = '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
-            # The Compiler diagnoses the projected single Schedule. Preserve its
-            # original bundle line numbers so feedback points into the author file.
-            projected_source = _IMPORT + '\n' * max(0, start - 1) + snippet
+            if node.name in referenced_stages:
+                continue
+            from open_cake_ir.compiler.frontend import schedule_function_source
+            projected_source = schedule_function_source(source, node)
             candidates.append(canonical_json_bytes({'python_source': projected_source}))
+        elif id(node) in program_ids:
+            candidates.append(canonical_json_bytes({
+                'python_program_source': program_sources[id(node)],
+                'program_id': program_ids[id(node)]}))
         elif (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
               and isinstance(node.value.func, ast.Attribute)
               and isinstance(node.value.func.value, ast.Name)

@@ -8,6 +8,9 @@ Python only; write ordered complete `@cake.schedule(...)` functions in
 `cake.transform(parent="...", transformation="...", parameters={...})` arguments.
 The Lab seals the raw file and derives the candidate set without executing it.
 Keep the starter's ABI, target binding and lowering route intact.
+Where the target route supports a complete multi-stage Program, declare it with
+static `cake.program(...)` and ordered `cake.stage(...)` bindings. Its referenced
+stage functions form one Program candidate rather than separate proposals.
 
 The Lab already holds the frozen Workload. Do not write or copy a
 `workload_contract_sha256` into the decorator; the Lab binds it after checking

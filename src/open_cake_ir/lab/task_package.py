@@ -450,7 +450,9 @@ Write one UTF-8 `candidate-set.py` file. Import the Cake frontend once, then def
 complete `@cake.schedule(...)` functions in proposal order. Each function is one
 candidate. A granted rewrite may appear at its desired position as
 `cake.transform(parent="...", transformation="...", parameters={{...}})` with only
-static literal arguments. The Lab reads this file without executing it and seals
+static literal arguments. A multi-stage proposal uses `cake.program(...)` with
+ordered `cake.stage(...)` bindings; referenced stage functions count as that one
+Program candidate. The Lab reads this file without executing it and seals
 the ordered candidates. Submit between one and {budget['maximum_candidates_per_turn']}
 proposals per Turn. The first Turn adds the file; later Turns update it. Do not
 write a Schedule JSON or `candidate-set.json` envelope.
@@ -460,7 +462,7 @@ write a Schedule JSON or `candidate-set.json` envelope.
     arm_rule = (
         "Author one complete restricted Cake Python Schedule in candidate.py. This Run grants no transform action or authored JSON envelope. Do not invoke CUDA, a GPU, the network, or another compiler."
         if source_file else
-        "Author complete Cake Schedules as decorated functions in candidate-set.py. Only granted static cake.transform declarations are allowed; do not write a Schedule/Program JSON or candidate-set.json. Do not invoke CUDA, a GPU, the network, or another compiler."
+        "Author complete Cake Schedules as decorated functions in candidate-set.py; compose multi-stage candidates with static cake.program/cake.stage declarations. Only granted static cake.transform declarations are allowed. Do not write a Schedule/Program JSON or candidate-set.json. Do not invoke CUDA, a GPU, the network, or another compiler."
         if source_bundle else
         "Submit authored Cake IR implementations only as restricted Python source through the supplied frontend. Granted Compiler transformations may produce internal Program documents. The JSON candidate envelope is transport only; do not author a Schedule or Program as JSON. Do not invoke CUDA, a GPU, the network, or another compiler."
         if python_only else

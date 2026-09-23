@@ -121,6 +121,7 @@ class OpenCakeEnvironment:
             'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else
             'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
             'candidate.ir.py')
+        self._python_program_enabled = submission_contract == PYTHON_CANDIDATE_BUNDLE_V1
         self._target = workload.target
         self._explicit_abi = isinstance(workload.document["semantics"].get("candidate_abi"), Mapping)
         self._expected = {arg.name: ("global", arg.dtype, list(arg.shape), arg.mode)
@@ -237,6 +238,14 @@ class OpenCakeEnvironment:
                     raise ValueError("Python IR submission is outside the admitted Authoring Environment")
                 source = parse_python_schedule(parsed["python_source"], filename=self._python_filename)
                 parsed = source.document
+            if isinstance(parsed, Mapping) and set(parsed) == {'python_program_source', 'program_id'}:
+                if (not self._python_program_enabled
+                    or not isinstance(parsed['python_program_source'], str)
+                    or not isinstance(parsed['program_id'], str)):
+                    raise ValueError('Python Program source is outside the admitted Authoring Environment')
+                from open_cake_ir.compiler.program_frontend import parse_program
+                parsed = parse_program(parsed['python_program_source'], filename='projected-program.ir.py',
+                                       program_id=parsed['program_id']).document
             if not isinstance(parsed, Mapping):
                 raise CompilerError("Schedule root must be an object")
             if "program_id" in parsed:
