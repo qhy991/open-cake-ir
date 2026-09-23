@@ -334,7 +334,8 @@ def _execute_run(specification: RunSpecification, *, project_root, evidence, clo
             resolutions = resolve_action_set(provider_turn.candidates,
                 environment_kind=kind, transformations=document['knowledge']['transformations'],
                 candidates=prior_candidates, baselines=baselines, compiler_factory=compiler_factory,
-                allow_python=document["authoring"].get("input_format") == "schedule_or_python_v1")
+                allow_python=document["authoring"].get("input_format") in {"schedule_or_python_v1", "python_source_v1"},
+                python_only=document["authoring"].get("input_format") == "python_source_v1")
             action_rows = []
             resolved_candidates = {}
             for ordinal, resolution in enumerate(resolutions):

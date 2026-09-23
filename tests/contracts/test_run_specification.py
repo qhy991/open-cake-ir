@@ -16,6 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class IndependentRunTests(SemanticLabTestCase):
+    def test_python_only_run_refuses_a_json_starter_during_preflight(self):
+        lab, specification = self.fixture()
+        document = specification.document
+        document['authoring']['input_format'] = 'python_source_v1'
+        document['authoring']['tool_surface'] = ['submit_python_source']
+        with self.assertRaisesRegex(ValueError, 'Python-only Run requires a .py Schedule starter'):
+            lab.preflight_run(RunSpecification.from_dict(document))
+
     def fixture(self, *, condition=None):
         lab = TaskLab(ROOT)
         campaign = lab.preflight(ROOT/'contracts/studies/matched-search-system-qualification-ralph-template.json')

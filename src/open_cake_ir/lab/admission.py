@@ -403,6 +403,13 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if sha256(path.read_bytes()).hexdigest() != reference['sha256']:
             raise ValueError(f'Run {name} bytes differ')
     if specification.environment_kind == 'open_cake':
+        if authoring.get('input_format') == 'python_source_v1':
+            starter_reference = _object(authoring.get('schedule_skeleton'),
+                'run.authoring.schedule_skeleton')
+            _, starter_path = source_reference_path(project_root,
+                starter_reference.get('path'), 'run.authoring.schedule_skeleton')
+            if starter_path.suffix != '.py':
+                raise ValueError('Python-only Run requires a .py Schedule starter')
         _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
         if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
             raise ValueError('Run Schedule skeleton target or lowering route differs')
