@@ -49,6 +49,9 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 Python 作者无需在 `@cake.schedule` 中填写 Workload 的内容 hash。独立使用 Compiler
 时可直接检查源码；进入 Lab 实验时，Lab 核对目标、生成路线和公开 tensor ABI 后，从已冻结
 的 Workload 补上绑定。显式写错 hash 仍会被拒绝。既有封存实验按原提交回放。
+新建的已知实现复现 Run 采用 `python_source_v1`，作者只能提交 `python_source`；
+原有 `schedule_or_python_v1` 继续用于按原合同回放的 Run。Clean-start 的不完整 JSON
+参考材料和 `candidate-set.json` 传输封装另行演进，不属于 Python kernel 的正文。
 `id=` 仅用于显式命名操作、与既有计划对照；省略时由结果变量或目标 Buffer 推导。
 
 ## 编写规则
