@@ -89,8 +89,14 @@ def _analysis_estimand(
 def _matched_author_controls(arms):
     """Shared treatment controls belong to the external matched-Study contract."""
     reference = arms['open_cake']
+    per_arm = {'submission_contract', 'qualification', 'qualification_anchor'}
     for name,environment in arms.items():
-        if any(environment.get(field) != reference.get(field) for field in ('provider','scaffold')):
+        provider = _object(environment.get('provider'), f'arms.{name}.provider')
+        reference_provider = _object(reference.get('provider'), 'arms.open_cake.provider')
+        if (environment.get('scaffold') != reference.get('scaffold')
+            or {key: value for key, value in provider.items() if key not in per_arm}
+            != {key: value for key, value in reference_provider.items()
+                if key not in per_arm}):
             raise ValueError('matched Authoring Environments differ in provider or scaffold')
 
 
@@ -147,12 +153,17 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
         open_cake_fields.update({"input_format", "toolchain_sha256"})
         comparison_fields -= {"launch_contract", "candidate_skeleton"}
         comparison_fields.add("baseline")
-        if (open_cake.get("input_format") != "schedule_or_python_v1"
+        from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        paired_python = (open_cake.get('input_format') == 'python_source_v1'
+                         and open_cake.get('reference_access') == 'known_kernel_reproduction'
+                         and open_cake.get('provider', {}).get('submission_contract')
+                         == PYTHON_CANDIDATE_BUNDLE_V1)
+        if (open_cake.get("input_format") != "schedule_or_python_v1" and not paired_python
             or comparison_arm_document.get("baseline") != {"binding": "open_cake_lowering"}
             or open_cake.get("toolchain_sha256") != comparison_arm_document.get("toolchain_sha256")):
             raise differs(
                 "same-backend native input, baseline or common toolchain binding",
-                expected={"input_format": "schedule_or_python_v1",
+                expected={"input_format": ["schedule_or_python_v1", "python_source_v1"],
                           "baseline": {"binding": "open_cake_lowering"},
                           "toolchain_sha256": open_cake.get("toolchain_sha256")},
                 observed={"input_format": open_cake.get("input_format"),
@@ -206,7 +217,7 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
     _matched_author_controls(arms)
     from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
     provider_document = _object(open_cake.get('provider'), 'study.arms.open_cake.provider')
-    expected_open_cake_tools = (["submit_python_bundle"] if single_environment
+    expected_open_cake_tools = (["submit_python_bundle"] if (single_environment or policy is not None)
                                  and provider_document.get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1
                                  else ["submit_python_source"] if python_clean_start or single_environment
                                  and open_cake.get("input_format") == "python_source_v1"

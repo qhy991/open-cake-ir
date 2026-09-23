@@ -2,16 +2,17 @@
 
 This extends `matched_search` through its existing AuthoringEnvironment, sealed
 LaunchableCandidate, common Evaluation, budget and append-only Evidence path. The
-`treatment` is agent search using Cake IR (JSON or restricted Python) versus the declared
+`treatment` is agent search using restricted Python Cake IR versus the declared
 **kernel-only native Triton subset**. Both start from one known Compiler-generated kernel.
 The study does not compare unrestricted Triton, clean-start invention, or syntax alone.
 The Compiler's static diagnostics and native source restrictions are treatment conditions.
 
 ## Contract and owners
 
-`contracts/studies/matched-search-triton-optimization-template.json` is a stable scientific
+`contracts/studies/matched-search-triton-optimization-python-template.json` is a stable scientific
 optimization template using the sole `task_agents_ralph_v1` interface. Each Run receives
-immutable `TASK.md` and `AGENTS.md`; the same provider thread updates `candidate-set.json`
+immutable `TASK.md` and `AGENTS.md`; the Cake arm updates `candidate-set.py`, while the
+native arm updates `candidate-set.json`
 from the external controller StateCard until a Ralph budget stops it. No prompt template
 is loaded. Its `scientific_matched_search` scope declares qualification-rate
 and conditional confirmed-latency endpoints, three independent Runs per arm, no replacement
@@ -21,7 +22,8 @@ matched. Search timing never promotes an artifact: a selected fixed candidate ne
 confirmatory correctness and stable paired-CUPTI timing. Profiling remains a separate assay.
 Neither artifact-only optimization nor system qualification is relabeled as science.
 
-The template selects the primary RMSNorm case and existing Corpus Schedule. To bind another
+The template selects the primary RMSNorm case and the Python starter
+`examples/python/b200_rmsnorm.py`. The older JSON template remains for frozen replay. To bind another
 Workload, explicitly select its contract, case, already-shaped baseline Schedule and matching
 lowering route. `WorkloadContract.tensor_abi(case_id)` owns the ordered input/output names,
 shapes, dtypes and modes; the Lab does not dispatch on an operator name to guess them.
@@ -30,25 +32,23 @@ shapes, dtypes and modes; the Lab does not dispatch on an operator name to guess
 Historical Workloads and direct-CUDA studies retain their old fixed input/replay boundary.
 They acquire no inferred tensor ABI or native-Triton treatment.
 
-Compiler and Executor references resolve at CampaignLock creation. No new revision-specific
-Study is needed. The new provider output schema requires its own live qualification; the
-pending provider reference in the template deliberately does not claim an old fixture is
-qualified for the native arm. `tools/freeze_live_matched_study.py` binds the qualified
-provider, the common toolchain and the existing broker/executor authorities. No provider
-campaign is authorized by this source template.
+Compiler and Executor references resolve at CampaignLock creation. Each arm needs its own
+live two-turn provider qualification under the generic output schema: Cake uses
+`python_candidate_bundle_v1`, native Triton uses the JSON envelope. The two receipts and
+anchors enter external execution binding schema v3 alongside the common runtime and
+fixed baseline. This source template alone authorizes no provider campaign.
 
 ## Candidate submission
 
-Both arms use the existing canonical `candidate-set.json` envelope:
+The Cake arm submits a static `candidate-set.py` of complete decorated Schedules,
+Programs and granted transform declarations. The Lab parses it without executing
+author code. The native arm retains the canonical `candidate-set.json` envelope:
 
 ```json
-{"arm":"open_cake","candidates":[{"python_source":"..."}],"schema_version":1}
+{"arm":"native_triton","candidates":[{"kernel_source":"...","compile_constants":{},"compile_options":{"num_warps":4},"grid":[1,1,1]}],"schema_version":1}
 ```
 
-An Open Cake member is either the full canonical Schedule object or an object containing
-only `python_source`. The existing Compiler Python frontend parses source without executing
-it, elaborates once into Schedule, and retains file/line/column locations in assessment
-feedback. Findings point back to the author's Python source. The frozen environment permits
+The Compiler Python frontend retains source locations in assessment feedback. The environment permits
 only its explicit `triton` route and entry point. Source has no authority to choose a backend.
 
 A native member has exactly four fields:

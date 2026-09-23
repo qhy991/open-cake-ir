@@ -219,20 +219,28 @@ def resolve_execution_bindings(
     path = external_file(project_root, str(bindings_path), 'execution bindings')
     bindings = json.loads(path.read_bytes())
     version = bindings.get('schema_version') if isinstance(bindings, Mapping) else None
-    expected = {
-        'schema_version', 'qualification_path', 'qualification_anchor_path',
-        'runtime_config_path', 'fixed_baseline_bundle_path',
-    } | ({'fixed_baseline_selection'} if version == 2 else set())
+    expected = ({'schema_version', 'qualification_paths', 'qualification_anchor_paths',
+                 'runtime_config_path', 'fixed_baseline_bundle_path'}
+                if version == 3 else
+                {'schema_version', 'qualification_path', 'qualification_anchor_path',
+                 'runtime_config_path', 'fixed_baseline_bundle_path'}) | (
+                    {'fixed_baseline_selection'} if (version == 2 or
+                    (version == 3 and isinstance(bindings, Mapping)
+                     and 'fixed_baseline_selection' in bindings)) else set())
     if (not isinstance(bindings, Mapping) or set(bindings) != expected
-            or type(version) is not int or version not in {1, 2}):
+            or type(version) is not int or version not in {1, 2, 3}):
         raise differs(
             'external execution binding fields differ',
-            expected={'schema_version': [1, 2], 'fields': sorted(expected)},
+            expected={'schema_version': [1, 2, 3], 'fields': sorted(expected)},
             observed={'schema_version': version,
                       'fields': sorted(bindings) if isinstance(bindings, Mapping) else bindings},
         )
-    receipt_path = external_file(project_root, bindings['qualification_path'], 'qualification')
-    anchor_path = external_file(project_root, bindings['qualification_anchor_path'], 'qualification anchor')
+    if version != 3 and any(
+        arm['provider'].get('submission_contract')
+        != arms['open_cake']['provider'].get('submission_contract')
+        for arm in arms.values()
+    ):
+        raise ValueError('mixed provider transports require per-arm execution bindings v3')
     runtime_path = external_file(project_root, bindings['runtime_config_path'], 'runtime configuration')
     if single:
         route = arms["open_cake"].get("lowering_route")
@@ -241,10 +249,32 @@ def resolve_execution_bindings(
         row = single_environment_toolchain(route["backend"])
     else:
         row = toolchain_for(policy.backend)
-    provider,config = bind_cli_provider(project_root,arms['open_cake']['provider'],row,
-        runtime_path=runtime_path,receipt_path=receipt_path,anchor_path=anchor_path)
-    for arm in arms.values():
-        arm['provider'] = json.loads(canonical(provider))
+    if version == 3:
+        if (single or not isinstance(bindings['qualification_paths'], Mapping)
+            or not isinstance(bindings['qualification_anchor_paths'], Mapping)
+            or set(bindings['qualification_paths']) != set(arms)
+            or set(bindings['qualification_anchor_paths']) != set(arms)):
+            raise ValueError('per-arm qualification binding must name each paired arm')
+        configurations = []
+        for name, arm in arms.items():
+            receipt_path = external_file(project_root, bindings['qualification_paths'][name],
+                                         f'{name} qualification')
+            anchor_path = external_file(project_root, bindings['qualification_anchor_paths'][name],
+                                        f'{name} qualification anchor')
+            provider, config = bind_cli_provider(project_root, arm['provider'], row,
+                runtime_path=runtime_path, receipt_path=receipt_path, anchor_path=anchor_path)
+            arm['provider'] = json.loads(canonical(provider))
+            configurations.append(config)
+        if any(other != configurations[0] for other in configurations[1:]):
+            raise ValueError('paired arms use different runtime configurations')
+        config = configurations[0]
+    else:
+        receipt_path = external_file(project_root, bindings['qualification_path'], 'qualification')
+        anchor_path = external_file(project_root, bindings['qualification_anchor_path'], 'qualification anchor')
+        provider, config = bind_cli_provider(project_root, arms['open_cake']['provider'], row,
+            runtime_path=runtime_path, receipt_path=receipt_path, anchor_path=anchor_path)
+        for arm in arms.values():
+            arm['provider'] = json.loads(canonical(provider))
     executor = resolve_executor(Path(project_root),execution['executor_revision'],
         'study.execution',template=True,target=execution['target'])
     toolchain_sha256,bound_execution = bind_runtime_execution(project_root,row,executor,config,runtime_path)
@@ -252,7 +282,7 @@ def resolve_execution_bindings(
         arm['toolchain_sha256'] = toolchain_sha256
     execution.update(bound_execution)
     execution['fixed_baseline'] = bind_fixed_baseline(project_root,bindings['fixed_baseline_bundle_path'],
-        bindings.get('fixed_baseline_selection') if version==2 else None)
+        bindings.get('fixed_baseline_selection') if version in {2, 3} else None)
     return document, executor
 
 

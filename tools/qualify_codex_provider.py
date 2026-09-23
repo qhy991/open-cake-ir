@@ -450,8 +450,9 @@ def main() -> int:
             or args.feature_policy != 'provider_defaults_optimization'):
         raise ValueError('Python source-file qualification requires one artifact-only Cake candidate')
     if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 and (
-            not single_arm or args.feature_policy != 'provider_defaults_optimization'):
-        raise ValueError('Python candidate-bundle qualification requires one artifact-only Cake arm')
+            not single_arm or args.feature_policy not in
+            {'provider_defaults_optimization', 'closed_research'}):
+        raise ValueError('Python candidate-bundle qualification requires one Cake arm')
     if not generic_schema and (not isinstance(arms, list) or len(arms) not in {1, 2} or arms[0] != "open_cake"):
         raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm")
     try:
@@ -459,7 +460,8 @@ def main() -> int:
             comparison_arm(dict.fromkeys(arms))
     except ValueError as error:
         raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm") from error
-    if not generic_schema and single_arm and (args.feature_policy != "provider_defaults_optimization" or args.python_source is None):
+    if (not generic_schema and single_arm and submission_contract != PYTHON_CANDIDATE_BUNDLE_V1
+        and (args.feature_policy != "provider_defaults_optimization" or args.python_source is None)):
         raise ValueError("single-arm artifact qualification requires provider defaults and --python-source")
     if args.harness == "claude-code" and (not single_arm or args.service_tier != "default"):
         raise ValueError("Claude qualification requires a single artifact-only arm and no service-tier override")
