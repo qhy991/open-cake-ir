@@ -208,6 +208,38 @@ class ReferenceAccessTests(unittest.TestCase):
         with self.assertRaises(frontend.FrontendError):
             frontend.parse(starter.decode())
 
+    def test_python_clean_start_handoff_and_package_refuse_contaminated_source(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.lab.reference_access import render_incomplete_python_starter
+        from open_cake_ir.tasks.normalization.study import task_run_inputs
+        from open_cake_ir.tasks.workloads import create_task
+        document, complete = create_task('rmsnorm', backend='triton-b300', rows=7, columns=128)
+        workload = WorkloadContract(document)
+        route = frontend.parse(complete).document['lowering']
+        expected = render_incomplete_python_starter(workload, 'primary', route)
+        starter = self.external/'starter.py'
+        workload_path = self.external/'workload.json'
+        starter.write_bytes(expected)
+        workload_path.write_bytes(_canonical_json_bytes(document))
+        inputs = task_run_inputs(ROOT, workload, workload_path, starter, harness='claude-code',
+                                 model='fixture', effort='high', reference_access='clean_start',
+                                 lowering_route=route)
+        arm = inputs['authoring']
+        self.assertEqual(arm['input_format'], 'python_source_v1')
+        self.assertEqual(arm['tool_surface'], ['submit_python_source'])
+        self.assertNotIn('schedule_skeleton', arm)
+        validate_reference_handoff(ROOT, {'author': arm}, workload=workload, case_id='primary')
+        delivered = build_run_reference_documents(ROOT, SimpleNamespace(document=inputs), arm,
+                                                   workload_contract=workload,
+                                                   prepare_schedule=prepare_schedule)
+        self.assertEqual(delivered['schedule-starter.py'], expected)
+        self.assertNotIn('schedule-skeleton.json', delivered)
+        self.assertNotIn('python-example.py', delivered)
+        starter.write_bytes(expected + b'\n# hidden implementation\n')
+        with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
+            validate_reference_handoff(ROOT, {'author': arm}, workload=workload, case_id='primary')
+
     def test_inherited_native_lowering_requires_known_kernel_reproduction(self):
         document = self.document("matched-search-triton-optimization-template.json")
         document["arms"]["native_triton"]["reference_access"] = "clean_start"
