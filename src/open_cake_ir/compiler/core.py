@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType
@@ -56,6 +56,7 @@ class Assessment:
     lowering_parameters: Mapping[str, int]
     schedule_bytes: bytes
     guidance: tuple[Finding, ...] = ()
+    _schedule: Schedule | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -315,6 +316,7 @@ class Compiler:
             lowering_parameters=MappingProxyType({}),
             schedule_bytes=_canonical_json_bytes(schedule),
             guidance=tuple(finding for finding in findings if finding.severity is FindingSeverity.HINT),
+            _schedule=typed_schedule,
         )
 
     def _structural_rejection(
@@ -354,9 +356,9 @@ class Compiler:
         definition = self._revision.targets.get(assessment.target)
         if definition is None:
             raise CompilerError(f"Target {assessment.target!r} is not bound by this Revision")
-        schedule = Schedule.from_dict(
-            _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
-        )
+        schedule = assessment._schedule
+        if schedule is None:
+            raise CompilerError("eligible assessment lacks its typed Schedule")
         route = assessment.route
         if route is None:
             raise CompilerError("assessment has no lowering route")
@@ -400,9 +402,9 @@ class Compiler:
         from .performance.profile import profile_envelope
 
         lowering = self.lower(assessment)
-        schedule = Schedule.from_dict(
-            _object(json.loads(assessment.schedule_bytes), "assessment.schedule")
-        )
+        schedule = assessment._schedule
+        if schedule is None:
+            raise CompilerError("eligible assessment lacks its typed Schedule")
         target = self._revision.targets[assessment.target]
         profile = profile_envelope(
             schedule, target, lowering=lowering, compiled_resources=compiled_resources,
