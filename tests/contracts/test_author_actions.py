@@ -55,6 +55,64 @@ class AuthorActionTests(SemanticLabTestCase):
         self.assertNotIn('Write exactly one valid UTF-8 JSON `candidate-set.json`', package.task_markdown)
         self.assertNotIn('Write only `candidate-set.json`', package.agents_markdown)
 
+    def test_source_file_run_archives_raw_python_and_replays_its_projection(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        from open_cake_ir.tasks.workloads import load_workload
+        lab, specification, workload, _ = self.fixture([])
+        document = specification.document
+        source = Path(document['authoring']['schedule_skeleton']['path']).read_text()
+        raw = source.encode()
+        candidate = encoded({'python_source': source})
+        document['budget']['maximum_candidates_per_turn'] = 1
+        document['evaluation_protocol']['searches_per_turn'] = 1
+        document['authoring'].update(input_format='python_source_v1',
+                                     tool_surface=['submit_python_source'])
+        scaffold = 'contracts/scaffolds/python-artifact-optimization-source-file-v1.md'
+        document['authoring']['scaffold'] = {'path': scaffold,
+            'sha256': sha256((ROOT/scaffold).read_bytes()).hexdigest()}
+        provider_document = document['authoring']['provider']
+        provider_document['submission_contract'] = PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.lab.provider_policy import execution_configuration
+        configuration = execution_configuration(provider_document)
+        qualification = ProviderQualificationReceipt.load(ROOT/provider_document['qualification']['path'])
+        qualification = replace(qualification, configuration_sha256=sha256(encoded(configuration)).hexdigest())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            receipt = root/'qualification.json'
+            receipt.write_bytes(encoded(qualification.document))
+            provider_document['qualification'] = {'path': str(receipt),
+                'canonical_sha256': qualification.canonical_sha256}
+            successor = RunSpecification.from_dict(document)
+            class SourceProvider(RalphFakeProvider):
+                def turn(self, request):
+                    old = super().turn(request)
+                    events = old.raw_events.replace(b'candidate-set.json', b'candidate.py')
+                    return replace(old, candidates=(candidate,),
+                        candidate_sha256s=(sha256(candidate).hexdigest(),), raw_submission=raw,
+                        raw_events=events, raw_events_sha256=sha256(events).hexdigest())
+            provider = SourceProvider({successor.run_id:lab.task_package(successor, successor.run_id)})
+            provider.configuration = configuration
+            provider.qualification_sha256 = qualification.canonical_sha256
+            compilation = CompilationFixture()
+            environment = OpenCakeEnvironment(Compiler.load(ROOT,ROOT/'compiler/revision.json'),
+                TritonToolchainBuilder(workload=workload,case_id='primary',isolated_compiler=compilation),
+                authority_document=successor.document['authoring'],workload=workload,case_id='primary')
+            evaluator = ProgramEvaluator(document['evaluation_protocol'],
+                sha256(encoded(document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
+            run = lab.execute_run(successor,root/'evidence',provider=provider,
+                                  environment=environment,evaluator=evaluator)
+            audit, replay = lab.audit_run(run)
+            self.assertTrue(replay, replay.refusals)
+            self.assertEqual(audit.protocol_adherence, 'adhered')
+            evidence = EvidenceStore.open(run.evidence_root)
+            event = next(row for row in evidence.replay_events(successor.run_id)
+                         if row['kind'] == 'provider_turn_completed')
+            source_ref = next(item for item in event['payload']['objects']
+                              if item['role'] == 'provider_source_file')
+            self.assertEqual(evidence.read_object(source_ref), raw)
+            self.assertEqual(len(compilation.requests), 2)
+
     def test_python_only_author_admission_refuses_schedule_json_but_keeps_internal_rewrites(self):
         compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
         _, source = create_task('silu', backend='triton-b200', rows=2, columns=8)
