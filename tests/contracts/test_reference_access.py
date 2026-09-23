@@ -270,6 +270,15 @@ class ReferenceAccessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
             self.preflight(document)
 
+    def test_committed_python_clean_start_successor_preflights(self):
+        document = self.document('matched-search-clean-start-python-v1-template.json')
+        lock = self.preflight(document)
+        cake = self.lab.task_package(lock, 'open_cake-1')
+        cuda = self.lab.task_package(lock, 'direct_cuda-1')
+        self.assertIn('schedule-starter.py', cake.task_markdown)
+        self.assertIn('candidate-skeleton.cu', cuda.task_markdown)
+        self.assertNotIn('schedule-skeleton.json', cake.task_markdown)
+
     def test_inherited_native_lowering_requires_known_kernel_reproduction(self):
         document = self.document("matched-search-triton-optimization-template.json")
         document["arms"]["native_triton"]["reference_access"] = "clean_start"
