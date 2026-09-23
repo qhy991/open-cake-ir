@@ -36,6 +36,22 @@ class ProgramEvaluator(FakeEvaluator):
 
 
 class AuthorActionTests(SemanticLabTestCase):
+    def test_source_file_run_exposes_python_file_without_candidate_set_or_actions(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        lab, specification, _, _ = self.fixture([])
+        document = specification.document
+        document['budget']['maximum_candidates_per_turn'] = 1
+        document['evaluation_protocol']['searches_per_turn'] = 1
+        document['authoring'].update(input_format='python_source_v1',
+                                     tool_surface=['submit_python_source'])
+        document['authoring']['provider']['submission_contract'] = PYTHON_SOURCE_FILE_V1
+        successor = RunSpecification.from_dict(document)
+        package = lab.task_package(successor, successor.run_id)
+        self.assertIn('candidate.py', package.task_markdown)
+        self.assertIn('Write only `candidate.py`', package.agents_markdown)
+        self.assertNotIn('candidate-set.json', package.task_markdown)
+        self.assertNotIn('candidate-set.json', package.agents_markdown)
+
     def test_python_only_author_admission_refuses_schedule_json_but_keeps_internal_rewrites(self):
         compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
         _, source = create_task('silu', backend='triton-b200', rows=2, columns=8)

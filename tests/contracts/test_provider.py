@@ -46,6 +46,21 @@ class ProviderContractTests(unittest.TestCase):
                 _project_candidate_submission(payload, submission_contract=PYTHON_SOURCE_FILE_V1,
                     arm='open_cake', environment_kind=kind, maximum_candidates_per_turn=maximum)
 
+    def test_codex_normalizes_a_single_raw_python_candidate_file(self) -> None:
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.serialization import canonical_json_bytes
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory)/'candidate.py'
+            source = b'from open_cake_ir.compiler import frontend as cake\n# author bytes\n'
+            candidate.write_bytes(source)
+            turn = normalize_codex_turn(self._events(candidate, duplicate=False),
+                candidate_path=candidate, expected_change='add',
+                expected_terminal_message='{"candidate_written":true}',
+                submission_contract=PYTHON_SOURCE_FILE_V1, arm='open_cake',
+                environment_kind='open_cake', maximum_candidates_per_turn=1)
+        self.assertEqual(turn.raw_submission, source)
+        self.assertEqual(turn.candidates, (canonical_json_bytes({'python_source': source.decode()}),))
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)

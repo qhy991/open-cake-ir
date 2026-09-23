@@ -18,7 +18,7 @@ from open_cake_ir.evidence.store import RunLedger
 
 from ._documents import _canonical_json_bytes
 from .faults import RunProtocolFault
-from .providers import CANDIDATE_SET_ENVELOPE_V1, ProviderTurn, _project_candidate_submission
+from .providers import CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1, ProviderTurn, _project_candidate_submission
 
 
 # The nvcc arm's products (D12). No execution platform row states them: the cubin row's
@@ -197,6 +197,8 @@ def _archive_provider_turn(
     thread_id: str,
     turn_number: int,
 ) -> None:
+    submission_contract = provider_document.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1)
+    source_file = submission_contract == PYTHON_SOURCE_FILE_V1
     reference_bundle = provider_turn.reference_bundle
     if reference_bundle is None:
         raise RunProtocolFault(
@@ -229,11 +231,11 @@ def _archive_provider_turn(
     )
     submission_object = evidence.put(
         provider_turn.raw_submission,
-        media_type="application/json",
+        media_type="text/x-python" if source_file else "application/json",
     )
     projected_candidates = _project_candidate_submission(
         provider_turn.raw_submission,
-        submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+        submission_contract=submission_contract,
         arm=arm, environment_kind=environment_kind,
         maximum_candidates_per_turn=maximum_candidates_per_turn,
     )
@@ -278,7 +280,7 @@ def _archive_provider_turn(
                 else []
             ),
             events_object.reference("provider_events"),
-            submission_object.reference("provider_submission_envelope"),
+            submission_object.reference("provider_source_file" if source_file else "provider_submission_envelope"),
             *(
                 item.reference(f"candidate_submission_{index:04d}")
                 for index, item in enumerate(candidate_objects)
