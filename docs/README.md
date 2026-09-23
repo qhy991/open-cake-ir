@@ -55,7 +55,7 @@ and the [C550 evidence chapter](metax-c550.md) for the distinct qualification bo
 | 章节 / Chapter | 中文入口 | English | 内容范围 / Scope |
 |---|---|---|---|
 | 系统架构 / Architecture | [系统概览](ARCHITECTURE.md) | [Architecture](en/ARCHITECTURE.md) | Compiler、Lab、Evaluation、Evidence 的职责与依赖 |
-| IR 与编写 / IR and authoring | [IR 指南](IR_GUIDE.md) · [Python](zh-CN/PYTHON_FRONTEND.md) | [IR guide](en/IR_GUIDE.md) · [Python](en/PYTHON_FRONTEND.md) | Schedule、Program、数据与执行计划；精确字段见 [Authoring Contract](../compiler/AUTHORING_CONTRACT.md) |
+| IR 与编写 / IR and authoring | [IR 与 Schedule 图解](IR_GUIDE.md#阅读前irschedule-ir-与-cake-ir) · [FMA 实例](IR_GUIDE.md#fma同一公式两种不同的信息) · [Python](zh-CN/PYTHON_FRONTEND.md) | [IR guide](en/IR_GUIDE.md) · [Python](en/PYTHON_FRONTEND.md) | Schedule、Program、数据与执行计划；精确字段见 [Authoring Contract](../compiler/AUTHORING_CONTRACT.md) |
 | 检查与验收 / Verification | [验收规则](zh-CN/ACCEPTANCE_GATES.md) · [结果导读](wiki/results.md) | [Acceptance](ACCEPTANCE_GATES.md) · [Results](en/wiki/results.md) | 合法性、编译、正确性、计时质量与结论边界 |
 | 实验方法 / Experiment methods | [Lab 流程](wiki/experiments.md) · [改写指南](KERNEL_REPRODUCTION.md) | [Lab workflow](en/wiki/experiments.md) | 任务用途、参考访问、材料与变换授权、预算和评测 |
 | 优化知识迁移 / Optimization knowledge | [机制设计](OPTIMIZATION_TRANSFER.md) · [消融方法](OPTIMIZATION_TRANSFER_ABLATION.md) | [Transfer design](en/OPTIMIZATION_TRANSFER.md) | 带前提的显式变换、目标参数选择与待验证的迁移收益 |
