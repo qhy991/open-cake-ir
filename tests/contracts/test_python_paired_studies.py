@@ -50,6 +50,12 @@ class PythonPairedStudyTests(unittest.TestCase):
                                  'isolated_auth_only_v1')
                 self.assertEqual(native['provider']['author_home_policy'],
                                  'isolated_auth_only_v1')
+                schema_path = ROOT/cake['provider']['output_schema']['path']
+                self.assertEqual(schema_path.name, 'run-turn-output-schema-v1.json')
+                schema = json.loads(schema_path.read_text())
+                self.assertIn('tool_calls', schema['required'])
+                self.assertEqual(schema['properties']['tool_calls'],
+                                 {'type': 'integer', 'const': 1})
                 self.assertNotIn('submission_contract', native['provider'])
                 self.assertTrue(cake['schedule_skeleton']['path'].endswith('.py'))
                 read_skeleton_reference(ROOT, cake['schedule_skeleton'])

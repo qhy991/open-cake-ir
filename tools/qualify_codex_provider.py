@@ -472,6 +472,16 @@ def main() -> int:
             comparison_arm(dict.fromkeys(arms))
     except ValueError as error:
         raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm") from error
+    if args.harness == 'codex':
+        required = schema.get('required', ())
+        properties = schema.get('properties', {})
+        closed = args.feature_policy == 'closed_research'
+        tool_calls = properties.get('tool_calls') if isinstance(properties, dict) else None
+        if (not isinstance(required, list) or not isinstance(properties, dict)
+            or ('tool_calls' in required) != closed
+            or ('tool_calls' in properties) != closed
+            or (closed and tool_calls != {'type': 'integer', 'const': 1})):
+            raise ValueError('qualification output schema differs from the Provider terminal-event contract')
     if (not generic_schema and single_arm and submission_contract != PYTHON_CANDIDATE_BUNDLE_V1
         and (args.feature_policy != "provider_defaults_optimization" or args.python_source is None)):
         raise ValueError("single-arm artifact qualification requires provider defaults and --python-source")

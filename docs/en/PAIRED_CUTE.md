@@ -72,7 +72,7 @@ initialization, exposes no NVIDIA device nodes and retains that CPU boundary evi
 There is no unsandboxed fallback or automatic target downgrade.
 
 Use `tools/qualify_codex_provider.py` twice with
-`contracts/providers/run-turn-output-schema-v2.json`: once for
+`contracts/providers/run-turn-output-schema-v1.json`: once for
 `--environment-kind open_cake --submission-contract python_candidate_bundle_v1` and
 once for `--environment-kind native_cute_dsl` with the JSON envelope. Bind both
 receipts and anchors through `schema_version: 3` execution bindings. Both

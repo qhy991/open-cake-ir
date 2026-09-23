@@ -96,8 +96,8 @@
         },
         "model": "gpt-5.6-sol",
         "output_schema": {
-          "path": "contracts/providers/run-turn-output-schema-v2.json",
-          "sha256": "e08600a46d093d49cade6d0999b53beb46151624678506730720e66e2c2523cf"
+          "path": "contracts/providers/run-turn-output-schema-v1.json",
+          "sha256": "e7e6da913bd3f244bbef396a5f2a9df6ad814ef6266f90960310b0262a251c0c"
         },
         "qualification": {
           "binding": "campaign_lock"
@@ -181,8 +181,8 @@
         },
         "model": "gpt-5.6-sol",
         "output_schema": {
-          "path": "contracts/providers/run-turn-output-schema-v2.json",
-          "sha256": "e08600a46d093d49cade6d0999b53beb46151624678506730720e66e2c2523cf"
+          "path": "contracts/providers/run-turn-output-schema-v1.json",
+          "sha256": "e7e6da913bd3f244bbef396a5f2a9df6ad814ef6266f90960310b0262a251c0c"
         },
         "qualification": {
           "binding": "campaign_lock"
