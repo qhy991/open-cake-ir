@@ -95,8 +95,15 @@ class PythonTaskReferenceTests(unittest.TestCase):
             authority_document={"input_format": "schedule_or_python_v1", "lowering_route": prepared["lowering"]},
             workload=workload, case_id="odd")
         result = environment.build(CandidateSubmission.seal(environment.media_type,
-            json.dumps({"python_source": bound.decode()}).encode()))
+            json.dumps({"python_source": source}).encode()))
         self.assertEqual(result.disposition, "launchable")
+        wrong = source.replace('entry_point="cake_rmsnorm"',
+            'entry_point="cake_rmsnorm", metadata={"workload_contract_sha256": "' + "0" * 64 + '"}')
+        self.assertNotEqual(wrong, source)
+        rejected_pin = environment.build(CandidateSubmission.seal(environment.media_type,
+            json.dumps({"python_source": wrong}).encode()))
+        self.assertEqual(rejected_pin.disposition, "rejected")
+        self.assertIn("Workload binding", rejected_pin.feedback["error"])
         # A richer envelope is refused for what it actually is. Reporting it as a
         # lowering route the actor never changed cost a live Campaign three Turns.
         rejected = environment.build(CandidateSubmission.seal(environment.media_type,
