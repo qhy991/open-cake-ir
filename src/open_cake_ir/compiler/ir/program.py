@@ -6,7 +6,7 @@ legality; the Compiler separately assesses each Schedule against its exact Targe
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from collections.abc import Mapping
 import json
@@ -38,10 +38,21 @@ class ProgramStage:
     name: str
     schedule_bytes: bytes
     bindings: Mapping[str, ProgramBinding]
+    _schedule: Schedule = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        # Bytes are the stage authority. Replacing a frozen dataclass field must
+        # reconstruct the typed view instead of carrying a stale cached Schedule.
+        if type(self.schedule_bytes) is not bytes:
+            raise TypeError('ProgramStage schedule_bytes must be immutable bytes')
+        if not isinstance(self.bindings, Mapping):
+            raise TypeError('ProgramStage bindings must be a mapping')
+        object.__setattr__(self, 'bindings', MappingProxyType(dict(self.bindings)))
+        object.__setattr__(self, '_schedule', Schedule.from_dict(json.loads(self.schedule_bytes)))
 
     @property
     def schedule(self):
-        return Schedule.from_dict(json.loads(self.schedule_bytes))
+        return self._schedule
 
 
 @dataclass(frozen=True)
@@ -142,7 +153,7 @@ class Program:
                     raise ValueError('program admits immutable inputs and fresh outputs, not state/scratch globals')
             producers.update(stage_writes)
             available.update(stage_writes)
-            stages.append(ProgramStage(name, canonical_json_bytes(raw['schedule']), MappingProxyType(dict(bindings))))
+            stages.append(ProgramStage(name, canonical_json_bytes(raw['schedule']), bindings))
         if not set(io['outputs']) <= producers:
             raise ValueError('program has unproduced public outputs')
         if not set(io['inputs']) <= consumed:

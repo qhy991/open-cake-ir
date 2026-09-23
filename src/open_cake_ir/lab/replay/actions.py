@@ -52,7 +52,8 @@ def replay_actions(*, specification, events, evidence, provider_candidates_by_tu
         derived = resolve_action_set(raw, environment_kind=specification.environment_kind,
             transformations=document['knowledge']['transformations'], candidates=prior,
             baselines=baselines, compiler_factory=compiler_factory,
-            allow_python=document["authoring"].get("input_format") == "schedule_or_python_v1")
+            allow_python=document["authoring"].get("input_format") in {"schedule_or_python_v1", "python_source_v1"},
+            python_only=document["authoring"].get("input_format") == "python_source_v1")
         if not isinstance(rows, list) or len(rows) != len(derived):
             refuse(location, 'action coverage differs from the author submission')
         current = {}

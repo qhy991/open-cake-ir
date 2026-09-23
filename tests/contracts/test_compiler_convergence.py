@@ -71,6 +71,14 @@ class CompilerConvergenceContractTests(unittest.TestCase):
             for call in calls.call_args_list:
                 self.assertIs(call.args[1], target)
 
+    def test_lower_replays_once_then_emits_the_typed_schedule(self) -> None:
+        document = self.document()
+        with mock.patch.object(core.Schedule, 'from_dict', wraps=core.Schedule.from_dict) as parse:
+            assessment = self.compiler.assess(document)
+            self.assertIsInstance(assessment._schedule, public.Schedule)
+            self.assertTrue(self.compiler.lower(assessment).source)
+        self.assertEqual(parse.call_count, 2)
+
     def test_assessment_replay_still_protects_all_consumers(self) -> None:
         assessment = self.compiler.assess(self.document())
         for changed, message in (

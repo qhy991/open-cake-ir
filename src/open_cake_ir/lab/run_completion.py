@@ -120,7 +120,7 @@ def _seal_run(
         )
     )
     ledger.append("checkpoints_projected", checkpoint_payload)
-    final_checkpoint = projected[-1]
+    final_checkpoint = projected[-1] if projected else None
     endpoint_observation, endpoint = matched_endpoint(
         checkpoint=final_checkpoint, observations=observations,
         terminal_provider_tokens=cumulative_tokens, protocol_adherence=protocol_adherence,

@@ -556,5 +556,321 @@
     "interpretation": "Guarded alignment improves versus the fixed generic sliced-w8 by a qualified1.08116554x (5.920/6.4005us). Candidate/external5.920/2.656us failsCV(max0.07037),so no accepted external candidate speedup. In this new experiment the separately paired generic control/external6.4005/2.656us passesquality(max0.049737),establishing a2.409827x latency ratio for that retained generic binary only. This does not retroactively repair old026CV failures,qualify the new aligned external edge or multiply olderstarter ratios.",
     "measurement": "CPU preparation and full numerical verification outside lease; original paired CUPTI coldL2,all2550snapshots and continuous exclusive capture unchanged. Guard completion preceded comparison submission.",
     "promotion_disposition": "No promotion. Retain guarded candidate as a qualified improvement over the fixed intermediatecontrol,keep the failed external edge and all old evidence."
+  },
+  "program_stage_alignment_implementation": {
+    "implemented_in": "b5e1c34b0acaaa986045f2d543c57073fedeeefc",
+    "trigger": "After008completeProgram GPU numerical acceptance, retainedstage1PTX has136ld.global.b16sites. TritonToolchainBuilder.build_stage explicitly refuses pointer alignment variants, even though single-kernel runtime guarded alignment is implemented. This is a bounded composition capability gap, not proof that vectorization alone explains timing.",
+    "contract": "Reuse the existing per-kernel alignment component and dispatcher for each complete Program stage. Public and private stage pointers select a checkedaligned leaf or unrestrictedgeneric implementation on everycall. Generic stages cannot be replaced by restrictedleaves. Check source/ABI/physicalcompile records for bothvariants. Keep orderedstage execution, originaloracle and existing timing policy.",
+    "representation": "No IR/layout addition. Programs withoutstagevariants retain exactschema1manifestshape. Variant-bearingmanifest schema2declares orderedaligned_stages projectedfromsealedchildren;admission verifiesit againstbundles. This projection is necessary for moduleaccounting withoutbinaryaccess:loadedmodules=stagecount+variantstagecount,executedkernels=stagecount. Childsource/compilefacts remainownedbychildartifacts.",
+    "verified_by": [
+      "Fixedb5e1c34b:61tests/112subtests passed;2optionalTorchtests skippedlocally thenbothpassed inexistingM3CPUenvironment withCUDAhidden.",
+      "Compilationbudget/nativepairing/frozenreplay29tests/43subtests passed;unchanged178CorpusGate andF821/F401 passed.",
+      "Independentcode review passed forschemas,replay,modulevsdispatchcounts,allpublic/private2/4/8offsetfallback,restrictedleafrefusal,corruptcompilerecordrejection andpartial-loadcleanup.",
+      "RealCPUisolatedbuildofsame008Program,bothstagessealed,sourceunchanged;resultat/mnt/b300-shared/home/qinhaiyan/cake-experiments/program-alignment-008-cpu-20260921/result.json."
+    ],
+    "cpu_probe": {
+      "source_commit": "b5e1c34b0acaaa986045f2d543c57073fedeeefc",
+      "cuda_initialized": false,
+      "modules": 4,
+      "kernels_per_call": 2,
+      "stages": [
+        {
+          "name": "gemm_split_partials",
+          "grid": [
+            8,
+            256,
+            1
+          ],
+          "block": [
+            256,
+            1,
+            1
+          ],
+          "same_lowered_source": true,
+          "pointer_alignments": {
+            "a": 16,
+            "b": 16,
+            "partial": 16
+          },
+          "generic_ptx": {
+            "ld.global.b16": 136,
+            "st.global.b32": 1
+          },
+          "aligned_ptx": {
+            "ld.global.v4.b32": 17,
+            "st.global.b32": 1
+          }
+        },
+        {
+          "name": "gemm_split_finalize",
+          "grid": [
+            1,
+            256,
+            1
+          ],
+          "block": [
+            256,
+            1,
+            1
+          ],
+          "same_lowered_source": true,
+          "pointer_alignments": {
+            "partial": 16,
+            "out": 16
+          },
+          "generic_ptx": {
+            "ld.global.b32": 1,
+            "st.global.b16": 1
+          },
+          "aligned_ptx": {
+            "ld.global.b32": 1,
+            "st.global.b16": 1
+          }
+        }
+      ]
+    },
+    "scope": "CPUimplementation/build evidence only. Staticinstruction sitechanges are not an8x speedup,deviceguard,profile,fullshape orpromotion. CompleteProgram costmodel remainsunmodeled. Stagealignment must receive realpublic/privatepointercounterexample andcompleteProgramGPUvalidation before performance acceptance.",
+    "promotion_disposition": "No promotion. Codegate may integrate afterCI;realdevicevalidation pending. SharedM3statefreeabout1.82GBafterCPUprobe (concurrentstateactivity not attributed);no newlargeGPUpreparation,nohistorycleanup."
+  },
+  "program_guard_pipeline": {
+    "implemented_in": "b44ce7c1",
+    "verified_by": [
+      "Finaltestsource2316a7c6687b80d83da07552a664874417054a8d:22tests/33subtests andF821/F401 pass.",
+      "Independentcode review andactualinput/task/budget admission review passed.",
+      "CPUreplayofretained006width-w4 captureat2316a7c6:all2550observations,cases/comparisons/status/numerical/quality decisionsunchanged,10literal+5090referenceinputchecks;verifyfunction10.022seconds,notGPUorend-to-end speedup. Evidence:/mnt/b300-shared/home/qinhaiyan/cake-experiments/program-guard-snapshot-replay-20260921/replay-result.json."
+    ],
+    "contract": "Extend existingcheck_alignment_candidate prepare/local->guard/broker->verify/local entry to completePrograms. Instrument the existingProgramallocator callback only to realize namedprivateoffset,restoreonallpaths,retain originalProgrambinding/checks/launch/teardown. Check actual perstage guardedaddresses andrestrictedleaf refusal beforeanydispatch,then fullstagecount/actualdispatcherchoice. Allpublicinputs/outputs retained losslessly,CPUoriginaloracleafterworkerexit; referenceverdicthelperextractedunchanged foronecomparisonowner.",
+    "coverage": "For008all5cases:aligned plusa/b/out FP16offset2/4/8 andFP32partialoffset4/8=60observations. Everyguardedstage parameterhas16Bcondition,eachlegalcounterexamplechecked;unsupportedpartialpointercontractsrefusedbyprobe. Private contentsare intermediates,notpublicoracleoutputs; privateaddressesandcompletepublicresultsbothchecked.",
+    "candidate_scope": "CandidateProgramcompiledb5e1c34b;judgefrozen2316a7c6. Controlisprevious65742cbb unalignedcomplete2stageProgram,notmiddleslicedw8ororiginalstarter. Programdocument,stagesources,grid,blockidentical;referenceunchanged.",
+    "runtime_evidence": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-program-alignment-008-20260921/",
+    "resource_budget": {
+      "guard_checks": 60,
+      "guard_normal_bytes": 587837560,
+      "guard_limit_bytes": 705314936,
+      "comparison_normal_bytes": 608240620,
+      "comparison_limit_bytes": 725717996,
+      "prepared_f64_bytes_per_run": 2349547520,
+      "note": "Nativebuild/copiedartifacts/cache/GPUargumentsetsadditional;refreshcapacitybeforeactualsubmission."
+    },
+    "device_status": "Not submitted at this source publication; CI/integration and realguardacceptance precedeperformance. No devicequalification orspeedclaim.",
+    "promotion_disposition": "No promotion; retain oldCV failures and all historical evidence."
+  },
+  "program_008_alignment_followup": {
+    "task": "008_gemm_n4096_k14336",
+    "candidate_compiler_commit": "b5e1c34b0acaaa986045f2d543c57073fedeeefc",
+    "judge_commit": "2316a7c6687b80d83da07552a664874417054a8d",
+    "control_compiler_commit": "65742cbbb66cbfe428b64b8aafddba774d636eaa",
+    "scope": "M1 N4096 K14336 FP16. Same complete two-stage split-K Program, lowered sources, constants, grids and 8 execution groups as the prior unaligned Program; per-stage guarded 16B AOT specialization with generic fallback. Control is the frozen unaligned complete Program, not sliced-w8 or original starter. Original supplied external callable, Workload and CPU oracle preserved.",
+    "guard": {
+      "run_id": "nvidia-program-alignment-008-guards-20260921-e91b5c45ba1c",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-alignment-008-guards-20260921-e91b5c45ba1c/stages/verify/guard-report.json",
+      "passed": true,
+      "checks": 60,
+      "stage_launches": 120,
+      "restricted_leaf_refusals": 65,
+      "snapshot_bytes": 587837560,
+      "input_check_counts": {
+        "literal": 10,
+        "reference": 110
+      },
+      "coverage": "All five original cases: aligned plus each FP16 public a/b/out at 2/4/8-byte offsets, and private FP32 partial at element-aligned 4/8-byte offsets. Private offsets exercise both producer and consumer leaf guards. Restricted leaves refuse before dispatch, actual generic/aligned selections and two stage launches match, every public output and input-invariance check passes. Private contents are not a separate public oracle output.",
+      "measurement": "Untimed correctness only. CPU prepare and final verification outside the exclusive GPU lease. Full snapshots retained; no performance qualification follows from this guard."
+    },
+    "comparison": {
+      "run_id": "nvidia-program-alignment-008-comparison-20260921-f2e809292860",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-alignment-008-comparison-20260921-f2e809292860/stages/verify/comparison-report.json",
+      "status": "measurement_quality_failed",
+      "correctness_passed": true,
+      "snapshot_count": 2550,
+      "snapshot_bytes": 608240620,
+      "input_check_counts": {
+        "literal": 10,
+        "reference": 5090
+      },
+      "edges": {
+        "optimized_vs_external": {
+          "candidate_us": 95.55199999999999,
+          "baseline_us": 26.721,
+          "speedup": null,
+          "descriptive_ratio": 0.279648777628935,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.097674118292728
+        },
+        "starter_vs_external": {
+          "candidate_us": 55.072,
+          "baseline_us": 26.625,
+          "speedup": null,
+          "descriptive_ratio": 0.483458018593841,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.061629086212179
+        },
+        "optimized_vs_starter": {
+          "candidate_us": 96.785,
+          "baseline_us": 55.041,
+          "speedup": null,
+          "descriptive_ratio": 0.568693495892959,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.076708676537001
+        }
+      }
+    },
+    "interpretation": "All three edges fail the original 0.05 maximum cohort CV gate. Aligned/unaligned Program 96.785/55.041us and aligned/external 95.552/26.721us are descriptive only: neither an accepted gain nor a qualified regression. The new unaligned Program/external edge also fails CV and does not replace the older qualified sliced-w8 external representative. Static vector load-site reduction did not produce an accepted speed improvement.",
+    "measurement": "Guard final CPU acceptance preceded the one comparison submission. CPU prepare and full verify remain outside the continuous exclusive paired capture; original full-callable CUPTI span, cold L2, Workload oracle, input invariance and every public output retained. No repeated run to upgrade CV.",
+    "promotion_disposition": "No promotion. Retain all generic and aligned artifacts, original starter, original external and failed timing edges. Do not multiply cross-run ratios or attribute the descriptive slowdown to a hardware bottleneck without independent evidence.",
+    "next_diagnostic": "Inspect the complete Program host dispatch path and compiled kernels separately before selecting a successor. The existing phased NCU task is prepared but not submitted because this round has no qualified candidate timing edge; no new NCU conclusion is claimed."
+  },
+  "program_dispatch_identity_followup": {
+    "implemented_in": "3bc753a49e52f3450400c95fae2532766c57a347",
+    "observation": "LoadedAlignmentCandidate and the restricted CUDA leaf each compare a launch contract canonical value with their bound manifest value. For the identical object this reconstructs identical JSON and hashes at every stage launch. A real sealed008 Program with FakeDriver exposes this CPU work without executing a GPU.",
+    "change": "Only identical-object comparisons skip redundant canonical serialization. Distinct contracts retain the prior canonical comparison, accepting equal clones and refusing modified clones. Each launch still reads actual pointers and checks ABI, target, alignment, module/context and CUBIN identity. No cache, numerical change, new IR or timing policy change.",
+    "evidence_root": "/mnt/b300-shared/home/qinhaiyan/cake-experiments/nvidia-program-alignment-008-20260921",
+    "before": {
+      "source_commit": "2316a7c6687b80d83da07552a664874417054a8d",
+      "report": "cpu-dispatch-profile-canonical-admission/result.json",
+      "observations": {
+        "starter": {
+          "samples": 200,
+          "cpu_call_median_us": 441.869,
+          "fake_stage_dispatch_gap_median_us": 27.490000000000002,
+          "stage_variant_last": {
+            "gemm_split_partials": "generic",
+            "gemm_split_finalize": "generic"
+          }
+        },
+        "optimized": {
+          "samples": 200,
+          "cpu_call_median_us": 556.6400000000001,
+          "fake_stage_dispatch_gap_median_us": 78.97649999999999,
+          "stage_variant_last": {
+            "gemm_split_partials": "aligned",
+            "gemm_split_finalize": "aligned"
+          }
+        }
+      },
+      "canonical_json_calls_per_50_program_calls": {
+        "starter": 100,
+        "optimized": 500
+      },
+      "leaf_manifest_canonical_calls_optimized": 400
+    },
+    "after": {
+      "source_commit": "3bc753a49e52f3450400c95fae2532766c57a347",
+      "report": "cpu-dispatch-profile-3bc753a4/result.json",
+      "observations": {
+        "starter": {
+          "samples": 200,
+          "cpu_call_median_us": 436.728,
+          "fake_stage_dispatch_gap_median_us": 27.557499999999997,
+          "stage_variant_last": {
+            "gemm_split_partials": "generic",
+            "gemm_split_finalize": "generic"
+          }
+        },
+        "optimized": {
+          "samples": 200,
+          "cpu_call_median_us": 442.4415,
+          "fake_stage_dispatch_gap_median_us": 31.372999999999998,
+          "stage_variant_last": {
+            "gemm_split_partials": "aligned",
+            "gemm_split_finalize": "aligned"
+          }
+        }
+      },
+      "canonical_json_calls_per_50_program_calls": {
+        "starter": 100,
+        "optimized": 100
+      },
+      "leaf_manifest_canonical_calls_optimized": 0
+    },
+    "verified_by": {
+      "fixed_commit": "3bc753a49e52f3450400c95fae2532766c57a347",
+      "local": "7 affected modules:52 tests,95 subtests pass;1 optional Torch test skips. F821 passes.",
+      "M3_CPU": "Same7 modules with CUDA hidden:53 tests pass, including the local Torch skip; cpu-tests-3bc753a4/stdout.log and stderr.log. No GPU launched.",
+      "review": "Independent review of semantic equivalence and dynamic refusal boundaries passed."
+    },
+    "limits": "These are CPU observations with fake CUDA calls, synthetic tensor metadata and real sealed Programs. They do not establish GPU latency, unique cause of the prior CUPTI gap or an accepted GPU speedup. The Program-level canonical comparisons before the first stage are unchanged; each source retains its own original measurement evidence.",
+    "probe_failure": "The first CPU diagnostic used a noncanonical device_name and was refused before loading a fake module; cpu-dispatch-profile/failure.json and original probe remain. Its successor uses the canonical NVIDIA B300 fixture. This was a probe input error, not a Compiler defect.",
+    "promotion_disposition": "Shared runtime simplification only. No kernel promotion or GPU performance claim. A successor device guard and formal paired comparison require final source acceptance and the existing broker."
+  },
+  "program_008_executor_followup": {
+    "task": "008_gemm_n4096_k14336",
+    "judge_executor_commit": "3bc753a49e52f3450400c95fae2532766c57a347",
+    "candidate_compiler_commit": "b5e1c34b0acaaa986045f2d543c57073fedeeefc",
+    "control_compiler_commit": "65742cbbb66cbfe428b64b8aafddba774d636eaa",
+    "scope": "Same frozen aligned complete Program, unaligned complete Program control, original supplied external and Workload as program_008_alignment_followup. No kernel recompilation. The new treatment is the independently reviewed same-object launch-contract comparison change in the common executor. M1 N4096 K14336 FP16; all original constants, stage grids, blocks and8groups preserved.",
+    "guard": {
+      "run_id": "nvidia-program-dispatch-008-guards-20260921-57ef40805c80",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-dispatch-008-guards-20260921-57ef40805c80/stages/verify/guard-report.json",
+      "passed": true,
+      "checks": 60,
+      "stage_launches": 120,
+      "restricted_leaf_refusals": 65,
+      "snapshot_bytes": 587837560,
+      "input_check_counts": {
+        "literal": 10,
+        "reference": 110
+      },
+      "coverage": "All five original cases: aligned; each public FP16 a/b/out pointer offset2/4/8B; privateFP32 partial offset4/8B. Actual generic/aligned dispatch, restricted leaf refusal before launch, all public outputs and input invariance pass. Private contents are not a separate public oracle output."
+    },
+    "comparison": {
+      "run_id": "nvidia-program-dispatch-008-comparison-20260921-ec5d58a9dd0b",
+      "path": "/mnt/b300-shared/home/qinhaiyan/workspace/aka-gpu-infra-b300-m3-20260908/state/runs/nvidia-program-dispatch-008-comparison-20260921-ec5d58a9dd0b/stages/verify/comparison-report.json",
+      "status": "measurement_quality_failed",
+      "correctness_passed": true,
+      "snapshot_count": 2550,
+      "snapshot_bytes": 608240620,
+      "input_check_counts": {
+        "literal": 10,
+        "reference": 5090
+      },
+      "edges": {
+        "optimized_vs_external": {
+          "candidate_us": 45.824,
+          "baseline_us": 26.688,
+          "speedup": null,
+          "descriptive_ratio": 0.582402234636872,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.153932370957868,
+          "maximum_cohort_cv_by_arm": {
+            "candidate": 0.153932370957868,
+            "baseline": 0.016875160528492
+          }
+        },
+        "starter_vs_external": {
+          "candidate_us": 55.04,
+          "baseline_us": 26.624,
+          "speedup": 0.483720930232558,
+          "descriptive_ratio": 0.483720930232558,
+          "quality_passed": true,
+          "classification": "second_arm_faster",
+          "maximum_cohort_cv": 0.031966739508718,
+          "maximum_cohort_cv_by_arm": {
+            "candidate": 0.031966739508718,
+            "baseline": 0.018119050954289
+          }
+        },
+        "optimized_vs_starter": {
+          "candidate_us": 46.24,
+          "baseline_us": 55.072,
+          "speedup": null,
+          "descriptive_ratio": 1.191003460207612,
+          "quality_passed": false,
+          "classification": "measurement_quality_failed",
+          "maximum_cohort_cv": 0.141389701666846,
+          "maximum_cohort_cv_by_arm": {
+            "candidate": 0.141389701666846,
+            "baseline": 0.03383651301768
+          }
+        }
+      }
+    },
+    "interpretation": "Under the new executor, aligned/unaligned Program46.240/55.072us has all10 pair wins and a descriptive1.191003 ratio, but maxCV0.1413897 fails the original gate. Aligned/external45.824/26.688us also failsCV0.1539324. Only the separately paired unaligned Program/external55.040/26.624us passesquality(maxCV0.0319667), establishing that control as slower. The prior qualified sliced-w8 remains the task representative. No accepted candidate speedup or automatic promotion.",
+    "measurement": "The new executor guard final acceptance preceded the unique comparison submission. Original CPU prepare and verify outside lease, continuous exclusive GPU paired capture, full-callable CUPTI span, coldL2, all2550 observations, numerical oracle and CV/materiality gates retained. No unchanged-source retry.",
+    "limits": "The prior2316 and current3bc GPU observations were separate runs, both with failed candidate quality edges; their descriptive latencies must not be converted into a qualified before/after executor speedup. CPU FakeDriver before/after evidence remains CPU-only. No independent NCU was submitted for this candidate, and no unique hardware or variance cause is established.",
+    "promotion_disposition": "No promotion. Keep the correct executor simplification, all original binaries and failed timing observations. Further work needs a distinct, evidenced runtime or candidate change; do not rerun this source to obtain a green CV."
   }
 }

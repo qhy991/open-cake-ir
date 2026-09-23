@@ -76,6 +76,38 @@ class TaskLaunchTests(unittest.TestCase):
                 admit.assert_not_called()
             self.workspace = self.directory / "next-task"
 
+    def test_clean_start_launch_refuses_before_writing_private_or_provider_material(self):
+        with patch.object(launch_task, '_provider_executable') as provider, \
+             patch.object(launch_task, '_admit_stack') as admit:
+            with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                launch_task.main(self.args() + ['--reference-access', 'clean_start'])
+        provider.assert_not_called()
+        admit.assert_not_called()
+        self.assertFalse(self.workspace.exists())
+
+    def test_source_file_launcher_selects_the_versioned_provider_contract(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        captured = []
+        original = launch_task.task_run_inputs
+        def inputs(*args, **kwargs):
+            value = original(*args, **kwargs)
+            captured.append(value)
+            return value
+        with patch.object(launch_task, '_provider_executable', return_value=Path('/fixture/provider')), \
+             patch.object(launch_task, 'task_run_inputs', side_effect=inputs), \
+             patch.object(launch_task, '_admit_stack', side_effect=RuntimeError('stop before execution')):
+            with self.assertRaisesRegex(RuntimeError, 'stop before execution'):
+                launch_task.main(self.args() + ['--source-file', '--max-candidates', '1',
+                                                '--searches-per-turn', '1'])
+        self.assertEqual(captured[0]['authoring']['provider']['submission_contract'], PYTHON_SOURCE_FILE_V1)
+        self.assertEqual(captured[0]['authoring']['scaffold']['path'],
+                         'contracts/scaffolds/python-artifact-optimization-source-file-v1.md')
+
+    def test_source_file_launcher_refuses_multi_candidate_before_workspace_creation(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            launch_task.main(self.args() + ['--source-file'])
+        self.assertFalse(self.workspace.exists())
+
     def test_codex_npm_wrapper_resolves_only_its_own_native_dependency(self):
         package = self.directory/'codex-package'
         (package/'bin').mkdir(parents=True)

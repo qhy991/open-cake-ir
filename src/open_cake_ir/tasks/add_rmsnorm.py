@@ -170,8 +170,7 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     ]
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
             f'@cake.schedule(name="{workload.workload_id}", target="{workload.target}",\n'
-            f'               backend="{BACKENDS[backend_for_target(workload.target)]["route"]}", entry_point="cake_add_rmsnorm",\n'
-            f'               metadata={{"workload_contract_sha256": "{workload.canonical_sha256}"}})\n'
+            f'               backend="{BACKENDS[backend_for_target(workload.target)]["route"]}", entry_point="cake_add_rmsnorm")\n'
             f'def candidate(lm, {", ".join(declarations)}):\n'
             '    compute = lm.role(execution_groups=[0, 1, 2, 3])\n'
             '    row = lm.program(delta, axis=0, dimension=0, tile=1)\n'

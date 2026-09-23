@@ -30,6 +30,7 @@ from .process import (
 )
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1, ProviderAuxiliaryActivity, ProviderInvocation,
+    PYTHON_SOURCE_FILE_V1,
     ProviderTurn, ProviderQualificationReceipt, QualifiedRunProvider, _project_candidate_submission,
 )
 
@@ -431,7 +432,7 @@ class ClaudeCandidateWriteUnwitnessed(ValueError):
 
 def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: str,
                             event_contract: str = CLAUDE_EVENT_CONTRACT,
-                            response_aliases=()) -> ParsedClaudeTurnEvents:
+                            response_aliases=(), candidate_filename: str = 'candidate-set.json') -> ParsedClaudeTurnEvents:
     """Require one completed native stream, coherent session and successful writes."""
     if event_contract not in CLAUDE_EVENT_CONTRACTS:
         raise ValueError("Claude event contract differs")
@@ -529,7 +530,7 @@ def parse_claude_turn_events(raw_events: bytes, *, expected_terminal_message: st
                     # anywhere in the spelling is still refused outright rather than
                     # normalized away, so no write can climb out of the envelope.
                     if (not resolved.is_absolute() or ".." in resolved.parts
-                            or resolved.name != "candidate-set.json"):
+                            or resolved.name != candidate_filename):
                         raise ValueError("Claude write is outside the candidate envelope")
                     writes.append((str(resolved), name))
             elif event["type"] == "user" and kind == "tool_result":
@@ -630,7 +631,8 @@ def normalize_claude_turn(raw_events: bytes, *, candidate_path: Path, expected_c
     if event_contract not in CLAUDE_EVENT_CONTRACTS or expected_change not in {"add", "update"}:
         raise ValueError("Claude event or candidate lifecycle contract differs")
     parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal_message,
-                                     event_contract=event_contract, response_aliases=response_aliases)
+                                     event_contract=event_contract, response_aliases=response_aliases,
+                                     candidate_filename=candidate_path.name)
     if (parsed.candidate_path != str(candidate_path.absolute()) or
             expected_change == "add" and parsed.write_tools[0] != "Write"):
         raise ValueError("Claude candidate path or initial write differs")
@@ -689,8 +691,12 @@ class ClaudeInvocationBuilder:
     def __init__(self, *, executable: Path, provider_revision: str, model: str,
                  reasoning_effort: str, workspace: Path, removed_environment: tuple[str, ...],
                  cli_options: frozenset[str] | set[str] | tuple[str, ...],
-                 event_contract: str = CLAUDE_EVENT_CONTRACT, response_aliases=()) -> None:
+                 event_contract: str = CLAUDE_EVENT_CONTRACT, response_aliases=(),
+                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1) -> None:
         self.response_aliases = response_model_aliases(model, response_aliases)
+        if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}:
+            raise ValueError('Claude builder submission contract differs')
+        self._submission_contract = submission_contract
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
             raise ValueError("Claude builder event contract differs")
         self._event_contract = event_contract
@@ -737,7 +743,7 @@ class ClaudeInvocationBuilder:
                 "permission_mode": "acceptEdits", "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 "removed_environment": list(self._removed_environment), "event_contract": self._event_contract,
-                "submission_contract": CANDIDATE_SET_ENVELOPE_V1, "terminal_schema": terminal_schema()}
+                "submission_contract": self._submission_contract, "terminal_schema": terminal_schema()}
 
     @property
     def cli_limitations(self) -> Mapping[str, object]:
@@ -818,8 +824,10 @@ class ClaudeProviderAdapter:
                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
                 arm: str | None = None, environment_kind: str = "open_cake", maximum_candidates_per_turn: int = 1) -> ProviderTurn:
         if (invocation.sandbox != "none" or event_contract not in CLAUDE_EVENT_CONTRACTS or
-                submission_contract != CANDIDATE_SET_ENVELOPE_V1 or expected_change not in {"add", "update"} or
-                candidate_path.absolute() != invocation.cwd.absolute() / "candidate-set.json"):
+                submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}
+                or expected_change not in {"add", "update"} or
+                candidate_path.absolute() != invocation.cwd.absolute() / (
+                    'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'candidate-set.json')):
             raise ValueError("Claude invocation or candidate contract differs")
         try:
             if (invocation.argv.count("--json-schema") != 1
@@ -856,7 +864,8 @@ class ClaudeProviderAdapter:
             if completed.returncode != 0:
                 raise ValueError(f"Claude process failed with exit code {completed.returncode}")
             parsed = parse_claude_turn_events(completed.stdout, expected_terminal_message=expected_terminal_message,
-                                             event_contract=event_contract, response_aliases=self.response_aliases)
+                                             event_contract=event_contract, response_aliases=self.response_aliases,
+                                             candidate_filename=candidate_path.name)
             if parsed.reported_models[0] != requested_model:
                 raise ValueError("Claude reported model differs from the exact requested model")
             return normalize_claude_turn(completed.stdout, candidate_path=candidate_path,

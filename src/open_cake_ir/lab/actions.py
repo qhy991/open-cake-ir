@@ -45,16 +45,26 @@ def candidate_program(payload, *, allow_python=True):
 
 
 def resolve_action(payload: bytes, *, environment_kind, transformations, candidates,
-                   baselines, compiler_factory, allow_python=False) -> ActionResolution:
+                   baselines, compiler_factory, allow_python=False, python_only=False) -> ActionResolution:
     action_sha256 = sha256(payload).hexdigest()
     if environment_kind == 'direct_cuda':
         return ActionResolution(action_sha256, 'submit', payload)
+    if python_only and (environment_kind != 'open_cake' or not allow_python):
+        raise ValueError('Python-only authoring requires the Open Cake Python frontend')
     try:
         document = json.loads(payload)
     except (ValueError, UnicodeError):
         # The representation owner retains the established localized parser feedback.
-        return ActionResolution(action_sha256, 'submit', payload)
+        if not python_only:
+            return ActionResolution(action_sha256, 'submit', payload)
+        return ActionResolution(action_sha256, 'submit', None, reason='author_format',
+                                message='Author must submit Python source in a python_source member.')
     if not isinstance(document, Mapping) or 'action' not in document:
+        if python_only and (not isinstance(document, Mapping)
+                            or set(document) != {'python_source'}
+                            or not isinstance(document['python_source'], str)):
+            return ActionResolution(action_sha256, 'submit', None, reason='author_format',
+                                    message='Author must submit Python source in a python_source member.')
         return ActionResolution(action_sha256, 'submit', payload)
     kind = document.get('action')
     def refused(reason, message, *, parent=None, transformation=None):
@@ -62,6 +72,9 @@ def resolve_action(payload: bytes, *, environment_kind, transformations, candida
     if kind == 'submit':
         if set(document) != {'action', 'candidate'} or not isinstance(document['candidate'], Mapping):
             return refused('action_shape', 'submit requires one complete candidate object.')
+        if python_only and (set(document['candidate']) != {'python_source'}
+                            or not isinstance(document['candidate']['python_source'], str)):
+            return refused('author_format', 'Author must submit Python source in a python_source member.')
         return ActionResolution(action_sha256, 'submit', canonical_json_bytes(document['candidate']))
     if kind != 'transform' or set(document) != {'action', 'parent', 'transformation', 'parameters'}:
         return refused('action_shape', 'Use submit(candidate) or transform(parent, transformation, parameters).')

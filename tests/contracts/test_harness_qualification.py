@@ -85,7 +85,8 @@ class HarnessQualificationTests(unittest.TestCase):
             path = Path(plan['candidate_path'])
             assert path.parent == Path.cwd() and path.exists() == resumed
             entry = plan['turns'][turn-1]
-            path.write_text(json.dumps(entry['submission']))
+            path.write_text(entry['submission'] if isinstance(entry['submission'], str)
+                            else json.dumps(entry['submission']))
             if {failure!r} == 'task':
                 Path('TASK.md').chmod(0o644)
                 Path('TASK.md').write_text('tampered task')
@@ -165,6 +166,27 @@ class HarnessQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'authority differs'):
             QualifiedRunProvider(qualification=receipt, builders={run_id:builder}, task_packages={run_id:package},
                                  adapter=ClaudeProviderAdapter())
+
+    def test_claude_qualifies_raw_python_file_as_a_distinct_contract(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.serialization import canonical_json_bytes
+        self.provider()
+        self.assertEqual(self.run_qualification(self.argv() + [
+            '--submission-contract', PYTHON_SOURCE_FILE_V1,
+            '--maximum-candidates-per-turn', '1']), 0)
+        receipt = ProviderQualificationReceipt.load(self.root/'receipt.json')
+        self.assertEqual(receipt.scope, 'zero_gpu_contract_fixture_only')
+        evidence = EvidenceStore.open(self.root/'evidence')
+        observed = next(row['payload'] for row in evidence.replay_events('claude-qualification-fixture')
+                        if row['kind'] == 'provider_qualification_observed')
+        objects = {item['role']:item for item in observed['objects']}
+        for phase, turn in (('initial', 1), ('resumed', 2)):
+            raw = evidence.read_object(objects[f'open_cake_{phase}_source_file'])
+            self.assertTrue(raw.startswith(self.source.read_bytes()))
+            self.assertIn(f'qualification turn {turn}'.encode(), raw)
+            self.assertEqual(evidence.read_object(objects[f'open_cake_{phase}_candidate_0000']),
+                             canonical_json_bytes({'python_source': raw.decode()}))
+        self.assertTrue((self.root/'workspace'/'open_cake'/'candidate.py').is_file())
 
     def test_codex_single_arm_transports_the_same_python_member_contract(self):
         from tests.contracts.test_provider_qualification import ProviderQualificationContractTests

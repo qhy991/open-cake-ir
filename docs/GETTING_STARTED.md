@@ -37,14 +37,13 @@ python3 -m venv .venv
 采用 FP32 浮点数；融合乘加 FMA 只在最终结果处舍入一次。
 这和“先把乘积舍入，再相加”可能有不同答案，见 [FMA 说明](wiki/primitives.md#elementwise)。
 
-完整计划在 [`fma-b8-smoke.json`](../corpus/schedules/fma-b8-smoke.json)。暂时不用自己写 JSON。
+编写入口是 [`examples/python/fma.py`](../examples/python/fma.py)。算子的形状、目标、执行组和 FMA 合同都写在这个 Python 文件中。
 
 ## 3. 检查计划
 
 ```bash
 .venv/bin/open-cake-ir compiler assess --format text \
-  --revision compiler/revision.json \
-  corpus/schedules/fma-b8-smoke.json
+  examples/python/fma.py
 ```
 
 关注两行：
@@ -56,7 +55,7 @@ python3 -m venv .venv
 
 它们分别表示计划满足已建模的规则、所选后端能够生成源码。
 可能出现 `[提示] RESIDENCY_BOUND`：这是一条资源分析提示，不是拒绝计划，也不是性能成绩。
-诊断后面的 `roles`、`operations[3]` 等是 JSON 中的位置。
+诊断后面的 `roles`、`operations[3]` 等是规范 IR 中的位置；Python 作者还会看到源码行列。
 
 `--format text` 便于人读；去掉它，会输出供工具使用的完整 JSON，包括原始诊断和分析。
 详细解释见 [怎样读结果](wiki/results.md)。
@@ -68,8 +67,7 @@ python3 -m venv .venv
 ```bash
 CAKE_TUTORIAL_DIR=$(mktemp -d)
 .venv/bin/open-cake-ir compiler lower --format text \
-  --revision compiler/revision.json \
-  corpus/schedules/fma-b8-smoke.json \
+  examples/python/fma.py \
   --output "$CAKE_TUTORIAL_DIR/fma.py"
 ```
 
@@ -80,32 +78,16 @@ CAKE_TUTORIAL_DIR=$(mktemp -d)
 此时得到的是 Triton 源码，还不是 GPU 二进制，也没有验证 GPU 答案。
 **请不要把“源码已生成”写成“GPU 测试已通过”。**
 
-## 5. 故意看一个错误
+## 5. 可选：查看规范 IR
 
-仓库已有一个“FMA 少了输入”的反例：
-
-```bash
-.venv/bin/open-cake-ir compiler assess --format text \
-  --revision compiler/revision.json \
-  corpus/schedules/fma-b8-smoke-arity-drift.json
-```
-
-这里应出现“结构检查：未通过”，并返回非零退出码。
-它验证编译器会拒绝错误计划，不是教程失败。原来的正确计划没有被修改。
-
-最后检查整套编译器语料：
-
-```bash
-.venv/bin/open-cake-ir compiler check-corpus --format text \
-  --revision compiler/revision.json
-```
-
-“符合预期”既包括正确计划被接受，也包括错误计划被拒绝。
-数量以当前输出为准，不需要从旧文章复制。
+编译器会在内部把 Python 写法构造成规范 Schedule。若需要研究它的序列化格式，
+可以打开 [FMA JSON 样本](../corpus/schedules/fma-b8-smoke.json)。这是 Corpus 的测试资料，
+不是编写或生成这个 kernel 的输入。
 
 ## 6. 下一步
 
-- 想改计划：[逐项解释这份 JSON](wiki/schedule.md)。
+- 想改算子：[Python 编写规则](PYTHON_FRONTEND.md)，从 `examples/python/fma.py` 开始。
+- 想研究规范 IR：[执行计划的字段](wiki/schedule.md)。
 - 想换一个计算：[算子图解](wiki/operators.md)。
 - 想跑 GPU：[实验流程](wiki/experiments.md)，先核对当前 Executor、机器和任务合同。
 - 想查看历史 GPU 教学结果：[Flash-KMeans 教学验收记录](../inventory/GPU_QUICKSTART_QUALIFICATION_V3_20260823.json)。它绑定当时的版本，不能当作当前环境的使用说明。

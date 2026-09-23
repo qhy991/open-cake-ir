@@ -393,7 +393,7 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if candidate_identity(baseline) != fixed.get('candidate'):
             raise ValueError('Run baseline artifact differs from its frozen selection')
         validate_pair_candidates(baseline, baseline, workload, protocol['case_id'])
-    validate_reference_handoff(project_root, {'author': authoring})
+    validate_reference_handoff(project_root, {'author': authoring}, workload=workload, case_id=protocol['case_id'])
     from .python_reference import read_skeleton_reference
     for name in ('scaffold', * (('launch_contract', 'candidate_skeleton') if specification.environment_kind == 'direct_cuda' else ())):
         reference = _object(authoring.get(name), f'run.authoring.{name}')
@@ -403,9 +403,28 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if sha256(path.read_bytes()).hexdigest() != reference['sha256']:
             raise ValueError(f'Run {name} bytes differ')
     if specification.environment_kind == 'open_cake':
-        _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
-        if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
-            raise ValueError('Run Schedule skeleton target or lowering route differs')
+        python_clean_start = (authoring.get('reference_access') == 'clean_start'
+                              and authoring.get('input_format') == 'python_source_v1')
+        if python_clean_start:
+            starter_reference = _object(authoring.get('python_starter'),
+                'run.authoring.python_starter')
+            if set(starter_reference) != {'path'}:
+                raise ValueError('Python clean-start Run reference fields differ')
+            _, starter_path = source_reference_path(project_root,
+                starter_reference['path'], 'run.authoring.python_starter')
+            if starter_path.suffix != '.py':
+                raise ValueError('Python clean-start Run requires a .py starter')
+        else:
+            if authoring.get('input_format') == 'python_source_v1':
+                starter_reference = _object(authoring.get('schedule_skeleton'),
+                    'run.authoring.schedule_skeleton')
+                _, starter_path = source_reference_path(project_root,
+                    starter_reference.get('path'), 'run.authoring.schedule_skeleton')
+                if starter_path.suffix != '.py':
+                    raise ValueError('Python-only Run requires a .py Schedule starter')
+            _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
+            if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
+                raise ValueError('Run Schedule skeleton target or lowering route differs')
     for name, reference in document['reference_inputs'].items():
         if name == 'baseline_programs':
             continue

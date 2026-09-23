@@ -100,6 +100,8 @@ class DocumentationContractTests(unittest.TestCase):
             *STABLE_ENTRY_DOCUMENTS,
             ROOT / "docs/README.md",
             ROOT / "docs/catalog.md",
+            ROOT / "docs/zh-CN/README.md",
+            ROOT / "docs/en/README.md",
             ROOT / "docs/en/adr/README.md",
             ROOT / "docs/zh-CN/adr/README.md",
             ROOT / "docs" / "GLOSSARY.md",
