@@ -265,7 +265,7 @@ def run_runtime_factory(project_root, runtime_config_path):
                     submission_contract=declared_provider.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1),cwd_policy=declared_provider['cwd_policy'],
                     reference_visibility=declared_provider['reference_visibility'],
                     author_home_policy=author_home_policy, codex_home=codex_home,
-                    qualified_system_skills_sha256=qualification.system_skills_sha256)
+                    qualified_system_skills_sha256=getattr(qualification, 'system_skills_sha256', None))
                 provider = CodexRunProvider(qualification=qualification,builders={specification.run_id:invocation},
                     task_packages=packages,adapter=CodexProviderAdapter())
         return {'provider':provider,'environment':environment,'evaluator':evaluator}
