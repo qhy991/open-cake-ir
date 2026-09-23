@@ -2,13 +2,20 @@
 % Compile: xelatex -interaction=nonstopmode -halt-on-error open-cake-ir-technical-report.tex
 % This single source intentionally has no external figure or bibliography files.
 \documentclass[UTF8,11pt,a4paper,fontset=none]{ctexart}
-\setCJKmainfont{Songti SC}[BoldFont=Hiragino Sans GB]
-\setCJKsansfont{Hiragino Sans GB}[BoldFont=Hiragino Sans GB]
+\setmainfont{Times New Roman}
+\setsansfont{Avenir Next}
+\setmonofont{Menlo}
+\setCJKmainfont{Songti SC}[BoldFont=Hiragino Sans GB W6]
+\setCJKsansfont{Hiragino Sans GB W3}[BoldFont=Hiragino Sans GB W6]
 \setCJKmonofont{Songti SC}
-\setCJKfamilyfont{zhhei}{Hiragino Sans GB}
+\setCJKfamilyfont{zhhei}{Hiragino Sans GB W6}
+\xeCJKsetup{CJKecglue={\hskip 0.16em plus 0.06em}}
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\emergencystretch=1.5em
 \usepackage[left=23mm,right=23mm,top=24mm,bottom=25mm,headheight=21pt]{geometry}
 \usepackage{amsmath,amssymb,booktabs,tabularx,array,enumitem,xcolor,colortbl}
-\usepackage{hyperref,fancyhdr,titlesec,caption,microtype,multicol}
+\usepackage{hyperref,fancyhdr,titlesec,caption,microtype,multicol,ragged2e}
 \usepackage{tikz,tcolorbox}
 \usetikzlibrary{arrows.meta,positioning}
 \tcbuselibrary{breakable,skins}
@@ -17,7 +24,7 @@
 \definecolor{accent}{HTML}{087C84}
 \definecolor{mist}{HTML}{F0F6F5}
 \definecolor{hair}{HTML}{D5E3E2}
-\hypersetup{colorlinks=true,linkcolor=ink,urlcolor=accent,citecolor=accent,pdftitle={open-cake-ir: Agent 驱动的 GPU Kernel 与编译器协同演进技术报告},pdfauthor={Haiyan Qin}}
+\hypersetup{colorlinks=true,linkcolor=ink,urlcolor=accent,citecolor=accent,pdftitle={open-cake-ir: 面向 GPU 内核优化的智能体与编译器协同演进},pdfauthor={Haiyan Qin}}
 \setlength{\parindent}{2em}
 \setlength{\parskip}{0.38em}
 \linespread{1.12}
@@ -29,7 +36,8 @@
 \titleformat{\subsection}[hang]{\normalsize\bfseries\sffamily\color{ink}}{\color{accent}\thesubsection}{0.7em}{}
 \titlespacing*{\subsection}{0pt}{1.4em}{0.45em}
 \captionsetup{font=small,labelfont={bf,color=accent},labelsep=quad,justification=raggedright,singlelinecheck=false,skip=5pt}
-\setcounter{tocdepth}{1}
+\setcounter{tocdepth}{2}
+\renewcommand{\contentsname}{内容导览}
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\scriptsize\sffamily\bfseries\color{accent} OPEN-CAKE-IR \quad / \quad TECHNICAL REPORT}
@@ -52,7 +60,7 @@
     \usecounter{enumiv}\let\p@enumiv\@empty
     \renewcommand\theenumiv{\@arabic\c@enumiv}%
     \setlength\itemsep{0.25em}}%
-  \sloppy\clubpenalty4000\widowpenalty4000}
+  \RaggedRight\clubpenalty10000\widowpenalty10000\interlinepenalty10000}
  {\endlist}
 \makeatother
 
@@ -65,9 +73,9 @@
 \vspace*{18mm}
 {\noindent\sffamily\bfseries\color{accent}\large 研究报告 \quad / \quad 技术体系与实验证据\par}
 \vspace{8mm}
-{\noindent\sffamily\bfseries\color{ink}\fontsize{27}{38}\selectfont Agent 驱动的\\GPU Kernel 与编译器\\协同演进\par}
+{\noindent\sffamily\bfseries\color{ink}\fontsize{25}{36}\selectfont 面向 GPU 内核优化的\\智能体与编译器协同演进\par}
 \vspace{7mm}
-{\noindent\color{muted}\large A Technical Report on Agent-Driven GPU Kernel\\and Compiler Co-Evolution\par}
+{\noindent\color{muted}\large Agent--Compiler Co-Evolution for GPU Kernel Optimization\par}
 \vspace{13mm}
 {\color{accent}\noindent\rule{\textwidth}{1.1pt}\par}
 \vspace{6mm}
@@ -101,23 +109,23 @@
 
 \section*{摘要}
 \begin{notebox}
-\noindent\textbf{问题。}GPU Kernel Agent 能提出候选实现，但一次失败或一项延迟读数很难说明问题
-属于调度、表达能力、目标准入还是测量质量。
+\noindent\textbf{问题。}智能体能提出 GPU 内核的候选实现，但一次失败或一项延迟读数，
+难以说明问题属于调度、表达能力、目标准入还是测量质量。
 \par\smallskip
-\noindent\textbf{方法。}open-cake-ir 以 typed Schedule 表达单 Kernel 的硬件决策，以 Program 组合
-阶段；Compiler 给出局部化诊断，Lab 在冻结合同下搜索，Evaluation 使用外部 oracle、目标计时和
-profiler 确认，Evidence 保存可审计的观察。重复缺口在运行外由后继提交修复。
+\noindent\textbf{方法。}系统用带类型的执行计划描述单个内核，以完整程序组织阶段。
+编译器定位错误；实验系统固定任务和预算；评测检查外部答案、设备计时与性能剖析；
+证据系统留存原始观察。重复缺口在运行之外由后继提交修复。
 \par\smallskip
-\noindent\textbf{证据。}当前源码的 179 项 Corpus Gate 用例符合预期；B300、C550 已有范围明确的
-设备案例。平台接入和固定任务的局部优化已有证据，跨硬件经验材料或显式变换能否降低 Agent
-搜索成本，仍需预注册的四组处理实验。软件合同、设备正确性和因果收益分别验收。
+\noindent\textbf{证据。}当前源码的 179 项语料检查符合预期；B300、C550 已有范围明确的设备案例。
+平台接入和固定任务的局部优化已有证据；跨硬件经验能否降低智能体搜索成本，仍需预注册实验。
+软件合同、设备正确性和因果收益分别验收。
 \end{notebox}
 
-\noindent\textbf{关键词：}GPU Kernel；中间表示；静态验证；Agent；实验可复查性；跨硬件优化
+\noindent\textbf{关键词：}GPU 内核；中间表示；静态验证；智能体；实验可复查性；跨硬件优化
 
 \vspace{1.2em}
 \noindent{\sffamily\bfseries\color{accent} ABSTRACT}\par\vspace{0.35em}
-{\small\noindent
+{\small\RaggedRight\hyphenpenalty=10000\exhyphenpenalty=10000\noindent
 open-cake-ir is a research system in which agents author typed, hardware-explicit kernel schedules,
 receive localized compiler feedback, and validate candidates against external oracles and target-specific
 measurements. The compiler evolves between frozen optimization runs, with corpus-gated changes. This
@@ -126,17 +134,24 @@ and the still untested causal claim of cross-hardware knowledge transfer. Its im
 commit \code{0fe3a447}; each historical measurement retains its own source and assay boundary.\par}
 
 \vspace{1.2em}{\color{hair}\noindent\rule{\textwidth}{0.6pt}}\par
-{\small\tableofcontents}
+\section*{内容导览}
+\setlength{\columnsep}{10mm}
+\begin{multicols}{2}
+\small
+\makeatletter\@starttoc{toc}\makeatother
+\end{multicols}
 \clearpage
 
 \section{问题、研究对象与论点}
 
-给定同一数学算子，GPU 实现仍须决定任务分块、线程分工、存储层次、访问坐标、同步与执行顺序。
+本文的智能体（Agent）负责提出和修订执行计划；GPU 内核是在加速器上并行执行的计算程序；
+Compiler 检查计划并生成目标代码。给定同一数学算子，GPU 实现仍须决定任务分块、线程分工、
+存储层次、访问坐标、同步与执行顺序。
 一个只输出延迟的搜索过程很难说明某次失败属于候选调度、编译器表达能力、硬件准入，还是测量噪声。
 CAKE 论文提出让 Agent 编辑显式执行计划，并以编译器分析和外部评测形成反馈闭环\cite{cake}。
 open-cake-ir 是对这一研究路线的独立工程实现；论文报告的模型实验和速度数字不作为本仓库结果\cite{papercontract}。
 
-本报告的研究对象是\emph{可复查的 Agent 编写环境}：一份候选包含什么决策，系统能在什么范围内拒绝，
+本报告的研究对象是\textbf{可复查的 Agent 编写环境}：一份候选包含什么决策，系统能在什么范围内拒绝，
 设备证据如何决定接受，以及真实缺口怎样改变下一版 Compiler。核心问题可以表述为：
 \begin{notebox}
 \noindent\textbf{核心问题}\quad
@@ -149,9 +164,10 @@ open-cake-ir 是对这一研究路线的独立工程实现；论文报告的模�
 \section{系统合同与职责边界}
 
 \subsection{从任务到可审计结论}
-Workload Contract 固定数学语义、输入域、外部 oracle 和容差。Schedule 描述一个 Kernel 的资源、
-执行组、操作、地址与同步；Program 再声明公共张量、各阶段顺序和绑定。RunSpecification 固定一次
-优化所用的源码、目标、可见材料、工具权限和预算。StudyPlan 仅在研究对照时进一步固定处理、分配、
+任务合同（Workload Contract）固定数学语义、输入域、外部标准答案和容差。执行计划（Schedule）
+描述一个内核的资源、执行组、操作、地址与同步；完整程序（Program）再声明公共张量、阶段顺序和绑定。
+运行规格（RunSpecification）固定一次优化的源码、目标、材料、工具权限和预算；研究计划（StudyPlan）
+仅在研究对照时进一步固定处理、分配、
 终点与分析。这些对象的职责不同，不能用一个候选的局部通过来代替 Study 结论\cite{architecture,study}。
 
 \begin{table}[htbp]
@@ -177,13 +193,13 @@ Evaluation，Evidence 保存其观察。这样的依赖关系使同一个 Compil
 \repo{CONTEXT-MAP.md}{职责地图}。
 
 \subsection{两个时钟：候选搜索与编译器演进}
-内循环在\emph{冻结的} Compiler、Workload、Target、oracle 和测量合同下进行：生成结构不同的候选，
+内循环在\textbf{冻结的} Compiler、Workload、Target、oracle 和测量合同下进行：生成结构不同的候选，
 先通过构造检查、Verifier 和后端预检筛选，再对幸存者做设备正确性、计时与剖析，最后把诊断
 送回下一次候选。外循环由累积的 Finding 触发：若问题属于通用合法性、缺失原语、lowering 或
 目标校准，维护者在后继提交中修改其负责模块，验证后才开启新 Campaign。一次运行不能边测边
 改变尺子\cite{architecture,acceptance}。
 
-\section{表示：Workload、Program 与 Schedule}
+\section{程序表示：任务、完整程序与执行计划}
 
 \subsection{显式的计划，而非新的布局代数}
 受限 Python 前端与 JSON 文档形式进入同一规范的 typed Schedule；Python 入口解析受支持的语法，
@@ -201,12 +217,12 @@ $m=\max_k x_k$；候选 Schedule 另选每个执行组处理的行、列块、�
 Program 负责多个 Schedule 的公共输入输出、阶段顺序与张量绑定。完整 Program 的正确性要检查
 所有阶段的最终输出；单 Kernel 的计时或剖析不能自然推广为 Program、模型或服务收益。
 
-\subsection{Target 是精确的硬件文档}
+\subsection{精确目标文档}
 当前源码声明八个精确目标，分属 NVIDIA、Apple、AMD、Hygon 和 MetaX 五个 Vendor。
-Target 文档拥有自己的 lane 宽度、存储空间、指令合同、代码对象及资源事实；未声明事实给出
-“未建模”的报告，不借用相似目标的常数。Backend 是生成机制而不是 Vendor：现有
-\code{triton}、\code{metal}、\code{native\_cuda} 和 \code{cutlass\_cute\_dsl} 各声明可生成的
-代码对象。Compiler 对目标和后端做精确匹配，不能把未声明目标降级到邻近架构\cite{targets,architecture}。
+精确目标文档（Target）拥有自己的线程组宽度、存储空间、指令合同、代码对象及资源事实；
+未声明的事实报告为“未建模”，不借用相似目标的常数。后端是生成机制，不是厂商身份：
+现有 Triton、Metal、原生 CUDA 与 CuTe DSL 四条路线，各自声明可生成的代码对象。
+编译器对目标和后端做精确匹配，不能把未声明目标降级到邻近架构\cite{targets,architecture}。
 
 \subsection{表示变更的验收义务}
 新增 IR 原语须同时给出类型、效应、合法性、静态分析和目标行为；只有语法而没有这些语义，
@@ -214,7 +230,7 @@ Target 文档拥有自己的 lane 宽度、存储空间、指令合同、代码�
 语料门、分析一致与硬件根据作为表示的八项设计约束\cite{cake,irguide}。某算子若能由现有原语
 组合实现，应先添加 Workload Contract；只有真实表达缺口才要求扩大 Compiler。
 
-\section{Compiler：局部化检查到目标源码}
+\section{编译器：从局部化检查到目标源码}
 
 \subsection{分层拒绝与反馈}
 Compiler 首先解析与构造类型正确的 IR，然后按四类合同检查：
@@ -342,7 +358,7 @@ MetaX & C550 固定单 Kernel 及若干完整输出；单 Kernel 配对计时和
 \section{跨硬件知识迁移：机制与待验证估计量}
 
 \subsection{可复用的单位与负责位置}
-候选优化可能包含两种不同的知识：一个带适用条件的\emph{语义改写}，以及在某个硬件上选出的
+候选优化可能包含两种不同的知识：一个带适用条件的\textbf{语义改写}，以及在某个硬件上选出的
 tile、执行组或 pipeline 参数。前者可在 IR 中形成显式 pass，声明前提并返回完整候选或拒绝原因；
 后者要在目标 Target 上重新选择和验证。以私有中间张量的融合为例，数据流私有性、舍入、消费者
 和生命周期是机制条件；寄存器占用与具体收益属于目标设备事实。来源设备的速度比不随机制迁移
@@ -390,17 +406,17 @@ oracle、计时区间与质量门。以下文献中的仓库链接均固定到�
 \begin{reportbibliography}{99}
 \bibitem{cake} Z. Ye et al. \emph{CAKE: Compiler--Agent Co-Design for Frontier Kernel Evolution}.
 arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
-\bibitem{architecture} H. Qin. \repo{docs/ARCHITECTURE.md}{系统架构与平台能力}, open-cake-ir, fixed source commit.
-\bibitem{irguide} H. Qin. \repo{docs/IR_GUIDE.md}{IR 指南}, open-cake-ir, fixed source commit.
+\bibitem{architecture} H. Qin. \repo{docs/ARCHITECTURE.md}{系统架构与平台能力}.
+\bibitem{irguide} H. Qin. \repo{docs/IR_GUIDE.md}{IR 指南}.
 \bibitem{targets} H. Qin. \repo{compiler/revision.json}{Compiler 清单}与
-\repo{compiler/targets/sm_103a.json}{Target 文档示例}, open-cake-ir, fixed source commit.
-\bibitem{acceptance} H. Qin. \repo{docs/ACCEPTANCE_GATES.md}{验收门}, open-cake-ir, fixed source commit.
-\bibitem{papercontract} H. Qin. \repo{docs/PAPER_CONTRACT.md}{论文与本地证据合同}, open-cake-ir, fixed source commit.
-\bibitem{status} H. Qin. \repo{reports/current/STATUS.md}{当前状态}, open-cake-ir, fixed source commit.
-\bibitem{nvidia} H. Qin. \repo{docs/results/nvidia/FLASHINFER_STATUS.md}{B300 FlashInfer 任务综述}, open-cake-ir, fixed source commit.
-\bibitem{metax} H. Qin. \repo{docs/metax-c550.md}{C550 专题与 M17 独立确认}, open-cake-ir, fixed source commit.
-\bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}, open-cake-ir, fixed source commit.
-\bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}, open-cake-ir, fixed source commit.
+\repo{compiler/targets/sm_103a.json}{Target 文档示例}.
+\bibitem{acceptance} H. Qin. \repo{docs/ACCEPTANCE_GATES.md}{验收门}.
+\bibitem{papercontract} H. Qin. \repo{docs/PAPER_CONTRACT.md}{论文与本地证据合同}.
+\bibitem{status} H. Qin. \repo{reports/current/STATUS.md}{当前状态}.
+\bibitem{nvidia} H. Qin. \repo{docs/results/nvidia/FLASHINFER_STATUS.md}{B300 FlashInfer 任务综述}.
+\bibitem{metax} H. Qin. \repo{docs/metax-c550.md}{C550 专题与 M17 独立确认}.
+\bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}.
+\bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}.
 \end{reportbibliography}
 \end{multicols}
 
