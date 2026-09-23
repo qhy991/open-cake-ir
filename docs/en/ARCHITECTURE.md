@@ -178,7 +178,7 @@ task wiring remains in `TaskLab`; public imports remain `open_cake_ir.lab`.
 
 ## Platform capabilities and representative evidence
 
-This is a reading projection of the 2026-09-21 report snapshot. Declared targets, source
+This table projects individually pinned historical runs into the current report. Declared targets, source
 lowering, device correctness, valid timing and complete agent optimization runs have separate
 qualification boundaries. Device observations retain their own source commits and fixed
 workloads; they are not reruns of every platform at the current report commit.
@@ -189,7 +189,7 @@ workloads; they are not reruns of every platform at the current report commit.
 | Apple | Fixed operators on qualified devices and TaskLab optimization records | No claim for every Apple family; complete Program composition remains unavailable; [Metal results](../results/metal/README.md) |
 | Hygon DCU | BW1101 task records include gains, regressions, null results and timing-resolution limitations | Short-kernel limitations prevent some performance comparisons; [DCU results](../results/dcu/README.md) |
 | AMD | gfx1151 device survey and smoke evidence | Absolute readings from two device timers remain unaligned; published records establish no qualified speedup or full agent-loop result; [AMD results](../results/amd/README.md) |
-| MetaX | Fixed single-kernel correctness, complete GQA/MLA/MoE and indexed-gather outputs; single-kernel MCPTI paired timing and profiling, bounded tile optimization, separate Program attribution | Ordinary whole-Program performance Runs and a complete C550 provider/Ralph loop still require qualification; [C550 chapter](../metax-c550.md) |
+| MetaX | Fixed single-kernel correctness, complete GQA/MLA/MoE and indexed-gather outputs; single-kernel MCPTI paired timing and profiling, bounded tile optimization, one confirmed ten-turn Agent Run, separate Program attribution | The Agent Run qualifies one single-kernel candidate on earlier source with a container-private lock, not whole-host exclusivity. Ordinary whole-Program performance Runs, the successor ABI source and E/P transfer effects remain unqualified; see the [agent-facing example](#why-the-interface-is-agent-facing) and [C550 chapter](../metax-c550.md) |
 
 Three cases illustrate different claims:
 
@@ -197,6 +197,12 @@ Three cases illustrate different claims:
   64 to 32. Independent confirmation measured 72.448 versus 58.368 μs (1.241×), within
   the fixed baseline and `local_serialized` scope. This is an authoring comparison, not
   a complete agent Run or knowledge-transfer result; see the [C550 record](../metax-c550.md).
+- **One C550 Agent Run.** At `896e0887`, a ten-turn M17 Run received localized verifier
+  feedback and independently confirmed its turn-6 single-kernel candidate across five
+  input cases. Its local MCPTI baseline/candidate medians were 12.032/11.008 μs (1.093×).
+  The private MACA lock does not establish whole-host exclusivity, and this one Run
+  does not identify a causal feedback or NVIDIA-knowledge effect; see the
+  [agent-facing example](#why-the-interface-is-agent-facing).
 - **Guarded alignment on B300.** The 026 RMSNorm aligned artifact achieved a qualified
   1.081× against its fixed generic sliced-w8 control with the same source/constants/grid.
   Its external-reference edge failed CV. This supports a bounded compiler/execution
