@@ -49,11 +49,11 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
 ```
 
-先检查仓库内的 FMA 执行计划，无需 GPU：
+先检查 Python 编写的 FMA kernel，无需 GPU，也无需载入 Schedule JSON：
 
 ```bash
 .venv/bin/python -m open_cake_ir.cli compiler assess --format text \
-  --revision compiler/revision.json corpus/schedules/fma-b8-smoke.json
+  examples/python/fma.py
 ```
 
 [完整入门教程](docs/GETTING_STARTED.md)继续介绍源码生成与反例检查。
