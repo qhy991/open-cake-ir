@@ -66,12 +66,15 @@ Evidence，因此项目的范围大于一种 DSL。本项目独立探索 [CAKE �
 
 新建的已知实现复现 Run 使用 `python_source_v1`：Agent 编写 Python Schedule，作者提交入口
 拒绝手写的 Schedule/Program JSON；Compiler Pass 生成的 Program 文档仍是内部候选。
-冻结 Run 的 `schedule_or_python_v1`、Clean-start 的不完整 JSON 参考材料、Corpus 和回放
-保持原有合同。`candidate-set.json` 目前只是仍由 Agent 填写的提交封装，不是 Cake IR。
-后续减法依次是：为 Clean-start 设计可审查的不完整 Python 参考材料；让 Provider 从源码文件
-生成提交封装并保留原始字节、候选顺序与回放；最后收敛 Compiler 内部的文档往返，让 typed
-Schedule/Program 承担内存中的语义，JSON 仅在持久化与传输处出现。每一步采用后继 Run
-合同并保留冻结实验的原提交，不原地改写历史证据。
+冻结 Run 的 `schedule_or_python_v1`、旧 Clean-start 的不完整 JSON 参考材料、Corpus 和回放
+保持原有合同。新 Clean-start 的 Python 参考材料只含公开 ABI、目标、生成路线和 `...` 占位，
+精确字节由 Lab 检查；当前 Provider 尚无可验证的读取隔离，实际启动被拒绝，见
+[ADR 0077](adr/0077-python-clean-start-reference-and-read-isolation.md)。
+新单候选、无 transform 的 `python_source_file_v1` Run 让 Agent 直接写 `candidate.py`；
+Lab 保存原始 UTF-8 字节并确定性生成内部候选，见 [ADR 0078](adr/0078-python-source-file-provider-submission.md)。
+多候选和 transform Run 仍使用 `candidate-set.json`，它是传输合同而非 Cake IR；下一步
+需让多个源码文件及显式动作也有同等的顺序、监护和回放。Compiler 内部文档往返继续收敛。
+每一步采用后继 Run 合同并保留冻结实验的原提交，不原地改写历史证据。
 
 | 层级 | 表示与负责的决策 | 尚未决定的事情 |
 | --- | --- | --- |
@@ -259,7 +262,7 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 
 ## 9. 平台能力与代表案例
 
-以下是 2026-09-21 报告快照的阅读投影。已声明 Target、能生成源码、设备算对、
+下表是报告对各自历史运行记录的阅读投影。已声明 Target、能生成源码、设备算对、
 计时有效和完成 Agent 优化闭环分别验收；表中的设备结果仍属于各自绑定的历史提交和
 固定 Workload，不等于当前提交已在所有硬件重跑。具体能力与数值由链接的专题和原始记录负责。
 
@@ -269,13 +272,14 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 | Apple / Metal | 已验收设备上的固定算子 | 已有 TaskLab 优化记录，设备与计时口径分别保留 | 不外推到全部 Apple family；完整 Program 组合尚未接入；见 [Metal 结果](results/metal/README.md) |
 | Hygon DCU / Triton、HSACO | 已有 BW1101 固定任务结果 | 保留确认加速、变慢、无显著差异与测量分辨能力待查的记录 | 多项短 kernel 不能给出可靠性能优劣；见 [DCU 结果](results/dcu/README.md) |
 | AMD / Triton、HSACO | gfx1151 有设备调查与 smoke 记录 | 两种设备计时器的绝对时间未对齐 | 已发布记录不支持合格加速比或完整 Agent 闭环结论；见 [AMD 结果](results/amd/README.md) |
-| MetaX / MACA Triton、MCFATBIN | 固定单 kernel，以及 GQA/MLA/MoE 和 indexed gather 的完整输出记录 | 单 kernel MCPTI 配对计时与 profiler 已接入，并有固定形状 tile 优化；完整 Program 有独立 attribution | 完整 Program 的普通 Run 性能测量、C550 上完整 provider/Ralph 闭环仍待验收；见 [C550 专题](metax-c550.md) |
+| MetaX / MACA Triton、MCFATBIN | 固定单 kernel，以及 GQA/MLA/MoE 和 indexed gather 的完整输出记录 | 单 kernel MCPTI 配对计时与 profiler、固定形状 tile 优化、一次十轮 Agent Run 的独立确认；完整 Program 有独立 attribution | Agent Run 只验收旧源码上的单 kernel 候选，容器私有锁不构成整机独占；完整 Program 的普通 Run 性能、后继 ABI 源码及 E/P 迁移效果仍待验收；见[上文实例](#面向-agent-的设计如何起作用)和 [C550 专题](metax-c550.md) |
 
 下列案例各回答一个问题，不合并成跨平台成绩：
 
 | 案例 | 已观察结果 | 支持的结论与限制 |
 | --- | --- | --- |
 | C550 FP16 GEMM，M17/N128/K2048 | 执行源码 `8c0cad53`：M tile 从 64 改为 32，独立确认 72.448 → 58.368 μs，1.241× | 显式 tiling 能在这个固定基线上产生通过质量门的收益；属于 `local_serialized` 范围的 authoring 对照，尚非完整 Agent Run 或迁移效果；[来源](metax-c550.md#m17-的一次显式-m-tile-优化) |
+| C550 M17 十轮 Agent Run | 源码 `896e0887`：十轮作者尝试、局部 Verifier 反馈；第六轮候选经五类输入及独立 MCPTI 确认，基线/候选 12.032 → 11.008 μs，1.093× | 验证单 kernel 上候选—拒绝—确认流程可运行；私有 MACA 锁不证明整机独占，也不证明反馈或 NVIDIA 材料的因果收益；[来源](#面向-agent-的设计如何起作用) |
 | B300 026 RMSNorm 的守卫式对齐 | 相同源码/常量/grid 的新对齐产物，相对固定 generic sliced-w8 对照取得合格 1.081×；新候选的 external 边未通过 CV | 支持这个编译/执行条件下的局部改善，仍需保留通用地址路径；不能据此声称追平外部参考；[来源](results/nvidia/FLASHINFER_STATUS.md)与 [Finding](../findings/2026-09-20-011-triton-aot-pointer-alignment.json) |
 | B300 008 完整两阶段 Program | 完整输出检查通过，候选与对照的多条计时边未通过质量门 | 表达和运行完整程序，与证明性能收益是不同验收；保留失败而不以重测挑选代替判断；[来源](results/nvidia/FLASHINFER_STATUS.md) |
 

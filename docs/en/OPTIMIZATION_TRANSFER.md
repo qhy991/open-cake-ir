@@ -138,7 +138,7 @@ silently reinterpret it.
 
 | Destination and source K=256 Schedule | Observed boundary | Claim still unavailable |
 | --- | --- | --- |
-| Hygon BW1101 `gfx938` | `main@0fe3a447` admits and lowers both arms; Hygon Triton 3.6.0 emits HSACO, then sealing and CPU pair admission declare all five cases | No target GPU load, correctness or timing; external GLM processes occupied the eight cards at observation |
+| Hygon BW1101 `gfx938` | The original `bw1100` had external GLM processes on all eight cards, so it reached only HSACO and CPU admission. On the idle `bw1100-1`, a separately captured Executor accounts for its different host kernel and environment. At clean source `4c9f4cc0`, all five cases pass before and after timing. Fresh, quality-passing `hip_dispatch` confirmation reports **517.9645/748.749 μs** for starter/candidate, with all ten pairs favoring the starter | A **confirmed negative transfer** on this host, not B300's 7.646× on Hygon. `local_serialized` does not exclude external jobs that ignore its lock, and absolute CUPTI/HIP times are not compared |
 | infplane AMD `gfx1151` | All five cases pass before and after timing; a fresh, quality-passing same-card `hip_dispatch` confirmation reports **191.954/466.222 μs** for starter/candidate, with all ten pairs favoring the starter | A **confirmed negative transfer** within this assay, not a replay of B300's 7.646×. Two gfx1151 timers still disagree on absolute values, so no cross-timer calibration is inferred |
 | MetaX C550 `xcore1002` | Frozen draft source `023d0db4` admits and lowers both arms; MetaX Triton 3.6 emits MCFATBINs with two native hidden pointers each; kernel projection enables sealing and CPU pair admission | No five-case device correctness or MCPTI timing while five containers have private MACA locks; the draft also awaits independent review |
 | Apple M2 `apple_gpu_family8`, same `pairwise_sqdist` | The Compiler identifies missing Metal tile-loop, K-indexing and loop-carried reduction support | No Metal binary or device result for this mechanism; changing the target name cannot supply missing lowering |
@@ -147,13 +147,40 @@ Two preregistered AMD target-local parameter successors did not yield a
 qualified gain: K=128 passed full correctness and timing quality but was
 slower than the same starter; K=64 passed correctness but exceeded the 0.05
 candidate CV limit, so its displayed median is descriptive only. The K=256
-build reports 256 VGPR and 260 bytes of per-workitem scratch against 126
-VGPR and no scratch for the starter. This suggests a resource-pressure
-hypothesis; it does not establish a causal explanation for the slowdown.
+AMD K=256 build reports 256 VGPR and 260 bytes of per-workitem scratch
+against 126 VGPR and no scratch for the starter. The corresponding Hygon
+build reports 256/256 VGPR and 608/620 bytes of scratch. These target-specific
+resource readings suggest pressure; they do not establish its causal role.
 Source and raw target artifacts remain outside the checkout under
 `open-cake-ir-evidence/transfer-b300-bw1101-20260923/`,
+`open-cake-ir-evidence/transfer-b300-bw1101-node4-20260923/`,
 `open-cake-ir-experiments/transfer-b300-gfx1151-20260923/` and
 `open-cake-ir-experiments/transfer-b300-c550-pairwise-20260923/`.
+
+**A confirmed Hygon target-local successor exists, but it is not an Agent
+knowledge-treatment effect.** Before further device time on `bw1100-1`, the
+plan froze only K=128 and K=64 replacements for the source K=256 tile. Both
+offline builds used zero scratch; K=128 used 252 VGPR and K=64 used 148.
+The preregistered rule (least scratch, then least VGPR) sent only K=64 to the
+GPU. The generated sources differ from K=256 only in the tile value and
+schedule identity. With the same five cases, whole-K starter and HIP pairing,
+the fresh K=64 confirmation passed correctness and timing quality at
+**518.524/189.586 μs (2.735×)** for starter/candidate, with all ten pairs
+favoring the candidate. K=128 received no GPU timing. Thus the B300-derived
+*K-tiling idea* can produce a benefit on this exact Hygon workload after
+target-side parameter selection, while its original K=256 setting is harmful.
+This bounded manual mechanism example does not compare Agents with and without
+NVIDIA-derived material under a matched budget; it cannot estimate E or P.
+
+The challenge has distinct, observed layers. Metal cannot currently express
+this loop-carried reduction Schedule. Triton can emit on AMD and Hygon yet
+does not preserve the source tile's resource allocation or performance.
+Another `gfx938` host needs its own Executor identity. C550's container locks
+do not yet support a shared exclusive claim, and the short M2 kernel failed
+its timing-quality gate. Expressibility, target code and parameter selection,
+host identity, measurement and causal attribution each require their own
+evidence. These few fixed shapes do not establish broad domestic-accelerator
+or full-model gains.
 
 A second source mechanism that Metal can express is B300 `silu`'s one-to-four
 execution-group change. Its B300 confirmation was 2.432/2.112 μs (1.1515×)

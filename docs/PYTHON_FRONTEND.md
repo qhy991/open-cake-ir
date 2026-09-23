@@ -50,8 +50,12 @@ Python 作者无需在 `@cake.schedule` 中填写 Workload 的内容 hash。独�
 时可直接检查源码；进入 Lab 实验时，Lab 核对目标、生成路线和公开 tensor ABI 后，从已冻结
 的 Workload 补上绑定。显式写错 hash 仍会被拒绝。既有封存实验按原提交回放。
 新建的已知实现复现 Run 采用 `python_source_v1`，作者只能提交 `python_source`；
-原有 `schedule_or_python_v1` 继续用于按原合同回放的 Run。Clean-start 的不完整 JSON
-参考材料和 `candidate-set.json` 传输封装另行演进，不属于 Python kernel 的正文。
+原有 `schedule_or_python_v1` 继续用于按原合同回放的 Run。新 Clean-start 可预检一个
+由 Workload 公共 ABI 生成、仅含 `...` 占位的 Python 参考文件；当前 Provider 的文件读取
+隔离尚未合格，因此该处理尚不能执行实验。旧 JSON 参考材料仅保留历史合同。
+单候选、无 transform 的新 Run 可选择 `python_source_file_v1`：Agent 直接更新
+`candidate.py`，Lab 自动生成内部 `python_source` 候选。多候选与 transform Run 仍使用
+`candidate-set.json` 传输封装；两者都不要求手写 Schedule JSON。
 `id=` 仅用于显式命名操作、与既有计划对照；省略时由结果变量或目标 Buffer 推导。
 
 ## 编写规则

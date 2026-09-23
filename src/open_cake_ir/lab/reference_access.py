@@ -6,6 +6,8 @@ Workload mathematics/oracle and public API contracts retain their existing owner
 """
 from __future__ import annotations
 
+import json
+import keyword
 from pathlib import Path
 from typing import Mapping
 
@@ -19,6 +21,13 @@ VETTED_REFERENCE_ASSETS = (
     "contracts/scaffolds/direct-cuda-clean-start-v1.cu",
     "contracts/scaffolds/matched-search-v1.md",
 )
+PYTHON_CLEAN_START_SCAFFOLD = "contracts/scaffolds/matched-search-python-v1.md"
+
+
+def require_qualified_clean_start_execution(authoring_environments) -> None:
+    """Current Provider qualifications do not restrict reads to the TaskPackage."""
+    if any(arm.get('reference_access') == 'clean_start' for arm in authoring_environments):
+        raise ValueError('clean-start provider read isolation is not qualified; refusing execution')
 
 
 def reference_access(arm: Mapping[str, object], context: str) -> str:
@@ -48,6 +57,45 @@ def incomplete_schedule(workload, case_id: str, lowering_route: Mapping[str, obj
     }
 
 
+def render_incomplete_python_starter(workload, case_id: str,
+                                     lowering_route: Mapping[str, object]) -> bytes:
+    """Render only the public ABI and route; the placeholder is not a valid Schedule.
+
+    Exact bytes are the clean-start reference policy. No arbitrary Python source is
+    admitted by comparing only its parsed operations or ignoring its comments.
+    """
+    if (not isinstance(lowering_route, Mapping)
+        or set(lowering_route) != {'backend', 'entry_point'}
+        or not isinstance(lowering_route['backend'], str)
+        or not isinstance(lowering_route['entry_point'], str)
+        or not lowering_route['entry_point'].isidentifier()
+        or keyword.iskeyword(lowering_route['entry_point'])):
+        raise ValueError('Python clean-start lowering route differs')
+    arguments = []
+    names = set()
+    for tensor in workload.tensor_abi(case_id):
+        if (not tensor.name.isidentifier() or keyword.iskeyword(tensor.name)
+            or tensor.name == 'lm' or tensor.name in names
+            or tensor.mode not in {'input', 'output'}):
+            raise ValueError('Python clean-start tensor ABI cannot be expressed')
+        names.add(tensor.name)
+        arguments.append(
+            f'{tensor.name}: cake.Tensor({tuple(tensor.shape)!r}, '
+            f'{json.dumps(tensor.dtype)}, mode={json.dumps(tensor.mode)})'
+        )
+    route = lowering_route
+    source = (
+        'from open_cake_ir.compiler import frontend as cake\n\n'
+        '@cake.schedule(name="candidate", '
+        f'target={json.dumps(workload.target)}, '
+        f'backend={json.dumps(route["backend"])}, '
+        f'entry_point={json.dumps(route["entry_point"])})\n'
+        f'def candidate(lm, {", ".join(arguments)}):\n'
+        '    ...\n'
+    )
+    return source.encode('utf-8')
+
+
 def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, workload=None, case_id=None) -> None:
     """Apply the same policy to local, external and inherited reference slots.
 
@@ -56,6 +104,12 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, worklo
     trusted role merely because its elaborated body resembles an empty Schedule.
     """
     validate_declarations(arms)
+    python_clean_start_treatment = any(
+        arm.get('environment_kind') == 'open_cake'
+        and arm.get('reference_access') == 'clean_start'
+        and arm.get('input_format') == 'python_source_v1'
+        for arm in arms.values()
+    )
     for name, arm in arms.items():
         access = reference_access(arm, f"arms.{name}")
         prefix = f"arms.{name}.reference_access={access}"
@@ -76,11 +130,30 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, worklo
         if not isinstance(scaffold, Mapping):
             raise ValueError(f"{prefix}: missing authoring_instructions reference")
         _, path = source_reference_path(root, scaffold.get("path"), "scaffold")
-        vetted_scaffold = ('contracts/scaffolds/message-author/AGENTS.md'
-                           if arm.get('provider', {}).get('harness') == 'responses' else VETTED_REFERENCE_ASSETS[2])
-        if path.read_bytes() != (root / vetted_scaffold).read_bytes():
+        python_clean_start = (kind == 'open_cake' and access == 'clean_start'
+                              and arm.get('input_format') == 'python_source_v1')
+        if arm.get('provider', {}).get('harness') == 'responses':
+            vetted_scaffolds = ('contracts/scaffolds/message-author/AGENTS.md',)
+        elif python_clean_start_treatment:
+            vetted_scaffolds = (PYTHON_CLEAN_START_SCAFFOLD,)
+        elif kind == 'direct_cuda':
+            # A paired direct-CUDA Run is projected alone when its TaskPackage is
+            # rendered. Both shared matched-search scaffolds are reviewed for it.
+            vetted_scaffolds = (VETTED_REFERENCE_ASSETS[2], PYTHON_CLEAN_START_SCAFFOLD)
+        else:
+            vetted_scaffolds = (VETTED_REFERENCE_ASSETS[2],)
+        if path.read_bytes() not in {(root / item).read_bytes() for item in vetted_scaffolds}:
             raise ValueError(f"{prefix}: authoring_instructions are not a vetted restricted scaffold")
         if kind == "open_cake":
+            if python_clean_start:
+                reference = arm.get('python_starter')
+                if not isinstance(reference, Mapping) or set(reference) != {'path'}:
+                    raise ValueError(f'{prefix}: Python target reference fields differ')
+                _, path = source_reference_path(root, reference['path'], 'python_starter')
+                expected = render_incomplete_python_starter(workload, case_id, arm['lowering_route'])
+                if path.suffix != '.py' or path.read_bytes() != expected:
+                    raise ValueError(f'{prefix}: target_implementation or unreviewed target reference is forbidden')
+                continue
             reference = arm.get("schedule_skeleton")
             if not isinstance(reference, Mapping):
                 raise ValueError(f"{prefix}: missing target reference")

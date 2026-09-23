@@ -446,6 +446,9 @@ def _qualify(root, workspace, args, executable, source_path):
                "--workspace", str(workspace / "qualification-workspace"), "--receipt-output", str(receipt),
                "--anchor-output", str(anchor), "--evidence-root", str(workspace / "qualification-evidence"),
                "--run-id", "task-provider-qualification"]
+    if getattr(args, 'source_file', False):
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        command.extend(('--submission-contract', PYTHON_SOURCE_FILE_V1))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
@@ -538,7 +541,7 @@ def main(argv=None) -> int:
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
     parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
                         default='known_kernel_reproduction',
-                        help='clean_start delivers only a task ABI stub, mathematics and API contracts; the baseline remains private')
+                        help='clean_start is reserved until provider read isolation is qualified')
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument("--rows", type=int)
@@ -550,6 +553,8 @@ def main(argv=None) -> int:
     parser.add_argument("--token-budget", type=int,
                         help="optional provider-token threshold; omitted means usage accounting only, with no token stop or qualification limit")
     parser.add_argument("--max-candidates", type=int, default=3)
+    parser.add_argument('--source-file', action='store_true',
+                        help='author one raw candidate.py per Turn; requires --max-candidates 1 --searches-per-turn 1')
     parser.add_argument("--max-compilations", type=int, default=128,
                         help="native source-to-artifact compiler entry calls, including failed calls and variants")
     parser.add_argument("--searches-per-turn", type=int, default=2)
@@ -597,6 +602,11 @@ def main(argv=None) -> int:
         parser.error("--fixed-baseline-bundle, --incumbent-registry and --prepared-baseline are mutually exclusive")
     if (args.qualification is None) != (args.qualification_anchor is None):
         parser.error("--qualification and --qualification-anchor must be supplied together")
+    if args.source_file and (args.reference_access != 'known_kernel_reproduction'
+                             or args.max_candidates != 1 or args.searches_per_turn != 1):
+        parser.error('--source-file requires known-kernel reproduction, one candidate and one search per Turn')
+    if args.reference_access == 'clean_start':
+        raise ValueError('clean-start provider read isolation is not qualified; refusing launch')
     workspace = _new_workspace(args.workspace)
     rows, columns = _default_shape(args.task, args.rows, args.columns)
     document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
@@ -623,18 +633,14 @@ def main(argv=None) -> int:
         admit_cohort_payload(workload, args.case,
                              _ROUTE_CALLS_PER_COHORT)
     authoring_source_path = source_path
-    if args.reference_access == 'clean_start':
-        from open_cake_ir.lab.reference_access import incomplete_schedule
-        authoring_source_path = workspace / 'authoring-skeleton.json'
-        _write(authoring_source_path, canonical(incomplete_schedule(
-            workload, args.case, frontend.parse(source).document['lowering'])))
     inputs = task_run_inputs(ROOT, workload, workload_path, authoring_source_path, harness=args.harness,
         model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         maximum_compilations=args.max_compilations, confirmation_seconds=args.confirmation_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
-        agents_md=args.agents_md, reference_access=args.reference_access)
+        agents_md=args.agents_md, reference_access=args.reference_access,
+        source_file=args.source_file)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     # The runtime config binds the provider and the allocator, both of which belong to
     # stages `--baseline-only` stops before; it is written only on the path that reaches

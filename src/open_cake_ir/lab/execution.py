@@ -32,6 +32,7 @@ from .run_spec import RunSpecification, RunRef
 from .contracts import CampaignLock, CampaignRef, RunEvaluator, RunProvider, TurnRequest
 from .custody import admit_new_campaign_path
 from .environments import AuthoringEnvironment, CandidateSubmission, EnvironmentResult
+from .reference_access import require_qualified_clean_start_execution
 from .executor import ExecutorRevision
 from .pairing import comparison_arm, native_backend
 from .ralph import RalphBudget, RalphController
@@ -109,6 +110,8 @@ def execute_campaign(
         evidence_root,
         role="Campaign Evidence root",
     )
+    require_qualified_clean_start_execution(
+        lock.document['resolved_inputs']['arm_environments'].values())
     matched_run_arms(environments, lock.claim_scope)
     if set(environments) != set(lock.document["resolved_inputs"]["arm_environments"]):
         raise differs(
@@ -165,6 +168,7 @@ def execute_run(specification: RunSpecification, evidence_root, *, project_root,
     """Execute a frozen engineering or Study-assigned Run through the same engine."""
     root = admit_new_campaign_path(project_root, evidence_root, role='Run Evidence root')
     specification = RunSpecification.from_dict(specification.document)
+    require_qualified_clean_start_execution((specification.document['authoring'],))
     if validate_run is not None:
         validate_run(specification)
     validate_run_bindings(specification, project_root=project_root,
@@ -189,6 +193,8 @@ def execute_campaign_with_factory(lock,evidence_root,*,project_root,workload_loa
     from .preflight import preflight_run
     specifications = [preflight_run(lock.run_specification(run_id),project_root=project_root,
                       workload_loader=workload_loader,validate_run=validate_run) for run_id in lock.run_order]
+    require_qualified_clean_start_execution(
+        specification.document['authoring'] for specification in specifications)
     evidence = EvidenceStore.create(root)
     for specification in specifications:
         components = runtime_factory(specification,root.parent/(root.name+'-'+specification.run_id))

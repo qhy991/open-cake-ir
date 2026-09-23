@@ -123,17 +123,18 @@
 
 \section*{摘要}
 \begin{notebox}
-\noindent\textbf{问题。}智能体能提出 GPU 内核的候选实现，但一次失败或一项延迟读数，
-难以说明问题属于调度、表达能力、目标准入还是测量质量。
-\par\smallskip
-\noindent\textbf{方法。}系统用带类型的执行计划描述单个内核，以完整程序组织阶段。
-编译器定位错误；实验系统固定任务和预算；评测检查外部答案、设备计时与性能剖析；
-证据系统留存原始观察。重复缺口在运行之外由后继提交修复。
-\par\smallskip
-\noindent\textbf{证据。}独立实现已声明五家厂商的八个精确目标，当前源码的 179 项语料检查
-符合预期。NVIDIA、Apple、Hygon 和 MetaX 各有范围不同的设备结果；AMD 的计时边界仍待
-解决。与 CAKE 导出产物重叠的 TinyGEMM2 固定形状已通过严格数值门，但性能差距显著。
-跨硬件知识处理的增量收益尚无实机因果估计。
+同一个算子可以有许多 GPU 实现：它们遵循相同的数学公式，却采用不同的分块、线程分工、
+存储和同步方式。智能体生成内核后，仅凭编译错误或一个延迟值，往往难以判断下一步该修改
+候选程序，还是该补足编译器的表达与检查能力。open-cake-ir 用带类型的执行计划记录这些
+硬件选择，在生成代码前给出可定位的诊断；任务语义、正确性检查、设备计时和运行证据则由
+各自的模块负责。一次优化运行使用固定的编译器，任务反复暴露出的编译器缺口在后继版本中
+修复，再回到新任务验证。
+
+当前源码声明五家厂商的八个精确目标，179 项语料检查符合预期。NVIDIA、Apple、Hygon
+和 MetaX 已有范围各异的设备结果；AMD 的设备计时仍在校准。同形状的 TinyGEMM2 对照
+通过了严格数值检查，也显示本地实现与 CAKE 导出产物之间仍有明显性能差距。已有证据说明
+系统能够承载这些任务和局部优化；经验材料能否帮助智能体在另一种硬件上更快找到好实现，
+还需要预先分组的实机实验。
 \end{notebox}
 
 \noindent\textbf{关键词：}GPU 内核；中间表示；静态验证；智能体；实验可复查性；跨硬件优化
@@ -153,13 +154,10 @@ retains its own source and assay boundary.\par}
 \vspace{1.6em}
 \section*{阅读约定}
 \begin{notebox}
-\noindent\textbf{软件合同。}Corpus Gate 与离线 lowering 说明源码在声明范围内符合预期。
-\par\smallskip
-\noindent\textbf{设备观察。}正确性、计时质量、局部收益与完整 Program 分别绑定自己的
-目标、Workload、运行提交和收据。
-\par\smallskip
-\noindent\textbf{研究结论。}不同作者环境或知识处理的效果，只有预先分配的独立 Run
-和共同确认协议能够估计。历史快照与论文报告值始终以来源标签区分。
+阅读结果时，请先看它经过哪一层检查。语料门说明编译器符合已审查的软件预期；设备正确性
+与计时结果还要说明目标型号、任务、运行版本和测量质量。比较两种智能体编写环境的效果，
+则需要预先分组的独立运行和同一套确认规则。本文把历史实验、当前仓库记录与 CAKE 论文
+报告的数字分别标明。
 \end{notebox}
 \clearpage
 \vspace{0.5em}{\color{hair}\noindent\rule{\textwidth}{0.6pt}}\par
@@ -173,105 +171,108 @@ retains its own source and assay boundary.\par}
 
 \section{问题、研究对象与论点}
 
-本文的智能体（Agent）负责提出和修订执行计划；GPU 内核是在加速器上并行执行的计算程序；
-Compiler 检查计划并生成目标代码。给定同一数学算子，GPU 实现仍须决定任务分块、线程分工、
-存储层次、访问坐标、同步与执行顺序。
-一个只输出延迟的搜索过程很难说明某次失败属于候选调度、编译器表达能力、硬件准入，还是测量噪声。
-CAKE 论文提出让 Agent 编辑显式执行计划，并以编译器分析和外部评测形成反馈闭环\cite{cake}。
-open-cake-ir 是对这一研究路线的独立工程实现；论文报告的模型实验和速度数字不作为本仓库结果\cite{papercontract}。
+以按行计算的 Softmax 为例，公式确定了每行应得到什么结果，却没有规定一个 GPU 程序
+处理多少行、由哪些线程完成归约，也没有规定中间值放在哪里。智能体可以尝试多种安排；
+其中有的地址或同步关系不成立，有的虽然算对，却比原实现慢。要继续改进，智能体需要知道
+具体是哪项选择出了问题，而不只是收到“编译失败”或一个延迟数字。
 
-本报告的研究对象是\textbf{可复查的 Agent 编写环境}：一份候选包含什么决策，系统能在什么范围内拒绝，
-设备证据如何决定接受，以及真实缺口怎样改变下一版 Compiler。核心问题可以表述为：
+本报告研究的是这样一套编写环境：智能体修改明确的执行计划，编译器在生成代码前检查
+可判断的关系，设备评测再回答结果是否正确、性能是否改善。当任务反复暴露出表达或分析
+缺口时，维护者改进编译器，并在后续任务中检验这项改动。贯穿全文的问题是：
 \begin{notebox}
 \noindent\textbf{核心问题}\quad
-在保持 Workload 语义和实验条件可追溯的前提下，怎样让 Agent 的 Kernel 决策可检查、
-让失败有负责位置，并让重复经验进入后继编译能力？
+怎样在固定任务和可追溯的实验条件下，让智能体的 GPU 执行选择可以被检查、失败可以
+被定位，并将反复出现的问题转化为后续可用的编译能力？
 \end{notebox}
-本文主要陈述三项已实现的机制：\textbf{显式的 Program/Schedule 合同}、\textbf{分层诊断与目标精确准入}、
-\textbf{冻结运行和追加式证据}。跨硬件知识迁移的增量价值是后续实验问题，不是现有软件实现的推论。
+CAKE 论文提出了编译器与智能体协同改进内核的研究路线\cite{cake}。open-cake-ir 沿着
+这一问题独立实现了程序表示、编译检查和实验流程，并把不同硬件上的观察保留在各自的
+任务与测量范围内\cite{papercontract}。
 
 \subsection{背景：公式、执行计划与智能体反馈}
-同一按行归约公式可以采用不同的行块、执行组、存储位置和归约顺序。候选从数学式走向设备
-内核时，正确性义务没有消失，反而增加了地址域、同步、资源和目标指令等约束。若编写环境
-只给出编译错误、数值通过位和一个延迟，智能体难以区分三种不同的下一步：修复当前候选、
-改进生成路线，或补足表示与检查规则。资源分析与 profiler 可以缩小解释空间，但不能自动
-证明唯一原因。本文因此沿着\emph{任务语义、执行决策、检查反馈、设备观察}四层组织叙事。
+数学公式与设备程序之间隔着一层执行安排。以内核中的行归约为例，行块大小改变了每个
+程序实例承担的工作；线程分工影响归约时的通信；中间值的存放方式又影响寄存器与共享
+内存压力。编译器可以检查一部分地址、数据流和同步关系，物理资源分配与速度则要到
+编译产物和设备上观察。因此，一个候选的反馈需要指出检查到了哪一层，以及问题落在哪个
+操作或资源上。
 
-编写 GPU 内核还需要区分两种结果。一个固定形状上更快的内核属于该任务的优化；将同一
-机制用于另一形状或硬件，要重新验证目标资源、数值和计时；将其提升为通用编译器规则，
-还须说明适用条件、拒绝反例和后继任务中的作用。把这三个层次混在一张加速比表中，会掩盖
-系统能力演进本身需要的证据。
+这些观察还决定改动应当留在哪个位置。某种分块在当前形状上更快，可以先保留为任务候选；
+换到另一目标时，需要重新选参数并验证；若同类改写在不同任务中反复有效，才有理由提炼
+带适用条件的编译器变换。报告将依次展示这三层工作所依据的程序、诊断和设备记录。
 
 \subsection{CAKE 论文提供的研究起点}
-CAKE 论文将智能体编写的硬件执行计划、编译前分析与外部评测放在同一个循环中。其 Cake IR
-显式记录资源、角色、访问和同步，而把屏障地址、阶段位等机械细节交给 lowering；布局没有
-成为作者必须操作的一阶代数。编译器以程序安全、硬件符合性、数据一致性和调度语义的局部
-诊断筛选候选，成本模型只在有目标校准时用于设备时间之前的排序。反复出现的真实失败推动
-后继 IR、Verifier、lowering 或校准变化；最终正确性和速度仍由外部参考与设备测量决定\cite{cake}。
+CAKE 让智能体编写一份带类型的硬件执行计划。计划写明资源、线程角色、数据访问和同步；
+屏障地址与流水线阶段位等机械细节由编译器推导。编译器先检查程序安全、硬件约束、数据
+一致性和调度语义，再把有希望的候选送去编译与设备评测。任务中反复出现的失败，可以
+推动后续增加原语、改进检查规则或校准性能估计。CAKE 的重点因此不只是生成更快的内核，
+也是让编译环境随着任务一起改进\cite{cake}。
 
-该论文的代表性因果实验是在 B200 的固定 Flash-KMeans 形状上，以隐藏目标低层实现的起点
-比较 Cake IR 编写环境和直接 CUDA/PTX 编写环境。论文报告每组三次独立运行、共同的
-80M provider-token 截点，并把结果归于\emph{整套编写环境}，而非孤立的 IR 语法。
-其性能、KDA 服务与 dispatcher 结果属于原论文的报告值；本仓库不能把它们作为本地复测
-数据。CAKE 的公开论文还说明目标主要是 NVIDIA Ampere 至 Blackwell，非 NVIDIA 后端的
-实现与迁移成本没有在该论文中测得\cite{cake,papercontract}。
+论文在 B200 上用固定形状的 Flash-KMeans 任务比较了两种编写环境：一组由智能体编写
+Cake IR，另一组直接编写 CUDA/PTX；目标的低层实现都不向作者开放。两组各运行三次，
+共同使用 80M provider-token 截点。这个实验比较的是整套编写环境，包括表示、检查和
+反馈，并未单独测量 IR 语法的作用。论文中的 KDA 服务及其他性能数字也属于原研究的结果；
+本文讨论本仓库时，会另列其独立运行的证据。CAKE 论文覆盖的目标是 NVIDIA Ampere 至
+Blackwell，非 NVIDIA 平台的实现和测量需要另建证据\cite{cake,papercontract}。
 
 \subsection{本工作的定位与当前贡献}
-open-cake-ir 是沿这一问题重新构造的独立系统。它把 Compiler 做成可单独调用的核心，
-使 Workload、研究处理、作者控制和证据监管分别由明确的层负责；Target 以精确文档声明
-硬件事实，五个 Vendor 在同一公共表示下各自拥有生成和执行边界。这样的实现提供了检查
-不同目标与不同来源证据的公共接口，但\textbf{公共接口不意味着同等设备资格或同等性能}。
+open-cake-ir 将 CAKE 提出的研究问题落到一套可独立检查的开源实现上。编译器单独接受
+完整程序及其内核计划，按精确目标给出诊断与生成源码；实验系统负责固定任务、作者材料
+和预算，评测与证据模块保留设备结果及运行过程。这种分工让一次内核优化的结果有出处，
+也让编译器的后继改动能够回到触发它的任务接受验证。
 
-本文可支持的当前贡献有三项：一是可编写、可检查、可生成的 Program/Schedule 与精确
-Target 合同；二是冻结 Run 内优化与 Run 外编译器演进的分离，以及可回放的候选、诊断、
-确认和终态；三是多目标接入和有界设备案例，为后续跨硬件机制检验提供可运行的研究基础。
-第三项中的\emph{跨硬件增量收益}仍是待验证问题，不能由路线接通或一个目标的本机优化推出。
-第\ref{sec:results}节将每个结果限定到相应的任务、目标、计时和证据级别。
+仓库目前支持五家厂商的八个精确目标，并在若干目标上保留了正确性、计时或完整程序的
+有界案例。本文的贡献是把这些程序表示、检查机制和实验证据放在同一条可读的路径上，
+说明各目标已经走到哪一步，以及与 CAKE 公开产物重叠的任务还差在哪里。跨硬件经验
+是否能额外降低智能体的搜索成本，是这一基础之上的下一项实验问题。
 
 \section{设计原则与实现边界}
 
-CAKE 在附录 B.1 给出八项 IR 设计原则\cite{cake}。表\ref{tab:principles}把它们转为本仓库
-编写和修改执行计划时的检查问题，而不是把通过现有用例写成这些原则在所有目标上的证明。
+CAKE 在附录 B.1 给出八项 IR 设计原则\cite{cake}。本仓库沿用这些原则来约束新的
+执行计划语法、检查规则和后端能力。表\ref{tab:principles}列出它们在实现中的具体落点。
 \begin{table}[htbp]
 \centering\small
 \caption{P1--P8 对本仓库的实际约束。具体语法和目标准入仍以源码合同为准。}
 \label{tab:principles}
 \begin{tabularx}{\textwidth}{@{}p{26mm}Y@{}}
 \toprule
-\rowcolor{mist}原则 & 实现时需要回答的问题 \\
+\rowcolor{mist}原则 & 本仓库的实现落点 \\
 \midrule
-P1 易于编写 & Python 候选能否用熟悉的变量、表达式和角色作用域表达任务，而不要求作者手算网格元数据？ \\
-P2 性能透明 & 分块、执行组、存储、访问与同步等影响性能的决定能否在 Schedule 中读到？ \\
-P3 规范形式 & 同一操作是否落到一套规范的类型与操作模型，避免 Python/JSON 两套语义？ \\
-P4 静态类型 & 类型、操作数、形状和资源关系能否在构造或 Assessment 时明确拒绝？ \\
-P5 可分析 & Verifier 和资源分析所需的关系是否在 IR 中显式存在？ \\
-P6 语料门 & 改动是否在接受与拒绝用例上通过完整 Corpus Gate？ \\
-P7 分析一致 & 数据模型变化是否同时更新合法性、资源和性能相关分析？ \\
-P8 硬件根据 & 原语承诺的目标指令、存储和同步行为是否有 Target 与后端根据？ \\
+P1 易于编写 & Python 前端提供变量、表达式和角色作用域；网格细节由计划和编译器推导。 \\
+P2 性能透明 & 影响性能的分块、执行组、存储、访问和同步选择保留在 Schedule 中。 \\
+P3 规范形式 & Python 与 JSON 进入同一套类型和操作模型。 \\
+P4 静态类型 & 类型、操作数与形状错误在构造和检查阶段定位。 \\
+P5 可分析 & IR 显式保留 Verifier 与资源分析需要的数据和执行关系。 \\
+P6 语料门 & 新语义同时接受既有正例与反例的 Corpus Gate 检查。 \\
+P7 分析一致 & 数据模型改动同时更新对应的合法性与资源分析。 \\
+P8 硬件根据 & 目标指令、存储和同步承诺由 Target 与后端说明其适用范围。 \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-本项目另有三条实现边界。\textbf{第一，目标精确匹配。}目标未声明的事实报告为未建模，
-目标不支持的指令或代码对象由其拥有者明确拒绝，不能通过名称相近的架构静默降级。
-\textbf{第二，结构合法与设备正确分开。}静态分析可能有漏报或误报，后端会引入未在逻辑
-Schedule 中显式分配的物理资源，实际正确性与延迟须由设备观察决定。
-\textbf{第三，Compiler 与实验处理分离。}编译器不读取 Study 分组、provider 或证据存储；
-一次冻结 Run 的候选只在同一 Compiler 和 Workload 合同内比较，编译器变化在后继提交
-及语料验证后进入下一轮\cite{architecture,acceptance}。
+硬件事实由精确目标文档声明。遇到未建模的资源上限，系统明确报告覆盖缺口；遇到目标
+不支持的指令，后端给出拒绝原因。这样，一份计划不会因为名称相近而悄悄降到另一架构。
+静态检查负责在已建模的范围内提前发现问题，真实输出与速度仍由设备评测确认。
+
+编译器还要保持独立。它解释程序和目标，却不读取研究分组、作者工具或证据库。一次运行
+固定编译器与任务，运行中比较候选；编译器自身的修改在后继提交通过语料检查后，才用于
+下一轮任务\cite{architecture,acceptance}。
 
 \section{系统合同与职责边界}
 
 \subsection{从任务到可审计结论}
-任务合同（Workload Contract）固定数学语义、输入域、外部标准答案和容差。执行计划（Schedule）
-描述一个内核的资源、执行组、操作、地址与同步；完整程序（Program）再声明公共张量、阶段顺序和绑定。
-运行规格（RunSpecification）固定一次优化的源码、目标、材料、工具权限和预算；研究计划（StudyPlan）
-仅在研究对照时进一步固定处理、分配、
-终点与分析。这些对象的职责不同，不能用一个候选的局部通过来代替 Study 结论\cite{architecture,study}。
+一次内核优化从任务合同（Workload Contract）开始。它规定输入、输出、数学定义和数值
+容差，给所有候选提供同一个判题标准。智能体提交的执行计划（Schedule）则写明这个内核
+怎样分工、读取、计算和同步；需要多个内核时，完整程序（Program）再说明阶段顺序及
+张量如何交接。
+
+运行规格（RunSpecification）把这次尝试使用的源码、目标硬件、可见材料和预算固定下来。
+如果目的是比较两种编写条件，研究计划（StudyPlan）还要在运行前分配组别、终点和分析
+规则。表\ref{tab:owners}列出这些事实各由谁负责；有了这样的分工，读者才能从一次
+候选追溯到它实际参加了哪项任务与评测\cite{architecture,study}。
 
 \begin{table}[htbp]
 \centering\small
-\caption{一次候选从表达走向结论时的负责位置。某层的通过不自动推出下一层的通过。}
+\caption{从任务到结论的负责位置。每一行给下一阶段提供事实或产物。}
+\label{tab:owners}
 \begin{tabularx}{\textwidth}{@{}p{25mm}Y Y@{}}
 \toprule
 \rowcolor{mist}对象或模块 & 拥有的事实 & 对外给出的产物 \\
@@ -286,10 +287,10 @@ Study & 处理分配、估计量和缺失策略 & 限定研究问题的分析结
 \end{tabularx}
 \end{table}
 
-Compiler 是独立产品核心，不导入 Lab、provider、Workload 实现或证据库。Lab 调用 Compiler 与
-Evaluation，Evidence 保存其观察。这样的依赖关系使同一个 Compiler 可用于离线检查，也防止
-实验策略偷偷进入 Schedule 的语义判断。系统源码与边界见\repo{docs/ARCHITECTURE.md}{架构章节}和
-\repo{CONTEXT-MAP.md}{职责地图}。
+图\ref{fig:architecture}展示了典型运行路径。实验系统调用编译器检查候选，再把可运行
+产物交给评测；评测与证据记录一起返回下一轮。编译器也可以脱离实验系统单独使用，
+例如在没有 GPU 的机器上检查 FMA 示例。模块依赖与源码入口见
+\repo{docs/ARCHITECTURE.md}{架构章节}和\repo{CONTEXT-MAP.md}{职责地图}。
 
 % Figure contract: Compiler is independently callable; Lab controls a frozen
 % Run and consumes Evaluation/Evidence. The feedback arrow is intra-Run only.
@@ -313,60 +314,67 @@ Evaluation，Evidence 保存其观察。这样的依赖关系使同一个 Compil
 \draw[feedback] (e.south) -- ++(0,-1.02) -| node[pos=0.55,below,font=\sffamily\scriptsize]
  {同一 Run 的可核对反馈} (l.south);
 \end{tikzpicture}
-\caption{任务与研究处理先于候选固定；Lab 调用独立 Compiler、Evaluation 与 Evidence，
-回放后的反馈才进入同一 Run 的下一次候选。箭头表示调用或信息流，不表示前一关通过即可跳过后一关。}
+\caption{一次运行中的候选路径。任务提供外部答案，实验系统管理候选，编译器生成源码，
+评测和证据模块把可核对的结果送回作者；上方的研究计划只在需要分组比较时使用。}
 \label{fig:architecture}
 \end{figure}
 
-\subsection{Compiler：独立解释完整程序}
-Compiler 读取一份完整 Program 及其叶子 Schedule，在同一精确 Target 与同一源码提交上
-解释类型、绑定、依赖和硬件承诺。\code{Assessment.accepted} 表示结构与通用规则的结论，
-\code{lowering\_eligible} 则记录后端能否兑现；两者分开允许可表达但未实现的路线给出
-明确资格拒绝。显式改写返回完整后继候选或局部拒绝，不让 Lab 持有第二套图语义。只有
-通过门的计划才由后端确定性生成可检查源码。Compiler 不知道研究组别、provider、设备
-分配、oracle 或最终 Claim\cite{architecture,irguide}。
+\subsection{编译器：检查程序，再生成目标源码}
+编译器读入完整程序及其各阶段计划，在一个精确目标上检查类型、张量绑定、数据依赖和
+硬件约束。检查结果把两个问题分开回答：\code{Assessment.accepted} 说明计划是否符合
+通用语义规则；\code{lowering\_eligible} 说明所选后端能否把它生成源码。比如，计划
+本身可以表达一种操作，某个后端却尚未实现对应指令，此时反馈会指出后端能力缺口。
 
-\subsection{Lab 与研究分配：冻结作者能看什么、能花多少}
-独立工程 Run 的输入是一份 \code{RunSpecification}；若研究需要比较条件，\code{StudyPlan}
-事先分配相同 Run 引擎的处理组、估计量与缺失规则。Lab 在触发作者、工具链和 GPU 之前
-核对 Workload、Compiler/Executor、provider、基线和预算。作者提交结构化候选，Ralph
-控制搜索、编译和确认额度；搜索停止后固定提名，再用新鲜 Evaluation 收据确认，不因确认
-失败临时换候选。历史 CampaignLock 只在输入边界转换到共同 Run，而不构成另一套执行
-循环。这样，一次实验的处理从准备到终态均有单一负责位置。
+通过检查的计划由后端确定性生成可阅读的源码。编译器中的显式改写也必须给出完整的新
+候选，或说明为何拒绝改写。这些判断只依赖程序、目标与编译器版本；实验组别和设备测量
+由后面的模块处理\cite{architecture,irguide}。
 
-\subsection{Evaluation 与 Evidence：判断和留存分开}
-Evaluation 接受封存的可运行候选，按 Workload 材料化输入，以外部 oracle 判对；正确性
-通过之后，才按精确目标的计时、状态重置与 profiler 协议收集样本。搜索、独立确认和
-profiler 各有自己的收据；CV 质量失败属于测量观察，不把数值正确候选改记为算错。
-Evidence 保存候选字节、事件顺序与终态，离线审计在不调用 provider、GPU 或网络的
-条件下重建协议、资格和缺失。Study 使用通过审计的 Run，而不是用作者自述或某个搜索
-最低读数生成估计。完整 Program 的每个阶段保留编译和 launch 身份，最终输出及程序
-区间单独验收；单次 dispatch 的计时器不自动具备多阶段 Program 资格\cite{acceptance}。
+\subsection{实验系统：固定一次优化的条件}
+一次运行开始前，实验系统先核对任务、编译器、执行环境、基线和预算，然后才把材料交给
+作者。运行中，作者提交候选，控制器记录还可使用多少次编译与评测。搜索结束时，系统从
+已有候选中固定一个提名，用独立的新样本确认它的正确性与性能；确认结果出现后，提名
+不会临时换成另一份候选。
+
+普通工程运行只需自己的运行规格。研究比较则由研究计划提前分配处理组，并让各组沿用
+同一执行与评测流程。旧实验使用的 CampaignLock 保留为输入适配层，历史数据仍按产生
+它的版本解释。这使作者能看什么、能调用什么工具、何时停止，都在结果出现前确定。
+
+\subsection{评测与证据：先判对，再解释速度}
+评测模块先用任务合同生成输入，与外部参考逐项核对输出。候选算对之后，才按目标设备的
+计时与状态重置约定采集样本，并在需要时运行性能剖析。搜索读数、独立确认和剖析结果
+各有单独收据。若计时波动超过质量门，记录说明的是测量尚不足以判定快慢；候选的数值
+正确性仍按先前的检查结果保留。
+
+证据模块保存候选文件、事件顺序、评测收据和终态。独立审计可以在不再调用作者服务或
+GPU 的情况下重建运行过程；研究分析只使用通过审计的结果。对多阶段程序，评测还要
+核对每次启动的顺序与最终输出，并按实际程序区间计时。单内核的计时收据只能回答那次
+内核调用的问题\cite{acceptance}。
 
 \subsection{两个时钟：候选搜索与编译器演进}
-内循环在\textbf{冻结的} Compiler、Workload、Target、oracle 和测量合同下进行：生成结构不同的候选，
-先通过构造检查、Verifier 和后端预检筛选，再对幸存者做设备正确性、计时与剖析，最后把诊断
-送回下一次候选。外循环由累积的 Finding 触发：若问题属于通用合法性、缺失原语、lowering 或
-目标校准，维护者在后继提交中修改其负责模块，验证后才开启新 Campaign。一次运行不能边测边
-改变尺子\cite{architecture,acceptance}。
+候选和编译器沿两条时间线变化。在一次运行里，任务、目标、编译器及测量规则保持固定；
+作者改变的是执行计划。检查与设备评测指出下一份候选该改哪里，也让不同候选的结果
+可以在同一条件下比较。
+
+如果多次运行都遇到相同的表达或检查缺口，维护者才在运行之外修改编译器。新版本先经过
+语料测试与代码审查，再用于下一轮任务。这样，旧运行的结果仍对应旧编译器，新运行才
+能检验编译器改动有没有解决原来的问题\cite{architecture,acceptance}。
 
 \section{程序表示：任务、完整程序与执行计划}
 
 \subsection{显式的计划，而非新的布局代数}
-受限 Python 前端与 JSON 文档形式进入同一规范的 typed Schedule；Python 入口解析受支持的语法，
-并不执行任意宿主 Python 程序。Schedule 记录执行组、缓冲区、访问映射、循环、操作与同步，
-性能相关的硬件选择因此可被检查。它没有把 layout 建成一阶代数；对目标硬件的具体存储与访问
-承诺由相应 Target 和后端解释并验证。Triton 路线仍把部分物理 placement、寄存器分配与指令
-选择交给下游工具链，不能把其生成结果当作 Schedule 已经精确指定的事实\cite{irguide,architecture}。
+对每一行做 Softmax，任务规定的是结果：若 $m=\max_k x_k$，则
+$y_j=\exp(x_j-m)/\sum_k\exp(x_k-m)$。执行计划要补上公式没有写出的事：每个程序实例
+处理几行，哪些执行组负责归约，中间结果放在哪里，以及按什么坐标写回。图
+\ref{fig:softmax-schedule} 以仓库示例中的 64 行块展示这些选择。
 
-例如对一行 Softmax，Workload 给出 $y_j=\exp(x_j-m)/\sum_k\exp(x_k-m)$，其中
-$m=\max_k x_k$；候选 Schedule 另选每个执行组处理的行、列块、归约方式与写回坐标。
-若读取、归约和写回对同一行的坐标约定不一致，问题属于数据一致性；若两个执行组写同一输出，
-问题属于程序安全；若目标不提供所需指令，则属于硬件符合性或后端资格。数学式相同不能消除
-这些执行计划差异。
+Schedule 把操作、缓冲区、执行组、访问坐标、循环和同步关系存成带类型的结构。
+编译器因此可以检查：读取和写回是否指向同一行，两组是否争写同一输出，目标是否接纳
+所需指令。它要求作者写明具体的存储与访问承诺，却没有另设一套通用布局代数；Triton
+等下游工具链继续负责物理布局、寄存器分配和最终指令选择\cite{irguide,architecture}。
 
-Program 负责多个 Schedule 的公共输入输出、阶段顺序与张量绑定。完整 Program 的正确性要检查
-所有阶段的最终输出；单 Kernel 的计时或剖析不能自然推广为 Program、模型或服务收益。
+当计算需要多个内核时，Program 将各阶段接成一个完整程序，声明它们共享的输入输出、
+执行顺序和张量绑定。此时验收对象是程序的最终输出与完整调用区间，而非某一个阶段的
+单独速度。
 
 % Figure contract: one fixed Softmax formula admits an explicit, inspectable
 % tile/worker/dataflow choice. Source: current examples/python/softmax.py and
@@ -399,25 +407,19 @@ Program 负责多个 Schedule 的公共输入输出、阶段顺序与张量绑�
 \draw[->,draw=ink,line width=1pt] (max)--(sum);
 \draw[->,draw=ink,line width=1pt] (sum)--(store);
 \end{tikzpicture}
-\caption{Softmax 的数学结果由 Workload 固定；行块、执行组、访问坐标与操作顺序是候选
-Schedule 中可修改、可检查的决定。改绘自
-\repo{docs/overview-20260918/figures/programming_model.png}{仓库原图}；本图不表示设备计时。}
+\caption{同一 Softmax 公式对应的一份具体执行计划：每个实例处理 64 行，由四个执行组
+完成读取、归约和写回。图改绘自\repo{docs/overview-20260918/figures/programming_model.png}{仓库原图}，
+展示的是候选结构，而非计时结果。}
 \label{fig:softmax-schedule}
 \end{figure}
 \FloatBarrier
 
 \subsection{受限 Python 前端与同一规范 IR}
-Python 前端允许作者用变量、表达式、角色作用域和分块循环构造 Schedule，同时保留语法树
-中的源码位置以指回诊断。它只接收受支持的语法并解析 AST，接收候选的入口不执行任意宿主
-Python 导入或函数体；JSON 仍是同一规范 Schedule 的序列化形式。正常导入一个受信任的示例
-与把不受信任的候选交给 AST 入口，是不同的安全边界\cite{irguide}。如下摘录自
-\repo{examples/python/softmax.py}{当前 Softmax 示例}：
-
-作者不必在 Python 装饰器中手填 Workload 内容身份。独立使用 Compiler 时可直接检查
-源码；进入 Lab Run 时，Lab 先核对精确目标、生成路线和公开 tensor ABI，再由已冻结
-Workload 补上内容绑定。显式提供错误身份仍会被拒绝，历史封存运行按原提交解释。
-这一分工把任务语义留在 Workload，而不让候选作者通过修改 hash 更换题目；它也不把
-Workload 的裁定逻辑塞进公共 Compiler。见\repo{docs/PYTHON_FRONTEND.md}{前端合同}。
+作者可以用 Python 变量和表达式写计划：\code{lm.program} 选择行块，\code{lm.role}
+指定执行组，随后在角色作用域内描述读取、归约、广播和写回。前端读取受支持的 Python
+语法树，构造与 JSON 输入相同的规范 Schedule，并把源码位置附在诊断上。接收候选的
+入口只解析源码，不运行作者的导入语句或函数体\cite{irguide}。下面摘录的是
+\repo{examples/python/softmax.py}{当前 Softmax 示例}中的实际操作：
 
 \Needspace{16\baselineskip}
 \begin{lstlisting}[style=reportcode,language=Python]
@@ -434,18 +436,22 @@ with compute:
     lm.store(y[batch, row_block, :], y_tile, id="store_y")
 \end{lstlisting}
 
-原示例的完整签名固定输入输出为 $[8,512,128]$ FP32，并指定 \code{sm\_100a} 与 Triton
-生成路线；这里仅省略装饰器和函数签名以突出工作划分与数据流。\code{tile=64} 是每实例
-处理的行数，四个执行组是调度承诺；它们并不从 Softmax 公式自动得出。行最大值和行和必须
-显式广播到列维后才能与输入 tile 对齐，写回仍使用相同行坐标。调整这些选择后，Compiler
-重新检查，设备评测再决定正确性和收益。
+示例输入输出都是 $[8,512,128]$ 的 FP32 张量，目标是 \code{sm\_100a}，生成路线为
+Triton。\code{tile=64} 使每个实例负责 64 行；四个执行组完成同一份行块上的工作。
+行最大值和行和先广播回列维度，再参与逐元素计算；最后仍按原来的行块坐标写回。
+换一种分块或分工，编译器会重新检查计划，设备评测再判断它是否算对、是否更快。
+
+作者在 Python 装饰器中无需手填任务内容的哈希。独立调用编译器时，可以直接检查计划；
+进入实验系统后，系统先核对目标、生成路线和公开张量接口，再绑定这次运行冻结的任务。
+这样，任务身份由实验输入决定，作者只编辑实现方案。具体准入规则见
+\repo{docs/PYTHON_FRONTEND.md}{前端合同}。
 
 \subsection{一个数值反例：FMA 与乘加}
-FMA 的数学关系可写成 $y_{ij}=a_{ij}b_{ij}+c_{ij}$，但一次融合舍入和先乘后加的两次舍入
-不是同一数值合同。当前示例对 $[8,128]$ FP32 输入显式请求
-\code{ptx.fma.rn.f32}；Target 和后端拥有该指令的准入与拼写，外部 oracle 拥有最终数值
-验收。图\ref{fig:fma-example}复用仓库已有的工作示意；高亮行只用于说明一个程序实例的
-访问坐标，不是硬件寄存器数量或设备执行截图\cite{irguide}。
+FMA 说明为什么公式相同，还要写清计算语义。$a\times b+c$ 可以先乘后加、舍入两次；
+融合乘加只在最终结果处舍入一次，某些输入下两者会得到不同的 FP32 值。
+\repo{examples/python/fma.py}{当前 FMA 示例}处理 $[8,128]$ 输入，显式请求
+\code{ptx.fma.rn.f32}。图\ref{fig:fma-example}把任务公式和这份计划的分工放在一起：
+公式规定应算什么，计划规定八行怎样分配、数据怎样读取和写回\cite{irguide}。
 
 % Figure contract: distinguish a mathematical FMA task from the five concrete
 % scheduling commitments of one current example. Adapted from the IR guide.
@@ -477,64 +483,62 @@ FMA 的数学关系可写成 $y_{ij}=a_{ij}b_{ij}+c_{ij}$，但一次融合舍�
 \draw[->,draw=ink,line width=1pt] (work.east)--(3.15,2.35);
 \draw[->,draw=ink,line width=1pt] (5.35,2.35)--(schedule.west);
 \end{tikzpicture}
-\caption{同一 FMA 公式没有规定工作分配、存储或生成路线。图按
-\repo{docs/figures/fma-schedule-example-v1.png}{仓库原图}重新排成适合报告的矢量图；
-逻辑 register tile 的长度不等于每线程物理寄存器数，也不表示新的设备测量。}
+\caption{FMA 示例的任务与计划。图按\repo{docs/figures/fma-schedule-example-v1.png}{仓库原图}
+重绘；高亮行代表一个程序实例要处理的数据，逻辑寄存器 tile 的长度并非每线程物理寄存器数。}
 \label{fig:fma-example}
 \end{figure}
 \FloatBarrier
 
 \subsection{完整 Program 的阶段与绑定}
-一个 Program 声明公共张量、各阶段顺序以及输入输出绑定，叶子阶段包含完整 Schedule。
-例如选择性注意力程序需要池化、评分、Top-$k$、索引展开和注意力阶段，并在循环中保存
-选择与归约状态；单 Kernel 合格不能替代阶段间张量一致性与最终输出的检查。程序级变换
-可以改变阶段数量，所以比较前须固定 Workload 与终点，再以完整 Program 的调用路径判对
-与计时。第\ref{sec:results}节把历史 QSA 程序作为这一范围的案例，而不把它当成通用 Program
-自动优化已经完成的证据。
+选择性注意力给出了多阶段程序的例子：它先池化并评分，再做 Top-$k$ 选择、索引展开和
+选中位置的注意力计算。一个 Program 将这些阶段的张量与执行顺序绑定起来；每个阶段
+仍由一份完整的 Schedule 描述。编译器检查阶段之间的数据关系，评测则核对最终输出，
+并在需要比较速度时测量整个程序的调用区间。第\ref{sec:results}节的历史 QSA 案例
+采用的正是这个范围。
 
 \subsection{精确目标文档}
-当前源码声明八个精确目标，分属 NVIDIA、Apple、AMD、Hygon 和 MetaX 五个 Vendor。
-精确目标文档（Target）拥有自己的线程组宽度、存储空间、指令合同、代码对象及资源事实；
-未声明的事实报告为“未建模”，不借用相似目标的常数。后端是生成机制，不是厂商身份：
-现有 Triton、Metal、原生 CUDA 与 CuTe DSL 四条路线，各自声明可生成的代码对象。
-编译器对目标和后端做精确匹配，不能把未声明目标降级到邻近架构\cite{targets,architecture}。
+同一份执行计划语言要面对不同硬件，具体能力由目标文档（Target）说明。当前八个目标
+分属 NVIDIA、Apple、AMD、Hygon 和 MetaX；每份文档分别声明线程组宽度、存储空间、
+可用指令、代码对象与资源限制。编译器按目标的精确 ID 准入，缺少的硬件事实报告为
+“未建模”。Triton、Metal、原生 CUDA 与 CuTe DSL 则是生成源码的路线；其中 Triton
+服务多个厂商，不以厂商名划分公共 IR\cite{targets,architecture}。
 
 \subsection{表示变更的验收义务}
-新增 IR 原语须同时给出类型、效应、合法性、静态分析和目标行为；只有语法而没有这些语义，
-不能成为已准入能力。仓库将易编写、性能决策可见、规范形式、构造时类型检查、可分析、
-语料门、分析一致与硬件根据作为表示的八项设计约束\cite{cake,irguide}。某算子若能由现有原语
-组合实现，应先添加 Workload Contract；只有真实表达缺口才要求扩大 Compiler。
+新原语会改变作者能写什么，也会改变编译器必须检查什么。因此，一项 IR 扩展要同时
+说明结果类型、读写效果、合法性规则、分析所需信息和目标上的实际行为，再用正反用例
+检查这些关系。对于能够由现有原语组合的算子，先建立任务合同和参考实现；遇到确实
+无法表达的执行行为，再扩展语言与后端\cite{cake,irguide}。
 
 \section{编译器：从局部化检查到目标源码}
 
 \subsection{分层拒绝与反馈}
-Compiler 首先解析与构造类型正确的 IR，然后按四类合同检查：
+编译器先把作者的程序构造成带类型的 IR，再检查程序中的关系是否成立。例如 FMA
+需要三个输入；若候选漏掉第三个读取，检查结果会在 \code{operations[3].reads}
+指出 \code{ELEMENTWISE\_ARITY}。作者据此补上缺失的数据边，而不必先编译、运行 GPU
+再从错误输出猜原因。其余检查归入四类：
 \begin{notebox}
 \noindent\begin{tabularx}{\linewidth}{@{}Y Y@{}}
 \code{schedule\_semantics} 调度语义 & \code{hardware\_conformance} 硬件符合性 \\
 \code{data\_consistency} 数据一致性 & \code{program\_safety} 程序安全
 \end{tabularx}
 \end{notebox}
-Assessment 中的 Finding 指向字段或源码区域，带稳定代码、类别、严重度和阻断范围；
-非阻断的 guidance 与拒绝原因分开。后端预检负责该生成路线特有的能力边界。静态分析只能
-在已建模的范围内阻断；未声明的资源上限和下游产生的物理资源需求需要另行观察\cite{architecture,acceptance}。
-
-一个可复查的小反例是 FMA 候选漏掉第三个输入：构造仍指向同一数学操作，Assessment 在
-\code{operations[3].reads} 报 \code{ELEMENTWISE\_ARITY}，指出该操作需要三个输入。
-作者因此可以修复具体数据边，无需先耗费设备时间。通过静态检查只允许候选继续；
-它不证明工具链编译、GPU 数值正确或速度收益\cite{architecture}。
+一条诊断（Finding）带有稳定代码、位置、类别及阻断范围，Python 前端还能把位置指回
+源文件。建议性提示另存，不改变候选的检查结论。通用规则通过后，后端还会检查这条
+生成路线能否支持候选所用的操作与硬件特性。通过这些门，意味着候选可以进入下一步
+编译；设备上的答案与速度仍要分别测量\cite{architecture,acceptance}。
 
 \subsection{源码生成与下游工具链}
-合法 Schedule 经选定后端输出可检查的目标源码。Triton 路线再通过厂商对应的 Triton 工具链
-编译；Metal、原生 CUDA 与 CuTe DSL 路线各保留自己的预检与生成条件。Target 声明的代码对象
-随生成路线进入工具链和 Executor，不能由目标名字猜测架构。生成源码、编译产物、设备可加载性、
-外部正确性与实测延迟是五个递进但互不等同的检查点\cite{architecture}。
+检查通过后，后端生成一份可阅读的目标源码。选择 Triton 时，这份源码还要交给对应厂商
+的 Triton 工具链；Metal、原生 CUDA 和 CuTe DSL 各有自己的生成与编译入口。目标文档
+声明最终代码对象的类别，执行器按该类别加载产物。这样，从执行计划到 GPU 结果的过程
+可以逐段追踪：源码是否生成、工具链是否编译、设备是否可加载、输出是否算对、计时是否
+可信，各有自己的记录\cite{architecture}。
 
 \subsection{Target 与生成路线如何保持分离}
-八个声明目标属于五个平等的 Vendor；同一 Triton emitter 可以服务 NVIDIA、AMD、Hygon
-和 MetaX，因而后端名不是厂商名。表\ref{tab:target-routes}把目标文档的代码对象与当前
-源码生成机制放在一起；它描述\emph{可尝试的路线}，不把路线存在写成每个算子都已获得
-设备正确性或计时资格。精确的支持与拒绝由目标文档、后端预检和对应工具链共同决定。
+同一代码生成机制可以服务不同厂商：当前 Triton 路线就接入了 NVIDIA、AMD、Hygon
+和 MetaX。厂商身份由精确目标文档声明，后端只说明自己能生成哪类代码对象。
+表\ref{tab:target-routes}列出这些关系。新增目标时，先核对它声明的指令、资源和代码
+对象，再验证所选后端与工具链；添加一个目标名并不会自动带来设备执行资格。
 
 \begin{table}[htbp]
 \centering\small
@@ -554,18 +558,20 @@ MetaX & \code{xcore1002} & MCFATBIN & Triton / MACA \\
 \end{tabularx}
 \end{table}
 
-目标文档一次声明 warp/wave 宽度、资源和指令事实；后端只保留自身的生成拼写与资格。
-一个 Target 未声明寄存器上限等事实时，分析返回明确的未建模报告，不默认成相邻 GPU 的
-值。MetaX 路线的 \code{triton\_arch=80} 是工具链兼容 API 值，并不是 NVIDIA SM80
-身份。一个新的同厂目标可由新文档加入，但目标集合、指令合同和后端证据门仍需有意识地
-审查与更新\cite{targets,architecture}。
+目标文档还拥有线程束或波前宽度、资源上限和指令事实。某项上限尚未声明时，分析会把
+它列为未建模，而不是借用另一型号的数值。MetaX 提供的 \code{triton\_arch=80}
+只是适配工具链 API 所需的值；物理目标仍是 \code{xcore1002}。这种区分使报告和代码
+生成都能说清实际使用了哪台设备\cite{targets,architecture}。
 
 \subsection{从 Finding 到物理资源观察}
-Assessment 把阻断性 Finding、仅报告的覆盖限制及非阻断 guidance 分开。它能告诉作者
-哪个字段违反了哪类合同，也能在缺少目标校准时拒绝给出伪精确的成本顺序。逻辑 Schedule
-中的寄存器 tile 不等于编译后每线程寄存器数；后端可能引入暂存、栈或共享内存。工具链
-产物的资源报告可以在不启动 GPU 的条件下收集，实机 profiler 才能观察目标运行时瓶颈。
-两类观察以候选和源码身份关联，但不互相替代。详见
+计划通过静态检查以后，作者还需要了解它在机器上付出了什么代价。Schedule 中声明的
+逻辑寄存器 tile，并不是每线程实际分到的物理寄存器；后端还可能增加暂存、栈与共享
+内存。工具链编译后的资源报告可在不运行 GPU 的情况下收集。若候选正确但偏慢，目标
+设备上的性能剖析进一步帮助作者提出关于访存、占用率或工作分配的假设。
+
+这三种反馈各回答一个问题：计划关系是否成立，编译产物用了多少资源，设备执行时发生
+了什么。它们绑定同一候选的源码和产物身份，方便作者沿着观察逐步修改。分析缺少目标
+校准时，报告保留未知状态。细节见
 \repo{docs/PROFILER_FREE_ANALYSIS.md}{编译资源分析}与
 \repo{docs/ANALYSIS_CALIBRATION.md}{校准边界}。
 
@@ -588,16 +594,15 @@ Assessment 把阻断性 Finding、仅报告的覆盖限制及非阻断 guidance 
 \draw[->,draw=ink,line width=1pt] (plan)--(resource);
 \draw[->,draw=ink,line width=1pt] (resource)--(device);
 \end{tikzpicture}
-\caption{三类反馈回答不同问题。按
+\caption{作者沿着计划、编译产物和设备运行三个层次读取反馈。图按
 \repo{docs/overview-20260918/figures/feedback_layers.png}{仓库既有说明图}改绘；
-箭头表示信息逐层增加，不能由资源估计直接推出设备速度，也不表示失败会自动生成
-唯一的 Compiler 修改。}
+每一层都为下一次修改提供不同的观察。}
 \label{fig:feedback-layers}
 \end{figure}
 \FloatBarrier
 
-下面的离线入口使用当前项目的 Compiler 配置读取 FMA Python 示例，只检查并生成源码；
-它不编译二进制、不启动设备，也不会产生性能样本：
+以下命令可在项目根目录离线检查 FMA 示例，并生成 Triton 源码。它让读者先观察
+Assessment 与生成结果；工具链编译、GPU 判对和计时属于后续步骤：
 \begin{lstlisting}[style=reportcode]
 PYTHONPATH=src python3 -m open_cake_ir.cli compiler assess \
   examples/python/fma.py --format text
@@ -606,30 +611,30 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 \end{lstlisting}
 
 \subsection{Corpus Gate 的含义}
-固定源码 \code{677eb444} 的状态页报告 \textbf{179/179} 项语料检查符合已审查预期；
-其中 Apple family7 与 family9 是已声明但未被该语料检查的目标。
-该数值证明当前软件合同与预期相符，不证明这些目标的设备运行或性能。语料预期必须作为独立
-审查决定维护，不能为使 Gate 变绿而在验证前重生成\cite{status,acceptance}。
+当前固定源码 \code{677eb444} 的语料门有 \textbf{179/179} 项符合预期。它逐项对照
+已审查的接受或拒绝结果，帮助维护者发现编译器语义变化带来的回归。覆盖报告同时指出
+两个已声明但尚无该门检查的目标：Apple family7 和 family9。通过数因此只描述这组
+软件用例；设备运行与性能由各目标自己的实验继续验证\cite{status,acceptance}。
 
 \section{实验方法与证据等级}
 
 \subsection{一次 Run 的四阶段}
-系统按下列顺序运行候选搜索：
+一次运行从固定任务开始，沿四个阶段推进：
 \begin{enumerate}
-\item 生成结构不同的 Schedule 或 Program 候选，并记录具体变更；
-\item 以 IR 构造、Verifier、backend preflight 和有目标覆盖的成本估计筛选，未覆盖时明确弃权；
-\item 对幸存者使用外部 oracle 检查完整输出，再在目标计时器、状态重置与质量门下测量，并保留 profiler 观察；
-\item 将失败归于候选、Verifier、成本模型、IR 或 lowering，决定继续搜索或登记后继 Finding。
+\item 作者提出结构不同的执行计划或完整程序，记录每次改了什么；
+\item 编译器先检查类型、合法性和后端支持，再用有目标校准的成本估计安排设备评测顺序；
+\item 对可运行候选核对完整输出；正确后按目标设备的协议计时，并在需要时采集剖析数据；
+\item 根据具体诊断继续修改候选，或将反复出现的编译器缺口留给后继版本处理。
 \end{enumerate}
-成本估计用于设备时间之前的排序与过滤，不能决定最终接受。每个目标分别声明计时器、测量区间
-和样本前设备状态；缺少其中一项时应报告测量覆盖限制，而不是继承其他目标的延迟语义。
+成本估计节省搜索时的设备时间，最终接受仍取决于外部答案和实机测量。每种目标硬件
+分别声明计时器、测量区间与样本前的设备状态；缺少这些条件时，报告保留计时覆盖缺口。
 
 \subsection{双时间尺度与 Finding 的负责位置}
-图\ref{fig:two-clocks}把两类变化隔开。在内循环，一个 Run 固定 Workload、Compiler、
-目标、作者可见材料和测量合同；作者可修改候选，外部系统追加诊断、正确性和计时收据。
-在外循环，维护者根据保留的反例判断应改变候选、Verifier、IR、lowering、目标事实或
-成本模型。若要改 Compiler，改动在新提交及语料验证后才供下一次 Run 使用；原 Run 的
-解释不随源码后来移动。一次性能差距也可能得出 \code{No promotion}，不自动铸造成 pass。
+图\ref{fig:two-clocks}展示了两种改动的节奏。一次运行只改变候选程序，任务、编译器、
+目标和测量规则保持原样。运行留下的错误、正确性收据与性能样本，为下一轮候选提供
+依据。运行结束后，维护者再查看反例：问题是候选写法、检查规则、生成路线，还是缺少
+一种表达？需要修改编译器时，改动先成为新提交，通过语料门和审查，再进入下一次运行。
+有些性能差距只适合继续探索候选，记录“暂不提炼通用变换”也是结论。
 
 % Figure contract: immutable Workload/Compiler within one Run versus a reviewed
 % successor Compiler commit. Dashed lower path is conditional, never automatic.
@@ -656,39 +661,39 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 \draw[outer] (source.east)--(d.west);
 \draw[outer] (d)--(n);\draw[outer] (n)--(r);
 \end{tikzpicture}
-\caption{同一 Run 内只改变候选；运行之外的证据驱动下一版 Compiler。下行虚线表示
-经 Finding 归属、提交和语料门之后的可能改动，不表示每次失败都会产生新原语或收益。}
+\caption{候选在固定编译器的一次运行中迭代。下方的虚线表示运行结束后，已归档的问题
+可能推动编译器改动；新版本通过审查后才用于下一轮。}
 \label{fig:two-clocks}
 \end{figure}
 
-最新集成源码还保留一份 C550 M17 的十轮 Agent Run：冻结源码 \code{896e0887} 的
-Evidence 记录十次作者回合、九次候选拒绝和终态；第二轮的 \code{ACCESS\_TILE\_MISMATCH}
-指向具体访问映射，第六轮来源的候选后来通过五类输入的独立正确性检查及 MCPTI 成对
-确认，Run 内固定基线与候选中位数为 12.032/11.008\,$\mu$s。它验证了一次反馈、筛选、
-确认与封存的实际路径；运行容器不具备整机独占资格，结果限于
-\code{local\_serialized}，更不能据此归因于反馈相对其他作者环境的额外效果。
-记录及其边界由\repo{docs/ARCHITECTURE.md}{架构案例}拥有。
+一份 C550 M17 的实际运行展示了这条路径。在固定源码 \code{896e0887} 下，作者进行了
+十个回合，九份候选被拒绝。第二轮的 \code{ACCESS\_TILE\_MISMATCH} 直接指向
+不一致的访问映射；第六轮产生的候选后来通过五类输入的独立正确性检查和 MCPTI
+成对计时。固定基线与候选的中位数分别为 12.032 和 11.008\,$\mu$s。这份记录覆盖了
+反馈、筛选、确认到终态的过程；计时只对应那次 \code{local\_serialized} 容器环境。
+详情见\repo{docs/ARCHITECTURE.md}{架构案例}。
 
 \subsection{研究对照的单位和参考访问}
-正式比较的实验单位是独立 Run，不是 Turn、候选或检查点。干净起点只能看到规格、oracle、
-高层代码和被授权的参考资料，不能读取目标的完整低层实现；已知 Kernel 复现则可以读取该实现。
-直接低层编写与 Cake 编写是 Authoring Environment 的不同处理条件，需要共同的目标、任务、
-模型、预算与评测协议。搜索内的最佳读数须经候选固定后的独立确认；基础设施故障应保留为缺失，
-不能重写成数值错误\cite{papercontract,study}。
+研究比较以一次独立运行为单位，而不是把同一运行中的多个候选当作重复样本。干净起点
+允许作者看任务规格、外部答案和高层代码，目标的完整低层实现则留在作者视野之外；
+研究已知内核的复现时，参考实现可以成为允许的材料。比较 Cake 和直接 CUDA 编写环境，
+还须固定模型、任务、预算与评测规则。搜索读数用于挑选候选，结论取自候选固定后的
+独立确认。基础设施中断在报告中记为缺失，保留它已经消耗的成本\cite{papercontract,study}。
 
 \subsection{证据保存、回放与结论资格}
-候选、评测和终态以追加方式保存，报告由原始事件、产物和收据派生。一次 CPU 或离线回放
-可以重新计算选择和终点状态，但不能替代当时的设备样本。\code{archive\_integrity}
-验证归档内容是否能按协议回放，\code{filesystem\_custody\_verified}验证写入和发布环境的
-监管前提；两者相互独立。若后一条件缺失，即便 Git 检出内容可读，也不能把它提升为
-资格、估计或性能晋升。历史证据在其原提交和原协议下解释，不由本报告的较新编译器重新
-赋予资格\cite{acceptance}。
+每份候选、评测收据和终态都按事件顺序追加保存。审计者可以离线重算候选选择与停止
+状态，并检查报告是否来自这些原始材料。还要分别核对归档内容能否完整回放，以及当时
+的写入与发布过程是否满足文件监管要求。前者说明记录可读，后者决定它能否用于晋升或
+研究估计。协议将两项分别记为 \code{archive\_integrity} 与
+\code{filesystem\_custody\_verified}。历史运行始终按当时的源码与协议审计
+\cite{acceptance}。
 
 \subsection{结论阶梯}
-表\ref{tab:evidence-ladder} 是本文解读每个案例的最小证据门。任一层的通过只授予该层的陈述资格。
+一份结果能支持多强的说法，取决于它实际通过了哪些步骤。表\ref{tab:evidence-ladder}
+列出从计划检查到研究比较所需的证据，也供后面的平台案例对照。
 \begin{table}[htbp]
 \centering\small
-\caption{结论阶梯；“通过”不沿表格自动向下传递。}
+\caption{从计划检查到研究比较，各种结论需要的证据。}
 \label{tab:evidence-ladder}
 \begin{tabularx}{\textwidth}{@{}p{31mm}Y Y@{}}
 \toprule
@@ -703,15 +708,16 @@ Program 或服务收益 & 完整调用路径、dispatch 与应用层验收 & Age
 \end{tabularx}
 \end{table}
 
-Evidence 保存候选、原始样本和事件；报告是由这些记录派生的视图。源码身份由干净 Git 提交
-决定，Compiler 为 \code{open-cake-ir@<commit>}，Executor 为 \code{<target>@<commit>}。
-本报告的阅读提交只界定当前叙述所见的软件，不能代替历史实验的执行提交或文件监管条件。
+源码版本由干净的 Git 提交确定：编译器身份写作 \code{open-cake-ir@<commit>}，执行器
+还要加上精确目标。本文固定的提交用于说明当前软件；后面的历史测量仍保留各自运行时
+的提交、样本与监管记录。
 
 \section{实现覆盖与代表性设备案例}\label{sec:results}
 
 \subsection{平台覆盖是分层事实}
-表\ref{tab:platforms} 概括仓库已发布的代表性证据。它不是跨厂商性能排行；同一平台的不同
-Workload 也可能有不同的计时和确认资格。完整细节由各平台专题与原始收据负责\cite{architecture}。
+仓库已接入五家厂商，但“能生成代码”“设备算对”和“计时可比较”是不同阶段。
+表\ref{tab:platforms}先给出每条路线已经到达的范围；具体数值在各自的任务、设备和
+基线之内解释。各平台的原始报告与收据仍是结果来源\cite{architecture}。
 \begin{table}[htbp]
 \centering\small
 \caption{截至报告快照的代表性平台能力与主要解释边界。}
@@ -730,41 +736,40 @@ MetaX & C550 固定单 Kernel 及若干完整输出；单 Kernel 配对计时和
 \end{table}
 
 \subsection{NVIDIA：任务族覆盖与外部比较}
-\repo{docs/results/nvidia/FLASHINFER_STATUS.md}{FlashInfer 逐任务综述}把 B300 的
-26 个任务按同一固定形状下的原 starter、改写产物和外部参考分别保留。截至该专题的
-2026-09-21 快照，16 项已有三方数值比较，其代表产物或保留的原 starter 对外部边中：
-2 项合格领先、6 项 \code{close\_null}、4 项合格落后、4 项没有合格外部边；另 10 项
-尚未完成外部性能闭环。这是任务状态分布，\textbf{不是}把不同形状和不合格边合成的
-平均加速比。任务 022 的改写候选对外部有合格领先，但相对原 starter 的直接比较
-未通过 CV 门，不能因此自动取代 starter。任务 003 的整行改写在局部对照上改善，
-对外部仍合格落后；这些负例使差距可定位。
+在 B300 上，\repo{docs/results/nvidia/FLASHINFER_STATUS.md}{FlashInfer 逐任务综述}
+为每个固定形状保留原起点、改写产物和外部实现。截至 2026-09-21，26 个任务中有
+16 个完成三方数值比较。按综述选定的代表产物，对外部实现的计时结果分为：2 项合格
+领先、6 项未检出达到预设门槛的差异、4 项合格落后、4 项缺少合格的外部计时；其余
+10 项还在完成外部性能比较。这个分布展示任务进度，不能合成为一个平台加速比。
 
-B300 服务实验、CTA 宽度验证、FlashInfer 改写与 CAKE 任务复现拥有各自的基线、版本与
-测量协议。把这些行并排作为平台观察可以展示研究覆盖；求一个“B300 总加速比”会改变
-各行的含义。B200 的 FMA、状态操作和 QSA 记录另按原提交保留，不能把 B300 的设备
-结果移给 B200。独立 NCU 剖析用于解释资源和工作分配，不修复某一条 CUPTI 比较的
-计时质量失败\cite{nvidia}。
+逐任务记录更能说明优化发生了什么。任务 022 的四组候选对外部实现取得合格领先，
+但它与原起点之间的计时质量不足，原起点仍保留为比较对象。任务 003 的整行改写相对
+中间候选改善，面对外部实现仍落后。这些结果把“相对自己的上一版进步”和“达到外部
+实现水平”分成两件事。独立 NCU 剖析可帮助解释工作分配与资源使用；计时判断仍依据
+原来的 CUPTI 样本及质量门\cite{nvidia}。
+
+B300 的服务实验、CTA 宽度验证、FlashInfer 改写和 CAKE 任务复现使用不同基线与
+协议，分别放在报告中。B200 的 FMA、状态操作和 QSA 案例也沿用各自的历史提交。
 
 \subsection{Apple、Hygon、AMD：不同结论等级}
-Apple Metal 已有各自设备上的 TaskLab 记录。M4 两个固定行归约任务相对其固定基线
-分别保留 1.107 和 1.138 倍的历史晋升观察；M1 Pro 的固定小形状 GEMM+SiLU
-相对朴素基线曾确认 23.604 倍。大比值反映该具体基线与形状，不能被写成对专家库
-或全部 Apple family 的一般优势。M2 的 GEMM 搜索有描述性读数，但未通过测量稳定性门。
-Metal 计时包含整个 command buffer 并按重复 dispatch 均摊，不与 CUDA 的 CUPTI
-微秒值横向比较\cite{metalresults}。
+Apple 的 Metal 记录涵盖几台不同设备。M4 上两个固定的 FP32 行归约任务，相对各自
+的起点保留了 1.107 和 1.138 倍的历史改进；M1 Pro 上的小形状 GEMM+SiLU，相对
+朴素任务基线确认了 23.604 倍。后一数值主要说明起点留下了很大优化空间，所用基线
+与专家库实现不同。M2 的 GEMM 搜索虽有较低读数，计时稳定性尚不足以给出性能结论。
+Metal 的样本覆盖整个 command buffer，并按重复调用均摊；它和 NVIDIA 的 CUPTI
+样本各有自己的区间\cite{metalresults}。
 
-Hygon BW1101 的保留 sweep 同时出现确认加速、确认变慢和分辨能力待查。例如
-逐通道矩任务在原记录中为 9.439/6.719\,$\mu$s（1.405 倍），
-\code{prelu} 为 5.439/9.759\,$\mu$s（确认变慢）；多项短内核两臂恰好报告
-5.439\,$\mu$s，来源将它们标为测量分辨能力待查，而不据此断言性能相同。汇总中部分
-历史形状未转录，报告正文引用案例时要保留原 Campaign 定位，不能补造形状\cite{dcuresults}。
-AMD \code{gfx1151} 已有 Triton/HSACO 路线及设备调查，但两种计时器的绝对时间尚未对齐；
-当前发布行没有合格加速比，也没有完整 Agent 优化结论\cite{amdresults}。
+Hygon BW1101 展示了另一种结果组合。逐通道矩任务从 9.439 降到
+6.719\,$\mu$s，原记录判为确认加速；\code{prelu} 则从 5.439 增至
+9.759\,$\mu$s，属于确认变慢。多项短内核的两边都读到 5.439\,$\mu$s，来源把它们
+标为测量分辨能力待查，而非真正持平。部分历史行没有在汇总表转录完整形状，读者可以
+沿链接回到原运行查看\cite{dcuresults}。AMD \code{gfx1151} 现有 Triton/HSACO
+路线和设备调查；两种计时器的绝对时间仍需对齐，因此其结果页暂不列加速比
+\cite{amdresults}。
 
 \begin{table}[htbp]
 \centering\small
-\caption{三个平台的代表性观察按各自基线和质量状态呈现。数值属于原报告的历史
-Workload 和软件，不能据此求跨平台平均。}
+\caption{Apple、Hygon 与 AMD 的代表性观察。每行沿用自己的任务基线和计时资格。}
 \label{tab:platform-cases}
 \begin{tabularx}{\textwidth}{@{}p{24mm}p{31mm}p{27mm}Y@{}}
 \toprule
@@ -780,15 +785,13 @@ AMD gfx1151 & RMSNorm smoke & 延迟缺失 & 路线调查；计时器未对齐 \
 \end{table}
 
 \subsection{MetaX：单内核、完整输出和实际 Run 分别验收}
-C550 的本地证据应按三种不同范围阅读：（1）固定单内核 M17 GEMM
-把 M tile 64 改为 32，独立确认 72.448/58.368\,$\mu$s，得到 1.241 倍本机局部
-收益；（2）GQA、MLA、MoE 等 17 个变体共 86/86 个完整输出 case 数值通过，
-相应收据没有计时样本；（3）当前集成文档记录了十轮 C550 Agent Run 的反馈与确认
-路径，12.032/11.008\,$\mu$s 的配对结果只属于那次固定基线和
-\code{local\_serialized} 容器范围。三种事实不能拼成“完整 Program 的 Agent
-自动优化已获得 1.241 倍”的陈述。MACA 路线的身份、MCPTI 样本、原生 profiler 与
-多阶段 attribution 的限制见\repo{docs/metax-c550.md}{C550 专题}和
-\repo{docs/ARCHITECTURE.md}{当前集成案例}。
+C550 的记录覆盖三件互有关联的工作。第一项是固定形状 M17 GEMM 的单内核分块优化，
+下节详述它相对本机基线的独立确认。第二项是 GQA、MLA 和 MoE 等 17 个程序变体的
+完整输出核对，86 个 case 全部通过；这些收据记录的是正确性，没有普通程序计时样本。
+第三项是一次十轮 Agent Run，保留了候选被拒、修正和最终确认的过程。该次 Run 中
+12.032/11.008\,$\mu$s 的配对中位数属于固定基线与 \code{local\_serialized}
+运行环境。三种观察各自回答实现、判对和作者流程的问题，详见
+\repo{docs/metax-c550.md}{C550 专题}与\repo{docs/ARCHITECTURE.md}{集成案例}。
 
 \subsection{案例 A：C550 的局部 tiling 收益}
 \begin{notebox}
@@ -798,9 +801,8 @@ C550 的本地证据应按三种不同范围阅读：（1）固定单内核 M17 
 独立确认的正确性与测量质量门通过。
 \end{notebox}
 这是 \code{local\_serialized} 范围内的本机 authoring 对照，支持这个形状上的局部调度改进。
-它没有比较“向 Agent 提供 NVIDIA 经验”与“不提供经验”的处理差异，也不是完整 Program 的
-自动优化 Run\cite{metax}。同一专题中的 17 个 Workload 变体、86/86 个完整输出 case
-属于正确性证据；其计时为缺失，不能拿来扩大上述收益范围。
+这次只改变 M tile，独立确认说明更小的 tile 对当前形状有利。将这一观察提炼为跨目标
+经验，还需要在目标设备上重新选择参数并验收收益\cite{metax}。
 
 \subsection{案例 B：B300 的对齐条件与质量门}
 \begin{notebox}
@@ -809,40 +811,38 @@ C550 的本地证据应按三种不同范围阅读：（1）固定单内核 M17 
 \noindent\small 固定 generic \code{sliced-w8} 对照 6.4005\,$\mu$s $\rightarrow$ 候选 5.920\,$\mu$s；
 同次候选对照边通过计时质量门。
 \end{notebox}
-同一候选对外部参考的边没有通过 CV 质量门，因此不能从该案例推出对外部参考的合格胜负。
-另一任务 008 的完整两阶段 Program 已通过 2550 份数值快照，但新候选相对对照及外部参考
-的计时边均未通过质量门：它证明完整程序可运行和算对，不提供合格的性能结论\cite{nvidia}。
+这项对齐改动对固定的通用实现取得了可确认的局部收益；与外部参考的那组样本没有通过
+CV 质量门，因此外部胜负仍未确定。任务 008 则把两阶段 Program 跑通并通过
+2550 份数值快照，但候选对内部对照和外部参考的计时都不稳定。它提供了完整程序的
+正确性记录，性能判断需要新的合格样本\cite{nvidia}。
 
 \subsection{两个局部案例的结论范围}
-两个局部改进来自不同硬件、Workload、源码与计时机制，不能平均，也不能作为一个跨硬件
-机制已迁移的轨迹。负结果、\code{close\_null}、未完成和质量失败与正结果同样保留。
-截至此报告所读的\repo{reports/current/STATUS.md}{当前状态页}，项目没有统一的已验收 Study Report
-索引；本文不计算全项目成功率或总加速比。
+两个案例分别说明了分块与对齐可以在固定任务上改进本机候选。它们使用不同硬件、任务和
+计时协议，因此正文按案例报告，同时保留变慢、差异不足和计时失败的记录。当前
+\repo{reports/current/STATUS.md}{状态页}也没有汇总全项目已验收的 Study Report；
+各项结果继续从自己的报告和收据追溯。
 
 \subsection{历史 B200 案例的放置方式}
 \href{https://github.com/qhy991/open-cake-ir/releases/tag/research-preview-2026-09-06}{2026 年 9 月旧版报告}
-给出两个值得保留的有界案例。QSA 在固定 $T=32768$ 的完整 Program 上，历史确认
-候选与同次 CUDA 黑盒参考约为 127.8/676.4\,ms；它说明程序表示和评测能承载多阶段
-候选，不能归因于一次同预算的智能体处理比较。Flash-KMeans 在历史 B200 固定形状
-上每组有三次独立搜索，Open-Cake 与直接 CUDA 作者环境的确认终点中位数约为
-1.512/5.342\,ms，历史比值约 3.53；该实验使用 150k token、\code{max} 努力与
-自己的历史源码和监管合同，不能和 CAKE 论文的 80M、\code{xhigh} 条件直接相除。
-正文保留这两项作为\emph{历史实验快照}，附录列完整 Workload、软件身份、样本口径
-及来源；在当前提交上没有为它们重新赋予设备或监管资格\cite{papercontract}。
+还保存了两项 B200 案例。QSA 的 $T=32768$ 完整程序，历史确认候选和同次 CUDA
+黑盒参考分别约为 127.8 与 676.4\,ms，展示了多阶段计划与程序级评测的一次实际
+使用。Flash-KMeans 的固定形状配对搜索，每组有三次独立运行；Open-Cake 与直接
+CUDA 编写环境的确认终点中位数分别约为 1.512 和 5.342\,ms。这项本地实验采用
+150k token 和 \code{max} 努力级别；CAKE 论文采用另一套 80M-token 协议，
+第 8 节将并列说明条件。两项结果都作为历史快照引用，完整任务、软件和样本来源列在
+附录\cite{papercontract}。
 
-\section{与 CAKE 的对照：方法、重叠任务与差距}
+\section{与 CAKE 对照：相同的问题，不同的证据}
 
-比较首先要确定对象：CAKE 论文的结论、公开的 CAKE 生成产物、本仓库的独立实现，
-以及某个固定 Workload 上的外部参考，是四种不同来源。表\ref{tab:cake-compare}
-将研究问题放到同一行，再标出能够直接对应和不能直接对应的部分。原论文在 B200
-Flash-KMeans clean-start 上报告 Cake IR 与直接 CUDA/PTX 的三次运行及 80M token
-终点；本仓库历史 B200 实验的作者环境、努力级别与预算不同。两个实验可以比较\emph{方法
-条件和待解问题}，不能把两组数值拼成“复现论文收益”\cite{cake,papercontract}。
+本仓库与 CAKE 有共同的研究问题，也有可以直接检查的重叠任务。不过，论文聚合数字、
+公开的 CAKE 生成产物、本仓库运行记录和某个任务的外部参考，各由不同材料产生。
+表\ref{tab:cake-compare}先比较研究设计与实现范围；下节再看同一 TinyGEMM2 任务上
+能够进行的数值和速度对照\cite{cake,papercontract}。
 
 \begin{table}[htbp]
 \centering\small
-\caption{CAKE 论文与本仓库的对应范围。\textit{paper\_reported} 与本地观察来源分开；
-一格中的“可实现”不代表已经形成匹配的性能实验。}
+\caption{CAKE 论文与本仓库在研究问题、目标和已获得证据上的对应关系。论文数字与本地
+运行分别标明来源。}
 \label{tab:cake-compare}
 \begin{tabularx}{\textwidth}{@{}p{30mm}Y Y@{}}
 \toprule
@@ -857,25 +857,23 @@ Flash-KMeans clean-start 上报告 Cake IR 与直接 CUDA/PTX 的三次运行及
 \end{tabularx}
 \end{table}
 
-CAKE 论文表 2 在 B200 Flash-KMeans 的相同 80M-token 截点，报告 Cake IR 三次运行的
-最优候选相对固定 FlashML 基线的中位数为 1.144 倍，直接 CUDA/PTX 为 0.928 倍；
-论文给出的参考基线是 0.938\,ms。这些是 \code{paper\_reported} 数字，不是本仓库的
-执行记录。本仓库历史 B200 配对搜索的 150k-token 结果使用不同努力级别、作者环境
-与基线，故下文不画跨这两项研究的相对性能柱状图\cite{cake,papercontract}。
+CAKE 论文表 2 以 B200 上固定的 FlashML 基线（0.938\,ms）为参照，在 80M token
+截点报告 Cake IR 三次运行最优候选的中位数为基线的 1.144 倍，直接 CUDA/PTX 为
+0.928 倍。这里转录的是论文结果。本仓库历史 Flash-KMeans 实验使用 150k token、
+不同努力级别和自己的基线，因此表\ref{tab:cake-compare}并列的是协议，而不是用
+两个实验的加速比互相比大小\cite{cake,papercontract}。
 
-\subsection{TinyGEMM2：同形状的诚实差距}
-与完全不同任务的相对加速比相比，B300 的 TinyGEMM2 有更直接的任务重叠。本仓库固定
-三个 BF16+bias 形状，使用独立 FP64 数学 oracle、官方导出产物作严格 bitwise BF16
-peer gate：本地候选 30/30 检查和官方导出 15/15 检查通过。五轮交替顺序的 CUPTI
-冷 L2 测量按成对收据保留；表\ref{tab:tinygemm-gap}显示本地 stage4 候选与官方导出
-stage4 在这些形状上的差距。它证明数值重写可以构造，也\textbf{明确暴露}当前 TMA、
-角色流水线和更大形状覆盖尚未追上对应生成产物；后者的原始 35/239 形状与服务验证
-不能从三行推断\cite{cakecomparison}。
+\subsection{TinyGEMM2：相同任务上的性能差距}
+TinyGEMM2 提供了更具体的对照。仓库固定三个 B300 BF16+bias 形状，用独立 FP64
+数学参考核对结果，再要求候选与官方导出产物逐位一致。本地候选的 30 次检查和官方
+导出的 15 次检查全部通过。随后，五轮交替顺序的 CUPTI 冷 L2 测量保留了两组完整
+样本。表\ref{tab:tinygemm-gap}列出 stage4 实现的中位数：本地候选已经重现了任务的
+数值结果，速度仍落后于对应的 CAKE 导出产物\cite{cakecomparison}。
 
 \begin{table}[htbp]
 \centering\small
-\caption{B300 TinyGEMM2 固定形状的历史原报告中位数（$\mu$s）。减速倍数来自原始
-成对比值，不以表中四舍五入数重新计算；这些行不是 CAKE 论文的 clean-start 对照。}
+\caption{B300 三个固定 TinyGEMM2 形状的历史中位数（$\mu$s）。减速倍数使用原始
+成对样本计算；此表比较生成产物，不是论文的智能体起点实验。}
 \label{tab:tinygemm-gap}
 \begin{tabularx}{\textwidth}{@{}Y r r r@{}}
 \toprule
@@ -916,34 +914,32 @@ $64/4096/3072$ & 21.216 & 289.186 & 13.63 倍 \\
 }
 \node[anchor=west,font=\sffamily\scriptsize,text=muted] at (3.20,-0.15) {配对延迟比；越大表示本地越慢};
 \end{tikzpicture}
-\caption{B300 上同一 TinyGEMM2 Workload、同一形状与严格 bitwise BF16 门下，
-本地 stage4 相对官方 CAKE 导出 stage4 的历史配对中位数减速。只展示三项已执行形状，
-不显示跨轮不确定性；原始样本与质量观察见\repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{专题}。
-本图不是 CAKE 论文的 80M-token 智能体实验。}
+\caption{严格数值检查通过后，本地 stage4 在三个 B300 固定形状上仍比官方 CAKE 导出
+stage4 慢。图示历史配对中位数；各轮原始样本与质量记录见
+\repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{专题}。}
 \label{fig:tinygemm-gap}
 \end{figure}
 \FloatBarrier
 
-原报告没有测得可以把这段减速唯一归于寄存器 spill、占用率或访存量的 profiler 归因，
-因此这些只能作为下一步假设。KDA prefill/decode 与 Alpha-MoE 的局部探针和规格也
-不等于完整候选或性能结果。对照章节保留\emph{能完成的任务范围、明确缺口与后续验收}，
-避免把一个 probe 当作一整个家族的复现\cite{cakecomparison}。
+差距提示下一步要检查 TMA、角色流水线和资源使用，但现有 profiler 记录尚不足以把
+13--37 倍的减速归给其中某一个原因。CAKE 导出产物原有的更大形状集合与服务验证，
+以及 KDA、Alpha-MoE 的完整任务，也仍在本仓库后续复现范围之外\cite{cakecomparison}。
 
-\section{跨硬件知识迁移：机制与待验证估计量}
+\section{跨硬件复用：从一次改写到可检验的收益}
 
-\subsection{可复用的单位与负责位置}
-候选优化可能包含两种不同的知识：一个带适用条件的\textbf{语义改写}，以及在某个硬件上选出的
-tile、执行组或 pipeline 参数。前者可在 IR 中形成显式 pass，声明前提并返回完整候选或拒绝原因；
-后者要在目标 Target 上重新选择和验证。以私有中间张量的融合为例，数据流私有性、舍入、消费者
-和生命周期是机制条件；寄存器占用与具体收益属于目标设备事实。来源设备的速度比不随机制迁移
-\cite{transfer}。当一次研究没有可推广改写时，记录 \code{No promotion} 是正常结果。
+\subsection{可复用的是机制，参数要在目标卡重选}
+一次优化既可能发现可复用的做法，也会得到只适合当前设备的参数。比如，融合私有的
+中间张量可以省去一次写回和重读；能否融合取决于消费者、生命周期与舍入语义。具体的
+tile、执行组和流水线深度，则要在目标卡上重新选择。可确定性表达的改写可以成为带
+前提和拒绝原因的显式 pass；只有一次有效的局部参数选择，仍作为任务经验保留
+\cite{transfer}。
 
 \subsection{E/P 四组实验}
-仓库已实现对经验材料 $E$ 与显式变换调用权 $P$ 的四格隔离和软件协议，但尚没有共同目标、
-基线与预算下的实机迁移收益实验。四组分别为 $E0P0$、$E1P0$、$E0P1$ 和 $E1P1$；
-$P1$ 的最小接口合同本身会暴露必要机制信息，因而 $E$ 的效果只指额外说明与案例。
-各组共享 typed IR、Target、oracle、计时质量门和可表达的基础能力。材料与调用权限须通过
-真实隔离执行，不能只由提示词声称关闭\cite{study}。
+若要知道经验究竟提供了多少帮助，先要把“让智能体读说明”和“让智能体调用现成改写”
+分开。图\ref{fig:ep-study}以 $E$ 控制额外机制材料，以 $P$ 控制显式 pass 的调用权，
+形成四种条件。四组共享任务、编译器、目标设备、正确性和计时规则；工具权限由运行环境
+实际隔离。$P1$ 组仍需知道调用的最小接口，所以 $E$ 测量的是接口之外的说明和案例。
+目前软件协议已接入，四组在共同目标与预算下的实机迁移实验尚未进行\cite{study}。
 
 % Figure contract: the E/P 2x2 cells are treatment assignments, not results.
 % All four share Compiler, Workload, oracle, target and measurement gate.
@@ -963,8 +959,8 @@ $P1$ 的最小接口合同本身会暴露必要机制信息，因而 $E$ 的效�
 \node[font=\sffamily\scriptsize,text=muted] at (6,-2.03)
  {四组共同：Compiler、Workload、目标、oracle、预算、计时与确认协议};
 \end{tikzpicture}
-\caption{$E$ 只控制额外说明与案例；$P$ 控制显式 pass 调用权。四格是预注册处理设计，
-图中没有实机处理效果；$P1$ 的最小接口本身会透露必要机制信息。}
+\caption{四组迁移实验的处理条件。$E$ 是额外说明与案例，$P$ 是显式变换调用权；
+所有组使用相同的编译器和设备评测。此图表示实验分组，尚无实机处理效果。}
 \label{fig:ep-study}
 \end{figure}
 
@@ -974,65 +970,75 @@ $P1$ 的最小接口合同本身会暴露必要机制信息，因而 $E$ 的效�
 \Delta_P&=\tfrac12[(p_{01}-p_{00})+(p_{11}-p_{10})],\\
 \Delta_{EP}&=p_{11}-p_{10}-p_{01}+p_{00}.
 \end{align*}
-独立 Run 是重复单位；正式多任务研究以任务等权汇总并保留组内配对结构。搜索成本、失败、
-预算耗尽和基础设施缺失须按预注册规则保留。协议的存在证明问题可被提出和执行，只有冻结
-处理后的设备实验才能估计上述三个量。
+一次独立运行是重复单位。正式研究按任务等权汇总，保留各任务内四组的配对关系；
+搜索成本、预算耗尽和基础设施缺失也按事先约定记录。四组全部运行并经共同确认后，
+才能计算上面三个处理效果。
 
-\subsection{已到达工具链的离线迁移实例}
-当前\repo{docs/OPTIMIZATION_TRANSFER.md}{迁移专题}新增了一条 B300 到 Hygon BW1101
-的有来源路径。源任务 \code{pairwise\_sqdist} 在 B300 固定 FP32 形状上，候选把 K 维
-按 256 分块，来源 Run 的五类输入前后检查和 CUPTI 配对质量通过，相对本机固定基线
-411.7945/53.856\,$\mu$s（7.646 倍）。移向 \code{gfx938} 时，Workload 的数学、
-张量、五类输入、oracle 与容差保持一致；历史 Schedule v1 不能直接改目标，先显式适配
-到 v2 \code{execution\_groups}。适配后，固定 Compiler 接受并 lower 候选与同卡 starter，
-Hygon Triton 3.6.0 将两者编成 HSACO，并通过 CPU 配对准入。
+\subsection{从 B300 到 Hygon：可执行与性能的分界}
+\repo{docs/OPTIMIZATION_TRANSFER.md}{迁移专题}记录了一次具体尝试。B300 上的
+\code{pairwise\_sqdist} 候选把 K 维按 256 分块；在固定 FP32 形状上，五类输入检查
+和 CUPTI 配对计时通过，相对本机基线从 411.7945 降到 53.856\,$\mu$s。
+将同一数学任务准备给 Hygon BW1101 时，团队保留张量、输入、参考答案和容差，先把
+旧版 Schedule 的角色表示显式适配到当前 \code{execution\_groups}。适配后的候选及
+同卡起点均通过编译器检查，并由 Hygon Triton 编成 HSACO。
 
-这条路径已经证明\emph{带有一次明确 IR 版本适配的机制能够到达目标工具链}，但尚未在
-Hygon 加载、对完整输出判对或计时。B300 的 7.646 倍没有转移为 Hygon 的性能成绩，
-也不是 $E/P$ 四格对照的因果结果。目标设备阶段需要五类 case、同卡基线配对、声明计时
-边界和独立确认，再决定是否把这一机制记作有效迁移。
+原 \code{bw1100} 节点的八卡被其他 GLM 进程占用，实验止于离线准入。另一台
+\code{bw1100-1} 具有空闲 BW1101，但宿主内核和环境与前者不同；因此先为该节点
+单独捕获 Executor，再在干净源码 \code{4c9f4cc0} 上运行相同合同。五类输入在
+计时前后均判对；新鲜 HIP 配对确认质量通过，同卡起点/来源 K=256 候选为
+517.9645/748.749\,$\mu$s，十对均是起点更快。故该机制\emph{能够正确执行，
+原参数却在此节点产生负迁移}。本地串行锁不能排除没有使用同一锁的外部任务；
+不同 CUPTI/HIP 计时器的绝对时延也不构成跨卡速度比。
+
+在运行下一次设备实验前，冻结两个只改 K tile 的 Hygon 后继：128 和 64。
+离线编译均报告零 scratch，分别占 252 和 148 个 VGPR；按预定的资源排序只选择
+K=64 上卡。它相对 K=256 的生成源码仅改变分块值与调度身份。在相同五类输入、
+whole-K 起点及 HIP 配对协议下，新鲜独立确认全部判对并通过计时质量门，起点/候选
+为 518.524/189.586\,$\mu$s（2.735 倍），十对均是候选更快；K=128 没有设备计时。
+因此，\emph{K 维分块这一来源机制可以在目标卡重新选参后奏效，但来源参数不可照搬}。
+这是一例限定形状的人工机制迁移和 Hygon 本机收益，并非控制作者与预算、随机分配
+材料 $E$ 或变换权限 $P$ 后得到的 Agent 处理效果。
+
+难点也并非单一后端开关：同一带循环归约的 Schedule 在当前 Metal 路线无法表达；
+Triton 能向 AMD、Hygon 生成代码，却不保证源参数的资源分配或速度；同 ISA 的
+第二台 Hygon 宿主仍需独立 Executor；C550 的容器锁边界和 M2 的计时质量分别限制
+设备主张。可表达性、目标选参、宿主身份、测量与因果归因须分层验收。
 
 \section{限制、可复查性与结论}
 
-本文的最强软件结论是当前源码上的表示、检查、生成和控制协议，以及 179 项语料预期相符。
-最强设备结论是指定源码、目标与固定 Workload 上的正确性和局部合格改善。当前材料不足以
-估计跨硬件经验迁移的因果收益、普遍性能优势，或模型与服务层面的端到端收益。
-静态分析的覆盖也受目标声明和后端实际资源分配限制；缺乏目标计时校准时应报告未知，
-而不是给出没有根据的延迟预测。
-
-后续工作以同一职责边界推进：补齐各平台完整 Program 与目标框架验收；在有原始证据的
-目标上校准测量与成本估计；将重复的失败形成有反例的 Verifier 规则、IR 能力或 guarded pass；
-最后用预注册 E/P 实验检验迁移增量。这个顺序让 Kernel 结果、Compiler 演进与研究归因各有
-自己的证据和版本。
+Open-Cake-IR 已经把候选生成、静态检查、目标代码生成和设备反馈接成一条可追踪的路径。
+在当前源码上，179 项语料符合预期；在若干固定 Workload 上，也已有设备正确性与局部性能
+结果。这些结果回答了“系统能否表达、检查并运行具体候选”。要回答“这一机制能否稳定带来
+跨任务、跨平台收益”，还需要更完整的目标侧测量和预注册对照实验。
 
 \subsection{解释结果时的四项限制}
-\textbf{实现来源。}CAKE 论文公开了系统机制与聚合结果，但原始编译器版本、完整 IR/Verifier、
-agent scaffold、原始 clean-start 轨迹和部分计时细节并未作为可逐字节重建的同一包公开。
-本仓库的 Compiler 是独立实现，不能把相似接口或同名任务说成原实现的逐字节复现
-\cite{papercontract}。
+\textbf{与 CAKE 的关系。}本文复现的是论文描述的设计问题与实验思路，并独立实现
+Compiler。论文公布了系统机制和汇总结果，但缺少把原始编译器、完整 IR 与 Verifier、
+agent scaffold、clean-start 轨迹及计时细节一起重建的材料。因此，同名任务的对照
+应从输入合同、参考实现和测量范围逐项核对\cite{papercontract}。
 
-\textbf{平台不均。}五个 Vendor、八个 Target 文档说明目标集合与离线准入；每个目标的
-工具链、数值合同、计时器和 profiler 资格仍由自己的收据决定。\code{apple\_gpu\_family7}
-和 \code{apple\_gpu\_family9} 在当前 179 项 Corpus Gate 中没有被检查；其他目标的
-通过数不能补上这种缺席。MetaX 的完整输出 case 与 AMD 的计时器调查也不能占用彼此的
-结论等级\cite{status,architecture}。
+\textbf{平台覆盖。}五家厂商、八份 Target 文档界定了可声明的目标；每个平台还须单独
+取得工具链、数值、计时器和 profiler 的运行收据。179 项 Corpus Gate 尚未检查
+\code{apple\_gpu\_family7} 与 \code{apple\_gpu\_family9}。MetaX 的完整输出验证和
+AMD 的计时器调查，也分别处于不同的证据阶段\cite{status,architecture}。
 
-\textbf{局部性能与应用。}单形状候选可能在自己的基线前改善，同时仍落后于外部专家实现。
-多形状 dispatcher 的守卫、fallback、尾部和框架开销还需要独立验证。本文的 QSA
-历史案例只计完整 Program 的 GPU 区间，不能外推为模型或服务延迟；M17 的单内核
-提升也不自动成为多阶段 Program 提升。
+\textbf{性能范围。}一个形状的候选优于本机基线，并不意味着它胜过外部专家实现，或能直接
+用于多形状应用。后者还涉及分派守卫、尾部输入、回退路径和框架开销。历史 QSA 数字覆盖
+完整 Program 的 GPU 区间；M17 数字覆盖单内核。两者都不能直接换算成模型或服务延迟。
 
-\textbf{研究归因。}普通工程 Run、provider 资格、软件消融夹具及有条件的性能观察都能
-帮助完善系统，但只有预注册处理、独立 Run、共同确认和完整缺失规则才能估计作者环境
-或机制材料的因果效应。当前 $E/P$ 四组尚无这种实机结果。
+\textbf{机制归因。}工程 Run 和局部消融可以发现问题、改进系统。若要判断作者环境或迁移
+材料带来了多少增益，还须固定处理条件，进行独立 Run 和共同确认，并说明缺失结果如何
+计入分析。$E/P$ 四组的实机对照尚待开展。
 
 \subsection{下一步的可检验目标}
-后续工作首先补齐目标侧完整输出、计时区间、状态重置与测量分辨能力，再扩展同一任务的
-Program 和框架接入。在固定来源平台机制与目标开发集后，冻结 $E/P$ 四组的材料、工具
-权限与任务清单；各目标只相对自己的本机基线报告确认率、搜索成本和条件性能。对实际反复
-出现的表达或分析缺口，保留触发 Finding、反例、后继提交及其验证，再观察新能力是否帮助
-后续任务。这样才能逐步回答“协同演进产生了什么可复用能力”，而不靠跨平台拼接的加速比。
+接下来的实验先补齐各目标的完整输出验证、计时区间、设备状态重置和测量分辨能力，
+再把单内核结果接入多阶段 Program 与目标框架。对反复出现的表达或分析缺口，记录
+Finding 和反例，在后继提交中补上 Verifier 规则、IR 能力或带前提的编译器变换，
+并观察它能否解决后续任务。迁移实验则固定来源机制、目标开发集和 $E/P$ 四组的材料
+与权限，按各目标自己的本机基线报告确认率、搜索成本和条件性能。这样，代码能力的
+增长与经验迁移的收益便可以分别检验。
 
+\clearpage
 \appendix
 \section{术语、源码入口与完整示例}
 
@@ -1077,11 +1083,12 @@ def softmax(lm, x: cake.Tensor((8, 512, 128), "fp32"),
         y_tile = lm.div(weights, lm.broadcast(rowsum, axis=0), id="normalize")
         lm.store(y[batch, row_block, :], y_tile, id="store_y")
 \end{lstlisting}
-这里的编写接口以 Python AST 构造与 JSON 相同的规范计划；\code{Compiler.load()}
-默认读取项目的当前配置。复制这个示例不会自动取得某台 GPU 的可运行产物或性能资格。
-现有\repo{docs/PYTHON_FRONTEND.md}{Python 前端文档}列出允许的语法及源码位置诊断。
+这里的 Python 接口通过 AST 构造与 JSON 相同的规范计划；\code{Compiler.load()}
+默认读取项目的当前配置。要在具体 GPU 上运行，还需匹配目标工具链，并完成正确性与
+性能验收。\repo{docs/PYTHON_FRONTEND.md}{Python 前端文档}列出了支持的语法及源码
+位置诊断。
 
-\Needspace{12\baselineskip}
+\clearpage
 \section{结果来源与历史身份}
 
 \begin{table}[htbp]

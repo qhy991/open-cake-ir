@@ -4,7 +4,7 @@ from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from open_cake_ir.lab import RunSpecification, ProviderQualificationReceipt
 from open_cake_ir.lab.contracts import StudyContract
@@ -16,6 +16,62 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class IndependentRunTests(SemanticLabTestCase):
+    def test_python_clean_start_run_preflights_and_delivers_only_incomplete_source(self):
+        from open_cake_ir.lab.reference_access import (
+            PYTHON_CLEAN_START_SCAFFOLD, render_incomplete_python_starter,
+        )
+        from open_cake_ir.tasks.workloads import load_workload
+        lab, specification = self.fixture()
+        document = specification.document
+        workload = load_workload(ROOT / document['workload']['path'])
+        route = document['authoring']['lowering_route']
+        with tempfile.TemporaryDirectory() as temporary:
+            starter = Path(temporary).resolve() / 'starter.py'
+            expected = render_incomplete_python_starter(workload,
+                document['evaluation_protocol']['case_id'], route)
+            starter.write_bytes(expected)
+            arm = document['authoring']
+            del arm['schedule_skeleton']
+            arm.update(reference_access='clean_start', input_format='python_source_v1',
+                tool_surface=['submit_python_source'], python_starter={'path': str(starter)},
+                scaffold={'path': PYTHON_CLEAN_START_SCAFFOLD,
+                          'sha256': sha256((ROOT/PYTHON_CLEAN_START_SCAFFOLD).read_bytes()).hexdigest()})
+            successor = RunSpecification.from_dict(document)
+            lab.preflight_run(successor)
+            package = lab.task_package(successor, successor.run_id)
+            self.assertIn('schedule-starter.py', package.task_markdown)
+            self.assertNotIn('schedule-skeleton.json', package.task_markdown)
+            self.assertNotIn('python-example.py', package.task_markdown)
+            evidence = Path(temporary).resolve() / 'blocked-evidence'
+            with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                lab.execute_run(successor, evidence, provider=None, environment=None, evaluator=None)
+            self.assertFalse(evidence.exists())
+            from open_cake_ir.tasks import compose
+            from open_cake_ir.lab import study_execution
+            runtime_config = Path(temporary).resolve()/'runtime.json'
+            runtime_config.write_text('{}')
+            with patch.object(compose, 'run_runtime_factory', side_effect=AssertionError('runtime factory called')) as factory:
+                with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                    compose.execute_run_from_config(ROOT, successor, runtime_config, evidence)
+                factory.assert_not_called()
+            runtime_directory = Path(temporary).resolve()/'runtime-output'
+            with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                compose.run_runtime_factory(ROOT, runtime_config)(successor, runtime_directory)
+            self.assertFalse(runtime_directory.exists())
+            allocation = type('Allocation', (), {'run_id': successor.run_id})()
+            plan = type('Plan', (), {'allocations': lambda self: (allocation,),
+                                     'run_specification': lambda self, _: successor})()
+            prepared = type('Study', (), {'plan': plan, 'root': Path(temporary).resolve()})()
+            runtime_factory = Mock(side_effect=AssertionError('runtime factory called'))
+            with patch.object(study_execution, 'validate_prepared_study'):
+                with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                    study_execution.execute_study(prepared, execute_run=Mock(), runtime_factory=runtime_factory)
+            runtime_factory.assert_not_called()
+            self.assertFalse((Path(temporary).resolve()/'runs'/successor.run_id/'failure.json').exists())
+            starter.write_bytes(expected + b'\n# hidden implementation\n')
+            with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
+                lab.preflight_run(successor)
+
     def test_python_only_run_refuses_a_json_starter_during_preflight(self):
         lab, specification = self.fixture()
         document = specification.document
