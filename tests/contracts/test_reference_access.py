@@ -160,7 +160,6 @@ class ReferenceAccessTests(unittest.TestCase):
                 }})
 
     def test_task_clean_start_delivers_only_the_workload_derived_stub(self):
-        from types import SimpleNamespace
         from open_cake_ir.evaluation.workload import WorkloadContract
         from open_cake_ir.lab.reference_access import incomplete_schedule
         from open_cake_ir.tasks.workloads import create_task
@@ -171,24 +170,14 @@ class ReferenceAccessTests(unittest.TestCase):
         stub = incomplete_schedule(workload, 'primary', route)
         path, workload_path = self.external/'stub.json', self.external/'workload.json'
         path.write_bytes(_canonical_json_bytes(stub)); workload_path.write_bytes(_canonical_json_bytes(document))
-        inputs = task_run_inputs(ROOT, workload, workload_path, path, harness='claude-code',
-                                 model='fixture', effort='high', reference_access='clean_start')
-        inputs['compiler_revision'] = {'path': 'compiler/revision.json', 'revision_id': 'fixture'}
-        arm = inputs['authoring']
-        delivered = build_run_reference_documents(ROOT, SimpleNamespace(document=inputs), arm,
-                                                   workload_contract=workload, prepare_schedule=prepare_schedule)
-        self.assertNotIn('schedule-starter.py', delivered)
-        self.assertNotIn('python-example.py', delivered)
-        self.assertNotIn('paired-triton-authoring.md', delivered)
-        self.assertEqual(json.loads(delivered['schedule-skeleton.json']), stub)
-        self.assertEqual(stub['operations'], [])
-        self.assertEqual(stub['target'], 'sm_103a')
-        for field, value in (('metadata', {'note': source}), ('operations', [{'id': 'hidden_implementation'}]),
-                             ('buffers', [])):
-            changed = deepcopy(stub); changed[field] = value
-            path.write_bytes(_canonical_json_bytes(changed))
-            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'target_implementation.*forbidden'):
-                validate_reference_handoff(ROOT, {'author': arm}, workload=workload, case_id='primary')
+        with self.assertRaisesRegex(ValueError, 'New Cake optimization Runs require a Python starter'):
+            task_run_inputs(ROOT, workload, workload_path, path, harness='claude-code',
+                            model='fixture', effort='high', reference_access='clean_start')
+        # Frozen JSON Studies remain readable and replayable at their own contract.
+        lock = self.preflight(self.document())
+        legacy = self.lab.task_package(lock, 'open_cake-1')
+        self.assertIn('schedule-skeleton.json', legacy.task_markdown)
+        self.assertNotIn('schedule-starter.py', legacy.task_markdown)
 
     def test_incomplete_python_starter_exposes_abi_without_an_implementation(self):
         from open_cake_ir.lab.reference_access import render_incomplete_python_starter
@@ -266,6 +255,10 @@ class ReferenceAccessTests(unittest.TestCase):
         self.assertNotIn('schedule-skeleton.json', cake_package.task_markdown)
         self.assertIn('candidate-skeleton.cu', cuda_package.task_markdown)
         self.assertNotIn('schedule-starter.py', cuda_package.task_markdown)
+        evidence = self.external/'blocked-campaign'
+        with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+            self.lab.execute(lock, evidence, provider=None, environments={}, evaluator=None)
+        self.assertFalse(evidence.exists())
         starter.write_bytes(expected + b'\n# leaked implementation\n')
         with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
             self.preflight(document)

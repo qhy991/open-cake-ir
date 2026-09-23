@@ -42,6 +42,10 @@ class IndependentRunTests(SemanticLabTestCase):
             self.assertIn('schedule-starter.py', package.task_markdown)
             self.assertNotIn('schedule-skeleton.json', package.task_markdown)
             self.assertNotIn('python-example.py', package.task_markdown)
+            evidence = Path(temporary).resolve() / 'blocked-evidence'
+            with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                lab.execute_run(successor, evidence, provider=None, environment=None, evaluator=None)
+            self.assertFalse(evidence.exists())
             starter.write_bytes(expected + b'\n# hidden implementation\n')
             with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
                 lab.preflight_run(successor)

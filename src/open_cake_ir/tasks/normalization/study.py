@@ -173,19 +173,17 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     default_scaffold = (METAL_SCAFFOLD
                         if backend is not None and BACKENDS[backend]["route"] == "metal"
                         else SCAFFOLD)
-    python_clean_start = reference_access == 'clean_start' and starter_path.suffix == '.py'
+    if starter_path.suffix != '.py':
+        raise ValueError('New Cake optimization Runs require a Python starter')
+    python_clean_start = reference_access == 'clean_start'
     if python_clean_start:
         from open_cake_ir.lab.reference_access import PYTHON_CLEAN_START_SCAFFOLD
         default_scaffold = PYTHON_CLEAN_START_SCAFFOLD
-    elif reference_access == 'clean_start':
-        default_scaffold = 'contracts/scaffolds/matched-search-v1.md'
     scaffold_name, scaffold_path = source_reference_path(
         root, str(agents_md) if agents_md is not None else default_scaffold, "scaffold")
     scaffold_bytes = scaffold_path.read_bytes()
     if not scaffold_bytes.decode("utf-8").strip():
         raise ValueError("authoring AGENTS.md must contain nonempty UTF-8 instructions")
-    if reference_access != 'clean_start' and starter_path.suffix != '.py':
-        raise ValueError('Python starter must be a .py source file for a new optimization Run')
     if python_clean_start:
         from open_cake_ir.lab.reference_access import render_incomplete_python_starter
         case_id = workload.document['validation']['primary_case']
@@ -200,10 +198,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         route = source.document['lowering']
         starter_reference = {'schedule_skeleton': {'path': str(starter_path),
             'canonical_sha256': sha256(canonical(source.document)).hexdigest()}}
-    input_format = ('schedule_or_python_v1' if reference_access == 'clean_start' and not python_clean_start
-                    else 'python_source_v1')
-    tool_surface = (['submit_schedule_or_python'] if input_format == 'schedule_or_python_v1'
-                    else ['submit_python_source'])
+    input_format = 'python_source_v1'
+    tool_surface = ['submit_python_source']
     provider = {"model": model, "reasoning_effort": effort,
                 "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
@@ -264,6 +260,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
 
 def study_template(root,workload,workload_path,starter_path,**options):
     """Retain the externally consumed Study input without duplicating task controls."""
+    if options.get('reference_access') == 'clean_start':
+        raise ValueError('Python clean-start uses an independent Run or the paired Study successor')
     inputs = task_run_inputs(root,workload,workload_path,starter_path,**options)
     return {
         "schema_version":2,"state":"template","kind":"matched_search",

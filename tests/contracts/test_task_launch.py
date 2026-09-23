@@ -76,28 +76,14 @@ class TaskLaunchTests(unittest.TestCase):
                 admit.assert_not_called()
             self.workspace = self.directory / "next-task"
 
-    def test_clean_start_and_unlimited_tokens_reach_the_existing_run_input(self):
-        captured = []
-        original = launch_task.task_run_inputs
-        def capture(*args, **kwargs):
-            value = original(*args, **kwargs); captured.append(value); return value
-        args = self.args()
-        offset = args.index('--token-budget'); del args[offset:offset + 2]
-        with patch.object(launch_task, '_provider_executable', return_value=Path('/fixture/provider')), \
-             patch.object(launch_task, 'task_run_inputs', side_effect=capture), \
-             patch.object(launch_task, '_admit_stack', side_effect=RuntimeError('stop before execution')):
-            with self.assertRaisesRegex(RuntimeError, 'stop before execution'):
-                launch_task.main(args + ['--reference-access', 'clean_start'])
-        inputs = captured[0]
-        self.assertIsNone(inputs['budget']['limit'])
-        self.assertEqual(inputs['budget']['checkpoints'], [])
-        self.assertEqual(inputs['authoring']['reference_access'], 'clean_start')
-        self.assertEqual(inputs['authoring']['input_format'], 'python_source_v1')
-        self.assertEqual(inputs['authoring']['scaffold']['path'], 'contracts/scaffolds/matched-search-python-v1.md')
-        author_path = Path(inputs['authoring']['python_starter']['path'])
-        self.assertTrue(author_path.read_text().rstrip().endswith('...'))
-        self.assertNotIn('lm.role(', author_path.read_text())
-        self.assertNotEqual(author_path, self.workspace/'starter.py')
+    def test_clean_start_launch_refuses_before_writing_private_or_provider_material(self):
+        with patch.object(launch_task, '_provider_executable') as provider, \
+             patch.object(launch_task, '_admit_stack') as admit:
+            with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                launch_task.main(self.args() + ['--reference-access', 'clean_start'])
+        provider.assert_not_called()
+        admit.assert_not_called()
+        self.assertFalse(self.workspace.exists())
 
     def test_codex_npm_wrapper_resolves_only_its_own_native_dependency(self):
         package = self.directory/'codex-package'
