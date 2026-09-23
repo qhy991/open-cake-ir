@@ -62,7 +62,7 @@ class AuthorActionTests(SemanticLabTestCase):
         self.assertEqual(transformed.reason, 'applied')
         self.assertEqual(len(Program.from_dict(json.loads(transformed.candidate)).stages), 1)
 
-    def fixture(self, grants, *, baseline=False):
+    def fixture(self, grants, *, baseline=False, python_only=False):
         lab, template = IndependentRunTests.fixture(self)
         document = template.document
         temporary = tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
@@ -80,6 +80,8 @@ class AuthorActionTests(SemanticLabTestCase):
         document['knowledge']['transformations'] = grants
         document['authoring'].update(reference_access='known_kernel_reproduction', input_format='schedule_or_python_v1',
             lowering_route=schedule['lowering'], schedule_skeleton={'path':str(root/'starter.py'),'canonical_sha256':sha256(encoded(schedule)).hexdigest()})
+        if python_only:
+            document['authoring'].update(input_format='python_source_v1', tool_surface=['submit_python_source'])
         document['evaluation_protocol'] = {'case_id':'primary','search_evaluation':'correctness_then_paired_cupti',
             'confirmatory_evaluation':'fresh_fixed_candidate_correctness_then_paired_cupti'}
         if workload.document['validation'].get('all_cases_required'):
@@ -88,15 +90,18 @@ class AuthorActionTests(SemanticLabTestCase):
         if baseline: document['reference_inputs']['baseline_programs'] = {'seed':program}
         return lab, RunSpecification.from_dict(document), workload, program
 
-    def execute_fixture(self, grants, *, only_transform=False, parent=None):
-        lab, specification, workload, program = self.fixture(grants)
+    def execute_fixture(self, grants, *, only_transform=False, parent=None, python_only=False):
+        lab, specification, workload, program = self.fixture(grants, python_only=python_only)
         document = specification.document
-        parent_id = sha256(encoded(program)).hexdigest()
+        source = Path(document['authoring']['schedule_skeleton']['path']).read_text()
+        candidate = {'python_source': source} if python_only else program
+        parent_id = sha256(encoded(candidate)).hexdigest()
+        stage = frontend.parse(source).document['schedule_id'] if python_only else 'seed'
         class Provider(RalphFakeProvider):
             def turn(self, request):
                 observed = super().turn(request)
-                action = (rewrite(parent or parent_id) if only_transform or request.turn > 1
-                          else {'action':'submit','candidate':program})
+                action = (rewrite(parent or parent_id, stage=stage) if only_transform or request.turn > 1
+                          else {'action':'submit','candidate':candidate})
                 payload = encoded(action)
                 return replace(observed,candidates=(payload,),candidate_sha256s=(sha256(payload).hexdigest(),),
                                raw_submission=_submission_envelope(request.arm,(payload,)))
@@ -129,6 +134,14 @@ class AuthorActionTests(SemanticLabTestCase):
         self.assertEqual(compiled.requests[1][1]['compile_options']['num_warps'],8)
         self.assertEqual(evaluator.calls,3)
         self.assertEqual(audit.endpoint_observation,'qualified')
+
+    def test_python_only_run_preserves_source_submission_and_compiler_transform_replay(self):
+        _,_,audit,events,compiled,_ = self.execute_fixture([PASS], python_only=True)
+        actions = [event['payload']['actions'][0] for event in events if event['kind']=='author_actions_resolved']
+        self.assertEqual([row['kind'] for row in actions], ['submit', 'transform'])
+        self.assertEqual([row['reason'] for row in actions], ['submitted', 'applied'])
+        self.assertEqual(len(compiled.requests), 2)
+        self.assertEqual(audit.protocol_adherence, 'adhered')
 
     def test_withheld_pass_refuses_without_a_second_build_or_evaluation(self):
         _,_,audit,events,compiled,evaluator = self.execute_fixture([])
