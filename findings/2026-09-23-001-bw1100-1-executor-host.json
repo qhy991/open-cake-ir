@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-23-001",
+  "kind": "capacity",
+  "date": "2026-09-23",
+  "title": "bw1100-1 needs its own captured gfx938 Executor host before a transfer Run",
+  "backend": "triton",
+  "target": "gfx938",
+  "compiler_revision_id": "open-cake-ir@51a3a9fb8a1743abe4a5ed44431c6f775a6d6506",
+  "executor_revision": "gfx938@51a3a9fb8a1743abe4a5ed44431c6f775a6d6506",
+  "evidence": {
+    "workspace": "bw1100-1:/home/testuser01/oci-transfer-b300-bw1101-node4-20260923",
+    "record": "capture_node4_host.sh and the captured runtime/hosts/gfx938.json in task/dcu-bw1100-1-host",
+    "observation": "node4 reports BW1101 gfx938 and one selected visible device in the exact DTK image. Python, PyTorch and Triton package versions match the prior gfx938 capture, but the host kernel release, build LD_LIBRARY_PATH and rocm-smi version differ. The existing gfx938 Executor belongs to node2 and cannot name node4. A first device probe failed within a 64 MiB container tmpfs; a 1 GiB successor passed without a kernel launch. Host capture then admitted the new closure and its profiler."
+  },
+  "observation": "A same-target device on a second node is not the same Executor host. Reusing the node2 capture would misstate the environment of every compiled and measured artifact.",
+  "proposed_change": "Commit the node4 gfx938 host capture on a separate source successor, retain the node2 capture at its historical commit, and independently review the resulting Executor identity. Run the frozen five-case pair and target-local timer only after source, host, toolchain and device admission pass at that new commit.",
+  "principles": "P2/P8 make the exact target environment inspectable; P6 retains Corpus Gate. No Schedule syntax, Target hardware fact or backend capability is generalized from the new host.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "partial_verification": {
+    "source_commit": "51a3a9fb8a1743abe4a5ed44431c6f775a6d6506",
+    "scope": "The canonical host-capture tool returned host_admitted=true and profiler_admitted=true on bw1100-1. No transfer Workload was launched on its GPU; source commit and Executor successor are not yet qualified."
+  }
+}
