@@ -174,6 +174,24 @@ class MetalPreflightTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,'validation_case_ids'):
                         TaskLab(ROOT).preflight(path)
 
+    def test_python_only_study_refuses_json_starter_during_preflight(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            path, study, executor, receipt, candidate = self.fixture(directory, 'claude-code')
+            arm = study['arms']['open_cake']
+            source_path = Path(arm['schedule_skeleton']['path'])
+            document = frontend.read_schedule(source_path).document
+            json_starter = directory/'starter.json'
+            json_starter.write_bytes(canonical(document))
+            arm['schedule_skeleton'] = {'path': str(json_starter),
+                                        'canonical_sha256': sha256(canonical(document)).hexdigest()}
+            path.write_bytes(canonical(study))
+            with patch.object(preflight, 'resolve_execution_bindings', return_value=(study, executor)), \
+                 patch.object(admission.ProviderQualificationReceipt, 'load', return_value=receipt), \
+                 patch.object(admission, 'load_baseline_bundle', return_value=candidate):
+                with self.assertRaisesRegex(ValueError, 'Python-only Study requires a .py Schedule starter'):
+                    TaskLab(ROOT).preflight(path)
+
     def test_full_preflight_reaches_lock_and_python_package_for_both_harnesses(self):
         for harness in ('codex','claude-code'):
             with self.subTest(harness=harness), tempfile.TemporaryDirectory() as temporary:

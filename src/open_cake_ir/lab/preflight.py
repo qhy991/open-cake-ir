@@ -108,6 +108,8 @@ def preflight(
         schedule_skeleton.get("path"),
         "study.arms.open_cake.schedule_skeleton.path",
     )
+    if open_cake.get('input_format') == 'python_source_v1' and schedule_skeleton_path.suffix != '.py':
+        raise ValueError('Python-only Study requires a .py Schedule starter')
     skeleton_document = _object(
         read_skeleton(schedule_skeleton_path),
         "study.arms.open_cake.schedule_skeleton",
