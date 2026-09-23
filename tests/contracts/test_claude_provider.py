@@ -42,6 +42,51 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual(turn.candidates,
                          (canonical_json_bytes({'python_source': self.source}),))
 
+    def test_source_file_replay_refuses_changed_raw_source_and_wrong_role(self):
+        from hashlib import sha256
+        from types import SimpleNamespace
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.lab.replay.provider import _replay_provider_turns
+        from open_cake_ir.lab.task_package import TaskPackage
+        self.candidate.unlink()
+        self.candidate = self.workspace/'candidate.py'
+        self.submission = self.source.encode()
+        self.candidate.write_bytes(self.submission)
+        raw_events = self.raw()
+        turn = self.normalize(raw_events, submission_contract=PYTHON_SOURCE_FILE_V1,
+                              environment_kind='open_cake', maximum_candidates_per_turn=1)
+        package = TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')
+        state = {'kind': 'ralph_state_v1', 'iteration': 1,
+                 'cumulative_provider_tokens': 0, 'terminal_reason': None}
+        objects = {'provider_events': raw_events,
+                   'provider_reference_bundle': package.evidence_bundle(state),
+                   'provider_source_file': self.submission,
+                   'candidate_submission_0000': turn.candidates[0]}
+        payload = {'turn': 1, 'thread_id': SESSION,
+                   'turn_provider_tokens': turn.provider_tokens,
+                   'cumulative_provider_tokens': turn.provider_tokens,
+                   'normalization': turn.normalization, 'candidate_count': 1,
+                   'auxiliary_activity': [dict(a.document) for a in turn.tool_activity]}
+        def replay():
+            payload['objects'] = [{'role': role, 'sha256': sha256(value).hexdigest()}
+                                  for role, value in objects.items()]
+            return _replay_provider_turns(arm='open_cake', audit=SimpleNamespace(run_id='open_cake-1'),
+                event_contract=CLAUDE_EVENT_CONTRACT,
+                evidence=SimpleNamespace(read_object=lambda ref: objects[ref['role']]),
+                expected_task_package=package, maximum_candidates_per_turn=1,
+                provider_authority={'model': 'exact-requested-model',
+                    'event_contract': CLAUDE_EVENT_CONTRACT,
+                    'submission_contract': PYTHON_SOURCE_FILE_V1},
+                provider_events=[{'payload': payload}])
+        self.assertEqual(replay()[0], {1: turn.provider_tokens})
+        objects['provider_source_file'] += b'# changed after author submission\n'
+        with self.assertRaisesRegex(ReplayRefusal, 'provider_source_file'):
+            replay()
+        objects['provider_source_file'] = self.submission
+        objects['provider_submission_envelope'] = objects.pop('provider_source_file')
+        with self.assertRaisesRegex(ReplayRefusal, 'provider_source_file'):
+            replay()
+
     @staticmethod
     def compaction_events():
         common = {"type": "system", "session_id": SESSION, "uuid": OTHER_SESSION}
