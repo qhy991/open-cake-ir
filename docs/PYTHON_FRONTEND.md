@@ -46,6 +46,9 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 - [B300 起点](B300.md)：RMSNorm、GEMM+bias 与 indexed gather，对应各自 v2 Workload。
 
 例子沿用既有算子的固定形状。新例子的名称和元数据不继承旧实验的身份或正确性结论。
+Python 作者无需在 `@cake.schedule` 中填写 Workload 的内容 hash。独立使用 Compiler
+时可直接检查源码；进入 Lab 实验时，Lab 核对目标、生成路线和公开 tensor ABI 后，从已冻结
+的 Workload 补上绑定。显式写错 hash 仍会被拒绝。既有封存实验按原提交回放。
 `id=` 仅用于显式命名操作、与既有计划对照；省略时由结果变量或目标 Buffer 推导。
 
 ## 编写规则

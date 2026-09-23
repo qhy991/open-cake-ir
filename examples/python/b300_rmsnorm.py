@@ -3,7 +3,6 @@ from open_cake_ir.compiler import frontend as cake
 
 @cake.schedule(name="rmsnorm-b8-smoke-b300", target="sm_103a", backend="triton",
                entry_point="cake_rmsnorm_b8_smoke",
-               metadata={"workload_contract_sha256": "946f8ef156383eddc8834497fb3d3afdfb9a0014624347d7b5f5ab2ca0d67b63"},
                residency={"ctas_per_multiprocessor": 4, "registers_per_thread": 96})
 def rmsnorm(lm, x: cake.Tensor((8, 512, 128), "fp32"),
             gamma: cake.Tensor((128,), "fp32"),

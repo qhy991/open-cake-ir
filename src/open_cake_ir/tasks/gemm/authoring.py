@@ -26,8 +26,7 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
             'lm.store(out[row, :], totals + biases, coalesced=False, id="store_out")']
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
             f'@cake.schedule(name="{workload.workload_id}", target="{workload.target}",\n'
-            f'               backend="{device["route"]}", entry_point="cake_{operator}",\n'
-            f'               metadata={{"workload_contract_sha256": "{workload.canonical_sha256}"}})\n'
+            f'               backend="{device["route"]}", entry_point="cake_{operator}")\n'
             f'def candidate(lm, {", ".join(declarations)}):\n'
             '    compute = lm.role(execution_groups=[0])\n'
             '    row = lm.program(a, axis=0, dimension=0, tile=1)\n'

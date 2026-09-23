@@ -242,7 +242,8 @@ class OpenCakeEnvironment:
             if (
                 not isinstance(metadata, Mapping)
                 or parsed.get('target') != self._target
-                or metadata.get("workload_contract_sha256") != self._workload_sha256
+                or ("workload_contract_sha256" in metadata
+                    and metadata["workload_contract_sha256"] != self._workload_sha256)
                 or not isinstance(buffers, list)
             ):
                 raise differs(
@@ -285,6 +286,12 @@ class OpenCakeEnvironment:
                                       by_name[name].get("shape"), by_name[name].get("mode"))
                                      if name in by_name else None) for name in expected},
                 )
+            if "workload_contract_sha256" not in metadata:
+                # The frozen Workload, not the author, owns this content binding.
+                # Bind only after the target, route and public tensor ABI agree.
+                parsed = {**parsed, "metadata": {
+                    **metadata, "workload_contract_sha256": self._workload_sha256,
+                }}
             assessment = self._compiler.assess(cast(Mapping[str, object], parsed))
             if self._empirical_selection is not None and (
                 assessment.compiler_revision_id != self._empirical_selection._compiler_revision_id

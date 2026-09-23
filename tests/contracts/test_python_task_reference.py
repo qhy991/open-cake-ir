@@ -58,6 +58,9 @@ class PythonTaskReferenceTests(unittest.TestCase):
         self.assertEqual(prepared["target"], "apple_gpu_family8")
         self.assertEqual(prepared["lowering"]["backend"], "metal")
         self.assertEqual(prepared["metadata"]["workload_contract_sha256"], "a" * 64)
+        wrong = {**self.document, "metadata": {"workload_contract_sha256": "b" * 64}}
+        with self.assertRaisesRegex(ValueError, "Workload binding"):
+            bind_baseline(wrong, workload, "primary", backend="metal")
 
     def test_common_retention_uses_actual_backend_products(self):
         from open_cake_ir.lab.archive import _arm_artifact_roles, _candidate_artifact_media_type

@@ -1,7 +1,6 @@
 """Bind task-owned Python starters without introducing another Schedule language."""
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 from typing import Mapping
 
@@ -14,30 +13,29 @@ def read_skeleton(path: Path) -> dict:
 
 
 def bind_python_reference(source: str, prepared: Mapping[str, object], *, filename: str) -> bytes:
-    """Only Lab-owned metadata may differ from the task's explicit Python program.
+    """Keep the author's Python untouched while Lab owns its Workload binding.
 
     Shape or arithmetic specialization belongs in the task-owned Python starter.
-    This function refuses changes it cannot express by binding metadata alone.
+    The prepared Schedule carries the Lab's binding; the author does not copy
+    its content hash into a decorator. Other metadata must still match.
     """
     original = frontend.parse(source, filename=filename).document
     if {k: v for k, v in original.items() if k != "metadata"} != {
         k: v for k, v in prepared.items() if k != "metadata"
     }:
         raise ValueError("Python starter must already match the prepared Schedule; only metadata may be bound")
-    tree = ast.parse(source, filename=filename)
-    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef))
-    decorator = function.decorator_list[0]
-    assert isinstance(decorator, ast.Call)  # frontend.parse already admitted this form
-    value = ast.parse(repr(dict(prepared["metadata"])), mode="eval").body
-    keyword = next((item for item in decorator.keywords if item.arg == "metadata"), None)
-    if keyword is None:
-        decorator.keywords.append(ast.keyword(arg="metadata", value=value))
-    else:
-        keyword.value = value
-    bound = ast.unparse(ast.fix_missing_locations(tree)) + "\n"
-    if frontend.parse(bound, filename=filename).document != prepared:
-        raise ValueError("bound Python starter differs from the prepared Schedule")
-    return bound.encode("utf-8")
+    authored_metadata = original["metadata"]
+    prepared_metadata = prepared["metadata"]
+    if (not isinstance(prepared_metadata, Mapping)
+            or {key: value for key, value in authored_metadata.items()
+                if key != "workload_contract_sha256"}
+            != {key: value for key, value in prepared_metadata.items()
+                if key != "workload_contract_sha256"}
+            or ("workload_contract_sha256" in authored_metadata
+                and authored_metadata["workload_contract_sha256"]
+                != prepared_metadata.get("workload_contract_sha256"))):
+        raise ValueError("Python starter metadata differs from the prepared Schedule")
+    return source.encode("utf-8")
 
 
 def read_skeleton_reference(project_root, reference, context='Schedule skeleton'):

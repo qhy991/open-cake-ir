@@ -150,7 +150,10 @@ Workload from a route or hard-code its tensor shapes.
 For Flash-KMeans, the Workload Contract owns B/N/K/D, BF16/FP32/INT32 semantics, tie handling and oracle. A Study
 narrows the public Compiler to one exact lowering route and supplies a complete `schedule-skeleton.json`; start from
 that skeleton. A Schedule may change admitted block sizes, execution groups and stages, but must preserve its route, external
-tensor shapes, `metadata.workload_contract_sha256`, operator semantics, and frozen Compiler Revision during a Run.
+tensor shapes, operator semantics, and frozen Compiler Revision during a Run. The Lab checks
+target, lowering route and public tensor ABI before attaching its Workload content binding;
+authors do not write that digest into a Python Schedule. An explicitly supplied digest that
+disagrees with the frozen Workload is refused.
 
 Native CUDA/PTX (`native_cuda`) consumes the same typed operations and exact Target.
 A `load(movement="tmem", source_atom={"op":"tcgen05.Ld32x32b","repetition":16})`

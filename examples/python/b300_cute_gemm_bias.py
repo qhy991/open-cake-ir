@@ -2,8 +2,7 @@ from open_cake_ir.compiler import frontend as cake
 
 
 @cake.schedule(name="b300-cute-register-primary", target="sm_103a", backend="cutlass_cute_dsl",
-               entry_point="cake_cute_register",
-               metadata={"workload_contract_sha256": "b3337c25ac111faf7084910696a4857c9c50c8fcb14826184ed4317bfc16caaf"})
+               entry_point="cake_cute_register")
 def gemm_bias(lm, a: cake.Tensor((512, 256), "bf16"),
               b: cake.Tensor((256, 256), "bf16"), bias: cake.Tensor((256,), "fp32"),
               c: cake.Tensor((512, 256), "fp32", mode="output")):
