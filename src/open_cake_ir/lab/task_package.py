@@ -403,13 +403,13 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
 """
     if "schedule-starter.py" in documents:
         task = task.replace("Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:",
-            "Author each Candidate in Python through the supplied frontend. Put its source text "
+            "When submitting an authored implementation, write it in Python through the supplied frontend. Put its source text "
             "in a `python_source` member; do not describe a Schedule with JSON fields. "
             "The existing candidate envelope is transport only.\n\n"
             "Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:")
     python_only = authority["environment_kind"] == "open_cake" and authority.get("input_format") == "python_source_v1"
     arm_rule = (
-        "Author Cake IR Candidates only as restricted Python source through the supplied frontend. The JSON candidate envelope is transport only; do not author a Schedule or Program as JSON. Do not invoke CUDA, a GPU, the network, or another compiler."
+        "Submit authored Cake IR implementations only as restricted Python source through the supplied frontend. Granted Compiler transformations may produce internal Program documents. The JSON candidate envelope is transport only; do not author a Schedule or Program as JSON. Do not invoke CUDA, a GPU, the network, or another compiler."
         if python_only else
         "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
         if authority["environment_kind"] == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"
