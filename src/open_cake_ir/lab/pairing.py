@@ -125,9 +125,6 @@ def bind_baseline(schedule: Mapping[str, object], workload, case_id: str, *, bac
         backend = backend_policy(document.get('lowering', {}).get('backend')).backend
     if backend not in {'triton', 'metal', 'cutlass_cute_dsl'} or document.get('lowering', {}).get('backend') != backend:
         raise ValueError('baseline differs from the explicitly requested lowering backend')
-    if ('workload_contract_sha256' in document['metadata']
-            and document['metadata']['workload_contract_sha256'] != workload.canonical_sha256):
-        raise ValueError('baseline Schedule Workload binding differs')
     document['metadata']['workload_contract_sha256'] = workload.canonical_sha256
     return document
 
