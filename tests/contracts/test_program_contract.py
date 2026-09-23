@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import json
+from dataclasses import replace
 import unittest
 from pathlib import Path
 
@@ -9,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler, Program  # noqa: E402
+from open_cake_ir.serialization import canonical_json_bytes  # noqa: E402
 from open_cake_ir.tasks.qsa.program import ProgramContract
 from tests.contracts._historical_qsa_program import replay_program_v2
 
@@ -21,6 +23,10 @@ class ProgramContractTest(unittest.TestCase):
         self.assertIs(stage.schedule, stage.schedule)
         self.assertEqual(stage.schedule.schedule_id, document['schedule_id'])
         self.assertEqual(json.loads(stage.schedule_bytes), document)
+        changed = json.loads(stage.schedule_bytes)
+        changed['schedule_id'] = 'different-id'
+        replaced = replace(stage, schedule_bytes=canonical_json_bytes(changed))
+        self.assertEqual(replaced.schedule.schedule_id, 'different-id')
 
     @classmethod
     def setUpClass(cls) -> None:
