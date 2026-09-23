@@ -80,6 +80,37 @@ class ProgramEvaluationTests(unittest.TestCase):
         self.assertEqual(result.disposition, 'launchable', result.feedback)
         return result.launchable, workload, fixture
 
+    def test_program_stages_receive_workload_binding_and_refuse_conflicting_pins(self):
+        document = epilogue_program()
+        for stage in document['stages']:
+            stage['schedule']['metadata'].pop('workload_contract_sha256', None)
+        program = Program.from_dict(document)
+        workload = workload_for(program)
+        builder = TritonToolchainBuilder(workload=workload, case_id='primary',
+                                        isolated_compiler=CompilationFixture())
+        environment = OpenCakeEnvironment(self.compiler, builder, workload=workload, case_id='primary',
+            authority_document={'lowering_route': {'backend': 'triton', 'entry_point': 'starter'},
+                                'input_format': 'schedule_or_python_v1'})
+        submission = CandidateSubmission.seal(environment.media_type, canonical_json_bytes(document))
+        with patch.object(self.compiler, 'lower_program', wraps=self.compiler.lower_program) as lower:
+            accepted = environment.build(submission)
+        self.assertEqual(accepted.disposition, 'launchable', accepted.feedback)
+        self.assertEqual(accepted.submission_sha256, submission.sha256)
+        self.assertEqual(accepted.launchable.candidate_sha256, submission.sha256)
+        bound_program = lower.call_args.args[0]
+        self.assertTrue(all(stage.schedule.metadata['workload_contract_sha256'] == workload.canonical_sha256
+                            for stage in bound_program.stages))
+        self.assertTrue(all('workload_contract_sha256' not in stage['schedule']['metadata']
+                            for stage in document['stages']))
+
+        conflicting = deepcopy(document)
+        conflicting['stages'][1]['schedule']['metadata']['workload_contract_sha256'] = '2' * 64
+        wrong = environment.build(CandidateSubmission.seal(environment.media_type,
+                                                            canonical_json_bytes(conflicting)))
+        self.assertEqual(wrong.disposition, 'rejected', wrong.feedback)
+        self.assertEqual(wrong.feedback['stage'], 'assessment')
+        self.assertIn('Workload binding', wrong.feedback['error'])
+
     def loaded(self, candidate, *, failing_stage=None):
         manifest, children, _ = program_components(candidate)
         position = 1000
