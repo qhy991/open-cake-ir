@@ -28,6 +28,19 @@ def source():
 
 
 class PythonProgramSourceTests(unittest.TestCase):
+    def test_program_declaration_is_one_bundle_candidate_not_two_stage_candidates(self):
+        from open_cake_ir.lab.provider_documents import (
+            PYTHON_CANDIDATE_BUNDLE_V1, _project_candidate_submission,
+        )
+        import json
+        projected = _project_candidate_submission(source().encode(),
+            submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',
+            environment_kind='open_cake', maximum_candidates_per_turn=2)
+        self.assertEqual(len(projected), 1)
+        member = json.loads(projected[0])
+        self.assertEqual(set(member), {'python_program_source', 'program_id'})
+        self.assertEqual(member['program_id'], 'rounded-epilogue-python')
+
     def test_two_python_stages_form_one_valid_program_and_lower(self):
         authored = parse_program(source(), filename='candidate-set.py',
                                  program_id='rounded-epilogue-python')

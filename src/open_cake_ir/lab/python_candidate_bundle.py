@@ -77,6 +77,43 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
     if '\r' in source.replace('\r\n', ''):
         raise ValueError('Python candidate bundle requires LF or CRLF line endings')
     lines = source.split('\n')
+    program_nodes = [node for node in body[1:]
+                     if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                         and isinstance(node.value.func, ast.Attribute)
+                         and isinstance(node.value.func.value, ast.Name)
+                         and node.value.func.value.id == 'cake'
+                         and node.value.func.attr == 'program')]
+    program_source = None
+    referenced_stages = set()
+    program_ids = {}
+    if program_nodes:
+        from open_cake_ir.compiler.program_frontend import parse_program
+        sanitized = list(lines)
+        for node in body[1:]:
+            if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and isinstance(node.value.func.value, ast.Name)
+                and node.value.func.value.id == 'cake'
+                and node.value.func.attr == 'transform'):
+                sanitized[node.lineno - 1:node.end_lineno] = [''] * (node.end_lineno - node.lineno + 1)
+        program_source = '\n'.join(sanitized)
+        for node in program_nodes:
+            fields = {key.arg: key.value for key in node.value.keywords if key.arg is not None}
+            if (node.value.args or len(fields) != len(node.value.keywords)
+                or 'program_id' not in fields):
+                raise ValueError('Python Program declaration fields differ')
+            program_id = _json_literal(fields['program_id'])
+            if not isinstance(program_id, str) or program_id in program_ids:
+                raise ValueError('Python Program ids must be unique strings')
+            parse_program(program_source, filename='candidate-set.py', program_id=program_id)
+            program_ids[id(node)] = program_id
+            for call in ast.walk(node.value):
+                if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == 'cake' and call.func.attr == 'stage'):
+                    referenced_stages.update(
+                        key.value.id for key in call.keywords
+                        if key.arg == 'schedule' and isinstance(key.value, ast.Name))
     candidates = []
     names = set()
     for node in body[1:]:
@@ -90,12 +127,17 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
                 or decorator[0].func.attr != 'schedule'):
                 raise ValueError('Python candidate function must have one Cake schedule decorator')
             names.add(node.name)
+            if node.name in referenced_stages:
+                continue
             start = decorator[0].lineno - 1
             snippet = '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
             # The Compiler diagnoses the projected single Schedule. Preserve its
             # original bundle line numbers so feedback points into the author file.
             projected_source = _IMPORT + '\n' * max(0, start - 1) + snippet
             candidates.append(canonical_json_bytes({'python_source': projected_source}))
+        elif id(node) in program_ids:
+            candidates.append(canonical_json_bytes({
+                'python_program_source': program_source, 'program_id': program_ids[id(node)]}))
         elif (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
               and isinstance(node.value.func, ast.Attribute)
               and isinstance(node.value.func.value, ast.Name)
