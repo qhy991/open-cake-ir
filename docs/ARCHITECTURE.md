@@ -163,6 +163,35 @@ AI 提交候选，外部控制器 Ralph 记录预算和当前状态，再决定�
 两者共用搜索、预算、确认与审计。受限消息作者只接收冻结材料和本 Run 历史，用于控制消融的信息访问。
 完整服务部署属于之后的接入与评测工作。见 [实验流程](wiki/experiments.md)。
 
+### 面向 Agent 的设计如何起作用
+
+这里的“Agent 友好”指**候选容易按明确合同修改，失败能定位到可行动的边界，昂贵评测有
+前置筛选，下一轮收到可核对的反馈**；它不是某个模型必然获得更高性能的结论。
+接口沿同一条候选路径协作：
+
+| Agent 需要解决的问题 | 当前提供的接口 | 对下一步的帮助 |
+| --- | --- | --- |
+| 题目、可见参考和预算是什么 | Workload 固定语义与 oracle；RunSpecification 固定目标、参考权限、材料、可调用变换、评测和预算；[任务包](../src/open_cake_ir/lab/task_package.py)交付 `TASK.md`、`AGENTS.md` | 作者只在获准范围内构造候选，结果能对应同一题目与环境 |
+| 哪个 GPU 决策可以修改 | 受限 [Python 前端](../src/open_cake_ir/compiler/frontend.py)生成 canonical Schedule；[Schedule IR](IR_GUIDE.md)显式声明执行组、分块、存储、地址、操作和同步；显式 pass 返回完整候选或拒绝原因 | 使一次改动及其适用条件可检查，不用从目标机器码反推原先的计划 |
+| 为什么这个候选不能继续 | `Compiler.assess` 区分结构验收与 lowering 资格；[Finding](../src/open_cake_ir/compiler/diagnostics.py)给出稳定代码、字段路径、合同类别、严重度及阻断范围，Python 输入保留源码位置 | 先修指定数据边、资源或后端缺口；报告与 hint 不被误读为正确性或性能证明 |
+| 哪些候选值得花设备时间 | 类型/语义、Verifier 和 backend preflight 先拒绝不适用方案；只有显式绑定且覆盖当前上下文的经验成本模型才参与排序，否则保持作者顺序 | 减少无效编译与 GPU 尝试，同时保留模型不覆盖时的未知状态 |
+| 上一轮实际证明了什么 | 外部 Evaluation 分开返回完整判对、测量质量、基线比较和可用 profiler；[Ralph 反馈](../src/open_cake_ir/lab/execution.py)连同 Findings 与预算状态供下一轮使用，Evidence 留存候选、原始样本及实际交付材料 | Agent 可以根据数值错误、测量噪声、资源诊断或明确拒绝分别修改假设 |
+
+例如 [FMA 反例](../corpus/schedules/fma-b8-smoke-arity-drift.json)把第三个输入从 `fma`
+操作的 reads 中删掉。当前 `assess` 返回 `ELEMENTWISE_ARITY`，位置为
+`operations[3].reads`，说明 FMA 需要三个操作数而候选只有两个；同份 Assessment 的
+`RESIDENCY_BOUND` 是资源报告。Agent 应修复操作输入，不必把资源报告当作错误，也不用先
+消耗一次 GPU 运行来发现这个数据流缺口。对通过检查的候选，生成源码还带有操作到
+源码行的映射，便于追溯后续编译与 profiler 观察。[入门教程](GETTING_STARTED.md)
+保留了这对正反例。
+
+当同类失败反复出现，维护者可依据保留的 Finding 和运行证据，在**冻结 Run 之外**补
+Verifier、IR、后端或有前提的显式变换；后继提交和 Corpus 验证后再启动新 Run。
+现有 [DCU Run 记录](dcu-gfx938-results.md)说明这条候选—诊断—确认路径能在一个目标上
+运行并产生局部收益，但它不是在同一目标上与直接写 Triton/HIP 的同预算因果对照；
+经验材料和 pass 是否额外提高 Agent 的跨硬件搜索效率，仍待
+[预注册的 E/P 实机实验](OPTIMIZATION_TRANSFER_ABLATION.md)。
+
 ## 6. 结果怎样形成结论
 
 ```text

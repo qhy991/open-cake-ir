@@ -100,6 +100,38 @@ Lab freezes task material, rendered as TASK.md and AGENTS.md for CLI authors. A 
 
 Engineering optimization directly prepares a Run. A `matched_search` Study preassigns Runs; the legacy CampaignLock is an input adapter to the same search, budget, confirmation and audit engine. The former `portfolio` Study is retired under ADR 0071; historical replay uses its original commit. Serving needs later integration and evaluation.
 
+### Why the interface is agent-facing
+
+“Agent-friendly” here names testable interface properties: a bounded authoring contract,
+editable execution decisions, localized reasons for refusal, pre-device filtering, and
+feedback tied to actual evaluation. It does not assert that every model becomes a better
+kernel author.
+
+| Agent decision | Implemented interface | Next action it supports |
+| --- | --- | --- |
+| What is the task, permitted reference and budget? | Workload owns semantics and oracle; RunSpecification freezes target, reference access, material, transform grants, evaluation and budget; the [task package](../../src/open_cake_ir/lab/task_package.py) delivers `TASK.md` and `AGENTS.md` | Construct a candidate within one stable contract |
+| Which GPU choice can change? | The restricted [Python frontend](../../src/open_cake_ir/compiler/frontend.py) builds the same canonical Schedule as JSON; [Schedule IR](IR_GUIDE.md) exposes groups, tiling, storage, addresses, operations and synchronization; an explicit pass returns a complete candidate or refusal | Relate one edit to a visible execution choice and its preconditions |
+| Why was the candidate refused? | `Compiler.assess` separates structural acceptance from lowering eligibility; [Finding](../../src/open_cake_ir/compiler/diagnostics.py) carries code, field path, contract category, severity and blocking scope; Python authoring retains source locations | Repair the named data edge or capability gap before device work |
+| Is device time warranted? | IR, Verifier and backend preflight filter first; only an explicitly bound empirical model covering the current context may reorder candidates, otherwise author order remains | Avoid invalid trials without treating an uncovered estimate as a performance verdict |
+| What did the last turn establish? | External Evaluation separates complete correctness, timing quality, baseline comparison and optional profiler attribution; [Ralph feedback](../../src/open_cake_ir/lab/execution.py) carries those observations with Findings and budget state, while Evidence retains the delivered material and raw samples | Choose a repair based on the actual failure class and preserve a replayable history |
+
+For a concrete example, the [FMA counterexample](../../corpus/schedules/fma-b8-smoke-arity-drift.json)
+omits one operand. The current assessment reports `ELEMENTWISE_ARITY` at
+`operations[3].reads`: FMA requires three operands and the candidate supplies two.
+`RESIDENCY_BOUND` in the same Assessment is a resource report, not that defect. The agent
+can repair the read edge before a GPU attempt. For eligible candidates, lowered source also
+maps operations to source lines for later compile and profiler investigation. The
+[getting-started guide](../GETTING_STARTED.md) keeps the accepted and refused siblings together.
+
+Recurring failures may be promoted by a maintainer from retained Findings and run evidence
+to a Verifier rule, IR capability, backend implementation or guarded explicit rewrite
+**outside the frozen Run**. A successor commit and Corpus check precede a new Run. Existing
+[DCU campaigns](../dcu-gfx938-results.md) show that the candidate–diagnosis–confirmation loop
+operates on one target and can produce local gains. They are not a same-target, matched-budget
+comparison against direct Triton/HIP authoring. Whether extra mechanism material or callable
+passes improve cross-hardware agent search remains an unmeasured
+[E/P study](../OPTIMIZATION_TRANSFER_ABLATION.md).
+
 Correctness, measurement stability, and application benefit are different facts. Faster operator code does not by itself make a model or service faster. Compiler changes happen between frozen Campaigns and update types, verification, analysis, and lowering together, followed by the full Corpus and the integration review specified by the [branch workflow](../DEVELOPMENT_BRANCHES.md). Executor fixes a different closure: Lab, evaluation, evidence tools, and environment. Read the [Glossary](GLOSSARY.md) and [maintenance guide](wiki/maintaining.md) for exact ownership.
 
 Concrete implementations live under `src/open_cake_ir/tasks/`. Tasks supply contract validation, oracles and preparation; the common Lab and Evaluation never import concrete tasks. See [task ownership](TASKS.md).

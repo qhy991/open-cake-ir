@@ -54,7 +54,7 @@ and the [C550 evidence chapter](metax-c550.md) for the distinct qualification bo
 
 | 章节 / Chapter | 中文入口 | English | 内容范围 / Scope |
 |---|---|---|---|
-| 系统架构 / Architecture | [系统概览](ARCHITECTURE.md) | [Architecture](en/ARCHITECTURE.md) | Compiler、Lab、Evaluation、Evidence 的职责与依赖 |
+| 系统架构 / Architecture | [系统概览](ARCHITECTURE.md) · [面向 Agent 的接口](ARCHITECTURE.md#面向-agent-的设计如何起作用) | [Architecture](en/ARCHITECTURE.md) · [Agent-facing interface](en/ARCHITECTURE.md#why-the-interface-is-agent-facing) | Compiler、Lab、Evaluation、Evidence 的职责与依赖 |
 | IR 与编写 / IR and authoring | [IR 与 Schedule 图解](IR_GUIDE.md#阅读前irschedule-ir-与-cake-ir) · [FMA 实例](IR_GUIDE.md#fma同一公式两种不同的信息) · [Python](zh-CN/PYTHON_FRONTEND.md) | [IR guide](en/IR_GUIDE.md) · [Python](en/PYTHON_FRONTEND.md) | Schedule、Program、数据与执行计划；精确字段见 [Authoring Contract](../compiler/AUTHORING_CONTRACT.md) |
 | 检查与验收 / Verification | [验收规则](zh-CN/ACCEPTANCE_GATES.md) · [结果导读](wiki/results.md) | [Acceptance](ACCEPTANCE_GATES.md) · [Results](en/wiki/results.md) | 合法性、编译、正确性、计时质量与结论边界 |
 | 实验方法 / Experiment methods | [Lab 流程](wiki/experiments.md) · [改写指南](KERNEL_REPRODUCTION.md) | [Lab workflow](en/wiki/experiments.md) | 任务用途、参考访问、材料与变换授权、预算和评测 |
