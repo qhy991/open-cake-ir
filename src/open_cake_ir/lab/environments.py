@@ -22,6 +22,7 @@ from . import selection
 from .executor import ExecutorRevision
 from .faults import CandidateCompileRejected
 from .build import BuildRequest, ToolchainBuilder, TritonToolchainBuilder, _ptxas_finding_rows
+from .workload_binding import bind_program_workload
 
 
 @dataclass(frozen=True)
@@ -189,14 +190,7 @@ class OpenCakeEnvironment:
                 raise ValueError('Program public ABI or target differs from the Workload')
             if any(stage.schedule.lowering.backend.value != self._route['backend'] for stage in program.stages):
                 raise ValueError('Program stage backend is outside the authoring environment')
-            bound = program.document
-            for stage in bound['stages']:
-                metadata = stage['schedule']['metadata']
-                if ('workload_contract_sha256' in metadata
-                        and metadata['workload_contract_sha256'] != self._workload_sha256):
-                    raise ValueError(f"Program stage {stage['name']!r} Workload binding differs from the frozen Workload")
-                metadata['workload_contract_sha256'] = self._workload_sha256
-            program = Program.from_dict(bound)
+            program = bind_program_workload(program, self._workload_sha256)
             lowered = self._compiler.lower_program(program)
             single = single_kernel_lowering(lowered)
             if single is None:

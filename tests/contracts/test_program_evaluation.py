@@ -50,7 +50,7 @@ def replay_program_candidate(compiler,program,candidate,payloads):
     evidence = SimpleNamespace(read_object=lambda reference:payloads[reference['role']])
     return _replay_launchable_candidate(evidence,[event],turn=1,candidate_sha256=bound.candidate_sha256,
         arm='open_cake',manifest_parser=parse_launch_manifest,compiler_factory=lambda:compiler,
-        authored_bytes=program.document_bytes)
+        authored_bytes=program.document_bytes,workload_sha256=workload_for(program).canonical_sha256)
 
 
 @dataclass
@@ -256,7 +256,7 @@ class ProgramEvaluationTests(unittest.TestCase):
                 self.assertEqual(requests[0].tensor_abi,
                     tuple((row.name,row.shape,row.dtype,row.mode) for row in workload.tensor_abi('primary')))
                 self.assertEqual(requests[0].target,program.target)
-                self.assertEqual(requests[0].source,self.compiler.lower_program(program).lowerings[0].source.encode())
+                self.assertEqual(requests[0].source,result.launchable.artifact_payloads['lowered_source'])
                 replayed = replay_program_candidate(self.compiler,program,result.launchable,result.launchable.artifact_payloads)
                 self.assertEqual(replayed.canonical_sha256,result.launchable.canonical_sha256)
 

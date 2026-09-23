@@ -25,6 +25,7 @@ def _replay_launchable_candidate(
     manifest_parser: Callable,
     compiler_factory=None,
     authored_bytes=None,
+    workload_sha256: str | None = None,
 ) -> LaunchableCandidate:
     """Rebuild one sealed launchable and enforce its arm-owned artifact contract."""
 
@@ -92,7 +93,9 @@ def _replay_launchable_candidate(
             raise ValueError('Program replay requires its exact Compiler')
         from open_cake_ir.compiler import Program
         from open_cake_ir.evaluation.program import program_tensor_abi, single_kernel_lowering
+        from ..workload_binding import bind_program_workload
         program = Program.from_dict(authored)
+        program = bind_program_workload(program, workload_sha256 or manifest.workload_sha256)
         lowered = compiler_factory().lower_program(program)
         if not candidate.is_program:
             single = single_kernel_lowering(lowered)
