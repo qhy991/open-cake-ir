@@ -26,7 +26,7 @@ class IndependentRunTests(SemanticLabTestCase):
         workload = load_workload(ROOT / document['workload']['path'])
         route = document['authoring']['lowering_route']
         with tempfile.TemporaryDirectory() as temporary:
-            starter = Path(temporary) / 'starter.py'
+            starter = Path(temporary).resolve() / 'starter.py'
             expected = render_incomplete_python_starter(workload,
                 document['evaluation_protocol']['case_id'], route)
             starter.write_bytes(expected)
