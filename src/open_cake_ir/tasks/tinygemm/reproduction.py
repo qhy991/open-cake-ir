@@ -185,7 +185,7 @@ def _source(workload, case_id, stages, partitioned):
     iterative = workload.case(case_id)['shape']['K'] > tile
     lines = ['from open_cake_ir.compiler import frontend as cake', '',
              f'@cake.schedule(name="{workload.workload_id}-s{stages}", target="{workload.target}", backend="triton",',
-             f'               entry_point="cake_tinygemm2", metadata={{"workload_contract_sha256": "{workload.canonical_sha256}"}})',
+             f'               entry_point="cake_tinygemm2")',
              f'def candidate(lm, {", ".join(declarations)}):',
              '    compute = lm.role(execution_groups=[0, 1, 2, 3])',
              '    row = lm.program(x, axis=0, dimension=0, tile=16)',

@@ -4,6 +4,11 @@
 
 The Compiler accepts Python variables, expressions, role scopes, and symbolic tile loops as an authoring frontend for the existing Schedule model. JSON remains its canonical serialization. This does not extend operator semantics, backend coverage, GPU correctness, or a frozen Study's authoring environment.
 
+Authors do not put a Workload content digest in `@cake.schedule`. The Compiler can inspect
+the Python source independently. In a Lab Run, the Lab verifies the exact target, lowering
+route and public tensor ABI before binding the already frozen Workload identity. An
+explicit conflicting digest is still rejected. Historical runs replay at their commits.
+
 ## One complete example
 
 The [FMA example](../../examples/python/fma.py) computes matching positions of a*b+c:

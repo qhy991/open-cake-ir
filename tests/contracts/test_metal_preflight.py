@@ -182,7 +182,7 @@ class MetalPreflightTests(unittest.TestCase):
                 self.assertIn('schedule-starter.py',package.task_markdown)
                 self.assertIn('```python',package.task_markdown)
                 self.assertEqual(study['arms']['open_cake']['scaffold']['path'],
-                                 'contracts/scaffolds/python-artifact-optimization-metal-v3.md')
+                                 'contracts/scaffolds/python-artifact-optimization-metal-v4.md')
                 # The package owner delivers the frozen scaffold in AGENTS.md and
                 # references it from TASK.md; do not require a second body copy.
                 self.assertIn((ROOT/METAL_SCAFFOLD).read_text().strip(), package.agents_markdown)

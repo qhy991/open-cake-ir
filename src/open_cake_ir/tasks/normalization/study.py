@@ -21,8 +21,8 @@ from open_cake_ir.serialization import canonical_json_bytes as canonical
 from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, timing_source, device_name
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
-SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v2.md"
-METAL_SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-metal-v3.md"
+SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v3.md"
+METAL_SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-metal-v4.md"
 
 
 def arm_feedback(evaluation) -> list[str]:
