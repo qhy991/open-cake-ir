@@ -155,19 +155,19 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import read_schedule
 from open_cake_ir.compiler.ir import Schedule
 
-schedule = Schedule.load("corpus/schedules/fma-b8-smoke.json")
+authored = read_schedule("examples/python/fma.py")
+schedule = Schedule.from_dict(authored.document)
 assert schedule.buffer("a").shape == (8, 128)
 print([(op.op_id, op.kind.value) for op in schedule.operations])
 
-compiler = Compiler.load(".", "compiler/revision.json")
-authored = read_schedule("examples/python/fma.py")
+compiler = Compiler.load()
 assessment = compiler.assess(authored.document)
 assert assessment.accepted and assessment.lowering_eligible, assessment.findings
 lowering = compiler.lower(assessment)
 assert "fma.rn.f32" in lowering.source
 ```
 
-The example reuses the existing [Python plan](../../examples/python/fma.py) and [JSON plan](../../corpus/schedules/fma-b8-smoke.json). Development uses the draft descriptor; released execution uses a matching frozen lock. Parsing, assessment, source generation, GPU compilation, correctness and performance are separate evidence boundaries. Read findings and analysis coverage rather than treating a single accepted bit as proof of everything.
+The example reads only the [Python plan](../../examples/python/fma.py). The [JSON form](../../corpus/schedules/fma-b8-smoke.json) remains available for Corpus regression and inspecting canonical serialization; authors do not need to supply it. Parsing, assessment, source generation, GPU compilation, correctness and performance are separate evidence boundaries. Read findings and analysis coverage rather than treating a single accepted bit as proof of everything.
 
 ## Extending the model
 
