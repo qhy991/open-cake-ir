@@ -113,6 +113,28 @@ assert cli.main(['--project-root', str(Path.cwd()), 'compiler', 'assess', '--rev
 
 
 class CliContractTests(unittest.TestCase):
+    def test_python_kernel_needs_no_json_path_on_authoring_command(self) -> None:
+        from open_cake_ir.compiler import Compiler
+
+        source = ROOT / "examples/python/fma.py"
+        with redirect_stdout(StringIO()) as output:
+            code = main(["--project-root", str(ROOT), "compiler", "assess", str(source)])
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(output.getvalue())["lowering_eligible"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "fma-generated.py"
+            with redirect_stdout(StringIO()):
+                code = main(["--project-root", str(ROOT), "compiler", "lower",
+                             str(source), "--output", str(target)])
+            self.assertEqual(code, 0)
+            self.assertIn("fma.rn.f32", target.read_text())
+
+        compiler = Compiler.load(ROOT)
+        authored = compiler.assess_file(source)
+        self.assertTrue(authored.lowering_eligible)
+        self.assertIn("fma.rn.f32", compiler.lower(authored).source)
+
     def setUp(self):
         # These CLI consumers test lock/JSON semantics, not host publication.
         # Exact-target release admission remains exercised without this fixture.
