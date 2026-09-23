@@ -24,6 +24,7 @@ from open_cake_ir.tasks.solx_fib import attention
 from open_cake_ir.tasks.program_evaluation import PreparedProgramCase, evaluate_program_case
 from open_cake_ir.evaluation.torch_tensor_inputs import check_cpu_tensor_inputs
 from tests.contracts.test_ordered_launch_plan import document
+from tests.contracts.test_metax_binary import bundle
 import tests.contracts.test_program_evaluation as program_fixtures
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,7 +36,10 @@ class McaCompilationFixture:
         artifacts = {role: b'CPU fixture; not executable' for role in route.artifact_roles}
         artifacts['source'] = source
         params = ', '.join(f'%arg{i}: !tt.ptr<f32>' for i in range(len(requirements['signature'])))
-        artifacts['ttgir'] = f'tt.func public @fixture({params}) attributes {{}}'.encode()
+        artifacts['ttgir'] = f'tt.func public @{requirements["kernel_entry_point"]}({params}) attributes {{}}'.encode()
+        artifacts['mcfatbin'] = bundle(architecture=requirements['codegen_arch'],
+            note_pointer_arguments=len(requirements['signature']),
+            note_kernel_name=requirements['kernel_entry_point'])[0]
         return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'], artifacts,
             requirements['compile_options']['num_warps'] * requirements['warp_size'], 0, 'CPU fixture', route.code_object.value)
 

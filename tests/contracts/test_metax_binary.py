@@ -37,10 +37,11 @@ def native_with_note(pointer_arguments, *, kernel_name="kernel"):
     return bytes(native)
 
 
-def bundle(*, architecture="xcore1000", native=None, extra=None, note_pointer_arguments=None):
+def bundle(*, architecture="xcore1000", native=None, extra=None,
+           note_pointer_arguments=None, note_kernel_name="kernel"):
     if native is None:
         if note_pointer_arguments is not None:
-            native = native_with_note(note_pointer_arguments)
+            native = native_with_note(note_pointer_arguments, kernel_name=note_kernel_name)
         else:
             native = bytearray(64)
             native[:6] = b"\x7fELF\x02\x01"
