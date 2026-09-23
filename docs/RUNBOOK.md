@@ -227,7 +227,7 @@ python tools/qualify_codex_provider.py \
 ```
 
 For the B300 Cake/native-Triton Python template, qualify the arms separately with
-`contracts/providers/run-turn-output-schema-v2.json`: select `open_cake` with the
+`contracts/providers/run-turn-output-schema-v1.json`: select `open_cake` with the
 `python_candidate_bundle_v1` submission contract and `native_triton` with the JSON
 envelope. Bind both two-turn receipts and anchors using external binding schema v3.
 

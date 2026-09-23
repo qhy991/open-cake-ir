@@ -357,13 +357,30 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     arm_root, executable, provider_revision='paired-python-fixture',
                     run_id=f'paired-{arm}', feature_policy='closed_research',
                     maximum_candidates_per_turn=3,
-                    output_schema=ROOT/'contracts/providers/run-turn-output-schema-v2.json',
+                    output_schema=ROOT/'contracts/providers/run-turn-output-schema-v1.json',
                     environment_kind=arm, submission_contract=contract)
                 self.assertEqual(completed.returncode, 0, completed.stderr.decode())
                 receipts[arm] = ProviderQualificationReceipt.load(receipt_path)
                 self.assertTrue(EvidenceStore.open(evidence_root).audit_run(f'paired-{arm}').archive_integrity)
             self.assertNotEqual(receipts['open_cake'].configuration_sha256,
                                 receipts['native_triton'].configuration_sha256)
+
+    def test_closed_qualification_rejects_a_schema_without_terminal_tool_calls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root/'codex'
+            self._write_provider(executable)
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision='schema-mismatch-fixture',
+                run_id='schema-mismatch', feature_policy='closed_research',
+                maximum_candidates_per_turn=3,
+                output_schema=ROOT/'contracts/providers/run-turn-output-schema-v2.json',
+                environment_kind='open_cake',
+                submission_contract='python_candidate_bundle_v1')
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn(b'terminal-event contract', completed.stderr)
+            self.assertFalse(receipt_path.exists())
+            self.assertFalse(evidence_root.exists())
 
     def test_two_executable_fixture_turns_archive_fixture_only_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
