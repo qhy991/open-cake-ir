@@ -190,6 +190,24 @@ class ReferenceAccessTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'target_implementation.*forbidden'):
                 validate_reference_handoff(ROOT, {'author': arm}, workload=workload, case_id='primary')
 
+    def test_incomplete_python_starter_exposes_abi_without_an_implementation(self):
+        from open_cake_ir.lab.reference_access import render_incomplete_python_starter
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.tasks.workloads import create_task
+        document, complete = create_task('rmsnorm', backend='triton-b300', rows=7, columns=128)
+        workload = WorkloadContract(document)
+        route = frontend.parse(complete).document['lowering']
+        starter = render_incomplete_python_starter(workload, 'primary', route)
+        self.assertIn(b'@cake.schedule(', starter)
+        self.assertIn(b'cake.Tensor((7, 128), "fp32", mode="input")', starter)
+        self.assertIn(b'cake.Tensor((7, 128), "fp32", mode="output")', starter)
+        self.assertTrue(starter.rstrip().endswith(b'...'))
+        self.assertNotIn(b'lm.role(', starter)
+        self.assertNotIn(b'lm.load(', starter)
+        self.assertNotIn(b'lm.store(', starter)
+        with self.assertRaises(frontend.FrontendError):
+            frontend.parse(starter.decode())
+
     def test_inherited_native_lowering_requires_known_kernel_reproduction(self):
         document = self.document("matched-search-triton-optimization-template.json")
         document["arms"]["native_triton"]["reference_access"] = "clean_start"
