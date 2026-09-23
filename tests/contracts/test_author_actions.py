@@ -125,6 +125,79 @@ class AuthorActionTests(SemanticLabTestCase):
             self.assertEqual(evidence.read_object(source_ref), raw)
             self.assertEqual(len(compilation.requests), 2)
 
+    def test_python_bundle_run_replays_ordered_source_and_transform_actions(self):
+        from open_cake_ir.lab.provider_documents import (
+            PYTHON_CANDIDATE_BUNDLE_V1, _project_candidate_submission,
+        )
+        from open_cake_ir.lab.provider_policy import execution_configuration
+        from open_cake_ir.lab.providers import ProviderQualificationReceipt
+        lab, specification, workload, _ = self.fixture([PASS])
+        document = specification.document
+        source = Path(document['authoring']['schedule_skeleton']['path']).read_text()
+        import_line, body = source.split('\n\n', 1)
+        first_raw = source.encode()
+        first_member, = _project_candidate_submission(first_raw,
+            submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',
+            environment_kind='open_cake', maximum_candidates_per_turn=2)
+        parent_id = sha256(first_member).hexdigest()
+        stage = frontend.parse(source).document['schedule_id']
+        params = rewrite(parent_id, stage=stage)['parameters']
+        action = f'cake.transform(parent={parent_id!r}, transformation={PASS!r}, parameters={params!r})\n'
+        variant = (body.replace('def candidate(', 'def candidate_variant(')
+                        .replace('name="silu-fp32-triton-b200-r2-c8-v1"', 'name="silu-bundle-variant"')
+                        .replace('execution_groups=[0]', 'execution_groups=[0, 1]'))
+        second_raw = (import_line + '\n\n' + action + '\n' + variant).encode()
+        second_members = _project_candidate_submission(second_raw,
+            submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',
+            environment_kind='open_cake', maximum_candidates_per_turn=2)
+        self.assertEqual(len(second_members), 2)
+        document['authoring'].update(input_format='python_source_v1',
+                                     tool_surface=['submit_python_bundle'])
+        scaffold = 'contracts/scaffolds/python-artifact-optimization-bundle-v1.md'
+        document['authoring']['scaffold'] = {'path': scaffold,
+            'sha256': sha256((ROOT/scaffold).read_bytes()).hexdigest()}
+        provider_document = document['authoring']['provider']
+        provider_document['submission_contract'] = PYTHON_CANDIDATE_BUNDLE_V1
+        configuration = execution_configuration(provider_document)
+        qualification = ProviderQualificationReceipt.load(ROOT/provider_document['qualification']['path'])
+        qualification = replace(qualification, configuration_sha256=sha256(encoded(configuration)).hexdigest())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            receipt = root/'qualification.json'
+            receipt.write_bytes(encoded(qualification.document))
+            provider_document['qualification'] = {'path': str(receipt),
+                'canonical_sha256': qualification.canonical_sha256}
+            successor = RunSpecification.from_dict(document)
+            class BundleProvider(RalphFakeProvider):
+                def turn(self, request):
+                    old = super().turn(request)
+                    raw = first_raw if request.turn == 1 else second_raw
+                    members = (first_member,) if request.turn == 1 else second_members
+                    events = old.raw_events.replace(b'candidate-set.json', b'candidate-set.py')
+                    return replace(old, candidates=members,
+                        candidate_sha256s=tuple(sha256(item).hexdigest() for item in members),
+                        raw_submission=raw, raw_events=events,
+                        raw_events_sha256=sha256(events).hexdigest())
+            provider = BundleProvider({successor.run_id:lab.task_package(successor, successor.run_id)})
+            provider.configuration = configuration
+            provider.qualification_sha256 = qualification.canonical_sha256
+            compilation = CompilationFixture()
+            environment = OpenCakeEnvironment(Compiler.load(ROOT,ROOT/'compiler/revision.json'),
+                TritonToolchainBuilder(workload=workload,case_id='primary',isolated_compiler=compilation),
+                authority_document=successor.document['authoring'],workload=workload,case_id='primary')
+            evaluator = ProgramEvaluator(document['evaluation_protocol'],
+                sha256(encoded(document['evaluation_protocol'])).hexdigest(),workload.canonical_sha256)
+            run = lab.execute_run(successor,root/'evidence',provider=provider,
+                                  environment=environment,evaluator=evaluator)
+            audit, replay = lab.audit_run(run)
+            self.assertTrue(replay, replay.refusals)
+            self.assertEqual(audit.protocol_adherence, 'adhered')
+            events = EvidenceStore.open(run.evidence_root).replay_events(successor.run_id)
+            actions = [row['payload']['actions'] for row in events if row['kind']=='author_actions_resolved']
+            self.assertEqual([item['kind'] for item in actions[1]], ['transform', 'submit'])
+            self.assertEqual(actions[1][0]['reason'], 'applied')
+            self.assertTrue(compilation.requests)
+
     def test_python_only_author_admission_refuses_schedule_json_but_keeps_internal_rewrites(self):
         compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
         _, source = create_task('silu', backend='triton-b200', rows=2, columns=8)
