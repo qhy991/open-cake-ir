@@ -35,6 +35,12 @@ class ActionResolution:
 
 def candidate_program(payload, *, allow_python=True):
     document = json.loads(payload)
+    if isinstance(document, Mapping) and set(document) == {'python_program_source', 'program_id'}:
+        if not allow_python or not isinstance(document['python_program_source'], str):
+            raise ValueError('parent Python Program source is outside the authoring environment')
+        from open_cake_ir.compiler.program_frontend import parse_program
+        return parse_program(document['python_program_source'],
+                             program_id=document['program_id']).program
     if isinstance(document, Mapping) and set(document) == {'python_source'}:
         if not allow_python:
             raise ValueError('parent Python syntax is outside the authoring environment')
@@ -45,7 +51,8 @@ def candidate_program(payload, *, allow_python=True):
 
 
 def resolve_action(payload: bytes, *, environment_kind, transformations, candidates,
-                   baselines, compiler_factory, allow_python=False, python_only=False) -> ActionResolution:
+                   baselines, compiler_factory, allow_python=False, python_only=False,
+                   source_bundle=False) -> ActionResolution:
     action_sha256 = sha256(payload).hexdigest()
     if environment_kind == 'direct_cuda':
         return ActionResolution(action_sha256, 'submit', payload)
@@ -60,9 +67,13 @@ def resolve_action(payload: bytes, *, environment_kind, transformations, candida
         return ActionResolution(action_sha256, 'submit', None, reason='author_format',
                                 message='Author must submit Python source in a python_source member.')
     if not isinstance(document, Mapping) or 'action' not in document:
+        program_source = (source_bundle and isinstance(document, Mapping)
+                          and set(document) == {'python_program_source', 'program_id'}
+                          and isinstance(document['python_program_source'], str)
+                          and isinstance(document['program_id'], str))
         if python_only and (not isinstance(document, Mapping)
-                            or set(document) != {'python_source'}
-                            or not isinstance(document['python_source'], str)):
+                            or not program_source and (set(document) != {'python_source'}
+                                or not isinstance(document['python_source'], str))):
             return ActionResolution(action_sha256, 'submit', None, reason='author_format',
                                     message='Author must submit Python source in a python_source member.')
         return ActionResolution(action_sha256, 'submit', payload)

@@ -52,6 +52,32 @@ class PythonProgramSourceTests(unittest.TestCase):
         lowered = Compiler.load(ROOT).lower_program(program)
         self.assertEqual(len(lowered.lowerings), 2)
 
+    def test_lab_builds_and_replays_authored_python_program_bytes(self):
+        from open_cake_ir.lab import CandidateSubmission, OpenCakeEnvironment, TritonToolchainBuilder
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        from open_cake_ir.serialization import canonical_json_bytes
+        from tests.contracts.test_program_evaluation import workload_for, replay_program_candidate
+        from tests.contracts.test_native_triton_pairing import CompilationFixture
+        compiler = Compiler.load(ROOT)
+        program = parse_program(source(), program_id='rounded-epilogue-python').program
+        workload = workload_for(program)
+        builder = TritonToolchainBuilder(workload=workload, case_id='primary',
+                                        isolated_compiler=CompilationFixture())
+        authority = {'input_format': 'python_source_v1',
+                     'lowering_route': {'backend': 'triton', 'entry_point': 'epilogue_producer'},
+                     'provider': {'submission_contract': PYTHON_CANDIDATE_BUNDLE_V1}}
+        environment = OpenCakeEnvironment(compiler, builder, workload=workload, case_id='primary',
+                                          authority_document=authority)
+        payload = canonical_json_bytes({'python_program_source': source(),
+                                        'program_id': 'rounded-epilogue-python'})
+        submission = CandidateSubmission.seal(environment.media_type, payload)
+        result = environment.build(submission)
+        self.assertEqual(result.disposition, 'launchable', result.feedback)
+        self.assertEqual(result.submission_sha256, submission.sha256)
+        self.assertEqual(replay_program_candidate(compiler, program, result.launchable,
+            result.launchable.artifact_payloads, authored_bytes=payload).canonical_sha256,
+            result.launchable.canonical_sha256)
+
     def test_composition_refuses_read_before_producer_and_host_effects(self):
         for changed in (source().replace('"mid": "middle", "out": "out"',
                                          '"mid": "unproduced", "out": "out"'),
