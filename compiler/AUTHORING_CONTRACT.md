@@ -6,6 +6,9 @@ Author one complete Schedule as JSON or the restricted Python surface documented
 acceptance. Names are unique within each declaration list; operation dependencies refer only backward; every output
 must be written; buffer allocation extents and role execution groups must fit the exact Target. `program_map` and `grid` are
 mutually exclusive. Each role owns one ascending contiguous warp interval, and no warp belongs to two roles.
+Multiple complete Python Schedules may be composed through static `cake.program` and
+`cake.stage` declarations; the resulting Program uses the existing tensor-binding,
+single-producer and read-before-write rules, with no separate layout language.
 Findings carry a stable code and path. Each Finding independently declares whether it
 blocks acceptance or lowering. A non-blocking Finding reports what the Schedule implies,
 such as a declared residency bound; another Finding in the same Assessment may still

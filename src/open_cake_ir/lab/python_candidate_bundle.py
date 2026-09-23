@@ -14,9 +14,6 @@ from collections.abc import Mapping
 from open_cake_ir.serialization import canonical_json_bytes
 
 
-_IMPORT = 'from open_cake_ir.compiler import frontend as cake\n'
-
-
 def _json_literal(node: ast.AST):
     def reject_duplicate_keys(item: ast.AST):
         if isinstance(item, ast.Dict):
@@ -72,10 +69,6 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
         or first.level != 0 or len(first.names) != 1
         or first.names[0].name != 'frontend' or first.names[0].asname != 'cake'):
         raise ValueError('Python candidate bundle requires the Cake frontend import')
-    # AST line numbers count physical line endings, not Unicode separators such
-    # as U+2028 inside a comment or string. Split only on LF to keep slices exact.
-    if '\r' in source.replace('\r\n', ''):
-        raise ValueError('Python candidate bundle requires LF or CRLF line endings')
     lines = source.split('\n')
     program_nodes = [node for node in body[1:]
                      if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
@@ -129,11 +122,8 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
             names.add(node.name)
             if node.name in referenced_stages:
                 continue
-            start = decorator[0].lineno - 1
-            snippet = '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
-            # The Compiler diagnoses the projected single Schedule. Preserve its
-            # original bundle line numbers so feedback points into the author file.
-            projected_source = _IMPORT + '\n' * max(0, start - 1) + snippet
+            from open_cake_ir.compiler.frontend import schedule_function_source
+            projected_source = schedule_function_source(source, node)
             candidates.append(canonical_json_bytes({'python_source': projected_source}))
         elif id(node) in program_ids:
             candidates.append(canonical_json_bytes({

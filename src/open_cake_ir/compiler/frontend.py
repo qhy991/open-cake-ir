@@ -79,6 +79,24 @@ class ScheduleSource:
         return self.locations[max(matches, key=len)] if matches else None
 
 
+def schedule_function_source(source: str, node: ast.FunctionDef) -> str:
+    """Project one decorated function with its original physical source lines.
+
+    Author bundles and Program composition share this extraction. Preserving blank
+    lines before the decorator lets the existing single-Schedule frontend report
+    locations in the original author file without executing it.
+    """
+    if len(node.decorator_list) != 1:
+        raise ValueError('Cake Schedule function needs one decorator')
+    if '\r' in source.replace('\r\n', ''):
+        raise ValueError('Cake Python source requires LF or CRLF line endings')
+    lines = source.split('\n')
+    start = node.decorator_list[0].lineno - 1
+    snippet = '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
+    return ('from open_cake_ir.compiler import frontend as cake\n'
+            + '\n' * max(0, start - 1) + snippet)
+
+
 def read_schedule(path: str | Path) -> ScheduleSource:
     """Read JSON or elaborate Python without executing authored code."""
     path = Path(path).resolve(strict=True)

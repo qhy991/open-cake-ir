@@ -59,6 +59,29 @@ Python 作者无需在 `@cake.schedule` 中填写 Workload 的内容 hash。独�
 冻结合同的传输与回放输入；新任务不要求手写 Schedule JSON。
 `id=` 仅用于显式命名操作、与既有计划对照；省略时由结果变量或目标 Buffer 推导。
 
+## 多阶段 Program
+
+同一 Python 文件可以声明多个完整 `@cake.schedule` 函数，再用静态的
+`cake.program(program_id=..., inputs=..., outputs=..., stages=(...))` 组合。
+每个 `cake.stage(name=..., schedule=<函数名>, bindings={...})` 显式绑定局部
+global Buffer 与 Program tensor；tensor 的形状和 dtype 从阶段推导，先写后读、
+唯一生产者、公开 ABI 和跨阶段形状由现有 `Program.from_dict` 检查。
+需要去掉 singleton 轴时，绑定值可写 `cake.singleton_view("tensor")`。
+这些声明由 AST 读取，不导入或执行作者文件，也不引入 layout algebra。
+
+[两阶段 epilogue 示例](../examples/python/epilogue_program.py) 可以直接通过：
+
+```python
+from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.program_frontend import read_program
+
+program = read_program("examples/python/epilogue_program.py").program
+lowered = Compiler.load().lower_program(program)
+```
+
+在 `candidate-set.py` 中，一个被 Program 引用的阶段函数属于该 Program，不另算候选；
+一个 `cake.program(...)` 声明算一个完整候选。未被引用的完整 Schedule 函数仍是独立候选。
+
 ## 编写规则
 
 `cake.Tensor(shape, dtype, mode="input")` 声明 global Buffer；输出参数写 `mode="output"`，

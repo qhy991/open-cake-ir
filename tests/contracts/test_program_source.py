@@ -9,22 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def source():
-    stages = []
-    for filename, name in (('epilogue_producer.py', 'producer'),
-                           ('epilogue_consumer.py', 'consumer')):
-        text = (ROOT/'examples/python'/filename).read_text()
-        stages.append('@cake.schedule' + text.split('@cake.schedule', 1)[1].replace(
-            'def candidate(', f'def {name}(', 1))
-    return ('from open_cake_ir.compiler import frontend as cake\n\n'
-            + '\n\n'.join(stages)
-            + '\n\ncake.program(program_id="rounded-epilogue-python",\n'
-              '    inputs=("a", "b", "bias"), outputs=("out",),\n'
-              '    stages=(\n'
-              '        cake.stage(name="producer", schedule=producer,\n'
-              '                   bindings={"a": "a", "b": "b", "bias": "bias", "mid": "middle"}),\n'
-              '        cake.stage(name="epilogue", schedule=consumer,\n'
-              '                   bindings={"mid": "middle", "out": "out"}),\n'
-              '    ))\n')
+    return (ROOT/'examples/python/epilogue_program.py').read_text()
 
 
 class PythonProgramSourceTests(unittest.TestCase):
@@ -103,3 +88,25 @@ class PythonProgramSourceTests(unittest.TestCase):
             with self.subTest(changed=changed[-50:]), self.assertRaises(ValueError):
                 parse_program(changed, filename='candidate-set.py',
                               program_id='rounded-epilogue-python')
+
+    def test_static_singleton_view_uses_existing_program_legality(self):
+        from open_cake_ir.tasks.workloads import create_task
+        _, first = create_task('softsign', backend='triton-b200', rows=1, columns=8)
+        first = first.replace('def candidate(', 'def prepare(', 1)
+        second = '''\n@cake.schedule(name="copy-tail", target="sm_100a", backend="triton", entry_point="copy_tail")
+def finish(lm, mid: cake.Tensor((8,), "fp32"), out: cake.Tensor((8,), "fp32", mode="output")):
+    compute = lm.role(execution_groups=[0])
+    col = lm.program(mid, axis=0, dimension=0, tile=8)
+    with compute:
+        values = lm.load(mid[col])
+        lm.store(out[col], values, coalesced=False)
+
+cake.program(program_id="view-program", inputs=("x",), outputs=("out",), stages=(
+    cake.stage(name="prepare", schedule=prepare, bindings={"x": "x", "out": "middle"}),
+    cake.stage(name="finish", schedule=finish,
+               bindings={"mid": cake.singleton_view("middle"), "out": "out"}),
+))
+'''
+        program = parse_program(first + '\n' + second, program_id='view-program').program
+        self.assertEqual(program.tensors['middle'].shape, (1, 8))
+        self.assertTrue(program.stages[1].bindings['mid'].singleton_view)

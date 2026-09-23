@@ -11,6 +11,10 @@ it. It projects each function into the existing single-Schedule Python frontend
 and each transform into the existing action owner. Unsupported top-level code,
 dynamic transform arguments, duplicate candidates and a proposal count above the
 Run budget are refused before compilation.
+Static `cake.program(...)` declarations can compose complete Schedule functions in
+the same source into one ordered Program candidate. Referenced stage functions are
+components, not extra proposals; the Compiler's existing typed Program checks tensor
+bindings, single producers and read-before-write without an author-written JSON graph.
 
 This retains the existing single-file Provider add/update lifecycle while preserving
 the order of multiple proposals and transform actions. The original UTF-8 file is

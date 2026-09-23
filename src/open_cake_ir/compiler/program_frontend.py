@@ -5,12 +5,9 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
-from .frontend import parse as parse_schedule
+from .frontend import parse as parse_schedule, schedule_function_source
 from .ir import Program
 from .ir.vocabulary import MemorySpace
-
-
-_IMPORT = 'from open_cake_ir.compiler import frontend as cake\n'
 
 
 @dataclass(frozen=True)
@@ -53,13 +50,12 @@ def _literal(node):
 def _schedule_source(source: str, node: ast.FunctionDef) -> str:
     if len(node.decorator_list) != 1:
         raise ValueError('Python Program stage needs one Cake schedule decorator')
-    _call(node.decorator_list[0], 'schedule', {'name', 'target', 'backend', 'entry_point'})
-    if '\r' in source.replace('\r\n', ''):
-        raise ValueError('Python Program requires LF or CRLF line endings')
-    lines = source.split('\n')
-    start = node.decorator_list[0].lineno - 1
-    snippet = '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
-    return _IMPORT + '\n' * max(0, start - 1) + snippet
+    decorator = node.decorator_list[0]
+    if (not isinstance(decorator, ast.Call) or not isinstance(decorator.func, ast.Attribute)
+        or not isinstance(decorator.func.value, ast.Name)
+        or decorator.func.value.id != 'cake' or decorator.func.attr != 'schedule'):
+        raise ValueError('Python Program stage needs one Cake schedule decorator')
+    return schedule_function_source(source, node)
 
 
 def _binding(node):
@@ -76,7 +72,7 @@ def _binding(node):
 
 
 def _program_document(source: str, declaration: ast.Call,
-                      functions: dict[str, ast.FunctionDef]):
+                      functions: dict[str, ast.FunctionDef], filename: str):
     fields = _call(declaration, 'program', {'program_id', 'inputs', 'outputs', 'stages'})
     program_id = _literal(fields['program_id'])
     inputs = _literal(fields['inputs'])
@@ -109,7 +105,7 @@ def _program_document(source: str, declaration: ast.Call,
                 raise ValueError('Python Program stage binding names must be unique strings')
             bindings[local] = _binding(tensor_node)
         schedule = parse_schedule(_schedule_source(source, functions[schedule_name.id]),
-                                  filename='candidate-set.py').document
+                                  filename=filename).document
         targets.add(schedule['target'])
         for buffer in schedule['buffers']:
             if buffer['space'] != MemorySpace.GLOBAL.value:
@@ -152,7 +148,7 @@ def parse_program(source: str, *, filename: str = 'candidate-set.py',
             declarations.append(node.value)
         else:
             raise ValueError('Python Program source has unsupported top-level code')
-    documents = [_program_document(source, declaration, functions)
+    documents = [_program_document(source, declaration, functions, filename)
                  for declaration in declarations]
     selected = [document for document in documents
                 if program_id is None or document['program_id'] == program_id]

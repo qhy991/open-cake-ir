@@ -74,6 +74,8 @@ Evidence，因此项目的范围大于一种 DSL。本项目独立探索 [CAKE �
 [ADR 0078](adr/0078-python-source-file-provider-submission.md)。新默认多候选 Run 写一个
 `candidate-set.py`：多个完整 Schedule 函数和获准的静态 transform 声明按源码顺序形成候选，
 Lab 保存原始字节并确定性投影，见 [ADR 0079](adr/0079-ordered-python-candidate-bundles.md)。
+静态 `cake.program` 还可把同文件的完整 Schedule 组合为一个多阶段候选；公共 tensor
+及阶段读写由 typed Program 检查，不要求作者填写 Program JSON。
 `candidate-set.json` 留给冻结合同的回放，不再是新已知实现复现任务的默认作者输入。
 Compiler 内部文档往返继续收敛；每一步保留原提交，不原地改写历史证据。
 每一步采用后继 Run 合同并保留冻结实验的原提交，不原地改写历史证据。
