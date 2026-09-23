@@ -38,11 +38,16 @@ class ProgramStage:
     name: str
     schedule_bytes: bytes
     bindings: Mapping[str, ProgramBinding]
-    _schedule: Schedule | None = field(default=None, repr=False, compare=False)
+    _schedule: Schedule = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        # Bytes are the stage authority. Replacing a frozen dataclass field must
+        # reconstruct the typed view instead of carrying a stale cached Schedule.
+        object.__setattr__(self, '_schedule', Schedule.from_dict(json.loads(self.schedule_bytes)))
 
     @property
     def schedule(self):
-        return self._schedule if self._schedule is not None else Schedule.from_dict(json.loads(self.schedule_bytes))
+        return self._schedule
 
 
 @dataclass(frozen=True)
@@ -144,7 +149,7 @@ class Program:
             producers.update(stage_writes)
             available.update(stage_writes)
             stages.append(ProgramStage(name, canonical_json_bytes(raw['schedule']),
-                                       MappingProxyType(dict(bindings)), schedule))
+                                       MappingProxyType(dict(bindings))))
         if not set(io['outputs']) <= producers:
             raise ValueError('program has unproduced public outputs')
         if not set(io['inputs']) <= consumed:
