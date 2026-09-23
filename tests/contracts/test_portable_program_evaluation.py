@@ -49,7 +49,15 @@ class NativeCompiler:
             entries = '\n'.join('      - .address_space: global\n'
                 f'        .offset: {index * 8}\n        .size: 8\n'
                 '        .value_kind: global_buffer' for index in range(count + 2))
-            artifacts['amdgcn'] = ('\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n'
+            artifacts['amdgcn'] = (f'.amdhsa_kernel {requirements["kernel_entry_point"]}\n'
+                '  .amdhsa_group_segment_fixed_size 0\n'
+                '  .amdhsa_private_segment_fixed_size 0\n'
+                f'  .amdhsa_kernarg_size {(count + 2) * 8}\n'
+                '  .amdhsa_uses_dynamic_stack 0\n'
+                '  .amdhsa_next_free_vgpr 16\n'
+                '  .amdhsa_next_free_sgpr 16\n'
+                '.end_amdhsa_kernel\n'
+                '\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n'
                 f'{entries}\n    .kernarg_segment_size: {(count + 2) * 8}\n    .name: k\n...\n'
                 '\t.end_amdgpu_metadata\n').encode()
         else:
