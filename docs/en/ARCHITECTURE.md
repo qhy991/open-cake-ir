@@ -123,6 +123,22 @@ can repair the read edge before a GPU attempt. For eligible candidates, lowered 
 maps operations to source lines for later compile and profiler investigation. The
 [getting-started guide](../GETTING_STARTED.md) keeps the accepted and refused siblings together.
 
+A C550 M17 ten-turn Agent Run supplies a bounded live example. On frozen source
+`896e0887`, Evidence records ten author turns, nine candidate refusals and a
+sealed endpoint. Turn 2 reported `ACCESS_TILE_MISMATCH` at `access_maps[2]`
+with the tile-axis reason; a candidate originating in turn 6 later passed
+fresh preflight and postflight checks for all five cases and a local paired
+MCPTI confirmation. That Run's baseline/candidate medians were
+12.032/11.008 μs with a passing timing-quality gate. `run_terminal` is
+event 157; the report and receipts are
+mirrored outside the checkout at
+`open-cake-ir-evidence/metax-m17-agent-run-20260923/`. This establishes that
+feedback, filtering and confirmation occurred in one real Run, not that this
+feedback caused an advantage over another authoring environment. The
+container's MACA lock was private rather than shared with the host and other
+containers, so `local_serialized` is not whole-host exclusivity. This Run also
+does not qualify PR #201's later exact source or NVIDIA-to-C550 transfer.
+
 Recurring failures may be promoted by a maintainer from retained Findings and run evidence
 to a Verifier rule, IR capability, backend implementation or guarded explicit rewrite
 **outside the frozen Run**. A successor commit and Corpus check precede a new Run. Existing

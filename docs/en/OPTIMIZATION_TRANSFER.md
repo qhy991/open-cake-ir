@@ -127,6 +127,30 @@ correctness cases and the timing quality gate: baseline/candidate medians were
 `close_null`; it must not be substituted for the tile32 result. This is a local authoring
 comparison, not a provider Run or an explanation-versus-pass transfer experiment.
 
+A source-linked **offline** transfer pilot uses the B300-M2 `pairwise_sqdist` Run
+at FP32 `R=1024,K=1024,N=64`. Its candidate tiles K by 256; confirmatory
+event 17 links five-case preflight and postflight correctness for both arms
+and a quality-passing paired CUPTI comparison, 411.7945/53.856 μs (7.646×)
+**on B300**. A BW1101 `gfx938` Workload keeps the same mathematics, tensors,
+five cases, oracle and tolerances. Merely changing the target on the historical
+Schedule v1 source was refused because `lm.role(warps=[0])` must be explicitly adapted
+to v2 `execution_groups`. After that one IR-version adaptation, current
+`main@0fe3a447` admits and lowers both the candidate and target starter;
+Hygon Triton 3.6.0 emits HSACO for both. The current Compiler passes its
+179-case Corpus Gate; both sealed manifests pass CPU pair admission while
+declaring all five validation cases, one Workload, Executor `gfx938@0fe3a447`
+and `fixed_baseline_paired_hip_dispatch_v1`.
+The source Run is at
+`B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/pairwise_sqdist-20260916-180016/`;
+the create-only offline evidence is under
+`open-cake-ir-evidence/transfer-b300-bw1101-20260923/` outside the checkout,
+with native objects at
+`bw1100:/home/testuser01/oci-transfer-b300-bw1101-20260923/`.
+**No Hygon GPU load, correctness result or timing exists for this pair.** The
+pilot establishes source-mechanism expressibility through the target toolchain,
+not cross-device performance. Target-device five-case validation, same-card
+paired timing, fresh confirmation and a separate E/P causal study remain due.
+
 The [E/P method appendix](../OPTIMIZATION_TRANSFER_ABLATION.md) has software-tested allocation
 and audit rules but explicitly reports no real-device transfer-effect study. Establishing the
 incremental value of NVIDIA-derived material still requires matched target Runs with a shared

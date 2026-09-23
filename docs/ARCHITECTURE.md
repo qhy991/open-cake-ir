@@ -185,6 +185,17 @@ AI 提交候选，外部控制器 Ralph 记录预算和当前状态，再决定�
 源码行的映射，便于追溯后续编译与 profiler 观察。[入门教程](GETTING_STARTED.md)
 保留了这对正反例。
 
+一份 C550 M17 的十轮 Agent Run 提供了运行时例子：在源码
+`896e0887` 的冻结环境中，Evidence 记录十次作者回合、九次候选拒绝和最终封存终点。
+第二轮的 `ACCESS_TILE_MISMATCH` 指向 `access_maps[2]` 并说明 tile 轴不一致；
+第六轮来源的候选后来通过五类输入的独立前后正确性检查及本机 MCPTI 成对确认；
+该次 Run 内固定基线/候选的确认中位数为 12.032/11.008 μs，测量质量门通过。
+原始 `run_terminal` 为事件 157，报告与收据保存在 checkout 外的
+`open-cake-ir-evidence/metax-m17-agent-run-20260923/`。这证明**一次实际 Run 的反馈、
+筛选与确认路径可走通**，不证明反馈相对于别的作者环境带来因果收益。该运行容器的 MACA
+锁未与宿主和其他容器共享，不能把其 `local_serialized` 结果扩写为整机独占资格；它也不
+验收后继 PR #201 的精确源码或 NVIDIA 经验迁移。
+
 当同类失败反复出现，维护者可依据保留的 Finding 和运行证据，在**冻结 Run 之外**补
 Verifier、IR、后端或有前提的显式变换；后继提交和 Corpus 验证后再启动新 Run。
 现有 [DCU Run 记录](dcu-gfx938-results.md)说明这条候选—诊断—确认路径能在一个目标上

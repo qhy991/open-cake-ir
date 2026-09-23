@@ -130,6 +130,23 @@ Run 的完整程序性能验收，C550 的完整 provider/Ralph 优化闭环仍�
 | [C550 M17 GEMM 的 M tile 改动](metax-c550.md) | 固定 `M17/N128/K2048` 下仅将 M tile 64→32，独立 `matrix-fib-m17-tile32-confirmatory-8c0cad53-v1/result.json` 通过五类正确性 case 与测量质量门；基线/候选中位数 72.448/58.368 μs，1.241228× | 这是 `local_serialized` 范围内的显式本机 authoring 对照，不是 provider 优化 Run，也没有“给 Agent NVIDIA 经验”与不给经验的对照 |
 | [E/P 四组迁移协议](OPTIMIZATION_TRANSFER_ABLATION.md) | 材料 E 和变换权限 P 的隔离、分配与审计已有软件测试 | 还没有共同目标、基线和预算下的实机迁移收益实验 |
 
+**一条来源明确的离线迁移实例。** B300-M2 的 `pairwise_sqdist` Run 在
+`R=1024,K=1024,N=64` 的 FP32 Workload 上，把 K 维按 256 分块；其第 17 个事件所连
+独立确认收据让基线与候选各通过五类输入的前后正确性检查，CUPTI 成对计时质量通过，
+本机中位数为 411.7945/53.856 μs（7.646×）。这是 NVIDIA 上的机制来源，不是目标卡
+成绩或 E/P 处理效果。为 BW1101 `gfx938` 生成的 Workload 保持数学、张量、五类输入、
+oracle 与容差一致。历史 Schedule v1 直接改 target 被当前 Compiler 拒绝，因为
+`lm.role(warps=[0])` 需要显式适配为 v2 `execution_groups`；适配后，`main@0fe3a447`
+接受并 lower 候选与同卡 starter，Hygon Triton 3.6.0 分别编成 HSACO。该 Compiler 的
+179 例 Corpus Gate 通过；两份封存候选通过声明五类验证 case 的 CPU 配对准入，绑定同一 Workload、Executor
+`gfx938@0fe3a447` 与 `fixed_baseline_paired_hip_dispatch_v1`。原始来源在
+`B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/pairwise_sqdist-20260916-180016/`；
+离线试点及镜像在 checkout 外的
+`open-cake-ir-evidence/transfer-b300-bw1101-20260923/`，Hygon 原产物在
+`bw1100:/home/testuser01/oci-transfer-b300-bw1101-20260923/`。**尚未在 Hygon 加载、
+判对或计时**，因此这里只证明带一次显式 IR 版本适配的机制能到达目标工具链，不证明
+跨卡性能收益。目标设备可用后还须完整五 case、同卡基线配对和独立确认；E/P 因果效应另测。
+
 M17 的收据名称必须含 `tile32-confirmatory`：同目录的
 `matrix-fib-m17-confirmatory-8c0cad53-v1` 是原产物自比较，结论为 `close_null`，
 不能代替 tile32 对固定基线的独立确认。原始收据与 86 份 Program 复核均在 checkout 外
