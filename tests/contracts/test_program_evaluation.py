@@ -50,7 +50,7 @@ def replay_program_candidate(compiler,program,candidate,payloads):
     evidence = SimpleNamespace(read_object=lambda reference:payloads[reference['role']])
     return _replay_launchable_candidate(evidence,[event],turn=1,candidate_sha256=bound.candidate_sha256,
         arm='open_cake',manifest_parser=parse_launch_manifest,compiler_factory=lambda:compiler,
-        authored_bytes=program.document_bytes,workload_sha256=workload_for(program).canonical_sha256)
+        authored_bytes=program.document_bytes,workload_sha256=spec.workload_sha256)
 
 
 @dataclass
