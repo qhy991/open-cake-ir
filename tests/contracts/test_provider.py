@@ -25,7 +25,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     required_live_provider_qualification_scope,
 )
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
-from open_cake_ir.lab.author_home import provision_codex_home  # noqa: E402
+from open_cake_ir.lab.author_home import provision_codex_home, system_skills_identity  # noqa: E402
 from open_cake_ir.lab.process import SupervisedProcessTimeout  # noqa: E402
 from open_cake_ir.lab.task_package import (  # noqa: E402
     TaskPackage,
@@ -201,7 +201,8 @@ class ProviderContractTests(unittest.TestCase):
                 model='gpt-5.6-sol', reasoning_effort='max', service_tier='default',
                 workspace=root, output_schema=ROOT/'contracts/providers/codex-turn-output-schema-v1.json',
                 removed_environment=('OPENAI_API_KEY', 'ANTHROPIC_API_KEY'),
-                author_home_policy='isolated_auth_only_v1', codex_home=home)
+                author_home_policy='isolated_auth_only_v1', codex_home=home,
+                qualified_system_skills_sha256=system_skills_identity(()))
             invocation = builder.build('fixture prompt', thread_id=None)
             self.assertEqual(builder.configuration['author_home_policy'], 'isolated_auth_only_v1')
             self.assertEqual(invocation.codex_home, home)
@@ -213,6 +214,15 @@ class ProviderContractTests(unittest.TestCase):
                         expected_change='add', expected_terminal_message='{}')
             self.assertEqual(supervised.call_args.kwargs['environment']['CODEX_HOME'], str(home))
             builder.remember_system_skills()
+            wrong = CodexInvocationBuilder(
+                executable=self.executable, provider_revision='fixture',
+                model='gpt-5.6-sol', reasoning_effort='max', service_tier='default',
+                workspace=root, output_schema=ROOT/'contracts/providers/codex-turn-output-schema-v1.json',
+                removed_environment=('OPENAI_API_KEY', 'ANTHROPIC_API_KEY'),
+                author_home_policy='isolated_auth_only_v1', codex_home=home,
+                qualified_system_skills_sha256='d'*64)
+            with self.assertRaisesRegex(ValueError, 'qualified CLI state'):
+                wrong.remember_system_skills()
             (home/'skills').mkdir()
             (home/'skills'/'injected').mkdir()
             with self.assertRaisesRegex(ValueError, 'user skills'):

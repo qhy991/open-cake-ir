@@ -707,6 +707,10 @@ class PairedExecutionTests(unittest.TestCase):
             qualification.update(scope='live_two_turn_current_provider',
                 executable_sha256=sha256(executable.read_bytes()).hexdigest(),
                 configuration_sha256=sha256(encoded(configuration)).hexdigest())
+            if python_transport:
+                from open_cake_ir.lab.author_home import system_skills_identity
+                qualification.update(schema_version=2,
+                    system_skills_sha256=system_skills_identity(()))
             suffix = name if python_transport else ''
             qp = self.output / f'qualification{suffix}.json'; qp.write_bytes(encoded(qualification))
             anchor = {'schema_version':1, 'kind':'codex_provider_qualification_evidence_anchor',

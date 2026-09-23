@@ -543,9 +543,12 @@ def main() -> int:
     auth_source = (external_file(ROOT, str(args.auth_source), 'qualification Codex credential source')
                    if args.author_home_policy is not None else None)
     workspace.mkdir(mode=0o750)
-    codex_home = (provision_codex_home(auth_source,
-                                      workspace.with_name(workspace.name + '-author-home'))
-                  if args.author_home_policy is not None else None)
+    codex_homes = ({arm: provision_codex_home(auth_source,
+                     workspace.with_name(workspace.name
+                         + (f'-{arm}' if len(qualification_arms) > 1 else '')
+                         + '-author-home'))
+                    for arm in qualification_arms}
+                   if args.author_home_policy is not None else {})
     workspaces = {}
     for arm in qualification_arms:
         arm_workspace = workspace / arm
@@ -553,7 +556,7 @@ def main() -> int:
         workspaces[arm] = arm_workspace
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
     code_mode_host = (resolve_codex_code_mode_host(executable, removed_environment=removed_environment,
-                                                   codex_home=codex_home,
+                                                   codex_home=codex_homes.get(qualification_arms[0]),
                                                    isolated_home=args.author_home_policy is not None)
                       if args.harness == "codex" else None)
     output_schema_sha256 = sha256(output_schema.read_bytes()).hexdigest()
@@ -663,7 +666,7 @@ def main() -> int:
                     output_schema=output_schema, disabled_features=disabled_features,
                     event_contract=event_contract, submission_contract=submission_contract,
                     cwd_policy="independent_task_workspace", reference_visibility="workspace_task_files",
-                    author_home_policy=args.author_home_policy, codex_home=codex_home)
+                    author_home_policy=args.author_home_policy, codex_home=codex_homes.get(arm))
             configuration_sha256s.add(sha256(_canonical_json_bytes(builder.configuration)).hexdigest())
             initial_plan = _planned_turn(package, 1)
             verify_task_package(arm_workspace, package)
@@ -802,10 +805,16 @@ def main() -> int:
             raise ValueError("Provider qualification authority changed")
 
         if args.harness == "codex":
-            resolve_codex_code_mode_host(
-                executable, expected=code_mode_host, removed_environment=removed_environment,
-                codex_home=codex_home, isolated_home=args.author_home_policy is not None,
-            )
+            for home in (codex_homes.values() if codex_homes else (None,)):
+                resolve_codex_code_mode_host(
+                    executable, expected=code_mode_host, removed_environment=removed_environment,
+                    codex_home=home, isolated_home=args.author_home_policy is not None,
+                )
+        qualified_skills = {observation['builder'].system_skills_sha256
+                            for observation in observations.values()}
+        if args.author_home_policy is not None and (
+            len(qualified_skills) != 1 or None in qualified_skills):
+            raise ValueError('paired Provider system skills differ between arms')
         receipt = ProviderQualificationReceipt(
             provider_revision=args.provider_revision,
             executable_sha256=executable_sha256,
@@ -815,6 +824,8 @@ def main() -> int:
             usage_observed=True,
             qualified=True,
             scope=receipt_scope,
+            system_skills_sha256=(next(iter(qualified_skills))
+                                   if args.author_home_policy is not None else None),
         )
         objects = []
         arm_payloads: dict[str, object] = {}

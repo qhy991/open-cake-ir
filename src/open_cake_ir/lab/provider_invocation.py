@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Mapping
 
 from .process import sanitized_environment
-from .author_home import ISOLATED_AUTH_ONLY_V1, system_skills_snapshot, verify_codex_home
+from .author_home import (ISOLATED_AUTH_ONLY_V1, system_skills_identity,
+                          system_skills_snapshot, verify_codex_home)
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
@@ -133,6 +134,7 @@ class CodexInvocationBuilder:
         code_mode_host: Mapping[str, object] | None = None,
         author_home_policy: str | None = None,
         codex_home: Path | None = None,
+        qualified_system_skills_sha256: str | None = None,
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -160,8 +162,13 @@ class CodexInvocationBuilder:
             raise ValueError('Codex author home policy differs')
         if (author_home_policy is None) != (codex_home is None):
             raise ValueError('Codex isolated author home binding differs')
+        if (qualified_system_skills_sha256 is not None and (
+            author_home_policy is None or len(qualified_system_skills_sha256) != 64
+            or any(char not in '0123456789abcdef' for char in qualified_system_skills_sha256))):
+            raise ValueError('Codex qualified system skills identity differs')
         self._codex_home = verify_codex_home(codex_home, fresh=True) if codex_home is not None else None
         self._system_skills_snapshot = None
+        self._qualified_system_skills_sha256 = qualified_system_skills_sha256
         self._author_home_policy = author_home_policy
         self._executable = executable.resolve(strict=True)
         self._code_mode_host = resolve_codex_code_mode_host(
@@ -293,6 +300,18 @@ class CodexInvocationBuilder:
             return
         verify_codex_home(self._codex_home)
         observed = system_skills_snapshot(self._codex_home)
+        if (self._qualified_system_skills_sha256 is not None
+            and system_skills_identity(observed) != self._qualified_system_skills_sha256):
+            raise ValueError('Codex system skills differ from qualified CLI state')
         if self._system_skills_snapshot is not None and observed != self._system_skills_snapshot:
             raise ValueError('isolated Codex system skills changed between Turns')
         self._system_skills_snapshot = observed
+
+    @property
+    def system_skills_sha256(self) -> str | None:
+        return (system_skills_identity(self._system_skills_snapshot)
+                if self._system_skills_snapshot is not None else None)
+
+    @property
+    def qualified_system_skills_sha256(self) -> str | None:
+        return self._qualified_system_skills_sha256

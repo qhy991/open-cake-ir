@@ -10,6 +10,8 @@ import stat
 from hashlib import sha256
 from pathlib import Path
 
+from open_cake_ir.serialization import canonical_json_bytes
+
 ISOLATED_AUTH_ONLY_V1 = 'isolated_auth_only_v1'
 
 
@@ -82,9 +84,17 @@ def _system_skills_snapshot(system: Path) -> tuple[tuple[str, int, str], ...]:
                     raise ValueError('isolated Codex system skills exceed the bounded tree')
                 descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
                 try:
+                    before = os.fstat(descriptor)
+                    identity = lambda value: (value.st_dev, value.st_ino, value.st_size,
+                                              value.st_mtime_ns, value.st_ctime_ns, value.st_mode)
+                    if identity(before) != identity(info):
+                        raise ValueError('isolated Codex system skill changed while checking')
                     digest = sha256()
                     while chunk := os.read(descriptor, 1024 * 1024):
                         digest.update(chunk)
+                    if (identity(os.fstat(descriptor)) != identity(before)
+                        or identity(path.lstat()) != identity(before)):
+                        raise ValueError('isolated Codex system skill changed while checking')
                 finally:
                     os.close(descriptor)
                 rows.append((relative, info.st_mode & 0o777, digest.hexdigest()))
@@ -96,6 +106,11 @@ def _system_skills_snapshot(system: Path) -> tuple[tuple[str, int, str], ...]:
 def system_skills_snapshot(home: Path) -> tuple[tuple[str, int, str], ...]:
     system = Path(home)/'skills'/'.system'
     return _system_skills_snapshot(system) if system.is_dir() else ()
+
+
+def system_skills_identity(snapshot: tuple[tuple[str, int, str], ...]) -> str:
+    """One identity for the CLI-managed tree admitted by the qualification."""
+    return sha256(canonical_json_bytes(snapshot)).hexdigest()
 
 
 def verify_codex_home(home: Path, *, fresh: bool = False,

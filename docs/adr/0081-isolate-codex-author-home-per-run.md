@@ -14,7 +14,9 @@ each independent Run start a fresh private home containing only a copied credent
 The CLI may create its own session and system-skill state there; admission refuses
 injected user skills, plugins, symlinks and permissive credential custody before
 every Turn. The CLI-generated system-skill tree is frozen after the first successful
-Turn and checked before and after each continuation. Token refresh may change
+Turn, compared with the version 2 qualification receipt, and checked before and
+after each continuation. A two-arm qualification uses a separate fresh home for
+each arm and requires the same system-skill identity. Token refresh may change
 `auth.json` bytes; this policy checks private custody rather than claiming a frozen
 credential or account identity. The actual invocation receives this home through
 `CODEX_HOME`.

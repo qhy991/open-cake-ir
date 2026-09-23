@@ -70,12 +70,18 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
                 "submission_contract": submission_contract}
     optional_contract = ({'submission_contract'} if 'submission_contract' in provider else set()) | (
         {'author_home_policy'} if 'author_home_policy' in provider else set())
+    authority_fields = _AUTHORITY | ({'system_skills_sha256'} if 'system_skills_sha256' in provider else set())
+    system_skills = provider.get('system_skills_sha256')
+    if system_skills is not None and (
+        not isinstance(system_skills, str) or len(system_skills) != 64
+        or any(char not in '0123456789abcdef' for char in system_skills)):
+        raise ValueError('Study Contract system skills identity differs')
     if ('author_home_policy' in provider
         and provider['author_home_policy'] != ISOLATED_AUTH_ONLY_V1):
         raise ValueError('Study Contract author home policy differs')
     if harness != "codex" or frozenset(provider) not in {
-        frozenset(_AUTHORITY | _CODEX | {"web_search"} | optional_contract),
-        frozenset(_AUTHORITY | _CODEX | {"event_contract"} | optional_contract),
+        frozenset(authority_fields | _CODEX | {"web_search"} | optional_contract),
+        frozenset(authority_fields | _CODEX | {"event_contract"} | optional_contract),
     }:
         raise ValueError("Study Contract provider configuration fields differ")
     defaults = provider.get("event_contract") == "tool_rich_candidate_v1"

@@ -328,5 +328,11 @@ class CodexRunProvider(QualifiedRunProvider):
         builders: Mapping[str, CodexInvocationBuilder], task_packages: Mapping[str, TaskPackage],
         adapter: CodexProviderAdapter | None = None,
     ) -> None:
+        for builder in builders.values():
+            if (builder.configuration.get('author_home_policy') is not None
+                and (qualification.system_skills_sha256 is None
+                     or builder.qualified_system_skills_sha256
+                     != qualification.system_skills_sha256)):
+                raise ValueError('Run system skills differ from Provider qualification')
         super().__init__(qualification=qualification, builders=builders, task_packages=task_packages,
                          adapter=adapter or CodexProviderAdapter())

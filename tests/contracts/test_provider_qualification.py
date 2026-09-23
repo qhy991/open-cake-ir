@@ -373,6 +373,10 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     workspace_path=root/f'{arm}-workspace')
                 self.assertEqual(completed.returncode, 0, completed.stderr.decode())
                 receipts[arm] = ProviderQualificationReceipt.load(receipt_path)
+                from open_cake_ir.lab.author_home import system_skills_identity
+                self.assertEqual(receipts[arm].document['schema_version'], 2)
+                self.assertEqual(receipts[arm].system_skills_sha256,
+                                 system_skills_identity(()))
                 self.assertEqual((root/f'{arm}-workspace-author-home'/'auth.json').read_bytes(),
                                  b'fixture credential')
                 evidence = EvidenceStore.open(evidence_root)
@@ -385,6 +389,25 @@ class ProviderQualificationContractTests(unittest.TestCase):
                                  invocations[f'{arm}_resumed_invocation']['codex_home'])
             self.assertNotEqual(receipts['open_cake'].configuration_sha256,
                                 receipts['native_triton'].configuration_sha256)
+
+    def test_a_two_arm_qualification_uses_distinct_fresh_author_homes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            executable = root/'codex'
+            self._write_provider(executable)
+            source = root/'auth.json'
+            source.write_bytes(b'fixture credential')
+            source.chmod(0o600)
+            completed, receipt_path, _, _ = self._run_qualification(
+                root, executable, provider_revision='two-arm-home-fixture',
+                run_id='two-arm-home', feature_policy='closed_research',
+                maximum_candidates_per_turn=3,
+                output_schema=ROOT/'contracts/providers/codex-triton-optimization-output-schema-v1.json',
+                author_home_policy='isolated_auth_only_v1', auth_source=source)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertTrue(ProviderQualificationReceipt.load(receipt_path).qualified)
+            for arm in ('open_cake', 'native_triton'):
+                self.assertTrue((root/f'workspace-{arm}-author-home'/'auth.json').is_file())
 
     def test_closed_qualification_rejects_a_schema_without_terminal_tool_calls(self):
         with tempfile.TemporaryDirectory() as directory:
