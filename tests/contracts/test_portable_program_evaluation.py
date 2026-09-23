@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from open_cake_ir.compiler import Compiler, Program, frontend
 from open_cake_ir.compiler.toolchain import TritonCompilation, triton_route
-from open_cake_ir.evaluation.core import EvaluationProtocol, load_torch_program, _MODULE_LOADERS
+from open_cake_ir.evaluation.core import EvaluationProtocol, load_torch_program
 from open_cake_ir.evaluation.paired import candidate_identity, participant_work, validate_receipt_policy
 from open_cake_ir.evaluation.platforms import platform_for
 from open_cake_ir.evaluation.program import (
@@ -149,16 +149,14 @@ class PortableProgramEvaluation(unittest.TestCase):
             def close(self, *, synchronize): synchronize(); self.closed = True
         def loader(bound, *args):
             kernel = Kernel(by_entry[bound.entry_point]); kernels.append(kernel); return kernel
-        native = ('open_cake_ir.evaluation.hip_driver.LoadedHipModuleCandidate.load'
-                  if candidate.target.startswith('gfx') else
-                  'open_cake_ir.evaluation.metax_driver.LoadedMetaxCandidate.load')
         admission = SimpleNamespace(device_arch=candidate.target)
         arguments = [torch.full(shape, 0., dtype=dtype, device='cuda:0')
                      for _, shape, dtype, _ in manifest.tensor_abi]
-        with patch.dict('sys.modules', {'torch': torch}), patch(native, side_effect=loader) as native_load:
-            loaded, tensors = load_torch_program(candidate, manifest, arguments, admission,
-                _MODULE_LOADERS[platform_for(candidate.target).code_object])
-        self.assertEqual(native_load.call_count, len(program.stages))
+        # Program ownership is under test here; the native HIP/MACA loaders have
+        # separate contracts and must not resolve this host's installed GPU runtime.
+        with patch.dict('sys.modules', {'torch': torch}):
+            loaded, tensors = load_torch_program(candidate, manifest, arguments, admission, loader)
+        self.assertEqual(len(kernels), len(program.stages))
         return torch, loaded, manifest, arguments, tensors, kernels, calls
 
     def assay(self, workload, program, candidate, *, broken_last=False):
