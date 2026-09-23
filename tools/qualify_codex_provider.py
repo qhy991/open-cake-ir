@@ -810,8 +810,9 @@ def main() -> int:
                     executable, expected=code_mode_host, removed_environment=removed_environment,
                     codex_home=home, isolated_home=args.author_home_policy is not None,
                 )
-        qualified_skills = {observation['builder'].system_skills_sha256
-                            for observation in observations.values()}
+        qualified_skills = ({observation['builder'].system_skills_sha256
+                             for observation in observations.values()}
+                            if args.author_home_policy is not None else set())
         if args.author_home_policy is not None and (
             len(qualified_skills) != 1 or None in qualified_skills):
             raise ValueError('paired Provider system skills differ between arms')
