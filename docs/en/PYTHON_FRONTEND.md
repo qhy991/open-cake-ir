@@ -34,7 +34,7 @@ Tensor parameters declare fixed shapes, dtype, and mode. A role owns the operati
 
 ## Check and generate without a GPU
 
-Use the project environment from [Getting started](GETTING_STARTED.md), running at the repository root. These commands use the released lock and a new external output:
+Use the project environment from [Getting started](GETTING_STARTED.md), running at the repository root. These commands use the current project's Compiler configuration and a new external output:
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler assess \
@@ -46,7 +46,7 @@ PYTHONPATH=src .venv/bin/python -m open_cake_ir.cli compiler lower \
   --output "$CAKE_PYTHON_OUTPUT/fma.py" --format text
 ```
 
-Text output currently reports Chinese structural acceptance and generation eligibility. The commands produce source, not GPU binaries, numerical checks, or performance measurements. Existing output files are refused. The canonical contract also describes using revision.json for an unreleased development draft; do not mix changed bound sources with an old released lock.
+Text output currently reports Chinese structural acceptance and generation eligibility. The commands produce source, not GPU binaries, numerical checks, or performance measurements. Existing output files are refused. An explicit `--revision` can select another configuration; running a historical frozen experiment still requires its own matching source and execution bindings.
 
 ## Supported authoring contract
 
