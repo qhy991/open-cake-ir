@@ -14,7 +14,7 @@ from collections.abc import Mapping
 from open_cake_ir.serialization import canonical_json_bytes
 
 
-_IMPORT = 'from open_cake_ir.compiler import frontend as cake\n\n'
+_IMPORT = 'from open_cake_ir.compiler import frontend as cake\n'
 
 
 def _json_literal(node: ast.AST):
@@ -92,7 +92,10 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
             names.add(node.name)
             start = decorator[0].lineno - 1
             snippet = '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
-            candidates.append(canonical_json_bytes({'python_source': _IMPORT + snippet}))
+            # The Compiler diagnoses the projected single Schedule. Preserve its
+            # original bundle line numbers so feedback points into the author file.
+            projected_source = _IMPORT + '\n' * max(0, start - 1) + snippet
+            candidates.append(canonical_json_bytes({'python_source': projected_source}))
         elif (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
               and isinstance(node.value.func, ast.Attribute)
               and isinstance(node.value.func.value, ast.Name)

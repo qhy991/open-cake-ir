@@ -78,8 +78,12 @@ class ProviderContractTests(unittest.TestCase):
             canonical_json_bytes({'action': 'transform', 'parent': 'prior',
                                   'transformation': 'specialize_triton_warps',
                                   'parameters': {'num_warps': 8}}),
-            canonical_json_bytes({'python_source': import_line + second.rstrip()}),
+            canonical_json_bytes({'python_source':
+                'from open_cake_ir.compiler import frontend as cake\n' +
+                '\n' * (raw.decode().split('\n').index(second.split('\n')[0]) - 1) + second.rstrip()}),
         ))
+        self.assertEqual(json.loads(projected[2])['python_source'].split('\n').index(second.split('\n')[0]),
+                         raw.decode().split('\n').index(second.split('\n')[0]))
         for invalid in (raw, (import_line + 'print("host effect")\n' + first).encode()):
             maximum = 2 if invalid is raw else 3
             with self.assertRaises(ValueError):
