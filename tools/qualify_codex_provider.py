@@ -432,6 +432,7 @@ def main() -> int:
     removed_environment = tuple(args.removed_environment or ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"))
     maximum_candidates_per_turn = args.maximum_candidates_per_turn or 1
     submission_contract = args.submission_contract
+    source_file = submission_contract in {PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1}
     schema = json.loads(output_schema.read_text(encoding="utf-8"))
     arm_schema = schema.get("properties", {}).get("arm", {})
     arms = arm_schema.get("enum")
