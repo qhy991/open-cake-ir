@@ -103,12 +103,14 @@ class PortableProgramEvaluation(unittest.TestCase):
         workload, program = task_program(backend)
         if single:
             program = Program.from_schedule(program.document['stages'][0]['schedule'])
-        lowered = self.compiler.lower_program(program)
+        from open_cake_ir.lab.workload_binding import bind_program_workload
+        bound = bind_program_workload(program, workload.canonical_sha256)
+        lowered = self.compiler.lower_program(bound)
         compilation = NativeCompiler()
         builder = TritonToolchainBuilder(workload=workload, case_id='primary', isolated_compiler=compilation)
         identity = sha256(program.document_bytes).hexdigest()
         children = {}
-        for stage, lowering in zip(program.stages, lowered.lowerings, strict=True):
+        for stage, lowering in zip(bound.stages, lowered.lowerings, strict=True):
             request = BuildRequest(identity, lowering.source.encode(), 'lowered_source', lowering.source_sha256,
                 lowering.target, lowering.route.entry_point, lowering.toolchain_requirements)
             children[stage.name] = builder.build_stage(request, stage_abi(stage))
