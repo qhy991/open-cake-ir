@@ -70,10 +70,12 @@ Evidence，因此项目的范围大于一种 DSL。本项目独立探索 [CAKE �
 保持原有合同。新 Clean-start 的 Python 参考材料只含公开 ABI、目标、生成路线和 `...` 占位，
 精确字节由 Lab 检查；当前 Provider 尚无可验证的读取隔离，实际启动被拒绝，见
 [ADR 0077](adr/0077-python-clean-start-reference-and-read-isolation.md)。
-新单候选、无 transform 的 `python_source_file_v1` Run 让 Agent 直接写 `candidate.py`；
-Lab 保存原始 UTF-8 字节并确定性生成内部候选，见 [ADR 0078](adr/0078-python-source-file-provider-submission.md)。
-多候选和 transform Run 仍使用 `candidate-set.json`，它是传输合同而非 Cake IR；下一步
-需让多个源码文件及显式动作也有同等的顺序、监护和回放。Compiler 内部文档往返继续收敛。
+新单候选、无 transform 的 `python_source_file_v1` Run 可直接写 `candidate.py`，见
+[ADR 0078](adr/0078-python-source-file-provider-submission.md)。新默认多候选 Run 写一个
+`candidate-set.py`：多个完整 Schedule 函数和获准的静态 transform 声明按源码顺序形成候选，
+Lab 保存原始字节并确定性投影，见 [ADR 0079](adr/0079-ordered-python-candidate-bundles.md)。
+`candidate-set.json` 留给冻结合同的回放，不再是新已知实现复现任务的默认作者输入。
+Compiler 内部文档往返继续收敛；每一步保留原提交，不原地改写历史证据。
 每一步采用后继 Run 合同并保留冻结实验的原提交，不原地改写历史证据。
 
 | 层级 | 表示与负责的决策 | 尚未决定的事情 |
