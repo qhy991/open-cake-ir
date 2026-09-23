@@ -298,7 +298,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
             completed, receipt_path, _, evidence_root = self._run_qualification(
                 root, executable, provider_revision='source-file-fixture', run_id='source-file',
                 feature_policy='provider_defaults_optimization', maximum_candidates_per_turn=1,
-                output_schema=ROOT/'contracts/providers/run-turn-output-schema-v1.json',
+                output_schema=ROOT/'contracts/providers/run-turn-output-schema-v2.json',
                 environment_kind='open_cake', submission_contract=PYTHON_SOURCE_FILE_V1,
                 python_source=source)
             self.assertEqual(completed.returncode, 0, completed.stderr.decode())
