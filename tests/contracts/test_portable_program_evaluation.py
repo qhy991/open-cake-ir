@@ -288,7 +288,11 @@ class PortableProgramEvaluation(unittest.TestCase):
                                      reference_outputs(workload, case_id, case.inputs))
                 def evaluate(prepared_authority, result):
                     self.assertEqual(tuple(prepared_authority.prepared_cases), workload.case_ids)
-                    self.assertEqual(prepared_authority.manifest.program.document, program.document)
+                    bound = prepared_authority.manifest.program.document
+                    for stage in bound['stages']:
+                        self.assertEqual(stage['schedule']['metadata'].pop('workload_contract_sha256'),
+                                         workload.canonical_sha256)
+                    self.assertEqual(bound, program.document)
                     result['admitted'] = True
                 with patch.dict(os.environ, {}, clear=True), \
                      patch.object(worker, '_load_authority', return_value=authority), \
