@@ -45,8 +45,9 @@ class MetalPreflightTests(unittest.TestCase):
             inputs = task_run_inputs(ROOT,workload,directory/'workload.json',directory/'starter.py',
                 harness='claude-code',model='exact-test-model',effort='high',turns=2)
             self.assertEqual(inputs['authoring']['input_format'], 'python_source_v1')
-            self.assertEqual(inputs['authoring']['tool_surface'], ['submit_python_source'])
-            from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+            self.assertEqual(inputs['authoring']['tool_surface'], ['submit_python_bundle'])
+            from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
+            self.assertEqual(inputs['authoring']['provider']['submission_contract'], PYTHON_CANDIDATE_BUNDLE_V1)
             source_run = task_run_inputs(ROOT,workload,directory/'workload.json',directory/'starter.py',
                 harness='claude-code',model='exact-test-model',effort='high',turns=2,
                 maximum_candidates=1,searches_per_turn=1,source_file=True)
@@ -217,7 +218,7 @@ class MetalPreflightTests(unittest.TestCase):
                 self.assertIn('schedule-starter.py',package.task_markdown)
                 self.assertIn('```python',package.task_markdown)
                 self.assertEqual(study['arms']['open_cake']['scaffold']['path'],
-                                 'contracts/scaffolds/python-artifact-optimization-metal-v4.md')
+                                 METAL_SCAFFOLD)
                 # The package owner delivers the frozen scaffold in AGENTS.md and
                 # references it from TASK.md; do not require a second body copy.
                 self.assertIn((ROOT/METAL_SCAFFOLD).read_text().strip(), package.agents_markdown)

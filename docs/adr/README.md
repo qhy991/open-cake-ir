@@ -85,3 +85,4 @@ ADR 保存设计理由，当前实现以代码和[当前状态](../../reports/cu
 - [0076: Complete Programs and independent transfer Runs](0076-programs-and-transfer-runs.md)
 - [0077: Python clean-start reference and read isolation](0077-python-clean-start-reference-and-read-isolation.md)
 - [0078: Python source-file Provider submission](0078-python-source-file-provider-submission.md)
+- [0079: Ordered Python candidate bundles](0079-ordered-python-candidate-bundles.md)

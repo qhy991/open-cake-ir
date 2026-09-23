@@ -314,6 +314,34 @@ class ProviderQualificationContractTests(unittest.TestCase):
             projected = evidence.read_object(objects['open_cake_initial_candidate_0000'])
             self.assertEqual(projected, canonical_json_bytes({'python_source': raw.decode()}))
 
+    def test_python_bundle_qualification_seals_ordered_source_candidates(self) -> None:
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root/'codex'
+            self._write_provider(executable, tool_rich=True)
+            source = root/'reference.py'
+            source.write_bytes((ROOT/'examples/python/fma.py').read_bytes())
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision='python-bundle-fixture', run_id='python-bundle',
+                feature_policy='provider_defaults_optimization', maximum_candidates_per_turn=3,
+                output_schema=ROOT/'contracts/providers/open-cake-optimization-output-schema-v1.json',
+                submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, python_source=source)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertEqual(ProviderQualificationReceipt.load(receipt_path).scope,
+                             'zero_gpu_contract_fixture_only')
+            evidence = EvidenceStore.open(evidence_root)
+            observed = next(row['payload'] for row in evidence.replay_events('python-bundle')
+                            if row['kind'] == 'provider_qualification_observed')
+            self.assertEqual(len(observed['arms']['open_cake']['initial_candidate_sha256s']), 3)
+            objects = {item['role']:item for item in observed['objects']}
+            raw = evidence.read_object(objects['open_cake_initial_source_file'])
+            self.assertEqual(raw.count(b'@cake.schedule('), 3)
+            for index in range(3):
+                member = json.loads(evidence.read_object(objects[f'open_cake_initial_candidate_{index:04d}']))
+                self.assertEqual(set(member), {'python_source'})
+                self.assertIn(f'candidate_1_{index}', member['python_source'])
+
     def test_two_executable_fixture_turns_archive_fixture_only_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -204,7 +204,11 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
                     "candidate_skeleton": "direct candidate skeleton reference"}[field]
             raise differs(f"Study Contract {noun}", expected=sorted(keys), observed=sorted(reference))
     _matched_author_controls(arms)
-    expected_open_cake_tools = (["submit_python_source"] if python_clean_start or single_environment
+    from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+    provider_document = _object(open_cake.get('provider'), 'study.arms.open_cake.provider')
+    expected_open_cake_tools = (["submit_python_bundle"] if single_environment
+                                 and provider_document.get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1
+                                 else ["submit_python_source"] if python_clean_start or single_environment
                                  and open_cake.get("input_format") == "python_source_v1"
                                  else ["submit_schedule_or_python"] if policy is not None or single_environment
                                  else ["submit_schedule"])

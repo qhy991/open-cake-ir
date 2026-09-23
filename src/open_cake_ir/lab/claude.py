@@ -31,6 +31,7 @@ from .process import (
 from .providers import (
     CANDIDATE_SET_ENVELOPE_V1, ProviderAuxiliaryActivity, ProviderInvocation,
     PYTHON_SOURCE_FILE_V1,
+    PYTHON_CANDIDATE_BUNDLE_V1,
     ProviderTurn, ProviderQualificationReceipt, QualifiedRunProvider, _project_candidate_submission,
 )
 
@@ -694,7 +695,8 @@ class ClaudeInvocationBuilder:
                  event_contract: str = CLAUDE_EVENT_CONTRACT, response_aliases=(),
                  submission_contract: str = CANDIDATE_SET_ENVELOPE_V1) -> None:
         self.response_aliases = response_model_aliases(model, response_aliases)
-        if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}:
+        if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                       PYTHON_CANDIDATE_BUNDLE_V1}:
             raise ValueError('Claude builder submission contract differs')
         self._submission_contract = submission_contract
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
@@ -824,10 +826,12 @@ class ClaudeProviderAdapter:
                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
                 arm: str | None = None, environment_kind: str = "open_cake", maximum_candidates_per_turn: int = 1) -> ProviderTurn:
         if (invocation.sandbox != "none" or event_contract not in CLAUDE_EVENT_CONTRACTS or
-                submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}
+                submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                            PYTHON_CANDIDATE_BUNDLE_V1}
                 or expected_change not in {"add", "update"} or
                 candidate_path.absolute() != invocation.cwd.absolute() / (
-                    'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'candidate-set.json')):
+                    'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                    'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else 'candidate-set.json')):
             raise ValueError("Claude invocation or candidate contract differs")
         try:
             if (invocation.argv.count("--json-schema") != 1
