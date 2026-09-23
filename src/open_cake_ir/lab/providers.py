@@ -20,6 +20,7 @@ from .process import (
 from .task_package import TaskPackage, verify_task_package, render_task_request
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
+    PYTHON_SOURCE_FILE_V1,
     ProviderInvocation,
     ProviderQualificationReceipt,
     ProviderTurn,
@@ -193,7 +194,7 @@ class QualifiedRunProvider:
         self._submission_contract = str(
             self.configuration.get("submission_contract")
         )
-        if self._submission_contract != CANDIDATE_SET_ENVELOPE_V1:
+        if self._submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}:
             raise ValueError("provider submission contract differs")
         for run_id, package in task_packages.items():
             if package.run_id != run_id:
@@ -234,7 +235,11 @@ class QualifiedRunProvider:
                 raise ValueError("initial provider Turn requires one empty workspace")
         elif request.thread_id is None:
             raise ValueError("resumed provider Turn requires the existing thread")
-        candidate_path = workspace / "candidate-set.json"
+        if self._submission_contract == PYTHON_SOURCE_FILE_V1 and (
+                request.environment_kind != 'open_cake' or request.maximum_candidates_per_turn != 1):
+            raise ValueError('Python source-file Run requires one Open Cake candidate per Turn')
+        candidate_path = workspace / (
+            'candidate.py' if self._submission_contract == PYTHON_SOURCE_FILE_V1 else 'candidate-set.json')
         expected_change = "add" if request.turn == 1 else "update"
         if (expected_change == "add" and candidate_path.exists()) or (
             expected_change == "update" and not candidate_path.is_file()

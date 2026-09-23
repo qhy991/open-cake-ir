@@ -16,6 +16,7 @@ from .rubrics import derive_rubric
 from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
 from .python_reference import bind_python_reference
 from .reference_access import document_role, reference_access, validate_reference_handoff
+from .provider_documents import PYTHON_SOURCE_FILE_V1
 from open_cake_ir.compiler import frontend
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
@@ -420,8 +421,27 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
             "in a `python_source` member; do not describe a Schedule with JSON fields. "
             "The existing candidate envelope is transport only.\n\n"
             "Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:")
+    source_file = authority['provider'].get('submission_contract') == PYTHON_SOURCE_FILE_V1
+    if source_file:
+        if (authority['environment_kind'] != 'open_cake'
+            or authority.get('input_format') != 'python_source_v1'
+            or budget['maximum_candidates_per_turn'] != 1
+            or lock.document['knowledge']['transformations']):
+            raise ValueError('Python source-file task requires one direct Cake candidate')
+        start = task.index('## Author actions and candidate output\n')
+        end = task.index('## Evaluation and budget\n')
+        task = (task[:start] + '''## Candidate output
+
+Write one complete Cake Python Schedule in `candidate.py` as UTF-8 source. The
+first Turn adds that file; later Turns update it. The Lab seals those exact bytes
+and generates the internal candidate transport. Do not write a Schedule JSON,
+`candidate-set.json`, a transform action, or another file.
+
+''' + task[end:])
     python_only = authority["environment_kind"] == "open_cake" and authority.get("input_format") == "python_source_v1"
     arm_rule = (
+        "Author one complete restricted Cake Python Schedule in candidate.py. This Run grants no transform action or authored JSON envelope. Do not invoke CUDA, a GPU, the network, or another compiler."
+        if source_file else
         "Submit authored Cake IR implementations only as restricted Python source through the supplied frontend. Granted Compiler transformations may produce internal Program documents. The JSON candidate envelope is transport only; do not author a Schedule or Program as JSON. Do not invoke CUDA, a GPU, the network, or another compiler."
         if python_only else
         "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
@@ -469,6 +489,9 @@ write surface, reference access, tool permissions, budget, or acceptance authori
 
 {_document_sections({'scaffold.md': documents['scaffold.md']}, access=reference_access(authority, 'arm'))}
 """
+    if source_file:
+        agents = agents.replace('Write only `candidate-set.json`; `TASK.md` and `AGENTS.md` are immutable.',
+                                'Write only `candidate.py`; `TASK.md` and `AGENTS.md` are immutable.')
     if authority['provider'].get('harness') == 'responses':
         task = task.replace('Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:',
                             'Return exactly one JSON candidate-set envelope in your final response:')

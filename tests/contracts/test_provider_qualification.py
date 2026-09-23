@@ -95,8 +95,9 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 declared = next(item for item in plan["turns"] if item["turn"] == selected_turn)
                 expected = declared["submission"]
                 candidate.write_text(
-                    (json.dumps(expected, indent=2, ensure_ascii=False)
-                     if {pretty_submission!r} else json.dumps(expected, sort_keys=True, separators=(",", ":"))) + "\\n",
+                    (expected if isinstance(expected, str) else
+                     (json.dumps(expected, indent=2, ensure_ascii=False)
+                      if {pretty_submission!r} else json.dumps(expected, sort_keys=True, separators=(",", ":"))) + ("" if isinstance(expected, str) else "\\n")),
                     encoding="utf-8",
                 )
                 if {mutate_helper!r} and not resumed:
@@ -195,6 +196,8 @@ class ProviderQualificationContractTests(unittest.TestCase):
         reasoning_effort: str = "max",
         output_schema: Path | None = None,
         environment_kind: str | None = None,
+        submission_contract: str | None = None,
+        python_source: Path | None = None,
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -233,6 +236,10 @@ class ProviderQualificationContractTests(unittest.TestCase):
             ]
         if environment_kind is not None:
             command.extend(["--environment-kind", environment_kind])
+        if submission_contract is not None:
+            command.extend(['--submission-contract', submission_contract])
+        if python_source is not None:
+            command.extend(['--python-source', str(python_source)])
         if maximum_candidates_per_turn is not None:
             command.extend(
                 [
@@ -278,6 +285,34 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 observed["payload"]["arms"]["open_cake"]["initial_auxiliary_activity"][0]["item_type"],
                 "command_execution",
             )
+
+    def test_python_source_file_qualification_seals_original_bytes_and_projection(self) -> None:
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.serialization import canonical_json_bytes
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root/'codex'
+            self._write_provider(executable, tool_rich=True)
+            source = root/'reference.py'
+            source.write_bytes((ROOT/'examples/python/fma.py').read_bytes())
+            completed, receipt_path, _, evidence_root = self._run_qualification(
+                root, executable, provider_revision='source-file-fixture', run_id='source-file',
+                feature_policy='provider_defaults_optimization', maximum_candidates_per_turn=1,
+                output_schema=ROOT/'contracts/providers/run-turn-output-schema-v1.json',
+                environment_kind='open_cake', submission_contract=PYTHON_SOURCE_FILE_V1,
+                python_source=source)
+            self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+            self.assertEqual(ProviderQualificationReceipt.load(receipt_path).scope,
+                             'zero_gpu_contract_fixture_only')
+            observed = next(event['payload'] for event in EvidenceStore.open(evidence_root).replay_events('source-file')
+                            if event['kind'] == 'provider_qualification_observed')
+            objects = {item['role']:item for item in observed['objects']}
+            evidence = EvidenceStore.open(evidence_root)
+            raw = evidence.read_object(objects['open_cake_initial_source_file'])
+            self.assertEqual(raw, (root/'workspace'/'open_cake'/'candidate.py').read_bytes().replace(
+                b'qualification turn 2', b'qualification turn 1'))
+            projected = evidence.read_object(objects['open_cake_initial_candidate_0000'])
+            self.assertEqual(projected, canonical_json_bytes({'python_source': raw.decode()}))
 
     def test_two_executable_fixture_turns_archive_fixture_only_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -237,6 +237,7 @@ def run_runtime_factory(project_root, runtime_config_path):
             if harness=='claude-code':
                 invocation = ClaudeInvocationBuilder(**common,cli_options=advertised_options(executable),
                     event_contract=declared_provider['event_contract'],
+                    submission_contract=declared_provider.get('submission_contract', 'candidate_set_envelope_v1'),
                     response_aliases=declared_provider.get('response_model_aliases', ()))
                 provider = ClaudeRunProvider(qualification=qualification,builders={specification.run_id:invocation},
                     task_packages=packages,adapter=ClaudeProviderAdapter(response_aliases=invocation.response_aliases))
@@ -246,7 +247,7 @@ def run_runtime_factory(project_root, runtime_config_path):
                     service_tier=declared_provider['service_tier'],output_schema=schema,
                     disabled_features=tuple(declared_provider['disabled_features']),
                     event_contract=declared_provider.get('event_contract','closed_file_change_v1'),
-                    submission_contract=CANDIDATE_SET_ENVELOPE_V1,cwd_policy=declared_provider['cwd_policy'],
+                    submission_contract=declared_provider.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1),cwd_policy=declared_provider['cwd_policy'],
                     reference_visibility=declared_provider['reference_visibility'])
                 provider = CodexRunProvider(qualification=qualification,builders={specification.run_id:invocation},
                     task_packages=packages,adapter=CodexProviderAdapter())

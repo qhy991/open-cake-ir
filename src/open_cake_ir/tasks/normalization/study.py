@@ -147,7 +147,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
                    agents_md: Path | None = None, response_aliases=(),
                    reference_access: str = 'known_kernel_reproduction',
-                   lowering_route=None) -> dict:
+                   lowering_route=None, source_file: bool = False) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -161,6 +161,9 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         raise ValueError("exact harness, model and effort are required")
     if type(searches_per_turn) is not int or type(maximum_candidates) is not int or not 1 <= searches_per_turn <= maximum_candidates:
         raise ValueError("searches per Turn must fit the candidate budget")
+    if source_file and (reference_access != 'known_kernel_reproduction'
+                        or maximum_candidates != 1 or searches_per_turn != 1):
+        raise ValueError('Python source-file Run requires one candidate and one search per Turn')
     budget = {"unit": "provider_tokens", "limit": token_budget, "checkpoints": [] if token_budget is None else [token_budget],
               "maximum_turns": turns, "maximum_candidates_per_turn": maximum_candidates,
               "maximum_compilations": maximum_compilations,
@@ -179,6 +182,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     if python_clean_start:
         from open_cake_ir.lab.reference_access import PYTHON_CLEAN_START_SCAFFOLD
         default_scaffold = PYTHON_CLEAN_START_SCAFFOLD
+    elif source_file:
+        default_scaffold = 'contracts/scaffolds/python-artifact-optimization-source-file-v1.md'
     scaffold_name, scaffold_path = source_reference_path(
         root, str(agents_md) if agents_md is not None else default_scaffold, "scaffold")
     scaffold_bytes = scaffold_path.read_bytes()
@@ -204,6 +209,9 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                 "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 **{name: dict(CAMPAIGN_BINDING) for name in ("revision", "executable_sha256", "qualification", "qualification_anchor")}}
+    if source_file:
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        provider['submission_contract'] = PYTHON_SOURCE_FILE_V1
     if response_aliases:
         if harness != "claude-code":
             raise ValueError("response model aliases require Claude Code")

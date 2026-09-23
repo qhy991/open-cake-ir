@@ -14,6 +14,7 @@ from ..faults import ReportedProviderUsage
 from ..provider_events import reported_provider_usage, provider_token_delta
 from ..providers import (
     CANDIDATE_SET_ENVELOPE_V1,
+    PYTHON_SOURCE_FILE_V1,
     _project_candidate_submission,
     parse_codex_turn_events,
 )
@@ -120,6 +121,10 @@ def _replay_provider_turns(
     message_history = []
     message_response_ids = set()
     message_model = provider_authority.get('model') if event_contract == 'responses_messages_v1' else None
+    submission_contract = provider_authority.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1)
+    source_file = submission_contract == PYTHON_SOURCE_FILE_V1
+    submission_role = 'provider_source_file' if source_file else 'provider_submission_envelope'
+    expected_name = 'candidate.py' if source_file else 'candidate-set.json'
     for expected_turn, event in enumerate(provider_events, start=1):
         location = event_location("provider_turn_completed", turn=expected_turn)
         payload = _object(event.get("payload"), "provider_turn.payload")
@@ -166,7 +171,7 @@ def _replay_provider_turns(
             cast(Mapping[str, object], item)
             for item in objects
             if isinstance(item, Mapping)
-            and item.get("role") == "provider_submission_envelope"
+            and item.get("role") == submission_role
         ]
         candidate_count = payload.get("candidate_count")
         candidate_set_turns.add(expected_turn)
@@ -192,7 +197,7 @@ def _replay_provider_turns(
         ]
         for role, count in (
             ("provider_events", len(event_references)),
-            ("provider_submission_envelope", len(submission_references)),
+            (submission_role, len(submission_references)),
             ("provider_reference_bundle", len(reference_bundle_references)),
         ):
             if count != 1:
@@ -225,16 +230,16 @@ def _replay_provider_turns(
         try:
             projected_candidates = _project_candidate_submission(
                 evidence.read_object(submission_references[0]),
-                submission_contract=CANDIDATE_SET_ENVELOPE_V1,
+                submission_contract=submission_contract,
                 arm=arm, environment_kind=expected_task_package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
         except (UnicodeError, ValueError) as error:
-            refuse(f"{location}.provider_submission_envelope",
-                   f"the retained submission envelope does not project: {error}")
+            refuse(f"{location}.{submission_role}",
+                   f"the retained author file does not project: {error}")
         if projected_candidates != candidates:
-            refuse(f"{location}.provider_submission_envelope",
-                   "candidates projected from the envelope differ from the retained candidate submissions")
+            refuse(f"{location}.{submission_role}",
+                   "candidates projected from the author file differ from the retained candidate submissions")
         candidate_digests = tuple(sha256(candidate).hexdigest() for candidate in candidates)
         if sha256(raw_events).hexdigest() != event_references[0].get("sha256"):
             refuse(f"{location}.provider_events", "retained raw bytes differ from the reference digest")
@@ -257,9 +262,6 @@ def _replay_provider_turns(
                 prior_cumulative=prior_cumulative, location=location)
         expected_terminal = _expected_terminal_message(arm, expected_turn, event_contract)
         expected_change = "add" if expected_turn == 1 else "update"
-        expected_name = (
-            "candidate-set.json"
-        )
         if event_contract == 'responses_messages_v1':
             from types import SimpleNamespace
             from ..message_provider import validate_exchange, usage
@@ -280,7 +282,8 @@ def _replay_provider_turns(
         elif event_contract in CLAUDE_EVENT_CONTRACTS:
             parsed = parse_claude_turn_events(raw_events, expected_terminal_message=expected_terminal,
                                               event_contract=event_contract,
-                                              response_aliases=provider_authority.get("response_model_aliases", ()))
+                                              response_aliases=provider_authority.get("response_model_aliases", ()),
+                                              candidate_filename=expected_name)
             if parsed.reported_models[0] != provider_authority["model"]:
                 refuse(f"{location}.provider_events", "reported models differ from the arm's provider authority",
                        observed=parsed.reported_models, expected=(provider_authority["model"],))

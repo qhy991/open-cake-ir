@@ -12,6 +12,7 @@ from typing import Mapping
 from .process import sanitized_environment
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
+    PYTHON_SOURCE_FILE_V1,
     CODEX_DISABLED_FEATURES,
     ProviderInvocation,
     _THREAD_ID,
@@ -140,7 +141,7 @@ class CodexInvocationBuilder:
             ((), "tool_rich_candidate_v1"),
         }:
             raise ValueError("Codex feature and event contracts differ")
-        if submission_contract != CANDIDATE_SET_ENVELOPE_V1:
+        if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}:
             raise ValueError("Codex submission contract differs")
         if (cwd_policy, reference_visibility) not in {
             ("independent_task_workspace", "workspace_task_files"),

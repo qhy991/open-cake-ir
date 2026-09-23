@@ -53,7 +53,9 @@ Python 作者无需在 `@cake.schedule` 中填写 Workload 的内容 hash。独�
 原有 `schedule_or_python_v1` 继续用于按原合同回放的 Run。新 Clean-start 可预检一个
 由 Workload 公共 ABI 生成、仅含 `...` 占位的 Python 参考文件；当前 Provider 的文件读取
 隔离尚未合格，因此该处理尚不能执行实验。旧 JSON 参考材料仅保留历史合同。
-`candidate-set.json` 传输封装仍由 Agent 填写，不属于 Python kernel 的正文。
+单候选、无 transform 的新 Run 可选择 `python_source_file_v1`：Agent 直接更新
+`candidate.py`，Lab 自动生成内部 `python_source` 候选。多候选与 transform Run 仍使用
+`candidate-set.json` 传输封装；两者都不要求手写 Schedule JSON。
 `id=` 仅用于显式命名操作、与既有计划对照；省略时由结果变量或目标 Buffer 推导。
 
 ## 编写规则
