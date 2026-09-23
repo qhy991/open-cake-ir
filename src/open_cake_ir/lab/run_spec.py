@@ -90,6 +90,7 @@ class RunSpecification:
         if authoring['provider'].get('submission_contract') == PYTHON_SOURCE_FILE_V1:
             if (authoring['environment_kind'] != 'open_cake'
                 or authoring.get('input_format') != 'python_source_v1'
+                or authoring.get('tool_surface') != ['submit_python_source']
                 or authoring.get('reference_access') != 'known_kernel_reproduction'
                 or document['budget'].get('maximum_candidates_per_turn') != 1
                 or document['evaluation_protocol'].get('searches_per_turn') != 1
@@ -98,6 +99,7 @@ class RunSpecification:
         if authoring['provider'].get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1:
             if (authoring['environment_kind'] != 'open_cake'
                 or authoring.get('input_format') != 'python_source_v1'
+                or authoring.get('tool_surface') != ['submit_python_bundle']
                 or authoring.get('reference_access') != 'known_kernel_reproduction'):
                 raise ValueError('Python candidate-bundle Run requires Cake Python known-kernel authoring')
         interface = _object(document['agent_interface'], 'run.agent_interface')

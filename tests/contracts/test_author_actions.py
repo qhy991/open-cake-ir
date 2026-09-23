@@ -158,6 +158,10 @@ class AuthorActionTests(SemanticLabTestCase):
             'sha256': sha256((ROOT/scaffold).read_bytes()).hexdigest()}
         provider_document = document['authoring']['provider']
         provider_document['submission_contract'] = PYTHON_CANDIDATE_BUNDLE_V1
+        wrong_surface = json.loads(encoded(document))
+        wrong_surface['authoring']['tool_surface'] = ['submit_python_source']
+        with self.assertRaisesRegex(ValueError, 'Python candidate-bundle Run'):
+            RunSpecification.from_dict(wrong_surface)
         configuration = execution_configuration(provider_document)
         qualification = ProviderQualificationReceipt.load(ROOT/provider_document['qualification']['path'])
         qualification = replace(qualification, configuration_sha256=sha256(encoded(configuration)).hexdigest())

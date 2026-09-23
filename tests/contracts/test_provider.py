@@ -85,6 +85,15 @@ class ProviderContractTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 _project_candidate_submission(invalid, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
                     arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=maximum)
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory)/'executed'
+            hostile = (import_line +
+                f'cake.transform(parent="prior", transformation="unsafe", '
+                f'parameters={{"x": open({str(marker)!r}, "w").write("bad")}})\n').encode()
+            with self.assertRaisesRegex(ValueError, 'static literals'):
+                _project_candidate_submission(hostile, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
+            self.assertFalse(marker.exists())
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
