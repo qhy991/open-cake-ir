@@ -18,6 +18,25 @@ _IMPORT = 'from open_cake_ir.compiler import frontend as cake\n\n'
 
 
 def _json_literal(node: ast.AST):
+    def reject_duplicate_keys(item: ast.AST):
+        if isinstance(item, ast.Dict):
+            seen = set()
+            for key, value in zip(item.keys, item.values, strict=True):
+                if key is None:
+                    raise ValueError('Python transform parameters cannot unpack mappings')
+                try:
+                    name = ast.literal_eval(key)
+                except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as error:
+                    raise ValueError('Python transform parameter keys must be static strings') from error
+                if not isinstance(name, str) or name in seen:
+                    raise ValueError('Python transform parameter keys must be unique strings')
+                seen.add(name)
+                reject_duplicate_keys(value)
+        elif isinstance(item, (ast.List, ast.Tuple)):
+            for value in item.elts:
+                reject_duplicate_keys(value)
+
+    reject_duplicate_keys(node)
     try:
         value = ast.literal_eval(node)
     except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as error:

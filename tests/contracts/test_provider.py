@@ -94,6 +94,13 @@ class ProviderContractTests(unittest.TestCase):
                 _project_candidate_submission(hostile, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
                     arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
             self.assertFalse(marker.exists())
+        for parameters in ('{"tile": 32, "tile": 64}',
+                           '{"nested": {"tile": 32, "tile": 64}}'):
+            duplicate = (import_line + f'cake.transform(parent="prior", transformation="specialize", '
+                         f'parameters={parameters})\n').encode()
+            with self.subTest(parameters=parameters), self.assertRaisesRegex(ValueError, 'unique strings'):
+                _project_candidate_submission(duplicate, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
