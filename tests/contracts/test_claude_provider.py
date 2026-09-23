@@ -29,6 +29,19 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
+    def test_raw_python_file_has_the_same_sealed_projection_as_codex(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.serialization import canonical_json_bytes
+        self.candidate.unlink()
+        self.candidate = self.workspace / 'candidate.py'
+        self.submission = self.source.encode()
+        self.candidate.write_bytes(self.submission)
+        turn = self.normalize(submission_contract=PYTHON_SOURCE_FILE_V1,
+                              environment_kind='open_cake', maximum_candidates_per_turn=1)
+        self.assertEqual(turn.raw_submission, self.submission)
+        self.assertEqual(turn.candidates,
+                         (canonical_json_bytes({'python_source': self.source}),))
+
     @staticmethod
     def compaction_events():
         common = {"type": "system", "session_id": SESSION, "uuid": OTHER_SESSION}
