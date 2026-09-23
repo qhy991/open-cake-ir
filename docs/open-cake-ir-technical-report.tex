@@ -6,81 +6,127 @@
 \setCJKsansfont{Hiragino Sans GB}[BoldFont=Hiragino Sans GB]
 \setCJKmonofont{Songti SC}
 \setCJKfamilyfont{zhhei}{Hiragino Sans GB}
-\usepackage[margin=25mm,headheight=15pt]{geometry}
-\usepackage{amsmath,amssymb,booktabs,tabularx,array,enumitem,xcolor}
-\usepackage{hyperref,fancyhdr}
-\definecolor{ink}{HTML}{17324D}
-\definecolor{muted}{HTML}{526579}
-\definecolor{accent}{HTML}{176B80}
+\usepackage[left=23mm,right=23mm,top=24mm,bottom=25mm,headheight=21pt]{geometry}
+\usepackage{amsmath,amssymb,booktabs,tabularx,array,enumitem,xcolor,colortbl}
+\usepackage{hyperref,fancyhdr,titlesec,caption,microtype,multicol}
+\usepackage{tikz,tcolorbox}
+\usetikzlibrary{arrows.meta,positioning}
+\tcbuselibrary{breakable,skins}
+\definecolor{ink}{HTML}{153341}
+\definecolor{muted}{HTML}{5A6B73}
+\definecolor{accent}{HTML}{087C84}
+\definecolor{mist}{HTML}{F0F6F5}
+\definecolor{hair}{HTML}{D5E3E2}
 \hypersetup{colorlinks=true,linkcolor=ink,urlcolor=accent,citecolor=accent,pdftitle={open-cake-ir: Agent 驱动的 GPU Kernel 与编译器协同演进技术报告},pdfauthor={Haiyan Qin}}
 \setlength{\parindent}{2em}
-\setlength{\parskip}{0.28em}
-\renewcommand{\arraystretch}{1.25}
+\setlength{\parskip}{0.38em}
+\linespread{1.12}
+\renewcommand{\arraystretch}{1.34}
 \setlist[itemize]{leftmargin=2.3em,itemsep=0.15em,topsep=0.25em}
 \setlist[enumerate]{leftmargin=2.3em,itemsep=0.15em,topsep=0.25em}
+\titleformat{\section}[hang]{\Large\bfseries\sffamily\color{ink}}{\color{accent}\thesection}{0.85em}{}[\vspace{2pt}{\color{hair}\titlerule[0.6pt]}]
+\titlespacing*{\section}{0pt}{2.0em}{0.9em}
+\titleformat{\subsection}[hang]{\normalsize\bfseries\sffamily\color{ink}}{\color{accent}\thesubsection}{0.7em}{}
+\titlespacing*{\subsection}{0pt}{1.4em}{0.45em}
+\captionsetup{font=small,labelfont={bf,color=accent},labelsep=quad,justification=raggedright,singlelinecheck=false,skip=5pt}
+\setcounter{tocdepth}{1}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small\color{muted} open-cake-ir 技术报告}
-\fancyhead[R]{\small\color{muted} 2026-09-23}
-\fancyfoot[C]{\thepage}
+\fancyhead[L]{\scriptsize\sffamily\bfseries\color{accent} OPEN-CAKE-IR \quad / \quad TECHNICAL REPORT}
+\fancyhead[R]{\scriptsize\sffamily\color{muted} 2026.09}
+\fancyfoot[L]{\scriptsize\sffamily\color{muted} 固定源码：0fe3a447}
+\fancyfoot[R]{\small\sffamily\bfseries\color{ink}\thepage}
+\renewcommand{\headrulewidth}{0.45pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{hair}\leaders\hrule height \headrulewidth\hfill}}
+\renewcommand{\footrulewidth}{0pt}
 \newcommand{\code}[1]{\texttt{#1}}
 \newcommand{\repo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/0fe3a4476765a1d323e9d114d1c9af2f324dd767/#1}{#2}}
 \newcommand{\scope}[1]{\textcolor{accent}{\textbf{#1}}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newtcolorbox{notebox}[1][]{enhanced,breakable,colback=mist,colframe=mist,boxrule=0pt,borderline west={2pt}{0pt}{accent},left=4mm,right=4mm,top=3mm,bottom=3mm,#1}
+\makeatletter
+\newenvironment{reportbibliography}[1]
+ {\list{\@biblabel{\@arabic\c@enumiv}}%
+   {\settowidth\labelwidth{\@biblabel{#1}}%
+    \leftmargin\labelwidth\advance\leftmargin\labelsep
+    \usecounter{enumiv}\let\p@enumiv\@empty
+    \renewcommand\theenumiv{\@arabic\c@enumiv}%
+    \setlength\itemsep{0.25em}}%
+  \sloppy\clubpenalty4000\widowpenalty4000}
+ {\endlist}
+\makeatother
 
 \begin{document}
 \begin{titlepage}
-\centering
-\vspace*{23mm}
-{\Large\color{accent} open-cake-ir\par}
+\thispagestyle{empty}
+\noindent\begin{tcolorbox}[colback=ink,colframe=ink,boxrule=0pt,arc=0pt,left=5mm,right=5mm,top=3mm,bottom=3mm]
+{\color{white}\sffamily\bfseries\small OPEN-CAKE-IR}\hfill{\color{white}\sffamily\small RESEARCH TECHNICAL REPORT \quad 2026 / 09}
+\end{tcolorbox}
+\vspace*{18mm}
+{\noindent\sffamily\bfseries\color{accent}\large 研究报告 \quad / \quad 技术体系与实验证据\par}
 \vspace{8mm}
-{\Huge\bfseries Agent 驱动的 GPU Kernel\\[3mm]与编译器协同演进\par}
-\vspace{5mm}
-{\Large 技术报告\par}
-\vspace{9mm}
-{\large\color{muted} A Technical Report on Agent-Driven GPU Kernel\\ and Compiler Co-Evolution\par}
-\vspace{17mm}
-{\Large 秦海岩\quad Haiyan Qin\par}
-\vspace{3mm}
-{\normalsize 北京航空航天大学\par}
+{\noindent\sffamily\bfseries\color{ink}\fontsize{27}{38}\selectfont Agent 驱动的\\GPU Kernel 与编译器\\协同演进\par}
+\vspace{7mm}
+{\noindent\color{muted}\large A Technical Report on Agent-Driven GPU Kernel\\and Compiler Co-Evolution\par}
+\vspace{13mm}
+{\color{accent}\noindent\rule{\textwidth}{1.1pt}\par}
+\vspace{6mm}
+\noindent\begin{minipage}[t]{0.48\textwidth}
+{\sffamily\bfseries\color{ink}秦海岩 \quad Haiyan Qin\par}
+{\small\color{muted}北京航空航天大学\par}
+\end{minipage}\hfill\begin{minipage}[t]{0.46\textwidth}
+\raggedleft{\sffamily\bfseries\color{ink}2026 年 9 月 23 日\par}
+{\small\color{muted}阅读快照 \quad / \quad 源码 0fe3a447\par}
+\end{minipage}
+\vspace{21mm}
+\begin{center}
+\begin{tikzpicture}[>=Latex, every node/.style={font=\sffamily\small,align=center},
+ flowbox/.style={draw=hair,fill=mist,rounded corners=2pt,minimum width=33mm,minimum height=15mm,inner sep=2pt}]
+\node[flowbox] (w) {Workload\\外部语义};
+\node[flowbox,right=5mm of w] (s) {Program / Schedule\\显式执行计划};
+\node[flowbox,right=5mm of s] (c) {Compiler / Target\\检查与生成};
+\node[flowbox,right=5mm of c] (e) {Evaluation / Evidence\\确认与留存};
+\draw[->,accent,line width=0.8pt] (w)--(s);
+\draw[->,accent,line width=0.8pt] (s)--(c);
+\draw[->,accent,line width=0.8pt] (c)--(e);
+\end{tikzpicture}
+\end{center}
 \vfill
-\begin{minipage}{0.86\textwidth}
-\small
-\textbf{版本与证据边界。}本报告整理仓库在 2026 年 9 月 23 日的实现与已发布证据；正文所读源码固定为
-\code{0fe3a4476765a1d323e9d114d1c9af2f324dd767}。历史设备实验仍绑定各自的源码、精确目标、
-Workload、oracle 和计时协议，不能因本报告的新版本而重新归属。文内给出固定提交的来源链接。
-\end{minipage}\par
-\vspace{8mm}
-{\large 2026 年 9 月 23 日\par}
+\begin{notebox}
+\noindent\textbf{报告边界}\quad 正文所读源码固定为
+\code{0fe3a4476765a1d323e9d114d1c9af2f324dd767}。历史设备实验仍绑定各自的源码、
+精确目标、Workload、oracle 和计时协议；文内引用指向所读的固定提交。
+\end{notebox}
 \end{titlepage}
 
-\begin{abstract}
-GPU Kernel Agent 可以快速提出候选实现，但候选为何非法、何处消耗资源、哪次设备测量可以支持收益，
-往往分散在代码生成器、运行时和实验记录中。open-cake-ir 将单 Kernel 的硬件执行决策表示为带类型的
-\emph{Schedule}，以 \emph{Program} 组合阶段；Compiler 在生成目标源码前给出局部化诊断，Lab 在冻结的
-Workload 和 Run 合同下搜索候选，Evaluation 以外部 oracle、目标计时和 profiler 检查结果，Evidence
-保存可审计的观察。编译器缺口由运行之外的后继提交修复，并通过语料门验证，形成 Kernel 优化与
-编译能力演进的两个循环。
-
-本文给出系统的职责、表示、检查和实验协议，并将证据按层级陈述。当前源码的 179 项 Corpus Gate
-用例符合预期；B300、C550 等目标已有范围明确的设备案例，包括合格的局部改进与未通过计时质量门的
-完整 Program。现有记录支持平台接入和若干固定任务的局部优化；跨硬件经验材料或显式变换能否降低
-Agent 搜索成本，仍需按预注册的四组处理实验验证。本文不将软件合同、设备正确性和因果收益混为一项结论。
-\end{abstract}
+\section*{摘要}
+\begin{notebox}
+\noindent\textbf{问题。}GPU Kernel Agent 能提出候选实现，但一次失败或一项延迟读数很难说明问题
+属于调度、表达能力、目标准入还是测量质量。
+\par\smallskip
+\noindent\textbf{方法。}open-cake-ir 以 typed Schedule 表达单 Kernel 的硬件决策，以 Program 组合
+阶段；Compiler 给出局部化诊断，Lab 在冻结合同下搜索，Evaluation 使用外部 oracle、目标计时和
+profiler 确认，Evidence 保存可审计的观察。重复缺口在运行外由后继提交修复。
+\par\smallskip
+\noindent\textbf{证据。}当前源码的 179 项 Corpus Gate 用例符合预期；B300、C550 已有范围明确的
+设备案例。平台接入和固定任务的局部优化已有证据，跨硬件经验材料或显式变换能否降低 Agent
+搜索成本，仍需预注册的四组处理实验。软件合同、设备正确性和因果收益分别验收。
+\end{notebox}
 
 \noindent\textbf{关键词：}GPU Kernel；中间表示；静态验证；Agent；实验可复查性；跨硬件优化
 
-\vspace{1em}
-\noindent\textbf{English abstract.}
+\vspace{1.2em}
+\noindent{\sffamily\bfseries\color{accent} ABSTRACT}\par\vspace{0.35em}
+{\small\noindent
 open-cake-ir is a research system in which agents author typed, hardware-explicit kernel schedules,
 receive localized compiler feedback, and validate candidates against external oracles and target-specific
 measurements. The compiler evolves between frozen optimization runs, with corpus-gated changes. This
 report separates software contract coverage, device correctness, qualified local performance results,
 and the still untested causal claim of cross-hardware knowledge transfer. Its implementation snapshot is
-commit \code{0fe3a447}; each historical measurement retains its own source and assay boundary.
+commit \code{0fe3a447}; each historical measurement retains its own source and assay boundary.\par}
 
-\clearpage
-\tableofcontents
+\vspace{1.2em}{\color{hair}\noindent\rule{\textwidth}{0.6pt}}\par
+{\small\tableofcontents}
 \clearpage
 
 \section{问题、研究对象与论点}
@@ -92,10 +138,11 @@ open-cake-ir 是对这一研究路线的独立工程实现；论文报告的模�
 
 本报告的研究对象是\emph{可复查的 Agent 编写环境}：一份候选包含什么决策，系统能在什么范围内拒绝，
 设备证据如何决定接受，以及真实缺口怎样改变下一版 Compiler。核心问题可以表述为：
-\begin{quote}
+\begin{notebox}
+\noindent\textbf{核心问题}\quad
 在保持 Workload 语义和实验条件可追溯的前提下，怎样让 Agent 的 Kernel 决策可检查、
 让失败有负责位置，并让重复经验进入后继编译能力？
-\end{quote}
+\end{notebox}
 本文主要陈述三项已实现的机制：\textbf{显式的 Program/Schedule 合同}、\textbf{分层诊断与目标精确准入}、
 \textbf{冻结运行和追加式证据}。跨硬件知识迁移的增量价值是后续实验问题，不是现有软件实现的推论。
 
@@ -109,10 +156,10 @@ Workload Contract 固定数学语义、输入域、外部 oracle 和容差。Sch
 
 \begin{table}[htbp]
 \centering\small
-\caption{一次候选从表达走向结论时的负责位置。箭头表示依赖方向，不表示某层的通过自动推出下一层的通过。}
+\caption{一次候选从表达走向结论时的负责位置。某层的通过不自动推出下一层的通过。}
 \begin{tabularx}{\textwidth}{@{}p{25mm}Y Y@{}}
 \toprule
-对象或模块 & 拥有的事实 & 对外给出的产物 \\
+\rowcolor{mist}对象或模块 & 拥有的事实 & 对外给出的产物 \\
 \midrule
 Workload & 数学、形状、输入分布、外部答案 & 不随候选改变的验收合同 \\
 Compiler & IR 类型、Target、合法性、后端准入与生成 & Assessment、Finding、目标源码 \\
@@ -170,8 +217,13 @@ Target 文档拥有自己的 lane 宽度、存储空间、指令合同、代码�
 \section{Compiler：局部化检查到目标源码}
 
 \subsection{分层拒绝与反馈}
-Compiler 首先解析与构造类型正确的 IR，然后以四类合同检查：\code{schedule\_semantics}、
-\code{hardware\_conformance}、\code{data\_consistency} 和 \code{program\_safety}。
+Compiler 首先解析与构造类型正确的 IR，然后按四类合同检查：
+\begin{notebox}
+\noindent\begin{tabularx}{\linewidth}{@{}Y Y@{}}
+\code{schedule\_semantics} 调度语义 & \code{hardware\_conformance} 硬件符合性 \\
+\code{data\_consistency} 数据一致性 & \code{program\_safety} 程序安全
+\end{tabularx}
+\end{notebox}
 Assessment 中的 Finding 指向字段或源码区域，带稳定代码、类别、严重度和阻断范围；
 非阻断的 guidance 与拒绝原因分开。后端预检负责该生成路线特有的能力边界。静态分析只能
 在已建模的范围内阻断；未声明的资源上限和下游产生的物理资源需求需要另行观察\cite{architecture,acceptance}。
@@ -221,7 +273,7 @@ Assessment 中的 Finding 指向字段或源码区域，带稳定代码、类别
 \label{tab:evidence-ladder}
 \begin{tabularx}{\textwidth}{@{}p{31mm}Y Y@{}}
 \toprule
-可陈述的结果 & 必要证据 & 尚需另行验收 \\
+\rowcolor{mist}可陈述的结果 & 必要证据 & 尚需另行验收 \\
 \midrule
 结构与目标准入 & typed IR、精确 Target、Finding 与后端预检 & 工具链编译和加载 \\
 设备正确性 & 完整输出对外部 oracle，覆盖规定形状与分布 & 计时质量和性能收益 \\
@@ -247,7 +299,7 @@ Workload 也可能有不同的计时和确认资格。完整细节由各平台�
 \label{tab:platforms}
 \begin{tabularx}{\textwidth}{@{}p{23mm}Y Y@{}}
 \toprule
-平台 & 已报告的执行范围 & 需保留的边界 \\
+\rowcolor{mist}平台 & 已报告的执行范围 & 需保留的边界 \\
 \midrule
 NVIDIA & B300 的单 Kernel、部分完整 Program；B200 另有固定案例 & FlashInfer 外部比较有通过与未通过质量门的边，按任务解读 \\
 Apple & Metal 固定算子与 TaskLab 优化记录 & 已验收设备和计时口径不推广到全部 family 或完整 Program \\
@@ -259,17 +311,24 @@ MetaX & C550 固定单 Kernel 及若干完整输出；单 Kernel 配对计时和
 \end{table}
 
 \subsection{案例 A：C550 的局部 tiling 收益}
-在 C550 的 FP16 GEMM 固定形状 $M=17,N=128,K=2048$ 上，已验收基线保持不变，
-显式地把 M tile 从 64 改为 32。独立确认的基线和候选中位数分别为
-\textbf{72.448 与 58.368\,$\mu$s}，比值 \textbf{1.241 倍}；正确性 case 与测量质量门通过。
+\begin{notebox}
+\noindent{\sffamily\bfseries\color{accent}\Large 1.241 倍}\quad
+\textbf{C550 · FP16 GEMM · $M=17,N=128,K=2048$}\par
+\noindent\small 基线 72.448\,$\mu$s $\rightarrow$ 候选 58.368\,$\mu$s；M tile 64 $\rightarrow$ 32。
+独立确认的正确性与测量质量门通过。
+\end{notebox}
 这是 \code{local\_serialized} 范围内的本机 authoring 对照，支持这个形状上的局部调度改进。
 它没有比较“向 Agent 提供 NVIDIA 经验”与“不提供经验”的处理差异，也不是完整 Program 的
 自动优化 Run\cite{metax}。同一专题中的 17 个 Workload 变体、86/86 个完整输出 case
 属于正确性证据；其计时为缺失，不能拿来扩大上述收益范围。
 
 \subsection{案例 B：B300 的对齐条件与质量门}
-B300 FlashInfer 任务 026 的守卫式对齐候选，相对同次冻结的 generic \code{sliced-w8}
-对照得到合格的 \textbf{1.081 倍}局部收益；比较所用中位数为 6.4005 与 5.920\,$\mu$s。
+\begin{notebox}
+\noindent{\sffamily\bfseries\color{accent}\Large 1.081 倍}\quad
+\textbf{B300 · FlashInfer 任务 026 · 守卫式对齐}\par
+\noindent\small 固定 generic \code{sliced-w8} 对照 6.4005\,$\mu$s $\rightarrow$ 候选 5.920\,$\mu$s；
+同次候选对照边通过计时质量门。
+\end{notebox}
 同一候选对外部参考的边没有通过 CV 质量门，因此不能从该案例推出对外部参考的合格胜负。
 另一任务 008 的完整两阶段 Program 已通过 2550 份数值快照，但新候选相对对照及外部参考
 的计时边均未通过质量门：它证明完整程序可运行和算对，不提供合格的性能结论\cite{nvidia}。
@@ -320,13 +379,15 @@ $P1$ 的最小接口合同本身会暴露必要机制信息，因而 $E$ 的效�
 自己的证据和版本。
 
 \section*{阅读与引用说明}
-\addcontentsline{toc}{section}{阅读与引用说明}
 本文是作者维护的仓库技术报告，无 DOI、期刊或同行评审声明。引用设计时请固定本报告及其
 所读源码提交；引用性能时还需追溯案例自己的执行源码、精确目标、Workload、baseline、
 oracle、计时区间与质量门。以下文献中的仓库链接均固定到本文所读的 \code{0fe3a447}，
 而实验原始收据的身份由各专题继续给出。
 
-\begin{thebibliography}{99}
+\section*{参考文献}
+\begin{multicols}{2}
+\footnotesize
+\begin{reportbibliography}{99}
 \bibitem{cake} Z. Ye et al. \emph{CAKE: Compiler--Agent Co-Design for Frontier Kernel Evolution}.
 arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
 \bibitem{architecture} H. Qin. \repo{docs/ARCHITECTURE.md}{系统架构与平台能力}, open-cake-ir, fixed source commit.
@@ -340,6 +401,7 @@ arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
 \bibitem{metax} H. Qin. \repo{docs/metax-c550.md}{C550 专题与 M17 独立确认}, open-cake-ir, fixed source commit.
 \bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}, open-cake-ir, fixed source commit.
 \bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}, open-cake-ir, fixed source commit.
-\end{thebibliography}
+\end{reportbibliography}
+\end{multicols}
 
 \end{document}
