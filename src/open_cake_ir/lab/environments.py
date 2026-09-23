@@ -244,7 +244,7 @@ class OpenCakeEnvironment:
                     or not isinstance(parsed['program_id'], str)):
                     raise ValueError('Python Program source is outside the admitted Authoring Environment')
                 from open_cake_ir.compiler.program_frontend import parse_program
-                parsed = parse_program(parsed['python_program_source'], filename='candidate-set.py',
+                parsed = parse_program(parsed['python_program_source'], filename='projected-program.ir.py',
                                        program_id=parsed['program_id']).document
             if not isinstance(parsed, Mapping):
                 raise CompilerError("Schedule root must be an object")

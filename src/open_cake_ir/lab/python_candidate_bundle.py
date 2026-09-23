@@ -79,7 +79,6 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
     program_ids = {}
     program_sources = {}
     if program_nodes:
-        from open_cake_ir.compiler.program_frontend import parse_program
         from open_cake_ir.compiler.frontend import source_node_text
         functions = {node.name: node for node in body[1:] if isinstance(node, ast.FunctionDef)}
         seen_program_ids = set()
@@ -107,14 +106,15 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
             stage_sources = []
             for name in dict.fromkeys(stage_names):
                 function = functions.get(name)
-                if function is None or len(function.decorator_list) != 1:
-                    raise ValueError('Python Program stage function is missing')
+                if function is None:
+                    # Program legality belongs to the individual candidate build.
+                    # An unrelated Schedule in this Turn can still be evaluated.
+                    continue
                 stage_sources.append(source_node_text(source, function,
                     start_lineno=function.decorator_list[0].lineno))
             program_source = ('from open_cake_ir.compiler import frontend as cake\n\n'
                               + '\n\n'.join(stage_sources) + '\n\n'
                               + source_node_text(source, node))
-            parse_program(program_source, filename='candidate-set.py', program_id=program_id)
             program_ids[id(node)] = program_id
             program_sources[id(node)] = program_source
             referenced_stages.update(stage_names)

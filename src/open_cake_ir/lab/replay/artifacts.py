@@ -97,6 +97,7 @@ def _replay_launchable_candidate(
         if isinstance(authored, Mapping) and set(authored) == {'python_program_source', 'program_id'}:
             from open_cake_ir.compiler.program_frontend import parse_program
             program = parse_program(authored['python_program_source'],
+                                    filename='projected-program.ir.py',
                                     program_id=authored['program_id']).program
         else:
             program = Program.from_dict(authored)

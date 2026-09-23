@@ -40,6 +40,7 @@ def candidate_program(payload, *, allow_python=True):
             raise ValueError('parent Python Program source is outside the authoring environment')
         from open_cake_ir.compiler.program_frontend import parse_program
         return parse_program(document['python_program_source'],
+                             filename='projected-program.ir.py',
                              program_id=document['program_id']).program
     if isinstance(document, Mapping) and set(document) == {'python_source'}:
         if not allow_python:

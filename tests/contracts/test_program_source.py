@@ -42,6 +42,33 @@ class PythonProgramSourceTests(unittest.TestCase):
                 environment_kind='open_cake', maximum_candidates_per_turn=2)
         self.assertEqual(project(original)[0], project(expanded)[1])
 
+    def test_invalid_program_does_not_drop_independent_schedule(self):
+        from open_cake_ir.lab.provider_documents import (
+            PYTHON_CANDIDATE_BUNDLE_V1, _project_candidate_submission,
+        )
+        import json
+        original = source()
+        invalid = original.replace('"mid": "middle", "out": "out"',
+                                   '"mid": "unproduced", "out": "out"')
+        standalone = (ROOT/'examples/python/fma.py').read_text()
+        standalone = standalone.replace('from open_cake_ir.compiler import frontend as cake\n', '')
+        projected = _project_candidate_submission((invalid + '\n' + standalone).encode(),
+            submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',
+            environment_kind='open_cake', maximum_candidates_per_turn=2)
+        self.assertEqual(len(projected), 2)
+        bad, good = (json.loads(item) for item in projected)
+        with self.assertRaises(ValueError):
+            parse_program(bad['python_program_source'],
+                          filename='projected-program.ir.py', program_id=bad['program_id'])
+        self.assertIn('python_source', good)
+
+        missing = invalid.replace('schedule=producer', 'schedule=absent', 1)
+        projected = _project_candidate_submission((missing + '\n' + standalone).encode(),
+            submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',
+            environment_kind='open_cake', maximum_candidates_per_turn=3)
+        self.assertEqual(len(projected), 3)
+        self.assertTrue(any('python_source' in json.loads(item) for item in projected))
+
     def test_two_python_stages_form_one_valid_program_and_lower(self):
         authored = parse_program(source(), filename='candidate-set.py',
                                  program_id='rounded-epilogue-python')
