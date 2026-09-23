@@ -31,6 +31,21 @@ from open_cake_ir.lab.task_package import (  # noqa: E402
 
 
 class ProviderContractTests(unittest.TestCase):
+    def test_python_source_file_projects_exact_source_without_an_authored_json_envelope(self) -> None:
+        from open_cake_ir.lab.provider_documents import (
+            PYTHON_SOURCE_FILE_V1, _project_candidate_submission,
+        )
+        from open_cake_ir.serialization import canonical_json_bytes
+        source = b'from open_cake_ir.compiler import frontend as cake\n# author bytes\n'
+        projected = _project_candidate_submission(source, submission_contract=PYTHON_SOURCE_FILE_V1,
+            arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=1)
+        self.assertEqual(projected, (canonical_json_bytes({'python_source': source.decode()}),))
+        for payload, kind, maximum in ((b'\xff', 'open_cake', 1), (source, 'direct_cuda', 1),
+                                       (source, 'open_cake', 2)):
+            with self.subTest(kind=kind, maximum=maximum, payload=payload), self.assertRaises(ValueError):
+                _project_candidate_submission(payload, submission_contract=PYTHON_SOURCE_FILE_V1,
+                    arm='open_cake', environment_kind=kind, maximum_candidates_per_turn=maximum)
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
