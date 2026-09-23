@@ -21,6 +21,7 @@ VETTED_REFERENCE_ASSETS = (
     "contracts/scaffolds/direct-cuda-clean-start-v1.cu",
     "contracts/scaffolds/matched-search-v1.md",
 )
+PYTHON_CLEAN_START_SCAFFOLD = "contracts/scaffolds/matched-search-python-v1.md"
 
 
 def reference_access(arm: Mapping[str, object], context: str) -> str:
@@ -117,11 +118,24 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, worklo
         if not isinstance(scaffold, Mapping):
             raise ValueError(f"{prefix}: missing authoring_instructions reference")
         _, path = source_reference_path(root, scaffold.get("path"), "scaffold")
-        vetted_scaffold = ('contracts/scaffolds/message-author/AGENTS.md'
-                           if arm.get('provider', {}).get('harness') == 'responses' else VETTED_REFERENCE_ASSETS[2])
+        python_clean_start = (kind == 'open_cake' and access == 'clean_start'
+                              and arm.get('input_format') == 'python_source_v1')
+        vetted_scaffold = (PYTHON_CLEAN_START_SCAFFOLD if python_clean_start
+                           else 'contracts/scaffolds/message-author/AGENTS.md'
+                           if arm.get('provider', {}).get('harness') == 'responses'
+                           else VETTED_REFERENCE_ASSETS[2])
         if path.read_bytes() != (root / vetted_scaffold).read_bytes():
             raise ValueError(f"{prefix}: authoring_instructions are not a vetted restricted scaffold")
         if kind == "open_cake":
+            if python_clean_start:
+                reference = arm.get('python_starter')
+                if not isinstance(reference, Mapping) or set(reference) != {'path'}:
+                    raise ValueError(f'{prefix}: Python target reference fields differ')
+                _, path = source_reference_path(root, reference['path'], 'python_starter')
+                expected = render_incomplete_python_starter(workload, case_id, arm['lowering_route'])
+                if path.suffix != '.py' or path.read_bytes() != expected:
+                    raise ValueError(f'{prefix}: target_implementation or unreviewed target reference is forbidden')
+                continue
             reference = arm.get("schedule_skeleton")
             if not isinstance(reference, Mapping):
                 raise ValueError(f"{prefix}: missing target reference")

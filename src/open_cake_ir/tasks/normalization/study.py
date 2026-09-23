@@ -146,7 +146,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
                    dispatches_per_sample: int | None = None,
                    maximum_cv: float | None = 0.05, required_pair_wins: int | None = 6,
                    agents_md: Path | None = None, response_aliases=(),
-                   reference_access: str = 'known_kernel_reproduction') -> dict:
+                   reference_access: str = 'known_kernel_reproduction',
+                   lowering_route=None) -> dict:
     """Prepare unbound Run values in memory; only a resolved Run is persisted.
 
     These controls are operator-agnostic and also feed the retained external Study
@@ -172,7 +173,11 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     default_scaffold = (METAL_SCAFFOLD
                         if backend is not None and BACKENDS[backend]["route"] == "metal"
                         else SCAFFOLD)
-    if reference_access == 'clean_start':
+    python_clean_start = reference_access == 'clean_start' and starter_path.suffix == '.py'
+    if python_clean_start:
+        from open_cake_ir.lab.reference_access import PYTHON_CLEAN_START_SCAFFOLD
+        default_scaffold = PYTHON_CLEAN_START_SCAFFOLD
+    elif reference_access == 'clean_start':
         default_scaffold = 'contracts/scaffolds/matched-search-v1.md'
     scaffold_name, scaffold_path = source_reference_path(
         root, str(agents_md) if agents_md is not None else default_scaffold, "scaffold")
@@ -181,9 +186,23 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         raise ValueError("authoring AGENTS.md must contain nonempty UTF-8 instructions")
     if reference_access != 'clean_start' and starter_path.suffix != '.py':
         raise ValueError('Python starter must be a .py source file for a new optimization Run')
-    source = frontend.read_schedule(starter_path)
-    input_format = 'schedule_or_python_v1' if reference_access == 'clean_start' else 'python_source_v1'
-    tool_surface = (['submit_schedule_or_python'] if reference_access == 'clean_start'
+    if python_clean_start:
+        from open_cake_ir.lab.reference_access import render_incomplete_python_starter
+        case_id = workload.document['validation']['primary_case']
+        if not isinstance(lowering_route, dict):
+            raise ValueError('Python clean-start requires an explicit lowering route')
+        if starter_path.read_bytes() != render_incomplete_python_starter(workload, case_id, lowering_route):
+            raise ValueError('Python clean-start starter differs from the Workload ABI and route')
+        route = dict(lowering_route)
+        starter_reference = {'python_starter': {'path': str(starter_path)}}
+    else:
+        source = frontend.read_schedule(starter_path)
+        route = source.document['lowering']
+        starter_reference = {'schedule_skeleton': {'path': str(starter_path),
+            'canonical_sha256': sha256(canonical(source.document)).hexdigest()}}
+    input_format = ('schedule_or_python_v1' if reference_access == 'clean_start' and not python_clean_start
+                    else 'python_source_v1')
+    tool_surface = (['submit_schedule_or_python'] if input_format == 'schedule_or_python_v1'
                     else ['submit_python_source'])
     provider = {"model": model, "reasoning_effort": effort,
                 "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
@@ -215,8 +234,8 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
             "environment_kind": "open_cake", "reference_access": reference_access, "provider": provider,
             "scaffold": {"path": scaffold_name, "sha256": sha256(scaffold_bytes).hexdigest()},
             "compiler_revision": dict(CURRENT_RELEASE_BINDING),
-            "lowering_route": source.document["lowering"],
-            "schedule_skeleton": {"path": str(starter_path), "canonical_sha256": sha256(canonical(source.document)).hexdigest()},
+            "lowering_route": route,
+            **starter_reference,
             "input_format": input_format, "tool_surface": tool_surface,
             # Stated from the policy rather than asserted: on a target whose backend
             # declares no timing source the policy carries a measurement-coverage
