@@ -139,18 +139,38 @@ Run 的完整程序性能验收，C550 的完整 provider/Ralph 优化闭环仍�
 
 | 目标与固定来源调度 | 已到达的验证边界 | 尚不能主张什么 |
 | --- | --- | --- |
-| Hygon BW1101 `gfx938`，K=256 | `main@0fe3a447` 接受并 lower 来源候选与本机 starter；Hygon Triton 3.6.0 均生成 HSACO，封存与声明五 case 的 CPU 配对准入通过 | 设备尚未加载、判对或计时；八卡上观察到其他 GLM 进程时未抢占 |
+| Hygon BW1101 `gfx938`，K=256 | 原 `bw1100` 的八卡被其他 GLM 进程占用，仅完成 HSACO 与 CPU 准入。另用空闲的 `bw1100-1`，为其不同的宿主内核与环境单独捕获 Executor，在干净源码 `4c9f4cc0` 上完成五 case 前后判对；新鲜 `hip_dispatch` 确认质量通过，starter/候选为 **517.9645/748.749 μs**，10 对均为 starter 更快 | 这是该机上的**确认负迁移**，不是 B300 的 7.646× 在 Hygon 重现；`local_serialized` 不排除未使用同一锁的外部任务，亦不能跨 CUPTI/HIP 比绝对时延 |
 | infplane AMD `gfx1151`，K=256 | 同一 Workload 的五 case 前后正确性全部通过；本机 `hip_dispatch` 新鲜确认质量通过，starter/候选为 **191.954/466.222 μs**，10 对均为 starter 更快 | 这是**确认的负迁移**，不是 B300 的 7.646× 在 AMD 上重现；gfx1151 两种计时器的绝对值尚未对齐，只解释同一 assay 内的配对关系 |
 | MetaX C550 `xcore1002`，K=256 | 固定草稿源码 `023d0db4` 接受并 lower 两臂；MetaX Triton 3.6 均生成 MCFATBIN、各声明两个隐藏指针；kernel 投影后封存和 CPU 配对准入通过 | 五个容器的 MACA 锁未与宿主共享，未运行设备正确性与 MCPTI 计时；该草稿也尚未独立评审合入 |
 | Apple M2 `apple_gpu_family8`，同一 `pairwise_sqdist` | Compiler 指出 Metal 当前不实现 tile loop、K 索引和跨循环归约 | 没有 Metal 二进制或设备结果；换 target 名称不会产生缺失的 lowering |
 
 AMD 的两个预先写下的目标参数后继也没有产生合格收益：K=128 完整判对且质量门通过，
 但相对同一 starter 更慢；K=64 完整判对但候选 CV 超过 0.05，显示的中位数只作描述。
-K=256 编译产物报告 256 VGPR/线程与 260 字节本地存储，starter 为 126 VGPR、零本地
-存储；这提示资源压力，不能单凭它证明慢的原因。来源、原始样本及失败记录分别保存在
+AMD 的 K=256 编译产物报告 256 VGPR/线程与 260 字节本地存储，starter 为 126 VGPR、零本地
+存储；Hygon `bw1100-1` 的对应产物则为 256/256 VGPR、608/620 字节 scratch。
+这些目标相关的资源读数提示压力，不能单凭它们证明慢的原因。来源、原始样本及失败记录分别保存在
 checkout 外的 `open-cake-ir-evidence/transfer-b300-bw1101-20260923/`、
+`open-cake-ir-evidence/transfer-b300-bw1101-node4-20260923/`、
 `open-cake-ir-experiments/transfer-b300-gfx1151-20260923/` 和
 `open-cake-ir-experiments/transfer-b300-c550-pairwise-20260923/`。
+
+**Hygon 上有一个经确认的目标侧后继，但不能把它归因于 Agent 读了 NVIDIA 经验。**
+在 `bw1100-1` 上，先冻结只把 K tile 从 256 改为 128 或 64 的两个候选；离线编译的
+scratch 均为零，VGPR 分别是 252 和 148，按预先写下的“先最少 scratch、再最少
+VGPR”规则只把 K=64 送上 GPU。K=64 与 K=256 的生成源码除分块值和调度身份外相同。
+同一五 case、同一 whole-K starter 和 HIP 配对协议下，K=64 的独立确认全部判对、
+计时质量通过，starter/候选为 **518.524/189.586 μs（2.735×）**，十对均是候选更快；
+K=128 未进行设备计时。这说明来自 B300 的“K 维分块”思路在此 Hygon 工作负载上
+经过目标侧参数重选后可形成收益，也说明原来的 K=256 参数不能直接移植。
+结果是一个人工限定的机制实例，不是相同预算下“给 Agent 看/不看 NVIDIA 材料”的
+对照；尚不能估计材料 E 或 pass 权限 P 的增量效果。
+
+这里的挑战已经能按证据分层定位：Metal 当前不能表达这个带循环归约的 Schedule；
+Triton 能在 AMD 与 Hygon 生成代码，也不保证来源分块的资源分配和速度；同为
+`gfx938` 的另一台宿主还需要自己的 Executor 身份；C550 的容器锁未统一前不能声称
+独占测量；短 Kernel 的 M2 计时未过质量门。这些分别是可表达性、目标代码与参数、
+运行环境、测量及因果归因的问题，不是一个“支持 Triton”开关能一次解决。
+几个固定形状的正负结果也不能推出这一机制在所有国产卡或模型服务中普遍有效。
 
 Metal 能表达的另一个来源机制是 B300 `silu` 的执行组 1→4：其 B300 独立确认在本机为
 2.432/2.112 μs（1.1515×）。同数学、输入和 oracle 的 M2 Schedule 已编译成 Metal
