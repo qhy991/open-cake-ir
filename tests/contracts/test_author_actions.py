@@ -45,12 +45,15 @@ class AuthorActionTests(SemanticLabTestCase):
         document['authoring'].update(input_format='python_source_v1',
                                      tool_surface=['submit_python_source'])
         document['authoring']['provider']['submission_contract'] = PYTHON_SOURCE_FILE_V1
+        scaffold = 'contracts/scaffolds/python-artifact-optimization-source-file-v1.md'
+        document['authoring']['scaffold'] = {'path': scaffold,
+            'sha256': sha256((ROOT/scaffold).read_bytes()).hexdigest()}
         successor = RunSpecification.from_dict(document)
         package = lab.task_package(successor, successor.run_id)
         self.assertIn('candidate.py', package.task_markdown)
         self.assertIn('Write only `candidate.py`', package.agents_markdown)
-        self.assertNotIn('candidate-set.json', package.task_markdown)
-        self.assertNotIn('candidate-set.json', package.agents_markdown)
+        self.assertNotIn('Write exactly one valid UTF-8 JSON `candidate-set.json`', package.task_markdown)
+        self.assertNotIn('Write only `candidate-set.json`', package.agents_markdown)
 
     def test_python_only_author_admission_refuses_schedule_json_but_keeps_internal_rewrites(self):
         compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
