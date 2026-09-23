@@ -127,29 +127,43 @@ correctness cases and the timing quality gate: baseline/candidate medians were
 `close_null`; it must not be substituted for the tile32 result. This is a local authoring
 comparison, not a provider Run or an explanation-versus-pass transfer experiment.
 
-A source-linked **offline** transfer pilot uses the B300-M2 `pairwise_sqdist` Run
-at FP32 `R=1024,K=1024,N=64`. Its candidate tiles K by 256; confirmatory
-event 17 links five-case preflight and postflight correctness for both arms
-and a quality-passing paired CUPTI comparison, 411.7945/53.856 μs (7.646×)
-**on B300**. A BW1101 `gfx938` Workload keeps the same mathematics, tensors,
-five cases, oracle and tolerances. Merely changing the target on the historical
-Schedule v1 source was refused because `lm.role(warps=[0])` must be explicitly adapted
-to v2 `execution_groups`. After that one IR-version adaptation, current
-`main@0fe3a447` admits and lowers both the candidate and target starter;
-Hygon Triton 3.6.0 emits HSACO for both. The current Compiler passes its
-179-case Corpus Gate; both sealed manifests pass CPU pair admission while
-declaring all five validation cases, one Workload, Executor `gfx938@0fe3a447`
-and `fixed_baseline_paired_hip_dispatch_v1`.
-The source Run is at
-`B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/pairwise_sqdist-20260916-180016/`;
-the create-only offline evidence is under
-`open-cake-ir-evidence/transfer-b300-bw1101-20260923/` outside the checkout,
-with native objects at
-`bw1100:/home/testuser01/oci-transfer-b300-bw1101-20260923/`.
-**No Hygon GPU load, correctness result or timing exists for this pair.** The
-pilot establishes source-mechanism expressibility through the target toolchain,
-not cross-device performance. Target-device five-case validation, same-card
-paired timing, fresh confirmation and a separate E/P causal study remain due.
+**The actual boundary of one source mechanism across targets.** In the B300-M2
+FP32 `pairwise_sqdist` Run (`R=1024,K=1024,N=64`), the candidate tiles K by
+256. Its event 17 independently confirmed five-case preflight and postflight
+correctness for both arms and a quality-passing CUPTI pair: 411.7945/53.856
+μs (7.646×) **on B300**. Each target Workload retains the same operator,
+tensors, cases, oracle and tolerances. The historical Schedule v1 `warps`
+field was adapted explicitly to v2 `execution_groups`; admission did not
+silently reinterpret it.
+
+| Destination and source K=256 Schedule | Observed boundary | Claim still unavailable |
+| --- | --- | --- |
+| Hygon BW1101 `gfx938` | `main@0fe3a447` admits and lowers both arms; Hygon Triton 3.6.0 emits HSACO, then sealing and CPU pair admission declare all five cases | No target GPU load, correctness or timing; external GLM processes occupied the eight cards at observation |
+| infplane AMD `gfx1151` | All five cases pass before and after timing; a fresh, quality-passing same-card `hip_dispatch` confirmation reports **191.954/466.222 μs** for starter/candidate, with all ten pairs favoring the starter | A **confirmed negative transfer** within this assay, not a replay of B300's 7.646×. Two gfx1151 timers still disagree on absolute values, so no cross-timer calibration is inferred |
+| MetaX C550 `xcore1002` | Frozen draft source `023d0db4` admits and lowers both arms; MetaX Triton 3.6 emits MCFATBINs with two native hidden pointers each; kernel projection enables sealing and CPU pair admission | No five-case device correctness or MCPTI timing while five containers have private MACA locks; the draft also awaits independent review |
+| Apple M2 `apple_gpu_family8`, same `pairwise_sqdist` | The Compiler identifies missing Metal tile-loop, K-indexing and loop-carried reduction support | No Metal binary or device result for this mechanism; changing the target name cannot supply missing lowering |
+
+Two preregistered AMD target-local parameter successors did not yield a
+qualified gain: K=128 passed full correctness and timing quality but was
+slower than the same starter; K=64 passed correctness but exceeded the 0.05
+candidate CV limit, so its displayed median is descriptive only. The K=256
+build reports 256 VGPR and 260 bytes of per-workitem scratch against 126
+VGPR and no scratch for the starter. This suggests a resource-pressure
+hypothesis; it does not establish a causal explanation for the slowdown.
+Source and raw target artifacts remain outside the checkout under
+`open-cake-ir-evidence/transfer-b300-bw1101-20260923/`,
+`open-cake-ir-experiments/transfer-b300-gfx1151-20260923/` and
+`open-cake-ir-experiments/transfer-b300-c550-pairwise-20260923/`.
+
+A second source mechanism that Metal can express is B300 `silu`'s one-to-four
+execution-group change. Its B300 confirmation was 2.432/2.112 μs (1.1515×)
+on that card. The same-math Apple M2 Schedule builds a Metal archive and
+passes all five cases before and after timing for both arms, but
+`fixed_baseline_paired_metal_v2` cohort CV far exceeds the fixed 0.05 gate.
+**There is no qualified M2 speedup.** Its raw record is under
+`open-cake-ir-experiments/transfer-b300-m2-silu-20260923/`. These examples
+establish expressibility, correctness or negative transfer separately;
+none estimates the causal value of E/P material or pass access to an Agent.
 
 The [E/P method appendix](../OPTIMIZATION_TRANSFER_ABLATION.md) has software-tested allocation
 and audit rules but explicitly reports no real-device transfer-effect study. Establishing the

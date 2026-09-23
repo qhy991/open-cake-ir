@@ -130,22 +130,34 @@ Run 的完整程序性能验收，C550 的完整 provider/Ralph 优化闭环仍�
 | [C550 M17 GEMM 的 M tile 改动](metax-c550.md) | 固定 `M17/N128/K2048` 下仅将 M tile 64→32，独立 `matrix-fib-m17-tile32-confirmatory-8c0cad53-v1/result.json` 通过五类正确性 case 与测量质量门；基线/候选中位数 72.448/58.368 μs，1.241228× | 这是 `local_serialized` 范围内的显式本机 authoring 对照，不是 provider 优化 Run，也没有“给 Agent NVIDIA 经验”与不给经验的对照 |
 | [E/P 四组迁移协议](OPTIMIZATION_TRANSFER_ABLATION.md) | 材料 E 和变换权限 P 的隔离、分配与审计已有软件测试 | 还没有共同目标、基线和预算下的实机迁移收益实验 |
 
-**一条来源明确的离线迁移实例。** B300-M2 的 `pairwise_sqdist` Run 在
-`R=1024,K=1024,N=64` 的 FP32 Workload 上，把 K 维按 256 分块；其第 17 个事件所连
-独立确认收据让基线与候选各通过五类输入的前后正确性检查，CUPTI 成对计时质量通过，
-本机中位数为 411.7945/53.856 μs（7.646×）。这是 NVIDIA 上的机制来源，不是目标卡
-成绩或 E/P 处理效果。为 BW1101 `gfx938` 生成的 Workload 保持数学、张量、五类输入、
-oracle 与容差一致。历史 Schedule v1 直接改 target 被当前 Compiler 拒绝，因为
-`lm.role(warps=[0])` 需要显式适配为 v2 `execution_groups`；适配后，`main@0fe3a447`
-接受并 lower 候选与同卡 starter，Hygon Triton 3.6.0 分别编成 HSACO。该 Compiler 的
-179 例 Corpus Gate 通过；两份封存候选通过声明五类验证 case 的 CPU 配对准入，绑定同一 Workload、Executor
-`gfx938@0fe3a447` 与 `fixed_baseline_paired_hip_dispatch_v1`。原始来源在
-`B300-M2:/mnt/b300-shared/home/qinhaiyan/oci-service-runs/pairwise_sqdist-20260916-180016/`；
-离线试点及镜像在 checkout 外的
-`open-cake-ir-evidence/transfer-b300-bw1101-20260923/`，Hygon 原产物在
-`bw1100:/home/testuser01/oci-transfer-b300-bw1101-20260923/`。**尚未在 Hygon 加载、
-判对或计时**，因此这里只证明带一次显式 IR 版本适配的机制能到达目标工具链，不证明
-跨卡性能收益。目标设备可用后还须完整五 case、同卡基线配对和独立确认；E/P 因果效应另测。
+**同一来源机制在不同目标上的实际边界。** B300-M2 的 `pairwise_sqdist` Run 在 FP32
+`R=1024,K=1024,N=64` 下把 K 维按 256 分块；事件 17 的独立确认让基线与候选均通过
+五类输入的前后正确性检查，CUPTI 成对计时质量通过，本机中位数为
+411.7945/53.856 μs（7.646×）。这是来源卡的固定基线收益。目标 Workload 重新绑定各自
+精确 Target，保持算子、张量、五类输入、oracle 与容差一致；历史 Schedule v1 的
+`warps` 字段显式适配为 v2 `execution_groups`，不在 admission 时暗中翻译。
+
+| 目标与固定来源调度 | 已到达的验证边界 | 尚不能主张什么 |
+| --- | --- | --- |
+| Hygon BW1101 `gfx938`，K=256 | `main@0fe3a447` 接受并 lower 来源候选与本机 starter；Hygon Triton 3.6.0 均生成 HSACO，封存与声明五 case 的 CPU 配对准入通过 | 设备尚未加载、判对或计时；八卡上观察到其他 GLM 进程时未抢占 |
+| infplane AMD `gfx1151`，K=256 | 同一 Workload 的五 case 前后正确性全部通过；本机 `hip_dispatch` 新鲜确认质量通过，starter/候选为 **191.954/466.222 μs**，10 对均为 starter 更快 | 这是**确认的负迁移**，不是 B300 的 7.646× 在 AMD 上重现；gfx1151 两种计时器的绝对值尚未对齐，只解释同一 assay 内的配对关系 |
+| MetaX C550 `xcore1002`，K=256 | 固定草稿源码 `023d0db4` 接受并 lower 两臂；MetaX Triton 3.6 均生成 MCFATBIN、各声明两个隐藏指针；kernel 投影后封存和 CPU 配对准入通过 | 五个容器的 MACA 锁未与宿主共享，未运行设备正确性与 MCPTI 计时；该草稿也尚未独立评审合入 |
+| Apple M2 `apple_gpu_family8`，同一 `pairwise_sqdist` | Compiler 指出 Metal 当前不实现 tile loop、K 索引和跨循环归约 | 没有 Metal 二进制或设备结果；换 target 名称不会产生缺失的 lowering |
+
+AMD 的两个预先写下的目标参数后继也没有产生合格收益：K=128 完整判对且质量门通过，
+但相对同一 starter 更慢；K=64 完整判对但候选 CV 超过 0.05，显示的中位数只作描述。
+K=256 编译产物报告 256 VGPR/线程与 260 字节本地存储，starter 为 126 VGPR、零本地
+存储；这提示资源压力，不能单凭它证明慢的原因。来源、原始样本及失败记录分别保存在
+checkout 外的 `open-cake-ir-evidence/transfer-b300-bw1101-20260923/`、
+`open-cake-ir-experiments/transfer-b300-gfx1151-20260923/` 和
+`open-cake-ir-experiments/transfer-b300-c550-pairwise-20260923/`。
+
+Metal 能表达的另一个来源机制是 B300 `silu` 的执行组 1→4：其 B300 独立确认在本机为
+2.432/2.112 μs（1.1515×）。同数学、输入和 oracle 的 M2 Schedule 已编译成 Metal
+archive，五类输入在两臂前后均判对；但 `fixed_baseline_paired_metal_v2` 的 cohort CV
+远超预定的 0.05，故**没有合格的 M2 加速结论**。原始记录在
+`open-cake-ir-experiments/transfer-b300-m2-silu-20260923/`。这些实例分别证明可表达性、
+正确性或负迁移，不是 E/P 材料和 pass 权限对 Agent 的因果效果。
 
 M17 的收据名称必须含 `tile32-confirmatory`：同目录的
 `matrix-fib-m17-confirmatory-8c0cad53-v1` 是原产物自比较，结论为 `close_null`，
