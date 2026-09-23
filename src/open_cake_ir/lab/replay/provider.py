@@ -15,6 +15,7 @@ from ..provider_events import reported_provider_usage, provider_token_delta
 from ..providers import (
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
+    PYTHON_CANDIDATE_BUNDLE_V1,
     _project_candidate_submission,
     parse_codex_turn_events,
 )
@@ -122,9 +123,11 @@ def _replay_provider_turns(
     message_response_ids = set()
     message_model = provider_authority.get('model') if event_contract == 'responses_messages_v1' else None
     submission_contract = provider_authority.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1)
-    source_file = submission_contract == PYTHON_SOURCE_FILE_V1
+    source_file = submission_contract in {PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1}
     submission_role = 'provider_source_file' if source_file else 'provider_submission_envelope'
-    expected_name = 'candidate.py' if source_file else 'candidate-set.json'
+    expected_name = ('candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                     'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else
+                     'candidate-set.json')
     for expected_turn, event in enumerate(provider_events, start=1):
         location = event_location("provider_turn_completed", turn=expected_turn)
         payload = _object(event.get("payload"), "provider_turn.payload")

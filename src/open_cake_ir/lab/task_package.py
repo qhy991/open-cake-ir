@@ -16,7 +16,7 @@ from .rubrics import derive_rubric
 from .pairing import bind_baseline, native_baseline, backend_policy, native_backend
 from .python_reference import bind_python_reference
 from .reference_access import document_role, reference_access, validate_reference_handoff
-from .provider_documents import PYTHON_SOURCE_FILE_V1
+from .provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
 from open_cake_ir.compiler import frontend
 from open_cake_ir.compiler.schema import schedule_schema_bytes
 from open_cake_ir.evaluation import WorkloadContract
@@ -422,6 +422,7 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
             "The existing candidate envelope is transport only.\n\n"
             "Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:")
     source_file = authority['provider'].get('submission_contract') == PYTHON_SOURCE_FILE_V1
+    source_bundle = authority['provider'].get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1
     if source_file:
         if (authority['environment_kind'] != 'open_cake'
             or authority.get('input_format') != 'python_source_v1'
@@ -438,10 +439,29 @@ and generates the internal candidate transport. Do not write a Schedule JSON,
 `candidate-set.json`, a transform action, or another file.
 
 ''' + task[end:])
+    if source_bundle:
+        if authority['environment_kind'] != 'open_cake' or authority.get('input_format') != 'python_source_v1':
+            raise ValueError('Python candidate-bundle task requires Cake Python')
+        start = task.index('## Author actions and candidate output\n')
+        end = task.index('## Evaluation and budget\n')
+        task = (task[:start] + f'''## Candidate output
+
+Write one UTF-8 `candidate-set.py` file. Import the Cake frontend once, then define
+complete `@cake.schedule(...)` functions in proposal order. Each function is one
+candidate. A granted rewrite may appear at its desired position as
+`cake.transform(parent="...", transformation="...", parameters={{...}})` with only
+static literal arguments. The Lab reads this file without executing it and seals
+the ordered candidates. Submit between one and {budget['maximum_candidates_per_turn']}
+proposals per Turn. The first Turn adds the file; later Turns update it. Do not
+write a Schedule JSON or `candidate-set.json` envelope.
+
+''' + task[end:])
     python_only = authority["environment_kind"] == "open_cake" and authority.get("input_format") == "python_source_v1"
     arm_rule = (
         "Author one complete restricted Cake Python Schedule in candidate.py. This Run grants no transform action or authored JSON envelope. Do not invoke CUDA, a GPU, the network, or another compiler."
         if source_file else
+        "Author complete Cake Schedules as decorated functions in candidate-set.py. Only granted static cake.transform declarations are allowed; do not write a Schedule/Program JSON or candidate-set.json. Do not invoke CUDA, a GPU, the network, or another compiler."
+        if source_bundle else
         "Submit authored Cake IR implementations only as restricted Python source through the supplied frontend. Granted Compiler transformations may produce internal Program documents. The JSON candidate envelope is transport only; do not author a Schedule or Program as JSON. Do not invoke CUDA, a GPU, the network, or another compiler."
         if python_only else
         "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
@@ -492,6 +512,9 @@ write surface, reference access, tool permissions, budget, or acceptance authori
     if source_file:
         agents = agents.replace('Write only `candidate-set.json`; `TASK.md` and `AGENTS.md` are immutable.',
                                 'Write only `candidate.py`; `TASK.md` and `AGENTS.md` are immutable.')
+    if source_bundle:
+        agents = agents.replace('Write only `candidate-set.json`; `TASK.md` and `AGENTS.md` are immutable.',
+                                'Write only `candidate-set.py`; `TASK.md` and `AGENTS.md` are immutable.')
     if authority['provider'].get('harness') == 'responses':
         task = task.replace('Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:',
                             'Return exactly one JSON candidate-set envelope in your final response:')

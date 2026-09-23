@@ -21,6 +21,7 @@ from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
+    PYTHON_CANDIDATE_BUNDLE_V1,
     CODEX_DISABLED_FEATURES,
     resolve_codex_code_mode_host,
     CodexInvocationBuilder,
@@ -69,6 +70,17 @@ def _expected_submission(
         if arm != 'open_cake' or maximum_candidates_per_turn != 1 or python_source is None:
             raise ValueError('Python source-file qualification requires one Cake candidate')
         return python_source + f"\n# qualification turn {turn}; reference {reference_nonce}\n"
+    if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1:
+        if arm != 'open_cake' or maximum_candidates_per_turn <= 0:
+            raise ValueError('Python bundle qualification requires Cake candidates')
+        functions = ''.join(
+            f'@cake.schedule(name="qualification_{turn}_{index}", target="sm_100a", '
+            f'backend="triton", entry_point="qualification_{turn}_{index}")\n'
+            f'def candidate_{turn}_{index}(lm):\n    ...\n\n'
+            for index in range(maximum_candidates_per_turn)
+        )
+        return ('from open_cake_ir.compiler import frontend as cake\n\n'
+                f'# qualification reference {reference_nonce}\n' + functions)
     if arm == "open_cake" and python_source is not None:
         members = [{"python_source": python_source +
                     f"\n# qualification turn {turn}; candidate {index}; reference {reference_nonce}\n"}
@@ -154,7 +166,10 @@ def _qualification_package(
             for turn in (1, 2)
         ],
     }
-    source_file = submission_contract == PYTHON_SOURCE_FILE_V1
+    source_file = submission_contract in {PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1}
+    candidate_name = ('candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                      'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else
+                      'candidate-set.json')
     submission_rules = (
         "The submission is the exact UTF-8 Python source string in the plan.\n\n"
         if source_file else
@@ -175,7 +190,7 @@ def _qualification_package(
     )
     agents = (
         "# AGENTS.md — provider qualification\n\n"
-        f"Follow the complete TASK.md plan. Write only {'candidate.py' if source_file else 'candidate-set.json'}. Keep "
+        f"Follow the complete TASK.md plan. Write only {candidate_name}. Keep "
         "TASK.md and AGENTS.md unchanged. Do not use a GPU or network.\n"
         + tool_instruction + "\n"
     )
@@ -195,6 +210,10 @@ def _planned_candidates(arm: str, plan: dict[str, object],
                         submission_contract: str = CANDIDATE_SET_ENVELOPE_V1) -> tuple[bytes, ...]:
     if submission_contract == PYTHON_SOURCE_FILE_V1:
         return (_canonical_json_bytes({'python_source': plan['submission']}),)
+    if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1:
+        from open_cake_ir.lab.python_candidate_bundle import project_python_candidate_bundle
+        return project_python_candidate_bundle(plan['submission'].encode(),
+            maximum_candidates_per_turn=plan['submission'].count('@cake.schedule('))
     members = plan["submission"]["candidates"]
     return tuple(
         str(member).encode("utf-8") if arm == "direct_cuda"
@@ -359,7 +378,8 @@ def main() -> int:
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--fixture-only", action="store_true", help="never issue a live qualification for executable test doubles")
     parser.add_argument("--python-source", type=Path, help="Workload Python starter required for single-arm artifact qualification")
-    parser.add_argument('--submission-contract', choices=(CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1),
+    parser.add_argument('--submission-contract', choices=(CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                                          PYTHON_CANDIDATE_BUNDLE_V1),
                         default=CANDIDATE_SET_ENVELOPE_V1)
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--provider-revision", required=True)
@@ -428,6 +448,9 @@ def main() -> int:
             or args.python_source is None
             or args.feature_policy != 'provider_defaults_optimization'):
         raise ValueError('Python source-file qualification requires one artifact-only Cake candidate')
+    if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 and (
+            not single_arm or args.feature_policy != 'provider_defaults_optimization'):
+        raise ValueError('Python candidate-bundle qualification requires one artifact-only Cake arm')
     if not generic_schema and (not isinstance(arms, list) or len(arms) not in {1, 2} or arms[0] != "open_cake"):
         raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm")
     try:
@@ -453,6 +476,8 @@ def main() -> int:
         event_contract = CLAUDE_EVENT_CONTRACT
         tool_instruction = ("Use Read for the task files and Write/Edit for candidate.py; only Read, Write, Edit, Glob and Grep are permitted."
                             if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                            "Use Read for the task files and Write/Edit for candidate-set.py; only Read, Write, Edit, Glob and Grep are permitted."
+                            if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else
                             "Use Read for the task files and Write/Edit for candidate-set.json; only Read, Write, Edit, Glob and Grep are permitted.")
         receipt_scope = "live_two_turn_tool_rich_provider"
     elif args.feature_policy == "closed_research":
@@ -516,7 +541,8 @@ def main() -> int:
     for arm, arm_workspace in workspaces.items():
         package = _qualification_package(
             f"{args.run_id}-{arm}", arm, arm_workspace / (
-                'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'candidate-set.json'),
+                'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else 'candidate-set.json'),
             reference_nonce, maximum_candidates_per_turn, event_contract,
             tool_instruction, python_source, submission_contract,
         )
@@ -587,7 +613,8 @@ def main() -> int:
         for arm in qualification_arms:
             arm_workspace = workspaces[arm]
             candidate = arm_workspace / (
-                'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'candidate-set.json')
+                'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                'candidate-set.py' if submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else 'candidate-set.json')
             package = task_packages[arm]
             common_builder_args = dict(executable=executable, provider_revision=args.provider_revision,
                 model=args.model, reasoning_effort=args.reasoning_effort, workspace=arm_workspace,
@@ -777,14 +804,14 @@ def main() -> int:
                 [
                     evidence.put(
                         initial.raw_submission,
-                        media_type="text/x-python" if submission_contract == PYTHON_SOURCE_FILE_V1 else "application/json",
+                        media_type="text/x-python" if source_file else "application/json",
                     ).reference(f"{arm}_initial_" + (
-                        'source_file' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'submission_envelope')),
+                        'source_file' if source_file else 'submission_envelope')),
                     evidence.put(
                         resumed.raw_submission,
-                        media_type="text/x-python" if submission_contract == PYTHON_SOURCE_FILE_V1 else "application/json",
+                        media_type="text/x-python" if source_file else "application/json",
                     ).reference(f"{arm}_resumed_" + (
-                        'source_file' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'submission_envelope')),
+                        'source_file' if source_file else 'submission_envelope')),
                 ]
             )
             candidate_media_type = (

@@ -581,6 +581,8 @@ class TaskLaunchTests(unittest.TestCase):
                               ('--python-source',str(source)),('--feature-policy','provider_defaults_optimization'),
                               ('--response-model-alias','vendor/exact-test-model')):
             self.assertEqual(command[command.index(flag)+1],expected)
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        self.assertEqual(command[command.index('--submission-contract')+1], PYTHON_CANDIDATE_BUNDLE_V1)
         self.assertNotIn('--fixture-only',command)
         self.assertEqual(receipt,self.workspace/'provider-qualification.json')
         self.assertEqual(anchor,self.workspace/'provider-anchor.json')

@@ -21,8 +21,8 @@ from open_cake_ir.serialization import canonical_json_bytes as canonical
 from open_cake_ir.tasks.devices import BACKENDS, backend_for_target, timing_source, device_name
 
 OUTPUT_SCHEMA = "contracts/providers/open-cake-optimization-output-schema-v1.json"
-SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-v3.md"
-METAL_SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-metal-v4.md"
+SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-bundle-v1.md"
+METAL_SCAFFOLD = "contracts/scaffolds/python-artifact-optimization-metal-bundle-v1.md"
 
 
 def arm_feedback(evaluation) -> list[str]:
@@ -182,8 +182,9 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     if python_clean_start:
         from open_cake_ir.lab.reference_access import PYTHON_CLEAN_START_SCAFFOLD
         default_scaffold = PYTHON_CLEAN_START_SCAFFOLD
-    elif source_file:
-        default_scaffold = 'contracts/scaffolds/python-artifact-optimization-source-file-v1.md'
+    elif reference_access == 'known_kernel_reproduction':
+        if source_file:
+            default_scaffold = 'contracts/scaffolds/python-artifact-optimization-source-file-v1.md'
     scaffold_name, scaffold_path = source_reference_path(
         root, str(agents_md) if agents_md is not None else default_scaffold, "scaffold")
     scaffold_bytes = scaffold_path.read_bytes()
@@ -204,14 +205,16 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         starter_reference = {'schedule_skeleton': {'path': str(starter_path),
             'canonical_sha256': sha256(canonical(source.document)).hexdigest()}}
     input_format = 'python_source_v1'
-    tool_surface = ['submit_python_source']
+    tool_surface = (['submit_python_bundle'] if reference_access == 'known_kernel_reproduction'
+                    and not source_file else ['submit_python_source'])
     provider = {"model": model, "reasoning_effort": effort,
                 "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 **{name: dict(CAMPAIGN_BINDING) for name in ("revision", "executable_sha256", "qualification", "qualification_anchor")}}
-    if source_file:
-        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
-        provider['submission_contract'] = PYTHON_SOURCE_FILE_V1
+    if reference_access == 'known_kernel_reproduction':
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
+        provider['submission_contract'] = (PYTHON_SOURCE_FILE_V1 if source_file
+                                           else PYTHON_CANDIDATE_BUNDLE_V1)
     if response_aliases:
         if harness != "claude-code":
             raise ValueError("response model aliases require Claude Code")

@@ -4,7 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping
 
-from .provider_documents import CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1, CODEX_DISABLED_FEATURES
+from .provider_documents import (CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                 PYTHON_CANDIDATE_BUNDLE_V1, CODEX_DISABLED_FEATURES)
 from ._documents import _canonical_json_bytes
 from .claude import CLAUDE_EVENT_CONTRACTS, CLAUDE_AUTHORING_TOOLS, terminal_schema, response_model_aliases
 
@@ -37,7 +38,8 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
         from .message_provider import configuration
         return configuration(provider)
     submission_contract = provider.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1)
-    if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}:
+    if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                   PYTHON_CANDIDATE_BUNDLE_V1}:
         raise ValueError('Study Contract provider submission contract differs')
     for name in ("model", "reasoning_effort"):
         value = provider.get(name)

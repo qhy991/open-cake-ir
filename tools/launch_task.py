@@ -446,9 +446,10 @@ def _qualify(root, workspace, args, executable, source_path):
                "--workspace", str(workspace / "qualification-workspace"), "--receipt-output", str(receipt),
                "--anchor-output", str(anchor), "--evidence-root", str(workspace / "qualification-evidence"),
                "--run-id", "task-provider-qualification"]
-    if getattr(args, 'source_file', False):
-        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
-        command.extend(('--submission-contract', PYTHON_SOURCE_FILE_V1))
+    from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
+    command.extend(('--submission-contract',
+                    PYTHON_SOURCE_FILE_V1 if getattr(args, 'source_file', False)
+                    else PYTHON_CANDIDATE_BUNDLE_V1))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
