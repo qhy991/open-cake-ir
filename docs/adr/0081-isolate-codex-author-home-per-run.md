@@ -13,13 +13,18 @@ material input, not an incidental host preference.
 each independent Run start a fresh private home containing only a copied credential.
 The CLI may create its own session and system-skill state there; admission refuses
 injected user skills, plugins, symlinks and permissive credential custody before
-every Turn. The CLI-generated system-skill tree is frozen after the first successful
+every Turn. The post-first-Turn system-skill tree is frozen after the first successful
 Turn, compared with the version 2 qualification receipt, and checked before and
 after each continuation. A two-arm qualification uses a separate fresh home for
 each arm and requires the same system-skill identity. Token refresh may change
 `auth.json` bytes; this policy checks private custody rather than claiming a frozen
 credential or account identity. The actual invocation receives this home through
 `CODEX_HOME`.
+
+This comparison does not independently prove which process created every system-skill
+file during the first Turn. Proving origin requires a separately initialized tree
+before authoring or the filesystem read/write jail tracked by ADR 0077; neither is
+inferred from a matching receipt.
 The qualification receipt binds the policy name, not credential bytes or a path
 that differs per Run. Run-specific homes prevent automatic reuse of previous CLI
 sessions as author context. Frozen Provider contracts without this policy retain

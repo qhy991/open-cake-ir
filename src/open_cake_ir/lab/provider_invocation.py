@@ -295,7 +295,7 @@ class CodexInvocationBuilder:
         )
 
     def remember_system_skills(self) -> None:
-        """Freeze the CLI-managed tree after the first successful Turn."""
+        """Freeze the post-first-Turn tree for qualification and continuations."""
         if self._codex_home is None:
             return
         verify_codex_home(self._codex_home)

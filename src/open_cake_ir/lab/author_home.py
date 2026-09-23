@@ -109,7 +109,7 @@ def system_skills_snapshot(home: Path) -> tuple[tuple[str, int, str], ...]:
 
 
 def system_skills_identity(snapshot: tuple[tuple[str, int, str], ...]) -> str:
-    """One identity for the CLI-managed tree admitted by the qualification."""
+    """One identity for the post-first-Turn tree admitted by qualification."""
     return sha256(canonical_json_bytes(snapshot)).hexdigest()
 
 
