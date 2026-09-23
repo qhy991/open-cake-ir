@@ -72,7 +72,11 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
         or first.level != 0 or len(first.names) != 1
         or first.names[0].name != 'frontend' or first.names[0].asname != 'cake'):
         raise ValueError('Python candidate bundle requires the Cake frontend import')
-    lines = source.splitlines(keepends=True)
+    # AST line numbers count physical line endings, not Unicode separators such
+    # as U+2028 inside a comment or string. Split only on LF to keep slices exact.
+    if '\r' in source.replace('\r\n', ''):
+        raise ValueError('Python candidate bundle requires LF or CRLF line endings')
+    lines = source.split('\n')
     candidates = []
     names = set()
     for node in body[1:]:
@@ -87,7 +91,7 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
                 raise ValueError('Python candidate function must have one Cake schedule decorator')
             names.add(node.name)
             start = decorator[0].lineno - 1
-            snippet = ''.join(lines[start:node.end_lineno]).rstrip('\r\n')
+            snippet = '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
             candidates.append(canonical_json_bytes({'python_source': _IMPORT + snippet}))
         elif (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
               and isinstance(node.value.func, ast.Attribute)
