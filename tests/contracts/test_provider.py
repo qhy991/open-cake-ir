@@ -61,6 +61,31 @@ class ProviderContractTests(unittest.TestCase):
         self.assertEqual(turn.raw_submission, source)
         self.assertEqual(turn.candidates, (canonical_json_bytes({'python_source': source.decode()}),))
 
+    def test_python_bundle_projects_ordered_schedules_and_transform_without_json_authoring(self) -> None:
+        from open_cake_ir.lab.provider_documents import (
+            PYTHON_CANDIDATE_BUNDLE_V1, _project_candidate_submission,
+        )
+        from open_cake_ir.serialization import canonical_json_bytes
+        import_line = 'from open_cake_ir.compiler import frontend as cake\n\n'
+        first = '@cake.schedule(name="first", target="sm_100a", backend="triton", entry_point="first")\ndef first(lm):\n    ...\n'
+        second = '@cake.schedule(name="second", target="sm_100a", backend="triton", entry_point="second")\ndef second(lm):\n    ...\n'
+        action = 'cake.transform(parent="prior", transformation="specialize_triton_warps", parameters={"num_warps": 8})\n'
+        raw = (import_line + first + '\n' + action + '\n' + second).encode()
+        projected = _project_candidate_submission(raw, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+            arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
+        self.assertEqual(projected, (
+            canonical_json_bytes({'python_source': import_line + first.rstrip()}),
+            canonical_json_bytes({'action': 'transform', 'parent': 'prior',
+                                  'transformation': 'specialize_triton_warps',
+                                  'parameters': {'num_warps': 8}}),
+            canonical_json_bytes({'python_source': import_line + second.rstrip()}),
+        ))
+        for invalid in (raw, (import_line + 'print("host effect")\n' + first).encode()):
+            maximum = 2 if invalid is raw else 3
+            with self.assertRaises(ValueError):
+                _project_candidate_submission(invalid, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=maximum)
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
