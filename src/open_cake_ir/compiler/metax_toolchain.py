@@ -215,6 +215,10 @@ class MetaxRoute:
             raise ValueError("MACA compiler metadata differs from the declared target")
         hidden = hidden_pointer_parameters(artifacts["ttgir"], artifacts[self.binary_role],
             requirements.get("codegen_arch"), requirements["kernel_entry_point"])
-        if hidden == 2 and (getattr(metadata, "global_scratch_size", None) != 0
-                            or getattr(metadata, "profile_scratch_size", None) != 0):
+        scratch = (getattr(metadata, "global_scratch_size", None),
+                   getattr(metadata, "profile_scratch_size", None))
+        if any(value is not None and (type(value) is not int or value != 0)
+               for value in scratch):
             raise ValueError("MACA compilation requires nonzero scratch buffers")
+        if hidden == 2 and any(value is None for value in scratch):
+            raise ValueError("MACA compilation omits scratch allocation metadata")

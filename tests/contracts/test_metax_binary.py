@@ -84,6 +84,15 @@ class MetaxBinaryTests(unittest.TestCase):
         metadata.global_scratch_size = 64
         with self.assertRaisesRegex(ValueError, "nonzero scratch"):
             MetaxRoute().validate_artifacts(artifacts, requirements, metadata)
+        metadata.global_scratch_size = 0
+        metadata.profile_scratch_size = None
+        with self.assertRaisesRegex(ValueError, "omits scratch"):
+            MetaxRoute().validate_artifacts(artifacts, requirements, metadata)
+        old_artifacts = {"ttgir": TTGIR_ONE_POINTER,
+                         "mcfatbin": bundle(note_pointer_arguments=1)[0]}
+        metadata.global_scratch_size = 64
+        with self.assertRaisesRegex(ValueError, "nonzero scratch"):
+            MetaxRoute().validate_artifacts(old_artifacts, requirements, metadata)
 
     def test_returns_only_the_native_member_of_the_requested_family(self):
         payload, native = bundle()
