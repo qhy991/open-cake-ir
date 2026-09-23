@@ -14,6 +14,7 @@ from open_cake_ir.lab.provider_documents import ProviderQualificationReceipt
 from open_cake_ir.lab.provider_policy import execution_configuration
 from open_cake_ir.lab.python_reference import read_skeleton_reference
 from open_cake_ir.serialization import canonical_json_bytes
+from open_cake_ir.tasks.workloads import load_workload
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,6 +37,9 @@ class PythonPairedStudyTests(unittest.TestCase):
                 self.assertNotIn('submission_contract', native['provider'])
                 self.assertTrue(cake['schedule_skeleton']['path'].endswith('.py'))
                 read_skeleton_reference(ROOT, cake['schedule_skeleton'])
+                workload = load_workload(ROOT/study.document['workload']['path'])
+                self.assertEqual(study.evaluation_protocol['validation_case_ids'],
+                                 list(workload.case_ids))
 
     def test_matched_controls_remain_equal_across_transports(self):
         path = STUDIES/'matched-search-triton-b300-optimization-python-template.json'

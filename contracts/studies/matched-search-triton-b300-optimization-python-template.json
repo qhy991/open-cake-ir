@@ -302,7 +302,15 @@
       "maximum_cv": 0.05,
       "materiality_ratio": 1.05,
       "required_pair_wins": 6
-    }
+    },
+    "validation_case_ids": [
+      "primary",
+      "row_tail",
+      "tiny",
+      "zeros",
+      "near_zero",
+      "alternating"
+    ]
   },
   "evidence": {
     "schema_version": 3,
