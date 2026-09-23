@@ -73,6 +73,8 @@ def _system_skills_snapshot(system: Path) -> tuple[tuple[str, int, str], ...]:
         for path in directory.iterdir():
             info = path.lstat()
             relative = path.relative_to(system).as_posix()
+            if stat.S_ISLNK(info.st_mode):
+                raise ValueError('isolated Codex system skills contain a link or special file')
             if info.st_uid != os.geteuid() or info.st_mode & 0o022:
                 raise ValueError('isolated Codex system skills custody differs')
             if stat.S_ISDIR(info.st_mode):
