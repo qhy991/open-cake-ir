@@ -8,12 +8,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.compiler import Compiler, Program  # noqa: E402
 from open_cake_ir.tasks.qsa.program import ProgramContract
 from tests.contracts._historical_qsa_program import replay_program_v2
 
 
 class ProgramContractTest(unittest.TestCase):
+    def test_program_stage_reuses_its_validated_typed_schedule(self) -> None:
+        document = json.loads((ROOT / 'corpus/schedules/fma-b8-smoke.json').read_text())
+        program = Program.from_schedule(document)
+        stage = program.stages[0]
+        self.assertIs(stage.schedule, stage.schedule)
+        self.assertEqual(stage.schedule.schedule_id, document['schedule_id'])
+        self.assertEqual(json.loads(stage.schedule_bytes), document)
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
