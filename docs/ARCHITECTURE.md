@@ -70,8 +70,10 @@ Evidence，因此项目的范围大于一种 DSL。本项目独立探索 [CAKE �
 保持原有合同。新 Clean-start 的 Python 参考材料只含公开 ABI、目标、生成路线和 `...` 占位，
 精确字节由 Lab 检查；当前 Provider 尚无可验证的读取隔离，实际启动被拒绝，见
 [ADR 0077](adr/0077-python-clean-start-reference-and-read-isolation.md)。
-`candidate-set.json` 目前仍由 Agent 填写，是传输合同而非 Cake IR。后续减法是让 Provider
-从源码文件生成封装并保留原始字节、候选顺序与回放，然后继续收敛 Compiler 的内部文档往返。
+新单候选、无 transform 的 `python_source_file_v1` Run 让 Agent 直接写 `candidate.py`；
+Lab 保存原始 UTF-8 字节并确定性生成内部候选，见 [ADR 0078](adr/0078-python-source-file-provider-submission.md)。
+多候选和 transform Run 仍使用 `candidate-set.json`，它是传输合同而非 Cake IR；下一步
+需让多个源码文件及显式动作也有同等的顺序、监护和回放。Compiler 内部文档往返继续收敛。
 每一步采用后继 Run 合同并保留冻结实验的原提交，不原地改写历史证据。
 
 | 层级 | 表示与负责的决策 | 尚未决定的事情 |

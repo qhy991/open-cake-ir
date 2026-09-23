@@ -181,7 +181,7 @@ class ProviderTurn:
 
     candidate_sha256s: tuple[str, ...]
     raw_submission: bytes
-    """Exact candidate envelope bytes from this Turn's no-follow file read."""
+    """Exact author file bytes from this Turn's no-follow read, before projection."""
 
     raw_events: bytes
     raw_events_sha256: str
