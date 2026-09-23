@@ -29,13 +29,14 @@ from .provider_policy import provider_configuration, provider_harness
 
 def validate_provider(*, open_cake, policy, project_root, study):
     """Matched-Study input policy; runtime qualification has an independent owner."""
-    provider = _object(open_cake.get('provider'), 'study.arms.provider')
     claim_scope = str(study.document['claim_scope'])
-    configuration = provider_configuration(provider, claim_scope, arms=study.document['arms'])
-    validate_provider_binding(provider=provider, project_root=project_root,
-        expected_provider_configuration=configuration,
-        admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
-        require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
+    for name, arm in study.document['arms'].items():
+        provider = _object(arm.get('provider'), f'study.arms.{name}.provider')
+        configuration = provider_configuration(provider, claim_scope, arms=study.document['arms'])
+        validate_provider_binding(provider=provider, project_root=project_root,
+            expected_provider_configuration=configuration,
+            admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
+            require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
     return claim_scope
 
 

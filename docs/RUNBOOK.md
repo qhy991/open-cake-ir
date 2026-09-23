@@ -118,7 +118,7 @@ Choose by question, not by historical sequence number:
 | Does the two-file Ralph path compose with time/token/Evaluation budgets? | `matched-search-system-qualification-ralph-template.json` |
 | What is the best confirmed artifact through the two-file Ralph loop? | `artifact-optimization-ralph-template.json` |
 | Does an implementation-free matched reference boundary hold? | `matched-search-clean-start-reference-template.json` |
-| Can Cake and native Triton optimize the same B300 baseline through Ralph? | `matched-search-triton-b300-optimization-template.json` |
+| Can Cake and native Triton optimize the same B300 baseline through Ralph? | `matched-search-triton-b300-optimization-python-template.json` |
 | Does a frozen exact-shape specialist set generalize to its declared cases? | Historical replay at its pinned commit (ADR 0071) |
 
 Template names are discovery aids; the content-bound Study Contract is the authority.
@@ -139,7 +139,7 @@ external execution binding. This includes the B300 Triton templates. Follow
 [the B300 binding example](B300.md) and [ADR 0056](adr/0056-fixed-baseline-paired-execution.md):
 
 ```bash
-open-cake-ir lab preflight contracts/studies/matched-search-triton-b300-optimization-template.json \
+open-cake-ir lab preflight contracts/studies/matched-search-triton-b300-optimization-python-template.json \
   --execution-bindings /new/external/path/execution-bindings.json \
   --output /new/external/path/campaign.lock.json
 ```
@@ -150,14 +150,16 @@ declared target; it does not replace measured acceptance.
 
 All matched-search Studies use `task_agents_ralph_v1`; Preflight renders no Prompt template. Live composition creates
 one read-only `TASK.md` and `AGENTS.md` in each Run workspace and retains their exact bytes
-with every StateCard. The workspace may contain only those files plus
-`candidate-set.json` after a Turn.
+with every StateCard. The workspace may contain only those files plus the assigned
+candidate file after a Turn: `candidate-set.py` for Cake Python Studies and
+`candidate-set.json` for native or historical JSON contracts.
 
-The candidate envelope accepts valid UTF-8 JSON with arbitrary whitespace and object-key
+The JSON candidate envelope accepts valid UTF-8 JSON with arbitrary whitespace and object-key
 order. Keys must be unique at every nesting level, numbers finite, and `schema_version`
 the integer `1`. Each Turn retains the exact submitted file bytes. Audit projects those
 bytes into the ordered canonical members again and checks their archived identities;
-direct CUDA source strings retain their decoded UTF-8 bytes.
+direct CUDA source strings retain their decoded UTF-8 bytes. Cake Python bundles are
+parsed statically without executing author code and preserve the raw submission.
 
 Clean-start references are replaced as one paired operation:
 
@@ -224,11 +226,12 @@ python tools/qualify_codex_provider.py \
   --feature-policy provider_defaults_optimization
 ```
 
-For the B300 Cake/native-Triton template, pass
-`contracts/providers/codex-triton-optimization-output-schema-v1.json` as `--output-schema`.
-The qualifier derives the two arms from this schema and validates both add/update paths.
+For the B300 Cake/native-Triton Python template, qualify the arms separately with
+`contracts/providers/run-turn-output-schema-v2.json`: select `open_cake` with the
+`python_candidate_bundle_v1` submission contract and `native_triton` with the JSON
+envelope. Bind both two-turn receipts and anchors using external binding schema v3.
 
-Both policies use Ralph: two immutable task files and one candidate-set envelope.
+Both policies use Ralph: two immutable task files and one assigned candidate file.
 There is no agent-interface selector or legacy prompt qualification.
 
 Failure remains a sealed observation and issues no passing receipt. Reauthenticate before
