@@ -9,7 +9,7 @@ from __future__ import annotations
 import ctypes
 from typing import Callable, Sequence
 
-from open_cake_ir.compiler.metax_toolchain import device_image
+from open_cake_ir.compiler.metax_toolchain import device_image, hidden_pointer_parameters
 from open_cake_ir.compiler.target import CodeObject, declared_target
 from .loaders import LifecycleError, check_candidate_authority
 
@@ -63,11 +63,13 @@ class LoadedMetaxCandidate:
         payload = candidate.artifact_payloads["mcfatbin"]
         check_candidate_authority(candidate, payload, "mcfatbin", manifest)
         target = declared_target(candidate.target)
+        hidden = hidden_pointer_parameters(candidate.artifact_payloads["ttgir"], payload,
+            target.architecture, manifest.kernel_name)
         if (target.code_object is not CodeObject.MCFATBIN or admission.target != target.target_id
                 or admission.device_name not in target.device_names
                 or admission.device_arch != target.target_id
                 or admission.warp_size != target.warp_size
-                or manifest.hidden_null_pointer_parameters != 0):
+                or manifest.hidden_null_pointer_parameters != hidden):
             raise ValueError("MACA device admission differs from the sealed target")
         image = ctypes.create_string_buffer(device_image(payload, target.architecture))
         runtime = load_runtime(admission.runtime_library) if api is None else api

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import unittest
 
 from open_cake_ir.evaluation.metax_driver import LoadedMetaxCandidate, _call
-from tests.contracts.test_metax_binary import bundle
+from tests.contracts.test_metax_binary import TTGIR_ONE_POINTER, bundle
 
 
 class API:
@@ -23,6 +23,8 @@ class API:
         return 0
     def mcModuleLaunchKernel(self, *args):
         self.launches.append(args)
+        self.last_slot_values = [__import__("ctypes").c_void_p.from_address(slot).value
+                                 for slot in args[-2]]
         return 0
     def mcModuleUnload(self, module):
         self.unloads.append(module.value)
@@ -41,11 +43,13 @@ class MetaxDriverTests(unittest.TestCase):
             _call(RecompileApi(), "mcModuleLaunchKernel")
 
     def setUp(self):
-        self.payload, self.native = bundle()
+        self.payload, self.native = bundle(note_pointer_arguments=1)
         self.api = API()
         self.candidate = SimpleNamespace(target="xcore1002", entry_point="kernel",
-            launch_spec_sha256="c" * 64, artifact_payloads={"mcfatbin": self.payload},
-            artifact_roles={"mcfatbin": sha256(self.payload).hexdigest()})
+            launch_spec_sha256="c" * 64,
+            artifact_payloads={"mcfatbin": self.payload, "ttgir": TTGIR_ONE_POINTER},
+            artifact_roles={"mcfatbin": sha256(self.payload).hexdigest(),
+                            "ttgir": sha256(TTGIR_ONE_POINTER).hexdigest()})
         self.manifest = SimpleNamespace(target="xcore1002", kernel_name="kernel", canonical_sha256="c" * 64,
             grid=(1, 1, 1), block=(64, 1, 1), dynamic_shared_memory_bytes=0,
             hidden_null_pointer_parameters=0, tensor_abi=(("x", (128,), "fp32", "input"),))
@@ -70,6 +74,16 @@ class MetaxDriverTests(unittest.TestCase):
         self.assertEqual(self.api.unloads, [17])
         with self.assertRaisesRegex(RuntimeError, "closed"):
             loaded.launch([self.argument()], tensor_contract=self.manifest)
+
+    def test_new_triton_scratch_arguments_are_two_null_pointers(self):
+        self.payload, self.native = bundle(note_pointer_arguments=3)
+        self.candidate.artifact_payloads["mcfatbin"] = self.payload
+        self.candidate.artifact_roles["mcfatbin"] = sha256(self.payload).hexdigest()
+        self.manifest.hidden_null_pointer_parameters = 2
+        loaded = self.load()
+        loaded.launch([self.argument()], tensor_contract=self.manifest)
+        self.assertEqual(self.api.last_slot_values, [4096, None, None])
+        loaded.close()
 
     def test_shape_dtype_and_device_mismatch_are_rejected_before_launch(self):
         loaded = self.load()
