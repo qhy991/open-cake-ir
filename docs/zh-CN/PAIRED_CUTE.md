@@ -52,7 +52,7 @@ Linux bubblewrap 编译环境不挂载作者工作区，不暴露 NVIDIA 设备�
 缺少依赖会报告环境失败，不会切换架构或绕过隔离。
 
 `tools/qualify_codex_provider.py` 分别配合
-`contracts/providers/run-turn-output-schema-v2.json`，Cake 臂指定
+`contracts/providers/run-turn-output-schema-v1.json`，Cake 臂指定
 `--environment-kind open_cake --submission-contract python_candidate_bundle_v1`，
 原生臂指定 `--environment-kind native_cute_dsl`。两份双轮 receipt 与 anchor
 分别写入版本 3 的外部执行绑定；它们不验证 kernel 正确性。随后将运行配置和已封存基线交给
