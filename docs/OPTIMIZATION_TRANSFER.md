@@ -113,6 +113,28 @@ profiler，以及 M17 GEMM 的本机 tile 优化案例。完整 Program attribut
 Run 的完整程序性能验收，C550 的完整 provider/Ralph 优化闭环仍以平台报告的待验收边界为准。
 因此平台接入已有实质工作，目标本机优化也已有局部例子；尚不能说所有阶段全部完成。
 
+### 现有证据的四个独立范围
+
+![机制编码、跨目标正确性、C550 本机调度收益与尚缺的迁移增益对照](figures/transfer-evidence-layers-v1.png)
+
+*图：四格来自不同任务和收据，是证据范围的阅读图，不是同一机制从 NVIDIA 流向 C550
+的实验轨迹。所列时间是固定形状单 kernel 的成对计时；`86/86` 的完整 Program 正确性
+收据没有计时样本。图不提供跨卡性能比值。*
+
+具体记录分别回答不同问题：
+
+| 记录 | 已验证的范围 | 尚缺的证据 |
+| --- | --- | --- |
+| [私有 BF16/FP16 epilogue 融合 pass](EPILOGUE_FUSION_PASS.md) | 显式组合两个 Schedule、保留舍入并删除私有中间量的 store/reload；[Finding](../findings/2026-09-10-006-explicit-private-epilogue-fusion.json)保留类型、源码和 CPU 模型检查 | `verified_by` 尚为空；没有该 pass 的目标 GPU 正确性、计时或跨硬件收益 |
+| [C550 的 GQA/MLA/MoE 完整正确性](metax-c550.md) | 各自精确绑定 C550 的 Workload 保留原 B300 合同的数学、形状、输入、oracle 和容差；17 个变体、86/86 case 的完整输出复核零不匹配 | 这些收据计时为 `null`；未验证把原 NVIDIA Schedule 原样移植后的性能，亦无材料/变换处理对照 |
+| [C550 M17 GEMM 的 M tile 改动](metax-c550.md) | 固定 `M17/N128/K2048` 下仅将 M tile 64→32，独立 `matrix-fib-m17-tile32-confirmatory-8c0cad53-v1/result.json` 通过五类正确性 case 与测量质量门；基线/候选中位数 72.448/58.368 μs，1.241228× | 这是 `local_serialized` 范围内的显式本机 authoring 对照，不是 provider 优化 Run，也没有“给 Agent NVIDIA 经验”与不给经验的对照 |
+| [E/P 四组迁移协议](OPTIMIZATION_TRANSFER_ABLATION.md) | 材料 E 和变换权限 P 的隔离、分配与审计已有软件测试 | 还没有共同目标、基线和预算下的实机迁移收益实验 |
+
+M17 的收据名称必须含 `tile32-confirmatory`：同目录的
+`matrix-fib-m17-confirmatory-8c0cad53-v1` 是原产物自比较，结论为 `close_null`，
+不能代替 tile32 对固定基线的独立确认。原始收据与 86 份 Program 复核均在 checkout 外
+`open-cake-ir-evidence/metax-parity-20260920/`，仓库内的链接是它们的专题阅读入口。
+
 **“NVIDIA 知识帮助国产卡优化”仍是待验证的研究假设。** 必须在同一目标上冻结共同
 Compiler/工具链、基线、作者和预算，对比有无额外机制材料与变换权限；先补齐的后端能力
 由所有组共同使用。目标本机优化回答“能否优化这张卡”，E/P 研究回答“迁移知识额外带来

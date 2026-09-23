@@ -102,10 +102,39 @@ The current snapshot provides substantial DCU execution and local optimization r
 short-kernel timing-resolution limits, and C550 fixed-kernel/selected Program correctness plus
 single-kernel timing/profiling and a bounded M17 tile case. Those observations establish platform
 paths and local examples, not completed full-program optimization or effective knowledge transfer.
-The hypothesis that NVIDIA mechanism material reduces domestic-target search cost remains to be
-tested with common frozen Compiler/toolchain, baseline, author, and budget, comparing extra
-material and transform access. The protocol below separates that attribution from ordinary local
-optimization and from later compiler-capability work.
+
+### Four separate evidence scopes
+
+![Chinese-labelled evidence diagram: encoded fusion pass, C550 correctness, local M17 tile gain, and missing transfer-effect study](../figures/transfer-evidence-layers-v1.png)
+
+*The four cards refer to different tasks and receipts; they do not form one NVIDIA-to-C550
+mechanism trajectory. The M17 time is paired single-kernel timing. The 86 complete-Program
+correctness receipts contain no timing samples. No cross-device performance ratio is inferred.*
+
+The [private BF16/FP16 epilogue fusion pass](../EPILOGUE_FUSION_PASS.md) composes two Schedules
+and has typed, source and CPU-model checks, while its [Finding](../../findings/2026-09-10-006-explicit-private-epilogue-fusion.json)
+still has no GPU capability verification. On C550, 17 precisely bound GQA/MLA/MoE Workload
+variants retain the B300 contracts' mathematics, shapes, cases, inputs, oracle and tolerances;
+all 86 complete-output cases passed independent replay with zero mismatches and zero timing
+samples ([C550 evidence](../metax-c550.md)). That is target correctness, not transfer of an
+unchanged NVIDIA Schedule or its performance.
+
+Separately, the C550 `M17/N128/K2048` GEMM changed only the M tile from 64 to 32. The exact
+`matrix-fib-m17-tile32-confirmatory-8c0cad53-v1/result.json` receipt accepted all five
+correctness cases and the timing quality gate: baseline/candidate medians were
+72.448/58.368 μs, or 1.241228×, under `local_serialized`. The similarly named
+`matrix-fib-m17-confirmatory-8c0cad53-v1` is an incumbent self-comparison classified
+`close_null`; it must not be substituted for the tile32 result. This is a local authoring
+comparison, not a provider Run or an explanation-versus-pass transfer experiment.
+
+The [E/P method appendix](../OPTIMIZATION_TRANSFER_ABLATION.md) has software-tested allocation
+and audit rules but explicitly reports no real-device transfer-effect study. Establishing the
+incremental value of NVIDIA-derived material still requires matched target Runs with a shared
+Compiler, toolchain, local baseline, author and budget. The raw C550 receipts and Program
+replay are retained outside the checkout under `open-cake-ir-evidence/metax-parity-20260920/`.
+
+The protocol below separates that attribution from ordinary local optimization and later
+compiler-capability work.
 
 ## The proposed 2×2 study controls **E**, extra mechanism explanations and cases, and **P**,
 permission to invoke a frozen transformation. E0P0 supplies neither; E1P0 supplies explanations
