@@ -1031,7 +1031,6 @@ Program 和框架接入。在固定来源平台机制与目标开发集后，冻
 出现的表达或分析缺口，保留触发 Finding、反例、后继提交及其验证，再观察新能力是否帮助
 后续任务。这样才能逐步回答“协同演进产生了什么可复用能力”，而不靠跨平台拼接的加速比。
 
-\clearpage
 \appendix
 \section{术语、源码入口与完整示例}
 
@@ -1053,8 +1052,8 @@ Finding & 可定位、可归属的结构、目标或后端诊断 \\
 \end{tabularx}
 \end{table}
 
-\repo{examples/python/softmax.py}{当前 Softmax 文件}是第 4 节运行示例的完整可读源码：
 \Needspace{26\baselineskip}
+\repo{examples/python/softmax.py}{当前 Softmax 文件}是第 4 节运行示例的完整可读源码：
 \begin{lstlisting}[style=reportcode,language=Python]
 from open_cake_ir.compiler import frontend as cake
 
@@ -1080,7 +1079,7 @@ def softmax(lm, x: cake.Tensor((8, 512, 128), "fp32"),
 默认读取项目的当前配置。复制这个示例不会自动取得某台 GPU 的可运行产物或性能资格。
 现有\repo{docs/PYTHON_FRONTEND.md}{Python 前端文档}列出允许的语法及源码位置诊断。
 
-\Needspace{20\baselineskip}
+\Needspace{12\baselineskip}
 \section{结果来源与历史身份}
 
 \begin{table}[htbp]
@@ -1097,7 +1096,7 @@ B300 TinyGEMM2 & \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{严格数值与成对�
 Apple、Hygon、AMD & 各平台 \repo{docs/RESULTS.md}{发布汇总}与原记录 \\
 MetaX C550 & \repo{docs/metax-c550.md}{平台专题}及 \repo{docs/ARCHITECTURE.md}{当前 Run 案例} \\
 迁移离线试点 & \repo{docs/OPTIMIZATION_TRANSFER.md}{机制与证据边界} \\
-历史 QSA/Flash-KMeans & \href{https://github.com/qhy991/open-cake-ir/releases/tag/research-preview-2026-09-06}{2026-W36.1 旧报告及其证据附录}；退役路径按 \code{history} 标签回放 \\
+历史案例 & QSA 与 Flash-KMeans：\href{https://github.com/qhy991/open-cake-ir/releases/tag/research-preview-2026-09-06}{2026-W36.1 旧报告及其证据附录}；退役路径按 \code{history} 标签回放 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1110,6 +1109,7 @@ B200 Workload，三对延迟（Open-Cake/CUDA，ms）为 1.191845/3.898164、
 127.821446/676.423598\,ms；该时间不含 Python 包装开销。这里只转录旧报告的
 有界结论与身份，不以新版 Compiler 重释旧原始记录。
 
+\Needspace{8\baselineskip}
 \section{复现边界与报告构建}
 
 本文的数字来自已存在的报告、Finding 与原始收据定位；写作和 TeX 编译没有启动新的
@@ -1126,9 +1126,9 @@ oracle、计时区间与质量门。以下文献中的仓库链接均固定到�
 而实验原始收据的身份由各专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
 的 \code{preferred-citation}；封面的中文题名概括本文的研究对象。
 
-\clearpage
 \section*{参考文献}
-\small
+\begin{multicols}{2}
+\footnotesize
 \begin{reportbibliography}{99}
 \bibitem{cake} Z. Ye et al. \emph{CAKE: Compiler--Agent Co-Design for Frontier Kernel Evolution}.
 arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
@@ -1148,5 +1148,6 @@ arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
 \bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}. open-cake-ir@677eb444, 2026.
 \bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}. open-cake-ir@677eb444, 2026.
 \end{reportbibliography}
+\end{multicols}
 
 \end{document}
