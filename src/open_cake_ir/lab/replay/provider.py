@@ -236,10 +236,10 @@ def _replay_provider_turns(
             )
         except (UnicodeError, ValueError) as error:
             refuse(f"{location}.{submission_role}",
-                   f"the retained submission envelope does not project: {error}")
+                   f"the retained author file does not project: {error}")
         if projected_candidates != candidates:
             refuse(f"{location}.{submission_role}",
-                   "candidates projected from the envelope differ from the retained candidate submissions")
+                   "candidates projected from the author file differ from the retained candidate submissions")
         candidate_digests = tuple(sha256(candidate).hexdigest() for candidate in candidates)
         if sha256(raw_events).hexdigest() != event_references[0].get("sha256"):
             refuse(f"{location}.provider_events", "retained raw bytes differ from the reference digest")

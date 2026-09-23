@@ -1,4 +1,4 @@
-"""Provider records and strict candidate-envelope byte admission."""
+"""Provider records and strict authored-file byte admission."""
 
 from __future__ import annotations
 
