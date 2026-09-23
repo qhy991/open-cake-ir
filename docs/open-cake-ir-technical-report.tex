@@ -5,10 +5,12 @@
 \setmainfont{Times New Roman}
 \setsansfont{Avenir Next}
 \setmonofont{Menlo}
-\setCJKmainfont{Songti SC}[BoldFont=Hiragino Sans GB W6]
-\setCJKsansfont{Hiragino Sans GB W3}[BoldFont=Hiragino Sans GB W6]
+% Use embedded TrueType faces with ToUnicode maps. The prior Hiragino CID
+% subsets had no Unicode map and disappeared in some PDF previewers.
+\setCJKmainfont{Songti SC}[BoldFont={Songti SC Bold}]
+\setCJKsansfont{Arial Unicode MS}[AutoFakeBold=1.4]
 \setCJKmonofont{Songti SC}
-\setCJKfamilyfont{zhhei}{Hiragino Sans GB W6}
+\setCJKfamilyfont{zhhei}{Arial Unicode MS}[AutoFakeBold=1.4]
 \xeCJKsetup{CJKecglue={\hskip 0.16em plus 0.06em}}
 \hyphenpenalty=10000
 \exhyphenpenalty=10000
