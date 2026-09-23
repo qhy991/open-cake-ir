@@ -34,7 +34,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-23-001 — `bw1100-1` has a distinct gfx938 Executor host closure despite the same DTK package versions; its captured successor is software-admitted, with device qualification pending (capacity, proposed).
+- F-2026-09-23-001 — `bw1100-1` has a distinct gfx938 Executor host closure despite the same DTK package versions; its captured successor passed software admission and bounded five-case HIP device confirmation at gfx938@4c9f4cc0 (capacity, accepted for that Workload).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
 - F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.
