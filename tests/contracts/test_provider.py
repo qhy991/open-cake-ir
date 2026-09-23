@@ -110,7 +110,7 @@ class ProviderContractTests(unittest.TestCase):
             submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',
             environment_kind='open_cake', maximum_candidates_per_turn=3)
         self.assertEqual(projected_comment,
-                         canonical_json_bytes({'python_source': import_line + first.rstrip()}))
+                         canonical_json_bytes({'python_source': import_line + '\n' + first.rstrip()}))
 
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
