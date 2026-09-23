@@ -16,6 +16,36 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class IndependentRunTests(SemanticLabTestCase):
+    def test_python_clean_start_run_preflights_and_delivers_only_incomplete_source(self):
+        from open_cake_ir.lab.reference_access import (
+            PYTHON_CLEAN_START_SCAFFOLD, render_incomplete_python_starter,
+        )
+        from open_cake_ir.tasks.workloads import load_workload
+        lab, specification = self.fixture()
+        document = specification.document
+        workload = load_workload(ROOT / document['workload']['path'])
+        route = document['authoring']['lowering_route']
+        with tempfile.TemporaryDirectory() as temporary:
+            starter = Path(temporary) / 'starter.py'
+            expected = render_incomplete_python_starter(workload,
+                document['evaluation_protocol']['case_id'], route)
+            starter.write_bytes(expected)
+            arm = document['authoring']
+            del arm['schedule_skeleton']
+            arm.update(reference_access='clean_start', input_format='python_source_v1',
+                tool_surface=['submit_python_source'], python_starter={'path': str(starter)},
+                scaffold={'path': PYTHON_CLEAN_START_SCAFFOLD,
+                          'sha256': sha256((ROOT/PYTHON_CLEAN_START_SCAFFOLD).read_bytes()).hexdigest()})
+            successor = RunSpecification.from_dict(document)
+            lab.preflight_run(successor)
+            package = lab.task_package(successor, successor.run_id)
+            self.assertIn('schedule-starter.py', package.task_markdown)
+            self.assertNotIn('schedule-skeleton.json', package.task_markdown)
+            self.assertNotIn('python-example.py', package.task_markdown)
+            starter.write_bytes(expected + b'\n# hidden implementation\n')
+            with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
+                lab.preflight_run(successor)
+
     def test_python_only_run_refuses_a_json_starter_during_preflight(self):
         lab, specification = self.fixture()
         document = specification.document
