@@ -126,11 +126,17 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, worklo
         _, path = source_reference_path(root, scaffold.get("path"), "scaffold")
         python_clean_start = (kind == 'open_cake' and access == 'clean_start'
                               and arm.get('input_format') == 'python_source_v1')
-        vetted_scaffold = (PYTHON_CLEAN_START_SCAFFOLD if python_clean_start_treatment
-                           else 'contracts/scaffolds/message-author/AGENTS.md'
-                           if arm.get('provider', {}).get('harness') == 'responses'
-                           else VETTED_REFERENCE_ASSETS[2])
-        if path.read_bytes() != (root / vetted_scaffold).read_bytes():
+        if arm.get('provider', {}).get('harness') == 'responses':
+            vetted_scaffolds = ('contracts/scaffolds/message-author/AGENTS.md',)
+        elif python_clean_start_treatment:
+            vetted_scaffolds = (PYTHON_CLEAN_START_SCAFFOLD,)
+        elif kind == 'direct_cuda':
+            # A paired direct-CUDA Run is projected alone when its TaskPackage is
+            # rendered. Both shared matched-search scaffolds are reviewed for it.
+            vetted_scaffolds = (VETTED_REFERENCE_ASSETS[2], PYTHON_CLEAN_START_SCAFFOLD)
+        else:
+            vetted_scaffolds = (VETTED_REFERENCE_ASSETS[2],)
+        if path.read_bytes() not in {(root / item).read_bytes() for item in vetted_scaffolds}:
             raise ValueError(f"{prefix}: authoring_instructions are not a vetted restricted scaffold")
         if kind == "open_cake":
             if python_clean_start:
