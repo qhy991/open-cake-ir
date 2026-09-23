@@ -3,7 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from open_cake_ir.lab.author_home import provision_codex_home, verify_codex_home
+from open_cake_ir.lab.author_home import (provision_codex_home, system_skills_snapshot,
+                                         verify_codex_home)
 
 
 class IsolatedCodexHomeTests(unittest.TestCase):
@@ -30,11 +31,24 @@ class IsolatedCodexHomeTests(unittest.TestCase):
             home = provision_codex_home(source, root/'author-home')
             (home/'skills').mkdir()
             (home/'skills'/'.system').mkdir()
+            with self.assertRaisesRegex(ValueError, 'prior skill state'):
+                verify_codex_home(home, fresh=True)
             verify_codex_home(home)
+            baseline = system_skills_snapshot(home)
+            (home/'skills'/'.system'/'injected').mkdir()
+            (home/'skills'/'.system'/'injected'/'SKILL.md').write_text('unreviewed')
+            with self.assertRaisesRegex(ValueError, 'changed between Turns'):
+                verify_codex_home(home, expected_system_skills=baseline)
+            (home/'skills'/'.system'/'injected'/'SKILL.md').unlink()
+            (home/'skills'/'.system'/'injected').rmdir()
             (home/'skills'/'user-skill').mkdir()
             with self.assertRaisesRegex(ValueError, 'user skills'):
                 verify_codex_home(home)
             (home/'skills'/'user-skill').rmdir()
+            (home/'skills'/'.system'/'link').symlink_to(source)
+            with self.assertRaisesRegex(ValueError, 'link or special'):
+                verify_codex_home(home)
+            (home/'skills'/'.system'/'link').unlink()
             (home/'plugins').mkdir()
             with self.assertRaisesRegex(ValueError, 'plugins'):
                 verify_codex_home(home)

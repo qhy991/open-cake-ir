@@ -543,7 +543,8 @@ def main() -> int:
     auth_source = (external_file(ROOT, str(args.auth_source), 'qualification Codex credential source')
                    if args.author_home_policy is not None else None)
     workspace.mkdir(mode=0o750)
-    codex_home = (provision_codex_home(auth_source, workspace.parent/'author-home')
+    codex_home = (provision_codex_home(auth_source,
+                                      workspace.with_name(workspace.name + '-author-home'))
                   if args.author_home_policy is not None else None)
     workspaces = {}
     for arm in qualification_arms:
@@ -552,7 +553,8 @@ def main() -> int:
         workspaces[arm] = arm_workspace
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
     code_mode_host = (resolve_codex_code_mode_host(executable, removed_environment=removed_environment,
-                                                   codex_home=codex_home)
+                                                   codex_home=codex_home,
+                                                   isolated_home=args.author_home_policy is not None)
                       if args.harness == "codex" else None)
     output_schema_sha256 = sha256(output_schema.read_bytes()).hexdigest()
     reference_nonce = sha256(
@@ -695,6 +697,12 @@ def main() -> int:
                 initial.candidates != _planned_candidates(arm, initial_plan, submission_contract)
             ):
                 raise ValueError("Provider initial candidate bytes differ")
+            if args.harness == 'codex':
+                try:
+                    builder.remember_system_skills()
+                except ValueError as error:
+                    raise RunProtocolFault('provider_fault', str(error),
+                                           artifact_payloads={'provider_stdout': initial.raw_events}) from error
 
             resumed_plan = _planned_turn(package, 2)
             resumed_prompt, resumed_projection = render_task_request(package, {"turn": 2})
@@ -753,6 +761,12 @@ def main() -> int:
                 raise ValueError(
                     "Provider two-Turn identity, usage, or candidate lifecycle differs"
                 )
+            if args.harness == 'codex':
+                try:
+                    builder.remember_system_skills()
+                except ValueError as error:
+                    raise RunProtocolFault('provider_fault', str(error),
+                                           artifact_payloads={'provider_stdout': resumed.raw_events}) from error
             observations[arm] = {
                 "reported_models": [initial_models, resumed_models],
                 "builder": builder,
@@ -790,7 +804,7 @@ def main() -> int:
         if args.harness == "codex":
             resolve_codex_code_mode_host(
                 executable, expected=code_mode_host, removed_environment=removed_environment,
-                codex_home=codex_home,
+                codex_home=codex_home, isolated_home=args.author_home_policy is not None,
             )
         receipt = ProviderQualificationReceipt(
             provider_revision=args.provider_revision,

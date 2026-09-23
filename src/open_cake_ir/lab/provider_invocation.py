@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .process import sanitized_environment
-from .author_home import ISOLATED_AUTH_ONLY_V1, verify_codex_home
+from .author_home import ISOLATED_AUTH_ONLY_V1, system_skills_snapshot, verify_codex_home
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
@@ -25,6 +25,7 @@ def resolve_codex_code_mode_host(
     executable: Path, *, expected: Mapping[str, object] | None = None,
     removed_environment: tuple[str, ...] = (),
     codex_home: Path | None = None,
+    isolated_home: bool = False,
 ) -> dict[str, str]:
     """Bind the native CLI's selected local helper, never a helper override.
 
@@ -72,7 +73,7 @@ def resolve_codex_code_mode_host(
         "CODEX_MANAGED_BY_VITE_PLUS", "CODEX_MANAGED_BY_PNPM",
         "CODEX_MANAGED_BY_NPM", "CODEX_MANAGED_BY_BUN",
     ))
-    if (not managed_override
+    if (not isolated_home and not managed_override
         and release_dir.is_relative_to(codex_home / "packages/standalone/releases")):
         candidates.append(release_dir / "codex-resources" / "codex-code-mode-host")
     candidates.append((package_bin or directory) / "codex-code-mode-host")
@@ -159,12 +160,13 @@ class CodexInvocationBuilder:
             raise ValueError('Codex author home policy differs')
         if (author_home_policy is None) != (codex_home is None):
             raise ValueError('Codex isolated author home binding differs')
-        self._codex_home = verify_codex_home(codex_home) if codex_home is not None else None
+        self._codex_home = verify_codex_home(codex_home, fresh=True) if codex_home is not None else None
+        self._system_skills_snapshot = None
         self._author_home_policy = author_home_policy
         self._executable = executable.resolve(strict=True)
         self._code_mode_host = resolve_codex_code_mode_host(
             self._executable, expected=code_mode_host, removed_environment=removed_environment,
-            codex_home=self._codex_home,
+            codex_home=self._codex_home, isolated_home=author_home_policy is not None,
         )
         self._provider_revision = provider_revision
         self._model = model
@@ -232,9 +234,16 @@ class CodexInvocationBuilder:
         resolve_codex_code_mode_host(
             self._executable, expected=self._code_mode_host,
             removed_environment=self._removed_environment, codex_home=self._codex_home,
+            isolated_home=self._author_home_policy is not None,
         )
         if self._codex_home is not None:
-            verify_codex_home(self._codex_home)
+            if thread_id is None:
+                verify_codex_home(self._codex_home, fresh=True)
+            elif self._system_skills_snapshot is None:
+                raise ValueError('Codex resumed Turn lacks its system-skill baseline')
+            else:
+                verify_codex_home(self._codex_home,
+                    expected_system_skills=self._system_skills_snapshot)
         common = (
             "--ignore-user-config",
             "--ignore-rules",
@@ -275,4 +284,15 @@ class CodexInvocationBuilder:
             removed_environment=self._removed_environment,
             thread_id=thread_id,
             codex_home=self._codex_home,
+            system_skills_snapshot=self._system_skills_snapshot,
         )
+
+    def remember_system_skills(self) -> None:
+        """Freeze the CLI-managed tree after the first successful Turn."""
+        if self._codex_home is None:
+            return
+        verify_codex_home(self._codex_home)
+        observed = system_skills_snapshot(self._codex_home)
+        if self._system_skills_snapshot is not None and observed != self._system_skills_snapshot:
+            raise ValueError('isolated Codex system skills changed between Turns')
+        self._system_skills_snapshot = observed

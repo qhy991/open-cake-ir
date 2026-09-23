@@ -168,6 +168,7 @@ class ProviderInvocation:
     removed_environment: tuple[str, ...]
     thread_id: str | None
     codex_home: Path | None = None
+    system_skills_snapshot: tuple[tuple[str, int, str], ...] | None = None
 
 
 @dataclass(frozen=True)

@@ -171,7 +171,8 @@ def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anch
         qualification={'path':str(receipt_path),'canonical_sha256':receipt.canonical_sha256},
         qualification_anchor={'path':str(anchor_path),'canonical_sha256':sha256(canonical(anchor)).hexdigest()})
     if harness=='codex':
-        bound['code_mode_host'] = resolve_codex_code_mode_host(executable)
+        bound['code_mode_host'] = resolve_codex_code_mode_host(executable,
+            isolated_home=isolated)
     return bound,config
 
 

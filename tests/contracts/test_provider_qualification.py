@@ -200,6 +200,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
         python_source: Path | None = None,
         author_home_policy: str | None = None,
         auth_source: Path | None = None,
+        workspace_path: Path | None = None,
     ) -> tuple[subprocess.CompletedProcess[bytes], Path, Path, Path]:
         receipt_path = root / "provider-qualification.json"
         anchor_path = root / "provider-qualification-anchor.json"
@@ -222,7 +223,7 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     )
                 ),
                 "--workspace",
-                str(root / "workspace"),
+                str(workspace_path or root / "workspace"),
                 "--receipt-output",
                 str(receipt_path),
                 "--anchor-output",
@@ -368,10 +369,11 @@ class ProviderQualificationContractTests(unittest.TestCase):
                     maximum_candidates_per_turn=3,
                     output_schema=ROOT/'contracts/providers/run-turn-output-schema-v1.json',
                     environment_kind=arm, submission_contract=contract,
-                    author_home_policy='isolated_auth_only_v1', auth_source=auth_source)
+                    author_home_policy='isolated_auth_only_v1', auth_source=auth_source,
+                    workspace_path=root/f'{arm}-workspace')
                 self.assertEqual(completed.returncode, 0, completed.stderr.decode())
                 receipts[arm] = ProviderQualificationReceipt.load(receipt_path)
-                self.assertEqual((arm_root/'author-home'/'auth.json').read_bytes(),
+                self.assertEqual((root/f'{arm}-workspace-author-home'/'auth.json').read_bytes(),
                                  b'fixture credential')
                 evidence = EvidenceStore.open(evidence_root)
                 self.assertTrue(evidence.audit_run(f'paired-{arm}').archive_integrity)

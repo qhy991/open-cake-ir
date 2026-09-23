@@ -13,7 +13,11 @@ material input, not an incidental host preference.
 each independent Run start a fresh private home containing only a copied credential.
 The CLI may create its own session and system-skill state there; admission refuses
 injected user skills, plugins, symlinks and permissive credential custody before
-every Turn. The actual invocation receives this exact home through `CODEX_HOME`.
+every Turn. The CLI-generated system-skill tree is frozen after the first successful
+Turn and checked before and after each continuation. Token refresh may change
+`auth.json` bytes; this policy checks private custody rather than claiming a frozen
+credential or account identity. The actual invocation receives this home through
+`CODEX_HOME`.
 The qualification receipt binds the policy name, not credential bytes or a path
 that differs per Run. Run-specific homes prevent automatic reuse of previous CLI
 sessions as author context. Frozen Provider contracts without this policy retain

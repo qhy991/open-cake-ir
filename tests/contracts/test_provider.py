@@ -212,10 +212,11 @@ class ProviderContractTests(unittest.TestCase):
                         invocation, candidate_path=root/'candidate-set.json',
                         expected_change='add', expected_terminal_message='{}')
             self.assertEqual(supervised.call_args.kwargs['environment']['CODEX_HOME'], str(home))
+            builder.remember_system_skills()
             (home/'skills').mkdir()
             (home/'skills'/'injected').mkdir()
             with self.assertRaisesRegex(ValueError, 'user skills'):
-                builder.build('second prompt', thread_id=None)
+                builder.build('second prompt', thread_id='01234567-89ab-cdef-0123-456789abcdef')
 
     def test_initial_and_resume_share_the_complete_authoring_environment(self) -> None:
         builder = CodexInvocationBuilder(

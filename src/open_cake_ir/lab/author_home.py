@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import stat
+from hashlib import sha256
 from pathlib import Path
 
 ISOLATED_AUTH_ONLY_V1 = 'isolated_auth_only_v1'
@@ -56,8 +57,50 @@ def provision_codex_home(auth_source: Path, destination: Path) -> Path:
     return verify_codex_home(destination)
 
 
-def verify_codex_home(home: Path) -> Path:
-    """Refuse a changed credential or user-installed skills before every Turn."""
+def _system_skills_snapshot(system: Path) -> tuple[tuple[str, int, str], ...]:
+    """Capture the CLI's system-skill tree and refuse links or writable entries."""
+    root_info = system.lstat()
+    if (not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.geteuid()
+        or root_info.st_mode & 0o022):
+        raise ValueError('isolated Codex system skills custody differs')
+    rows = []
+    total_bytes = 0
+    pending = [system]
+    while pending:
+        directory = pending.pop()
+        for path in directory.iterdir():
+            info = path.lstat()
+            relative = path.relative_to(system).as_posix()
+            if info.st_uid != os.geteuid() or info.st_mode & 0o022:
+                raise ValueError('isolated Codex system skills custody differs')
+            if stat.S_ISDIR(info.st_mode):
+                rows.append((relative + '/', info.st_mode & 0o777, ''))
+                pending.append(path)
+            elif stat.S_ISREG(info.st_mode) and info.st_nlink == 1:
+                total_bytes += info.st_size
+                if info.st_size > 16 * 1024 * 1024 or total_bytes > 64 * 1024 * 1024:
+                    raise ValueError('isolated Codex system skills exceed the bounded tree')
+                descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+                try:
+                    digest = sha256()
+                    while chunk := os.read(descriptor, 1024 * 1024):
+                        digest.update(chunk)
+                finally:
+                    os.close(descriptor)
+                rows.append((relative, info.st_mode & 0o777, digest.hexdigest()))
+            else:
+                raise ValueError('isolated Codex system skills contain a link or special file')
+    return tuple(sorted(rows))
+
+
+def system_skills_snapshot(home: Path) -> tuple[tuple[str, int, str], ...]:
+    system = Path(home)/'skills'/'.system'
+    return _system_skills_snapshot(system) if system.is_dir() else ()
+
+
+def verify_codex_home(home: Path, *, fresh: bool = False,
+                      expected_system_skills: tuple[tuple[str, int, str], ...] | None = None) -> Path:
+    """Refuse unsafe credential custody and skill-tree drift before every Turn."""
     home = Path(home)
     info = home.lstat()
     if (not home.is_absolute() or home.resolve(strict=True) != home
@@ -67,12 +110,24 @@ def verify_codex_home(home: Path) -> Path:
     _regular_private(home/'auth.json', maximum_bytes=1024 * 1024)
     skills = home/'skills'
     if skills.exists() or skills.is_symlink():
+        if fresh:
+            raise ValueError('fresh Codex author home contains prior skill state')
         if (skills.is_symlink() or not skills.is_dir()
             or {item.name for item in skills.iterdir()} - {'.system'}):
             raise ValueError('isolated Codex home contains user skills')
+        skills_info = skills.lstat()
+        if skills_info.st_uid != os.geteuid() or skills_info.st_mode & 0o022:
+            raise ValueError('isolated Codex skills directory custody differs')
         system = skills/'.system'
         if system.is_symlink():
             raise ValueError('isolated Codex system skills are symlinked')
+        if system.exists() and not system.is_dir():
+            raise ValueError('isolated Codex system skills differ')
+        observed = system_skills_snapshot(home)
+    else:
+        observed = ()
+    if expected_system_skills is not None and observed != expected_system_skills:
+        raise ValueError('isolated Codex system skills changed between Turns')
     if (home/'plugins').exists() or (home/'plugins').is_symlink():
         raise ValueError('isolated Codex home contains plugins')
     return home

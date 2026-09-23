@@ -60,7 +60,9 @@ class CodexProviderAdapter:
         environment = sanitized_environment(invocation.removed_environment)
         if invocation.codex_home is not None:
             from .author_home import verify_codex_home
-            environment['CODEX_HOME'] = str(verify_codex_home(invocation.codex_home))
+            environment['CODEX_HOME'] = str(verify_codex_home(
+                invocation.codex_home, fresh=invocation.thread_id is None,
+                expected_system_skills=invocation.system_skills_snapshot))
         try:
             completed = run_supervised(
                 invocation.argv,
@@ -307,6 +309,14 @@ class QualifiedRunProvider:
                 artifact_payloads={"provider_stdout": result.raw_events},
                 reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
                                                        expected_thread_id=request.thread_id)) from error
+        if isinstance(builder, CodexInvocationBuilder):
+            try:
+                builder.remember_system_skills()
+            except ValueError as error:
+                raise RunProtocolFault('provider_fault', str(error),
+                    artifact_payloads={'provider_stdout': result.raw_events},
+                    reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
+                                                           expected_thread_id=request.thread_id)) from error
         return replace(result, provider_tokens=tokens, reference_bundle=reference_bundle)
 
 
