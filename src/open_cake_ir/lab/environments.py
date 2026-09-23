@@ -113,7 +113,7 @@ class OpenCakeEnvironment:
         self._workload = workload
         self._case_id = case_id
         self._workload_sha256 = workload.canonical_sha256
-        self._python_enabled = authority_document.get("input_format") == "schedule_or_python_v1"
+        self._python_enabled = authority_document.get("input_format") in {"schedule_or_python_v1", "python_source_v1"}
         self._target = workload.target
         self._explicit_abi = isinstance(workload.document["semantics"].get("candidate_abi"), Mapping)
         self._expected = {arg.name: ("global", arg.dtype, list(arg.shape), arg.mode)

@@ -134,7 +134,7 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
     if single_environment:
         comparison_fields = set()
         open_cake_fields.update({"input_format", "toolchain_sha256"})
-        if open_cake.get("input_format") != "schedule_or_python_v1":
+        if open_cake.get("input_format") not in {"schedule_or_python_v1", "python_source_v1"}:
             raise ValueError("single-environment optimization requires the Python-enabled authoring contract")
     if policy is not None:
         open_cake_fields.update({"input_format", "toolchain_sha256"})
@@ -195,8 +195,10 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
                     "candidate_skeleton": "direct candidate skeleton reference"}[field]
             raise differs(f"Study Contract {noun}", expected=sorted(keys), observed=sorted(reference))
     _matched_author_controls(arms)
-    expected_open_cake_tools = (["submit_schedule_or_python"] if policy is not None or single_environment
-                                else ["submit_schedule"])
+    expected_open_cake_tools = (["submit_python_source"] if single_environment
+                                 and open_cake.get("input_format") == "python_source_v1"
+                                 else ["submit_schedule_or_python"] if policy is not None or single_environment
+                                 else ["submit_schedule"])
     expected_comparison_tools = (None if comparison is None
                                  else [policy.submit_tool] if policy is not None else ["submit_cuda"])
     if (open_cake.get("tool_surface") != expected_open_cake_tools

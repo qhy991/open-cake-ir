@@ -145,12 +145,14 @@ def build_run_reference_documents(
         skeleton_ref = _object(arm["schedule_skeleton"], "arm.schedule_skeleton")
         skeleton_bytes, skeleton = read_skeleton_reference(root, skeleton_ref)
         python_starter = str(skeleton_ref['path']).endswith('.py')
+        if arm.get('input_format') == 'python_source_v1' and not python_starter:
+            raise ValueError('Python-only Authoring Environment requires a Python starter')
         if skeleton.get('lowering') != arm.get('lowering_route'):
             raise ValueError('Schedule skeleton lowering route differs')
         case_id = str(_object(lock.document["evaluation_protocol"], "protocol")["case_id"])
         skeleton = prepare_schedule(skeleton, workload_contract, case_id, arm)
         if python_starter:
-            if arm.get("input_format") != "schedule_or_python_v1":
+            if arm.get("input_format") not in {"schedule_or_python_v1", "python_source_v1"}:
                 raise ValueError("Python starter requires the existing Python-enabled Authoring Environment")
             documents["schedule-starter.py"] = bind_python_reference(
                 skeleton_bytes.decode("utf-8"), skeleton, filename=str(skeleton_ref["path"]))
@@ -158,11 +160,11 @@ def build_run_reference_documents(
             documents.update({"schedule.schema.json": schedule_schema_bytes(),
                 "schedule-authoring.md": (root / "compiler/AUTHORING_CONTRACT.md").read_bytes(),
                 "schedule-skeleton.json": _canonical_json(skeleton).encode()})
-        if arm.get("input_format") == "schedule_or_python_v1":
+        if arm.get("input_format") in {"schedule_or_python_v1", "python_source_v1"}:
             documents["python-frontend.md"] = (root / "docs/PYTHON_FRONTEND.md").read_bytes()
             if access == "known_kernel_reproduction":
                 documents["python-example.py"] = (root / "examples/python/fma.py").read_bytes()
-        if access == "known_kernel_reproduction" and arm.get("lowering_route", {}).get("backend") != "metal" and arm.get("input_format") == "schedule_or_python_v1":
+        if access == "known_kernel_reproduction" and arm.get("lowering_route", {}).get("backend") != "metal" and arm.get("input_format") in {"schedule_or_python_v1", "python_source_v1"}:
             policy = backend_policy(arm["lowering_route"]["backend"])
             documents[policy.authoring_file] = (root / "docs/en" / policy.document).read_bytes()
     elif environment_kind != "direct_cuda" and (policy := native_backend(environment_kind)) is not None:
@@ -405,7 +407,10 @@ The bound `scaffold.md` authoring instructions are delivered in `AGENTS.md`.
             "in a `python_source` member; do not describe a Schedule with JSON fields. "
             "The existing candidate envelope is transport only.\n\n"
             "Write exactly one valid UTF-8 JSON `candidate-set.json` envelope:")
+    python_only = authority["environment_kind"] == "open_cake" and authority.get("input_format") == "python_source_v1"
     arm_rule = (
+        "Author Cake IR Candidates only as restricted Python source through the supplied frontend. The JSON candidate envelope is transport only; do not author a Schedule or Program as JSON. Do not invoke CUDA, a GPU, the network, or another compiler."
+        if python_only else
         "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."
         if authority["environment_kind"] == "open_cake" and authority.get("input_format") == "schedule_or_python_v1"
         else "Author only Cake IR Schedules; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."

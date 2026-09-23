@@ -179,7 +179,12 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
     scaffold_bytes = scaffold_path.read_bytes()
     if not scaffold_bytes.decode("utf-8").strip():
         raise ValueError("authoring AGENTS.md must contain nonempty UTF-8 instructions")
+    if reference_access != 'clean_start' and starter_path.suffix != '.py':
+        raise ValueError('Python starter must be a .py source file for a new optimization Run')
     source = frontend.read_schedule(starter_path)
+    input_format = 'schedule_or_python_v1' if reference_access == 'clean_start' else 'python_source_v1'
+    tool_surface = (['submit_schedule_or_python'] if reference_access == 'clean_start'
+                    else ['submit_python_source'])
     provider = {"model": model, "reasoning_effort": effort,
                 "removed_environment": ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
@@ -212,7 +217,7 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
             "compiler_revision": dict(CURRENT_RELEASE_BINDING),
             "lowering_route": source.document["lowering"],
             "schedule_skeleton": {"path": str(starter_path), "canonical_sha256": sha256(canonical(source.document)).hexdigest()},
-            "input_format": "schedule_or_python_v1", "tool_surface": ["submit_schedule_or_python"],
+            "input_format": input_format, "tool_surface": tool_surface,
             # Stated from the policy rather than asserted: on a target whose backend
             # declares no timing source the policy carries a measurement-coverage
             # limitation, and an arm that still advertised `qualified_timing` and
