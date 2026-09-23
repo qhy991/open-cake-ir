@@ -224,7 +224,9 @@ def task_run_inputs(root: Path, workload, workload_path: Path, starter_path: Pat
         provider.update(harness=harness, permission_mode="acceptEdits", sandbox="none", safe_mode=True,
                         tools=list(CLAUDE_AUTHORING_TOOLS), event_contract=CLAUDE_EVENT_CONTRACT, terminal_schema=terminal_schema())
     else:
+        from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1
         provider.update(sandbox="workspace-write", service_tier="default", disabled_features=[],
+                        author_home_policy=ISOLATED_AUTH_ONLY_V1,
                         event_contract="tool_rich_candidate_v1", code_mode_host=dict(CAMPAIGN_BINDING),
                         output_schema={"path": OUTPUT_SCHEMA, "sha256": sha256((root / OUTPUT_SCHEMA).read_bytes()).hexdigest()})
     evaluation = evaluation_policy(workload, searches_per_turn=searches_per_turn,

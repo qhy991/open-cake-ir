@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -15,6 +16,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     CodexInvocationBuilder,
+    CodexProviderAdapter,
     CodexRunProvider,
     ProviderQualificationReceipt,
     ProviderTurn,
@@ -23,6 +25,8 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     required_live_provider_qualification_scope,
 )
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
+from open_cake_ir.lab.author_home import provision_codex_home  # noqa: E402
+from open_cake_ir.lab.process import SupervisedProcessTimeout  # noqa: E402
 from open_cake_ir.lab.task_package import (  # noqa: E402
     TaskPackage,
     materialize_task_package,
@@ -184,6 +188,34 @@ class ProviderContractTests(unittest.TestCase):
         return b"".join(
             json.dumps(event, separators=(",", ":")).encode() + b"\n" for event in events
         )
+
+    def test_isolated_home_is_bound_to_the_actual_cli_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root/'source-auth.json'
+            source.write_bytes(b'fixture credential')
+            source.chmod(0o600)
+            home = provision_codex_home(source, root/'author-home')
+            builder = CodexInvocationBuilder(
+                executable=self.executable, provider_revision='fixture',
+                model='gpt-5.6-sol', reasoning_effort='max', service_tier='default',
+                workspace=root, output_schema=ROOT/'contracts/providers/codex-turn-output-schema-v1.json',
+                removed_environment=('OPENAI_API_KEY', 'ANTHROPIC_API_KEY'),
+                author_home_policy='isolated_auth_only_v1', codex_home=home)
+            invocation = builder.build('fixture prompt', thread_id=None)
+            self.assertEqual(builder.configuration['author_home_policy'], 'isolated_auth_only_v1')
+            self.assertEqual(invocation.codex_home, home)
+            with patch('open_cake_ir.lab.providers.run_supervised',
+                       side_effect=SupervisedProcessTimeout(b'', b'')) as supervised:
+                with self.assertRaises(RunProtocolFault):
+                    CodexProviderAdapter(timeout_seconds=5).execute(
+                        invocation, candidate_path=root/'candidate-set.json',
+                        expected_change='add', expected_terminal_message='{}')
+            self.assertEqual(supervised.call_args.kwargs['environment']['CODEX_HOME'], str(home))
+            (home/'skills').mkdir()
+            (home/'skills'/'injected').mkdir()
+            with self.assertRaisesRegex(ValueError, 'user skills'):
+                builder.build('second prompt', thread_id=None)
 
     def test_initial_and_resume_share_the_complete_authoring_environment(self) -> None:
         builder = CodexInvocationBuilder(

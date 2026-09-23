@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Mapping
 
 from .process import sanitized_environment
+from .author_home import ISOLATED_AUTH_ONLY_V1, verify_codex_home
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
     PYTHON_SOURCE_FILE_V1,
@@ -23,6 +24,7 @@ from .provider_documents import (
 def resolve_codex_code_mode_host(
     executable: Path, *, expected: Mapping[str, object] | None = None,
     removed_environment: tuple[str, ...] = (),
+    codex_home: Path | None = None,
 ) -> dict[str, str]:
     """Bind the native CLI's selected local helper, never a helper override.
 
@@ -35,6 +37,8 @@ def resolve_codex_code_mode_host(
     if not executable.is_file() or not os.access(executable, os.X_OK):
         raise ValueError("Codex native executable is not an executable file")
     environment = sanitized_environment(removed_environment)
+    if codex_home is not None:
+        environment['CODEX_HOME'] = str(verify_codex_home(codex_home))
     if "CODEX_HOME" in environment:
         # The CLI resolves this in invocation.cwd, which differs from our cwd.
         # Only an existing absolute directory gives both processes one identity.
@@ -126,6 +130,8 @@ class CodexInvocationBuilder:
         cwd_policy: str = "independent_task_workspace",
         reference_visibility: str = "workspace_task_files",
         code_mode_host: Mapping[str, object] | None = None,
+        author_home_policy: str | None = None,
+        codex_home: Path | None = None,
     ) -> None:
         values = (provider_revision, model, reasoning_effort, service_tier)
         if any(not value for value in values) or not removed_environment:
@@ -149,9 +155,16 @@ class CodexInvocationBuilder:
             ("independent_task_workspace", "workspace_task_files"),
         }:
             raise ValueError("Codex workspace/reference policy differs")
+        if author_home_policy not in {None, ISOLATED_AUTH_ONLY_V1}:
+            raise ValueError('Codex author home policy differs')
+        if (author_home_policy is None) != (codex_home is None):
+            raise ValueError('Codex isolated author home binding differs')
+        self._codex_home = verify_codex_home(codex_home) if codex_home is not None else None
+        self._author_home_policy = author_home_policy
         self._executable = executable.resolve(strict=True)
         self._code_mode_host = resolve_codex_code_mode_host(
             self._executable, expected=code_mode_host, removed_environment=removed_environment,
+            codex_home=self._codex_home,
         )
         self._provider_revision = provider_revision
         self._model = model
@@ -197,6 +210,8 @@ class CodexInvocationBuilder:
         if self._event_contract != "closed_file_change_v1":
             configuration["event_contract"] = self._event_contract
         configuration["submission_contract"] = self._submission_contract
+        if self._author_home_policy is not None:
+            configuration['author_home_policy'] = self._author_home_policy
         return configuration
 
     @property
@@ -216,8 +231,10 @@ class CodexInvocationBuilder:
             raise ValueError("provider thread_id is invalid")
         resolve_codex_code_mode_host(
             self._executable, expected=self._code_mode_host,
-            removed_environment=self._removed_environment,
+            removed_environment=self._removed_environment, codex_home=self._codex_home,
         )
+        if self._codex_home is not None:
+            verify_codex_home(self._codex_home)
         common = (
             "--ignore-user-config",
             "--ignore-rules",
@@ -257,4 +274,5 @@ class CodexInvocationBuilder:
             provider_revision=self._provider_revision,
             removed_environment=self._removed_environment,
             thread_id=thread_id,
+            codex_home=self._codex_home,
         )

@@ -75,7 +75,10 @@ Use `tools/qualify_codex_provider.py` twice with
 `contracts/providers/run-turn-output-schema-v2.json`: once for
 `--environment-kind open_cake --submission-contract python_candidate_bundle_v1` and
 once for `--environment-kind native_cute_dsl` with the JSON envelope. Bind both
-receipts and anchors through `schema_version: 3` execution bindings. This proves the provider
+receipts and anchors through `schema_version: 3` execution bindings. Both
+qualifications use `--author-home-policy isolated_auth_only_v1` and an explicit
+private `--auth-source`; the runtime provider section declares `auth_source` so each
+Run gets a fresh author home. This proves the provider
 contract, not kernel correctness. Pass the external qualification receipt, anchor,
 runtime configuration and sealed fixed-baseline bundle through the ordinary
 `lab preflight --execution-bindings` path. Keep every new lock and evidence root outside

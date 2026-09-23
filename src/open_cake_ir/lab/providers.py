@@ -58,6 +58,9 @@ class CodexProviderAdapter:
         """Run without shell expansion and remove every contract-declared environment name."""
 
         environment = sanitized_environment(invocation.removed_environment)
+        if invocation.codex_home is not None:
+            from .author_home import verify_codex_home
+            environment['CODEX_HOME'] = str(verify_codex_home(invocation.codex_home))
         try:
             completed = run_supervised(
                 invocation.argv,

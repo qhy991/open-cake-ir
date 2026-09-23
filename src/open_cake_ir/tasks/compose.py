@@ -243,12 +243,28 @@ def run_runtime_factory(project_root, runtime_config_path):
                     task_packages=packages,adapter=ClaudeProviderAdapter(response_aliases=invocation.response_aliases))
             else:
                 schema = _raw_reference_path(root,declared_provider['output_schema'],'provider.output_schema')
+                author_home_policy = declared_provider.get('author_home_policy')
+                codex_home = None
+                if author_home_policy is not None:
+                    from open_cake_ir.lab.author_home import (
+                        ISOLATED_AUTH_ONLY_V1, provision_codex_home,
+                    )
+                    if (author_home_policy != ISOLATED_AUTH_ONLY_V1
+                        or 'auth_source' not in provider_config):
+                        raise ValueError('Run isolated Codex home policy or credential source differs')
+                    home_root = author_workspace.parent/'.codex-homes'
+                    home_root.mkdir(mode=0o700, exist_ok=True)
+                    auth_source = external_file(root, provider_config['auth_source'],
+                                                'Run Codex credential source')
+                    codex_home = provision_codex_home(auth_source,
+                                                       home_root/specification.run_id)
                 invocation = CodexInvocationBuilder(**common,code_mode_host=declared_provider['code_mode_host'],
                     service_tier=declared_provider['service_tier'],output_schema=schema,
                     disabled_features=tuple(declared_provider['disabled_features']),
                     event_contract=declared_provider.get('event_contract','closed_file_change_v1'),
                     submission_contract=declared_provider.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1),cwd_policy=declared_provider['cwd_policy'],
-                    reference_visibility=declared_provider['reference_visibility'])
+                    reference_visibility=declared_provider['reference_visibility'],
+                    author_home_policy=author_home_policy, codex_home=codex_home)
                 provider = CodexRunProvider(qualification=qualification,builders={specification.run_id:invocation},
                     task_packages=packages,adapter=CodexProviderAdapter())
         return {'provider':provider,'environment':environment,'evaluator':evaluator}

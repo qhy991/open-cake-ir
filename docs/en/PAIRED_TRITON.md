@@ -37,6 +37,9 @@ live two-turn provider qualification under the generic output schema: Cake uses
 `python_candidate_bundle_v1`, native Triton uses the JSON envelope. The two receipts and
 anchors enter external execution binding schema v3 alongside the common runtime and
 fixed baseline. This source template alone authorizes no provider campaign.
+Both qualifications use `--author-home-policy isolated_auth_only_v1` and an explicit
+private `--auth-source`; `runtime.provider.auth_source` lets execution provision a
+fresh Codex home for each independent Run.
 
 ## Candidate submission
 

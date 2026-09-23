@@ -46,6 +46,10 @@ class PythonPairedStudyTests(unittest.TestCase):
                 self.assertEqual(cake['tool_surface'], ['submit_python_bundle'])
                 self.assertEqual(cake['provider']['submission_contract'],
                                  'python_candidate_bundle_v1')
+                self.assertEqual(cake['provider']['author_home_policy'],
+                                 'isolated_auth_only_v1')
+                self.assertEqual(native['provider']['author_home_policy'],
+                                 'isolated_auth_only_v1')
                 self.assertNotIn('submission_contract', native['provider'])
                 self.assertTrue(cake['schedule_skeleton']['path'].endswith('.py'))
                 read_skeleton_reference(ROOT, cake['schedule_skeleton'])

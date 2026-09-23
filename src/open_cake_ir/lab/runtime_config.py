@@ -51,7 +51,9 @@ def load_runtime_config(path: str | Path, *, toolchain_kind: str, provider_kind:
         ("broker", {"command", "cwd", "timeout_seconds", "service_user", "service_group"}),
     ):
         section = value[name]
-        optional = toolchain_row.optional_runtime_fields if name == 'toolchain' else frozenset()
+        optional = (toolchain_row.optional_runtime_fields if name == 'toolchain' else
+                    {'auth_source'} if name == 'provider' and provider_kind == 'codex' else
+                    frozenset())
         if not isinstance(section, Mapping) or not expected <= set(section) <= expected | optional:
             raise ValueError(f"runtime_config.{name} fields differ")
         sections[name] = dict(section)

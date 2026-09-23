@@ -167,6 +167,7 @@ class ProviderInvocation:
     provider_revision: str
     removed_environment: tuple[str, ...]
     thread_id: str | None
+    codex_home: Path | None = None
 
 
 @dataclass(frozen=True)
