@@ -24,6 +24,12 @@ VETTED_REFERENCE_ASSETS = (
 PYTHON_CLEAN_START_SCAFFOLD = "contracts/scaffolds/matched-search-python-v1.md"
 
 
+def require_qualified_clean_start_execution(authoring_environments) -> None:
+    """Current Provider qualifications do not restrict reads to the TaskPackage."""
+    if any(arm.get('reference_access') == 'clean_start' for arm in authoring_environments):
+        raise ValueError('clean-start provider read isolation is not qualified; refusing execution')
+
+
 def reference_access(arm: Mapping[str, object], context: str) -> str:
     value = arm.get("reference_access")
     if not isinstance(value, str) or value not in REFERENCE_ACCESS:

@@ -4,7 +4,7 @@ from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from open_cake_ir.lab import RunSpecification, ProviderQualificationReceipt
 from open_cake_ir.lab.contracts import StudyContract
@@ -46,6 +46,28 @@ class IndependentRunTests(SemanticLabTestCase):
             with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
                 lab.execute_run(successor, evidence, provider=None, environment=None, evaluator=None)
             self.assertFalse(evidence.exists())
+            from open_cake_ir.tasks import compose
+            from open_cake_ir.lab import study_execution
+            runtime_config = Path(temporary).resolve()/'runtime.json'
+            runtime_config.write_text('{}')
+            with patch.object(compose, 'run_runtime_factory', side_effect=AssertionError('runtime factory called')) as factory:
+                with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                    compose.execute_run_from_config(ROOT, successor, runtime_config, evidence)
+                factory.assert_not_called()
+            runtime_directory = Path(temporary).resolve()/'runtime-output'
+            with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                compose.run_runtime_factory(ROOT, runtime_config)(successor, runtime_directory)
+            self.assertFalse(runtime_directory.exists())
+            allocation = type('Allocation', (), {'run_id': successor.run_id})()
+            plan = type('Plan', (), {'allocations': lambda self: (allocation,),
+                                     'run_specification': lambda self, _: successor})()
+            prepared = type('Study', (), {'plan': plan, 'root': Path(temporary).resolve()})()
+            runtime_factory = Mock(side_effect=AssertionError('runtime factory called'))
+            with patch.object(study_execution, 'validate_prepared_study'):
+                with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                    study_execution.execute_study(prepared, execute_run=Mock(), runtime_factory=runtime_factory)
+            runtime_factory.assert_not_called()
+            self.assertFalse((Path(temporary).resolve()/'runs'/successor.run_id/'failure.json').exists())
             starter.write_bytes(expected + b'\n# hidden implementation\n')
             with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
                 lab.preflight_run(successor)
