@@ -92,9 +92,11 @@ class TaskLaunchTests(unittest.TestCase):
         self.assertIsNone(inputs['budget']['limit'])
         self.assertEqual(inputs['budget']['checkpoints'], [])
         self.assertEqual(inputs['authoring']['reference_access'], 'clean_start')
-        self.assertEqual(inputs['authoring']['scaffold']['path'], 'contracts/scaffolds/matched-search-v1.md')
-        author_path = Path(inputs['authoring']['schedule_skeleton']['path'])
-        self.assertEqual(json.loads(author_path.read_text())['operations'], [])
+        self.assertEqual(inputs['authoring']['input_format'], 'python_source_v1')
+        self.assertEqual(inputs['authoring']['scaffold']['path'], 'contracts/scaffolds/matched-search-python-v1.md')
+        author_path = Path(inputs['authoring']['python_starter']['path'])
+        self.assertTrue(author_path.read_text().rstrip().endswith('...'))
+        self.assertNotIn('lm.role(', author_path.read_text())
         self.assertNotEqual(author_path, self.workspace/'starter.py')
 
     def test_codex_npm_wrapper_resolves_only_its_own_native_dependency(self):

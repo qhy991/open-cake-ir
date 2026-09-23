@@ -623,18 +623,21 @@ def main(argv=None) -> int:
         admit_cohort_payload(workload, args.case,
                              _ROUTE_CALLS_PER_COHORT)
     authoring_source_path = source_path
+    clean_start_route = None
     if args.reference_access == 'clean_start':
-        from open_cake_ir.lab.reference_access import incomplete_schedule
-        authoring_source_path = workspace / 'authoring-skeleton.json'
-        _write(authoring_source_path, canonical(incomplete_schedule(
-            workload, args.case, frontend.parse(source).document['lowering'])))
+        from open_cake_ir.lab.reference_access import render_incomplete_python_starter
+        clean_start_route = frontend.parse(source).document['lowering']
+        authoring_source_path = workspace / 'authoring-starter.py'
+        _write(authoring_source_path, render_incomplete_python_starter(
+            workload, args.case, clean_start_route))
     inputs = task_run_inputs(ROOT, workload, workload_path, authoring_source_path, harness=args.harness,
         model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         maximum_compilations=args.max_compilations, confirmation_seconds=args.confirmation_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
-        agents_md=args.agents_md, reference_access=args.reference_access)
+        agents_md=args.agents_md, reference_access=args.reference_access,
+        lowering_route=clean_start_route)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
     # The runtime config binds the provider and the allocator, both of which belong to
     # stages `--baseline-only` stops before; it is written only on the path that reaches

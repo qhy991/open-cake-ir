@@ -98,6 +98,12 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, worklo
     trusted role merely because its elaborated body resembles an empty Schedule.
     """
     validate_declarations(arms)
+    python_clean_start_treatment = any(
+        arm.get('environment_kind') == 'open_cake'
+        and arm.get('reference_access') == 'clean_start'
+        and arm.get('input_format') == 'python_source_v1'
+        for arm in arms.values()
+    )
     for name, arm in arms.items():
         access = reference_access(arm, f"arms.{name}")
         prefix = f"arms.{name}.reference_access={access}"
@@ -120,7 +126,7 @@ def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, worklo
         _, path = source_reference_path(root, scaffold.get("path"), "scaffold")
         python_clean_start = (kind == 'open_cake' and access == 'clean_start'
                               and arm.get('input_format') == 'python_source_v1')
-        vetted_scaffold = (PYTHON_CLEAN_START_SCAFFOLD if python_clean_start
+        vetted_scaffold = (PYTHON_CLEAN_START_SCAFFOLD if python_clean_start_treatment
                            else 'contracts/scaffolds/message-author/AGENTS.md'
                            if arm.get('provider', {}).get('harness') == 'responses'
                            else VETTED_REFERENCE_ASSETS[2])

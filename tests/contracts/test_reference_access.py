@@ -240,6 +240,36 @@ class ReferenceAccessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
             validate_reference_handoff(ROOT, {'author': arm}, workload=workload, case_id='primary')
 
+    def test_paired_python_clean_start_study_preserves_direct_cuda_treatment(self):
+        from open_cake_ir.lab.reference_access import (
+            PYTHON_CLEAN_START_SCAFFOLD, render_incomplete_python_starter,
+        )
+        document = self.document()
+        workload = load_workload(ROOT / document['workload']['path'])
+        cake = document['arms']['open_cake']
+        route = cake['lowering_route']
+        starter = self.external/'paired-starter.py'
+        expected = render_incomplete_python_starter(workload,
+            document['evaluation_protocol']['case_id'], route)
+        starter.write_bytes(expected)
+        del cake['schedule_skeleton']
+        cake.update(input_format='python_source_v1', tool_surface=['submit_python_source'],
+                    python_starter={'path': str(starter)})
+        scaffold = {'path': PYTHON_CLEAN_START_SCAFFOLD,
+                    'sha256': sha256((ROOT/PYTHON_CLEAN_START_SCAFFOLD).read_bytes()).hexdigest()}
+        for arm in document['arms'].values():
+            arm['scaffold'] = dict(scaffold)
+        lock = self.preflight(document)
+        cake_package = self.lab.task_package(lock, 'open_cake-1')
+        cuda_package = self.lab.task_package(lock, 'direct_cuda-1')
+        self.assertIn('schedule-starter.py', cake_package.task_markdown)
+        self.assertNotIn('schedule-skeleton.json', cake_package.task_markdown)
+        self.assertIn('candidate-skeleton.cu', cuda_package.task_markdown)
+        self.assertNotIn('schedule-starter.py', cuda_package.task_markdown)
+        starter.write_bytes(expected + b'\n# leaked implementation\n')
+        with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
+            self.preflight(document)
+
     def test_inherited_native_lowering_requires_known_kernel_reproduction(self):
         document = self.document("matched-search-triton-optimization-template.json")
         document["arms"]["native_triton"]["reference_access"] = "clean_start"
