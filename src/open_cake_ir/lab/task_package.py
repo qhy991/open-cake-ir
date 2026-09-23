@@ -440,6 +440,8 @@ and generates the internal candidate transport. Do not write a Schedule JSON,
 ''' + task[end:])
     python_only = authority["environment_kind"] == "open_cake" and authority.get("input_format") == "python_source_v1"
     arm_rule = (
+        "Author one complete restricted Cake Python Schedule in candidate.py. This Run grants no transform action or authored JSON envelope. Do not invoke CUDA, a GPU, the network, or another compiler."
+        if source_file else
         "Submit authored Cake IR implementations only as restricted Python source through the supplied frontend. Granted Compiler transformations may produce internal Program documents. The JSON candidate envelope is transport only; do not author a Schedule or Program as JSON. Do not invoke CUDA, a GPU, the network, or another compiler."
         if python_only else
         "Author only Cake IR Schedules or restricted Python through the supplied frontend; preserve the supplied lowering route. Do not invoke CUDA, a GPU, the network, or another compiler."

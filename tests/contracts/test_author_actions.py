@@ -54,6 +54,17 @@ class AuthorActionTests(SemanticLabTestCase):
         self.assertIn('Write only `candidate.py`', package.agents_markdown)
         self.assertNotIn('Write exactly one valid UTF-8 JSON `candidate-set.json`', package.task_markdown)
         self.assertNotIn('Write only `candidate-set.json`', package.agents_markdown)
+        self.assertNotIn('Granted Compiler transformations', package.agents_markdown)
+        for field in ('maximum_candidates_per_turn', 'searches_per_turn', 'transformations'):
+            invalid = json.loads(encoded(document))
+            if field == 'maximum_candidates_per_turn':
+                invalid['budget'][field] = 2
+            elif field == 'searches_per_turn':
+                invalid['evaluation_protocol'][field] = 2
+            else:
+                invalid['knowledge'][field] = [PASS]
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'one direct Cake candidate'):
+                RunSpecification.from_dict(invalid)
 
     def test_source_file_run_archives_raw_python_and_replays_its_projection(self):
         from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
