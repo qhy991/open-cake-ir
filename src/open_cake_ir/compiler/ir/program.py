@@ -43,6 +43,11 @@ class ProgramStage:
     def __post_init__(self):
         # Bytes are the stage authority. Replacing a frozen dataclass field must
         # reconstruct the typed view instead of carrying a stale cached Schedule.
+        if type(self.schedule_bytes) is not bytes:
+            raise TypeError('ProgramStage schedule_bytes must be immutable bytes')
+        if not isinstance(self.bindings, Mapping):
+            raise TypeError('ProgramStage bindings must be a mapping')
+        object.__setattr__(self, 'bindings', MappingProxyType(dict(self.bindings)))
         object.__setattr__(self, '_schedule', Schedule.from_dict(json.loads(self.schedule_bytes)))
 
     @property
@@ -148,8 +153,7 @@ class Program:
                     raise ValueError('program admits immutable inputs and fresh outputs, not state/scratch globals')
             producers.update(stage_writes)
             available.update(stage_writes)
-            stages.append(ProgramStage(name, canonical_json_bytes(raw['schedule']),
-                                       MappingProxyType(dict(bindings))))
+            stages.append(ProgramStage(name, canonical_json_bytes(raw['schedule']), bindings))
         if not set(io['outputs']) <= producers:
             raise ValueError('program has unproduced public outputs')
         if not set(io['inputs']) <= consumed:

@@ -30,6 +30,12 @@ class ProgramContractTest(unittest.TestCase):
         self.assertEqual(replaced.schedule.schedule_id, 'different-id')
         with self.assertRaisesRegex(TypeError, 'immutable bytes'):
             ProgramStage(stage.name, bytearray(stage.schedule_bytes), stage.bindings)
+        bindings = dict(stage.bindings)
+        direct = ProgramStage(stage.name, stage.schedule_bytes, bindings)
+        bindings.clear()
+        self.assertEqual(direct.bindings, stage.bindings)
+        with self.assertRaises(TypeError):
+            direct.bindings['a'] = stage.bindings['a']
 
     @classmethod
     def setUpClass(cls) -> None:
