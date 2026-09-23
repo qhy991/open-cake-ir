@@ -264,11 +264,12 @@ def _validate_invocation_pair(
 
 
 def _reported_models(turn, *, harness: str, requested_model: str, event_contract: str,
-                     response_aliases=()) -> list[str]:
+                     response_aliases=(), candidate_filename: str = 'candidate-set.json') -> list[str]:
     if harness != "claude-code":
         return []
     parsed = parse_claude_turn_events(turn.raw_events, expected_terminal_message=turn.terminal_message,
-                                     event_contract=event_contract, response_aliases=response_aliases)
+                                     event_contract=event_contract, response_aliases=response_aliases,
+                                     candidate_filename=candidate_filename)
     if parsed.reported_models[0] != requested_model:
         raise RunProtocolFault("provider_fault", "Claude reported model differs from the exact requested model",
                                artifact_payloads={"provider_stdout": turn.raw_events})
@@ -624,7 +625,8 @@ def main() -> int:
                 arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
-            initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model, event_contract=event_contract, response_aliases=aliases)
+            initial_models = _reported_models(initial, harness=args.harness, requested_model=args.model,
+                event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
@@ -660,7 +662,8 @@ def main() -> int:
                 arm=arm, environment_kind=package.environment_kind,
                 maximum_candidates_per_turn=maximum_candidates_per_turn,
             )
-            resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model, event_contract=event_contract, response_aliases=aliases)
+            resumed_models = _reported_models(resumed, harness=args.harness, requested_model=args.model,
+                event_contract=event_contract, response_aliases=aliases, candidate_filename=candidate.name)
             _validate_workspace(
                 arm_workspace, candidate, task_files=True
             )
