@@ -36,6 +36,21 @@ class ProgramEvaluator(FakeEvaluator):
 
 
 class AuthorActionTests(SemanticLabTestCase):
+    def test_bundle_diagnostics_name_the_authored_python_file(self):
+        from open_cake_ir.lab import CandidateSubmission
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        _, specification, workload, _ = self.fixture([])
+        authority = specification.document['authoring']
+        authority['input_format'] = 'python_source_v1'
+        authority['provider']['submission_contract'] = PYTHON_CANDIDATE_BUNDLE_V1
+        source = Path(authority['schedule_skeleton']['path']).read_text() + '\nprint("host effect")\n'
+        environment = OpenCakeEnvironment(Compiler.load(ROOT, ROOT/'compiler/revision.json'), Mock(),
+            authority_document=authority, workload=workload, case_id='primary')
+        result = environment.build(CandidateSubmission.seal(environment.media_type,
+            encoded({'python_source': source})))
+        self.assertEqual(result.disposition, 'rejected')
+        self.assertEqual(result.feedback['source_location']['filename'], 'candidate-set.py')
+
     def test_source_file_run_exposes_python_file_without_candidate_set_or_actions(self):
         from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
         lab, specification, _, _ = self.fixture([])
