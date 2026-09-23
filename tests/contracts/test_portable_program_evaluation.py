@@ -24,6 +24,7 @@ from open_cake_ir.tasks.normalization.study import evaluation_policy
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
 from open_cake_ir.tasks.workloads import create_task, reference_outputs
 from tests.contracts.test_epilogue_fusion import execute
+from tests.contracts.test_metax_binary import bundle
 from tests.contracts.test_program_evaluation import replay_program_candidate
 from tests.contracts.test_qsa_common_program import Torch
 
@@ -54,6 +55,9 @@ class NativeCompiler:
         else:
             parameters = ', '.join(f'%arg{index}: !tt.ptr<f32> ' for index in range(count))
             artifacts['ttgir'] = f'tt.func public @k({parameters}) attributes {{}}'.encode()
+        if route.gpu_backend == 'maca':
+            artifacts['mcfatbin'] = bundle(architecture=requirements['codegen_arch'],
+                note_pointer_arguments=count, note_kernel_name=requirements['kernel_entry_point'])[0]
         return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'],
             artifacts, requirements['compile_options']['num_warps'] * requirements['warp_size'],
             0, 'CPU fixture', route.code_object.value)
