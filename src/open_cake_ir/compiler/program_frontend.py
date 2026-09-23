@@ -60,8 +60,13 @@ def _schedule_source(source: str, node: ast.FunctionDef) -> str:
 
 def _binding(node):
     if isinstance(node, ast.Call):
-        arguments = _call(node, 'singleton_view', {'tensor'})
-        tensor = _literal(arguments['tensor'])
+        if (isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == 'cake' and node.func.attr == 'singleton_view'
+            and len(node.args) == 1 and not node.keywords):
+            tensor = _literal(node.args[0])
+        else:
+            arguments = _call(node, 'singleton_view', {'tensor'})
+            tensor = _literal(arguments['tensor'])
         if not isinstance(tensor, str):
             raise ValueError('Python Program singleton view tensor must be text')
         return {'tensor': tensor, 'view': 'singleton_axes'}
