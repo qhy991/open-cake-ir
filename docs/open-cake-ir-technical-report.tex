@@ -50,13 +50,13 @@
 \fancyhf{}
 \fancyhead[L]{\scriptsize\sffamily\bfseries\color{accent} OPEN-CAKE-IR \quad / \quad TECHNICAL REPORT}
 \fancyhead[R]{\scriptsize\sffamily\color{muted} 2026.09}
-\fancyfoot[L]{\scriptsize\sffamily\color{muted} 固定源码：ff02b8fe}
+\fancyfoot[L]{\scriptsize\sffamily\color{muted} 固定源码：677eb444}
 \fancyfoot[R]{\small\sffamily\bfseries\color{ink}\thepage}
 \renewcommand{\headrulewidth}{0.45pt}
 \renewcommand{\headrule}{\hbox to\headwidth{\color{hair}\leaders\hrule height \headrulewidth\hfill}}
 \renewcommand{\footrulewidth}{0pt}
 \newcommand{\code}[1]{\texttt{#1}}
-\newcommand{\repo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/ff02b8feadf4c7d1399f818c5283830280d7cb85/#1}{#2}}
+\newcommand{\repo}[2]{\href{https://github.com/qhy991/open-cake-ir/blob/677eb444fec593294c470dcc5793262ae769fce2/#1}{#2}}
 \newcommand{\scope}[1]{\textcolor{accent}{\textbf{#1}}}
 \newcolumntype{Y}{>{\raggedright\arraybackslash}X}
 \newtcolorbox{notebox}[1][]{enhanced,breakable,colback=mist,colframe=mist,boxrule=0pt,borderline west={2pt}{0pt}{accent},left=4mm,right=4mm,top=3mm,bottom=3mm,#1}
@@ -96,7 +96,7 @@
 {\small\color{muted}北京航空航天大学\par}
 \end{minipage}\hfill\begin{minipage}[t]{0.46\textwidth}
 \raggedleft{\sffamily\bfseries\color{ink}2026 年 9 月 23 日\par}
-{\small\color{muted}阅读快照 \quad / \quad 源码 ff02b8fe\par}
+{\small\color{muted}阅读快照 \quad / \quad 源码 677eb444\par}
 \end{minipage}
 \vspace{21mm}
 \begin{center}
@@ -114,7 +114,7 @@
 \vfill
 \begin{notebox}
 \noindent\textbf{报告边界}\quad 正文所读源码固定为
-\code{ff02b8feadf4c7d1399f818c5283830280d7cb85}。历史设备实验仍绑定各自的源码、
+\code{677eb444fec593294c470dcc5793262ae769fce2}。历史设备实验仍绑定各自的源码、
 精确目标、Workload、oracle 和计时协议；文内引用指向所读的固定提交。
 \end{notebox}
 \end{titlepage}
@@ -145,7 +145,7 @@ external oracles and target-specific measurements.\par\smallskip\noindent A corp
 between frozen optimization runs. The implementation declares eight exact targets across five vendors;
 device correctness and measurement coverage remain uneven. A same-shape TinyGEMM2 comparison passes
 strict numerical checks while exposing a substantial performance gap. Cross-hardware knowledge-transfer
-effects remain unmeasured. The software snapshot is commit \code{ff02b8fe}; each historical measurement
+effects remain unmeasured. The software snapshot is commit \code{677eb444}; each historical measurement
 retains its own source and assay boundary.\par}
 
 \vspace{1.6em}
@@ -411,6 +411,12 @@ Python 导入或函数体；JSON 仍是同一规范 Schedule 的序列化形式�
 与把不受信任的候选交给 AST 入口，是不同的安全边界\cite{irguide}。如下摘录自
 \repo{examples/python/softmax.py}{当前 Softmax 示例}：
 
+作者不必在 Python 装饰器中手填 Workload 内容身份。独立使用 Compiler 时可直接检查
+源码；进入 Lab Run 时，Lab 先核对精确目标、生成路线和公开 tensor ABI，再由已冻结
+Workload 补上内容绑定。显式提供错误身份仍会被拒绝，历史封存运行按原提交解释。
+这一分工把任务语义留在 Workload，而不让候选作者通过修改 hash 更换题目；它也不把
+Workload 的裁定逻辑塞进公共 Compiler。见\repo{docs/PYTHON_FRONTEND.md}{前端合同}。
+
 \Needspace{16\baselineskip}
 \begin{lstlisting}[style=reportcode,language=Python]
 compute = lm.role(execution_groups=[0, 1, 2, 3])
@@ -598,7 +604,7 @@ PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
 \end{lstlisting}
 
 \subsection{Corpus Gate 的含义}
-固定源码 \code{ff02b8fe} 的状态页报告 \textbf{179/179} 项语料检查符合已审查预期；
+固定源码 \code{677eb444} 的状态页报告 \textbf{179/179} 项语料检查符合已审查预期；
 其中 Apple family7 与 family9 是已声明但未被该语料检查的目标。
 该数值证明当前软件合同与预期相符，不证明这些目标的设备运行或性能。语料预期必须作为独立
 审查决定维护，不能为使 Gate 变绿而在验证前重生成\cite{status,acceptance}。
@@ -1116,7 +1122,7 @@ Assessment 与 lowering；设备结果则须在原任务的目标、工具链、
 \section*{阅读与引用说明}
 本文是作者维护的仓库技术报告，无 DOI、期刊或同行评审声明。引用设计时请固定本报告及其
 所读源码提交；引用性能时还需追溯案例自己的执行源码、精确目标、Workload、baseline、
-oracle、计时区间与质量门。以下文献中的仓库链接均固定到本文所读的 \code{ff02b8fe}，
+oracle、计时区间与质量门。以下文献中的仓库链接均固定到本文所读的 \code{677eb444}，
 而实验原始收据的身份由各专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
 的 \code{preferred-citation}；封面的中文题名概括本文的研究对象。
 
@@ -1126,21 +1132,21 @@ oracle、计时区间与质量门。以下文献中的仓库链接均固定到�
 \begin{reportbibliography}{99}
 \bibitem{cake} Z. Ye et al. \emph{CAKE: Compiler--Agent Co-Design for Frontier Kernel Evolution}.
 arXiv:2608.12629v1, 2026. \url{https://arxiv.org/html/2608.12629v1}.
-\bibitem{architecture} H. Qin. \repo{docs/ARCHITECTURE.md}{系统架构与平台能力}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{irguide} H. Qin. \repo{docs/IR_GUIDE.md}{IR 指南}. open-cake-ir@ff02b8fe, 2026.
+\bibitem{architecture} H. Qin. \repo{docs/ARCHITECTURE.md}{系统架构与平台能力}. open-cake-ir@677eb444, 2026.
+\bibitem{irguide} H. Qin. \repo{docs/IR_GUIDE.md}{IR 指南}. open-cake-ir@677eb444, 2026.
 \bibitem{targets} H. Qin. \repo{compiler/revision.json}{Compiler 清单}与
-\repo{compiler/targets/sm_103a.json}{Target 文档示例}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{acceptance} H. Qin. \repo{docs/ACCEPTANCE_GATES.md}{验收门}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{papercontract} H. Qin. \repo{docs/PAPER_CONTRACT.md}{论文与本地证据合同}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{status} H. Qin. \repo{reports/current/STATUS.md}{当前状态}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{nvidia} H. Qin. \repo{docs/results/nvidia/FLASHINFER_STATUS.md}{B300 FlashInfer 任务综述}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{metalresults} H. Qin. \repo{docs/results/metal/README.md}{Apple 平台结果}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{dcuresults} H. Qin. \repo{docs/results/dcu/README.md}{Hygon DCU 平台结果}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{amdresults} H. Qin. \repo{docs/results/amd/README.md}{AMD 平台结果}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{metax} H. Qin. \repo{docs/metax-c550.md}{C550 专题与 M17 独立确认}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{cakecomparison} H. Qin. \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{B300 CAKE 重叠任务对照}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}. open-cake-ir@ff02b8fe, 2026.
-\bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}. open-cake-ir@ff02b8fe, 2026.
+\repo{compiler/targets/sm_103a.json}{Target 文档示例}. open-cake-ir@677eb444, 2026.
+\bibitem{acceptance} H. Qin. \repo{docs/ACCEPTANCE_GATES.md}{验收门}. open-cake-ir@677eb444, 2026.
+\bibitem{papercontract} H. Qin. \repo{docs/PAPER_CONTRACT.md}{论文与本地证据合同}. open-cake-ir@677eb444, 2026.
+\bibitem{status} H. Qin. \repo{reports/current/STATUS.md}{当前状态}. open-cake-ir@677eb444, 2026.
+\bibitem{nvidia} H. Qin. \repo{docs/results/nvidia/FLASHINFER_STATUS.md}{B300 FlashInfer 任务综述}. open-cake-ir@677eb444, 2026.
+\bibitem{metalresults} H. Qin. \repo{docs/results/metal/README.md}{Apple 平台结果}. open-cake-ir@677eb444, 2026.
+\bibitem{dcuresults} H. Qin. \repo{docs/results/dcu/README.md}{Hygon DCU 平台结果}. open-cake-ir@677eb444, 2026.
+\bibitem{amdresults} H. Qin. \repo{docs/results/amd/README.md}{AMD 平台结果}. open-cake-ir@677eb444, 2026.
+\bibitem{metax} H. Qin. \repo{docs/metax-c550.md}{C550 专题与 M17 独立确认}. open-cake-ir@677eb444, 2026.
+\bibitem{cakecomparison} H. Qin. \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{B300 CAKE 重叠任务对照}. open-cake-ir@677eb444, 2026.
+\bibitem{transfer} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER.md}{跨硬件优化知识迁移机制}. open-cake-ir@677eb444, 2026.
+\bibitem{study} H. Qin. \repo{docs/OPTIMIZATION_TRANSFER_ABLATION.md}{E/P 消融实验设计}. open-cake-ir@677eb444, 2026.
 \end{reportbibliography}
 
 \end{document}
