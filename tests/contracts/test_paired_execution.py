@@ -837,8 +837,10 @@ class PairedExecutionTests(unittest.TestCase):
                 self.assertEqual(set(value['provider']._builders),{run_id})
                 if python_transport:
                     from open_cake_ir.lab.execution_admission import validate_run_bindings
-                    validate_run_bindings(lock.run_specification(run_id), project_root=project,
-                        workload_loader=load_workload, task_package=lambda *_: None, **value)
+                    with patch('open_cake_ir.lab.bindings._resolve_compiler_reference',
+                               return_value=(gate, compiler_ref['path'], compiler_ref)):
+                        validate_run_bindings(lock.run_specification(run_id), project_root=project,
+                            workload_loader=load_workload, task_package=lambda *_: None, **value)
 
             if comparison == 'native_triton':
                 invalid_workload = workload.document
