@@ -26,6 +26,7 @@ from open_cake_ir.lab.claude import ClaudeInvocationBuilder, advertised_options,
 from open_cake_ir.lab.provider_policy import provider_harness
 from open_cake_ir.lab.message_provider import MessageQualification, ResponsesRunProvider
 from open_cake_ir.lab.python_reference import read_skeleton_reference
+from open_cake_ir.lab.reference_access import require_qualified_clean_start_execution
 # MetalArchiveHost is bound through the Lab toolchain table; it stays named here because
 # the composition tests patch `compose.MetalArchiveHost.from_executor`.
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder  # noqa: F401
@@ -118,6 +119,7 @@ def run_runtime_factory(project_root, runtime_config_path):
     def build(specification, directory):
         specification = lab.preflight_run(specification)
         document = specification.document
+        require_qualified_clean_start_execution((document['authoring'],))
         authoring, execution, protocol = (document[name] for name in ('authoring','execution','evaluation_protocol'))
         kind = specification.environment_kind
         declared_provider = authoring['provider']
@@ -256,6 +258,7 @@ def execute_run_from_config(project_root,specification,runtime_config_path,evide
     from open_cake_ir.lab.custody import admit_new_campaign_path
     root = Path(project_root).resolve(strict=True)
     output = admit_new_campaign_path(root,evidence_root,role='Run Evidence root')
+    require_qualified_clean_start_execution((specification.document['authoring'],))
     components = run_runtime_factory(root,runtime_config_path)(specification,output.parent/(output.name+'-runtime'))
     return TaskLab(root).execute_run(specification,output,**components)
 

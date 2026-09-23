@@ -66,12 +66,13 @@ Evidence，因此项目的范围大于一种 DSL。本项目独立探索 [CAKE �
 
 新建的已知实现复现 Run 使用 `python_source_v1`：Agent 编写 Python Schedule，作者提交入口
 拒绝手写的 Schedule/Program JSON；Compiler Pass 生成的 Program 文档仍是内部候选。
-冻结 Run 的 `schedule_or_python_v1`、Clean-start 的不完整 JSON 参考材料、Corpus 和回放
-保持原有合同。`candidate-set.json` 目前只是仍由 Agent 填写的提交封装，不是 Cake IR。
-后续减法依次是：为 Clean-start 设计可审查的不完整 Python 参考材料；让 Provider 从源码文件
-生成提交封装并保留原始字节、候选顺序与回放；最后收敛 Compiler 内部的文档往返，让 typed
-Schedule/Program 承担内存中的语义，JSON 仅在持久化与传输处出现。每一步采用后继 Run
-合同并保留冻结实验的原提交，不原地改写历史证据。
+冻结 Run 的 `schedule_or_python_v1`、旧 Clean-start 的不完整 JSON 参考材料、Corpus 和回放
+保持原有合同。新 Clean-start 的 Python 参考材料只含公开 ABI、目标、生成路线和 `...` 占位，
+精确字节由 Lab 检查；当前 Provider 尚无可验证的读取隔离，实际启动被拒绝，见
+[ADR 0077](adr/0077-python-clean-start-reference-and-read-isolation.md)。
+`candidate-set.json` 目前仍由 Agent 填写，是传输合同而非 Cake IR。后续减法是让 Provider
+从源码文件生成封装并保留原始字节、候选顺序与回放，然后继续收敛 Compiler 的内部文档往返。
+每一步采用后继 Run 合同并保留冻结实验的原提交，不原地改写历史证据。
 
 | 层级 | 表示与负责的决策 | 尚未决定的事情 |
 | --- | --- | --- |

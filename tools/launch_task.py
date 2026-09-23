@@ -538,7 +538,7 @@ def main(argv=None) -> int:
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
     parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
                         default='known_kernel_reproduction',
-                        help='clean_start delivers only a task ABI stub, mathematics and API contracts; the baseline remains private')
+                        help='clean_start is reserved until provider read isolation is qualified')
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument("--rows", type=int)
@@ -597,6 +597,8 @@ def main(argv=None) -> int:
         parser.error("--fixed-baseline-bundle, --incumbent-registry and --prepared-baseline are mutually exclusive")
     if (args.qualification is None) != (args.qualification_anchor is None):
         parser.error("--qualification and --qualification-anchor must be supplied together")
+    if args.reference_access == 'clean_start':
+        raise ValueError('clean-start provider read isolation is not qualified; refusing launch')
     workspace = _new_workspace(args.workspace)
     rows, columns = _default_shape(args.task, args.rows, args.columns)
     document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
@@ -623,11 +625,6 @@ def main(argv=None) -> int:
         admit_cohort_payload(workload, args.case,
                              _ROUTE_CALLS_PER_COHORT)
     authoring_source_path = source_path
-    if args.reference_access == 'clean_start':
-        from open_cake_ir.lab.reference_access import incomplete_schedule
-        authoring_source_path = workspace / 'authoring-skeleton.json'
-        _write(authoring_source_path, canonical(incomplete_schedule(
-            workload, args.case, frontend.parse(source).document['lowering'])))
     inputs = task_run_inputs(ROOT, workload, workload_path, authoring_source_path, harness=args.harness,
         model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
