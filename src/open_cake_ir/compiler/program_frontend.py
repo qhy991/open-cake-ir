@@ -78,7 +78,9 @@ def _binding(node):
 
 def _program_document(source: str, declaration: ast.Call,
                       functions: dict[str, ast.FunctionDef], filename: str):
-    fields = _call(declaration, 'program', {'program_id', 'inputs', 'outputs', 'stages'})
+    required = {'program_id', 'inputs', 'outputs', 'stages'}
+    declared = {key.arg for key in declaration.keywords}
+    fields = _call(declaration, 'program', required | ({'tensors'} if 'tensors' in declared else set()))
     program_id = _literal(fields['program_id'])
     inputs = _literal(fields['inputs'])
     outputs = _literal(fields['outputs'])
@@ -89,8 +91,29 @@ def _program_document(source: str, declaration: ast.Call,
     raw_stages = fields['stages']
     if not isinstance(raw_stages, (ast.Tuple, ast.List)) or not raw_stages.elts:
         raise ValueError('Python Program requires ordered stages')
-    stages = []
     tensors = {}
+    if 'tensors' in fields:
+        raw_tensors = fields['tensors']
+        if not isinstance(raw_tensors, ast.Dict):
+            raise ValueError('Python Program explicit tensors must be a mapping')
+        for name_node, spec_node in zip(raw_tensors.keys, raw_tensors.values, strict=True):
+            if name_node is None:
+                raise ValueError('Python Program tensors cannot unpack mappings')
+            name = _literal(name_node)
+            if not isinstance(name, str) or name in tensors:
+                raise ValueError('Python Program tensor names must be unique strings')
+            if (not isinstance(spec_node, ast.Call) or not isinstance(spec_node.func, ast.Attribute)
+                or not isinstance(spec_node.func.value, ast.Name)
+                or spec_node.func.value.id != 'cake' or spec_node.func.attr != 'Tensor'
+                or len(spec_node.args) != 2 or spec_node.keywords):
+                raise ValueError('Python Program explicit tensor needs cake.Tensor(shape, dtype)')
+            shape, dtype = (_literal(item) for item in spec_node.args)
+            if (not isinstance(shape, list) or not shape
+                or any(type(extent) is not int or extent <= 0 for extent in shape)
+                or not isinstance(dtype, str)):
+                raise ValueError('Python Program explicit tensor shape or dtype differs')
+            tensors[name] = {'shape': shape, 'dtype': dtype}
+    stages = []
     targets = set()
     for raw_stage in raw_stages.elts:
         stage_fields = _call(raw_stage, 'stage', {'name', 'schedule', 'bindings'})

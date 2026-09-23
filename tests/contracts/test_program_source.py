@@ -26,6 +26,22 @@ class PythonProgramSourceTests(unittest.TestCase):
         self.assertEqual(set(member), {'python_program_source', 'program_id'})
         self.assertEqual(member['program_id'], 'rounded-epilogue-python')
 
+    def test_program_candidate_identity_ignores_unrelated_proposals(self):
+        from open_cake_ir.lab.provider_documents import (
+            PYTHON_CANDIDATE_BUNDLE_V1, _project_candidate_submission,
+        )
+        original = source()
+        before, declaration = original.split('cake.program(', 1)
+        declaration = 'cake.program(' + declaration
+        unrelated = declaration.replace('program_id="rounded-epilogue-python"',
+                                        'program_id="unrelated-program"', 1)
+        expanded = before + unrelated + '\n\n' + declaration
+        def project(text):
+            return _project_candidate_submission(text.encode(),
+                submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',
+                environment_kind='open_cake', maximum_candidates_per_turn=2)
+        self.assertEqual(project(original)[0], project(expanded)[1])
+
     def test_two_python_stages_form_one_valid_program_and_lower(self):
         authored = parse_program(source(), filename='candidate-set.py',
                                  program_id='rounded-epilogue-python')
@@ -110,3 +126,15 @@ cake.program(program_id="view-program", inputs=("x",), outputs=("out",), stages=
         program = parse_program(first + '\n' + second, program_id='view-program').program
         self.assertEqual(program.tensors['middle'].shape, (1, 8))
         self.assertTrue(program.stages[1].bindings['mid'].singleton_view)
+
+    def test_explicit_tensor_resolves_an_all_view_intermediate(self):
+        both_views = source().replace('"mid": "middle"',
+                                      '"mid": cake.singleton_view("middle")')
+        with self.assertRaisesRegex(ValueError, 'undeclared tensor'):
+            parse_program(both_views, program_id='rounded-epilogue-python')
+        declared = both_views.replace('cake.program(program_id="rounded-epilogue-python",',
+            'cake.program(program_id="rounded-epilogue-python", '
+            'tensors={"middle": cake.Tensor((1, 2, 8), "bf16")},')
+        program = parse_program(declared, program_id='rounded-epilogue-python').program
+        self.assertEqual(program.tensors['middle'].shape, (1, 2, 8))
+        self.assertTrue(all(stage.bindings['mid'].singleton_view for stage in program.stages))

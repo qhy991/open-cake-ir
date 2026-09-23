@@ -69,44 +69,55 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
         or first.level != 0 or len(first.names) != 1
         or first.names[0].name != 'frontend' or first.names[0].asname != 'cake'):
         raise ValueError('Python candidate bundle requires the Cake frontend import')
-    lines = source.split('\n')
     program_nodes = [node for node in body[1:]
                      if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
                          and isinstance(node.value.func, ast.Attribute)
                          and isinstance(node.value.func.value, ast.Name)
                          and node.value.func.value.id == 'cake'
                          and node.value.func.attr == 'program')]
-    program_source = None
     referenced_stages = set()
     program_ids = {}
+    program_sources = {}
     if program_nodes:
         from open_cake_ir.compiler.program_frontend import parse_program
-        sanitized = list(lines)
-        for node in body[1:]:
-            if (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
-                and isinstance(node.value.func, ast.Attribute)
-                and isinstance(node.value.func.value, ast.Name)
-                and node.value.func.value.id == 'cake'
-                and node.value.func.attr == 'transform'):
-                sanitized[node.lineno - 1:node.end_lineno] = [''] * (node.end_lineno - node.lineno + 1)
-        program_source = '\n'.join(sanitized)
+        from open_cake_ir.compiler.frontend import source_node_text
+        functions = {node.name: node for node in body[1:] if isinstance(node, ast.FunctionDef)}
+        seen_program_ids = set()
         for node in program_nodes:
             fields = {key.arg: key.value for key in node.value.keywords if key.arg is not None}
             if (node.value.args or len(fields) != len(node.value.keywords)
                 or 'program_id' not in fields):
                 raise ValueError('Python Program declaration fields differ')
             program_id = _json_literal(fields['program_id'])
-            if not isinstance(program_id, str) or program_id in program_ids:
+            if not isinstance(program_id, str) or program_id in seen_program_ids:
                 raise ValueError('Python Program ids must be unique strings')
+            seen_program_ids.add(program_id)
+            stages_node = fields.get('stages')
+            if not isinstance(stages_node, (ast.Tuple, ast.List)):
+                raise ValueError('Python Program requires ordered stages')
+            stage_names = []
+            for stage_call in stages_node.elts:
+                if not isinstance(stage_call, ast.Call):
+                    raise ValueError('Python Program stage declaration differs')
+                schedule_names = [key.value.id for key in stage_call.keywords
+                                  if key.arg == 'schedule' and isinstance(key.value, ast.Name)]
+                if len(schedule_names) != 1:
+                    raise ValueError('Python Program stage must reference one Schedule function')
+                stage_names.extend(schedule_names)
+            stage_sources = []
+            for name in dict.fromkeys(stage_names):
+                function = functions.get(name)
+                if function is None or len(function.decorator_list) != 1:
+                    raise ValueError('Python Program stage function is missing')
+                stage_sources.append(source_node_text(source, function,
+                    start_lineno=function.decorator_list[0].lineno))
+            program_source = ('from open_cake_ir.compiler import frontend as cake\n\n'
+                              + '\n\n'.join(stage_sources) + '\n\n'
+                              + source_node_text(source, node))
             parse_program(program_source, filename='candidate-set.py', program_id=program_id)
             program_ids[id(node)] = program_id
-            for call in ast.walk(node.value):
-                if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
-                    and isinstance(call.func.value, ast.Name)
-                    and call.func.value.id == 'cake' and call.func.attr == 'stage'):
-                    referenced_stages.update(
-                        key.value.id for key in call.keywords
-                        if key.arg == 'schedule' and isinstance(key.value, ast.Name))
+            program_sources[id(node)] = program_source
+            referenced_stages.update(stage_names)
     candidates = []
     names = set()
     for node in body[1:]:
@@ -127,7 +138,8 @@ def project_python_candidate_bundle(payload: bytes, *, maximum_candidates_per_tu
             candidates.append(canonical_json_bytes({'python_source': projected_source}))
         elif id(node) in program_ids:
             candidates.append(canonical_json_bytes({
-                'python_program_source': program_source, 'program_id': program_ids[id(node)]}))
+                'python_program_source': program_sources[id(node)],
+                'program_id': program_ids[id(node)]}))
         elif (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
               and isinstance(node.value.func, ast.Attribute)
               and isinstance(node.value.func.value, ast.Name)

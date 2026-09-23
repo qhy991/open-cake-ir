@@ -79,6 +79,15 @@ class ScheduleSource:
         return self.locations[max(matches, key=len)] if matches else None
 
 
+def source_node_text(source: str, node: ast.AST, *, start_lineno: int | None = None) -> str:
+    """Slice an AST node by physical LF lines, not Unicode text separators."""
+    if '\r' in source.replace('\r\n', ''):
+        raise ValueError('Cake Python source requires LF or CRLF line endings')
+    lines = source.split('\n')
+    start = (node.lineno if start_lineno is None else start_lineno) - 1
+    return '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
+
+
 def schedule_function_source(source: str, node: ast.FunctionDef) -> str:
     """Project one decorated function with its original physical source lines.
 
@@ -88,11 +97,8 @@ def schedule_function_source(source: str, node: ast.FunctionDef) -> str:
     """
     if len(node.decorator_list) != 1:
         raise ValueError('Cake Schedule function needs one decorator')
-    if '\r' in source.replace('\r\n', ''):
-        raise ValueError('Cake Python source requires LF or CRLF line endings')
-    lines = source.split('\n')
     start = node.decorator_list[0].lineno - 1
-    snippet = '\n'.join(lines[start:node.end_lineno]).rstrip('\r\n')
+    snippet = source_node_text(source, node, start_lineno=start + 1)
     return ('from open_cake_ir.compiler import frontend as cake\n'
             + '\n' * max(0, start - 1) + snippet)
 
