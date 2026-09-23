@@ -691,8 +691,12 @@ class ClaudeInvocationBuilder:
     def __init__(self, *, executable: Path, provider_revision: str, model: str,
                  reasoning_effort: str, workspace: Path, removed_environment: tuple[str, ...],
                  cli_options: frozenset[str] | set[str] | tuple[str, ...],
-                 event_contract: str = CLAUDE_EVENT_CONTRACT, response_aliases=()) -> None:
+                 event_contract: str = CLAUDE_EVENT_CONTRACT, response_aliases=(),
+                 submission_contract: str = CANDIDATE_SET_ENVELOPE_V1) -> None:
         self.response_aliases = response_model_aliases(model, response_aliases)
+        if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1}:
+            raise ValueError('Claude builder submission contract differs')
+        self._submission_contract = submission_contract
         if event_contract not in CLAUDE_EVENT_CONTRACTS:
             raise ValueError("Claude builder event contract differs")
         self._event_contract = event_contract
@@ -739,7 +743,7 @@ class ClaudeInvocationBuilder:
                 "permission_mode": "acceptEdits", "sandbox": "none", "safe_mode": True, "tools": list(CLAUDE_AUTHORING_TOOLS),
                 "cwd_policy": "independent_task_workspace", "reference_visibility": "workspace_task_files",
                 "removed_environment": list(self._removed_environment), "event_contract": self._event_contract,
-                "submission_contract": CANDIDATE_SET_ENVELOPE_V1, "terminal_schema": terminal_schema()}
+                "submission_contract": self._submission_contract, "terminal_schema": terminal_schema()}
 
     @property
     def cli_limitations(self) -> Mapping[str, object]:

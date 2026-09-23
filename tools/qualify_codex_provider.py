@@ -20,6 +20,7 @@ from open_cake_ir.lab.pairing import comparison_arm
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
+    PYTHON_SOURCE_FILE_V1,
     CODEX_DISABLED_FEATURES,
     resolve_codex_code_mode_host,
     CodexInvocationBuilder,
@@ -62,7 +63,12 @@ def _expected_submission(
     reference_nonce: str,
     maximum_candidates_per_turn: int,
     python_source: str | None = None,
-) -> dict[str, object]:
+    submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
+) -> dict[str, object] | str:
+    if submission_contract == PYTHON_SOURCE_FILE_V1:
+        if arm != 'open_cake' or maximum_candidates_per_turn != 1 or python_source is None:
+            raise ValueError('Python source-file qualification requires one Cake candidate')
+        return python_source + f"\n# qualification turn {turn}; reference {reference_nonce}\n"
     if arm == "open_cake" and python_source is not None:
         members = [{"python_source": python_source +
                     f"\n# qualification turn {turn}; candidate {index}; reference {reference_nonce}\n"}
@@ -129,6 +135,7 @@ def _qualification_package(
     event_contract: str,
     tool_instruction: str,
     python_source: str | None = None,
+    submission_contract: str = CANDIDATE_SET_ENVELOPE_V1,
 ) -> TaskPackage:
     plan = {
         "candidate_path": str(candidate.absolute()),
@@ -137,7 +144,8 @@ def _qualification_package(
                 "turn": turn,
                 "change": "add" if turn == 1 else "update",
                 "submission": _expected_submission(
-                    arm, turn, reference_nonce, maximum_candidates_per_turn, python_source
+                    arm, turn, reference_nonce, maximum_candidates_per_turn, python_source,
+                    submission_contract
                 ),
                 "terminal_message": json.loads(
                     _terminal_message(turn, event_contract, arm=arm)
@@ -146,22 +154,28 @@ def _qualification_package(
             for turn in (1, 2)
         ],
     }
-    task = (
-        "# TASK.md — provider qualification\n\n"
-        f"Prove two-Turn `{arm}` candidate-set add/update behavior.\n\n"
-        "Use only the plan entry whose turn equals the controller StateCard turn. "
-        "Write that entry's complete submission to candidate_path with its declared "
-        "file change, then return its terminal_message as JSON. Do not execute "
-        "either candidate. The plan and both task files stay unchanged between turns.\n\n"
+    source_file = submission_contract == PYTHON_SOURCE_FILE_V1
+    submission_rules = (
+        "The submission is the exact UTF-8 Python source string in the plan.\n\n"
+        if source_file else
         "The submission must be valid UTF-8 JSON. Whitespace, object-key order, and "
         "equivalent JSON escapes are accepted. Keys must be unique at every level, "
         "numbers must be finite, and schema_version must be the integer 1. Preserve "
         "Candidate array order and direct CUDA source strings exactly.\n\n"
+    )
+    task = (
+        "# TASK.md — provider qualification\n\n"
+        f"Prove two-Turn `{arm}` {'Python source-file' if source_file else 'candidate-set'} add/update behavior.\n\n"
+        "Use only the plan entry whose turn equals the controller StateCard turn. "
+        "Write that entry's complete submission to candidate_path with its declared "
+        "file change, then return its terminal_message as JSON. Do not execute "
+        "either candidate. The plan and both task files stay unchanged between turns.\n\n"
+        f"{submission_rules}"
         "QUALIFICATION_PLAN_JSON=" + _canonical_json_bytes(plan).decode() + "\n"
     )
     agents = (
         "# AGENTS.md — provider qualification\n\n"
-        "Follow the complete TASK.md plan. Write only candidate-set.json. Keep "
+        f"Follow the complete TASK.md plan. Write only {'candidate.py' if source_file else 'candidate-set.json'}. Keep "
         "TASK.md and AGENTS.md unchanged. Do not use a GPU or network.\n"
         + tool_instruction + "\n"
     )
@@ -177,7 +191,10 @@ def _planned_turn(package: TaskPackage, turn: int) -> dict[str, object]:
     return next(item for item in plan["turns"] if item["turn"] == turn)
 
 
-def _planned_candidates(arm: str, plan: dict[str, object]) -> tuple[bytes, ...]:
+def _planned_candidates(arm: str, plan: dict[str, object],
+                        submission_contract: str = CANDIDATE_SET_ENVELOPE_V1) -> tuple[bytes, ...]:
+    if submission_contract == PYTHON_SOURCE_FILE_V1:
+        return (_canonical_json_bytes({'python_source': plan['submission']}),)
     members = plan["submission"]["candidates"]
     return tuple(
         str(member).encode("utf-8") if arm == "direct_cuda"
@@ -341,6 +358,8 @@ def main() -> int:
     parser.add_argument("--harness", choices=("codex", "claude-code"), required=True)
     parser.add_argument("--fixture-only", action="store_true", help="never issue a live qualification for executable test doubles")
     parser.add_argument("--python-source", type=Path, help="Workload Python starter required for single-arm artifact qualification")
+    parser.add_argument('--submission-contract', choices=(CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1),
+                        default=CANDIDATE_SET_ENVELOPE_V1)
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--provider-revision", required=True)
     parser.add_argument("--output-schema", type=Path, required=True)
@@ -391,7 +410,7 @@ def main() -> int:
     anchor_output = _new_path(args.anchor_output)
     removed_environment = tuple(args.removed_environment or ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"))
     maximum_candidates_per_turn = args.maximum_candidates_per_turn or 1
-    submission_contract = CANDIDATE_SET_ENVELOPE_V1
+    submission_contract = args.submission_contract
     schema = json.loads(output_schema.read_text(encoding="utf-8"))
     arm_schema = schema.get("properties", {}).get("arm", {})
     arms = arm_schema.get("enum")
@@ -403,6 +422,11 @@ def main() -> int:
     elif args.environment_kind is not None:
         raise ValueError('--environment-kind is for condition-neutral output schemas')
     single_arm = arms == ["open_cake"]
+    if submission_contract == PYTHON_SOURCE_FILE_V1 and (
+            not single_arm or maximum_candidates_per_turn != 1
+            or args.python_source is None
+            or args.feature_policy != 'provider_defaults_optimization'):
+        raise ValueError('Python source-file qualification requires one artifact-only Cake candidate')
     if not generic_schema and (not isinstance(arms, list) or len(arms) not in {1, 2} or arms[0] != "open_cake"):
         raise ValueError("qualification output schema must declare one supported arm pair or single Open Cake arm")
     try:
@@ -426,7 +450,9 @@ def main() -> int:
     if args.harness == "claude-code":
         disabled_features = ()
         event_contract = CLAUDE_EVENT_CONTRACT
-        tool_instruction = "Use Read for the task files and Write/Edit for candidate-set.json; only Read, Write, Edit, Glob and Grep are permitted."
+        tool_instruction = ("Use Read for the task files and Write/Edit for candidate.py; only Read, Write, Edit, Glob and Grep are permitted."
+                            if submission_contract == PYTHON_SOURCE_FILE_V1 else
+                            "Use Read for the task files and Write/Edit for candidate-set.json; only Read, Write, Edit, Glob and Grep are permitted.")
         receipt_scope = "live_two_turn_tool_rich_provider"
     elif args.feature_policy == "closed_research":
         disabled_features = CODEX_DISABLED_FEATURES
@@ -488,9 +514,10 @@ def main() -> int:
     task_packages: dict[str, TaskPackage] = {}
     for arm, arm_workspace in workspaces.items():
         package = _qualification_package(
-            f"{args.run_id}-{arm}", arm, arm_workspace / "candidate-set.json",
+            f"{args.run_id}-{arm}", arm, arm_workspace / (
+                'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'candidate-set.json'),
             reference_nonce, maximum_candidates_per_turn, event_contract,
-            tool_instruction, python_source,
+            tool_instruction, python_source, submission_contract,
         )
         materialize_task_package(arm_workspace, package)
         task_packages[arm] = package
@@ -558,14 +585,16 @@ def main() -> int:
         configuration_sha256s: set[str] = set()
         for arm in qualification_arms:
             arm_workspace = workspaces[arm]
-            candidate = arm_workspace / "candidate-set.json"
+            candidate = arm_workspace / (
+                'candidate.py' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'candidate-set.json')
             package = task_packages[arm]
             common_builder_args = dict(executable=executable, provider_revision=args.provider_revision,
                 model=args.model, reasoning_effort=args.reasoning_effort, workspace=arm_workspace,
                 removed_environment=removed_environment)
             if args.harness == "claude-code":
                 builder = ClaudeInvocationBuilder(
-                    **common_builder_args, cli_options=advertised_options(executable), response_aliases=aliases)
+                    **common_builder_args, cli_options=advertised_options(executable),
+                    response_aliases=aliases, submission_contract=submission_contract)
             else:
                 builder = CodexInvocationBuilder(**common_builder_args,
                     code_mode_host=code_mode_host, service_tier=args.service_tier,
@@ -601,7 +630,7 @@ def main() -> int:
             )
             verify_task_package(arm_workspace, package)
             if (
-                initial.candidates != _planned_candidates(arm, initial_plan)
+                initial.candidates != _planned_candidates(arm, initial_plan, submission_contract)
             ):
                 raise ValueError("Provider initial candidate bytes differ")
 
@@ -638,7 +667,7 @@ def main() -> int:
             verify_task_package(arm_workspace, package)
             if (
                 (
-                    resumed.candidates != _planned_candidates(arm, resumed_plan)
+                resumed.candidates != _planned_candidates(arm, resumed_plan, submission_contract)
                 )
                 or resumed.thread_id != initial.thread_id
                 or initial.provider_tokens <= 0
@@ -675,10 +704,7 @@ def main() -> int:
 
         if (
             len(configuration_sha256s) != 1
-            or (
-                submission_contract == CANDIDATE_SET_ENVELOPE_V1
-                and set(workspace.iterdir()) != set(workspaces.values())
-            )
+            or set(workspace.iterdir()) != set(workspaces.values())
             or len(
                 {
                     str(observation["initial"].thread_id)
@@ -748,12 +774,14 @@ def main() -> int:
                 [
                     evidence.put(
                         initial.raw_submission,
-                        media_type="application/json",
-                    ).reference(f"{arm}_initial_submission_envelope"),
+                        media_type="text/x-python" if submission_contract == PYTHON_SOURCE_FILE_V1 else "application/json",
+                    ).reference(f"{arm}_initial_" + (
+                        'source_file' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'submission_envelope')),
                     evidence.put(
                         resumed.raw_submission,
-                        media_type="application/json",
-                    ).reference(f"{arm}_resumed_submission_envelope"),
+                        media_type="text/x-python" if submission_contract == PYTHON_SOURCE_FILE_V1 else "application/json",
+                    ).reference(f"{arm}_resumed_" + (
+                        'source_file' if submission_contract == PYTHON_SOURCE_FILE_V1 else 'submission_envelope')),
                 ]
             )
             candidate_media_type = (
