@@ -98,6 +98,15 @@ def _project_candidate_submission(
         or maximum_candidates_per_turn <= 0
     ):
         raise ValueError("provider maximum candidates per Turn differs")
+    if submission_contract == PYTHON_SOURCE_FILE_V1:
+        if (environment_kind != 'open_cake' or not isinstance(arm, str) or not arm
+            or maximum_candidates_per_turn != 1 or type(payload) is not bytes or not payload):
+            raise ValueError('Python source-file submission contract differs')
+        try:
+            source = payload.decode('utf-8')
+        except UnicodeDecodeError as error:
+            raise ValueError('provider Python source file is not UTF-8') from error
+        return (canonical_json_bytes({'python_source': source}),)
     if submission_contract != CANDIDATE_SET_ENVELOPE_V1 or not isinstance(arm, str) or not arm or environment_kind not in {
         "open_cake",
         "direct_cuda",
@@ -326,6 +335,7 @@ _MAX_CANDIDATE_BYTES = 64 * 1024 * 1024
 
 
 CANDIDATE_SET_ENVELOPE_V1 = "candidate_set_envelope_v1"
+PYTHON_SOURCE_FILE_V1 = "python_source_file_v1"
 
 
 CODEX_DISABLED_FEATURES = (
