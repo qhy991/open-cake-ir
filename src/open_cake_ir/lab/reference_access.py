@@ -6,6 +6,8 @@ Workload mathematics/oracle and public API contracts retain their existing owner
 """
 from __future__ import annotations
 
+import json
+import keyword
 from pathlib import Path
 from typing import Mapping
 
@@ -46,6 +48,45 @@ def incomplete_schedule(workload, case_id: str, lowering_route: Mapping[str, obj
         'metadata': {'workload_contract_sha256': workload.canonical_sha256},
         'lowering': dict(lowering_route),
     }
+
+
+def render_incomplete_python_starter(workload, case_id: str,
+                                     lowering_route: Mapping[str, object]) -> bytes:
+    """Render only the public ABI and route; the placeholder is not a valid Schedule.
+
+    Exact bytes are the clean-start reference policy. No arbitrary Python source is
+    admitted by comparing only its parsed operations or ignoring its comments.
+    """
+    if (not isinstance(lowering_route, Mapping)
+        or set(lowering_route) != {'backend', 'entry_point'}
+        or not isinstance(lowering_route['backend'], str)
+        or not isinstance(lowering_route['entry_point'], str)
+        or not lowering_route['entry_point'].isidentifier()
+        or keyword.iskeyword(lowering_route['entry_point'])):
+        raise ValueError('Python clean-start lowering route differs')
+    arguments = []
+    names = set()
+    for tensor in workload.tensor_abi(case_id):
+        if (not tensor.name.isidentifier() or keyword.iskeyword(tensor.name)
+            or tensor.name == 'lm' or tensor.name in names
+            or tensor.mode not in {'input', 'output'}):
+            raise ValueError('Python clean-start tensor ABI cannot be expressed')
+        names.add(tensor.name)
+        arguments.append(
+            f'{tensor.name}: cake.Tensor({tuple(tensor.shape)!r}, '
+            f'{json.dumps(tensor.dtype)}, mode={json.dumps(tensor.mode)})'
+        )
+    route = lowering_route
+    source = (
+        'from open_cake_ir.compiler import frontend as cake\n\n'
+        '@cake.schedule(name="candidate", '
+        f'target={json.dumps(workload.target)}, '
+        f'backend={json.dumps(route["backend"])}, '
+        f'entry_point={json.dumps(route["entry_point"])})\n'
+        f'def candidate(lm, {", ".join(arguments)}):\n'
+        '    ...\n'
+    )
+    return source.encode('utf-8')
 
 
 def validate_reference_handoff(root: Path, arms: Mapping[str, object], *, workload=None, case_id=None) -> None:
