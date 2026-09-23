@@ -67,6 +67,9 @@ Python 作者无需在 `@cake.schedule` 中填写 Workload 的内容 hash。独�
 global Buffer 与 Program tensor；tensor 的形状和 dtype 从阶段推导，先写后读、
 唯一生产者、公开 ABI 和跨阶段形状由现有 `Program.from_dict` 检查。
 需要去掉 singleton 轴时，绑定值可写 `cake.singleton_view("tensor")`。
+如果某个 tensor 在所有阶段都只以这种视图出现，形状无法从阶段唯一推导，
+可在 `cake.program` 中补充 `tensors={"tensor": cake.Tensor((...), "dtype")}`；
+直接绑定的 tensor 不必重复声明。
 这些声明由 AST 读取，不导入或执行作者文件，也不引入 layout algebra。
 
 [两阶段 epilogue 示例](../examples/python/epilogue_program.py) 可以直接通过：
