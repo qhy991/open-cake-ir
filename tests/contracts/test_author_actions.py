@@ -63,7 +63,8 @@ class AuthorActionTests(SemanticLabTestCase):
                 invalid['evaluation_protocol'][field] = 2
             else:
                 invalid['knowledge'][field] = [PASS]
-            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'one direct Cake candidate'):
+            message = 'searches_per_turn' if field == 'searches_per_turn' else 'one direct Cake candidate'
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, message):
                 RunSpecification.from_dict(invalid)
 
     def test_source_file_run_archives_raw_python_and_replays_its_projection(self):
