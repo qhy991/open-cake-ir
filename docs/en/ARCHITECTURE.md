@@ -23,6 +23,65 @@ For row normalization, Workload fixes mathematics, reference and tolerance. Sche
 
 ## The compiler path
 
+### Cake IR, DSL, and Triton layers
+
+Cake IR is a **typed, hardware-explicit schedule representation**. The restricted Python
+frontend is a DSL authoring surface for the same Schedule document; JSON and Python reach one
+typed IR, and the Python frontend does not compile arbitrary Python control flow. The whole
+open-cake-ir project is larger than this DSL: it also contains the Compiler, Lab, Evaluation,
+and Evidence layers. This repository independently explores ideas from the
+[CAKE paper](https://arxiv.org/html/2608.12629v1); the description here is of this repository,
+not an attribution of the paper's implementation or results to it.
+
+| Layer | Representation and owned decisions | What remains open |
+| --- | --- | --- |
+| Workload semantics | Workload and oracle fix inputs, mathematics, and numerical acceptance | Tiling, fusion, and scheduling |
+| Complete-program IR | Program fixes public tensors, stage order, and bindings; each stage contains a Schedule | It is not an automatic model-graph optimizer; current composition is static and same-stream |
+| Kernel schedule IR | Schedule declares operations, buffers, execution groups, access coordinates, loops, storage, and synchronization | All physical registers, final machine instructions, and measured latency |
+| Generated source | A backend translates an eligible Schedule to Triton Python, CUDA/C++, CuTe DSL, or Metal | Toolchain compilation is still required |
+| Toolchain and execution | The target toolchain produces the exact code object, which the Executor loads and evaluates | Compilation does not replace external correctness or performance evidence |
+
+Schedule is therefore a **kernel-scheduling IR**: more concrete than a mathematical operator
+graph and more abstract than final machine code. It is not simply higher-level than Triton in
+every dimension. The Triton route leaves parts of physical layout, register allocation, and
+instruction selection to Triton; a native route can expose finer target instruction, storage,
+and synchronization commitments. The shared boundary is the representation and verification
+interface, not equal control or capability across all backends.
+
+```mermaid
+flowchart TD
+    A["Restricted Python / JSON"] --> S["Typed Schedule: one kernel plan"]
+    P["Program: stages and tensor bindings"] --> S
+    S --> V["Compiler: Target checks, findings, backend preflight"]
+    V --> T["Triton Python → vendor Triton toolchain"]
+    V --> N["CUDA/C++ or CuTe DSL → NVIDIA toolchain"]
+    V --> M["Metal → Apple toolchain"]
+    T --> B["Exact code object → Executor → external validation"]
+    N --> B
+    M --> B
+```
+
+**Triton is an optional source-generation route and downstream compiler foundation, not the
+Cake IR format.** `Compiler.lower()` first emits inspectable source. The Triton route then uses
+`ASTSource` and `GPUTarget` in `compile_triton()`; Cake IR is not passed directly to Triton, nor
+is this repository a direct producer of Triton's internal MLIR dialect. NVIDIA routes retain
+TTIR, TTGIR, LLIR, PTX, and CUBIN where the toolchain provides them; other vendors retain the
+artifacts their own toolchain actually produces and must not be assumed to pass through PTX.
+
+Using Triton lets CAKE focus on explicit plans, legality, rewrites, and diagnostics while
+reusing an existing block-program implementation and machine-code path. The trade-off is that
+the route is bounded by the selected Triton/backend version: for example, `triton.dot` owns
+physical placement in that route, so Cake cannot promise placement that the backend does not
+honor. Finer control belongs in a native route when a real use case and evidence justify it;
+the four backends are not interchangeable implementations.
+
+See the [Python frontend](../../src/open_cake_ir/compiler/frontend.py),
+[Program](../../src/open_cake_ir/compiler/ir/program.py), [Schedule](../../src/open_cake_ir/compiler/ir/schedule.py),
+[backend inventory](../../src/open_cake_ir/compiler/backends/__init__.py),
+[Triton emitter](../../src/open_cake_ir/compiler/backends/triton.py), and
+[toolchain](../../src/open_cake_ir/compiler/toolchain.py). The [transfer chapter](OPTIMIZATION_TRANSFER.md#porting-to-domestic-accelerators-and-co-optimizing-the-target-architecture)
+defines the domestic-accelerator stages and evidence boundaries.
+
 Format/type checks precede dependency, address, resource, and hardware checks. Assessment separates structural acceptance from backend eligibility and contains localized Findings. Each Finding retains its contract category, severity, and separate acceptance/lowering dispositions. `Assessment.findings` retains the blocking/report observations checked by the existing Corpus Gate; `Assessment.guidance` carries nonblocking hints. CLI, Lab, and profile reports expose both without treating hints as acceptance evidence or GPU measurements. Eligible plans generate source through `triton`, `cutlass_cute_dsl`, `native_cuda`, or `metal`.
 
 The dedicated `checked_cuda_asset` route is retired. Its original TinyGEMM2 Schedules remain explicit structure-refusal cases; replay old fixed-source observations at their pinned Git revision. Current `Lowering.generated` is true, while historical values retain their meaning. Analysis covers declared rules only: backend registers or implicit shared memory require compiled or device evidence.
@@ -40,6 +99,38 @@ The dedicated `checked_cuda_asset` route is retired. Its original TinyGEMM2 Sche
 Lab freezes task material, rendered as TASK.md and AGENTS.md for CLI authors. A confined message author receives only permitted material and its own Run history. An external Ralph controller supplies evidence-derived state and enforces budgets. AI submits candidates or explicit transformation requests; the evaluator independently checks the resulting candidates. Earlier immutable candidates survive later edits.
 
 Engineering optimization directly prepares a Run. A `matched_search` Study preassigns Runs; the legacy CampaignLock is an input adapter to the same search, budget, confirmation and audit engine. The former `portfolio` Study is retired under ADR 0071; historical replay uses its original commit. Serving needs later integration and evaluation.
+
+### Why the interface is agent-facing
+
+“Agent-friendly” here names testable interface properties: a bounded authoring contract,
+editable execution decisions, localized reasons for refusal, pre-device filtering, and
+feedback tied to actual evaluation. It does not assert that every model becomes a better
+kernel author.
+
+| Agent decision | Implemented interface | Next action it supports |
+| --- | --- | --- |
+| What is the task, permitted reference and budget? | Workload owns semantics and oracle; RunSpecification freezes target, reference access, material, transform grants, evaluation and budget; the [task package](../../src/open_cake_ir/lab/task_package.py) delivers `TASK.md` and `AGENTS.md` | Construct a candidate within one stable contract |
+| Which GPU choice can change? | The restricted [Python frontend](../../src/open_cake_ir/compiler/frontend.py) builds the same canonical Schedule as JSON; [Schedule IR](IR_GUIDE.md) exposes groups, tiling, storage, addresses, operations and synchronization; an explicit pass returns a complete candidate or refusal | Relate one edit to a visible execution choice and its preconditions |
+| Why was the candidate refused? | `Compiler.assess` separates structural acceptance from lowering eligibility; [Finding](../../src/open_cake_ir/compiler/diagnostics.py) carries code, field path, contract category, severity and blocking scope; Python authoring retains source locations | Repair the named data edge or capability gap before device work |
+| Is device time warranted? | IR, Verifier and backend preflight filter first; only an explicitly bound empirical model covering the current context may reorder candidates, otherwise author order remains | Avoid invalid trials without treating an uncovered estimate as a performance verdict |
+| What did the last turn establish? | External Evaluation separates complete correctness, timing quality, baseline comparison and optional profiler attribution; [Ralph feedback](../../src/open_cake_ir/lab/execution.py) carries those observations with Findings and budget state, while Evidence retains the delivered material and raw samples | Choose a repair based on the actual failure class and preserve a replayable history |
+
+For a concrete example, the [FMA counterexample](../../corpus/schedules/fma-b8-smoke-arity-drift.json)
+omits one operand. The current assessment reports `ELEMENTWISE_ARITY` at
+`operations[3].reads`: FMA requires three operands and the candidate supplies two.
+`RESIDENCY_BOUND` in the same Assessment is a resource report, not that defect. The agent
+can repair the read edge before a GPU attempt. For eligible candidates, lowered source also
+maps operations to source lines for later compile and profiler investigation. The
+[getting-started guide](../GETTING_STARTED.md) keeps the accepted and refused siblings together.
+
+Recurring failures may be promoted by a maintainer from retained Findings and run evidence
+to a Verifier rule, IR capability, backend implementation or guarded explicit rewrite
+**outside the frozen Run**. A successor commit and Corpus check precede a new Run. Existing
+[DCU campaigns](../dcu-gfx938-results.md) show that the candidate–diagnosis–confirmation loop
+operates on one target and can produce local gains. They are not a same-target, matched-budget
+comparison against direct Triton/HIP authoring. Whether extra mechanism material or callable
+passes improve cross-hardware agent search remains an unmeasured
+[E/P study](../OPTIMIZATION_TRANSFER_ABLATION.md).
 
 Correctness, measurement stability, and application benefit are different facts. Faster operator code does not by itself make a model or service faster. Compiler changes happen between frozen Campaigns and update types, verification, analysis, and lowering together, followed by the full Corpus and the integration review specified by the [branch workflow](../DEVELOPMENT_BRANCHES.md). Executor fixes a different closure: Lab, evaluation, evidence tools, and environment. Read the [Glossary](GLOSSARY.md) and [maintenance guide](wiki/maintaining.md) for exact ownership.
 

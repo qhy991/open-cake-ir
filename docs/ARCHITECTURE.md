@@ -56,6 +56,61 @@ flowchart LR
 
 ## 4. 编译器怎样处理计划
 
+### Cake IR、DSL 与 Triton 的层级
+
+本项目的 Cake IR 是**带类型、显式硬件执行计划的领域专用表示**。受限 Python 前端是
+它的 DSL 编写形式，JSON 是同一 Schedule 的文档形式；二者进入同一 typed IR，Python
+前端不编译任意 Python 程序。整个 open-cake-ir 还包含 Compiler、Lab、Evaluation 与
+Evidence，因此项目的范围大于一种 DSL。本项目独立探索 [CAKE 论文](https://arxiv.org/html/2608.12629v1)
+的思路，下面描述本仓库实现，不把论文实现或性能归给本仓库。
+
+| 层级 | 表示与负责的决策 | 尚未决定的事情 |
+| --- | --- | --- |
+| 任务语义 | Workload 与外部 oracle 固定输入输出、数学和数值验收 | 如何分块、融合或调度 |
+| 完整程序 IR | Program 固定公共张量、stage 顺序与绑定；每个 stage 包含完整 Schedule | 不是任意模型图的自动优化前端；当前组合是静态、同 stream 的程序 |
+| kernel 调度 IR | Schedule 声明操作、Buffer、执行分组、访问坐标、循环、存储与同步承诺 | 不直接给出全部物理寄存器、最终机器指令与实测时延 |
+| 生成源码 | backend 将合法 Schedule 翻译成 Triton Python、CUDA/C++、CuTe DSL 或 Metal | 生成成功仍需对应工具链编译 |
+| 工具链与执行 | 对应工具链生成精确目标的代码对象，Executor 加载并评测 | 编译通过不能代替外部正确性与性能确认 |
+
+所以 Schedule 是 **kernel 的调度级 IR**：比只写数学算子的图更具体，通常比最终机器码
+更抽象。不能简单说它在所有维度上都比 Triton 更高层。Triton 路线将部分物理布局、
+寄存器分配和指令选择交给 Triton；原生路线可以表达更细的目标指令、存储和同步承诺。
+统一的是表示与验证接口，各路线接受的 Schedule 子集和硬件控制粒度不同。
+
+```mermaid
+flowchart TD
+    A["受限 Python / JSON"] --> S["Typed Schedule：单 kernel 执行计划"]
+    P["Program：stage 与张量绑定"] --> S
+    S --> V["Compiler：Target 检查、诊断与 backend preflight"]
+    V --> T["Triton Python → 对应厂商 Triton 工具链"]
+    V --> N["CUDA/C++ 或 CuTe DSL → 对应 NVIDIA 工具链"]
+    V --> M["Metal → Apple 工具链"]
+    T --> B["精确目标代码对象 → Executor → 外部验证"]
+    N --> B
+    M --> B
+```
+
+**Triton 是可选的生成路线和下游编译基础，不是 Cake IR 的格式。**
+`Compiler.lower()` 调用后端生成可检查源码；Triton 路线随后由 `compile_triton()` 使用
+`ASTSource` 和 `GPUTarget` 编译，并不是把 Cake IR 直接交给 Triton 读取，也不是直接
+生成 Triton 的 MLIR dialect。普通 NVIDIA 路线保留 TTIR、TTGIR、LLIR、PTX、CUBIN；
+其他厂商保留其工具链实际提供的产物，不能假定均经过 PTX。
+
+复用 Triton 的工程价值是让 CAKE 专注于显式计划、合法性、变换与诊断，利用下游已有的
+block 运算实现、指令选择及机器代码生成。代价是这条路线的表达和优化空间受该版本
+Triton/backend 约束：例如 `triton.dot` 的物理 placement 由下游决定，CAKE 不能承诺
+它不会兑现的 placement。需要更细硬件控制时，应在有实际需求和验证的前提下完善相应
+原生路线；当前四个后端不是可随意互换、能力等价的实现。
+
+定义与实现分别见 [Python 前端](../src/open_cake_ir/compiler/frontend.py)、
+[Program](../src/open_cake_ir/compiler/ir/program.py)、[Schedule](../src/open_cake_ir/compiler/ir/schedule.py)、
+[后端清单](../src/open_cake_ir/compiler/backends/__init__.py)、
+[Triton emitter](../src/open_cake_ir/compiler/backends/triton.py)和
+[工具链](../src/open_cake_ir/compiler/toolchain.py)。国产卡接入、机制迁移与目标架构优化的
+阶段和证据边界由[迁移章节](OPTIMIZATION_TRANSFER.md#国产卡迁移与目标架构协同优化)说明。
+
+### 从计划到源码的检查
+
 ```text
 检查格式与类型
   → 检查依赖、地址、资源和硬件规则
@@ -107,6 +162,35 @@ AI 提交候选，外部控制器 Ralph 记录预算和当前状态，再决定�
 普通优化直接准备 Run；研究通过 Study 预分配相同的 Run。旧 CampaignLock 只在输入边界适配，
 两者共用搜索、预算、确认与审计。受限消息作者只接收冻结材料和本 Run 历史，用于控制消融的信息访问。
 完整服务部署属于之后的接入与评测工作。见 [实验流程](wiki/experiments.md)。
+
+### 面向 Agent 的设计如何起作用
+
+这里的“Agent 友好”指**候选容易按明确合同修改，失败能定位到可行动的边界，昂贵评测有
+前置筛选，下一轮收到可核对的反馈**；它不是某个模型必然获得更高性能的结论。
+接口沿同一条候选路径协作：
+
+| Agent 需要解决的问题 | 当前提供的接口 | 对下一步的帮助 |
+| --- | --- | --- |
+| 题目、可见参考和预算是什么 | Workload 固定语义与 oracle；RunSpecification 固定目标、参考权限、材料、可调用变换、评测和预算；[任务包](../src/open_cake_ir/lab/task_package.py)交付 `TASK.md`、`AGENTS.md` | 作者只在获准范围内构造候选，结果能对应同一题目与环境 |
+| 哪个 GPU 决策可以修改 | 受限 [Python 前端](../src/open_cake_ir/compiler/frontend.py)生成 canonical Schedule；[Schedule IR](IR_GUIDE.md)显式声明执行组、分块、存储、地址、操作和同步；显式 pass 返回完整候选或拒绝原因 | 使一次改动及其适用条件可检查，不用从目标机器码反推原先的计划 |
+| 为什么这个候选不能继续 | `Compiler.assess` 区分结构验收与 lowering 资格；[Finding](../src/open_cake_ir/compiler/diagnostics.py)给出稳定代码、字段路径、合同类别、严重度及阻断范围，Python 输入保留源码位置 | 先修指定数据边、资源或后端缺口；报告与 hint 不被误读为正确性或性能证明 |
+| 哪些候选值得花设备时间 | 类型/语义、Verifier 和 backend preflight 先拒绝不适用方案；只有显式绑定且覆盖当前上下文的经验成本模型才参与排序，否则保持作者顺序 | 减少无效编译与 GPU 尝试，同时保留模型不覆盖时的未知状态 |
+| 上一轮实际证明了什么 | 外部 Evaluation 分开返回完整判对、测量质量、基线比较和可用 profiler；[Ralph 反馈](../src/open_cake_ir/lab/execution.py)连同 Findings 与预算状态供下一轮使用，Evidence 留存候选、原始样本及实际交付材料 | Agent 可以根据数值错误、测量噪声、资源诊断或明确拒绝分别修改假设 |
+
+例如 [FMA 反例](../corpus/schedules/fma-b8-smoke-arity-drift.json)把第三个输入从 `fma`
+操作的 reads 中删掉。当前 `assess` 返回 `ELEMENTWISE_ARITY`，位置为
+`operations[3].reads`，说明 FMA 需要三个操作数而候选只有两个；同份 Assessment 的
+`RESIDENCY_BOUND` 是资源报告。Agent 应修复操作输入，不必把资源报告当作错误，也不用先
+消耗一次 GPU 运行来发现这个数据流缺口。对通过检查的候选，生成源码还带有操作到
+源码行的映射，便于追溯后续编译与 profiler 观察。[入门教程](GETTING_STARTED.md)
+保留了这对正反例。
+
+当同类失败反复出现，维护者可依据保留的 Finding 和运行证据，在**冻结 Run 之外**补
+Verifier、IR、后端或有前提的显式变换；后继提交和 Corpus 验证后再启动新 Run。
+现有 [DCU Run 记录](dcu-gfx938-results.md)说明这条候选—诊断—确认路径能在一个目标上
+运行并产生局部收益，但它不是在同一目标上与直接写 Triton/HIP 的同预算因果对照；
+经验材料和 pass 是否额外提高 Agent 的跨硬件搜索效率，仍待
+[预注册的 E/P 实机实验](OPTIMIZATION_TRANSFER_ABLATION.md)。
 
 ## 6. 结果怎样形成结论
 
