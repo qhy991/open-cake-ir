@@ -221,6 +221,12 @@ class McptiDispatchBenchmark:
         for _ in range(dry_run_iters):
             function()
         torch.cuda.synchronize()
+        reset = self._reset_record if cold_l2_cache else None
+        context = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
+            "l2_cache_bytes": self.l2_cache_bytes,
+            "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
+            "reset_record": reset,
+            "reset_activity": self._reset_activity if cold_l2_cache else None}
         # Collect one reset+candidate pair per MCPTI session. The device launch
         # sequence is unchanged, but MACA's long-session activity stream can report
         # adjacent intervals with a small backwards timestamp. Independent sessions
@@ -232,13 +238,19 @@ class McptiDispatchBenchmark:
                 if cold_l2_cache:
                     self._reset.fill_(1.0)
                 function()
-            sessions.append(self._collect(sample))
+            activity = self._collect(sample)
+            # Keep the actual rejected session, plus preceding complete sessions,
+            # before a per-session refusal can end this cohort.
+            self.last_activity = {**context, "activity": activity,
+                "captured_sessions": [*sessions, activity]}
+            # A missing dispatch in one session cannot be supplied by an extra
+            # dispatch in another just because the merged count still matches.
+            dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
+                grid=self.manifest.grid, block=self.manifest.block, repeats=1,
+                reset_record=reset)
+            sessions.append(activity)
         activity = self._merge_sample_activity(sessions)
-        reset = self._reset_record if cold_l2_cache else None
-        self.last_activity = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
-            "l2_cache_bytes": self.l2_cache_bytes, "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
-            "reset_record": reset, "reset_activity": self._reset_activity if cold_l2_cache else None,
-            "activity": activity}
+        self.last_activity = {**context, "activity": activity}
         samples = dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
             grid=self.manifest.grid, block=self.manifest.block, repeats=repeat_iters, reset_record=reset)
         self.non_target_dispatches = 0  # Proven above; any extra device activity is refused.
