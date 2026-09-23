@@ -169,6 +169,17 @@ the fresh K=64 confirmation passed correctness and timing quality at
 favoring the candidate. K=128 received no GPU timing. Thus the B300-derived
 *K-tiling idea* can produce a benefit on this exact Hygon workload after
 target-side parameter selection, while its original K=256 setting is harmful.
+To avoid relying on one shape, a second same-operator shape was frozen
+**before device work**: `R=1024,K=512,N=64`, with the already selected K=64
+against its canonical whole-K starter and no further tile search. All five
+cases passed without mismatches in both the search and fresh confirmation;
+timing quality passed. The confirmatory starter/candidate medians were
+**106.232/97.593 μs (1.0885×)**, with ten candidate pair wins and 250 samples
+per arm. This supports limited shape generalization on the same Hygon target,
+but the gain is much smaller than 2.735× at K=1024. There is no B300 source
+gain measured at this new shape, nor cross-operator or model result. The
+frozen stop rule and raw receipts are under
+`open-cake-ir-evidence/transfer-b300-bw1101-node4-holdout-20260923/`.
 This bounded manual mechanism example does not compare Agents with and without
 NVIDIA-derived material under a matched budget; it cannot estimate E or P.
 
