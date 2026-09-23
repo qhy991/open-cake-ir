@@ -21,7 +21,7 @@ INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tan
 `80` 是 MACA Triton API 的兼容值，不是 NVIDIA SM80；设备 admission 还会从
 原生 MACA 属性查询实际物理架构。
 
-已验证环境使用 MACA PyTorch `2.8.0+metax3.5.3.9`、FlagTree
+原 `c550-1` 已验证环境使用 MACA PyTorch `2.8.0+metax3.5.3.9`、FlagTree
 `0.5.1+metax3.1`，其提供的 Triton **API 版本为 3.1.0**。系统 Python 不等于
 该环境：实际解释器是 `/opt/conda/bin/python3`。
 [`runtime/hosts/xcore1002.json`](../runtime/hosts/xcore1002.json) 由 canonical capture
@@ -36,8 +36,12 @@ INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tan
 bitcode。检查器验证声明的 family、成员边界和 MXC ELF 类型，loader 仅提交
 原生 ELF，避免模块加载回退到 bitcode 编译。
 
-当前 vendor launcher 只传非 constexpr 参数。封存 manifest 读取实际 TTGIR
-signature 并验证 tensor 参数数量，隐藏指针数为 0。
+`c550-1` 的 FlagTree 3.1 launcher 只传非 constexpr 参数，隐藏指针数为 0。
+`c550-2` 的 MetaX Triton 3.6 launcher 还传全局和 profile scratch 两个指针；
+当编译元数据声明两者无需分配时，Cake 才能传两个空指针。封存 manifest 同时核对
+实际 TTGIR tensor signature 和原生 ELF note 的完整指针数量；加载器在设备启动前
+重新核对该数量。其他隐藏指针数量或需分配的 scratch 明确拒绝，不从版本名猜测 ABI。
+`c550-2` 的完整 Agent 优化 Run 与后续性能确认仍以各自冻结提交和收据为准。
 Evaluation 验证全部 Workload input cases、每个输出元素及输入不变性，并保留
 PCI 标识和 runtime 路径。无计时收据使用 JSON `null` 的 `timing_samples`，
 不会给出零延迟。CUDA/NCU 的 profile child 仍保留自己的单次校验与独立 profiler 路径。

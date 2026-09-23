@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-23-001",
+  "date": "2026-09-23",
+  "kind": "bug",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@cbd5ddc9fd63aac8729f89278d6e42ef00d6cd05",
+  "executor_revision": "xcore1002@cbd5ddc9fd63aac8729f89278d6e42ef00d6cd05",
+  "title": "MetaX Triton 3.6 adds two scratch launch pointers beyond TTGIR tensor parameters",
+  "decision": "accepted",
+  "implemented_in": "7f346053045d4c8daa4ec6e88d0783e9b6c15095",
+  "evidence": {
+    "failed_run": "c550-2:/root/.local/share/open-cake-ir/m17-image-run-cbd5-v1/run-evidence/runs/open_cake-1/events/000000000009.json",
+    "failed_run_fault": "broker_fault at first search Evaluation, evaluator exited -11 without a result",
+    "reproduction": "c550-2:/root/open-cake-runs-v2/m17-image-crash-canary-v1/trace_eval.log",
+    "abi_inspection": "c550-2:/root/open-cake-runs-v2/m17-image-crash-canary-v1/candidate-native.elf",
+    "controlled_launch": "c550-2:/root/open-cake-runs-v2/m17-image-baseline-canary-v1/hidden2.log"
+  },
+  "observation": "The Triton 3.6 native ELF note declares five global_buffer parameters for three Workload tensor pointers, while the generated launcher supplies global_scratch and profile_scratch as two more pointers. The old three-pointer launch segfaults on the frozen baseline and candidate. Supplying two null scratch pointers to the same baseline reaches primary-case correctness with no output mismatch and unchanged inputs. The old FlagTree 3.1 native note declares only the three tensor pointers.",
+  "proposed_change": "Read the emitted MetaX ELF note alongside the TTGIR signature, seal zero or two hidden null pointers, refuse other counts or allocated scratch, and check the same binary ABI before loading or launching. Preserve the old FlagTree zero-pointer route.",
+  "verified_by": {
+    "replay": "c550-2:/root/open-cake-runs-v5/m17-abi-run-v1/run-evidence/runs/open_cake-1/events/000000000036.json and 000000000039.json",
+    "contracts": "tests/contracts/test_metax_binary.py and test_metax_driver.py on 18ebd46c; full Python 3.10/3.11/3.12 PR #201 CI after 7d02e1f6",
+    "scope": "The successor M17 search receipt passes all five Workload cases and MCPTI measurement quality; separate profiler correctness passes. This verifies the launch repair, not a confirmed performance win, general shape coverage, or complete Program timing."
+  }
+}
