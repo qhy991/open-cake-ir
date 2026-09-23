@@ -78,6 +78,24 @@ class PythonProgramSourceTests(unittest.TestCase):
             result.launchable.artifact_payloads, authored_bytes=payload).canonical_sha256,
             result.launchable.canonical_sha256)
 
+    def test_compiler_rewrite_can_use_a_python_program_as_parent(self):
+        from hashlib import sha256
+        from open_cake_ir.lab.actions import resolve_action_set
+        from open_cake_ir.serialization import canonical_json_bytes
+        compiler = Compiler.load(ROOT)
+        parent = canonical_json_bytes({'python_program_source': source(),
+                                       'program_id': 'rounded-epilogue-python'})
+        identity = sha256(parent).hexdigest()
+        action = canonical_json_bytes({'action': 'transform', 'parent': identity,
+            'transformation': 'fuse_pointwise_epilogue',
+            'parameters': {'producer': 'producer', 'epilogue': 'epilogue',
+                           'schedule_id': 'fused', 'entry_point': 'fused'}})
+        result, = resolve_action_set((action,), environment_kind='open_cake',
+            transformations=['fuse_pointwise_epilogue'], candidates={identity: parent},
+            baselines={}, compiler_factory=lambda: compiler, allow_python=True,
+            python_only=True, source_bundle=True)
+        self.assertEqual(result.reason, 'applied')
+
     def test_composition_refuses_read_before_producer_and_host_effects(self):
         for changed in (source().replace('"mid": "middle", "out": "out"',
                                          '"mid": "unproduced", "out": "out"'),
