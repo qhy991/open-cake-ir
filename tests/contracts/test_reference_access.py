@@ -160,7 +160,6 @@ class ReferenceAccessTests(unittest.TestCase):
                 }})
 
     def test_task_clean_start_delivers_only_the_workload_derived_stub(self):
-        from types import SimpleNamespace
         from open_cake_ir.evaluation.workload import WorkloadContract
         from open_cake_ir.lab.reference_access import incomplete_schedule
         from open_cake_ir.tasks.workloads import create_task
@@ -171,24 +170,107 @@ class ReferenceAccessTests(unittest.TestCase):
         stub = incomplete_schedule(workload, 'primary', route)
         path, workload_path = self.external/'stub.json', self.external/'workload.json'
         path.write_bytes(_canonical_json_bytes(stub)); workload_path.write_bytes(_canonical_json_bytes(document))
-        inputs = task_run_inputs(ROOT, workload, workload_path, path, harness='claude-code',
-                                 model='fixture', effort='high', reference_access='clean_start')
-        inputs['compiler_revision'] = {'path': 'compiler/revision.json', 'revision_id': 'fixture'}
+        with self.assertRaisesRegex(ValueError, 'New Cake optimization Runs require a Python starter'):
+            task_run_inputs(ROOT, workload, workload_path, path, harness='claude-code',
+                            model='fixture', effort='high', reference_access='clean_start')
+        # Frozen JSON Studies remain readable and replayable at their own contract.
+        lock = self.preflight(self.document())
+        legacy = self.lab.task_package(lock, 'open_cake-1')
+        self.assertIn('schedule-skeleton.json', legacy.task_markdown)
+        self.assertNotIn('schedule-starter.py', legacy.task_markdown)
+
+    def test_incomplete_python_starter_exposes_abi_without_an_implementation(self):
+        from open_cake_ir.lab.reference_access import render_incomplete_python_starter
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.tasks.workloads import create_task
+        document, complete = create_task('rmsnorm', backend='triton-b300', rows=7, columns=128)
+        workload = WorkloadContract(document)
+        route = frontend.parse(complete).document['lowering']
+        starter = render_incomplete_python_starter(workload, 'primary', route)
+        self.assertIn(b'@cake.schedule(', starter)
+        self.assertIn(b'cake.Tensor((7, 128), "fp32", mode="input")', starter)
+        self.assertIn(b'cake.Tensor((7, 128), "fp32", mode="output")', starter)
+        self.assertTrue(starter.rstrip().endswith(b'...'))
+        self.assertNotIn(b'lm.role(', starter)
+        self.assertNotIn(b'lm.load(', starter)
+        self.assertNotIn(b'lm.store(', starter)
+        with self.assertRaises(frontend.FrontendError):
+            frontend.parse(starter.decode())
+
+    def test_python_clean_start_handoff_and_package_refuse_contaminated_source(self):
+        from types import SimpleNamespace
+        from open_cake_ir.evaluation.workload import WorkloadContract
+        from open_cake_ir.lab.reference_access import render_incomplete_python_starter
+        from open_cake_ir.tasks.normalization.study import task_run_inputs
+        from open_cake_ir.tasks.workloads import create_task
+        document, complete = create_task('rmsnorm', backend='triton-b300', rows=7, columns=128)
+        workload = WorkloadContract(document)
+        route = frontend.parse(complete).document['lowering']
+        expected = render_incomplete_python_starter(workload, 'primary', route)
+        starter = self.external/'starter.py'
+        workload_path = self.external/'workload.json'
+        starter.write_bytes(expected)
+        workload_path.write_bytes(_canonical_json_bytes(document))
+        inputs = task_run_inputs(ROOT, workload, workload_path, starter, harness='claude-code',
+                                 model='fixture', effort='high', reference_access='clean_start',
+                                 lowering_route=route)
         arm = inputs['authoring']
+        self.assertEqual(arm['input_format'], 'python_source_v1')
+        self.assertEqual(arm['tool_surface'], ['submit_python_source'])
+        self.assertNotIn('schedule_skeleton', arm)
+        validate_reference_handoff(ROOT, {'author': arm}, workload=workload, case_id='primary')
         delivered = build_run_reference_documents(ROOT, SimpleNamespace(document=inputs), arm,
-                                                   workload_contract=workload, prepare_schedule=prepare_schedule)
-        self.assertNotIn('schedule-starter.py', delivered)
+                                                   workload_contract=workload,
+                                                   prepare_schedule=prepare_schedule)
+        self.assertEqual(delivered['schedule-starter.py'], expected)
+        self.assertNotIn('schedule-skeleton.json', delivered)
         self.assertNotIn('python-example.py', delivered)
-        self.assertNotIn('paired-triton-authoring.md', delivered)
-        self.assertEqual(json.loads(delivered['schedule-skeleton.json']), stub)
-        self.assertEqual(stub['operations'], [])
-        self.assertEqual(stub['target'], 'sm_103a')
-        for field, value in (('metadata', {'note': source}), ('operations', [{'id': 'hidden_implementation'}]),
-                             ('buffers', [])):
-            changed = deepcopy(stub); changed[field] = value
-            path.write_bytes(_canonical_json_bytes(changed))
-            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'target_implementation.*forbidden'):
-                validate_reference_handoff(ROOT, {'author': arm}, workload=workload, case_id='primary')
+        starter.write_bytes(expected + b'\n# hidden implementation\n')
+        with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
+            validate_reference_handoff(ROOT, {'author': arm}, workload=workload, case_id='primary')
+
+    def test_paired_python_clean_start_study_preserves_direct_cuda_treatment(self):
+        from open_cake_ir.lab.reference_access import (
+            PYTHON_CLEAN_START_SCAFFOLD, render_incomplete_python_starter,
+        )
+        document = self.document()
+        workload = load_workload(ROOT / document['workload']['path'])
+        cake = document['arms']['open_cake']
+        route = cake['lowering_route']
+        starter = self.external/'paired-starter.py'
+        expected = render_incomplete_python_starter(workload,
+            document['evaluation_protocol']['case_id'], route)
+        starter.write_bytes(expected)
+        del cake['schedule_skeleton']
+        cake.update(input_format='python_source_v1', tool_surface=['submit_python_source'],
+                    python_starter={'path': str(starter)})
+        scaffold = {'path': PYTHON_CLEAN_START_SCAFFOLD,
+                    'sha256': sha256((ROOT/PYTHON_CLEAN_START_SCAFFOLD).read_bytes()).hexdigest()}
+        for arm in document['arms'].values():
+            arm['scaffold'] = dict(scaffold)
+        lock = self.preflight(document)
+        cake_package = self.lab.task_package(lock, 'open_cake-1')
+        cuda_package = self.lab.task_package(lock, 'direct_cuda-1')
+        self.assertIn('schedule-starter.py', cake_package.task_markdown)
+        self.assertNotIn('schedule-skeleton.json', cake_package.task_markdown)
+        self.assertIn('candidate-skeleton.cu', cuda_package.task_markdown)
+        self.assertNotIn('schedule-starter.py', cuda_package.task_markdown)
+        evidence = self.external/'blocked-campaign'
+        with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+            self.lab.execute(lock, evidence, provider=None, environments={}, evaluator=None)
+        self.assertFalse(evidence.exists())
+        starter.write_bytes(expected + b'\n# leaked implementation\n')
+        with self.assertRaisesRegex(ValueError, 'unreviewed target reference'):
+            self.preflight(document)
+
+    def test_committed_python_clean_start_successor_preflights(self):
+        document = self.document('matched-search-clean-start-python-v1-template.json')
+        lock = self.preflight(document)
+        cake = self.lab.task_package(lock, 'open_cake-1')
+        cuda = self.lab.task_package(lock, 'direct_cuda-1')
+        self.assertIn('schedule-starter.py', cake.task_markdown)
+        self.assertIn('candidate-skeleton.cu', cuda.task_markdown)
+        self.assertNotIn('schedule-skeleton.json', cake.task_markdown)
 
     def test_inherited_native_lowering_requires_known_kernel_reproduction(self):
         document = self.document("matched-search-triton-optimization-template.json")
