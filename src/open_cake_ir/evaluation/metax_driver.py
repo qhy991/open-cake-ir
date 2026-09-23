@@ -14,10 +14,18 @@ from open_cake_ir.compiler.target import CodeObject, declared_target
 from .loaders import LifecycleError, check_candidate_authority
 
 
+_STATUS_NAMES = {
+    # MACA 3.5.3 mc_runtime_types.h. This is a runtime request to compile the
+    # module, not a broker allocation failure or a malformed tensor ABI.
+    1009: "mcErrorRecompile",
+}
+
+
 def _call(api, name: str, *arguments) -> None:
     status = getattr(api, name)(*arguments)
     if status:
-        raise RuntimeError(f"MACA {name} failed with status {status}")
+        label = _STATUS_NAMES.get(status, "unknown")
+        raise RuntimeError(f"MACA {name} failed with status {status} ({label})")
 
 
 def load_runtime(path: str):
