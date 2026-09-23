@@ -36,6 +36,32 @@ class ProgramEvaluator(FakeEvaluator):
 
 
 class AuthorActionTests(SemanticLabTestCase):
+    def test_python_only_author_admission_refuses_schedule_json_but_keeps_internal_rewrites(self):
+        compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
+        _, source = create_task('silu', backend='triton-b200', rows=2, columns=8)
+        authored = encoded({'python_source': source})
+        schedule = frontend.parse(source).document
+        context = dict(environment_kind='open_cake', transformations=['fuse_pointwise_epilogue'],
+                       candidates={}, baselines={'reference': encoded(epilogue_program())},
+                       compiler_factory=lambda: compiler, allow_python=True, python_only=True)
+        direct, wrapped, python, submitted_python, transformed = resolve_action_set((
+            encoded(schedule),
+            encoded({'action': 'submit', 'candidate': schedule}),
+            authored,
+            encoded({'action': 'submit', 'candidate': {'python_source': source}}),
+            encoded({'action': 'transform', 'parent': 'baseline:reference',
+                     'transformation': 'fuse_pointwise_epilogue',
+                     'parameters': {'producer': 'producer', 'epilogue': 'epilogue',
+                                    'schedule_id': 'fused', 'entry_point': 'fused'}}),
+        ), **context)
+        self.assertEqual((direct.reason, wrapped.reason), ('author_format', 'author_format'))
+        self.assertIsNone(direct.candidate)
+        self.assertIsNone(wrapped.candidate)
+        self.assertEqual(python.candidate, authored)
+        self.assertEqual(submitted_python.candidate, authored)
+        self.assertEqual(transformed.reason, 'applied')
+        self.assertEqual(len(Program.from_dict(json.loads(transformed.candidate)).stages), 1)
+
     def fixture(self, grants, *, baseline=False):
         lab, template = IndependentRunTests.fixture(self)
         document = template.document

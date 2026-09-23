@@ -44,6 +44,13 @@ class MetalPreflightTests(unittest.TestCase):
             workload = load_workload(directory/'workload.json')
             inputs = task_run_inputs(ROOT,workload,directory/'workload.json',directory/'starter.py',
                 harness='claude-code',model='exact-test-model',effort='high',turns=2)
+            self.assertEqual(inputs['authoring']['input_format'], 'python_source_v1')
+            self.assertEqual(inputs['authoring']['tool_surface'], ['submit_python_source'])
+            json_starter = directory/'starter.json'
+            json_starter.write_text(json.dumps(frontend.read_schedule(directory/'starter.py').document))
+            with self.assertRaisesRegex(ValueError, 'Python starter'):
+                task_run_inputs(ROOT,workload,directory/'workload.json',json_starter,
+                    harness='claude-code',model='exact-test-model',effort='high',turns=2)
             executable = directory/'provider';executable.write_bytes(b'CPU provider; not executed')
             receipt.executable_sha256 = sha256(executable.read_bytes()).hexdigest()
             runtime = {'schema_version':1,'provider':{'executable':str(executable),'workspace_root':str(directory/'actors')},
