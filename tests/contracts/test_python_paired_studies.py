@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from open_cake_ir.lab.bindings import resolve_execution_bindings
+from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.lab.admission import validate_provider_binding
 from open_cake_ir.lab.contracts import StudyContract, _matched_study_shape
 from open_cake_ir.lab.provider_documents import ProviderQualificationReceipt
@@ -22,9 +23,20 @@ STUDIES = ROOT / 'contracts/studies'
 
 
 class PythonPairedStudyTests(unittest.TestCase):
-    def test_b300_successors_use_python_starters_and_per_arm_transport(self):
+    def test_b200_python_starter_preserves_the_existing_schedule(self):
+        authored = frontend.read_schedule(ROOT/'examples/python/b200_rmsnorm.py').document
+        existing = json.loads((ROOT/'corpus/schedules/rmsnorm-b8-smoke.json').read_text())
+        self.assertEqual({key: value for key, value in authored.items() if key != 'metadata'},
+                         {key: value for key, value in existing.items() if key != 'metadata'})
+        compiler = Compiler.load(ROOT)
+        assessment = compiler.assess(authored)
+        self.assertTrue(assessment.accepted and assessment.lowering_eligible,
+                        assessment.findings)
+        self.assertEqual(compiler.lower(assessment).target, 'sm_100a')
+
+    def test_nvidia_successors_use_python_starters_and_per_arm_transport(self):
         successors = sorted(STUDIES.glob('*optimization-python-template.json'))
-        self.assertEqual(len(successors), 4)
+        self.assertEqual(len(successors), 5)
         for path in successors:
             with self.subTest(path=path.name):
                 study = StudyContract.load(path)
@@ -92,9 +104,10 @@ class PythonPairedStudyTests(unittest.TestCase):
                 resolve_execution_bindings(ROOT, study, bindings)
 
     def test_old_template_retains_replay_contract(self):
-        old = StudyContract.load(
-            STUDIES/'matched-search-triton-b300-optimization-template.json')
-        self.assertEqual(old.arms['open_cake']['input_format'], 'schedule_or_python_v1')
+        for name in ('matched-search-triton-b300-optimization-template.json',
+                     'matched-search-triton-optimization-template.json'):
+            old = StudyContract.load(STUDIES/name)
+            self.assertEqual(old.arms['open_cake']['input_format'], 'schedule_or_python_v1')
 
     def test_a_native_receipt_cannot_qualify_the_cake_python_transport(self):
         study = StudyContract.load(
