@@ -164,10 +164,13 @@ class Compiler:
         return self._revision.commit
 
     @classmethod
-    def load(cls, project_root: str | Path, revision_path: str | Path) -> "Compiler":
-        """Load the Compiler manifest, its declared Targets and the checkout's commit."""
+    def load(cls, project_root: str | Path = ".",
+             revision_path: str | Path | None = None) -> "Compiler":
+        """Load this project's Compiler; explicit revision paths remain supported."""
 
-        revision = load_revision(project_root, revision_path)
+        selected = (Path(project_root) / "compiler/revision.json"
+                    if revision_path is None else revision_path)
+        revision = load_revision(project_root, selected)
         return cls(
             project_root=revision.project_root,
             revision_id=revision.revision_id,
