@@ -342,6 +342,29 @@ class ProviderQualificationContractTests(unittest.TestCase):
                 self.assertEqual(set(member), {'python_source'})
                 self.assertIn(f'candidate_1_{index}', member['python_source'])
 
+    def test_closed_paired_transports_receive_distinct_arm_qualifications(self) -> None:
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            executable = root/'codex'
+            self._write_provider(executable)
+            receipts = {}
+            for arm, contract in (('open_cake', PYTHON_CANDIDATE_BUNDLE_V1),
+                                  ('native_triton', None)):
+                arm_root = root/arm
+                arm_root.mkdir()
+                completed, receipt_path, _, evidence_root = self._run_qualification(
+                    arm_root, executable, provider_revision='paired-python-fixture',
+                    run_id=f'paired-{arm}', feature_policy='closed_research',
+                    maximum_candidates_per_turn=3,
+                    output_schema=ROOT/'contracts/providers/run-turn-output-schema-v2.json',
+                    environment_kind=arm, submission_contract=contract)
+                self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+                receipts[arm] = ProviderQualificationReceipt.load(receipt_path)
+                self.assertTrue(EvidenceStore.open(evidence_root).audit_run(f'paired-{arm}').archive_integrity)
+            self.assertNotEqual(receipts['open_cake'].configuration_sha256,
+                                receipts['native_triton'].configuration_sha256)
+
     def test_two_executable_fixture_turns_archive_fixture_only_receipt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

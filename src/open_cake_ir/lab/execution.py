@@ -186,9 +186,9 @@ def execute_campaign_with_factory(lock,evidence_root,*,project_root,workload_loa
     """Keep the external Campaign archive while assembling independent Run adapters."""
     lock = CampaignLock.from_dict(lock.document)
     root = admit_new_campaign_path(project_root,evidence_root,role='Campaign Evidence root')
-    from .execution_admission import campaign_provider_binding
+    from .execution_admission import campaign_provider_bindings
     from .bindings import source_reference_path
-    campaign_provider_binding(lock,project_root)
+    campaign_provider_bindings(lock,project_root)
     _,workload_path = source_reference_path(project_root,lock.document['workload']['path'],'Campaign Workload')
     validate_authoring(workload_loader(workload_path),lock.document['resolved_inputs']['arm_environments'])
     from .preflight import preflight_run
