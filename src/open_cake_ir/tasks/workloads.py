@@ -9,6 +9,7 @@ from .tinygemm.contract import _validate_tinygemm_contract
 from .qsa.workload import _validate_qsa_contract
 from .dsa.contract import _validate_dsa_contract
 from .kda.contract import _validate_kda_fused_decode_contract, _validate_kda_decode_megaop_b200_contract
+from .kda_prefill.contract import validate_contract as _validate_kda_prefill_b300_contract
 from . import add_rmsnorm
 from .tiles import workload as tile_math
 from .tiles.workload import validate_tile_contract
@@ -44,6 +45,7 @@ _TASKS = {
     "dsa_attention": (_validate_dsa_contract, WorkloadContract),
     "kda_fused_decode": (_validate_kda_fused_decode_contract, WorkloadContract),
     "kimi_k3_kda_decode_megaop_b200": (_validate_kda_decode_megaop_b200_contract, WorkloadContract),
+    "cake_kda_prefill_b300": (_validate_kda_prefill_b300_contract, WorkloadContract),
     "rmsnorm_fp32": (validate_tile_contract, WorkloadContract),
     "gemm_bias_bf16_fp32": (validate_tile_contract, WorkloadContract),
     "indexed_gather_bf16": (validate_tile_contract, WorkloadContract),

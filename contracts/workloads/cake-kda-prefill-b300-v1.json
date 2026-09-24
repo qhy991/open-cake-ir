@@ -1,0 +1,355 @@
+{
+  "schema_version": 1,
+  "workload_id": "cake-kda-prefill-b300-v1",
+  "revision": "1",
+  "state": "frozen",
+  "provenance": [
+    {
+      "kind": "known_kernel_reproduction_reference",
+      "repository": "https://github.com/flashinfer-ai/flashinfer",
+      "revision": "e835e0f5565b5b9786c987e00c6b39a26bfecca5",
+      "path": "experiments/flashinfer_rewrites/references/027_cake_kda_prefill",
+      "scope": "B200 exported M64/M128 mechanism and public semantics; no B300 performance inherited"
+    },
+    {
+      "kind": "separate_target_adaptation",
+      "authority": "user_request_B300_M4_then_KDA_prefill",
+      "scope": "new exact sm_103a task identity; original sm_100a six-row task remains unchanged"
+    }
+  ],
+  "operator": "cake_kda_prefill_b300",
+  "cases": [
+    {
+      "case_id": "guard-h64-t65",
+      "shape": {
+        "batch": 1,
+        "total_tokens": 65,
+        "heads": 64,
+        "head_dim": 128,
+        "num_sequences": 1
+      },
+      "seed": 427027,
+      "mode": "fixed"
+    },
+    {
+      "case_id": "guard-h96-packed-33-65-17",
+      "shape": {
+        "batch": 1,
+        "total_tokens": 115,
+        "heads": 96,
+        "head_dim": 128,
+        "num_sequences": 3
+      },
+      "seed": 427028,
+      "mode": "packed"
+    },
+    {
+      "case_id": "h96_fixed8192",
+      "shape": {
+        "batch": 1,
+        "total_tokens": 8192,
+        "heads": 96,
+        "head_dim": 128,
+        "num_sequences": 1
+      },
+      "seed": 10000,
+      "mode": "fixed"
+    },
+    {
+      "case_id": "h96_mixed",
+      "shape": {
+        "batch": 1,
+        "total_tokens": 8192,
+        "heads": 96,
+        "head_dim": 128,
+        "num_sequences": 6
+      },
+      "seed": 10001,
+      "mode": "packed"
+    },
+    {
+      "case_id": "h96_uniform",
+      "shape": {
+        "batch": 1,
+        "total_tokens": 8192,
+        "heads": 96,
+        "head_dim": 128,
+        "num_sequences": 8
+      },
+      "seed": 10002,
+      "mode": "packed"
+    },
+    {
+      "case_id": "h64_fixed8192",
+      "shape": {
+        "batch": 1,
+        "total_tokens": 8192,
+        "heads": 64,
+        "head_dim": 128,
+        "num_sequences": 1
+      },
+      "seed": 10003,
+      "mode": "fixed"
+    },
+    {
+      "case_id": "h64_mixed",
+      "shape": {
+        "batch": 1,
+        "total_tokens": 8192,
+        "heads": 64,
+        "head_dim": 128,
+        "num_sequences": 6
+      },
+      "seed": 10004,
+      "mode": "packed"
+    },
+    {
+      "case_id": "h64_uniform",
+      "shape": {
+        "batch": 1,
+        "total_tokens": 8192,
+        "heads": 64,
+        "head_dim": 128,
+        "num_sequences": 8
+      },
+      "seed": 10005,
+      "mode": "packed"
+    }
+  ],
+  "tensors": {
+    "q": {
+      "shape": [
+        "batch",
+        "total_tokens",
+        "heads",
+        "head_dim"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "k": {
+      "shape": [
+        "batch",
+        "total_tokens",
+        "heads",
+        "head_dim"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "v": {
+      "shape": [
+        "batch",
+        "total_tokens",
+        "heads",
+        "head_dim"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "g": {
+      "shape": [
+        "batch",
+        "total_tokens",
+        "heads",
+        "head_dim"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "beta": {
+      "shape": [
+        "batch",
+        "total_tokens",
+        "heads"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "A_log": {
+      "shape": [
+        "heads"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "dt_bias": {
+      "shape": [
+        "heads",
+        "head_dim"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "cu_seqlens": {
+      "shape": [
+        "num_sequences+1"
+      ],
+      "dtype": "int64",
+      "layout": "contiguous_row_major"
+    },
+    "seq_order": {
+      "shape": [
+        "num_sequences"
+      ],
+      "dtype": "int32",
+      "layout": "contiguous_row_major"
+    },
+    "initial_state": {
+      "shape": [
+        "num_sequences",
+        "heads",
+        "head_dim",
+        "head_dim"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "side_effect": "updated_in_place"
+    },
+    "out": {
+      "shape": [
+        "batch",
+        "total_tokens",
+        "heads",
+        "head_dim"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "storage": "fresh_contiguous_nonaliasing"
+    },
+    "final_state": {
+      "shape": [
+        "num_sequences",
+        "heads",
+        "head_dim",
+        "head_dim"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major",
+      "alias_of": "initial_state"
+    }
+  },
+  "semantics": {
+    "target": "sm_103a",
+    "reference_target": "sm_100a",
+    "head_dim": 128,
+    "sequence_lengths": {
+      "guard-h64-t65": [
+        65
+      ],
+      "guard-h96-packed-33-65-17": [
+        33,
+        65,
+        17
+      ],
+      "h96_fixed8192": [
+        8192
+      ],
+      "h96_mixed": [
+        1300,
+        547,
+        2048,
+        963,
+        271,
+        3063
+      ],
+      "h96_uniform": [
+        1024,
+        1024,
+        1024,
+        1024,
+        1024,
+        1024,
+        1024,
+        1024
+      ],
+      "h64_fixed8192": [
+        8192
+      ],
+      "h64_mixed": [
+        1300,
+        547,
+        2048,
+        963,
+        271,
+        3063
+      ],
+      "h64_uniform": [
+        1024,
+        1024,
+        1024,
+        1024,
+        1024,
+        1024,
+        1024,
+        1024
+      ]
+    },
+    "candidate_abi": [
+      "q",
+      "k",
+      "v",
+      "g",
+      "beta",
+      "A_log",
+      "dt_bias",
+      "cu_seqlens",
+      "seq_order",
+      "initial_state",
+      "out",
+      "final_state"
+    ],
+    "definition": "BF16 Q/K L2 normalization; FP32 gate=lower_bound*sigmoid(exp(A_log)*(g+dt_bias)), beta=sigmoid(beta_logit), V-first recurrent state and BF16-rounded output/state after each token",
+    "constants": {
+      "scale": 0.08838834764831845,
+      "lower_bound": -5.0
+    },
+    "state_effects": {
+      "initial_state_final_state": "exact_full_range_alias_required",
+      "partial_overlap": "refused",
+      "other_inputs": "unchanged",
+      "out": "fully_overwritten_nonaliasing"
+    },
+    "variant_rule": "M64 exactly for fixed one-sequence H64; M128 otherwise",
+    "packed_metadata": "int64 cumulative offsets partition every token; int32 seq_order is a permutation of sequence ids",
+    "materialization": "CPU-seeded BF16 q/k/v/g/beta and initial state; FP32 A_log/dt_bias; six benchmark rows use the frozen public distributions with separately generated B300 bytes; guardrails have their own fixed seeds"
+  },
+  "oracle": {
+    "kind": "independent_cpu_bf16_token_recurrence",
+    "callable": "open_cake_ir.tasks.kda_prefill.oracle.reference_prefill",
+    "reference_access": "known_kernel_reproduction",
+    "external_peer": "B300 exact-target adaptation of pinned CAKE export; qualification required before performance use"
+  },
+  "validation": {
+    "atol": 0.01,
+    "rtol": 0.01,
+    "comparison_scope": "all_output_and_final_state_elements",
+    "all_cases_required": true,
+    "case_tiers": {
+      "guardrails": [
+        "guard-h64-t65",
+        "guard-h96-packed-33-65-17"
+      ],
+      "benchmark": [
+        "h96_fixed8192",
+        "h96_mixed",
+        "h96_uniform",
+        "h64_fixed8192",
+        "h64_mixed",
+        "h64_uniform"
+      ]
+    },
+    "input_preservation": "q_k_v_g_beta_A_log_dt_bias_offsets_order_unchanged",
+    "state_validation": "complete_final_state_and_in_place_alias",
+    "measurement": {
+      "target": "sm_103a",
+      "timer": "CUPTI",
+      "cache": "cold_L2_flushed_per_sample",
+      "cuda_graph": false,
+      "state_reset": "fresh_initial_state_per_timed_sample_or_equivalent_rotating_pool",
+      "scope": "kernel_duration_sum_and_full_public_callable_reported_separately"
+    },
+    "performance_criterion": "unselected_until_exact_B300_external_baseline_and_budget_are_bound",
+    "claim_boundary": "B300 adapted reproduction; not the original B200 paper measurement or model serving"
+  }
+}
