@@ -81,7 +81,7 @@ _RECORDS = (
     # Native CUDA realizes the same already-typed INT32 add/relaxed/device effect
     # through an explicit PTX instruction. Claiming a work index provides no
     # release/acquire visibility for the work item or a later CTA handoff.
-    InstructionContract("ptx.atom.global.add.relaxed.gpu.s32", ContractKind.ATOMIC),
+    InstructionContract("ptx.atom.relaxed.gpu.global.add.s32", ContractKind.ATOMIC),
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.tanh.f32", ElementwiseOp.TANH, DType.FP32),

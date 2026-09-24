@@ -130,7 +130,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"})
 
     def test_native_atomic_contract_is_a_distinct_backend_realization(self) -> None:
-        native = contract("ptx.atom.global.add.relaxed.gpu.s32")
+        native = contract("ptx.atom.relaxed.gpu.global.add.s32")
         triton = contract("triton.atomic_add.i32.relaxed.gpu")
         self.assertIsNotNone(native)
         self.assertIsNotNone(triton)
