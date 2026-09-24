@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler import Compiler, Program
-from open_cake_ir.compiler.ir import WorkerExecution
+from open_cake_ir.compiler.ir import HandoffScope, WorkerExecution
 from open_cake_ir.evaluation.program import ProgramLaunchManifest
 
 
@@ -102,8 +102,8 @@ class WorkerExecutionContract(unittest.TestCase):
         changed = document()
         changed["execution"]["handoffs"][0]["scope"] = "system"
         program = Program.from_dict(changed)
-        self.assertEqual(program.execution.handoffs[0].scope.value, "system")
-        self.assertEqual(program.execution.handoffs[1].scope.value, "device")
+        self.assertIs(program.execution.handoffs[0].scope, HandoffScope.SYSTEM)
+        self.assertIs(program.execution.handoffs[1].scope, HandoffScope.DEVICE)
         self.assertEqual(Program.from_dict(program.document), program)
         with self.assertRaisesRegex(ValueError, "dedicated native lowering"):
             Compiler.load(ROOT).lower_program(program)
