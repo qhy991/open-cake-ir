@@ -110,8 +110,8 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
         })
 
     def test_the_registry_is_closed_and_every_record_says_what_it_is(self) -> None:
-        """Sixteen records; each kind carries exactly the fields its analyses read."""
-        self.assertEqual(len(CONTRACTS), 18)
+        """Every record carries exactly the fields its analyses read."""
+        self.assertEqual(len(CONTRACTS), 19)
         for name, record in CONTRACTS.items():
             with self.subTest(contract=name):
                 self.assertEqual(record.name, name)
@@ -128,6 +128,15 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
         self.assertEqual(PLACED_CONTRACTS, {
             "tcgen05.mma.cta_group::1.kind::f16",
             "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"})
+
+    def test_native_atomic_contract_is_a_distinct_backend_realization(self) -> None:
+        native = contract("ptx.atom.global.add.relaxed.gpu.s32")
+        triton = contract("triton.atomic_add.i32.relaxed.gpu")
+        self.assertIsNotNone(native)
+        self.assertIsNotNone(triton)
+        self.assertIs(native.kind, ContractKind.ATOMIC)
+        self.assertIs(triton.kind, ContractKind.ATOMIC)
+        self.assertNotEqual(native.name, triton.name)
         with self.assertRaises(TypeError):
             CONTRACTS["vendor.new.mma"] = None
 

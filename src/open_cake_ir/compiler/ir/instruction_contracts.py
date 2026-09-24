@@ -78,6 +78,10 @@ _RECORDS = (
     _mma("triton.dot.fp16_fp32", {DType.FP16}),
     _mma("triton.dot.fp8e4m3_fp32", {DType.FP8_E4M3}),
     InstructionContract("triton.atomic_add.i32.relaxed.gpu", ContractKind.ATOMIC),
+    # Native CUDA realizes the same already-typed INT32 add/relaxed/device effect
+    # through an explicit PTX instruction. Claiming a work index provides no
+    # release/acquire visibility for the work item or a later CTA handoff.
+    InstructionContract("ptx.atom.global.add.relaxed.gpu.s32", ContractKind.ATOMIC),
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.tanh.f32", ElementwiseOp.TANH, DType.FP32),
