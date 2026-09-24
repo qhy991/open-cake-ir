@@ -123,6 +123,46 @@ class Event:
     stolen: bool
 
 
+@dataclass(frozen=True)
+class HandoffResult:
+    completed: bool
+    published_tiles: tuple[int, ...]
+    # (CTA id, current tile, tile whose flag this CTA awaits).
+    blocked_on: tuple[tuple[int, int, int], ...]
+
+
+def grid_stride_publish_wait(n_ctas: int, peers: Sequence[int]) -> HandoffResult:
+    """Model a naive same-body publish→wait in a persistent grid.
+
+    Every launched CTA is assumed resident and gets work `cta + iteration*N`.
+    Each tile publishes its own flag before waiting for its peer. A failure
+    here is a logical wait cycle despite perfect CTA residency, not a claim
+    about CUDA scheduling or an implementation of Cake mailboxes.
+    """
+    if (type(n_ctas) is not int or n_ctas < 1 or not peers or n_ctas > len(peers)
+            or any(type(peer) is not int or not 0 <= peer < len(peers) for peer in peers)):
+        raise ValueError("finite CTAs and in-range peer tile ids are required")
+    cursors = list(range(n_ctas))
+    published: set[int] = set()
+    while True:
+        progressed = False
+        for cta, tile in enumerate(cursors):
+            if tile >= len(peers):
+                continue
+            if tile not in published:
+                published.add(tile)
+                progressed = True
+            if peers[tile] in published:
+                cursors[cta] += n_ctas
+                progressed = True
+        if all(tile >= len(peers) for tile in cursors):
+            return HandoffResult(True, tuple(sorted(published)), ())
+        if not progressed:
+            blocked = tuple((cta, tile, peers[tile])
+                            for cta, tile in enumerate(cursors) if tile < len(peers))
+            return HandoffResult(False, tuple(sorted(published)), blocked)
+
+
 class ChunkQueue:
     """Immediate-completion DAG model, without timing or GPU memory visibility."""
 

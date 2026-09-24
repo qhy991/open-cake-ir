@@ -72,7 +72,14 @@ workload. A route that cannot emit all declared effects refuses by name.
    (ADR 0082). The plan's waits are bounded by a producer phase whose worker
    class is nonempty and whose queued work cannot be held solely by waiters.
    This is a liveness condition, not an inference from a quiet GPU or the
-   upper-bound resource estimator.
+   upper-bound resource estimator. In particular, a cooperative grid-stride
+   Schedule may still deadlock when its first resident work tile waits for a
+   flag produced only by a later tile on a blocked CTA. The finite
+   `grid_stride_publish_wait` counterexample in
+   `experiments/weave/scheduler_model.py` pins two CTAs publishing tiles 0/1
+   and each waiting on tile 3/2: all CTAs are resident and neither can reach
+   its next tile. Unknown runtime peers require a stronger worker queue
+   progress proof or a refusal, not an optimistic static pass.
 5. Queue counters and readiness flags begin in the state named by the
    Workload/Executor reset contract on **every** launch. Timing includes the
    declared reset interval; a cost estimate only selects candidates before
@@ -93,7 +100,8 @@ without a layout algebra or inherited hardware constants.
 Reject a zero-worker class, duplicate queue ownership, an out-of-range claim,
 a payload read preceded only by `depends_on`, a relaxed flag publication,
 multiple flag producers, a cyclic phase graph, an unbounded steal window, a
-compiled occupancy shortfall, and a missing reset. A local HBM copy is not an
+compiled occupancy shortfall, a future-iteration wait cycle, and a missing
+reset. A local HBM copy is not an
 admitted substitute for inter-GPU dispatch: a later EP Program needs an
 explicit remote-transfer effect, completion and per-rank oracle before it can
 support the paper's claim.
