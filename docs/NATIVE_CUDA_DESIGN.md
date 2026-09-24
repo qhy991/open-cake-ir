@@ -396,6 +396,8 @@ and one FP32 global store. The native SIMT path assigns one weight row to one
 CTA and reduces 16 or 32 products with a fixed warp shuffle tree. Its
 AccessMaps state the vector, weight-row and output coordinates; admission
 rejects another reduction, dtype, mapping, cache hint or resource shape.
+The participating lanes use an exact 16- or 32-bit shuffle mask and power-of-two
+width, following the [CUDA warp synchronization constraints](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#warp-sync-intrinsic-constraints).
 This makes one expert projection expressible through Cake without an opaque
 MoE operation. It does not implement expert selection, the gated activation,
 the second projection, cross-GPU dispatch or a performance claim. B300 nvcc
