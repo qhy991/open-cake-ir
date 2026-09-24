@@ -1143,6 +1143,42 @@ $64/4096/3072$ & \code{21abdd5d} & 19.904 & 21.440 & 1.079 倍 & 通过 \\
 \code{docs/results/nvidia/} 的发布成绩。CAKE 导出产物原有的更大形状集合与
 服务验证，以及 KDA、Alpha-MoE 的完整任务，仍在后续复现范围之外。
 
+\subsection{KDA prefill：B300 上的有界机制诊断}
+仓库已为原始 KDA prefill 六个形状另立精确 \code{sm\_103a} 的 B300 Workload，
+并建立独立 BF16 逐 token 递推 oracle；原有 B200 任务及其成绩未作改写。
+固定 H64、D128、T8192 形状上，仅将原始 CAKE 导出物的目标检查和编译架构
+适配到 B300 后，完整输出和最终状态均通过 \(\mathrm{atol}=\mathrm{rtol}=0.01\)
+检查。此适配参考的单内核、五轮 CUPTI 冷 L2 诊断中位数约为
+456\,$\mu$s，不能称为原始 B200 成绩。
+
+\begin{table}[htbp]
+\centering\small\renewcommand{\arraystretch}{1.12}
+\caption{B300-M4 的 KDA prefill H64/T8192 有界同机对照。每行的参考与原型在同一
+broker 独占作业内交替计时五轮；数字为各自的中位数（$\mu$s），倍数为轮内成对
+比值的中位数。原型均未获 Cake Schedule 准入，也不是正式 Evaluation。}
+\label{tab:kda-b300-diagnostic}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+原型 & 适配 CAKE 参考 & 原型 & 原型/参考 \\
+\midrule
+native CUDA 逐 token 标量 & 456.195 & 16,979.920 & 37.221$\times$ \\
+Triton chunk32、V tile64 & 456.035 & 96,080.520 & 210.687$\times$ \\
+Triton chunk16、V tile32 & 456.259 & 83,264.993 & 182.495$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+三种原型在每轮均通过全部 67,108,864 个输出和 1,048,576 个最终状态元素的
+独立检查。CPU 上的 chunk32 代数及 BF16 矩阵操作数模拟也通过完整输入。
+标量 CUDA 虽无寄存器溢出，却逐 token 更新大状态；首个 Triton chunk
+映射产生每线程 176 字节栈空间，缩小 tile 后静态栈与本地访存消失，耗时仍达
+83\,ms。这些记录表明只换语言或只消除该静态溢出信号都不足以接近适配参考；
+由于 tile 参数同时变化，无法从两次 Triton 读数单独量化溢出代价。适配参考可见
+32-token 分块、TMA、\code{tcgen05} MMA、TMEM 状态驻留和分工流水线，
+而当前 native/CuTe 后端尚不接纳完整的可变状态 Schedule。后继工作须先实现
+该状态与同步合同，再做同一形状的设备验证；目前没有可称为 CAKE 性能提升的
+KDA 结果。完整实验路径由本地 Finding \code{F-2026-09-24-003} 索引。
+
 \section{跨硬件复用：从一次改写到可检验的收益}
 
 \subsection{可复用的是机制，参数要在目标卡重选}
@@ -1326,6 +1362,7 @@ def softmax(lm, x: cake.Tensor((8, 512, 128), "fp32"),
 当前 Compiler & \repo{reports/current/STATUS.md}{状态页}、\repo{compiler/revision.json}{版本清单}与精确目标文档 \\
 B300 FlashInfer & \repo{docs/results/nvidia/FLASHINFER_STATUS.md}{逐任务状态}；每行链接自己的 Finding 与收据 \\
 B300 TinyGEMM2 & \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{历史严格数值与成对计时报告}；后继 B300-M4 诊断索引 \code{F-2026-09-24-002}（尚未正式发布） \\
+B300 KDA prefill & 精确目标 Workload \code{cake-kda-prefill-b300-v1}；有界外部诊断索引 \code{F-2026-09-24-003}（尚未正式发布） \\
 Apple、Hygon、AMD & 各平台 \repo{docs/RESULTS.md}{发布汇总}与原记录 \\
 MetaX C550 & \repo{docs/metax-c550.md}{平台专题}及 \repo{docs/ARCHITECTURE.md}{当前 Run 案例} \\
 迁移离线试点 & \repo{docs/OPTIMIZATION_TRANSFER.md}{机制与证据边界} \\
