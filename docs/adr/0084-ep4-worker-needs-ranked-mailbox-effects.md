@@ -31,6 +31,10 @@ outside the IR. The local expert math is available as three complete Cake
 Schedules in `examples/programs/weave-local-expert-ffn-b300.json`; the NVIDIA
 task branch at `e4cbd5b7` emits an ordered native CUDA counterpart. Neither
 Program is a fused or distributed worker.
+The NVIDIA task branch at `c822fb10` can emit inline device helpers from the
+complete local expert and origin combine Schedules under an explicit
+`ranked_mailbox` rewrite request. Those helpers provide mathematical source
+maps but no reservation, peer ownership, readiness or launch protocol.
 
 ## Proposed Program boundary
 

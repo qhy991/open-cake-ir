@@ -159,6 +159,13 @@ rounding per token. Its offline tests and Corpus Gate pass. The ranked
 mailbox effect, nvcc/device correctness and performance comparison remain
 unqualified.
 
+At NVIDIA task commit `c822fb10`, a bounded inline device-math emitter
+checks the complete native local expert Program and the native combine
+Schedule, then maps all 29 leaf operations into fused device helpers only
+when an explicit `ranked_mailbox` rewrite is requested. It leaves ordinary
+ordered Program lowering intact. This supplies mathematical source material,
+not the four-rank queue/handoff effect, nvcc result or GPU correctness.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
