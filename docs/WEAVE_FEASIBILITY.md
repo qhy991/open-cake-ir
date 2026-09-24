@@ -63,7 +63,7 @@ Shared IR, Program and verifier work belongs on `task/core-*` against `main`; NV
 
 ## Native atomic successor contract
 
-The next native CUDA slice names `ptx.atom.global.add.relaxed.gpu.s32` in the shared
+The next native CUDA slice names `ptx.atom.relaxed.gpu.global.add.s32` in the shared
 instruction registry. It is a second physical realization of the existing typed
 `atomic_rmw(add, int32, relaxed, device)` effect, not a new atomic opcode or a
 second spelling of MoE. P1/P3 retain the ordinary returned-old-value operation;
