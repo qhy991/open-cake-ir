@@ -82,6 +82,10 @@ _RECORDS = (
     # through an explicit PTX instruction. Claiming a work index provides no
     # release/acquire visibility for the work item or a later CTA handoff.
     InstructionContract("ptx.atom.relaxed.gpu.global.add.s32", ContractKind.ATOMIC),
+    # System scope is a distinct instruction effect. A remote GPU allocation
+    # additionally needs peer access and native P2P atomic admission at runtime;
+    # the Target's ISA declaration alone never grants that topology fact.
+    InstructionContract("ptx.atom.relaxed.sys.global.add.s32", ContractKind.ATOMIC),
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.tanh.f32", ElementwiseOp.TANH, DType.FP32),
