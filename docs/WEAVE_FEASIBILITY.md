@@ -159,6 +159,10 @@ the FP8 task's routing and block-scale semantics.
 The next Compiler tick must compose that visible expert math with ranked
 mailbox effects, remote queue and payload ownership, system-scope
 publication and liveness analysis. [ADR 0084](adr/0084-ep4-worker-needs-ranked-mailbox-effects.md)
-states the four-rank admission and verification obligations. The existing
+states the four-rank admission and verification obligations. The CPU
+`experiments/weave/dispatch_ledger.py` now separates deduplicated remote
+payload slots from one-per-route compute tasks, including the skew and tail
+capacity bounds. The direct CUDA reference still sends one payload per
+route. The existing
 single-device launch paths refuse the EP4 Workload Contract. No raw mailbox
 source is promoted as an opaque MoE instruction.

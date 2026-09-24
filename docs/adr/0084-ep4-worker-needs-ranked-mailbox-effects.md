@@ -43,16 +43,22 @@ instruction or paste the direct-reference body as unexamined source.
 The worker execution descriptor needs these **effects**, each tied to named
 buffers and operations:
 
-1. **Remote dispatch reservation.** A source rank derives destination from a
-   checked expert ID, atomically reserves one slot in that destination's
-   mailbox, writes source/token/route/expert metadata and BF16 payload, then
-   publishes that slot's ready flag with system-scope release. Reservation
-   returns the old slot index; a range check precedes every write.
+1. **Remote payload reservation and route enqueue.** A source rank derives
+   destination from each checked expert ID. All routes of one `(source rank,
+   token)` to the same remote destination share **one** BF16 payload slot;
+   each route still reserves its own compute-task slot with expert and route
+   metadata referring to that payload. A local route reads the source's
+   hidden tensor without a remote payload reservation. Both reservations
+   return old indices checked against their distinct capacities. Payload
+   bytes and task metadata each have a ready flag published with
+   system-scope release after their writes.
 2. **Inbound claim and local expert compute.** Regular compute CTAs and
    communication CTAs during the steal window claim from the *same*
-   rank-local head. Each claim owns one ready slot, consumes payload only
-   after system-scope acquire, and runs the complete local expert math with
-   that slot's local expert coordinate. A claim cannot execute twice.
+   rank-local task head. Each claim owns one ready task, acquires its
+   metadata and (for remote work) the referenced payload's ready flag,
+   then runs the complete local expert math with that task's local expert
+   coordinate. Two tasks may read one payload, but neither task can execute
+   twice.
 3. **Return contribution.** The compute owner writes its FP32 contribution to
    the source rank's `(token, route)` slot and publishes a system-scope ready
    flag. The origin's combine phase may read it only after acquire. A
@@ -76,10 +82,13 @@ analysis, not an emitter's guess from pointer spelling.
 ## Static checks before native emission
 
 - The Workload's `R`, `T`, top-k, expert count and weight geometry bind all
-  shard extents. The worst-case inbound capacity is derived from routed
-  work across **all** sources; skew to one rank must not overflow its
-  mailbox. Deduplication is a separate declared semantic relation, not a
-  capacity optimization silently assumed from the direct reference.
+  shard extents. In the present EP4 Workload, one destination can receive
+  at most `(R-1)*T` **remote payloads** and `R*T*top_k` **compute tasks**;
+  the `T=8` skew case reaches 24 and 64 respectively, while `T=7` reaches
+  21 and 56. These capacities are derived from Workload routing and must
+  not be inferred from the direct reference's one-slot-per-route mailbox.
+  `experiments/weave/dispatch_ledger.py` projects the two domains without
+  claiming a Cake effect or GPU implementation.
 - Every payload, metadata slot, ready flag, contribution and public output
   has one writer and an owning rank. The reserved slot and returned source
   coordinate determine the only legal write address. Invalid expert IDs,
@@ -100,8 +109,9 @@ analysis, not an emitter's guess from pointer spelling.
   cannot accept one. A Compiler change after a Campaign is a successor
   commit, not a mutation of the frozen Run.
 
-Counterexamples must include an overfull skewed mailbox, duplicate route
-reservation, wrong origin rank, an acquire omitted before the first payload
+Counterexamples must include an overfull skewed payload or task queue, a
+duplicate remote payload, a missing route task, wrong origin rank, an
+acquire omitted before the first payload or task-metadata
 read, a relaxed publication flag, a zero-worker class, a future-tile wait
 cycle, invalid `K_r` or tail partition, a missing peer pair and a compiled
 occupancy shortfall. The owning rule must refuse each one; an unrelated
