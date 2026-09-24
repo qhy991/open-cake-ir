@@ -4,15 +4,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import json
 from pathlib import Path
 import unittest
-
-from experiments.weave.dispatch_ledger import dispatch_ledger
-from experiments.weave.rank_plan import rank_plans
 
 
 ROOT = Path(__file__).resolve().parents[2]
 HEADER = ROOT / 'experiments/weave/native_b300/chunk_math.hpp'
+WORKLOAD = ROOT / 'contracts/workloads/weave-ep4-bf16-moe-b300-v1.json'
 
 
 class WeaveNativeTailChunks(unittest.TestCase):
@@ -45,21 +44,17 @@ int main() { rows<7>(); rows<8>(); }
                            check=True, capture_output=True, text=True, timeout=20)
             output = subprocess.run([str(binary)], check=True, capture_output=True,
                                     text=True, timeout=10).stdout
+        declared_tokens = {case['shape']['T'] for case in
+                           json.loads(WORKLOAD.read_text())['cases']}
+        self.assertEqual(declared_tokens, {7, 8})
         for line in output.splitlines():
             tokens_text, count_text, token_map, sizes = line.split()
             tokens, count = int(tokens_text), int(count_text)
-            shape = {'R': 4, 'T': tokens, 'E': 8, 'K': 2}
-            ids = [[[0, 1] for _ in range(tokens)] for _ in range(4)]
-            ledger = dispatch_ledger(shape, ids)
-            plans = rank_plans(shape, ledger, sm_count=148,
-                               communication_ctas=(12,) * 4,
-                               chunks=(count,) * 4,
-                               steal_budgets=(0,) * 4)
-            chunks = plans[0].chunks
-            expected_map = [next(index for index, chunk in enumerate(chunks)
-                                 if chunk.first_token <= token < chunk.stop_token)
-                            for token in range(tokens)]
-            expected_sizes = [chunk.stop_token - chunk.first_token for chunk in chunks]
+            self.assertIn(tokens, declared_tokens)
+            base, longer = divmod(tokens, count)
+            expected_sizes = [base + 1] * longer + [base] * (count - longer)
+            expected_map = [index for index, size in enumerate(expected_sizes)
+                            for _ in range(size)]
             with self.subTest(tokens=tokens, chunks=count):
                 self.assertEqual([int(value) for value in token_map.rstrip(',').split(',')],
                                  expected_map)

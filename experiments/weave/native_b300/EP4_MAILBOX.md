@@ -67,8 +67,9 @@ cross-GPU progress proof together with native emission and counterexamples.
 original source's four-rank direct CUDA/PTX protocol, while
 `chunk_math.hpp` partitions arbitrary `1 <= K <= T` into first-longer chunks.
 For `T=7,K=2`, the source uses four then three tokens and waits for eight
-then six route contributions. The host-compiled helper is checked against the
-Workload-derived `rank_plan.py` for every `K` at `T=7` and `T=8`.
+then six route contributions. The host-compiled helper is checked against an
+independent balanced-partition oracle for every `K` at the Workload's
+declared `T=7` and `T=8` shapes.
 The already measured `ep4_mailbox.cu` is unchanged. The successor has not
 been nvcc-compiled or run on B300-M4, and still sends one remote payload per
 route instead of deduplicating destinations. No tail correctness, steal,
