@@ -70,6 +70,12 @@ For `T=7,K=2`, the source uses four then three tokens and waits for eight
 then six route contributions. The host-compiled helper is checked against an
 independent balanced-partition oracle for every `K` at the Workload's
 declared `T=7` and `T=8` shapes.
+The measured `T=8` runs used the same `K` on every rank. Source inspection
+found that their return path indexed the origin's chunk counter with the
+compute rank's `K`, so those runs cannot support a per-rank temporal-plan
+claim. The unmeasured tail successor carries all four source-rank chunk
+counts into each launch and indexes each return by the **origin** rank's
+count. Its prepared device case uses `K=(2,3,7,1)` to test that boundary.
 The already measured `ep4_mailbox.cu` is unchanged. The successor has not
 been nvcc-compiled or run on B300-M4, and still sends one remote payload per
 route instead of deduplicating destinations. No tail correctness, steal,

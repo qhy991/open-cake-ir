@@ -39,6 +39,7 @@ struct Params {
     const __nv_bfloat16* w_up_gate;
     const __nv_bfloat16* w_down;
     int rank, comm_ctas, chunks, steal_budget;
+    int source_chunks[R];
 };
 
 __device__ __forceinline__ int sys_add_relaxed(int* pointer, int value) {
@@ -172,7 +173,7 @@ __device__ __forceinline__ void compute_one(const Params* params, int slot,
     if (lane == 0) {
         flag_publish(&origin->contribution_ready[contribution]);
         sys_add_relaxed(&origin->chunk_completed[
-            cake_weave::chunk_for_token<T>(token, params->chunks)], 1);
+            cake_weave::chunk_for_token<T>(token, params->source_chunks[source])], 1);
         atomicAdd(&local->compute_completed, 1);
     }
     __syncthreads();
@@ -275,13 +276,19 @@ extern "C" size_t weave_ep4_dispatch_done_offset() {
 extern "C" int weave_ep4_prepare_rank(int rank, void** mailboxes,
     const void* hidden, const void* expert_ids, const void* route_weights,
     const void* w_up_gate, const void* w_down,
-    int comm_ctas, int chunks, int steal_budget, void** result) {
+    int comm_ctas, int chunks, int steal_budget,
+    const int* source_chunks, void** result) {
     if (rank < 0 || rank >= R || !mailboxes || !hidden || !expert_ids ||
-        !route_weights || !w_up_gate || !w_down || !result) return int(cudaErrorInvalidValue);
+        !route_weights || !w_up_gate || !w_down || !source_chunks || !result)
+        return int(cudaErrorInvalidValue);
+    if (chunks < 1 || chunks > T || source_chunks[rank] != chunks)
+        return int(cudaErrorInvalidValue);
     Params host{};
     for (int peer = 0; peer < R; ++peer) {
-        if (!mailboxes[peer]) return int(cudaErrorInvalidValue);
+        if (!mailboxes[peer] || source_chunks[peer] < 1 || source_chunks[peer] > T)
+            return int(cudaErrorInvalidValue);
         host.mailboxes[peer] = static_cast<Mailbox*>(mailboxes[peer]);
+        host.source_chunks[peer] = source_chunks[peer];
     }
     host.hidden = static_cast<const __nv_bfloat16*>(hidden);
     host.expert_ids = static_cast<const int*>(expert_ids);
