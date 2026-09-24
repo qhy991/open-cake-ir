@@ -128,6 +128,15 @@ bundle includes both valid local experts and two invalid indices, but remains
 unexecuted on B300-M4. This still lacks gated activation, down projection,
 remote dispatch/combine and a four-rank Cake lowering.
 
+`examples/programs/weave-local-expert-ffn-b300.json` now expresses the whole
+**local expert calculation** as three complete Cake Schedules: BF16 up/gate
+projection, FP32 gated activation over two nonoverlapping subranges, then
+FP32-activation/BF16-weight down projection. The current Triton route lowers
+all three ordered stages offline, with explicit singleton views between their
+global tensors. This verifies composability of the existing IR and exact
+local shapes; it does not fuse stages, execute on B300 or implement the
+five-stage cross-GPU persistent worker.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
