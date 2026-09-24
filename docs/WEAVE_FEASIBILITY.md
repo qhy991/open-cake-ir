@@ -190,6 +190,13 @@ one identical CTA grid across the four ranks; its refreshed tail bundle
 also passes CPU source/effect binding after fresh extraction. nvcc and
 four-GPU oracle validation are still open.
 
+The shared ranked pre-seal manifest now checks one frozen EP Workload case
+against the Compiler's complete math/effects, exact rank/expert tensor
+shards, generated per-rank ABI and four `c/K/steal` plans. It does not add
+this artifact to the single-device `LaunchableCandidate` path. Compilation,
+distributed loader replay and device qualification are still required
+before a sealed ranked candidate can enter common Evaluation.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
