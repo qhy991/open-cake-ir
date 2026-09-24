@@ -58,6 +58,12 @@ class WeaveDispatchLedger(unittest.TestCase):
             ids = [[rng.sample(range(8), 2) for _ in range(8)]
                    for _ in range(4)]
             ledger = dispatch_ledger(SHAPE, ids)
+            volumes = routed_volume_values(SHAPE, ids)
+            self.assertEqual(ledger.payload_slots,
+                             tuple(row.unique_remote_in_tokens for row in volumes))
+            self.assertEqual(ledger.task_slots,
+                             tuple(row.local_routes + row.remote_in_routes
+                                   for row in volumes))
             tasks = [task for rank_tasks in ledger.tasks_by_rank for task in rank_tasks]
             self.assertEqual(len(tasks), 64)
             self.assertEqual({(task.source_rank, task.token, task.route)
