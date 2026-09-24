@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "schedule_id": "b300-persistent-target-facts-missing",
+  "schedule_id": "b300-persistent-accepted",
   "target": "sm_103a",
   "roles": [
     {

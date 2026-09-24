@@ -1195,7 +1195,10 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "8aaa5864c6ec77bae070ea92baebcabf2d1df90d376903790fe125d13386dfaa",
         "lowering_source_sha256": "67d34f2f454ae7c941809678401a4368d6f80b84844e93ca5b08415dd7f74af9"
       }
@@ -1206,7 +1209,10 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "d6d4c1239deeeff534f5fa15a86babc72f8ca162ed6496d8f874dd0f9a0c4007",
         "lowering_source_sha256": "bdf87f6a7272f458dff92c762103e4897778c46f8c8444b3c572b82762ed6b91"
       }
@@ -1217,7 +1223,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "fd6242a6960746cb18bbb470be8c1a8763c690966d16319548b5466a46e93fc9",
         "lowering_source_sha256": "c7c9b3275e45d1e4e0e9766bdc41125b2415362e123b8b14cacb1a74c3e503a1"
       }
@@ -1242,6 +1250,7 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
+          "RESIDENCY_BOUND",
           "CUTE_TARGET_UNSUPPORTED"
         ],
         "schedule_sha256": "4453440e33847505964d60e07f9bb714a01696902acffe18bfbc92aea4aec6b4",
@@ -1249,16 +1258,17 @@
       }
     },
     {
-      "case_id": "b300-persistent-target-facts-missing",
-      "schedule": "corpus/schedules/b300-persistent-target-facts-missing.json",
+      "case_id": "b300-persistent-accepted",
+      "schedule": "corpus/schedules/b300-persistent-accepted.json",
       "expected": {
         "accepted": true,
-        "lowering_eligible": false,
+        "lowering_eligible": true,
         "finding_codes": [
-          "TRITON_PERSISTENT_TARGET_FACTS_MISSING"
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
         ],
-        "schedule_sha256": "f713ad4db727aa7ffbad63d611f5ff4fedfa6ae7c85f5b206f0ffc04529346d3",
-        "lowering_source_sha256": null
+        "schedule_sha256": "86b5dfc29da52fb2c66bf9eb87a5cba2c941b02007ef3bc3c8e0d6c8c9406c3c",
+        "lowering_source_sha256": "fed6339a69f7106c74fba1ffb7583e635492c19e423e0a93b79fced74c83b566"
       }
     },
     {
@@ -1268,6 +1278,7 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
+          "RESIDENCY_BOUND",
           "TRITON_INDEXED_TILE_REUSE"
         ],
         "schedule_sha256": "2473edad2eeef5cef36bfc633b9209f8665f0b1fdf09d735e4cf4a27906e4178",
@@ -1281,7 +1292,8 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "MMA_REGISTER_ATOM_MISMATCH"
+          "MMA_REGISTER_ATOM_MISMATCH",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "d5a0de165989ab4ea2bcef433cfcecd9bcbb62002508f79e62b32511e5b6a048",
         "lowering_source_sha256": null
@@ -1294,7 +1306,8 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "MMA_REGISTER_CONTRACT_UNSUPPORTED"
+          "MMA_REGISTER_CONTRACT_UNSUPPORTED",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "e3d3943bd3550731f20312f94f9184f79905f6ace6f12feb4de01a88bca80e05",
         "lowering_source_sha256": null
@@ -1309,7 +1322,8 @@
         "finding_codes": [
           "MMA_OPERAND_SOURCE_MISMATCH",
           "MMA_OPERAND_SOURCE_MISMATCH",
-          "MMA_OPERAND_SOURCE_MISMATCH"
+          "MMA_OPERAND_SOURCE_MISMATCH",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "723034e46ec994051d0f0ec188dc429bf795d8e0a3b4aecdbd8a1ce7b952a8ff",
         "lowering_source_sha256": null
@@ -1321,7 +1335,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "dc6a6c4c6ebe5002844e3db6be7992ec395e72eaed1f214aafcea68a96cbada1",
         "lowering_source_sha256": "3eb51409d14067be69a1726f0b2571d089c415b53db5c3fe80d6fb3a6c809301"
       }
@@ -1333,6 +1349,7 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
+          "RESIDENCY_BOUND",
           "CUTE_RANGE_OPTION_UNSUPPORTED"
         ],
         "schedule_sha256": "c9e6d8893d08508a5711a33a0299b9a6daf890d9d13f157e914f7b373de1346f",
@@ -1346,6 +1363,7 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
+          "RESIDENCY_BOUND",
           "CUTE_REGISTER_STORE_COALESCING"
         ],
         "schedule_sha256": "7c32178f13a11180a1ba401f8d45dd1b9149c0e26c2af31bfecab0f4c44509b4",
@@ -1358,7 +1376,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "aa4f970435e0d831210c1482b613d5e082dbbc24575f0e4c2f90cb6de27ee577",
         "lowering_source_sha256": "ae3cd6a70d85c6622b9649ec1372ade3730919b70226c99b3a499fee0fd2780a"
       }
@@ -1384,6 +1404,7 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
+          "RESIDENCY_BOUND",
           "TRITON_ARGMIN_DOMAIN"
         ],
         "schedule_sha256": "f28a26240bd3ac46b39cd79c0101d91386c88167cbe92a7da92b82e07cdab16e",
@@ -1495,6 +1516,7 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
+          "RESIDENCY_BOUND",
           "TRITON_ARGMIN_DOMAIN"
         ],
         "schedule_sha256": "23f2bb2dd5bf7adea1d1ae56a6abf9aa103b8ca2c95bfa58dfa8dac6d7099e75",
@@ -1586,7 +1608,10 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "9692f5d8efeac9b6c421ad494930fa11570df2d945e7ee0897927dbae49d9d8c",
         "lowering_source_sha256": "589913ce7e76a77b053a5d1fc090f6841634cf56aca0c9f13669bc69079664f0"
       }
@@ -1597,7 +1622,10 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "511806a007583c81c2b95107d90f1d63f2abc85a02ac94113812dac5d16f8bd0",
         "lowering_source_sha256": "a89b1acf5e6b96e3e6c3a46cb0a5b7fb495fc6dfc917577931d728c34490027e"
       }
@@ -1608,7 +1636,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "3efa8ca072a13927baa6fc5f99bd59df63cc1af410e273e697ea0a4fb3e249f2",
         "lowering_source_sha256": "a02f046fd33dda67f6cbb86842e3fed2727786a331265eb60206fda8e466c2d9"
       }
@@ -1737,7 +1767,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "1817753e9a95c965e4553774c54c88347c7b10c2cff09f073a91e53d2c6ddb10",
         "lowering_source_sha256": "6eb015cc37a8e0a7fe9e8893a180ba8b07806c66222e3ee0d523b4e5ebd9d816"
       }
@@ -1748,7 +1780,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "1e774c4ae250f4489f119cc206bf5443f298a1802b4b1c7d0fac269fc59ec5da",
         "lowering_source_sha256": "63bc214ad4977a8ea4c1e016ab646db7abf4c1af9f705c2f23e9470078a20e06"
       }
@@ -1819,7 +1853,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "d09532c9b53b538e8315f35f0544180dfac363dd5b41307139ec7994a8822457",
         "lowering_source_sha256": "358dc45bed2aeb04ed8e1c27b5fd97c432f8b50524fba9985f9ef961919f866d"
       }
@@ -1830,7 +1866,10 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "2fda9e26a9382cc176c768351a6f16a5a1b023326801215d8034fa2c88bf3da2",
         "lowering_source_sha256": "825041b9a7df49f476315d754f1887376dd41d62d85feb254335f4f9824832f0"
       }
@@ -1841,7 +1880,10 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "94432acc84443158a8404b68c82564aec3588dbc0bfea04e9e39aa860b0058b3",
         "lowering_source_sha256": "246f05cbb0cabdfe09463bfc702af868b70fb6ffb755afe122a294ab8c9ac515"
       }
@@ -1853,6 +1895,7 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
+          "RESIDENCY_BOUND",
           "NATIVE_ARGMIN_DOMAIN",
           "NATIVE_STORE_PROGRAM_OWNERSHIP"
         ],
@@ -1867,6 +1910,8 @@
         "accepted": true,
         "lowering_eligible": false,
         "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND",
           "TRITON_ARGMIN_DOMAIN"
         ],
         "schedule_sha256": "03c31781f15c6803158fb083a573598e9fccc3ec9da6e8d3bcae98712d4f3f60",
@@ -1879,7 +1924,10 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "fed3f973c9610d2eda7663331bc95ea80d29922aca8930b76aec3a2efb982986",
         "lowering_source_sha256": "be9130bfc5467e512c397ace65f41ac910a452ee111fa103f01fda53f408189e"
       }
@@ -1905,7 +1953,9 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "MMA_K_RANGES_INSTRUCTION_MISMATCH"
+          "MMA_K_RANGES_INSTRUCTION_MISMATCH",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "dfb1e8ad05471c69a66cf2080243589f81e1f8f0d82f7576a53d7fc0051aec67",
         "lowering_source_sha256": null
@@ -1918,7 +1968,9 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "MMA_INPUT_TILE_DOMAIN"
+          "MMA_INPUT_TILE_DOMAIN",
+          "REGISTER_PRESSURE",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "711cfa0f878cce1c8c760a28523fed2d0ac48521c5336571f22412c029569010",
         "lowering_source_sha256": null
@@ -2166,7 +2218,9 @@
       "expected": {
         "accepted": true,
         "lowering_eligible": true,
-        "finding_codes": [],
+        "finding_codes": [
+          "RESIDENCY_BOUND"
+        ],
         "schedule_sha256": "550e5b835b9a543bb17081652201847cedc4bead79e1ea24e7a2332d5bcb6a37",
         "lowering_source_sha256": "a13c40fc93761eb7d0e157793576eaf693cad09ea48d7306e29f8d8876a10b51"
       }
@@ -2179,7 +2233,8 @@
         "lowering_eligible": false,
         "finding_codes": [
           "ACCESS_INDEX_BUFFER_DTYPE",
-          "ELEMENTWISE_RESULT_DTYPE"
+          "ELEMENTWISE_RESULT_DTYPE",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "00335686e043eab73f3e46c199a05986b59a4a66d1b46a7d3d424dcdf87a8766",
         "lowering_source_sha256": null
@@ -2192,7 +2247,8 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "SCALAR_INDEX_WRITE_UNPROVEN"
+          "SCALAR_INDEX_WRITE_UNPROVEN",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "cee1a5a113b1349e7ace7f35c64fe21fb7c02dfdaca21b0647167a89d1d6e253",
         "lowering_source_sha256": null
@@ -2205,7 +2261,8 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "INTEGER_DIVISOR_INVALID"
+          "INTEGER_DIVISOR_INVALID",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "a632446e13cfef9d704394aed81f24e784c03faa5940de2d77d9ea40532a5238",
         "lowering_source_sha256": null
@@ -2218,7 +2275,8 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "VALUE_OPERATION_TYPE"
+          "VALUE_OPERATION_TYPE",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "7b9303d39f4da7e41c3263d354f1c64400724d00d315d8686578363f252f2f83",
         "lowering_source_sha256": null
@@ -2231,7 +2289,8 @@
         "accepted": false,
         "lowering_eligible": false,
         "finding_codes": [
-          "VALUE_OPERATION_TYPE"
+          "VALUE_OPERATION_TYPE",
+          "RESIDENCY_BOUND"
         ],
         "schedule_sha256": "5712410642e0db772ac202826dc0a38a6e6b55e4dc169a468d1bc83ecf6cca25",
         "lowering_source_sha256": null
