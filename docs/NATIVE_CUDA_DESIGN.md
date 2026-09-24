@@ -90,12 +90,19 @@ chunk algebra with that extra prefix rounding passed the complete T65 and T257
 output/final-state oracles. A later combined full H64/T8192 CPU screen also
 passes; B300 stage correctness remains unverified. Neither representation is
 selected for a performance claim.
+A separate typed coupling stage accepts midpoint-scaled BF16 key/query factors,
+beta gates and explicit triangular masks. Three existing MMA nodes produce the
+prediction matrix, its transposed view and the output correction matrix; row
+versus column beta broadcasts are Schedule commitments. Full H64/T8192 and
+tail guardrail CPU recurrence screens pass with BF16 factor operands. Its three
+128 MiB factor inputs and three 32 MiB matrix outputs are still hypothetical
+global traffic until the upstream factor producer and B300 timing are measured.
 The numerical successor precomputes a 32x32 BF16 inverse factor per head/chunk,
 independent of the current recurrent state. A typed Triton fixture uses five
 unrolled doubling steps and 18 existing BF16 MMA operations; it maintains both
 the matrix and its transpose because Cake MMA contracts the last axis of two
-operands (`A @ B.T`). The upstream coupling stage must prove that input pair's
-transpose relation. Full H64/T8192 and T65/T257 CPU recurrence screens pass,
+operands (`A @ B.T`). The coupling producer must preserve the two inverse
+inputs' transpose relation. Full H64/T8192 and T65/T257 CPU recurrence screens pass,
 but the generated inverse stage has no GPU compilation, register or timing
 receipt, and its 32 MiB output plus two 32 MiB inputs are extra traffic.
 Streaming argmin preserves global indices, lowest-index ties and centroid-tail masks.
