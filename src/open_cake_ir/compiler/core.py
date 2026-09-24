@@ -195,6 +195,8 @@ class Compiler:
         # input boundary; only the resulting validated structure reaches emission.
         from .ir import Program
         program = Program.from_dict(program.document)
+        if program.execution is not None:
+            raise ValueError('cooperative worker Program requires dedicated native lowering')
         if self.commit is None:
             raise ValueError('program compilation requires a clean Compiler commit')
         lowerings = []

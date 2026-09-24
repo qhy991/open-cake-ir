@@ -1,8 +1,9 @@
-"""Complete static same-stream Programs; no runtime, Workload or Lab dependencies.
+"""Complete Programs; no runtime, Workload or Lab dependencies.
 
-Global tensors are single-assignment. Stages contain complete Schedules, with exact
-bindings and an optional explicit singleton-axis view. Construction proves composition
-legality; the Compiler separately assesses each Schedule against its exact Target.
+Version 1 executes static stages on one stream. Version 2 additionally types a
+cooperative worker execution descriptor, but requires dedicated lowering and
+Evaluation; it cannot replay through the version-1 ordered launcher. Global
+tensors remain single-assignment and every stage contains a complete Schedule.
 """
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ import math
 
 from .schedule import Schedule
 from .vocabulary import DType, BufferMode, MemorySpace
+from .worker_execution import WorkerExecution
 from open_cake_ir.serialization import canonical_json_bytes
 
 
@@ -63,11 +65,14 @@ class Program:
     inputs: tuple[str, ...]
     outputs: tuple[str, ...]
     stages: tuple[ProgramStage, ...]
+    execution: WorkerExecution | None = None
 
     @classmethod
     def from_dict(cls, document):
         fields = {'schema_version','program_id','target','tensors','inputs','outputs','stages'}
-        if not isinstance(document, Mapping) or set(document) != fields or type(document['schema_version']) is not int or document['schema_version'] != 1:
+        version = document.get('schema_version') if isinstance(document, Mapping) else None
+        if (type(version) is not int or version not in (1, 2)
+                or set(document) != fields | ({'execution'} if version == 2 else set())):
             raise ValueError('program fields or schema_version differ')
         for field in ('program_id','target'):
             if not isinstance(document[field], str) or not document[field]:
@@ -96,6 +101,8 @@ class Program:
         available = set(io['inputs'])
         producers = set()
         consumed = set()
+        stage_producers: dict[str, str] = {}
+        stage_consumers: dict[str, set[str]] = {}
         names = set()
         stages = []
         for raw in raw_stages:
@@ -145,10 +152,12 @@ class Program:
                     if tensor_name not in available:
                         raise ValueError(f'program stage {name!r} reads {tensor_name!r} before its producer')
                     consumed.add(tensor_name)
+                    stage_consumers.setdefault(tensor_name, set()).add(name)
                 elif buffer.mode is BufferMode.OUTPUT:
                     if tensor_name in available:
                         raise ValueError(f'program stage {name!r} overwrites {tensor_name!r}; one producer required')
                     stage_writes.add(tensor_name)
+                    stage_producers[tensor_name] = name
                 else:
                     raise ValueError('program admits immutable inputs and fresh outputs, not state/scratch globals')
             producers.update(stage_writes)
@@ -156,13 +165,19 @@ class Program:
             stages.append(ProgramStage(name, canonical_json_bytes(raw['schedule']), bindings))
         if not set(io['outputs']) <= producers:
             raise ValueError('program has unproduced public outputs')
-        if not set(io['inputs']) <= consumed:
-            raise ValueError('program ignores a public input')
         intermediates = set(tensors) - set(io['inputs']) - set(io['outputs'])
         if not intermediates <= producers & consumed:
             raise ValueError('program intermediates require a producer and a consumer')
+        execution = (WorkerExecution.from_dict(
+            document['execution'], tensors=tensors, inputs=io['inputs'], stages=stages,
+            producers=stage_producers, consumers=stage_consumers,
+            intermediates=intermediates) if version == 2 else None)
+        if execution is not None:
+            consumed.update(execution.controls.values())
+        if not set(io['inputs']) <= consumed:
+            raise ValueError('program ignores a public input')
         return cls(document['program_id'], document['target'], MappingProxyType(tensors),
-                   io['inputs'], io['outputs'], tuple(stages))
+                   io['inputs'], io['outputs'], tuple(stages), execution)
 
     @property
     def allocated_bytes(self):
@@ -172,8 +187,9 @@ class Program:
     @property
     def document(self) -> dict:
         """A fresh projection, not mutable Program authority."""
-        return {
-            'schema_version': 1, 'program_id': self.program_id, 'target': self.target,
+        document = {
+            'schema_version': 2 if self.execution is not None else 1,
+            'program_id': self.program_id, 'target': self.target,
             'tensors': {name: {'shape': list(tensor.shape), 'dtype': tensor.dtype.value}
                         for name, tensor in self.tensors.items()},
             'inputs': list(self.inputs), 'outputs': list(self.outputs),
@@ -183,6 +199,9 @@ class Program:
                                      for name, binding in stage.bindings.items()}}
                        for stage in self.stages],
         }
+        if self.execution is not None:
+            document['execution'] = self.execution.document
+        return document
 
     @property
     def document_bytes(self) -> bytes:

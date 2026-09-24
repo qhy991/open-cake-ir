@@ -24,6 +24,11 @@ scheduling. Those are precisely the contracts a future Cake primitive and
 native CUDA/PTX lowering must state and test. `atomic_rmw` alone supplies only
 unique work indices under relaxed device scope; it does not publish a chunk.
 
+`grid_stride_publish_wait` probes a separate liveness edge: cooperative
+residency alone cannot save a CTA that waits before advancing to a future
+tile whose flag another blocked CTA needs. The included two-CTA cycle is a
+refusal target for a future WorkerPlan verifier, not an observed GPU deadlock.
+
 Run the CPU checks with:
 
 ```sh

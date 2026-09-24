@@ -4,7 +4,7 @@ from __future__ import annotations
 import unittest
 
 from experiments.weave.scheduler_model import (
-    Calibration, RoutedVolume, Tile, choose_plan, run_chunks,
+    Calibration, RoutedVolume, Tile, choose_plan, grid_stride_publish_wait, run_chunks,
 )
 
 
@@ -82,6 +82,19 @@ class WeaveSchedulerModel(unittest.TestCase):
             run_chunks(4, 4, ((1, 1, 1, 1),), max_stolen=1, seed=0)
         with self.assertRaises(ValueError):
             run_chunks(4, 1, ((1, -1, 1, 1),), max_stolen=1, seed=0)
+
+    def test_cooperative_residency_does_not_prevent_future_tile_wait_deadlock(self) -> None:
+        blocked = grid_stride_publish_wait(2, (3, 2, 2, 3))
+        self.assertFalse(blocked.completed)
+        self.assertEqual(blocked.published_tiles, (0, 1))
+        self.assertEqual(blocked.blocked_on, ((0, 0, 3), (1, 1, 2)))
+        for peers in ((0, 1, 2, 3), (1, 0, 3, 2)):
+            with self.subTest(peers=peers):
+                completed = grid_stride_publish_wait(2, peers)
+                self.assertTrue(completed.completed)
+                self.assertEqual(completed.published_tiles, (0, 1, 2, 3))
+        with self.assertRaises(ValueError):
+            grid_stride_publish_wait(2, (0, 4, 0, 1))
 
 
 if __name__ == "__main__":
