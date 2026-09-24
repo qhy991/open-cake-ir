@@ -136,6 +136,14 @@ all three ordered stages offline, with explicit singleton views between their
 global tensors. This verifies composability of the existing IR and exact
 local shapes; it does not fuse stages, execute on B300 or implement the
 five-stage cross-GPU persistent worker.
+The NVIDIA task branch at `e4cbd5b7` now lowers the same three-stage local
+calculation through native CUDA: a selected-expert BF16 up/gate projection,
+an explicit FP32 `up * gate/(1+exp(-gate))` activation, and a down projection
+that keeps activation FP32 while reading BF16 weights. Native and Triton
+Schedules for each stage retain the same operation graph and AccessMaps.
+The native Program passes offline tests and the Corpus Gate, but has no nvcc
+or B300 oracle result and still launches three kernels instead of one
+distributed persistent kernel.
 
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
