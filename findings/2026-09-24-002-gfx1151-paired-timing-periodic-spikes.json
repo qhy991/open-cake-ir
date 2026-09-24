@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-24-002",
+  "kind": "protocol",
+  "date": "2026-09-24",
+  "title": "gfx1151 paired HIP timing contains repeatable sample spikes sixteen dispatches apart",
+  "backend": "triton with fixed_baseline_paired_hip_dispatch_v1",
+  "target": "gfx1151",
+  "compiler_revision_id": "open-cake-ir@d696c9fa227c3abd2c60beb7e32e5b2b277f4d92",
+  "executor_revision": "gfx1151@d696c9fa227c3abd2c60beb7e32e5b2b277f4d92",
+  "evidence": {
+    "retained": "/home/wwxq/oci-lab/amd-timing-periodic-20260924/diagnosis.json",
+    "other_observed_revision": "softmax_backward, absmax_rescale and rmsnorm_input_gradient used open-cake-ir@f7a4ed7388fe8981e63c63dd84c6de169046f145 with Executor gfx1151@f7a4ed7388fe8981e63c63dd84c6de169046f145",
+    "sites": [
+      "/home/wwxq/oci-experiments-amd-20260924/glm-5-3-retry-fractional-r4/momentum_sgd/run-evidence/runs/open_cake-1/events: search candidate_evaluated sequences 11 through 468 (32 retained timing artifacts)",
+      "/home/wwxq/oci-experiments-amd-20260924/glm-5-3-retry-fractional-r4/adamw/run-evidence/runs/open_cake-1/events: search candidate_evaluated sequences 11 through 302 (21 retained timing artifacts at observation; Run was still active)",
+      "/home/wwxq/oci-experiments-amd-20260921/remaining-tasks-glm-5-3-1b/softmax_backward/run-evidence/runs/open_cake-1/events: search candidate_evaluated sequences 10 through 448 (32 retained timing artifacts)",
+      "/home/wwxq/oci-experiments-amd-20260921/remaining-tasks-glm-5-3-1b/absmax_rescale/run-evidence/runs/open_cake-1/events: search candidate_evaluated sequences 9 through 364 (26 retained timing artifacts)",
+      "/home/wwxq/oci-experiments-amd-20260921/remaining-tasks-glm-5-3-1b/rmsnorm_input_gradient/run-evidence/runs/open_cake-1/events: search candidate_evaluated sequences 10 through 433 (31 retained timing artifacts)",
+      "src/open_cake_ir/evaluation/hip_benchmark.py: HipDispatchBenchmark records 25 target dispatches inside one torch.profiler session and resets a buffer before each dispatch"
+    ]
+  },
+  "observation": "Across five gfx1151 tasks, two task-dependent sample positions separated by sixteen repeatedly exceed their cohort-arm median by more than 20%. The retained diagnostic counts candidate outliers at positions 6/22 in 276/261 of 320 momentum_sgd cohorts, 4/20 in 145/143 of 210 adamw cohorts, 8/24 in 302/307 of 320 softmax_backward cohorts, 8/24 in 243/251 of 260 absmax_rescale cohorts, and 7/23 in 278/283 of 310 rmsnorm_input_gradient cohorts (zero-based positions). The median absolute excess at those positions is about 4.5-5.0 microseconds. The same absolute excess has a larger relative effect on a shorter candidate than on its slower fixed baseline. The pattern is repeatable, but these records do not distinguish profiler buffering, reset scheduling, or device interference as its cause. It is not evidence that the candidate kernel itself slowed periodically.",
+  "proposed_change": "First run a no-change A/A timing probe on an idle gfx1151 under the admitted runtime, retaining raw per-dispatch events. Vary only profiler session chunk size while keeping the exact kernel, inputs, device-state reset and sample count fixed, then compare the position and magnitude of spikes. If the timing source is responsible, introduce a reviewed successor timing protocol and calibrated timer implementation with tests and new device evidence; keep all frozen Run outcomes and their original CV gate unchanged. Do not trim periodic samples, loosen maximum_cv, or reclassify quality-failed candidates from this diagnostic alone.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
