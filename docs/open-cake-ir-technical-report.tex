@@ -97,7 +97,7 @@
 {\sffamily\bfseries\color{ink}秦海岩 \quad Haiyan Qin\par}
 {\small\color{muted}北京航空航天大学\par}
 \end{minipage}\hfill\begin{minipage}[t]{0.46\textwidth}
-\raggedleft{\sffamily\bfseries\color{ink}2026 年 9 月 23 日\par}
+\raggedleft{\sffamily\bfseries\color{ink}2026 年 9 月 24 日更新\par}
 {\small\color{muted}阅读快照 \quad / \quad 源码 677eb444\par}
 \end{minipage}
 \vspace{21mm}
@@ -116,8 +116,10 @@
 \vfill
 \begin{notebox}
 \noindent\textbf{报告边界}\quad 正文所读源码固定为
-\code{677eb444fec593294c470dcc5793262ae769fce2}。历史设备实验仍绑定各自的源码、
-精确目标、Workload、oracle 和计时协议；文内引用指向所读的固定提交。
+\code{677eb444fec593294c470dcc5793262ae769fce2}。第 8 节另列
+2026 年 9 月 24 日的 B300-M4 后继诊断，明确标出较新的编译器提交和验收边界。
+历史设备实验仍绑定各自的源码、精确目标、Workload、oracle 和计时协议；
+原有仓库引用指向所读的固定提交。
 \end{notebox}
 \end{titlepage}
 
@@ -132,7 +134,9 @@
 
 当前源码声明五家厂商的八个精确目标，179 项语料检查符合预期。NVIDIA、Apple、Hygon
 和 MetaX 已有范围各异的设备结果；AMD 的设备计时仍在校准。同形状的 TinyGEMM2 对照
-通过了严格数值检查，也显示本地实现与 CAKE 导出产物之间仍有明显性能差距。已有证据说明
+通过了严格数值检查。历史实现曾慢 13--37 倍；后继 B300-M4 诊断中，三个固定形状的
+本地实现分别比原有实现快 36.045、30.972 和 11.722 倍，距 CAKE 导出产物约
+6\%、14\% 和 15\%。这些是尚未进入正式 Evaluation 的局部测量。已有证据说明
 系统能够承载这些任务和局部优化；经验材料能否帮助智能体在另一种硬件上更快找到好实现，
 还需要预先分组的实机实验。
 \end{notebox}
@@ -147,9 +151,12 @@ hardware-explicit schedules, receive localized compiler feedback, and validate c
 external oracles and target-specific measurements.\par\smallskip\noindent A corpus-gated compiler successor is introduced
 between frozen optimization runs. The implementation declares eight exact targets across five vendors;
 device correctness and measurement coverage remain uneven. A same-shape TinyGEMM2 comparison passes
-strict numerical checks while exposing a substantial performance gap. Cross-hardware knowledge-transfer
-effects remain unmeasured. The software snapshot is commit \code{677eb444}; each historical measurement
-retains its own source and assay boundary.\par}
+strict numerical checks. A later B300-M4 diagnostic improved the three fixed shapes by
+36.045, 30.972, and 11.722 times over the earlier local kernels; their descriptive latency
+ratios to the CAKE exports are 1.061, 1.138, and 1.151. These successor measurements are
+not formal Evaluation results. Cross-hardware knowledge-transfer effects remain unmeasured.
+The primary software snapshot is commit \code{677eb444}; each measurement retains its own
+source and assay boundary.\par}
 
 \vspace{1.6em}
 \section*{阅读约定}
@@ -1037,9 +1044,60 @@ stage4 慢。图示历史配对中位数；各轮原始样本与质量记录见
 \end{figure}
 \FloatBarrier
 
-差距提示下一步要检查 TMA、角色流水线和资源使用，但现有 profiler 记录尚不足以把
-13--37 倍的减速归给其中某一个原因。CAKE 导出产物原有的更大形状集合与服务验证，
-以及 KDA、Alpha-MoE 的完整任务，也仍在本仓库后续复现范围之外\cite{cakecomparison}。
+\paragraph{2026 年 9 月 24 日 B300-M4 后继诊断。}
+表\ref{tab:tinygemm-followup}在同一轮三臂比较中重新测量旧 Triton、后继 Compiler
+产物和官方 CAKE 导出产物。后继编译器源码为 \code{4da760be}；前两形状使用
+Schedule 声明的原生 CUDA warp MMA 路线，$K=3072$ 使用按 K 片段直接加载的
+Triton 路线。三个形状各有五种输入分布，后继输出均与导出产物逐位一致，
+独立数学参考检查通过，输入保持不变。五轮交替顺序测量中，每臂每轮保留 25 个
+CUPTI 冷 L2 样本，且每臂只启动一个内核；表中的倍数取五轮配对延迟比的中位数，
+不能用已四舍五入的表格延迟相除替代。
+
+\begin{table}[htbp]
+\centering\footnotesize
+\caption{B300-M4 后继诊断，三个固定 TinyGEMM2 形状的延迟中位数（$\mu$s）。
+旧到新的提升、后继相对 CAKE 的延迟比均按同轮配对数据计算；这不是正式
+Evaluation，也不是 CAKE 论文的智能体起点实验。}
+\label{tab:tinygemm-followup}
+\begin{tabularx}{\textwidth}{@{}Y r r r r r@{}}
+\toprule
+\rowcolor{mist}$B/N/K$ & 旧 Triton & 后继 & CAKE 导出 & 旧/后继 & 后继/CAKE \\
+\midrule
+$1/128/720$ & 100.256 & 2.784 & 2.624 & 36.045 倍 & 1.061 倍$^{*}$ \\
+$16/1024/1024$ & 106.048 & 3.424 & 3.008 & 30.972 倍 & 1.138 倍 \\
+$64/4096/3072$ & 289.123 & 24.672 & 21.408 & 11.722 倍 & 1.151 倍 \\
+\bottomrule
+\end{tabularx}
+\par\vspace{2pt}\begin{minipage}{\textwidth}\footnotesize
+$^{*}$ B1 的 CAKE 臂最大轮内变异系数为 8.137\%，超过预定的 5\% 门限；
+该臂的外部延迟差仅作描述。其余旧/后继配对边均通过此门限，B16/B64 的
+后继/CAKE 配对边也通过。
+\end{minipage}
+\end{table}
+\FloatBarrier
+
+\textbf{已观察到的机制与界限。}旧 Triton lowering 将整个 $16\times1024$ 操作数
+装入后再对四个 $K=256$ 片段执行 \code{tl.gather}；按片段直接加载显著缩小了
+离线生成代码，并在三个形状上消除了多数延迟。对两种短 K 形状，后继 Schedule
+进一步明确四个有序的 FP32 部分积、$K=64$ 的 TMA descriptor 片段、生产者与
+计算组的同步及 warp 局部 \code{mma.sync}，保持原有求和与 BF16 写回语义。
+一个以标量 global-to-shared 拷贝代替 TMA 的有界原型虽然逐位正确，
+在 B1/B16 上分别达到 19.840/23.360\,$\mu$s；改用四个 K64 TMA box 后的
+短 K 路线显著更快。把 $K=256$ 一次放入单个 descriptor 的尝试则在
+\code{cuTensorMapEncodeTiled} 阶段被拒绝，不能当作可运行的优化。
+对长 K 形状，保持两个执行组、两级流水；把深度降为一级虽仍逐位正确，
+在独立配对测量中反而慢 1.538 倍。上述对照支持所选发射方式和分工对
+这三个形状的改进；缺少可用的动态 profiler 计数器，尚不能把全部收益
+唯一归因于某一硬件资源。
+
+原始记录位于 B300-M4 的 \code{gpuq-cd8190e80e06} 作业；Finding
+\code{F-2026-09-24-002} 的第 10--12 项给出三个形状的完整报告路径，
+第 13 项索引一级流水消融。截至本次更新，后继代码和 Finding 仍在任务分支，
+尚未进入维护分支。
+这次是 broker 准入的定制诊断：B300-M4 的 broker 未提供现有正式 Executor
+所要求的 \code{GPUQ\_JOB\_ID}，因此尚无正式 Evaluation 收据，不进入
+\code{docs/results/nvidia/} 的发布成绩。CAKE 导出产物原有的更大形状集合与
+服务验证，以及 KDA、Alpha-MoE 的完整任务，仍在后续复现范围之外。
 
 \section{跨硬件复用：从一次改写到可检验的收益}
 
@@ -1223,7 +1281,7 @@ def softmax(lm, x: cake.Tensor((8, 512, 128), "fp32"),
 \midrule
 当前 Compiler & \repo{reports/current/STATUS.md}{状态页}、\repo{compiler/revision.json}{版本清单}与精确目标文档 \\
 B300 FlashInfer & \repo{docs/results/nvidia/FLASHINFER_STATUS.md}{逐任务状态}；每行链接自己的 Finding 与收据 \\
-B300 TinyGEMM2 & \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{严格数值与成对计时报告} \\
+B300 TinyGEMM2 & \repo{docs/NVIDIA_CAKE_REPRODUCTION.md}{历史严格数值与成对计时报告}；后继 B300-M4 诊断索引 \code{F-2026-09-24-002}（尚未正式发布） \\
 Apple、Hygon、AMD & 各平台 \repo{docs/RESULTS.md}{发布汇总}与原记录 \\
 MetaX C550 & \repo{docs/metax-c550.md}{平台专题}及 \repo{docs/ARCHITECTURE.md}{当前 Run 案例} \\
 迁移离线试点 & \repo{docs/OPTIMIZATION_TRANSFER.md}{机制与证据边界} \\
@@ -1254,7 +1312,8 @@ Assessment 与 lowering；设备结果则须在原任务的目标、工具链、
 本文是项目维护者撰写的仓库技术报告，无 DOI、期刊或同行评审声明。引用设计时请固定本报告及其
 所读源码提交；引用性能时还需追溯案例自己的执行源码、精确目标、Workload、baseline、
 oracle、计时区间与质量门。以下文献中的仓库链接均固定到本文所读的 \code{677eb444}，
-而实验原始收据的身份由各专题继续给出。正式英文引文题名沿用仓库 \code{CITATION.cff}
+而后继 TinyGEMM2 诊断由正文所列 \code{4da760be} 与 B300-M4 原始记录另行定位。
+正式英文引文题名沿用仓库 \code{CITATION.cff}
 的 \code{preferred-citation}；封面的中文题名概括本文的研究对象。
 
 \section*{参考文献}
