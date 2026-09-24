@@ -493,10 +493,12 @@ class TritonLoopScopesTest(unittest.TestCase):
         d["access_maps"][0]["indices"].reverse()
         self.preflight_refuse(d, "TRITON_MMA_ANCESTOR_CARRY")
 
-    def test_sibling_deeper_and_dynamic_nests_remain_explicitly_refused(self):
+    def test_invalid_sibling_scope_deeper_and_dynamic_nests_remain_refused(self):
         d = _gemm()
         d["tile_loops"][1]["body"].remove("k_loop")
-        self.preflight_refuse(d, "TRITON_LOOP_NEST_UNSUPPORTED")
+        # Sibling loops are now a supported emission shape. This former borrowed
+        # backend block must be owned by the actual invalid cross-loop coordinate.
+        self.refuse(d, "ACCESS_LOOP_SCOPE")
         d = _gemm()
         third = copy.deepcopy(d["tile_loops"][1])
         third.update(name="third", iterator="third_i", body=["m_loop"])
