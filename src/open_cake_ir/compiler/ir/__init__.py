@@ -110,6 +110,7 @@ from .schedule import (
 )
 
 from .program import Program, ProgramBinding, ProgramStage, ProgramTensor
+from .ranked_mailbox import RankedMailboxAnalysis, RankedMailboxEffects
 from .worker_execution import (
     HandoffScope, RankPlacement, StealWindow, WorkerClass, WorkerExecution,
     WorkerHandoff, WorkerQueue,

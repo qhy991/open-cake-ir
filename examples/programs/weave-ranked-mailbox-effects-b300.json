@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "world_size": 4,
+  "workers": [
+    "communication",
+    "computation"
+  ],
+  "controls": {
+    "communication_ctas": "rank_local_int32",
+    "chunks": "rank_local_int32",
+    "steal_budget": "rank_local_int32"
+  },
+  "channels": {
+    "payload": {
+      "owner": "destination_rank",
+      "key": [
+        "source_rank",
+        "item",
+        "destination_rank"
+      ],
+      "reservation": "returned_old_atomic_system",
+      "ready": "release_acquire_system"
+    },
+    "task": {
+      "owner": "destination_rank",
+      "key": [
+        "source_rank",
+        "item",
+        "route"
+      ],
+      "reservation": "returned_old_atomic_system",
+      "ready": "release_acquire_system",
+      "claim": "atomic_gpu",
+      "payload": "remote_payload_slot_or_local_input"
+    },
+    "return": {
+      "owner": "source_rank",
+      "key": [
+        "source_rank",
+        "item",
+        "route"
+      ],
+      "reservation": "deterministic_index",
+      "ready": "release_acquire_system"
+    }
+  },
+  "steal": {
+    "borrower": "communication",
+    "queue": "task",
+    "after": "dispatch",
+    "before": "combine"
+  },
+  "reset": "zero_all_rank_mailboxes_before_launch",
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_ranked_ep4"
+  }
+}

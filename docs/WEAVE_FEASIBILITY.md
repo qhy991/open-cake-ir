@@ -104,6 +104,68 @@ correctness and a skewed plan with 14 actually stolen tiles at
 `experiments/weave/native_b300/EP4_MAILBOX.md`). Neither that small geometry
 nor the Cake synthetic worker has measured MoE latency or serving benefit.
 
+The current NVIDIA result projection does not establish that Triton has no
+remaining MoE headroom: `docs/results/nvidia/records.json` row
+`nvidia-result-042` (`Alpha-MoE`) has null baseline and candidate latency and
+status `未实测`. The new BF16 EP4 contract likewise has no qualified Triton
+candidate. A native CUDA/PTX performance decision needs a matched workload,
+target, correctness gate and timing interval for both paths; the raw mailbox
+correctness result and the FP32 worker probes cannot substitute for that
+comparison.
+
+The NVIDIA task branch at `49e1ba3a` now lowers one BF16 expert-projection
+row dot from seven ordinary Cake operations (`load`, `cast`, `mul`, `reduce`,
+`store`) into a one-warp CUDA kernel. The same mathematical Schedule is also
+eligible for Triton with a changed lowering route, so it offers a controlled
+leaf comparison once B300 execution is available. This native leaf has passed
+offline Compiler and Corpus gates; it has not been nvcc-compiled or checked
+against the B300 oracle, and it is not connected to the EP4 worker Program.
+At NVIDIA task commit `a9151838`, the leaf additionally accepts a local
+expert coordinate through an ordinary INT32 load and `scalar_buffer`
+AccessMap. The native weight load masks an out-of-range coordinate to BF16
+zero, matching the eligible Triton route. A five-case matched correctness
+bundle includes both valid local experts and two invalid indices, but remains
+unexecuted on B300-M4. This still lacks gated activation, down projection,
+remote dispatch/combine and a four-rank Cake lowering.
+
+`examples/programs/weave-local-expert-ffn-b300.json` now expresses the whole
+**local expert calculation** as three complete Cake Schedules: BF16 up/gate
+projection, FP32 gated activation over two nonoverlapping subranges, then
+FP32-activation/BF16-weight down projection. The current Triton route lowers
+all three ordered stages offline, with explicit singleton views between their
+global tensors. This verifies composability of the existing IR and exact
+local shapes; it does not fuse stages, execute on B300 or implement the
+five-stage cross-GPU persistent worker.
+
+The NVIDIA task branch at `e4cbd5b7` now lowers the same three-stage local
+calculation through native CUDA: a selected-expert BF16 up/gate projection,
+an explicit FP32 `up * gate/(1+exp(-gate))` activation, and a down projection
+that keeps activation FP32 while reading BF16 weights. Native and Triton
+Schedules for each stage retain the same operation graph and AccessMaps.
+The native Program passes offline tests and the Corpus Gate, but has no nvcc
+or B300 oracle result and still launches three kernels instead of one
+distributed persistent kernel.
+
+The origin's weighted combine is also expressible without a MoE opcode:
+`examples/schedules/triton/weave-weighted-combine-t{7,8}-h16.json`
+loads each token's two FP32 contributions and route weights, multiplies,
+reduces the route axis and rounds once to BF16. Both Workload token extents
+lower through Triton offline. The missing part is the ranked mailbox effect
+that binds remote contributions to this complete Schedule and a four-GPU
+oracle.
+The NVIDIA task branch at `59bd7385` now emits the matched native CUDA
+combine for both `T=7` and `T=8`, with one FP32 route reduction and one BF16
+rounding per token. Its offline tests and Corpus Gate pass. The ranked
+mailbox effect, nvcc/device correctness and performance comparison remain
+unqualified.
+
+At NVIDIA task commit `c822fb10`, a bounded inline device-math emitter
+checks the complete native local expert Program and the native combine
+Schedule, then maps all 29 leaf operations into fused device helpers only
+when an explicit `ranked_mailbox` rewrite is requested. It leaves ordinary
+ordered Program lowering intact. This supplies mathematical source material,
+not the four-rank queue/handoff effect, nvcc result or GPU correctness.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
@@ -114,8 +176,38 @@ backend name. The BF16 EP4 development contract deliberately starts after
 routing with expert IDs and weights as inputs; it does not pretend to cover
 the FP8 task's routing and block-scale semantics.
 
-The next Compiler tick must keep the exact Program math visible while adding
-rank ownership, remote queue and payload effects, their system-scope
-publication and liveness analyses, and native BF16 expert computation. The
-existing single-device launch paths refuse the EP4 Workload Contract. No raw
-mailbox source is promoted as an opaque MoE instruction.
+The next Compiler tick must compose that visible expert math with ranked
+mailbox effects, remote queue and payload ownership, system-scope
+publication and liveness analysis. [ADR 0084](adr/0084-ep4-worker-needs-ranked-mailbox-effects.md)
+states the four-rank admission and verification obligations. The CPU
+`experiments/weave/dispatch_ledger.py` now separates deduplicated remote
+payload slots from one-per-route compute tasks, including the skew and tail
+capacity bounds. `experiments/weave/rank_plan.py` derives per-rank `c/K/steal`
+domains and uneven tail completion counts: `T=7, K=2` requires 8 then 6
+route contributions. The measured direct CUDA reference still sends one
+payload per route and requires `T % K == 0`. A bounded CPU event model explores
+dispatch, regular compute, local stealing and early combine over these plans;
+it does not establish GPU memory order, occupancy or timing.
+The shared `RankedMailboxEffects` slice now declares the three queue/return
+ownership domains, exact system-scope handoffs and rank-local controls, and
+derives the 21/56 or 24/64 payload/task capacity from complete local and
+combine math. Compiler lowering still refuses this form until a dedicated
+four-rank backend and Evaluation binding exist.
+
+The NVIDIA task branch at `7fd4eaf5` adds an unmeasured `T=7` successor
+while leaving the measured `T=8` source unchanged. Its host-compiled chunk
+helper covers uneven partitions; it has no nvcc or B300 oracle result.
+The measured `T=8` runs had the same `K` on every rank; source inspection found that
+their return path indexed the origin counter with the compute rank's `K`.
+An unmeasured successor at `fd222407` passes all source-rank chunk counts
+and prepares `K=(2,3,7,1)` as a device counterexample. It has passed CPU
+input/plan checks but not nvcc or GPU execution.
+The NVIDIA task branch at `d772da55` also has an unmeasured direct CUDA
+successor that separates remote payload slots from per-route compute tasks.
+Its frozen `skew_to_rank0` and `tail_tokens` input/oracle bundles check the
+expected 24/64 and 10/14 payload/task counts respectively; CPU preparation
+and a host-only syntax check passed. Neither bundle has an nvcc or GPU result,
+so no deduplication or performance claim is established for Cake.
+
+The existing single-device launch paths refuse the EP4 Workload Contract.
+No raw mailbox source is promoted as an opaque MoE instruction.

@@ -1,0 +1,1039 @@
+{
+  "schema_version": 1,
+  "program_id": "weave-local-expert-ffn-h16-i32",
+  "target": "sm_103a",
+  "tensors": {
+    "x": {
+      "shape": [
+        16
+      ],
+      "dtype": "bf16"
+    },
+    "w_up_gate": {
+      "shape": [
+        2,
+        64,
+        16
+      ],
+      "dtype": "bf16"
+    },
+    "w_down": {
+      "shape": [
+        2,
+        16,
+        32
+      ],
+      "dtype": "bf16"
+    },
+    "local_expert": {
+      "shape": [
+        1
+      ],
+      "dtype": "int32"
+    },
+    "up_gate": {
+      "shape": [
+        64
+      ],
+      "dtype": "fp32"
+    },
+    "activated": {
+      "shape": [
+        32
+      ],
+      "dtype": "fp32"
+    },
+    "out": {
+      "shape": [
+        16
+      ],
+      "dtype": "fp32"
+    }
+  },
+  "inputs": [
+    "x",
+    "w_up_gate",
+    "w_down",
+    "local_expert"
+  ],
+  "outputs": [
+    "out"
+  ],
+  "stages": [
+    {
+      "name": "up_gate",
+      "schedule": {
+        "schema_version": 2,
+        "schedule_id": "triton-bf16-selected-expert-up-gate-h16-i32",
+        "target": "sm_103a",
+        "roles": [
+          {
+            "name": "compute",
+            "execution_groups": [
+              0
+            ]
+          }
+        ],
+        "allocations": [],
+        "pipelines": [],
+        "barriers": [],
+        "buffers": [
+          {
+            "name": "x",
+            "space": "global",
+            "dtype": "bf16",
+            "shape": [
+              16
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "weight",
+            "space": "global",
+            "dtype": "bf16",
+            "shape": [
+              2,
+              64,
+              16
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "expert_id",
+            "space": "global",
+            "dtype": "int32",
+            "shape": [
+              1
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "y",
+            "space": "global",
+            "dtype": "fp32",
+            "shape": [
+              64
+            ],
+            "mode": "output"
+          },
+          {
+            "name": "rx",
+            "space": "register",
+            "dtype": "bf16",
+            "shape": [
+              16
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "rw",
+            "space": "register",
+            "dtype": "bf16",
+            "shape": [
+              16
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "fx",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              16
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "fw",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              16
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "products",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              16
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "sum",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              1
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "expert_index",
+            "space": "register",
+            "dtype": "int32",
+            "shape": [
+              1
+            ],
+            "mode": "scratch"
+          }
+        ],
+        "operations": [
+          {
+            "id": "load_expert",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "expert_id"
+            ],
+            "writes": [
+              "expert_index"
+            ],
+            "parameters": {
+              "movement": "global"
+            }
+          },
+          {
+            "id": "load_x",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "x"
+            ],
+            "writes": [
+              "rx"
+            ],
+            "parameters": {
+              "movement": "global"
+            }
+          },
+          {
+            "id": "load_w",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "weight",
+              "expert_index"
+            ],
+            "writes": [
+              "rw"
+            ],
+            "parameters": {
+              "movement": "global"
+            },
+            "depends_on": [
+              "load_expert"
+            ]
+          },
+          {
+            "id": "cast_x",
+            "kind": "cast",
+            "role": "compute",
+            "reads": [
+              "rx"
+            ],
+            "writes": [
+              "fx"
+            ],
+            "parameters": {
+              "to": "fp32"
+            },
+            "depends_on": [
+              "load_x"
+            ]
+          },
+          {
+            "id": "cast_w",
+            "kind": "cast",
+            "role": "compute",
+            "reads": [
+              "rw"
+            ],
+            "writes": [
+              "fw"
+            ],
+            "parameters": {
+              "to": "fp32"
+            },
+            "depends_on": [
+              "load_w"
+            ]
+          },
+          {
+            "id": "mul",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "fx",
+              "fw"
+            ],
+            "writes": [
+              "products"
+            ],
+            "parameters": {
+              "op": "mul"
+            },
+            "depends_on": [
+              "cast_x",
+              "cast_w"
+            ]
+          },
+          {
+            "id": "sum",
+            "kind": "reduce",
+            "role": "compute",
+            "reads": [
+              "products"
+            ],
+            "writes": [
+              "sum"
+            ],
+            "parameters": {
+              "op": "sum",
+              "axis": 0,
+              "scope": "cta",
+              "across_loop": false
+            },
+            "depends_on": [
+              "mul"
+            ]
+          },
+          {
+            "id": "store_y",
+            "kind": "store",
+            "role": "compute",
+            "reads": [
+              "sum"
+            ],
+            "writes": [
+              "y"
+            ],
+            "parameters": {
+              "coalesced": false
+            },
+            "depends_on": [
+              "sum"
+            ]
+          }
+        ],
+        "outputs": [
+          "y"
+        ],
+        "program_map": {
+          "axes": [
+            {
+              "name": "row",
+              "axis": 0,
+              "buffer": "weight",
+              "dimension": 1,
+              "tile": 1
+            }
+          ]
+        },
+        "tile_loops": [],
+        "access_maps": [
+          {
+            "operation": "load_expert",
+            "buffer": "expert_id",
+            "indices": [
+              {
+                "source": "dimension",
+                "dimension": 0
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "load_x",
+            "buffer": "x",
+            "indices": [
+              {
+                "source": "dimension",
+                "dimension": 0
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "load_w",
+            "buffer": "weight",
+            "indices": [
+              {
+                "source": "scalar_buffer",
+                "name": "expert_index"
+              },
+              {
+                "source": "program",
+                "name": "row"
+              },
+              {
+                "source": "dimension",
+                "dimension": 2
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "store_y",
+            "buffer": "y",
+            "indices": [
+              {
+                "source": "program",
+                "name": "row"
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          }
+        ],
+        "metadata": {},
+        "lowering": {
+          "backend": "triton",
+          "entry_point": "cake_expert_up_gate"
+        }
+      },
+      "bindings": {
+        "x": "x",
+        "weight": "w_up_gate",
+        "expert_id": "local_expert",
+        "y": "up_gate"
+      }
+    },
+    {
+      "name": "activation",
+      "schedule": {
+        "schema_version": 2,
+        "schedule_id": "triton-bf16-gated-activation-i32",
+        "target": "sm_103a",
+        "roles": [
+          {
+            "name": "compute",
+            "execution_groups": [
+              0
+            ]
+          }
+        ],
+        "allocations": [],
+        "pipelines": [],
+        "barriers": [],
+        "buffers": [
+          {
+            "name": "up_gate",
+            "space": "global",
+            "dtype": "fp32",
+            "shape": [
+              1,
+              64
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "activated",
+            "space": "global",
+            "dtype": "fp32",
+            "shape": [
+              1,
+              32
+            ],
+            "mode": "output"
+          },
+          {
+            "name": "up",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "gate",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "neg",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "exponential",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "denominator",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "silu",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "result",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          }
+        ],
+        "operations": [
+          {
+            "id": "load_up",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "up_gate"
+            ],
+            "writes": [
+              "up"
+            ],
+            "parameters": {
+              "movement": "global"
+            }
+          },
+          {
+            "id": "load_gate",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "up_gate"
+            ],
+            "writes": [
+              "gate"
+            ],
+            "parameters": {
+              "movement": "global"
+            }
+          },
+          {
+            "id": "neg_gate",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "gate"
+            ],
+            "writes": [
+              "neg"
+            ],
+            "parameters": {
+              "op": "mul",
+              "scalar": -1
+            },
+            "depends_on": [
+              "load_gate"
+            ]
+          },
+          {
+            "id": "exp_gate",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "neg"
+            ],
+            "writes": [
+              "exponential"
+            ],
+            "parameters": {
+              "op": "exp"
+            },
+            "depends_on": [
+              "neg_gate"
+            ]
+          },
+          {
+            "id": "denom",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "exponential"
+            ],
+            "writes": [
+              "denominator"
+            ],
+            "parameters": {
+              "op": "add",
+              "scalar": 1
+            },
+            "depends_on": [
+              "exp_gate"
+            ]
+          },
+          {
+            "id": "silu",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "gate",
+              "denominator"
+            ],
+            "writes": [
+              "silu"
+            ],
+            "parameters": {
+              "op": "div"
+            },
+            "depends_on": [
+              "load_gate",
+              "denom"
+            ]
+          },
+          {
+            "id": "multiply",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "up",
+              "silu"
+            ],
+            "writes": [
+              "result"
+            ],
+            "parameters": {
+              "op": "mul"
+            },
+            "depends_on": [
+              "load_up",
+              "silu"
+            ]
+          },
+          {
+            "id": "store",
+            "kind": "store",
+            "role": "compute",
+            "reads": [
+              "result"
+            ],
+            "writes": [
+              "activated"
+            ],
+            "parameters": {
+              "coalesced": true
+            },
+            "depends_on": [
+              "multiply"
+            ]
+          }
+        ],
+        "outputs": [
+          "activated"
+        ],
+        "tile_loops": [],
+        "access_maps": [
+          {
+            "operation": "load_up",
+            "buffer": "up_gate",
+            "indices": [
+              {
+                "source": "program",
+                "name": "token"
+              },
+              {
+                "source": "dimension",
+                "dimension": 1,
+                "extent": 32
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "load_gate",
+            "buffer": "up_gate",
+            "indices": [
+              {
+                "source": "program",
+                "name": "token"
+              },
+              {
+                "source": "dimension",
+                "dimension": 1,
+                "offset": 32
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "store",
+            "buffer": "activated",
+            "indices": [
+              {
+                "source": "program",
+                "name": "token"
+              },
+              {
+                "source": "dimension",
+                "dimension": 1
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          }
+        ],
+        "metadata": {},
+        "lowering": {
+          "backend": "triton",
+          "entry_point": "cake_expert_activation"
+        },
+        "program_map": {
+          "axes": [
+            {
+              "name": "token",
+              "axis": 0,
+              "buffer": "up_gate",
+              "dimension": 0,
+              "tile": 1
+            }
+          ]
+        }
+      },
+      "bindings": {
+        "up_gate": {
+          "tensor": "up_gate",
+          "view": "singleton_axes"
+        },
+        "activated": {
+          "tensor": "activated",
+          "view": "singleton_axes"
+        }
+      }
+    },
+    {
+      "name": "down",
+      "schedule": {
+        "schema_version": 2,
+        "schedule_id": "triton-bf16-selected-expert-down-i32-h16",
+        "target": "sm_103a",
+        "roles": [
+          {
+            "name": "compute",
+            "execution_groups": [
+              0
+            ]
+          }
+        ],
+        "allocations": [],
+        "pipelines": [],
+        "barriers": [],
+        "buffers": [
+          {
+            "name": "x",
+            "space": "global",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "weight",
+            "space": "global",
+            "dtype": "bf16",
+            "shape": [
+              2,
+              16,
+              32
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "expert_id",
+            "space": "global",
+            "dtype": "int32",
+            "shape": [
+              1
+            ],
+            "mode": "input"
+          },
+          {
+            "name": "y",
+            "space": "global",
+            "dtype": "fp32",
+            "shape": [
+              16
+            ],
+            "mode": "output"
+          },
+          {
+            "name": "rx",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "rw",
+            "space": "register",
+            "dtype": "bf16",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "fw",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "products",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              32
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "sum",
+            "space": "register",
+            "dtype": "fp32",
+            "shape": [
+              1
+            ],
+            "mode": "scratch"
+          },
+          {
+            "name": "expert_index",
+            "space": "register",
+            "dtype": "int32",
+            "shape": [
+              1
+            ],
+            "mode": "scratch"
+          }
+        ],
+        "operations": [
+          {
+            "id": "load_expert",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "expert_id"
+            ],
+            "writes": [
+              "expert_index"
+            ],
+            "parameters": {
+              "movement": "global"
+            }
+          },
+          {
+            "id": "load_x",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "x"
+            ],
+            "writes": [
+              "rx"
+            ],
+            "parameters": {
+              "movement": "global"
+            }
+          },
+          {
+            "id": "load_w",
+            "kind": "load",
+            "role": "compute",
+            "reads": [
+              "weight",
+              "expert_index"
+            ],
+            "writes": [
+              "rw"
+            ],
+            "parameters": {
+              "movement": "global"
+            },
+            "depends_on": [
+              "load_expert"
+            ]
+          },
+          {
+            "id": "cast_w",
+            "kind": "cast",
+            "role": "compute",
+            "reads": [
+              "rw"
+            ],
+            "writes": [
+              "fw"
+            ],
+            "parameters": {
+              "to": "fp32"
+            },
+            "depends_on": [
+              "load_w"
+            ]
+          },
+          {
+            "id": "mul",
+            "kind": "elementwise",
+            "role": "compute",
+            "reads": [
+              "rx",
+              "fw"
+            ],
+            "writes": [
+              "products"
+            ],
+            "parameters": {
+              "op": "mul"
+            },
+            "depends_on": [
+              "load_x",
+              "cast_w"
+            ]
+          },
+          {
+            "id": "sum",
+            "kind": "reduce",
+            "role": "compute",
+            "reads": [
+              "products"
+            ],
+            "writes": [
+              "sum"
+            ],
+            "parameters": {
+              "op": "sum",
+              "axis": 0,
+              "scope": "cta",
+              "across_loop": false
+            },
+            "depends_on": [
+              "mul"
+            ]
+          },
+          {
+            "id": "store_y",
+            "kind": "store",
+            "role": "compute",
+            "reads": [
+              "sum"
+            ],
+            "writes": [
+              "y"
+            ],
+            "parameters": {
+              "coalesced": false
+            },
+            "depends_on": [
+              "sum"
+            ]
+          }
+        ],
+        "outputs": [
+          "y"
+        ],
+        "program_map": {
+          "axes": [
+            {
+              "name": "row",
+              "axis": 0,
+              "buffer": "weight",
+              "dimension": 1,
+              "tile": 1
+            }
+          ]
+        },
+        "tile_loops": [],
+        "access_maps": [
+          {
+            "operation": "load_expert",
+            "buffer": "expert_id",
+            "indices": [
+              {
+                "source": "dimension",
+                "dimension": 0
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "load_x",
+            "buffer": "x",
+            "indices": [
+              {
+                "source": "dimension",
+                "dimension": 0
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "load_w",
+            "buffer": "weight",
+            "indices": [
+              {
+                "source": "scalar_buffer",
+                "name": "expert_index"
+              },
+              {
+                "source": "program",
+                "name": "row"
+              },
+              {
+                "source": "dimension",
+                "dimension": 2
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          },
+          {
+            "operation": "store_y",
+            "buffer": "y",
+            "indices": [
+              {
+                "source": "program",
+                "name": "row"
+              }
+            ],
+            "boundary": "mask_tiled_axes"
+          }
+        ],
+        "metadata": {},
+        "lowering": {
+          "backend": "triton",
+          "entry_point": "cake_expert_down"
+        }
+      },
+      "bindings": {
+        "x": "activated",
+        "weight": "w_down",
+        "expert_id": "local_expert",
+        "y": "out"
+      }
+    }
+  ]
+}
