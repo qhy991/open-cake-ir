@@ -47,8 +47,8 @@ __device__ __forceinline__ void tma_load(unsigned dst, const CUtensorMap* map,
 }
 
 extern "C" __global__ __launch_bounds__(384, 1)
-void @ENTRY@_kernel(const __grid_constant__ CUtensorMap weight_map,
-                                    const __grid_constant__ CUtensorMap activation_map,
+void @ENTRY@_kernel(const __grid_constant__ CUtensorMap activation_map,
+                                    const __grid_constant__ CUtensorMap weight_map,
                                     const __nv_bfloat16* bias, __nv_bfloat16* out,
                                     int batch, int features, int depth) {
     extern __shared__ __align__(1024) unsigned char smem[];
