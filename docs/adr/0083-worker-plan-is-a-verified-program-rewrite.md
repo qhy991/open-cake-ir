@@ -95,9 +95,12 @@ For a declared system-scope handoff, the development worker launch adapter
 allows only that named intermediate payload to reside on a peer device. It
 requires an explicit launch device and a lowering that declares peer-aware
 host admission; all other tensors and the queue state remain local. This is a
-storage contract for a future NVIDIA system-scope release/acquire lowering,
-not permission to run producer and consumer on different GPUs or to substitute
-an unqualified peer allocation.
+storage contract now realized by a bounded NVIDIA system-scope
+release/acquire lowering. At `a81940b0`, its two-GPU B300-M4 development run
+passed eight `c/K/steal` plans with one peer-owned intermediate and an
+independent post-release CPU oracle. Every worker CTA still executed on one
+GPU: this is not permission to run producer and consumer on different GPUs,
+nor to substitute an unqualified peer allocation or claim EP4 performance.
 
 ## Admission and liveness obligations
 
