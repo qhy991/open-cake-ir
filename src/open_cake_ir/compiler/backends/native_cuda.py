@@ -23,7 +23,8 @@ SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32, DType.INT32})
 CODE_OBJECTS = frozenset({CodeObject.CUBIN})
 COOPERATIVE_GRID = True
 SUPPORTED_OPERATION_KINDS = frozenset({OperationKind.LOAD, OperationKind.MMA,
-    OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE_ARGMIN,
+    OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE,
+    OperationKind.REDUCE_ARGMIN,
     OperationKind.ATOMIC_RMW, OperationKind.STORE})
 _TYPES = {DType.BF16: '__nv_bfloat16', DType.FP16: '__half',
           DType.FP32: 'float', DType.INT32: 'int32_t'}
@@ -115,6 +116,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     if failures:
         return tuple(failures)
     if not s.pipelines:
+        if any(op.kind is OperationKind.REDUCE for op in s.operations):
+            from .native_cuda_row_dot import preflight as row_dot_preflight
+            return row_dot_preflight(s, target)
         if any(op.kind is OperationKind.ELEMENTWISE for op in s.operations) and not any(
                 op.kind is OperationKind.ATOMIC_RMW for op in s.operations):
             from .native_cuda_pointwise import preflight as pointwise_preflight
@@ -153,6 +157,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     check(all(op.kind is not OperationKind.ATOMIC_RMW for op in s.operations),
           'NATIVE_ATOMIC_SIMT_ONLY', 'operations',
           'native atomic work claims use the one-warp SIMT route, not a TMA/MMA pipeline')
+    check(all(op.kind is not OperationKind.REDUCE for op in s.operations),
+          'NATIVE_REDUCE_SIMT_ONLY', 'operations',
+          'native reduce currently requires the one-warp row-dot route')
     for field in ('allocations','barriers','pipelines'):
         for i,item in enumerate(getattr(s,field)):
             check(not any(c in item.name for c in '\\\r\n'), 'NATIVE_NAME_UNSUPPORTED',
@@ -978,6 +985,9 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
     if entry_point is not None and entry_point != schedule.lowering.entry_point:
         raise EmitError('Entry point differs from the canonical route.')
     if not schedule.pipelines:
+        if any(op.kind is OperationKind.REDUCE for op in schedule.operations):
+            from .native_cuda_row_dot import Emitter as RowDotEmitter
+            return RowDotEmitter(schedule,target,schedule.lowering.entry_point).emit()
         if any(op.kind is OperationKind.ELEMENTWISE for op in schedule.operations) and not any(
                 op.kind is OperationKind.ATOMIC_RMW for op in schedule.operations):
             from .native_cuda_pointwise import Emitter as PointwiseEmitter

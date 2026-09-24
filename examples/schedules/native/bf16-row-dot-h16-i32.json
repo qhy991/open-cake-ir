@@ -1,0 +1,279 @@
+{
+  "schema_version": 2,
+  "schedule_id": "native-bf16-row-dot-h16-i32",
+  "target": "sm_103a",
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "x",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        16
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "weight",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        32,
+        16
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "y",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        32
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "rx",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        16
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rw",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        16
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "fx",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        16
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "fw",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        16
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "products",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        16
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "sum",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_x",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "x"
+      ],
+      "writes": [
+        "rx"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "load_w",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "weight"
+      ],
+      "writes": [
+        "rw"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "cast_x",
+      "kind": "cast",
+      "role": "compute",
+      "reads": [
+        "rx"
+      ],
+      "writes": [
+        "fx"
+      ],
+      "parameters": {
+        "to": "fp32"
+      },
+      "depends_on": [
+        "load_x"
+      ]
+    },
+    {
+      "id": "cast_w",
+      "kind": "cast",
+      "role": "compute",
+      "reads": [
+        "rw"
+      ],
+      "writes": [
+        "fw"
+      ],
+      "parameters": {
+        "to": "fp32"
+      },
+      "depends_on": [
+        "load_w"
+      ]
+    },
+    {
+      "id": "mul",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "fx",
+        "fw"
+      ],
+      "writes": [
+        "products"
+      ],
+      "parameters": {
+        "op": "mul"
+      },
+      "depends_on": [
+        "cast_x",
+        "cast_w"
+      ]
+    },
+    {
+      "id": "sum",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": [
+        "products"
+      ],
+      "writes": [
+        "sum"
+      ],
+      "parameters": {
+        "op": "sum",
+        "axis": 0,
+        "scope": "cta",
+        "across_loop": false
+      },
+      "depends_on": [
+        "mul"
+      ]
+    },
+    {
+      "id": "store_y",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "sum"
+      ],
+      "writes": [
+        "y"
+      ],
+      "parameters": {
+        "coalesced": false
+      },
+      "depends_on": [
+        "sum"
+      ]
+    }
+  ],
+  "outputs": [
+    "y"
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "row",
+        "axis": 0,
+        "buffer": "weight",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_x",
+      "buffer": "x",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_w",
+      "buffer": "weight",
+      "indices": [
+        {
+          "source": "program",
+          "name": "row"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_y",
+      "buffer": "y",
+      "indices": [
+        {
+          "source": "program",
+          "name": "row"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_bf16_row_dot"
+  }
+}

@@ -388,6 +388,19 @@ selection follows the Program's fixed rank and queue ownership. The peer pair is
 checked by the generated host ABI. The scope change has no B300 timing claim
 until the successor source is compiled and measured on device.
 
+### BF16 row-dot expert projection leaf
+
+`examples/schedules/native/bf16-row-dot-h16-i32.json` composes two BF16
+global loads, two explicit FP32 casts, a lane-wise multiply, a CTA-scoped SUM
+and one FP32 global store. The native SIMT path assigns one weight row to one
+CTA and reduces 16 or 32 products with a fixed warp shuffle tree. Its
+AccessMaps state the vector, weight-row and output coordinates; admission
+rejects another reduction, dtype, mapping, cache hint or resource shape.
+This makes one expert projection expressible through Cake without an opaque
+MoE operation. It does not implement expert selection, the gated activation,
+the second projection, cross-GPU dispatch or a performance claim. B300 nvcc
+and oracle validation remain required before using this leaf in an Evaluation.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
