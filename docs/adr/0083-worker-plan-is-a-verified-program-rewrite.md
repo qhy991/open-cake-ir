@@ -2,8 +2,9 @@
 
 Status: proposed. The B300 scheduling mechanism has device evidence. A bounded
 version-2 Program execution descriptor checks structure and dataflow. The
-NVIDIA task branch now emits one single-GPU, three-FMA-stage worker kernel;
-Evaluation and a full MoE worker lowering remain unimplemented.
+NVIDIA task branch now emits one single-GPU, three-FMA-stage worker kernel.
+Shared Evaluation has a development launch adapter for that lowered object;
+sealed candidate execution and a full MoE worker lowering remain unimplemented.
 
 ## Problem
 
@@ -75,6 +76,13 @@ and ordered Evaluation still refuse version 2. The NVIDIA task branch admits
 only a same-tile, device-scope FP32 FMA pipeline; no system-scope or real MoE
 Program can execute through it. Type construction alone claims no device
 liveness or correctness.
+
+The development `prepare_worker_program` adapter binds all Program tensors and
+a separate internal state allocation on one device, rejects overlapping
+storage and a changed stream, calls one backend-owned launch, and checks the
+device status after synchronization. Its metadata requires a reset on every
+launch stream. This does not seal an executable candidate or admit the
+existing ordered Program Evaluation path for version 2.
 
 ## Admission and liveness obligations
 
