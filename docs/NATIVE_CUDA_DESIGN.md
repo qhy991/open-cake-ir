@@ -490,6 +490,13 @@ runner's ad hoc pointer policy, now owns the rank input, mailbox view,
 per-launch reset and four synchronized status checks. nvcc and on-device
 validation are still pending.
 
+At `a78cbf7f`, the integrated adapter also requires one identical
+one-dimensional CTA grid on all four ranks, and the native backend tests pin
+all five generated per-rank input shapes. The current exact-source tail
+bundle is `cake-ranked-ep4-adapter-tail-b300-m4-a78cbf7f/`; a fresh
+extraction passes CPU binding and input admission. The earlier `e3bf171d`
+bundle remains a development predecessor, not a device result.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
