@@ -39,7 +39,7 @@ class RankedMailboxEffectsContract(unittest.TestCase):
                                   analysis.return_slots_per_rank),
                                  (payloads, tasks, returns))
                 with self.assertRaisesRegex(ValueError,
-                                            'dedicated backend lowering'):
+                                            'dedicated backend lowering|mathematical leaf needs its own native CUDA route'):
                     compiler.lower_ranked_mailbox(effects, local, combine(tokens))
         self.assertEqual(len(compiler.lower_program(local).lowerings), 3)
 
