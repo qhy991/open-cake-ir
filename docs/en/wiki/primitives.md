@@ -65,7 +65,7 @@ Return the largest k values and original positions in descending value order, sm
 
 ## scan
 
-Keep the running sums: `[2,5,1]` becomes `[2,7,8]` forward or `[8,6,1]` reverse. The admitted operator is sum, with forward/reverse direction. It cannot be replaced by one reduction result. See [forward](../../../corpus/schedules/chunk-cumsum-b8-smoke.json) and [reverse](../../../corpus/schedules/chunk-cumsum-reverse-b8-smoke.json).
+Keep each inclusive prefix. With `[2,5,1]`, forward `sum` gives `[2,7,8]` and forward `mul` gives `[2,10,10]`; reverse scans give `[8,6,1]` and `[10,5,1]`. Both convert input to FP32 and retain its shape. `mul` expresses within-chunk token decay products for KDA; it does not carry a prefix between tiles. See the existing [forward sum](../../../corpus/schedules/chunk-cumsum-b8-smoke.json) and [reverse sum](../../../corpus/schedules/chunk-cumsum-reverse-b8-smoke.json) examples.
 
 ## index_expand
 
