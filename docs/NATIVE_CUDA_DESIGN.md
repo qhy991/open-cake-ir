@@ -120,6 +120,14 @@ This is a distinct mapping hypothesis: 21 dependent MMA operations may increase
 register pressure or serial latency even though the traffic screen is smaller.
 Only target compilation, complete component numerics and paired B300 timing can
 choose between the two fused depths.
+A state-input successor keeps that fused 21-MMA body but also writes the three
+BF16 tiles needed by the native state kernel (base key, base query, final key),
+FP32 beta gate and FP32 chunk-end decay. It declares about 404 MB of input and
+480 MB of output traffic on H64/T8192, rather than pretending the two-matrix
+output is a complete preprocessor. A CPU screen with each planned BF16 operand
+and storage rounding passes the complete T65/T257 and H64/T8192 token oracles.
+That screen is not a GPU kernel receipt, and the high-retention held-out state
+failure of chunk-level rounding still limits generalization.
 A typed midpoint-factor stage takes BF16 normalized Q/K and FP32 per-token
 log-decay, scans its 32-token prefix, extracts the first/last log values, and
 forms BF16 forward-key, backward-key and forward-query tiles. The bounded
