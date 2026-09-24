@@ -124,6 +124,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         if any(op.kind is OperationKind.REDUCE for op in s.operations):
             from .native_cuda_row_dot import preflight as row_dot_preflight
             return row_dot_preflight(s, target)
+        if any(op.kind is OperationKind.ELEMENTWISE
+               and op.parameters.op is ElementwiseOp.EXP for op in s.operations):
+            from .native_cuda_activation import preflight as activation_preflight
+            return activation_preflight(s, target)
         if any(op.kind is OperationKind.ELEMENTWISE for op in s.operations) and not any(
                 op.kind is OperationKind.ATOMIC_RMW for op in s.operations):
             from .native_cuda_pointwise import preflight as pointwise_preflight
@@ -993,6 +997,10 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
         if any(op.kind is OperationKind.REDUCE for op in schedule.operations):
             from .native_cuda_row_dot import Emitter as RowDotEmitter
             return RowDotEmitter(schedule,target,schedule.lowering.entry_point).emit()
+        if any(op.kind is OperationKind.ELEMENTWISE
+               and op.parameters.op is ElementwiseOp.EXP for op in schedule.operations):
+            from .native_cuda_activation import Emitter as ActivationEmitter
+            return ActivationEmitter(schedule,target,schedule.lowering.entry_point).emit()
         if any(op.kind is OperationKind.ELEMENTWISE for op in schedule.operations) and not any(
                 op.kind is OperationKind.ATOMIC_RMW for op in schedule.operations):
             from .native_cuda_pointwise import Emitter as PointwiseEmitter

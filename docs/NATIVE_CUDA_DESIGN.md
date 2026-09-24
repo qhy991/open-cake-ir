@@ -414,6 +414,18 @@ Triton is exhausted. Device correctness must precede a paired, exact-target
 CUPTI comparison under the declared reset and timing policy.
 The selected-expert variant also has an operation-for-operation Triton peer.
 
+### FP32 gated activation leaf
+
+`examples/schedules/native/bf16-gated-activation-i32.json` names the up and
+gate halves of a packed FP32 `[1,64]` projection with disjoint AccessMap
+subranges. Its five arithmetic operations spell
+`up * (gate / (1 + exp(-gate)))`; the native one-warp lowering emits ordinary
+FP32 operations and `expf` in that order, then stores the contiguous `[1,32]`
+activation. The paired Triton Schedule carries identical math and access
+commitments. The local expert's down projection still needs FP32 activation
+input support before these leaves form a complete native Program. No B300
+correctness or timing is claimed by offline emission.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
