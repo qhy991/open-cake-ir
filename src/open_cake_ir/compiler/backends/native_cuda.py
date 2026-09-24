@@ -14,7 +14,7 @@ from ..diagnostics import Finding
 from ..ir import (
     AccessIndexKind, BarrierMechanism, BufferMode, DType, ElementwiseOp,
     LoadMovement, LoweringBackend, MemorySpace, OperandMajorMode, OperandSource,
-    OperationKind, Schedule, Swizzle,
+    OperationKind, ReduceOp, ReductionScope, Schedule, Swizzle,
 )
 from ..target import CodeObject, Target
 from ..verifier import verify
@@ -22,7 +22,8 @@ from ..verifier import verify
 SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32, DType.INT32})
 CODE_OBJECTS = frozenset({CodeObject.CUBIN})
 SUPPORTED_OPERATION_KINDS = frozenset({OperationKind.LOAD, OperationKind.MMA,
-    OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE_ARGMIN,
+    OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE,
+    OperationKind.REDUCE_ARGMIN,
     OperationKind.STORE, OperationKind.TMEM_STORE})
 _TYPES = {DType.BF16: '__nv_bfloat16', DType.FP16: '__half',
           DType.FP32: 'float', DType.INT32: 'int32_t'}
@@ -51,8 +52,27 @@ def _publication_scope(s, operation):
 
 
 def _scalar_row(s, buffer):
-    return any(op.kind is OperationKind.REDUCE_ARGMIN and buffer.name in op.writes
-               for op in s.operations)
+    """Prove a rank-one tile has one scalar per physical row, not 128 replicas."""
+    def walk(name, seen):
+        value = s.buffer(name)
+        if value is None or value.shape != (128,) or name in seen:
+            return False
+        writers = [op for op in s.operations if name in op.writes]
+        if len(writers) != 1:
+            return False
+        writer = writers[0]
+        if writer.kind is OperationKind.REDUCE_ARGMIN:
+            return True
+        if writer.kind is OperationKind.REDUCE:
+            return writer.parameters.axis == 1 and not writer.parameters.across_loop
+        if writer.kind not in (OperationKind.CAST, OperationKind.ELEMENTWISE):
+            return False
+        return bool(writer.reads) and all(
+            (source := s.buffer(source_name)) is not None
+            and (source.shape == (1,) or walk(source_name, seen | {name}))
+            for source_name in writer.reads
+        )
+    return walk(buffer.name, set())
 
 
 def _slots(s, buffer):
@@ -474,11 +494,29 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   and all(buffers[n].space is MemorySpace.REGISTER for n in op.reads),
                   'NATIVE_ARITHMETIC_STORAGE', path,
                   'native elementwise operations read and write row-owned registers; load global inputs explicitly')
-            check(op.parameters.broadcast_axis in (None,1), 'NATIVE_BROADCAST_UNSUPPORTED', path,
-                  'native row ownership currently admits trailing-column broadcasts only')
+            check(op.parameters.broadcast_axis in (None,0,1), 'NATIVE_BROADCAST_UNSUPPORTED', path,
+                  'native row ownership admits explicit row or column broadcasts')
+            if op.parameters.broadcast_axis == 0:
+                narrow = [buffers[name] for name in op.reads
+                          if buffers[name].shape == (dst.shape[0],)]
+                check(len(dst.shape) == 2 and dst.shape[0] == 128
+                      and bool(narrow) and all(_scalar_row(s,value) for value in narrow),
+                      'NATIVE_ROW_BROADCAST', path+'.parameters.broadcast_axis',
+                      'row broadcast requires a proven one-scalar-per-row producer')
             check(op.parameters.scalar is None or math.isfinite(op.parameters.scalar)
                   and abs(op.parameters.scalar) <= 3.4028234663852886e38,
                   'NATIVE_SCALAR_FINITE', path+'.parameters.scalar', 'native scalar literals must be finite FP32 values')
+        elif op.kind is OperationKind.REDUCE:
+            src = buffers[op.reads[0]]
+            p = op.parameters
+            check(p.op is ReduceOp.SUM and p.axis == 1
+                  and p.scope is ReductionScope.CTA and not p.across_loop
+                  and src.space is MemorySpace.REGISTER and src.dtype is DType.FP32
+                  and len(src.shape) == 2 and src.shape[0] == 128
+                  and dst.space is MemorySpace.REGISTER and dst.dtype is DType.FP32
+                  and dst.shape == (128,),
+                  'NATIVE_ROW_REDUCE', path,
+                  'native sum folds each FP32 register row to one FP32 row-owned scalar')
         elif op.kind is OperationKind.REDUCE_ARGMIN:
             src = buffers[op.reads[0]]
             check(len(src.shape) == 2 and src.shape[0] == 128 and src.space is MemorySpace.REGISTER
@@ -881,14 +919,22 @@ class _Emitter:
             p=op.parameters
             self.line('#pragma unroll')
             self.begin(f'for (int col=0; col<{_slots(self.s,dst)}; ++col)')
-            x=f'{a}[{"0" if src.is_scalar else "col"}]'
-            y=f'{p.scalar!r}f' if p.scalar is not None else (f'{self.names[op.reads[1]]}[{"0" if self.b(op.reads[1]).is_scalar else "col"}]' if len(op.reads)>1 else x)
+            x=f'{a}[{"0" if src.is_scalar or _scalar_row(self.s,src) else "col"}]'
+            y=(f'{p.scalar!r}f' if p.scalar is not None else
+               (f'{self.names[op.reads[1]]}[{"0" if self.b(op.reads[1]).is_scalar or _scalar_row(self.s,self.b(op.reads[1])) else "col"}]'
+                if len(op.reads)>1 else x))
             expr={ElementwiseOp.ADD:f'__fadd_rn({x},{y})',ElementwiseOp.SUB:f'__fsub_rn({x},{y})',
                   ElementwiseOp.MUL:f'__fmul_rn({x},{y})',ElementwiseOp.DIV:f'__fdiv_rn({x},{y})',
                   ElementwiseOp.RELU:f'fmaxf({x},0.0f)',ElementwiseOp.SQUARE:f'__fmul_rn({x},{x})',
                   ElementwiseOp.EXP:f'expf({x})',ElementwiseOp.RSQRT:f'rsqrtf({x})',
                   ElementwiseOp.RECIPROCAL:f'__fdiv_rn(1.0f,{x})'}[p.op]
             self.line(f'{d}[col] = {expr};'); self.end()
+        elif op.kind is OperationKind.REDUCE:
+            self.line(f'{d}[0] = 0.0f;')
+            self.line('#pragma unroll')
+            self.begin(f'for (int col=0; col<{src.shape[1]}; ++col)')
+            self.line(f'{d}[0] = __fadd_rn({d}[0], {a}[col]);')
+            self.end()
         elif op.kind is OperationKind.CAST:
             convert = {DType.BF16:'__float2bfloat16_rn',DType.FP16:'__float2half_rn',DType.FP32:'float',DType.INT32:'int32_t'}[dst.dtype]
             self.line('#pragma unroll')

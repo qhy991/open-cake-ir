@@ -196,6 +196,35 @@ class NativeCudaContracts(unittest.TestCase):
         d['operations'][-4]['parameters']['op']='log2'
         self.refuses(d,'BACKEND_ARITHMETIC_UNSUPPORTED')
 
+    def test_native_row_norm_reduces_then_broadcasts_one_scalar_per_row(self):
+        d=json.loads((ROOT/'tests/fixtures/kda-native-row-norm-sm103a.json').read_text())
+        source=self.lower(d).source
+        reduction=source[source.index('// CAKE_OP: reduce_norm'):source.index('// CAKE_OP: add_epsilon')]
+        normalization=source[source.index('// CAKE_OP: normalize'):source.index('// CAKE_OP: store')]
+        self.assertIn('= 0.0f;',reduction)
+        self.assertIn('__fadd_rn(',reduction)
+        self.assertRegex(normalization,r'__fmul_rn\(b\d+\[col\],b\d+\[0\]\)')
+
+        # A replicated length-128 vector is not the same physical row ownership.
+        d['buffers'] += [
+            {'name':'row_scale','space':'global','dtype':'fp32','shape':[128],'mode':'input'},
+            {'name':'row_scale_tile','space':'register','dtype':'fp32','shape':[128],'mode':'scratch'},
+        ]
+        normal=next(op for op in d['operations'] if op['id']=='normalize')
+        position=d['operations'].index(normal)
+        d['operations'].insert(position,{'id':'load_row_scale','kind':'load','role':'epilogue',
+                                        'reads':['row_scale'],'writes':['row_scale_tile'],
+                                        'parameters':{'movement':'global'}})
+        normal['reads']=['sum','row_scale_tile']
+        normal['depends_on'].append('load_row_scale')
+        d['access_maps'].append({'operation':'load_row_scale','buffer':'row_scale',
+                                 'indices':[{'source':'dimension','dimension':0}],
+                                 'boundary':'mask_tiled_axes'})
+        schedule=Schedule.from_dict(d)
+        target=Target.load(ROOT/'compiler/targets/sm_103a.json')
+        self.assertIn('NATIVE_ROW_BROADCAST',
+                      {finding.code for finding in preflight(schedule,target)})
+
     def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
         d=document('inplace-state-gemm')
         lowered=self.lower(d)
