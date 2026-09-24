@@ -240,7 +240,8 @@ extern "C" int weave_worker_launch(void** buffers, int tile_count, int repeats,
     cudaDeviceProp properties{};
     result = cudaGetDeviceProperties(&properties, device);
     if (result != cudaSuccess) return int(result);
-    if (std::strcmp(properties.name, "NVIDIA B300") != 0 ||
+    if ((std::strcmp(properties.name, "NVIDIA B300") != 0 &&
+         std::strcmp(properties.name, "NVIDIA B300 SXM6 AC") != 0) ||
         properties.major != 10 || properties.minor != 3 ||
         properties.multiProcessorCount != kTargetSms) return int(cudaErrorInvalidDevice);
     int cooperative = 0;

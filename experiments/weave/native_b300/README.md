@@ -8,6 +8,9 @@ for MoE communication and grouped GEMM; they do not implement either one.
 
 One cooperative launch creates 148 CTAs, matching the observed SM count of the
 exact `sm_103a` Target. Every CTA reads device-resident `(c, K, steal_limit)`.
+The host admits the Target's two declared B300 device names; B300-M4 exposed
+`NVIDIA B300 SXM6 AC` on a broker-assigned card, which a first prototype had
+incorrectly refused before kernel launch.
 `blockIdx.x < c` selects communication workers; other CTAs compute. The
 runtime values change the worker split and the chunk size without recompiling
 the kernel. The host refuses a device without cooperative-launch support or
