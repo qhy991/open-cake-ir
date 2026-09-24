@@ -151,8 +151,13 @@ The origin's weighted combine is also expressible without a MoE opcode:
 loads each token's two FP32 contributions and route weights, multiplies,
 reduces the route axis and rounds once to BF16. Both Workload token extents
 lower through Triton offline. The missing part is the ranked mailbox effect
-that binds remote contributions to this complete Schedule, plus a native
-lowering and four-GPU oracle.
+that binds remote contributions to this complete Schedule and a four-GPU
+oracle.
+The NVIDIA task branch at `59bd7385` now emits the matched native CUDA
+combine for both `T=7` and `T=8`, with one FP32 route reduction and one BF16
+rounding per token. Its offline tests and Corpus Gate pass. The ranked
+mailbox effect, nvcc/device correctness and performance comparison remain
+unqualified.
 
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
