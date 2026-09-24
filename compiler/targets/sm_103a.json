@@ -107,7 +107,18 @@
       "kind": "device_specification",
       "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html",
       "locator": "setmaxnreg is a warpgroup-wide instruction and a warpgroup is four contiguous warps; the register redistribution it performs is therefore a legality rule on a role's slot range, not a preference"
+    },
+    {
+      "kind": "device_observation",
+      "source": "cudaDeviceGetAttribute on NVIDIA B300-M4",
+      "locator": "B300-M4:/home/qinhaiyan/cake-weave-b300-m4-occupancy-20260924/facts.json; broker job gpuq-8bf1f1ff977e; observed 2026-09-24"
     }
   ],
+  "occupancy": {
+    "multiprocessor_count": 148,
+    "registers_per_multiprocessor": 65536,
+    "shared_memory_per_multiprocessor_bytes": 233472,
+    "maximum_threads_per_multiprocessor": 2048
+  },
   "warps_per_warpgroup": 4
 }

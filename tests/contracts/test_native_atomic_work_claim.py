@@ -82,15 +82,19 @@ class NativeAtomicWorkClaim(unittest.TestCase):
         self.assertIn("NATIVE_SIMT_RESIDENCY",
                       [finding.code for finding in self.compiler.assess(document).findings])
 
-    def test_unimplemented_cache_commitment_and_missing_b300_sm_count_refuse(self):
+    def test_cache_commitment_refuses_and_b300_uses_its_observed_sm_count(self):
         document = work_document()
         next(op for op in document["operations"] if op["kind"] == "load")["parameters"]["reuse"] = "streamed"
         self.assertIn("NATIVE_SIMT_LOAD",
                       [finding.code for finding in self.compiler.assess(document).findings])
         document = work_document()
         document["target"] = "sm_103a"
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertEqual(self.compiler.lower(assessment).toolchain_requirements["grid"], [148, 1, 1])
+        missing = replace(Target.load(ROOT / "compiler/targets/sm_103a.json"), occupancy=None)
         self.assertIn("NATIVE_SIMT_PERSISTENCE",
-                      [finding.code for finding in self.compiler.assess(document).findings])
+                      [finding.code for finding in preflight(Schedule.from_dict(document), missing)])
         document["program_map"]["persistent"] = False
         document.pop("residency")
         self.assertTrue(self.compiler.assess(document).lowering_eligible)

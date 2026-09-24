@@ -82,19 +82,28 @@ stores one lane-owned result. It reuses `ProgramMap.persistent` and the native
 host launch; no MoE opcode, task lookup or raw source escape is admitted.
 Both B200 and B300 Target documents explicitly name the PTX instruction
 contract. A persistent launch additionally needs the exact Target's observed
-SM count; the B300 document currently lacks that fact, so only its ordinary
-grid is admitted. A declared load cache policy is refused until the native
+occupancy. B300-M4 supplied all four fields through `cudaDeviceGetAttribute`
+under broker job `gpuq-8bf1f1ff977e`; the retained observation is
+`B300-M4:/home/qinhaiyan/cake-weave-b300-m4-occupancy-20260924/facts.json`.
+A declared load cache policy is refused until the native
 emitter realizes it rather than being silently dropped.
 
 The PTX instruction provides an atomic old value under device-scope relaxed
 ordering, as specified by the [NVIDIA PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-atom).
 It neither publishes a separate payload nor waits for another CTA's chunk.
 The example `examples/schedules/native/atomic-work-claim.json` is a source
-and admission probe. GPU compilation, external-oracle correctness, profiler
-evidence and a cross-role steal remain separate gates. The P1–P8 check for
+and admission probe. Persistent B300 correctness, profiler evidence and a
+cross-role steal remain separate gates. The P1–P8 check for
 the shared atomic contract is in `docs/WEAVE_FEASIBILITY.md`; this backend
 slice preserves that operation's existing typing and adds exact Target and
 emission refusals.
+
+The ordinary-grid B300 form compiled with CUDA 13.1 nvcc/ptxas and matched an
+independent permutation oracle across three route distributions on B300-M4.
+Inputs, source, broker receipt, device snapshots and post-release report are
+retained at `B300-M4:/home/qinhaiyan/cake-weave-b300-m4-ebf0eaac-probe02/`
+under source commit `ebf0eaac`. This scoped development check establishes no
+latency, communication overlap or multi-GPU MoE correctness.
 
 PTX encoding reference: NVIDIA PTX ISA, sections 9.7.17.4 (matrix descriptors),
 9.7.17.8 (TMEM allocation), 9.7.17.9 (TMEM transfer), and 9.7.17.10 (tcgen05 MMA):

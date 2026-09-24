@@ -115,7 +115,11 @@ class B300ContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires a cubin target; 'apple_gpu_family9' declares metal_binary_archive"):
             _cubin_target('apple_gpu_family9')
         target = declared_target('sm_103a')
-        self.assertIsNone(target.occupancy)
+        self.assertIsNotNone(target.occupancy)
+        self.assertEqual(target.occupancy.multiprocessor_count, 148)
+        self.assertEqual(target.occupancy.registers_per_multiprocessor, 65536)
+        self.assertEqual(target.occupancy.shared_memory_per_multiprocessor_bytes, 233472)
+        self.assertEqual(target.occupancy.maximum_threads_per_multiprocessor, 2048)
         self.assertEqual(target.peak.memory_bandwidth.value, 8e12)
         self.assertFalse(target.peak.arithmetic)
         document = baseline_schedule(self.workload, 'primary')
@@ -172,14 +176,18 @@ class B300ContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'compilation target'):
             native.build(CandidateSubmission.seal(native.media_type, encoded(native_baseline(lowering))))
 
-    def test_missing_sm_facts_refuse_persistent_grid_before_emission(self):
+    def test_b300_persistent_grid_uses_its_observed_sm_count(self):
         document = json.loads((ROOT / 'corpus/schedules/rmsnorm-b128-persistent.json').read_text())
         document['target'] = 'sm_103a'
         assessment = self.compiler.assess(document)
-        self.assertFalse(assessment.lowering_eligible)
-        self.assertIn('TRITON_PERSISTENT_TARGET_FACTS_MISSING', [f.code for f in assessment.findings])
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertEqual(self.compiler.lower(assessment).toolchain_requirements['grid'], [592, 1, 1])
+        from open_cake_ir.compiler.backends.triton import preflight
+        missing = replace(declared_target('sm_103a'), occupancy=None)
+        self.assertIn('TRITON_PERSISTENT_TARGET_FACTS_MISSING',
+                      [f.code for f in preflight(Schedule.from_dict(document), missing)])
 
-    def test_missing_occupancy_does_not_disable_register_budget_legality(self):
+    def test_occupancy_does_not_override_register_budget_legality(self):
         document = baseline_schedule(self.workload, 'primary')
         document['roles'][0]['registers_per_thread'] = 32
         assessment = self.compiler.assess(document)
