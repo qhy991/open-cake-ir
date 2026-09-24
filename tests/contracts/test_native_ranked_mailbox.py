@@ -14,6 +14,9 @@ from open_cake_ir.compiler.backends.native_cuda_ranked_mailbox import _admit
 from open_cake_ir.evaluation.ranked_launch import (
     RankedMailboxExecutable, prepare_ranked_mailbox,
 )
+from open_cake_ir.evaluation.ranked_manifest import RankedMailboxLaunchManifest
+from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.tasks.weave_ep.workload import validate_contract
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -171,6 +174,31 @@ class NativeRankedMailbox(unittest.TestCase):
         prepared.run()
         self.assertEqual((calls['reset'], calls['launch'], calls['status'],
                           prepared.launch_calls), (1, 1, 1, 1))
+
+    def test_actual_lowering_binds_frozen_distributed_workload_case(self):
+        effects, local, combine = material(7)
+        lowered = self.compiler.lower_ranked_mailbox(effects, local, combine)
+        contract_path = ROOT / 'contracts/workloads/weave-ep4-bf16-moe-b300-v1.json'
+        workload = WorkloadContract.from_document(
+            json.loads(contract_path.read_text()), contract_path,
+            validate=validate_contract)
+        combine_document = json.loads((ROOT / 'examples/schedules/native/'
+                                       'weave-weighted-combine-t7-h16.json').read_text())
+        bindings = {'hidden_states': 'hidden', 'expert_ids': 'expert_ids',
+                    'route_weights': 'route_weights', 'w_up_gate': 'w_up_gate',
+                    'w_down': 'w_down'}
+        plans = [{'rank': rank, 'communication_ctas': (147, 12, 36, 72)[rank],
+                  'chunks': (2, 3, 7, 1)[rank],
+                  'steal_budget': 14 if rank == 0 else 0}
+                 for rank in range(4)]
+        manifest = RankedMailboxLaunchManifest.from_lowered(
+            lowered, combine_document=combine_document, workload=workload,
+            case_id='tail_tokens', tensor_bindings=bindings, plans=plans)
+        manifest.check_lowered(lowered)
+        self.assertEqual(manifest.as_dict()['case_id'], 'tail_tokens')
+        self.assertEqual(manifest.as_dict()['plans'][2]['chunks'], 7)
+        with self.assertRaisesRegex(ValueError, 'Workload|public output'):
+            manifest.check_workload(workload, 'skew_to_rank0')
 
 
 if __name__ == '__main__':
