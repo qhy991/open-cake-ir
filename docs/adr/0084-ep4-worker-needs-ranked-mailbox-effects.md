@@ -36,6 +36,14 @@ complete local expert and origin combine Schedules under an explicit
 `ranked_mailbox` rewrite request. Those helpers provide mathematical source
 maps but no reservation, peer ownership, readiness or launch protocol.
 
+The shared `evaluation/ranked_launch.py` development adapter now checks one
+rank-local input set and `c/K/steal` plan per rank, exact storage owners and
+nonaliasing, the compiled mailbox size and its BF16 output view, and stable
+execution contexts. Each invocation requires an Evaluation-owned reset and
+one combined launch followed by synchronized statuses from every rank.
+Platform callbacks still own CUDA, peer admission and the actual reset;
+this adapter does not seal a distributed candidate or qualify measurement.
+
 ## Proposed Program boundary
 
 Keep one complete Program as the mathematical authority. Its rank-leading

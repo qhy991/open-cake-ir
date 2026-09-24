@@ -174,6 +174,12 @@ passes only after CUDA/PTX helpers are stubbed. There is still no nvcc, four-
 GPU oracle, sealed distributed Evaluation candidate, CUPTI interval or
 measured Triton headroom.
 
+The shared ranked development launch adapter now checks all four rank-local
+input sets, plan bounds, compiled mailbox/output views, owner and alias
+intervals, and requires reset plus synchronized per-rank status on every
+call. It has offline callback tests; no B300 execution or formal candidate
+seal follows from that adapter alone.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
