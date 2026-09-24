@@ -2,7 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Mapping
 from .ir.program import Program
 if TYPE_CHECKING:
     from .core import Lowering
@@ -30,3 +30,25 @@ class LoweredProgram:
                 or lowering.target != self.program.target
                 or lowering.route != schedule.lowering or not lowering.generated):
                 raise ValueError(f'lowered Program stage {stage.name!r} code binding differs')
+
+
+@dataclass(frozen=True)
+class LoweredWorkerProgram:
+    """One generated kernel for a complete worker Program.
+
+    The owning backend supplies its source and internal-state requirements;
+    Evaluation allocates the declared state and mathematical tensors.
+    """
+
+    program: Program
+    compiler_revision_id: str
+    source: str
+    toolchain_requirements: Mapping[str, object]
+
+    def validate_binding(self) -> None:
+        replayed = Program.from_dict(self.program.document)
+        if (replayed != self.program or self.program.execution is None
+                or self.toolchain_requirements.get('target') != self.program.target
+                or self.toolchain_requirements.get('entry_point')
+                != self.program.execution.lowering.entry_point):
+            raise ValueError('lowered worker Program binding differs')
