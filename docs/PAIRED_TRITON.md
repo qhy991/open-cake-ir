@@ -11,6 +11,8 @@
 新实验的科学 Study 模板为 `contracts/studies/matched-search-triton-optimization-python-template.json`。
 旧模板只供其已固定的历史实验回放。Cake starter 是 `examples/python/b200_rmsnorm.py`；
 两臂分别绑定真实双轮 provider 资格证明，外部执行绑定使用 schema v3。
+两次资格验证都使用 `isolated_auth_only_v1` 作者 home 策略和外部私有凭据；
+运行时为每个独立 Run 建立新 home，避免继承个人 skills 与其他 Run 会话。
 每臂三个预先安排的独立 Run，候选失败是观察结果，外部故障是 missing，不补跑；资格率和
 条件确认延迟保留各自含义。Provider 的新输出 schema 需重新资格验证，模板中的 pending
 引用没有 live 权威。Compiler/Executor 绑定由 CampaignLock 解析，预算和 Evidence owner 不变。

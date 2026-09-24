@@ -167,6 +167,8 @@ class ProviderInvocation:
     provider_revision: str
     removed_environment: tuple[str, ...]
     thread_id: str | None
+    codex_home: Path | None = None
+    system_skills_snapshot: tuple[tuple[str, int, str], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -263,6 +265,7 @@ class ProviderQualificationReceipt:
     usage_observed: bool
     qualified: bool
     scope: str
+    system_skills_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -280,6 +283,9 @@ class ProviderQualificationReceipt:
                 "live_two_turn_current_provider",
                 "live_two_turn_tool_rich_provider",
             }
+            or (self.system_skills_sha256 is not None and (
+                len(self.system_skills_sha256) != 64
+                or any(char not in '0123456789abcdef' for char in self.system_skills_sha256)))
         ):
             raise ValueError("provider qualification identity differs")
 
@@ -288,7 +294,7 @@ class ProviderQualificationReceipt:
         """Load the closed non-secret provider capability receipt."""
 
         document = json.loads(Path(path).read_text(encoding="utf-8"))
-        if not isinstance(document, Mapping) or set(document) != {
+        fields = {
             "schema_version",
             "provider_revision",
             "executable_sha256",
@@ -298,7 +304,10 @@ class ProviderQualificationReceipt:
             "usage_observed",
             "qualified",
             "scope",
-        } or document.get("schema_version") != 1:
+        }
+        version = document.get('schema_version') if isinstance(document, Mapping) else None
+        if (not isinstance(document, Mapping) or type(version) is not int or version not in {1, 2}
+            or set(document) != fields | ({'system_skills_sha256'} if version == 2 else set())):
             raise ValueError("provider qualification fields differ")
         return cls(
             provider_revision=str(document["provider_revision"]),
@@ -309,6 +318,7 @@ class ProviderQualificationReceipt:
             usage_observed=document["usage_observed"] is True,
             qualified=document["qualified"] is True,
             scope=str(document["scope"]),
+            system_skills_sha256=(str(document['system_skills_sha256']) if version == 2 else None),
         )
 
     @property
@@ -316,7 +326,7 @@ class ProviderQualificationReceipt:
         """Return the canonical non-secret receipt document."""
 
         return {
-            "schema_version": 1,
+            "schema_version": 2 if self.system_skills_sha256 is not None else 1,
             "provider_revision": self.provider_revision,
             "executable_sha256": self.executable_sha256,
             "configuration_sha256": self.configuration_sha256,
@@ -325,6 +335,8 @@ class ProviderQualificationReceipt:
             "usage_observed": self.usage_observed,
             "qualified": self.qualified,
             "scope": self.scope,
+            **({'system_skills_sha256': self.system_skills_sha256}
+               if self.system_skills_sha256 is not None else {}),
         }
 
     @property

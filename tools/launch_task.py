@@ -22,6 +22,7 @@ from open_cake_ir.cli import _json_projection
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
+from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, verify_auth_source
 from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.incumbents import TaskIncumbentRegistry, admit_baseline_selection
 from open_cake_ir.lab.build import TritonToolchainBuilder
@@ -106,6 +107,12 @@ def _provider_executable(harness: str, requested: Path | None) -> Path:
     if not native.is_file() or not os.access(native, os.X_OK):
         raise ValueError("this Codex installation has no usable native executable; no installation attempted")
     return native.resolve(strict=True)
+
+
+def _codex_auth_source(requested: Path | None) -> Path:
+    source = (requested if requested is not None else
+              Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex')))/'auth.json')
+    return verify_auth_source(external_file(ROOT, str(source), 'Codex credential source'))
 
 
 def _new_workspace(value: Path) -> Path:
@@ -332,7 +339,7 @@ def _admit_allocator(runtime) -> None:
 
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     local_kind=None, gpu_run=None, broker_socket=None,
-                    kernelctl=None, infra_socket=None):
+                    kernelctl=None, infra_socket=None, auth_source=None):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -396,7 +403,8 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     else:
         raise ValueError(f"task execution allocation {allocation!r} is unsupported")
     return {"schema_version": 1,
-            "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors")},
+            "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors"),
+                         **({'auth_source': str(auth_source)} if auth_source is not None else {})},
             "toolchain": toolchain,
             "broker": {"command": command, "cwd": str(ROOT), "timeout_seconds": timeout,
                        "service_user": pwd.getpwuid(os.getuid()).pw_name,
@@ -450,6 +458,9 @@ def _qualify(root, workspace, args, executable, source_path):
     command.extend(('--submission-contract',
                     PYTHON_SOURCE_FILE_V1 if getattr(args, 'source_file', False)
                     else PYTHON_CANDIDATE_BUNDLE_V1))
+    if args.harness == 'codex':
+        command.extend(('--author-home-policy', ISOLATED_AUTH_ONLY_V1,
+                        '--auth-source', str(args.auth_source)))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
@@ -571,6 +582,8 @@ def main(argv=None) -> int:
     parser.add_argument("--confirmation-seconds", type=float,
                         help="fixed confirmation-phase reserve inside total wall budget (default: one tenth)")
     parser.add_argument("--provider-executable", type=Path)
+    parser.add_argument('--auth-source', type=Path,
+                        help='private Codex credential copied into a new home for each Run')
     parser.add_argument("--provider-revision")
     parser.add_argument("--qualification", type=Path)
     parser.add_argument("--qualification-anchor", type=Path)
@@ -643,6 +656,12 @@ def main(argv=None) -> int:
         agents_md=args.agents_md, reference_access=args.reference_access,
         source_file=args.source_file)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
+    if args.harness != 'codex' and args.auth_source is not None:
+        raise ValueError('--auth-source applies only to the Codex harness')
+    auth_source = (_codex_auth_source(args.auth_source)
+                   if not args.baseline_only and args.harness == 'codex' else None)
+    if auth_source is not None:
+        args.auth_source = auth_source
     # The runtime config binds the provider and the allocator, both of which belong to
     # stages `--baseline-only` stops before; it is written only on the path that reaches
     # them. Building it here regardless is what made the provider mandatory above.
@@ -651,7 +670,8 @@ def main(argv=None) -> int:
                                allocation=_allocation_of(args.backend),
                                local_kind=_local_kind_of(args.backend),
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
-                               kernelctl=args.kernelctl, infra_socket=args.infra_socket))
+                               kernelctl=args.kernelctl, infra_socket=args.infra_socket,
+                               auth_source=auth_source))
     if runtime is not None:
         if args.pointer_alignment is not None:
             from open_cake_ir.lab.toolchains import toolchain_for

@@ -79,6 +79,8 @@ Lab 保存原始字节并确定性投影，见 [ADR 0079](adr/0079-ordered-pytho
 `candidate-set.json` 留给冻结合同的回放，不再是新已知实现复现任务的默认作者输入。
 成对 Study 的 Cake 与原生臂分别固定 Python 和 JSON 提交及各自的 Provider 资格证明；
 共同的模型、预算与测量合同仍相等，见 [ADR 0080](adr/0080-paired-studies-bind-provider-transport-per-arm.md)。
+新 Codex Run 的作者 home 按 Run 隔离，只从外部私有凭据建立；该策略控制技能和会话材料，
+不替代 clean-start 的文件读取隔离，见 [ADR 0081](adr/0081-isolate-codex-author-home-per-run.md)。
 Compiler 内部文档往返继续收敛；每一步保留原提交，不原地改写历史证据。
 每一步采用后继 Run 合同并保留冻结实验的原提交，不原地改写历史证据。
 

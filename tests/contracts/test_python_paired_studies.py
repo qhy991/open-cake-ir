@@ -46,6 +46,10 @@ class PythonPairedStudyTests(unittest.TestCase):
                 self.assertEqual(cake['tool_surface'], ['submit_python_bundle'])
                 self.assertEqual(cake['provider']['submission_contract'],
                                  'python_candidate_bundle_v1')
+                self.assertEqual(cake['provider']['author_home_policy'],
+                                 'isolated_auth_only_v1')
+                self.assertEqual(native['provider']['author_home_policy'],
+                                 'isolated_auth_only_v1')
                 schema_path = ROOT/cake['provider']['output_schema']['path']
                 self.assertEqual(schema_path.name, 'run-turn-output-schema-v1.json')
                 schema = json.loads(schema_path.read_text())
@@ -128,11 +132,13 @@ class PythonPairedStudyTests(unittest.TestCase):
             provider_revision='fixture-provider', executable_sha256='a'*64,
             configuration_sha256=sha256(canonical_json_bytes(native_config)).hexdigest(),
             initial_and_resume_equivalent=True, file_lifecycle_observed=True,
-            usage_observed=True, qualified=True, scope='zero_gpu_contract_fixture_only')
+            usage_observed=True, qualified=True, scope='zero_gpu_contract_fixture_only',
+            system_skills_sha256='c'*64)
         with tempfile.TemporaryDirectory() as directory:
             receipt_path = Path(directory).resolve()/'receipt.json'
             receipt_path.write_bytes(canonical_json_bytes(native_receipt.document))
             cake = providers['open_cake']
+            cake['system_skills_sha256'] = native_receipt.system_skills_sha256
             cake['qualification'] = {'path': str(receipt_path),
                                      'canonical_sha256': native_receipt.canonical_sha256}
             with self.assertRaisesRegex(ValueError, 'qualification bytes or capability'):

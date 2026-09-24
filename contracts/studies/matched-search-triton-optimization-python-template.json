@@ -116,7 +116,8 @@
           "path": "/cpu-fixture/codex-code-mode-host",
           "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
         },
-        "submission_contract": "python_candidate_bundle_v1"
+        "submission_contract": "python_candidate_bundle_v1",
+        "author_home_policy": "isolated_auth_only_v1"
       },
       "scaffold": {
         "path": "contracts/scaffolds/matched-search-v1.md",
@@ -193,7 +194,8 @@
         "code_mode_host": {
           "path": "/cpu-fixture/codex-code-mode-host",
           "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-        }
+        },
+        "author_home_policy": "isolated_auth_only_v1"
       },
       "scaffold": {
         "path": "contracts/scaffolds/matched-search-v1.md",
