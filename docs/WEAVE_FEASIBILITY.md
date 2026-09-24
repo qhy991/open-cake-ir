@@ -60,3 +60,18 @@ The Cake `Program` executes separately lowered stages in order on one stream (`e
 4. Implement one complete, correct dispatch → local expert compute → combine slice with an external oracle, then an overlap slice, then runtime `(c,K)` and stealing. Each compiler primitive and its analysis must land together. Measure per-rank latency and profiler overlap; qualify cost curves on the exact target. Do not infer speedup from offline lowering or a cost estimate.
 
 Shared IR, Program and verifier work belongs on `task/core-*` against `main`; NVIDIA target, backend and on-device validation belong on `task/nvidia-*` against `nvidia`, following `docs/DEVELOPMENT_BRANCHES.md`. Formal GPU work remains subject to the repository's GPU lease and acceptance gates. This audit's promotion disposition is **no Compiler promotion**: it identifies missing contracts and evidence, but has not validated a reusable new primitive.
+
+## Native atomic successor contract
+
+The next native CUDA slice names `ptx.atom.global.add.relaxed.gpu.s32` in the shared
+instruction registry. It is a second physical realization of the existing typed
+`atomic_rmw(add, int32, relaxed, device)` effect, not a new atomic opcode or a
+second spelling of MoE. P1/P3 retain the ordinary returned-old-value operation;
+P2 makes the physical PTX route inspectable; P4/P5 reuse its existing state,
+index, result and bounds checks; P6 requires accepted/refused kernel cases and
+the Corpus Gate; P7 keeps typing and admission with the primitive; P8 binds the
+emission to an exact Target declaration and PTX ISA form. NVIDIA Target admission
+and native lowering belong in the platform task and are not implied by this
+registry row. Relaxed atomic add guarantees a unique claimed index; it does not
+publish a preceding payload or make a later worker's read ready. Weave's chunk
+handoff will require a separate release/acquire and liveness design.
