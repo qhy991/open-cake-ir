@@ -30,6 +30,9 @@ def document() -> dict:
 
 def target(*, admit_store: bool) -> Target:
     value = json.loads((ROOT / "compiler/targets/sm_103a.json").read_text())
+    value["operation_kinds"] = [
+        kind for kind in value["operation_kinds"] if kind != "tmem_store"
+    ]
     if admit_store:
         value["operation_kinds"].append("tmem_store")
     return Target.from_dict(value)
@@ -42,7 +45,7 @@ def codes(value: dict, *, admit_store: bool = True) -> set[str]:
 
 
 class TmemStateContract(unittest.TestCase):
-    def test_complete_contract_is_typed_but_real_target_still_refuses(self):
+    def test_complete_contract_is_typed_but_undeclared_target_refuses(self):
         value = document()
         jsonschema.Draft202012Validator(schedule_schema()).validate(value)
         self.assertEqual(codes(value), set())
