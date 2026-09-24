@@ -23,7 +23,7 @@ SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32, DType.INT32})
 CODE_OBJECTS = frozenset({CodeObject.CUBIN})
 SUPPORTED_OPERATION_KINDS = frozenset({OperationKind.LOAD, OperationKind.MMA,
     OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE_ARGMIN,
-    OperationKind.STORE})
+    OperationKind.STORE, OperationKind.TMEM_STORE})
 _TYPES = {DType.BF16: '__nv_bfloat16', DType.FP16: '__half',
           DType.FP32: 'float', DType.INT32: 'int32_t'}
 _SWIZZLE = {Swizzle.B32: (32, 6), Swizzle.B64: (64, 4), Swizzle.B128: (128, 2)}
@@ -159,9 +159,11 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         if b.space is MemorySpace.TENSOR:
             check(b.swizzle is None, 'NATIVE_TMEM_SWIZZLE_UNSUPPORTED', path+'.swizzle',
                   'native TMEM addressing uses columns and physical lanes, not an SMEM swizzle')
-            check(len(b.shape) == 2 and b.shape[0] == 128 and b.dtype is DType.FP32
+            check(len(b.shape) == 2 and b.shape[0] == 128
+                  and b.dtype in (DType.BF16, DType.FP32)
                   and b.byte_offset % 512 == 0 and b.stages == 1,
-                  'NATIVE_TMEM_LAYOUT', path, 'native accumulators use 128 FP32 rows and whole TMEM columns')
+                  'NATIVE_TMEM_LAYOUT', path,
+                  'native FP32 accumulators or BF16 state use 128 rows and whole TMEM columns')
         if b.space is MemorySpace.REGISTER:
             check(len(b.shape) in (1,2) and (len(b.shape) == 1 or b.shape[0] == 128),
                   'NATIVE_REGISTER_LAYOUT', path, 'register tiles use 128 row-owning threads or replicated vectors')
@@ -226,13 +228,20 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
               'one declared ready barrier owns the stage transaction arrivals')
         if len(ready) == 1:
             b = ready[0]; owned_barriers.add(b.name)
+            def expected_waits(mma):
+                tensor_stores = [writers.get(name) for name in mma.reads
+                                 if buffers[name].space is MemorySpace.TENSOR]
+                return {b.name} | {name for store in tensor_stores if store is not None
+                                   for name in store.signals}
             check(b.mechanism is BarrierMechanism.MBARRIER and b.count == len(loads)
                   and all(op.signals == (b.name,) and not op.waits for op in loads)
-                  and all(op.waits == (b.name,) for op in mmas),
+                  and all(set(op.waits) == expected_waits(op) and
+                          len(op.waits) == len(expected_waits(op)) for op in mmas),
                   'NATIVE_PIPELINE_BARRIER', f'barriers[{s.barriers.index(b)}]',
-                  'ready arrival count and exact TMA/MMA edges must match every stage producer/consumer')
+                  'ready arrival count and waits for staged and TMEM operands must match')
         staged = {name for op in loads for name in op.writes}
-        consumed = {name for op in mmas for name in op.reads}
+        consumed = {name for op in mmas for name in op.reads
+                    if buffers[name].space is MemorySpace.SHARED}
         check(staged == consumed, 'NATIVE_PIPELINE_STAGE_OWNERSHIP', f'pipelines[{i}]',
               'every staged operand is produced and consumed by this pipeline')
         for name in staged:
@@ -243,8 +252,13 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'NATIVE_PIPELINE_STAGE_ESCAPE', f'buffers[{s.buffers.index(buffers[name])}]',
                   'stage readers cannot escape the completion-protected pipeline')
         for mma in mmas:
+            if any(buffers[name].space is MemorySpace.TENSOR for name in mma.reads):
+                check(loop is None, 'NATIVE_TMEM_MMA_SCOPE',
+                      f'operations[{s.operations.index(mma)}].pipeline',
+                      'the first TMEM-A route admits one root contraction, not a carried chunk loop')
             check(loop is None or (s.mma_accumulates_over(mma, loop)
-                  and all(s._staged_axis_filled_by(name, loop) == 1 for name in mma.reads)),
+                  and all(s._staged_axis_filled_by(name, loop) == 1 for name in mma.reads
+                          if buffers[name].space is MemorySpace.SHARED)),
                   'NATIVE_MMA_CONTRACTION_SCOPE', f'operations[{s.operations.index(mma)}]',
                   'both operand AccessMaps must use this loop for the K dimension')
     for i, loop in enumerate(s.tile_loops):
@@ -275,7 +289,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         if not asynchronous:
             check(role.execution_groups[0] % 4 == 0, 'NATIVE_ROLE_ALIGNMENT', path+'.role',
                   'TMEM row ownership requires an aligned group of four physical warps')
-            check(op.pipeline is None and not op.signals, 'NATIVE_OPERATION_SYNC', path,
+            check(op.pipeline is None and
+                  (not op.signals or op.kind is OperationKind.TMEM_STORE),
+                  'NATIVE_OPERATION_SYNC', path,
                   'register operations do not produce asynchronous stage signals')
             if not (op.kind is OperationKind.LOAD and op.parameters.movement is LoadMovement.TMEM):
                 check(not op.waits, 'NATIVE_OPERATION_SYNC', path+'.waits', 'this operation has no asynchronous wait protocol')
@@ -286,17 +302,27 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                       'a register value must stay within its producer role')
         if op.kind is OperationKind.MMA:
             p = op.parameters; instruction = p.instruction
+            tensor_a = (len(op.reads) == 2
+                        and buffers[op.reads[0]].space is MemorySpace.TENSOR)
+            placement = (
+                (tensor_a and instruction is not None
+                 and instruction.operand_source is OperandSource.TENSOR
+                 and buffers[op.reads[1]].space is MemorySpace.SHARED)
+                or (not tensor_a and instruction is not None
+                    and instruction.operand_source is OperandSource.SHARED
+                    and all(buffers[n].space is MemorySpace.SHARED for n in op.reads))
+            )
             good = (instruction is not None and instruction.contract == _CONTRACT
-                    and instruction.cta_group == 1 and instruction.operand_source is OperandSource.SHARED
+                    and instruction.cta_group == 1 and placement
                     and instruction.operand_major == (OperandMajorMode.K, OperandMajorMode.K)
                     and p.tile_shape is not None and instruction.shape == (128,p.tile_shape[1],16)
                     and p.tile_shape[0] == 128 and 8 <= p.tile_shape[1] <= 256 and p.tile_shape[1] % 8 == 0
-                    and len(op.reads) == 2 and all(buffers[n].space is MemorySpace.SHARED for n in op.reads)
+                    and len(op.reads) == 2
                     and all(buffers[n].dtype in (DType.BF16,DType.FP16) for n in op.reads)
                     and buffers[op.reads[0]].dtype == buffers[op.reads[1]].dtype
                     and dst.space is MemorySpace.TENSOR)
             check(good, 'NATIVE_MMA_CONTRACT', path+'.parameters.instruction',
-                  'native MMA requires explicit M128/N8..256/K16 f16-family, matching half/BF16 shared K-major operands and FP32 TMEM')
+                  'native MMA requires explicit M128/N8..256/K16 f16-family and either shared/shared or TMEM-A/shared-B operands')
             if p.k_ranges is not None:
                 check(good and all(endpoint % instruction.shape[2] == 0
                                    for interval in p.k_ranges for endpoint in interval),
@@ -309,8 +335,12 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                       and dst.shape == p.tile_shape[:2],
                       'NATIVE_MMA_TILE_DOMAIN', path+'.parameters.tile_shape',
                       'the full input and result tile domains must match A[M,K], B[N,K] and result[M,N]')
-            check(len(op.reads) == 2 and all(name in writers and writers[name].kind is OperationKind.LOAD for name in op.reads),
-                  'NATIVE_MMA_OPERAND_WRITER', path+'.reads', 'MMA operands must be explicitly staged by loads')
+            check(len(op.reads) == 2 and all(
+                name in writers and writers[name].kind is (
+                    OperationKind.TMEM_STORE if buffers[name].space is MemorySpace.TENSOR
+                    else OperationKind.LOAD) for name in op.reads),
+                  'NATIVE_MMA_OPERAND_WRITER', path+'.reads',
+                  'MMA operands must be explicitly staged by loads or a TMEM store')
             check(op.pipeline is not None, 'NATIVE_MMA_PIPELINE', path+'.pipeline', 'MMA must belong to an explicit contraction pipeline')
             check(len(op.signals) == 1, 'NATIVE_MMA_COMPLETION', path+'.signals', 'each MMA needs one distinct completion mbarrier')
             for name in op.signals:
@@ -371,6 +401,27 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                         check(all(c.source is AccessIndexKind.PROGRAM for c in access.indices[:-2])
                               and all(c.source is not AccessIndexKind.PROGRAM for c in access.indices[-2:]),
                               'NATIVE_TMA_COORDINATES', path, 'TMA scalar program axes precede the two tiled matrix axes')
+
+        elif op.kind is OperationKind.TMEM_STORE:
+            src = buffers[op.reads[0]]
+            atom = op.parameters.destination_atom
+            check(_scope(s, op) is None, 'NATIVE_TMEM_STORE_SCOPE', path,
+                  'the first TMEM store route publishes one tile outside TileLoop')
+            check(src.space is MemorySpace.REGISTER and dst.space is MemorySpace.TENSOR
+                  and src.dtype is dst.dtype is DType.BF16
+                  and src.shape == dst.shape and len(src.shape) == 2
+                  and src.shape[0] == 128 and src.shape[1] % 16 == 0
+                  and atom.op == 'tcgen05.St32x32b' and atom.repetition == 8,
+                  'NATIVE_TMEM_STORE_CONTRACT', path,
+                  'native TMEM store packs pairs of BF16 values in 128 rows using x8 atoms')
+            barrier = next((b for b in s.barriers if b.name in op.signals), None)
+            check(len(op.signals) == 1 and barrier is not None
+                  and barrier.mechanism is BarrierMechanism.MBARRIER
+                  and barrier.count == 4 and barrier.pipeline is None,
+                  'NATIVE_TMEM_STORE_COMPLETION', path+'.signals',
+                  'four writing warps must publish through one count-four mbarrier')
+            if barrier is not None:
+                owned_barriers.add(barrier.name)
 
         elif op.kind is OperationKind.ELEMENTWISE:
             check(op.parameters.op in (ElementwiseOp.ADD, ElementwiseOp.SUB, ElementwiseOp.MUL,
@@ -523,6 +574,18 @@ class _Emitter:
                 self.line(f'asm volatile("tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;" :: "r"(cake_smem({name})), "n"({a.tensor_columns}) : "memory");')
                 self.end()
         self.line('__syncthreads();')
+        tmem_store_barriers = {
+            name for op in self.s.operations if op.kind is OperationKind.TMEM_STORE
+            for name in op.signals
+        }
+        if tmem_store_barriers:
+            self.begin('if (threadIdx.x == 0)')
+            for name in sorted(tmem_store_barriers):
+                barrier = next(b for b in self.s.barriers if b.name == name)
+                self.line(f'cake_init({self.barvars[name]}, {barrier.count});')
+            self.line('asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");')
+            self.end()
+            self.line('__syncthreads();')
         for b in self.s.buffers:
             if b.space is MemorySpace.REGISTER:
                 self.line(f'{_TYPES[b.dtype]} {self.names[b.name]}[{_slots(self.s,b)}];')
@@ -532,6 +595,11 @@ class _Emitter:
         self.sequence(None)
         self.line('__syncthreads();')
         self.invalidate_completions(None)
+        if tmem_store_barriers:
+            self.begin('if (threadIdx.x == 0)')
+            for name in sorted(tmem_store_barriers):
+                self.line(f'cake_inval({self.barvars[name]});')
+            self.end()
         for a in self.s.allocations:
             if a.space is MemorySpace.TENSOR:
                 self.begin(f'if (warp == {self.roles[a.allocating_role].execution_groups[0]})')
@@ -626,6 +694,12 @@ class _Emitter:
         for producer in (True,False):
             role = loads[0].role if producer else mmas[0].role
             self.begin(f'if ({self.role_condition(role)}'+(')' if producer else ' && (threadIdx.x & 31) == 0)'))
+            if not producer:
+                for mma in mmas:
+                    for name in mma.reads:
+                        if self.b(name).space is MemorySpace.TENSOR:
+                            writer = next(op for op in self.s.operations if name in op.writes)
+                            self.line(f'cake_wait({self.barvars[writer.signals[0]]}, 0);')
             self.line('#pragma unroll 1')
             self.begin(f'for (int {var}=0; {var}<{trips}; ++{var})')
             self.line(f'const int stage = {var} % {p.stages};')
@@ -667,12 +741,17 @@ class _Emitter:
                     for start,end in ranges:
                         self.line('#pragma unroll')
                         self.begin(f'for (int atom={start//atom_k}; atom<{end//atom_k}; ++atom)')
-                        expr=[]
-                        for buf in (a,b):
-                            width,mode = _SWIZZLE[buf.swizzle]
-                            expr.append(f'cake_desc(cake_smem({self.pointer(buf,"stage")}) + atom*{atom_k*buf.dtype.itemsize}, {width*8}, {mode})')
-                        # A nonzero physical atom can be this result's first contribution.
-                        self.line(f'cake_mma({self.taddr(dst)}, {expr[0]}, {expr[1]}, {desc}u, {var} != 0 || atom != {first_atom});')
+                        if a.space is MemorySpace.TENSOR:
+                            width,mode = _SWIZZLE[b.swizzle]
+                            b_desc = f'cake_desc(cake_smem({self.pointer(b,"stage")}) + atom*{atom_k*b.dtype.itemsize}, {width*8}, {mode})'
+                            self.line(f'cake_mma_tmem_a({self.taddr(dst)}, {self.taddr(a)} + atom*{atom_k//2}, {b_desc}, {desc}u, {var} != 0 || atom != {first_atom});')
+                        else:
+                            expr=[]
+                            for buf in (a,b):
+                                width,mode = _SWIZZLE[buf.swizzle]
+                                expr.append(f'cake_desc(cake_smem({self.pointer(buf,"stage")}) + atom*{atom_k*buf.dtype.itemsize}, {width*8}, {mode})')
+                            # A nonzero physical atom can be this result's first contribution.
+                            self.line(f'cake_mma({self.taddr(dst)}, {expr[0]}, {expr[1]}, {desc}u, {var} != 0 || atom != {first_atom});')
                         self.end()
                 self.line(f'cake_commit({freevar}+stage);')
             self.end()
@@ -711,6 +790,22 @@ class _Emitter:
             outputs=', '.join(f'"=f"({d}[col+{i}])' for i in range(rep))
             self.line(f'asm volatile("tcgen05.ld.sync.aligned.32x32b.x{rep}.b32 {{{operands}}}, [%{rep}];" : {outputs} : "r"({self.taddr(src)} + (({row}/32)*32 << 16) + col) : "memory");')
             self.line('asm volatile("tcgen05.wait::ld.sync.aligned;" ::: "memory");')
+            self.end()
+        elif op.kind is OperationKind.TMEM_STORE:
+            self.line('#pragma unroll')
+            self.begin(f'for (int group=0; group<{src.shape[1]//16}; ++group)')
+            for i in range(8):
+                col = f'(group*16+{i*2})'
+                self.line(f'uint32_t word{i} = uint32_t(__bfloat16_as_ushort({a}[{col}])) | (uint32_t(__bfloat16_as_ushort({a}[{col}+1])) << 16);')
+            inputs = ', '.join(f'"r"(word{i})' for i in range(8))
+            self.line('asm volatile("tcgen05.st.sync.aligned.32x32b.x8.b32 '
+                      '[%0], {%1,%2,%3,%4,%5,%6,%7,%8};" :: '
+                      f'"r"({self.taddr(dst)} + (({row}/32)*32 << 16) + group*8), '
+                      f'{inputs} : "memory");')
+            self.end()
+            self.line('asm volatile("tcgen05.wait::st.sync.aligned;" ::: "memory");')
+            self.begin('if ((threadIdx.x & 31) == 0)')
+            self.line(f'cake_arrive({self.barvars[op.signals[0]]});')
             self.end()
         elif op.kind is OperationKind.LOAD:
             self.line('#pragma unroll')
@@ -840,6 +935,9 @@ __device__ __forceinline__ uint64_t cake_desc(uint32_t address, uint32_t stride,
 }
 __device__ __forceinline__ void cake_mma(uint32_t dst, uint64_t a, uint64_t b, uint32_t desc, bool accumulate) {
   asm volatile("{ .reg .pred p; setp.ne.b32 p, %4, 0; tcgen05.mma.cta_group::1.kind::f16 [%0], %1, %2, %3, p; }" :: "r"(dst), "l"(a), "l"(b), "r"(desc), "r"(int(accumulate)) : "memory");
+}
+__device__ __forceinline__ void cake_mma_tmem_a(uint32_t dst, uint32_t a, uint64_t b, uint32_t desc, bool accumulate) {
+  asm volatile("{ .reg .pred p; setp.ne.b32 p, %4, 0; tcgen05.mma.cta_group::1.kind::f16 [%0], [%1], %2, %3, p; }" :: "r"(dst), "r"(a), "l"(b), "r"(desc), "r"(int(accumulate)) : "memory");
 }
 __device__ __forceinline__ void cake_commit(uint64_t* p) {
   asm volatile("tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.b64 [%0];" :: "r"(cake_smem(p)) : "memory");

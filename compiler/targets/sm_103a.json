@@ -32,6 +32,7 @@
     "elementwise",
     "scan",
     "store",
+    "tmem_store",
     "coordinate",
     "compare",
     "select"

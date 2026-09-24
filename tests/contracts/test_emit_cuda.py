@@ -125,6 +125,25 @@ class NativeCudaContracts(unittest.TestCase):
                 self.assertNotIn('import cutlass',l.source)
                 self.assertNotIn('triton',l.source)
 
+    def test_tmem_state_store_and_tensor_a_mma_have_emitted_completion(self):
+        d=json.loads((ROOT/'tests/fixtures/tmem-state-mma-sm103a.json').read_text())
+        lowered=self.lower(d)
+        source=lowered.source
+        self.assertIn('tcgen05.st.sync.aligned.32x32b.x8.b32',source)
+        self.assertIn('tcgen05.wait::st.sync.aligned',source)
+        self.assertIn('tcgen05.mma.cta_group::1.kind::f16 [%0], [%1]',source)
+        self.assertIn('cake_init(bar0, 4);',source)
+        self.assertIn('cake_arrive(bar0);',source)
+        self.assertIn('cake_wait(bar0, 0);',source)
+        self.assertEqual(lowered.toolchain_requirements['argument_order'],['a','b','c'])
+        self.assertEqual(lowered.toolchain_requirements['grid'],[1,1,1])
+        self.assertLess(source.index('// CAKE_OP: store_tmem'),
+                        source.index('// CAKE_OP: load_b'))
+        self.assertLess(source.index('// CAKE_OP: load_b'),
+                        source.index('// CAKE_OP: mma'))
+        self.assertLess(source.index('// CAKE_OP: mma'),
+                        source.index('// CAKE_OP: read_acc'))
+
     def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
         d=document('inplace-state-gemm')
         lowered=self.lower(d)
