@@ -84,6 +84,13 @@ device status after synchronization. Its metadata requires a reset on every
 launch stream. This does not seal an executable candidate or admit the
 existing ordered Program Evaluation path for version 2.
 
+For the narrower system-scope atomic leaf, `bind_peer_atomic_state` is an
+Evaluation development check: it inspects the actual state pointer's owner,
+requires a different execution device, probes peer access and native P2P
+atomic support for that exact ordered pair, then confirms peer access was
+enabled. The Target's PTX contract is necessary but never substitutes for
+those runtime pair facts. This admits no remote payload handoff or EP4 Program.
+
 ## Admission and liveness obligations
 
 1. The Program's leaf Schedules and bindings are complete and share the exact
