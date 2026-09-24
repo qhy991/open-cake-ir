@@ -44,10 +44,34 @@
       "run": "cpu-static-probe",
       "event": 5,
       "note": "The existing k_ranges canonicalizer merges adjacent ranges and erases four equal K partitions. A separate k_partitions field preserves ordered warp-local FP32 partials and their left-associated sum; common verification accepts the complete staged Schedule while current emitters refuse it by name."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-warp-correctness-admission-a8f537fb-20260924.json",
+      "run": "gpuq-1c6d1eead791",
+      "event": 6,
+      "note": "The first Compiler-emitted native kernel passed CPU compilation but swapped A/B TMA descriptor parameters. Ready-barrier expected bytes never completed; the task-owned broker job was cancelled, then GPU contexts and queues were verified clear. Successor 212b6f7a corrected the descriptor order and added a source-boundary regression check."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-warp-authored-correctness-4da760be-20260924/",
+      "run": "gpuq-a2b6a0673319",
+      "event": 7,
+      "note": "Normal Python native_source authoring under Compiler commit 4da760be produced clean AOT artifacts and completed all ten short-K shape/distribution cases. Every native output matched the frozen official CAKE output bitwise, all prepared inputs remained unchanged, and the task lease was released before host validation."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-warp-authored-benchmark-b16-4da760be-20260924/report.json",
+      "run": "gpuq-297902a2e2c3",
+      "event": 8,
+      "note": "Five alternating-order cold-L2 CUPTI rounds measured Compiler native 3.424, selected-load Triton 5.888 and official CAKE 3.008 microseconds for B16/N1024/K1024. Each arm had one CUDA kernel, all round outputs and inputs passed, and maximum within-round CVs were 4.888%, 2.502% and 4.382%, respectively. This broker-bound custom diagnostic is not a formal Evaluation receipt."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-warp-authored-benchmark-b1-4da760be-20260924/report.json",
+      "run": "gpuq-297902a2e2c3",
+      "event": 9,
+      "note": "For B1/N128/K720 the corresponding medians were native 2.815, selected-load Triton 4.639 and official CAKE 2.656 microseconds, with complete bitwise outputs and one kernel per arm. The official arm maximum within-round CV was 7.510%, so the external latency edge remains descriptive."
     }
   ],
-  "observation": "The B300 gap is partly an emission-mechanism gap. Direct selected-K loads reduced the largest historical TinyGEMM slowdown, but the two short-K fixtures remain slower than official CAKE. A scalar global-to-shared warp-MMA prototype was numerically exact yet much slower. Replacing its copies with four K64 TMA boxes made the B16 prototype nearly match the official kernel. A K256 box is rejected by the device API, so describing K256 staging with one K256 descriptor is not a valid shortcut. The existing common verifier's exact box/staging equality prevented the K64-box plan even before backend admission. Swapping the MMA operand orientation preserves bitwise outputs on both short-K fixtures and makes the accumulator axes match the public row-major output, avoiding a new output-layout abstraction. The existing k_ranges field merges adjacent intervals, so it cannot name the four distinct warp partials; that requires a separate typed K-partition commitment.",
-  "proposed_change": "Admit a declared TMA descriptor box that evenly tiles the final axis of one shared staging buffer, while each existing emitter refuses a route it cannot emit. Then add a bounded native_cuda mma.sync path whose Schedule declares the four compute groups, four producer groups per operand, K256 stage and K64 descriptor boxes, named readiness/synchronization, four FP32 partials, CTA reduction and BF16 bias epilogue. Preserve exact target and bitwise Workload gates; do not route by operator name or copy the external kernel into the backend. A formal B300-M4 comparison also needs an Executor successor that accepts the existing broker's own admission receipt without inventing GPUQ_JOB_ID. Add ordered k_partitions to the MMA data model with complete nonoverlapping coverage, one execution group per partition, and instruction-aligned boundaries; keep every current emitter refusing it until the native warp-MMA route exists.",
+  "observation": "The B300 gap is partly an emission-mechanism gap. Direct selected-K loads reduced the largest historical TinyGEMM slowdown, but the two short-K fixtures remain slower than official CAKE. A scalar global-to-shared warp-MMA prototype was numerically exact yet much slower. Replacing its copies with four K64 TMA boxes made the B16 prototype nearly match the official kernel. A K256 box is rejected by the device API, so describing K256 staging with one K256 descriptor is not a valid shortcut. The existing common verifier's exact box/staging equality prevented the K64-box plan even before backend admission. Swapping the MMA operand orientation preserves bitwise outputs on both short-K fixtures and makes the accumulator axes match the public row-major output, avoiding a new output-layout abstraction. The existing k_ranges field merges adjacent intervals, so it cannot name the four distinct warp partials; that requires a separate typed K-partition commitment. The normal Python-authored Compiler successor 4da760be now emits the TMA warp-MMA route and passes all ten short-K bitwise peer cases. The B16 paired custom CUPTI diagnostic is stable and narrows the original gap to about 14%; B1 retains an external-CV failure. This is implementation evidence, while formal Evaluation remains blocked by B300-M4 broker admission identity rather than by kernel correctness.",
+  "proposed_change": "Admit a declared TMA descriptor box that evenly tiles the final axis of one shared staging buffer, while each existing emitter refuses a route it cannot emit. Then add a bounded native_cuda mma.sync path whose Schedule declares the four compute groups, four producer groups per operand, K256 stage and K64 descriptor boxes, named readiness/synchronization, four FP32 partials, CTA reduction and BF16 bias epilogue. Preserve exact target and bitwise Workload gates; do not route by operator name or copy the external kernel into the backend. A formal B300-M4 comparison also needs an Executor successor that accepts the existing broker's own admission receipt without inventing GPUQ_JOB_ID. Add ordered k_partitions to the MMA data model with complete nonoverlapping coverage, one execution group per partition, and instruction-aligned boundaries; keep every current emitter refusing it until the native warp-MMA route exists. The provisional core and NVIDIA task commits implement the typed route, but integration through maintained branches and a formal Executor successor that consumes broker-issued admission are still required before closing this Finding or publishing platform result rows.",
   "decision": "proposed",
   "implemented_in": null,
   "verified_by": null
