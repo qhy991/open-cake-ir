@@ -110,10 +110,12 @@ An intermediate crossing regular producer/consumer ranks must use a
 system-scope handoff; a same-rank intermediate must use device scope. Public
 outputs reside with their producing rank and runtime controls with queue
 state. Construction checks all of these edges and both ranks' nonempty CTA
-classes. The existing single-device adapter and backends refuse this form
-until a two-rank emitter and launch adapter prove the cross-rank queue and
-wait protocol. Version 3 is not an EP4 fallback or permission to launch a
-version-2 kernel twice.
+classes. The single-device adapter still refuses this form. The NVIDIA task
+branch now emits one bounded two-rank FP32 FMA worker source with system-scope
+queues and has a development launch adapter that binds each tensor to its
+declared rank. Exact-source compilation and two-GPU oracle validation remain
+open. Version 3 is not an EP4 fallback or permission to launch a version-2
+kernel twice; formal distributed candidate sealing remains a separate gate.
 
 ## Admission and liveness obligations
 
