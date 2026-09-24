@@ -16,6 +16,10 @@ The [indexed-load example](../../../corpus/schedules/indexed-gather-b8-smoke.jso
 
 Write a value to the AccessMap destination with the declared type and rounding. Writing caller state needs a proof of disjoint ownership, or the admitted reservation-derived indexed-store proof. A claim that indices are unique is insufficient. See [state update](../../../corpus/schedules/state-store-b8-smoke.json) and [reservation-owned store](../../../corpus/schedules/reservation-owned-store-b8-smoke.json). State-only calls may return an empty tuple.
 
+## tmem_store
+
+Copy a BF16 register tile into TMEM scratch. Unlike a global `store`, `tcgen05.st` completes asynchronously. The Schedule names its `tcgen05.St32x32b` x8 atom, four 32-lane execution groups, and a count-4 `mbarrier`; every reader waits on that barrier. For `tcgen05.mma` with `operand_source=tensor`, A resides in TMEM and B in shared memory. No declared Target or backend currently admits the complete route. The [contract fixture](../../../tests/fixtures/tmem-state-mma-sm103a.json) checks its representation and refusals only.
+
 ## elementwise
 
 Compute at corresponding positions, such as `[1,2]+[3,4]=[4,6]`.
