@@ -129,6 +129,19 @@ class TinyGemmReproduction(unittest.TestCase):
                     self.assertEqual(bool(document.get('tile_loops')), depth > 1024)
                     self.assertTrue(compiler.lower(assessment).source)
 
+    def test_measured_large_fixture_selects_two_groups_and_two_stages_only_by_default(self):
+        large = WorkloadContract(task.workload_document(rows=64, columns=4096, depth=3072))
+        default = frontend.parse(task.partitioned_source(large)).document
+        self.assertEqual(default['roles'][0]['execution_groups'], [0, 1])
+        self.assertEqual(default['tile_loops'][0]['range_options']['num_stages'], 2)
+        explicit = frontend.parse(task.partitioned_source(large, stages=4)).document
+        self.assertEqual(explicit['roles'][0]['execution_groups'], [0, 1])
+        self.assertEqual(explicit['tile_loops'][0]['range_options']['num_stages'], 4)
+        other = WorkloadContract(task.workload_document(rows=16, columns=1024, depth=1024))
+        default_other = frontend.parse(task.partitioned_source(other)).document
+        self.assertEqual(default_other['roles'][0]['execution_groups'], [0, 1, 2, 3])
+        self.assertFalse(default_other['tile_loops'])
+
     def test_partitioned_lowering_keeps_each_quarter_and_accumulates_across_trips(self):
         import numpy as np
         class Pointer:
