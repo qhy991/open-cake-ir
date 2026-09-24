@@ -124,6 +124,9 @@ def rewrite_program(compiler: Compiler, program: Program, transformation: str,
         return _refuse('transform_parameters', 'Stage names and result identity must be nonempty strings.')
     try:
         program = Program.from_dict(program.document)
+        if program.execution is not None:
+            return _refuse('execution_kind',
+                           'Cooperative worker Programs require their dedicated rewrite path.')
         # A complete candidate has no unassessed side region. Keep findings localized
         # even when the requested rewrite happens to select different stages.
         for stage in program.stages:

@@ -85,6 +85,8 @@ class ProgramLaunchManifest:
             or not isinstance(document['case_id'], str) or not document['case_id']):
             raise ValueError('Program Workload binding differs')
         program = Program.from_dict(document['program'])
+        if program.execution is not None:
+            raise ValueError('cooperative worker Program cannot use ordered Program execution')
         sources = document['lowered_sources']
         if (not isinstance(sources, Mapping) or set(sources) != {stage.name for stage in program.stages}
             or any(not isinstance(value, str) or len(value) != 64 or any(c not in '0123456789abcdef' for c in value)

@@ -1,7 +1,9 @@
 # ADR 0083: A CTA worker plan rewrites a complete Program
 
-Status: proposed. The B300 scheduling mechanism has device evidence; Cake
-admission and native lowering described here are not implemented yet.
+Status: proposed. The B300 scheduling mechanism has device evidence. A bounded
+version-2 Program execution descriptor now checks structure and dataflow;
+native worker lowering and Evaluation remain unimplemented and explicitly
+refused.
 
 ## Problem
 
@@ -51,6 +53,19 @@ the Study controls access and comparison policy. The NVIDIA native backend
 owns PTX atomics, release/acquire loads and stores, branch emission and
 cooperative launch. A backend name does not multiply for each vendor or
 workload. A route that cannot emit all declared effects refuses by name.
+
+The first structural slice is `Program` schema version 2 with
+`execution.kind="cooperative_workers"`. Version 1 remains the unchanged
+static same-stream authority. Version 2 reuses complete stage Schedules and
+single-assignment tensor bindings, and additionally owns three distinct
+public INT32 scalar control inputs, two ordered CTA classes, one queue per
+stage, one release/acquire device handoff per private intermediate, and one
+steal window. The controls count as Program-consumed inputs without a dummy
+math stage. Queue and handoff order are canonical. This bounded form is an
+internal admission step: `Compiler.lower_program`, existing Program rewrites
+and ordered Evaluation all refuse version 2 until one complete native worker
+path exists. It claims no device liveness or correctness from type
+construction alone.
 
 ## Admission and liveness obligations
 
