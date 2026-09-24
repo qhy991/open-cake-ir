@@ -112,3 +112,22 @@ and at
 The first broker attempt exited before touching CUDA because the standalone
 runner lacked its receipt path. The successful retry used a separate receipt;
 both logs are retained. The successful job released its GPU allocation.
+
+## Four-GPU peer-read prerequisite
+
+A separate B300-M4 broker job `gpuq-2ffcda714d1a` requested exactly four
+GPUs, the user's resource ceiling. An `sm_103a` CUDA kernel on each destination
+read a peer-owned INT32 array from each of the other three GPUs through CUDA
+unified virtual addressing. All 12 directed pairs reported peer access, and
+all 12 outputs matched an independent CPU oracle after lease release. The
+four broker-visible devices each reported B300 compute capability 10.3 and
+148 SMs. Source inputs, compile output, device observations, broker receipt
+and oracle report are retained outside source at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/cake-weave-peer-b300-m4-4gpu-3e5715cf/`
+and at `B300-M4:/home/qinhaiyan/cake-weave-peer-b300-m4-4gpu-3e5715cf/`.
+The broker job finished and released all four cards.
+
+Peer readability establishes a transport prerequisite only. This test has no
+concurrent producer/consumer handoff, NVLink bandwidth measurement, grouped
+GEMM, expert routing or MoE output. The worker prototype above remains a
+single-GPU computation with an HBM-copy stand-in for dispatch.
