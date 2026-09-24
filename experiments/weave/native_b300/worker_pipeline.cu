@@ -164,7 +164,9 @@ __global__ void worker_pipeline(
     const unsigned tiles_per_chunk = tiles / chunks;
     const bool communication_worker = blockIdx.x < c;
     if (lane == 0) {
-        role_trace[blockIdx.x] = communication_worker ? 1u : 0u;
+        unsigned smid;
+        asm volatile("mov.u32 %0, %%smid;" : "=r"(smid));
+        role_trace[blockIdx.x] = (smid << 1) | unsigned(communication_worker);
     }
 
     if (communication_worker) {
