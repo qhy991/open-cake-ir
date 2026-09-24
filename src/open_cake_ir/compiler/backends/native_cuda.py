@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 
+from . import native_cuda_warp_mma
 from .common import Emission, EmitError, refusal, vocabulary_findings
 from ..diagnostics import Finding
 from ..ir import (
@@ -87,6 +88,8 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     failures = list(requirements(s))
     if failures:
         return tuple(failures)
+    if native_cuda_warp_mma.applies(s):
+        return native_cuda_warp_mma.preflight(s, target)
     def check(ok, code, path, message):
         if not ok:
             failures.append(refusal(code, path, message))
@@ -858,4 +861,6 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
             raise EmitError('; '.join(f'{f.code} at {f.path}: {f.message}' for f in failures))
     if entry_point is not None and entry_point != schedule.lowering.entry_point:
         raise EmitError('Entry point differs from the canonical route.')
+    if native_cuda_warp_mma.applies(schedule):
+        return native_cuda_warp_mma.emit(schedule, target, entry_point=entry_point)
     return _Emitter(schedule,target,schedule.lowering.entry_point).emit()

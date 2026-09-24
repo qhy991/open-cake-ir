@@ -1,0 +1,233 @@
+// Generated from a Schedule by the native CUDA warp-MMA route.
+// SPDX-License-Identifier: Apache-2.0
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <cuda_bf16.h>
+#include <cstdint>
+#include <new>
+#include <cstring>
+
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ != @CUDA_ARCH@
+#error "This prototype requires sm_103a"
+#endif
+
+namespace {
+constexpr int kAOffset = @A_OFFSET@;
+constexpr int kBOffset = @B_OFFSET@;
+constexpr int kPartialOffset = @PARTIAL_OFFSET@;
+constexpr int kSharedBytes = @SHARED_BYTES@;
+constexpr int kBarrierOffset = @BARRIER_OFFSET@;
+struct Handle {
+    CUtensorMap weight;
+    CUtensorMap activation;
+    int batch;
+    int features;
+    int depth;
+};
+
+__device__ __forceinline__ unsigned shared_address(const void* pointer) {
+    return static_cast<unsigned>(__cvta_generic_to_shared(pointer));
+}
+__device__ __forceinline__ void barrier_init(unsigned address) {
+    asm volatile("mbarrier.init.shared::cta.b64 [%0], 1;" :: "r"(address) : "memory");
+}
+__device__ __forceinline__ void barrier_expect(unsigned address, unsigned bytes) {
+    asm volatile("mbarrier.arrive.expect_tx.release.cta.shared::cta.b64 _, [%0], %1;"
+                 :: "r"(address), "r"(bytes) : "memory");
+}
+__device__ __forceinline__ void barrier_wait(unsigned address) {
+    asm volatile("{ .reg .pred done; WAIT: mbarrier.try_wait.parity.acquire.cta.shared::cta.b64 done, [%0], 0; @!done bra WAIT; }"
+                 :: "r"(address) : "memory");
+}
+__device__ __forceinline__ void tma_load(unsigned dst, const CUtensorMap* map,
+                                         int k, int row, unsigned barrier) {
+    asm volatile("cp.async.bulk.tensor.2d.shared::cta.global.mbarrier::complete_tx::bytes "
+                 "[%0], [%1, {%2, %3}], [%4];"
+                 :: "r"(dst), "l"(map), "r"(k), "r"(row), "r"(barrier) : "memory");
+}
+
+extern "C" __global__ __launch_bounds__(384, 1)
+void @ENTRY@_kernel(const __grid_constant__ CUtensorMap weight_map,
+                                    const __grid_constant__ CUtensorMap activation_map,
+                                    const __nv_bfloat16* bias, __nv_bfloat16* out,
+                                    int batch, int features, int depth) {
+    extern __shared__ __align__(1024) unsigned char smem[];
+    const int tid = int(threadIdx.x);
+    const int warp = tid / 32;
+    const int lane = tid & 31;
+    const int batch_base = int(blockIdx.x) * 16;
+    const int feature_base = int(blockIdx.y) * 8;
+    const unsigned base = shared_address(smem);
+
+    if (warp == 0 && lane == 0) {
+        #pragma unroll
+        for (int slot = 0; slot < 4; ++slot) {
+            barrier_init(base + kBarrierOffset + slot * 8);
+            barrier_init(base + kBarrierOffset + 32 + slot * 8);
+        }
+        asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");
+    }
+    __syncthreads();
+
+    float accum[4] = {0.f, 0.f, 0.f, 0.f};
+    // CAKE_OP:@LOAD_A_OP@
+    if (warp >= 4 && warp < 8 && lane == 0) {
+        const int slot = warp - 4;
+        const unsigned ready = base + kBarrierOffset + slot * 8;
+        barrier_expect(ready, 8192);
+        #pragma unroll
+        for (int su = 0; su < 4; ++su) {
+            const unsigned dst = base + kAOffset + (slot * 4 + su) * 2048;
+            tma_load(dst, &activation_map, slot * 256 + su * 64, batch_base, ready);
+        }
+    // CAKE_OP:@LOAD_B_OP@
+    } else if (warp >= 8 && warp < 12 && lane == 0) {
+        const int slot = warp - 8;
+        const unsigned ready = base + kBarrierOffset + 32 + slot * 8;
+        barrier_expect(ready, 4096);
+        #pragma unroll
+        for (int su = 0; su < 4; ++su) {
+            const unsigned dst = base + kBOffset + (slot * 4 + su) * 1024;
+            tma_load(dst, &weight_map, slot * 256 + su * 64, feature_base, ready);
+        }
+    }
+
+    // CAKE_OP:@MMA_OP@
+    if (warp < 4) {
+        barrier_wait(base + kBarrierOffset + warp * 8);
+        barrier_wait(base + kBarrierOffset + 32 + warp * 8);
+        const unsigned lane_div8 = unsigned(lane) / 8;
+        const unsigned lane_mod8 = unsigned(lane) % 8;
+        const unsigned row_wt = lane_mod8 + (lane_div8 % 2) * 8;
+        const unsigned col_off_wt = lane_div8 / 2;
+        const unsigned row_act = lane_mod8;
+        #pragma unroll
+        for (int su = 0; su < 4; ++su) {
+            const unsigned weight_base = base + kAOffset + (warp * 4 + su) * 2048;
+            const unsigned activation_base = base + kBOffset + (warp * 4 + su) * 1024;
+            #pragma unroll
+            for (int kii = 0; kii < 4; ++kii) {
+                unsigned a_frag[4];
+                unsigned b_frag[2];
+                const unsigned col_w = unsigned(2 * kii) + col_off_wt;
+                const unsigned col_sw_w = (row_wt % 8) ^ col_w;
+                asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
+                    : "=r"(a_frag[0]), "=r"(a_frag[1]), "=r"(a_frag[2]), "=r"(a_frag[3])
+                    : "r"(weight_base + row_wt * 128 + col_sw_w * 16) : "memory");
+                const unsigned col_a = unsigned(2 * kii) + lane_div8;
+                const unsigned col_sw_a = (row_act % 8) ^ col_a;
+                asm volatile("ldmatrix.sync.aligned.m8n8.x2.shared.b16 {%0, %1}, [%2];"
+                    : "=r"(b_frag[0]), "=r"(b_frag[1])
+                    : "r"(activation_base + row_act * 128 + col_sw_a * 16) : "memory");
+                asm volatile("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 "
+                             "{%0, %1, %2, %3}, {%4, %5, %6, %7}, {%8, %9}, {%0, %1, %2, %3};"
+                    : "+f"(accum[0]), "+f"(accum[1]), "+f"(accum[2]), "+f"(accum[3])
+                    : "r"(a_frag[0]), "r"(a_frag[1]), "r"(a_frag[2]), "r"(a_frag[3]),
+                      "r"(b_frag[0]), "r"(b_frag[1]));
+            }
+        }
+        float* partials = reinterpret_cast<float*>(smem + kPartialOffset);
+        #pragma unroll
+        for (int z = 0; z < 4; ++z) partials[tid * 4 + z] = accum[z];
+        asm volatile("barrier.sync 2, 128;" ::: "memory");
+    }
+
+    // CAKE_OP:@BIAS_OP@ @ADD_OP@ @CAST_OP@ @STORE_OP@
+    if (warp == 0) {
+        float* partials = reinterpret_cast<float*>(smem + kPartialOffset);
+        #pragma unroll
+        for (int z = 0; z < 4; ++z) {
+            accum[z] = ((accum[z] + partials[(32 + lane) * 4 + z])
+                        + partials[(64 + lane) * 4 + z])
+                        + partials[(96 + lane) * 4 + z];
+        }
+        const int batch0 = batch_base + lane / 4;
+        const int batch1 = batch0 + 8;
+        const int feature0 = feature_base + 2 * (lane % 4);
+        const int feature1 = feature0 + 1;
+        const float bias0 = feature0 < features ? __bfloat162float(bias[feature0]) : 0.f;
+        const float bias1 = feature1 < features ? __bfloat162float(bias[feature1]) : 0.f;
+        if (batch0 < batch) {
+            if (feature0 < features) out[batch0 * features + feature0] = __float2bfloat16_rn(accum[0] + bias0);
+            if (feature1 < features) out[batch0 * features + feature1] = __float2bfloat16_rn(accum[1] + bias1);
+        }
+        if (batch1 < batch) {
+            if (feature0 < features) out[batch1 * features + feature0] = __float2bfloat16_rn(accum[2] + bias0);
+            if (feature1 < features) out[batch1 * features + feature1] = __float2bfloat16_rn(accum[3] + bias1);
+        }
+    }
+}
+}  // namespace
+
+struct @ENTRY@_handle {
+    CUtensorMap a_map;
+    CUtensorMap b_map;
+    const __nv_bfloat16* bias;
+    __nv_bfloat16* output;
+    int device;
+};
+
+extern "C" int @ENTRY@_create(void* const* buffers, void** result) {
+    if (!buffers || !result) return int(cudaErrorInvalidValue);
+    const void* activation = buffers[@INPUT_INDEX@];
+    const void* weight = buffers[@WEIGHT_INDEX@];
+    const void* bias = buffers[@BIAS_INDEX@];
+    void* output = buffers[@OUTPUT_INDEX@];
+    if (!activation || !weight || !bias || !output) return int(cudaErrorInvalidValue);
+    int device;
+    cudaDeviceProp properties;
+    cudaError_t error = cudaGetDevice(&device);
+    if (error != cudaSuccess) return int(error);
+    error = cudaGetDeviceProperties(&properties, device);
+    if (error != cudaSuccess) return int(error);
+    if (properties.major != @MAJOR@ || properties.minor != @MINOR@ || (@DEVICE_NAME_REFUSAL@))
+        return int(cudaErrorInvalidDevice);
+    auto* handle = new(std::nothrow) @ENTRY@_handle{};
+    if (!handle) return int(cudaErrorMemoryAllocation);
+    handle->device = device;
+    handle->bias = static_cast<const __nv_bfloat16*>(bias);
+    handle->output = static_cast<__nv_bfloat16*>(output);
+    const uint64_t a_dims[2] = {@DEPTH@u, @BATCH@u};
+    const uint64_t b_dims[2] = {@DEPTH@u, @FEATURES@u};
+    const uint64_t strides[1] = {@DEPTH@u * sizeof(__nv_bfloat16)};
+    const uint32_t a_box[2] = {64u, 16u};
+    const uint32_t b_box[2] = {64u, 8u};
+    const uint32_t steps[2] = {1u, 1u};
+    CUresult status = cuTensorMapEncodeTiled(
+        &handle->a_map, CU_TENSOR_MAP_DATA_TYPE_BFLOAT16, 2,
+        const_cast<void*>(activation), a_dims, strides, a_box, steps,
+        CU_TENSOR_MAP_INTERLEAVE_NONE, CU_TENSOR_MAP_SWIZZLE_128B,
+        CU_TENSOR_MAP_L2_PROMOTION_NONE, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+    if (status != CUDA_SUCCESS) { delete handle; return 10000 + int(status); }
+    status = cuTensorMapEncodeTiled(
+        &handle->b_map, CU_TENSOR_MAP_DATA_TYPE_BFLOAT16, 2,
+        const_cast<void*>(weight), b_dims, strides, b_box, steps,
+        CU_TENSOR_MAP_INTERLEAVE_NONE, CU_TENSOR_MAP_SWIZZLE_128B,
+        CU_TENSOR_MAP_L2_PROMOTION_NONE, CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
+    if (status != CUDA_SUCCESS) { delete handle; return 10000 + int(status); }
+    error = cudaFuncSetAttribute(@ENTRY@_kernel,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, kSharedBytes);
+    if (error != cudaSuccess) { delete handle; return int(error); }
+    *result = handle;
+    return 0;
+}
+
+extern "C" int @ENTRY@_launch(void* opaque, void* stream) {
+    if (!opaque) return int(cudaErrorInvalidValue);
+    auto* handle = static_cast<@ENTRY@_handle*>(opaque);
+    int device;
+    cudaError_t error = cudaGetDevice(&device);
+    if (error != cudaSuccess) return int(error);
+    if (device != handle->device) return int(cudaErrorInvalidDevice);
+    @ENTRY@_kernel<<<dim3(@GRID_X@, @GRID_Y@, 1), 384, kSharedBytes,
+        reinterpret_cast<cudaStream_t>(stream)>>>(
+        handle->a_map, handle->b_map, handle->bias, handle->output,
+        @BATCH@, @FEATURES@, @DEPTH@);
+    return int(cudaGetLastError());
+}
+
+extern "C" int @ENTRY@_destroy(void* opaque) {
+    delete static_cast<@ENTRY@_handle*>(opaque);
+    return 0;
+}
+// CAKE_KERNEL_END
