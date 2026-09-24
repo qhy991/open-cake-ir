@@ -99,8 +99,10 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
                                 "triton.dot.fp8e4m3_block_scale_fp32"],
                         "synchronization": ["barrier.sync", "mbarrier",
                                             "triton_program_order"]},
-            "sm_103a": {"atomic": ["ptx.atom.relaxed.gpu.global.add.s32",
+            "sm_103a": {"atomic": ["ptx.atom.acq_rel.sys.global.add.s32",
+                                   "ptx.atom.relaxed.gpu.global.add.s32",
                                    "ptx.atom.relaxed.sys.global.add.s32",
+                                   "ptx.atom.release.sys.global.add.s32",
                                    "triton.atomic_add.i32.relaxed.gpu"],
                         "elementwise": ["libdevice.tanh.f32", "ptx.fma.rn.f32"],
                         "mma": ["mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
@@ -222,15 +224,17 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "gfx1151": ["ocml.tanh.f32"],
             "sm_100a": ["ptx.atom.relaxed.gpu.global.add.s32"],
-            "sm_103a": ["libdevice.tanh.f32", "ptx.atom.relaxed.gpu.global.add.s32",
+            "sm_103a": ["libdevice.tanh.f32", "ptx.atom.acq_rel.sys.global.add.s32",
+                        "ptx.atom.relaxed.gpu.global.add.s32",
                         "ptx.atom.relaxed.sys.global.add.s32",
+                        "ptx.atom.release.sys.global.add.s32",
                         "ptx.fma.rn.f32",
                         "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp32_ieee",
                         "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_block_scale_fp32"],
         })
         # gfx1151 and xcore1002 retain their device evidence but have no tanh
         # Corpus case. Preserve both explicit gaps without manufacturing cases.
-        self.assertEqual(sum(len(v) for v in unreached.values()), 16)
+        self.assertEqual(sum(len(v) for v in unreached.values()), 18)
         self.assertNotIn("gfx938", unreached)
 
     def test_a_python_schedule_is_read_rather_than_skipped(self) -> None:
