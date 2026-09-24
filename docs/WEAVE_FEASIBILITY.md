@@ -136,6 +136,7 @@ all three ordered stages offline, with explicit singleton views between their
 global tensors. This verifies composability of the existing IR and exact
 local shapes; it does not fuse stages, execute on B300 or implement the
 five-stage cross-GPU persistent worker.
+
 The NVIDIA task branch at `e4cbd5b7` now lowers the same three-stage local
 calculation through native CUDA: a selected-expert BF16 up/gate projection,
 an explicit FP32 `up * gate/(1+exp(-gate))` activation, and a down projection
@@ -155,8 +156,9 @@ backend name. The BF16 EP4 development contract deliberately starts after
 routing with expert IDs and weights as inputs; it does not pretend to cover
 the FP8 task's routing and block-scale semantics.
 
-The next Compiler tick must keep the exact Program math visible while adding
-rank ownership, remote queue and payload effects, their system-scope
-publication and liveness analyses, and native BF16 expert computation. The
-existing single-device launch paths refuse the EP4 Workload Contract. No raw
-mailbox source is promoted as an opaque MoE instruction.
+The next Compiler tick must compose that visible expert math with ranked
+mailbox effects, remote queue and payload ownership, system-scope
+publication and liveness analysis. [ADR 0084](adr/0084-ep4-worker-needs-ranked-mailbox-effects.md)
+states the four-rank admission and verification obligations. The existing
+single-device launch paths refuse the EP4 Workload Contract. No raw mailbox
+source is promoted as an opaque MoE instruction.
