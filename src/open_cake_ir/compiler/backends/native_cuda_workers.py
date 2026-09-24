@@ -185,7 +185,7 @@ def _emit(program, target, tiles: int, width: int, grid: int):
         f'      {entry}_stage0({args}, tile, lane);',
         '      __syncwarp();',
         f'      if (lane == 0) {{ cake_publish(state + {ready0} + tile); '
-        'cake_claim(state + 3); }}',
+        'cake_claim(state + 3); }',
         '      __syncwarp();', '    }',
         f'    if (lane == 0) while (cake_relaxed(state + 3) < {tiles}) __nanosleep(64);',
         '    __syncwarp();',

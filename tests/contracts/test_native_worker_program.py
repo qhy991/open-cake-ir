@@ -71,6 +71,7 @@ class NativeWorkerProgram(unittest.TestCase):
         self.assertEqual(lowered.toolchain_requirements['argument_order'],
                          list(document()['tensors']))
         source = lowered.source
+        self.assertEqual(source.count('{'), source.count('}'))
         self.assertEqual(source.count('fma.rn.f32 %0, %1, %2, %3;'), 3)
         self.assertIn('atom.relaxed.gpu.global.add.s32', source)
         self.assertIn('st.release.gpu.global.s32', source)
