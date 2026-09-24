@@ -121,6 +121,8 @@ class LaunchableCandidate:
                 document = json.loads(self.artifact_payloads['launch_manifest'])
             except (ValueError, UnicodeError):
                 pass
+        if isinstance(document, Mapping) and document.get('abi') == 'ranked_mailbox_v1':
+            raise ValueError('ranked launch manifest requires a distributed candidate loader')
         if self.is_program and self.artifact_payloads:
             from .program import program_components
             program_components(self)

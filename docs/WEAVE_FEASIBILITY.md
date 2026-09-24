@@ -203,6 +203,17 @@ manifest using its actual Cake lowering for both frozen `skew_to_rank0` and
 `cake-ranked-ep4-preseal-f504f4e6/` under the Weave evidence root. They are
 not `LaunchableCandidate` artifacts or GPU correctness results.
 
+The remaining formal handoff is specific: the Target's cubin and generated
+CUDA host wrapper must be sealed together, then loaded through a four-rank
+route rather than the single-device CUBIN or ordered-Program loader. The
+existing CUPTI timing boundary is single-device; four-device activity and
+joint-interval accounting need separate qualification before any
+native-versus-Triton performance decision.
+
+The existing candidate constructor now refuses a ranked manifest presented
+as an ordinary single-device CUBIN, so pre-seal evidence cannot be mistaken
+for a launchable ranked artifact while that builder/loader is missing.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic

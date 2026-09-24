@@ -173,6 +173,38 @@ cycle, invalid `K_r` or tail partition, a missing peer pair and a compiled
 occupancy shortfall. The owning rule must refuse each one; an unrelated
 verifier block is not evidence for it.
 
+## Sealing and loader boundary
+
+The current `sm_103a` Target still declares a `cubin` code object. The
+ranked native source also exports a CUDA host ABI that must be compiled as
+a shared host wrapper. That wrapper is an execution artifact beside the
+Target's cubin, not a new code object or permission to call it one
+single-device kernel. A future ranked build must seal the exact pre-seal
+manifest, lowered source, cubin, host wrapper and one compile report that
+binds both outputs to that source. It must introduce an explicit ranked
+artifact/loader route; `ProgramLaunchManifest` means same-stream ordered
+stages, `WorkloadTensorManifest` refuses distributed Workloads, and the
+current `LaunchableCandidate` CUBIN role set has no host-wrapper role and
+reports one kernel per call. Relabeling `.so` as `cubin` or placing the four
+rank source in `program_bundle` would make the existing loader report false
+execution semantics.
+The common `LaunchableCandidate` constructor now explicitly refuses a
+`ranked_mailbox_v1` manifest carried as an ordinary CUBIN candidate, even
+when the supplied artifact bytes satisfy their existing seals. This is a
+negative admission gate, not a distributed candidate implementation.
+
+The ranked loader must use the declared four-rank Evaluation adapter, the
+selected exact peer pairs and one broker lease of at most four GPUs. It must
+verify rank-local input ownership, compiled mailbox/output offsets, reset
+and all four statuses before oracle comparison. The existing single-device
+CUPTI admission (`evaluation/admission.py`) and calibration record check
+(`tools/calibrate_empirical_cost.py`) attribute activity to one
+device/context/stream; a ranked
+measurement protocol must capture four device activities and declare how
+their joint wall interval and per-rank overlap are derived. Until that
+timer and the target's L2-reset policy are qualified for this shape, a
+numerical pass supports no ranked latency or Triton-headroom conclusion.
+
 ## Verification and performance decision
 
 Cake P1/P3 preserve the ordinary mathematical editing model and one
