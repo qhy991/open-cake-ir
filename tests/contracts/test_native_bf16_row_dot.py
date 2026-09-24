@@ -57,6 +57,14 @@ class NativeBf16RowDot(unittest.TestCase):
         value['buffers'][1]['shape'][1] = 8
         self.assertIn('NATIVE_ROW_DOT_SHAPE',
                       {f.code for f in preflight(Schedule.from_dict(value), self.target)})
+        value = deepcopy(base)
+        value['operations'][4].pop('depends_on')
+        self.assertIn('NATIVE_ROW_DOT_DEPENDENCIES',
+                      {f.code for f in preflight(Schedule.from_dict(value), self.target)})
+        value = deepcopy(base)
+        value['buffers'][0]['byte_offset'] = 4
+        self.assertIn('NATIVE_ROW_DOT_REFINEMENT',
+                      {f.code for f in preflight(Schedule.from_dict(value), self.target)})
 
 
 if __name__ == '__main__':

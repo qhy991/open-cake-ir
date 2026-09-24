@@ -6,6 +6,8 @@ expert-projection leaf, not a MoE operation or a dynamic expert dispatcher.
 """
 from __future__ import annotations
 
+import re
+
 from .common import Emission, refusal
 from .native_cuda import _Emitter, _TYPES
 from ..diagnostics import Finding
@@ -20,6 +22,7 @@ from ..target import CodeObject, Target
 _BODY = (OperationKind.LOAD, OperationKind.LOAD, OperationKind.CAST,
          OperationKind.CAST, OperationKind.ELEMENTWISE, OperationKind.REDUCE,
          OperationKind.STORE)
+_IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
@@ -34,6 +37,9 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
           and target.compute_capability is not None and target.warp_size == 32,
           'NATIVE_ROW_DOT_ROUTE', 'lowering',
           'BF16 row dot needs the exact native CUDA cubin target with a 32-lane warp')
+    check(_IDENTIFIER.fullmatch(schedule.lowering.entry_point) is not None,
+          'NATIVE_ROW_DOT_ENTRY', 'lowering.entry_point',
+          'the generated entry point must be one ASCII C identifier')
     check(not schedule.allocations and not schedule.pipelines and not schedule.barriers
           and not schedule.tile_loops and schedule.grid is None and schedule.residency is None,
           'NATIVE_ROW_DOT_RESOURCES', 'allocations',
@@ -65,6 +71,21 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
               'the row dot owns exactly three global and six distinct register buffers')
         return tuple(findings)
     x, weight, y, rx, rw, fx, fw, products, total = (buffers[n] for n in names)
+    dependencies = ((), (), (load_x.op_id,), (load_w.op_id,),
+                    (cast_x.op_id, cast_w.op_id), (mul.op_id,), (reduce.op_id,))
+    check(tuple(op.depends_on for op in ops) == dependencies,
+          'NATIVE_ROW_DOT_DEPENDENCIES', 'operations',
+          'the declared graph must order each cast, multiply, sum and store')
+    check(all('\n' not in op.op_id and '\r' not in op.op_id
+              and '\\' not in op.op_id for op in ops),
+          'NATIVE_ROW_DOT_OP_NAME', 'operations',
+          'source-map operation names cannot contain newlines or backslashes')
+    for buffer in schedule.buffers:
+        check(buffer.allocation is None and buffer.byte_offset == 0
+              and buffer.stages == 1 and buffer.swizzle is None
+              and buffer.scale_of is None and buffer.valid_extent is None,
+              'NATIVE_ROW_DOT_REFINEMENT', f'buffers.{buffer.name}',
+              'the SIMT leaf has no staged or refined storage')
     check((cast_x.reads, cast_w.reads, mul.reads, reduce.reads, store.reads)
           == ((rx.name,), (rw.name,), (fx.name, fw.name), (products.name,), (total.name,)),
           'NATIVE_ROW_DOT_DATAFLOW', 'operations',
