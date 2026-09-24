@@ -138,7 +138,7 @@ def derive_rubric(feedback: object = _ABSENT) -> dict[str, object]:
         "reported" if findings else "none"
     )
     add("findings", findings_state, ("findings",),
-        "Use each finding's path and category to locate the declared contract. Respect blocks_acceptance and blocks_lowering separately: a lowering capability refusal need not mean the candidate is wrong. Reports and hints describe only their modeled domain; record gaps for independent review, without editing the frozen Compiler."
+        "Use each finding's path and category to locate the declared contract. Respect blocks_acceptance and blocks_lowering separately. A backend_lowering route means Cake IR accepted the Schedule but this backend lacks an implementation; retain the exact source and Finding for a successor Compiler change, or record why support is deferred. An ir_vocabulary route instead requires an expressibility or analysis change. Do not alter the frozen Compiler during this Run. Reports and hints describe only their modeled domain."
         if findings_state == "reported" else
         "No localized findings are established here. An empty or unavailable findings list does not prove GPU safety, modeled resource coverage or absence of Compiler limitations.")
 

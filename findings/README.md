@@ -4,6 +4,13 @@ Append-only records between campaign evidence and Compiler/Executor changes. One
 per finding, named `YYYY-MM-DD-NNN-slug.json`. The evidence ledger already records what
 happened; a finding is the curated "so what" that a Revision decision can cite.
 
+A rejected Candidate routed to `backend_lowering` is evidence of a possible backend
+implementation gap, not an automatic approval to add an instruction. Curate its exact
+Schedule, Target, backend and localized Compiler Finding here; either implement emission
+with matching admission/analysis and counterexamples in a successor commit, or record
+why the capability is deferred. A missing Cake IR expression is separately routed to
+`ir_vocabulary`. Frozen Runs keep their original Compiler and measurement contract.
+
 ## Lifecycle
 
 `decision` moves `proposed -> accepted | rejected | deferred` through the normal review

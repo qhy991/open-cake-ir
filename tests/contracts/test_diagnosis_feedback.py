@@ -20,6 +20,30 @@ from tests.contracts.test_authoring_environment import RecordingToolchain, _head
 
 
 class DiagnosisSeamTests(unittest.TestCase):
+    def test_backend_gap_is_retained_for_a_successor_compiler_tick(self):
+        from open_cake_ir.lab.candidate_filter import record_candidate_rejections
+        from open_cake_ir.lab.diagnoses import rejected_peer_feedback
+        from open_cake_ir.lab.environments import EnvironmentResult
+        submission = CandidateSubmission.seal('application/vnd.open-cake.schedule+json',
+                                              b'{"candidate":"fixture"}')
+        feedback = {'stage': 'assessment', 'findings': [
+            {'code': 'BACKEND_ARITHMETIC_UNSUPPORTED', 'path': 'operations[2]',
+             'category': 'hardware_conformance', 'severity': 'blocking',
+             'message': 'this backend has no typed arithmetic body',
+             'blocks_acceptance': False, 'blocks_lowering': True}]}
+        result = EnvironmentResult('rejected', submission.sha256, None, feedback)
+        retained = []
+        ledger = Mock()
+        ledger.append.side_effect = lambda kind, payload: retained.append((kind, payload))
+        record_candidate_rejections(built=[(submission, result)], evidence=None,
+                                    ledger=ledger, turn_number=1, arm='open_cake')
+        self.assertEqual(retained[0][0], 'candidate_rejected')
+        self.assertEqual(retained[0][1]['routed_to'], 'backend_lowering')
+        self.assertEqual(retained[0][1]['feedback'], feedback)
+        peer, = rejected_peer_feedback([(submission, result)], arm='open_cake')
+        self.assertEqual(peer['routed_to'], 'backend_lowering')
+        self.assertEqual(peer['findings'][0]['path'], 'operations[2]')
+
     def environment(self, *, python=False):
         # This is the explicit prospective source domain, not the stale released lock.
         draft = Compiler.load(ROOT, ROOT / "compiler/revision.json")

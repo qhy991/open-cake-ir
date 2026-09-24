@@ -26,6 +26,21 @@ class FindingSeverity(str, Enum):
     HINT = "hint"
 
 
+# A Schedule with only these blocking Findings is valid Cake IR whose selected
+# emission route has no implementation for a declared operation, dtype, access or
+# exact target. Keep ownership here with Compiler diagnostics; Lab imports the set
+# to route evidence, rather than maintaining another backend capability table.
+BACKEND_LOWERING_GAP_CODES = frozenset({
+    'BACKEND_TARGET_UNSUPPORTED',
+    'BACKEND_DTYPE_UNEMITTABLE',
+    'BACKEND_OPERATION_UNEMITTABLE',
+    'BACKEND_ACCESS_INDEX_UNSUPPORTED',
+    'BACKEND_ARITHMETIC_UNSUPPORTED',
+    'BACKEND_CAST_UNSUPPORTED',
+    'BACKEND_REDUCTION_UNSUPPORTED',
+})
+
+
 @dataclass(frozen=True)
 class Finding:
     """One typed Compiler diagnostic, retained unchanged through Assessment.

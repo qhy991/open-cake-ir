@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab.routing import (  # noqa: E402
+    BACKEND_LOWERING,
     CANDIDATE,
     COST_MODEL,
     DESTINATIONS,
@@ -41,7 +42,7 @@ class RoutingContractTests(unittest.TestCase):
         # A report is not a reason to reject, so it must not appear as one.
         self.assertNotIn("RESIDENCY_BOUND", decision.reason)
 
-    def test_a_missing_backend_body_is_the_vocabularys_not_the_candidates(self) -> None:
+    def test_an_expressible_missing_backend_body_is_lowerings_not_the_candidates(self) -> None:
         """The Schedule is not wrong; the compiler cannot lower it.
 
         This finding blocks lowering without blocking acceptance, so a router that only
@@ -69,8 +70,27 @@ class RoutingContractTests(unittest.TestCase):
                 ],
             }
         )
-        self.assertEqual(decision.destination, IR_VOCABULARY)
+        self.assertEqual(decision.destination, BACKEND_LOWERING)
         self.assertIn("BACKEND_OPERATION_UNEMITTABLE", decision.reason)
+
+    def test_every_declared_backend_capability_gap_has_the_same_owner(self) -> None:
+        from open_cake_ir.compiler.diagnostics import BACKEND_LOWERING_GAP_CODES
+        for code in BACKEND_LOWERING_GAP_CODES:
+            with self.subTest(code=code):
+                decision = route_rejection({'stage': 'assessment', 'findings': [
+                    {'code': code, 'blocks_acceptance': False, 'blocks_lowering': True}]})
+                self.assertEqual(decision.destination, BACKEND_LOWERING)
+        mixed = route_rejection({'stage': 'assessment', 'findings': [
+            {'code': 'BACKEND_CAST_UNSUPPORTED', 'blocks_acceptance': False,
+             'blocks_lowering': True},
+            {'code': 'REDUCE_SHAPE_MISMATCH', 'blocks_acceptance': True,
+             'blocks_lowering': True}]})
+        self.assertEqual(mixed.destination, CANDIDATE)
+        self.assertIn('REDUCE_SHAPE_MISMATCH', mixed.reason)
+        author_fixable = route_rejection({'stage': 'assessment', 'findings': [
+            {'code': 'BACKEND_IDENTIFIER_UNSAFE', 'blocks_acceptance': False,
+             'blocks_lowering': True}]})
+        self.assertEqual(author_fixable.destination, CANDIDATE)
 
     def test_a_real_gate_refusal_still_wins_over_a_report(self) -> None:
         # A Schedule can be both wrong and unlowerable. The gate refusal is the one the

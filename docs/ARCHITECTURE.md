@@ -297,6 +297,10 @@ Executor 固定的是 Lab、评测、证据工具和机器环境。它与 Compil
 
 Compiler 演进由运行之外的维护 Agent 或研究者根据具体诊断实施。候选写法错误先修候选；
 缺少合法表达或 lowering 才进入对应能力改动，primitive、类型和分析共同验证后启动后继 Run。
+已被 Cake IR 接受、仅因所选后端缺少指令或访问实现而拒绝 lowering 的候选，反馈归为
+`backend_lowering`；缺少表达该物理决策的 IR 词汇才归为 `ir_vocabulary`。前者的维护 Agent
+可在后继提交补该后端的 emission、preflight 与反例测试，或把缺口连同原候选和 Finding
+留作待审议记录。两者都不能在冻结 Run 中热改 Compiler，也不能偷偷换目标或放宽 oracle。
 发现性能差距本身不要求新增 pass；每轮保留 promotion disposition，`No promotion` 是有效结论。
 
 待完成的边界包括各平台的完整 Program 测量、部分 dtype/指令及 profiler 指标、
