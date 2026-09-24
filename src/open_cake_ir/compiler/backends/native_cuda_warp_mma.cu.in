@@ -59,6 +59,11 @@ void @ENTRY@_kernel(const __grid_constant__ CUtensorMap activation_map,
     const int feature_base = int(blockIdx.y) * 8;
     const unsigned base = shared_address(smem);
 
+    if (tid == 0) {
+        asm volatile("prefetch.tensormap [%0];" :: "l"(&activation_map) : "memory");
+        asm volatile("prefetch.tensormap [%0];" :: "l"(&weight_map) : "memory");
+    }
+
     if (warp == 0 && lane == 0) {
         #pragma unroll
         for (int slot = 0; slot < 4; ++slot) {
@@ -69,6 +74,15 @@ void @ENTRY@_kernel(const __grid_constant__ CUtensorMap activation_map,
     }
     __syncthreads();
 
+    // CAKE_OP:@BIAS_OP@
+    const int feature0 = feature_base + 2 * (lane % 4);
+    const int feature1 = feature0 + 1;
+    float bias0 = 0.f;
+    float bias1 = 0.f;
+    if (warp == 0) {
+        bias0 = feature0 < features ? __bfloat162float(bias[feature0]) : 0.f;
+        bias1 = feature1 < features ? __bfloat162float(bias[feature1]) : 0.f;
+    }
     float accum[4] = {0.f, 0.f, 0.f, 0.f};
     // CAKE_OP:@LOAD_A_OP@
     if (warp >= 4 && warp < 8 && lane == 0) {
@@ -132,7 +146,7 @@ void @ENTRY@_kernel(const __grid_constant__ CUtensorMap activation_map,
         asm volatile("barrier.sync 2, 128;" ::: "memory");
     }
 
-    // CAKE_OP:@BIAS_OP@ @ADD_OP@ @CAST_OP@ @STORE_OP@
+    // CAKE_OP:@ADD_OP@ @CAST_OP@ @STORE_OP@
     if (warp == 0) {
         float* partials = reinterpret_cast<float*>(smem + kPartialOffset);
         #pragma unroll
@@ -143,10 +157,6 @@ void @ENTRY@_kernel(const __grid_constant__ CUtensorMap activation_map,
         }
         const int batch0 = batch_base + lane / 4;
         const int batch1 = batch0 + 8;
-        const int feature0 = feature_base + 2 * (lane % 4);
-        const int feature1 = feature0 + 1;
-        const float bias0 = feature0 < features ? __bfloat162float(bias[feature0]) : 0.f;
-        const float bias1 = feature1 < features ? __bfloat162float(bias[feature1]) : 0.f;
         if (batch0 < batch) {
             if (feature0 < features) out[batch0 * features + feature0] = __float2bfloat16_rn(accum[0] + bias0);
             if (feature1 < features) out[batch0 * features + feature1] = __float2bfloat16_rn(accum[1] + bias1);

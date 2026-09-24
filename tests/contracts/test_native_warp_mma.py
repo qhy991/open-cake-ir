@@ -46,6 +46,11 @@ class NativeWarpMma(unittest.TestCase):
                 self.assertIn("ldmatrix.sync.aligned.m8n8.x4", emission.source)
                 self.assertIn("mma.sync.aligned.m16n8k16", emission.source)
                 self.assertIn("barrier.sync 2, 128", emission.source)
+                self.assertIn("prefetch.tensormap", emission.source)
+                self.assertLess(emission.source.index("// CAKE_OP:load_bias"),
+                                emission.source.index("barrier_wait(base + kBarrierOffset + warp * 8)"))
+                self.assertLess(emission.source.index("bias0 = feature0"),
+                                emission.source.index("barrier_wait(base + kBarrierOffset + warp * 8)"))
                 self.assertEqual(emission.toolchain_requirements["argument_order"],
                                  ["input", "weight", "bias", "output"])
                 self.assertEqual(emission.toolchain_requirements["grid"],
