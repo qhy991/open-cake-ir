@@ -43,7 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-24-002 — B300 TinyGEMM warp MMA needs K64 TMA boxes and four ordered K256 partials; a single K256 descriptor was refused by the device, and current emitters retain explicit refusals (capacity, proposed; native Compiler route and formal device acceptance pending).
+- F-2026-09-24-002 — B300 TinyGEMM warp MMA needs K64 TMA boxes and four ordered K256 partials; a Python-authored native Compiler successor now passes ten bitwise cases and stable B16 diagnostic timing, while formal Executor admission and branch integration remain pending (capacity, proposed).
 
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 
