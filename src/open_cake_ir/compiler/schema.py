@@ -288,6 +288,10 @@ _PARAMETERS = {
         ]
     },
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
+    OperationKind.TMEM_STORE: _object({"destination_atom": _object({
+        "op": {"const": "tcgen05.St32x32b"},
+        "repetition": {"const": 8},
+    })}),
 }
 
 

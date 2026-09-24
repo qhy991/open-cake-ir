@@ -99,6 +99,7 @@ from .operations import (
     ReduceParameters,
     ScanParameters,
     StoreParameters,
+    TmemStoreParameters,
     TopKParameters,
 )
 
