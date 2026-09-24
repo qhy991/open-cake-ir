@@ -71,6 +71,74 @@ class StealWindow:
 
 
 @dataclass(frozen=True)
+class RankPlacement:
+    world_size: int
+    state_rank: int
+    worker_ranks: Mapping[str, int]
+    tensor_ranks: Mapping[str, int]
+    stage_ranks: Mapping[str, int]
+
+    @classmethod
+    def from_dict(cls, value, *, workers: tuple[WorkerClass, ...], stages: Sequence,
+                  handoffs: tuple[WorkerHandoff, ...], tensors: Mapping,
+                  producers: Mapping[str, str], outputs: tuple[str, ...],
+                  controls: Mapping[str, str]):
+        raw = _object(value, {"world_size", "state_rank", "worker_ranks",
+                              "tensor_ranks"}, "worker execution.placement")
+        world = raw["world_size"]
+        if type(world) is not int or world != 2:
+            raise ValueError("rank worker placement currently requires exactly two ranks")
+        state_rank = raw["state_rank"]
+        if type(state_rank) is not int or not 0 <= state_rank < world:
+            raise ValueError("rank worker state owner differs")
+        worker_names = {worker.name for worker in workers}
+        owner_rows = raw["worker_ranks"]
+        if not isinstance(owner_rows, Mapping) or set(owner_rows) != worker_names:
+            raise ValueError("rank worker placement must own every CTA class")
+        worker_ranks = dict(owner_rows)
+        if (any(type(rank) is not int or not 0 <= rank < world
+                for rank in worker_ranks.values())
+                or set(worker_ranks.values()) != set(range(world))):
+            raise ValueError("rank worker classes must populate both valid ranks")
+        tensor_rows = raw["tensor_ranks"]
+        if not isinstance(tensor_rows, Mapping) or set(tensor_rows) != set(tensors):
+            raise ValueError("rank worker placement must own every Program tensor")
+        tensor_ranks = dict(tensor_rows)
+        if any(type(rank) is not int or not 0 <= rank < world
+               for rank in tensor_ranks.values()):
+            raise ValueError("rank tensor owner must be an in-range rank")
+        if any(tensor_ranks[name] != state_rank for name in controls.values()):
+            raise ValueError("rank worker controls must reside with queue state")
+        stage_ranks = {}
+        for stage in stages:
+            owners = {worker_ranks[worker.name] for worker in workers
+                      if stage.name in worker.phases}
+            if len(owners) != 1:
+                raise ValueError(f"stage {stage.name!r} needs one regular worker rank")
+            stage_ranks[stage.name] = owners.pop()
+        for handoff in handoffs:
+            producer = stage_ranks[handoff.producer]
+            consumer = stage_ranks[handoff.consumer]
+            required_scope = (HandoffScope.SYSTEM if producer != consumer
+                              else HandoffScope.DEVICE)
+            if handoff.scope is not required_scope:
+                raise ValueError(f"handoff {handoff.payload!r} scope differs from rank placement")
+            if tensor_ranks[handoff.payload] not in {producer, consumer}:
+                raise ValueError(f"handoff {handoff.payload!r} needs an endpoint owner")
+        for tensor in outputs:
+            if tensor_ranks[tensor] != stage_ranks[producers[tensor]]:
+                raise ValueError(f"public output {tensor!r} needs its producing rank")
+        return cls(world, state_rank, MappingProxyType(worker_ranks),
+                   MappingProxyType(tensor_ranks), MappingProxyType(stage_ranks))
+
+    @property
+    def document(self) -> dict:
+        return {"world_size": self.world_size, "state_rank": self.state_rank,
+                "worker_ranks": dict(self.worker_ranks),
+                "tensor_ranks": dict(self.tensor_ranks)}
+
+
+@dataclass(frozen=True)
 class WorkerExecution:
     lowering: LoweringRoute
     controls: Mapping[str, str]
@@ -78,13 +146,16 @@ class WorkerExecution:
     queues: tuple[WorkerQueue, ...]
     handoffs: tuple[WorkerHandoff, ...]
     steal: StealWindow
+    placement: RankPlacement | None = None
 
     @classmethod
     def from_dict(cls, value, *, tensors: Mapping, inputs: tuple[str, ...],
                   stages: Sequence, producers: Mapping[str, str],
-                  consumers: Mapping[str, set[str]], intermediates: set[str]):
+                  consumers: Mapping[str, set[str]], intermediates: set[str],
+                  outputs: tuple[str, ...], version: int):
         raw = _object(value, {"kind", "lowering", "controls", "workers", "queues",
-                              "handoffs", "steal"}, "worker execution")
+                              "handoffs", "steal"} | ({"placement"} if version == 3
+                                                       else set()), "worker execution")
         if raw["kind"] != "cooperative_workers":
             raise ValueError("worker execution kind differs")
         lowering = LoweringRoute.from_dict(raw["lowering"], "worker execution.lowering")
@@ -181,12 +252,16 @@ class WorkerExecution:
             raise ValueError("worker handoff payloads must be unique and complete")
         if handoffs != sorted(handoffs, key=lambda item: (positions[item.producer], item.payload)):
             raise ValueError("worker handoffs follow producer stage order")
+        placement = (RankPlacement.from_dict(raw["placement"], workers=tuple(workers),
+            stages=stages, handoffs=tuple(handoffs), tensors=tensors,
+            producers=producers, outputs=outputs, controls=selected)
+            if version == 3 else None)
         return cls(lowering, MappingProxyType(selected), tuple(workers), tuple(queues),
-                   tuple(handoffs), steal)
+                   tuple(handoffs), steal, placement)
 
     @property
     def document(self) -> dict:
-        return {
+        document = {
             "kind": "cooperative_workers",
             "lowering": {"backend": self.lowering.backend.value,
                          "entry_point": self.lowering.entry_point},
@@ -201,3 +276,6 @@ class WorkerExecution:
             "steal": {"borrower": self.steal.borrower, "stage": self.steal.stage,
                       "after": self.steal.after, "before": self.steal.before},
         }
+        if self.placement is not None:
+            document["placement"] = self.placement.document
+        return document

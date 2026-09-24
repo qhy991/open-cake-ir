@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler import Compiler, Program
-from open_cake_ir.compiler.ir import HandoffScope, WorkerExecution
+from open_cake_ir.compiler.ir import HandoffScope, RankPlacement, WorkerExecution
 from open_cake_ir.evaluation.program import ProgramLaunchManifest
 
 
@@ -61,7 +61,64 @@ def document() -> dict:
     }
 
 
+def rank_document() -> dict:
+    value = document()
+    value['schema_version'] = 3
+    value['execution']['workers'][1]['phases'] = ['compute']
+    value['execution']['queues'][2]['workers'] = ['communication']
+    for handoff in value['execution']['handoffs']:
+        handoff['scope'] = 'system'
+    value['execution']['placement'] = {
+        'world_size': 2, 'state_rank': 0,
+        'worker_ranks': {'communication': 0, 'computation': 1},
+        'tensor_ranks': {name: (1 if name == 'middle0' else 0)
+                         for name in value['tensors']},
+    }
+    return value
+
+
 class WorkerExecutionContract(unittest.TestCase):
+    def test_rank_placement_roundtrips_and_never_uses_ordered_fallback(self) -> None:
+        program = Program.from_dict(rank_document())
+        self.assertIsInstance(program.execution.placement, RankPlacement)
+        self.assertEqual(dict(program.execution.placement.stage_ranks),
+                         {'dispatch': 0, 'compute': 1, 'combine': 0})
+        self.assertEqual(program.document['schema_version'], 3)
+        self.assertEqual(Program.from_dict(program.document), program)
+        with self.assertRaisesRegex(ValueError, 'dedicated native lowering'):
+            Compiler.load(ROOT).lower_program(program)
+        manifest = {'schema_version': 1, 'abi': ProgramLaunchManifest.abi,
+                    'workload_sha256': '0' * 64, 'case_id': 'primary',
+                    'program': program.document, 'lowered_sources': {}}
+        with self.assertRaisesRegex(ValueError, 'cannot use ordered Program execution'):
+            ProgramLaunchManifest.from_dict(manifest)
+
+    def test_rank_placement_rejects_wrong_scope_and_incomplete_ownership(self) -> None:
+        mutations = [
+            (lambda d: d['execution']['handoffs'][0].__setitem__('scope', 'device'),
+             'scope differs from rank placement'),
+            (lambda d: d['execution']['placement']['tensor_ranks'].pop('middle0'),
+             'own every Program tensor'),
+            (lambda d: d['execution']['placement']['worker_ranks'].__setitem__(
+                'computation', 0), 'both valid ranks'),
+            (lambda d: d['execution']['placement']['tensor_ranks'].__setitem__(
+                'out', 1), 'producing rank'),
+            (lambda d: d['execution']['placement']['tensor_ranks'].__setitem__(
+                'chunks', 1), 'controls must reside'),
+            (lambda d: d['execution']['placement'].__setitem__('world_size', 3),
+             'exactly two ranks'),
+        ]
+        for mutate, reason in mutations:
+            value = rank_document()
+            mutate(value)
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
+                Program.from_dict(value)
+        value = rank_document()
+        value['execution']['workers'][1]['phases'].append('combine')
+        value['execution']['queues'][2]['workers'].append('computation')
+        with self.assertRaisesRegex(ValueError, 'one regular worker rank'):
+            Program.from_dict(value)
+
     def test_complete_topology_roundtrips_without_changing_version_one(self) -> None:
         program = Program.from_dict(document())
         self.assertIsNotNone(program.execution)

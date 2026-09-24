@@ -111,5 +111,6 @@ from .schedule import (
 
 from .program import Program, ProgramBinding, ProgramStage, ProgramTensor
 from .worker_execution import (
-    HandoffScope, StealWindow, WorkerClass, WorkerExecution, WorkerHandoff, WorkerQueue,
+    HandoffScope, RankPlacement, StealWindow, WorkerClass, WorkerExecution,
+    WorkerHandoff, WorkerQueue,
 )
