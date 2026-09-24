@@ -12,7 +12,7 @@ import math
 from .common import Emission, EmitError, refusal, vocabulary_findings
 from ..diagnostics import Finding
 from ..ir import (
-    AccessIndexKind, BarrierMechanism, BufferMode, DType, ElementwiseOp,
+    AccessIndexKind, AtomicMemoryScope, BarrierMechanism, BufferMode, DType, ElementwiseOp,
     LoadMovement, LoweringBackend, MemorySpace, OperandMajorMode, OperandSource,
     OperationKind, Schedule, Swizzle,
 )
@@ -95,6 +95,14 @@ def _launch_grid(s: Schedule, target: Target) -> tuple[int, int, int]:
     for axis in mapping.axes:
         extents[axis.axis] = axis.tile_count(s.buffer(axis.buffer).shape[axis.dimension])
     return tuple(extents)
+
+
+def _system_atomic_states(schedule: Schedule) -> tuple[str, ...]:
+    """State pointers whose system-scope RMW requires runtime owner inspection."""
+    return tuple(sorted({operation.reads[0] for operation in schedule.operations
+                         if operation.kind is OperationKind.ATOMIC_RMW
+                         and operation.parameters.scope is AtomicMemoryScope.SYSTEM
+                         and operation.reads}))
 
 
 def requirements(s: Schedule) -> tuple[Finding, ...]:
@@ -624,6 +632,8 @@ class _Emitter:
                 'block':[self.s.total_execution_group_extent*self.target.warp_size,1,1]}
         if self.s.program_map is not None and self.s.program_map.cooperative:
             result['cooperative_grid'] = True
+        if _system_atomic_states(self.s):
+            result['peer_state_runtime_check'] = True
         return result
 
     def sequence(self, scope):
@@ -846,6 +856,37 @@ class _Emitter:
         for i,b in enumerate(self.globals):
             self.line(f'if (!buffers[{i}]) {{ delete h; return int(cudaErrorInvalidValue); }}')
             self.line(f'h->{self.names[b.name]} = static_cast<{_TYPES[b.dtype]}*>(buffers[{i}]);')
+        for index, state_name in enumerate(_system_atomic_states(self.s)):
+            pointer = f'h->{self.names[state_name]}'
+            attrs = f'peer_attrs{index}'
+            self.line(f'cudaPointerAttributes {attrs}{{}};')
+            self.line(f'error = cudaPointerGetAttributes(&{attrs}, {pointer});')
+            self.line('if (error != cudaSuccess) { delete h; return int(error); }')
+            self.line(f'if ({attrs}.type != cudaMemoryTypeDevice) '
+                      '{ delete h; return int(cudaErrorInvalidDevicePointer); }')
+            self.begin(f'if ({attrs}.device != device)')
+            self.line(f'cudaDeviceProp peer_prop{index}{{}};')
+            self.line(f'error = cudaGetDeviceProperties(&peer_prop{index}, {attrs}.device);')
+            self.line('if (error != cudaSuccess) { delete h; return int(error); }')
+            peer_names = ' && '.join(
+                f'std::strcmp(peer_prop{index}.name, "{name}") != 0'
+                for name in self.target.device_names)
+            self.line(f'if (peer_prop{index}.major != {major} || '
+                      f'peer_prop{index}.minor != {minor} || ({peer_names})) '
+                      '{ delete h; return int(cudaErrorInvalidDevice); }')
+            self.line(f'int peer_access{index} = 0, native_atomic{index} = 0;')
+            self.line(f'error = cudaDeviceCanAccessPeer(&peer_access{index}, device, '
+                      f'{attrs}.device);')
+            self.line('if (error != cudaSuccess) { delete h; return int(error); }')
+            self.line(f'error = cudaDeviceGetP2PAttribute(&native_atomic{index}, '
+                      f'cudaDevP2PAttrNativeAtomicSupported, device, {attrs}.device);')
+            self.line('if (error != cudaSuccess) { delete h; return int(error); }')
+            self.line(f'if (peer_access{index} != 1 || native_atomic{index} != 1) '
+                      '{ delete h; return int(cudaErrorNotSupported); }')
+            self.line(f'error = cudaDeviceEnablePeerAccess({attrs}.device, 0);')
+            self.line('if (error != cudaSuccess && error != cudaErrorPeerAccessAlreadyEnabled) '
+                      '{ delete h; return int(error); }')
+            self.end()
         for i,op in enumerate(self.loads):
             src=self.b(op.reads[0]);dst=self.b(op.writes[0]);w,_=_SWIZZLE[dst.swizzle]
             dt='CU_TENSOR_MAP_DATA_TYPE_BFLOAT16' if src.dtype is DType.BF16 else 'CU_TENSOR_MAP_DATA_TYPE_FLOAT16'

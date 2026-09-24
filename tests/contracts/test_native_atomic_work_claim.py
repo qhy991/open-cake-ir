@@ -46,6 +46,7 @@ class NativeAtomicWorkClaim(unittest.TestCase):
         self.assertIn("// CAKE_OP: store_positions", source)
         self.assertIn("<<<dim3(148,1,1), 32, 0,", source)
         self.assertNotIn("tcgen05.mma", source)
+        self.assertNotIn("cudaPointerGetAttributes", source)
         for operation in document["operations"]:
             self.assertIn(operation["id"], lowering.source_map)
 
@@ -105,6 +106,12 @@ class NativeAtomicWorkClaim(unittest.TestCase):
         source = self.compiler.lower(assessment).source
         self.assertIn('atom.relaxed.sys.global.add.s32 %0, [%1], %2;', source)
         self.assertNotIn('atom.relaxed.gpu.global.add.s32 %0, [%1], %2;', source)
+        self.assertIn('cudaPointerGetAttributes', source)
+        self.assertIn('cudaDeviceCanAccessPeer', source)
+        self.assertIn('cudaDevP2PAttrNativeAtomicSupported', source)
+        self.assertIn('cudaDeviceEnablePeerAccess', source)
+        self.assertTrue(self.compiler.lower(assessment).toolchain_requirements[
+            'peer_state_runtime_check'])
 
         target = Target.load(ROOT / 'compiler/targets/sm_103a.json')
         missing = replace(target, instruction_contracts=target.instruction_contracts
