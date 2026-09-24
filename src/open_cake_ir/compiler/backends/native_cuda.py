@@ -1024,3 +1024,9 @@ def lower_program(compiler, program):
     """One backend-owned cooperative worker Program lowering."""
     from .native_cuda_workers import lower_worker_program
     return lower_worker_program(compiler, program)
+
+
+def lower_ranked_mailbox(compiler, effects, local_program, combine_schedule, analysis):
+    """One exact four-rank source from explicit effects and complete math."""
+    from .native_cuda_ranked_mailbox import lower_ranked_mailbox as lower
+    return lower(compiler, effects, local_program, combine_schedule, analysis)

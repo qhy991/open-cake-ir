@@ -116,18 +116,21 @@ __device__ __forceinline__ void dispatch_one(const Params* params, int token,
                 if (destinations[prior] == destination)
                     payload_slot = payload_slots[prior];
             if (payload_slot < 0) {
+                // CAKE_EFFECT: payload.reserve
                 payload_slot = lane == 0 ? sys_add_relaxed(&remote->payload_tail, 1) : 0;
                 payload_slot = __shfl_sync(0xffffffffu, payload_slot, 0);
                 if (lane < H)
                     remote->payload[payload_slot * H + lane] =
                         params->hidden[token * H + lane];
                 __syncwarp();
+                // CAKE_EFFECT: payload.publish
                 if (lane == 0) flag_publish(&remote->payload_ready[payload_slot]);
                 __syncwarp();
             }
         }
         destinations[route] = destination;
         payload_slots[route] = payload_slot;
+        // CAKE_EFFECT: task.reserve
         int task_slot = lane == 0 ? sys_add_relaxed(&remote->task_tail, 1) : 0;
         task_slot = __shfl_sync(0xffffffffu, task_slot, 0);
         if (lane == 0) {
@@ -136,6 +139,7 @@ __device__ __forceinline__ void dispatch_one(const Params* params, int token,
             remote->route_slot[task_slot] = route;
             remote->expert[task_slot] = expert;
             remote->payload_slot[task_slot] = payload_slot;
+            // CAKE_EFFECT: task.publish
             flag_publish(&remote->task_ready[task_slot]);
         }
         __syncwarp();
@@ -155,6 +159,7 @@ __device__ __forceinline__ int try_claim(Mailbox* local) {
         const int head = atomicAdd(&local->task_head, 0);
         const int tail = sys_load_acquire(&local->task_tail);
         if (head >= tail) return -1;
+        // CAKE_EFFECT: task.claim
         if (atomicCAS(&local->task_head, head, head + 1) == head) return head;
     }
 }
@@ -168,6 +173,7 @@ __device__ __forceinline__ bool no_more_inbound(Mailbox* local) {
 __device__ __forceinline__ void compute_one(const Params* params, int slot,
                                              int lane) {
     Mailbox* local = params->mailboxes[params->rank];
+    // CAKE_EFFECT: task.acquire
     while (flag_load_acquire(&local->task_ready[slot]) == 0) __nanosleep(64);
     const int expert = local->expert[slot];
     const int local_expert = expert - params->rank * (E / R);
@@ -175,6 +181,7 @@ __device__ __forceinline__ void compute_one(const Params* params, int slot,
     const int token = local->token[slot];
     const int route = local->route_slot[slot];
     const int payload_slot = local->payload_slot[slot];
+    // CAKE_EFFECT: payload.acquire
     if (payload_slot >= 0)
         while (flag_load_acquire(&local->payload_ready[payload_slot]) == 0)
             __nanosleep(64);
@@ -187,7 +194,9 @@ __device__ __forceinline__ void compute_one(const Params* params, int slot,
                    activated, origin->contributions + contribution * H, lane);
     __syncthreads();
     if (lane == 0) {
+        // CAKE_EFFECT: return.publish
         flag_publish(&origin->contribution_ready[contribution]);
+        // CAKE_EFFECT: return.chunk_complete
         sys_add_relaxed(&origin->chunk_completed[
             cake_weave::chunk_for_token<T>(token, params->source_chunks[source])], 1);
         atomicAdd(&local->compute_completed, 1);
@@ -199,6 +208,7 @@ __device__ __forceinline__ void combine_one(const Params* params, int token,
                                              int lane) {
     Mailbox* local = params->mailboxes[params->rank];
     const int chunk = cake_weave::chunk_for_token<T>(token, params->chunks);
+    // CAKE_EFFECT: return.acquire
     while (sys_load_acquire(&local->chunk_completed[chunk]) <
            cake_weave::chunk_size<T>(chunk, params->chunks) * K) __nanosleep(64);
     for (int route = 0; route < K; ++route)
@@ -371,9 +381,8 @@ extern "C" int @ENTRY@_launch(void** parameters) {
         cudaDeviceProp prop{};
         error = cudaGetDeviceProperties(&prop, rank);
         if (error != cudaSuccess) return int(error);
-        if ((std::strcmp(prop.name, "NVIDIA B300") != 0 &&
-             std::strcmp(prop.name, "NVIDIA B300 SXM6 AC") != 0) ||
-            prop.major != 10 || prop.minor != 3 ||
+        if ((@DEVICE_NAME_CHECK@) ||
+            prop.major != @MAJOR@ || prop.minor != @MINOR@ ||
             prop.multiProcessorCount != SMS) return int(cudaErrorInvalidDevice);
         int cooperative = 0;
         error = cudaDeviceGetAttribute(&cooperative, cudaDevAttrCooperativeLaunch, rank);
@@ -385,6 +394,7 @@ extern "C" int @ENTRY@_launch(void** parameters) {
         for (int peer = 0; peer < R; ++peer) {
             if (peer == rank) continue;
             int access = 0, native_atomic = 0;
+            // CAKE_EFFECT: peer_pair.admit
             error = cudaDeviceCanAccessPeer(&access, rank, peer);
             if (error != cudaSuccess || access != 1) return int(cudaErrorNotSupported);
             error = cudaDeviceGetP2PAttribute(&native_atomic,

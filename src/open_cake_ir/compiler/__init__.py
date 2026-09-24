@@ -26,7 +26,7 @@ from .performance.compiled_resources import CompiledResources
 from .performance.empirical_cost import EmpiricalCostModel
 from .ir import Program, ProgramBinding, ProgramStage, ProgramTensor
 from .ir import RankedMailboxAnalysis, RankedMailboxEffects
-from .program import LoweredProgram
+from .program import LoweredProgram, LoweredRankedMailbox
 from .program_passes import ProgramRewriteResult, TRANSFORMATIONS
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
 from .performance.profile import MetricEstimate, ProfileEnvelope, profile_envelope
@@ -44,6 +44,7 @@ __all__ = [
     "RankedMailboxAnalysis",
     "RankedMailboxEffects",
     "LoweredProgram",
+    "LoweredRankedMailbox",
     "Assessment",
     "Compiler",
     "CompilerError",

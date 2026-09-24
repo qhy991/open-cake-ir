@@ -455,6 +455,26 @@ backend must still prove all queue claims, peer ownership, release/acquire,
 residency and launch binding before it may embed these helpers. Host-only C++
 syntax checking cannot replace nvcc/PTXAS or the B300 oracle.
 
+### Ranked mailbox development lowering
+
+`native_cuda_ranked_mailbox.py` now binds `RankedMailboxEffects`, the complete
+local expert Program, and the complete origin combine Schedule into one
+four-rank CUDA source. The protocol template owns separate deduplicated
+remote-payload and per-route task queues; the inline math helper supplies
+the mathematical body and its 29 operation markers. The emitter derives
+`T`, `R`, `K`, `H`, expert count, B300 SM count and device-name checks from
+the admitted math, effects and exact Target rather than a second hardware
+table. It refuses a missing system-scope PTX contract and emits source
+markers for reservation, publication, acquire, claim and peer-pair checks.
+
+The generated host ABI checks input pointer owners and bounded expert IDs
+and weights before launch; launch checks cooperative residency and native
+P2P atomics for each directed selected GPU pair. Evaluation must still bind
+four rank-local tensors, allocate and reset the mailboxes, synchronize and
+run the external oracle. No nvcc, B300 correctness, CUPTI or performance
+claim follows from this source generation alone. Ordinary ordered Programs
+retain their separate launch path.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
