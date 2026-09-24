@@ -33,6 +33,7 @@ def workload_for(program):
                            dtype=program.tensors[name].dtype.value, mode=mode)
            for mode, names in (('input', program.inputs), ('output', program.outputs)) for name in names]
     return SimpleNamespace(canonical_sha256='1'*64, target=program.target,
+        requires_distributed_execution=False,
         document={'semantics': {'target': program.target, 'candidate_abi': {}},
                   'validation': {'comparison': 'elementwise_atol_rtol', 'atol': 0., 'rtol': 0.}},
         tensor_abi=lambda case: abi)
