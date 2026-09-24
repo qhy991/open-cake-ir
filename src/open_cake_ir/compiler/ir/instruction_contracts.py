@@ -86,6 +86,11 @@ _RECORDS = (
     # additionally needs peer access and native P2P atomic admission at runtime;
     # the Target's ISA declaration alone never grants that topology fact.
     InstructionContract("ptx.atom.relaxed.sys.global.add.s32", ContractKind.ATOMIC),
+    # The ranked dispatch-completion chain needs the returned old value and
+    # cross-GPU release/acquire ordering. These are distinct PTX instruction
+    # contracts; a Target must explicitly declare either before emission.
+    InstructionContract("ptx.atom.acq_rel.sys.global.add.s32", ContractKind.ATOMIC),
+    InstructionContract("ptx.atom.release.sys.global.add.s32", ContractKind.ATOMIC),
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.tanh.f32", ElementwiseOp.TANH, DType.FP32),

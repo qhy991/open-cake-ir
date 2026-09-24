@@ -116,7 +116,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
 
     def test_the_registry_is_closed_and_every_record_says_what_it_is(self) -> None:
         """Every record carries exactly the fields its analyses read."""
-        self.assertEqual(len(CONTRACTS), 22)
+        self.assertEqual(len(CONTRACTS), 24)
         for name, record in CONTRACTS.items():
             with self.subTest(contract=name):
                 self.assertEqual(record.name, name)
@@ -140,12 +140,18 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
     def test_native_atomic_contract_is_a_distinct_backend_realization(self) -> None:
         native = contract("ptx.atom.relaxed.gpu.global.add.s32")
         system = contract("ptx.atom.relaxed.sys.global.add.s32")
+        acq_rel = contract("ptx.atom.acq_rel.sys.global.add.s32")
+        release = contract("ptx.atom.release.sys.global.add.s32")
         triton = contract("triton.atomic_add.i32.relaxed.gpu")
         self.assertIsNotNone(native)
         self.assertIsNotNone(system)
+        self.assertIsNotNone(acq_rel)
+        self.assertIsNotNone(release)
         self.assertIsNotNone(triton)
         self.assertIs(native.kind, ContractKind.ATOMIC)
         self.assertIs(system.kind, ContractKind.ATOMIC)
+        self.assertIs(acq_rel.kind, ContractKind.ATOMIC)
+        self.assertIs(release.kind, ContractKind.ATOMIC)
         self.assertIs(triton.kind, ContractKind.ATOMIC)
         self.assertNotEqual(native.name, triton.name)
         self.assertNotEqual(native.name, system.name)
