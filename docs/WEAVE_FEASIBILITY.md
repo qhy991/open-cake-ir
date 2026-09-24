@@ -180,6 +180,11 @@ intervals, and requires reset plus synchronized per-rank status on every
 call. It has offline callback tests; no B300 execution or formal candidate
 seal follows from that adapter alone.
 
+The NVIDIA task at `e3bf171d` now supplies the adapter's exact five
+per-rank input shapes/dtypes and passes a generated-source binding test.
+Its separate `tail_tokens` four-GPU development bundle passes a fresh CPU
+preparation check. It remains uncompiled and unexecuted on B300-M4.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
