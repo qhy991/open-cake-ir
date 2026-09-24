@@ -82,3 +82,33 @@ An earlier run at `5cb9c344` was refused by the host's too-narrow B300 device
 name check before kernel launch; its failure log and receipt are retained
 separately. No GPU processes or lease from this task remained after the
 successful run.
+
+## Isolated spatial, temporal and steal sweep
+
+At source commit `3e5715cf`, a second standalone test fixed 512 tiles, width
+16 and 32 FP32 matrix-vector repetitions while changing one runtime plan
+dimension at a time. Nine plans were prepared before GPU admission, then run
+through one exclusive B300-M4 broker GPU in job `gpuq-314534c59efc`. The
+independent CPU oracle ran after lease release. All nine plans passed output,
+exactly-once execution, CTA split, queue completion and steal-budget checks.
+
+| Controlled plans | `(c, K, steal budget)` | Stolen tiles | Compute tiles complete at first combine |
+| --- | --- | ---: | ---: |
+| Spatial split | `(12, 1, 0)` / `(36, 1, 0)` / `(120, 1, 0)` | `0` / `0` / `0` | `512` / `512` / `512` |
+| Temporal chunks | `(36, 2, 0)` / `(36, 4, 0)` / `(36, 8, 0)` | `0` / `0` / `0` | `512` / `506` / `509` |
+| Steal budget | `(120, 2, 0)` / `(120, 2, 64)` / `(120, 2, 256)` | `0` / `64` / `256` | `274` / `260` / `424` |
+
+The spatial rows show that the device-resident cutoff changes CTA roles while
+preserving correctness. The temporal rows show early combine for `K=4/8` in
+this single run. The steal rows show exact budget use for two nonzero budgets.
+The first-combine counter is an event-order observation, not a timing or SM
+overlap measurement; it may vary with scheduling. The synthetic dispatch is an
+HBM copy, so none of these rows verifies NVLink, grouped GEMM or end-to-end
+MoE. The device snapshots, broker receipts, compile output and post-release
+report are retained outside source at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/cake-weave-worker-sweep-b300-m4-3e5715cf/`
+and at
+`B300-M4:/home/qinhaiyan/cake-weave-worker-sweep-b300-m4-3e5715cf/`.
+The first broker attempt exited before touching CUDA because the standalone
+runner lacked its receipt path. The successful retry used a separate receipt;
+both logs are retained. The successful job released its GPU allocation.
