@@ -628,12 +628,18 @@ def _verify_descriptor_commitments(schedule: Schedule, out: _Collector) -> None:
                     f"{len(staged.shape)} destination {name!r}",
                     category,
                 )
-            elif tuple(box) != staged.shape:
+            elif not (
+                tuple(box) == staged.shape
+                or (len(box) == 2 and staged.space is MemorySpace.SHARED
+                    and box[0] == staged.shape[0]
+                    and box[1] < staged.shape[1]
+                    and staged.shape[1] % box[1] == 0)
+            ):
                 out.add(
                     "TMA_DESCRIPTOR_MISMATCH",
                     path,
-                    f"descriptor box {box} does not match staging buffer {name!r} "
-                    f"shape {staged.shape}",
+                    f"descriptor box {box} must match staging buffer {name!r} "
+                    f"shape {staged.shape} or evenly tile its final shared-memory axis",
                     category,
                 )
 

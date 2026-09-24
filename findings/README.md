@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-24-002 — B300 TinyGEMM warp MMA needs four declared K64 TMA boxes per K256 shared operand; a single K256 descriptor was refused by the device, and existing emitters retain explicit tiled-route refusals (capacity, proposed; native Compiler route and formal device acceptance pending).
+
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-24-002",
+  "kind": "capacity",
+  "date": "2026-09-24",
+  "title": "A K256 shared operand on B300 needs four K64 TMA boxes before four warp-local MMA partials can be emitted",
+  "backend": "native_cuda warp MMA proposal; CuTe-DSL and native tcgen05 single-box routes remain separate",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@b00b2b8fda331011cad519d2817804ee7951fab3",
+  "executor_revision": "sm_103a@b00b2b8fda331011cad519d2817804ee7951fab3; external broker-bound diagnostic scripts, not a formal Executor receipt",
+  "evidence": [
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-tinygemm-tma-proto-correctness-20260924/",
+      "run": "gpuq-d13049be6571",
+      "event": 0,
+      "note": "The K64-box TMA and four-warp mma.sync prototype produced bitwise-equal complete outputs on both short-K shapes across five input distributions, with every input preserved. The prototype is outside the Compiler."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-tinygemm-tma-proto-benchmark-b16-20260924/report.json",
+      "run": "gpuq-d58c0237c06a",
+      "event": 1,
+      "note": "Under one broker-exclusive CUPTI comparison, the TMA prototype, selected-load Triton and official CAKE medians were 3.392, 5.856 and 3.040 microseconds. All five round outputs matched bitwise, each arm launched one kernel, and each arm's maximum within-round CV was below 5%. This is a custom diagnostic, not formal Evaluation admission."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-tinygemm-tma256-proto-admission-20260924.json",
+      "run": "gpuq-14617f481446",
+      "event": 2,
+      "note": "The alternate single K256 TMA descriptor was refused by cuTensorMapEncodeTiled with CUDA_ERROR_INVALID_VALUE before kernel launch. Its report cannot be used as a performance result."
+    },
+    {
+      "workspace": "src/open_cake_ir/compiler/verifier/hardware_conformance.py::_verify_descriptor_commitments",
+      "run": "cpu-static-probe",
+      "event": 3,
+      "note": "The previous equality check rejected a K64 descriptor for a K256 shared staging buffer. The proposed structural rule admits only boxes that exactly match the buffer or evenly tile its final shared-memory axis. The existing CuTe and native tcgen05 emitters explicitly refuse the tiled route."
+    }
+  ],
+  "observation": "The B300 gap is partly an emission-mechanism gap. Direct selected-K loads reduced the largest historical TinyGEMM slowdown, but the two short-K fixtures remain slower than official CAKE. A scalar global-to-shared warp-MMA prototype was numerically exact yet much slower. Replacing its copies with four K64 TMA boxes made the B16 prototype nearly match the official kernel. A K256 box is rejected by the device API, so describing K256 staging with one K256 descriptor is not a valid shortcut. The existing common verifier's exact box/staging equality prevented the K64-box plan even before backend admission.",
+  "proposed_change": "Admit a declared TMA descriptor box that evenly tiles the final axis of one shared staging buffer, while each existing emitter refuses a route it cannot emit. Then add a bounded native_cuda mma.sync path whose Schedule declares the four compute groups, four producer groups per operand, K256 stage and K64 descriptor boxes, named readiness/synchronization, four FP32 partials, CTA reduction and BF16 bias epilogue. Preserve exact target and bitwise Workload gates; do not route by operator name or copy the external kernel into the backend. A formal B300-M4 comparison also needs an Executor successor that accepts the existing broker's own admission receipt without inventing GPUQ_JOB_ID.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
