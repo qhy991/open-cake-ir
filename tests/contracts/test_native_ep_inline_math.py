@@ -55,7 +55,7 @@ class NativeEpInlineMath(unittest.TestCase):
                           entry='cake_ep4', rewrite='ordered_program')
         changed = json.loads(PROGRAM.read_text())
         next(op for op in changed['stages'][1]['schedule']['operations']
-             if op['id'] == 'exp_gate')['parameters']['op'] = 'tanh'
+             if op['id'] == 'exp_gate')['parameters']['op'] = 'rsqrt'
         with self.assertRaisesRegex(ValueError, 'NATIVE_ACTIVATION_ARITHMETIC'):
             lower_ep_math(Program.from_dict(changed), combine, target,
                           entry='cake_ep4', rewrite='ranked_mailbox')
