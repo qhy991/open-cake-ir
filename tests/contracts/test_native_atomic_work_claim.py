@@ -45,6 +45,28 @@ class NativeAtomicWorkClaim(unittest.TestCase):
         for operation in document["operations"]:
             self.assertIn(operation["id"], lowering.source_map)
 
+    def test_b300_cooperative_grid_is_a_real_host_launch(self):
+        document = work_document()
+        document["target"] = "sm_103a"
+        document["program_map"]["cooperative"] = True
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.lowering_eligible,
+                        [(f.code, f.path) for f in assessment.findings if f.blocks_lowering])
+        lowering = self.compiler.lower(assessment)
+        self.assertEqual(lowering.toolchain_requirements["grid"], [148, 1, 1])
+        self.assertIs(lowering.toolchain_requirements["cooperative_grid"], True)
+        self.assertIn("cudaDevAttrCooperativeLaunch", lowering.source)
+        self.assertIn("cudaOccupancyMaxActiveBlocksPerMultiprocessor", lowering.source)
+        self.assertIn("resident_blocks < 1", lowering.source)
+        self.assertIn("cudaLaunchCooperativeKernel", lowering.source)
+        self.assertNotIn("_kernel<<<", lowering.source)
+
+        document["target"] = "sm_100a"
+        refusal = self.compiler.assess(document)
+        self.assertFalse(refusal.lowering_eligible)
+        self.assertIn("TARGET_COOPERATIVE_GRID_UNMODELED",
+                      [finding.code for finding in refusal.findings])
+
     def test_static_reservation_has_one_program_per_token(self):
         document = json.loads((ROOT / "corpus/schedules/atomic-reservation-b8-smoke.json").read_text())
         document["lowering"]["backend"] = "native_cuda"

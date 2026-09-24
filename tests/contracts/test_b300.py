@@ -120,6 +120,7 @@ class B300ContractTests(unittest.TestCase):
         self.assertEqual(target.occupancy.registers_per_multiprocessor, 65536)
         self.assertEqual(target.occupancy.shared_memory_per_multiprocessor_bytes, 233472)
         self.assertEqual(target.occupancy.maximum_threads_per_multiprocessor, 2048)
+        self.assertIs(target.cooperative_grid, True)
         self.assertEqual(target.peak.memory_bandwidth.value, 8e12)
         self.assertFalse(target.peak.arithmetic)
         document = baseline_schedule(self.workload, 'primary')

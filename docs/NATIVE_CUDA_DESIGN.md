@@ -71,6 +71,14 @@ SM count, inter-GPU transfer, cross-CTA readiness, or communication-worker GEMM
 stealing. Those require separately admitted effects and backend mechanisms; a
 PTX atomic or barrier spelling alone cannot supply their ownership/liveness proof.
 
+`ProgramMap.cooperative=true` is a further explicit launch commitment (ADR
+0082). On B300, native CUDA now queries `cudaDevAttrCooperativeLaunch` and the
+compiled kernel's actual active blocks per SM, refuses a shortfall against the
+declared CTA residency, and uses `cudaLaunchCooperativeKernel` with the same
+derived grid and exact Target. Its metadata reports the commitment. Other
+backends refuse it before emission. This promises an admitted cooperative
+launch; it introduces no implicit cross-CTA wait or payload publication.
+
 ## Native PTX returned-old-value work claim prototype
 
 A second, explicitly bounded path in the same `native_cuda` backend lowers a

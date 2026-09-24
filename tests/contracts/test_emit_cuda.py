@@ -164,6 +164,15 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertIn('const int cake_axis1 = (cake_work % 4);',source)
         self.assertIn('const int cake_axis0 = (cake_work / 4);',source)
 
+    def test_b300_tensor_pipeline_can_request_cooperative_launch(self):
+        d=persistent_document()
+        d['target']='sm_103a'
+        d['program_map']['cooperative']=True
+        lowering=self.lower(d)
+        self.assertIs(lowering.toolchain_requirements['cooperative_grid'],True)
+        self.assertIn('cudaLaunchCooperativeKernel',lowering.source)
+        self.assertIn('resident_blocks < 1',lowering.source)
+
     def test_persistent_native_grid_refuses_missing_facts_and_unenforced_caps(self):
         d=persistent_document()
         d['residency']['registers_per_thread']=96

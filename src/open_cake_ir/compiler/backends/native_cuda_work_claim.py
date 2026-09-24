@@ -47,6 +47,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
           'NATIVE_SIMT_PROGRAM_MAP', 'program_map',
           'one scalar token axis owns each work-claim CTA')
     persistent = mapping is not None and mapping.persistent
+    check(mapping is None or not mapping.cooperative or target.cooperative_grid is True,
+          'NATIVE_SIMT_COOPERATIVE_TARGET_UNSUPPORTED', 'program_map.cooperative',
+          'the exact Target must declare cooperative-grid launch support')
     check(not persistent or (target.occupancy is not None and s.residency is not None
           and s.residency.ctas_per_multiprocessor is not None),
           'NATIVE_SIMT_PERSISTENCE', 'program_map.persistent',

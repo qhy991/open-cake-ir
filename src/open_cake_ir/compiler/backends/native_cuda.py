@@ -21,7 +21,7 @@ from ..verifier import verify
 
 SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32, DType.INT32})
 CODE_OBJECTS = frozenset({CodeObject.CUBIN})
-COOPERATIVE_GRID = False
+COOPERATIVE_GRID = True
 SUPPORTED_OPERATION_KINDS = frozenset({OperationKind.LOAD, OperationKind.MMA,
     OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE_ARGMIN,
     OperationKind.ATOMIC_RMW, OperationKind.STORE})
@@ -122,6 +122,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
           'NATIVE_TARGET_UNSUPPORTED', 'target',
           'native CUDA requires the Schedule\'s own Target and its declared compute capability')
     persistent = s.program_map is not None and s.program_map.persistent
+    check(s.program_map is None or not s.program_map.cooperative
+          or target.cooperative_grid is True,
+          'NATIVE_COOPERATIVE_TARGET_UNSUPPORTED', 'program_map.cooperative',
+          'the exact Target must declare cooperative-grid launch support')
     check(not persistent or target.occupancy is not None,
           'NATIVE_PERSISTENT_TARGET_FACTS_MISSING', 'program_map.persistent',
           'a persistent native grid requires the Target\'s observed multiprocessor count')
@@ -605,7 +609,7 @@ class _Emitter:
     def metadata(self, register_mapping):
         dims = _launch_grid(self.s, self.target)
         flags = ['-std=c++17',f'--gpu-architecture={self.s.target.replace("sm_","compute_")}',f'--gpu-code={self.s.target}','-O3','--fmad=false','-lineinfo','-Xptxas=-v']
-        return {'kernel_entry_point':self.entry+'_kernel', 'threads_per_cta':self.s.total_execution_group_extent*self.target.warp_size,
+        result = {'kernel_entry_point':self.entry+'_kernel', 'threads_per_cta':self.s.total_execution_group_extent*self.target.warp_size,
                 'dynamic_shared_bytes':self.shared_bytes, 'grid':list(dims), 'nvcc_flags':flags,
                 'argument_order':[b.name for b in self.globals],
                 'arguments':[{'name':b.name,'dtype':b.dtype.value,'shape':list(b.shape),'mode':b.mode.value} for b in self.globals],
@@ -614,6 +618,9 @@ class _Emitter:
                 'register_mapping':register_mapping,
                 'source_language':'cuda_cpp', 'signature':{b.name:'*'+b.dtype.value for b in self.globals},
                 'block':[self.s.total_execution_group_extent*self.target.warp_size,1,1]}
+        if self.s.program_map is not None and self.s.program_map.cooperative:
+            result['cooperative_grid'] = True
+        return result
 
     def sequence(self, scope):
         ops = list(self.s.operations) if scope is None else list(self.s.loop_operations(scope))
@@ -857,8 +864,24 @@ class _Emitter:
         self.line('if (device != h->device) return int(cudaErrorInvalidDevice);')
         dims=_launch_grid(self.s,self.target)
         args=[f'h->{self.names[b.name]}' for b in self.globals]+[f'h->{self.mapnames[op.op_id]}' for op in self.loads]
-        self.line(f'{self.entry}_kernel<<<dim3({dims[0]},{dims[1]},{dims[2]}), {self.s.total_execution_group_extent*self.target.warp_size}, {self.shared_bytes}, reinterpret_cast<cudaStream_t>(stream)>>>('+', '.join(args)+');')
-        self.line('return int(cudaGetLastError());');self.end()
+        if self.s.program_map is not None and self.s.program_map.cooperative:
+            requested = self.s.residency.ctas_per_multiprocessor
+            threads = self.s.total_execution_group_extent*self.target.warp_size
+            self.line('int cooperative = 0;')
+            self.line('error = cudaDeviceGetAttribute(&cooperative, cudaDevAttrCooperativeLaunch, device);')
+            self.line('if (error != cudaSuccess) return int(error);')
+            self.line('if (cooperative != 1) return int(cudaErrorNotSupported);')
+            self.line('int resident_blocks = 0;')
+            self.line(f'error = cudaOccupancyMaxActiveBlocksPerMultiprocessor(&resident_blocks, {self.entry}_kernel, {threads}, {self.shared_bytes});')
+            self.line('if (error != cudaSuccess) return int(error);')
+            self.line(f'if (resident_blocks < {requested}) return int(cudaErrorCooperativeLaunchTooLarge);')
+            self.line('void* kernel_args[] = {'+', '.join('&'+arg for arg in args)+'};')
+            self.line(f'error = cudaLaunchCooperativeKernel(reinterpret_cast<const void*>({self.entry}_kernel), dim3({dims[0]},{dims[1]},{dims[2]}), dim3({threads}), kernel_args, {self.shared_bytes}, reinterpret_cast<cudaStream_t>(stream));')
+            self.line('return int(error);')
+        else:
+            self.line(f'{self.entry}_kernel<<<dim3({dims[0]},{dims[1]},{dims[2]}), {self.s.total_execution_group_extent*self.target.warp_size}, {self.shared_bytes}, reinterpret_cast<cudaStream_t>(stream)>>>('+', '.join(args)+');')
+            self.line('return int(cudaGetLastError());')
+        self.end()
         self.begin(f'extern "C" int {self.entry}_destroy(void* handle)')
         self.line(f'delete static_cast<{handle}*>(handle); return 0;');self.end()
 

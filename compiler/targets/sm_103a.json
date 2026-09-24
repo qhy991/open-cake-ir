@@ -112,8 +112,14 @@
       "kind": "device_observation",
       "source": "cudaDeviceGetAttribute on NVIDIA B300-M4",
       "locator": "B300-M4:/home/qinhaiyan/cake-weave-b300-m4-occupancy-20260924/facts.json; broker job gpuq-8bf1f1ff977e; observed 2026-09-24"
+    },
+    {
+      "kind": "device_observation",
+      "source": "cudaDeviceGetAttribute cudaDevAttrCooperativeLaunch on NVIDIA B300-M4",
+      "locator": "B300-M4:/home/qinhaiyan/cake-weave-worker-b300-m4-863eb3fd/report.json; value 1 under exclusive broker job gpuq-07e90df5e32c; observed 2026-09-24"
     }
   ],
+  "cooperative_grid": true,
   "occupancy": {
     "multiprocessor_count": 148,
     "registers_per_multiprocessor": 65536,
