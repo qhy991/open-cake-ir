@@ -134,8 +134,10 @@ def _emit(program, target, tiles: int, width: int, grid: int):
     c = pointers[execution.controls['first_class_ctas']]
     k = pointers[execution.controls['chunk_count']]
     budget = pointers[execution.controls['steal_budget']]
-    state_ints = 8 + 3 * tiles
-    ready0, ready1, chunk = 8, 8 + tiles, 8 + 2 * tiles
+    # Eight control words, one successful-steal count and one first-combine
+    # observation precede the per-tile flags and per-chunk completion slots.
+    state_ints = 10 + 3 * tiles
+    ready0, ready1, chunk = 10, 10 + tiles, 10 + 2 * tiles
     major, minor = target.compute_capability
     arch = major * 100 + minor * 10
     lines = [
@@ -201,7 +203,8 @@ def _emit(program, target, tiles: int, width: int, grid: int):
         f'      {entry}_stage1({args}, tile, lane);',
         '      __syncwarp();',
         f'      if (lane == 0) {{ cake_publish(state + {ready1} + tile); '
-        f'cake_claim(state + {chunk} + tile / per_chunk); cake_claim(state + 4); }}',
+        f'cake_claim(state + {chunk} + tile / per_chunk); '
+        'cake_claim(state + 4); cake_claim(state + 8); }',
         '      __syncwarp();', '    }',
         '    if (lane == 0) cake_claim(state + 5);',
         '    __syncwarp();',
@@ -223,6 +226,7 @@ def _emit(program, target, tiles: int, width: int, grid: int):
         f'    while (cake_relaxed(state + {chunk} + tile / per_chunk) < per_chunk) '
         '__nanosleep(64);',
         f'    while (cake_acquire(state + {ready1} + tile) == 0) __nanosleep(64);',
+        '    if (lane == 0) atomicCAS(state + 9, 0, cake_relaxed(state + 4) + 1);',
         f'    {entry}_stage2({args}, tile, lane);',
         '    __syncwarp();', '  }',
         '}', '// CAKE_KERNEL_END',
@@ -293,6 +297,8 @@ def _emit(program, target, tiles: int, width: int, grid: int):
         'grid': [grid, 1, 1], 'block': [32, 1, 1],
         'cooperative_grid': True, 'state_bytes': state_ints * 4,
         'state_status_offset_bytes': 7 * 4,
+        'state_stolen_tiles_offset_bytes': 8 * 4,
+        'state_first_combine_compute_done_plus_one_offset_bytes': 9 * 4,
         'state_reset': 'zero_before_each_launch_on_launch_stream',
         'argument_order': list(tensor_names),
         'host_abi': {'create': entry+'_create', 'launch': entry+'_launch',

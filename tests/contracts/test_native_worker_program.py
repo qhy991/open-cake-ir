@@ -67,7 +67,10 @@ class NativeWorkerProgram(unittest.TestCase):
         self.assertIsInstance(lowered, LoweredWorkerProgram)
         lowered.validate_binding()
         self.assertEqual(lowered.toolchain_requirements['grid'], [148, 1, 1])
-        self.assertEqual(lowered.toolchain_requirements['state_bytes'], 6176)
+        self.assertEqual(lowered.toolchain_requirements['state_bytes'], 6184)
+        self.assertEqual(lowered.toolchain_requirements['state_stolen_tiles_offset_bytes'], 32)
+        self.assertEqual(lowered.toolchain_requirements[
+            'state_first_combine_compute_done_plus_one_offset_bytes'], 36)
         self.assertEqual(lowered.toolchain_requirements['argument_order'],
                          list(document()['tensors']))
         source = lowered.source
@@ -76,7 +79,9 @@ class NativeWorkerProgram(unittest.TestCase):
         self.assertIn('atom.relaxed.gpu.global.add.s32', source)
         self.assertIn('st.release.gpu.global.s32', source)
         self.assertIn('ld.acquire.gpu.global.s32', source)
-        self.assertIn('cudaMemsetAsync(h->state, 0, 6176', source)
+        self.assertIn('cudaMemsetAsync(h->state, 0, 6184', source)
+        self.assertIn('cake_claim(state + 8);', source)
+        self.assertIn('atomicCAS(state + 9, 0, cake_relaxed(state + 4) + 1)', source)
         self.assertIn('cudaLaunchCooperativeKernel', source)
         self.assertIn('// CAKE_OP: send.fma', source)
         self.assertIn('// CAKE_OP: calculate.fma', source)

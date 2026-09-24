@@ -136,6 +136,9 @@ support and compiled residency, resets the derived internal state on the
 launch stream, and returns a status slot for invalid device-resident controls.
 The caller allocates the state described in toolchain requirements. Other
 topologies, system-scope handoffs and non-native leaf routes are refused.
+The state includes a successful-steal count and a first-combine observation
+(`compute_done + 1`, with zero reserved for "not observed") so the device
+experiment can distinguish an exercised schedule from a merely valid output.
 
 This slice is a single-GPU synthetic execution path. Its Program v2 Evaluation
 adapter, full inter-GPU dispatch/combine, grouped expert GEMMs, per-layer cost
