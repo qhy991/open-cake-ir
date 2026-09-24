@@ -440,6 +440,22 @@ def _verify_instruction_commitments(
                             f"{operand.space.value}",
                             category,
                         )
+            if instruction.operand_source is OperandSource.TENSOR:
+                operands = [buffers.get(name) for name in operation.reads[:2]]
+                if (
+                    instruction.contract != "tcgen05.mma.cta_group::1.kind::f16"
+                    or len(operands) != 2
+                    or operands[0] is None or operands[1] is None
+                    or operands[0].space is not MemorySpace.TENSOR
+                    or operands[1].space is not MemorySpace.SHARED
+                ):
+                    out.add(
+                        "MMA_OPERAND_SOURCE_MISMATCH",
+                        f"{path}.instruction.operand_source",
+                        "tcgen05 tensor placement reads A from TMEM and B from "
+                        "shared memory",
+                        category,
+                    )
 
         if tile is None:
             out.add(

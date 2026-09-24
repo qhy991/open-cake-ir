@@ -76,6 +76,7 @@ class OperationKind(str, Enum):
     ELEMENTWISE = "elementwise"
     SCAN = "scan"
     STORE = "store"
+    TMEM_STORE = "tmem_store"
 
 
 class LoweringBackend(str, Enum):

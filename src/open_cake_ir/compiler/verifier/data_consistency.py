@@ -68,6 +68,7 @@ _ARITY = {
     OperationKind.REDUCE: (1, 1, "reduce"),
     OperationKind.SCAN: (1, 1, "scan"),
     OperationKind.STORE: (1, 1, "store"),
+    OperationKind.TMEM_STORE: (1, 1, "tmem_store"),
 }
 
 
@@ -1388,6 +1389,33 @@ def _verify_operation_shape(
                         f"{result.dtype.value}",
                         category,
                     )
+    if operation.kind is OperationKind.TMEM_STORE:
+        source = buffers.get(operation.reads[0]) if len(operation.reads) == 1 else None
+        destination = buffers.get(operation.writes[0]) if len(operation.writes) == 1 else None
+        if (
+            source is None or destination is None
+            or source.space is not MemorySpace.REGISTER
+            or destination.space is not MemorySpace.TENSOR
+            or source.dtype is not DType.BF16 or destination.dtype is not DType.BF16
+            or source.shape != destination.shape
+            or len(source.shape) != 2 or source.shape[0] != 128
+            or source.shape[1] % 16
+            or destination.mode is not BufferMode.SCRATCH
+        ):
+            out.add(
+                "TMEM_STORE_CONTRACT", path,
+                "tmem_store moves one 128-row BF16 register tile into an identical "
+                "scratch tensor tile with a whole number of paired-column x8 atoms",
+                category,
+            )
+        atom = operation.parameters.destination_atom
+        if atom.op != "tcgen05.St32x32b" or atom.repetition != 8:
+            out.add(
+                "TMEM_STORE_ATOM", f"{path}.parameters.destination_atom",
+                "the admitted TMEM store atom is tcgen05.St32x32b with repetition 8",
+                FindingCategory.HARDWARE_CONFORMANCE,
+            )
+
     if operation.kind is OperationKind.STORE:
         if len(operation.writes) != 1:
             out.add(

@@ -419,6 +419,18 @@ class StoreParameters:
 
 
 @dataclass(frozen=True)
+class TmemStoreParameters:
+    """Register-to-TMEM copy atom; completion is a declared barrier edge.
+
+    This is distinct from an ordinary global store: tcgen05.st is asynchronous,
+    consumes one physical 128-lane row tile and must be waited on before an MMA reads
+    the destination. The Schedule names both the copy atom and the handshake.
+    """
+
+    destination_atom: CopyAtom
+
+
+@dataclass(frozen=True)
 class FenceProxyParameters:
     pass
 
@@ -438,6 +450,7 @@ OperationParameters = Union[
     CastParameters,
     ElementwiseParameters,
     StoreParameters,
+    TmemStoreParameters,
     FenceProxyParameters,
 ]
 
@@ -761,6 +774,12 @@ def _operation_parameters(
     if kind is OperationKind.STORE:
         obj = _strict_object(value, required={"coalesced"}, context=context)
         return StoreParameters(_boolean(obj["coalesced"], f"{context}.coalesced"))
+
+    if kind is OperationKind.TMEM_STORE:
+        obj = _strict_object(value, required={"destination_atom"}, context=context)
+        return TmemStoreParameters(CopyAtom.from_dict(
+            obj["destination_atom"], f"{context}.destination_atom"
+        ))
 
     _strict_object(value, required=set(), context=context)
     return FenceProxyParameters()

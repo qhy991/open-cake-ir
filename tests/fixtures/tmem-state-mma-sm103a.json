@@ -1,0 +1,379 @@
+{
+  "schema_version": 2,
+  "schedule_id": "tmem-state-mma-witness",
+  "target": "sm_103a",
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_tmem_state_mma_witness"
+  },
+  "metadata": {},
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "name": "mma",
+      "execution_groups": [
+        4
+      ]
+    },
+    {
+      "name": "copy",
+      "execution_groups": [
+        5
+      ]
+    }
+  ],
+  "allocations": [
+    {
+      "name": "b_smem",
+      "space": "shared",
+      "size_bytes": 8192
+    },
+    {
+      "name": "tensor",
+      "space": "tensor",
+      "size_bytes": 65536,
+      "tensor_columns": 128,
+      "allocating_role": "compute"
+    }
+  ],
+  "buffers": [
+    {
+      "name": "a",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "b",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        64,
+        64
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "c",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "a_reg",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "a_tmem",
+      "space": "tensor",
+      "dtype": "bf16",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "tensor"
+    },
+    {
+      "name": "b_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        64,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "b_smem",
+      "swizzle": "swizzle_128b"
+    },
+    {
+      "name": "acc",
+      "space": "tensor",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch",
+      "allocation": "tensor",
+      "byte_offset": 16384
+    },
+    {
+      "name": "dot",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        64
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "pipelines": [
+    {
+      "name": "main",
+      "stages": 1
+    }
+  ],
+  "barriers": [
+    {
+      "name": "state_ready",
+      "count": 4,
+      "producers": [
+        "compute"
+      ],
+      "consumers": [
+        "mma"
+      ],
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "b_ready",
+      "count": 1,
+      "producers": [
+        "copy"
+      ],
+      "consumers": [
+        "mma"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "done",
+      "count": 1,
+      "producers": [
+        "mma"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "mechanism": "mbarrier"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_state",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "a"
+      ],
+      "writes": [
+        "a_reg"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "store_tmem",
+      "kind": "tmem_store",
+      "role": "compute",
+      "reads": [
+        "a_reg"
+      ],
+      "writes": [
+        "a_tmem"
+      ],
+      "parameters": {
+        "destination_atom": {
+          "op": "tcgen05.St32x32b",
+          "repetition": 8
+        }
+      },
+      "signals": [
+        "state_ready"
+      ],
+      "depends_on": [
+        "load_state"
+      ]
+    },
+    {
+      "id": "load_b",
+      "kind": "load",
+      "role": "copy",
+      "reads": [
+        "b"
+      ],
+      "writes": [
+        "b_stage"
+      ],
+      "parameters": {
+        "movement": "tma",
+        "descriptor_box": [
+          64,
+          64
+        ]
+      },
+      "signals": [
+        "b_ready"
+      ],
+      "pipeline": "main"
+    },
+    {
+      "id": "mma",
+      "kind": "mma",
+      "role": "mma",
+      "reads": [
+        "a_tmem",
+        "b_stage"
+      ],
+      "writes": [
+        "acc"
+      ],
+      "parameters": {
+        "accumulator": "fp32",
+        "tile_shape": [
+          128,
+          64,
+          64
+        ],
+        "instruction": {
+          "contract": "tcgen05.mma.cta_group::1.kind::f16",
+          "shape": [
+            128,
+            64,
+            16
+          ],
+          "cta_group": 1,
+          "operand_source": "tensor",
+          "operand_major": [
+            "k",
+            "k"
+          ]
+        }
+      },
+      "waits": [
+        "state_ready",
+        "b_ready"
+      ],
+      "signals": [
+        "done"
+      ],
+      "pipeline": "main",
+      "depends_on": [
+        "store_tmem",
+        "load_b"
+      ]
+    },
+    {
+      "id": "read_acc",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "acc"
+      ],
+      "writes": [
+        "dot"
+      ],
+      "parameters": {
+        "movement": "tmem",
+        "source_atom": {
+          "op": "tcgen05.Ld32x32b",
+          "repetition": 16
+        }
+      },
+      "waits": [
+        "done"
+      ],
+      "depends_on": [
+        "mma"
+      ]
+    },
+    {
+      "id": "store_out",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "dot"
+      ],
+      "writes": [
+        "c"
+      ],
+      "parameters": {
+        "coalesced": false
+      },
+      "depends_on": [
+        "read_acc"
+      ]
+    }
+  ],
+  "outputs": [
+    "c"
+  ],
+  "access_maps": [
+    {
+      "operation": "load_state",
+      "buffer": "a",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_b",
+      "buffer": "b",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_out",
+      "buffer": "c",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "grid": [
+    1,
+    1,
+    1
+  ]
+}

@@ -46,6 +46,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 - F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle and measures about 456 µs. Chunk algebra passes the complete CPU oracle, but correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in separate paired device diagnostics. Native global-state read/modify/write now passes a B300 in-place witness; KDA's chunk/TMEM/TMA stateful Schedule and native lowering remain a capacity proposal.
 
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
+- F-2026-09-24-002 — gfx1151 paired HIP timing has repeatable task-dependent sample spikes sixteen dispatches apart across five tasks; the cause remains unproven, and a fixed A/A device probe must precede any timer or CV-policy change (protocol, proposed).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
 - F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.
