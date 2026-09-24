@@ -52,6 +52,19 @@ class WeaveDispatchLedger(unittest.TestCase):
         self.assertEqual(dispatch_ledger(tail, skew_tail).task_slots,
                          (56, 0, 0, 0))
 
+    def test_frozen_tail_routing_has_equal_payload_and_task_counts_per_rank(self):
+        tail = dict(SHAPE, T=7)
+        ids = []
+        for rank in range(4):
+            rows = []
+            for token in range(7):
+                first = (rank * 2 + token) % 8
+                rows.append([first, (first + 3) % 8])
+            ids.append(rows)
+        ledger = dispatch_ledger(tail, ids)
+        self.assertEqual(ledger.payload_slots, (10, 10, 10, 10))
+        self.assertEqual(ledger.task_slots, (14, 14, 14, 14))
+
     def test_every_route_and_remote_payload_has_one_owner(self):
         rng = random.Random(1809)
         for _ in range(12):
