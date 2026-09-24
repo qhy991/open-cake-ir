@@ -91,11 +91,15 @@ waits for its own
 `mbarrier`. The MMA role waits for that barrier, then executes
 `tcgen05.fence::after_thread_sync` before issuing `tcgen05.mma` with A in TMEM and B
 in explicitly swizzled shared memory. FP32 TMEM readout and the final global store
-retain their existing completion contract. The backend refuses a carried TMEM-A
-contraction or a TMEM store inside a TileLoop, because this first route does not
-implement their barrier phases. The core IR and native emission have CPU contract and
-Corpus Gate coverage; the generated CUDA source still needs exact-target NVCC and
-B300 numerical validation. This is a mechanism witness, not a KDA prefill candidate.
+retain their existing completion contract. A later bounded prototype accepts one
+static outer `TileLoop.carried_buffers` tile: prologue store publishes phase zero,
+each trip TMA-loads its B tile, waits for phase `trip & 1`, completes the MMA and
+readout, then stores the next BF16 state and publishes the next phase. The per-trip
+MMA completion barrier is drained and invalidated before reuse. Dynamic chunk bounds,
+multiple carried tiles, KDA normalization, triangular solve and five-role overlap
+remain outside this route. Core IR and native emission have CPU contract and Corpus
+Gate coverage; both generated CUDA witnesses still need exact-target NVCC and B300
+numerical validation. Neither witness is a KDA prefill performance candidate.
 
 Native examples are complete hardware Schedules, not backend-renamed Triton inputs.
 The KMeans core explicitly takes `centroid_sq`, matching the existing portfolio runtime

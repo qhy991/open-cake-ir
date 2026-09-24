@@ -43,6 +43,10 @@ def _pipeline_loop(s, pipeline):
 def _publication_scope(s, operation):
     """The final accumulator is consumed in its contraction's parent scope."""
     loop = _scope(s, operation)
+    if loop is not None and loop.carried_buffers:
+        # Each carried-state chunk consumes its result before overwriting the
+        # accumulator in the next trip, so completion belongs to that trip.
+        return loop.name
     return s.loop_parent().get(loop.name) if loop is not None else None
 
 
@@ -201,7 +205,8 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         loop = _pipeline_loop(s, pipeline)
         if loop is not None:
             pipe_loops[loop.name] = pipeline
-        body = s.loop_operations(loop) if loop is not None else tagged
+        carried = loop is not None and bool(loop.carried_buffers)
+        body = tagged if carried else (s.loop_operations(loop) if loop is not None else tagged)
         body_path = f'tile_loops[{s.tile_loops.index(loop)}].body' if loop is not None else f'pipelines[{i}]'
         if loop is None:
             positions = [s.operations.index(op) for op in tagged]
@@ -211,11 +216,15 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'one contraction tile without a K loop uses one explicitly declared stage')
         loads = [op for op in body if op.kind is OperationKind.LOAD and op.parameters.movement in (LoadMovement.TMA, LoadMovement.GLOBAL)]
         mmas = [op for op in body if op.kind is OperationKind.MMA]
+        body_matches = loop is None or (
+            list(loop.body[:len(body)]) == [op.op_id for op in body]
+            if carried else list(loop.body) == [op.op_id for op in body]
+        )
         check(bool(loads) and bool(mmas) and len(loads)+len(mmas) == len(body)
               and all(op.pipeline == pipeline.name for op in body)
-              and (loop is None or list(loop.body) == [op.op_id for op in body]),
+              and body_matches,
               'NATIVE_PIPELINE_BODY', body_path,
-              'pipeline loops contain direct TMA loads followed by one or more MMA operations')
+              'contraction stages contain TMA loads followed by MMA; a carried loop may follow with state update operations')
         check([op.kind for op in body] == [OperationKind.LOAD]*len(loads)+[OperationKind.MMA]*len(mmas),
               'NATIVE_PIPELINE_ORDER', body_path,
               'all stage producers must precede its MMA consumers')
@@ -253,10 +262,26 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'stage readers cannot escape the completion-protected pipeline')
         for mma in mmas:
             if any(buffers[name].space is MemorySpace.TENSOR for name in mma.reads):
-                check(loop is None, 'NATIVE_TMEM_MMA_SCOPE',
+                check(loop is None or carried, 'NATIVE_TMEM_MMA_SCOPE',
                       f'operations[{s.operations.index(mma)}].pipeline',
-                      'the first TMEM-A route admits one root contraction, not a carried chunk loop')
-            check(loop is None or (s.mma_accumulates_over(mma, loop)
+                      'TMEM-A MMA admits a root contraction or one declared carried chunk loop')
+            if carried:
+                tensor_a = (len(mma.reads) == 2
+                            and buffers[mma.reads[0]].space is MemorySpace.TENSOR)
+                staged_b = buffers[mma.reads[1]] if len(mma.reads) == 2 else None
+                source_b = buffers[loads[0].reads[0]] if loads and loads[0].reads else None
+                access_b = s.access_map(loads[0].op_id, source_b.name) if source_b else None
+                check(tensor_a and len(loads) == 1 and staged_b is not None
+                      and loads[0].writes == (staged_b.name,)
+                      and source_b is not None and loop.buffer == source_b.name
+                      and loop.dimension == 0 and staged_b.shape[0] == loop.tile
+                      and access_b is not None and len(access_b.indices) == 2
+                      and access_b.indices[0].source is AccessIndexKind.LOOP_TILE
+                      and access_b.indices[0].name == loop.iterator
+                      and access_b.indices[1].source is AccessIndexKind.DIMENSION,
+                      'NATIVE_CARRIED_MMA_DOMAIN', f'operations[{s.operations.index(mma)}]',
+                      'a carried chunk uses one TMA B tile selected by the outer chunk loop')
+            check(loop is None or carried or (s.mma_accumulates_over(mma, loop)
                   and all(s._staged_axis_filled_by(name, loop) == 1 for name in mma.reads
                           if buffers[name].space is MemorySpace.SHARED)),
                   'NATIVE_MMA_CONTRACTION_SCOPE', f'operations[{s.operations.index(mma)}]',
@@ -405,8 +430,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         elif op.kind is OperationKind.TMEM_STORE:
             src = buffers[op.reads[0]]
             atom = op.parameters.destination_atom
-            check(_scope(s, op) is None, 'NATIVE_TMEM_STORE_SCOPE', path,
-                  'the first TMEM store route publishes one tile outside TileLoop')
+            scope = _scope(s, op)
+            check(scope is None or dst.name in scope.carried_buffers,
+                  'NATIVE_TMEM_STORE_SCOPE', path,
+                  'an in-loop TMEM store must update its loop-declared carried tile')
             check(src.space is MemorySpace.REGISTER and dst.space is MemorySpace.TENSOR
                   and src.dtype is dst.dtype is DType.BF16
                   and src.shape == dst.shape and len(src.shape) == 2
@@ -647,6 +674,9 @@ class _Emitter:
                 self.operation(op)
 
     def loop(self, loop):
+        if loop.carried_buffers:
+            self.carried_loop(loop)
+            return
         if loop.name in self.pipeloops:
             self.pipeline(loop,self.pipeloops[loop.name]); return
         # A carried argmin is initialized once per dynamic entry to its reduction
@@ -660,6 +690,20 @@ class _Emitter:
         self.begin(f'for (int {self.loopvars[loop.iterator]}=0; {self.loopvars[loop.iterator]}<{self.trip(loop)}; ++{self.loopvars[loop.iterator]})')
         self.sequence(loop)
         # Ensure all TMEM readers have completed before the next output tile overwrites it.
+        self.line('__syncthreads();')
+        self.invalidate_completions(loop)
+        self.end()
+
+    def carried_loop(self, loop):
+        """Run one complete chunk per trip, publishing the next TMEM phase last."""
+        pipeline = self.pipeloops[loop.name]
+        variable = self.loopvars[loop.iterator]
+        self.line('#pragma unroll 1')
+        self.begin(f'for (int {variable}=0; {variable}<{self.trip(loop)}; ++{variable})')
+        self.pipeline(None, pipeline, carried_phase=f'({variable}&1)')
+        for operation in self.s.loop_operations(loop):
+            if operation.pipeline != pipeline.name:
+                self.operation(operation)
         self.line('__syncthreads();')
         self.invalidate_completions(loop)
         self.end()
@@ -678,7 +722,7 @@ class _Emitter:
             self.end()
             self.line('__syncthreads();')
 
-    def pipeline(self, loop, p):
+    def pipeline(self, loop, p, *, carried_phase=None):
         ops = self.s.loop_operations(loop) if loop is not None else [op for op in self.s.operations if op.pipeline == p.name]
         trips = self.trip(loop) if loop is not None else 1
         loads = [op for op in ops if op.kind is OperationKind.LOAD]
@@ -703,7 +747,8 @@ class _Emitter:
                     for name in mma.reads:
                         if self.b(name).space is MemorySpace.TENSOR:
                             writer = next(op for op in self.s.operations if name in op.writes)
-                            self.line(f'cake_wait({self.barvars[writer.signals[0]]}, 0);')
+                            phase = carried_phase if carried_phase is not None else '0'
+                            self.line(f'cake_wait({self.barvars[writer.signals[0]]}, {phase});')
             self.line('#pragma unroll 1')
             self.begin(f'for (int {var}=0; {var}<{trips}; ++{var})')
             self.line(f'const int stage = {var} % {p.stages};')

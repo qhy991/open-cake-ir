@@ -148,6 +148,22 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertLess(source.index('// CAKE_OP: mma'),
                         source.index('// CAKE_OP: read_acc'))
 
+    def test_two_chunk_tmem_state_has_carried_barrier_phases(self):
+        d=json.loads((ROOT/'tests/fixtures/tmem-carried-two-chunk-sm103a.json').read_text())
+        lowered=self.lower(d)
+        source=lowered.source
+        self.assertIn('for (int it0=0; it0<2; ++it0)',source)
+        self.assertEqual(source.count('cake_init(bar0, 4);'),1)
+        self.assertEqual(source.count('cake_arrive(bar0);'),2)
+        self.assertIn('cake_wait(bar0, (it0&1));',source)
+        self.assertLess(source.index('// CAKE_OP: store_tmem'),
+                        source.index('for (int it0=0; it0<2; ++it0)'))
+        loop_source=source[source.index('for (int it0=0; it0<2; ++it0)'):]
+        self.assertLess(loop_source.index('// CAKE_OP: read_acc'),
+                        loop_source.index('// CAKE_OP: store_update'))
+        self.assertLess(loop_source.index('// CAKE_OP: store_update'),
+                        loop_source.index('cake_inval(bar2);'))
+
     def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
         d=document('inplace-state-gemm')
         lowered=self.lower(d)
