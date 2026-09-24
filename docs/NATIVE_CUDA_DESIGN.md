@@ -232,6 +232,20 @@ atomic support, bind remote storage and prove payload publication separately.
 The direct four-GPU EP4 mailbox experiment exercises those mechanisms outside
 Cake; the Compiler still cannot lower its remote address and flag effects.
 
+A separate two-GPU development binding at the same fixed Compiler commit
+`de45cf2c` passed GPU 1's `counts` allocation to Cake code running on GPU 0.
+The runner checked the selected pair's peer access and native P2P atomic
+attributes before enabling peer access. Broker job `gpuq-b126c81629bb` used
+two exclusive B300-M4 GPUs and passed the all-one-expert, balanced-nonzero and
+skewed-invalid route cases against the post-release permutation oracle.
+Inputs, Cake source, compile log, peer observation, receipt and device report
+are retained at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-system-peer-atom-b300-m4-de45cf2c/`
+and `B300-M4:/home/qinhaiyan/cake-system-peer-atom-b300-m4-de45cf2c/`.
+The broker no longer listed the allocation after completion. This proves one
+exact peer-state work-claim binding, not a Cake-owned pointer-placement
+protocol, payload handoff, EP4 execution or latency.
+
 PTX encoding reference: NVIDIA PTX ISA, sections 9.7.17.4 (matrix descriptors),
 9.7.17.8 (TMEM allocation), 9.7.17.9 (TMEM transfer), and 9.7.17.10 (tcgen05 MMA):
 https://docs.nvidia.com/cuda/parallel-thread-execution/index.html .
