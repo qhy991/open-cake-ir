@@ -34,7 +34,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-24-002 — B300 TinyGEMM warp MMA needs K64 TMA boxes and four ordered K256 partials; Python-authored successors pass the bitwise peer and same-run old/final diagnostics show 36.045×, 30.972× and 11.722× gains on three fixed shapes. Formal Executor admission and branch integration remain pending (capacity, proposed).
+- F-2026-09-24-002 — B300 TinyGEMM warp MMA needs K64 TMA boxes and four ordered K256 partials; the later exact-shape B64 tile runs 1.079× faster than the official CAKE export in a stable paired custom diagnostic. Early bias load and TMA descriptor prefetch narrow B16 to 3.040 vs 3.008 µs; B1's apparent lead fails the CV gate. Formal Executor admission and branch integration remain pending (capacity, proposed).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
 - F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.

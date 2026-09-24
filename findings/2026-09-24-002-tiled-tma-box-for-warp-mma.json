@@ -92,11 +92,83 @@
       "run": "gpuq-d1f3e34aab62",
       "event": 13,
       "note": "A bounded K3072 depth-one hypothesis kept the same Workload, four FP32 partials, two execution groups, oracle and cold-L2 CUPTI protocol. It passed five input distributions bitwise, with unchanged inputs and one kernel per arm. Five paired rounds measured s1 37.760 versus retained s2 24.545 microseconds; median paired s1/s2 latency was 1.538x, and all three arms had maximum within-round CV below 1.6%. No promotion: the existing two-stage authored route remains the qualified diagnostic representative."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-b64-tile-correctness-20260924/host-validation.json",
+      "run": "gpuq-34f56e39e3e0",
+      "event": 14,
+      "note": "Seven B64 output-tile/warp-width variants compiled offline; all seven matched the frozen official CAKE output bitwise across five input distributions and preserved every input. This was screening, not an accepted route."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-b64-tile-benchmark-cupti-20260924/report.json",
+      "run": "gpuq-08080a5864f6",
+      "event": 15,
+      "note": "With the existing CUPTI dependency available in a broker-exclusive run, five cold-L2 rounds found M16/N32/W2 at 19.841 us and M32/N16/W2 at 19.808 us versus official 21.376 us; all arms passed the 5% within-round CV gate, with complete bitwise outputs and one CUDA kernel each."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-b64-tile-confirm-benchmark-20260924/report.json",
+      "run": "gpuq-06546338680d",
+      "event": 16,
+      "note": "Independent five-round paired confirmation retained M16/N32/W2 at 19.904 us versus official 21.344 us, median paired official/candidate 1.07074x. Both arms passed the 5% CV gate, outputs matched bitwise, inputs were unchanged and each arm launched one kernel."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-b64-final-benchmark-21abdd5d-20260924/report.json",
+      "run": "gpuq-8a4be675d682",
+      "event": 17,
+      "note": "The committed Python-authored Compiler successor 21abdd5d emits the same M16/N32/W2 kernel selected by screening. In a fresh five-round broker-exclusive comparison it measured 19.904 us versus official 21.440 us, paired official/candidate 1.079032x; both arms had max CV below 1.6%, complete outputs matched bitwise and inputs were unchanged. This remains custom diagnostic evidence, not formal Evaluation."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-producer-benchmark-b16-20260924/report.json",
+      "run": "gpuq-bb7d633ffeae",
+      "event": 18,
+      "note": "Reducing the two TMA producer roles from four warps each to two or one, or parallelizing barrier initialization, preserved all five B16 peer cases but did not materially change the 3.424 us native latency; no producer-width promotion."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-geometry-b16-benchmark-20260924/report.json",
+      "run": "gpuq-a4049f3e9c24",
+      "event": 19,
+      "note": "A standalone feature16/batch8 geometry matched all five B16 peer cases and measured 3.328 us versus original-geometry 3.392 us and official 3.008 us. The B1 geometry run also passed five peer cases but its candidate/official CVs exceeded 5%. This geometry requires explicit transposed register-to-public-output mapping absent from the present Schedule; do not silently emit it under the existing dataflow."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-original-latency-benchmark-b16-20260924/report.json",
+      "run": "gpuq-04f4337c781c",
+      "event": 20,
+      "note": "On the current Schedule geometry, moving the already-declared bias load before the TMA waits reduced B16 from 3.392 to 3.104 us; adding descriptor prefetch reduced it to 3.040 us versus official 3.008 us. All variants passed five peer cases and this five-round comparison had max CV below 5%. This is a backend emission-order fix, not a new IR primitive."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-original-latency-b1-benchmark-20260924/report.json",
+      "run": "gpuq-6f54b6884ab2",
+      "event": 21,
+      "note": "The same early-bias/prefetch prototype passed all five B1 peer cases and measured 2.624 us versus official 2.592 us, but candidate and official max CVs were 5.976% and 7.478%; external latency is descriptive only."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-latency-final-b16-35f66aca-20260924/report.json",
+      "run": "gpuq-27b8c42539b2",
+      "event": 22,
+      "note": "Committed source 35f66aca passed all ten B1/B16 distribution cases bitwise with unchanged inputs, then in one broker-exclusive five-round run measured B16 native 3.040 us versus official 3.008 us (paired official/native 0.979167x, both max CV below 5%). The B1 native/official medians were 2.592/2.624 us, but both arms failed the 5% CV gate, so no B1 external speed claim. Formal Executor admission remains unavailable."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-b64-tile-benchmark-20260924/",
+      "run": "gpuq-4183429c3ff1",
+      "event": 23,
+      "note": "A prior B64 tile timing attempt omitted the already installed cupti-python dependency path. StrictCuptiBenchmark warned and refused event fallback before any latency result; the failed broker job and empty result directory were retained, then a new job with the existing dependency performed event 15."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-latency-final-b1-35f66aca-20260924/report.json",
+      "run": "gpuq-27b8c42539b2",
+      "event": 24,
+      "note": "Committed source 35f66aca measured B1 native 2.592 us and official CAKE 2.624 us in five paired rounds, with complete bitwise outputs and unchanged inputs. Native max CV 5.557% and official max CV 8.080% fail the 5% external quality gate, so the apparent native win is descriptive only."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-native-geometry-b1-benchmark-output-20260924/report.json",
+      "run": "gpuq-d6367e470ea7",
+      "event": 25,
+      "note": "The feature16/batch8 geometry passed all five B1 cases bitwise and halved its CTA grid from 16 to 8, but measured 2.784 us versus the original geometry 2.816 us and official 2.656 us, with candidate and official max CV above 5%; no B1 promotion."
     }
   ],
-  "observation": "The B300 gap is partly an emission-mechanism gap. Direct selected-K loads reduced the largest historical TinyGEMM slowdown, but the two short-K fixtures remain slower than official CAKE. A scalar global-to-shared warp-MMA prototype was numerically exact yet much slower. Replacing its copies with four K64 TMA boxes made the B16 prototype nearly match the official kernel. A K256 box is rejected by the device API, so describing K256 staging with one K256 descriptor is not a valid shortcut. The existing common verifier's exact box/staging equality prevented the K64-box plan even before backend admission. Swapping the MMA operand orientation preserves bitwise outputs on both short-K fixtures and makes the accumulator axes match the public row-major output, avoiding a new output-layout abstraction. The existing k_ranges field merges adjacent intervals, so it cannot name the four distinct warp partials; that requires a separate typed K-partition commitment. The normal Python-authored Compiler successor 4da760be now emits the TMA warp-MMA route and passes all ten short-K bitwise peer cases. The B16 paired custom CUPTI diagnostic is stable and narrows the original gap to about 14%; B1 retains an external-CV failure. This is implementation evidence, while formal Evaluation remains blocked by B300-M4 broker admission identity rather than by kernel correctness. A final same-run three-arm comparison under authored Compiler commit 4da760be measured paired old-to-final gains of 36.045x, 30.972x and 11.722x for the three fixed TinyGEMM shapes. All old/final edges passed the 5% within-round CV gate; the B16/B64 external edges passed, while B1 official CAKE CV failed. The Compiler-native route applies to the two short-K fixtures and the selected-load Triton route to the K3072 fixture. A successor depth-one ablation on B64 was numerically exact but 1.538x slower than the retained two-stage route in a stable same-run comparison. No stage-depth widening or promotion follows.",
-  "proposed_change": "Admit a declared TMA descriptor box that evenly tiles the final axis of one shared staging buffer, while each existing emitter refuses a route it cannot emit. Then add a bounded native_cuda mma.sync path whose Schedule declares the four compute groups, four producer groups per operand, K256 stage and K64 descriptor boxes, named readiness/synchronization, four FP32 partials, CTA reduction and BF16 bias epilogue. Preserve exact target and bitwise Workload gates; do not route by operator name or copy the external kernel into the backend. A formal B300-M4 comparison also needs an Executor successor that accepts the existing broker's own admission receipt without inventing GPUQ_JOB_ID. Add ordered k_partitions to the MMA data model with complete nonoverlapping coverage, one execution group per partition, and instruction-aligned boundaries; keep every current emitter refusing it until the native warp-MMA route exists. The provisional core and NVIDIA task commits implement the typed route, but integration through maintained branches and a formal Executor successor that consumes broker-issued admission are still required before closing this Finding or publishing platform result rows. Do not upgrade these custom broker diagnostics into published result rows: the formal sm_103a Executor admission still expects GPUQ_JOB_ID that the B300-M4 broker does not inject; keep the Finding open until a successor preserves the measurement contract and completes formal replay.",
+  "observation": "The B300 gap is partly an emission-mechanism gap. Direct selected-K loads reduced the largest historical TinyGEMM slowdown, but the two short-K fixtures remain slower than official CAKE. A scalar global-to-shared warp-MMA prototype was numerically exact yet much slower. Replacing its copies with four K64 TMA boxes made the B16 prototype nearly match the official kernel. A K256 box is rejected by the device API, so describing K256 staging with one K256 descriptor is not a valid shortcut. The existing common verifier's exact box/staging equality prevented the K64-box plan even before backend admission. Swapping the MMA operand orientation preserves bitwise outputs on both short-K fixtures and makes the accumulator axes match the public row-major output, avoiding a new output-layout abstraction. The existing k_ranges field merges adjacent intervals, so it cannot name the four distinct warp partials; that requires a separate typed K-partition commitment. The normal Python-authored Compiler successor 4da760be now emits the TMA warp-MMA route and passes all ten short-K bitwise peer cases. The B16 paired custom CUPTI diagnostic is stable and narrows the original gap to about 14%; B1 retains an external-CV failure. This is implementation evidence, while formal Evaluation remains blocked by B300-M4 broker admission identity rather than by kernel correctness. A final same-run three-arm comparison under authored Compiler commit 4da760be measured paired old-to-final gains of 36.045x, 30.972x and 11.722x for the three fixed TinyGEMM shapes. All old/final edges passed the 5% within-round CV gate; the B16/B64 external edges passed, while B1 official CAKE CV failed. The Compiler-native route applies to the two short-K fixtures and the selected-load Triton route to the K3072 fixture. A successor depth-one ablation on B64 was numerically exact but 1.538x slower than the retained two-stage route in a stable same-run comparison. No stage-depth widening or promotion follows. A bounded output-feature-tile sweep under the same B64 Workload found a committed M16/N32/W2 Triton successor that is 1.079032x faster than the official CAKE export in a stable five-round paired custom diagnostic. B16 producer-width and timed-wait ablations were negative. Hoisting the Schedule-declared bias load and prefetching the TMA descriptors in the existing native route narrowed the stable B16 external gap to roughly 1%; B1 reached a lower descriptive median but both external arms failed the CV gate. A feature16/batch8 native prototype improved B16 slightly but cannot be emitted honestly from the current Schedule without an explicit register/output orientation commitment. No generic Compiler pass is promoted; the B64 tile is an exact-fixture authoring choice and the early bias/prefetch belongs to native lowering.",
+  "proposed_change": "Admit a declared TMA descriptor box that evenly tiles the final axis of one shared staging buffer, while each existing emitter refuses a route it cannot emit. Then add a bounded native_cuda mma.sync path whose Schedule declares the four compute groups, four producer groups per operand, K256 stage and K64 descriptor boxes, named readiness/synchronization, four FP32 partials, CTA reduction and BF16 bias epilogue. Preserve exact target and bitwise Workload gates; do not route by operator name or copy the external kernel into the backend. A formal B300-M4 comparison also needs an Executor successor that accepts the existing broker's own admission receipt without inventing GPUQ_JOB_ID. Add ordered k_partitions to the MMA data model with complete nonoverlapping coverage, one execution group per partition, and instruction-aligned boundaries; keep every current emitter refusing it until the native warp-MMA route exists. The provisional core and NVIDIA task commits implement the typed route, but integration through maintained branches and a formal Executor successor that consumes broker-issued admission are still required before closing this Finding or publishing platform result rows. Do not upgrade these custom broker diagnostics into published result rows: the formal sm_103a Executor admission still expects GPUQ_JOB_ID that the B300-M4 broker does not inject; keep the Finding open until a successor preserves the measurement contract and completes formal replay. Retain the B64 M16/N32/W2 choice only for its measured exact shape and the native bias-load/prefetch emission order for the existing short-K route; do not promote the unsuccessful producer-width, timed-wait or depth-one variants. A standalone geometry prototype is not a qualified Schedule route.",
   "decision": "proposed",
-  "implemented_in": "core fd521217 and c04cc464; NVIDIA native 4da760be3867a445691b4a2884b6023a7388410f",
+  "implemented_in": "core fd521217 and c04cc464; NVIDIA native 4da760be3867a445691b4a2884b6023a7388410f; NVIDIA B64 tile 21abdd5def4e74a635f4cdc48f910fbde8cc6dba and native latency 35f66acacd047865bc6163a914832bc6624031de",
   "verified_by": null
 }
