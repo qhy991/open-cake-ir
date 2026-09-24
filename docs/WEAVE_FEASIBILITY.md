@@ -1,5 +1,8 @@
 # Weave design versus current Cake IR
 
+This opening audit is fixed to its 2026-09-24 Compiler base. The successor
+evidence and remaining Compiler boundary are recorded at the end of this page.
+
 Evidence date: 2026-09-24. Compiler base: `3e5f9bff651e9dfc56731a6f7bce3ac6855873fc` (`origin/main` at branch creation). Paper: [Weave, arXiv:2609.21483v1](https://arxiv.org/html/2609.21483v1), submitted 2026-09-18. This is an offline expressibility and evaluation-boundary audit; it contains no new GPU measurement.
 
 ## Decision
@@ -75,3 +78,44 @@ and native lowering belong in the platform task and are not implied by this
 registry row alone. Relaxed atomic add guarantees a unique claimed index; it does not
 publish a preceding payload or make a later worker's read ready. Weave's chunk
 handoff will require a separate release/acquire and liveness design.
+
+## 2026-09-25 successor evidence and next lowering boundary
+
+The B300 task branch now emits a one-GPU cooperative worker Program from three
+complete FP32 FMA leaf Schedules. It has typed CTA classes, work queues,
+release/acquire tile handoffs, chunks and a steal window. B300-M4 verified
+eight spatial/temporal/steal plans against an independent CPU oracle at
+`cake-worker-b300-m4-dafb2a70/`. A subsequent two-GPU development run at
+`cake-peer-payload-b300-m4-a81940b0/` bound one intermediate to peer storage:
+all eight plans remained numerically exact and exercised system-scope flag
+publication. A separate Cake-generated system-scope atomic work claim bound
+peer-owned state and passed three cases at
+`cake-system-peer-host-b300-m4-f0ae3b36/`. These evidence directories live
+under `open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/` or the
+corresponding `20260925/` root. They do not make the worker Program an EP4
+program: all of its CTAs execute on one GPU.
+
+The distinct `weave-ep4-bf16-moe-b300-v1` Workload Contract now owns a
+four-rank CPU oracle, expert placement, five routing distributions and
+per-rank local/incoming/unique-token counts. A direct CUDA/PTX mailbox
+reference, **outside Cake lowering**, passed balanced four-GPU BF16 output
+correctness and a skewed plan with 14 actually stolen tiles at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/` (see
+`experiments/weave/native_b300/EP4_MAILBOX.md`). Neither that small geometry
+nor the Cake synthetic worker has measured MoE latency or serving benefit.
+
+An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
+explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
+FP8 dtype admission, dynamic access indices, cast realization, arithmetic
+and operation kinds; `moe_gemm2` has the same classes of gap. The routing
+stages additionally need top-k, coordinate, compare and select lowerings.
+These are multiple independently owned primitives and effects, not a missing
+backend name. The BF16 EP4 development contract deliberately starts after
+routing with expert IDs and weights as inputs; it does not pretend to cover
+the FP8 task's routing and block-scale semantics.
+
+The next Compiler tick must keep the exact Program math visible while adding
+rank ownership, remote queue and payload effects, their system-scope
+publication and liveness analyses, and native BF16 expert computation. The
+existing single-device launch paths refuse the EP4 Workload Contract. No raw
+mailbox source is promoted as an opaque MoE instruction.

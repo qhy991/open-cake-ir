@@ -13,6 +13,7 @@ from open_cake_ir.tasks.weave_ep.workload import (
     RankVolume, materialize_tensors, reference_tensors, reference_values,
     routed_volume_values, routed_volumes, validate_contract, workload_document,
 )
+from open_cake_ir.tasks.workloads import load_workload, validate_workload_document
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,6 +29,8 @@ class WeaveEP4Workload(unittest.TestCase):
 
     def test_exact_contract_and_single_device_refusal(self):
         workload = self.workload
+        self.assertEqual(load_workload(CONTRACT).document, workload.document)
+        validate_workload_document(workload.document)
         self.assertEqual(workload.document, workload_document())
         self.assertTrue(workload.requires_distributed_execution)
         self.assertEqual(workload.case_ids,
