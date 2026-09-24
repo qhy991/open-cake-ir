@@ -47,7 +47,7 @@
 
 ## tmem_store
 
-**把 BF16 寄存器 tile 写入 TMEM 暂存区。** 它不是全局输出 `store`：`tcgen05.st` 异步执行，Schedule 必须声明 `tcgen05.St32x32b` x8 copy atom、四个 32-lane execution group 和 count=4 的 `mbarrier`。读取这块 TMEM 的操作要等待该 barrier。矩阵乘加若声明 `operand_source=tensor`，A 来自 TMEM，B 来自 shared memory。当前真实 Target 尚未声明此操作，后端也尚未实现完整生成；[合同 fixture](../../tests/fixtures/tmem-state-mma-sm103a.json) 只检验表示与拒绝规则。
+**把 BF16 寄存器 tile 写入 TMEM 暂存区。** 它不是全局输出 `store`：`tcgen05.st` 异步执行，Schedule 必须声明 `tcgen05.St32x32b` x8 copy atom、四个 32-lane execution group 和 count=4 的 `mbarrier`。读取这块 TMEM 的操作要等待该 barrier。矩阵乘加若声明 `operand_source=tensor`，A 来自 TMEM，B 来自 shared memory。本隔离 NVIDIA 原型仅在 `sm_103a` Target 声明此操作，并有[单次合同 fixture](../../tests/fixtures/tmem-state-mma-sm103a.json)和[静态两块 fixture](../../tests/fixtures/tmem-carried-two-chunk-sm103a.json)；NVCC 和 B300 数值资格仍待验证。
 
 ## elementwise
 

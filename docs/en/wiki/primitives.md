@@ -18,7 +18,7 @@ Write a value to the AccessMap destination with the declared type and rounding. 
 
 ## tmem_store
 
-Copy a BF16 register tile into TMEM scratch. Unlike a global `store`, `tcgen05.st` completes asynchronously. The Schedule names its `tcgen05.St32x32b` x8 atom, four 32-lane execution groups, and a count-4 `mbarrier`; every reader waits on that barrier. For `tcgen05.mma` with `operand_source=tensor`, A resides in TMEM and B in shared memory. No declared Target or backend currently admits the complete route. The [contract fixture](../../../tests/fixtures/tmem-state-mma-sm103a.json) checks its representation and refusals only.
+Copy a BF16 register tile into TMEM scratch. Unlike a global `store`, `tcgen05.st` completes asynchronously. The Schedule names its `tcgen05.St32x32b` x8 atom, four 32-lane execution groups, and a count-4 `mbarrier`; every reader waits on that barrier. For `tcgen05.mma` with `operand_source=tensor`, A resides in TMEM and B in shared memory. This isolated NVIDIA prototype declares the operation only on `sm_103a` and has [one-shot](../../../tests/fixtures/tmem-state-mma-sm103a.json) and [static two-chunk](../../../tests/fixtures/tmem-carried-two-chunk-sm103a.json) fixtures. NVCC and B300 numeric qualification are still pending.
 
 ## elementwise
 

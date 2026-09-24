@@ -208,7 +208,7 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 
 `Swizzle`、TMEM column、copy atom、MMA atom shape 与 operand placement 都是具体的硬件承诺。它们让存储和执行决策可检查，但不构成另一套可自由变换的 layout IR。一个后端缺乏某种组合时应在 assessment 阶段说明，不能自动转到另一个架构或忽略该字段。
 
-`tmem_store` 是 BF16 register tile 到 TMEM scratch tile 的异步物理传输，不是写回全局输出的 `store`。两侧同为 128 行、列数为 16 的倍数，`destination_atom` 明确指定 `tcgen05.St32x32b` 的 x8 重复。四个 32-lane execution group 在各自的 store 完成后向一个 count=4 的 `mbarrier` 报到；读取该 TMEM tile 的每个操作都须等待此 barrier。`tcgen05.mma` 若声明 `operand_source=tensor`，A 必须来自 TMEM、B 必须来自 shared memory。当前目标文档尚未声明 `tmem_store`，后端也尚未获得这条路径的完整 lowering 资格；仅能在明确声明它的 Target 上通过该合同检查。
+`tmem_store` 是 BF16 register tile 到 TMEM scratch tile 的异步物理传输，不是写回全局输出的 `store`。两侧同为 128 行、列数为 16 的倍数，`destination_atom` 明确指定 `tcgen05.St32x32b` 的 x8 重复。四个 32-lane execution group 在各自的 store 完成后向一个 count=4 的 `mbarrier` 报到；读取该 TMEM tile 的每个操作都须等待此 barrier。`tcgen05.mma` 若声明 `operand_source=tensor`，A 必须来自 TMEM、B 必须来自 shared memory。本隔离 NVIDIA 原型仅在 `sm_103a` Target 声明该操作，并生成单次及静态循环源码；NVCC 与 B300 设备资格仍待验证，其他目标不继承这项声明。
 
 需要跨 TileLoop 迭代复用同一块 TMEM 时，`TileLoop.carried_buffers` 明确声明该状态：一个循环前 `tmem_store` 初始化 phase 0，循环体读取当前值后由另一个 `tmem_store` 更新下一 phase，两者使用同一 count=4 的 `mbarrier`。Verifier 只在写入次数、角色、作用域、读写顺序和所有读取方的等待都能证明时允许这两个静态写者；未声明 carry 仍报 `BUFFER_MULTIPLE_WRITERS`。目前这条合同限于静态外层循环、每循环一个 BF16 TMEM tile，尚无 native 循环相位 lowering。该声明不引入布局代数，也不使一次单 tile 的 GPU 资格自动覆盖多 chunk KDA。
 
