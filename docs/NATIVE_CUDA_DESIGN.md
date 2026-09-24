@@ -81,6 +81,22 @@ The global addressing domain is bounded to signed-32-bit element counts. Unsuppo
 placement, precision, resource refinements, range controls and role arrangements fail
 locally; there is no scalar-MMA or target fallback.
 
+### B300 TMEM state prototype
+
+The exact `sm_103a` prototype admits one root contraction in which four aligned
+32-lane groups load a 128-row BF16 register tile and publish packed pairs through
+`tmem_store` with `destination_atom` `tcgen05.St32x32b`, repetition 8. Each group
+waits for its own
+`tcgen05.st` completion; one leader per group arrives on the declared count-four
+`mbarrier`. The MMA role waits for that barrier, then executes
+`tcgen05.fence::after_thread_sync` before issuing `tcgen05.mma` with A in TMEM and B
+in explicitly swizzled shared memory. FP32 TMEM readout and the final global store
+retain their existing completion contract. The backend refuses a carried TMEM-A
+contraction or a TMEM store inside a TileLoop, because this first route does not
+implement their barrier phases. The core IR and native emission have CPU contract and
+Corpus Gate coverage; the generated CUDA source still needs exact-target NVCC and
+B300 numerical validation. This is a mechanism witness, not a KDA prefill candidate.
+
 Native examples are complete hardware Schedules, not backend-renamed Triton inputs.
 The KMeans core explicitly takes `centroid_sq`, matching the existing portfolio runtime
 preparation contract. The original Workload still owns tokens/centroids and strict ids.
