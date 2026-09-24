@@ -101,6 +101,8 @@ def prepare_worker_program(lowered: LoweredWorkerProgram, inputs: Mapping[str, o
     """
     lowered.validate_binding()
     program = lowered.program
+    if program.execution is not None and program.execution.placement is not None:
+        raise ValueError('rank-placed worker Program requires a distributed launch adapter')
     if program.execution is None or set(inputs) != set(program.inputs):
         raise ValueError('worker launch public input set or execution kind differs')
     requirements = lowered.toolchain_requirements

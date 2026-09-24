@@ -102,6 +102,19 @@ independent post-release CPU oracle. Every worker CTA still executed on one
 GPU: this is not permission to run producer and consumer on different GPUs,
 nor to substitute an unqualified peer allocation or claim EP4 performance.
 
+The next structural slice is Program schema version 3 with an explicit
+two-rank `execution.placement`: every worker class, Program tensor and the
+internal queue state names one rank. Each stage has one regular worker rank;
+the declared steal window may execute its borrowed stage on the other rank.
+An intermediate crossing regular producer/consumer ranks must use a
+system-scope handoff; a same-rank intermediate must use device scope. Public
+outputs reside with their producing rank and runtime controls with queue
+state. Construction checks all of these edges and both ranks' nonempty CTA
+classes. The existing single-device adapter and backends refuse this form
+until a two-rank emitter and launch adapter prove the cross-rank queue and
+wait protocol. Version 3 is not an EP4 fallback or permission to launch a
+version-2 kernel twice.
+
 ## Admission and liveness obligations
 
 1. The Program's leaf Schedules and bindings are complete and share the exact

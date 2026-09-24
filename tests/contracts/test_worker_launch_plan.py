@@ -8,7 +8,7 @@ import unittest
 from open_cake_ir.compiler import Program
 from open_cake_ir.compiler.program import LoweredWorkerProgram
 from open_cake_ir.evaluation.launch_plan import prepare_worker_program
-from tests.contracts.test_worker_execution import document
+from tests.contracts.test_worker_execution import document, rank_document
 
 
 @dataclass
@@ -33,6 +33,11 @@ def lowered_worker():
 
 
 class WorkerLaunchPlanTests(unittest.TestCase):
+    def test_rank_placement_cannot_use_the_single_device_adapter(self):
+        self.lowered = replace(self.lowered, program=Program.from_dict(rank_document()))
+        with self.assertRaisesRegex(ValueError, 'distributed launch adapter'):
+            self.prepare()
+
     def setUp(self):
         self.lowered = lowered_worker()
         self.inputs = {name: Storage(10000 + index * 100000,

@@ -1,8 +1,8 @@
 """Complete Programs; no runtime, Workload or Lab dependencies.
 
-Version 1 executes static stages on one stream. Version 2 additionally types a
-cooperative worker execution descriptor, but requires dedicated lowering and
-Evaluation; it cannot replay through the version-1 ordered launcher. Global
+Version 1 executes static stages on one stream. Version 2 types a cooperative
+worker execution descriptor; version 3 adds exact two-rank placement. Neither
+worker form can replay through the version-1 ordered launcher. Global
 tensors remain single-assignment and every stage contains a complete Schedule.
 """
 from __future__ import annotations
@@ -71,8 +71,8 @@ class Program:
     def from_dict(cls, document):
         fields = {'schema_version','program_id','target','tensors','inputs','outputs','stages'}
         version = document.get('schema_version') if isinstance(document, Mapping) else None
-        if (type(version) is not int or version not in (1, 2)
-                or set(document) != fields | ({'execution'} if version == 2 else set())):
+        if (type(version) is not int or version not in (1, 2, 3)
+                or set(document) != fields | ({'execution'} if version != 1 else set())):
             raise ValueError('program fields or schema_version differ')
         for field in ('program_id','target'):
             if not isinstance(document[field], str) or not document[field]:
@@ -171,7 +171,8 @@ class Program:
         execution = (WorkerExecution.from_dict(
             document['execution'], tensors=tensors, inputs=io['inputs'], stages=stages,
             producers=stage_producers, consumers=stage_consumers,
-            intermediates=intermediates) if version == 2 else None)
+            intermediates=intermediates, outputs=io['outputs'], version=version)
+            if version != 1 else None)
         if execution is not None:
             consumed.update(execution.controls.values())
         if not set(io['inputs']) <= consumed:
@@ -188,7 +189,9 @@ class Program:
     def document(self) -> dict:
         """A fresh projection, not mutable Program authority."""
         document = {
-            'schema_version': 2 if self.execution is not None else 1,
+            'schema_version': (3 if self.execution is not None and
+                               self.execution.placement is not None else
+                               2 if self.execution is not None else 1),
             'program_id': self.program_id, 'target': self.target,
             'tensors': {name: {'shape': list(tensor.shape), 'dtype': tensor.dtype.value}
                         for name, tensor in self.tensors.items()},
