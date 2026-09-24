@@ -9,6 +9,9 @@ import unittest
 from open_cake_ir.compiler import Compiler, Schedule, Target
 from open_cake_ir.compiler.backends.native_cuda import emit, preflight
 from open_cake_ir.compiler.backends.common import EmitError
+from open_cake_ir.evaluation.peer_atomic import (
+    PeerAtomicBinding, PeerCapabilities, bind_peer_atomic_state,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -111,6 +114,24 @@ class NativeAtomicWorkClaim(unittest.TestCase):
         document['target'] = 'sm_100a'
         self.assertIn('NATIVE_ATOMIC_CONTRACT_UNSUPPORTED', [f.code for f in
             self.compiler.assess(document).findings])
+
+    def test_real_b300_target_can_bind_an_observed_peer_state(self):
+        document = work_document()
+        document['target'] = 'sm_103a'
+        next(op for op in document['operations'] if op['kind'] == 'atomic_rmw')[
+            'parameters']['scope'] = 'system'
+        schedule = Schedule.from_dict(document)
+        target = Target.load(ROOT / 'compiler/targets/sm_103a.json')
+        buffers = {buffer.name: index + 1000 for index, buffer in
+                   enumerate(schedule.buffers) if buffer.space.value == 'global'}
+        enabled = []
+        bound = bind_peer_atomic_state(schedule, target, buffers,
+            execution_device=0,
+            pointer_owner=lambda pointer: 1 if pointer == buffers['counts'] else 0,
+            probe_peer=lambda source, owner: PeerCapabilities(True, True),
+            enable_peer=lambda source, owner: enabled.append((source, owner)) or True)
+        self.assertEqual(bound, PeerAtomicBinding('sm_103a', 'counts', 0, 1))
+        self.assertEqual(enabled, [(0, 1)])
 
     def test_two_warp_roles_and_unproven_residency_are_refused(self):
         document = work_document()
