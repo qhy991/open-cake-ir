@@ -112,6 +112,18 @@ to nvcc's contraction decision. This is a reusable arithmetic leaf for a
 future worker Program lowering; it does not yet fuse stages or implement the
 cross-GPU MoE pipeline.
 
+At clean source commit `2ccf404b`, 19 related contract tests and the 179-case
+Corpus Gate passed. CUDA 13.1 nvcc/ptxas compiled the Cake-generated B300
+cooperative kernel with 16 registers, no spills and no barriers. Broker job
+`gpuq-9d4b3e68f245` used one exclusive B300-M4 GPU; after lease release, an
+independent CPU `a*b+c` oracle matched all 8,192 outputs exactly. Inputs,
+generated source, compile log, admission receipt and device result are retained
+outside source at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/cake-native-fma-b300-m4-2ccf404b/`
+and `B300-M4:/home/qinhaiyan/cake-native-fma-b300-m4-2ccf404b/`. This check
+establishes leaf lowering correctness, not Program v2 worker execution or
+performance.
+
 ## Native PTX returned-old-value work claim prototype
 
 A second, explicitly bounded path in the same `native_cuda` backend lowers a
