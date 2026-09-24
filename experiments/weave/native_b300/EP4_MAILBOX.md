@@ -60,3 +60,16 @@ Promotion disposition: no raw kernel is promoted into the Compiler. The
 reusable work-claim and release/acquire mechanics have device evidence; the
 next Compiler change must admit their rank placement, queue capacity and
 cross-GPU progress proof together with native emission and counterexamples.
+
+## Tail-case source successor (unqualified)
+
+`ep4_mailbox_tail.cu` is a separate, unmeasured `T=7` successor. It retains the
+original source's four-rank direct CUDA/PTX protocol, while
+`chunk_math.hpp` partitions arbitrary `1 <= K <= T` into first-longer chunks.
+For `T=7,K=2`, the source uses four then three tokens and waits for eight
+then six route contributions. The host-compiled helper is checked against the
+Workload-derived `rank_plan.py` for every `K` at `T=7` and `T=8`.
+The already measured `ep4_mailbox.cu` is unchanged. The successor has not
+been nvcc-compiled or run on B300-M4, and still sends one remote payload per
+route instead of deduplicating destinations. No tail correctness, steal,
+overlap or performance claim follows until an independent broker-run oracle.
