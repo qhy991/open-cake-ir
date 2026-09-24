@@ -497,6 +497,12 @@ bundle is `cake-ranked-ep4-adapter-tail-b300-m4-a78cbf7f/`; a fresh
 extraction passes CPU binding and input admission. The earlier `e3bf171d`
 bundle remains a development predecessor, not a device result.
 
+At `f504f4e6`, the frozen skew and tail cases also pass the shared ranked
+pre-seal manifest using the actual native lowering. The retained
+`cake-ranked-ep4-preseal-f504f4e6/` evidence holds both canonical manifests,
+source and requirements, each replayed against that clean Compiler commit.
+No compiled executable or `LaunchableCandidate` exists yet.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
