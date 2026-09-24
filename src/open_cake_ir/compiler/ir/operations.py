@@ -169,8 +169,34 @@ class MmaParameters:
     storage shape, and each MMA still writes one independently materialized result.
     None retains the original full contraction.
     """
+    k_partitions: tuple[tuple[int, int], ...] | None = None
+    """Ordered, disjoint K domains for independent warp partials.
+
+    Each partition accumulates in FP32 on one execution group. The result is the
+    left-associated FP32 sum of those partials in this order. This is distinct from
+    `k_ranges`, whose adjacent intervals canonicalize to one contribution domain.
+    """
 
     def __post_init__(self) -> None:
+        if self.k_partitions is not None:
+            if self.k_ranges is not None or self.tile_shape is None:
+                raise ScheduleParseError("mma.k_partitions requires tile_shape and excludes k_ranges")
+            if not isinstance(self.k_partitions, (tuple, list)) or len(self.k_partitions) < 2:
+                raise ScheduleParseError("mma.k_partitions requires at least two intervals")
+            partitions: list[tuple[int, int]] = []
+            cursor = 0
+            for index, interval in enumerate(self.k_partitions):
+                path = f"mma.k_partitions[{index}]"
+                if not isinstance(interval, (tuple, list)) or len(interval) != 2:
+                    raise ScheduleParseError(f"{path} must contain start and end")
+                start, end = (_nonnegative_int(value, path) for value in interval)
+                if start != cursor or start >= end or end > self.tile_shape[2]:
+                    raise ScheduleParseError(f"{path} must continue the preceding partition within tile_shape.K")
+                partitions.append((start, end))
+                cursor = end
+            if cursor != self.tile_shape[2]:
+                raise ScheduleParseError("mma.k_partitions must cover the complete tile_shape.K")
+            object.__setattr__(self, "k_partitions", tuple(partitions))
         if self.k_ranges is None:
             return
         if self.tile_shape is None:
@@ -511,7 +537,7 @@ def _operation_parameters(
         obj = _strict_object(
             value,
             required={"accumulator"},
-            optional={"instruction", "tile_shape", "k_ranges"},
+            optional={"instruction", "tile_shape", "k_ranges", "k_partitions"},
             context=context,
         )
         accumulator = _enum(DType, obj["accumulator"], f"{context}.accumulator")
@@ -535,6 +561,9 @@ def _operation_parameters(
         ranges = None
         if "k_ranges" in obj:
             ranges = _object_list(obj["k_ranges"], f"{context}.k_ranges", allow_empty=False)
+        partitions = None
+        if "k_partitions" in obj:
+            partitions = _object_list(obj["k_partitions"], f"{context}.k_partitions", allow_empty=False)
         try:
             return MmaParameters(
                 accumulator,
@@ -543,9 +572,10 @@ def _operation_parameters(
                 else MmaInstruction.from_dict(instruction, f"{context}.instruction"),
                 mnk("tile_shape"),
                 ranges,
+                partitions,
             )
         except ScheduleParseError as error:
-            if str(error).startswith("mma.k_ranges"):
+            if str(error).startswith(("mma.k_ranges", "mma.k_partitions")):
                 raise ScheduleParseError(str(error).replace("mma.", f"{context}.", 1)) from error
             raise
 

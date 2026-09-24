@@ -482,6 +482,12 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                             f"{name!r} is {buffer.space.value}. Use explicit load/store operations.",
                         )
         if operation.kind is OperationKind.MMA:
+            add(
+                operation.parameters.k_partitions is None,
+                "TRITON_MMA_K_PARTITIONS_UNSUPPORTED",
+                f"operations[{index}].parameters.k_partitions",
+                "the Triton emitter does not map ordered K partitions to separate execution groups",
+            )
             instruction = operation.parameters.instruction
             tile = operation.parameters.tile_shape
             operands = [schedule.buffer(name) for name in operation.reads]

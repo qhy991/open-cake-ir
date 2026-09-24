@@ -34,7 +34,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-24-002 — B300 TinyGEMM warp MMA needs four declared K64 TMA boxes per K256 shared operand; a single K256 descriptor was refused by the device, and existing emitters retain explicit tiled-route refusals (capacity, proposed; native Compiler route and formal device acceptance pending).
+- F-2026-09-24-002 — B300 TinyGEMM warp MMA needs K64 TMA boxes and four ordered K256 partials; a single K256 descriptor was refused by the device, and current emitters retain explicit refusals (capacity, proposed; native Compiler route and formal device acceptance pending).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
 - F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.
