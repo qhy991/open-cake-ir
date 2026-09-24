@@ -475,6 +475,13 @@ run the external oracle. No nvcc, B300 correctness, CUPTI or performance
 claim follows from this source generation alone. Ordinary ordered Programs
 retain their separate launch path.
 
+At clean commit `5b0af054`, the frozen `skew_to_rank0` and `tail_tokens`
+Workload inputs are bound to generated sources under the 2026-09-25 Weave
+evidence root in `cake-ranked-ep4-skew-b300-m4-5b0af054/` and
+`cake-ranked-ep4-tail-b300-m4-5b0af054/`. Both fresh bundles pass the Cake
+source/effect binding and CPU input gates. Host C++ syntax checks of copies
+with CUDA/PTX helpers stubbed pass; no nvcc or GPU job has run.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
