@@ -3,13 +3,16 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+from hashlib import sha256
 import json
 from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler import Schedule
 from open_cake_ir.evaluation.ranked_manifest import RankedMailboxLaunchManifest
+from open_cake_ir.evaluation.core import LaunchableCandidate
 from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks.weave_ep.workload import validate_contract
 from tests.contracts.test_ranked_mailbox_launch import fixture
 
@@ -35,6 +38,22 @@ def material():
 
 
 class RankedMailboxManifest(unittest.TestCase):
+    def test_preseal_manifest_cannot_masquerade_as_single_device_candidate(self):
+        workload, lowered, plans = material()
+        manifest = RankedMailboxLaunchManifest.from_lowered(
+            lowered, combine_document=json.loads(COMBINE.read_text()),
+            workload=workload, case_id='tail_tokens',
+            tensor_bindings=BINDINGS, plans=plans)
+        payloads = {'launch_manifest': canonical_json_bytes(manifest.as_dict()),
+                    'cubin': b'development-placeholder-cubin'}
+        roles = {name: sha256(value).hexdigest()
+                 for name, value in payloads.items()}
+        with self.assertRaisesRegex(ValueError,
+                                    'requires a distributed candidate loader'):
+            LaunchableCandidate('a' * 64, 'sm_103a',
+                                lowered.effects.lowering.entry_point,
+                                roles, 'b' * 64, payloads)
+
     def test_exact_tail_workload_math_shards_and_plan_bind(self):
         workload, lowered, plans = material()
         combine_document = json.loads(COMBINE.read_text())
