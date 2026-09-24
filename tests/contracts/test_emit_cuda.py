@@ -172,6 +172,14 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertIn('NATIVE_CARRIED_PIPELINE_STAGES',
                       {finding.code for finding in preflight(s,t)})
 
+    def test_carried_tmem_phase_parity_wraps_after_two_chunks(self):
+        d=json.loads((ROOT/'tests/fixtures/tmem-carried-two-chunk-sm103a.json').read_text())
+        next(buffer for buffer in d['buffers'] if buffer['name']=='b')['shape']=[256,64]
+        source=self.lower(d).source
+        self.assertIn('for (int it0=0; it0<4; ++it0)',source)
+        self.assertIn('cake_wait(bar0, (it0&1));',source)
+        self.assertEqual(source.count('cake_init(bar0, 4);'),1)
+
     def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
         d=document('inplace-state-gemm')
         lowered=self.lower(d)
