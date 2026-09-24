@@ -113,6 +113,14 @@ target, correctness gate and timing interval for both paths; the raw mailbox
 correctness result and the FP32 worker probes cannot substitute for that
 comparison.
 
+The NVIDIA task branch at `49e1ba3a` now lowers one BF16 expert-projection
+row dot from seven ordinary Cake operations (`load`, `cast`, `mul`, `reduce`,
+`store`) into a one-warp CUDA kernel. The same mathematical Schedule is also
+eligible for Triton with a changed lowering route, so it offers a controlled
+leaf comparison once B300 execution is available. This native leaf has passed
+offline Compiler and Corpus gates; it has not been nvcc-compiled or checked
+against the B300 oracle, and it is not connected to the EP4 worker Program.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
