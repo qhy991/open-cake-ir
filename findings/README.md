@@ -43,7 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle at about 456 µs. Correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in paired diagnostics. CPU-gated native TMEM state, row normalization and typed FP32/BF16 decay-prefix components now exist locally; generated-source device qualification and a complete KDA candidate remain open.
+- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle at about 456 µs. Correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in paired diagnostics. CPU-gated native TMEM state, row normalization, typed FP32/BF16 prefix stages and a full-shape numerical screen of log-domain coupling with BF16 triangular doubling now exist; generated-source device qualification and a complete KDA candidate remain open.
 
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 - F-2026-09-24-002 — gfx1151 paired HIP timing has repeatable task-dependent sample spikes sixteen dispatches apart across five tasks; the cause remains unproven, and a fixed A/A device probe must precede any timer or CV-policy change (protocol, proposed).
