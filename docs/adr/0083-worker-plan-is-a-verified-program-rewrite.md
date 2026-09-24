@@ -1,9 +1,9 @@
 # ADR 0083: A CTA worker plan rewrites a complete Program
 
 Status: proposed. The B300 scheduling mechanism has device evidence. A bounded
-version-2 Program execution descriptor now checks structure and dataflow;
-native worker lowering and Evaluation remain unimplemented and explicitly
-refused.
+version-2 Program execution descriptor checks structure and dataflow. The
+NVIDIA task branch now emits one single-GPU, three-FMA-stage worker kernel;
+Evaluation and a full MoE worker lowering remain unimplemented.
 
 ## Problem
 
@@ -69,10 +69,12 @@ public INT32 scalar control inputs, two ordered CTA classes, one queue per
 stage, one release/acquire handoff with explicit device or system scope per private intermediate, and one
 steal window. The controls count as Program-consumed inputs without a dummy
 math stage. Queue and handoff order are canonical. This bounded form is an
-internal admission step: `Compiler.lower_program`, existing Program rewrites
-and ordered Evaluation all refuse version 2 until one complete native worker
-path exists. It claims no device liveness or correctness from type
-construction alone.
+internal admission step: `Compiler.lower_program` delegates to a backend-owned
+worker lowering and refuses a backend without one. Existing Program rewrites
+and ordered Evaluation still refuse version 2. The NVIDIA task branch admits
+only a same-tile, device-scope FP32 FMA pipeline; no system-scope or real MoE
+Program can execute through it. Type construction alone claims no device
+liveness or correctness.
 
 ## Admission and liveness obligations
 
