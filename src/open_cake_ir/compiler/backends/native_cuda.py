@@ -552,6 +552,10 @@ class _Emitter:
         arch = major*100 + minor*10
         self.line(f'#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ != {arch}\n#error "Schedule requires exact {self.s.target}"\n#endif')
         self.line(_INSTRUCTIONS)
+        if any(op.kind is OperationKind.MMA and
+               any(self.b(name).space is MemorySpace.TENSOR for name in op.reads)
+               for op in self.s.operations):
+            self.line(_TMEM_A_INSTRUCTIONS)
         params = [f'{_TYPES[b.dtype]}* {self.names[b.name]}' for b in self.globals]
         params += [f'const __grid_constant__ CUtensorMap {self.mapnames[op.op_id]}' for op in self.loads]
         self.begin(f'extern "C" __global__ void {self.entry}_kernel('+', '.join(params)+')')
@@ -936,11 +940,14 @@ __device__ __forceinline__ uint64_t cake_desc(uint32_t address, uint32_t stride,
 __device__ __forceinline__ void cake_mma(uint32_t dst, uint64_t a, uint64_t b, uint32_t desc, bool accumulate) {
   asm volatile("{ .reg .pred p; setp.ne.b32 p, %4, 0; tcgen05.mma.cta_group::1.kind::f16 [%0], %1, %2, %3, p; }" :: "r"(dst), "l"(a), "l"(b), "r"(desc), "r"(int(accumulate)) : "memory");
 }
-__device__ __forceinline__ void cake_mma_tmem_a(uint32_t dst, uint32_t a, uint64_t b, uint32_t desc, bool accumulate) {
-  asm volatile("{ .reg .pred p; setp.ne.b32 p, %4, 0; tcgen05.mma.cta_group::1.kind::f16 [%0], [%1], %2, %3, p; }" :: "r"(dst), "r"(a), "l"(b), "r"(desc), "r"(int(accumulate)) : "memory");
-}
 __device__ __forceinline__ void cake_commit(uint64_t* p) {
   asm volatile("tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.b64 [%0];" :: "r"(cake_smem(p)) : "memory");
+}
+'''
+
+_TMEM_A_INSTRUCTIONS = r'''
+__device__ __forceinline__ void cake_mma_tmem_a(uint32_t dst, uint32_t a, uint64_t b, uint32_t desc, bool accumulate) {
+  asm volatile("{ .reg .pred p; setp.ne.b32 p, %4, 0; tcgen05.mma.cta_group::1.kind::f16 [%0], [%1], %2, %3, p; }" :: "r"(dst), "r"(a), "l"(b), "r"(desc), "r"(int(accumulate)) : "memory");
 }
 '''
 
