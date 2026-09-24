@@ -195,6 +195,7 @@ def validate_input(document: Mapping[str, object]) -> None:
 
 
 CODE_OBJECTS = frozenset({CodeObject.CUBIN, CodeObject.HSACO, CodeObject.MCFATBIN})
+COOPERATIVE_GRID = False
 
 # C550 can compile the same FP32 GEMM+bias source at 1/2/4/8 warps, while the
 # 16-warp launch reaches MACA's mcErrorRecompile before its first kernel call.

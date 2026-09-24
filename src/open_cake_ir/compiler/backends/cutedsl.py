@@ -60,6 +60,7 @@ SUPPORTED_DTYPES = frozenset(_CUTLASS_DTYPE) & frozenset(TORCH_DTYPES)
 # Every CuTe-DSL route here compiles to a cubin; the Compiler refuses any other declared
 # code object before preflight.
 CODE_OBJECTS = frozenset({CodeObject.CUBIN})
+COOPERATIVE_GRID = False
 
 # The TMEM route's qualification evidence (ADR 0070): the tcgen05 pipeline emitted below
 # has been measured on B200 only. sm_103a declares the same instruction contracts, so

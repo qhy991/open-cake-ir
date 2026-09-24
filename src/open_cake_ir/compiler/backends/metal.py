@@ -25,6 +25,7 @@ from ..verifier import verify
 
 SUPPORTED_DTYPES = frozenset({DType.FP32})
 CODE_OBJECTS = frozenset({CodeObject.METAL_BINARY_ARCHIVE})
+COOPERATIVE_GRID = False
 SUPPORTED_OPERATION_KINDS = frozenset({
     OperationKind.LOAD, OperationKind.ELEMENTWISE, OperationKind.REDUCE, OperationKind.STORE,
 })

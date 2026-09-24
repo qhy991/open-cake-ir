@@ -74,6 +74,22 @@ def verify(
         )
         return
 
+    if schedule.program_map is not None and schedule.program_map.cooperative:
+        if target.cooperative_grid is None:
+            out.add(
+                "TARGET_COOPERATIVE_GRID_UNMODELED",
+                "program_map.cooperative",
+                f"Target {target.target_id!r} declares no cooperative-grid launch fact",
+                category,
+            )
+        elif not target.cooperative_grid:
+            out.add(
+                "TARGET_COOPERATIVE_GRID_UNSUPPORTED",
+                "program_map.cooperative",
+                f"Target {target.target_id!r} explicitly refuses cooperative-grid launch",
+                category,
+            )
+
     for index, role in enumerate(schedule.roles):
         for position, warp in enumerate(role.execution_groups):
             if warp >= limits.maximum_warps_per_cta:

@@ -78,6 +78,13 @@ class ProgramMap:
     this is where it goes.
     """
 
+    cooperative: bool
+    """Require a cooperative launch for a persistent grid.
+
+    This is a launch property, not a cross-CTA barrier or a claim that a CTA
+    occupies a particular SM. The exact Target and backend must admit it.
+    """
+
     def axis(self, name: str) -> ProgramAxis | None:
         return next((axis for axis in self.axes if axis.name == name), None)
 
@@ -97,7 +104,7 @@ class ProgramMap:
         obj = _strict_object(
             value,
             required={"axes"},
-            optional={"persistent", "traversal"},
+            optional={"persistent", "traversal", "cooperative"},
             context=context,
         )
         axes = _object_list(obj["axes"], f"{context}.axes", allow_empty=False)
@@ -106,6 +113,11 @@ class ProgramMap:
             for index, item in enumerate(axes)
         )
         persistent = _boolean(obj.get("persistent", False), f"{context}.persistent")
+        cooperative = _boolean(obj.get("cooperative", False), f"{context}.cooperative")
+        if cooperative and not persistent:
+            raise ScheduleParseError(
+                f"{context}.cooperative requires persistent traversal"
+            )
         traversal = obj.get("traversal")
         if traversal is not None:
             traversal = _string_tuple(traversal, f"{context}.traversal")
@@ -114,7 +126,7 @@ class ProgramMap:
                     f"{context}.traversal orders a persistent walk; without persistence "
                     "the axis numbering already decides which axis varies fastest"
                 )
-        return cls(parsed, persistent, traversal)
+        return cls(parsed, persistent, traversal, cooperative)
 
 
 @dataclass(frozen=True)
