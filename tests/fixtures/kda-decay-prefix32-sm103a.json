@@ -1,0 +1,550 @@
+{
+  "schema_version": 2,
+  "schedule_id": "kda-b300-h64-decay-prefix32",
+  "target": "sm_103a",
+  "lowering": {
+    "backend": "triton",
+    "entry_point": "cake_kda_b300_decay_prefix32"
+  },
+  "program_map": {
+    "axes": [
+      {
+        "name": "chunk",
+        "axis": 0,
+        "buffer": "g",
+        "dimension": 0,
+        "tile": 32
+      },
+      {
+        "name": "head",
+        "axis": 1,
+        "buffer": "g",
+        "dimension": 1,
+        "tile": 1
+      }
+    ]
+  },
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "tile_loops": [],
+  "metadata": {},
+  "buffers": [
+    {
+      "name": "g",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        8192,
+        64,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "A_log",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        64
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "dt_bias",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        64,
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "prefix_out",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        8192,
+        64,
+        128
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "g_tile",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "g_fp32",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rate_log",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rate",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "bias_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "shifted",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "scaled",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "neg_scaled",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "exp_neg",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "denom",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "sigmoid",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "gated",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "decay",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "prefix_tile",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32,
+        128
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_g",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "g"
+      ],
+      "writes": [
+        "g_tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "cast_g",
+      "kind": "cast",
+      "role": "compute",
+      "reads": [
+        "g_tile"
+      ],
+      "writes": [
+        "g_fp32"
+      ],
+      "parameters": {
+        "to": "fp32"
+      },
+      "depends_on": [
+        "load_g"
+      ]
+    },
+    {
+      "id": "load_rate_log",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "A_log"
+      ],
+      "writes": [
+        "rate_log"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "rate_exp",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "rate_log"
+      ],
+      "writes": [
+        "rate"
+      ],
+      "parameters": {
+        "op": "exp"
+      },
+      "depends_on": [
+        "load_rate_log"
+      ]
+    },
+    {
+      "id": "load_bias",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "dt_bias"
+      ],
+      "writes": [
+        "bias_tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "add_bias",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "g_fp32",
+        "bias_tile"
+      ],
+      "writes": [
+        "shifted"
+      ],
+      "parameters": {
+        "op": "add",
+        "broadcast_axis": 1
+      },
+      "depends_on": [
+        "cast_g",
+        "load_bias"
+      ]
+    },
+    {
+      "id": "scale_gate",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "shifted",
+        "rate"
+      ],
+      "writes": [
+        "scaled"
+      ],
+      "parameters": {
+        "op": "mul"
+      },
+      "depends_on": [
+        "add_bias",
+        "rate_exp"
+      ]
+    },
+    {
+      "id": "negate_gate",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "scaled"
+      ],
+      "writes": [
+        "neg_scaled"
+      ],
+      "parameters": {
+        "op": "mul",
+        "scalar": -1.0
+      },
+      "depends_on": [
+        "scale_gate"
+      ]
+    },
+    {
+      "id": "exp_gate",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "neg_scaled"
+      ],
+      "writes": [
+        "exp_neg"
+      ],
+      "parameters": {
+        "op": "exp"
+      },
+      "depends_on": [
+        "negate_gate"
+      ]
+    },
+    {
+      "id": "sigmoid_denom",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "exp_neg"
+      ],
+      "writes": [
+        "denom"
+      ],
+      "parameters": {
+        "op": "add",
+        "scalar": 1.0
+      },
+      "depends_on": [
+        "exp_gate"
+      ]
+    },
+    {
+      "id": "sigmoid",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "denom"
+      ],
+      "writes": [
+        "sigmoid"
+      ],
+      "parameters": {
+        "op": "reciprocal"
+      },
+      "depends_on": [
+        "sigmoid_denom"
+      ]
+    },
+    {
+      "id": "scale_decay",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "sigmoid"
+      ],
+      "writes": [
+        "gated"
+      ],
+      "parameters": {
+        "op": "mul",
+        "scalar": -5.0
+      },
+      "depends_on": [
+        "sigmoid"
+      ]
+    },
+    {
+      "id": "exp_decay",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "gated"
+      ],
+      "writes": [
+        "decay"
+      ],
+      "parameters": {
+        "op": "exp"
+      },
+      "depends_on": [
+        "scale_decay"
+      ]
+    },
+    {
+      "id": "prefix_mul",
+      "kind": "scan",
+      "role": "compute",
+      "reads": [
+        "decay"
+      ],
+      "writes": [
+        "prefix_tile"
+      ],
+      "parameters": {
+        "op": "mul",
+        "axis": 0,
+        "direction": "forward"
+      },
+      "depends_on": [
+        "exp_decay"
+      ]
+    },
+    {
+      "id": "store_prefix",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "prefix_tile"
+      ],
+      "writes": [
+        "prefix_out"
+      ],
+      "parameters": {
+        "coalesced": true
+      },
+      "depends_on": [
+        "prefix_mul"
+      ]
+    }
+  ],
+  "access_maps": [
+    {
+      "operation": "load_g",
+      "buffer": "g",
+      "indices": [
+        {
+          "source": "program_tile",
+          "name": "chunk"
+        },
+        {
+          "source": "program",
+          "name": "head"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_rate_log",
+      "buffer": "A_log",
+      "indices": [
+        {
+          "source": "program",
+          "name": "head"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_bias",
+      "buffer": "dt_bias",
+      "indices": [
+        {
+          "source": "program",
+          "name": "head"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_prefix",
+      "buffer": "prefix_out",
+      "indices": [
+        {
+          "source": "program_tile",
+          "name": "chunk"
+        },
+        {
+          "source": "program",
+          "name": "head"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "outputs": [
+    "prefix_out"
+  ]
+}
