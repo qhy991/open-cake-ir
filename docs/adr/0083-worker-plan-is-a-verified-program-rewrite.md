@@ -23,6 +23,12 @@ and broker receipt are at
 This is single-GPU synthetic work. It supplies no NVLink, grouped-GEMM,
 end-to-end MoE or latency evidence.
 
+A later B300-M4 prerequisite probe at `3e5715cf` found CUDA peer reads on all
+12 directed pairs of four broker-selected GPUs. A separate two-GPU probe found
+native peer atomic support in both directions and matched 16 small payload
+handoffs using PTX `st.release.sys` / `ld.acquire.sys`. These observations do
+not establish the full concurrent EP protocol, throughput or MoE semantics.
+
 ## Proposed representation and owners
 
 Use one complete Compiler `Program` for the mathematical stages and their
@@ -39,9 +45,10 @@ how those existing leaf Schedules execute in one cooperative kernel:
   IR opcodes;
 - per-tile handoffs that name an output payload, an INT32 readiness flag,
   one producing stage and one consuming stage. The producer publishes with
-  device-scope **release** after all payload-writing lanes rendezvous; each
-  consuming lane uses device-scope **acquire** on that tile's flag before its
-  first payload read;
+  **release** after all payload-writing lanes rendezvous; each consuming lane
+  uses **acquire** on that tile's flag before its first payload read. Scope is
+  `device` for one GPU and `system` for peer GPU publication. A remote flag in
+  GPU memory also requires the exact device pair's native P2P atomic support;
 - one consolidated steal window after dispatch and before combine; both CTA
   classes claim the **same compute queue** during it. The final combine phase
   may admit both classes without adding a second combine queue.
@@ -59,7 +66,7 @@ The first structural slice is `Program` schema version 2 with
 static same-stream authority. Version 2 reuses complete stage Schedules and
 single-assignment tensor bindings, and additionally owns three distinct
 public INT32 scalar control inputs, two ordered CTA classes, one queue per
-stage, one release/acquire device handoff per private intermediate, and one
+stage, one release/acquire handoff with explicit device or system scope per private intermediate, and one
 steal window. The controls count as Program-consumed inputs without a dummy
 math stage. Queue and handoff order are canonical. This bounded form is an
 internal admission step: `Compiler.lower_program`, existing Program rewrites
@@ -77,7 +84,10 @@ construction alone.
 2. The verifier proves unique flag and payload ownership, matched
    release/acquire scope, dominance of acquire before any cross-CTA payload
    read, and an acyclic phase-dependency graph. A relaxed atomic may choose a
-   work index; it never serves as publication evidence.
+   work index; it never serves as publication evidence. A cross-GPU handoff
+   cannot use `device` scope. The exact peer pair must declare peer access and
+   native P2P atomic support before system-scope flag admission; a probe on one
+   pair does not qualify an unexamined pair.
 3. The chosen `c`, `K` and steal limit are device-resident runtime values with
    declared bounds. Invalid values produce an explicit failure status rather
    than a silent clamp or another Schedule. Chunk extents and tail ownership

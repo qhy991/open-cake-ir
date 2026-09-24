@@ -8,6 +8,7 @@ emission and execution path is qualified.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 from collections.abc import Mapping, Sequence
 
@@ -48,11 +49,17 @@ class WorkerQueue:
     workers: tuple[str, ...]
 
 
+class HandoffScope(str, Enum):
+    DEVICE = "device"
+    SYSTEM = "system"
+
+
 @dataclass(frozen=True)
 class WorkerHandoff:
     payload: str
     producer: str
     consumer: str
+    scope: HandoffScope
 
 
 @dataclass(frozen=True)
@@ -161,11 +168,15 @@ class WorkerExecution:
             payload = _name(row["payload"], f"worker execution.handoffs[{index}].payload")
             producer = _name(row["producer"], f"worker execution.handoffs[{index}].producer")
             consumer = _name(row["consumer"], f"worker execution.handoffs[{index}].consumer")
+            try:
+                scope = HandoffScope(row["scope"])
+            except (TypeError, ValueError):
+                raise ValueError(f"handoff {payload!r} requires device or system scope") from None
             if (payload not in intermediates or producers.get(payload) != producer
                     or consumers.get(payload) != {consumer}
-                    or row["order"] != "release_acquire" or row["scope"] != "device"):
+                    or row["order"] != "release_acquire"):
                 raise ValueError(f"handoff {payload!r} differs from the Program dataflow or memory order")
-            handoffs.append(WorkerHandoff(payload, producer, consumer))
+            handoffs.append(WorkerHandoff(payload, producer, consumer, scope))
         if {handoff.payload for handoff in handoffs} != intermediates:
             raise ValueError("worker handoff payloads must be unique and complete")
         if handoffs != sorted(handoffs, key=lambda item: (positions[item.producer], item.payload)):
@@ -186,7 +197,7 @@ class WorkerExecution:
                        for queue in self.queues],
             "handoffs": [{"payload": handoff.payload, "producer": handoff.producer,
                           "consumer": handoff.consumer, "order": "release_acquire",
-                          "scope": "device"} for handoff in self.handoffs],
+                          "scope": handoff.scope.value} for handoff in self.handoffs],
             "steal": {"borrower": self.steal.borrower, "stage": self.steal.stage,
                       "after": self.steal.after, "before": self.steal.before},
         }
