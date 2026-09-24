@@ -79,6 +79,25 @@ derived grid and exact Target. Its metadata reports the commitment. Other
 backends refuse it before emission. This promises an admitted cooperative
 launch; it introduces no implicit cross-CTA wait or payload publication.
 
+At `606a6f1e`, the B300-M4 CUDA 13.1 toolchain compiled both cooperative
+native routes: the one-warp INT32 work claim used 20 registers with no spills,
+and the tensor-core GEMM route used 80 registers and one barrier, also without
+spills. Each ran under a separate one-GPU exclusive broker lease and was
+verified against an external CPU oracle after release:
+
+- `gpuq-c73b88f136fd`: work claim passed all three contention,
+  nonzero-counter and invalid-route cases.
+- `gpuq-4cebccd99fa8`: persistent BF16 GEMM+bias on A[32768,256] and
+  B[256,256] matched 8,388,608 FP32 outputs with zero mismatches and zero
+  maximum error under the predeclared `1e-4` gate. The 148 CTAs traversed
+  1,024 logical output tiles.
+
+Raw inputs, source, compile logs, broker receipts, device outputs and
+post-release reports are retained at
+`B300-M4:/home/qinhaiyan/cake-weave-b300-m4-606a6f1e-cooperative/`.
+These scoped development checks do not test cross-CTA release/acquire, CTA
+role switching, NVLink or Weave communication/computation overlap.
+
 ## Native PTX returned-old-value work claim prototype
 
 A second, explicitly bounded path in the same `native_cuda` backend lowers a
