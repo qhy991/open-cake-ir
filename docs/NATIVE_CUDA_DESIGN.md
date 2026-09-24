@@ -246,6 +246,24 @@ The broker no longer listed the allocation after completion. This proves one
 exact peer-state work-claim binding, not a Cake-owned pointer-placement
 protocol, payload handoff, EP4 execution or latency.
 
+At successor commit `f0ae3b36`, the generated native host `create` now
+inspects each system-atomic state pointer with `cudaPointerGetAttributes`.
+For a peer-owned device allocation it checks the owner's exact B300 identity,
+directed peer access and native P2P atomics, then enables the peer mapping.
+Device-scope atomic schedules emit none of these checks. The fixed successor
+passed 20 related tests and the 179-case Corpus Gate; CUDA 13.1 compiled its
+kernel without spills. In broker job `gpuq-7d83558601a0`, two exclusive GPUs
+passed all three post-release permutation-oracle cases with GPU 1 owning
+`counts` and GPU 0 executing the Cake kernel. The test driver did **not**
+enable peer access, so the generated host ABI exercised that path. Receipt,
+source, compile log and observed output are retained at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-system-peer-host-b300-m4-f0ae3b36/`
+and `B300-M4:/home/qinhaiyan/cake-system-peer-host-b300-m4-f0ae3b36/`.
+The peer mapping is CUDA-context state and remains enabled until that context
+ends; a sealed distributed Executor still needs explicit context ownership.
+This qualification covers one remote atomic state pointer only. It does not
+publish a payload, schedule remote expert work or time an MoE layer.
+
 PTX encoding reference: NVIDIA PTX ISA, sections 9.7.17.4 (matrix descriptors),
 9.7.17.8 (TMEM allocation), 9.7.17.9 (TMEM transfer), and 9.7.17.10 (tcgen05 MMA):
 https://docs.nvidia.com/cuda/parallel-thread-execution/index.html .
