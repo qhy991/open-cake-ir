@@ -26,6 +26,7 @@ from open_cake_ir.lab.claude import ClaudeInvocationBuilder, advertised_options,
 from open_cake_ir.lab.provider_policy import provider_harness
 from open_cake_ir.lab.message_provider import MessageQualification, ResponsesRunProvider
 from open_cake_ir.lab.python_reference import read_skeleton_reference
+from open_cake_ir.lab.reference_access import require_qualified_clean_start_execution
 # MetalArchiveHost is bound through the Lab toolchain table; it stays named here because
 # the composition tests patch `compose.MetalArchiveHost.from_executor`.
 from open_cake_ir.lab.metal_build import MetalArchiveHost, MetalToolchainBuilder  # noqa: F401
@@ -118,6 +119,7 @@ def run_runtime_factory(project_root, runtime_config_path):
     def build(specification, directory):
         specification = lab.preflight_run(specification)
         document = specification.document
+        require_qualified_clean_start_execution((document['authoring'],))
         authoring, execution, protocol = (document[name] for name in ('authoring','execution','evaluation_protocol'))
         kind = specification.environment_kind
         declared_provider = authoring['provider']
@@ -235,17 +237,35 @@ def run_runtime_factory(project_root, runtime_config_path):
             if harness=='claude-code':
                 invocation = ClaudeInvocationBuilder(**common,cli_options=advertised_options(executable),
                     event_contract=declared_provider['event_contract'],
+                    submission_contract=declared_provider.get('submission_contract', 'candidate_set_envelope_v1'),
                     response_aliases=declared_provider.get('response_model_aliases', ()))
                 provider = ClaudeRunProvider(qualification=qualification,builders={specification.run_id:invocation},
                     task_packages=packages,adapter=ClaudeProviderAdapter(response_aliases=invocation.response_aliases))
             else:
                 schema = _raw_reference_path(root,declared_provider['output_schema'],'provider.output_schema')
+                author_home_policy = declared_provider.get('author_home_policy')
+                codex_home = None
+                if author_home_policy is not None:
+                    from open_cake_ir.lab.author_home import (
+                        ISOLATED_AUTH_ONLY_V1, provision_codex_home,
+                    )
+                    if (author_home_policy != ISOLATED_AUTH_ONLY_V1
+                        or 'auth_source' not in provider_config):
+                        raise ValueError('Run isolated Codex home policy or credential source differs')
+                    home_root = author_workspace.parent/'.codex-homes'
+                    home_root.mkdir(mode=0o700, exist_ok=True)
+                    auth_source = external_file(root, provider_config['auth_source'],
+                                                'Run Codex credential source')
+                    codex_home = provision_codex_home(auth_source,
+                                                       home_root/specification.run_id)
                 invocation = CodexInvocationBuilder(**common,code_mode_host=declared_provider['code_mode_host'],
                     service_tier=declared_provider['service_tier'],output_schema=schema,
                     disabled_features=tuple(declared_provider['disabled_features']),
                     event_contract=declared_provider.get('event_contract','closed_file_change_v1'),
-                    submission_contract=CANDIDATE_SET_ENVELOPE_V1,cwd_policy=declared_provider['cwd_policy'],
-                    reference_visibility=declared_provider['reference_visibility'])
+                    submission_contract=declared_provider.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1),cwd_policy=declared_provider['cwd_policy'],
+                    reference_visibility=declared_provider['reference_visibility'],
+                    author_home_policy=author_home_policy, codex_home=codex_home,
+                    qualified_system_skills_sha256=getattr(qualification, 'system_skills_sha256', None))
                 provider = CodexRunProvider(qualification=qualification,builders={specification.run_id:invocation},
                     task_packages=packages,adapter=CodexProviderAdapter())
         return {'provider':provider,'environment':environment,'evaluator':evaluator}
@@ -256,6 +276,7 @@ def execute_run_from_config(project_root,specification,runtime_config_path,evide
     from open_cake_ir.lab.custody import admit_new_campaign_path
     root = Path(project_root).resolve(strict=True)
     output = admit_new_campaign_path(root,evidence_root,role='Run Evidence root')
+    require_qualified_clean_start_execution((specification.document['authoring'],))
     components = run_runtime_factory(root,runtime_config_path)(specification,output.parent/(output.name+'-runtime'))
     return TaskLab(root).execute_run(specification,output,**components)
 

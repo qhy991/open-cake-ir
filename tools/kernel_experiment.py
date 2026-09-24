@@ -47,12 +47,18 @@ def validate(config):
     if not isinstance(config["objective"], str) or not config["objective"].strip():
         raise ValueError("experiment objective is required")
     provider = config["provider"]
-    object_fields(provider, {"harness", "model", "effort"})
+    object_fields(provider, {"harness", "model", "effort"}, {"response_model_aliases"})
     if provider["harness"] not in {"codex", "claude-code"} or any(
-            not isinstance(v, str) or not v.strip() for v in provider.values()):
+            not isinstance(provider[key], str) or not provider[key].strip() for key in ('harness', 'model', 'effort')):
         raise ValueError("explicit provider settings are required")
-    object_fields(config["budget"], {"turns", "token_budget", "wall_seconds"})
-    if any(type(v) is not int or v <= 0 for v in config["budget"].values()):
+    if 'response_model_aliases' in provider:
+        from open_cake_ir.lab.claude import response_model_aliases
+        if provider['harness'] != 'claude-code':
+            raise ValueError('response model aliases require the Claude provider')
+        response_model_aliases(provider['model'], provider['response_model_aliases'])
+    object_fields(config["budget"], {"turns", "wall_seconds"}, {"token_budget"})
+    if any(type(v) is not int or v <= 0 for k, v in config["budget"].items()
+           if not (k == "token_budget" and v is None)):
         raise ValueError("positive per-cell budgets are required")
     if not isinstance(config["references"], list) or not config["references"]:
         raise ValueError("reproduction requires explicit reference files")
@@ -181,7 +187,11 @@ for name in ("task", "backend", "rows", "columns", "depth", "fixed_baseline_bund
         args += ["--" + name.replace("_", "-"), str(p["cell"][name])]
 for group in (p["provider"], p["budget"]):
     for name, value in group.items():
-        args += ["--" + name.replace("_", "-"), str(value)]
+        if name == "response_model_aliases":
+            for alias in value:
+                args += ["--response-model-alias", alias]
+        elif value is not None:
+            args += ["--" + name.replace("_", "-"), str(value)]
 environment = dict(os.environ)
 if "codex_home" in n:
     home = pathlib.Path(n["codex_home"])

@@ -19,9 +19,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.cli import _json_projection
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.ir.vocabulary import LoweringBackend
 from open_cake_ir.lab.bindings import external_file, load_baseline_bundle, load_prepared_baseline, resolve_executor, CURRENT_RELEASE_BINDING
+from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, verify_auth_source
 from open_cake_ir.lab.environments import CandidateSubmission
 from open_cake_ir.lab.incumbents import TaskIncumbentRegistry, admit_baseline_selection
 from open_cake_ir.lab.build import TritonToolchainBuilder
@@ -106,6 +107,12 @@ def _provider_executable(harness: str, requested: Path | None) -> Path:
     if not native.is_file() or not os.access(native, os.X_OK):
         raise ValueError("this Codex installation has no usable native executable; no installation attempted")
     return native.resolve(strict=True)
+
+
+def _codex_auth_source(requested: Path | None) -> Path:
+    source = (requested if requested is not None else
+              Path(os.environ.get('CODEX_HOME', str(Path.home()/'.codex')))/'auth.json')
+    return verify_auth_source(external_file(ROOT, str(source), 'Codex credential source'))
 
 
 def _new_workspace(value: Path) -> Path:
@@ -332,7 +339,7 @@ def _admit_allocator(runtime) -> None:
 
 def _runtime_config(workspace, executor, executable, route, *, allocation,
                     local_kind=None, gpu_run=None, broker_socket=None,
-                    kernelctl=None, infra_socket=None):
+                    kernelctl=None, infra_socket=None, auth_source=None):
     """Bind the declared toolchain to the declared allocator.
 
     The route decides which toolchain builds a candidate; the allocation decides how a run
@@ -396,7 +403,8 @@ def _runtime_config(workspace, executor, executable, route, *, allocation,
     else:
         raise ValueError(f"task execution allocation {allocation!r} is unsupported")
     return {"schema_version": 1,
-            "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors")},
+            "provider": {"executable": str(executable), "workspace_root": str(workspace / "actors"),
+                         **({'auth_source': str(auth_source)} if auth_source is not None else {})},
             "toolchain": toolchain,
             "broker": {"command": command, "cwd": str(ROOT), "timeout_seconds": timeout,
                        "service_user": pwd.getpwuid(os.getuid()).pw_name,
@@ -446,6 +454,13 @@ def _qualify(root, workspace, args, executable, source_path):
                "--workspace", str(workspace / "qualification-workspace"), "--receipt-output", str(receipt),
                "--anchor-output", str(anchor), "--evidence-root", str(workspace / "qualification-evidence"),
                "--run-id", "task-provider-qualification"]
+    from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
+    command.extend(('--submission-contract',
+                    PYTHON_SOURCE_FILE_V1 if getattr(args, 'source_file', False)
+                    else PYTHON_CANDIDATE_BUNDLE_V1))
+    if args.harness == 'codex':
+        command.extend(('--author-home-policy', ISOLATED_AUTH_ONLY_V1,
+                        '--auth-source', str(args.auth_source)))
     for alias in args.response_model_alias:
         command.extend(("--response-model-alias", alias))
     completed = subprocess.run(command, cwd=root, capture_output=True, text=True, timeout=args.wall_seconds)
@@ -493,6 +508,10 @@ def _default_shape(task: str, rows: int | None, columns: int | None) -> tuple[in
     own extents keep that operand inside the bound; explicit flags still win.
     """
     if task in AKA_TASKS:
+        if task == 'aka_histogram':
+            return 1024 if rows is None else rows, 16 if columns is None else columns
+        if task == 'aka_max_pool1d':
+            return 2 if rows is None else rows, 8 if columns is None else columns
         return 8 if rows is None else rows, 256 if columns is None else columns
     if task == ADD_RMSNORM_TASK:
         return 128 if rows is None else rows, 2560 if columns is None else columns
@@ -532,6 +551,9 @@ def main(argv=None) -> int:
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--agents-md", type=Path,
                         help="task instructions bound as the arm scaffold and delivered in AGENTS.md; repository-relative path or absolute external file")
+    parser.add_argument('--reference-access', choices=('clean_start', 'known_kernel_reproduction'),
+                        default='known_kernel_reproduction',
+                        help='clean_start is reserved until provider read isolation is qualified')
     parser.add_argument("--kernelctl", type=Path, help="GPU Infra client; replaces the legacy allocation command")
     parser.add_argument("--infra-socket", type=Path, help="existing node GPU Infra daemon socket")
     parser.add_argument("--rows", type=int)
@@ -540,9 +562,11 @@ def main(argv=None) -> int:
                         help="contracted K extent; only a contraction task declares one")
     parser.add_argument("--case", choices=("primary",), default="primary", help="timing case; all five input cases remain required")
     parser.add_argument("--turns", type=int, default=32)
-    parser.add_argument("--token-budget", type=int, default=3000000,
-                        help="provider-token stopping threshold checked between complete invocations; an invocation can cross it")
+    parser.add_argument("--token-budget", type=int,
+                        help="optional provider-token threshold; omitted means usage accounting only, with no token stop or qualification limit")
     parser.add_argument("--max-candidates", type=int, default=3)
+    parser.add_argument('--source-file', action='store_true',
+                        help='author one raw candidate.py per Turn; requires --max-candidates 1 --searches-per-turn 1')
     parser.add_argument("--max-compilations", type=int, default=128,
                         help="native source-to-artifact compiler entry calls, including failed calls and variants")
     parser.add_argument("--searches-per-turn", type=int, default=2)
@@ -558,6 +582,8 @@ def main(argv=None) -> int:
     parser.add_argument("--confirmation-seconds", type=float,
                         help="fixed confirmation-phase reserve inside total wall budget (default: one tenth)")
     parser.add_argument("--provider-executable", type=Path)
+    parser.add_argument('--auth-source', type=Path,
+                        help='private Codex credential copied into a new home for each Run')
     parser.add_argument("--provider-revision")
     parser.add_argument("--qualification", type=Path)
     parser.add_argument("--qualification-anchor", type=Path)
@@ -590,6 +616,11 @@ def main(argv=None) -> int:
         parser.error("--fixed-baseline-bundle, --incumbent-registry and --prepared-baseline are mutually exclusive")
     if (args.qualification is None) != (args.qualification_anchor is None):
         parser.error("--qualification and --qualification-anchor must be supplied together")
+    if args.source_file and (args.reference_access != 'known_kernel_reproduction'
+                             or args.max_candidates != 1 or args.searches_per_turn != 1):
+        parser.error('--source-file requires known-kernel reproduction, one candidate and one search per Turn')
+    if args.reference_access == 'clean_start':
+        raise ValueError('clean-start provider read isolation is not qualified; refusing launch')
     workspace = _new_workspace(args.workspace)
     rows, columns = _default_shape(args.task, args.rows, args.columns)
     document, source = create_task(args.task, backend=args.backend, rows=rows, columns=columns,
@@ -615,14 +646,22 @@ def main(argv=None) -> int:
     if route == "metal":
         admit_cohort_payload(workload, args.case,
                              _ROUTE_CALLS_PER_COHORT)
-    inputs = task_run_inputs(ROOT, workload, workload_path, source_path, harness=args.harness,
+    authoring_source_path = source_path
+    inputs = task_run_inputs(ROOT, workload, workload_path, authoring_source_path, harness=args.harness,
         model=args.model, effort=args.effort, response_aliases=args.response_model_alias, turns=args.turns, token_budget=args.token_budget,
         maximum_candidates=args.max_candidates, searches_per_turn=args.searches_per_turn, wall_seconds=args.wall_seconds,
         maximum_compilations=args.max_compilations, confirmation_seconds=args.confirmation_seconds,
         dispatches_per_sample=args.dispatches_per_sample,
         maximum_cv=args.maximum_cv, required_pair_wins=args.required_pair_wins,
-        agents_md=args.agents_md)
+        agents_md=args.agents_md, reference_access=args.reference_access,
+        source_file=args.source_file)
     compiler, executor, host, compiler_reference = _admit_stack(ROOT, workspace, workload.target, route)
+    if args.harness != 'codex' and args.auth_source is not None:
+        raise ValueError('--auth-source applies only to the Codex harness')
+    auth_source = (_codex_auth_source(args.auth_source)
+                   if not args.baseline_only and args.harness == 'codex' else None)
+    if auth_source is not None:
+        args.auth_source = auth_source
     # The runtime config binds the provider and the allocator, both of which belong to
     # stages `--baseline-only` stops before; it is written only on the path that reaches
     # them. Building it here regardless is what made the provider mandatory above.
@@ -631,7 +670,8 @@ def main(argv=None) -> int:
                                allocation=_allocation_of(args.backend),
                                local_kind=_local_kind_of(args.backend),
                                gpu_run=args.gpu_run, broker_socket=args.broker_socket,
-                               kernelctl=args.kernelctl, infra_socket=args.infra_socket))
+                               kernelctl=args.kernelctl, infra_socket=args.infra_socket,
+                               auth_source=auth_source))
     if runtime is not None:
         if args.pointer_alignment is not None:
             from open_cake_ir.lab.toolchains import toolchain_for
@@ -746,7 +786,7 @@ def main(argv=None) -> int:
     _write(runtime_path, canonical(runtime))
     specification = prepare_task_run(ROOT,inputs,compiler_reference=compiler_reference,executor=executor,
         qualification_path=receipt_path,qualification_anchor_path=anchor_path,runtime_config_path=runtime_path,
-        baseline_path=baseline_path,baseline_selection=baseline_selection)
+        baseline_path=baseline_path,baseline_selection=baseline_selection,baseline_source_path=source_path)
     _write(workspace / "run.json",canonical(specification.document))
     if args.preflight_only:
         print(workspace / "run.json")

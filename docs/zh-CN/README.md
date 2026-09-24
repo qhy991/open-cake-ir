@@ -5,11 +5,20 @@
 
 原生 CUDA/PTX 的执行分工与使用，见[原生后端指南](NATIVE_CUDA.md)。
 
-[English](../en/README.md) · [全部中英文对照](../README.md) · [项目首页](../../README.md)
+[English](../en/README.md) · [完整中英文目录](../catalog.md) · [项目首页](../../README.md)
 
 在 B300 上运行三个 Python 算子起点，见 [B300 指南](../B300.md)。
 
 **这个系统帮助人和 AI 写出清楚的 GPU 计算计划，先找明显错误，再生成代码，最后用真实答案和测量检查。** 你不用先学会编程；先看小例子，想动手时再打开终端。
+
+## 快速查找
+
+| 目的 | 入口 |
+|---|---|
+| 查看结果和外部差距 | [硬件结果](../RESULTS.md) · [FlashInfer 逐任务综述](../results/nvidia/FLASHINFER_STATUS.md) · [MetaX C550](../metax-c550.md) |
+| 选择硬件或实验方法 | [按主题查指南](../catalog.md) · [Lab 任务流程](../wiki/experiments.md) |
+| 查完整章节或引用报告 | [技术报告首页](../README.md) · [完整中英文目录](../catalog.md) |
+| 找代码与维护流程 | [源码导航](../../README.md#源码与文档结构) · [开发分支](../DEVELOPMENT_BRANCHES.md) |
 
 ## 先用四句话理解
 
@@ -52,7 +61,7 @@ GPU 是擅长让很多小组同时算题的处理器。算子是一道明确的�
 | 677 条审查和 56 个 GPU 样本是什么意思 | [大批量审查导读](AKA_QUALIFIED_IR_REVIEW_AND_LAB_PLAN_20260903.md) |
 | 一个最小真实 GPU 样本怎样判对 | [八个输出的仿射计算](../AFFINE_PARENT_B200_CANARY_20260906.md) |
 | 今日发布版由哪里决定 | [自动生成的状态页](../../reports/current/STATUS.md) |
-| 其余调查、报告和数据说明 | [全部中英文对照](../README.md) |
+| 其余调查、报告和数据说明 | [完整中英文目录](../catalog.md) |
 
 ## 阅读时记住三条
 

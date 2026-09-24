@@ -44,6 +44,24 @@ class MetalPreflightTests(unittest.TestCase):
             workload = load_workload(directory/'workload.json')
             inputs = task_run_inputs(ROOT,workload,directory/'workload.json',directory/'starter.py',
                 harness='claude-code',model='exact-test-model',effort='high',turns=2)
+            self.assertEqual(inputs['authoring']['input_format'], 'python_source_v1')
+            self.assertEqual(inputs['authoring']['tool_surface'], ['submit_python_bundle'])
+            from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
+            self.assertEqual(inputs['authoring']['provider']['submission_contract'], PYTHON_CANDIDATE_BUNDLE_V1)
+            source_run = task_run_inputs(ROOT,workload,directory/'workload.json',directory/'starter.py',
+                harness='claude-code',model='exact-test-model',effort='high',turns=2,
+                maximum_candidates=1,searches_per_turn=1,source_file=True)
+            self.assertEqual(source_run['authoring']['provider']['submission_contract'], PYTHON_SOURCE_FILE_V1)
+            self.assertEqual(source_run['authoring']['scaffold']['path'],
+                             'contracts/scaffolds/python-artifact-optimization-source-file-v1.md')
+            with self.assertRaisesRegex(ValueError, 'one candidate and one search'):
+                task_run_inputs(ROOT,workload,directory/'workload.json',directory/'starter.py',
+                    harness='claude-code',model='exact-test-model',effort='high',source_file=True)
+            json_starter = directory/'starter.json'
+            json_starter.write_text(json.dumps(frontend.read_schedule(directory/'starter.py').document))
+            with self.assertRaisesRegex(ValueError, 'Python starter'):
+                task_run_inputs(ROOT,workload,directory/'workload.json',json_starter,
+                    harness='claude-code',model='exact-test-model',effort='high',turns=2)
             executable = directory/'provider';executable.write_bytes(b'CPU provider; not executed')
             receipt.executable_sha256 = sha256(executable.read_bytes()).hexdigest()
             runtime = {'schema_version':1,'provider':{'executable':str(executable),'workspace_root':str(directory/'actors')},
@@ -118,11 +136,13 @@ class MetalPreflightTests(unittest.TestCase):
             qualification_anchor={'path':str(anchor_path),'canonical_sha256':sha256(canonical(anchor)).hexdigest()})
         if harness=='codex':
             provider['code_mode_host']={'path':'/cpu-test-only/no-host', 'sha256':'e'*64}
+            provider['system_skills_sha256']='f'*64
         configuration = provider_configuration(provider, 'artifact_optimization_only', arms=study['arms'])
         receipt = SimpleNamespace(provider_revision=provider['revision'], executable_sha256='d'*64,
             configuration_sha256=sha256(canonical(configuration)).hexdigest(), initial_and_resume_equivalent=True,
             file_lifecycle_observed=True, usage_observed=True, qualified=True,
-            scope='live_two_turn_tool_rich_provider', canonical_sha256=receipt_identity)
+            scope='live_two_turn_tool_rich_provider', canonical_sha256=receipt_identity,
+            system_skills_sha256=provider.get('system_skills_sha256'))
         compiler = Compiler.load(ROOT, ROOT/'compiler/revision.json')
         lowering = compiler.lower(compiler.assess(frontend.parse(source).document))
         requirements = lowering.toolchain_requirements
@@ -167,6 +187,24 @@ class MetalPreflightTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError,'validation_case_ids'):
                         TaskLab(ROOT).preflight(path)
 
+    def test_python_only_study_refuses_json_starter_during_preflight(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary).resolve()
+            path, study, executor, receipt, candidate = self.fixture(directory, 'claude-code')
+            arm = study['arms']['open_cake']
+            source_path = Path(arm['schedule_skeleton']['path'])
+            document = frontend.read_schedule(source_path).document
+            json_starter = directory/'starter.json'
+            json_starter.write_bytes(canonical(document))
+            arm['schedule_skeleton'] = {'path': str(json_starter),
+                                        'canonical_sha256': sha256(canonical(document)).hexdigest()}
+            path.write_bytes(canonical(study))
+            with patch.object(preflight, 'resolve_execution_bindings', return_value=(study, executor)), \
+                 patch.object(admission.ProviderQualificationReceipt, 'load', return_value=receipt), \
+                 patch.object(admission, 'load_baseline_bundle', return_value=candidate):
+                with self.assertRaisesRegex(ValueError, 'Python-only Study requires a .py Schedule starter'):
+                    TaskLab(ROOT).preflight(path)
+
     def test_full_preflight_reaches_lock_and_python_package_for_both_harnesses(self):
         for harness in ('codex','claude-code'):
             with self.subTest(harness=harness), tempfile.TemporaryDirectory() as temporary:
@@ -182,7 +220,7 @@ class MetalPreflightTests(unittest.TestCase):
                 self.assertIn('schedule-starter.py',package.task_markdown)
                 self.assertIn('```python',package.task_markdown)
                 self.assertEqual(study['arms']['open_cake']['scaffold']['path'],
-                                 'contracts/scaffolds/python-artifact-optimization-metal-v3.md')
+                                 METAL_SCAFFOLD)
                 # The package owner delivers the frozen scaffold in AGENTS.md and
                 # references it from TASK.md; do not require a second body copy.
                 self.assertIn((ROOT/METAL_SCAFFOLD).read_text().strip(), package.agents_markdown)

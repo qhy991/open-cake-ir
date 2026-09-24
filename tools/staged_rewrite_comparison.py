@@ -321,6 +321,32 @@ def prepared_library(root,metadata):
     return path
 
 
+
+def check_snapshot(reader, workload, case, before, expected, first_input_verdicts, input_checks):
+    """Check one retained observation through the original comparison owners.
+
+    The verdict cache is local to one ordered replay. Only R tags may reuse its
+    checked first literal; later literals never replace that first verdict.
+    """
+    observed,after = reader.read(case)
+    if reader.encoding is None:
+        return compare_tile_outputs(workload,before,expected,observed,after)
+    output_correct,metrics = compare_tile_output_values(workload,expected,observed)
+    unchanged = set(before)==set(after)
+    for name,values in after.items():
+        key = case,name
+        if name in reader.reference_inputs:
+            if key not in first_input_verdicts:
+                raise ValueError('input reference lacks a checked first literal')
+            same = first_input_verdicts[key]
+            input_checks['reference'] += 1
+        else:
+            same = name in before and _same_tensor_inputs({name:before[name]},{name:values})
+            input_checks['literal'] += 1
+            if name in reader.first_inputs:first_input_verdicts[key] = same
+        unchanged &= same
+    return output_correct and unchanged, {**metrics,'inputs_unchanged':unchanged}
+
 def verify(root,output,prepared,captured,workload):
     admit_cases(prepared,workload)
     raw = json.loads(regular(captured,'capture.json').read_text())
@@ -356,27 +382,8 @@ def verify(root,output,prepared,captured,workload):
             check = {'checked_launches':observation['count'],'passed':True,'output_mismatches':0,
                      'max_abs_error':0.0,'inputs_unchanged':True}
             for _ in range(observation['count']):
-                observed,after = reader.read(case)
-                if reader.encoding is None:
-                    correct,metrics = compare_tile_outputs(workload,cases[case],expected[case],observed,after)
-                else:
-                    output_correct,metrics = compare_tile_output_values(workload,expected[case],observed)
-                    before = cases[case]
-                    unchanged = set(before)==set(after)
-                    for name,values in after.items():
-                        key = case,name
-                        if name in reader.reference_inputs:
-                            if key not in first_input_verdicts:
-                                raise ValueError('input reference lacks a checked first literal')
-                            same = first_input_verdicts[key]
-                            input_checks['reference'] += 1
-                        else:
-                            same = name in before and _same_tensor_inputs({name:before[name]},{name:values})
-                            input_checks['literal'] += 1
-                            if name in reader.first_inputs:first_input_verdicts[key] = same
-                        unchanged &= same
-                    metrics = {**metrics,'inputs_unchanged':unchanged}
-                    correct = output_correct and unchanged
+                correct,metrics = check_snapshot(reader,workload,case,cases[case],expected[case],
+                                                 first_input_verdicts,input_checks)
                 check['passed'] &= correct
                 check['output_mismatches'] += metrics['output_mismatches']
                 check['max_abs_error'] = max(check['max_abs_error'],metrics['max_abs_error'])

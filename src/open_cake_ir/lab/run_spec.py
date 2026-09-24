@@ -86,6 +86,22 @@ class RunSpecification:
             _digest(reference['canonical_sha256'], 'run.reference.canonical_sha256')
         _object(authoring.get('provider'), 'run.authoring.provider')
         validate_run_controls(document)
+        from .provider_documents import PYTHON_SOURCE_FILE_V1, PYTHON_CANDIDATE_BUNDLE_V1
+        if authoring['provider'].get('submission_contract') == PYTHON_SOURCE_FILE_V1:
+            if (authoring['environment_kind'] != 'open_cake'
+                or authoring.get('input_format') != 'python_source_v1'
+                or authoring.get('tool_surface') != ['submit_python_source']
+                or authoring.get('reference_access') != 'known_kernel_reproduction'
+                or document['budget'].get('maximum_candidates_per_turn') != 1
+                or document['evaluation_protocol'].get('searches_per_turn') != 1
+                or document['knowledge']['transformations']):
+                raise ValueError('Python source-file Run requires one direct Cake candidate and no transforms')
+        if authoring['provider'].get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1:
+            if (authoring['environment_kind'] != 'open_cake'
+                or authoring.get('input_format') != 'python_source_v1'
+                or authoring.get('tool_surface') != ['submit_python_bundle']
+                or authoring.get('reference_access') != 'known_kernel_reproduction'):
+                raise ValueError('Python candidate-bundle Run requires Cake Python known-kernel authoring')
         interface = _object(document['agent_interface'], 'run.agent_interface')
         if interface != {'schema_version': 1, 'kind': 'task_agents_ralph_v1'}:
             raise ValueError('Run author interface differs')

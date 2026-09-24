@@ -6,6 +6,7 @@ from pathlib import Path
 from open_cake_ir.serialization import canonical_json_bytes
 from .bindings import source_reference_path, qualification_path
 from .custody import admit_new_campaign_path
+from .reference_access import require_qualified_clean_start_execution
 from .message_provider import MessageQualification
 from .study_plan import StudyPlan, StudyRef
 from .run_spec import RunSpecification
@@ -139,6 +140,9 @@ def execute_study(study, *, execute_run, runtime_factory):
     """
     validate_prepared_study(study)
     allocations = study.plan.allocations()
+    require_qualified_clean_start_execution(
+        study.plan.run_specification(allocation).document['authoring']
+        for allocation in allocations)
     for allocation in allocations:
         directory = study.root/'runs'/allocation.run_id
         if (directory/'evidence').exists() or (directory/'failure.json').exists():

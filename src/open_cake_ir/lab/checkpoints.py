@@ -60,7 +60,7 @@ def project_checkpoints(
 
     if terminal_provider_tokens < 0:
         raise ValueError("terminal provider tokens must be non-negative")
-    if not checkpoints or any(
+    if any(
         not isinstance(value, int) or isinstance(value, bool) or value <= 0
         for value in checkpoints
     ):

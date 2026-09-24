@@ -20,6 +20,8 @@ from .process import (
 from .task_package import TaskPackage, verify_task_package, render_task_request
 from .provider_documents import (
     CANDIDATE_SET_ENVELOPE_V1,
+    PYTHON_SOURCE_FILE_V1,
+    PYTHON_CANDIDATE_BUNDLE_V1,
     ProviderInvocation,
     ProviderQualificationReceipt,
     ProviderTurn,
@@ -56,6 +58,11 @@ class CodexProviderAdapter:
         """Run without shell expansion and remove every contract-declared environment name."""
 
         environment = sanitized_environment(invocation.removed_environment)
+        if invocation.codex_home is not None:
+            from .author_home import verify_codex_home
+            environment['CODEX_HOME'] = str(verify_codex_home(
+                invocation.codex_home, fresh=invocation.thread_id is None,
+                expected_system_skills=invocation.system_skills_snapshot))
         try:
             completed = run_supervised(
                 invocation.argv,
@@ -193,7 +200,8 @@ class QualifiedRunProvider:
         self._submission_contract = str(
             self.configuration.get("submission_contract")
         )
-        if self._submission_contract != CANDIDATE_SET_ENVELOPE_V1:
+        if self._submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                             PYTHON_CANDIDATE_BUNDLE_V1}:
             raise ValueError("provider submission contract differs")
         for run_id, package in task_packages.items():
             if package.run_id != run_id:
@@ -234,7 +242,13 @@ class QualifiedRunProvider:
                 raise ValueError("initial provider Turn requires one empty workspace")
         elif request.thread_id is None:
             raise ValueError("resumed provider Turn requires the existing thread")
-        candidate_path = workspace / "candidate-set.json"
+        if self._submission_contract == PYTHON_SOURCE_FILE_V1 and (
+                request.environment_kind != 'open_cake' or request.maximum_candidates_per_turn != 1):
+            raise ValueError('Python source-file Run requires one Open Cake candidate per Turn')
+        candidate_path = workspace / (
+            'candidate.py' if self._submission_contract == PYTHON_SOURCE_FILE_V1 else
+            'candidate-set.py' if self._submission_contract == PYTHON_CANDIDATE_BUNDLE_V1 else
+            'candidate-set.json')
         expected_change = "add" if request.turn == 1 else "update"
         if (expected_change == "add" and candidate_path.exists()) or (
             expected_change == "update" and not candidate_path.is_file()
@@ -295,6 +309,14 @@ class QualifiedRunProvider:
                 artifact_payloads={"provider_stdout": result.raw_events},
                 reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
                                                        expected_thread_id=request.thread_id)) from error
+        if isinstance(builder, CodexInvocationBuilder):
+            try:
+                builder.remember_system_skills()
+            except ValueError as error:
+                raise RunProtocolFault('provider_fault', str(error),
+                    artifact_payloads={'provider_stdout': result.raw_events},
+                    reported_usage=reported_provider_usage(result.raw_events, provider=self.configuration,
+                                                           expected_thread_id=request.thread_id)) from error
         return replace(result, provider_tokens=tokens, reference_bundle=reference_bundle)
 
 
@@ -306,5 +328,11 @@ class CodexRunProvider(QualifiedRunProvider):
         builders: Mapping[str, CodexInvocationBuilder], task_packages: Mapping[str, TaskPackage],
         adapter: CodexProviderAdapter | None = None,
     ) -> None:
+        for builder in builders.values():
+            if (builder.configuration.get('author_home_policy') is not None
+                and (qualification.system_skills_sha256 is None
+                     or builder.qualified_system_skills_sha256
+                     != qualification.system_skills_sha256)):
+                raise ValueError('Run system skills differ from Provider qualification')
         super().__init__(qualification=qualification, builders=builders, task_packages=task_packages,
                          adapter=adapter or CodexProviderAdapter())
