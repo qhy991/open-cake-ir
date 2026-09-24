@@ -55,6 +55,15 @@ class WorkloadContract:
         self.source_path = source_path
         self.workload_id = _name(document.get("workload_id"), "workload.workload_id")
         self.canonical_sha256 = sha256(_canonical_json_bytes(document)).hexdigest()
+        semantics = document.get("semantics")
+        topology = semantics.get("execution_topology") if isinstance(semantics, Mapping) else None
+        if topology is not None and (not isinstance(topology, Mapping)
+                or set(topology) != {"kind", "world_size"}
+                or topology.get("kind") != "expert_parallel"
+                or type(topology.get("world_size")) is not int
+                or topology["world_size"] < 2):
+            raise ValueError("workload expert-parallel execution topology differs")
+        self.requires_distributed_execution = topology is not None
         raw_cases = document.get("cases")
         if not isinstance(raw_cases, list) or not raw_cases:
             raise ValueError("workload.cases must be a non-empty list")
