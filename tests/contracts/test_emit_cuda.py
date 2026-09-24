@@ -194,7 +194,7 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertLess(source.index('// CAKE_OP: rsqrt_positive'),
                         source.index('// CAKE_OP: reciprocal_positive'))
         d['operations'][-4]['parameters']['op']='log2'
-        self.refuses(d,'NATIVE_ARITHMETIC_UNSUPPORTED')
+        self.refuses(d,'BACKEND_ARITHMETIC_UNSUPPORTED')
 
     def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
         d=document('inplace-state-gemm')
