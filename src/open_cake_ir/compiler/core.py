@@ -190,6 +190,29 @@ class Compiler:
         from .program_passes import rewrite_program
         return rewrite_program(self, program, transformation, parameters)
 
+    def assess_ranked_mailbox(self, effects, local_program, combine_schedule):
+        """Analyze explicit rank effects beside complete local and origin math."""
+        from .ir import Program, RankedMailboxEffects
+        effects = RankedMailboxEffects.from_dict(effects.document)
+        local_program = Program.from_dict(local_program.document)
+        if local_program.target not in self._revision.targets:
+            raise ValueError('ranked mailbox needs an exactly declared Target')
+        return effects.analyze(local_program, combine_schedule)
+
+    def lower_ranked_mailbox(self, effects, local_program, combine_schedule):
+        """Route only to a backend that explicitly emits the complete protocol."""
+        from .ir import Program, RankedMailboxEffects
+        effects = RankedMailboxEffects.from_dict(effects.document)
+        local_program = Program.from_dict(local_program.document)
+        analysis = self.assess_ranked_mailbox(effects, local_program, combine_schedule)
+        if self.commit is None:
+            raise ValueError('ranked mailbox lowering needs a clean Compiler commit')
+        backend = BACKENDS.get(effects.lowering.backend)
+        lower = getattr(backend.module, 'lower_ranked_mailbox', None) if backend else None
+        if lower is None:
+            raise ValueError('ranked mailbox effects require dedicated backend lowering')
+        return lower(self, effects, local_program, combine_schedule, analysis)
+
     def lower_program(self, program):
         # Public callers can assemble typed fields directly. Reconstruct at this
         # input boundary; only the resulting validated structure reaches emission.

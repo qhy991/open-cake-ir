@@ -79,6 +79,15 @@ buffers and operations:
    per-contribution ready flags. For `T=7, K_r=2`, the two completion
    thresholds are 8 and 6 contributions, not a reused uniform counter.
 
+The first Compiler slice is `compiler/ir/ranked_mailbox.py`:
+`RankedMailboxEffects` declares the three owners, reservation modes, keys,
+system-scope ready handoffs, rank-local controls, shared task-queue steal
+window and per-launch reset. Its analysis derives separate payload, task and
+return capacities from a complete local Program and complete combine
+Schedule. The ordinary Program launcher is unchanged; a ranked lowering
+without a dedicated backend refuses explicitly. This typed effect object
+does not yet prove remote memory visibility or emit a four-rank kernel.
+
 The mailbox state and every tensor shard have one declared owning rank. A
 remote pointer carries that owner through lowering and Evaluation. Admission
 checks the exact directed peer pair for peer access and native P2P atomics
@@ -145,8 +154,19 @@ verifier block is not evidence for it.
 
 ## Verification and performance decision
 
-The implementation tick must land Program syntax, effects, legality,
-lowering and counterexamples together (Cake P1–P8). First run the full
+Cake P1/P3 preserve the ordinary mathematical editing model and one
+canonical mailbox effect document; capacities are derived rather than
+declared twice. P2 exposes rank-local `c/K/steal`, queue owners and scope.
+P4/P5 require construction-time key/owner/shape checks and capacity analysis,
+followed by the separate liveness and peer-pair gates above. P6 gates the
+new effect through the kernel corpus and adversarial examples. P7 places
+syntax beside analysis in the first slice and requires a later backend tick
+before executable admission. P8 keeps system-scope PTX and cooperative launch
+grounded in the exact Target and actual selected peer pairs.
+
+The executable successor must bind the typed effect to a complete ranked
+Program, native lowering and counterexamples together (Cake P1–P8).
+First run the full
 Compiler Corpus Gate at a fixed commit. Then, under the B300-M4 broker and
 at most four GPUs, require nvcc compilation, all five Workload cases against
 the external oracle, input preservation, queue/counter evidence, and a skew

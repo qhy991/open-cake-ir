@@ -25,6 +25,7 @@ from .backends.common import EmitError, Emission
 from .performance.compiled_resources import CompiledResources
 from .performance.empirical_cost import EmpiricalCostModel
 from .ir import Program, ProgramBinding, ProgramStage, ProgramTensor
+from .ir import RankedMailboxAnalysis, RankedMailboxEffects
 from .program import LoweredProgram
 from .program_passes import ProgramRewriteResult, TRANSFORMATIONS
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
@@ -40,6 +41,8 @@ __all__ = [
     "ProgramBinding",
     "ProgramStage",
     "ProgramTensor",
+    "RankedMailboxAnalysis",
+    "RankedMailboxEffects",
     "LoweredProgram",
     "Assessment",
     "Compiler",

@@ -188,6 +188,11 @@ route contributions. The measured direct CUDA reference still sends one
 payload per route and requires `T % K == 0`. A bounded CPU event model explores
 dispatch, regular compute, local stealing and early combine over these plans;
 it does not establish GPU memory order, occupancy or timing.
+The shared `RankedMailboxEffects` slice now declares the three queue/return
+ownership domains, exact system-scope handoffs and rank-local controls, and
+derives the 21/56 or 24/64 payload/task capacity from complete local and
+combine math. Compiler lowering still refuses this form until a dedicated
+four-rank backend and Evaluation binding exist.
 
 The NVIDIA task branch at `7fd4eaf5` adds an unmeasured `T=7` successor
 while leaving the measured `T=8` source unchanged. Its host-compiled chunk
