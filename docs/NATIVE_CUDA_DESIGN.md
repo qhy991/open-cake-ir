@@ -104,6 +104,14 @@ account for about 2.013 GB of write-then-read values that fusion might avoid.
 The sum of individual peak-bandwidth screens is 311 us, but this is neither a
 measured latency nor a valid additive runtime lower bound: cache reuse,
 instruction cost, launch order and on-chip resource pressure remain unknown.
+A separate fused Cake fixture composes upstream preparation, midpoint factors
+and three coupling MMAs into one Triton Schedule. It removes both global
+upstream-to-factor and factor-to-coupling boundaries, about 1.879 GB of logical
+write-then-read values in the four-stage screen; the fused Schedule declares
+about 404 MB input and 101 MB output traffic before inverse/state work. This
+only proves type legality and source generation. If register pressure or
+serialization makes the fused kernel slow, the device result must choose a
+different split rather than an automatic cost-model promotion.
 A typed midpoint-factor stage takes BF16 normalized Q/K and FP32 per-token
 log-decay, scans its 32-token prefix, extracts the first/last log values, and
 forms BF16 forward-key, backward-key and forward-query tiles. The bounded
