@@ -190,8 +190,8 @@ The PTX instruction provides an atomic old value under device-scope relaxed
 ordering, as specified by the [NVIDIA PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-atom).
 It neither publishes a separate payload nor waits for another CTA's chunk.
 The example `examples/schedules/native/atomic-work-claim.json` is a source
-and admission probe. Persistent B300 correctness, profiler evidence and a
-cross-role steal remain separate gates. The P1–P8 check for
+and admission probe. Profiler evidence and a cross-role steal remain separate
+from this leaf. The P1–P8 check for
 the shared atomic contract is in `docs/WEAVE_FEASIBILITY.md`; this backend
 slice preserves that operation's existing typing and adds exact Target and
 emission refusals.
@@ -209,6 +209,28 @@ all three cases: 2,048 same-expert routes, balanced routes with nonzero
 initial counters, and skewed routes containing invalid expert ids. These
 development checks establish no latency, profiler overlap, cross-CTA handoff,
 or multi-GPU MoE correctness.
+
+### B300 system-scope work claim successor
+
+The shared IR now distinguishes `atomic_rmw(add, relaxed, system)` from device
+scope. Triton refuses the stronger request rather than emitting `scope="gpu"`.
+Native CUDA selects `atom.relaxed.sys.global.add.s32` only when the exact
+Target declares that instruction; B300 admits it and B200 does not inherit
+that admission. At clean source commit `de45cf2c`, 30 focused contracts and
+the 179-case Corpus Gate passed. CUDA 13.1 ptxas compiled the generated B300
+kernel with 20 registers and no spills. One exclusive broker GPU in job
+`gpuq-9d4930d83925` passed the same three independent permutation-oracle
+cases, and the job disappeared from subsequent broker status. Source, inputs,
+compile log, receipt, device snapshots and post-release report are at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-system-atom-b300-m4-de45cf2c/`
+and `B300-M4:/home/qinhaiyan/cake-system-atom-b300-m4-de45cf2c/`.
+
+That Cake Schedule used a local state pointer. System-scope instruction
+correctness does not grant access to a peer-owned allocation. A distributed
+launcher must check every exact device pair's peer access and native P2P
+atomic support, bind remote storage and prove payload publication separately.
+The direct four-GPU EP4 mailbox experiment exercises those mechanisms outside
+Cake; the Compiler still cannot lower its remote address and flag effects.
 
 PTX encoding reference: NVIDIA PTX ISA, sections 9.7.17.4 (matrix descriptors),
 9.7.17.8 (TMEM allocation), 9.7.17.9 (TMEM transfer), and 9.7.17.10 (tcgen05 MMA):
