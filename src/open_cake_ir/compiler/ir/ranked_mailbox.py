@@ -68,6 +68,7 @@ class RankedMailboxEffects:
                 or set(value) != {'schema_version', 'world_size', 'workers',
                                   'controls', 'channels', 'steal', 'reset',
                                   'lowering'}
+                or type(value['schema_version']) is not int
                 or value['schema_version'] != 1):
             raise ValueError('ranked mailbox effect fields or version differ')
         world = value['world_size']

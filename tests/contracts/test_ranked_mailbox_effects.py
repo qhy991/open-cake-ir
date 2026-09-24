@@ -55,6 +55,7 @@ class RankedMailboxEffectsContract(unittest.TestCase):
              'keys, owners'),
             (lambda d: d.__setitem__('reset', 'optional'), 'reset'),
             (lambda d: d.__setitem__('world_size', 1), 'at least two'),
+            (lambda d: d.__setitem__('schema_version', True), 'fields or version'),
         )
         for mutate, reason in changes:
             value = deepcopy(base)

@@ -89,6 +89,10 @@ class RankedMailboxManifest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'identity differs'):
             RankedMailboxLaunchManifest.from_dict(changed)
         changed = manifest.as_dict()
+        changed['schema_version'] = True
+        with self.assertRaisesRegex(ValueError, 'fields or ABI'):
+            RankedMailboxLaunchManifest.from_dict(changed)
+        changed = manifest.as_dict()
         changed['rank_inputs'][0]['shape'][0] = 6
         with self.assertRaisesRegex(ValueError, 'exact Compiler lowering'):
             RankedMailboxLaunchManifest.from_dict(changed).check_lowered(lowered)
