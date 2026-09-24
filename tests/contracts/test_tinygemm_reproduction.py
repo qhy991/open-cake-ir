@@ -131,14 +131,24 @@ class TinyGemmReproduction(unittest.TestCase):
 
     def test_partitioned_lowering_keeps_each_quarter_and_accumulates_across_trips(self):
         import numpy as np
+        class Pointer:
+            def __init__(self, values, offsets=0):
+                self.values = values.reshape(-1)
+                self.offsets = offsets
+
+            def __add__(self, offsets):
+                return Pointer(self.values, self.offsets + offsets)
+
         class LogicalTL:
             float32 = np.float32
             arange = staticmethod(np.arange)
-            broadcast_to = staticmethod(np.broadcast_to)
             trans = staticmethod(np.transpose)
-            gather = staticmethod(lambda a, i, axis: np.take_along_axis(a, i, axis))
             dot = staticmethod(lambda a, b, acc, **kw: acc + a @ b)
             inline_asm_elementwise = staticmethod(lambda *a, args, **kw: args[0])
+
+            @staticmethod
+            def load(pointer, mask, other):
+                return np.where(mask, pointer.values[np.clip(pointer.offsets, 0, len(pointer.values)-1)], other)
         workload = WorkloadContract(task.workload_document(rows=16, columns=16, depth=3072))
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         document = frontend.parse(task.partitioned_source(workload)).document
@@ -147,14 +157,21 @@ class TinyGemmReproduction(unittest.TestCase):
         tree = ast.parse(compiler.lower(assessment).source)
         loop = next(n for n in ast.walk(tree) if isinstance(n, ast.For))
         assignments = [n for n in loop.body if isinstance(n, ast.Assign)
-                       and isinstance(n.targets[0], ast.Name) and n.targets[0].id in {'acc0','acc1','acc2','acc3'}]
-        self.assertEqual(len(assignments), 8)
+                       and isinstance(n.targets[0], ast.Name)
+                       and (n.targets[0].id.startswith('dot') or n.targets[0].id in {'acc0','acc1','acc2','acc3'})]
+        self.assertEqual(len(assignments), 24)
         rng = np.random.default_rng(7)
         inputs = [(rng.integers(-2, 3, (16, 1024)).astype(np.float32),
                    rng.integers(-2, 3, (16, 1024)).astype(np.float32)) for _ in range(3)]
-        env = {'tl': LogicalTL, **{f'acc{i}': np.full((16, 16), i + 1, np.float32) for i in range(4)}}
-        for a, b in inputs:
-            env.update(a=a, b=b)
+        a = np.concatenate([pair[0] for pair in inputs], axis=1)
+        b = np.concatenate([pair[1] for pair in inputs], axis=1)
+        env = {'tl': LogicalTL, 'x': Pointer(a), 'weight': Pointer(b),
+               'row_offsets': np.arange(16), 'column_offsets': np.arange(16),
+               'BLOCK_K_LOOP': 1024, 'N_K_LOOP': 3072, 'D_WEIGHT_1': 3072,
+               'N_ROW': 16, 'N_COLUMN': 16,
+               **{f'acc{i}': np.full((16, 16), i + 1, np.float32) for i in range(4)}}
+        for trip in range(3):
+            env['k'] = trip * 1024
             for node in assignments:
                 exec(compile(ast.Module(body=[node], type_ignores=[]), '<selected K carry>', 'exec'), env)
         for i in range(4):
