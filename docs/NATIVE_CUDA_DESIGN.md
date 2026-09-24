@@ -139,6 +139,15 @@ topologies, system-scope handoffs and non-native leaf routes are refused.
 The state includes a successful-steal count and a first-combine observation
 (`compute_done + 1`, with zero reserved for "not observed") so the device
 experiment can distinguish an exercised schedule from a merely valid output.
+At fixed source commit `dafb2a70`, 7 focused Program/worker tests and the
+179-case Corpus Gate passed. B300-M4's CUDA 13.1 nvcc/ptxas compiled the
+generated cooperative worker kernel with 30 registers, no spills and no
+barriers; the compile log is retained at
+`B300-M4:/home/qinhaiyan/cake-worker-b300-m4-dafb2a70/compile.log`.
+An eight-plan correctness input and independent CPU oracle are prepared at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/cake-worker-b300-m4-dafb2a70/`.
+The B300 SSH path became intermittent after compilation, so no GPU execution
+or latency claim follows from this source check.
 
 This slice is a single-GPU synthetic execution path. Its Program v2 Evaluation
 adapter, full inter-GPU dispatch/combine, grouped expert GEMMs, per-layer cost
