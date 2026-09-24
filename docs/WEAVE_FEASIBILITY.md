@@ -164,12 +164,19 @@ states the four-rank admission and verification obligations. The CPU
 payload slots from one-per-route compute tasks, including the skew and tail
 capacity bounds. `experiments/weave/rank_plan.py` derives per-rank `c/K/steal`
 domains and uneven tail completion counts: `T=7, K=2` requires 8 then 6
-route contributions. The direct CUDA reference still sends one payload per
-route and requires `T % K == 0`. A bounded CPU event model now explores
+route contributions. The measured direct CUDA reference still sends one
+payload per route and requires `T % K == 0`. A bounded CPU event model explores
 dispatch, regular compute, local stealing and early combine over these plans;
-it does not establish GPU memory order, occupancy or timing. The NVIDIA task
-branch at `7fd4eaf5` keeps the measured `T=8` reference unchanged and adds
-an unmeasured `T=7` source successor whose host-compiled chunk helper covers
-uneven partitions; it has no nvcc or B300 oracle result. The existing
-single-device launch paths refuse the EP4 Workload Contract. No raw mailbox
-source is promoted as an opaque MoE instruction.
+it does not establish GPU memory order, occupancy or timing.
+
+The NVIDIA task branch at `7fd4eaf5` adds an unmeasured `T=7` successor
+while leaving the measured `T=8` source unchanged. Its host-compiled chunk
+helper covers uneven partitions; it has no nvcc or B300 oracle result.
+The measured `T=8` runs had the same `K` on every rank; source inspection found that
+their return path indexed the origin counter with the compute rank's `K`.
+An unmeasured successor at `fd222407` passes all source-rank chunk counts
+and prepares `K=(2,3,7,1)` as a device counterexample. It has passed CPU
+input/plan checks but not nvcc or GPU execution.
+
+The existing single-device launch paths refuse the EP4 Workload Contract.
+No raw mailbox source is promoted as an opaque MoE instruction.

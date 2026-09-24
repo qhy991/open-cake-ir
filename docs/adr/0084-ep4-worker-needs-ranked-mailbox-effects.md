@@ -96,7 +96,11 @@ analysis, not an emitter's guess from pointer spelling.
   and incomplete return domains. The measured direct CUDA source still
   requires `T % K_r == 0`. The NVIDIA task's separate `T=7` successor has
   host-tested chunk arithmetic but no nvcc or device oracle result; the CPU
-  plan does not make either kernel tail-qualified.
+  plan does not make either kernel tail-qualified. The measured runs shared
+  one `K` across ranks and their return path used the compute rank's `K`
+  to update an origin counter. A further unmeasured successor at `fd222407`
+  passes the four origin chunk counts explicitly and prepares
+  `K=(2,3,7,1)` as the device counterexample.
 - `experiments/weave/ep4_event_model.py` explores bounded fair orders of
   dispatch, regular compute, local CTA stealing and combine. It checks unique
   route completion, publication-before-consumption in its logical event order,
