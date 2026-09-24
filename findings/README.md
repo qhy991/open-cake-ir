@@ -43,7 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle and measures about 456 µs. Chunk algebra passes the complete CPU oracle, but correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in separate paired device diagnostics. Removing Triton stack/local traffic is insufficient; a complete chunk/TMEM/TMA stateful Schedule and native lowering remain a capacity proposal.
+- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle and measures about 456 µs. Chunk algebra passes the complete CPU oracle, but correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in separate paired device diagnostics. Native global-state read/modify/write now passes a B300 in-place witness; KDA's chunk/TMEM/TMA stateful Schedule and native lowering remain a capacity proposal.
 
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 
