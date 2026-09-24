@@ -144,10 +144,26 @@ At fixed source commit `dafb2a70`, 7 focused Program/worker tests and the
 generated cooperative worker kernel with 30 registers, no spills and no
 barriers; the compile log is retained at
 `B300-M4:/home/qinhaiyan/cake-worker-b300-m4-dafb2a70/compile.log`.
-An eight-plan correctness input and independent CPU oracle are prepared at
-`open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/cake-worker-b300-m4-dafb2a70/`.
-The B300 SSH path became intermittent after compilation, so no GPU execution
-or latency claim follows from this source check.
+Broker job `gpuq-d78103dea1dc` ran eight predeclared plans on one exclusive
+B300-M4 GPU. After the lease ended, the independent CPU oracle matched every
+element of all three stage outputs in every plan; queue completion, readiness
+flags, chunk counts and runtime status also passed. The broker no longer listed
+this job or its allocation on the subsequent status check. The first broker
+attempt, `gpuq-13fdadd3f9db`, exited before CUDA because the standalone test
+command omitted its `run` argument; its separate receipt and log are retained.
+
+| Plans | Runtime `(c, K, steal budget)` | Successful steals | Compute counter at first combine |
+| --- | --- | ---: | ---: |
+| Spatial split | `(12/36/120, 1, 0)` | `0/0/0` | `512/512/512` |
+| Temporal chunks | `(120, 2/4/8, 0)` | `0/0/0` | `278/140/140` |
+| Steal window | `(120, 2, 64/256)` | `64/233` | `260/471` |
+
+Inputs, generated source, compile log, both broker receipts, device snapshots
+and post-release report are retained at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/cake-worker-b300-m4-dafb2a70/`
+and `B300-M4:/home/qinhaiyan/cake-worker-b300-m4-dafb2a70/`.
+These counters establish schedule execution in this synthetic Program; they
+are not a latency, SM-activity, NVLink or MoE measurement.
 
 This slice is a single-GPU synthetic execution path. Its Program v2 Evaluation
 adapter, full inter-GPU dispatch/combine, grouped expert GEMMs, per-layer cost
