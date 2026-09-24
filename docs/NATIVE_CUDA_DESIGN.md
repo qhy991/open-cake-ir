@@ -90,6 +90,14 @@ chunk algebra with that extra prefix rounding passed the complete T65 and T257
 output/final-state oracles. A later combined full H64/T8192 CPU screen also
 passes; B300 stage correctness remains unverified. Neither representation is
 selected for a performance claim.
+A typed midpoint-factor stage takes BF16 normalized Q/K and FP32 per-token
+log-decay, scans its 32-token prefix, extracts the first/last log values, and
+forms BF16 forward-key, backward-key and forward-query tiles. The bounded
+H64/T8192 CPU recurrence screens pass, but the upstream normalization/gate
+producer and generated-source B300 qualification remain open. Materializing
+all three factor outputs costs 384 MiB, in addition to 512 MiB of factor-stage
+inputs; fusion or another explicit traffic reduction may be needed to beat
+the adapted single-kernel CAKE reference.
 A separate typed coupling stage accepts midpoint-scaled BF16 key/query factors,
 beta gates and explicit triangular masks. Three existing MMA nodes produce the
 prediction matrix, its transposed view and the output correction matrix; row
