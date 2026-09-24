@@ -26,6 +26,8 @@ def _admit(compiler, program):
     execution = program.execution
     if execution is None or execution.lowering.backend is not LoweringBackend.NATIVE_CUDA:
         _refuse('the execution route must be native_cuda')
+    if execution.placement is not None:
+        _refuse('rank-placed worker Program needs a two-rank native lowering')
     if not _IDENTIFIER.fullmatch(execution.lowering.entry_point):
         _refuse('the native entry point must be an ASCII C identifier')
     target = compiler._revision.targets.get(program.target)

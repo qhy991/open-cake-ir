@@ -8,6 +8,7 @@ import unittest
 
 from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.program import LoweredWorkerProgram
+from tests.contracts.test_worker_execution import rank_document
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -111,6 +112,8 @@ class NativeWorkerProgram(unittest.TestCase):
         self.assertIn('cake_publish(state + 10 + tile)', second)
 
     def test_refuses_unproved_routes_and_handoffs(self):
+        with self.assertRaisesRegex(ValueError, 'two-rank native lowering'):
+            self.compiler.lower_program(Program.from_dict(rank_document()))
         value = document()
         value['stages'][1]['schedule']['lowering']['backend'] = 'triton'
         with self.assertRaisesRegex(ValueError, 'stage .*native_cuda leaf route'):
