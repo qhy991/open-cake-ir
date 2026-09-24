@@ -46,6 +46,10 @@ Post-projection q, k, v, index_q, and index_k feed causal complete-block pooling
 
 Current-step inputs, gate parameters, convolution/recurrent state, and cache positions feed convolution update, recurrence, and sigmoid-gated RMSNorm. Selected state changes; unselected slots and padded rows remain protected. The [fused-decode contract](../../../contracts/workloads/kimi-k3-kda-fused-decode-v1.json) covers local head/activity cases and state pools across two calls. Prefill/chunk/model results cannot substitute.
 
+## KDA prefill: fixed B300 shapes
+
+The [B300 v1 contract](../../../contracts/workloads/cake-kda-prefill-b300-v1.json) defines a separate exact-`sm_103a` prefill task without rewriting the B200 source task or the one-step decode contract above. Six fixed shapes plus short and tail guardrails require both BF16 output and in-place final state to pass an independent per-token recurrence oracle; packed sequences preserve their offsets and execution order. The contract and CPU validation exist, but B300-M4 custom diagnostics do not qualify a formal Evaluation or a complete Cake candidate.
+
 ## Kimi-K3 megaop: surrounding projections
 
 Layer inputs, weights, and state feed qkvg/gate projections, the stateful core, then the local output projection. This is one B200 rank-local module, ending before BF16 TP AllReduce. [v1](../../../contracts/workloads/kimi-k3-kda-decode-megaop-b200-v1.json) uses a baseline-bracketed protocol; [v2](../../../contracts/workloads/kimi-k3-kda-decode-megaop-b200-v2.json) uses paired timing and confidence intervals. Rules cannot be interchanged after results.
