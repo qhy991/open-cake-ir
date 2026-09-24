@@ -90,6 +90,13 @@ chunk algebra with that extra prefix rounding passed the complete T65 and T257
 output/final-state oracles. A later combined full H64/T8192 CPU screen also
 passes; B300 stage correctness remains unverified. Neither representation is
 selected for a performance claim.
+A typed upstream stage now normalizes BF16 Q/K across the full 128-key dimension,
+forms FP32 log-decay from G/A_log/dt_bias, and forms FP32 beta gates. Its four
+outputs are preparation values, not the public KDA result. Separately
+materializing them costs about 514 MiB of writes on the fixed H64/T8192 case,
+before the factor, coupling and state stages read them. The upstream generated
+source has CPU contract coverage only; fusion and B300 timing must decide which
+intermediates deserve global storage.
 A typed midpoint-factor stage takes BF16 normalized Q/K and FP32 per-token
 log-decay, scans its 32-token prefix, extracts the first/last log values, and
 forms BF16 forward-key, backward-key and forward-query tiles. The bounded
