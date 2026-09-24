@@ -195,6 +195,17 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'native program coordinates use positive tiles')
     pipe_loops = {}
     owned_barriers = set()
+    for loop_index, loop in enumerate(s.tile_loops):
+        if not loop.carried_buffers:
+            continue
+        owners = [p for p in s.pipelines if _pipeline_loop(s, p) == loop]
+        check(len(owners) == 1, 'NATIVE_CARRIED_PIPELINE_COUNT',
+              f'tile_loops[{loop_index}].body',
+              'one carried-state loop has exactly one staged B/MMA pipeline')
+        if len(owners) == 1:
+            check(owners[0].stages == 1, 'NATIVE_CARRIED_PIPELINE_STAGES',
+                  f'pipelines[{s.pipelines.index(owners[0])}].stages',
+                  'the current carried-state route completes one stage per chunk')
     for i, pipeline in enumerate(s.pipelines):
         tagged = [op for op in s.operations if op.pipeline == pipeline.name]
         scopes = {_scope(s, op).name if _scope(s, op) else None for op in tagged}

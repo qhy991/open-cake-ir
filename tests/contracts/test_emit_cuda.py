@@ -164,6 +164,14 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertLess(loop_source.index('// CAKE_OP: store_update'),
                         loop_source.index('cake_inval(bar2);'))
 
+    def test_carried_route_refuses_unrealized_stage_depth(self):
+        d=json.loads((ROOT/'tests/fixtures/tmem-carried-two-chunk-sm103a.json').read_text())
+        d['pipelines'][0]['stages']=2
+        s=Schedule.from_dict(d)
+        t=Target.load(ROOT/'compiler/targets/sm_103a.json')
+        self.assertIn('NATIVE_CARRIED_PIPELINE_STAGES',
+                      {finding.code for finding in preflight(s,t)})
+
     def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
         d=document('inplace-state-gemm')
         lowered=self.lower(d)
