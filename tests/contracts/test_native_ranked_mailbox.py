@@ -9,7 +9,11 @@ import unittest
 
 from open_cake_ir.compiler import (Compiler, LoweredRankedMailbox, Program,
                                    RankedMailboxEffects, Schedule, Target)
+from open_cake_ir.compiler.ir import DType
 from open_cake_ir.compiler.backends.native_cuda_ranked_mailbox import _admit
+from open_cake_ir.evaluation.ranked_launch import (
+    RankedMailboxExecutable, prepare_ranked_mailbox,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,6 +90,80 @@ class NativeRankedMailbox(unittest.TestCase):
         fake = SimpleNamespace(_revision=SimpleNamespace(targets={local.target: missing}))
         with self.assertRaisesRegex(ValueError, 'PTX system contracts'):
             _admit(fake, effects, local, combine, effects.analyze(local, combine))
+
+    def test_generated_rank_input_abi_binds_one_evaluation_launch(self):
+        effects, local, combine = material(8)
+        lowered = self.compiler.lower_ranked_mailbox(effects, local, combine)
+        rows = lowered.toolchain_requirements['rank_inputs']
+        self.assertEqual([row['name'] for row in rows],
+                         ['hidden', 'expert_ids', 'route_weights',
+                          'w_up_gate', 'w_down'])
+        inputs = {}
+        for rank in range(4):
+            inputs[rank] = {}
+            for index, row in enumerate(rows):
+                dtype = DType(row['dtype'])
+                shape = tuple(row['shape'])
+                nbytes = dtype.itemsize
+                for extent in shape:
+                    nbytes *= extent
+                inputs[rank][row['name']] = SimpleNamespace(
+                    pointer=1000000 + rank * 1000000 + index * 8192,
+                    nbytes=nbytes, device=rank, shape=shape, dtype=dtype)
+        plans = {rank: {'communication_ctas': (147, 12, 36, 72)[rank],
+                        'chunks': (2, 4, 8, 1)[rank],
+                        'steal_budget': 32 if rank == 0 else 0}
+                 for rank in range(4)}
+        calls = {'reset': 0, 'launch': 0, 'status': 0}
+
+        def span(tensor):
+            return tensor.device, tensor.pointer, tensor.pointer + tensor.nbytes
+
+        def check(tensor, spec):
+            if (tensor.shape != spec.shape or tensor.dtype is not spec.dtype
+                    or tensor.nbytes != spec.nbytes):
+                raise ValueError('bound generated ABI differs')
+
+        def load(source):
+            self.assertIs(source, lowered)
+
+            def bind(buffers, mailboxes, controls, contexts):
+                self.assertEqual(set(buffers), set(mailboxes))
+                self.assertEqual(controls[0]['steal_budget'], 32)
+
+                def launch(bound):
+                    self.assertEqual(bound, contexts)
+                    calls['launch'] += 1
+
+                return launch
+
+            return RankedMailboxExecutable(8192, 32, 4096, 256, bind)
+
+        def allocate(rank, size):
+            return SimpleNamespace(pointer=1100000 + rank * 1000000,
+                                   nbytes=size, device=rank, shape=(size,), dtype=None)
+
+        def view(mailbox, offset, spec):
+            return SimpleNamespace(pointer=mailbox.pointer + offset,
+                                   nbytes=spec.nbytes, device=mailbox.device,
+                                   shape=spec.shape, dtype=spec.dtype)
+
+        def reset(mailboxes, contexts):
+            calls['reset'] += 1
+
+        def statuses(mailboxes, offset, contexts):
+            self.assertEqual(offset, 32)
+            calls['status'] += 1
+            return (0, 0, 0, 0)
+
+        prepared = prepare_ranked_mailbox(
+            lowered, inputs, plans, load_source=load, allocate_mailbox=allocate,
+            check_tensor=check, storage_span=span,
+            execution_context=lambda rank: (rank, None), output_view=view,
+            reset_mailboxes=reset, read_status=statuses)
+        prepared.run()
+        self.assertEqual((calls['reset'], calls['launch'], calls['status'],
+                          prepared.launch_calls), (1, 1, 1, 1))
 
 
 if __name__ == '__main__':
