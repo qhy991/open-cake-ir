@@ -28,7 +28,7 @@ def mma(doc):
 
 
 class MmaKPartitions(unittest.TestCase):
-    def test_complete_partitioned_schedule_is_typed_but_no_existing_emitter_claims_it(self):
+    def test_complete_partitioned_schedule_is_typed_and_only_native_route_emits_it(self):
         jsonschema.validate(document(), schedule_schema())
         schedule = Schedule.from_dict(document())
         parameters = next(op.parameters for op in schedule.operations if op.kind.value == "mma")
@@ -39,9 +39,8 @@ class MmaKPartitions(unittest.TestCase):
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         assessment = compiler.assess(document())
         self.assertTrue(assessment.accepted)
-        self.assertFalse(assessment.lowering_eligible)
-        self.assertIn("NATIVE_MMA_K_PARTITIONS_UNSUPPORTED",
-                      {f.code for f in native_cuda.preflight(schedule, TARGET)})
+        self.assertTrue(assessment.lowering_eligible)
+        self.assertFalse(native_cuda.preflight(schedule, TARGET))
         self.assertIn("TRITON_MMA_K_PARTITIONS_UNSUPPORTED",
                       {f.code for f in triton.preflight(schedule, TARGET)})
         self.assertIn("CUTE_MMA_K_PARTITIONS_UNSUPPORTED",
