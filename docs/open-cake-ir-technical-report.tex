@@ -412,13 +412,16 @@ Schedule 把操作、缓冲区、执行组、访问坐标、循环和同步关�
 展示的是候选结构，而非计时结果。}
 \label{fig:softmax-schedule}
 \end{figure}
-\FloatBarrier
 
 \subsection{受限 Python 前端与同一规范 IR}
-作者可以用 Python 变量和表达式写计划：\code{lm.program} 选择行块，\code{lm.role}
-指定执行组，随后在角色作用域内描述读取、归约、广播和写回。前端读取受支持的 Python
-语法树，构造与 JSON 输入相同的规范 Schedule，并把源码位置附在诊断上。接收候选的
-入口只解析源码，不运行作者的导入语句或函数体\cite{irguide}。下面摘录的是
+示例把 Python 前端导入为 \code{cake}，用它声明 \code{@cake.schedule} 和张量参数；
+函数的第一个形参 \code{lm} 是 Schedule 上下文的语法名字：前端识别它的方法调用，
+不会执行一个运行时的 \code{lm} 对象。仓库没有为 \code{lm} 规定缩写含义；把形参
+及函数体中的引用一起改名为 \code{ctx}，仍会得到同一份规范 Schedule。\code{lm.program}
+选择行块，\code{lm.role} 指定
+执行组，角色作用域内的调用描述读取、归约、广播和写回。前端解析受支持的 Python
+语法树，并为诊断保留源码位置；它不会运行源文件的导入语句或函数体\cite{irguide}。
+下面摘录的是
 \repo{examples/python/softmax.py}{当前 Softmax 示例}中的实际操作：
 
 \Needspace{16\baselineskip}
@@ -445,6 +448,78 @@ Triton。\code{tile=64} 使每个实例负责 64 行；四个执行组完成同�
 进入实验系统后，系统先核对目标、生成路线和公开张量接口，再绑定这次运行冻结的任务。
 这样，任务身份由实验输入决定，作者只编辑实现方案。具体准入规则见
 \repo{docs/PYTHON_FRONTEND.md}{前端合同}。
+
+\subsection{从 Python Schedule 到 Triton：一次实际生成}
+对上面的 Softmax，固定源码 \code{677eb444} 的 Compiler 先把 Python 语法树转换为
+带类型的 Schedule，再检查形状、访问、操作依赖和目标约束。本例的结构检查通过，
+Triton 生成路线可用；报告另给出 \code{REGISTER\_PRESSURE} 与
+\code{RESIDENCY\_BOUND} 两条提示。随后执行 \code{lower}，得到下面的 Triton
+内核体节选；两处较长的地址表达式只按页宽重新折行。代码中的 \code{CAKE\_OP}
+注释保留了原计划的操作 ID，便于从生成代码
+找回 \code{load\_x}、\code{row\_max} 等编写位置。
+
+\noindent\textbf{对照速览：}\code{lm.program} 的 64 行块变成程序 ID 与行偏移；
+\code{lm.load} 的访问变成地址、边界掩码和 \code{tl.load}；行归约与广播变成
+\code{tl.max}/\code{tl.sum} 和 \code{[:, None]}。编译器还把四个执行组写入
+启动参数 \code{num\_warps=4}。
+
+\Needspace{28\baselineskip}
+\begin{lstlisting}[style=reportcode,language=Python]
+row_block = tl.program_id(0)
+batch = tl.program_id(1)
+row_block_offsets = row_block * BLOCK_ROW_BLOCK + tl.arange(0, BLOCK_ROW_BLOCK)
+x_d2_offsets = tl.arange(0, D_X_2)
+y_d2_offsets = tl.arange(0, D_Y_2)
+
+# CAKE_OP:load_x
+load_x_ptrs = (
+    x + batch * N_ROW_BLOCK * D_X_2
+    + row_block_offsets[:, None] * D_X_2
+    + x_d2_offsets[None, :]
+)
+x_tile = tl.load(
+    load_x_ptrs,
+    mask=row_block_offsets[:, None] < N_ROW_BLOCK,
+    other=0.0,
+    eviction_policy="evict_last",
+)
+# CAKE_OP:row_max
+rowmax = tl.max(x_tile.to(tl.float32), axis=1)
+# CAKE_OP:shift
+shifted = x_tile - rowmax[:, None]
+
+# CAKE_OP:exponentiate
+weights = tl.exp(shifted)
+
+# CAKE_OP:row_sum
+rowsum = tl.sum(weights.to(tl.float32), axis=1)
+# CAKE_OP:normalize
+y_tile = weights / rowsum[:, None]
+
+# CAKE_OP:store_y
+tl.store(
+    y + batch * D_Y_1 * D_Y_2
+      + row_block_offsets[:, None] * D_Y_2
+      + y_d2_offsets[None, :],
+    y_tile,
+    mask=row_block_offsets[:, None] < D_Y_1,
+)
+\end{lstlisting}
+
+摘录省略了函数签名和宿主启动包装。完整文件还核对输入的形状、dtype、设备和连续性，
+随后将 $512/64=8$ 个行块与 8 个 batch 组成 \code{(8, 8, 1)} 网格，传入
+\code{BLOCK\_ROW\_BLOCK=64}、\code{num\_warps=4} 和 \code{maxnreg=96}。
+其中的 \code{tl} 是实际导入的 \code{triton.language}；前面的 \code{lm} 只是
+Cake 前端识别的形参名。
+
+读者可在固定源码的根目录运行下列命令，查看包含函数签名、输入检查和启动包装的完整
+生成文件。这个步骤只生成 Python/Triton 源码，设备编译、正确性和速度另由评测确认。
+\begin{lstlisting}[style=reportcode]
+PYTHONPATH=src python3 -m open_cake_ir.cli compiler assess \
+  examples/python/softmax.py --format text
+PYTHONPATH=src python3 -m open_cake_ir.cli compiler lower \
+  examples/python/softmax.py --output /tmp/cake-softmax-generated.py --format text
+\end{lstlisting}
 
 \subsection{一个数值反例：FMA 与乘加}
 FMA 说明为什么公式相同，还要写清计算语义。$a\times b+c$ 可以先乘后加、舍入两次；
@@ -490,11 +565,52 @@ FMA 说明为什么公式相同，还要写清计算语义。$a\times b+c$ 可�
 \FloatBarrier
 
 \subsection{完整 Program 的阶段与绑定}
-选择性注意力给出了多阶段程序的例子：它先池化并评分，再做 Top-$k$ 选择、索引展开和
-选中位置的注意力计算。一个 Program 将这些阶段的张量与执行顺序绑定起来；每个阶段
-仍由一份完整的 Schedule 描述。编译器检查阶段之间的数据关系，评测则核对最终输出，
-并在需要比较速度时测量整个程序的调用区间。第\ref{sec:results}节的历史 QSA 案例
-采用的正是这个范围。
+\repo{contracts/programs/qsa-prefill-t32768-v4.json}{QSA Program v4} 是一份可检查的
+多阶段实例。其任务在 $B=1,T=32768$ 时读入 $q,k,v$、索引查询与索引键，最终写出
+BF16 的 \code{output}，形状为 $[1,32768,32,128]$。Program 中的五个阶段各有一份
+\repo{corpus/schedules/qsa-score-topk-t32768.json}{独立 Schedule}；下表直接按合同中的
+张量绑定与阶段顺序展开，而不是只用“池化、选择、注意力”概括整个程序。
+
+\begin{table}[htbp]
+\centering\small\renewcommand{\arraystretch}{1.2}
+\caption{QSA Program v4 的实际五阶段数据流。形状来自固定 $B=1,T=32768$ 的任务与
+Program 合同；本表描述程序结构，不代表第\ref{sec:results}节历史候选的计时。}
+\label{tab:qsa-program}
+\begin{tabularx}{\textwidth}{@{}p{21mm}Y Y@{}}
+\toprule
+\rowcolor{mist}阶段 & 读取的张量 & 写出的张量及作用 \\
+\midrule
+\code{pool} & \code{index\_k} & \code{pooled}：FP32 $[8192,128]$，每 4 个索引键池化一次 \\
+\code{layernorm} & \code{pooled}, \code{k\_norm\_weight} & \code{normalized\_keys}：FP32 $[8192,128]$ \\
+\code{score\_topk} & \code{index\_q}, \code{normalized\_keys} & \code{block\_indices}：INT32 $[32768,512]$，每个查询选 512 个块 \\
+\code{expand} & \code{block\_indices} & \code{token\_indices}：INT32 $[32768,2048]$，展开为 token 位置 \\
+\code{attention} & $q,k,v$, \code{token\_indices} & \code{output}：BF16 $[1,32768,32,128]$，只读取选中位置 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+例如，合同中的 \code{expand} 节点把 \code{score\_topk} 产生的块索引接到自己的
+Schedule，再写出供 \code{attention} 消费的 token 索引。下面保留原 JSON 的数据流
+字段，省略身份校验字段：
+\Needspace{12\baselineskip}
+\begin{lstlisting}[style=reportcode]
+{
+  "id": "expand",
+  "schedule": "corpus/schedules/qsa-expand-t32768.json",
+  "inputs": ["block_indices"],
+  "outputs": ["token_indices"],
+  "views": {"block_indices": "identity", "token_indices": "identity"},
+  "depends_on": ["score_topk"]
+}
+\end{lstlisting}
+
+编译器逐阶段检查 Schedule，也检查 Program 的公共输入输出、中间张量形状与 dtype、
+生产者和依赖关系；例如 \code{block\_indices} 必须先由 \code{score\_topk} 产生，
+\code{expand} 才能读取。合同还声明了输入的 singleton 轴视图，使阶段局部 Buffer
+与公开张量对应。五个阶段分别生成目标源码，评测核对最终 \code{output}，计时覆盖
+完整调用序列。此处的 v4 是固定源码中的编译验证实例；第\ref{sec:results}节的
+127.8\,ms 历史 QSA 结果绑定它自己的旧版程序与设备收据。
 
 \subsection{精确目标文档}
 同一份执行计划语言要面对不同硬件，具体能力由目标文档（Target）说明。当前八个目标
@@ -986,7 +1102,7 @@ tile、执行组和流水线深度，则要在目标卡上重新选择。可确�
 \code{bw1100-1} 具有空闲 BW1101，但宿主内核和环境与前者不同；因此先为该节点
 单独捕获 Executor，再在干净源码 \code{4c9f4cc0} 上运行相同合同。五类输入在
 计时前后均判对；新鲜 HIP 配对确认质量通过，同卡起点/来源 K=256 候选为
-517.9645/748.749\,$\mu$s，十对均是起点更快。故该机制\emph{能够正确执行，
+517.9645/748.749\,$\mu$s，十对均是起点更快。故该机制\textbf{能够正确执行，
 原参数却在此节点产生负迁移}。本地串行锁不能排除没有使用同一锁的外部任务；
 不同 CUPTI/HIP 计时器的绝对时延也不构成跨卡速度比。
 
