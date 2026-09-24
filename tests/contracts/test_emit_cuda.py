@@ -135,6 +135,10 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertIn('cake_init(bar0, 4);',source)
         self.assertIn('cake_arrive(bar0);',source)
         self.assertIn('cake_wait(bar0, 0);',source)
+        tensor_wait=source.index('cake_wait(bar0, 0);')
+        tensor_mma=source.index('cake_mma_tmem_a(', source.index('// CAKE_OP: mma'))
+        self.assertLess(tensor_wait, source.index('tcgen05.fence::after_thread_sync', tensor_wait))
+        self.assertLess(source.index('tcgen05.fence::after_thread_sync', tensor_wait), tensor_mma)
         self.assertEqual(lowered.toolchain_requirements['argument_order'],['a','b','c'])
         self.assertEqual(lowered.toolchain_requirements['grid'],[1,1,1])
         self.assertLess(source.index('// CAKE_OP: store_tmem'),
