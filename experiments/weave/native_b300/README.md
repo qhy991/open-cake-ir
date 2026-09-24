@@ -56,3 +56,29 @@ name CTA classes separately from warp `Role`, device-resident runtime split
 inputs, bounded work queues, release/acquire payload ownership, cooperative
 residency and phase liveness. The native backend then owns PTX emission; the
 Workload Contract owns the external oracle and per-rank routing semantics.
+
+## B300-M4 development observation
+
+The exact source at `863eb3fd` compiled with CUDA 13.1 nvcc/ptxas for
+`sm_103a` (48 registers, no spills). Under one exclusive broker GPU,
+`gpuq-07e90df5e32c` completed three preregistered plans. The independent
+CPU oracle ran after the GPU lease was released and found the matrix-vector
+output correct, every dispatch/compute/combine tile executed exactly once,
+the requested CTA split, and the declared steal budget held in each case.
+
+| Plan | `c` | `K` | Stolen compute tiles | Compute tiles done at first combine |
+| --- | ---: | ---: | ---: | ---: |
+| No steal | 12 | 1 | 0 / 512 | 512 / 512 |
+| Chunk pipeline | 36 | 4 | 0 / 512 | 506 / 512 |
+| Steal heavy | 120 | 2 | 256 / 512 | 424 / 512 |
+
+The K=4 and K=2 rows show a combine began before all compute tiles finished;
+the K=2 row actually exercised compute stealing. These counters do not measure
+simultaneous SM activity or latency. Raw inputs, compile log, broker receipt,
+device snapshots and post-release report are retained at
+`B300-M4:/home/qinhaiyan/cake-weave-worker-b300-m4-863eb3fd/` and mirrored
+outside the checkout under `open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/`.
+An earlier run at `5cb9c344` was refused by the host's too-narrow B300 device
+name check before kernel launch; its failure log and receipt are retained
+separately. No GPU processes or lease from this task remained after the
+successful run.
