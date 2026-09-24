@@ -138,9 +138,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         path = f'buffers[{i}]'
         check(all(c not in b.name for c in '\\\r\n'), 'NATIVE_NAME_UNSUPPORTED', path+'.name', 'source-map names must occupy one line')
         check(b.dtype in SUPPORTED_DTYPES, 'NATIVE_DTYPE_UNSUPPORTED', path+'.dtype', 'unsupported native storage type')
-        check(b.mode is not BufferMode.STATE and b.valid_extent is None and b.scale_of is None,
+        check(b.valid_extent is None and b.scale_of is None,
               'NATIVE_BUFFER_REFINEMENT_UNSUPPORTED', path,
-              'native CUDA does not implement state, valid-extent or block-scale relations')
+              'native CUDA does not implement valid-extent or block-scale relations')
         check(b.space in (MemorySpace.SHARED, MemorySpace.TENSOR) or
               b.stages == 1 and b.swizzle is None and b.byte_offset == 0,
               'NATIVE_BUFFER_REFINEMENT_UNSUPPORTED', path,

@@ -125,6 +125,29 @@ class NativeCudaContracts(unittest.TestCase):
                 self.assertNotIn('import cutlass',l.source)
                 self.assertNotIn('triton',l.source)
 
+    def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
+        d=document('inplace-state-gemm')
+        lowered=self.lower(d)
+        self.assertEqual(lowered.toolchain_requirements['argument_order'],['a','b','c'])
+        self.assertEqual(next(arg['mode'] for arg in lowered.toolchain_requirements['arguments']
+                              if arg['name']=='c'),'state')
+        source=lowered.source
+        self.assertLess(source.index('// CAKE_OP: load_state'),
+                        source.index('// CAKE_OP: mma'))
+        self.assertLess(source.index('// CAKE_OP: mma'),
+                        source.index('// CAKE_OP: add_state'))
+        self.assertLess(source.index('// CAKE_OP: add_state'),
+                        source.index('// CAKE_OP: store'))
+        self.assertIn('b8[col] = __fadd_rn(b6[col],b9[col]);',source)
+
+    def test_inplace_state_keeps_verifier_ownership_gates(self):
+        d=document('inplace-state-gemm')
+        d['program_map']['axes'][0]['buffer']='a'
+        self.refuses(d,'STATE_STORE_PROGRAM_OWNER')
+        d=document('inplace-state-gemm')
+        d['tile_loops'][0]['body'].append('store')
+        self.refuses(d,'STATE_STORE_LOOP_UNSUPPORTED')
+
     def test_operation_names_do_not_dispatch_kernels(self):
         d=document();d['schedule_id']='unrelated-operator'
         for i,op in enumerate(d['operations']):
