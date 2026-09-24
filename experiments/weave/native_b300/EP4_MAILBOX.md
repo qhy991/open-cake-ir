@@ -92,3 +92,23 @@ chunk, not the compute rank's. Its separate bundle is at
 `open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-weave-ep4-tail-mixed-k-b300-m4-fd222407/`.
 CPU preparation and the Workload-derived rank-plan check pass; nvcc and the
 four-GPU oracle remain unrun.
+
+## Deduplicated-dispatch successor (unqualified)
+
+`ep4_mailbox_dedup.cu` separates remote BF16 payload slots from compute-task
+slots. One communication CTA owns a source token, groups its two routes by
+destination, publishes one remote payload per distinct remote destination,
+then publishes one task per route. Local routes read the immutable local
+hidden tensor and reserve no remote payload. Regular computation and
+communication-CTA stealing claim the same destination task head; task and
+payload flags have separate system-scope release/acquire handoffs. Returns
+still use the origin rank's chunk plan. The source can be compiled for the
+Workload's `T=7` or `T=8` using the explicit `CAKE_WEAVE_TOKENS` definition;
+its ABI reports the compiled token count and both mailbox tail counters.
+
+For the frozen `skew_to_rank0` case (`T=8`), rank 0 should receive 24 remote
+payloads but 64 total compute tasks, including 16 local routes. The frozen
+`tail_tokens` case (`T=7`) expects 10 remote payloads and 14 total compute
+tasks per rank. These are CPU Workload/dispatch-ledger expectations, not
+device results. The successor has not been nvcc-compiled or run, is not Cake
+lowering, and does not establish communication or end-to-end speedup.
