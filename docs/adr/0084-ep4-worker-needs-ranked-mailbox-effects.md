@@ -95,6 +95,12 @@ analysis, not an emitter's guess from pointer spelling.
   chunks and refuses zero-worker classes, invalid `K_r`, over-budget stealing
   and incomplete return domains. The direct CUDA reference still requires
   `T % K_r == 0`; the CPU plan does not make that source tail-correct.
+- `experiments/weave/ep4_event_model.py` explores bounded fair orders of
+  dispatch, regular compute, local CTA stealing and combine. It checks unique
+  route completion, publication-before-consumption in its logical event order,
+  steal bounds and early chunk combine. It does not model GPU memory
+  visibility, compiled occupancy, true CTA residency or elapsed time, so a
+  green simulation cannot discharge the device liveness obligation below.
 - Every payload, metadata slot, ready flag, contribution and public output
   has one writer and an owning rank. The reserved slot and returned source
   coordinate determine the only legal write address. Invalid expert IDs,

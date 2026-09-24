@@ -165,6 +165,8 @@ payload slots from one-per-route compute tasks, including the skew and tail
 capacity bounds. `experiments/weave/rank_plan.py` derives per-rank `c/K/steal`
 domains and uneven tail completion counts: `T=7, K=2` requires 8 then 6
 route contributions. The direct CUDA reference still sends one payload per
-route and requires `T % K == 0`. The existing
+route and requires `T % K == 0`. A bounded CPU event model now explores
+dispatch, regular compute, local stealing and early combine over these plans;
+it does not establish GPU memory order, occupancy or timing. The existing
 single-device launch paths refuse the EP4 Workload Contract. No raw mailbox
 source is promoted as an opaque MoE instruction.
