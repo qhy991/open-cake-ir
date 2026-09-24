@@ -260,7 +260,8 @@ def _metadata(event: Mapping) -> bool:
         if (set(event) != {"type", "subtype", "attempt", "max_retries", "retry_delay_ms", "error_status", "error", "uuid", "session_id"}
                 or any(type(event[key]) is not int for key in ("attempt", "max_retries"))
                 or type(event["retry_delay_ms"]) not in (int, float)
-                or not math.isfinite(event["retry_delay_ms"])
+                or (type(event["retry_delay_ms"]) is float
+                    and not math.isfinite(event["retry_delay_ms"]))
                 or event["retry_delay_ms"] < 0
                 or not 1 <= event["attempt"] <= event["max_retries"]
                 or event["error_status"] is not None and (type(event["error_status"]) is not int or not 100 <= event["error_status"] <= 599)

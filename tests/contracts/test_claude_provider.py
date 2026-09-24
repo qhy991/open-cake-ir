@@ -1107,6 +1107,12 @@ class ClaudeProviderContracts(unittest.TestCase):
             changed = copy.deepcopy(events); changed[3]["retry_delay_ms"] = value
             with self.subTest(value=value), self.assertRaises(ValueError):
                 self.normalize(self.raw(changed))
+        large = copy.deepcopy(events); large[3]["retry_delay_ms"] = 10 ** 309
+        self.assertEqual(self.normalize(self.raw(large)).provider_tokens, 205)
+        # A valid JSON exponent can parse to infinity without a NaN/Infinity literal.
+        overflow = self.raw(events).replace(b'519.0670546041245', b'1e309')
+        with self.assertRaises(ValueError):
+            self.normalize(overflow)
         incomplete = copy.deepcopy(events); incomplete.pop(-1)
         with self.assertRaises(ValueError):
             self.normalize(self.raw(incomplete))
