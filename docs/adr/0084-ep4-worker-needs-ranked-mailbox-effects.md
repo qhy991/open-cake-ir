@@ -16,6 +16,10 @@ tiles. That source is outside Cake lowering, uses a small fixed geometry, has
 no qualified latency, and does not implement dispatch deduplication or the
 Workload's `T=7` tail case. It proves neither a Cake EP4 backend nor a
 performance gain.
+Separate unmeasured NVIDIA task successors at `fd222407` and `d772da55`
+address origin-ranked `K` and then distinct remote payload/task queues in
+direct CUDA. Prepared Workload oracle bundles and host checks do not
+substitute for nvcc, four-GPU correctness or a Cake effect analysis.
 
 Cake Program version 3 can name two ranks, one tensor owner per tensor, one
 state owner and system-scope handoffs. Its two worker classes are assigned to

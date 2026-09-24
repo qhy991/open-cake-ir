@@ -177,6 +177,12 @@ their return path indexed the origin counter with the compute rank's `K`.
 An unmeasured successor at `fd222407` passes all source-rank chunk counts
 and prepares `K=(2,3,7,1)` as a device counterexample. It has passed CPU
 input/plan checks but not nvcc or GPU execution.
+The NVIDIA task branch at `d772da55` also has an unmeasured direct CUDA
+successor that separates remote payload slots from per-route compute tasks.
+Its frozen `skew_to_rank0` and `tail_tokens` input/oracle bundles check the
+expected 24/64 and 10/14 payload/task counts respectively; CPU preparation
+and a host-only syntax check passed. Neither bundle has an nvcc or GPU result,
+so no deduplication or performance claim is established for Cake.
 
 The existing single-device launch paths refuse the EP4 Workload Contract.
 No raw mailbox source is promoted as an opaque MoE instruction.
