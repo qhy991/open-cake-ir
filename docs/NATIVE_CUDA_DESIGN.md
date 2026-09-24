@@ -98,6 +98,20 @@ post-release reports are retained at
 These scoped development checks do not test cross-CTA release/acquire, CTA
 role switching, NVLink or Weave communication/computation overlap.
 
+## Native one-warp FP32 FMA leaf
+
+`native_cuda_pointwise.py` admits a complete rank-two row Schedule whose one
+warp loads three FP32 operands, executes the Target-declared
+`ptx.fma.rn.f32` instruction, and stores one FP32 result. The row/lane
+AccessMaps, immutable inputs, fresh output, equal register widths, cache
+choice, and no-resource execution are checked before emission. Its host ABI
+uses the existing native route, including optional cooperative persistent
+launch. `examples/schedules/native/fma-row-b512.json` is a B300 instance.
+The generated instruction is explicit PTX rather than a C++ expression left
+to nvcc's contraction decision. This is a reusable arithmetic leaf for a
+future worker Program lowering; it does not yet fuse stages or implement the
+cross-GPU MoE pipeline.
+
 ## Native PTX returned-old-value work claim prototype
 
 A second, explicitly bounded path in the same `native_cuda` backend lowers a
