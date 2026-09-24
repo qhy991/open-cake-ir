@@ -18,7 +18,10 @@ from ..ir import (
 )
 from ..target import CodeObject, Target
 
-_ATOMIC_CONTRACT = 'ptx.atom.relaxed.gpu.global.add.s32'
+_ATOMIC_CONTRACTS = {
+    AtomicMemoryScope.DEVICE: 'ptx.atom.relaxed.gpu.global.add.s32',
+    AtomicMemoryScope.SYSTEM: 'ptx.atom.relaxed.sys.global.add.s32',
+}
 
 
 def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
@@ -32,9 +35,6 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     check(s.lowering.backend is LoweringBackend.NATIVE_CUDA and s.target == target.target_id
           and target.code_object is CodeObject.CUBIN,
           'NATIVE_SIMT_ROUTE', 'lowering', 'SIMT work claims require the exact native CUDA cubin route')
-    check(_ATOMIC_CONTRACT in target.instruction_contracts,
-          'NATIVE_ATOMIC_CONTRACT_UNSUPPORTED', 'target',
-          f'Target {target.target_id!r} does not declare {_ATOMIC_CONTRACT!r}')
     check(not s.allocations and not s.barriers and not s.pipelines and not s.tile_loops,
           'NATIVE_SIMT_RESOURCES', 'allocations',
           'one-warp work claims carry no shared, tensor, barrier or tile-loop resources')
@@ -127,6 +127,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'NATIVE_SIMT_LOAD', path,
                   'load reads an immutable global INT32 array without an unimplemented cache commitment')
         elif op.kind is OperationKind.ATOMIC_RMW:
+            contract = _ATOMIC_CONTRACTS[op.parameters.scope]
+            check(contract in target.instruction_contracts,
+                  'NATIVE_ATOMIC_CONTRACT_UNSUPPORTED', f'{path}.parameters.scope',
+                  f'Target {target.target_id!r} does not declare {contract!r}')
             result = buffers.get(op.writes[-1]) if len(op.writes) == 2 else None
             check(memory.mode is BufferMode.STATE and len(memory.shape) == 1
                   and len(op.reads) == len(op.writes) == 2
@@ -134,9 +138,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   and result.space is MemorySpace.REGISTER
                   and op.parameters.op is AtomicOp.ADD
                   and op.parameters.order is AtomicMemoryOrder.RELAXED
-                  and op.parameters.scope is AtomicMemoryScope.DEVICE,
+                  and op.parameters.scope in _ATOMIC_CONTRACTS,
                   'NATIVE_SIMT_ATOMIC', path,
-                  'PTX work claim is returned-old INT32 add with relaxed GPU scope')
+                  'PTX work claim is returned-old INT32 add with declared relaxed scope')
         else:
             source = buffers.get(op.reads[0]) if len(op.reads) == 1 else None
             check(memory.mode is BufferMode.OUTPUT and len(memory.shape) == 2
@@ -206,7 +210,8 @@ class Emitter(_Emitter):
                 old = self.names[op.writes[-1]]
                 address, mask = self.address(op, target)
                 self.begin(f'if ({mask})')
-                self.line(f'asm volatile("atom.relaxed.gpu.global.add.s32 %0, [%1], %2;"'
+                instruction = _ATOMIC_CONTRACTS[op.parameters.scope].removeprefix('ptx.')
+                self.line(f'asm volatile("{instruction} %0, [%1], %2;"'
                           f' : "=r"({old})'
                           f' : "l"(reinterpret_cast<unsigned long long>(&{self.names[target.name]}[{address}])), '
                           f'"r"(int32_t({op.parameters.value})) : "memory");')

@@ -57,6 +57,7 @@
     "triton.dot.fp8e4m3_block_scale_fp32",
     "triton.atomic_add.i32.relaxed.gpu",
     "ptx.atom.relaxed.gpu.global.add.s32",
+    "ptx.atom.relaxed.sys.global.add.s32",
     "libdevice.tanh.f32",
     "ptx.fma.rn.f32"
   ],
@@ -73,6 +74,11 @@
     }
   },
   "citations": [
+    {
+      "kind": "instruction_set",
+      "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-atom",
+      "locator": "PTX atom.relaxed.sys.global.add.s32 is a distinct system-scope returned-old-value INT32 operation; remote GPU storage also requires pairwise native peer atomic admission"
+    },
     {
       "kind": "instruction_set",
       "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-atom",

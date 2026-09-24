@@ -14,6 +14,7 @@ from open_cake_ir.compiler.backends.common import EmitError
 ROOT = Path(__file__).resolve().parents[2]
 WORK = ROOT / "examples/schedules/native/atomic-work-claim.json"
 ATOM = "ptx.atom.relaxed.gpu.global.add.s32"
+SYSTEM_ATOM = "ptx.atom.relaxed.sys.global.add.s32"
 
 
 def work_document() -> dict:
@@ -89,6 +90,27 @@ class NativeAtomicWorkClaim(unittest.TestCase):
                       [finding.code for finding in preflight(schedule, undeclared)])
         with self.assertRaisesRegex(EmitError, "NATIVE_ATOMIC_CONTRACT_UNSUPPORTED"):
             emit(schedule, undeclared)
+
+    def test_system_scope_claim_uses_its_own_b300_contract(self):
+        document = work_document()
+        document['target'] = 'sm_103a'
+        next(op for op in document['operations'] if op['kind'] == 'atomic_rmw')[
+            'parameters']['scope'] = 'system'
+        assessment = self.compiler.assess(document)
+        self.assertTrue(assessment.lowering_eligible,
+                        [(f.code, f.path) for f in assessment.findings if f.blocks_lowering])
+        source = self.compiler.lower(assessment).source
+        self.assertIn('atom.relaxed.sys.global.add.s32 %0, [%1], %2;', source)
+        self.assertNotIn('atom.relaxed.gpu.global.add.s32 %0, [%1], %2;', source)
+
+        target = Target.load(ROOT / 'compiler/targets/sm_103a.json')
+        missing = replace(target, instruction_contracts=target.instruction_contracts
+                          - {SYSTEM_ATOM})
+        self.assertIn('NATIVE_ATOMIC_CONTRACT_UNSUPPORTED', [f.code for f in
+            preflight(Schedule.from_dict(document), missing)])
+        document['target'] = 'sm_100a'
+        self.assertIn('NATIVE_ATOMIC_CONTRACT_UNSUPPORTED', [f.code for f in
+            self.compiler.assess(document).findings])
 
     def test_two_warp_roles_and_unproven_residency_are_refused(self):
         document = work_document()
