@@ -14,7 +14,7 @@ A Workload defines the problem, a Schedule describes workers and data, the Compi
 
 | Purpose | Direct links |
 |---|---|
-| Inspect results and external-reference gaps | [Hardware results](../RESULTS.md) · [FlashInfer experimental status and English summary](../results/nvidia/FLASHINFER_STATUS.md) |
+| Inspect results and external-reference gaps | [Hardware results](../RESULTS.md) · [FlashInfer experimental status and English summary](../results/nvidia/FLASHINFER_STATUS.md) · [MetaX C550 evidence](../metax-c550.md) |
 | Choose a platform or experiment workflow | [Platform and method catalog](../catalog.md) · [Lab workflow](wiki/experiments.md) |
 | Read or cite the technical report | [Report chapters and citation](../README.md) · [Complete catalog](../catalog.md) |
 | Locate implementation owners | [Source navigation](../../README.md#源码与文档结构) · [Development branches](../DEVELOPMENT_BRANCHES.md) |
@@ -86,7 +86,10 @@ Original documents retain their paths. Chinese reading companions for English or
 ## Research design
 
 [Executable optimization knowledge transfer](OPTIMIZATION_TRANSFER.md) describes the proposed
-cross-hardware mechanism and its explanation-versus-rewrite ablation.
+cross-hardware mechanism and its explanation-versus-rewrite ablation. Domestic-accelerator work
+is separated into target admission, direct target-architecture optimization, and the measured
+incremental value of NVIDIA-derived mechanism material; none of these claims is implied by the
+others.
 
 ## Citation
 

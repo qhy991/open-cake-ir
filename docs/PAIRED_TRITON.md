@@ -1,14 +1,18 @@
 # 同后端 Triton 已知基线优化
 
 本轮沿用 `matched_search` 的 AuthoringEnvironment、候选封存、共同 Evaluation、预算和
-追加式 Evidence。`open_cake` 臂支持 JSON Schedule 或现有受限 Python IR 前端；
+追加式 Evidence。新实验的 `open_cake` 臂使用受限 Python IR 前端；
 `native_triton` 臂只接受已声明的 kernel-only Triton 子集。两臂从同一 Compiler lowering
 提取的 kernel 开始，固定 Workload、case、ABI、oracle、后端、工具链和预算。这个处理条件
 比较 agent 搜索效果，不代表完整 Triton、clean-start 或仅语法的因果比较。
 
-所有 Run 使用 Ralph：先读只读的 `TASK.md`、`AGENTS.md`，再根据每轮 StateCard 更新 `candidate-set.json`，由外部控制器管理预算和停止。不再读取旧 prompt 模板。
+所有 Run 使用 Ralph：先读只读的 `TASK.md`、`AGENTS.md`。Cake 臂更新 `candidate-set.py`，原生臂更新 `candidate-set.json`；外部控制器管理预算和停止。
 
-稳定科学 Study 模板为 `contracts/studies/matched-search-triton-optimization-template.json`。
+新实验的科学 Study 模板为 `contracts/studies/matched-search-triton-optimization-python-template.json`。
+旧模板只供其已固定的历史实验回放。Cake starter 是 `examples/python/b200_rmsnorm.py`；
+两臂分别绑定真实双轮 provider 资格证明，外部执行绑定使用 schema v3。
+两次资格验证都使用 `isolated_auth_only_v1` 作者 home 策略和外部私有凭据；
+运行时为每个独立 Run 建立新 home，避免继承个人 skills 与其他 Run 会话。
 每臂三个预先安排的独立 Run，候选失败是观察结果，外部故障是 missing，不补跑；资格率和
 条件确认延迟保留各自含义。Provider 的新输出 schema 需重新资格验证，模板中的 pending
 引用没有 live 权威。Compiler/Executor 绑定由 CampaignLock 解析，预算和 Evidence owner 不变。

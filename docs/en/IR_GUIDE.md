@@ -4,6 +4,35 @@
 
 This reading companion explains the canonical Schedule model and where to change it. The [typed IR](../../src/open_cake_ir/compiler/ir/__init__.py), generated [JSON Schema](../../src/open_cake_ir/compiler/schema.py) and [Authoring Contract](../../compiler/AUTHORING_CONTRACT.md) own exact spellings and constraints. The [Glossary](GLOSSARY.md) owns terminology. This guide does not maintain a separate release or experimental results ledger.
 
+## IR, Schedule IR, and the paper's Cake IR
+
+**IR is a category; Schedule IR is one kind of intermediate representation.** A compute-graph
+IR describes relationships among calculations; a lower-level IR may approach target instructions.
+These are examples for comparison, not a claim that this repository implements each of them.
+Here, `compiler/ir/` is the package defining types. Its canonical `Schedule` describes how
+**one GPU kernel executes**. `Program` binds public tensors and stage order across complete
+Schedules. `Assessment` is a check result and `Lowering` is a generated-source result; neither
+is another authoring IR.
+
+![Chinese-labelled figure: IR is the category, Schedule IR is one member; the right side shows Schedule responsibilities](../figures/ir-schedule-relationship-v1.png)
+
+*The left side illustrates IR categories, not this repository's module inventory. The right
+side maps to ProgramMap, Role, Buffer, AccessMap, Operation, Barrier, Pipeline, Target and the
+lowering route; the definitions below and the schema own the exact fields.*
+
+The [original CAKE paper](https://arxiv.org/html/2608.12629v1) calls its agent-facing typed,
+hardware-explicit machine schedule **Cake IR**. It declares roles, storage, accesses and
+synchronization while lowering derives mechanical details, without a first-class layout algebra.
+This repository follows that direction and separates static `Program` composition, the
+single-kernel `Schedule`, exact `Target`, Verifier, backend source emission and downstream
+toolchain. The paper mainly describes NVIDIA-to-CUDA/PTX; this repository admits distinct
+Triton, native CUDA, CuTe DSL and Metal routes. See the [architecture](ARCHITECTURE.md#cake-ir-dsl-and-triton-layers).
+
+Schedule IR makes performance- and correctness-relevant execution choices inspectable so the
+Compiler can localize findings within its modeled domain and emit source for an eligible route.
+IR expressibility does not imply that a selected backend can implement the plan. Compilation,
+device correctness and performance have their own validation boundaries.
+
 ## Scope of the reorganization
 
 `open_cake_ir.compiler.ir` is one package with one definition of each type and rule. Moving definitions preserves existing imports, fields, enum values, parameter defaults, JSON input, rejection behavior and generated kernel source. The package exports the original objects rather than wrapping or duplicating them. Definition locations and Python `__module__` names now identify the owning submodule.
@@ -93,6 +122,32 @@ Pipeline stages describe reuse. Barriers declare counts, producers, consumers an
 
 ## Read and inspect an existing plan
 
+### FMA: one formula, a concrete execution plan
+
+The fixed `fma-b8-smoke` example has FP32 inputs `a,b,c` and output `y`, each `[8,128]`.
+Its numerical relationship is `y[i,j] = fma(a[i,j], b[i,j], c[i,j])`; the Schedule's
+`ptx.fma.rn.f32` instruction contract requires one fused rounding, not a separately rounded
+multiply followed by an add. Workload and oracle own numerical acceptance; Schedule specifies
+the execution decisions for this kernel.
+
+![Chinese-labelled figure: eight-row FMA workload versus five Schedule IR decisions](../figures/fma-schedule-example-v1.png)
+
+*Highlighted `batch=4` is one of eight zero-indexed rows. The matrix sketches the first few
+columns; the real row has 128. The five decisions are read from the
+[complete Schedule](../../corpus/schedules/fma-b8-smoke.json).*
+
+`program_map` partitions axis 0 into eight programs with `tile=1`; the program for `batch=4`
+handles row index 4. The `compute` role declares four `execution_groups`. Three loads use
+their AccessMaps to read `[batch, 0:128]` into logical `[128]` register Buffers; `fma`
+consumes those tiles and `store_y` writes the result to the same coordinates. The global
+Buffers remain `[8,128]`. This Schedule has no tile loops, pipelines or barriers. A logical
+`[128]` register tile does **not** mean 128 physical registers per thread; actual allocation
+belongs to the compiled artifact.
+
+The exact `sm_100a` Target and `triton` route select source generation. `Compiler.assess`
+checks structure, semantics, Target and backend capability. Only an eligible Assessment can
+be lowered to Triton source; the code below does not execute a GPU kernel.
+
 Run from the repository root with its `src` directory on the Python path:
 
 ```python
@@ -100,19 +155,19 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import read_schedule
 from open_cake_ir.compiler.ir import Schedule
 
-schedule = Schedule.load("corpus/schedules/fma-b8-smoke.json")
+authored = read_schedule("examples/python/fma.py")
+schedule = Schedule.from_dict(authored.document)
 assert schedule.buffer("a").shape == (8, 128)
 print([(op.op_id, op.kind.value) for op in schedule.operations])
 
-compiler = Compiler.load(".", "compiler/revision.json")
-authored = read_schedule("examples/python/fma.py")
+compiler = Compiler.load()
 assessment = compiler.assess(authored.document)
 assert assessment.accepted and assessment.lowering_eligible, assessment.findings
 lowering = compiler.lower(assessment)
 assert "fma.rn.f32" in lowering.source
 ```
 
-The example reuses the existing [Python plan](../../examples/python/fma.py) and [JSON plan](../../corpus/schedules/fma-b8-smoke.json). Development uses the draft descriptor; released execution uses a matching frozen lock. Parsing, assessment, source generation, GPU compilation, correctness and performance are separate evidence boundaries. Read findings and analysis coverage rather than treating a single accepted bit as proof of everything.
+The example reads only the [Python plan](../../examples/python/fma.py). The [JSON form](../../corpus/schedules/fma-b8-smoke.json) remains available for Corpus regression and inspecting canonical serialization; authors do not need to supply it. Parsing, assessment, source generation, GPU compilation, correctness and performance are separate evidence boundaries. Read findings and analysis coverage rather than treating a single accepted bit as proof of everything.
 
 ## Extending the model
 

@@ -29,6 +29,64 @@ TERMINAL = '{"arm":"open_cake","candidate_written":true,"kind":"open_cake_ir_tur
 
 
 class ClaudeProviderContracts(unittest.TestCase):
+    def test_raw_python_file_has_the_same_sealed_projection_as_codex(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.serialization import canonical_json_bytes
+        self.candidate.unlink()
+        self.candidate = self.workspace / 'candidate.py'
+        self.submission = self.source.encode()
+        self.candidate.write_bytes(self.submission)
+        turn = self.normalize(submission_contract=PYTHON_SOURCE_FILE_V1,
+                              environment_kind='open_cake', maximum_candidates_per_turn=1)
+        self.assertEqual(turn.raw_submission, self.submission)
+        self.assertEqual(turn.candidates,
+                         (canonical_json_bytes({'python_source': self.source}),))
+
+    def test_source_file_replay_refuses_changed_raw_source_and_wrong_role(self):
+        from hashlib import sha256
+        from types import SimpleNamespace
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.lab.replay.provider import _replay_provider_turns
+        from open_cake_ir.lab.task_package import TaskPackage
+        self.candidate.unlink()
+        self.candidate = self.workspace/'candidate.py'
+        self.submission = self.source.encode()
+        self.candidate.write_bytes(self.submission)
+        raw_events = self.raw()
+        turn = self.normalize(raw_events, submission_contract=PYTHON_SOURCE_FILE_V1,
+                              environment_kind='open_cake', maximum_candidates_per_turn=1)
+        package = TaskPackage('open_cake-1', 'open_cake', 'task', 'rules')
+        state = {'kind': 'ralph_state_v1', 'iteration': 1,
+                 'cumulative_provider_tokens': 0, 'terminal_reason': None}
+        objects = {'provider_events': raw_events,
+                   'provider_reference_bundle': package.evidence_bundle(state),
+                   'provider_source_file': self.submission,
+                   'candidate_submission_0000': turn.candidates[0]}
+        payload = {'turn': 1, 'thread_id': SESSION,
+                   'turn_provider_tokens': turn.provider_tokens,
+                   'cumulative_provider_tokens': turn.provider_tokens,
+                   'normalization': turn.normalization, 'candidate_count': 1,
+                   'auxiliary_activity': [dict(a.document) for a in turn.tool_activity]}
+        def replay():
+            payload['objects'] = [{'role': role, 'sha256': sha256(value).hexdigest()}
+                                  for role, value in objects.items()]
+            return _replay_provider_turns(arm='open_cake', audit=SimpleNamespace(run_id='open_cake-1'),
+                event_contract=CLAUDE_EVENT_CONTRACT,
+                evidence=SimpleNamespace(read_object=lambda ref: objects[ref['role']]),
+                expected_task_package=package, maximum_candidates_per_turn=1,
+                provider_authority={'model': 'exact-requested-model',
+                    'event_contract': CLAUDE_EVENT_CONTRACT,
+                    'submission_contract': PYTHON_SOURCE_FILE_V1},
+                provider_events=[{'payload': payload}])
+        self.assertEqual(replay()[0], {1: turn.provider_tokens})
+        objects['provider_source_file'] += b'# changed after author submission\n'
+        with self.assertRaisesRegex(ReplayRefusal, 'provider_source_file'):
+            replay()
+        objects['provider_source_file'] = self.submission
+        objects['provider_submission_envelope'] = objects.pop('provider_source_file')
+        with self.assertRaisesRegex(ReplayRefusal, 'provider_source_file'):
+            replay()
+
     @staticmethod
     def compaction_events():
         common = {"type": "system", "session_id": SESSION, "uuid": OTHER_SESSION}
@@ -1033,6 +1091,32 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual(CLAUDE_EVENT_CONTRACT, "claude_stream_candidate_v4")
         with self.assertRaises(ValueError): self.normalize(raw, event_contract="claude_stream_candidate_v2")
 
+    def test_fractional_retry_delay_preserves_complete_turn_and_rejects_invalid_values(self):
+        events = self.events(); retry = self.retry_event()
+        retry.update(retry_delay_ms=519.0670546041245, error_status=503, error="server_error")
+        events.insert(3, retry)
+        raw = self.raw(events)
+        turn = self.normalize(raw)
+        self.assertEqual(turn.raw_events, raw)
+        self.assertEqual(turn.provider_tokens, 205)
+        self.assertEqual(turn.candidates, self.normalize().candidates)
+        notices = [activity for activity in turn.tool_activity if activity.item_type == "api_retry"]
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0].status, "observed")
+        for value in (True, -0.5, float("inf"), float("nan"), "519.067"):
+            changed = copy.deepcopy(events); changed[3]["retry_delay_ms"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.normalize(self.raw(changed))
+        large = copy.deepcopy(events); large[3]["retry_delay_ms"] = 10 ** 309
+        self.assertEqual(self.normalize(self.raw(large)).provider_tokens, 205)
+        # A valid JSON exponent can parse to infinity without a NaN/Infinity literal.
+        overflow = self.raw(events).replace(b'519.0670546041245', b'1e309')
+        with self.assertRaises(ValueError):
+            self.normalize(overflow)
+        incomplete = copy.deepcopy(events); incomplete.pop(-1)
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(incomplete))
+
     def summary_event(self):
         return {"type": "system", "subtype": "post_turn_summary", "summarizes_uuid": OTHER_SESSION,
             "status_category": "review_ready", "status_detail": "turn 1: created candidate-set.json",
@@ -1069,7 +1153,7 @@ class ClaudeProviderContracts(unittest.TestCase):
 
     def test_native_retry_counter_and_control_schema_fail_closed(self):
         changes = ({"attempt": 0}, {"attempt": True}, {"attempt": 11}, {"max_retries": 0},
-            {"max_retries": "10"}, {"retry_delay_ms": -1}, {"retry_delay_ms": 509.0},
+            {"max_retries": "10"}, {"retry_delay_ms": -1}, {"retry_delay_ms": True},
             {"error_status": False}, {"error_status": 600}, {"error": "new-unmodeled-error"},
             {"no_response": {}}, {"subtype": "other_retry"}, {"session_id": OTHER_SESSION}, {"uuid": ""})
         for change in changes:

@@ -481,7 +481,7 @@ class FindingRoutingContractTests(SemanticLabTestCase):
         backend = dataclasses.replace(hint, severity=FindingSeverity.BLOCKING)
         self.assertEqual(
             route_rejection({"stage": "assessment", "findings": [backend.to_dict()]}).destination,
-            "ir_vocabulary",
+            "backend_lowering",
         )
 
 

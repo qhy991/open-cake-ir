@@ -29,13 +29,14 @@ from .provider_policy import provider_configuration, provider_harness
 
 def validate_provider(*, open_cake, policy, project_root, study):
     """Matched-Study input policy; runtime qualification has an independent owner."""
-    provider = _object(open_cake.get('provider'), 'study.arms.provider')
     claim_scope = str(study.document['claim_scope'])
-    configuration = provider_configuration(provider, claim_scope, arms=study.document['arms'])
-    validate_provider_binding(provider=provider, project_root=project_root,
-        expected_provider_configuration=configuration,
-        admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
-        require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
+    for name, arm in study.document['arms'].items():
+        provider = _object(arm.get('provider'), f'study.arms.{name}.provider')
+        configuration = provider_configuration(provider, claim_scope, arms=study.document['arms'])
+        validate_provider_binding(provider=provider, project_root=project_root,
+            expected_provider_configuration=configuration,
+            admitted_scopes={'zero_gpu_contract_fixture_only', required_live_provider_qualification_scope(claim_scope)},
+            require_native_pair=policy is not None, evaluation_protocol=study.evaluation_protocol)
     return claim_scope
 
 
@@ -74,6 +75,12 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
         "study.arms.provider.qualification.path",
     )
     qualification = ProviderQualificationReceipt.load(qualification_path)
+    from .author_home import ISOLATED_AUTH_ONLY_V1
+    if (provider.get('author_home_policy') == ISOLATED_AUTH_ONLY_V1
+        and (qualification.system_skills_sha256 is None
+             or provider.get('system_skills_sha256')
+             != qualification.system_skills_sha256)):
+        raise ValueError('Provider system skills differ from the qualified author home')
     expected_configuration_sha256 = sha256(
         _canonical_json_bytes(expected_provider_configuration)).hexdigest()
     expected_qualification = {
@@ -403,9 +410,28 @@ def admit_run_inputs(specification, *, project_root, workload_loader):
         if sha256(path.read_bytes()).hexdigest() != reference['sha256']:
             raise ValueError(f'Run {name} bytes differ')
     if specification.environment_kind == 'open_cake':
-        _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
-        if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
-            raise ValueError('Run Schedule skeleton target or lowering route differs')
+        python_clean_start = (authoring.get('reference_access') == 'clean_start'
+                              and authoring.get('input_format') == 'python_source_v1')
+        if python_clean_start:
+            starter_reference = _object(authoring.get('python_starter'),
+                'run.authoring.python_starter')
+            if set(starter_reference) != {'path'}:
+                raise ValueError('Python clean-start Run reference fields differ')
+            _, starter_path = source_reference_path(project_root,
+                starter_reference['path'], 'run.authoring.python_starter')
+            if starter_path.suffix != '.py':
+                raise ValueError('Python clean-start Run requires a .py starter')
+        else:
+            if authoring.get('input_format') == 'python_source_v1':
+                starter_reference = _object(authoring.get('schedule_skeleton'),
+                    'run.authoring.schedule_skeleton')
+                _, starter_path = source_reference_path(project_root,
+                    starter_reference.get('path'), 'run.authoring.schedule_skeleton')
+                if starter_path.suffix != '.py':
+                    raise ValueError('Python-only Run requires a .py Schedule starter')
+            _, skeleton = read_skeleton_reference(project_root, authoring.get('schedule_skeleton'))
+            if skeleton.get('target') != execution['target'] or skeleton.get('lowering') != authoring.get('lowering_route'):
+                raise ValueError('Run Schedule skeleton target or lowering route differs')
     for name, reference in document['reference_inputs'].items():
         if name == 'baseline_programs':
             continue

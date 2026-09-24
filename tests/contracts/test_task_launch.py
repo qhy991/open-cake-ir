@@ -76,26 +76,37 @@ class TaskLaunchTests(unittest.TestCase):
                 admit.assert_not_called()
             self.workspace = self.directory / "next-task"
 
-    def test_clean_start_and_unlimited_tokens_reach_the_existing_run_input(self):
+    def test_clean_start_launch_refuses_before_writing_private_or_provider_material(self):
+        with patch.object(launch_task, '_provider_executable') as provider, \
+             patch.object(launch_task, '_admit_stack') as admit:
+            with self.assertRaisesRegex(ValueError, 'read isolation is not qualified'):
+                launch_task.main(self.args() + ['--reference-access', 'clean_start'])
+        provider.assert_not_called()
+        admit.assert_not_called()
+        self.assertFalse(self.workspace.exists())
+
+    def test_source_file_launcher_selects_the_versioned_provider_contract(self):
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
         captured = []
         original = launch_task.task_run_inputs
-        def capture(*args, **kwargs):
-            value = original(*args, **kwargs); captured.append(value); return value
-        args = self.args()
-        offset = args.index('--token-budget'); del args[offset:offset + 2]
+        def inputs(*args, **kwargs):
+            value = original(*args, **kwargs)
+            captured.append(value)
+            return value
         with patch.object(launch_task, '_provider_executable', return_value=Path('/fixture/provider')), \
-             patch.object(launch_task, 'task_run_inputs', side_effect=capture), \
+             patch.object(launch_task, 'task_run_inputs', side_effect=inputs), \
              patch.object(launch_task, '_admit_stack', side_effect=RuntimeError('stop before execution')):
             with self.assertRaisesRegex(RuntimeError, 'stop before execution'):
-                launch_task.main(args + ['--reference-access', 'clean_start'])
-        inputs = captured[0]
-        self.assertIsNone(inputs['budget']['limit'])
-        self.assertEqual(inputs['budget']['checkpoints'], [])
-        self.assertEqual(inputs['authoring']['reference_access'], 'clean_start')
-        self.assertEqual(inputs['authoring']['scaffold']['path'], 'contracts/scaffolds/matched-search-v1.md')
-        author_path = Path(inputs['authoring']['schedule_skeleton']['path'])
-        self.assertEqual(json.loads(author_path.read_text())['operations'], [])
-        self.assertNotEqual(author_path, self.workspace/'starter.py')
+                launch_task.main(self.args() + ['--source-file', '--max-candidates', '1',
+                                                '--searches-per-turn', '1'])
+        self.assertEqual(captured[0]['authoring']['provider']['submission_contract'], PYTHON_SOURCE_FILE_V1)
+        self.assertEqual(captured[0]['authoring']['scaffold']['path'],
+                         'contracts/scaffolds/python-artifact-optimization-source-file-v1.md')
+
+    def test_source_file_launcher_refuses_multi_candidate_before_workspace_creation(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            launch_task.main(self.args() + ['--source-file'])
+        self.assertFalse(self.workspace.exists())
 
     def test_codex_npm_wrapper_resolves_only_its_own_native_dependency(self):
         package = self.directory/'codex-package'
@@ -570,6 +581,8 @@ class TaskLaunchTests(unittest.TestCase):
                               ('--python-source',str(source)),('--feature-policy','provider_defaults_optimization'),
                               ('--response-model-alias','vendor/exact-test-model')):
             self.assertEqual(command[command.index(flag)+1],expected)
+        from open_cake_ir.lab.provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        self.assertEqual(command[command.index('--submission-contract')+1], PYTHON_CANDIDATE_BUNDLE_V1)
         self.assertNotIn('--fixture-only',command)
         self.assertEqual(receipt,self.workspace/'provider-qualification.json')
         self.assertEqual(anchor,self.workspace/'provider-anchor.json')

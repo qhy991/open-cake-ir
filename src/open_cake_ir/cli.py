@@ -248,7 +248,8 @@ def build_parser() -> argparse.ArgumentParser:
             "--format", dest="output_format", choices=("json", "text"), default="json",
             help="JSON for tools (default), or a concise Chinese explanation",
         )
-        command.add_argument("--revision", type=Path, required=True)
+        command.add_argument("--revision", type=Path,
+                             help="Compiler revision; defaults to this project's compiler/revision.json")
         command.add_argument("schedule", type=Path, help="Schedule JSON or restricted Python source")
         if name == "lower":
             command.add_argument("--output", type=Path, required=True)

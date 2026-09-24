@@ -6,7 +6,7 @@ from .flash_kmeans.authoring import prepare_flash_schedule, validate_flash_autho
 
 
 def prepare_schedule(schedule, workload, case_id, arm):
-    if arm.get("input_format") == "schedule_or_python_v1":
+    if arm.get("input_format") in {"schedule_or_python_v1", "python_source_v1"}:
         return bind_baseline(schedule, workload, case_id, backend=arm["lowering_route"]["backend"])
     return prepare_flash_schedule(schedule, workload, case_id)
 

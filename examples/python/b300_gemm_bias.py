@@ -3,7 +3,6 @@ from open_cake_ir.compiler import frontend as cake
 
 @cake.schedule(name="gemm-bias-b1-smoke-b300", target="sm_103a", backend="triton",
                entry_point="cake_gemm_bias_b1_smoke",
-               metadata={"workload_contract_sha256": "b3337c25ac111faf7084910696a4857c9c50c8fcb14826184ed4317bfc16caaf"},
                residency={"ctas_per_multiprocessor": 4, "registers_per_thread": 128})
 def gemm_bias(lm, a: cake.Tensor((512, 256), "bf16"),
               b: cake.Tensor((256, 256), "bf16"), bias: cake.Tensor((256,), "fp32"),

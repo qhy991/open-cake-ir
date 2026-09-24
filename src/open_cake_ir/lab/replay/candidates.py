@@ -130,6 +130,7 @@ def _replay_candidates(
             arm=arm,
             manifest_parser=manifest_parser, compiler_factory=compiler_factory,
             authored_bytes=provider_candidate_bytes[(turn, candidate_sha256)] if provider_candidate_bytes is not None else None,
+            workload_sha256=workload_sha256,
         )
 
     receipts: dict[tuple[int, str, str], EvaluationReceipt] = {}
@@ -169,6 +170,9 @@ def _replay_candidates(
                 refuse(f"{location}.payload", "retained/rejected artifact roles are not a closed partition",
                        observed={"objects": payload.get("objects"),
                                  "artifact_rejections": payload.get("artifact_rejections")})
+            # replay_matched_run checked the lock's exact Compiler commit before
+            # reading events. Historical routing replays at its pinned source,
+            # never with a later revision's diagnosis taxonomy.
             decision = route_rejection(feedback, arm=arm)
             if (
                 payload.get("routed_to") != decision.destination

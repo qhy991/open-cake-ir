@@ -4,13 +4,29 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import importlib
+import importlib.metadata
 import platform
 from pathlib import Path
 
 
-PACKAGES = frozenset({"torch", "flagtree", "packaging", "pybind11", "psutil", "setuptools"})
+PACKAGES = frozenset({"torch", "packaging", "pybind11", "psutil", "setuptools"})
+TRITON_DISTRIBUTIONS = frozenset({"flagtree", "triton"})
 BUILD_TOOLS = frozenset({"cxx", "mxcc", "bwrap", "sh"})
 LIBRARIES = frozenset({"libmcruntime.so", "libmcpti.so"})
+
+
+def installed_triton_distribution() -> str:
+    """Select the sole installed distribution that supplies MetaX Triton."""
+    available = []
+    for name in sorted(TRITON_DISTRIBUTIONS):
+        try:
+            importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        available.append(name)
+    if len(available) != 1:
+        raise ValueError("MACA requires exactly one installed FlagTree or Triton distribution")
+    return available[0]
 
 
 def validate_host(host: Mapping) -> None:
@@ -26,7 +42,8 @@ def validate_host(host: Mapping) -> None:
             or not isinstance(observed_platform["kernel_release"], str) or not observed_platform["kernel_release"]):
         raise ValueError("MACA host platform differs")
     _python_authority(host["python"], "MACA Python")
-    if set(_package_authority(host["packages"], "MACA packages")) != PACKAGES:
+    packages = set(_package_authority(host["packages"], "MACA packages"))
+    if not any(packages == PACKAGES | {name} for name in TRITON_DISTRIBUTIONS):
         raise ValueError("MACA host package set differs")
     runtime = host["runtime"]
     if (not isinstance(runtime, Mapping)
@@ -53,6 +70,8 @@ def admit_host(host: Mapping, *, executor_id: str = "") -> Mapping:
     from .executor import _admit_python_and_packages, _admit_executable, _admit_shared_library
 
     validate_host(host)
+    if set(host["packages"]) - PACKAGES != {installed_triton_distribution()}:
+        raise ValueError("MACA Triton distribution differs from capture")
     _admit_python_and_packages(host)
     current = {"system": platform.system(), "machine": platform.machine(), "kernel_release": platform.release()}
     if current != dict(host["platform"]):
