@@ -197,6 +197,12 @@ this artifact to the single-device `LaunchableCandidate` path. Compilation,
 distributed loader replay and device qualification are still required
 before a sealed ranked candidate can enter common Evaluation.
 
+The isolated NVIDIA integration task at `f504f4e6` now passes this pre-seal
+manifest using its actual Cake lowering for both frozen `skew_to_rank0` and
+`tail_tokens` cases. The two fresh manifest/source replays are retained in
+`cake-ranked-ep4-preseal-f504f4e6/` under the Weave evidence root. They are
+not `LaunchableCandidate` artifacts or GPU correctness results.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic

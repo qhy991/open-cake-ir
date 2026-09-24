@@ -35,7 +35,8 @@ class RankedMailboxLaunchManifest:
     @classmethod
     def from_dict(cls, document):
         if (not isinstance(document, Mapping) or set(document) != _FIELDS
-                or document.get('schema_version') != 1
+                or type(document.get('schema_version')) is not int
+                or document['schema_version'] != 1
                 or document.get('abi') != cls.abi):
             raise ValueError('ranked launch manifest fields or ABI differ')
         digest = document['workload_sha256']
