@@ -43,7 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle at about 456 µs. Correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in paired diagnostics. CPU-gated TMEM state and typed prefix/factor/coupling/inverse components exist, but their fully materialized traffic flags fusion and no complete Cake candidate has device qualification. A held-out high-retention input fails final-state tolerance even with serial chunk32; generalization requires a verified remedy or fallback.
+- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle at about 456 µs. Correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in paired diagnostics. CPU-gated TMEM state and typed upstream/factor/coupling/inverse components exist, but their fully materialized traffic flags fusion and no complete Cake candidate has device qualification. A held-out high-retention input fails final-state tolerance even with serial chunk32; generalization requires a verified remedy or fallback.
 
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 
