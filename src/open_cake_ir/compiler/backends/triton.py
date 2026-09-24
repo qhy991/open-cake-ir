@@ -497,6 +497,12 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                             f"{name!r} is {buffer.space.value}. Use explicit load/store operations.",
                         )
         if operation.kind is OperationKind.MMA:
+            add(
+                operation.parameters.k_partitions is None,
+                "TRITON_MMA_K_PARTITIONS_UNSUPPORTED",
+                f"operations[{index}].parameters.k_partitions",
+                "the Triton emitter does not map ordered K partitions to separate execution groups",
+            )
             instruction = operation.parameters.instruction
             tile = operation.parameters.tile_shape
             operands = [schedule.buffer(name) for name in operation.reads]
@@ -805,6 +811,7 @@ class _TritonEmitter:
         if failures:
             raise EmitError(failures[0].message)
         self.role = schedule.roles[0]
+        self._selected_loads = self._selected_mma_loads()
 
         # A kernel must write something, so a store is required of every Schedule -- but
         # how many is the host wrapper's business, not this constructor's. MMA operations
@@ -833,6 +840,65 @@ class _TritonEmitter:
         matches = [op for op in self.schedule.operations if op.kind is kind]
         _require(len(matches) <= 1, f"expected at most one {label} operation")
         return matches[0] if matches else None
+
+    def _selected_mma_loads(self) -> dict[str, tuple[object, AccessMap]]:
+        """Find full K loads whose only uses are contiguous selected-K MMA reads.
+
+        The MMA contract already identifies the selected contribution. Materializing a
+        whole register tile and gathering each quarter is unnecessary when no other
+        operation observes the full tile. Keep the fallback for shared or noncontiguous
+        uses, so this changes only the physical load, not the authored dataflow.
+        """
+
+        consumers: dict[str, list[object]] = {}
+        for operation in self.schedule.operations:
+            for name in operation.reads:
+                consumers.setdefault(name, []).append(operation)
+        selected = {}
+        for operation in self.schedule.operations:
+            if operation.kind is not OperationKind.LOAD or len(operation.writes) != 1:
+                continue
+            output = operation.writes[0]
+            uses = consumers.get(output, ())
+            access = self.schedule.access_map(operation.op_id, operation.reads[0])
+            if not uses or access is None or len(access.indices) != 2:
+                continue
+            if access.indices[0].source is not AccessIndexKind.PROGRAM_TILE:
+                continue
+            k_index = access.indices[1]
+            if k_index.source not in {AccessIndexKind.PROGRAM_TILE, AccessIndexKind.LOOP_TILE}:
+                continue
+            staged = self.schedule.buffer(output)
+            if staged is None or len(staged.shape) != 2:
+                continue
+            if all(
+                use.kind is OperationKind.MMA
+                and output in use.reads[:2]
+                and use.parameters.k_ranges is not None
+                and len(use.parameters.contribution_ranges) == 1
+                and use.parameters.selected_k == (
+                    use.parameters.contribution_ranges[0][1]
+                    - use.parameters.contribution_ranges[0][0]
+                )
+                and use.parameters.tile_shape is not None
+                and use.parameters.tile_shape[2] == staged.shape[1]
+                for use in uses
+            ):
+                selected[output] = (operation, access)
+        # A deferred load is legal only when every MMA that consumes it can also
+        # load its other operand directly. Otherwise the ordinary MMA path still
+        # needs the full staged value.
+        while True:
+            incomplete = {
+                name for name in selected
+                if any(any(operand not in selected for operand in use.reads[:2])
+                       for use in consumers[name])
+            }
+            if not incomplete:
+                break
+            for name in incomplete:
+                selected.pop(name)
+        return selected
 
     def _extent(self, buffer_name: str, dimension: int) -> str:
         """Constexpr name for one global buffer dimension.
@@ -1348,6 +1414,9 @@ class _TritonEmitter:
         access = self.schedule.access_map(operation.op_id, operation.reads[0])
         _require(access is not None, f"load {operation.op_id!r} has no access map")
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if operation.writes[0] in self._selected_loads:
+            self.line(f"{pad}# Contiguous selected-K loads are materialized at their MMA uses.")
+            return
         pointer, mask = self._address(access, pad)
         self.line(f"{pad}{operation.op_id}_ptrs = {pointer}")
         self.line(f"{pad}{operation.writes[0]} = tl.load(", declares=(operation.writes[0],))
@@ -1848,6 +1917,52 @@ class _TritonEmitter:
         )
         if operation.parameters.k_ranges is not None:
             parameters = operation.parameters
+            if all(name in self._selected_loads for name in tiles):
+                selected_tiles = []
+                start, end = parameters.contribution_ranges[0]
+                for name in tiles:
+                    producer, access = self._selected_loads[name]
+                    k_index = access.indices[1]
+                    k_name = k_index.name
+                    _require(k_name is not None, "selected-K load has no K coordinate")
+                    selected_offsets = f"{operation.op_id}_{name}_k_offsets"
+                    if k_index.source is AccessIndexKind.PROGRAM_TILE:
+                        base = f"{k_name} * {self._tile(k_name)}"
+                    else:
+                        base = k_name
+                    self.line(
+                        f"{pad}{selected_offsets} = {base} + "
+                        f"tl.arange(0, {parameters.selected_k}) + {start}"
+                    )
+                    pointer, mask = self._address(access, pad)
+                    original_offsets = f"{k_name}_offsets"
+                    _require(original_offsets in pointer, "selected-K address has no K offsets")
+                    pointer = pointer.replace(original_offsets, selected_offsets)
+                    mask = mask.replace(original_offsets, selected_offsets)
+                    selected_name = f"{operation.op_id}_{name}_selected"
+                    options = []
+                    if producer.parameters.reuse is LoadReuse.REUSED:
+                        options.append('eviction_policy="evict_last"')
+                    elif producer.parameters.reuse is LoadReuse.STREAMED:
+                        options.append('cache_modifier=".cg"')
+                    if mask:
+                        options.extend((f"mask={mask}", "other=0.0"))
+                    options_text = ", ".join((pointer, *options))
+                    self.line(f"{pad}{selected_name} = tl.load({options_text})")
+                    selected_tiles.append(selected_name)
+                output = operation.writes[0]
+                accumulator = f', acc={output}' if self._accumulating(operation) else ''
+                self.line(
+                    f"{pad}{output} = tl.dot({selected_tiles[0]}, "
+                    f"tl.trans({selected_tiles[1]}){accumulator}, out_dtype=tl.float32)",
+                    declares=(output,),
+                )
+                self.line(
+                    f'{pad}{output} = tl.inline_asm_elementwise("mov.b32 $0, $1;", '
+                    f'constraints="=f,f", args=[{output}], dtype=tl.float32, is_pure=True, pack=1)',
+                    declares=(output,),
+                )
+                return
             ordinal = f"tl.arange(0, {parameters.selected_k})"
             spans = []
             offset = 0

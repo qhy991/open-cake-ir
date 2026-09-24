@@ -129,16 +129,55 @@ class TinyGemmReproduction(unittest.TestCase):
                     self.assertEqual(bool(document.get('tile_loops')), depth > 1024)
                     self.assertTrue(compiler.lower(assessment).source)
 
+    def test_measured_large_fixture_selects_two_groups_and_two_stages_only_by_default(self):
+        large = WorkloadContract(task.workload_document(rows=64, columns=4096, depth=3072))
+        default = frontend.parse(task.partitioned_source(large)).document
+        self.assertEqual(default['roles'][0]['execution_groups'], [0, 1])
+        self.assertEqual(default['tile_loops'][0]['range_options']['num_stages'], 2)
+        explicit = frontend.parse(task.partitioned_source(large, stages=4)).document
+        self.assertEqual(explicit['roles'][0]['execution_groups'], [0, 1])
+        self.assertEqual(explicit['tile_loops'][0]['range_options']['num_stages'], 4)
+        other = WorkloadContract(task.workload_document(rows=16, columns=1024, depth=1024))
+        default_other = frontend.parse(task.partitioned_source(other)).document
+        self.assertEqual(default_other['roles'][0]['execution_groups'], [0, 1, 2, 3])
+        self.assertFalse(default_other['tile_loops'])
+
+    def test_native_authoring_uses_the_same_workload_and_only_qualified_shapes(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        for batch, columns, depth in ((1, 128, 720), (16, 1024, 1024)):
+            workload = WorkloadContract(task.workload_document(
+                rows=batch, columns=columns, depth=depth))
+            authored = task.native_source(workload)
+            document = frontend.parse(authored).document
+            self.assertEqual(document['target'], workload.target)
+            self.assertEqual(document['lowering']['backend'], 'native_cuda')
+            assessment = compiler.assess(document)
+            self.assertTrue(assessment.lowering_eligible, assessment.findings)
+            self.assertIn('mma.sync.aligned.m16n8k16', compiler.lower(assessment).source)
+        unqualified = WorkloadContract(task.workload_document(rows=1, columns=256, depth=720))
+        with self.assertRaisesRegex(ValueError, 'two qualified'):
+            task.native_source(unqualified)
+
     def test_partitioned_lowering_keeps_each_quarter_and_accumulates_across_trips(self):
         import numpy as np
+        class Pointer:
+            def __init__(self, values, offsets=0):
+                self.values = values.reshape(-1)
+                self.offsets = offsets
+
+            def __add__(self, offsets):
+                return Pointer(self.values, self.offsets + offsets)
+
         class LogicalTL:
             float32 = np.float32
             arange = staticmethod(np.arange)
-            broadcast_to = staticmethod(np.broadcast_to)
             trans = staticmethod(np.transpose)
-            gather = staticmethod(lambda a, i, axis: np.take_along_axis(a, i, axis))
             dot = staticmethod(lambda a, b, acc, **kw: acc + a @ b)
             inline_asm_elementwise = staticmethod(lambda *a, args, **kw: args[0])
+
+            @staticmethod
+            def load(pointer, mask, other):
+                return np.where(mask, pointer.values[np.clip(pointer.offsets, 0, len(pointer.values)-1)], other)
         workload = WorkloadContract(task.workload_document(rows=16, columns=16, depth=3072))
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         document = frontend.parse(task.partitioned_source(workload)).document
@@ -147,14 +186,21 @@ class TinyGemmReproduction(unittest.TestCase):
         tree = ast.parse(compiler.lower(assessment).source)
         loop = next(n for n in ast.walk(tree) if isinstance(n, ast.For))
         assignments = [n for n in loop.body if isinstance(n, ast.Assign)
-                       and isinstance(n.targets[0], ast.Name) and n.targets[0].id in {'acc0','acc1','acc2','acc3'}]
-        self.assertEqual(len(assignments), 8)
+                       and isinstance(n.targets[0], ast.Name)
+                       and (n.targets[0].id.startswith('dot') or n.targets[0].id in {'acc0','acc1','acc2','acc3'})]
+        self.assertEqual(len(assignments), 24)
         rng = np.random.default_rng(7)
         inputs = [(rng.integers(-2, 3, (16, 1024)).astype(np.float32),
                    rng.integers(-2, 3, (16, 1024)).astype(np.float32)) for _ in range(3)]
-        env = {'tl': LogicalTL, **{f'acc{i}': np.full((16, 16), i + 1, np.float32) for i in range(4)}}
-        for a, b in inputs:
-            env.update(a=a, b=b)
+        a = np.concatenate([pair[0] for pair in inputs], axis=1)
+        b = np.concatenate([pair[1] for pair in inputs], axis=1)
+        env = {'tl': LogicalTL, 'x': Pointer(a), 'weight': Pointer(b),
+               'row_offsets': np.arange(16), 'column_offsets': np.arange(16),
+               'BLOCK_K_LOOP': 1024, 'N_K_LOOP': 3072, 'D_WEIGHT_1': 3072,
+               'N_ROW': 16, 'N_COLUMN': 16,
+               **{f'acc{i}': np.full((16, 16), i + 1, np.float32) for i in range(4)}}
+        for trip in range(3):
+            env['k'] = trip * 1024
             for node in assignments:
                 exec(compile(ast.Module(body=[node], type_ignores=[]), '<selected K carry>', 'exec'), env)
         for i in range(4):

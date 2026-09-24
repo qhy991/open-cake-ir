@@ -20,6 +20,8 @@ OPERATOR = 'cake_tinygemm2_bf16_bias'
 TARGETS = {'triton-b200': 'sm_100a', 'triton-b300': 'sm_103a'}
 CASES = ('primary', 'zeros', 'near_zero', 'alternating', 'mixed_magnitude')
 CANDIDATE_STAGES = (2, 4)
+_TWO_GROUP_TWO_STAGE_FIXTURE = (64, 4096, 3072)
+_NATIVE_WARP_FIXTURES = frozenset({(1, 128, 720), (16, 1024, 1024)})
 PEER_COMMIT = '67f76379a145f19793896394974e29e610cda912'
 PEER_DIRECTORY = 'experiments/flashinfer_rewrites/references/029_cake_tinygemm2/baseline/csrc'
 
@@ -179,6 +181,11 @@ def _source(workload, case_id, stages, partitioned):
     if partitioned and workload.target != 'sm_103a':
         raise ValueError('partitioned TinyGEMM is currently bounded to sm_103a')
     args = workload.tensor_abi(case_id)
+    shape = workload.case(case_id)['shape']
+    # This one measured fixture benefits from two execution groups. Keep other
+    # shapes at their authored width until they have their own device evidence.
+    groups = ([0, 1] if partitioned and (shape['B'], shape['N'], shape['K']) == _TWO_GROUP_TWO_STAGE_FIXTURE
+              else [0, 1, 2, 3])
     declarations = [f'{a.name}: cake.Tensor({a.shape!r}, "{a.dtype}"' +
                     (', mode="output")' if a.mode == 'output' else ')') for a in args]
     tile = 1024 if partitioned else 16
@@ -187,7 +194,7 @@ def _source(workload, case_id, stages, partitioned):
              f'@cake.schedule(name="{workload.workload_id}-s{stages}", target="{workload.target}", backend="triton",',
              f'               entry_point="cake_tinygemm2")',
              f'def candidate(lm, {", ".join(declarations)}):',
-             '    compute = lm.role(execution_groups=[0, 1, 2, 3])',
+             f'    compute = lm.role(execution_groups={groups})',
              '    row = lm.program(x, axis=0, dimension=0, tile=16)',
              '    column = lm.program(weight, axis=1, dimension=0, tile=16)']
     if iterative:
@@ -222,6 +229,25 @@ def starter_source(workload, case_id='primary', *, stages=4):
     return _source(workload, case_id, stages, False)
 
 
-def partitioned_source(workload, case_id='primary', *, stages=4):
+def partitioned_source(workload, case_id='primary', *, stages=None):
     """Retain four K256 partials per K1024 cycle; no warp/TMA equivalence claim."""
+    if stages is None:
+        shape = workload.case(case_id)['shape']
+        stages = 2 if (shape['B'], shape['N'], shape['K']) == _TWO_GROUP_TWO_STAGE_FIXTURE else 4
     return _source(workload, case_id, stages, True)
+
+
+def native_source(workload, case_id='primary'):
+    """Author the bounded B300 TMA/warp-MMA Schedule under the same Workload gate."""
+    validate_contract(workload.document)
+    shape = workload.case(case_id)['shape']
+    fixture = (shape['B'], shape['N'], shape['K'])
+    if workload.target != 'sm_103a' or fixture not in _NATIVE_WARP_FIXTURES:
+        raise ValueError('native warp MMA requires one of its two qualified B300 fixtures')
+    source = Path(__file__).with_name('native_warp_mma.py.in').read_text()
+    substitutions = {'SCHEDULE_ID': f'{workload.workload_id}-native-warp-mma',
+                     'BATCH': str(fixture[0]), 'FEATURES': str(fixture[1]),
+                     'DEPTH': str(fixture[2])}
+    for key, value in substitutions.items():
+        source = source.replace(f'@{key}@', value)
+    return source

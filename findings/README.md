@@ -43,6 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-24-002 — B300 TinyGEMM warp MMA needs K64 TMA boxes and four ordered K256 partials; Python-authored successors pass the bitwise peer and same-run old/final diagnostics show 36.045×, 30.972× and 11.722× gains on three fixed shapes. Formal Executor admission and branch integration remain pending (capacity, proposed).
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).

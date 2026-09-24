@@ -1,0 +1,579 @@
+{
+  "schema_version": 2,
+  "schedule_id": "tinygemm2-b300-native-tma-swapped-b1-n128-k720",
+  "target": "sm_103a",
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "name": "load_weight",
+      "execution_groups": [
+        4,
+        5,
+        6,
+        7
+      ]
+    },
+    {
+      "name": "load_activation",
+      "execution_groups": [
+        8,
+        9,
+        10,
+        11
+      ]
+    }
+  ],
+  "allocations": [
+    {
+      "name": "smem",
+      "space": "shared",
+      "size_bytes": 52224
+    }
+  ],
+  "buffers": [
+    {
+      "name": "input",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        1,
+        720
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "weight",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        128,
+        720
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "bias",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        128
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "output",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        1,
+        128
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "activation_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        16,
+        1024
+      ],
+      "mode": "scratch",
+      "allocation": "smem",
+      "byte_offset": 1024,
+      "swizzle": "swizzle_128b"
+    },
+    {
+      "name": "weight_stage",
+      "space": "shared",
+      "dtype": "bf16",
+      "shape": [
+        8,
+        1024
+      ],
+      "mode": "scratch",
+      "allocation": "smem",
+      "byte_offset": 33792,
+      "swizzle": "swizzle_128b"
+    },
+    {
+      "name": "bias_tile",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "bias32",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "acc",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        16,
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "sum",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        16,
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rounded",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        16,
+        8
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "pipelines": [
+    {
+      "name": "main",
+      "stages": 1
+    }
+  ],
+  "barriers": [
+    {
+      "name": "activation_ready0",
+      "count": 1,
+      "producers": [
+        "load_activation"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "activation_ready1",
+      "count": 1,
+      "producers": [
+        "load_activation"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "activation_ready2",
+      "count": 1,
+      "producers": [
+        "load_activation"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "activation_ready3",
+      "count": 1,
+      "producers": [
+        "load_activation"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "weight_ready0",
+      "count": 1,
+      "producers": [
+        "load_weight"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "weight_ready1",
+      "count": 1,
+      "producers": [
+        "load_weight"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "weight_ready2",
+      "count": 1,
+      "producers": [
+        "load_weight"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "weight_ready3",
+      "count": 1,
+      "producers": [
+        "load_weight"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "pipeline": "main",
+      "mechanism": "mbarrier"
+    },
+    {
+      "name": "partials_ready",
+      "count": 128,
+      "producers": [
+        "compute"
+      ],
+      "consumers": [
+        "compute"
+      ],
+      "mechanism": "barrier.sync"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_bias",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "bias"
+      ],
+      "writes": [
+        "bias_tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "load_activation",
+      "kind": "load",
+      "role": "load_activation",
+      "reads": [
+        "input"
+      ],
+      "writes": [
+        "activation_stage"
+      ],
+      "signals": [
+        "activation_ready0",
+        "activation_ready1",
+        "activation_ready2",
+        "activation_ready3"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "movement": "tma",
+        "descriptor_box": [
+          16,
+          64
+        ]
+      }
+    },
+    {
+      "id": "load_weight",
+      "kind": "load",
+      "role": "load_weight",
+      "reads": [
+        "weight"
+      ],
+      "writes": [
+        "weight_stage"
+      ],
+      "signals": [
+        "weight_ready0",
+        "weight_ready1",
+        "weight_ready2",
+        "weight_ready3"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "movement": "tma",
+        "descriptor_box": [
+          8,
+          64
+        ]
+      }
+    },
+    {
+      "id": "split_k_mma",
+      "kind": "mma",
+      "role": "compute",
+      "reads": [
+        "activation_stage",
+        "weight_stage"
+      ],
+      "writes": [
+        "acc"
+      ],
+      "waits": [
+        "activation_ready0",
+        "activation_ready1",
+        "activation_ready2",
+        "activation_ready3",
+        "weight_ready0",
+        "weight_ready1",
+        "weight_ready2",
+        "weight_ready3"
+      ],
+      "signals": [
+        "partials_ready"
+      ],
+      "depends_on": [
+        "load_activation",
+        "load_weight"
+      ],
+      "pipeline": "main",
+      "parameters": {
+        "accumulator": "fp32",
+        "instruction": {
+          "contract": "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
+          "shape": [
+            16,
+            8,
+            16
+          ],
+          "cta_group": 1,
+          "operand_source": "register",
+          "operand_major": [
+            "k",
+            "k"
+          ]
+        },
+        "tile_shape": [
+          16,
+          8,
+          1024
+        ],
+        "k_partitions": [
+          [
+            0,
+            256
+          ],
+          [
+            256,
+            512
+          ],
+          [
+            512,
+            768
+          ],
+          [
+            768,
+            1024
+          ]
+        ]
+      }
+    },
+    {
+      "id": "bias32",
+      "kind": "cast",
+      "role": "compute",
+      "reads": [
+        "bias_tile"
+      ],
+      "writes": [
+        "bias32"
+      ],
+      "depends_on": [
+        "load_bias"
+      ],
+      "parameters": {
+        "to": "fp32"
+      }
+    },
+    {
+      "id": "add_bias",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "acc",
+        "bias32"
+      ],
+      "writes": [
+        "sum"
+      ],
+      "depends_on": [
+        "split_k_mma",
+        "bias32"
+      ],
+      "waits": [
+        "partials_ready"
+      ],
+      "parameters": {
+        "op": "add",
+        "broadcast_axis": 1
+      }
+    },
+    {
+      "id": "round_out",
+      "kind": "cast",
+      "role": "compute",
+      "reads": [
+        "sum"
+      ],
+      "writes": [
+        "rounded"
+      ],
+      "depends_on": [
+        "add_bias"
+      ],
+      "parameters": {
+        "to": "bf16"
+      }
+    },
+    {
+      "id": "store_out",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "rounded"
+      ],
+      "writes": [
+        "output"
+      ],
+      "depends_on": [
+        "round_out"
+      ],
+      "parameters": {
+        "coalesced": false
+      }
+    }
+  ],
+  "outputs": [
+    "output"
+  ],
+  "metadata": {
+    "legacy_source": {
+      "revision": "b50af21d6d0f11b1833042754dd879bb40e2d05a",
+      "path": "examples/schedules/tinygemm2-stage4-split-k-explicit-v1.json",
+      "canonical_json_sha256": "024afdf636bed9a122493c2b91aea985db3e4691964bb47673cc7bfa20ec680b"
+    }
+  },
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_tinygemm2_native"
+  },
+  "program_map": {
+    "axes": [
+      {
+        "name": "batch",
+        "axis": 0,
+        "buffer": "input",
+        "dimension": 0,
+        "tile": 16
+      },
+      {
+        "name": "feature",
+        "axis": 1,
+        "buffer": "weight",
+        "dimension": 0,
+        "tile": 8
+      },
+      {
+        "name": "k",
+        "axis": 2,
+        "buffer": "input",
+        "dimension": 1,
+        "tile": 1024
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_activation",
+      "buffer": "input",
+      "indices": [
+        {
+          "source": "program_tile",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "k"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_weight",
+      "buffer": "weight",
+      "indices": [
+        {
+          "source": "program_tile",
+          "name": "feature"
+        },
+        {
+          "source": "program_tile",
+          "name": "k"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_bias",
+      "buffer": "bias",
+      "indices": [
+        {
+          "source": "program_tile",
+          "name": "feature"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_out",
+      "buffer": "output",
+      "indices": [
+        {
+          "source": "program_tile",
+          "name": "batch"
+        },
+        {
+          "source": "program_tile",
+          "name": "feature"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ]
+}

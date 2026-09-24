@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 
+from . import native_cuda_warp_mma
 from .common import Emission, EmitError, refusal, vocabulary_findings
 from ..diagnostics import Finding
 from ..ir import (
@@ -87,6 +88,8 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     failures = list(requirements(s))
     if failures:
         return tuple(failures)
+    if native_cuda_warp_mma.applies(s):
+        return native_cuda_warp_mma.preflight(s, target)
     def check(ok, code, path, message):
         if not ok:
             failures.append(refusal(code, path, message))
@@ -286,6 +289,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                       'a register value must stay within its producer role')
         if op.kind is OperationKind.MMA:
             p = op.parameters; instruction = p.instruction
+            check(p.k_partitions is None, 'NATIVE_MMA_K_PARTITIONS_UNSUPPORTED',
+                  path+'.parameters.k_partitions',
+                  'the tcgen05 native route does not emit warp-local K partitions')
             good = (instruction is not None and instruction.contract == _CONTRACT
                     and instruction.cta_group == 1 and instruction.operand_source is OperandSource.SHARED
                     and instruction.operand_major == (OperandMajorMode.K, OperandMajorMode.K)
@@ -855,4 +861,6 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
             raise EmitError('; '.join(f'{f.code} at {f.path}: {f.message}' for f in failures))
     if entry_point is not None and entry_point != schedule.lowering.entry_point:
         raise EmitError('Entry point differs from the canonical route.')
+    if native_cuda_warp_mma.applies(schedule):
+        return native_cuda_warp_mma.emit(schedule, target, entry_point=entry_point)
     return _Emitter(schedule,target,schedule.lowering.entry_point).emit()
