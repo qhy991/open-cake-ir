@@ -206,12 +206,15 @@ ABI checks every declared tensor owner and each directed peer pair before
 launch, resets state once on rank 0, checks compiled cooperative residency
 on both GPUs, then launches both rank-specific worker loops. The three FP32
 FMA leaf bodies still come from their complete Schedules. Other placements
-and math remain refused, and the single-device Evaluation adapter cannot
-launch this form.
+and math remain refused. The single-device Evaluation adapter cannot launch
+this form; a shared development adapter now allocates tensors by declared
+rank, isolates rank-0 queue state, checks argument order and storage, then
+requires one combined two-kernel launch and a synchronized status read.
 
 This is a two-rank development mechanism, not an EP4 MoE implementation. It
-still needs exact-source nvcc compilation, a two-GPU independent oracle and a
-distributed Evaluation adapter before any device or performance claim.
+still needs exact-source nvcc compilation and a two-GPU independent oracle
+before any device claim. A sealed distributed Evaluation candidate and timing
+protocol remain separate work even after the development adapter runs.
 
 ## Native PTX returned-old-value work claim prototype
 
