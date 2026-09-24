@@ -187,6 +187,7 @@ class TileLoop:
     body: tuple[str, ...]
     range_options: RangeOptions
     stop: LoopStop | None = None
+    carried_buffers: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, value: Any, context: str) -> "TileLoop":
@@ -201,12 +202,17 @@ class TileLoop:
                 "body",
                 "range_options",
             },
-            optional={"stop"},
+            optional={"stop", "carried_buffers"},
             context=context,
         )
         body = _string_tuple(obj["body"], f"{context}.body")
         if not body:
             raise ScheduleParseError(f"{context}.body must not be empty")
+        carried = _string_tuple(obj.get("carried_buffers", []), f"{context}.carried_buffers")
+        if "carried_buffers" in obj and not carried:
+            raise ScheduleParseError(f"{context}.carried_buffers is empty; omit it")
+        if len(carried) != len(set(carried)):
+            raise ScheduleParseError(f"{context}.carried_buffers must be unique")
         return cls(
             _string(obj["name"], f"{context}.name"),
             _string(obj["iterator"], f"{context}.iterator"),
@@ -218,6 +224,7 @@ class TileLoop:
             None
             if obj.get("stop") is None
             else LoopStop.from_dict(obj["stop"], f"{context}.stop"),
+            carried,
         )
 
 

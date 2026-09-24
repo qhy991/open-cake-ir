@@ -21,6 +21,7 @@ from ..ir.operations import elementwise_result_dtype, ELEMENTWISE_FLOAT_DTYPES a
 from ..diagnostics import FindingCategory
 from ._collector import _Collector
 from .hardware_conformance import _BLOCK_SCALE_MMA_CONTRACT
+from .carried_tmem import analyze_carried_tmem
 
 
 def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
@@ -313,6 +314,15 @@ def verify(schedule: Schedule, out: _Collector) -> None:
     category = FindingCategory.DATA_CONSISTENCY
 
     buffers = {buffer.name: buffer for buffer in schedule.buffers}
+    carried_pairs, carried_issues = analyze_carried_tmem(schedule)
+    for issue in carried_issues:
+        issue_category = (
+            FindingCategory.PROGRAM_SAFETY
+            if issue.code in {"CARRIED_TMEM_UPDATE_ORDER", "CARRIED_TMEM_READER_SCOPE",
+                              "CARRIED_TMEM_BARRIER"}
+            else category
+        )
+        out.add(issue.code, issue.path, issue.message, issue_category)
     allocations = {item.name: item for item in schedule.allocations}
     roles = {role.name for role in schedule.roles}
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
@@ -674,12 +684,14 @@ def verify(schedule: Schedule, out: _Collector) -> None:
                 category,
             )
         if len(ops) > 1:
-            out.add(
-                "BUFFER_MULTIPLE_WRITERS",
-                f"buffers[{schedule.buffers.index(buffer)}]",
-                f"buffer {name!r} is written by {', '.join(sorted(ops))}",
-                category,
-            )
+            carried = carried_pairs.get(name)
+            if carried is None or set(ops) != {carried.initializer, carried.updater}:
+                out.add(
+                    "BUFFER_MULTIPLE_WRITERS",
+                    f"buffers[{schedule.buffers.index(buffer)}]",
+                    f"buffer {name!r} is written by {', '.join(sorted(ops))}",
+                    category,
+                )
     for name, ops in sorted(readers.items()):
         buffer = buffers[name]
         if buffer.mode is BufferMode.SCRATCH and name not in writers:
