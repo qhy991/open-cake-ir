@@ -392,7 +392,7 @@ def _verify_instruction_commitments(
                         category,
                     )
             _verify_atom_placement(operation, instruction, path, out)
-            _verify_register_mma(operation, instruction, buffers, path, out)
+            _verify_register_mma(schedule, operation, instruction, buffers, path, out)
             if (operation.parameters.k_ranges is not None and instruction.shape is not None
                     and any(endpoint % instruction.shape[2]
                             for interval in operation.parameters.k_ranges for endpoint in interval)):
@@ -465,8 +465,8 @@ def _verify_instruction_commitments(
                 )
 
 
-def _verify_register_mma(operation, instruction, buffers, path: str, out: _Collector) -> None:
-    """Warp MMA consumes register fragments; declaring them constrains storage.
+def _verify_register_mma(schedule, operation, instruction, buffers, path: str, out: _Collector) -> None:
+    """Warp MMA consumes register fragments, including declared shared staging.
 
     This modeled instruction has a fixed 16x8x16 atom, K-major operands and one
     CTA. Other instruction families do not inherit its register-source contract.
@@ -479,17 +479,42 @@ def _verify_register_mma(operation, instruction, buffers, path: str, out: _Colle
             out.add("MMA_REGISTER_CONTRACT_UNSUPPORTED", f"{path}.instruction.operand_source",
                     "register operand placement is modeled only for the admitted BF16 warp MMA",
                     category)
+        if operation.parameters.k_partitions is not None:
+            out.add("MMA_K_PARTITIONS_CONTRACT_UNSUPPORTED", f"{path}.k_partitions",
+                    "warp-local K partitions require the admitted BF16 warp MMA", category)
         return
     if instruction.operand_source not in (None, OperandSource.REGISTER):
         out.add("MMA_OPERAND_SOURCE_MISMATCH", f"{path}.instruction.operand_source",
                 "warp MMA reads register fragments, not shared or tensor memory",
                 category)
-    for name in (*operation.reads, *operation.writes):
-        buffer = buffers.get(name)
-        if buffer is not None and buffer.space is not MemorySpace.REGISTER:
-            out.add("MMA_OPERAND_SOURCE_MISMATCH", f"{path}.instruction.operand_source",
-                    f"warp MMA operands and accumulator must be register-resident; "
-                    f"{name!r} is {buffer.space.value}", category)
+    partitions = operation.parameters.k_partitions
+    if partitions is None:
+        for name in (*operation.reads, *operation.writes):
+            buffer = buffers.get(name)
+            if buffer is not None and buffer.space is not MemorySpace.REGISTER:
+                out.add("MMA_OPERAND_SOURCE_MISMATCH", f"{path}.instruction.operand_source",
+                        f"warp MMA operands and accumulator must be register-resident; "
+                        f"{name!r} is {buffer.space.value}", category)
+    else:
+        staged = [buffers.get(name) for name in operation.reads]
+        written = [buffers.get(name) for name in operation.writes]
+        if (instruction.operand_source is not OperandSource.REGISTER
+                or len(staged) != 2 or any(buffer is None or buffer.space is not MemorySpace.SHARED
+                                            for buffer in staged)
+                or len(written) != 1 or written[0] is None
+                or written[0].space is not MemorySpace.REGISTER):
+            out.add("MMA_PARTITION_STORAGE_MISMATCH", f"{path}.instruction.operand_source",
+                    "partitioned warp MMA loads fragments from two declared shared tiles "
+                    "into registers and writes one FP32 register result", category)
+        role = next((role for role in schedule.roles if role.name == operation.role), None)
+        if role is None or len(role.execution_groups) != len(partitions):
+            out.add("MMA_PARTITION_GROUP_MISMATCH", f"{path}.k_partitions",
+                    "each ordered K partition needs one declared execution group", category)
+        if (instruction.shape is not None and any(
+                endpoint % instruction.shape[2]
+                for start, end in partitions for endpoint in (start, end))):
+            out.add("MMA_PARTITION_ATOM_MISMATCH", f"{path}.k_partitions",
+                    "each partition boundary must align to the warp MMA atom K", category)
     if (instruction.shape is not None and instruction.shape != (16, 8, 16)):
         out.add("MMA_REGISTER_ATOM_MISMATCH", f"{path}.instruction.shape",
                 "the declared BF16 warp MMA atom has shape 16x8x16", category)
@@ -628,12 +653,18 @@ def _verify_descriptor_commitments(schedule: Schedule, out: _Collector) -> None:
                     f"{len(staged.shape)} destination {name!r}",
                     category,
                 )
-            elif tuple(box) != staged.shape:
+            elif not (
+                tuple(box) == staged.shape
+                or (len(box) == 2 and staged.space is MemorySpace.SHARED
+                    and box[0] == staged.shape[0]
+                    and box[1] < staged.shape[1]
+                    and staged.shape[1] % box[1] == 0)
+            ):
                 out.add(
                     "TMA_DESCRIPTOR_MISMATCH",
                     path,
-                    f"descriptor box {box} does not match staging buffer {name!r} "
-                    f"shape {staged.shape}",
+                    f"descriptor box {box} must match staging buffer {name!r} "
+                    f"shape {staged.shape} or evenly tile its final shared-memory axis",
                     category,
                 )
 

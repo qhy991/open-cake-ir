@@ -144,6 +144,14 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
         )
         for index, operation in enumerate(schedule.operations)
         if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
+    ) + tuple(
+        refusal(
+            "CUTE_MMA_K_PARTITIONS_UNSUPPORTED",
+            f"operations[{index}].parameters.k_partitions",
+            "CuTe-DSL does not emit warp-local K partitions",
+        )
+        for index, operation in enumerate(schedule.operations)
+        if operation.kind is OperationKind.MMA and operation.parameters.k_partitions is not None
     )
     if common:
         return state + common + python_name_findings(schedule, PYTHON_NAMESPACE)
@@ -335,6 +343,14 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             f"operations[{index}].parameters.descriptor_box",
             "the CuTe-DSL backend requires every load to name a descriptor box",
         )
+        if load.parameters.descriptor_box is not None and len(load.writes) == 1:
+            staged = schedule.buffer(load.writes[0])
+            add(
+                staged is not None and load.parameters.descriptor_box == staged.shape,
+                "CUTE_LOAD_DESCRIPTOR_TILING_UNSUPPORTED",
+                f"operations[{index}].parameters.descriptor_box",
+                "the CuTe-DSL emitter currently transfers one descriptor box per staged buffer",
+            )
     if not findings and _namespace:
         try:
             emitter = _Emitter(schedule, target, _namespace=False)
