@@ -22,7 +22,7 @@ The published evaluation is on 4×H100 SXM, EP=4, BF16, six models and three seq
 | Exact H100 target | `compiler/targets/` declares B200 (`sm_100a`) and B300 (`sm_103a`), but no H100 (`sm_90` family) document. `Compiler.assess` returns `TARGET_UNSUPPORTED` for the probed `sm_90a`. | Blocking for paper-exact reproduction; Cake refuses architecture fallback by design. |
 | Cross-GPU dispatch/combine | `compiler/ir/vocabulary.py::OperationKind` has no remote transfer or communication operation. `compiler/ir/program.py::Program` owns one target and static same-stream stages; `evaluation/cuda_driver.py::PersistentCudaCandidate.launch` admits one logical GPU. | Blocking for EP=4 execution and external oracle/measurement. |
 | Runtime partition of CTAs into SM roles | `Role.execution_groups` divides execution groups **inside a CTA**, not CTAs across SMs. `ProgramMap.persistent` statically strides CTAs over work in `backends/triton.py::_emit_persistent_header`. | Current persistence cannot represent `blockIdx.x < c*(routing)` with different CTA bodies. |
-| Dynamic tile claiming, stealing and cross-CTA pipeline readiness | Cake has a narrow INT32 `atomic_rmw` for reservation, but no modeled distributed work queue, cross-CTA readiness signal/wait, CTA role transition or proof of ownership/liveness for the five-stage DAG. Native CUDA preflight also refuses `program_map.persistent`. | Blocking for single-kernel temporal scheduler. Atomic add alone is insufficient. |
+| Dynamic tile claiming, stealing and cross-CTA pipeline readiness | Cake's narrow INT32 `atomic_rmw` can return a unique old counter value, and that value can address a work-item load inside a persistent Triton kernel. Cake has no modeled cross-CTA readiness signal/wait, CTA role transition or proof of ownership/liveness for the five-stage DAG. Native CUDA preflight also refuses `program_map.persistent`. | Single-role dynamic work claiming is expressible; Weave's cross-role stealing remains blocked. |
 | Online `c,K` model and calibration | Existing cost work ranks static candidates before evaluation; target documents carry hardware facts but no per-SM communication/compute throughput curves or chunk-efficiency calibration for EP. | New measurement/model contract required; paper's H100 curves cannot be inherited by B200/B300. |
 
 ## Reproducible offline probes
@@ -34,6 +34,23 @@ All probes were run in detached worktree `/tmp/cake-weave-validation-check-3e5f9
 3. Changing that plan's first Schedule target to `sm_90a` yielded `lowering_eligible=False` with `TARGET_UNSUPPORTED`. Changing an operation kind to `remote_load` raised `ScheduleParseError` because it is outside the admitted operation vocabulary. Changing one Program stage target from `sm_103a` to `sm_100a` raised `ValueError: program stage 'moe_group_scores' target differs`.
 
 These probes establish only current admission/lowering boundaries. They do not establish that any particular proposed communication/scheduling extension is correct or fast.
+
+## Focused spatial, temporal and steal probes
+
+`tools/probe_weave_schedule.py` is a repeatable, CPU-only admission probe. It was run in a clean detached worktree at `e67fd64cba81d1ecf55f201e3d0c005095e17899` with `PYTHONPATH=src python3 tools/probe_weave_schedule.py`. The existing atomic-reservation contracts and persistent traversal test also ran there: 9 tests, 1 environment skip, 0 failures, using the repository's test virtual environment.
+
+| Mechanism attempted | Observed admission / lowering | What it proves |
+| --- | --- | --- |
+| Static persistent spatial work mapping | Accepted; emitted `tl.range(program_id, TOTAL_TILES, NUM_CTAS)` with 592 CTAs walking 1,024 tiles. | Cake can keep CTAs resident and traverse a fixed work domain. This does not partition CTAs by runtime routing results. |
+| Two declared roles on Triton | Refused with `TRITON_ROLE_COUNT`. | Existing `Role` partitions execution groups *within* a CTA; Triton only lowers one such role. There is no CTA-class assignment for `blockIdx.x < c*`. |
+| Cross-role producer/consumer without handshake | Refused with `OP_CROSS_ROLE_RACE`. | A `depends_on` edge does not establish concurrent-worker visibility. |
+| Cross-role producer/consumer with declared `barrier.sync` | Refused with `TRITON_BARRIER_UNSUPPORTED` and `TRITON_ROLE_COUNT`. | The verifier can name a handshake, but this backend cannot emit it. It also cannot realize the two roles. |
+| Static chunk loop | Accepted. | Fixed loop/chunk structure is expressible. |
+| Loop bound naming a runtime routing count | Refused with `LOOP_STOP_PROGRAM_UNKNOWN`. | Current `LoopStop` derives from a declared Program axis; this probe cannot bind a device-resident routing count to a runtime-chosen `K`. This single refusal is not a proof that every conceivable encoding of `K` is impossible. |
+| Persistent atomic work claim, old value used to load and store a work item | Accepted; emitted `tl.atomic_add`, a runtime-indexed `tl.load`, and a persistent loop with 148 CTAs over 256 logical tiles. | The building block for dynamic tile assignment exists for one worker type. The probe is an INT32 work-list slice, not GEMM or a communication/computation pipeline. |
+| Communication producer hands its claimed tile to computation role | Refused with `OP_CROSS_ROLE_RACE`. | Reusing the atomic claim does not provide Weave's safe role transition or chunk-ready handoff. |
+
+The Cake `Program` executes separately lowered stages in order on one stream (`evaluation/program.py::_launch`), so reordering or statically chunking those stages cannot reproduce same-kernel communication/compute overlap. The probe generated source only; it did not build a GPU binary or validate output on a device. The user's four-GPU cap was respected: **zero GPUs allocated**, because the complete Weave schedule fails compiler admission before device evaluation. A future device experiment needs a complete admitted candidate, external oracle and the repository's acceptance gates and GPU lease procedure.
 
 ## Smallest useful successor validation
 
