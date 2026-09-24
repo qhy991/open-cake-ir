@@ -86,6 +86,7 @@ class WorkerExecutionContract(unittest.TestCase):
             (lambda d: d["execution"]["controls"].__setitem__("chunk_count", "a"), "control 'chunk_count'"),
             (lambda d: d["execution"]["handoffs"].pop(), "one handoff"),
             (lambda d: d["execution"]["handoffs"][0].__setitem__("order", "relaxed"), "handoff 'middle0'"),
+            (lambda d: d["execution"]["handoffs"][0].__setitem__("scope", "cluster"), "requires device or system scope"),
             (lambda d: d["execution"]["handoffs"][0].__setitem__("consumer", "combine"), "handoff 'middle0'"),
             (lambda d: d["execution"]["handoffs"].__setitem__(
                 1, dict(d["execution"]["handoffs"][0])), "unique and complete"),
@@ -96,6 +97,16 @@ class WorkerExecutionContract(unittest.TestCase):
             mutate(changed)
             with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
                 Program.from_dict(changed)
+
+    def test_system_scope_handoff_is_preserved_without_claiming_a_lowering(self) -> None:
+        changed = document()
+        changed["execution"]["handoffs"][0]["scope"] = "system"
+        program = Program.from_dict(changed)
+        self.assertEqual(program.execution.handoffs[0].scope.value, "system")
+        self.assertEqual(program.execution.handoffs[1].scope.value, "device")
+        self.assertEqual(Program.from_dict(program.document), program)
+        with self.assertRaisesRegex(ValueError, "dedicated native lowering"):
+            Compiler.load(ROOT).lower_program(program)
 
     def test_queue_owners_phase_order_and_steal_window_are_checked(self) -> None:
         mutations = [
