@@ -482,6 +482,14 @@ evidence root in `cake-ranked-ep4-skew-b300-m4-5b0af054/` and
 source/effect binding and CPU input gates. Host C++ syntax checks of copies
 with CUDA/PTX helpers stubbed pass; no nvcc or GPU job has run.
 
+At `e3bf171d`, the generated source declares its exact per-rank input ABI to
+the shared Evaluation adapter. A separate `tail_tokens` development bundle
+at `cake-ranked-ep4-adapter-tail-b300-m4-e3bf171d/` passes fresh CPU
+source/effect binding and input checks. That adapter, rather than a task
+runner's ad hoc pointer policy, now owns the rank input, mailbox view,
+per-launch reset and four synchronized status checks. nvcc and on-device
+validation are still pending.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
