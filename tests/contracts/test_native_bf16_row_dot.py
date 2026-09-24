@@ -12,6 +12,7 @@ from open_cake_ir.compiler.backends.native_cuda_row_dot import preflight
 
 ROOT = Path(__file__).resolve().parents[2]
 DOCUMENT = ROOT / 'examples/schedules/native/bf16-row-dot-h16-i32.json'
+TRITON_DOCUMENT = ROOT / 'examples/schedules/triton/bf16-row-dot-h16-i32.json'
 
 
 def document():
@@ -65,6 +66,22 @@ class NativeBf16RowDot(unittest.TestCase):
         value['buffers'][0]['byte_offset'] = 4
         self.assertIn('NATIVE_ROW_DOT_REFINEMENT',
                       {f.code for f in preflight(Schedule.from_dict(value), self.target)})
+
+    def test_triton_comparator_keeps_identical_math_and_access(self):
+        native = document()
+        triton = json.loads(TRITON_DOCUMENT.read_text())
+        for value in (native, triton):
+            value.pop('schedule_id')
+            value.pop('lowering')
+        self.assertEqual(native, triton)
+        assessment = self.compiler.assess(json.loads(TRITON_DOCUMENT.read_text()))
+        self.assertTrue(assessment.lowering_eligible,
+                        [(f.code, f.path) for f in assessment.findings if f.blocks_lowering])
+        lowered = self.compiler.lower(assessment)
+        self.assertIn('tl.sum(products.to(tl.float32), axis=0)', lowered.source)
+        self.assertEqual(lowered.toolchain_requirements['grid'], [32, 1, 1])
+        self.assertEqual(set(lowered.source_map),
+                         {operation['id'] for operation in triton['operations']})
 
 
 if __name__ == '__main__':

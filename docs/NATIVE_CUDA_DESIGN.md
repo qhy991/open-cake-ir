@@ -402,6 +402,11 @@ This makes one expert projection expressible through Cake without an opaque
 MoE operation. It does not implement expert selection, the gated activation,
 the second projection, cross-GPU dispatch or a performance claim. B300 nvcc
 and oracle validation remain required before using this leaf in an Evaluation.
+`examples/schedules/triton/bf16-row-dot-h16-i32.json` holds the same buffers,
+operations, dependencies and AccessMaps with only the lowering route and
+identifier changed. This is a matched leaf comparator; it does not show that
+Triton is exhausted. Device correctness must precede a paired, exact-target
+CUPTI comparison under the declared reset and timing policy.
 
 ## Completion phases and nested reduction scopes
 
