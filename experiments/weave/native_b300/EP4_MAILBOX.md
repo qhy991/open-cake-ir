@@ -85,3 +85,10 @@ prepared outside the checkout at
 `open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-weave-ep4-tail-b300-m4-7fd4eaf5/`.
 Its CPU preparation gate checks all rank extents and the `T=7` source binding;
 no broker job has been submitted for this successor.
+At `fd222407`, a second unmeasured successor passes every origin rank's
+chunk count to the remote compute kernel. Its prepared case uses
+`K=(2,3,7,1)`, so a contribution is counted in its **source** rank's
+chunk, not the compute rank's. Its separate bundle is at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-weave-ep4-tail-mixed-k-b300-m4-fd222407/`.
+CPU preparation and the Workload-derived rank-plan check pass; nvcc and the
+four-GPU oracle remain unrun.
