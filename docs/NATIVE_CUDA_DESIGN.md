@@ -444,6 +444,17 @@ arrival, chunk waits or ownership: ranked mailbox effects must bind those
 before a distributed Program can call it. Offline lowering is no B300
 correctness or timing evidence.
 
+`native_cuda_ep_math.py::lower_ep_math` is a bounded **explicit worker-rewrite
+material** step. It checks the complete three-stage local Program and the
+combine Schedule with their existing verifiers and native preflights, then
+emits inline device helpers with a source marker for every mathematical
+operation. The helper keeps FP32 multiply and addition separate, carries one
+32-float shared activation tile, and rounds the final weighted sum once to
+BF16. It does not change ordinary ordered Program lowering. A ranked mailbox
+backend must still prove all queue claims, peer ownership, release/acquire,
+residency and launch binding before it may embed these helpers. Host-only C++
+syntax checking cannot replace nvcc/PTXAS or the B300 oracle.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
