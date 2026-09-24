@@ -4,7 +4,7 @@
   "target": "sm_103a",
   "lowering": {
     "backend": "native_cuda",
-    "entry_point": "cake_native_gemm_bias"
+    "entry_point": "cake_native_inplace_state_gemm"
   },
   "metadata": {},
   "roles": [
