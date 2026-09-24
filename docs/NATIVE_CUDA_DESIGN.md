@@ -422,9 +422,14 @@ subranges. Its five arithmetic operations spell
 `up * (gate / (1 + exp(-gate)))`; the native one-warp lowering emits ordinary
 FP32 operations and `expf` in that order, then stores the contiguous `[1,32]`
 activation. The paired Triton Schedule carries identical math and access
-commitments. The local expert's down projection still needs FP32 activation
-input support before these leaves form a complete native Program. No B300
-correctness or timing is claimed by offline emission.
+commitments. The FP32/BF16 selected row-dot form now admits the down
+projection without rounding the FP32 activation back to BF16. In
+`examples/programs/weave-local-expert-ffn-native-b300.json`, the 64-row
+up/gate projection, 32-lane activation and 16-row down projection form a
+three-stage native CUDA Program. Each stage has an operation-for-operation
+Triton peer. This is a complete **local expert calculation** with separate
+kernel launches, not Weave's fused EP4 worker, routing, remote mailbox or
+weighted combine. Compilation, B300 oracle and timing remain open.
 
 ## Completion phases and nested reduction scopes
 

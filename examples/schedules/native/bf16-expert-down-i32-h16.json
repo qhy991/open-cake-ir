@@ -1,0 +1,305 @@
+{
+  "schema_version": 2,
+  "schedule_id": "native-bf16-expert-down-i32-h16",
+  "target": "sm_103a",
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "x",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        32
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "weight",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        2,
+        16,
+        32
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "expert_id",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        1
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "y",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        16
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "rx",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rw",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        32
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "fw",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "products",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        32
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "sum",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "expert_index",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_expert",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "expert_id"
+      ],
+      "writes": [
+        "expert_index"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "load_x",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "x"
+      ],
+      "writes": [
+        "rx"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "load_w",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "weight",
+        "expert_index"
+      ],
+      "writes": [
+        "rw"
+      ],
+      "parameters": {
+        "movement": "global"
+      },
+      "depends_on": [
+        "load_expert"
+      ]
+    },
+    {
+      "id": "cast_w",
+      "kind": "cast",
+      "role": "compute",
+      "reads": [
+        "rw"
+      ],
+      "writes": [
+        "fw"
+      ],
+      "parameters": {
+        "to": "fp32"
+      },
+      "depends_on": [
+        "load_w"
+      ]
+    },
+    {
+      "id": "mul",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "rx",
+        "fw"
+      ],
+      "writes": [
+        "products"
+      ],
+      "parameters": {
+        "op": "mul"
+      },
+      "depends_on": [
+        "load_x",
+        "cast_w"
+      ]
+    },
+    {
+      "id": "sum",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": [
+        "products"
+      ],
+      "writes": [
+        "sum"
+      ],
+      "parameters": {
+        "op": "sum",
+        "axis": 0,
+        "scope": "cta",
+        "across_loop": false
+      },
+      "depends_on": [
+        "mul"
+      ]
+    },
+    {
+      "id": "store_y",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "sum"
+      ],
+      "writes": [
+        "y"
+      ],
+      "parameters": {
+        "coalesced": false
+      },
+      "depends_on": [
+        "sum"
+      ]
+    }
+  ],
+  "outputs": [
+    "y"
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "row",
+        "axis": 0,
+        "buffer": "weight",
+        "dimension": 1,
+        "tile": 1
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_expert",
+      "buffer": "expert_id",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_x",
+      "buffer": "x",
+      "indices": [
+        {
+          "source": "dimension",
+          "dimension": 0
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_w",
+      "buffer": "weight",
+      "indices": [
+        {
+          "source": "scalar_buffer",
+          "name": "expert_index"
+        },
+        {
+          "source": "program",
+          "name": "row"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_y",
+      "buffer": "y",
+      "indices": [
+        {
+          "source": "program",
+          "name": "row"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_native_expert_down"
+  }
+}
