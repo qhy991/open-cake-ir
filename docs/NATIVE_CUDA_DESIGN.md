@@ -174,7 +174,20 @@ the peer's exact B300 identity and directed P2P capabilities, then enables
 peer access. The development Evaluation adapter admits only the named
 system-scope intermediate on a peer device; every other tensor stays local.
 CUDA 13.1 nvcc/ptxas compiled this bounded successor with 30 registers and
-no spills. Device numerical and liveness qualification remains pending.
+no spills. At fixed code commit `a81940b0`, 14 related tests and the 179-case
+Corpus Gate passed. Broker job `gpuq-9712bbf86cf7` then used two exclusive
+B300-M4 GPUs: GPU 0 ran every Cake worker CTA and GPU 1 owned `middle0`.
+The standalone driver did not enable peer access. All eight predeclared
+`c/K/steal` plans matched every element of all three stage outputs exactly
+against the post-release CPU oracle; inputs were unchanged and the queues,
+flags and status passed. The `K=2/4/8` plans observed 259/197/196 completed
+compute tiles at the first combine, and budgets 64/256 yielded 64/164 actual
+stolen tiles. Source, input/oracle, compile log, broker receipt, device state
+and report are retained at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-peer-payload-b300-m4-a81940b0/`
+and `B300-M4:/home/qinhaiyan/cake-peer-payload-b300-m4-a81940b0/`.
+The broker no longer listed this allocation after completion. Event counters
+are scheduling observations, not latency or SM-overlap measurements.
 
 The worker CTAs still execute on one GPU even when an intermediate allocation
 belongs to a peer. The development launch adapter is not a sealed Evaluation
