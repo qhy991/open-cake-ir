@@ -131,3 +131,26 @@ Peer readability establishes a transport prerequisite only. This test has no
 concurrent producer/consumer handoff, NVLink bandwidth measurement, grouped
 GEMM, expert routing or MoE output. The worker prototype above remains a
 single-GPU computation with an HBM-copy stand-in for dispatch.
+
+## Two-GPU system-scope handoff prerequisite
+
+NVIDIA's [CUDA memory model](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cuda-cpp-memory-model.html)
+limits `.gpu` synchronization scope to one GPU; peer-GPU payload publication
+requires `.sys` scope and, for a flag in GPU memory, native P2P atomic support
+for the exact pair. B300-M4 broker job `gpuq-a9a69b66ff70` allocated two GPUs.
+`cudaDeviceGetP2PAttribute` reported native peer atomic support in both
+directions. A producer on one GPU wrote an INT32 payload and published a local
+flag with PTX `st.release.sys.global.u32`; a concurrently launched peer kernel
+waited with `ld.acquire.sys.global.u32` before reading that payload. Both
+directions passed eight rounds each against the post-release CPU oracle, for
+16/16 correct handoffs. The broker released both GPUs.
+
+Inputs, PTX-bearing source, compile output, capability observations, device
+outputs and broker receipt are retained outside source at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/cake-weave-sys-handoff-b300-m4-2gpu-3e5715cf/`
+and at
+`B300-M4:/home/qinhaiyan/cake-weave-sys-handoff-b300-m4-2gpu-3e5715cf/`.
+This small protocol probe does not qualify a high-load all-to-all or a Cake
+Program v2 lowering. The shared worker descriptor now preserves either
+`device` or `system` scope; it still refuses execution until the verifier,
+native emission and Evaluation state/reset owners are complete.
