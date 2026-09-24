@@ -120,6 +120,13 @@ eligible for Triton with a changed lowering route, so it offers a controlled
 leaf comparison once B300 execution is available. This native leaf has passed
 offline Compiler and Corpus gates; it has not been nvcc-compiled or checked
 against the B300 oracle, and it is not connected to the EP4 worker Program.
+At NVIDIA task commit `a9151838`, the leaf additionally accepts a local
+expert coordinate through an ordinary INT32 load and `scalar_buffer`
+AccessMap. The native weight load masks an out-of-range coordinate to BF16
+zero, matching the eligible Triton route. A five-case matched correctness
+bundle includes both valid local experts and two invalid indices, but remains
+unexecuted on B300-M4. This still lacks gated activation, down projection,
+remote dispatch/combine and a four-rank Cake lowering.
 
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
