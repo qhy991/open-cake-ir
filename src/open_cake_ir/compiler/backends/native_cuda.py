@@ -1,4 +1,4 @@
-"""Operation-driven CUDA C++/PTX for explicit single-CTA Blackwell schedules.
+"""Operation-driven CUDA C++/PTX for explicit Blackwell CTA schedules.
 
 No framework compiler or kernel template participates. A bounded K loop has independent
 TMA and MMA warp roles connected by the declared circular pipeline. Other operations
@@ -78,6 +78,24 @@ def _storage(s):
     return offsets, (cursor + 15) // 16 * 16
 
 
+def _launch_grid(s: Schedule, target: Target) -> tuple[int, int, int]:
+    """Derive a persistent CTA count from the Target and declared residency."""
+    mapping = s.program_map
+    if mapping is None:
+        return s.grid or (1, 1, 1)
+    if mapping.persistent:
+        assert s.residency is not None and s.residency.ctas_per_multiprocessor is not None
+        assert target.occupancy is not None
+        work_tiles = math.prod(axis.tile_count(s.buffer(axis.buffer).shape[axis.dimension])
+                              for axis in mapping.axes)
+        return (min(work_tiles, target.occupancy.multiprocessor_count
+                    * s.residency.ctas_per_multiprocessor), 1, 1)
+    extents = [1, 1, 1]
+    for axis in mapping.axes:
+        extents[axis.axis] = axis.tile_count(s.buffer(axis.buffer).shape[axis.dimension])
+    return tuple(extents)
+
+
 def requirements(s: Schedule) -> tuple[Finding, ...]:
     """Backend-owned vocabulary admission, shared by public and direct emission."""
     return vocabulary_findings(s, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
@@ -99,10 +117,15 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     check(target.target_id == s.target and target.compute_capability is not None,
           'NATIVE_TARGET_UNSUPPORTED', 'target',
           'native CUDA requires the Schedule\'s own Target and its declared compute capability')
-    check(s.program_map is None or not s.program_map.persistent,
-          'NATIVE_PERSISTENCE_UNSUPPORTED', 'program_map', 'native CUDA does not implement persistent traversal')
-    check(s.residency is None, 'NATIVE_RESIDENCY_UNSUPPORTED', 'residency',
-          'native CUDA does not yet enforce register caps or requested CTA residency')
+    persistent = s.program_map is not None and s.program_map.persistent
+    check(not persistent or target.occupancy is not None,
+          'NATIVE_PERSISTENT_TARGET_FACTS_MISSING', 'program_map.persistent',
+          'a persistent native grid requires the Target\'s observed multiprocessor count')
+    check(s.residency is None or (persistent
+          and s.residency.ctas_per_multiprocessor is not None
+          and s.residency.registers_per_thread is None),
+          'NATIVE_RESIDENCY_UNSUPPORTED', 'residency',
+          'native CUDA admits CTA residency for a persistent grid, but not a register cap')
     check(s.grid in (None, (1, 1, 1)), 'NATIVE_GRID_UNSUPPORTED', 'grid',
           'multi-CTA ownership must be expressed by ProgramMap')
     check(bool(s.pipelines), 'NATIVE_PIPELINE_REQUIRED', 'pipelines',
@@ -444,7 +467,14 @@ class _Emitter:
         self.pipeloops = {loop.name:p for p in s.pipelines if (loop := _pipeline_loop(s,p)) is not None}
         self.rootpipes = [p for p in s.pipelines if _pipeline_loop(s,p) is None]
         self.loopvars = {loop.iterator:f'it{i}' for i,loop in enumerate(s.tile_loops)}
-        self.axisvars = {axis.name:f'blockIdx.{"xyz"[axis.axis]}' for axis in s.program_map.axes} if s.program_map else {}
+        if s.program_map is None:
+            self.axisvars = {}
+        elif s.program_map.persistent:
+            self.axisvars = {axis.name:f'cake_axis{i}'
+                             for i,axis in enumerate(s.program_map.axes)}
+        else:
+            self.axisvars = {axis.name:f'blockIdx.{"xyz"[axis.axis]}'
+                             for axis in s.program_map.axes}
         self.barvars = {b.name:f'bar{i}' for i,b in enumerate(s.barriers)}
         self.tmemvars = {a.name:f'tm{i}' for i,a in enumerate(s.allocations) if a.space is MemorySpace.TENSOR}
 
@@ -529,9 +559,27 @@ class _Emitter:
         for i, op in enumerate(self.s.operations):
             if op.kind is OperationKind.REDUCE_ARGMIN:
                 self.line(f'float best{i};')
+        if self.s.program_map is not None and self.s.program_map.persistent:
+            order = self.s.program_map.walk_order()
+            total = math.prod(axis.tile_count(self.b(axis.buffer).shape[axis.dimension])
+                              for axis in order)
+            launched = _launch_grid(self.s, self.target)[0]
+            self.line('#pragma unroll 1')
+            self.begin(f'for (int cake_work=int(blockIdx.x); cake_work<{total}; cake_work+={launched})')
+            remainder = 'cake_work'
+            for position, axis in enumerate(order):
+                extent = axis.tile_count(self.b(axis.buffer).shape[axis.dimension])
+                value = remainder if position + 1 == len(order) else f'({remainder} % {extent})'
+                self.line(f'const int {self.axisvars[axis.name]} = {value};')
+                remainder = f'({remainder} / {extent})'
         self.sequence(None)
         self.line('__syncthreads();')
         self.invalidate_completions(None)
+        if self.s.program_map is not None and self.s.program_map.persistent:
+            # No CTA starts its next logical tile until every role has finished
+            # this tile's writes and completion-barrier invalidation.
+            self.line('__syncthreads();')
+            self.end()
         for a in self.s.allocations:
             if a.space is MemorySpace.TENSOR:
                 self.begin(f'if (warp == {self.roles[a.allocating_role].execution_groups[0]})')
@@ -543,13 +591,10 @@ class _Emitter:
             self.end()
         self.end(); self.line('// CAKE_KERNEL_END')
         self.host()
-        dims = [1,1,1]
-        if self.s.program_map:
-            for axis in self.s.program_map.axes:
-                dims[axis.axis] = axis.tile_count(self.b(axis.buffer).shape[axis.dimension])
+        dims = _launch_grid(self.s, self.target)
         flags = ['-std=c++17',f'--gpu-architecture={self.s.target.replace("sm_","compute_")}',f'--gpu-code={self.s.target}','-O3','--fmad=false','-lineinfo','-Xptxas=-v']
         metadata = {'kernel_entry_point':self.entry+'_kernel', 'threads_per_cta':self.s.total_execution_group_extent*self.target.warp_size,
-                    'dynamic_shared_bytes':self.shared_bytes, 'grid':dims, 'nvcc_flags':flags,
+                    'dynamic_shared_bytes':self.shared_bytes, 'grid':list(dims), 'nvcc_flags':flags,
                     'argument_order':[b.name for b in self.globals],
                     'arguments':[{'name':b.name,'dtype':b.dtype.value,'shape':list(b.shape),'mode':b.mode.value} for b in self.globals],
                     'host_abi':{'create':self.entry+'_create','launch':self.entry+'_launch','destroy':self.entry+'_destroy'},
@@ -798,10 +843,7 @@ class _Emitter:
         self.line(f'auto* h = static_cast<{handle}*>(handle);')
         self.line('int device; cudaError_t error = cudaGetDevice(&device); if (error != cudaSuccess) return int(error);')
         self.line('if (device != h->device) return int(cudaErrorInvalidDevice);')
-        dims=[1,1,1]
-        if self.s.program_map:
-            for axis in self.s.program_map.axes:
-                dims[axis.axis]=axis.tile_count(self.b(axis.buffer).shape[axis.dimension])
+        dims=_launch_grid(self.s,self.target)
         args=[f'h->{self.names[b.name]}' for b in self.globals]+[f'h->{self.mapnames[op.op_id]}' for op in self.loads]
         self.line(f'{self.entry}_kernel<<<dim3({dims[0]},{dims[1]},{dims[2]}), {self.s.total_execution_group_extent*self.target.warp_size}, {self.shared_bytes}, reinterpret_cast<cudaStream_t>(stream)>>>('+', '.join(args)+');')
         self.line('return int(cudaGetLastError());');self.end()

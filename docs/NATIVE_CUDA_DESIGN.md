@@ -22,8 +22,8 @@ readout. One epilogue thread owns one row; stores therefore explicitly use
 `coalesced=false`. Source maps identify operations and resource declarations. Circular
 TMA stages use ready and consumed barriers with per-slot parity; consumers release
 storage only after asynchronous MMA completes. The compiler derives addresses, never
-algorithmic precision or placement. Register-role redistribution, persistent grids,
-cluster operations and unsupported range controls are refused. Reported physical
+algorithmic precision or placement. Register-role redistribution, cluster operations
+and unsupported range controls are refused. Reported physical
 registers and device correctness remain unknown until target compilation/evaluation.
 
 P4/P7: the new transfer is typed tensor FP32 to identically shaped register FP32, with
@@ -40,6 +40,36 @@ reproduction/structural cases, not clean-start or performance evidence. Remote t
 requires the active delivery's separate authorization and exact target contract.
 Exact-target compilation, external-oracle checks, matched timing with L2 flush and profiler
 remain separate evidence gates. Framework acceptance is not inferred from this compiler change.
+
+## Persistent native traversal successor for Weave investigation
+
+The native backend now admits the existing `ProgramMap.persistent` form when the
+Schedule declares `residency.ctas_per_multiprocessor` and the exact Target has an
+observed multiprocessor count. It launches `min(logical tiles, SMs × requested CTAs
+per SM)` CTAs, then decodes successive logical tiles in the declared traversal
+order inside each CTA. The CTA's TMEM allocation remains live for its traversal;
+each logical tile completes and invalidates its own pipeline/completion barriers
+before the next iteration. The emitter places a CTA rendezvous at that boundary.
+The host launch and toolchain metadata use the same derived grid.
+
+P1/P3: reuse the canonical `ProgramMap`, `Residency`, operation DAG and existing
+native CUDA route; no second grid size or kernel-template API is introduced.
+P2: residency and traversal remain visible in the Schedule and generated CUDA.
+P4: the common verifier requires residency and checks its resource bound; native
+preflight requires exact Target occupancy and refuses a register cap it cannot
+enforce. P5: work analysis continues to count logical tiles rather than resident
+CTAs. P6: focused source and refusal tests plus the Corpus Gate cover the change.
+P7: no IR data model changes; native preflight and emission acquire this
+existing semantic form together. P8: each logical tile repeats the declared
+TMA/MMA/barrier sequence on the same CTA. CTA-to-SM placement and actual
+resident occupancy still require target observation, not an inference from the
+grid size alone.
+
+This successor establishes a native CUDA persistent tensor-core lowering
+building block. It does **not** implement Weave's routing-dependent communication
+SM count, inter-GPU transfer, cross-CTA readiness, or communication-worker GEMM
+stealing. Those require separately admitted effects and backend mechanisms; a
+PTX atomic or barrier spelling alone cannot supply their ownership/liveness proof.
 
 PTX encoding reference: NVIDIA PTX ISA, sections 9.7.17.4 (matrix descriptors),
 9.7.17.8 (TMEM allocation), 9.7.17.9 (TMEM transfer), and 9.7.17.10 (tcgen05 MMA):

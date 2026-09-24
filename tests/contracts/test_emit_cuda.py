@@ -1,6 +1,7 @@
 """Public native lowering contracts. Source/static evidence, never GPU qualification."""
 from __future__ import annotations
 import copy
+from dataclasses import replace
 import json
 import re
 from pathlib import Path
@@ -36,6 +37,16 @@ def one_tile_document():
         if b['space']=='shared':b['stages']=1
         if b['name']=='b_stage':b['byte_offset']=128*64*2
     for access in d['access_maps'][:2]:access['indices'][1]={'source':'dimension','dimension':1}
+    return d
+
+
+def persistent_document(*, rows=32768):
+    d=document()
+    d['program_map'].update(persistent=True, traversal=['rows', 'cols'])
+    d['residency']={'ctas_per_multiprocessor':1}
+    for buffer in d['buffers']:
+        if buffer['name'] in ('a','c'):
+            buffer['shape'][0]=rows
     return d
 
 
@@ -124,6 +135,46 @@ class NativeCudaContracts(unittest.TestCase):
                 self.assertIn('tcgen05.dealloc',l.source)
                 self.assertNotIn('import cutlass',l.source)
                 self.assertNotIn('triton',l.source)
+
+    def test_persistent_native_grid_walks_more_tiles_than_resident_ctas(self):
+        d=persistent_document()
+        l=self.lower(d)
+        target=Target.load(ROOT/'compiler/targets/sm_100a.json')
+        self.assertEqual(l.toolchain_requirements['grid'],
+                         [target.occupancy.multiprocessor_count,1,1])
+        source=l.source
+        loop=source.index('for (int cake_work=int(blockIdx.x); cake_work<1024; cake_work+=148)')
+        self.assertIn('const int cake_axis0 = (cake_work % 256);',source)
+        self.assertIn('const int cake_axis1 = (cake_work / 256);',source)
+        self.assertLess(source.index('tcgen05.alloc'),loop)
+        self.assertLess(loop,source.index('// CAKE_OP: load_a',loop))
+        self.assertLess(source.index('// CAKE_OP: store',loop),source.index('tcgen05.dealloc',loop))
+        self.assertIn('<<<dim3(148,1,1)',source)
+        # A separate work iteration must begin only after the prior tile's CTA
+        # roles rendezvous and its completion barrier has been invalidated.
+        after_store=source.index('// CAKE_OP: store',loop)
+        self.assertLess(after_store,source.index('cake_inval(',after_store))
+        self.assertLess(source.index('cake_inval(',after_store),
+                        source.index('tcgen05.dealloc',after_store))
+
+    def test_persistent_native_traversal_changes_axis_decomposition(self):
+        d=persistent_document()
+        d['program_map']['traversal']=['cols','rows']
+        source=self.lower(d).source
+        self.assertIn('const int cake_axis1 = (cake_work % 4);',source)
+        self.assertIn('const int cake_axis0 = (cake_work / 4);',source)
+
+    def test_persistent_native_grid_refuses_missing_facts_and_unenforced_caps(self):
+        d=persistent_document()
+        d['residency']['registers_per_thread']=96
+        self.refuses(d,'NATIVE_RESIDENCY_UNSUPPORTED')
+        d=persistent_document()
+        d['residency']['ctas_per_multiprocessor']=5
+        self.assertFalse(self.compiler.assess(d).lowering_eligible)
+        target=Target.load(ROOT/'compiler/targets/sm_100a.json')
+        missing=replace(target,occupancy=None)
+        self.assertIn('NATIVE_PERSISTENT_TARGET_FACTS_MISSING',
+                      [f.code for f in preflight(Schedule.from_dict(persistent_document()),missing)])
 
     def test_operation_names_do_not_dispatch_kernels(self):
         d=document();d['schedule_id']='unrelated-operator'
