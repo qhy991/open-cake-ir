@@ -410,6 +410,7 @@ def schedule_schema() -> dict[str, Any]:
                 {
                     "persistent": {"type": "boolean"},
                     "traversal": _NAMES,
+                    "cooperative": {"type": "boolean"},
                 },
             ),
             "roles": {

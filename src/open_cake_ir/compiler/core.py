@@ -288,6 +288,14 @@ class Compiler:
                 f"{target!r} target runs {target_definition.code_object.value!r}",
                 FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
             ))
+        if (typed_schedule.program_map is not None
+                and typed_schedule.program_map.cooperative
+                and backend is not None and not backend.module.COOPERATIVE_GRID):
+            findings.append(Finding(
+                "BACKEND_COOPERATIVE_GRID_UNSUPPORTED", "program_map.cooperative",
+                f"the {route.backend.value} backend does not emit a cooperative-grid launch",
+                FindingCategory.HARDWARE_CONFORMANCE, blocks_acceptance=False,
+            ))
         if backend is not None:
             findings.extend(backend.module.requirements(typed_schedule))
 

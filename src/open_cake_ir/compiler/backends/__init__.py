@@ -20,6 +20,8 @@ class BackendModule(Protocol):
     # Target's declared code object against it before preflight, so a backend admits
     # targets by what they run and never by a table of their ids.
     CODE_OBJECTS: frozenset[CodeObject]
+    # True only when the emitter and host launch both realize ProgramMap.cooperative.
+    COOPERATIVE_GRID: bool
 
     def requirements(self, schedule: Schedule) -> tuple[Finding, ...]: ...
     def preflight(self, schedule: Schedule, target: Target) -> tuple[Finding, ...]: ...

@@ -21,6 +21,7 @@ from ..verifier import verify
 
 SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32, DType.INT32})
 CODE_OBJECTS = frozenset({CodeObject.CUBIN})
+COOPERATIVE_GRID = False
 SUPPORTED_OPERATION_KINDS = frozenset({OperationKind.LOAD, OperationKind.MMA,
     OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE_ARGMIN,
     OperationKind.STORE})

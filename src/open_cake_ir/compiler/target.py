@@ -237,7 +237,8 @@ _TARGET_FIELDS = frozenset({
 })
 # `compute_capability` and `warps_per_warpgroup` are admitted by code object below.
 _OPTIONAL_TARGET_FIELDS = frozenset({
-    "occupancy", "peak", "compute_capability", "warps_per_warpgroup", "triton_arch", "l2_cache_bytes",
+    "occupancy", "peak", "compute_capability", "warps_per_warpgroup", "triton_arch",
+    "l2_cache_bytes", "cooperative_grid",
 })
 
 
@@ -372,6 +373,9 @@ class Target:
     # Optional observed hardware capacity for target-owned measurement reset protocols.
     # Absence is unmodeled, never an inherited size or a zero-byte cache.
     l2_cache_bytes: int | None = None
+    # A launch-wide residency/synchronization capability, independent of the
+    # backend API that realizes it. Absent means unmodeled, never false or true.
+    cooperative_grid: bool | None = None
 
     @classmethod
     def load(cls, path: str | Path) -> "Target":
@@ -426,6 +430,9 @@ class Target:
             or any(type(item) is not int or item < 0 for item in capability)
         ):
             raise TargetParseError("target.compute_capability must be a nonnegative integer pair")
+        cooperative_grid = value.get("cooperative_grid")
+        if "cooperative_grid" in value and type(cooperative_grid) is not bool:
+            raise TargetParseError("target.cooperative_grid must be a boolean when declared")
         if not cubin and "warps_per_warpgroup" in value:
             raise TargetParseError(f"{code_object.value} targets have no warps_per_warpgroup")
         if code_object is CodeObject.MCFATBIN:
@@ -485,4 +492,5 @@ class Target:
             triton_arch=triton_arch,
             l2_cache_bytes=(_int_field(value["l2_cache_bytes"], "target.l2_cache_bytes")
                             if "l2_cache_bytes" in value else None),
+            cooperative_grid=cooperative_grid,
         )
