@@ -167,6 +167,9 @@ domains and uneven tail completion counts: `T=7, K=2` requires 8 then 6
 route contributions. The direct CUDA reference still sends one payload per
 route and requires `T % K == 0`. A bounded CPU event model now explores
 dispatch, regular compute, local stealing and early combine over these plans;
-it does not establish GPU memory order, occupancy or timing. The existing
+it does not establish GPU memory order, occupancy or timing. The NVIDIA task
+branch at `7fd4eaf5` keeps the measured `T=8` reference unchanged and adds
+an unmeasured `T=7` source successor whose host-compiled chunk helper covers
+uneven partitions; it has no nvcc or B300 oracle result. The existing
 single-device launch paths refuse the EP4 Workload Contract. No raw mailbox
 source is promoted as an opaque MoE instruction.

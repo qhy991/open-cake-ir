@@ -93,8 +93,10 @@ analysis, not an emitter's guess from pointer spelling.
 - `experiments/weave/rank_plan.py` derives rank-local CTA populations and
   per-chunk completion thresholds from that ledger. It accepts uneven tail
   chunks and refuses zero-worker classes, invalid `K_r`, over-budget stealing
-  and incomplete return domains. The direct CUDA reference still requires
-  `T % K_r == 0`; the CPU plan does not make that source tail-correct.
+  and incomplete return domains. The measured direct CUDA source still
+  requires `T % K_r == 0`. The NVIDIA task's separate `T=7` successor has
+  host-tested chunk arithmetic but no nvcc or device oracle result; the CPU
+  plan does not make either kernel tail-qualified.
 - `experiments/weave/ep4_event_model.py` explores bounded fair orders of
   dispatch, regular compute, local CTA stealing and combine. It checks unique
   route completion, publication-before-consumption in its logical event order,
