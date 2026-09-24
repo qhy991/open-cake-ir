@@ -258,8 +258,12 @@ def _metadata(event: Mapping) -> bool:
             "reconstructible and the Turn is not comparable")
     elif kind == "system" and event.get("subtype") == "api_retry":
         if (set(event) != {"type", "subtype", "attempt", "max_retries", "retry_delay_ms", "error_status", "error", "uuid", "session_id"}
-                or any(type(event[key]) is not int for key in ("attempt", "max_retries", "retry_delay_ms"))
-                or not 1 <= event["attempt"] <= event["max_retries"] or event["retry_delay_ms"] < 0
+                or any(type(event[key]) is not int for key in ("attempt", "max_retries"))
+                or type(event["retry_delay_ms"]) not in (int, float)
+                or (type(event["retry_delay_ms"]) is float
+                    and not math.isfinite(event["retry_delay_ms"]))
+                or event["retry_delay_ms"] < 0
+                or not 1 <= event["attempt"] <= event["max_retries"]
                 or event["error_status"] is not None and (type(event["error_status"]) is not int or not 100 <= event["error_status"] <= 599)
                 or event["error"] not in ("authentication_failed", "oauth_org_not_allowed", "billing_error", "rate_limit",
                     "overloaded", "invalid_request", "model_not_found", "server_error", "max_output_tokens", "unknown")):

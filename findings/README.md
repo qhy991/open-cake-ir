@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
+
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
 - F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.
 - F-2026-09-21-003 — MACA pointer-count inspection rejected comma-adjacent TTGIR pointer types; parser repair with closed-pointer CPU replay.
