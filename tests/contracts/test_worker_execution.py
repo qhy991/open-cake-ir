@@ -85,7 +85,7 @@ class WorkerExecutionContract(unittest.TestCase):
                          {'dispatch': 0, 'compute': 1, 'combine': 0})
         self.assertEqual(program.document['schema_version'], 3)
         self.assertEqual(Program.from_dict(program.document), program)
-        with self.assertRaisesRegex(ValueError, 'dedicated native lowering'):
+        with self.assertRaisesRegex(ValueError, 'worker'):
             Compiler.load(ROOT).lower_program(program)
         manifest = {'schema_version': 1, 'abi': ProgramLaunchManifest.abi,
                     'workload_sha256': '0' * 64, 'case_id': 'primary',
