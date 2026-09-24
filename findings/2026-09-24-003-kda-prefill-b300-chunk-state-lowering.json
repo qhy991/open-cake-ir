@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-24-003",
+  "kind": "capacity",
+  "date": "2026-09-24",
+  "title": "B300 KDA prefill needs chunk-resident state and stateful native lowering before a scalar route can close the measured gap",
+  "backend": "native_cuda and cutlass_cute_dsl component admission; B300 adapted CAKE M64 external reference",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@6b7d99ec1a55f5a449ac234b68313dc9ea0ffbfb",
+  "executor_revision": "B300-M4 agent-gpu-broker 0.6.0 custom diagnostic; no formal sm_103a Executor receipt",
+  "evidence": [
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-b300-port-bfd26e43-20260924/manifest.json",
+      "run": "cpu-only",
+      "event": 0,
+      "note": "A separate exact-sm_103a diagnostic port of the pinned B200 CAKE export compiled both M64 and M128 without GPU visibility. Only the host target gate and compilation architecture changed; this is not the original B200 qualification."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-b300-small-output-20260924/host-validation.json",
+      "run": "gpuq-0da0a1abf118",
+      "event": 1,
+      "note": "M64 fixed H64/T65 full-chunk-plus-tail output 532480/532480 and in-place state 1048576/1048576 passed the independent CPU recurrence at atol=rtol=0.01; all immutable inputs were unchanged."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-b300-packed-output-20260924/host-validation.json",
+      "run": "gpuq-e8204921a678",
+      "event": 2,
+      "note": "M128 packed H96 lengths 33,65,17 with seq_order [1,0,2] passed all 1413120 output and 4718592 final-state elements and preserved immutable inputs."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-b300-h64-fixed-output-20260924/host-validation.json",
+      "run": "gpuq-4e1bb5ef7797",
+      "event": 3,
+      "note": "The adapted reference passed the complete H64/T8192 benchmark-shape CPU oracle: 67108864 output and 1048576 final-state elements, zero tolerance failures, and every immutable input unchanged."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-b300-h64-baseline-output-20260924/host-validation.json",
+      "run": "gpuq-aac74cea19d2",
+      "event": 4,
+      "note": "Five broker-exclusive cold-L2 CUPTI rounds with distinct initial-state slots per invocation measured the adapted one-kernel reference at 456.034 microseconds median; maximum within-round CV was 0.117%. Each round retained complete output/state and passed the external CPU oracle. No B200-paper comparison is made."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-native-scalar-t65-output-v2-20260924/host-validation.json",
+      "run": "gpuq-5ff72d7695de",
+      "event": 5,
+      "note": "A direct register-resident per-token native CUDA prototype, outside Compiler admission, passed the complete H64/T65 output and state oracle. NVCC reported 71 registers and zero spills. An earlier host-only target-name refusal was retained as a failed broker job before this successor."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-native-scalar-h64-fixed-output-20260924/host-validation.json",
+      "run": "gpuq-082b2230be0a",
+      "event": 6,
+      "note": "The same native prototype passed every H64/T8192 output and final-state element with unchanged inputs; its correctness cannot establish useful performance."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-b300-paired-scalar-output-20260924/host-validation.json",
+      "run": "gpuq-d08b5fd00fd9",
+      "event": 7,
+      "note": "Five paired broker-exclusive cold-L2 CUPTI rounds measured adapted CAKE reference 456.195 versus scalar prototype 16979.920 microseconds, median paired scalar/reference 37.220750x. Both arms had exactly one CUDA activity, zero oracle failures and maximum within-round CV 0.135%/0.082%. This is a bounded mechanism diagnostic, not a Cake candidate or formal Evaluation."
+    },
+    {
+      "workspace": "/private/tmp/cake-kda-b300-component-probes-6b7d99ec-20260924.json",
+      "run": "cpu-only",
+      "event": 8,
+      "note": "Retargeted component probes on sm_103a show simple Triton state source lowers; CuTe state refuses CUTE_STATE_UNSUPPORTED, CuTe TMEM witness refuses CUTE_TARGET_UNSUPPORTED, and native state refuses NATIVE_BUFFER_REFINEMENT_UNSUPPORTED plus load/store ownership refinements. A small native TMA/MMA pipeline witness lowers, but no complete KDA Schedule is admitted."
+    }
+  ],
+  "observation": "The new B300 KDA prefill Workload and independent BF16 recurrence oracle are committed at c0486915 and 6b7d99ec; the original six-row B200 task remains unchanged. A minimally adapted pinned CAKE M64/M128 reference compiles and passes fixed, packed and full H64/T8192 output/state checks on B300-M4. The H64/T8192 adapted reference has a stable 456.034 us single-kernel diagnostic baseline. A correct register-resident per-token native prototype is 37.220750x slower in a same-run comparison despite zero spills. This does not uniquely attribute the gap, but it falsifies the proposition that replacing Triton with a direct scalar CUDA loop is enough. The reference emission visibly uses 32-token chunks, five-slot producer/compute/epilogue pipeline, TMA, tcgen05 MMA and TMEM-resident state, while current component probes do not admit mutable state through either native or CuTe lowering. No full typed Cake candidate, six-shape B300 comparison, framework validation or formal Evaluation exists yet.",
+  "proposed_change": "Build one complete H64 fixed-shape Schedule whose concrete storage and access commitments name state ownership, ordered 32-token chunks, TMEM state residency, TMA descriptor boxes, tcgen05 instruction atoms, five-role pipeline and synchronization. Before emission, check P1-P8 and extend the owning common IR typing/effects, verifier legality and native CUDA lowering in one successor change; existing backends must refuse unsupported state/chunk commitments by name. Keep the reference as an external black-box baseline rather than an opaque backend escape. Qualify the successor first against the fixed T65 guardrail and full H64/T8192 output/state oracle, then paired B300-M4 CUPTI and profiler evidence; only after a strong seed extend to M128 packed and all six rows. An automatic estimate or the scalar prototype does not authorize promotion. Formal Executor admission and branch integration remain separate gates.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}

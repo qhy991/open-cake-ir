@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle and measures 456.034 µs; a correct scalar native prototype is 37.221× slower in a stable same-run comparison. The missing complete chunk/TMEM/TMA stateful Schedule and native lowering remain a capacity proposal, not an accepted candidate.
+
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
