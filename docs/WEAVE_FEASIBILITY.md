@@ -162,7 +162,9 @@ publication and liveness analysis. [ADR 0084](adr/0084-ep4-worker-needs-ranked-m
 states the four-rank admission and verification obligations. The CPU
 `experiments/weave/dispatch_ledger.py` now separates deduplicated remote
 payload slots from one-per-route compute tasks, including the skew and tail
-capacity bounds. The direct CUDA reference still sends one payload per
-route. The existing
+capacity bounds. `experiments/weave/rank_plan.py` derives per-rank `c/K/steal`
+domains and uneven tail completion counts: `T=7, K=2` requires 8 then 6
+route contributions. The direct CUDA reference still sends one payload per
+route and requires `T % K == 0`. The existing
 single-device launch paths refuse the EP4 Workload Contract. No raw mailbox
 source is promoted as an opaque MoE instruction.

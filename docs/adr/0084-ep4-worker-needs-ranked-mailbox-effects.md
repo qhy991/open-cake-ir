@@ -68,7 +68,8 @@ buffers and operations:
    with their weights and rounds its output to BF16. `K_r` partitions its
    token range into complete chunks, including a tail; no chunk may omit or
    duplicate a token. Completion may overlap later compute, subject to the
-   per-contribution ready flags.
+   per-contribution ready flags. For `T=7, K_r=2`, the two completion
+   thresholds are 8 and 6 contributions, not a reused uniform counter.
 
 The mailbox state and every tensor shard have one declared owning rank. A
 remote pointer carries that owner through lowering and Evaluation. Admission
@@ -89,6 +90,11 @@ analysis, not an emitter's guess from pointer spelling.
   not be inferred from the direct reference's one-slot-per-route mailbox.
   `experiments/weave/dispatch_ledger.py` projects the two domains without
   claiming a Cake effect or GPU implementation.
+- `experiments/weave/rank_plan.py` derives rank-local CTA populations and
+  per-chunk completion thresholds from that ledger. It accepts uneven tail
+  chunks and refuses zero-worker classes, invalid `K_r`, over-budget stealing
+  and incomplete return domains. The direct CUDA reference still requires
+  `T % K_r == 0`; the CPU plan does not make that source tail-correct.
 - Every payload, metadata slot, ready flag, contribution and public output
   has one writer and an owning rank. The reserved slot and returned source
   coordinate determine the only legal write address. Invalid expert IDs,
