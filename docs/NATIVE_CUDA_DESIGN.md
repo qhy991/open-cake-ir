@@ -73,8 +73,9 @@ isolated KDA-preparation witness; no B300 numerical receipt yet establishes that
 their error is acceptable for the complete recurrent Workload. A bounded FP32
 sum now folds each 128-row register tile along its columns, and provenance from
 that reduction permits one scalar per row to scale the original tile; a merely
-replicated vector of the same shape is refused. Prefix-product scan and the
-triangular chunk correction remain separate gaps.
+replicated vector of the same shape is refused. The row-norm witness covers a
+full 128-wide local reduction, matching KDA's head dimension. Prefix-product
+scan and triangular chunk correction remain separate gaps.
 Streaming argmin preserves global indices, lowest-index ties and centroid-tail masks.
 Resident argmin uses local tile positions and is admitted only when a complete,
 zero-origin candidate domain fits in one tile. `Schedule.argmin_domain` follows the

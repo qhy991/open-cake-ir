@@ -34,13 +34,13 @@
     {
       "name": "operands",
       "space": "shared",
-      "size_bytes": 49152
+      "size_bytes": 65536
     },
     {
       "name": "tensor",
       "space": "tensor",
-      "size_bytes": 32768,
-      "tensor_columns": 64,
+      "size_bytes": 65536,
+      "tensor_columns": 128,
       "allocating_role": "epilogue"
     }
   ],
@@ -102,7 +102,7 @@
       "space": "shared",
       "dtype": "bf16",
       "shape": [
-        64,
+        128,
         64
       ],
       "mode": "scratch",
@@ -117,7 +117,7 @@
       "dtype": "fp32",
       "shape": [
         128,
-        64
+        128
       ],
       "mode": "scratch",
       "allocation": "tensor"
@@ -128,7 +128,7 @@
       "dtype": "fp32",
       "shape": [
         128,
-        64
+        128
       ],
       "mode": "scratch"
     },
@@ -137,7 +137,7 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        64
+        128
       ],
       "mode": "scratch"
     },
@@ -147,7 +147,7 @@
       "dtype": "fp32",
       "shape": [
         128,
-        64
+        128
       ],
       "mode": "scratch"
     },
@@ -157,7 +157,7 @@
       "dtype": "fp32",
       "shape": [
         128,
-        64
+        128
       ],
       "mode": "scratch"
     },
@@ -194,7 +194,7 @@
       "dtype": "fp32",
       "shape": [
         128,
-        64
+        128
       ],
       "mode": "scratch"
     }
@@ -266,7 +266,7 @@
       "parameters": {
         "movement": "tma",
         "descriptor_box": [
-          64,
+          128,
           64
         ]
       },
@@ -292,7 +292,7 @@
           "contract": "tcgen05.mma.cta_group::1.kind::f16",
           "shape": [
             128,
-            64,
+            128,
             16
           ],
           "cta_group": 1,
@@ -304,7 +304,7 @@
         },
         "tile_shape": [
           128,
-          64,
+          128,
           64
         ]
       },
@@ -585,7 +585,7 @@
         "axis": 1,
         "buffer": "b",
         "dimension": 0,
-        "tile": 64
+        "tile": 128
       }
     ]
   }
