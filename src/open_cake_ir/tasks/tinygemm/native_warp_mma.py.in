@@ -1,0 +1,46 @@
+from open_cake_ir.compiler import frontend as cake
+
+@cake.schedule(name="@SCHEDULE_ID@", target="sm_103a", backend="native_cuda",
+               entry_point="cake_tinygemm2_native")
+def candidate(lm, input: cake.Tensor((@BATCH@, @DEPTH@), "bf16"), weight: cake.Tensor((@FEATURES@, @DEPTH@), "bf16"),
+              bias: cake.Tensor((@FEATURES@,), "bf16"), output: cake.Tensor((@BATCH@, @FEATURES@), "bf16", mode="output")):
+    compute = lm.role(execution_groups=[0, 1, 2, 3])
+    load_weight = lm.role(execution_groups=[4, 5, 6, 7])
+    load_activation = lm.role(execution_groups=[8, 9, 10, 11])
+    smem = lm.smem(52224)
+    activation_stage = smem.view(shape=(16, 1024), dtype="bf16", byte_offset=1024, swizzle="swizzle_128b")
+    weight_stage = smem.view(shape=(8, 1024), dtype="bf16", byte_offset=33792, swizzle="swizzle_128b")
+    main = lm.pipeline(stages=1)
+    activation_ready0 = lm.barrier(count=1, producers=["load_activation"], consumers=["compute"], pipeline="main", mechanism="mbarrier")
+    activation_ready1 = lm.barrier(count=1, producers=["load_activation"], consumers=["compute"], pipeline="main", mechanism="mbarrier")
+    activation_ready2 = lm.barrier(count=1, producers=["load_activation"], consumers=["compute"], pipeline="main", mechanism="mbarrier")
+    activation_ready3 = lm.barrier(count=1, producers=["load_activation"], consumers=["compute"], pipeline="main", mechanism="mbarrier")
+    weight_ready0 = lm.barrier(count=1, producers=["load_weight"], consumers=["compute"], pipeline="main", mechanism="mbarrier")
+    weight_ready1 = lm.barrier(count=1, producers=["load_weight"], consumers=["compute"], pipeline="main", mechanism="mbarrier")
+    weight_ready2 = lm.barrier(count=1, producers=["load_weight"], consumers=["compute"], pipeline="main", mechanism="mbarrier")
+    weight_ready3 = lm.barrier(count=1, producers=["load_weight"], consumers=["compute"], pipeline="main", mechanism="mbarrier")
+    partials_ready = lm.barrier(count=128, producers=["compute"], consumers=["compute"], mechanism="barrier.sync")
+    batch = lm.program(input, axis=0, dimension=0, tile=16)
+    feature = lm.program(weight, axis=1, dimension=0, tile=8)
+    k = lm.program(input, axis=2, dimension=1, tile=1024)
+    with compute:
+        bias_tile = lm.load(bias[feature], id="load_bias")
+    with load_activation:
+        lm.load(input[batch, k], out=activation_stage, movement="tma", descriptor_box=[16, 64],
+                signals=[activation_ready0, activation_ready1, activation_ready2, activation_ready3],
+                pipeline="main", id="load_activation")
+    with load_weight:
+        lm.load(weight[feature, k], out=weight_stage, movement="tma", descriptor_box=[8, 64],
+                signals=[weight_ready0, weight_ready1, weight_ready2, weight_ready3],
+                pipeline="main", id="load_weight")
+    with compute:
+        acc = lm.mma(activation_stage, weight_stage, instruction={"contract":"mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
+            "shape":[16,8,16],"cta_group":1,"operand_source":"register","operand_major":["k","k"]},
+            tile_shape=(16, 8, 1024), k_partitions=[[0,256],[256,512],[512,768],[768,1024]],
+            waits=[activation_ready0,activation_ready1,activation_ready2,activation_ready3,
+                   weight_ready0,weight_ready1,weight_ready2,weight_ready3],
+            signals=[partials_ready], pipeline="main", id="split_k_mma")
+        bias32 = lm.cast(bias_tile, to="fp32", id="bias32")
+        summed = lm.add(acc, lm.broadcast(bias32, axis=1), waits=[partials_ready], id="add_bias")
+        rounded = lm.cast(summed, to="bf16", id="round_out")
+        lm.store(output[batch, feature], rounded, coalesced=False, id="store_out")

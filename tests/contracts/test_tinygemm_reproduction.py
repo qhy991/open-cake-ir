@@ -142,6 +142,22 @@ class TinyGemmReproduction(unittest.TestCase):
         self.assertEqual(default_other['roles'][0]['execution_groups'], [0, 1, 2, 3])
         self.assertFalse(default_other['tile_loops'])
 
+    def test_native_authoring_uses_the_same_workload_and_only_qualified_shapes(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        for batch, columns, depth in ((1, 128, 720), (16, 1024, 1024)):
+            workload = WorkloadContract(task.workload_document(
+                rows=batch, columns=columns, depth=depth))
+            authored = task.native_source(workload)
+            document = frontend.parse(authored).document
+            self.assertEqual(document['target'], workload.target)
+            self.assertEqual(document['lowering']['backend'], 'native_cuda')
+            assessment = compiler.assess(document)
+            self.assertTrue(assessment.lowering_eligible, assessment.findings)
+            self.assertIn('mma.sync.aligned.m16n8k16', compiler.lower(assessment).source)
+        unqualified = WorkloadContract(task.workload_document(rows=1, columns=256, depth=720))
+        with self.assertRaisesRegex(ValueError, 'two qualified'):
+            task.native_source(unqualified)
+
     def test_partitioned_lowering_keeps_each_quarter_and_accumulates_across_trips(self):
         import numpy as np
         class Pointer:

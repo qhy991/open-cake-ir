@@ -21,6 +21,7 @@ TARGETS = {'triton-b200': 'sm_100a', 'triton-b300': 'sm_103a'}
 CASES = ('primary', 'zeros', 'near_zero', 'alternating', 'mixed_magnitude')
 CANDIDATE_STAGES = (2, 4)
 _TWO_GROUP_TWO_STAGE_FIXTURE = (64, 4096, 3072)
+_NATIVE_WARP_FIXTURES = frozenset({(1, 128, 720), (16, 1024, 1024)})
 PEER_COMMIT = '67f76379a145f19793896394974e29e610cda912'
 PEER_DIRECTORY = 'experiments/flashinfer_rewrites/references/029_cake_tinygemm2/baseline/csrc'
 
@@ -234,3 +235,19 @@ def partitioned_source(workload, case_id='primary', *, stages=None):
         shape = workload.case(case_id)['shape']
         stages = 2 if (shape['B'], shape['N'], shape['K']) == _TWO_GROUP_TWO_STAGE_FIXTURE else 4
     return _source(workload, case_id, stages, True)
+
+
+def native_source(workload, case_id='primary'):
+    """Author the bounded B300 TMA/warp-MMA Schedule under the same Workload gate."""
+    validate_contract(workload.document)
+    shape = workload.case(case_id)['shape']
+    fixture = (shape['B'], shape['N'], shape['K'])
+    if workload.target != 'sm_103a' or fixture not in _NATIVE_WARP_FIXTURES:
+        raise ValueError('native warp MMA requires one of its two qualified B300 fixtures')
+    source = Path(__file__).with_name('native_warp_mma.py.in').read_text()
+    substitutions = {'SCHEDULE_ID': f'{workload.workload_id}-native-warp-mma',
+                     'BATCH': str(fixture[0]), 'FEATURES': str(fixture[1]),
+                     'DEPTH': str(fixture[2])}
+    for key, value in substitutions.items():
+        source = source.replace(f'@{key}@', value)
+    return source
