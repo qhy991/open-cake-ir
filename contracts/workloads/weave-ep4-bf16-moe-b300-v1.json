@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "workload_id": "weave-ep4-bf16-moe-b300-v1",
+  "revision": "1",
+  "state": "frozen",
+  "operator": "bf16_expert_parallel_moe",
+  "provenance": [
+    {
+      "kind": "research_design",
+      "source": "https://arxiv.org/abs/2609.21483",
+      "scope": "five-stage EP MoE and dynamic scheduling motivation; this development geometry and oracle are independent"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "balanced",
+      "shape": {
+        "R": 4,
+        "T": 8,
+        "E": 8,
+        "H": 16,
+        "I": 32,
+        "F": 64,
+        "K": 2
+      },
+      "seed": 6201,
+      "mode": "balanced"
+    },
+    {
+      "case_id": "skew_to_rank0",
+      "shape": {
+        "R": 4,
+        "T": 8,
+        "E": 8,
+        "H": 16,
+        "I": 32,
+        "F": 64,
+        "K": 2
+      },
+      "seed": 6202,
+      "mode": "skew_to_rank0"
+    },
+    {
+      "case_id": "local_only",
+      "shape": {
+        "R": 4,
+        "T": 8,
+        "E": 8,
+        "H": 16,
+        "I": 32,
+        "F": 64,
+        "K": 2
+      },
+      "seed": 6203,
+      "mode": "local_only"
+    },
+    {
+      "case_id": "remote_only",
+      "shape": {
+        "R": 4,
+        "T": 8,
+        "E": 8,
+        "H": 16,
+        "I": 32,
+        "F": 64,
+        "K": 2
+      },
+      "seed": 6204,
+      "mode": "remote_only"
+    },
+    {
+      "case_id": "tail_tokens",
+      "shape": {
+        "R": 4,
+        "T": 7,
+        "E": 8,
+        "H": 16,
+        "I": 32,
+        "F": 64,
+        "K": 2
+      },
+      "seed": 6205,
+      "mode": "tail_tokens"
+    }
+  ],
+  "tensors": {
+    "hidden_states": {
+      "shape": [
+        "R",
+        "T",
+        "H"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "expert_ids": {
+      "shape": [
+        "R",
+        "T",
+        "K"
+      ],
+      "dtype": "int32",
+      "layout": "contiguous_row_major"
+    },
+    "route_weights": {
+      "shape": [
+        "R",
+        "T",
+        "K"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "w_up_gate": {
+      "shape": [
+        "E",
+        "F",
+        "H"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "w_down": {
+      "shape": [
+        "E",
+        "H",
+        "I"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "output": {
+      "shape": [
+        "R",
+        "T",
+        "H"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    }
+  },
+  "semantics": {
+    "target": "sm_103a",
+    "execution_topology": {
+      "kind": "expert_parallel",
+      "world_size": 4
+    },
+    "expert_placement": "contiguous_equal_ranges_by_rank",
+    "tensor_placement": {
+      "hidden_states": "rank_sharded_axis_0",
+      "expert_ids": "rank_sharded_axis_0",
+      "route_weights": "rank_sharded_axis_0",
+      "w_up_gate": "expert_sharded_axis_0",
+      "w_down": "expert_sharded_axis_0",
+      "output": "rank_sharded_axis_0"
+    },
+    "candidate_abi": {
+      "inputs": [
+        "hidden_states",
+        "expert_ids",
+        "route_weights",
+        "w_up_gate",
+        "w_down"
+      ],
+      "outputs": [
+        "output"
+      ]
+    },
+    "definition": "for each rank/token/route: dispatch BF16 activation to expert owner; FP64 reference computes up+gate, x1*silu(x2), down, weighted combine to source rank; round final output to BF16",
+    "top_k": 2,
+    "route_ids": "distinct_in_range_per_token",
+    "route_weights": "finite_nonnegative_sum_one_per_token",
+    "input_effects": "unchanged",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "exclusions": [
+      "no_model_forward",
+      "no_serving",
+      "no_automatic_single_device_fallback"
+    ]
+  },
+  "oracle": {
+    "kind": "independent_cpu_ep4_bf16_moe",
+    "callable": "open_cake_ir.tasks.weave_ep.workload.reference_tensors",
+    "implementation": "CPU_FP64_per_route_linear_layers_and_weighted_combine"
+  },
+  "validation": {
+    "primary_case": "balanced",
+    "all_cases_required": true,
+    "comparison": "elementwise_atol_rtol",
+    "atol": 0.01,
+    "rtol": 0.01,
+    "equal_nan": false,
+    "qualification": "CPU_oracle_only; distributed_CUDA_candidate_and_timing_pending"
+  }
+}

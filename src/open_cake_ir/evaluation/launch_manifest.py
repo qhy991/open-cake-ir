@@ -78,6 +78,8 @@ class WorkloadTensorManifest:
         raise NotImplementedError
 
     def check_workload(self, workload: WorkloadContract, case_id: str) -> None:
+        if workload.requires_distributed_execution:
+            raise ValueError('single-device launch manifest cannot bind an expert-parallel Workload')
         expected = tuple((t.name, t.shape, t.dtype, t.mode) for t in workload.tensor_abi(case_id))
         if (self.workload_sha256 != workload.canonical_sha256 or self.case_id != case_id
                 or self.tensor_abi != expected

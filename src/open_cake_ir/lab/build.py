@@ -61,6 +61,8 @@ def build_program_candidate(lowered, toolchain, *, candidate_sha256, workload, c
 
     The caller owns measurement admission; this function owns the complete build.
     """
+    if workload.requires_distributed_execution:
+        raise ValueError('expert-parallel Workload requires a distributed candidate builder')
     from open_cake_ir.evaluation.program import (
         admit_program_execution, program_tensor_abi, seal_program_candidate,
         single_kernel_lowering, stage_abi,

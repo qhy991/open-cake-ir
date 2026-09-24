@@ -71,6 +71,18 @@ routed experts, normalized weights and the `2.5` route scale.  It deliberately e
 the first three hash-routed layers, expert dispatch, local FP4 expert MLPs, cross-rank
 all-reduce and the shared expert. Those edges belong in a future MoE Program Contract.
 
+## Weave EP4 development semantics
+
+[`weave-ep4-bf16-moe-b300-v1.json`](weave-ep4-bf16-moe-b300-v1.json)
+declares four rank shards, contiguous expert ownership, top-2 routing, BF16
+up/gate and down weights, weighted combine back to the source rank, and five
+balanced/skew/local/remote/tail distributions. Its independent CPU oracle and
+per-rank routed-volume counts are in
+[`tasks/weave_ep/workload.py`](../../src/open_cake_ir/tasks/weave_ep/workload.py).
+The current qualification is CPU semantics only. Single-device launch manifests
+and builders explicitly refuse this contract; distributed artifact sealing,
+peer transport, Cake kernel lowering, timing and MoE performance remain open.
+
 ## SoL-ExecBench imports
 
 `solx-fib-*` and `solx-l1-*` are imports from the `flashinfer-bench-tasks` pack, split by
