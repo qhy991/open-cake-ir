@@ -76,6 +76,10 @@ that reduction permits one scalar per row to scale the original tile; a merely
 replicated vector of the same shape is refused. The row-norm witness covers a
 full 128-wide local reduction, matching KDA's head dimension. Prefix-product
 scan and triangular chunk correction remain separate gaps.
+The shared `scan(op="mul")` vocabulary can emit a Triton within-chunk prefix;
+native CUDA still refuses that operation by name. A multi-stage preprocessor
+would have to account for its extra launch and global traffic in the complete
+KDA Workload rather than treating the scan alone as a speedup.
 Streaming argmin preserves global indices, lowest-index ties and centroid-tail masks.
 Resident argmin uses local tile positions and is admitted only when a complete,
 zero-origin candidate domain fits in one tile. `Schedule.argmin_domain` follows the

@@ -225,6 +225,15 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertIn('NATIVE_ROW_BROADCAST',
                       {finding.code for finding in preflight(schedule,target)})
 
+    def test_prefix_product_has_no_implicit_native_fallback(self):
+        d=json.loads((ROOT/'corpus/schedules/chunk-cumsum-b8-smoke.json').read_text())
+        d['schedule_id']='kda-prefix-product-native-boundary'
+        d['target']='sm_103a'
+        d['lowering']={'backend':'native_cuda',
+                       'entry_point':'cake_kda_prefix_product_boundary'}
+        d['operations'][1]['parameters']['op']='mul'
+        self.refuses(d,'BACKEND_OPERATION_UNEMITTABLE')
+
     def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
         d=document('inplace-state-gemm')
         lowered=self.lower(d)
