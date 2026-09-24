@@ -87,8 +87,17 @@ qualified prefix result or a complete two-stage KDA kernel. The extra launch,
 write and later read must be measured against the 456 us adapted reference.
 A separate BF16 output commitment halves the prefix tensor to 128 MiB. CPU
 chunk algebra with that extra prefix rounding passed the complete T65 and T257
-output/final-state oracles, but full H64/T8192 and B300 stage correctness remain
-unverified. Neither representation is selected for a performance claim.
+output/final-state oracles. A later combined full H64/T8192 CPU screen also
+passes; B300 stage correctness remains unverified. Neither representation is
+selected for a performance claim.
+The numerical successor precomputes a 32x32 BF16 inverse factor per head/chunk,
+independent of the current recurrent state. A typed Triton fixture uses five
+unrolled doubling steps and 18 existing BF16 MMA operations; it maintains both
+the matrix and its transpose because Cake MMA contracts the last axis of two
+operands (`A @ B.T`). The upstream coupling stage must prove that input pair's
+transpose relation. Full H64/T8192 and T65/T257 CPU recurrence screens pass,
+but the generated inverse stage has no GPU compilation, register or timing
+receipt, and its 32 MiB output plus two 32 MiB inputs are extra traffic.
 Streaming argmin preserves global indices, lowest-index ties and centroid-tail masks.
 Resident argmin uses local tile positions and is admitted only when a complete,
 zero-origin candidate domain fits in one tile. `Schedule.argmin_domain` follows the
