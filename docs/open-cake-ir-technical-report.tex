@@ -1129,7 +1129,11 @@ $64/4096/3072$ & \code{21abdd5d} & 19.904 & 21.440 & 1.079 倍 & 通过 \\
 \end{table}
 \FloatBarrier
 
-\Needspace{6\baselineskip}
+\Needspace{8\baselineskip}
+该方向与提前 bias、descriptor 预取合并的 $B=1$ 原型曾测到 2.528 对
+2.592\,$\mu$s，但本地与 CAKE 两臂最大轮内变异系数分别为 7.925\% 和
+9.026\%，同样不能据此宣称超越。
+
 前一轮原始记录位于 B300-M4 的 \code{gpuq-cd8190e80e06} 作业；Finding
 \code{F-2026-09-24-002} 的第 10--13 项索引前一轮与一级流水消融，
 第 17、22、24 项索引最新的 B64、B16 和 B1 产物及原始报告。
