@@ -461,6 +461,15 @@ class MeasurementCoverageTest(unittest.TestCase):
         self.assertNotIn("measurement_coverage", policy)
         self.assertEqual(paired_protocol(policy).route_calls_per_cohort, 11 + 25)
 
+    def test_gfx1151_declares_the_synced_successor_without_changing_dcu_v1(self) -> None:
+        from open_cake_ir.evaluation.paired import PAIRED_HIP_SYNC_KIND, paired_protocol
+        policy = self.study("triton-gfx1151")["evaluation_protocol"]
+        self.assertEqual(policy["paired_timing"]["kind"], PAIRED_HIP_SYNC_KIND)
+        self.assertEqual(policy["search_evaluation"], "correctness_then_paired_hip_dispatch")
+        self.assertEqual(paired_protocol(policy).route_calls_per_cohort, 11 + 25)
+        self.assertNotEqual(policy["paired_timing"]["kind"],
+                            self.study("triton-dcu")["evaluation_protocol"]["paired_timing"]["kind"])
+
     def test_a_backend_with_no_named_timer_still_states_the_limitation(self) -> None:
         """The behaviour that carried the DCU before it had a source, kept for the next one.
 

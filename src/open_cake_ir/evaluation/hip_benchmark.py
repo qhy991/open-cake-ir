@@ -30,6 +30,11 @@ HIP offers no flush API. Measured: 244-251 us a sample, and it changes the answe
 below about 4 MiB of working set -- at and above that the kernel evicts its own input
 while running and warm and cold are indistinguishable.
 
+The v1 assay enqueues the reset immediately before the target. The v2 caller explicitly
+synchronizes that reset before launching the target; both retain the same cold-cache
+reset and report only the target's device interval. The v1 order is the default so its
+frozen Runs still replay at their original commit.
+
 **Resolution is coarse and the caller is told.** Twenty-five dispatches of a 3 us kernel
 produced three distinct durations, so the reported spread of a short kernel is largely the
 timer's quantum rather than the kernel's own variance. `resolution_us` reports the smallest
@@ -56,13 +61,17 @@ _FLUSH_ELEMENTS = 64 * 1024 * 1024
 class HipDispatchBenchmark:
     """Time one named kernel's dispatches through the admitted runtime's own profiler."""
 
-    def __init__(self, kernel_name: str, *, flush_elements: int = _FLUSH_ELEMENTS) -> None:
+    def __init__(self, kernel_name: str, *, flush_elements: int = _FLUSH_ELEMENTS,
+                 synchronize_after_reset: bool = False) -> None:
         if not isinstance(kernel_name, str) or not kernel_name:
             raise ValueError("a dispatch benchmark times one named kernel")
         if not isinstance(flush_elements, int) or flush_elements <= 0:
             raise ValueError("the device-state reset needs a positive buffer")
+        if type(synchronize_after_reset) is not bool:
+            raise ValueError("reset synchronization must be an explicit boolean")
         self.kernel_name = kernel_name
         self._flush_elements = flush_elements
+        self._synchronize_after_reset = synchronize_after_reset
         self._flush = None
         self.resolution_us: float | None = None
         self.non_target_dispatches: int | None = None
@@ -104,6 +113,8 @@ class HipDispatchBenchmark:
             for _ in range(repeat_iters):
                 if reset is not None:
                     reset.zero_()
+                    if self._synchronize_after_reset:
+                        torch.cuda.synchronize()
                 function()
             torch.cuda.synchronize()
         device_events = [event for event in session.events()

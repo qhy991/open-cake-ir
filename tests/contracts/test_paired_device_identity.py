@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
 from open_cake_ir.evaluation.paired import (  # noqa: E402
-    PAIRED_HIP_KIND, PAIRED_KIND, PAIRED_METAL_KIND, admit_device_identity,
+    PAIRED_HIP_KIND, PAIRED_HIP_SYNC_KIND, PAIRED_KIND, PAIRED_METAL_KIND, admit_device_identity,
 )
 
 
@@ -38,6 +38,12 @@ class AmdgcnIdentityTests(unittest.TestCase):
     def test_an_amdgcn_pair_is_admitted_on_its_own_terms(self):
         raw, launch = self._records()
         admit_device_identity(raw, launch, _participants(self.TARGET))
+
+    def test_synchronized_reset_is_admitted_only_for_the_measured_target(self):
+        raw, launch = self._records(raw={"kind": PAIRED_HIP_SYNC_KIND})
+        admit_device_identity(raw, launch, _participants("gfx1151"))
+        with self.assertRaisesRegex(ValueError, "not qualified"):
+            admit_device_identity(raw, launch, _participants("gfx938"))
 
     def test_the_runtime_that_reports_no_uuid_is_admitted_saying_so(self):
         """`observe_local_hip` records the absence in words rather than inventing an id.

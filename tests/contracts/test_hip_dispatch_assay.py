@@ -143,6 +143,40 @@ class NonTargetDispatchTests(unittest.TestCase):
             _run(benchmark, [_Event(KERNEL)], repeat_iters=1, cold_l2_cache=False)
 
 
+class ResetHandoffTests(unittest.TestCase):
+    def observed_calls(self, synchronize_after_reset):
+        calls = []
+        reset = mock.MagicMock()
+        reset.zero_.side_effect = lambda: calls.append("reset")
+        torch = mock.MagicMock()
+        torch.empty.return_value = reset
+        torch.cuda.synchronize.side_effect = lambda: calls.append("sync")
+        events = [_Event(KERNEL), _Event("reset"), _Event(KERNEL), _Event("reset")]
+        session = _Session(events)
+        with mock.patch.dict(sys.modules, {"torch": torch,
+                                           "torch.profiler": mock.MagicMock(
+                                               ProfilerActivity=mock.MagicMock(),
+                                               profile=lambda **kw: session)}):
+            benchmark = HipDispatchBenchmark(KERNEL,
+                synchronize_after_reset=synchronize_after_reset)
+            benchmark(lambda: calls.append("kernel"), dry_run_iters=1,
+                      repeat_iters=2, cold_l2_cache=True, use_cuda_graph=False)
+        return calls
+
+    def test_v1_keeps_its_existing_reset_then_launch_order(self):
+        self.assertEqual(self.observed_calls(False),
+                         ["kernel", "sync", "reset", "kernel", "reset", "kernel", "sync"])
+
+    def test_v2_synchronizes_each_reset_before_the_timed_launch(self):
+        self.assertEqual(self.observed_calls(True),
+                         ["kernel", "sync", "reset", "sync", "kernel",
+                          "reset", "sync", "kernel", "sync"])
+
+    def test_reset_synchronization_requires_an_explicit_boolean(self):
+        with self.assertRaisesRegex(ValueError, "explicit boolean"):
+            HipDispatchBenchmark(KERNEL, synchronize_after_reset=1)
+
+
 # Where this count has to arrive is asserted where it arrives: see
 # `tests/contracts/test_tile_gpu_worker.py`, which drives `_evaluate_tile_candidate` with
 # an assay carrying the attribute and asserts the value in the receipt. A test here that
