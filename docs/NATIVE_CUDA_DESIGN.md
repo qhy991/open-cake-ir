@@ -135,7 +135,7 @@ not MoE opcodes. The emitted host launch checks exact Target, cooperative
 support and compiled residency, resets the derived internal state on the
 launch stream, and returns a status slot for invalid device-resident controls.
 The caller allocates the state described in toolchain requirements. Other
-topologies, system-scope handoffs and non-native leaf routes are refused.
+topologies and non-native leaf routes are refused.
 The state includes a successful-steal count and a first-combine observation
 (`compute_done + 1`, with zero reserved for "not observed") so the device
 experiment can distinguish an exercised schedule from a merely valid output.
@@ -165,9 +165,21 @@ and `B300-M4:/home/qinhaiyan/cake-worker-b300-m4-dafb2a70/`.
 These counters establish schedule execution in this synthetic Program; they
 are not a latency, SM-activity, NVLink or MoE measurement.
 
-This slice is a single-GPU synthetic execution path. Its Program v2 Evaluation
-adapter, full inter-GPU dispatch/combine, grouped expert GEMMs, per-layer cost
-model and MoE Workload acceptance remain separate required work.
+The B300 successor also accepts a Program v2 handoff whose intermediate
+payload is explicitly stored on a peer GPU. Its ready flag uses
+`st.release.sys.global.s32` / `ld.acquire.sys.global.s32`; a device-scope
+handoff keeps its original `.gpu` instructions. The generated host `create`
+requires local queue state, inspects the payload's actual peer owner, checks
+the peer's exact B300 identity and directed P2P capabilities, then enables
+peer access. The development Evaluation adapter admits only the named
+system-scope intermediate on a peer device; every other tensor stays local.
+CUDA 13.1 nvcc/ptxas compiled this bounded successor with 30 registers and
+no spills. Device numerical and liveness qualification remains pending.
+
+The worker CTAs still execute on one GPU even when an intermediate allocation
+belongs to a peer. The development launch adapter is not a sealed Evaluation
+candidate. Full inter-GPU dispatch/combine, grouped expert GEMMs, per-layer
+cost model and MoE Workload acceptance remain separate required work.
 
 ## Native PTX returned-old-value work claim prototype
 

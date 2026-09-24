@@ -83,19 +83,37 @@ class NativeWorkerProgram(unittest.TestCase):
         self.assertIn('cake_claim(state + 8);', source)
         self.assertIn('atomicCAS(state + 9, 0, cake_relaxed(state + 4) + 1)', source)
         self.assertIn('cudaLaunchCooperativeKernel', source)
+        self.assertNotIn('cudaPointerGetAttributes', source)
+        self.assertNotIn('st.release.sys.global.s32', source)
         self.assertIn('// CAKE_OP: send.fma', source)
         self.assertIn('// CAKE_OP: calculate.fma', source)
         self.assertIn('// CAKE_OP: finish.fma', source)
         self.assertNotIn('triton', source.lower())
 
+    def test_system_handoff_publishes_a_peer_payload_with_runtime_admission(self):
+        value = document()
+        value['execution']['handoffs'][0]['scope'] = 'system'
+        lowered = self.compiler.lower_program(Program.from_dict(value))
+        self.assertTrue(lowered.toolchain_requirements['peer_payload_runtime_check'])
+        self.assertIn('cake_publish_system(state + 10 + tile)', lowered.source)
+        self.assertIn('cake_acquire_system(state + 10 + tile)', lowered.source)
+        self.assertIn('st.release.sys.global.s32', lowered.source)
+        self.assertIn('ld.acquire.sys.global.s32', lowered.source)
+        self.assertIn('cudaPointerGetAttributes', lowered.source)
+        self.assertIn('cudaDevP2PAttrNativeAtomicSupported', lowered.source)
+        self.assertIn('cudaDeviceEnablePeerAccess', lowered.source)
+        self.assertIn('state_attrs.device != device', lowered.source)
+        value = document()
+        value['execution']['handoffs'][1]['scope'] = 'system'
+        second = self.compiler.lower_program(Program.from_dict(value)).source
+        self.assertIn('cake_publish_system(state + 522 + tile)', second)
+        self.assertIn('cake_acquire_system(state + 522 + tile)', second)
+        self.assertIn('cake_publish(state + 10 + tile)', second)
+
     def test_refuses_unproved_routes_and_handoffs(self):
         value = document()
         value['stages'][1]['schedule']['lowering']['backend'] = 'triton'
         with self.assertRaisesRegex(ValueError, 'stage .*native_cuda leaf route'):
-            self.compiler.lower_program(Program.from_dict(value))
-        value = document()
-        value['execution']['handoffs'][0]['scope'] = 'system'
-        with self.assertRaisesRegex(ValueError, 'system-scope handoff'):
             self.compiler.lower_program(Program.from_dict(value))
         value = document()
         value['stages'][1]['schedule']['program_map']['cooperative'] = False

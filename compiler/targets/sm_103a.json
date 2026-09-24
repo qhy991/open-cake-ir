@@ -64,7 +64,9 @@
   "synchronization_contracts": [
     "mbarrier",
     "barrier.sync",
-    "triton_program_order"
+    "triton_program_order",
+    "ptx.st.release.sys.global.s32",
+    "ptx.ld.acquire.sys.global.s32"
   ],
   "peak": {
     "memory_bandwidth": {
@@ -74,6 +76,16 @@
     }
   },
   "citations": [
+    {
+      "kind": "instruction_set",
+      "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-ld",
+      "locator": "ld.acquire.sys.global.s32 reads a device-visible ready flag with system-scope acquire semantics"
+    },
+    {
+      "kind": "instruction_set",
+      "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#data-movement-and-conversion-instructions-st",
+      "locator": "st.release.sys.global.s32 publishes the ready flag after the payload write; directed peer capability remains a runtime fact"
+    },
     {
       "kind": "instruction_set",
       "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-atom",

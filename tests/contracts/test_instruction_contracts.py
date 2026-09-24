@@ -109,6 +109,8 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
                                 "triton.dot.fp32_tf32",
                                 "triton.dot.fp8e4m3_block_scale_fp32"],
                         "synchronization": ["barrier.sync", "mbarrier",
+                                            "ptx.ld.acquire.sys.global.s32",
+                                            "ptx.st.release.sys.global.s32",
                                             "triton_program_order"]},
         })
 
