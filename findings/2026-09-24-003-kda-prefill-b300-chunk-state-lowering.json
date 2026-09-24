@@ -62,9 +62,39 @@
       "run": "cpu-only",
       "event": 8,
       "note": "Retargeted component probes on sm_103a show simple Triton state source lowers; CuTe state refuses CUTE_STATE_UNSUPPORTED, CuTe TMEM witness refuses CUTE_TARGET_UNSUPPORTED, and native state refuses NATIVE_BUFFER_REFINEMENT_UNSUPPORTED plus load/store ownership refinements. A small native TMA/MMA pipeline witness lowers, but no complete KDA Schedule is admitted."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-h64-chunk-cpu-dca6ac1d-20260925.json",
+      "run": "cpu-only",
+      "event": 9,
+      "note": "The committed chunk-32 algebra at dca6ac1d passed all 67108864 output and 1048576 final-state elements against the independent recurrence on the exact H64/T8192 B300 prepared inputs; local BF16-quantized matrix-operand simulation also passed. This validates the mathematical candidate, not its GPU mapping."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-chunk-triton-compile-20260925/t8192/kernel.cubin",
+      "run": "cpu-only",
+      "event": 10,
+      "note": "An unadmitted one-program-per-head-and-64-V-row Triton chunk-32 prototype compiled for sm_103a. Static cubin inspection reported 128 registers, 176 bytes of stack per thread and 66 local load/store SASS instructions. These facts support a spill/resource-pressure hypothesis, not a dynamic bottleneck attribution."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-chunk-triton-t65-output-20260925/host-validation.json",
+      "run": "gpuq-f73f3a859d08",
+      "event": 11,
+      "note": "The unadmitted Triton chunk prototype passed the independent complete H64/T65 output and final-state oracle with immutable inputs unchanged."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-chunk-triton-h64-fixed-output-20260925/host-validation.json",
+      "run": "gpuq-3cb3af67a24f",
+      "event": 12,
+      "note": "The same prototype passed every H64/T8192 output and final-state element at atol=rtol=0.01 with immutable inputs unchanged."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-b300-paired-triton-output-20260925/host-validation.json",
+      "run": "gpuq-ab6d588eb43c",
+      "event": 13,
+      "note": "Five paired broker-exclusive cold-L2 CUPTI rounds measured adapted CAKE reference 456.035 versus unadmitted Triton chunk prototype 96080.520 microseconds, median paired candidate/reference 210.686724x. Both one-kernel arms passed the full oracle each round; maximum within-round CV was 0.108%/0.479%. This negative mechanism diagnostic is neither a qualified Cake candidate nor formal Evaluation."
     }
   ],
-  "observation": "The new B300 KDA prefill Workload and independent BF16 recurrence oracle are committed at c0486915 and 6b7d99ec; the original six-row B200 task remains unchanged. A minimally adapted pinned CAKE M64/M128 reference compiles and passes fixed, packed and full H64/T8192 output/state checks on B300-M4. The H64/T8192 adapted reference has a stable 456.034 us single-kernel diagnostic baseline. A correct register-resident per-token native prototype is 37.220750x slower in a same-run comparison despite zero spills. This does not uniquely attribute the gap, but it falsifies the proposition that replacing Triton with a direct scalar CUDA loop is enough. The reference emission visibly uses 32-token chunks, five-slot producer/compute/epilogue pipeline, TMA, tcgen05 MMA and TMEM-resident state, while current component probes do not admit mutable state through either native or CuTe lowering. No full typed Cake candidate, six-shape B300 comparison, framework validation or formal Evaluation exists yet.",
+  "observation": "The new B300 KDA prefill Workload and independent BF16 recurrence oracle are committed at c0486915 and 6b7d99ec; the original six-row B200 task remains unchanged. A minimally adapted pinned CAKE M64/M128 reference compiles and passes fixed, packed and full H64/T8192 output/state checks on B300-M4. The H64/T8192 adapted reference has a stable approximately 456 us single-kernel diagnostic baseline. The committed chunk-32 recurrence algebra passes the complete CPU oracle, including a BF16-quantized operand simulation. A correct register-resident per-token native prototype is 37.220750x slower and an unadmitted chunk-32 Triton prototype is 210.686724x slower in separate same-run comparisons. The latter uses 128 registers, 176 bytes of stack per thread and local SASS accesses; resource pressure is a plausible cause, not a uniquely established dynamic bottleneck. Neither direct scalar CUDA nor this large live-tensor Triton mapping closes the gap. The reference emission visibly uses 32-token chunks, five-slot producer/compute/epilogue pipeline, TMA, tcgen05 MMA and TMEM-resident state, while current component probes do not admit mutable state through either native or CuTe lowering. No full typed Cake candidate, six-shape B300 comparison, framework validation or formal Evaluation exists yet.",
   "proposed_change": "Build one complete H64 fixed-shape Schedule whose concrete storage and access commitments name state ownership, ordered 32-token chunks, TMEM state residency, TMA descriptor boxes, tcgen05 instruction atoms, five-role pipeline and synchronization. Before emission, check P1-P8 and extend the owning common IR typing/effects, verifier legality and native CUDA lowering in one successor change; existing backends must refuse unsupported state/chunk commitments by name. Keep the reference as an external black-box baseline rather than an opaque backend escape. Qualify the successor first against the fixed T65 guardrail and full H64/T8192 output/state oracle, then paired B300-M4 CUPTI and profiler evidence; only after a strong seed extend to M128 packed and all six rows. An automatic estimate or the scalar prototype does not authorize promotion. Formal Executor admission and branch integration remain separate gates.",
   "decision": "proposed",
   "implemented_in": null,
