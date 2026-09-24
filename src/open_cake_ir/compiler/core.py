@@ -196,7 +196,11 @@ class Compiler:
         from .ir import Program
         program = Program.from_dict(program.document)
         if program.execution is not None:
-            raise ValueError('cooperative worker Program requires dedicated native lowering')
+            backend = BACKENDS.get(program.execution.lowering.backend)
+            lower_worker = getattr(backend.module, 'lower_program', None) if backend else None
+            if lower_worker is None:
+                raise ValueError('cooperative worker Program requires dedicated native lowering')
+            return lower_worker(self, program)
         if self.commit is None:
             raise ValueError('program compilation requires a clean Compiler commit')
         lowerings = []
