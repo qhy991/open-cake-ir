@@ -84,6 +84,8 @@ def prepare_ranked_mailbox(lowered: LoweredRankedMailbox,
             or any(not isinstance(grid, list) or len(grid) != 3
                    or any(type(extent) is not int or extent <= 0 for extent in grid)
                    for grid in grids)
+            or grids[0][0] < 2
+            or any(grid != [grids[0][0], 1, 1] for grid in grids)
             or not isinstance(abi, Mapping)
             or not {'mailbox_bytes', 'status_offset', 'output_offset',
                     'output_bytes', 'prepare_rank', 'launch'} <= set(abi)
