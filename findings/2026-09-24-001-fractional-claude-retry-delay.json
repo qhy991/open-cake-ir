@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-24-001",
+  "date": "2026-09-24",
+  "kind": "protocol",
+  "title": "Fractional native Claude retry delays reject recovered provider turns",
+  "backend": "Claude Code Anthropic Messages provider; claude_stream_candidate_v4",
+  "target": "gfx1151",
+  "compiler_revision_id": "open-cake-ir@f7a4ed7388fe8981e63c63dd84c6de169046f145",
+  "executor_revision": "gfx1151@f7a4ed7388fe8981e63c63dd84c6de169046f145",
+  "evidence": {
+    "first_workspace": "infplane:/home/wwxq/oci-experiments-amd-20260921/remaining-tasks-kimi-k3-1b/softsign",
+    "first_run": "run-evidence/runs/open_cake-1",
+    "first_fault_event": 75,
+    "second_workspace": "infplane:/home/wwxq/oci-experiments-amd-20260923/glm-5-3-recovery/per_channel_moments",
+    "second_run": "run-evidence/runs/open_cake-1",
+    "second_fault_event": 363,
+    "native_observations": "api_retry.retry_delay_ms observed as 519.0670546041245 after 503 and 515.4203618388758 after 429; both native streams then emitted complete success. The old parser required an integer."
+  },
+  "observation": "The integer-only retry-delay check faults otherwise complete authoring turns; first failure halted the Kimi queue and recurrence halted the GLM recovery queue. The old failed archives remain immutable and provide no accepted candidate or performance result.",
+  "proposed_change": "Accept only finite nonnegative int/float milliseconds excluding bool for retry_delay_ms; preserve the exact retry event field set, integer attempts, bounded HTTP status, admitted error classes, completed terminal and candidate custody checks. Verify original stream and candidate by software replay, then fresh campaign separately.",
+  "decision": "accepted",
+  "implemented_in": "aadbf6756ca6b08596fb60660fb81c952e4bfcfb",
+  "verified_by": {
+    "original_replay": "infplane:/home/wwxq/oci-lab/amd-glm-5-3-recovery-20260923/retry-original-replay.json",
+    "test": "infplane:/home/wwxq/oci-lab/amd-glm-5-3-recovery-20260923/retry-tests-r2.stdout",
+    "scope": "Software protocol replay and 57 Claude provider tests; no GPU or performance claim."
+  }
+}
