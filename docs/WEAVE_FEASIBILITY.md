@@ -185,6 +185,11 @@ per-rank input shapes/dtypes and passes a generated-source binding test.
 Its separate `tail_tokens` four-GPU development bundle passes a fresh CPU
 preparation check. It remains uncompiled and unexecuted on B300-M4.
 
+The integrated successor at `a78cbf7f` pins all five input ABI shapes and
+one identical CTA grid across the four ranks; its refreshed tail bundle
+also passes CPU source/effect binding after fresh extraction. nvcc and
+four-GPU oracle validation are still open.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
