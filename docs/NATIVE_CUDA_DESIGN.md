@@ -112,6 +112,14 @@ about 404 MB input and 101 MB output traffic before inverse/state work. This
 only proves type legality and source generation. If register pressure or
 serialization makes the fused kernel slow, the device result must choose a
 different split rather than an automatic cost-model promotion.
+A second fused fixture passes P and its transpose directly from coupling casts
+into the five-step inverse, avoiding their global round trip. It emits 21 BF16
+MMAs and returns only output coupling B and the BF16 inverse. Its declared
+logical input/output are about 404/67 MB, excluding the recurrent state kernel.
+This is a distinct mapping hypothesis: 21 dependent MMA operations may increase
+register pressure or serial latency even though the traffic screen is smaller.
+Only target compilation, complete component numerics and paired B300 timing can
+choose between the two fused depths.
 A typed midpoint-factor stage takes BF16 normalized Q/K and FP32 per-token
 log-decay, scans its 32-token prefix, extracts the first/last log values, and
 forms BF16 forward-key, backward-key and forward-query tiles. The bounded
