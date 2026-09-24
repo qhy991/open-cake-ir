@@ -154,3 +154,20 @@ This small protocol probe does not qualify a high-load all-to-all or a Cake
 Program v2 lowering. The shared worker descriptor now preserves either
 `device` or `system` scope; it still refuses execution until the verifier,
 native emission and Evaluation state/reset owners are complete.
+
+## Observed SM placement for the CTA split
+
+The direct prototype now records PTX `%smid` together with each CTA's role in
+`role_trace`. At source commit `58936b53`, B300-M4 exclusive job
+`gpuq-2f1223552f27` reran the three original plans. The independent oracle
+again passed all outputs and exact-once checks. Each of the three launches
+observed **148 distinct SM IDs for 148 CTAs**; the communication CTA counts
+`12/36/120` therefore corresponded to `12/36/120` distinct communication
+SMs in these runs. The trace, compile output, broker receipt and post-release
+report are at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260924/cake-weave-smid-b300-m4-58936b53/`
+and `B300-M4:/home/qinhaiyan/cake-weave-smid-b300-m4-58936b53/`.
+This is an observed placement of this one compiled kernel. Cooperative launch
+guarantees enough residency for all participating CTAs, but the worker
+lowering still needs to check its own occupancy and record its own SM
+distribution before claiming an exact SM split.
