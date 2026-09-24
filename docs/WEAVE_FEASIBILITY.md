@@ -146,6 +146,14 @@ The native Program passes offline tests and the Corpus Gate, but has no nvcc
 or B300 oracle result and still launches three kernels instead of one
 distributed persistent kernel.
 
+The origin's weighted combine is also expressible without a MoE opcode:
+`examples/schedules/triton/weave-weighted-combine-t{7,8}-h16.json`
+loads each token's two FP32 contributions and route weights, multiplies,
+reduces the route axis and rounds once to BF16. Both Workload token extents
+lower through Triton offline. The missing part is the ranked mailbox effect
+that binds remote contributions to this complete Schedule, plus a native
+lowering and four-GPU oracle.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
