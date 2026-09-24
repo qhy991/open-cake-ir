@@ -124,6 +124,23 @@ and `B300-M4:/home/qinhaiyan/cake-native-fma-b300-m4-2ccf404b/`. This check
 establishes leaf lowering correctness, not Program v2 worker execution or
 performance.
 
+## Cooperative worker Program lowering slice
+
+The native backend now lowers one admitted Program v2 form into one CUDA
+cooperative kernel: three complete FP32 FMA row Schedules over the same tile
+domain, two device-scope release/acquire handoffs, two CTA classes, three
+atomic-claim queues and one bounded steal window. Stage bodies are generated
+from their Schedule operations and Program bindings; stage names are labels,
+not MoE opcodes. The emitted host launch checks exact Target, cooperative
+support and compiled residency, resets the derived internal state on the
+launch stream, and returns a status slot for invalid device-resident controls.
+The caller allocates the state described in toolchain requirements. Other
+topologies, system-scope handoffs and non-native leaf routes are refused.
+
+This slice is a single-GPU synthetic execution path. Its Program v2 Evaluation
+adapter, full inter-GPU dispatch/combine, grouped expert GEMMs, per-layer cost
+model and MoE Workload acceptance remain separate required work.
+
 ## Native PTX returned-old-value work claim prototype
 
 A second, explicitly bounded path in the same `native_cuda` backend lowers a

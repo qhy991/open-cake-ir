@@ -944,3 +944,9 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
         from .native_cuda_work_claim import Emitter as WorkClaimEmitter
         return WorkClaimEmitter(schedule,target,schedule.lowering.entry_point).emit()
     return _Emitter(schedule,target,schedule.lowering.entry_point).emit()
+
+
+def lower_program(compiler, program):
+    """One backend-owned cooperative worker Program lowering."""
+    from .native_cuda_workers import lower_worker_program
+    return lower_worker_program(compiler, program)
