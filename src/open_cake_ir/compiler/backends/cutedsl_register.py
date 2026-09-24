@@ -58,6 +58,14 @@ def requirements(schedule: Schedule) -> tuple[Finding, ...]:
         )
         for index, operation in enumerate(schedule.operations)
         if operation.kind is OperationKind.MMA and operation.parameters.k_ranges is not None
+    ) + tuple(
+        refusal(
+            "CUTE_MMA_K_PARTITIONS_UNSUPPORTED",
+            f"operations[{index}].parameters.k_partitions",
+            "register CuTe-DSL does not emit warp-local K partitions",
+        )
+        for index, operation in enumerate(schedule.operations)
+        if operation.kind is OperationKind.MMA and operation.parameters.k_partitions is not None
     ) + python_name_findings(schedule, REGISTER_NAMESPACE)
 
 

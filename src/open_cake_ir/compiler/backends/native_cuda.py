@@ -286,6 +286,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                       'a register value must stay within its producer role')
         if op.kind is OperationKind.MMA:
             p = op.parameters; instruction = p.instruction
+            check(p.k_partitions is None, 'NATIVE_MMA_K_PARTITIONS_UNSUPPORTED',
+                  path+'.parameters.k_partitions',
+                  'the tcgen05 native route does not emit warp-local K partitions')
             good = (instruction is not None and instruction.contract == _CONTRACT
                     and instruction.cta_group == 1 and instruction.operand_source is OperandSource.SHARED
                     and instruction.operand_major == (OperandMajorMode.K, OperandMajorMode.K)

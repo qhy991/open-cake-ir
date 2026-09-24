@@ -152,6 +152,13 @@ _PARAMETERS = {
                 "description": "Ordered disjoint half-open input K contributions; requires tile_shape. "
                     "Each start < end <= tile_shape.K. Adjacent intervals merge; full coverage is omitted.",
             },
+            "k_partitions": {
+                "type": "array", "minItems": 2,
+                "items": {"type": "array", "minItems": 2, "maxItems": 2,
+                          "items": {"type": "integer", "minimum": 0}},
+                "description": "Ordered contiguous warp-local FP32 partial domains that cover the full K tile; "
+                    "the result sums those partials left to right. Requires tile_shape and excludes k_ranges.",
+            },
             "instruction": _placed_only(
                 _object(
                     {"contract": {
@@ -291,7 +298,10 @@ _PARAMETERS = {
 }
 
 
-_PARAMETERS[OperationKind.MMA]["dependentRequired"] = {"k_ranges": ["tile_shape"]}
+_PARAMETERS[OperationKind.MMA]["dependentRequired"] = {
+    "k_ranges": ["tile_shape"], "k_partitions": ["tile_shape"]
+}
+_PARAMETERS[OperationKind.MMA]["not"] = {"required": ["k_ranges", "k_partitions"]}
 
 _PARAMETERS[OperationKind.LOAD].setdefault("allOf", []).extend([
     {"if": {"properties": {"movement": {"const": "tmem"}}},
