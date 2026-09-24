@@ -22,7 +22,7 @@ The published evaluation is on 4×H100 SXM, EP=4, BF16, six models and three seq
 | Exact H100 target | `compiler/targets/` declares B200 (`sm_100a`) and B300 (`sm_103a`), but no H100 (`sm_90` family) document. `Compiler.assess` returns `TARGET_UNSUPPORTED` for the probed `sm_90a`. | Blocking for paper-exact reproduction; Cake refuses architecture fallback by design. |
 | Cross-GPU dispatch/combine | `compiler/ir/vocabulary.py::OperationKind` has no remote transfer or communication operation. `compiler/ir/program.py::Program` owns one target and static same-stream stages; `evaluation/cuda_driver.py::PersistentCudaCandidate.launch` admits one logical GPU. | Blocking for EP=4 execution and external oracle/measurement. |
 | Runtime partition of CTAs into SM roles | `Role.execution_groups` divides execution groups **inside a CTA**, not CTAs across SMs. `ProgramMap.persistent` statically strides CTAs over work in `backends/triton.py::_emit_persistent_header`. | Current persistence cannot represent `blockIdx.x < c*(routing)` with different CTA bodies. |
-| Dynamic tile claiming, stealing and cross-CTA pipeline readiness | Cake's narrow INT32 `atomic_rmw` can return a unique old counter value, and that value can address a work-item load inside a persistent Triton kernel. Cake has no modeled cross-CTA readiness signal/wait, CTA role transition or proof of ownership/liveness for the five-stage DAG. Native CUDA preflight also refuses `program_map.persistent`. | Single-role dynamic work claiming is expressible; Weave's cross-role stealing remains blocked. |
+| Dynamic tile claiming, stealing and cross-CTA pipeline readiness | Cake's narrow INT32 `atomic_rmw` returns a unique old counter value that can address a work-item load. Triton and the new native CUDA PTX route both lower this single-role slice; ordinary and persistent native B300 forms passed scoped development correctness on B300-M4. Cake still has no modeled cross-CTA readiness signal/wait, CTA role transition or proof of ownership/liveness for the five-stage DAG. | Single-role dynamic work claiming is expressible; Weave's cross-role stealing remains blocked. |
 | Online `c,K` model and calibration | Existing cost work ranks static candidates before evaluation; target documents carry hardware facts but no per-SM communication/compute throughput curves or chunk-efficiency calibration for EP. | New measurement/model contract required; paper's H100 curves cannot be inherited by B200/B300. |
 
 ## Reproducible offline probes
@@ -63,7 +63,7 @@ Shared IR, Program and verifier work belongs on `task/core-*` against `main`; NV
 
 ## Native atomic successor contract
 
-The next native CUDA slice names `ptx.atom.relaxed.gpu.global.add.s32` in the shared
+The native CUDA successor names `ptx.atom.relaxed.gpu.global.add.s32` in the shared
 instruction registry. It is a second physical realization of the existing typed
 `atomic_rmw(add, int32, relaxed, device)` effect, not a new atomic opcode or a
 second spelling of MoE. P1/P3 retain the ordinary returned-old-value operation;
@@ -72,6 +72,6 @@ index, result and bounds checks; P6 requires accepted/refused kernel cases and
 the Corpus Gate; P7 keeps typing and admission with the primitive; P8 binds the
 emission to an exact Target declaration and PTX ISA form. NVIDIA Target admission
 and native lowering belong in the platform task and are not implied by this
-registry row. Relaxed atomic add guarantees a unique claimed index; it does not
+registry row alone. Relaxed atomic add guarantees a unique claimed index; it does not
 publish a preceding payload or make a later worker's read ready. Weave's chunk
 handoff will require a separate release/acquire and liveness design.

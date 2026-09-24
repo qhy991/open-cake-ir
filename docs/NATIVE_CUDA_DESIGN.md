@@ -98,12 +98,19 @@ the shared atomic contract is in `docs/WEAVE_FEASIBILITY.md`; this backend
 slice preserves that operation's existing typing and adds exact Target and
 emission refusals.
 
-The ordinary-grid B300 form compiled with CUDA 13.1 nvcc/ptxas and matched an
-independent permutation oracle across three route distributions on B300-M4.
-Inputs, source, broker receipt, device snapshots and post-release report are
-retained at `B300-M4:/home/qinhaiyan/cake-weave-b300-m4-ebf0eaac-probe02/`
-under source commit `ebf0eaac`. This scoped development check establishes no
-latency, communication overlap or multi-GPU MoE correctness.
+Both ordinary-grid and persistent B300 forms compiled with CUDA 13.1
+nvcc/ptxas and independently matched a permutation oracle across three route
+distributions on B300-M4. Their source commits are `ebf0eaac` and `19bcc545`,
+respectively. Inputs, source, broker receipt, device snapshots and post-release
+reports are retained at
+`B300-M4:/home/qinhaiyan/cake-weave-b300-m4-ebf0eaac-probe02/` and
+`B300-M4:/home/qinhaiyan/cake-weave-b300-m4-19bcc545-persistent/`.
+The broker allocated one shared GPU to each sequential correctness run and
+the allocations were released before CPU verification. Both forms passed
+all three cases: 2,048 same-expert routes, balanced routes with nonzero
+initial counters, and skewed routes containing invalid expert ids. These
+development checks establish no latency, profiler overlap, cross-CTA handoff,
+or multi-GPU MoE correctness.
 
 PTX encoding reference: NVIDIA PTX ISA, sections 9.7.17.4 (matrix descriptors),
 9.7.17.8 (TMEM allocation), 9.7.17.9 (TMEM transfer), and 9.7.17.10 (tcgen05 MMA):
