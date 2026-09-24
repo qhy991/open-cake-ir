@@ -401,7 +401,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         len(schedule.tile_loops) <= 2,
         "TRITON_TILE_LOOP_COUNT",
         "tile_loops",
-        "the Triton backend supports at most a two-deep tile-loop nest",
+        "the Triton backend supports at most two tile loops",
     )
     add(
         len(schedule.roles) == 1,
@@ -631,30 +631,31 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             "scalar program axis",
         )
 
-    nested = len(schedule.tile_loops) > 1
-    if nested:
+    multiple_loops = len(schedule.tile_loops) > 1
+    if multiple_loops:
         parent = schedule.loop_parent()
+        depths = sorted(schedule.loop_depth(loop.name) for loop in schedule.tile_loops)
         add(
             len(schedule.tile_loops) == 2
-            and len(parent) == 1
-            and sorted(schedule.loop_depth(loop.name) for loop in schedule.tile_loops) == [0, 1],
+            and ((len(parent) == 1 and depths == [0, 1])
+                 or (not parent and depths == [0, 0])),
             "TRITON_LOOP_NEST_UNSUPPORTED",
             "tile_loops",
-            "the nested Triton slice requires one outer loop with one inner loop",
+            "the two-loop Triton slice requires one outer/inner pair or two sibling loops",
         )
         for index, loop in enumerate(schedule.tile_loops):
             add(
                 loop.stop is None,
                 "TRITON_NESTED_LOOP_STOP",
                 f"tile_loops[{index}].stop",
-                "nested Triton loops currently require static extents",
+                "two-loop Triton emission currently requires static extents",
             )
             for option in ("flatten", "warp_specialize"):
                 add(
                     not getattr(loop.range_options, option),
                     "TRITON_NESTED_LOOP_OPTION",
                     f"tile_loops[{index}].range_options.{option}",
-                    f"nested Triton loops do not implement {option}=true",
+                    f"two-loop Triton emission does not implement {option}=true",
                 )
 
     for index, operation in enumerate(schedule.operations):
@@ -669,7 +670,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             f"operations[{index}].kind",
             f"the Triton backend has no {operation.kind.value!r} body at this loop position",
         )
-        if nested and chain:
+        if multiple_loops and chain:
             add(
                 operation.kind not in {
                     OperationKind.REDUCE_ARGMIN,
@@ -678,7 +679,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 },
                 "TRITON_NESTED_OPERATION_UNSUPPORTED",
                 f"operations[{index}].kind",
-                f"the two-deep Triton slice does not implement nested {operation.kind.value!r}",
+                f"the two-loop Triton slice does not implement {operation.kind.value!r}",
             )
             if operation.kind is OperationKind.MMA:
                 add(
@@ -689,7 +690,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                     ),
                     "TRITON_NESTED_MMA_OPERAND",
                     f"operations[{index}].reads",
-                    "the bounded nested MMA backend requires two directly loaded operands; "
+                    "the bounded two-loop MMA backend requires two directly loaded operands; "
                     "casted operands remain outside this nested emission slice",
                 )
                 add(

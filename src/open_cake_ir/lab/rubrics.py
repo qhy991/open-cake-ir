@@ -138,7 +138,7 @@ def derive_rubric(feedback: object = _ABSENT) -> dict[str, object]:
         "reported" if findings else "none"
     )
     add("findings", findings_state, ("findings",),
-        "Use each finding's path and category to locate the declared contract. Respect blocks_acceptance and blocks_lowering separately: a lowering capability refusal need not mean the candidate is wrong. Reports and hints describe only their modeled domain; record gaps for independent review, without editing the frozen Compiler."
+        "Use each finding's path and category to locate the declared contract. Respect blocks_acceptance and blocks_lowering separately: a lowering refusal need not mean the candidate is wrong. A backend_lowering route marks an accepted Schedule whose selected backend lacks a reviewed implementation; retain the source and Finding for a successor Compiler change or deferred record. A backend_triage route marks an accepted Schedule whose lowering-only Finding still needs owner judgement. The ir_vocabulary route is reserved until a typed Compiler Finding establishes missing expressibility. Do not alter the frozen Compiler during this Run. Reports and hints describe only their modeled domain."
         if findings_state == "reported" else
         "No localized findings are established here. An empty or unavailable findings list does not prove GPU safety, modeled resource coverage or absence of Compiler limitations.")
 

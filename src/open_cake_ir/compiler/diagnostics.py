@@ -26,6 +26,58 @@ class FindingSeverity(str, Enum):
     HINT = "hint"
 
 
+# A Schedule with only these blocking Findings is valid Cake IR whose selected
+# emission route has no implementation for a declared operation, dtype, access or
+# exact target. Keep ownership here with Compiler diagnostics; Lab imports the set
+# to route evidence, rather than maintaining another backend capability table.
+BACKEND_LOWERING_GAP_CODES = frozenset({
+    'BACKEND_TARGET_UNSUPPORTED',
+    'BACKEND_DTYPE_UNEMITTABLE',
+    'BACKEND_OPERATION_UNEMITTABLE',
+    'BACKEND_ACCESS_INDEX_UNSUPPORTED',
+    'BACKEND_ARITHMETIC_UNSUPPORTED',
+    'BACKEND_CAST_UNSUPPORTED',
+    'BACKEND_REDUCTION_UNSUPPORTED',
+    'TRITON_BARRIER_UNSUPPORTED',
+    'TRITON_ARANGE_RANGE_UNSUPPORTED',
+    'TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED',
+    'TRITON_MMA_INSTRUCTION_UNSUPPORTED',
+    'TRITON_MMA_K_RANGES_UNSUPPORTED',
+    'TRITON_LOOP_STOP_UNSUPPORTED',
+    'TRITON_ELEMENTWISE_UNSUPPORTED',
+    'TOP_K_SOURCE_UNLOWERABLE',
+    'TOP_K_INT32_ACROSS_LOOP_UNLOWERABLE',
+    'TOP_K_K_UNLOWERABLE',
+    'INDEX_EXPAND_SOURCE_UNLOWERABLE',
+    'INDEX_EXPAND_EXTENT_UNLOWERABLE',
+    'VALID_EXTENT_ACCESS_UNLOWERABLE',
+    'METAL_MMA_K_RANGES_UNSUPPORTED',
+    'METAL_INSTRUCTION_UNSUPPORTED',
+    'METAL_ELEMENTWISE_UNSUPPORTED',
+    'METAL_REDUCTION_UNSUPPORTED',
+    'CUTE_MMA_K_RANGES_UNSUPPORTED',
+    'CUTE_MMA_INSTRUCTION_UNSUPPORTED',
+    'CUTE_ACCESS_SUBRANGE_UNSUPPORTED',
+    'CUTE_STATE_UNSUPPORTED',
+    'NATIVE_OPERATION_UNSUPPORTED',
+    'NATIVE_ARITHMETIC_UNSUPPORTED',
+    'NATIVE_BARRIER_UNSUPPORTED',
+    'NATIVE_DTYPE_UNSUPPORTED',
+})
+
+# These lowering-only backend diagnostics name a declaration the author can change
+# without extending Cake IR or implementing a new emitter body.
+AUTHOR_FIXABLE_LOWERING_CODES = frozenset({
+    'BACKEND_IDENTIFIER_COLLISION',
+    'BACKEND_IDENTIFIER_UNSAFE',
+    'BACKEND_SOURCE_ID_UNSAFE',
+    'BACKEND_MMA_INSTRUCTION_REQUIRED',
+    'METAL_ENTRY_POINT_UNSUPPORTED',
+    'NATIVE_NAME_UNSUPPORTED',
+    'NATIVE_REFERENCE_UNKNOWN',
+})
+
+
 @dataclass(frozen=True)
 class Finding:
     """One typed Compiler diagnostic, retained unchanged through Assessment.

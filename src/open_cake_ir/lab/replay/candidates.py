@@ -170,6 +170,9 @@ def _replay_candidates(
                 refuse(f"{location}.payload", "retained/rejected artifact roles are not a closed partition",
                        observed={"objects": payload.get("objects"),
                                  "artifact_rejections": payload.get("artifact_rejections")})
+            # replay_matched_run checked the lock's exact Compiler commit before
+            # reading events. Historical routing replays at its pinned source,
+            # never with a later revision's diagnosis taxonomy.
             decision = route_rejection(feedback, arm=arm)
             if (
                 payload.get("routed_to") != decision.destination
