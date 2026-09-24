@@ -142,6 +142,7 @@ class AtomicMemoryOrder(str, Enum):
 
 class AtomicMemoryScope(str, Enum):
     DEVICE = "device"
+    SYSTEM = "system"
 
 
 class IndexTieBreak(str, Enum):

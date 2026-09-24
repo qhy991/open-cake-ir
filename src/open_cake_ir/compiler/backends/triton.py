@@ -20,6 +20,7 @@ from typing import Mapping
 from .triton_selection import top_k_selection_structure
 from .common import PythonNamespace, emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
+    AtomicMemoryScope,
     ElementwiseOp,
     LoadReuse,
     AccessIndexKind,
@@ -569,6 +570,12 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
                 "the Triton backend only emits direct global loads",
             )
         if operation.kind is OperationKind.ATOMIC_RMW:
+            add(
+                operation.parameters.scope is AtomicMemoryScope.DEVICE,
+                "TRITON_ATOMIC_SCOPE_UNSUPPORTED",
+                f"operations[{index}].parameters.scope",
+                "this Triton route emits GPU scope and cannot realize a system-scope atomic",
+            )
             add(
                 _ATOMIC_RMW_CONTRACT in target.instruction_contracts,
                 "TRITON_ATOMIC_CONTRACT_UNSUPPORTED",

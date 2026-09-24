@@ -163,6 +163,19 @@ class AtomicReservationContractTest(unittest.TestCase):
             ["TRITON_ATOMIC_CONTRACT_UNSUPPORTED"],
         )
 
+    def test_system_scope_is_typed_but_triton_cannot_step_it_down(self) -> None:
+        document = _document()
+        _operation(document)["parameters"]["scope"] = "system"
+        jsonschema.Draft202012Validator(schedule_schema()).validate(document)
+        schedule = Schedule.from_dict(document)
+        self.assertIs(schedule.operation("reserve_positions").parameters.scope,
+                      AtomicMemoryScope.SYSTEM)
+        findings = preflight(schedule, Target.load(TARGET_PATH))
+        self.assertIn("TRITON_ATOMIC_SCOPE_UNSUPPORTED",
+                      {finding.code for finding in findings})
+        with self.assertRaisesRegex(ValueError, "cannot realize a system-scope atomic"):
+            emit(schedule, Target.load(TARGET_PATH))
+
     def test_cute_route_explicitly_refuses_mutable_state(self) -> None:
         findings = cute_preflight(
             Schedule.load(SCHEDULE), Target.load(TARGET_PATH)
