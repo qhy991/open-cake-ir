@@ -44,6 +44,23 @@ class KdaDecayPrefixStage(unittest.TestCase):
                           Target.load(ROOT / 'compiler/targets/sm_103a.json'))
         self.assertIn('SCAN_DTYPE_MISMATCH', {finding.code for finding in findings})
 
+    def test_bf16_prefix_storage_is_a_separate_explicit_commitment(self):
+        full = json.loads(FIXTURE.read_text())
+        value = json.loads(FIXTURE.read_text())
+        value['schedule_id'] = 'kda-b300-h64-decay-prefix32-bf16'
+        value['lowering']['entry_point'] = 'cake_kda_b300_decay_prefix32_bf16'
+        next(buffer for buffer in value['buffers']
+             if buffer['name'] == 'prefix_out')['dtype'] = 'bf16'
+        assessment = self.compiler.assess(value)
+        self.assertTrue(assessment.lowering_eligible,
+                        [(finding.code, finding.path) for finding in assessment.findings
+                         if finding.blocks_lowering])
+        source = self.compiler.lower(assessment).source
+        self.assertIn('out = torch.empty((8192, 64, 128), dtype=torch.bfloat16', source)
+        self.assertIn('tl.cumprod(decay.to(tl.float32), axis=0', source)
+        self.assertEqual(work_bound(Schedule.from_dict(value)).compulsory_written_bytes,
+                         work_bound(Schedule.from_dict(full)).compulsory_written_bytes // 2)
+
 
 if __name__ == '__main__':
     unittest.main()

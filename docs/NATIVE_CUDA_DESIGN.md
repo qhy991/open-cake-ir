@@ -85,6 +85,10 @@ A bounded `sm_103a` H64/T8192 fixture now composes the gate arithmetic and
 tensor. This is a typed component with CPU source-contract checks, not a
 qualified prefix result or a complete two-stage KDA kernel. The extra launch,
 write and later read must be measured against the 456 us adapted reference.
+A separate BF16 output commitment halves the prefix tensor to 128 MiB. CPU
+chunk algebra with that extra prefix rounding passed the complete T65 and T257
+output/final-state oracles, but full H64/T8192 and B300 stage correctness remain
+unverified. Neither representation is selected for a performance claim.
 Streaming argmin preserves global indices, lowest-index ties and centroid-tail masks.
 Resident argmin uses local tile positions and is admitted only when a complete,
 zero-origin candidate domain fits in one tile. `Schedule.argmin_domain` follows the
