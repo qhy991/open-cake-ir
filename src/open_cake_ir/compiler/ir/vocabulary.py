@@ -91,6 +91,7 @@ class ScanOp(str, Enum):
     """The associative operator a prefix scan accumulates with."""
 
     SUM = "sum"
+    MUL = "mul"
 
 
 class ScanDirection(str, Enum):

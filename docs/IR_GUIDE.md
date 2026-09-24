@@ -198,6 +198,7 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 - `MmaInstruction` 的 operand placement 只适用于相应的硬件指令合同；`triton.dot` 的操作数布局由后端处理，不能随意添加它不会兑现的 placement 字段。
 - `reduce` 的历史默认是跨循环累计；文档中省略 `across_loop` 表示该默认，显式 `true` 被拒绝，`false` 表示不跨循环累计。`top_k` 与 `reduce_argmin` 的默认则是 `false`，不能照搬。
 - `top_k` 保留所选维度并返回 values 与 indices；它不是 argmin 加一个开关。驻留 signed INT32 top-k 与跨循环 FP32 top-k 也有不同后端边界。
+- `scan(op="mul")` 与既有 `scan(op="sum")` 共用一个前缀操作及 FP32 类型规则；`axis` 和 `direction` 决定块内顺序。Triton 用 `tl.cumprod` 实现乘积；它不暗中延续上一个 tile 的前缀，原生 CUDA 后端也尚未声明该分解。
 - `FenceProxyParameters` 是保留的 Python 参数类型，但 `OperationKind` 中没有可提交的 fence kind；不要把类型列表当成可编写操作清单。
 
 ## 7. 同步与硬件承诺

@@ -100,6 +100,7 @@ REDUCTIONS: dict[ReduceOp, _Reduction] = {
 
 SCANS: dict[ScanOp, str] = {
     ScanOp.SUM: "{out} = tl.cumsum({src}.to(tl.float32), axis={axis}, reverse={reverse})",
+    ScanOp.MUL: "{out} = tl.cumprod({src}.to(tl.float32), axis={axis}, reverse={reverse})",
 }
 
 
