@@ -21,6 +21,9 @@ from ..verifier import verify
 
 
 _IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
+# This bounded source has only the exact B300 development evidence. Hardware
+# width and architecture values still come from that Target document.
+RANKED_ROUTE_EVIDENCE = frozenset({'sm_103a'})
 
 
 @dataclass(frozen=True)
@@ -68,7 +71,8 @@ def lower_ep_math(program: Program, combine: Schedule, target: Target, *,
             or len(program.stages) != 3 or program.target != target.target_id
             or combine.target != target.target_id
             or target.code_object is not CodeObject.CUBIN
-            or target.compute_capability != (10, 3) or target.warp_size != 32):
+            or target.target_id not in RANKED_ROUTE_EVIDENCE
+            or target.compute_capability is None or target.warp_size != 32):
         _refuse('exact B300 target, entry or three-stage local Program differs')
     first, activation, down = program.stages
     for stage, gate in ((first, row_dot_preflight),

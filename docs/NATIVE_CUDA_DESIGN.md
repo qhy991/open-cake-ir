@@ -466,6 +466,11 @@ the mathematical body and its 29 operation markers. The emitter derives
 the admitted math, effects and exact Target rather than a second hardware
 table. It refuses a missing system-scope PTX contract and emits source
 markers for reservation, publication, acquire, claim and peer-pair checks.
+The B300 qualification is an explicit target-id evidence gate;
+compute capability, SM count, accepted device names and exact nvcc
+architecture flags are read from that Target. A synthetic changed SM count
+therefore changes emitted source instead of being shadowed by a backend
+constant.
 
 The generated host ABI checks input pointer owners and bounded expert IDs
 and weights before launch; launch checks cooperative residency and native

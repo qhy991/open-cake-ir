@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 from types import MappingProxyType
 
-from .native_cuda_ep_math import lower_ep_math
+from .native_cuda_ep_math import RANKED_ROUTE_EVIDENCE, lower_ep_math
 from ..ir import LoweringBackend, Program, RankedMailboxAnalysis, RankedMailboxEffects, Schedule
 from ..program import LoweredRankedMailbox
 from ..target import CodeObject
@@ -35,10 +35,11 @@ def _admit(compiler, effects: RankedMailboxEffects, local: Program,
             or _IDENTIFIER.fullmatch(effects.lowering.entry_point) is None):
         _refuse('explicit native CUDA route and ASCII C entry are required')
     if (target is None or target.target_id != combine.target
+            or target.target_id not in RANKED_ROUTE_EVIDENCE
             or target.code_object is not CodeObject.CUBIN
-            or target.compute_capability != (10, 3) or target.warp_size != 32
+            or target.compute_capability is None or target.warp_size != 32
             or target.cooperative_grid is not True or target.occupancy is None
-            or target.occupancy.multiprocessor_count != 148
+            or target.occupancy.multiprocessor_count < 2
             or not target.device_names
             or not _ATOMICS <= target.instruction_contracts
             or not _HANDOFFS <= target.synchronization_contracts):
@@ -60,7 +61,6 @@ def _admit(compiler, effects: RankedMailboxEffects, local: Program,
                          entry=effects.lowering.entry_point,
                          rewrite='ranked_mailbox')
     if (math.tokens != analysis.items_per_rank or math.hidden != analysis.feature_width
-            or math.local_experts * analysis.world_size != 8
             or math.intermediate != 32):
         _refuse('inline math and ranked queue geometry differ')
     return target, math
@@ -154,8 +154,9 @@ def lower_ranked_mailbox(compiler, effects: RankedMailboxEffects,
         'host_abi': names,
         'peer_pair_runtime_check': True,
         'input_domain_runtime_check': True,
-        'nvcc_flags': ['-std=c++17', '--gpu-architecture=compute_103a',
-                       '--gpu-code=sm_103a', '-O3', '--fmad=false',
+        'nvcc_flags': ['-std=c++17',
+                       '--gpu-architecture=' + target.target_id.replace('sm_', 'compute_', 1),
+                       '--gpu-code=' + target.target_id, '-O3', '--fmad=false',
                        '-lineinfo', '-Xptxas=-v'],
         'link_libraries': ['cuda', 'cudart'],
     }

@@ -10,7 +10,7 @@ import unittest
 from open_cake_ir.compiler import (Compiler, LoweredRankedMailbox, Program,
                                    RankedMailboxEffects, Schedule, Target)
 from open_cake_ir.compiler.ir import DType
-from open_cake_ir.compiler.backends.native_cuda_ranked_mailbox import _admit
+from open_cake_ir.compiler.backends.native_cuda_ranked_mailbox import _admit, _emit_source
 from open_cake_ir.evaluation.ranked_launch import (
     RankedMailboxExecutable, prepare_ranked_mailbox,
 )
@@ -64,6 +64,9 @@ class NativeRankedMailbox(unittest.TestCase):
                 self.assertTrue(requirements['peer_pair_runtime_check'])
                 self.assertTrue(requirements['input_domain_runtime_check'])
                 self.assertEqual(requirements['activated_shared_bytes'], 128)
+                self.assertIn('--gpu-architecture=compute_103a',
+                              requirements['nvcc_flags'])
+                self.assertIn('--gpu-code=sm_103a', requirements['nvcc_flags'])
                 self.assertIn('atom.acq_rel.sys.global.add.s32', lowered.source)
                 self.assertIn('atom.release.sys.global.add.s32', lowered.source)
                 self.assertIn('cudaDevP2PAttrNativeAtomicSupported', lowered.source)
@@ -100,6 +103,15 @@ class NativeRankedMailbox(unittest.TestCase):
         fake = SimpleNamespace(_revision=SimpleNamespace(targets={local.target: missing}))
         with self.assertRaisesRegex(ValueError, 'PTX system contracts'):
             _admit(fake, effects, local, combine, effects.analyze(local, combine))
+        observed = replace(target, occupancy=replace(
+            target.occupancy, multiprocessor_count=147))
+        synthetic = SimpleNamespace(_revision=SimpleNamespace(targets={local.target: observed}))
+        admitted_target, inline_math = _admit(
+            synthetic, effects, local, combine, effects.analyze(local, combine))
+        source, _ = _emit_source(effects.lowering.entry_point,
+                                 effects.analyze(local, combine),
+                                 admitted_target, inline_math)
+        self.assertIn('constexpr int SMS = 147;', source)
 
     def test_generated_rank_input_abi_binds_one_evaluation_launch(self):
         effects, local, combine = material(8)
