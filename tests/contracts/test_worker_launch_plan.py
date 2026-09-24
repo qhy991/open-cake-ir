@@ -120,6 +120,41 @@ class WorkerLaunchPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'device/stream changed'):
             prepared.run()
 
+    def test_only_declared_system_payload_may_use_peer_storage(self):
+        program_document = document()
+        program_document['execution']['handoffs'][0]['scope'] = 'system'
+        program = Program.from_dict(program_document)
+        requirements = {**self.lowered.toolchain_requirements,
+                        'peer_payload_runtime_check': True}
+        self.lowered = replace(self.lowered, program=program,
+                               toolchain_requirements=requirements)
+        def allocate(name, spec):
+            tensor = self.allocate(name, spec)
+            if name == 'middle0':
+                tensor.device = 'gpu1'
+            return tensor
+        prepared = self.prepare(allocate=allocate, launch_device='gpu0')
+        self.assertEqual(prepared.buffers['middle0'].device, 'gpu1')
+        self.assertEqual(prepared.buffers['middle1'].device, 'gpu0')
+        self.assertEqual(prepared.run()['out'].device, 'gpu0')
+        with self.assertRaisesRegex(ValueError, 'explicit launch device'):
+            self.prepare(allocate=allocate)
+        self.lowered = replace(self.lowered, toolchain_requirements={
+            key: value for key, value in requirements.items()
+            if key != 'peer_payload_runtime_check'})
+        with self.assertRaisesRegex(ValueError, 'peer-aware host ABI'):
+            self.prepare(allocate=allocate, launch_device='gpu0')
+        self.lowered = replace(self.lowered, toolchain_requirements=requirements)
+        with self.assertRaisesRegex(ValueError, 'needs peer storage'):
+            self.prepare(launch_device='gpu0')
+        def undeclared_peer(name, spec):
+            tensor = allocate(name, spec)
+            if name == 'middle1':
+                tensor.device = 'gpu1'
+            return tensor
+        with self.assertRaisesRegex(ValueError, 'local storage must share one device'):
+            self.prepare(allocate=undeclared_peer, launch_device='gpu0')
+
 
 if __name__ == '__main__':
     unittest.main()

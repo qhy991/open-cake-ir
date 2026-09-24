@@ -91,6 +91,14 @@ atomic support for that exact ordered pair, then confirms peer access was
 enabled. The Target's PTX contract is necessary but never substitutes for
 those runtime pair facts. This admits no remote payload handoff or EP4 Program.
 
+For a declared system-scope handoff, the development worker launch adapter
+allows only that named intermediate payload to reside on a peer device. It
+requires an explicit launch device and a lowering that declares peer-aware
+host admission; all other tensors and the queue state remain local. This is a
+storage contract for a future NVIDIA system-scope release/acquire lowering,
+not permission to run producer and consumer on different GPUs or to substitute
+an unqualified peer allocation.
+
 ## Admission and liveness obligations
 
 1. The Program's leaf Schedules and bindings are complete and share the exact
