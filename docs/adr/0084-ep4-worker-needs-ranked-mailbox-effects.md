@@ -44,6 +44,13 @@ one combined launch followed by synchronized statuses from every rank.
 Platform callbacks still own CUDA, peer admission and the actual reset;
 this adapter does not seal a distributed candidate or qualify measurement.
 
+`evaluation/ranked_manifest.py` is a separate pre-seal boundary: it binds
+one frozen distributed Workload case, the complete effect/local/combine math,
+exact Compiler lowering, rank/expert-sharded tensor ABI and all four runtime
+plans. It refuses wrong placement, source identity, grid or controls. The
+existing single-device manifest and `LaunchableCandidate` remain closed to
+this form until compilation and a distributed loader can seal and replay it.
+
 ## Proposed Program boundary
 
 Keep one complete Program as the mathematical authority. Its rank-leading
