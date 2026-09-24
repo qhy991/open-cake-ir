@@ -9,6 +9,7 @@ No target or backend gains capability merely because the vocabulary can say it.
 """
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 import unittest
@@ -26,6 +27,45 @@ FIXTURE = ROOT / "tests/fixtures/tmem-state-mma-sm103a.json"
 
 def document() -> dict:
     return json.loads(FIXTURE.read_text())
+
+
+def carried_document() -> dict:
+    """Two repeated GEMMs expose TMEM state carry without KDA-specific math."""
+    value = document()
+    value["schedule_id"] = "tmem-carried-two-chunk-witness"
+    for buffer in value["buffers"]:
+        if buffer["name"] == "b":
+            buffer["shape"] = [128, 64]
+    value["buffers"].append({
+        "name": "next_reg", "space": "register", "dtype": "bf16",
+        "shape": [128, 64], "mode": "scratch",
+    })
+    value["tile_loops"] = [{
+        "name": "chunks", "iterator": "chunk_index", "buffer": "b",
+        "dimension": 0, "tile": 64,
+        "body": ["load_b", "mma", "read_acc", "cast_next", "store_update", "store_out"],
+        "carried_buffers": ["a_tmem"],
+        "range_options": {"num_stages": 1, "loop_unroll_factor": 1,
+                          "flatten": False, "warp_specialize": True,
+                          "disallow_acc_multi_buffer": True, "disable_licm": False},
+    }]
+    operations = value["operations"]
+    operations.insert(-1, {
+        "id": "cast_next", "kind": "cast", "role": "compute",
+        "reads": ["dot"], "writes": ["next_reg"],
+        "parameters": {"to": "bf16"}, "depends_on": ["read_acc"],
+    })
+    operations.insert(-1, {
+        "id": "store_update", "kind": "tmem_store", "role": "compute",
+        "reads": ["next_reg"], "writes": ["a_tmem"],
+        "parameters": {"destination_atom": {"op": "tcgen05.St32x32b", "repetition": 8}},
+        "signals": ["state_ready"], "depends_on": ["cast_next"],
+    })
+    next(a for a in value["access_maps"] if a["operation"] == "load_b")["indices"] = [
+        {"source": "loop_tile", "name": "chunk_index"},
+        {"source": "dimension", "dimension": 1},
+    ]
+    return value
 
 
 def target(*, admit_store: bool) -> Target:
@@ -90,6 +130,49 @@ class TmemStateContract(unittest.TestCase):
         value["operations"][1]["parameters"] = {}
         with self.assertRaises(ScheduleParseError):
             Schedule.from_dict(value)
+
+    def test_carried_tmem_has_one_initializer_and_one_ordered_update(self):
+        value = carried_document()
+        jsonschema.Draft202012Validator(schedule_schema()).validate(value)
+        self.assertEqual(codes(value), set())
+        self.assertEqual(Schedule.from_dict(value).tile_loops[0].carried_buffers,
+                         ("a_tmem",))
+
+    def test_carry_declaration_does_not_erase_old_writer_guards(self):
+        value = carried_document()
+        value["tile_loops"][0].pop("carried_buffers")
+        self.assertIn("BUFFER_MULTIPLE_WRITERS", codes(value))
+        self.assertIn("TMEM_STORE_COMPLETION_OWNERSHIP", codes(value))
+        value = carried_document()
+        value["tile_loops"][0]["carried_buffers"] = []
+        with self.assertRaises(ScheduleParseError):
+            Schedule.from_dict(value)
+
+    def test_carried_tmem_rejects_wrong_writer_and_barrier_phase(self):
+        value = carried_document()
+        value["tile_loops"][0]["body"].remove("store_update")
+        self.assertIn("CARRIED_TMEM_WRITER_SCOPE", codes(value))
+        value = carried_document()
+        update = next(op for op in value["operations"] if op["id"] == "store_update")
+        update["signals"] = ["done"]
+        self.assertIn("CARRIED_TMEM_BARRIER", codes(value))
+        value = carried_document()
+        extra = copy.deepcopy(next(op for op in value["operations"] if op["id"] == "store_update"))
+        extra["id"] = "extra_update"
+        value["operations"].insert(-1, extra)
+        value["tile_loops"][0]["body"].insert(-1, "extra_update")
+        self.assertIn("CARRIED_TMEM_WRITERS", codes(value))
+
+    def test_update_must_follow_every_in_loop_state_reader(self):
+        value = carried_document()
+        operations = value["operations"]
+        update = next(op for op in operations if op["id"] == "store_update")
+        operations.remove(update)
+        operations.insert(3, update)
+        body = value["tile_loops"][0]["body"]
+        body.remove("store_update")
+        body.insert(1, "store_update")
+        self.assertIn("CARRIED_TMEM_UPDATE_ORDER", codes(value))
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ from ..ir import (
 from ..diagnostics import FindingCategory, FindingSeverity
 from ..target import Target
 from ._collector import _Collector
+from .carried_tmem import analyze_carried_tmem
 
 
 def declared_barrier_mechanisms(target: Target) -> frozenset[BarrierMechanism]:
@@ -149,6 +150,7 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
     barriers = {barrier.name: barrier for barrier in schedule.barriers}
     active = {operation.role for operation in schedule.operations}
+    carried_pairs, _ = analyze_carried_tmem(schedule)
 
     # A TMEM store completes asynchronously. Every physical warp that writes its
     # 128-lane tile must finish and arrive before a consumer may read the tensor tile.
@@ -362,8 +364,16 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
             for operation in producers
             if operation.produced_pipeline_kind is not None
         }
-        if any(tmem_stage(op) for op in producers) and (
-            len(producers) != 1 or barrier.pipeline is not None
+        carried_pair = next(
+            (pair for pair in carried_pairs.values() if pair.barrier == barrier.name), None
+        )
+        carried_producers = (
+            carried_pair is not None
+            and {op.op_id for op in producers}
+            == {carried_pair.initializer, carried_pair.updater}
+        )
+        if any(tmem_stage(op) for op in producers) and not (
+            (len(producers) == 1 and barrier.pipeline is None) or carried_producers
         ):
             out.add(
                 "TMEM_STORE_COMPLETION_OWNERSHIP", path,

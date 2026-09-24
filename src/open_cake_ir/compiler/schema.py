@@ -554,7 +554,11 @@ def schedule_schema() -> dict[str, Any]:
                                 "add": {"type": "integer"},
                                 "floor_div": _POSITIVE,
                             }
-                        )
+                        ),
+                        "carried_buffers": dict(
+                            _NAMES, minItems=1, uniqueItems=True,
+                            description="TMEM scratch buffers with one pre-loop initializer and one ordered in-loop update.",
+                        ),
                     },
                 ),
             },
