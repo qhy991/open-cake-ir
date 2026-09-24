@@ -52,7 +52,7 @@ class RankedMailboxManifest(unittest.TestCase):
     def test_shape_plan_source_and_binding_drift_refuse(self):
         workload, lowered, plans = material()
         combine_document = json.loads(COMBINE.read_text())
-        with self.assertRaisesRegex(ValueError, 'shard ABI'):
+        with self.assertRaisesRegex(ValueError, 'public output or input ABI'):
             RankedMailboxLaunchManifest.from_lowered(
                 lowered, combine_document=combine_document,
                 workload=workload, case_id='skew_to_rank0',
