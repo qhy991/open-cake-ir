@@ -182,10 +182,11 @@ def _source(workload, case_id, stages, partitioned):
         raise ValueError('partitioned TinyGEMM is currently bounded to sm_103a')
     args = workload.tensor_abi(case_id)
     shape = workload.case(case_id)['shape']
-    # This one measured fixture benefits from two execution groups. Keep other
-    # shapes at their authored width until they have their own device evidence.
-    groups = ([0, 1] if partitioned and (shape['B'], shape['N'], shape['K']) == _TWO_GROUP_TWO_STAGE_FIXTURE
-              else [0, 1, 2, 3])
+    # This exact fixture has bitwise and paired B300 evidence for two groups
+    # and a wider output-feature tile. Keep other shapes at their authored map.
+    large_fixture = partitioned and (shape['B'], shape['N'], shape['K']) == _TWO_GROUP_TWO_STAGE_FIXTURE
+    groups = [0, 1] if large_fixture else [0, 1, 2, 3]
+    column_tile = 32 if large_fixture else 16
     declarations = [f'{a.name}: cake.Tensor({a.shape!r}, "{a.dtype}"' +
                     (', mode="output")' if a.mode == 'output' else ')') for a in args]
     tile = 1024 if partitioned else 16
@@ -196,7 +197,7 @@ def _source(workload, case_id, stages, partitioned):
              f'def candidate(lm, {", ".join(declarations)}):',
              f'    compute = lm.role(execution_groups={groups})',
              '    row = lm.program(x, axis=0, dimension=0, tile=16)',
-             '    column = lm.program(weight, axis=1, dimension=0, tile=16)']
+             f'    column = lm.program(weight, axis=1, dimension=0, tile={column_tile})']
     if iterative:
         lines.extend([f'    for k in lm.range(x, name="k_loop", dimension=1, tile={tile}, num_stages={stages}, disallow_acc_multi_buffer=True):',
                       '        with compute:'])
@@ -211,7 +212,7 @@ def _source(workload, case_id, stages, partitioned):
         name = f'acc{i}' if partitioned else 'acc'
         ranges = f', k_ranges=[[{i*256}, {(i+1)*256}]]' if partitioned else ''
         lines.append(pad+f'{name} = lm.mma(a, b, instruction={{"contract": "triton.dot.bf16_fp32"}}, '
-                     f'tile_shape=(16, 16, {tile}){ranges}, id="dot{i}")')
+                     f'tile_shape=(16, {column_tile}, {tile}){ranges}, id="dot{i}")')
     lines.extend(['    with compute:', '        raw_bias = lm.load(bias[column], id="load_bias")',
                   '        bias32 = lm.cast(raw_bias, to="fp32", id="bias32")'])
     accumulator = 'acc'

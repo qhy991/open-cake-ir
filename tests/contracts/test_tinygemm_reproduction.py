@@ -129,17 +129,22 @@ class TinyGemmReproduction(unittest.TestCase):
                     self.assertEqual(bool(document.get('tile_loops')), depth > 1024)
                     self.assertTrue(compiler.lower(assessment).source)
 
-    def test_measured_large_fixture_selects_two_groups_and_two_stages_only_by_default(self):
+    def test_measured_large_fixture_selects_two_groups_and_wider_feature_tile(self):
         large = WorkloadContract(task.workload_document(rows=64, columns=4096, depth=3072))
         default = frontend.parse(task.partitioned_source(large)).document
         self.assertEqual(default['roles'][0]['execution_groups'], [0, 1])
         self.assertEqual(default['tile_loops'][0]['range_options']['num_stages'], 2)
+        self.assertEqual(default['program_map']['axes'][1]['tile'], 32)
+        self.assertEqual([op for op in default['operations'] if op['kind'] == 'mma'][0]
+                         ['parameters']['tile_shape'], [16, 32, 1024])
         explicit = frontend.parse(task.partitioned_source(large, stages=4)).document
         self.assertEqual(explicit['roles'][0]['execution_groups'], [0, 1])
         self.assertEqual(explicit['tile_loops'][0]['range_options']['num_stages'], 4)
+        self.assertEqual(explicit['program_map']['axes'][1]['tile'], 32)
         other = WorkloadContract(task.workload_document(rows=16, columns=1024, depth=1024))
         default_other = frontend.parse(task.partitioned_source(other)).document
         self.assertEqual(default_other['roles'][0]['execution_groups'], [0, 1, 2, 3])
+        self.assertEqual(default_other['program_map']['axes'][1]['tile'], 16)
         self.assertFalse(default_other['tile_loops'])
 
     def test_native_authoring_uses_the_same_workload_and_only_qualified_shapes(self):
