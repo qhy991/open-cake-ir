@@ -16,6 +16,7 @@ from .native_cuda_workers import _stage_source
 
 
 _IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
+_LOCAL_ATOMIC = 'ptx.atom.relaxed.gpu.global.add.s32'
 _ATOMIC = 'ptx.atom.relaxed.sys.global.add.s32'
 _HANDOFF = {'ptx.st.release.sys.global.s32',
             'ptx.ld.acquire.sys.global.s32'}
@@ -37,9 +38,9 @@ def _admit(compiler, program):
     if (target is None or target.code_object is not CodeObject.CUBIN
             or target.cooperative_grid is not True or target.occupancy is None
             or target.compute_capability is None or target.warp_size != 32
-            or _ATOMIC not in target.instruction_contracts
+            or not {_LOCAL_ATOMIC, _ATOMIC} <= target.instruction_contracts
             or not _HANDOFF <= target.synchronization_contracts):
-        _refuse('exact Target needs cooperative occupancy and system-scope queue/handoff contracts')
+        _refuse('exact Target needs cooperative occupancy, GPU/system atomic and system handoff contracts')
     if len(program.stages) != 3 or len(execution.handoffs) != 2:
         _refuse('this slice needs three mathematical leaves and two handoffs')
     names = tuple(stage.name for stage in program.stages)
@@ -100,6 +101,14 @@ def _admit(compiler, program):
 
 
 _DEVICE = r'''
+// The state allocation belongs to rank 0. Only the shared compute queue and
+// cross-rank completion counters need system scope; rank-0-only queues use GPU scope.
+__device__ __forceinline__ int cake_gpu_add(int32_t* pointer, int delta) {
+  int old;
+  asm volatile("atom.relaxed.gpu.global.add.s32 %0, [%1], %2;" : "=r"(old) :
+    "l"(reinterpret_cast<unsigned long long>(pointer)), "r"(delta) : "memory");
+  return old;
+}
 __device__ __forceinline__ int cake_sys_claim(int32_t* pointer) {
   int old;
   asm volatile("atom.relaxed.sys.global.add.s32 %0, [%1], %2;" : "=r"(old) :
@@ -120,6 +129,10 @@ __device__ __forceinline__ int cake_warp_claim(int32_t* pointer, int lane) {
   int old = lane == 0 ? cake_sys_claim(pointer) : 0;
   return __shfl_sync(0xffffffffu, old, 0);
 }
+__device__ __forceinline__ int cake_warp_claim_local(int32_t* pointer, int lane) {
+  int old = lane == 0 ? cake_gpu_add(pointer, 1) : 0;
+  return __shfl_sync(0xffffffffu, old, 0);
+}
 '''
 
 
@@ -134,7 +147,7 @@ __device__ __forceinline__ void @ENTRY@_compute(@FLOAT_PARAMS@, int32_t* state,
     cake_sys_publish(state + @READY1@ + tile);
     cake_sys_claim(state + @CHUNK@ + tile / per_chunk);
     cake_sys_claim(state + 4);
-    if (stolen) cake_sys_claim(state + 8);
+    if (stolen) cake_gpu_add(state + 8, 1);
   }
   __syncwarp();
 }
@@ -150,37 +163,37 @@ extern "C" __global__ void @ENTRY@_kernel(@KERNEL_PARAMS@, int32_t* state,
   const int per_chunk = @TILES@ / k;
   if (rank == 0 && int(blockIdx.x) < c) {
     while (true) {
-      int tile = cake_warp_claim(state + 0, lane);
+      int tile = cake_warp_claim_local(state + 0, lane);
       if (tile >= @TILES@) break;
       @ENTRY@_stage0(@FLOAT_ARGS@, tile, lane);
       __syncwarp();
       if (lane == 0) {
         cake_sys_publish(state + @READY0@ + tile);
-        cake_sys_claim(state + 3);
+        cake_gpu_add(state + 3, 1);
       }
       __syncwarp();
     }
     if (lane == 0)
-      while (cake_sys_load(state + 3) < @TILES@) __nanosleep(64);
+      while (cake_gpu_add(state + 3, 0) < @TILES@) __nanosleep(64);
     __syncwarp();
     while (true) {
       int stop = 0;
       if (lane == 0)
         stop = cake_sys_load(state + @CHUNK@) >= per_chunk ||
-               cake_sys_claim(state + 6) >= budget;
+               cake_gpu_add(state + 6, 1) >= budget;
       stop = __shfl_sync(0xffffffffu, stop, 0);
       if (stop) break;
       int tile = cake_warp_claim(state + 1, lane);
       if (tile >= @TILES@) break;
       @ENTRY@_compute(@FLOAT_ARGS@, state, tile, lane, per_chunk, true);
     }
-    if (lane == 0) cake_sys_claim(state + 5);
+    if (lane == 0) cake_gpu_add(state + 5, 1);
     __syncwarp();
     if (lane == 0)
-      while (cake_sys_load(state + 5) < c) __nanosleep(64);
+      while (cake_gpu_add(state + 5, 0) < c) __nanosleep(64);
     __syncwarp();
     while (true) {
-      int tile = cake_warp_claim(state + 2, lane);
+      int tile = cake_warp_claim_local(state + 2, lane);
       if (tile >= @TILES@) break;
       while (cake_sys_load(state + @CHUNK@ + tile / per_chunk) < per_chunk)
         __nanosleep(64);

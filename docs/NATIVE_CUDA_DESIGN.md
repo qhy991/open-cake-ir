@@ -373,6 +373,21 @@ outlive queued launches. The emitted metadata is a projection of Schedule/Target
 second workload registry. GPU correctness is pending until the separate qualification
 worker evaluates the unchanged oracle and case requirements.
 
+### Two-rank worker queue scope
+
+The bounded rank-placed worker keeps its queue state on rank 0. Dispatch and
+combine cursors, dispatch completion, the communication-worker barrier, the
+steal permit counter and the stolen-tile counter have only rank-0 users. Their
+returned-old-value increments use the Target's
+`ptx.atom.relaxed.gpu.global.add.s32` contract. The compute cursor and
+completion counter have writers on both ranks; their increments retain
+`ptx.atom.relaxed.sys.global.add.s32`. Cross-rank ready flags retain
+system-scope release/acquire; chunk completion uses a system-scope counter,
+while the consumer also waits on each payload's ready flag. This scope
+selection follows the Program's fixed rank and queue ownership. The peer pair is
+checked by the generated host ABI. The scope change has no B300 timing claim
+until the successor source is compiled and measured on device.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
