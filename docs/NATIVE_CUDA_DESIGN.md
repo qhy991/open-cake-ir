@@ -67,7 +67,11 @@ individual stage operations.
 
 Native code currently supports M128 atoms, N in [8,256] at multiples of eight, K16
 atoms and K16/32/64 staged tiles selected by full-row 32/64/128-byte swizzles. Register
-arithmetic supports FP32 add/sub/mul/div/relu/square and explicit floating-point casts.
+arithmetic supports FP32 add/sub/mul/div/relu/square/exp/rsqrt/reciprocal and explicit
+floating-point casts. The last three are row-owned CUDA math operations in an
+isolated KDA-preparation witness; no B300 numerical receipt yet establishes that
+their error is acceptable for the complete recurrent Workload. Native reduce,
+prefix-product scan and the triangular chunk correction remain separate gaps.
 Streaming argmin preserves global indices, lowest-index ties and centroid-tail masks.
 Resident argmin uses local tile positions and is admitted only when a complete,
 zero-origin candidate domain fits in one tile. `Schedule.argmin_domain` follows the

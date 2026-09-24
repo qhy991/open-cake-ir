@@ -463,8 +463,11 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
 
         elif op.kind is OperationKind.ELEMENTWISE:
             check(op.parameters.op in (ElementwiseOp.ADD, ElementwiseOp.SUB, ElementwiseOp.MUL,
-                                        ElementwiseOp.DIV, ElementwiseOp.RELU, ElementwiseOp.SQUARE),
-                  'NATIVE_ARITHMETIC_UNSUPPORTED', path+'.parameters.op', 'native arithmetic currently admits add/sub/mul/div/relu/square')
+                                        ElementwiseOp.DIV, ElementwiseOp.RELU, ElementwiseOp.SQUARE,
+                                        ElementwiseOp.EXP, ElementwiseOp.RSQRT,
+                                        ElementwiseOp.RECIPROCAL),
+                  'NATIVE_ARITHMETIC_UNSUPPORTED', path+'.parameters.op',
+                  'native arithmetic admits FP32 add/sub/mul/div/relu/square/exp/rsqrt/reciprocal')
             check(dst.dtype is DType.FP32 and all(buffers[n].dtype is DType.FP32 for n in op.reads),
                   'NATIVE_ARITHMETIC_DTYPE', path, 'native elementwise operations use FP32 values')
             check(dst.space is MemorySpace.REGISTER
@@ -882,7 +885,9 @@ class _Emitter:
             y=f'{p.scalar!r}f' if p.scalar is not None else (f'{self.names[op.reads[1]]}[{"0" if self.b(op.reads[1]).is_scalar else "col"}]' if len(op.reads)>1 else x)
             expr={ElementwiseOp.ADD:f'__fadd_rn({x},{y})',ElementwiseOp.SUB:f'__fsub_rn({x},{y})',
                   ElementwiseOp.MUL:f'__fmul_rn({x},{y})',ElementwiseOp.DIV:f'__fdiv_rn({x},{y})',
-                  ElementwiseOp.RELU:f'fmaxf({x},0.0f)',ElementwiseOp.SQUARE:f'__fmul_rn({x},{x})'}[p.op]
+                  ElementwiseOp.RELU:f'fmaxf({x},0.0f)',ElementwiseOp.SQUARE:f'__fmul_rn({x},{x})',
+                  ElementwiseOp.EXP:f'expf({x})',ElementwiseOp.RSQRT:f'rsqrtf({x})',
+                  ElementwiseOp.RECIPROCAL:f'__fdiv_rn(1.0f,{x})'}[p.op]
             self.line(f'{d}[col] = {expr};'); self.end()
         elif op.kind is OperationKind.CAST:
             convert = {DType.BF16:'__float2bfloat16_rn',DType.FP16:'__float2half_rn',DType.FP32:'float',DType.INT32:'int32_t'}[dst.dtype]

@@ -180,6 +180,22 @@ class NativeCudaContracts(unittest.TestCase):
         self.assertIn('cake_wait(bar0, (it0&1));',source)
         self.assertEqual(source.count('cake_init(bar0, 4);'),1)
 
+    def test_kda_gate_math_uses_typed_native_fp32_primitives(self):
+        d=json.loads((ROOT/'tests/fixtures/kda-native-math-primitives-sm103a.json').read_text())
+        lowered=self.lower(d)
+        source=lowered.source
+        self.assertIn('expf(',source)
+        self.assertIn('rsqrtf(',source)
+        self.assertIn('__fdiv_rn(1.0f,',source)
+        self.assertLess(source.index('// CAKE_OP: square_positive'),
+                        source.index('// CAKE_OP: exp_positive'))
+        self.assertLess(source.index('// CAKE_OP: exp_positive'),
+                        source.index('// CAKE_OP: rsqrt_positive'))
+        self.assertLess(source.index('// CAKE_OP: rsqrt_positive'),
+                        source.index('// CAKE_OP: reciprocal_positive'))
+        d['operations'][-4]['parameters']['op']='log2'
+        self.refuses(d,'NATIVE_ARITHMETIC_UNSUPPORTED')
+
     def test_inplace_state_has_one_global_argument_and_ordered_read_write(self):
         d=document('inplace-state-gemm')
         lowered=self.lower(d)
