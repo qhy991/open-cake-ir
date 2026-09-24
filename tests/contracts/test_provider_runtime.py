@@ -80,6 +80,8 @@ class ProviderRuntimeContractTests(unittest.TestCase):
         resource = self.write(executable.parent / "codex-resources/codex-code-mode-host", b"resource")
         with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=True):
             self.assertEqual(resolve_codex_code_mode_host(executable)["path"], str(resource))
+            self.assertEqual(resolve_codex_code_mode_host(executable, isolated_home=True)["path"],
+                             str(sibling))
             with patch.dict(os.environ, {"CODEX_MANAGED_BY_NPM": "1"}):
                 self.assertEqual(resolve_codex_code_mode_host(executable)["path"], str(sibling))
         with patch.dict(os.environ, {"CODEX_HOME": str(self.root)}, clear=True):

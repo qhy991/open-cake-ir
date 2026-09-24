@@ -75,7 +75,7 @@ Provider 是真正调用 AI 的程序。显示“已登录”不代表它能遵�
 
 失败也要封存，不能删掉后伪装成同一次成功。完成必要的环境处理后，另用新的 Run 身份。资格记录固定的推理强度没有隐含默认值，变更它需要对应的新资格和新 Study。通过这项检查，只证明 AI 工具的传输和交互边界；没有授予 GPU 运行资格，也没有科学结果。
 
-B300 的 Cake / 原生 Triton 对照分别使用 `contracts/providers/run-turn-output-schema-v1.json` 验证：Cake 指定 `--environment-kind open_cake --submission-contract python_candidate_bundle_v1`，原生臂指定 `--environment-kind native_triton`。两份双轮 receipt 和 anchor 分别进入版本 3 的外部执行绑定。
+B300 的 Cake / 原生 Triton 对照分别使用 `contracts/providers/run-turn-output-schema-v1.json` 验证：Cake 指定 `--environment-kind open_cake --submission-contract python_candidate_bundle_v1`，原生臂指定 `--environment-kind native_triton`。两次都传入 `--author-home-policy isolated_auth_only_v1` 和私有 `--auth-source`；运行配置的 `provider.auth_source` 供每个 Run 建立新作者 home。两份双轮 receipt 和 anchor 分别进入版本 3 的外部执行绑定。
 
 Ralph 的预算包括：token、检查点、最多轮数、每轮最多候选、总墙上时间、AI 实际写作时间，以及搜索、确认、分析瓶颈各自的评测次数。排队和评测不计入 AI 写作时间，但计入总时间。下一轮的最坏评测需求放不进剩余预算时，控制器不能开始它。
 

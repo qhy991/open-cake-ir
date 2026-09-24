@@ -75,6 +75,12 @@ def validate_provider_binding(*, provider, project_root, expected_provider_confi
         "study.arms.provider.qualification.path",
     )
     qualification = ProviderQualificationReceipt.load(qualification_path)
+    from .author_home import ISOLATED_AUTH_ONLY_V1
+    if (provider.get('author_home_policy') == ISOLATED_AUTH_ONLY_V1
+        and (qualification.system_skills_sha256 is None
+             or provider.get('system_skills_sha256')
+             != qualification.system_skills_sha256)):
+        raise ValueError('Provider system skills differ from the qualified author home')
     expected_configuration_sha256 = sha256(
         _canonical_json_bytes(expected_provider_configuration)).hexdigest()
     expected_qualification = {

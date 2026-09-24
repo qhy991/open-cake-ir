@@ -148,11 +148,20 @@ def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anch
     """Resolve the CLI provider's existing qualification into one authoring value."""
     from .providers import ProviderQualificationReceipt, resolve_codex_code_mode_host
     from .provider_policy import provider_harness
+    from .author_home import ISOLATED_AUTH_ONLY_V1, verify_auth_source
     harness = provider_harness(provider)
     if harness not in {'codex','claude-code'}:
         raise ValueError('CLI task preparation requires a CLI provider')
     config = load_runtime_config(runtime_path,toolchain_kind=row.runtime_kind)
+    isolated = provider.get('author_home_policy') == ISOLATED_AUTH_ONLY_V1
+    auth_source = config['provider'].get('auth_source')
+    if isolated != (auth_source is not None):
+        raise ValueError('runtime Codex credential source differs from author home policy')
+    if isolated:
+        verify_auth_source(external_file(project_root, auth_source, 'provider credential source'))
     receipt = ProviderQualificationReceipt.load(receipt_path)
+    if isolated and receipt.system_skills_sha256 is None:
+        raise ValueError('isolated Codex home requires qualified system skills')
     anchor = json.loads(Path(anchor_path).read_bytes())
     executable = Path(config['provider']['executable']).resolve(strict=True)
     observed = sha256(executable.read_bytes()).hexdigest()
@@ -163,8 +172,11 @@ def bind_cli_provider(project_root,provider,row,*,runtime_path,receipt_path,anch
     bound.update(revision=receipt.provider_revision,executable_sha256=receipt.executable_sha256,
         qualification={'path':str(receipt_path),'canonical_sha256':receipt.canonical_sha256},
         qualification_anchor={'path':str(anchor_path),'canonical_sha256':sha256(canonical(anchor)).hexdigest()})
+    if isolated:
+        bound['system_skills_sha256'] = receipt.system_skills_sha256
     if harness=='codex':
-        bound['code_mode_host'] = resolve_codex_code_mode_host(executable)
+        bound['code_mode_host'] = resolve_codex_code_mode_host(executable,
+            isolated_home=isolated)
     return bound,config
 
 

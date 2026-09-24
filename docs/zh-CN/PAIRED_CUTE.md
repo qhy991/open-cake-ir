@@ -55,7 +55,10 @@ Linux bubblewrap 编译环境不挂载作者工作区，不暴露 NVIDIA 设备�
 `contracts/providers/run-turn-output-schema-v1.json`，Cake 臂指定
 `--environment-kind open_cake --submission-contract python_candidate_bundle_v1`，
 原生臂指定 `--environment-kind native_cute_dsl`。两份双轮 receipt 与 anchor
-分别写入版本 3 的外部执行绑定；它们不验证 kernel 正确性。随后将运行配置和已封存基线交给
+分别写入版本 3 的外部执行绑定。两次资格验证都指定
+`--author-home-policy isolated_auth_only_v1 --auth-source /external/private/auth.json`；
+运行配置的 `provider.auth_source` 绑定同一私有凭据，每个 Run 建立新作者 home。
+它们不验证 kernel 正确性。随后将运行配置和已封存基线交给
 `lab preflight --execution-bindings`。所有新 lock、证据和报告放在源码目录外。
 
 两组共用 `open_cake_ir.lab.cute_build` 的 `CuTeToolchainBuilder` 和

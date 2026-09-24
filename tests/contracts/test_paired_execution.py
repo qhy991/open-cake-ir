@@ -707,6 +707,10 @@ class PairedExecutionTests(unittest.TestCase):
             qualification.update(scope='live_two_turn_current_provider',
                 executable_sha256=sha256(executable.read_bytes()).hexdigest(),
                 configuration_sha256=sha256(encoded(configuration)).hexdigest())
+            if python_transport:
+                from open_cake_ir.lab.author_home import system_skills_identity
+                qualification.update(schema_version=2,
+                    system_skills_sha256=system_skills_identity(()))
             suffix = name if python_transport else ''
             qp = self.output / f'qualification{suffix}.json'; qp.write_bytes(encoded(qualification))
             anchor = {'schema_version':1, 'kind':'codex_provider_qualification_evidence_anchor',
@@ -721,6 +725,11 @@ class PairedExecutionTests(unittest.TestCase):
                          'triton_version':'fixture','timeout_seconds':30},
             'broker':{'command':['fixture-broker'],'cwd':str(project),'timeout_seconds':30,
                       'service_user':'fixture','service_group':'fixture'}}
+        if python_transport:
+            auth_source = self.output/'auth-source.json'
+            auth_source.write_bytes(b'fixture credential')
+            auth_source.chmod(0o600)
+            config['provider']['auth_source'] = str(auth_source)
         if comparison == 'native_cute_dsl':
             config['toolchain'].pop('triton_version')
             # The declared jail environment is the Triton toolchain's field; the CuTe one
@@ -836,6 +845,9 @@ class PairedExecutionTests(unittest.TestCase):
             for run_id,value in components.items():
                 self.assertEqual(set(value['provider']._builders),{run_id})
                 if python_transport:
+                    self.assertEqual(value['provider'].configuration['author_home_policy'],
+                                     'isolated_auth_only_v1')
+                    self.assertTrue((self.output/'new-author-workspaces'/'.codex-homes'/run_id/'auth.json').is_file())
                     from open_cake_ir.lab.execution_admission import validate_run_bindings
                     with patch('open_cake_ir.lab.bindings._resolve_compiler_reference',
                                return_value=(gate, compiler_ref['path'], compiler_ref)):

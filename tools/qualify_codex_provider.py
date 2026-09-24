@@ -17,6 +17,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from open_cake_ir.evidence import EvidenceObject, EvidenceStore  # noqa: E402
 from open_cake_ir.serialization import canonical_json_bytes as _canonical_json_bytes  # noqa: E402
 from open_cake_ir.lab.pairing import comparison_arm
+from open_cake_ir.lab.author_home import ISOLATED_AUTH_ONLY_V1, provision_codex_home
+from open_cake_ir.lab.bindings import external_file
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
 from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
@@ -276,6 +278,7 @@ def _validate_invocation_pair(
         or initial.sandbox != resumed.sandbox
         or initial.provider_revision != resumed.provider_revision
         or initial.removed_environment != resumed.removed_environment
+        or initial.codex_home != resumed.codex_home
         or initial.thread_id is not None
         or resumed.thread_id != thread_id
     ):
@@ -315,7 +318,7 @@ def _validate_workspace(
 
 
 def _invocation_document(invocation: ProviderInvocation) -> dict[str, object]:
-    return {
+    document = {
         "argv": list(invocation.argv),
         "cwd": str(invocation.cwd),
         "sandbox": invocation.sandbox,
@@ -323,6 +326,9 @@ def _invocation_document(invocation: ProviderInvocation) -> dict[str, object]:
         "removed_environment": list(invocation.removed_environment),
         "thread_id": invocation.thread_id,
     }
+    if invocation.codex_home is not None:
+        document['codex_home'] = str(invocation.codex_home)
+    return document
 
 
 def _put_json(evidence: EvidenceStore, value: object) -> EvidenceObject:
@@ -399,6 +405,9 @@ def main() -> int:
         help="exact provider reasoning effort to qualify as a treatment factor",
     )
     parser.add_argument("--service-tier", default="default")
+    parser.add_argument('--author-home-policy', choices=(ISOLATED_AUTH_ONLY_V1,))
+    parser.add_argument('--auth-source', type=Path,
+                        help='private external Codex credential for an isolated author home')
     parser.add_argument("--timeout-seconds", type=int, default=1800)
     parser.add_argument(
         "--maximum-candidates-per-turn",
@@ -418,6 +427,9 @@ def main() -> int:
         default=None,
     )
     args = parser.parse_args()
+    if ((args.author_home_policy is None) != (args.auth_source is None)
+        or args.author_home_policy is not None and args.harness != 'codex'):
+        parser.error('isolated Codex author home requires its credential source and Codex harness')
     from open_cake_ir.lab.claude import response_model_aliases
     aliases = response_model_aliases(args.model, args.response_model_alias)
     if aliases and args.harness != "claude-code":
@@ -528,14 +540,24 @@ def main() -> int:
         )
     ):
         raise ValueError("Provider qualification input custody differs")
+    auth_source = (external_file(ROOT, str(args.auth_source), 'qualification Codex credential source')
+                   if args.author_home_policy is not None else None)
     workspace.mkdir(mode=0o750)
+    codex_homes = ({arm: provision_codex_home(auth_source,
+                     workspace.with_name(workspace.name
+                         + (f'-{arm}' if len(qualification_arms) > 1 else '')
+                         + '-author-home'))
+                    for arm in qualification_arms}
+                   if args.author_home_policy is not None else {})
     workspaces = {}
     for arm in qualification_arms:
         arm_workspace = workspace / arm
         arm_workspace.mkdir(mode=0o750)
         workspaces[arm] = arm_workspace
     executable_sha256 = sha256(executable.read_bytes()).hexdigest()
-    code_mode_host = (resolve_codex_code_mode_host(executable, removed_environment=removed_environment)
+    code_mode_host = (resolve_codex_code_mode_host(executable, removed_environment=removed_environment,
+                                                   codex_home=codex_homes.get(qualification_arms[0]),
+                                                   isolated_home=args.author_home_policy is not None)
                       if args.harness == "codex" else None)
     output_schema_sha256 = sha256(output_schema.read_bytes()).hexdigest()
     reference_nonce = sha256(
@@ -602,6 +624,8 @@ def main() -> int:
     if args.harness == "codex":
         authority.update(code_mode_host=code_mode_host, service_tier=args.service_tier)
     authority["submission_contract"] = submission_contract
+    if args.author_home_policy is not None:
+        authority['author_home_policy'] = args.author_home_policy
     if event_contract == "closed_file_change_v1":
         authority["web_search"] = "disabled"
     authority["maximum_candidates_per_turn"] = maximum_candidates_per_turn
@@ -641,7 +665,8 @@ def main() -> int:
                     code_mode_host=code_mode_host, service_tier=args.service_tier,
                     output_schema=output_schema, disabled_features=disabled_features,
                     event_contract=event_contract, submission_contract=submission_contract,
-                    cwd_policy="independent_task_workspace", reference_visibility="workspace_task_files")
+                    cwd_policy="independent_task_workspace", reference_visibility="workspace_task_files",
+                    author_home_policy=args.author_home_policy, codex_home=codex_homes.get(arm))
             configuration_sha256s.add(sha256(_canonical_json_bytes(builder.configuration)).hexdigest())
             initial_plan = _planned_turn(package, 1)
             verify_task_package(arm_workspace, package)
@@ -675,6 +700,12 @@ def main() -> int:
                 initial.candidates != _planned_candidates(arm, initial_plan, submission_contract)
             ):
                 raise ValueError("Provider initial candidate bytes differ")
+            if args.harness == 'codex':
+                try:
+                    builder.remember_system_skills()
+                except ValueError as error:
+                    raise RunProtocolFault('provider_fault', str(error),
+                                           artifact_payloads={'provider_stdout': initial.raw_events}) from error
 
             resumed_plan = _planned_turn(package, 2)
             resumed_prompt, resumed_projection = render_task_request(package, {"turn": 2})
@@ -733,6 +764,12 @@ def main() -> int:
                 raise ValueError(
                     "Provider two-Turn identity, usage, or candidate lifecycle differs"
                 )
+            if args.harness == 'codex':
+                try:
+                    builder.remember_system_skills()
+                except ValueError as error:
+                    raise RunProtocolFault('provider_fault', str(error),
+                                           artifact_payloads={'provider_stdout': resumed.raw_events}) from error
             observations[arm] = {
                 "reported_models": [initial_models, resumed_models],
                 "builder": builder,
@@ -768,9 +805,17 @@ def main() -> int:
             raise ValueError("Provider qualification authority changed")
 
         if args.harness == "codex":
-            resolve_codex_code_mode_host(
-                executable, expected=code_mode_host, removed_environment=removed_environment,
-            )
+            for home in (codex_homes.values() if codex_homes else (None,)):
+                resolve_codex_code_mode_host(
+                    executable, expected=code_mode_host, removed_environment=removed_environment,
+                    codex_home=home, isolated_home=args.author_home_policy is not None,
+                )
+        qualified_skills = ({observation['builder'].system_skills_sha256
+                             for observation in observations.values()}
+                            if args.author_home_policy is not None else set())
+        if args.author_home_policy is not None and (
+            len(qualified_skills) != 1 or None in qualified_skills):
+            raise ValueError('paired Provider system skills differ between arms')
         receipt = ProviderQualificationReceipt(
             provider_revision=args.provider_revision,
             executable_sha256=executable_sha256,
@@ -780,6 +825,8 @@ def main() -> int:
             usage_observed=True,
             qualified=True,
             scope=receipt_scope,
+            system_skills_sha256=(next(iter(qualified_skills))
+                                   if args.author_home_policy is not None else None),
         )
         objects = []
         arm_payloads: dict[str, object] = {}
