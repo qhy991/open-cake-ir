@@ -55,3 +55,8 @@ geometry is intentionally small and no latency, NVLink bandwidth, SM overlap,
 large-model or end-to-end serving claim follows. Cake still needs explicit
 rank placement, remote-transfer and system-scope queue/handoff analyses before
 its Compiler can generate this distributed program.
+
+Promotion disposition: no raw kernel is promoted into the Compiler. The
+reusable work-claim and release/acquire mechanics have device evidence; the
+next Compiler change must admit their rank placement, queue capacity and
+cross-GPU progress proof together with native emission and counterexamples.
