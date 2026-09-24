@@ -431,6 +431,19 @@ Triton peer. This is a complete **local expert calculation** with separate
 kernel launches, not Weave's fused EP4 worker, routing, remote mailbox or
 weighted combine. Compilation, B300 oracle and timing remain open.
 
+### Origin weighted combine leaf
+
+`examples/schedules/native/weave-weighted-combine-t{7,8}-h16.json` composes
+FP32 contribution and route-weight loads, a declared route-axis broadcast,
+FP32 multiply and SUM, one FP32-to-BF16 cast, and a contiguous store. The
+native SIMT lowering assigns one source token to one CTA and two route values
+to each of its first 16 lanes; it emits exactly one BF16 rounding after the
+route sum. Both token extents have matched Triton Schedules with the same
+operations and AccessMaps. The leaf does not supply remote contribution
+arrival, chunk waits or ownership: ranked mailbox effects must bind those
+before a distributed Program can call it. Offline lowering is no B300
+correctness or timing evidence.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline

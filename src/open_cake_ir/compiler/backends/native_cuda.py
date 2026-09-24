@@ -122,6 +122,11 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         return tuple(failures)
     if not s.pipelines:
         if any(op.kind is OperationKind.REDUCE for op in s.operations):
+            if any(op.kind is OperationKind.CAST and op.writes
+                   and (result := s.buffer(op.writes[0])) is not None
+                   and result.dtype is DType.BF16 for op in s.operations):
+                from .native_cuda_combine import preflight as combine_preflight
+                return combine_preflight(s, target)
             from .native_cuda_row_dot import preflight as row_dot_preflight
             return row_dot_preflight(s, target)
         if any(op.kind is OperationKind.ELEMENTWISE
@@ -995,6 +1000,11 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
         raise EmitError('Entry point differs from the canonical route.')
     if not schedule.pipelines:
         if any(op.kind is OperationKind.REDUCE for op in schedule.operations):
+            if any(op.kind is OperationKind.CAST and op.writes
+                   and (result := schedule.buffer(op.writes[0])) is not None
+                   and result.dtype is DType.BF16 for op in schedule.operations):
+                from .native_cuda_combine import Emitter as CombineEmitter
+                return CombineEmitter(schedule,target,schedule.lowering.entry_point).emit()
             from .native_cuda_row_dot import Emitter as RowDotEmitter
             return RowDotEmitter(schedule,target,schedule.lowering.entry_point).emit()
         if any(op.kind is OperationKind.ELEMENTWISE
