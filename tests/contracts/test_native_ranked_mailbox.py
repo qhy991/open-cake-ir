@@ -50,6 +50,13 @@ class NativeRankedMailbox(unittest.TestCase):
                 self.assertEqual(requirements['payload_capacity'], payloads)
                 self.assertEqual(requirements['task_capacity'], tasks)
                 self.assertEqual(requirements['grid_per_rank'], [[148, 1, 1]] * 4)
+                self.assertEqual(requirements['rank_inputs'], [
+                    {'name': 'hidden', 'shape': [tokens, 16], 'dtype': 'bf16'},
+                    {'name': 'expert_ids', 'shape': [tokens, 2], 'dtype': 'int32'},
+                    {'name': 'route_weights', 'shape': [tokens, 2], 'dtype': 'fp32'},
+                    {'name': 'w_up_gate', 'shape': [2, 64, 16], 'dtype': 'bf16'},
+                    {'name': 'w_down', 'shape': [2, 16, 32], 'dtype': 'bf16'},
+                ])
                 self.assertTrue(requirements['cooperative_grid'])
                 self.assertTrue(requirements['peer_pair_runtime_check'])
                 self.assertTrue(requirements['input_domain_runtime_check'])
