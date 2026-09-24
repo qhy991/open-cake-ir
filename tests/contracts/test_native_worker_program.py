@@ -58,6 +58,22 @@ def document() -> dict:
     }
 
 
+def rank_native_document() -> dict:
+    value = document()
+    value['schema_version'] = 3
+    value['execution']['workers'][1]['phases'] = ['calculate']
+    value['execution']['queues'][2]['workers'] = ['first']
+    for handoff in value['execution']['handoffs']:
+        handoff['scope'] = 'system'
+    value['execution']['placement'] = {
+        'world_size': 2, 'state_rank': 0,
+        'worker_ranks': {'first': 0, 'second': 1},
+        'tensor_ranks': {name: (1 if name == 'middle0' else 0)
+                         for name in value['tensors']},
+    }
+    return value
+
+
 class NativeWorkerProgram(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -111,9 +127,39 @@ class NativeWorkerProgram(unittest.TestCase):
         self.assertIn('cake_acquire_system(state + 522 + tile)', second)
         self.assertIn('cake_publish(state + 10 + tile)', second)
 
+    def test_two_rank_source_owns_shared_system_queue_and_exact_peer_checks(self):
+        lowered = self.compiler.lower_program(Program.from_dict(rank_native_document()))
+        requirements = lowered.toolchain_requirements
+        self.assertEqual(requirements['world_size'], 2)
+        self.assertEqual(requirements['state_rank'], 0)
+        self.assertEqual(requirements['tensor_ranks']['middle0'], 1)
+        self.assertEqual(requirements['grid_per_rank'], [[148, 1, 1], [148, 1, 1]])
+        self.assertTrue(requirements['peer_pair_runtime_check'])
+        self.assertEqual(requirements['state_bytes'], 6184)
+        self.assertEqual(set(requirements['host_abi']),
+                         {'create_rank', 'launch_two', 'destroy_rank'})
+        source = lowered.source
+        self.assertEqual(source.count('{'), source.count('}'))
+        self.assertEqual(source.count('fma.rn.f32 %0, %1, %2, %3;'), 3)
+        self.assertIn('atom.relaxed.sys.global.add.s32', source)
+        self.assertIn('st.release.sys.global.s32', source)
+        self.assertIn('ld.acquire.sys.global.s32', source)
+        self.assertIn('cudaPointerGetAttributes', source)
+        self.assertIn('cudaDevP2PAttrNativeAtomicSupported', source)
+        self.assertIn('cudaStreamSynchronize', source)
+        self.assertEqual(source.count('cudaLaunchCooperativeKernel'), 2)
+        self.assertIn('rank == 0 && int(blockIdx.x) < c', source)
+        self.assertIn('rank == 1 && int(blockIdx.x) >= c', source)
+        for stage in ('send', 'calculate', 'finish'):
+            self.assertIn(f'// CAKE_OP: {stage}.fma', source)
+
     def test_refuses_unproved_routes_and_handoffs(self):
-        with self.assertRaisesRegex(ValueError, 'two-rank native lowering'):
+        with self.assertRaisesRegex(ValueError, 'exact Target needs'):
             self.compiler.lower_program(Program.from_dict(rank_document()))
+        value = rank_native_document()
+        value['execution']['placement']['tensor_ranks']['middle0'] = 0
+        with self.assertRaisesRegex(ValueError, 'first intermediate on rank 1'):
+            self.compiler.lower_program(Program.from_dict(value))
         value = document()
         value['stages'][1]['schedule']['lowering']['backend'] = 'triton'
         with self.assertRaisesRegex(ValueError, 'stage .*native_cuda leaf route'):

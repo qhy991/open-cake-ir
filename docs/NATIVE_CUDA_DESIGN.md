@@ -194,6 +194,25 @@ belongs to a peer. The development launch adapter is not a sealed Evaluation
 candidate. Full inter-GPU dispatch/combine, grouped expert GEMMs, per-layer
 cost model and MoE Workload acceptance remain separate required work.
 
+### Two-rank worker Program v3 successor
+
+The bounded native successor maps Program v3's first CTA class to rank 0 and
+regular compute to rank 1. Rank 0 owns dispatch, optional compute stealing
+and combine; rank 1 owns regular compute. A single rank-0 state allocation
+holds the work queues, per-tile flags and chunk counts. Both generated
+cooperative kernels use system-scope PTX atomics and release/acquire on that
+state; one intermediate resides on rank 1 and the next on rank 0. The host
+ABI checks every declared tensor owner and each directed peer pair before
+launch, resets state once on rank 0, checks compiled cooperative residency
+on both GPUs, then launches both rank-specific worker loops. The three FP32
+FMA leaf bodies still come from their complete Schedules. Other placements
+and math remain refused, and the single-device Evaluation adapter cannot
+launch this form.
+
+This is a two-rank development mechanism, not an EP4 MoE implementation. It
+still needs exact-source nvcc compilation, a two-GPU independent oracle and a
+distributed Evaluation adapter before any device or performance claim.
+
 ## Native PTX returned-old-value work claim prototype
 
 A second, explicitly bounded path in the same `native_cuda` backend lowers a

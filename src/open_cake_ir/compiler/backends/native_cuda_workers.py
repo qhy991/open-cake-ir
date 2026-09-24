@@ -377,6 +377,9 @@ def _emit(program, target, tiles: int, width: int, grid: int):
 
 
 def lower_worker_program(compiler, program) -> LoweredWorkerProgram:
+    if program.execution is not None and program.execution.placement is not None:
+        from .native_cuda_rank_workers import lower_rank_worker_program
+        return lower_rank_worker_program(compiler, program)
     target, tiles, width, grid = _admit(compiler, program)
     if compiler.commit is None:
         raise ValueError('program compilation requires a clean Compiler commit')
