@@ -1,7 +1,7 @@
 """Four rank Evaluation binding preserves owners, reset and one launch."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 from pathlib import Path
 import unittest
@@ -170,6 +170,12 @@ class RankedMailboxLaunch(unittest.TestCase):
         _, _, short = self.callbacks(mailbox_bytes=200)
         with self.assertRaisesRegex(ValueError, 'compiled mailbox size'):
             prepare_ranked_mailbox(lowered, inputs, plans, **short)
+        wrong_requirements = dict(lowered.toolchain_requirements)
+        wrong_requirements['grid_per_rank'] = [[148, 1, 1], [148, 1, 1],
+                                               [147, 1, 1], [148, 1, 1]]
+        with self.assertRaisesRegex(ValueError, 'source, target or mailbox ABI'):
+            prepare_ranked_mailbox(replace(lowered,
+                toolchain_requirements=wrong_requirements), inputs, plans, **callbacks)
         _, _, failure = self.callbacks(status=(0, 0, 3, 0))
         with self.assertRaisesRegex(ValueError, 'statuses differ'):
             prepare_ranked_mailbox(lowered, inputs, plans, **failure).run()
