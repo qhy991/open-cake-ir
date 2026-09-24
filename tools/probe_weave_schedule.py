@@ -45,9 +45,15 @@ def claimed_work() -> dict:
     """Make the returned atomic index drive a visible load and output store."""
     document = schedule("atomic-reservation-b8-smoke.json")
     document["program_map"]["persistent"] = True
+    document["residency"]["ctas_per_multiprocessor"] = 1
+    # More logical work tiles than resident CTAs, including the all-to-one-expert
+    # case where one counter must cover every returned old value.
+    for buffer in document["buffers"]:
+        if buffer["name"] in {"expert_ids", "positions"}:
+            buffer["shape"][0] = 256
     document["buffers"].insert(1, {
         "name": "work_tiles", "space": "global", "dtype": "int32",
-        "shape": [4, 64], "mode": "input",
+        "shape": [4, 2048], "mode": "input",
     })
     document["buffers"].append({
         "name": "claimed_tiles", "space": "register", "dtype": "int32",
@@ -129,6 +135,9 @@ def main() -> int:
         source_fragments=("tl.atomic_add(", "claimed_tiles = tl.load(",
                           "for _work in tl.range(tl.program_id(0), TOTAL_TILES, NUM_CTAS):"),
     )
+    constants = result["persistent_atomic_claim"]["persistent_constants"]
+    if constants["TOTAL_TILES"] <= constants["NUM_CTAS"]:
+        raise AssertionError("claimed-work control did not actually reuse resident CTAs")
     steal = deepcopy(work)
     steal["roles"] = split["roles"]
     for op in steal["operations"]:
