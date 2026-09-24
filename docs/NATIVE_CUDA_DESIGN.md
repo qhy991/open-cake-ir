@@ -97,12 +97,19 @@ materializing them costs about 514 MiB of writes on the fixed H64/T8192 case,
 before the factor, coupling and state stages read them. The upstream generated
 source has CPU contract coverage only; fusion and B300 timing must decide which
 intermediates deserve global storage.
+A combined WorkBound screen for separately materialized upstream, factor,
+coupling and inverse stages counts about 1.412 GB of logical reads and 1.076 GB
+of logical writes before the state kernel. The three adjacent boundaries alone
+account for about 2.013 GB of write-then-read values that fusion might avoid.
+The sum of individual peak-bandwidth screens is 311 us, but this is neither a
+measured latency nor a valid additive runtime lower bound: cache reuse,
+instruction cost, launch order and on-chip resource pressure remain unknown.
 A typed midpoint-factor stage takes BF16 normalized Q/K and FP32 per-token
 log-decay, scans its 32-token prefix, extracts the first/last log values, and
 forms BF16 forward-key, backward-key and forward-query tiles. The bounded
-H64/T8192 CPU recurrence screens pass, but the upstream normalization/gate
-producer and generated-source B300 qualification remain open. Materializing
-all three factor outputs costs 384 MiB, in addition to 512 MiB of factor-stage
+H64/T8192 CPU recurrence screens pass, but the generated upstream and factor
+sources have no B300 qualification. Materializing all three factor outputs costs
+384 MiB, in addition to 512 MiB of factor-stage
 inputs; fusion or another explicit traffic reduction may be needed to beat
 the adapted single-kernel CAKE reference.
 A separate typed coupling stage accepts midpoint-scaled BF16 key/query factors,
@@ -111,7 +118,7 @@ prediction matrix, its transposed view and the output correction matrix; row
 versus column beta broadcasts are Schedule commitments. Full H64/T8192 and
 tail guardrail CPU recurrence screens pass with BF16 factor operands. Its three
 128 MiB factor inputs and three 32 MiB matrix outputs are still hypothetical
-global traffic until the upstream factor producer and B300 timing are measured.
+global traffic until the generated factor producer and B300 timing are measured.
 The numerical successor precomputes a 32x32 BF16 inverse factor per head/chunk,
 independent of the current recurrent state. A typed Triton fixture uses five
 unrolled doubling steps and 18 existing BF16 MMA operations; it maintains both
