@@ -20,6 +20,30 @@ from tests.contracts.test_authoring_environment import RecordingToolchain, _head
 
 
 class DiagnosisSeamTests(unittest.TestCase):
+    def test_backend_gap_is_retained_for_a_successor_compiler_tick(self):
+        from open_cake_ir.lab.candidate_filter import record_candidate_rejections
+        from open_cake_ir.lab.diagnoses import rejected_peer_feedback
+        from open_cake_ir.lab.environments import EnvironmentResult
+        submission = CandidateSubmission.seal('application/vnd.open-cake.schedule+json',
+                                              b'{"candidate":"fixture"}')
+        feedback = {'stage': 'assessment', 'findings': [
+            {'code': 'BACKEND_ARITHMETIC_UNSUPPORTED', 'path': 'operations[2]',
+             'category': 'hardware_conformance', 'severity': 'blocking',
+             'message': 'this backend has no typed arithmetic body',
+             'blocks_acceptance': False, 'blocks_lowering': True}]}
+        result = EnvironmentResult('rejected', submission.sha256, None, feedback)
+        retained = []
+        ledger = Mock()
+        ledger.append.side_effect = lambda kind, payload: retained.append((kind, payload))
+        record_candidate_rejections(built=[(submission, result)], evidence=None,
+                                    ledger=ledger, turn_number=1, arm='open_cake')
+        self.assertEqual(retained[0][0], 'candidate_rejected')
+        self.assertEqual(retained[0][1]['routed_to'], 'backend_lowering')
+        self.assertEqual(retained[0][1]['feedback'], feedback)
+        peer, = rejected_peer_feedback([(submission, result)], arm='open_cake')
+        self.assertEqual(peer['routed_to'], 'backend_lowering')
+        self.assertEqual(peer['findings'][0]['path'], 'operations[2]')
+
     def environment(self, *, python=False):
         # This is the explicit prospective source domain, not the stale released lock.
         draft = Compiler.load(ROOT, ROOT / "compiler/revision.json")
@@ -44,7 +68,7 @@ class DiagnosisSeamTests(unittest.TestCase):
         self.assertEqual(result.disposition, "rejected")
         self.assertEqual(result.feedback["stage"], "lowering")
         self.assertEqual(result.feedback["code"], "LOWERING_UNDETERMINED")
-        self.assertEqual(route_rejection(result.feedback).destination, "ir_vocabulary")
+        self.assertEqual(route_rejection(result.feedback).destination, "backend_triage")
         self.assertEqual(toolchain.requests, [])
 
     def test_actual_python_refusal_preserves_top_level_location_for_peer(self):
@@ -216,6 +240,21 @@ class DiagnosisSummaryTests(unittest.TestCase):
                         authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
                     run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "a" * 64,
                         "routed_to": "candidate", "routing_reason": "retained prior routing", "feedback": {"diagnostic": "do not print source text"}})
+                    if index == 0:
+                        run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "b" * 64,
+                            "routed_to": "backend_lowering", "routing_reason": "selected backend lacks emission",
+                            "feedback": {"findings": [{"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]",
+                                                       "message": "private source must not be printed"}]}})
+                        run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "c" * 64,
+                            "routed_to": "candidate", "routing_reason": "acceptance also refused",
+                            "feedback": {"findings": [
+                                {"code": "REDUCE_SHAPE_MISMATCH", "path": "operations[0]", "blocks_acceptance": True},
+                                {"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]", "blocks_lowering": True}]}})
+                        run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "d" * 64,
+                            "routed_to": "candidate", "routing_reason": "advisory is not a gap",
+                            "feedback": {"findings": [
+                                {"code": "REDUCE_SHAPE_MISMATCH", "path": "operations[0]", "blocks_acceptance": True},
+                                {"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]", "blocks_lowering": False}]}})
                     run.append("diagnosis_routed", {"turn": 1, "routed_to": "cost_model", "routing_reason": "ranking inversion"})
                     run.seal(protocol_adherence="adhered", endpoint_observation="observed", endpoint={"kind": "fixture"})
                     paths.append(store.root)
@@ -228,10 +267,25 @@ class DiagnosisSummaryTests(unittest.TestCase):
                 result = json.loads(completed.stdout)
                 self.assertEqual(len(result["groups"]), 2)
                 self.assertEqual(len(result["runs"]), 2)
+                self.assertEqual(sorted(group["counts"].get("candidate_rejected:backend_lowering", 0)
+                                        for group in result["groups"]), [0, 1])
                 for group in result["groups"]:
-                    self.assertEqual(group["counts"], {"candidate_rejected:candidate": 1, "diagnosis_routed:cost_model": 1})
+                    self.assertIn(group["counts"]["candidate_rejected:candidate"], (1, 3))
+                    self.assertEqual(group["counts"]["diagnosis_routed:cost_model"], 1)
                 self.assertTrue(any(not run["filesystem_custody_verified"] for run in result["runs"]))
                 self.assertNotIn("do not print source text", completed.stdout)
+                queue = subprocess.run([sys.executable, str(ROOT / "tools/summarize_diagnoses.py"),
+                                        "--compiler-gaps", *map(str, paths)],
+                                       capture_output=True, text=True, check=True)
+                gaps = json.loads(queue.stdout)["compiler_gaps"]
+                self.assertEqual(len(gaps), 2)
+                self.assertEqual({gap["destination"] for gap in gaps}, {"backend_lowering", "candidate"})
+                for gap in gaps:
+                    self.assertEqual(gap["findings"], [{"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]"}])
+                    self.assertEqual(gap["run_id"], "direct_cuda-1")
+                    self.assertIsInstance(gap["event_sequence"], int)
+                self.assertTrue(next(gap for gap in gaps if gap["destination"] == "candidate")["candidate_admission_blocked"])
+                self.assertNotIn("private source must not be printed", queue.stdout)
                 self.assertEqual(before, {path: (path.read_bytes(), path.stat().st_mode) for path in before})
                 # An incomplete new root is refused, not silently omitted or repaired.
                 broken = EvidenceStore.create(root / "incomplete")
