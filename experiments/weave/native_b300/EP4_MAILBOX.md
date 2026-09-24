@@ -74,3 +74,8 @@ The already measured `ep4_mailbox.cu` is unchanged. The successor has not
 been nvcc-compiled or run on B300-M4, and still sends one remote payload per
 route instead of deduplicating destinations. No tail correctness, steal,
 overlap or performance claim follows until an independent broker-run oracle.
+An exact `tail_tokens` Workload input/oracle bundle and four-GPU runner are
+prepared outside the checkout at
+`open-cake-ir-workspaces/evidence/weave-b300-m4-20260925/cake-weave-ep4-tail-b300-m4-7fd4eaf5/`.
+Its CPU preparation gate checks all rank extents and the `T=7` source binding;
+no broker job has been submitted for this successor.
