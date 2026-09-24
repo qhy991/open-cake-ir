@@ -1091,6 +1091,26 @@ class ClaudeProviderContracts(unittest.TestCase):
         self.assertEqual(CLAUDE_EVENT_CONTRACT, "claude_stream_candidate_v4")
         with self.assertRaises(ValueError): self.normalize(raw, event_contract="claude_stream_candidate_v2")
 
+    def test_fractional_retry_delay_preserves_complete_turn_and_rejects_invalid_values(self):
+        events = self.events(); retry = self.retry_event()
+        retry.update(retry_delay_ms=519.0670546041245, error_status=503, error="server_error")
+        events.insert(3, retry)
+        raw = self.raw(events)
+        turn = self.normalize(raw)
+        self.assertEqual(turn.raw_events, raw)
+        self.assertEqual(turn.provider_tokens, 205)
+        self.assertEqual(turn.candidates, self.normalize().candidates)
+        notices = [activity for activity in turn.tool_activity if activity.item_type == "api_retry"]
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(notices[0].status, "observed")
+        for value in (True, -0.5, float("inf"), float("nan"), "519.067"):
+            changed = copy.deepcopy(events); changed[3]["retry_delay_ms"] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.normalize(self.raw(changed))
+        incomplete = copy.deepcopy(events); incomplete.pop(-1)
+        with self.assertRaises(ValueError):
+            self.normalize(self.raw(incomplete))
+
     def summary_event(self):
         return {"type": "system", "subtype": "post_turn_summary", "summarizes_uuid": OTHER_SESSION,
             "status_category": "review_ready", "status_detail": "turn 1: created candidate-set.json",
@@ -1127,7 +1147,7 @@ class ClaudeProviderContracts(unittest.TestCase):
 
     def test_native_retry_counter_and_control_schema_fail_closed(self):
         changes = ({"attempt": 0}, {"attempt": True}, {"attempt": 11}, {"max_retries": 0},
-            {"max_retries": "10"}, {"retry_delay_ms": -1}, {"retry_delay_ms": 509.0},
+            {"max_retries": "10"}, {"retry_delay_ms": -1}, {"retry_delay_ms": True},
             {"error_status": False}, {"error_status": 600}, {"error": "new-unmodeled-error"},
             {"no_response": {}}, {"subtype": "other_retry"}, {"session_id": OTHER_SESSION}, {"uuid": ""})
         for change in changes:
