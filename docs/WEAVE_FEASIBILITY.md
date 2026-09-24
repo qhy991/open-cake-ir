@@ -104,6 +104,15 @@ correctness and a skewed plan with 14 actually stolen tiles at
 `experiments/weave/native_b300/EP4_MAILBOX.md`). Neither that small geometry
 nor the Cake synthetic worker has measured MoE latency or serving benefit.
 
+The current NVIDIA result projection does not establish that Triton has no
+remaining MoE headroom: `docs/results/nvidia/records.json` row
+`nvidia-result-042` (`Alpha-MoE`) has null baseline and candidate latency and
+status `未实测`. The new BF16 EP4 contract likewise has no qualified Triton
+candidate. A native CUDA/PTX performance decision needs a matched workload,
+target, correctness gate and timing interval for both paths; the raw mailbox
+correctness result and the FP32 worker probes cannot substitute for that
+comparison.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
