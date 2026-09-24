@@ -112,3 +112,9 @@ payloads but 64 total compute tasks, including 16 local routes. The frozen
 tasks per rank. These are CPU Workload/dispatch-ledger expectations, not
 device results. The successor has not been nvcc-compiled or run, is not Cake
 lowering, and does not establish communication or end-to-end speedup.
+Exact Workload inputs, CPU oracles and four-GPU broker runners are prepared
+outside the checkout in `cake-weave-ep4-dedup-skew-b300-m4-d772da55/` and
+`cake-weave-ep4-dedup-tail-b300-m4-d772da55/` under the 2026-09-25 Weave
+evidence root. Both fresh bundles pass their CPU preparation checks. A
+separate host C++ syntax-only copy passed with CUDA APIs stubbed and PTX
+helpers neutralized; it does **not** qualify nvcc/PTXAS or device execution.
