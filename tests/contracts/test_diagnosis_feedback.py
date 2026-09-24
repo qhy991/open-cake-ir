@@ -245,6 +245,16 @@ class DiagnosisSummaryTests(unittest.TestCase):
                             "routed_to": "backend_lowering", "routing_reason": "selected backend lacks emission",
                             "feedback": {"findings": [{"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]",
                                                        "message": "private source must not be printed"}]}})
+                        run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "c" * 64,
+                            "routed_to": "candidate", "routing_reason": "acceptance also refused",
+                            "feedback": {"findings": [
+                                {"code": "REDUCE_SHAPE_MISMATCH", "path": "operations[0]", "blocks_acceptance": True},
+                                {"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]", "blocks_lowering": True}]}})
+                        run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "d" * 64,
+                            "routed_to": "candidate", "routing_reason": "advisory is not a gap",
+                            "feedback": {"findings": [
+                                {"code": "REDUCE_SHAPE_MISMATCH", "path": "operations[0]", "blocks_acceptance": True},
+                                {"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]", "blocks_lowering": False}]}})
                     run.append("diagnosis_routed", {"turn": 1, "routed_to": "cost_model", "routing_reason": "ranking inversion"})
                     run.seal(protocol_adherence="adhered", endpoint_observation="observed", endpoint={"kind": "fixture"})
                     paths.append(store.root)
@@ -260,7 +270,7 @@ class DiagnosisSummaryTests(unittest.TestCase):
                 self.assertEqual(sorted(group["counts"].get("candidate_rejected:backend_lowering", 0)
                                         for group in result["groups"]), [0, 1])
                 for group in result["groups"]:
-                    self.assertEqual(group["counts"]["candidate_rejected:candidate"], 1)
+                    self.assertIn(group["counts"]["candidate_rejected:candidate"], (1, 3))
                     self.assertEqual(group["counts"]["diagnosis_routed:cost_model"], 1)
                 self.assertTrue(any(not run["filesystem_custody_verified"] for run in result["runs"]))
                 self.assertNotIn("do not print source text", completed.stdout)
@@ -268,11 +278,13 @@ class DiagnosisSummaryTests(unittest.TestCase):
                                         "--compiler-gaps", *map(str, paths)],
                                        capture_output=True, text=True, check=True)
                 gaps = json.loads(queue.stdout)["compiler_gaps"]
-                self.assertEqual(len(gaps), 1)
-                self.assertEqual(gaps[0]["destination"], "backend_lowering")
-                self.assertEqual(gaps[0]["findings"], [{"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]"}])
-                self.assertEqual(gaps[0]["run_id"], "direct_cuda-1")
-                self.assertIsInstance(gaps[0]["event_sequence"], int)
+                self.assertEqual(len(gaps), 2)
+                self.assertEqual({gap["destination"] for gap in gaps}, {"backend_lowering", "candidate"})
+                for gap in gaps:
+                    self.assertEqual(gap["findings"], [{"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]"}])
+                    self.assertEqual(gap["run_id"], "direct_cuda-1")
+                    self.assertIsInstance(gap["event_sequence"], int)
+                self.assertTrue(next(gap for gap in gaps if gap["destination"] == "candidate")["candidate_admission_blocked"])
                 self.assertNotIn("private source must not be printed", queue.stdout)
                 self.assertEqual(before, {path: (path.read_bytes(), path.stat().st_mode) for path in before})
                 # An incomplete new root is refused, not silently omitted or repaired.

@@ -18,8 +18,9 @@ Each destination is inferred from a signal the loop already produces, not from a
 * **backend_triage** -- Cake IR admits the Schedule but a lowering-only Finding has
   no reviewed owner yet, or several owners are mixed. Preserve it for a maintenance
   agent instead of blaming the author by default.
-* **ir_vocabulary** -- a typed Compiler Finding explicitly establishes that a physical
-  decision is not expressible in Cake IR. Generic emitter errors do not prove that.
+* **ir_vocabulary** -- reserved for a future typed Compiler Finding that explicitly
+  establishes a missing Cake IR expression. No current lowering refusal proves this;
+  generic emitter errors do not prove it either.
 * **cost_model** -- the order was wrong. This one is not inferred from a rejection, because
   it needs two measurements to compare: the Lab raises it when a Turn searches more than
   one launchable candidate and the fastest is not the one the ranking put first, by more

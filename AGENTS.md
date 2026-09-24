@@ -210,6 +210,8 @@ The paper states eight. They bind IR changes here.
   reusable tactics. A one-off failure is not evidence for a rule.
 - After a sealed Run, the maintenance agent examines retained `backend_lowering` and
   `backend_triage` rejections (`tools/summarize_diagnoses.py --compiler-gaps <evidence-root>`).
+  The queue also exposes known backend gaps that co-occur with an invalid candidate;
+  these are leads, not evidence that this Schedule is admissible.
   For each distinct gap, inspect the exact Schedule, Target and backend: implement
   target-specific emission and its admission/analysis with counterexamples in a successor
   Compiler commit when supported by the Target, or curate a deferred Finding that cites
