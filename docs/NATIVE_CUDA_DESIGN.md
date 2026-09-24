@@ -71,6 +71,31 @@ SM count, inter-GPU transfer, cross-CTA readiness, or communication-worker GEMM
 stealing. Those require separately admitted effects and backend mechanisms; a
 PTX atomic or barrier spelling alone cannot supply their ownership/liveness proof.
 
+## Native PTX returned-old-value work claim prototype
+
+A second, explicitly bounded path in the same `native_cuda` backend lowers a
+one-warp INT32 Schedule with `load`, `atomic_rmw(add, relaxed, device)` and
+`store`. Each lane owns one routed slot. The backend emits
+`atom.relaxed.gpu.global.add.s32` only when the runtime index is in bounds,
+uses the returned old value for an optional indirect work-table load, and
+stores one lane-owned result. It reuses `ProgramMap.persistent` and the native
+host launch; no MoE opcode, task lookup or raw source escape is admitted.
+Both B200 and B300 Target documents explicitly name the PTX instruction
+contract. A persistent launch additionally needs the exact Target's observed
+SM count; the B300 document currently lacks that fact, so only its ordinary
+grid is admitted. A declared load cache policy is refused until the native
+emitter realizes it rather than being silently dropped.
+
+The PTX instruction provides an atomic old value under device-scope relaxed
+ordering, as specified by the [NVIDIA PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/#parallel-synchronization-and-communication-instructions-atom).
+It neither publishes a separate payload nor waits for another CTA's chunk.
+The example `examples/schedules/native/atomic-work-claim.json` is a source
+and admission probe. GPU compilation, external-oracle correctness, profiler
+evidence and a cross-role steal remain separate gates. The P1–P8 check for
+the shared atomic contract is in `docs/WEAVE_FEASIBILITY.md`; this backend
+slice preserves that operation's existing typing and adds exact Target and
+emission refusals.
+
 PTX encoding reference: NVIDIA PTX ISA, sections 9.7.17.4 (matrix descriptors),
 9.7.17.8 (TMEM allocation), 9.7.17.9 (TMEM transfer), and 9.7.17.10 (tcgen05 MMA):
 https://docs.nvidia.com/cuda/parallel-thread-execution/index.html .
