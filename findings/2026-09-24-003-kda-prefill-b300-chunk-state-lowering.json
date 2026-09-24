@@ -92,9 +92,33 @@
       "run": "gpuq-ab6d588eb43c",
       "event": 13,
       "note": "Five paired broker-exclusive cold-L2 CUPTI rounds measured adapted CAKE reference 456.035 versus unadmitted Triton chunk prototype 96080.520 microseconds, median paired candidate/reference 210.686724x. Both one-kernel arms passed the full oracle each round; maximum within-round CV was 0.108%/0.479%. This negative mechanism diagnostic is neither a qualified Cake candidate nor formal Evaluation."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-chunk-triton-c16-v32-compile-output-20260925/summary.json",
+      "run": "cpu-only",
+      "event": 14,
+      "note": "A smaller unadmitted chunk-16, V-tile-32 Triton variant compiled offline for sm_103a; cubin inspection reported 238 registers, zero stack bytes and no static local SASS accesses. This removes the observed static spill signal but has not established runtime speed."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-c16v32-t65-output-20260925/host-validation.json",
+      "run": "gpuq-313ea0d2d662",
+      "event": 15,
+      "note": "The smaller variant passed complete H64/T65 output and final-state CPU oracle checks with all immutable inputs unchanged."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-c16v32-t8192-output-20260925/host-validation.json",
+      "run": "gpuq-b899bef61250",
+      "event": 16,
+      "note": "The smaller variant also passed all H64/T8192 output and final-state elements at atol=rtol=0.01 with unchanged immutable inputs."
+    },
+    {
+      "workspace": "B300-M4:/home/qinhaiyan/cake-kda-c16v32-paired-v2-output-20260925/host-validation.json",
+      "run": "gpuq-d749fb174281",
+      "event": 17,
+      "note": "Five same-run broker-exclusive cold-L2 CUPTI rounds measured adapted CAKE reference 456.259 versus unadmitted chunk-16/V-tile-32 Triton 83264.993 microseconds; median paired candidate/reference 182.495015x. Every complete output/state check passed, each arm had one CUDA activity, and maximum within-round CV was 0.144%/0.202%. A predecessor job gpuq-76a2113101cd was refused before launch by the source-commit identity guard and retained as failed evidence. Removing the static spill signal improves latency only modestly; the remaining gap is not uniquely attributed."
     }
   ],
-  "observation": "The new B300 KDA prefill Workload and independent BF16 recurrence oracle are committed at c0486915 and 6b7d99ec; the original six-row B200 task remains unchanged. A minimally adapted pinned CAKE M64/M128 reference compiles and passes fixed, packed and full H64/T8192 output/state checks on B300-M4. The H64/T8192 adapted reference has a stable approximately 456 us single-kernel diagnostic baseline. The committed chunk-32 recurrence algebra passes the complete CPU oracle, including a BF16-quantized operand simulation. A correct register-resident per-token native prototype is 37.220750x slower and an unadmitted chunk-32 Triton prototype is 210.686724x slower in separate same-run comparisons. The latter uses 128 registers, 176 bytes of stack per thread and local SASS accesses; resource pressure is a plausible cause, not a uniquely established dynamic bottleneck. Neither direct scalar CUDA nor this large live-tensor Triton mapping closes the gap. The reference emission visibly uses 32-token chunks, five-slot producer/compute/epilogue pipeline, TMA, tcgen05 MMA and TMEM-resident state, while current component probes do not admit mutable state through either native or CuTe lowering. No full typed Cake candidate, six-shape B300 comparison, framework validation or formal Evaluation exists yet.",
+  "observation": "The new B300 KDA prefill Workload and independent BF16 recurrence oracle are committed at c0486915 and 6b7d99ec; the original six-row B200 task remains unchanged. A minimally adapted pinned CAKE M64/M128 reference compiles and passes fixed, packed and full H64/T8192 output/state checks on B300-M4. The H64/T8192 adapted reference has a stable approximately 456 us single-kernel diagnostic baseline. The committed chunk-32 recurrence algebra passes the complete CPU oracle, including a BF16-quantized operand simulation. A correct register-resident per-token native prototype is 37.220750x slower, while unadmitted chunk-32/V-tile-64 and chunk-16/V-tile-32 Triton prototypes are 210.686724x and 182.495015x slower in separate same-run comparisons. The larger Triton variant uses 176 bytes of stack per thread; the smaller variant has zero stack and no static local SASS accesses but still takes 83.265 ms. This comparison changes several tile parameters together, so it does not isolate a spill penalty; serial chunk mapping and duplicated work remain hypotheses without dynamic counters. Neither direct scalar CUDA nor either large-live-tensor Triton mapping closes the gap. The reference emission visibly uses 32-token chunks, five-slot producer/compute/epilogue pipeline, TMA, tcgen05 MMA and TMEM-resident state, while current component probes do not admit mutable state through either native or CuTe lowering. No full typed Cake candidate, six-shape B300 comparison, framework validation or formal Evaluation exists yet.",
   "proposed_change": "Build one complete H64 fixed-shape Schedule whose concrete storage and access commitments name state ownership, ordered 32-token chunks, TMEM state residency, TMA descriptor boxes, tcgen05 instruction atoms, five-role pipeline and synchronization. Before emission, check P1-P8 and extend the owning common IR typing/effects, verifier legality and native CUDA lowering in one successor change; existing backends must refuse unsupported state/chunk commitments by name. Keep the reference as an external black-box baseline rather than an opaque backend escape. Qualify the successor first against the fixed T65 guardrail and full H64/T8192 output/state oracle, then paired B300-M4 CUPTI and profiler evidence; only after a strong seed extend to M128 packed and all six rows. An automatic estimate or the scalar prototype does not authorize promotion. Formal Executor admission and branch integration remain separate gates.",
   "decision": "proposed",
   "implemented_in": null,
