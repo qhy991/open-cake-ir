@@ -6,6 +6,8 @@ on:
       - 'src/open_cake_ir/compiler/**'
       - 'corpus/**'
       - 'tools/check_triton_topk_compile.py'
+      - 'tools/check_triton_sibling_compile.py'
+      - 'tests/contracts/test_emit_triton.py'
       - '.github/workflows/triton-compile.yml'
   push:
     branches: [main, metal, amd, dcu, nvidia, metax]
@@ -13,6 +15,8 @@ on:
       - 'src/open_cake_ir/compiler/**'
       - 'corpus/**'
       - 'tools/check_triton_topk_compile.py'
+      - 'tools/check_triton_sibling_compile.py'
+      - 'tests/contracts/test_emit_triton.py'
       - '.github/workflows/triton-compile.yml'
 
 permissions:
@@ -74,11 +78,19 @@ jobs:
           assert all(row['returncode'] == 0 and not row['timed_out'] for row in report['cases'])
           print(f'{variant}: every accepted selection case compiled; device correctness was not evaluated.')
           PY
+      - name: Compile the new sibling-loop slice on the successor
+        if: matrix.variant == 'successor'
+        run: |
+          python successor/tools/check_triton_sibling_compile.py \
+            --project-root "$GITHUB_WORKSPACE/successor" \
+            --output-root "$RUNNER_TEMP/triton-sibling-successor"
       - name: Retain compile reports and per-case artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: triton-${{ matrix.variant }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/triton-${{ matrix.variant }}
+          path: |
+            ${{ runner.temp }}/triton-${{ matrix.variant }}
+            ${{ runner.temp }}/triton-sibling-${{ matrix.variant }}
           if-no-files-found: warn
           retention-days: 30
