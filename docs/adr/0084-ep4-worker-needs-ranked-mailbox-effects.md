@@ -87,6 +87,12 @@ return capacities from a complete local Program and complete combine
 Schedule. The ordinary Program launcher is unchanged; a ranked lowering
 without a dedicated backend refuses explicitly. This typed effect object
 does not yet prove remote memory visibility or emit a four-rank kernel.
+The NVIDIA task at `5b0af054` is a development successor that emits a
+four-rank source from this effect object and the complete Cake math. It
+declares the additional B300 PTX system-atomic contracts, checks pointer
+owners and input ID/weight bounds in its host ABI, and probes selected
+directed P2P pairs at launch. Its source and runner remain unqualified until
+nvcc, all required device cases and formal Evaluation pass.
 
 The mailbox state and every tensor shard have one declared owning rank. A
 remote pointer carries that owner through lowering and Evaluation. Admission
