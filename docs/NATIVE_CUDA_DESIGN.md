@@ -398,15 +398,21 @@ AccessMaps state the vector, weight-row and output coordinates; admission
 rejects another reduction, dtype, mapping, cache hint or resource shape.
 The participating lanes use an exact 16- or 32-bit shuffle mask and power-of-two
 width, following the [CUDA warp synchronization constraints](https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#warp-sync-intrinsic-constraints).
-This makes one expert projection expressible through Cake without an opaque
-MoE operation. It does not implement expert selection, the gated activation,
-the second projection, cross-GPU dispatch or a performance claim. B300 nvcc
-and oracle validation remain required before using this leaf in an Evaluation.
+`bf16-selected-expert-row-dot-h16-i32.json` adds one INT32 scalar load and a
+`scalar_buffer` AccessMap for a local expert coordinate into a weight tensor
+`[experts, rows, width]`. Native emission checks `0 <= expert < experts`
+before dereferencing weight; an invalid coordinate contributes BF16 zero,
+matching the mask-and-zero load semantics in Cake's Triton emission. The
+Schedule declares that index read and dependency explicitly. This is local
+expert selection, not routing or remote dispatch. The gated activation,
+second projection, cross-GPU handoff and performance qualification still
+remain. B300 nvcc and oracle validation are required before Evaluation.
 `examples/schedules/triton/bf16-row-dot-h16-i32.json` holds the same buffers,
 operations, dependencies and AccessMaps with only the lowering route and
 identifier changed. This is a matched leaf comparator; it does not show that
 Triton is exhausted. Device correctness must precede a paired, exact-target
 CUPTI comparison under the declared reset and timing policy.
+The selected-expert variant also has an operation-for-operation Triton peer.
 
 ## Completion phases and nested reduction scopes
 

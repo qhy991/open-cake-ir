@@ -22,6 +22,7 @@ from ..target import CodeObject, Target
 _BODY = (OperationKind.LOAD, OperationKind.LOAD, OperationKind.CAST,
          OperationKind.CAST, OperationKind.ELEMENTWISE, OperationKind.REDUCE,
          OperationKind.STORE)
+_SELECTED_BODY = (OperationKind.LOAD,) + _BODY
 _IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
 
 
@@ -47,32 +48,47 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     check(len(schedule.roles) == 1 and schedule.roles[0].execution_groups == (0,)
           and schedule.roles[0].registers_per_thread is None,
           'NATIVE_ROW_DOT_ROLE', 'roles', 'one execution group owns the row dot')
+    ops = schedule.operations
+    kinds = tuple(op.kind for op in ops)
+    selected = kinds == _SELECTED_BODY
     mapping = schedule.program_map
     check(mapping is not None and len(mapping.axes) == 1
           and not mapping.persistent and not mapping.cooperative
-          and mapping.axes[0].axis == mapping.axes[0].dimension == 0
+          and mapping.axes[0].axis == 0
+          and mapping.axes[0].dimension == (1 if selected else 0)
           and mapping.axes[0].tile == 1,
           'NATIVE_ROW_DOT_MAP', 'program_map',
           'one nonpersistent scalar program axis owns each output row')
-    ops = schedule.operations
-    if tuple(op.kind for op in ops) != _BODY or any(
-            len(op.reads) != (2 if op.kind is OperationKind.ELEMENTWISE else 1)
-            or len(op.writes) != 1 for op in ops):
+    if kinds not in (_BODY, _SELECTED_BODY):
         check(False, 'NATIVE_ROW_DOT_BODY', 'operations',
-              'row dot is two loads, two casts, multiply, SUM and store')
+              'row dot is two loads or a scalar expert load plus two loads, then casts, multiply, SUM and store')
         return tuple(findings)
-    load_x, load_w, cast_x, cast_w, mul, reduce, store = ops
+    load_expert = ops[0] if selected else None
+    load_x, load_w, cast_x, cast_w, mul, reduce, store = ops[1:] if selected else ops
+    if (any(len(op.writes) != 1 for op in ops)
+            or any(len(op.reads) != (2 if op is mul or selected and op is load_w else 1)
+                   for op in ops)):
+        check(False, 'NATIVE_ROW_DOT_BODY', 'operations',
+              'loads, casts, multiply, SUM and store must have their exact operand counts')
+        return tuple(findings)
     buffers = {b.name: b for b in schedule.buffers}
     names = (load_x.reads[0], load_w.reads[0], store.writes[0],
              load_x.writes[0], load_w.writes[0], cast_x.writes[0],
              cast_w.writes[0], mul.writes[0], reduce.writes[0])
-    if len(set(names)) != 9 or set(names) != set(buffers):
+    if selected:
+        names += (load_expert.reads[0], load_expert.writes[0])
+    if len(set(names)) != (11 if selected else 9) or set(names) != set(buffers):
         check(False, 'NATIVE_ROW_DOT_BUFFERS', 'buffers',
-              'the row dot owns exactly three global and six distinct register buffers')
+              'the row dot owns only its distinct inputs, output and register temporaries')
         return tuple(findings)
-    x, weight, y, rx, rw, fx, fw, products, total = (buffers[n] for n in names)
-    dependencies = ((), (), (load_x.op_id,), (load_w.op_id,),
+    x, weight, y, rx, rw, fx, fw, products, total = (buffers[n] for n in names[:9])
+    expert_global, expert_index = ((buffers[names[9]], buffers[names[10]])
+                                   if selected else (None, None))
+    dependencies = ((), (load_expert.op_id,)) if selected else ((), ())
+    dependencies += ((load_x.op_id,), (load_w.op_id,),
                     (cast_x.op_id, cast_w.op_id), (mul.op_id,), (reduce.op_id,))
+    if selected:
+        dependencies = ((),) + dependencies
     check(tuple(op.depends_on for op in ops) == dependencies,
           'NATIVE_ROW_DOT_DEPENDENCIES', 'operations',
           'the declared graph must order each cast, multiply, sum and store')
@@ -86,22 +102,35 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
               and buffer.scale_of is None and buffer.valid_extent is None,
               'NATIVE_ROW_DOT_REFINEMENT', f'buffers.{buffer.name}',
               'the SIMT leaf has no staged or refined storage')
+        if buffer.space is MemorySpace.GLOBAL:
+            check(buffer.elements <= 2147483647,
+                  'NATIVE_ROW_DOT_INDEX_RANGE', f'buffers.{buffer.name}',
+                  'contiguous native addressing requires a signed-32-bit element domain')
     check((cast_x.reads, cast_w.reads, mul.reads, reduce.reads, store.reads)
-          == ((rx.name,), (rw.name,), (fx.name, fw.name), (products.name,), (total.name,)),
+          == ((rx.name,), (rw.name,), (fx.name, fw.name), (products.name,), (total.name,))
+          and (not selected or load_w.reads == (weight.name, expert_index.name)),
           'NATIVE_ROW_DOT_DATAFLOW', 'operations',
           'every read must consume the preceding load, cast, multiply or sum result')
-    rows = weight.shape[0] if len(weight.shape) == 2 else 0
-    width = weight.shape[1] if len(weight.shape) == 2 else 0
+    weight_rank = 3 if selected else 2
+    rows = weight.shape[-2] if len(weight.shape) == weight_rank else 0
+    width = weight.shape[-1] if len(weight.shape) == weight_rank else 0
     check(width in (16, 32) and x.shape == (width,) and y.shape == (rows,)
-          and rows > 0 and rows <= target.resource_limits.maximum_grid[0],
+          and rows > 0 and rows <= target.resource_limits.maximum_grid[0]
+          and (not selected or weight.shape[0] > 0),
           'NATIVE_ROW_DOT_SHAPE', 'buffers',
-          'weight [rows, 16|32], x [width] and y [rows] must share exact extents')
+          'weight [rows, width] or [experts, rows, width], x [width] and y [rows] must agree')
     check((x.space, weight.space, y.space) == (MemorySpace.GLOBAL,) * 3
           and (x.mode, weight.mode, y.mode)
           == (BufferMode.INPUT, BufferMode.INPUT, BufferMode.OUTPUT)
           and (x.dtype, weight.dtype, y.dtype) == (DType.BF16, DType.BF16, DType.FP32),
           'NATIVE_ROW_DOT_GLOBALS', 'buffers',
           'two BF16 global inputs produce one FP32 global output')
+    if selected:
+        check(expert_global.space is MemorySpace.GLOBAL
+              and expert_global.mode is BufferMode.INPUT
+              and expert_global.dtype is DType.INT32 and expert_global.shape == (1,),
+              'NATIVE_ROW_DOT_EXPERT_INPUT', 'buffers',
+              'selected expert id is one public INT32 scalar')
     for buffer, dtype, shape in ((rx, DType.BF16, (width,)),
                                  (rw, DType.BF16, (width,)),
                                  (fx, DType.FP32, (width,)),
@@ -112,6 +141,12 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
               and buffer.dtype is dtype and buffer.shape == shape,
               'NATIVE_ROW_DOT_REGISTER', f'buffers.{buffer.name}',
               'each temporary has one declared lane or scalar register type')
+    if selected:
+        check(expert_index.space is MemorySpace.REGISTER
+              and expert_index.mode is BufferMode.SCRATCH
+              and expert_index.dtype is DType.INT32 and expert_index.shape == (1,),
+              'NATIVE_ROW_DOT_EXPERT_REGISTER', f'buffers.{expert_index.name}',
+              'the selected expert coordinate is one INT32 register')
     if mapping is not None and len(mapping.axes) == 1:
         check(mapping.axes[0].buffer == weight.name,
               'NATIVE_ROW_DOT_OWNER', 'program_map.axes[0]',
@@ -123,7 +158,8 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
           'NATIVE_ROW_DOT_EFFECTS', 'operations',
           'all operations execute synchronously in the owning warp')
     check(all(op.parameters.movement is LoadMovement.GLOBAL
-              and op.parameters.reuse is None for op in (load_x, load_w)),
+              and op.parameters.reuse is None for op in
+              ((load_expert,) if selected else ()) + (load_x, load_w)),
           'NATIVE_ROW_DOT_LOAD', 'operations',
           'the two operands use ordinary global loads with no cache override')
     check(cast_x.parameters.to is DType.FP32 and cast_w.parameters.to is DType.FP32,
@@ -149,15 +185,22 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             if kind is AccessIndexKind.PROGRAM:
                 if mapping is None or index.source is not kind or index.name != mapping.axes[0].name:
                     return False
+            elif kind is AccessIndexKind.SCALAR_BUFFER:
+                if index.source is not kind or index.name != dimension:
+                    return False
             elif (index.source is not kind or index.dimension != dimension
                   or index.offset != 0 or index.extent is not None):
                 return False
         return True
 
-    check(len(schedule.access_maps) == 3
+    weight_indices = (((AccessIndexKind.SCALAR_BUFFER, expert_index.name),)
+                      if selected else ()) + ((AccessIndexKind.PROGRAM, None),
+                                              (AccessIndexKind.DIMENSION, 2 if selected else 1))
+    check(len(schedule.access_maps) == (4 if selected else 3)
+          and (not selected or mapped(load_expert, expert_global,
+                                      ((AccessIndexKind.DIMENSION, 0),)))
           and mapped(load_x, x, ((AccessIndexKind.DIMENSION, 0),))
-          and mapped(load_w, weight, ((AccessIndexKind.PROGRAM, None),
-                                      (AccessIndexKind.DIMENSION, 1)))
+          and mapped(load_w, weight, weight_indices)
           and mapped(store, y, ((AccessIndexKind.PROGRAM, None),)),
           'NATIVE_ROW_DOT_ACCESS', 'access_maps',
           'input vector, weight row and scalar output need exact masked coordinates')
@@ -166,10 +209,13 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
 
 class Emitter(_Emitter):
     def emit(self) -> Emission:
-        load_x, load_w, cast_x, cast_w, mul, reduce, store = self.s.operations
+        selected = len(self.s.operations) == len(_SELECTED_BODY)
+        load_expert = self.s.operations[0] if selected else None
+        load_x, load_w, cast_x, cast_w, mul, reduce, store = (
+            self.s.operations[1:] if selected else self.s.operations)
         x, weight, y = (self.b(name) for name in
                         (load_x.reads[0], load_w.reads[0], store.writes[0]))
-        rows, width = weight.shape
+        rows, width = weight.shape[-2:]
         self.line('// Generated by Open-Cake native CUDA; schedule_sha256=__SCHEDULE_SHA256__')
         self.line('#include <cuda.h>\n#include <cuda_runtime.h>\n#include <cuda_bf16.h>'
                   '\n#include <cstdint>\n#include <new>\n#include <cstring>')
@@ -189,8 +235,19 @@ class Emitter(_Emitter):
             self.line(f'// CAKE_OP: {op.op_id}')
             if op.kind is OperationKind.LOAD:
                 src = self.b(op.reads[0])
-                address, _ = self.address(op, src, ['cake_lane'])
-                self.line(f'{self.names[op.writes[0]]} = {address};')
+                if selected and op is load_expert:
+                    address, _ = self.address(op, src, ['0'])
+                    self.line(f'{self.names[op.writes[0]]} = {address};')
+                elif selected and op is load_w:
+                    index = self.names[load_expert.writes[0]]
+                    address = (f'{self.names[weight.name]}[({index}) * '
+                               f'{rows * width} + cake_row * {width} + cake_lane]')
+                    self.line(f'{self.names[op.writes[0]]} = '
+                              f'({index} >= 0 && {index} < {weight.shape[0]}) ? '
+                              f'{address} : __float2bfloat16(0.0f);')
+                else:
+                    address, _ = self.address(op, src, ['cake_lane'])
+                    self.line(f'{self.names[op.writes[0]]} = {address};')
             elif op.kind is OperationKind.CAST:
                 self.line(f'{self.names[op.writes[0]]} = '
                           f'__bfloat162float({self.names[op.reads[0]]});')
@@ -212,5 +269,7 @@ class Emitter(_Emitter):
         self.end()
         self.line('// CAKE_KERNEL_END')
         self.host()
+        mapping = ('one BF16 row dot per CTA; masked expert select and FP32 warp-tree SUM'
+                   if selected else 'one BF16 row dot per CTA; FP32 warp-tree SUM')
         return Emission('\n'.join(self.lines) + '\n', self.entry, {'shared_bytes': 0},
-                        self.metadata('one BF16 row dot per CTA; FP32 warp-tree SUM'))
+                        self.metadata(mapping))

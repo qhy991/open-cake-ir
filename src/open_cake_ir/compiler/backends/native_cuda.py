@@ -108,7 +108,12 @@ def _system_atomic_states(schedule: Schedule) -> tuple[str, ...]:
 
 def requirements(s: Schedule) -> tuple[Finding, ...]:
     """Backend-owned vocabulary admission, shared by public and direct emission."""
-    return vocabulary_findings(s, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS)
+    selected_row_dot = (not s.pipelines
+        and any(op.kind is OperationKind.REDUCE for op in s.operations)
+        and any(component.source is AccessIndexKind.SCALAR_BUFFER
+                for access in s.access_maps for component in access.indices))
+    return vocabulary_findings(s, SUPPORTED_DTYPES, SUPPORTED_OPERATION_KINDS,
+                               runtime_values=selected_row_dot)
 
 
 def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
