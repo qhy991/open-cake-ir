@@ -85,6 +85,10 @@ v2 是后继合同，旧实验继续使用它原来固定的版本。学习 Comp
 该合同有多种本地 head 数和活动行情况，不能拿其他 prefill、chunk 或完整模型成绩替代。
 输入输出包含状态，判对时要检查状态池和连续两次调用，不能只看最后一张输出表。
 
+## KDA prefill：B300 固定形状
+
+[B300 v1 合同](../../contracts/workloads/cake-kda-prefill-b300-v1.json)另立精确 `sm_103a` 的 prefill 任务，不重写 B200 来源任务，也不与上述单步 decode 互代。六个固定形状及短序列、尾块 guardrail 要求 BF16 输出与原地最终状态均通过独立逐 token 递推 oracle；打包序列还要遵守长度偏移与执行顺序。合同和 CPU 校验已具备，B300-M4 的定制诊断不构成正式 Evaluation 或完整 CAKE 候选资格。
+
 ## Kimi-K3 megaop：加上核心前后的投影
 
 - **输入：** 当前层输入、投影权重、卷积与递归状态等完整参数。
