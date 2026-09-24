@@ -15,9 +15,11 @@ Each destination is inferred from a signal the loop already produces, not from a
 * **backend_lowering** -- Cake IR admits the Schedule, but the selected backend has
   no implementation for its declared instruction, dtype, access or exact target.
   This is a Compiler evolution candidate, not a reason to corrupt the Schedule.
-* **ir_vocabulary** -- lowering cannot determine source because a physical decision
-  is not expressible in the admitted Schedule. This needs a language/analysis change,
-  which is distinct from implementing an already-expressible instruction in a backend.
+* **backend_triage** -- Cake IR admits the Schedule but a lowering-only Finding has
+  no reviewed owner yet, or several owners are mixed. Preserve it for a maintenance
+  agent instead of blaming the author by default.
+* **ir_vocabulary** -- a typed Compiler Finding explicitly establishes that a physical
+  decision is not expressible in Cake IR. Generic emitter errors do not prove that.
 * **cost_model** -- the order was wrong. This one is not inferred from a rejection, because
   it needs two measurements to compare: the Lab raises it when a Turn searches more than
   one launchable candidate and the fastest is not the one the ranking put first, by more
@@ -36,18 +38,21 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from open_cake_ir.compiler.diagnostics import BACKEND_LOWERING_GAP_CODES
+from open_cake_ir.compiler.diagnostics import (AUTHOR_FIXABLE_LOWERING_CODES,
+                                               BACKEND_LOWERING_GAP_CODES)
 
 CANDIDATE = "candidate"
 VERIFIER = "verifier"
 IR_VOCABULARY = "ir_vocabulary"
 BACKEND_LOWERING = "backend_lowering"
+BACKEND_TRIAGE = "backend_triage"
 COST_MODEL = "cost_model"
 
-DESTINATIONS = (CANDIDATE, VERIFIER, IR_VOCABULARY, BACKEND_LOWERING, COST_MODEL)
+DESTINATIONS = (CANDIDATE, VERIFIER, IR_VOCABULARY, BACKEND_LOWERING,
+                BACKEND_TRIAGE, COST_MODEL)
 
-# The Compiler says this when a backend emits and the Schedule leaves a decision open.
-# It is the one rejection that is about the vocabulary rather than about the Schedule.
+# Every backend EmitError currently receives this phrase, including implementation
+# defects. Its cause is not typed, so it needs owner triage rather than an IR claim.
 _UNDER_DETERMINED = "does not determine its source"
 
 @dataclass(frozen=True)
@@ -91,9 +96,9 @@ def route_rejection(feedback: Mapping[str, object], *, arm: str = "open_cake") -
     error = feedback.get("error")
     if feedback.get("code") == "LOWERING_UNDETERMINED" or (isinstance(error, str) and _UNDER_DETERMINED in error):
         return Route(
-            IR_VOCABULARY,
-            "lowering refused because the Schedule leaves a decision the vocabulary "
-            "cannot express",
+            BACKEND_TRIAGE,
+            "emission refused after admission; the generic EmitError does not prove "
+            "whether Cake IR, backend lowering, or a missing preflight rule owns it",
         )
 
     findings = feedback.get("findings")
@@ -104,6 +109,11 @@ def route_rejection(feedback: Mapping[str, object], *, arm: str = "open_cake") -
                                  if item.get('blocks_acceptance'))
         if candidate_codes:
             return Route(CANDIDATE, f"a gate refused it: {', '.join(candidate_codes)}")
+        author_codes = sorted(str(item.get('code')) for item in blocking
+                              if item.get('code') in AUTHOR_FIXABLE_LOWERING_CODES)
+        if author_codes and len(author_codes) == len(blocking):
+            return Route(CANDIDATE,
+                         f"the selected backend requires an author declaration change: {', '.join(author_codes)}")
         backend_codes = sorted(str(item.get('code')) for item in blocking
                                if item.get('blocks_lowering')
                                and item.get('code') in BACKEND_LOWERING_GAP_CODES)
@@ -115,8 +125,10 @@ def route_rejection(feedback: Mapping[str, object], *, arm: str = "open_cake") -
             )
         if blocking:
             return Route(
-                CANDIDATE,
-                f"a gate refused it: {', '.join(sorted(str(item.get('code')) for item in blocking))}",
+                BACKEND_TRIAGE,
+                "Cake IR accepted this Schedule; a maintenance agent must assign "
+                "the lowering-only Finding owner before changing it: "
+                + ', '.join(sorted(str(item.get('code')) for item in blocking)),
             )
 
     return Route(

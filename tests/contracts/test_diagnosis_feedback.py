@@ -68,7 +68,7 @@ class DiagnosisSeamTests(unittest.TestCase):
         self.assertEqual(result.disposition, "rejected")
         self.assertEqual(result.feedback["stage"], "lowering")
         self.assertEqual(result.feedback["code"], "LOWERING_UNDETERMINED")
-        self.assertEqual(route_rejection(result.feedback).destination, "ir_vocabulary")
+        self.assertEqual(route_rejection(result.feedback).destination, "backend_triage")
         self.assertEqual(toolchain.requests, [])
 
     def test_actual_python_refusal_preserves_top_level_location_for_peer(self):
@@ -240,6 +240,11 @@ class DiagnosisSummaryTests(unittest.TestCase):
                         authority_sha256=sha256(canonical_json_bytes(authority)).hexdigest())
                     run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "a" * 64,
                         "routed_to": "candidate", "routing_reason": "retained prior routing", "feedback": {"diagnostic": "do not print source text"}})
+                    if index == 0:
+                        run.append("candidate_rejected", {"turn": 1, "candidate_sha256": "b" * 64,
+                            "routed_to": "backend_lowering", "routing_reason": "selected backend lacks emission",
+                            "feedback": {"findings": [{"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]",
+                                                       "message": "private source must not be printed"}]}})
                     run.append("diagnosis_routed", {"turn": 1, "routed_to": "cost_model", "routing_reason": "ranking inversion"})
                     run.seal(protocol_adherence="adhered", endpoint_observation="observed", endpoint={"kind": "fixture"})
                     paths.append(store.root)
@@ -252,10 +257,23 @@ class DiagnosisSummaryTests(unittest.TestCase):
                 result = json.loads(completed.stdout)
                 self.assertEqual(len(result["groups"]), 2)
                 self.assertEqual(len(result["runs"]), 2)
+                self.assertEqual(sorted(group["counts"].get("candidate_rejected:backend_lowering", 0)
+                                        for group in result["groups"]), [0, 1])
                 for group in result["groups"]:
-                    self.assertEqual(group["counts"], {"candidate_rejected:candidate": 1, "diagnosis_routed:cost_model": 1})
+                    self.assertEqual(group["counts"]["candidate_rejected:candidate"], 1)
+                    self.assertEqual(group["counts"]["diagnosis_routed:cost_model"], 1)
                 self.assertTrue(any(not run["filesystem_custody_verified"] for run in result["runs"]))
                 self.assertNotIn("do not print source text", completed.stdout)
+                queue = subprocess.run([sys.executable, str(ROOT / "tools/summarize_diagnoses.py"),
+                                        "--compiler-gaps", *map(str, paths)],
+                                       capture_output=True, text=True, check=True)
+                gaps = json.loads(queue.stdout)["compiler_gaps"]
+                self.assertEqual(len(gaps), 1)
+                self.assertEqual(gaps[0]["destination"], "backend_lowering")
+                self.assertEqual(gaps[0]["findings"], [{"code": "BACKEND_OPERATION_UNEMITTABLE", "path": "operations[3]"}])
+                self.assertEqual(gaps[0]["run_id"], "direct_cuda-1")
+                self.assertIsInstance(gaps[0]["event_sequence"], int)
+                self.assertNotIn("private source must not be printed", queue.stdout)
                 self.assertEqual(before, {path: (path.read_bytes(), path.stat().st_mode) for path in before})
                 # An incomplete new root is refused, not silently omitted or repaired.
                 broken = EvidenceStore.create(root / "incomplete")

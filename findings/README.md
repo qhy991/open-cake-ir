@@ -9,7 +9,9 @@ implementation gap, not an automatic approval to add an instruction. Curate its 
 Schedule, Target, backend and localized Compiler Finding here; either implement emission
 with matching admission/analysis and counterexamples in a successor commit, or record
 why the capability is deferred. A missing Cake IR expression is separately routed to
-`ir_vocabulary`. Frozen Runs keep their original Compiler and measurement contract.
+`ir_vocabulary`. A lowering-only Finding with unclear or mixed ownership is routed
+to `backend_triage` for explicit judgement; do not silently mark it an author error.
+Frozen Runs keep their original Compiler and measurement contract.
 
 ## Lifecycle
 

@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.lab.routing import (  # noqa: E402
     BACKEND_LOWERING,
+    BACKEND_TRIAGE,
     CANDIDATE,
     COST_MODEL,
     DESTINATIONS,
@@ -91,6 +92,24 @@ class RoutingContractTests(unittest.TestCase):
             {'code': 'BACKEND_IDENTIFIER_UNSAFE', 'blocks_acceptance': False,
              'blocks_lowering': True}]})
         self.assertEqual(author_fixable.destination, CANDIDATE)
+        for code in ('TRITON_BARRIER_UNSUPPORTED', 'METAL_MMA_K_RANGES_UNSUPPORTED',
+                     'CUTE_MMA_K_RANGES_UNSUPPORTED',
+                     'TRITON_WARP_SPECIALIZED_ARGMIN_UNSUPPORTED'):
+            with self.subTest(code=code):
+                finding = {'code': code, 'blocks_acceptance': False,
+                           'blocks_lowering': True}
+                self.assertEqual(route_rejection({'stage': 'assessment',
+                    'findings': [finding]}).destination, BACKEND_LOWERING)
+        unknown = route_rejection({'stage': 'assessment', 'findings': [
+            {'code': 'TRITON_ARGMIN_DOMAIN', 'blocks_acceptance': False,
+             'blocks_lowering': True}]})
+        self.assertEqual(unknown.destination, BACKEND_TRIAGE)
+        mixed_lowering = route_rejection({'stage': 'assessment', 'findings': [
+            {'code': 'BACKEND_CAST_UNSUPPORTED', 'blocks_acceptance': False,
+             'blocks_lowering': True},
+            {'code': 'BACKEND_IDENTIFIER_UNSAFE', 'blocks_acceptance': False,
+             'blocks_lowering': True}]})
+        self.assertEqual(mixed_lowering.destination, BACKEND_TRIAGE)
 
     def test_a_real_gate_refusal_still_wins_over_a_report(self) -> None:
         # A Schedule can be both wrong and unlowerable. The gate refusal is the one the
@@ -116,14 +135,14 @@ class RoutingContractTests(unittest.TestCase):
         decision = route_rejection({"stage": "compile", "diagnostic": "ptxas exit 255"})
         self.assertEqual(decision.destination, VERIFIER)
 
-    def test_an_inexpressible_schedule_is_the_vocabularys(self) -> None:
+    def test_generic_emitter_refusal_needs_owner_triage(self) -> None:
         decision = route_rejection(
             {
                 "stage": "assessment",
                 "error": "Schedule does not determine its source: expected one mma",
             }
         )
-        self.assertEqual(decision.destination, IR_VOCABULARY)
+        self.assertEqual(decision.destination, BACKEND_TRIAGE)
 
     def test_a_route_must_name_a_real_destination_and_a_reason(self) -> None:
         for bad in ({"destination": "elsewhere", "reason": "x"}, {"destination": CANDIDATE, "reason": ""}):

@@ -300,7 +300,8 @@ Compiler 演进由运行之外的维护 Agent 或研究者根据具体诊断实�
 已被 Cake IR 接受、仅因所选后端缺少指令或访问实现而拒绝 lowering 的候选，反馈归为
 `backend_lowering`；缺少表达该物理决策的 IR 词汇才归为 `ir_vocabulary`。前者的维护 Agent
 可在后继提交补该后端的 emission、preflight 与反例测试，或把缺口连同原候选和 Finding
-留作待审议记录。两者都不能在冻结 Run 中热改 Compiler，也不能偷偷换目标或放宽 oracle。
+留作待审议记录。尚未判断归属的 lowering-only 拒绝进入 `backend_triage`，不默认归罪于作者。
+这些路线都不能在冻结 Run 中热改 Compiler，也不能偷偷换目标或放宽 oracle。
 发现性能差距本身不要求新增 pass；每轮保留 promotion disposition，`No promotion` 是有效结论。
 
 待完成的边界包括各平台的完整 Program 测量、部分 dtype/指令及 profiler 指标、
