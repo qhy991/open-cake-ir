@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from threading import Lock
 from types import MappingProxyType
 from collections.abc import Mapping, Callable
-from open_cake_ir.compiler.ir import ProgramTensor, MemorySpace, BufferMode
+from open_cake_ir.compiler.ir import HandoffScope, ProgramTensor, MemorySpace, BufferMode
 from open_cake_ir.compiler.program import LoweredProgram, LoweredWorkerProgram
 
 
@@ -91,7 +91,7 @@ class PreparedProgram:
 def prepare_worker_program(lowered: LoweredWorkerProgram, inputs: Mapping[str, object], *,
             allocate: Callable, allocate_state: Callable, load_worker: Callable,
             check_tensor: Callable, storage_span: Callable, execution_context: Callable,
-            read_status: Callable):
+            read_status: Callable, launch_device: object | None = None):
     """Bind a cooperative Program's storage before any device launch.
 
     The backend declares an internal state extent and a host launch that resets
@@ -116,6 +116,11 @@ def prepare_worker_program(lowered: LoweredWorkerProgram, inputs: Mapping[str, o
             or set(host_abi) != {'create', 'launch', 'destroy'}
             or any(not isinstance(name, str) or not name for name in host_abi.values())):
         raise ValueError('worker launch state, argument order or host ABI differs')
+    system_payloads = {handoff.payload for handoff in program.execution.handoffs
+                       if handoff.scope is HandoffScope.SYSTEM}
+    if system_payloads and (launch_device is None
+            or requirements.get('peer_payload_runtime_check') is not True):
+        raise ValueError('system handoff needs an explicit launch device and peer-aware host ABI')
     bound_context = execution_context()
     buffers = dict(inputs)
     for name, spec in program.tensors.items():
@@ -128,14 +133,20 @@ def prepare_worker_program(lowered: LoweredWorkerProgram, inputs: Mapping[str, o
     entries = [(name, tensor, program.tensors[name].nbytes)
                for name, tensor in buffers.items()]
     entries.append((None, state, state_bytes))
+    bound_device = launch_device
     for name, tensor, extent in entries:
         device, start, end = storage_span(tensor)
         if type(start) is not int or type(end) is not int or not 0 < start < end:
             raise ValueError('worker launch requires nonempty storage byte intervals')
         if end - start < extent or name is not None and end - start != extent:
             raise ValueError(f'worker launch storage extent differs for {name or "internal state"!r}')
-        if spans and device != spans[0][0]:
-            raise ValueError('worker Program storage must share one device')
+        if bound_device is None:
+            bound_device = device
+        if name in system_payloads:
+            if device == bound_device:
+                raise ValueError(f'system handoff payload {name!r} needs peer storage')
+        elif device != bound_device:
+            raise ValueError('worker Program local storage must share one device')
         if any(device == other_device and start < other_end and other_start < end
                for other_device, other_start, other_end in spans):
             raise ValueError(f'worker launch storage for {name or "internal state"!r} overlaps another tensor')

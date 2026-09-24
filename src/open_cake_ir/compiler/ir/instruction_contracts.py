@@ -96,6 +96,10 @@ _RECORDS = (
     _sync("mbarrier", BarrierMechanism.MBARRIER),
     _sync("barrier.sync", BarrierMechanism.NAMED),
     _sync("triton_program_order", None),
+    # A Program-level peer payload handoff needs both halves. Neither instruction
+    # creates a barrier object; the Program verifier owns producer/consumer edges.
+    _sync("ptx.st.release.sys.global.s32", None),
+    _sync("ptx.ld.acquire.sys.global.s32", None),
 )
 
 CONTRACTS: Mapping[str, InstructionContract] = MappingProxyType(

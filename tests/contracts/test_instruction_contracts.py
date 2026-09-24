@@ -111,7 +111,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
 
     def test_the_registry_is_closed_and_every_record_says_what_it_is(self) -> None:
         """Every record carries exactly the fields its analyses read."""
-        self.assertEqual(len(CONTRACTS), 20)
+        self.assertEqual(len(CONTRACTS), 22)
         for name, record in CONTRACTS.items():
             with self.subTest(contract=name):
                 self.assertEqual(record.name, name)
@@ -128,6 +128,9 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
         self.assertEqual(PLACED_CONTRACTS, {
             "tcgen05.mma.cta_group::1.kind::f16",
             "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"})
+        self.assertEqual({contract(name).kind for name in (
+            'ptx.st.release.sys.global.s32',
+            'ptx.ld.acquire.sys.global.s32')}, {ContractKind.SYNCHRONIZATION})
 
     def test_native_atomic_contract_is_a_distinct_backend_realization(self) -> None:
         native = contract("ptx.atom.relaxed.gpu.global.add.s32")
