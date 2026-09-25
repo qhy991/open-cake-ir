@@ -558,6 +558,12 @@ outcomes, not oracle failures. The exact wait condition and memory-order
 cause remain unresolved. The `cake-ranked-ep4-b300-device-369b8cf3/`
 evidence directory under the 2026-09-25 Weave evidence root retains reports,
 compiled products, receipts, failure observations and the plan-by-plan index.
+Parallel host waits let both an earlier low-`c` remote-only plan and the
+T7 mixed-`K` plan pass once, but a prestarted idle thread with the original
+sequential wait also let mixed `K` pass. A 120-second memcheck run of the
+original low-`c` plan timed out without a diagnostic beyond startup. Host
+threading is not qualified as a repair; the device protocol remains the
+owner of the liveness investigation.
 No protocol change is promoted until the failing plans replay successfully
 under a successor source.
 
