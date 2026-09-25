@@ -34,5 +34,5 @@ preferred-citation:
   year: 2026
   institution:
     name: "open-cake-ir project"
-  url: "https://github.com/qhy991/open-cake-ir/blob/main/docs/README.md"
-  notes: "Living technical report with Chinese and English editions. Cite the report commit and chapter; measurements retain their own experiment revision, target, workload and timing boundary."
+  url: "https://github.com/qhy991/open-cake-ir/blob/main/docs/open-cake-ir-technical-report.pdf"
+  notes: "TeX-compiled technical report. Cite its commit and page; measurements retain their own experiment revision, target, workload and timing boundary."
