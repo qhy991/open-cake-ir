@@ -67,6 +67,7 @@ class NativeRankedMailbox(unittest.TestCase):
                 self.assertIn('--gpu-architecture=compute_103a',
                               requirements['nvcc_flags'])
                 self.assertIn('--gpu-code=sm_103a', requirements['nvcc_flags'])
+                self.assertEqual(requirements['link_libraries'], ['cudart'])
                 self.assertIn('atom.acq_rel.sys.global.add.s32', lowered.source)
                 self.assertIn('atom.release.sys.global.add.s32', lowered.source)
                 self.assertIn('cudaDevP2PAttrNativeAtomicSupported', lowered.source)

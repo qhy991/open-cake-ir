@@ -158,7 +158,7 @@ def lower_ranked_mailbox(compiler, effects: RankedMailboxEffects,
                        '--gpu-architecture=' + target.target_id.replace('sm_', 'compute_', 1),
                        '--gpu-code=' + target.target_id, '-O3', '--fmad=false',
                        '-lineinfo', '-Xptxas=-v'],
-        'link_libraries': ['cuda', 'cudart'],
+        'link_libraries': ['cudart'],
     }
     result = LoweredRankedMailbox(local, combine, effects, analysis,
                                   compiler._revision.revision_id, source,
