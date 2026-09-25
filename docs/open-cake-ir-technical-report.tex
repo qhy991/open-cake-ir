@@ -1197,7 +1197,7 @@ KDA。七输出融合预处理也已通过 H64/T8192 的全部元素检查，包
 \midrule
 适配 CAKE 完整 prefill & 456.034 & 单内核完整输出及最终状态通过 \\
 21-MMA 七输出预处理 & 637.606 & 组件正确；单阶段已超过参考完整内核 \\
-2-MMA 七输出预处理 & 389.507 & 组件正确；状态内核尚未实现和计时 \\
+2-MMA 七输出预处理 & 389.507 & 组件正确；后续完整配对见下文 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -1212,8 +1212,8 @@ T65、T257 和完整 H64/T8192 的独立逐 token oracle 均通过。改动同�
 数据不能把收益拆归到单一原因。按不同作业的中位数相减，新的预处理距旧参考
 完整内核仅余约 66.527\,$\mu$s；这只是非配对的设计余量，不是端到端收益。
 Nsight Compute 因 \code{ERR\_NVGPUCTRPERM} 无法读取性能计数器，因此尚无
-硬件计数器归因。Cake 准入的原生状态消费者及其成对完整任务计时，以及高保留门值下逐 token
-BF16 状态舍入导致的最终状态失败，仍需分别解决。
+硬件计数器归因。此时原生状态消费者尚未完成；后续完整计时见下文。高保留门值下
+逐 token BF16 状态舍入导致的最终状态失败仍需解决。
 
 \paragraph{完整固定形状的首次成对测量。}
 后继将上述 2-MMA 预处理接到一个尚未获 Cake Schedule 准入的 Triton 持久化
@@ -1232,7 +1232,45 @@ BF16 状态舍入导致的最终状态失败，仍需分别解决。
 报告 40 个寄存器、零 spill。但这个\emph{独立求解原语}的冷 L2 中位数仍为
 668.229\,$\mu$s，单独就超过前述另一作业中的完整参考。它使用合成 RHS，
 不能与预处理延迟相加冒充完整任务测量。由此可见，仅把消费者换成 CUDA/PTX
-仍不够；下一步须将准备值、RHS 和 TMEM 状态传递融合到片上，再做完整配对验收。
+仍不够；后续继续验证片上状态传递与完整配对计时。
+
+\paragraph{原生 TMEM 状态传递与 TMA 搬运。}
+独立原生 CUDA 探针起初在设备上超时。分段探针发现其
+\code{tcgen05.alloc/dealloc/relinquish} 的 \code{sync.aligned} 指令只由
+warp 0 的 lane 0 执行；改为 warp 0 全部 lane 执行后，一块 H64/T32
+输出与状态均通过独立 oracle。再以 TMEM 保存并按需读回 BF16 状态，
+两块 T64 和完整 256 块 T8192 的原生消费者均通过检查。完整版本的
+NVCC 报告 255 个寄存器、零 stack/spill；检查覆盖全部 67,108,864 个输出
+和 1,048,576 个最终状态元素，失败数为零。
+
+\begin{table}[htbp]
+\centering\small\renewcommand{\arraystretch}{1.12}
+\caption{B300-M4 固定 H64/T8192 的完整两阶段机制。每行均将同一
+2-MMA 预处理接到所列消费者；参考与候选在同一 broker 独占作业中交替
+测量五轮、每臂每轮 25 次 CUPTI 冷 L2 样本，禁用 CUDA graph。
+行与行之间是不同作业，不应将两行延迟差直接当作成对加速比。}
+\label{tab:kda-b300-state-followup}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+消费者 & 适配 CAKE 参考 & 两阶段候选 & 候选/参考 \\
+\midrule
+Triton 串行求解 & 456.195 & 10,199.621 & 22.362$\times$ \\
+native TMEM，手工 B 搬运 & 456.291 & 15,898.575 & 34.845$\times$ \\
+native TMEM，TMA B 搬运 & 456.131 & 3,879.034 & 8.503$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+两种 native 消费者的结果及原地最终状态在各自完整配对作业后逐轮通过独立
+oracle，不可变输入保持不变。手工版本每块由一个 warp 搬运约 26~KiB 的
+四个 BF16 操作数 tile；TMA 版本改用四次异步张量搬运及同一事务 barrier，
+其完整候选延迟显著下降。但两个版本均保留每个 head 一 CTA、256 块顺序
+递推，以及预处理的全局中间值。因此当前正确的 TMA 版本仍比适配参考慢
+8.503 倍，尚无超越 CAKE 的性能结论；下一步要改变串行依赖/中间值
+组织方式，而不能仅继续压缩搬运开销。\code{ERR\_NVGPUCTRPERM} 仍使
+硬件计数器归因不可用，且这些原型尚未获 Cake Schedule 准入或正式
+Evaluation 收据。
+\FloatBarrier
 
 \section{跨硬件复用：从一次改写到可检验的收益}
 
