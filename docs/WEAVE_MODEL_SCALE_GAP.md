@@ -45,6 +45,20 @@ arithmetic under the old structs, **not** an admitted source, allocation or
 measured L2/throughput estimate. The model contract's seeded synthetic routes
 also differ from the paper's ShareGPT routing.
 
+The same saved synthetic route IDs expose a temporal packing constraint. With
+128-row expert tiles, accumulating across all 128-token source waves requires
+194 tile tasks and 8,448 padded rows; 70 full tasks become publishable only
+in the final wave, and 124 partial tasks require terminal flush. Treating
+each source rank's wave as an independent expert bin instead would create
+2,048 tasks and 245,760 padded rows. A CPU-only thresholded policy that
+flushes bins at 64 rows after each wave creates 256 tasks and publishes 70
+in the second wave, with 16,384 padded rows. The route-keyed task manifests,
+counterexamples and exact source are retained in
+`cake-weave-model-tile-flush-22d3f77d/` under the same external evidence
+root. This is a deterministic publication witness, not GPU execution or a
+timing model. It motivates a tile queue that accumulates across temporal
+chunks and permits an explicit partial-bin publication rule.
+
 ## Required joint change
 
 1. **Math and mapping.** Build complete Cake Schedules for an expert up/gate
