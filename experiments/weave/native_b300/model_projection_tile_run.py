@@ -1,4 +1,4 @@
-"""Standalone one-GPU correctness probe for a Cake B300 expert GEMM tile.
+"""Standalone one-GPU correctness probe for Cake B300 expert GEMM tiles.
 
 `prepare` and `verify` are CPU-only. `run` requires one exclusive B300-M4
 broker GPU and the nvcc-built host wrapper in the external evidence directory.
@@ -17,8 +17,17 @@ import time
 
 
 CASES = ('dyadic_random', 'zero_rows')
-LABEL = 'cake-weave-model-upgate-tile-cc1715b5'
 CUDA_RUNTIME = '/usr/local/cuda-13.1/lib64/libcudart.so'
+TILES = {
+    'weave-model-upgate-tile-b300': {
+        'tag': 'upgate', 'grid': [1, 24, 1],
+        'a': [128, 2048], 'b': [1536, 2048], 'c': [128, 1536],
+    },
+    'weave-model-down-tile-b300': {
+        'tag': 'down', 'grid': [1, 32, 1],
+        'a': [128, 768], 'b': [2048, 768], 'c': [128, 2048],
+    },
+}
 
 
 def document(path: Path) -> dict:
@@ -35,31 +44,34 @@ def prepare(root: Path) -> dict:
     requirements = document(root / 'requirements.json')
     schedule = document(root / 'schedule.json')
     commit = assessment['compiler_commit']
+    geometry = TILES.get(schedule.get('schedule_id'))
+    if geometry is None:
+        raise ValueError('unknown model projection tile')
+    label = f'cake-weave-model-{geometry["tag"]}-tile-{commit[:8]}'
     if (len(commit) != 40 or any(char not in '0123456789abcdef' for char in commit)
             or requirements['target'] != 'sm_103a'
             or requirements['source_language'] != 'cuda_cpp'
             or requirements['argument_order'] != ['a', 'b', 'c']
-            or requirements['grid'] != [1, 24, 1]
+            or requirements['grid'] != geometry['grid']
             or requirements['block'] != [192, 1, 1]
             or requirements['dynamic_shared_bytes'] != 49200
             or [(row['name'], row['dtype'], row['shape'], row['mode'])
                 for row in requirements['arguments']] != [
-                    ('a', 'bf16', [128, 2048], 'input'),
-                    ('b', 'bf16', [1536, 2048], 'input'),
-                    ('c', 'fp32', [128, 1536], 'output')]
+                    ('a', 'bf16', geometry['a'], 'input'),
+                    ('b', 'bf16', geometry['b'], 'input'),
+                    ('c', 'fp32', geometry['c'], 'output')]
             or schedule['target'] != 'sm_103a'
-            or schedule['schedule_id'] != 'weave-model-upgate-tile-b300'
             or any(row['blocks_lowering'] or row['blocks_acceptance']
                    for row in assessment['findings'])):
-        raise ValueError('model upgate tile source, target or typed ABI differs')
-    extents = {'a.bf16': 128 * 2048 * 2,
-               'b.bf16': 1536 * 2048 * 2,
-               'expected.fp32': 128 * 1536 * 4}
+        raise ValueError('model projection tile source, target or typed ABI differs')
+    extents = {'a.bf16': math.prod(geometry['a']) * 2,
+               'b.bf16': math.prod(geometry['b']) * 2,
+               'expected.fp32': math.prod(geometry['c']) * 4}
     for name in CASES:
         case = document(root / name / 'case.json')
-        if (case['name'] != name or case['a_shape'] != [128, 2048]
-                or case['b_shape'] != [1536, 2048]
-                or case['output_shape'] != [128, 1536]
+        if (case['name'] != name or case['a_shape'] != geometry['a']
+                or case['b_shape'] != geometry['b']
+                or case['output_shape'] != geometry['c']
                 or case['input_dtype'] != 'bf16'
                 or case['output_dtype'] != 'fp32'
                 or case['expected_exact_fp32'] is not True):
@@ -67,10 +79,11 @@ def prepare(root: Path) -> dict:
         for filename, expected in extents.items():
             if (root / name / filename).stat().st_size != expected:
                 raise ValueError(f'{name}/{filename} byte extent differs')
-    return {'compiler_commit': commit, 'requirements': requirements}
+    return {'compiler_commit': commit, 'requirements': requirements,
+            'geometry': geometry, 'extents': extents, 'label': label}
 
 
-def admitted() -> str:
+def admitted(expected_label: str) -> str:
     path = Path(os.environ.get('BROKER_RECEIPT', '/nonexistent'))
     for _ in range(30):
         if path.is_file():
@@ -79,7 +92,7 @@ def admitted() -> str:
     else:
         raise RuntimeError('broker admission receipt missing')
     row = document(path)
-    if (row.get('label') != LABEL or row.get('mode') != 'exclusive'
+    if (row.get('label') != expected_label or row.get('mode') != 'exclusive'
             or row.get('gpu_count') != 1 or len(row.get('gpu_ids', [])) != 1
             or not isinstance(row.get('job_id'), str)):
         raise RuntimeError('one exact exclusive B300 GPU admission differs')
@@ -89,8 +102,9 @@ def admitted() -> str:
 class Runtime:
     def __init__(self, root: Path):
         self.root = root
-        self.job = admitted()
         binding = prepare(root)
+        self.job = admitted(binding['label'])
+        self.binding = binding
         self.commit = binding['compiler_commit']
         self.req = binding['requirements']
         build = document(root / 'build_report.json')
@@ -147,9 +161,10 @@ class Runtime:
             raise ValueError('device evidence must be create-only')
         output = self.root / 'device_outputs'
         output.mkdir(exist_ok=False)
-        a = self.allocate(128 * 2048 * 2)
-        b = self.allocate(1536 * 2048 * 2)
-        c = self.allocate(128 * 1536 * 4)
+        extents = self.binding['extents']
+        a = self.allocate(extents['a.bf16'])
+        b = self.allocate(extents['b.bf16'])
+        c = self.allocate(extents['expected.fp32'])
         calls = 0
         for name in CASES:
             case = self.root / name
@@ -157,7 +172,8 @@ class Runtime:
             retained.mkdir()
             self.write(a, (case / 'a.bf16').read_bytes())
             self.write(b, (case / 'b.bf16').read_bytes())
-            checked(self.cuda.cudaMemset(c, 0, 128 * 1536 * 4), 'output reset')
+            checked(self.cuda.cudaMemset(c, 0, extents['expected.fp32']),
+                    'output reset')
             checked(self.cuda.cudaDeviceSynchronize(), 'input/reset completion')
             handle = C.c_void_p()
             arguments = (C.c_void_p * 3)(a.value, b.value, c.value)
@@ -167,16 +183,17 @@ class Runtime:
                 checked(self.cuda.cudaDeviceSynchronize(), 'native completion')
                 calls += 1
                 (retained / 'actual.fp32').write_bytes(
-                    self.read(c, 128 * 1536 * 4))
+                    self.read(c, extents['expected.fp32']))
                 (retained / 'observed_a.bf16').write_bytes(
-                    self.read(a, 128 * 2048 * 2))
+                    self.read(a, extents['a.bf16']))
                 (retained / 'observed_b.bf16').write_bytes(
-                    self.read(b, 1536 * 2048 * 2))
+                    self.read(b, extents['b.bf16']))
             finally:
                 checked(self.destroy(handle), 'native destroy')
         (self.root / 'device.json').write_text(json.dumps({
             'broker_job': self.job, 'compiler_commit': self.commit,
-            'target': 'sm_103a', 'cases': list(CASES), 'launch_calls': calls,
+            'target': 'sm_103a', 'tile': self.binding['geometry']['tag'],
+            'cases': list(CASES), 'launch_calls': calls,
             'scope': 'one-GPU B300 native tensor-tile development correctness',
         }, indent=2) + '\n')
 
@@ -208,6 +225,7 @@ def verify(root: Path) -> None:
     receipt = document(root / 'gpuq-admission.json')
     if (device['compiler_commit'] != binding['compiler_commit']
             or device['broker_job'] != receipt['job_id']
+            or device['tile'] != binding['geometry']['tag']
             or device['cases'] != list(CASES)
             or device['launch_calls'] != len(CASES)):
         raise ValueError('device/Compiler/broker case binding differs')
@@ -217,7 +235,8 @@ def verify(root: Path) -> None:
         retained = root / 'device_outputs' / name
         actual_bytes = (retained / 'actual.fp32').read_bytes()
         expected_bytes = (case / 'expected.fp32').read_bytes()
-        if len(actual_bytes) != len(expected_bytes) or len(actual_bytes) != 128 * 1536 * 4:
+        if (len(actual_bytes) != len(expected_bytes)
+                or len(actual_bytes) != binding['extents']['expected.fp32']):
             raise ValueError(f'{name} output extent differs')
         exact = actual_bytes == expected_bytes
         mismatches = 0
@@ -243,8 +262,9 @@ def verify(root: Path) -> None:
                          'max_abs_error': max_abs_error})
     report = {'compiler_commit': binding['compiler_commit'],
               'broker_job': device['broker_job'], 'target': 'sm_103a',
+              'tile': binding['geometry']['tag'],
               'cases': outcomes, 'passed': all(row['passed'] for row in outcomes),
-              'scope': 'one expert up/gate projection tile; no EP4, latency or serving claim'}
+              'scope': 'one expert projection tile; no full FFN, EP4, latency or serving claim'}
     (root / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
     if not report['passed']:
