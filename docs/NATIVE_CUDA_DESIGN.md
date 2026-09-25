@@ -508,6 +508,14 @@ pre-seal manifest using the actual native lowering. The retained
 source and requirements, each replayed against that clean Compiler commit.
 No compiled executable or `LaunchableCandidate` exists yet.
 
+`lab/ranked_build.py` is a create-only CPU development compiler handoff for
+the exact pre-seal manifest. It invokes the supplied nvcc on one retained
+Cake source for a CUDA host wrapper and a separate cubin, preserves each
+command/log and partial failure, and checks that both outputs are ELF files.
+It does not mint a `LaunchableCandidate`, borrow a GPU, validate PTXAS
+resources, or qualify the four-rank loader. Actual B300-M4 nvcc execution
+and broker-held oracle are still required.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
