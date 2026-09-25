@@ -59,6 +59,8 @@ def _run_on_broker(document: dict, upstream: Path, output_dir: Path) -> None:
         raise RuntimeError("GPU execution requires a broker-issued exclusive lease")
     if int(os.environ.get("WORLD_SIZE", "0")) != 4 or torch.cuda.device_count() != 4:
         raise RuntimeError("EP4 requires exactly four broker-mapped CUDA devices")
+    if any(torch.cuda.get_device_capability(i) != (10, 3) for i in range(4)):
+        raise RuntimeError("Target mismatch: this experiment requires four sm_103a GPUs")
     rank = int(os.environ["RANK"])
     local_rank = int(os.environ["LOCAL_RANK"])
     if rank != local_rank:

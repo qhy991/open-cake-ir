@@ -2,6 +2,7 @@
   "schema_version": 1,
   "experiment_id": "weave-td-ep4-qwen3-30b-b300-v1",
   "state": "independent_unqualified",
+  "target": "sm_103a",
   "upstream": {
     "repository": "https://github.com/ByteDance-Seed/Triton-distributed",
     "branch": "triton-v3.4",

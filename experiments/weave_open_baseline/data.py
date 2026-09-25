@@ -17,7 +17,8 @@ CONTRACT = Path(__file__).with_name("contract.json")
 def load_contract(path: Path = CONTRACT) -> dict:
     document = json.loads(path.read_text())
     shape = document["geometry"]
-    if (shape["expert_parallel_size"] != 4
+    if (document["target"] != "sm_103a"
+            or shape["expert_parallel_size"] != 4
             or shape["tokens_total"] != 4 * shape["tokens_per_rank"]
             or shape["experts"] % 4 != 0
             or shape["top_k"] > shape["experts"]
