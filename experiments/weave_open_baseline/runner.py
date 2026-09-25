@@ -43,9 +43,9 @@ def preflight(document: dict, upstream: Path) -> dict:
     for stage in ("mega_dispatch_group_gemm", "swiglu_forward", "mega_group_gemm_combine"):
         if stage not in source:
             raise ValueError(f"Full-layer stage absent in pinned upstream: {stage}")
-    import py_compile
     for relative in UPSTREAM_FILES:
-        py_compile.compile(str(upstream / relative), doraise=True)
+        source_path = upstream / relative
+        compile(source_path.read_text(), str(source_path), "exec")
     return {"pass": True, "upstream_commit": head, "source_files": list(UPSTREAM_FILES),
             "numpy_version": np.__version__, "mode": "cpu_only_static"}
 
@@ -55,6 +55,8 @@ def _run_on_broker(document: dict, upstream: Path, output_dir: Path) -> None:
     import torch.distributed as dist
 
     shape = document["geometry"]
+    if not os.environ.get("GPUQ_JOB_ID") or os.environ.get("GPUQ_MODE") != "exclusive":
+        raise RuntimeError("GPU execution requires a broker-issued exclusive lease")
     if int(os.environ.get("WORLD_SIZE", "0")) != 4 or torch.cuda.device_count() != 4:
         raise RuntimeError("EP4 requires exactly four broker-mapped CUDA devices")
     rank = int(os.environ["RANK"])
@@ -86,8 +88,9 @@ def _run_on_broker(document: dict, upstream: Path, output_dir: Path) -> None:
                                num_sm=64, num_buffers=1, capacity=4.0)
 
         def forward():
-            return TritonDistFusedEpMoeFunction.apply(
-                shape["experts"], route_weights, ids, hidden, fc1, None, fc2, group)
+            with torch.inference_mode():
+                return TritonDistFusedEpMoeFunction.apply(
+                    shape["experts"], route_weights, ids, hidden, fc1, None, fc2, group)
 
         for _ in range(document["measurement"]["warmups"]):
             dist.barrier(group)
@@ -101,19 +104,26 @@ def _run_on_broker(document: dict, upstream: Path, output_dir: Path) -> None:
             start = time.perf_counter_ns()
             last = forward()
             torch.cuda.synchronize()
-            samples.append(time.perf_counter_ns() - start)
+            samples.append((start, time.perf_counter_ns()))
         dist.barrier(group)
         assert last is not None
         np.save(output_dir / f"rank{rank}-output.npy", last.detach().float().cpu().numpy())
         all_samples = [None] * 4
         dist.all_gather_object(all_samples, samples, group=group)
         if rank == 0:
-            complete_ns = [max(all_samples[r][i] for r in range(4))
+            complete_ns = [max(all_samples[r][i][1] for r in range(4))
+                           - min(all_samples[r][i][0] for r in range(4))
                            for i in range(len(samples))]
             (output_dir / "device-observation.json").write_text(json.dumps({
                 "experiment_id": document["experiment_id"],
                 "upstream_commit": document["upstream"]["commit"],
-                "rank_ns": all_samples,
+                "broker_job_id": os.environ["GPUQ_JOB_ID"],
+                "broker_device_ids": os.environ["GPUQ_DEVICE_IDS"],
+                "geometry": shape,
+                "configuration": {"num_sm": 64, "capacity": 4.0, "num_buffers": 1,
+                                  "warmups": document["measurement"]["warmups"],
+                                  "iterations": document["measurement"]["iterations"]},
+                "rank_start_end_ns": all_samples,
                 "complete_layer_ns": complete_ns,
                 "median_complete_layer_ns": statistics.median(complete_ns),
                 "timer": document["measurement"]["timer"],

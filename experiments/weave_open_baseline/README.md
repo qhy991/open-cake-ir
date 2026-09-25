@@ -54,27 +54,34 @@ experiment's provisional times.
 
 ## Reproduction stages
 
-1. Clone the upstream repository at the commit above into a **separate**
-   checkout. Build/install it and its NVSHMEM requirements on B300-M4 using
-   the upstream 3.4 instructions. Do all downloads, builds and Python syntax
-   checks without a GPU lease. Keep install logs and `git status` with the run.
-2. Run `python3.11 runner.py preflight --upstream /path/to/Triton-distributed`.
+1. Clone the upstream 3.4 branch at the exact commit above into a **separate**
+   checkout, and initialize its `3rdparty/triton` submodule at
+   `f53694a72a1e4f464fa245df2c7305ccda7cb2a9`. On B300-M4, run
+   `prepare_cpu.sh init`, `prepare_cpu.sh deps`, `prepare_cpu.sh build`, then
+   `prepare_cpu.sh probe`, passing the upstream checkout and a new isolated
+   build directory to each command. This script launches a container with no
+   GPU devices, installs into a private venv and leaves build logs under the
+   caller's chosen path. Keep the complete commands, logs and `git status`.
+2. Run `python runner.py preflight --upstream /path/to/Triton-distributed`.
    This checks the exact upstream commit, clean tracked source, all three
    forward stages and Python syntax. It is CPU only.
-3. Submit one `gpu-run --mode exclusive --gpu-count 4` job through the B300-M4
-   broker. Inside that job, run `torchrun --nproc_per_node=4 runner.py run
-   --upstream /path/to/Triton-distributed --output /path/to/new-output`.
-   Record the broker admission receipt. The broker sets `CUDA_VISIBLE_DEVICES`;
-   do not set it in the launcher. Keep the output path create-only.
-4. After the broker's lease has ended, run `runner.py check --output
-   /path/to/new-output` on the CPU with the **same NumPy version** used for
+3. Create a new output directory and submit one `gpu-run --mode exclusive
+   --gpu-count 4 --receipt-out /path/to/new-output/admission.json` job through
+   the B300-M4 broker, with `run_under_broker.sh <upstream> <build> <output>`
+   as its child command. The script checks the broker-owned allocation and
+   passes exactly those four physical devices into the GPU container.
+   Preserve broker stdout/stderr and the admission receipt. The broker sets
+   `CUDA_VISIBLE_DEVICES`; do not set it in the launcher.
+4. After the broker's lease has ended, run `check_after_release.sh <build>
+   <output>` on the CPU with the **same NumPy version** used for
    input generation. Retain `rank*-output.npy`, `device-observation.json`,
    `oracle-result.json`, commands and logs. A failing/missing oracle is not a
    successful baseline.
 
 The measured function includes route preprocessing, dispatch, gate/up GEMM,
 SwiGLU, down GEMM and combine, ending only after each rank synchronizes. The
-per-iteration layer time is the maximum of all four rank durations. Input
+per-iteration layer time is latest rank completion minus earliest rank start
+on the same host's monotonic clock. Input
 generation, weight transfer, initialization and oracle run outside the window.
 The current timer is a host steady clock without a verified L2 flush or CUPTI
 target timing contract. Its output is diagnostic only; it cannot support a

@@ -39,7 +39,7 @@
   },
   "measurement": {
     "window": "all four ranks: pre-synchronized start of upstream forward through completed combine and device synchronization",
-    "aggregation": "maximum rank duration per iteration",
+    "aggregation": "latest rank completion minus earliest rank start per iteration on one host monotonic clock",
     "warmups": 3,
     "iterations": 10,
     "timer": "host_steady_clock_provisional",
