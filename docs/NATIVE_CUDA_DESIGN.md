@@ -118,8 +118,8 @@ MMAs and returns only output coupling B and the BF16 inverse. Its declared
 logical input/output are about 404/67 MB, excluding the recurrent state kernel.
 This is a distinct mapping hypothesis: 21 dependent MMA operations may increase
 register pressure or serial latency even though the traffic screen is smaller.
-Only target compilation, complete component numerics and paired B300 timing can
-choose between the two fused depths.
+Target compilation and complete component numerics gate the choice; later
+B300 measurements below reject this 21-MMA depth for the fixed H64 case.
 A state-input successor keeps that fused 21-MMA body but also writes the three
 BF16 tiles needed by the native state kernel (base key, base query, final key),
 FP32 beta gate and FP32 chunk-end decay. It declares about 404 MB of input and
@@ -128,6 +128,16 @@ output is a complete preprocessor. A CPU screen with each planned BF16 operand
 and storage rounding passes the complete T65/T257 and H64/T8192 token oracles.
 That screen is not a GPU kernel receipt, and the high-retention held-out state
 failure of chunk-level rounding still limits generalization.
+The mixed-major seven-output successor subsequently passed exact-B300 AOT and
+complete H64 component correctness. Its 21-MMA fused preparation alone took
+637.606 us median under a five-round cold-L2 CUPTI diagnostic and used 227
+registers. Replacing explicit inverse output with strict-lower P and a planned
+serial forward substitution cut the typed preparation to two BF16 MMAs. That
+preparation also passes complete B300 output checks, uses 185 registers, and
+measured 389.507 us in a separate five-round CUPTI job. CPU serial substitution
+passes the independent full output/final-state oracle. The earlier adapted
+complete CAKE reference measured about 456 us in another job, leaving only
+nonpaired component headroom; no full native state consumer or speedup exists.
 A typed midpoint-factor stage takes BF16 normalized Q/K and FP32 per-token
 log-decay, scans its 32-token prefix, extracts the first/last log values, and
 forms BF16 forward-key, backward-key and forward-query tiles. The bounded
@@ -195,8 +205,10 @@ Its three-seed 128x32 FP32 outputs pass the independent product; the probe is
 not a Cake lowering. The successor native route admits exactly BF16 TMEM-A
 M128/N32/K128 with that swizzle on `sm_103a`, and refuses other geometries by
 `NATIVE_MN_MAJOR_B_UNQUALIFIED`. The shared verifier reads the declared major
-mode to require B `[K,N]` only when MN-major is named. Generated-source NVCC,
-B300 execution and the complete recurrent KDA state consumer are separate gates.
+mode to require B `[K,N]` only when MN-major is named. The Cake-emitted
+successor compiled for exact `sm_103a` with 40 registers and zero spills and
+passed three full-output B300 checks against the independent product. The
+complete recurrent KDA state consumer and its paired timing remain separate gates.
 
 Native examples are complete hardware Schedules, not backend-renamed Triton inputs.
 The KMeans core explicitly takes `centroid_sq`, matching the existing portfolio runtime
