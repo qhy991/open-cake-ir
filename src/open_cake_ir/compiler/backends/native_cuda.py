@@ -125,6 +125,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             if any(op.kind is OperationKind.CAST and op.writes
                    and (result := s.buffer(op.writes[0])) is not None
                    and result.dtype is DType.BF16 for op in s.operations):
+                if s.program_map is not None and len(s.program_map.axes) == 2:
+                    from .native_cuda_model_combine import preflight as model_combine_preflight
+                    return model_combine_preflight(s, target)
                 from .native_cuda_combine import preflight as combine_preflight
                 return combine_preflight(s, target)
             from .native_cuda_row_dot import preflight as row_dot_preflight
@@ -1011,6 +1014,9 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
             if any(op.kind is OperationKind.CAST and op.writes
                    and (result := schedule.buffer(op.writes[0])) is not None
                    and result.dtype is DType.BF16 for op in schedule.operations):
+                if schedule.program_map is not None and len(schedule.program_map.axes) == 2:
+                    from .native_cuda_model_combine import Emitter as ModelCombineEmitter
+                    return ModelCombineEmitter(schedule,target,schedule.lowering.entry_point).emit()
                 from .native_cuda_combine import Emitter as CombineEmitter
                 return CombineEmitter(schedule,target,schedule.lowering.entry_point).emit()
             from .native_cuda_row_dot import Emitter as RowDotEmitter
