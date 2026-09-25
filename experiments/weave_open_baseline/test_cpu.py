@@ -69,6 +69,17 @@ class CpuOracleTest(unittest.TestCase):
         self.assertLess(float(np.abs(new_rank["gate"]).mean()),
                         float(np.abs(old_rank["gate"]).mean()))
 
+    def test_fanin_model_width_oracle_rejects_zero_output(self):
+        document = load_fanin_contract(
+            Path(__file__).with_name("model_scale_inputs_fanin_v2.json"))
+        document["geometry"].update(tokens_total=32, tokens_per_rank=8,
+                                    experts=8, top_k=8)
+        ranks = [make_rank(document, rank) for rank in range(4)]
+        expected = reference(document, ranks)
+        tolerance = 0.01 + 0.01 * np.abs(expected)
+        self.assertGreater(float(np.abs(expected).mean()), 0.05)
+        self.assertGreater(float(np.mean(np.abs(expected) > tolerance)), 0.9)
+
     def test_fallback_launcher_refuses_without_broker_lease(self):
         directory = str(Path(__file__).parent)
         environment = {key: value for key, value in os.environ.items()
