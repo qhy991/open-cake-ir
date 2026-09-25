@@ -65,8 +65,9 @@ experiment's provisional times.
    GPU devices, installs into a private venv and leaves build logs under the
    caller's chosen path. Keep the complete commands, logs and `git status`.
 2. Run `python runner.py preflight --upstream /path/to/Triton-distributed`.
-   This checks the exact upstream commit, clean tracked source, all three
-   forward stages and Python syntax. Run `create_oracle_cpu.sh <build>
+   This checks the exact upstream and Triton submodule commits, clean tracked
+   source, all three forward stages and Python syntax. Run
+   `create_oracle_cpu.sh <build>
    /path/to/new-cpu-oracle` in the same isolated Python/NumPy environment
    used for the device job. Both are CPU only; the oracle writes four rank
    input snapshots, every expected output and an observation record before

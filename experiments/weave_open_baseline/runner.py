@@ -33,6 +33,11 @@ def preflight(document: dict, upstream: Path) -> dict:
     head = subprocess.check_output(["git", "-C", str(upstream), "rev-parse", "HEAD"], text=True).strip()
     if head != document["upstream"]["commit"]:
         raise ValueError(f"Upstream commit {head} differs from contract")
+    submodule = upstream / "3rdparty/triton"
+    submodule_head = subprocess.check_output(
+        ["git", "-C", str(submodule), "rev-parse", "HEAD"], text=True).strip()
+    if submodule_head != "f53694a72a1e4f464fa245df2c7305ccda7cb2a9":
+        raise ValueError("Upstream Triton submodule differs from reviewed commit")
     changed = subprocess.check_output(["git", "-C", str(upstream), "diff", "--name-only", "HEAD"], text=True)
     if changed.strip():
         raise ValueError(f"Upstream tracked source modified: {changed.strip()}")
@@ -46,7 +51,8 @@ def preflight(document: dict, upstream: Path) -> dict:
     for relative in UPSTREAM_FILES:
         source_path = upstream / relative
         compile(source_path.read_text(), str(source_path), "exec")
-    return {"pass": True, "upstream_commit": head, "source_files": list(UPSTREAM_FILES),
+    return {"pass": True, "upstream_commit": head, "triton_submodule_commit": submodule_head,
+            "source_files": list(UPSTREAM_FILES),
             "numpy_version": np.__version__, "mode": "cpu_only_static"}
 
 

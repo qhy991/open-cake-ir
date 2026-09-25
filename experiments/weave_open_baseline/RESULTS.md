@@ -43,6 +43,12 @@ produced for this baseline yet.
   packages visible from the base SGLang image; the upstream source build and
   `triton_dist` import remain unverified. The build container has no GPU
   mapping; its startup message reports no driver.
+- First CPU-only editable build: `prepare_cpu.sh build <source> <build>` exited
+  1. `build.log` shows the direct cause: CMake was absent in the base image,
+  while upstream requires CMake >=3.20 for its Triton C++ extensions. This is
+  a build-environment failure, not a device compatibility result. The private
+  venv will be given pinned `cmake==3.31.10` before retrying; the original log
+  remains unchanged.
 
 The first environment inspection used the existing SGLang Python shim, which
 was found to launch a Docker container with `--gpus all`. It imported only
