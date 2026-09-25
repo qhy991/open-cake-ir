@@ -104,6 +104,12 @@ claim is oracle correctness, not bitwise equality or a layer latency.
    synchronization edges needed for that transition. The spatial `c` budget
    must be checked against the actual resident 192-thread cooperative grid,
    not inherited from the small SIMT worker's `SMS=148` grid assumption.
+   On B300-M4, `cake-weave-model-ffn-residency-a71c9eca/` records CUDA's
+   occupancy query for the exact up/gate and down stages at 192 threads and
+   49,200 B dynamic SMEM: **one active CTA/SM** on 148 SMs, or 148 CTAs as
+   each stage's queried cooperative grid bound. Communication and computation
+   CTAs must share that total budget if the future combined worker retains
+   the same limit; the ranked worker itself has not been compiled or queried.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
