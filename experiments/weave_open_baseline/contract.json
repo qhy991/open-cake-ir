@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "experiment_id": "weave-td-ep4-qwen3-30b-b300-v1",
+  "state": "independent_unqualified",
+  "upstream": {
+    "repository": "https://github.com/ByteDance-Seed/Triton-distributed",
+    "branch": "triton-v3.4",
+    "commit": "63de69e48dde17f32b0ee80ba83901c6950404cd",
+    "entry_point": "triton_dist.function.nvidia.ep_moe_fused.TritonDistFusedEpMoeFunction"
+  },
+  "geometry": {
+    "model": "Qwen3-30B",
+    "expert_parallel_size": 4,
+    "tokens_total": 2048,
+    "tokens_per_rank": 512,
+    "experts": 128,
+    "top_k": 8,
+    "hidden": 2048,
+    "intermediate": 768,
+    "dtype": "bfloat16"
+  },
+  "input": {
+    "kind": "deterministic_synthetic",
+    "seed": 260921483,
+    "route_ids": "distinct_uniform_topk_of_seeded_scores",
+    "route_weights": "positive_fp32_normalized_per_token",
+    "expert_placement": "contiguous_equal_ranges_by_rank",
+    "weights": "seeded_normal_float32_rounded_to_bfloat16",
+    "activations": "seeded_normal_float32_rounded_to_bfloat16",
+    "note": "The paper uses ShareGPT routing. This input is not the paper's input distribution."
+  },
+  "operation": "dispatch -> BF16 expert gate/up projection -> SwiGLU -> BF16 expert down projection -> weighted combine to source rank",
+  "oracle": {
+    "kind": "independent_cpu_numpy_fp64",
+    "final_dtype": "bfloat16",
+    "atol": 0.01,
+    "rtol": 0.01,
+    "all_outputs_required": true
+  },
+  "measurement": {
+    "window": "all four ranks: pre-synchronized start of upstream forward through completed combine and device synchronization",
+    "aggregation": "maximum rank duration per iteration",
+    "warmups": 3,
+    "iterations": 10,
+    "timer": "host_steady_clock_provisional",
+    "device_state_reset": "unmodeled",
+    "status": "coverage_limitation_no_comparable_latency_until_target_timer_and_reset_verified"
+  },
+  "relationship_to_frozen_workload": {
+    "workload_id": "weave-ep4-bf16-moe-b300-v1",
+    "equivalent": false,
+    "reason": "Frozen T7/T8 E8 H16 I32 K2 development cases are outside upstream tiled EP MoE validation and differ from this model-scale experiment."
+  }
+}
