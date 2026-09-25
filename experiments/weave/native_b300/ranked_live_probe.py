@@ -90,6 +90,14 @@ class ProbedRuntime(adapter.Runtime):
         return replace(executable, bind=bind)
 
     def start_probe(self, mailboxes):
+        # Leave CUDA stream and pinned-memory creation until after the kernel
+        # has started. Prelaunch resource creation changed the failing run's
+        # interleaving and hid the progress stall in the first probe revision.
+        self.probe_mailboxes = mailboxes
+        self.probe_thread = Thread(target=self.probe, daemon=True)
+        self.probe_thread.start()
+
+    def allocate_probe_buffers(self):
         size = C.sizeof(self.mailbox_type)
         for rank in range(adapter.R):
             adapter.checked(self.cuda.cudaSetDevice(rank), 'probe device owner')
@@ -98,9 +106,8 @@ class ProbedRuntime(adapter.Runtime):
                             'probe pinned host allocation')
             adapter.checked(self.cuda.cudaStreamCreateWithFlags(C.byref(stream), 1),
                             'probe nonblocking stream')
-            self.probe_buffers[rank] = (host, stream, mailboxes[rank].pointer)
-        self.probe_thread = Thread(target=self.probe, daemon=True)
-        self.probe_thread.start()
+            self.probe_buffers[rank] = (host, stream,
+                                        self.probe_mailboxes[rank].pointer)
 
     def probe(self):
         try:
@@ -108,6 +115,12 @@ class ProbedRuntime(adapter.Runtime):
                 if self.probe_stop.wait(seconds if seconds == 5 else seconds - previous):
                     return
                 previous = seconds
+                if not self.probe_buffers:
+                    (adapter.HERE / 'probe_stage.json').write_text(
+                        '{"stage":"allocating_after_launch"}\n')
+                    self.allocate_probe_buffers()
+                    (adapter.HERE / 'probe_stage.json').write_text(
+                        '{"stage":"copying"}\n')
                 if not self.snapshot(seconds):
                     return
         except Exception as error:
