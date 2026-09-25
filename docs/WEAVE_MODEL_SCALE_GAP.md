@@ -129,6 +129,13 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    after every task; holding it until the CTA finished all waves resolved
    the observed failure. These are resource/control probes with no FFN math
    or peer mailbox, so they do not qualify the complete ranked worker.
+   The next one-GPU probe (`cake-weave-model-activation-queue-f20e9d45/`)
+   replaced dummy claims with the real Cake model-width SwiGLU row stage.
+   Four cooperative cases each completed 8,192 activation CTA work units
+   over four waves with bitwise BF16 oracle equality. At `c=147` and
+   `c=148`, communication CTAs actually stole 4,096 and 8,192 stage units.
+   Its input repeats one dense-dyadic tile and it still has no TMA/MMA stage,
+   live expert-bin readiness or P2P handoff.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -141,6 +148,9 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 - Integrate the separate core schema-2 tile/stage effect after its review,
   then lower the evidenced host tile formation, padding, expert weight
   selection and **stage CTA completion counters** into a live B300 queue.
+  Reuse the proven activation CTA task/steal lifetime, then execute the
+  24 up/gate and 32 down tensor-core CTA work units with their actual TMA
+  descriptors and predecessor-stage completion rules.
   Communication CTA steal must claim the same ready stage unit as computation
   CTAs; connect the admitted GPU combine to the live ranked return path.
   Exercise empty, highly skewed and tail experts, and replay small T7/T8
