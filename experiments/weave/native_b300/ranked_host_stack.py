@@ -25,6 +25,23 @@ def target():
     with log.open('x') as stream:
         faulthandler.register(signal.SIGUSR1, file=stream, all_threads=True)
         import adapter_run
+        if os.environ.get('CAKE_RANK_TRACE') == '1':
+            original_statuses = adapter_run.Runtime.statuses
+
+            def traced_statuses(runtime, mailboxes, offset, contexts):
+                with (HERE / 'rank_wait_trace.jsonl').open('x', buffering=1) as trace:
+                    for rank in range(adapter_run.R):
+                        trace.write(json.dumps({'rank': rank,
+                                                'phase': 'before_device_sync'}) + '\n')
+                        adapter_run.checked(runtime.cuda.cudaSetDevice(rank),
+                                            'traced completion owner')
+                        adapter_run.checked(runtime.cuda.cudaDeviceSynchronize(),
+                                            'traced rank completion')
+                        trace.write(json.dumps({'rank': rank,
+                                                'phase': 'after_device_sync'}) + '\n')
+                return original_statuses(runtime, mailboxes, offset, contexts)
+
+            adapter_run.Runtime.statuses = traced_statuses
         adapter_run.device_run()
 
 
