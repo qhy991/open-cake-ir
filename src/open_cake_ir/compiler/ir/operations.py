@@ -419,6 +419,11 @@ class StoreParameters:
 
 
 @dataclass(frozen=True)
+class TransposeParameters:
+    """Swap the axes of one rank-two register tile without changing its values."""
+
+
+@dataclass(frozen=True)
 class FenceProxyParameters:
     pass
 
@@ -438,6 +443,7 @@ OperationParameters = Union[
     CastParameters,
     ElementwiseParameters,
     StoreParameters,
+    TransposeParameters,
     FenceProxyParameters,
 ]
 
@@ -761,6 +767,10 @@ def _operation_parameters(
     if kind is OperationKind.STORE:
         obj = _strict_object(value, required={"coalesced"}, context=context)
         return StoreParameters(_boolean(obj["coalesced"], f"{context}.coalesced"))
+
+    if kind is OperationKind.TRANSPOSE:
+        _strict_object(value, required=set(), context=context)
+        return TransposeParameters()
 
     _strict_object(value, required=set(), context=context)
     return FenceProxyParameters()

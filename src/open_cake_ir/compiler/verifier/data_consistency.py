@@ -68,6 +68,7 @@ _ARITY = {
     OperationKind.REDUCE: (1, 1, "reduce"),
     OperationKind.SCAN: (1, 1, "scan"),
     OperationKind.STORE: (1, 1, "store"),
+    OperationKind.TRANSPOSE: (1, 1, "transpose"),
 }
 
 
@@ -886,6 +887,26 @@ def _verify_operation_shape(
                     f"reduce_argmin returns int32 source positions, but "
                     f"{indices.name!r} is {indices.dtype.value}",
                     category,
+                )
+    if operation.kind is OperationKind.TRANSPOSE and len(operation.reads) == len(operation.writes) == 1:
+        source = buffers.get(operation.reads[0])
+        output = buffers.get(operation.writes[0])
+        if source is not None and output is not None:
+            if source.space is not MemorySpace.REGISTER or output.space is not MemorySpace.REGISTER:
+                out.add(
+                    "TRANSPOSE_STORAGE", path,
+                    "transpose exchanges axes of register-resident values; memory placement stays explicit",
+                    category,
+                )
+            if source.dtype is not output.dtype:
+                out.add(
+                    "TRANSPOSE_DTYPE", f"{path}.writes",
+                    "transpose preserves the source dtype", category,
+                )
+            if len(source.shape) != 2 or output.shape != source.shape[::-1]:
+                out.add(
+                    "TRANSPOSE_SHAPE", f"{path}.writes",
+                    "transpose swaps the two axes of one rank-two tile", category,
                 )
     if operation.kind is OperationKind.CAST:
         if len(operation.reads) != 1 or len(operation.writes) != 1:

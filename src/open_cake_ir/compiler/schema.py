@@ -288,6 +288,7 @@ _PARAMETERS = {
         ]
     },
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
+    OperationKind.TRANSPOSE: _object({}),
 }
 
 
