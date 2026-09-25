@@ -1,7 +1,13 @@
-# Open EP4 MoE baseline candidate for the Weave/Cake study
+# Open EP4 MoE baselines for the Weave/Cake study
 
-This is a **separate, unqualified model-scale experiment**, not an edit to
-`weave-ep4-bf16-moe-b300-v1`. The selected baseline is the public
+These are **separate model-scale experiments**, not edits to the frozen
+`weave-ep4-bf16-moe-b300-v1`. The runnable complete-layer correctness
+baseline is [SGLang + DeepEP](README_SGLANG_DEEPEP.md) on the explicitly
+separate fan-in-scaled v2 synthetic contract; see [results](RESULTS.md).
+It is not the exact paper SGLang v0.5.9 configuration, and no qualified
+Cake-vs-baseline timing exists.
+
+The initially closest fusion candidate was the public
 [Triton-Distributed 3.4 branch](https://github.com/ByteDance-Seed/Triton-distributed/tree/triton-v3.4)
 at commit `63de69e48dde17f32b0ee80ba83901c6950404cd` (2026-09-18).
 There is no public `v3.4.0` Git tag in that repository. Its
@@ -10,7 +16,7 @@ ships a wheel named `triton_dist-3.4.0`, but the release source predates the
 full `ep_moe_fused.py` entry. Thus this pinned 3.4-branch commit is a later,
 explicitly disclosed source baseline, not a byte-identical reconstruction of
 the paper's unspecified `v3.4.0` checkout.
-The selected [forward implementation](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/function/nvidia/ep_moe_fused.py)
+Its [forward implementation](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/function/nvidia/ep_moe_fused.py)
 calls `mega_dispatch_group_gemm`, `swiglu_forward`, then
 `mega_group_gemm_combine`. Its
 [upstream EP test](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/test/nvidia/test_ep_moe_fused.py)
@@ -36,8 +42,8 @@ five baselines. Their public source boundaries are:
 | Paper label | Checked public identity | Five-stage forward and B300 status |
 | --- | --- | --- |
 | SGLang v0.5.9 | [tag `bbe9c7e`](https://github.com/sgl-project/sglang/tree/v0.5.9) | Serving EP MoE path exists. It needs a model/runtime configuration; paper does not identify one. No B300-M4 run here. |
-| Triton-Distributed v3.4.0 | [3.4 branch `63de69e`](https://github.com/ByteDance-Seed/Triton-distributed/tree/63de69e48dde17f32b0ee80ba83901c6950404cd) | Public full forward entry above; chosen. The historical wheel version has no corresponding full EP MoE source; B300-M4 unverified. |
-| DeepEP v1.2.1 + DeepGEMM | [DeepEP tag `9af0e0d`](https://github.com/deepseek-ai/DeepEP/tree/v1.2.1) | DeepEP provides dispatch/combine, not expert FFN. The paper does not pin DeepGEMM, its composition, or the exact BF16 path. No complete layer was assembled here. |
+| Triton-Distributed v3.4.0 | [3.4 branch `63de69e`](https://github.com/ByteDance-Seed/Triton-distributed/tree/63de69e48dde17f32b0ee80ba83901c6950404cd) | Public full forward entry above; initial candidate blocked at source build. The historical wheel has no corresponding full EP MoE entry; B300-M4 unverified. |
+| DeepEP v1.2.1 + DeepGEMM | [DeepEP tag `9af0e0d`](https://github.com/deepseek-ai/DeepEP/tree/v1.2.1) | DeepEP provides dispatch/combine, not expert FFN. The paper does not pin DeepGEMM or the exact BF16 composition. No complete DeepEP+DeepGEMM layer was assembled here; the runnable fallback uses SGLang BF16 expert computation. |
 | Comet/Flux v1.1.2 | [Flux tags](https://github.com/bytedance/flux/tags) | Public Flux has `v1.1.1`, but no `v1.1.2` tag; its `v1.1.1` tree does not include a named Comet/MoE runner. Exact paper source cannot be pinned. |
 | ParallelKittens `a8f63a9` | [ThunderKittens public MoE benchmark](https://github.com/HazyResearch/ThunderKittens/tree/main/kernels/parallel/moe_dispatch_gemm) | The public sample is dispatch + first expert GEMM, not a complete MoE layer. The cited short commit is not resolvable in the public repository. |
 

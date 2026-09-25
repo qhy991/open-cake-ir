@@ -1,9 +1,10 @@
 # EP4 open baseline execution record
 
-Status: **A complete SGLang/DeepEP layer executed on four B300s, but its first
-synthetic input failed the predeclared FP64 CPU oracle tolerance.** No
-correctness-qualified baseline, profiler trace or comparable latency exists
-yet.
+Status: **A complete SGLang/DeepEP BF16 EP4 layer passed the independent FP64
+CPU oracle in two separate B300 broker jobs and one CUDA trace job for the
+fan-in-scaled v2 synthetic contract.** The original fixed-scale v1 input
+failed and remains retained. No qualified cross-implementation latency or
+speedup exists.
 
 ## Fixed sources
 
@@ -104,19 +105,19 @@ and its fused GEMM tiles use K64/N256, so the frozen small cases have no
 upstream compatibility evidence. No result from one geometry is labeled as an
 equivalent result for the other.
 
-The adapter observes the complete upstream forward window across four ranks;
+The TD adapter was designed to observe the complete upstream forward window across four ranks;
 its host monotonic spans are diagnostic. The declared `sm_103a` CUPTI/FlashInfer
 timer inputs under `/mnt/b300-shared` currently return ENODEV on B300-M4
 (read-only observation from the parallel Cake task). The adapter therefore
 reports `qualified_latency_ns: null` and a measurement-coverage limitation.
-A completed source build, CUDA 13 dependency correction/import probe, four-card
-broker admission, device output, after-release oracle comparison and profiler
-remain open gates. The create-only CPU model-scale oracle has already completed
-as recorded above. The TD candidate did not request a GPU lease. Its bounded CPU build
-container was stopped and verified absent; the broker had no running jobs in
-the final read-only snapshot.
+For the TD candidate, a completed source build, CUDA 13 dependency
+correction/import probe, four-card broker admission, device output,
+after-release oracle comparison and profiler remain open gates. Its
+create-only CPU model-scale oracle completed as recorded above, but TD never
+requested a GPU lease. Its bounded CPU build container was stopped and
+verified absent before the later fallback work began.
 
-## Later complete-layer fallback prepared
+## Complete-layer fallback progression
 
 The TD source build remains pending on the external LLVM dependency. A second
 open path has passed its CPU gate using the existing full-scale input/oracle:
@@ -133,8 +134,8 @@ The no-GPU preflight in the pinned image passed for all retained inputs and
 reported the exact SGLang source commit, package versions, source syntax and
 272,630,912 bytes of DeepEP RDMA buffer per rank. Its retained log is
 `/home/qinhaiyan/weave-td-build-20260925/sglang-preflight-image-pinned.log`.
-Device correctness, profiler and qualified timing are still pending at this
-point; see [fallback reproduction steps](README_SGLANG_DEEPEP.md).
+At that preflight checkpoint, device correctness and profiler were pending;
+see [fallback reproduction steps](README_SGLANG_DEEPEP.md).
 
 The first fallback broker request, `gpuq-fbf6458ba421`, was admitted for four
 physical GPUs and then failed in the launcher **before Docker/CUDA**. The
@@ -183,5 +184,53 @@ independent of H and I and produces a mean FP64 oracle magnitude near 3.
 `model_scale_inputs_fanin_v2.json` and
 `contract_sglang_deepep_fanin_v2.json` define a separate fan-in-scaled
 synthetic successor with the same geometry, seed, routing and unchanged FP64
-oracle tolerance. It must get a new CPU input/oracle snapshot and a new broker
-job; the v1 failure is retained. No v2 device claim exists in this record yet.
+oracle tolerance. It required a new CPU input/oracle snapshot and new broker
+jobs; the v1 failure is retained.
+
+## Fan-in-scaled v2: complete EP4 correctness and trace
+
+`create_fanin_oracle.py` generated all four rank input snapshots and the
+independent FP64 CPU output at
+`/home/qinhaiyan/weave-fanin-cpu-oracle-7a179dc8-20260925/` **before** GPU
+time. Its `cpu-oracle-observation.json` records 4,194,304 finite, nonzero
+expected values, mean absolute magnitude 0.18587, and a strong negative
+control: all-zero output would fail on 4,048,663 elements under the unchanged
+`atol=rtol=0.01` rule. The pinned SGLang/DeepEP no-GPU preflight passed for
+these exact snapshots; log:
+`/home/qinhaiyan/weave-td-build-20260925/sglang-fanin-preflight-7a179dc8.log`.
+The retained `routing-volume.json` checks the actual EP traffic: 16,384
+expert routes, 4,113 local and 12,271 cross-GPU; every source-rank token has
+at least one remote destination. The successful jobs therefore exercised
+cross-GPU dispatch/combine, not just local expert math.
+
+The runtime adapter at commit `7a179dc8` used the pinned SGLang source
+`5a15cde8`, DeepEP package `1.2.1`, the same v2 inputs, four 128-token chunks
+per rank, and the same FP64 CPU oracle in every run. Every broker lease was
+exclusive, exactly four GPUs, terminal `completed` with exit 0, then verified
+released **before** CPU comparison. The executed command forms and cache
+preparation are in [COMMANDS.md](COMMANDS.md).
+
+| Run | Broker job | Evidence directory | Post-release CPU oracle |
+| --- | --- | --- | --- |
+| First correctness | `gpuq-d085d22e1c15` | `/home/qinhaiyan/weave-sglang-deepep-fanin-ep4-run-7a179dc8-20260925/` | 4,194,304/4,194,304 pass; max absolute error 0.0078125 |
+| Independent repeat, fresh JIT cache | `gpuq-af1118ef8413` | `/home/qinhaiyan/weave-sglang-deepep-fanin-ep4-repeat1-7a179dc8-20260925/` | 4,194,304/4,194,304 pass; max absolute error 0.0078125 |
+| CPU/CUDA Chrome trace | `gpuq-dbfb2c1adee5` | `/home/qinhaiyan/weave-sglang-deepep-fanin-ep4-profile-7a179dc8-20260925/` | 4,194,304/4,194,304 pass; max absolute error 0.0078125 |
+
+The first two independently brokered outputs are bitwise equal on **all four
+ranks**, as retained in the repeat directory's `repeat-comparison.json`. The
+profiled output is also bitwise equal to the first run on all four ranks
+(`profile-vs-unprofiled.json`). The profile directory retains
+`rank0-trace.json` through `rank3-trace.json` and
+`trace-audit.json`. Each rank's trace has 49 CUDA kernel events, including four
+DeepEP dispatch and four combine kernels; CPU op events include eight `bmm`
+and four SiLU operations, consistent with four complete token chunks. This
+checks that communication, expert up/gate, activation, down and weighted
+combine actually occurred. The trace has no SM/NVLink hardware counters.
+
+`device-observation.json` retains raw four-rank host spans, but the first run
+includes JIT compilation, the profile run includes instrumentation, and the
+declared `sm_103a` CUPTI/L2-reset timer dependencies remain unavailable.
+`qualified_latency_ns` is null in every run. The Cake frozen T7/T8 results,
+separate single-GPU H2048/I768 projection tiles and expert-bin pack are not a
+matched complete MoE-layer comparator. **No Cake-vs-SGLang latency ratio or
+speedup is supported.**

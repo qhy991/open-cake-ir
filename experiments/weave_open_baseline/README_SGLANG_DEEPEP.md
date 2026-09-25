@@ -1,5 +1,13 @@
 # Complete BF16 EP4 fallback: SGLang + DeepEP
 
+The fan-in-scaled v2 synthetic contract has a complete four-GPU correctness
+result in two independent broker leases plus a CPU/CUDA trace run; see
+[the retained result](RESULTS.md). The original fixed-scale v1 input failed
+its FP64 oracle tolerance and is preserved. Neither result supplies a
+qualified Cake-vs-SGLang latency comparison.
+The v2 route audit records 12,271 cross-GPU expert routes out of 16,384 total,
+so this is genuine EP communication rather than a local-only FFN.
+
 The fixed Triton-Distributed source build needs a 1.24 GB prebuilt LLVM
 dependency that was not available at a usable rate on B300-M4. This fallback
 uses the already present SGLang `v0.5.12.post1` image. Its checked-in source is
@@ -75,8 +83,8 @@ the same. `create_fanin_oracle.py` creates a fresh input/oracle directory before
 GPU time and checks that an all-zero output fails substantially. Pass
 `contract_sglang_deepep_fanin_v2.json` as the optional contract name to the
 CPU preflight and broker launcher, then pass the corresponding full path to
-`runner_sglang_deepep.py check`. A v2 pass would qualify only this separate
-model-scale synthetic setting, leaving v1's failure intact.
+`runner_sglang_deepep.py check`. The observed v2 pass qualifies only this
+separate model-scale synthetic setting, leaving v1's failure intact.
 
 After a v2 correctness pass, a separate broker run can add the optional fourth
 launcher argument `profile`. It writes one CPU/CUDA Chrome trace per rank in a
