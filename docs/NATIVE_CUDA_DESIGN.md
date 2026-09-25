@@ -630,6 +630,14 @@ logical rank; it refuses missing/duplicate ranks or invalid timestamps.
 The retained derived JSON names only kernel activity union and intersection,
 not a qualified MoE-layer timer.
 
+The model-scale route is audited separately in
+`docs/WEAVE_MODEL_SCALE_GAP.md`. Its first concrete native tensor-core
+component is a no-bias H2048/F1536 up/gate projection tile: Cake emitted
+TMA/`tcgen05` at clean commit `cc1715b5`, and one B300-M4 broker GPU produced
+bitwise FP32 agreement with an independent FP64 oracle on two exact-dyadic
+input distributions. This is a local expert projection seed, not a complete
+ranked MoE worker, down projection or timing result.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline

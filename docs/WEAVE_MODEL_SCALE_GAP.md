@@ -12,13 +12,17 @@ do not imply model-scale throughput.
 | --- | --- | --- |
 | Ranked payload/task/return effects | `RankedMailboxEffects` types rank owners, system release/acquire, capacities, `c/K/steal`; the B300 source passed five small cases and replayed three former liveness failures after the warp-uniform fix. | Effect key is one `(source,item,route)` compute task; no tensor-core tile task, expert bin, tile completion or multi-warp role transition. |
 | Inline expert math | `native_cuda_ep_math.py` verifies a three-stage Program and combine Schedule, then emits a one-warp SIMT BF16 row-dot / FP32 activation/down body. | Admission fixes H16, I32, two local experts and T7/T8. Increasing constants would leave one-token/route SIMT work and not implement grouped tensor-core GEMM. |
-| Tensor-core leaf | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. An offline target-document change from `sm_100a` to `sm_103a` admitted and lowered it at clean Compiler commit `1c59d3af`; CUDA 13.1 nvcc/PTXAS compiled its cubin on B300-M4 with 192 threads/CTA, 80 registers/thread, one barrier and no spills. | This is an independent 512×256×256 GEMM+bias tile, not a dynamic expert FFN, not rank-placed and not callable as a leaf inside the current 32-thread ranked CTA. No B300 device oracle or timing was run for this synthetic tile. |
+| Tensor-core leaf | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. A synthetic `sm_103a` retarget compiled at `1c59d3af`. A separate no-bias model-width up/gate tile at `cc1715b5` compiled for B300 (192 threads/CTA, 74 registers/thread, one barrier, no spills) and passed two full one-GPU FP32 output comparisons bitwise against an independent FP64 oracle. | The passing tile is one expert projection, without routed token bins, SwiGLU or down projection. It is not rank-placed and cannot yet be called inside the current 32-thread ranked CTA. No complete EP4 or performance result follows. |
 
 The tensor-tile source, exact synthetic Schedule, nonblocking
 `RESIDENCY_BOUND` finding, nvcc command/log and cubin are retained in
 `cake-weave-b300-tensor-tile-probe-1c59d3af/` under the 2026-09-25 Weave
 evidence root. Its compilation establishes a real lowering reuse candidate;
 it proves no expert arithmetic, queue protocol or performance.
+The model-width up/gate Schedule, generated source, two dyadic input/oracle
+cases, compiled products, single-GPU broker receipt and bitwise report are
+separately retained in `cake-weave-model-upgate-tile-cc1715b5/`. Its exact
+fixed shape and input domain do not qualify the full model-scale FFN.
 
 ## Provisional Qwen3-30B geometry pressure
 
@@ -67,10 +71,12 @@ also differ from the paper's ShareGPT routing.
 
 ## Bounded implementation order
 
-- First qualify a **local expert tensor tile** on B300 for the independent
-  model-scale inputs and both projections; retain nvcc/PTXAS, oracle and
-  profiler evidence. The synthetic GEMM+bias cubin is a starting route, not
-  this result.
+- Extend the passing fixed-shape up/gate projection into a **complete local
+  expert FFN**: dynamic expert-owned bins, explicit gated activation and a
+  down projection tile, each with its own Cake Schedule and analysis. Validate
+  varied expert loads and the independent model-scale oracle on B300; retain
+  nvcc/PTXAS, oracle and profiler evidence. The current two dyadic up/gate
+  cases are a correctness seed, not that complete result.
 - Then add tile-keyed ranked effects, capacity/liveness analyses and native
   emission in a successor Compiler commit; replay small T7/T8 counterexamples
   and the separate model-scale Workload before a new Campaign.
