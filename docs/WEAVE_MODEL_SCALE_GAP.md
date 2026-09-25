@@ -10,7 +10,7 @@ do not imply model-scale throughput.
 
 | Mechanism | Current Cake/B300 evidence | Model-scale gap |
 | --- | --- | --- |
-| Ranked payload/task/return effects | `RankedMailboxEffects` types rank owners, system release/acquire, capacities, `c/K/steal`; the B300 source passed five small cases and replayed three former liveness failures after the warp-uniform fix. | Effect key is one `(source,item,route)` compute task; no tensor-core tile task, expert bin, tile completion or multi-warp role transition. |
+| Ranked payload/task/return effects | `RankedMailboxEffects` types rank owners, system release/acquire, capacities, `c/K/steal`; the B300 source passed five small cases and replayed three former liveness failures after the warp-uniform fix. A separate core task branch at `52e5c88f` now types logical tiles and their stage CTA work units. | The live NVIDIA emitter still claims one `(source,item,route)` task. Core schema 2 has no B300 ranked lowering or four-device result. |
 | Inline expert math | `native_cuda_ep_math.py` verifies a three-stage Program and combine Schedule, then emits a one-warp SIMT BF16 row-dot / FP32 activation/down body. | Admission fixes H16, I32, two local experts and T7/T8. Increasing constants would leave one-token/route SIMT work and not implement grouped tensor-core GEMM. |
 | Tensor-core local FFN | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. Separate no-bias model-width up/gate (`cc1715b5`) and down (`de0c4824`) tiles each passed two full one-GPU FP32 comparisons bitwise against an independent FP64 oracle. A model-width SwiGLU Schedule (`cb72263a`) explicitly casts FP32 to BF16; a three-stage Program (`98431873`) binds up/gate → SwiGLU → down without an implicit cast. CUDA 13.1 compiled all three Program stages on B300-M4 with 74/24/74 registers per thread and no spills. One brokered B300 GPU run passed two full stage-by-stage cases bitwise against an independent oracle. | The ordered Program is one fixed expert tile; the model-scale bridge below invokes it from host orchestration rather than a tile-keyed GPU worker. No distributed EP4 or performance result follows. |
 | Dynamic expert-bin input | Cake now admits a complete Schedule using three metadata loads, returned-old `atomic_rmw`, BF16 row load and two reservation-owned indexed stores. The exact B300 native CUDA emitter (`66e97f3a`) compiled and passed a brokered one-GPU oracle on all 16,384 routes; host admission rejected duplicate local experts and unreset counts. The earlier standalone PTX probe (`a4bcc968`) remains separate evidence. | Its host domain check synchronizes and copies route metadata before launch, and each expert bin has a fixed 2,048-row capacity. There is no cross-device release/acquire publication, tile-ready queue or FFN invocation from these bins. |
@@ -50,11 +50,11 @@ also differ from the paper's ShareGPT routing.
 
 The same saved synthetic route IDs expose a temporal packing constraint. With
 128-row expert tiles, accumulating across all 128-token source waves requires
-194 tile tasks and 8,448 padded rows; 70 full tasks become publishable only
+194 logical tiles and 8,448 padded rows; 70 full tiles become publishable only
 in the final wave, and 124 partial tasks require terminal flush. Treating
 each source rank's wave as an independent expert bin instead would create
-2,048 tasks and 245,760 padded rows. A CPU-only thresholded policy that
-flushes bins at 64 rows after each wave creates 256 tasks and publishes 70
+2,048 logical tiles and 245,760 padded rows. A CPU-only thresholded policy that
+flushes bins at 64 rows after each wave creates 256 logical tiles and publishes 70
 in the second wave, with 16,384 padded rows. The route-keyed task manifests,
 counterexamples and exact source are retained in
 `cake-weave-model-tile-flush-22d3f77d/` under the same external evidence
@@ -80,6 +80,13 @@ The `cake-weave-model-combine-fd698ba9/` record separately validates GPU
 top-8 combine on those retained contributions. Its 223 BF16 bit differences
 from the CPU FP64 combine are within the unchanged external tolerance; the
 claim is oracle correctness, not bitwise equality or a layer latency.
+The separate core schema-2 analysis (`cake-ranked-stage-tasks-52e5c88f/`)
+derives that each logical FFN tile expands into **24 up/gate, 128 activation
+and 32 down CTA work units**. Under the 64-row temporal policy, the safe
+per-rank queue upper bounds are 255 logical tiles and 46,920 stage work
+units, with 765 stage-completion slots. The saved route plan observes 64
+logical tiles and 11,776 stage work units per destination rank. These are
+CPU capacity/plan facts, not an emitted live GPU queue.
 
 ## Required joint change
 
@@ -90,18 +97,20 @@ claim is oracle correctness, not bitwise equality or a layer latency.
    selection and token bins with explicit byte offsets/strides, without a
    first-class layout algebra or an opaque MoE opcode. Verify each tile
    against the independent oracle before embedding it in EP4.
-2. **Task/effect ownership.** A tile rather than a token-route becomes the
-   compute claim unit. Derive destination queue capacity, source return
-   ownership and chunk-completion thresholds from that complete Program and
-   its tile decomposition. A route cannot publish twice or disappear when
-   tiles group tokens. The verifier must cover partial bins, empty experts,
-   tail tokens, duplicate destination payloads, aliasing, release/acquire
-   and warp-uniform loop exits.
+2. **Task/effect ownership.** A logical expert tile groups token routes;
+   one ready Program-stage CTA work unit is the compute claim unit. All CTA
+   work units of a predecessor stage must finish before the next stage is
+   published. Derive destination queue capacity, source return ownership and
+   chunk-completion thresholds from that decomposition. A route cannot
+   publish twice or disappear when tiles group tokens. The verifier must
+   cover partial bins, empty experts, tail tokens, duplicate destination
+   payloads, aliasing, release/acquire and warp-uniform loop exits.
 3. **CTA resource transition.** Current ranked workers launch 32 threads per
    CTA. The admitted tensor tile uses six warp roles in a 192-thread CTA
    (four epilogue, one MMA, one copy), plus SMEM and TMEM resources. A
-   communication CTA that later steals a tile must own all resources and
-   synchronization edges needed for that transition. The spatial `c` budget
+   communication CTA that later steals a stage work unit must own the
+   maximum-stage resources and synchronization edges needed for that
+   transition. The spatial `c` budget
    must be checked against the actual resident 192-thread cooperative grid,
    not inherited from the small SIMT worker's `SMS=148` grid assumption.
    On B300-M4, `cake-weave-model-ffn-residency-a71c9eca/` records CUDA's
@@ -129,16 +138,14 @@ claim is oracle correctness, not bitwise equality or a layer latency.
 
 ## Bounded implementation order
 
-- Promote the evidenced host tile-formation, partial-row padding, expert
-  weight selection and route-keyed completion into explicit Cake scheduling
-  effects, static capacity/liveness analysis and native CUDA emission; connect
-  the admitted GPU combine to the same live ranked return path.
-  Exercise empty, highly skewed and tail experts in addition to the current
-  fan-in case. Move the pre-launch domain check off the critical path only
-  with an equally explicit admission and failure signal.
-- Then add tile-keyed ranked effects, capacity/liveness analyses and native
-  emission in a successor Compiler commit; replay small T7/T8 counterexamples
-  and the separate model-scale Workload before a new Campaign.
+- Integrate the separate core schema-2 tile/stage effect after its review,
+  then lower the evidenced host tile formation, padding, expert weight
+  selection and **stage CTA completion counters** into a live B300 queue.
+  Communication CTA steal must claim the same ready stage unit as computation
+  CTAs; connect the admitted GPU combine to the live ranked return path.
+  Exercise empty, highly skewed and tail experts, and replay small T7/T8
+  counterexamples before a new Campaign. Move pre-launch domain checks off
+  the critical path only with equally explicit admission/failure signals.
 - Finally evaluate spatial `c`, temporal chunks and stealing under a common
   complete-layer timer and the upstream baseline's exact source/semantics.
   A cost estimate only filters candidates; on-device correctness and the
