@@ -207,7 +207,7 @@ def run(root: Path) -> None:
         contribution_path=output/'contributions.fp32'
         seen=set()
         tasks=0
-        with contribution_path.open('xb') as file:
+        with contribution_path.open('x+b') as file:
             file.truncate(CONTRIBUTION_BYTES)
             with mmap.mmap(file.fileno(),CONTRIBUTION_BYTES,
                            access=mmap.ACCESS_WRITE) as contributions, \
