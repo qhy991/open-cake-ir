@@ -516,6 +516,13 @@ It does not mint a `LaunchableCandidate`, borrow a GPU, validate PTXAS
 resources, or qualify the four-rank loader. Actual B300-M4 nvcc execution
 and broker-held oracle are still required.
 
+The exact `tail_tokens` build-ready bundle at
+`cake-ranked-ep4-build-ready-tail-b300-m4-e7d0015c/` includes the frozen
+Workload, pre-seal manifest, generated source, CPU builder and Evaluation
+adapter. A fresh extraction passes source/Workload binding and a fake-nvcc
+invocation of both output routes. It has no real compiled products or GPU
+result.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
