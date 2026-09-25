@@ -611,6 +611,17 @@ and per-rank L2 reset are also unqualified. The separate
 `cake-ranked-ep4-warp-uniform-replay-f9bfd64d/MEASUREMENT_COVERAGE.md`
 records this precondition, so no spatial/temporal/steal latency ranking or
 Cake-versus-Triton speedup follows from the correctness runs.
+A broker-held Nsight Systems development attempt also found hardware GPU
+metric sampling denied by `ERR_NVGPUCTRPERM`. A successor CUDA-activity-only
+trace on the frozen skew/steal plan passed the oracle and retained one kernel
+record per logical rank, all with 44 registers; rank 0 ended last in that
+single trace. Its four kernel records had a 232450 ns union window and a
+24453 ns all-rank overlap, but this is not the complete MoE-layer interval,
+has no L2-reset repetitions or SM/NVLink counters, and supports no speedup
+or internal comm/compute-overlap claim. The raw `.nsys-rep`, SQLite, receipt,
+oracle and exact scope are under
+`cake-ranked-ep4-nsys-development-f9bfd64d/PROFILE.md` in the Weave evidence
+root.
 
 ## Completion phases and nested reduction scopes
 
