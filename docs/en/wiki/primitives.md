@@ -39,6 +39,14 @@ FMA rounds `a*b+c` once rather than separately rounding the product. It requires
 
 Convert numerical storage type. More bits do not recover previously lost precision; fewer bits may round again. This does not reshape a tensor or move it to another GPU. See the [cast plan](../../../corpus/schedules/cast-b8-smoke.json); allowed pairs depend on the Compiler and backend.
 
+## transpose
+
+Swap the two axes of one register-resident rank-two tile, preserving every value and
+its dtype. A `[16,32]` tile becomes `[32,16]`; the sole parameter spelling is `{}`.
+This value operation does not imply a shared-memory swizzle, TMA descriptor, or global
+address permutation. Triton emits `tl.trans`; the Compiler refuses a Target or backend
+that has not declared this operation.
+
 ## mma
 
 Matrix multiply-accumulate: `[2,3]` and `[4,5]` give 23 by paired products and a sum. In this project's rank-two contraction, the final axis of both inputs is K. Types, accumulator, tile, and instruction are explicit. FP32 storage with TF32 multiplication must be requested; multiple explicit MMA nodes compose through dependencies. See [GEMM+bias](../../../corpus/schedules/gemm-bias-b1-smoke.json) and [TF32](../../../corpus/schedules/fp32-tf32-mma-b1-smoke.json).

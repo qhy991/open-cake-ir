@@ -10,7 +10,7 @@
 | 需要做什么 | 操作 |
 | --- | --- |
 | 取数、存答案 | [load](#load)、[store](#store) |
-| 对应位置计算或换精度 | [elementwise](#elementwise)、[cast](#cast) |
+| 对应位置计算、换精度或交换二维坐标 | [elementwise](#elementwise)、[cast](#cast)、[transpose](#transpose) |
 | 矩阵乘加和收尾 | [mma](#mma)、[epilogue](#epilogue) |
 | 合并一组数、找编号、选前几名 | [reduce](#reduce)、[reduce_argmin](#reduce_argmin)、[top_k](#top_k) |
 | 前缀累计、展开编号 | [scan](#scan)、[index_expand](#index_expand) |
@@ -82,6 +82,13 @@
 它不是改变表的尺寸，也不是挪动数据到另一块 GPU。
 允许哪些类型转换，由当前 Compiler 和后端检查。
 例子：[类型转换](../../corpus/schedules/cast-b8-smoke.json)。
+
+## transpose
+
+**交换二维临时值的行、列。** 一个 `[16,32]` 寄存器 tile 变成 `[32,16]`，
+数值类型和元素不变；`parameters` 使用唯一的空对象 `{}`。源和结果都必须是寄存器值。
+它明确改变数值 tile 的坐标顺序，不替代共享内存 swizzle、TMA 描述符或全局地址映射。
+当前 Triton lowering 发出 `tl.trans`；Target 未声明该操作或后端没有实现时，Compiler 会拒绝。
 
 ## mma
 
