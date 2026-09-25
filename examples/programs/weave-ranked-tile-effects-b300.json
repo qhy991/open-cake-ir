@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "world_size": 4,
+  "experts": 8,
+  "tile_rows": 128,
+  "maximum_chunks_per_rank": 2,
+  "partial_threshold_rows": 64,
+  "workers": ["communication", "computation"],
+  "controls": {
+    "communication_ctas": "rank_local_int32",
+    "chunks": "rank_local_int32",
+    "steal_budget": "rank_local_int32"
+  },
+  "channels": {
+    "payload": {
+      "owner": "destination_rank",
+      "key": ["source_rank", "item", "destination_rank"],
+      "reservation": "returned_old_atomic_system",
+      "ready": "release_acquire_system"
+    },
+    "bin": {
+      "owner": "destination_rank",
+      "key": ["destination_rank", "expert", "row"],
+      "reservation": "returned_old_atomic_gpu",
+      "ready": "release_acquire_system",
+      "row_identity": ["source_rank", "item", "route"]
+    },
+    "task": {
+      "owner": "destination_rank",
+      "key": ["destination_rank", "expert", "tile_index"],
+      "reservation": "returned_old_atomic_gpu",
+      "ready": "release_acquire_system",
+      "claim": "atomic_gpu",
+      "payload": "expert_bin_rows_with_valid_count"
+    },
+    "return": {
+      "owner": "source_rank",
+      "key": ["source_rank", "item", "route"],
+      "reservation": "deterministic_index",
+      "ready": "release_acquire_system"
+    }
+  },
+  "publication": "full_on_capacity_partial_at_wave_threshold_and_terminal",
+  "input_domain": "distinct_expert_ids_in_range_per_item",
+  "steal": {
+    "borrower": "communication",
+    "queue": "tile_task",
+    "after": "dispatch_chunk",
+    "before": "combine",
+    "resource_transition": "complete_tile_worker"
+  },
+  "reset": "zero_all_rank_mailboxes_before_launch",
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_ranked_tile_b300"
+  }
+}
