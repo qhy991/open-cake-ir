@@ -567,11 +567,12 @@ owner of the liveness investigation.
 A later broker-held SIGUSR1 host-stack probe of the unchanged low-`c`
 remote-only source reproduced noncompletion without a target background
 thread. After all four launches returned, the host was blocked inside the
-adapter's per-rank `cudaDeviceSynchronize()`; the exact rank and device wait
-remain unknown. An earlier CUDA-GDB interruption at eight seconds saw no
-active kernel and is inconclusive because debugger startup changes the
-launch timing. The rank-specific wait trace is prepared as a separate
-diagnostic Executor successor and has not run on device.
+adapter's per-rank `cudaDeviceSynchronize()`. An earlier CUDA-GDB
+interruption at eight seconds saw no active kernel and is inconclusive
+because debugger startup changes launch timing. A successor rank-wait
+diagnostic recorded `rank=0, before_device_sync` but no completion entry;
+its SIGUSR1 host stack was inside that same synchronization. This narrows
+the failing device for that run without identifying a CTA or wait flag.
 No protocol change is promoted until the failing plans replay successfully
 under a successor source.
 
