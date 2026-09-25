@@ -533,6 +533,34 @@ attempt, so its source remains a distinct predecessor. This change still
 needs nvcc/PTXAS and B300-M4 correctness and counter evidence before it can
 support a steal-performance claim.
 
+### B300-M4 ranked development results
+
+At clean Compiler commit `369b8cf3`, CUDA 13.1 nvcc/PTXAS compiled the
+generated T7 and T8 sources for `sm_103a` (44 registers, one barrier,
+128 bytes shared memory, no spills). Broker-held four-GPU development runs
+passed the independent CPU oracle, input-immutability check and queue counts
+for each of the frozen balanced, skew, local-only, remote-only and T7-tail
+cases under at least one explicit plan. The skew plan with rank-0
+`(c,K,steal_budget)=(147,1,32)` actually stole 19 tasks; its compiled
+mailbox reported `steal_permits=stolen=19`, 64 tasks and 24 deduplicated
+remote payloads. The same input and `c,K` with budget zero passed without
+stealing. These are correctness and schedule-coverage observations, not
+latency or overlap measurements.
+
+The admissible control range is **not** qualified as a whole. On the fixed
+skew input, rank-0 `c=12,K=1,steal=0` timed out where `c=147,K=1,steal=0`
+passed. The original remote-only plan timed out, while all ranks at `c=147`
+passed. For T7, uniform `K=2` passed, but the per-rank `K=(2,3,7,1)` plan
+timed out in multiple uninstrumented runs with steal disabled; diagnostic
+sidecars changed interleaving and sometimes passed. The first T7 plan with
+rank-0 stealing also timed out. These are retained broker `run_timeout`
+outcomes, not oracle failures. The exact wait condition and memory-order
+cause remain unresolved. The `cake-ranked-ep4-b300-device-369b8cf3/`
+evidence directory under the 2026-09-25 Weave evidence root retains reports,
+compiled products, receipts, failure observations and the plan-by-plan index.
+No protocol change is promoted until the failing plans replay successfully
+under a successor source.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
