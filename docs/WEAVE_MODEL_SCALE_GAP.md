@@ -6,14 +6,14 @@ geometry and CPU oracle. The frozen `weave-ep4-bf16-moe-b300-v1` Cake
 development Workload remains T7/T8, E8, top-2, H16, I32; its passing runs
 do not imply model-scale throughput.
 
-## The two admitted domains today
+## Admitted domains and remaining joins
 
 | Mechanism | Current Cake/B300 evidence | Model-scale gap |
 | --- | --- | --- |
 | Ranked payload/task/return effects | `RankedMailboxEffects` types rank owners, system release/acquire, capacities, `c/K/steal`; the B300 source passed five small cases and replayed three former liveness failures after the warp-uniform fix. | Effect key is one `(source,item,route)` compute task; no tensor-core tile task, expert bin, tile completion or multi-warp role transition. |
 | Inline expert math | `native_cuda_ep_math.py` verifies a three-stage Program and combine Schedule, then emits a one-warp SIMT BF16 row-dot / FP32 activation/down body. | Admission fixes H16, I32, two local experts and T7/T8. Increasing constants would leave one-token/route SIMT work and not implement grouped tensor-core GEMM. |
 | Tensor-core local FFN | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. Separate no-bias model-width up/gate (`cc1715b5`) and down (`de0c4824`) tiles each passed two full one-GPU FP32 comparisons bitwise against an independent FP64 oracle. A model-width SwiGLU Schedule (`cb72263a`) explicitly casts FP32 to BF16; a three-stage Program (`98431873`) binds up/gate → SwiGLU → down without an implicit cast. CUDA 13.1 compiled all three Program stages on B300-M4 with 74/24/74 registers per thread and no spills. One brokered B300 GPU run passed two full stage-by-stage cases bitwise against an independent oracle. | The ordered Program is one fixed expert tile. There is no routed token bin, rank placement, tile-keyed mailbox or transition from the current 32-thread ranked CTA to the 192-thread tensor-core worker. No EP4 or performance result follows. |
-| Dynamic expert-bin input | A standalone B300 kernel uses a PTX GPU-scope returned-old atomic reservation to pack BF16 rows and route keys by expert. One brokered GPU run passed all 16,384 synthetic model-scale routes with exact BF16 rows and unique keys (`a4bcc968`). | It is a one-GPU layout probe with fixed per-expert capacity. Cake has not yet admitted its dynamic address/effect graph; no cross-device release/acquire publication, tile-ready queue or FFN invocation follows. |
+| Dynamic expert-bin input | Cake now admits a complete Schedule using three metadata loads, returned-old `atomic_rmw`, BF16 row load and two reservation-owned indexed stores. The exact B300 native CUDA emitter (`66e97f3a`) compiled and passed a brokered one-GPU oracle on all 16,384 routes; host admission rejected duplicate local experts and unreset counts. The earlier standalone PTX probe (`a4bcc968`) remains separate evidence. | Its host domain check synchronizes and copies route metadata before launch, and each expert bin has a fixed 2,048-row capacity. There is no cross-device release/acquire publication, tile-ready queue or FFN invocation from these bins. |
 
 The tensor-tile source, exact synthetic Schedule, nonblocking
 `RESIDENCY_BOUND` finding, nvcc command/log and cubin are retained in
@@ -63,6 +63,12 @@ The B300 `cake-weave-model-expert-bin-pack-a4bcc968/` record separately
 validates the actual BF16 row and return-key placement for all routes on one
 GPU. Its relaxed GPU-scope atomic is only a row reservation; it cannot stand
 in for the system release/acquire handoff needed by the ranked EP4 worker.
+The successor `cake-weave-model-expert-bin-cake-66e97f3a/` retains the
+Cake-generated source, Compiler findings, exact toolchain requirements,
+nvcc/PTXAS products and all-route device oracle. Its Schedule expresses
+dynamic indices and reservation ownership in existing IR primitives. The
+pre-launch host domain check proves the fixed capacity for the synthetic
+contract but must be replaced or accounted for before any performance claim.
 
 ## Required joint change
 
@@ -96,11 +102,12 @@ in for the system release/acquire handoff needed by the ranked EP4 worker.
 
 ## Bounded implementation order
 
-- Evolve Cake's dynamic addressing/effect analysis and native CUDA lowering
-  together so the proven expert-bin row reservation, route-key store and BF16
-  copy become an admitted Schedule rather than a standalone probe. Then
-  connect the bins to the validated local FFN Program, including empty and
-  partial experts, and obtain routed model-scale correctness evidence.
+- Connect the admitted expert-bin Schedule to the validated local FFN Program.
+  The bridge must convert dynamic expert counts into 128-row tasks, zero-pad
+  partial tiles, select the correct expert weights and scatter each result by
+  its retained route key; test empty and partial experts before claiming a
+  routed model-scale layer. Move the pre-launch domain check off the critical
+  path only with an equally explicit admission and failure signal.
 - Then add tile-keyed ranked effects, capacity/liveness analyses and native
   emission in a successor Compiler commit; replay small T7/T8 counterexamples
   and the separate model-scale Workload before a new Campaign.
