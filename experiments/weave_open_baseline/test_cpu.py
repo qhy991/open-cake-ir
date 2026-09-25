@@ -14,6 +14,7 @@ import numpy as np
 
 from data import compare_outputs, load_contract, make_rank, reference, round_bf16
 from runner import input_observation, load_rank_snapshot
+from runner_sglang_deepep import load_experiment
 
 
 def small_contract() -> dict:
@@ -24,6 +25,22 @@ def small_contract() -> dict:
 
 
 class CpuOracleTest(unittest.TestCase):
+    def test_fallback_contract_reuses_exact_model_scale_input(self):
+        experiment, workload = load_experiment()
+        self.assertEqual(experiment["geometry"], workload["geometry"])
+        self.assertEqual(experiment["execution"]["chunk_tokens_per_rank"], 128)
+        self.assertEqual(experiment["execution"]["chunks_per_rank"], 4)
+
+    def test_fallback_launcher_refuses_without_broker_lease(self):
+        directory = str(Path(__file__).parent)
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith("GPUQ_")}
+        result = subprocess.run([str(Path(directory) / "run_sglang_under_broker.sh"),
+                                 directory, directory], capture_output=True,
+                                text=True, check=False, env=environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("broker-issued exclusive", result.stderr)
+
     def test_device_launcher_refuses_without_broker_lease(self):
         directory = str(Path(__file__).parent)
         environment = {key: value for key, value in os.environ.items()

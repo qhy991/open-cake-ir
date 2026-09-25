@@ -114,3 +114,23 @@ remain open gates. The create-only CPU model-scale oracle has already completed
 as recorded above. No baseline GPU lease was requested. The bounded CPU build
 container was stopped and verified absent; the broker had no running jobs in
 the final read-only snapshot.
+
+## Later complete-layer fallback prepared
+
+The TD source build remains pending on the external LLVM dependency. A second
+open path has passed its CPU gate using the existing full-scale input/oracle:
+SGLang `v0.5.12.post1` at source commit `5a15cde8` plus installed DeepEP
+`1.2.1`. `contract_sglang_deepep.json` pins the image identity and states its
+binary-provenance and paper-version differences. This is SGLang's unquantized
+BF16 DeepEP low-latency path, **not** DeepEP+DeepGEMM or the paper's exact
+SGLang v0.5.9 configuration. Each rank's 512 tokens will be processed as four
+128-token chunks because DeepEP's upstream test marks a 512-token single call
+buggy. Dispatch, SGLang BF16 gate/up-SiLU-down expert computation and weighted
+combine are all inside the layer window.
+
+The no-GPU preflight in the pinned image passed for all retained inputs and
+reported the exact SGLang source commit, package versions, source syntax and
+272,630,912 bytes of DeepEP RDMA buffer per rank. Its retained log is
+`/home/qinhaiyan/weave-td-build-20260925/sglang-preflight-image-pinned.log`.
+Device correctness, profiler and qualified timing are still pending at this
+point; see [fallback reproduction steps](README_SGLANG_DEEPEP.md).

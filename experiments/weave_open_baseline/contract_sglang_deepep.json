@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "experiment_id": "weave-sglang-deepep-bf16-ep4-qwen3-30b-b300-v1",
+  "state": "independent_unqualified",
+  "target": "sm_103a",
+  "source": {
+    "sglang_repository": "https://github.com/sgl-project/sglang",
+    "sglang_commit": "5a15cde858ea09b77116212a39356f2fc51b8584",
+    "sglang_version": "0.5.12.post1",
+    "deep_ep_repository": "https://github.com/deepseek-ai/DeepEP",
+    "deep_ep_commit": "9af0e0d0e74f3577af1979c9b9e1ac2cad0104ee",
+    "deep_ep_version": "1.2.1",
+    "deep_ep_binary_source_status": "installed package version matches public v1.2.1 tag; exact binary build commit is not embedded in package metadata",
+    "container": "m.daocloud.io/docker.io/lmsysorg/sglang:v0.5.12.post1",
+    "container_image_id": "sha256:ceaf8b16e02d165143633ac228bbb994a05fe77d7e0526cf035ae4bbf4eacc36",
+    "communication": "DeepEP Buffer.low_latency_dispatch and low_latency_combine, BF16/NVLink",
+    "expert_ffn": "SGLang DeepEPMoE.forward_unquantized_deepep_ll, BF16 torch.bmm and SiLU"
+  },
+  "input_snapshot": {
+    "experiment_id": "weave-td-ep4-qwen3-30b-b300-v1",
+    "contract": "contract.json",
+    "oracle": "independent_cpu_numpy_fp64",
+    "reason": "Use the same retained synthetic model-scale inputs and oracle across open baseline attempts."
+  },
+  "geometry": {
+    "model": "Qwen3-30B",
+    "expert_parallel_size": 4,
+    "tokens_total": 2048,
+    "tokens_per_rank": 512,
+    "experts": 128,
+    "top_k": 8,
+    "hidden": 2048,
+    "intermediate": 768,
+    "dtype": "bfloat16"
+  },
+  "execution": {
+    "chunk_tokens_per_rank": 128,
+    "chunks_per_rank": 4,
+    "chunk_order": "sequential_rank_local_token_order",
+    "upstream_boundary": "DeepEP low-latency public test marks 512-token single calls buggy; its default is 128 tokens.",
+    "window": "all four ranks: first chunk dispatch through fourth chunk weighted combine and device synchronization"
+  },
+  "validation": {
+    "atol": 0.01,
+    "rtol": 0.01,
+    "all_rank_outputs_required": true
+  },
+  "measurement": {
+    "qualified_latency_ns": null,
+    "coverage_limitation": "sm_103a CUPTI/L2-reset timer dependencies unavailable; raw host spans diagnostic only"
+  },
+  "relationship_to_paper": "Later SGLang BF16 DeepEP fallback, not byte-identical with paper SGLang v0.5.9 or DeepEP+DeepGEMM setting. No speedup claim.",
+  "relationship_to_frozen_workload": "Independent E128/H2048/I768/K8/T2048 model-scale experiment; frozen Cake T7/T8 E8/H16/I32/K2 cases are not equivalent."
+}
