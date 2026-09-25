@@ -604,6 +604,13 @@ the liveness evidence but do not prove the full schedule domain or justify a
 performance claim. The evidence index retains the second receipts and reports;
 the backend defect remains open before promotion to a maintained platform
 branch.
+The captured B300-M4 host's FlashInfer CUPTI helper and Python paths under
+`/mnt/b300-shared` currently return `ENODEV`; no substitute helper is admitted
+by the existing strict benchmark policy. The ranked four-device joint interval
+and per-rank L2 reset are also unqualified. The separate
+`cake-ranked-ep4-warp-uniform-replay-f9bfd64d/MEASUREMENT_COVERAGE.md`
+records this precondition, so no spatial/temporal/steal latency ranking or
+Cake-versus-Triton speedup follows from the correctness runs.
 
 ## Completion phases and nested reduction scopes
 
