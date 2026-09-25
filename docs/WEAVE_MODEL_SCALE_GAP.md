@@ -12,17 +12,19 @@ do not imply model-scale throughput.
 | --- | --- | --- |
 | Ranked payload/task/return effects | `RankedMailboxEffects` types rank owners, system release/acquire, capacities, `c/K/steal`; the B300 source passed five small cases and replayed three former liveness failures after the warp-uniform fix. | Effect key is one `(source,item,route)` compute task; no tensor-core tile task, expert bin, tile completion or multi-warp role transition. |
 | Inline expert math | `native_cuda_ep_math.py` verifies a three-stage Program and combine Schedule, then emits a one-warp SIMT BF16 row-dot / FP32 activation/down body. | Admission fixes H16, I32, two local experts and T7/T8. Increasing constants would leave one-token/route SIMT work and not implement grouped tensor-core GEMM. |
-| Tensor-core leaf | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. A synthetic `sm_103a` retarget compiled at `1c59d3af`. A separate no-bias model-width up/gate tile at `cc1715b5` compiled for B300 (192 threads/CTA, 74 registers/thread, one barrier, no spills) and passed two full one-GPU FP32 output comparisons bitwise against an independent FP64 oracle. | The passing tile is one expert projection, without routed token bins, SwiGLU or down projection. It is not rank-placed and cannot yet be called inside the current 32-thread ranked CTA. No complete EP4 or performance result follows. |
+| Tensor-core leaf | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. A synthetic `sm_103a` retarget compiled at `1c59d3af`. Separate no-bias model-width up/gate (`cc1715b5`) and down (`de0c4824`) tiles compiled for B300 (192 threads/CTA, 74 registers/thread, one barrier, no spills). Each passed two full one-GPU FP32 output comparisons bitwise against an independent FP64 oracle. | These are **separate** expert projections. There is no routed token bin, SwiGLU activation, visible FP32-to-BF16 cast feeding down, rank placement or inline call from the current 32-thread ranked CTA. No complete FFN, EP4 or performance result follows. |
 
 The tensor-tile source, exact synthetic Schedule, nonblocking
 `RESIDENCY_BOUND` finding, nvcc command/log and cubin are retained in
 `cake-weave-b300-tensor-tile-probe-1c59d3af/` under the 2026-09-25 Weave
 evidence root. Its compilation establishes a real lowering reuse candidate;
 it proves no expert arithmetic, queue protocol or performance.
-The model-width up/gate Schedule, generated source, two dyadic input/oracle
-cases, compiled products, single-GPU broker receipt and bitwise report are
-separately retained in `cake-weave-model-upgate-tile-cc1715b5/`. Its exact
-fixed shape and input domain do not qualify the full model-scale FFN.
+The model-width up/gate and down Schedules, generated sources, dyadic
+input/oracle cases, compiled products, single-GPU broker receipts and
+bitwise reports are separately retained in
+`cake-weave-model-upgate-tile-cc1715b5/` and
+`cake-weave-model-down-tile-de0c4824/`. Their exact fixed shapes and input
+domains do not qualify the full model-scale FFN.
 
 ## Provisional Qwen3-30B geometry pressure
 
@@ -71,12 +73,12 @@ also differ from the paper's ShareGPT routing.
 
 ## Bounded implementation order
 
-- Extend the passing fixed-shape up/gate projection into a **complete local
-  expert FFN**: dynamic expert-owned bins, explicit gated activation and a
-  down projection tile, each with its own Cake Schedule and analysis. Validate
-  varied expert loads and the independent model-scale oracle on B300; retain
-  nvcc/PTXAS, oracle and profiler evidence. The current two dyadic up/gate
-  cases are a correctness seed, not that complete result.
+- Connect the two passing fixed-shape projections into a **complete local
+  expert FFN**: add dynamic expert-owned token bins and a Cake Schedule for
+  gated activation with an explicit FP32-to-BF16 cast before the tensor-core
+  down tile. Validate varied expert loads and the independent model-scale
+  oracle on B300; retain nvcc/PTXAS, oracle and profiler evidence. The current
+  dyadic projection cases are correctness seeds, not that complete result.
 - Then add tile-keyed ranked effects, capacity/liveness analyses and native
   emission in a successor Compiler commit; replay small T7/T8 counterexamples
   and the separate model-scale Workload before a new Campaign.

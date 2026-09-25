@@ -631,12 +631,14 @@ The retained derived JSON names only kernel activity union and intersection,
 not a qualified MoE-layer timer.
 
 The model-scale route is audited separately in
-`docs/WEAVE_MODEL_SCALE_GAP.md`. Its first concrete native tensor-core
-component is a no-bias H2048/F1536 up/gate projection tile: Cake emitted
-TMA/`tcgen05` at clean commit `cc1715b5`, and one B300-M4 broker GPU produced
-bitwise FP32 agreement with an independent FP64 oracle on two exact-dyadic
-input distributions. This is a local expert projection seed, not a complete
-ranked MoE worker, down projection or timing result.
+`docs/WEAVE_MODEL_SCALE_GAP.md`. Its first two native tensor-core components
+are separate no-bias H2048/F1536 up/gate and I768/H2048 down projection
+tiles. Cake emitted TMA/`tcgen05` at clean commits `cc1715b5` and
+`de0c4824`; each B300-M4 single-GPU broker run produced bitwise FP32
+agreement with an independent FP64 oracle on two exact-dyadic distributions.
+The common development runner is `model_projection_tile_run.py`. The gated
+activation and explicit FP32-to-BF16 cast into down, expert binning, ranked
+composition and timing remain unimplemented.
 
 ## Completion phases and nested reduction scopes
 
