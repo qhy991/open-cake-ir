@@ -66,6 +66,9 @@ def document() -> dict:
 
 def target(*, admit: bool) -> Target:
     value = json.loads((ROOT / "compiler/targets/sm_103a.json").read_text())
+    value["operation_kinds"] = [
+        kind for kind in value["operation_kinds"] if kind != "transpose"
+    ]
     if admit:
         value["operation_kinds"].append("transpose")
     return Target.from_dict(value)
