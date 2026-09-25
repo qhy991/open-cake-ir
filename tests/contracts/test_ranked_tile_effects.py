@@ -83,8 +83,13 @@ class RankedTileEffectsContract(unittest.TestCase):
         self.assertEqual((analysis.remote_payload_slots_per_rank,
                           analysis.packed_route_rows_per_rank,
                           analysis.rows_per_expert,
-                          analysis.tile_task_slots_per_rank,
+                          analysis.logical_tile_slots_per_rank,
                           analysis.return_slots_per_rank),(24,64,32,4,16))
+        self.assertEqual((analysis.stage_work_units,
+                          analysis.stage_work_units_per_tile,
+                          analysis.stage_task_slots_per_rank,
+                          analysis.stage_completion_slots_per_rank),
+                         ((('math',4),),4,16,4))
         self.assertEqual((analysis.required_execution_groups,
                           analysis.maximum_shared_bytes,
                           analysis.maximum_tensor_bytes),(6,49152,32768))
@@ -97,13 +102,19 @@ class RankedTileEffectsContract(unittest.TestCase):
         document['partial_threshold_rows']=128
         analysis=RankedTileEffects.from_dict(document).analyze(
             local_tile_program(),combine())
-        self.assertEqual(analysis.tile_task_slots_per_rank,2)
+        self.assertEqual(analysis.logical_tile_slots_per_rank,2)
+        self.assertEqual(analysis.stage_task_slots_per_rank,8)
         self.assertEqual(analysis.return_slots_per_rank,16)
 
     def test_wrong_owner_publication_domain_or_resource_transition_refuses(self):
         base=json.loads(EFFECTS.read_text())
         changes=(
             (lambda d:d['channels']['task'].__setitem__('owner','source_rank'),
+             'channel keys'),
+            (lambda d:d['channels']['task']['key'].pop(),
+             'channel keys'),
+            (lambda d:d['channels']['task'].__setitem__(
+                'precondition','ready_after_one_cta'),
              'channel keys'),
             (lambda d:d.__setitem__('publication','partial_at_every_route'),
              'publication'),
@@ -113,6 +124,7 @@ class RankedTileEffectsContract(unittest.TestCase):
              'steal'),
             (lambda d:d.__setitem__('reset','optional'),'reset'),
             (lambda d:d.__setitem__('schema_version',True),'fields or version'),
+            (lambda d:d.__setitem__('schema_version',1),'fields or version'),
         )
         for mutate,reason in changes:
             document=deepcopy(base)
@@ -138,6 +150,11 @@ class RankedTileEffectsContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'combine shape'):
             RankedTileEffects.from_dict(base).analyze(
                 local_tile_program(),Schedule.from_dict(wrong))
+        persistent=local_tile_program().document
+        persistent['stages'][0]['schedule']['program_map']['persistent']=True
+        with self.assertRaisesRegex(ValueError,'finite explicit ProgramMap'):
+            RankedTileEffects.from_dict(base).analyze(
+                Program.from_dict(persistent),combine())
 
     def test_materialized_two_wave_plan_preserves_every_return_key(self):
         effects=RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
@@ -146,6 +163,8 @@ class RankedTileEffectsContract(unittest.TestCase):
         checked=analysis.check_plan(ids,tasks,source_chunk_tokens=32)
         self.assertEqual(checked.tasks_by_owner,(4,4,0,0))
         self.assertEqual(checked.rows_by_owner,(256,256,0,0))
+        self.assertEqual(checked.required_stage_work_units_by_owner,
+                         (16,16,0,0))
         self.assertEqual((checked.full_tiles,checked.early_partial_tiles,
                           checked.terminal_partial_tiles),(0,4,4))
 

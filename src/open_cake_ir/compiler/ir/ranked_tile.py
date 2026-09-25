@@ -1,4 +1,4 @@
-"""Tile-keyed ranked effects and structural capacity/resource analysis.
+"""Tile-keyed ranked effects and stage-work-unit capacity/resource analysis.
 
 This contract owns task/return identity and upper bounds. It authorizes no
 device emission: the backend must still prove the exact Target, publication,
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from math import ceil
+from math import ceil, prod
 
 from .program import Program
 from .schedule import LoweringRoute, Schedule
@@ -34,13 +34,20 @@ _BIN = {
     'ready': 'release_acquire_system',
     'row_identity': ['source_rank', 'item', 'route'],
 }
-_TASK = {
+_TILE = {
     'owner': 'destination_rank',
     'key': ['destination_rank', 'expert', 'tile_index'],
+    'payload': 'expert_bin_rows_with_valid_count',
+    'ready': 'release_acquire_system',
+}
+_TASK = {
+    'owner': 'destination_rank',
+    'key': ['destination_rank', 'expert', 'tile_index', 'stage', 'subtile'],
     'reservation': 'returned_old_atomic_gpu',
     'ready': 'release_acquire_system',
     'claim': 'atomic_gpu',
-    'payload': 'expert_bin_rows_with_valid_count',
+    'payload': 'one_stage_program_map_cta_with_valid_rows',
+    'precondition': 'all_predecessor_stage_work_units_completed',
 }
 _RETURN = {
     'owner': 'source_rank',
@@ -50,12 +57,13 @@ _RETURN = {
 }
 _STEAL = {
     'borrower': 'communication',
-    'queue': 'tile_task',
+    'queue': 'stage_task',
     'after': 'dispatch_chunk',
     'before': 'combine',
-    'resource_transition': 'complete_tile_worker',
+    'resource_transition': 'maximum_stage_worker',
 }
 _PUBLICATION = 'full_on_capacity_partial_at_wave_threshold_and_terminal'
+_STAGE_WORK_UNIT_ORDER = 'flatten_program_map_axes_xyz'
 _INPUT_DOMAIN = 'distinct_expert_ids_in_range_per_item'
 _RESET = 'zero_all_rank_mailboxes_before_launch'
 
@@ -74,7 +82,11 @@ class RankedTileAnalysis:
     remote_payload_slots_per_rank: int
     packed_route_rows_per_rank: int
     rows_per_expert: int
-    tile_task_slots_per_rank: int
+    logical_tile_slots_per_rank: int
+    stage_work_units: tuple[tuple[str, int], ...]
+    stage_work_units_per_tile: int
+    stage_task_slots_per_rank: int
+    stage_completion_slots_per_rank: int
     return_slots_per_rank: int
     required_execution_groups: int
     maximum_shared_bytes: int
@@ -179,17 +191,20 @@ class RankedTileAnalysis:
             raise ValueError('tile plan has missing source return routes')
         if (any(rows > self.rows_per_expert for rows in expert_rows)
                 or any(rows > self.packed_route_rows_per_rank for rows in owner_rows)
-                or any(count > self.tile_task_slots_per_rank
+                or any(count > self.logical_tile_slots_per_rank
                        for count in owner_tasks)):
             raise ValueError('tile plan exceeds an admitted bin or task capacity')
-        return RankedTilePlanCheck(tuple(owner_tasks), tuple(owner_rows),
-                                   full, early, terminal)
+        return RankedTilePlanCheck(
+            tuple(owner_tasks), tuple(owner_rows),
+            tuple(count * self.stage_work_units_per_tile
+                  for count in owner_tasks), full, early, terminal)
 
 
 @dataclass(frozen=True)
 class RankedTilePlanCheck:
     tasks_by_owner: tuple[int, ...]
     rows_by_owner: tuple[int, ...]
+    required_stage_work_units_by_owner: tuple[int, ...]
     full_tiles: int
     early_partial_tiles: int
     terminal_partial_tiles: int
@@ -209,10 +224,11 @@ class RankedTileEffects:
         required = {'schema_version', 'world_size', 'experts', 'tile_rows',
                     'maximum_chunks_per_rank', 'partial_threshold_rows',
                     'workers', 'controls', 'channels', 'publication',
+                    'stage_work_unit_order',
                     'input_domain', 'steal', 'reset', 'lowering'}
         if (not isinstance(value, Mapping) or set(value) != required
                 or type(value['schema_version']) is not int
-                or value['schema_version'] != 1):
+                or value['schema_version'] != 2):
             raise ValueError('ranked tile effect fields or version differ')
         world = value['world_size']
         experts = value['experts']
@@ -228,18 +244,21 @@ class RankedTileEffects:
             raise ValueError('ranked tile workers and controls differ')
         channels = value['channels']
         if (not isinstance(channels, Mapping)
-                or set(channels) != {'payload', 'bin', 'task', 'return'}
+                or set(channels) != {'payload', 'bin', 'tile', 'task', 'return'}
                 or channels['payload'] != _PAYLOAD
                 or channels['bin'] != _BIN
+                or channels['tile'] != _TILE
                 or channels['task'] != _TASK
                 or channels['return'] != _RETURN):
             raise ValueError('ranked tile channel keys, owners or memory order differ')
         if value['publication'] != _PUBLICATION:
             raise ValueError('ranked tile publication must flush full and terminal bins')
+        if value['stage_work_unit_order'] != _STAGE_WORK_UNIT_ORDER:
+            raise ValueError('ranked tile stage work units need explicit program-axis order')
         if value['input_domain'] != _INPUT_DOMAIN:
             raise ValueError('ranked tile input must declare per-item unique expert IDs')
         if value['steal'] != _STEAL:
-            raise ValueError('ranked tile steal must borrow the complete tile worker')
+            raise ValueError('ranked tile steal must borrow a complete stage worker')
         if value['reset'] != _RESET:
             raise ValueError('ranked tile mailboxes require reset before every launch')
         lowering = LoweringRoute.from_dict(value['lowering'],
@@ -253,14 +272,16 @@ class RankedTileEffects:
                 key: list(item) for key, item in value.items()
                 if isinstance(item, list)}}
         return {
-            'schema_version': 1, 'world_size': self.world_size,
+            'schema_version': 2, 'world_size': self.world_size,
             'experts': self.experts, 'tile_rows': self.tile_rows,
             'maximum_chunks_per_rank': self.maximum_chunks_per_rank,
             'partial_threshold_rows': self.partial_threshold_rows,
             'workers': list(_WORKERS), 'controls': dict(_CONTROLS),
             'channels': {'payload': copied(_PAYLOAD), 'bin': copied(_BIN),
-                         'task': copied(_TASK), 'return': copied(_RETURN)},
+                         'tile': copied(_TILE), 'task': copied(_TASK),
+                         'return': copied(_RETURN)},
             'publication': _PUBLICATION, 'input_domain': _INPUT_DOMAIN,
+            'stage_work_unit_order': _STAGE_WORK_UNIT_ORDER,
             'steal': dict(_STEAL), 'reset': _RESET,
             'lowering': {'backend': self.lowering.backend.value,
                          'entry_point': self.lowering.entry_point},
@@ -315,12 +336,31 @@ class RankedTileEffects:
         possible_partial_waves = (self.maximum_chunks_per_rank
                                   if self.partial_threshold_rows < self.tile_rows
                                   else 1)
-        tile_capacity = min(
+        logical_tile_capacity = min(
             total_routes,
             ceil(total_routes / self.tile_rows)
             + local_experts * possible_partial_waves - 1,
         )
         stages = [stage.schedule for stage in local.stages]
+        stage_units: list[tuple[str, int]] = []
+        for stage in local.stages:
+            schedule = stage.schedule
+            mapping = schedule.program_map
+            if (mapping is None or mapping.persistent or mapping.cooperative
+                    or schedule.grid is not None):
+                raise ValueError('ranked tile stage work units need a finite explicit ProgramMap')
+            extents = []
+            for axis in mapping.axes:
+                owner = schedule.buffer(axis.buffer)
+                if (owner is None or owner.space is not MemorySpace.GLOBAL
+                        or axis.dimension >= len(owner.shape)):
+                    raise ValueError('ranked tile stage ProgramMap axis owner differs')
+                extents.append(axis.tile_count(owner.shape[axis.dimension]))
+            count = prod(extents)
+            if count < 1:
+                raise ValueError('ranked tile stage needs at least one CTA work unit')
+            stage_units.append((stage.name, count))
+        work_units_per_tile = sum(count for _, count in stage_units)
         shared = max(sum(allocation.size_bytes for allocation in stage.allocations
                          if allocation.space is MemorySpace.SHARED)
                      for stage in stages)
@@ -333,6 +373,9 @@ class RankedTileEffects:
             self.tile_rows, width, self.maximum_chunks_per_rank,
             self.partial_threshold_rows,
             (self.world_size - 1) * tokens,
-            total_routes, self.world_size * tokens, tile_capacity,
+            total_routes, self.world_size * tokens, logical_tile_capacity,
+            tuple(stage_units), work_units_per_tile,
+            logical_tile_capacity * work_units_per_tile,
+            logical_tile_capacity * len(stages),
             tokens * routes, groups, shared, tensor,
         )
