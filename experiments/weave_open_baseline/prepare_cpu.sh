@@ -46,5 +46,7 @@ esac
 
 docker run --rm --network host --user "$(id -u):$(id -g)" \
   -e HOME=/tmp/weave-td-home -e NVIDIA_VISIBLE_DEVICES=void \
+  -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY \
+  -e http_proxy -e https_proxy -e no_proxy \
   -v "$source_root:/src" -v "$build_root:/build" -w /src \
   "$image" bash -lc "$command"
