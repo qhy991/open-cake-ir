@@ -49,6 +49,16 @@ produced for this baseline yet.
   a build-environment failure, not a device compatibility result. The private
   venv will be given pinned `cmake==3.31.10` before retrying; the original log
   remains unchanged.
+- Full-scale CPU inputs and oracle were generated **before any baseline GPU
+  lease** by `create_oracle_cpu.sh
+  /home/qinhaiyan/weave-td-build-20260925
+  /home/qinhaiyan/weave-td-cpu-oracle-694c84f2-20260925`. The create-only
+  directory holds four `rank*-input.npz` files, `oracle-expected.npy` and
+  `cpu-oracle-observation.json`; the command log is
+  `/home/qinhaiyan/weave-td-build-20260925/cpu-oracle-run.log`.
+  NumPy 1.26.4 produced all 4,194,304 finite, nonzero BF16-representable
+  expected values. CPU generation took 14.09 s; that wall time is host
+  preparation evidence, not an MoE-layer latency.
 
 The first environment inspection used the existing SGLang Python shim, which
 was found to launch a Docker container with `--gpus all`. It imported only

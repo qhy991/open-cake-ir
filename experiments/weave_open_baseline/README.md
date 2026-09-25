@@ -54,6 +54,15 @@ CTA / mixed-K timeouts. It contains neither CUPTI/L2-reset latency nor a
 matched open baseline. Do not compare its functional outcomes to this
 experiment's provisional times.
 
+| Boundary | Frozen Cake development Workload | This TD experiment | Paper §5.1 |
+| --- | --- | --- | --- |
+| Hardware | EP4 on B300 `sm_103a` | EP4 on B300 planned, unqualified | EP4 on H100 SXM |
+| Geometry | T7/T8, E8, K2, H16, I32 | 2,048 total tokens, E128, K8, H2048, I768 | Qwen3-30B at 2k/4k/8k among six models |
+| Routing | Five fixed balanced/skew/local/remote/tail cases | Seeded synthetic distinct top-k | ShareGPT-derived inputs |
+| Semantics | BF16 expert up × SiLU(gate), down, weighted combine | Same five mathematical stages; gate/up packed in TD order | Five-stage MoE layer |
+| Correctness | Independent FP64 CPU oracle; selected plans passed | Independent FP64 CPU oracle; device comparison pending | Paper results, not this oracle |
+| Timing | No qualified layer timing | Host monotonic diagnostic only, no L2 reset/CUPTI | H100 paper measurements |
+
 ## Reproduction stages
 
 1. Clone the upstream 3.4 branch at the exact commit above into a **separate**

@@ -211,7 +211,11 @@ def main() -> None:
     elif args.mode == "oracle":
         if os.environ.get("GPUQ_JOB_ID"):
             raise RuntimeError("CPU oracle must run outside a GPU lease")
-        args.output.mkdir(parents=True, exist_ok=False)
+        if args.output.exists():
+            if any(args.output.iterdir()):
+                raise ValueError("CPU oracle output is not empty")
+        else:
+            args.output.mkdir(parents=True)
         start = time.perf_counter_ns()
         ranks = [make_rank(document, rank) for rank in range(4)]
         for rank, inputs in enumerate(ranks):

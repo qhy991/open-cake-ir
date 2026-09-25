@@ -80,6 +80,12 @@ class CpuOracleTest(unittest.TestCase):
                             "oracle", "--contract", str(contract_path),
                             "--output", str(input_path)], check=True,
                            stdout=subprocess.DEVNULL)
+            repeated = subprocess.run([sys.executable, str(Path(__file__).with_name("runner.py")),
+                                       "oracle", "--contract", str(contract_path),
+                                       "--output", str(input_path)], check=False,
+                                      capture_output=True, text=True)
+            self.assertNotEqual(repeated.returncode, 0)
+            self.assertIn("not empty", repeated.stderr)
             self.assertEqual(input_observation(document, input_path)["shape"], [4, 2, 4])
             for rank in range(4):
                 np.testing.assert_array_equal(load_rank_snapshot(document, input_path, rank)["ids"],

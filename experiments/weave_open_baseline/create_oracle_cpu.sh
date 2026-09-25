@@ -18,11 +18,12 @@ if [[ -e $output_root ]]; then
 fi
 output_parent=$(dirname "$output_root")
 mkdir -p "$output_parent"
+mkdir "$output_root"
 docker run --rm --network none --user "$(id -u):$(id -g)" \
   -e HOME=/tmp/weave-td-home -e NVIDIA_VISIBLE_DEVICES=void \
   -e OPENBLAS_NUM_THREADS=8 -e OMP_NUM_THREADS=8 -e MKL_NUM_THREADS=8 \
   -v "$build_root:/build:ro" -v "$adapter_root:/adapter:ro" \
-  -v "$output_parent:/outputs" -w /adapter \
+  -v "$output_root:/outputs" -w /adapter \
   lmsysorg/sglang:latest-cu130-runtime \
   /build/venv/bin/python /adapter/runner.py oracle \
-  --output "/outputs/$(basename "$output_root")"
+  --output /outputs
