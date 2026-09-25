@@ -12,6 +12,7 @@ from ..ir import (
     BufferMode,
     LoadMovement,
     MemorySpace,
+    OperandMajorMode,
     DType,
     ElementwiseOp,
     OperationKind,
@@ -1467,14 +1468,27 @@ def _verify_operation_shape(
         # the gate stays until that refresh is reviewed on its own.
         if tile is not None and backend is not None and backend.value in {"native_cuda", "triton"}:
             operands = [buffers.get(name) for name in operation.reads[:2]]
+            instruction = operation.parameters.instruction
+            b_major = (
+                instruction.operand_major[1]
+                if instruction is not None and instruction.operand_major is not None
+                else OperandMajorMode.K
+            )
+            # The logical contraction stays MxNxK. An explicitly MN-major B is
+            # physically KxN; K-major B is NxK. No layout is inferred here.
+            b_shape = (
+                (tile[2], tile[1]) if b_major is OperandMajorMode.MN
+                else (tile[1], tile[2])
+            )
             if (len(operands) != 2
                     or operands[0] is None or operands[1] is None
                     or operands[0].shape != (tile[0], tile[2])
-                    or operands[1].shape != (tile[1], tile[2])):
+                    or operands[1].shape != b_shape):
                 out.add(
                     "MMA_INPUT_TILE_DOMAIN", f"{path}.parameters.tile_shape",
                     "a contraction uses the full rank-two input tile domain "
-                    "A[M,K] and B[N,K]; tile_shape must describe that input domain", category,
+                    "A[M,K] and B[N,K] for K-major or B[K,N] for MN-major; "
+                    "tile_shape must describe that input domain", category,
                 )
 
     # An arithmetic primitive takes what its op says it takes. A binary op reads two
