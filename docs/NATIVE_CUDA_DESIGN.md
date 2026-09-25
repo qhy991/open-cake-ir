@@ -595,9 +595,15 @@ balanced passed. Every run used exactly four exclusive broker GPUs and
 released them before CPU oracle comparison. The
 `cake-ranked-ep4-warp-uniform-replay-f9bfd64d/RESULTS.md` evidence index
 retains receipts, logs, counters and results. These are first replays, not a
-statistical liveness qualification or latency result. Repeat the failing
-plans on the successor before closing this backend defect or promoting the
-source to a maintained platform branch.
+statistical liveness qualification or latency result.
+One independent repeat of each formerly timing-out plan then passed in a
+fresh broker job and directory, again with four-rank oracle and queue checks.
+Remote-only and T7 mixed-`K` also passed on a second physical four-GPU set;
+skew low-`c` repeated on the same physical set. Two passes per plan improve
+the liveness evidence but do not prove the full schedule domain or justify a
+performance claim. The evidence index retains the second receipts and reports;
+the backend defect remains open before promotion to a maintained platform
+branch.
 
 ## Completion phases and nested reduction scopes
 
