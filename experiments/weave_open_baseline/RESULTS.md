@@ -26,13 +26,15 @@ produced for this baseline yet.
   /home/qinhaiyan/weave-td-open-baseline-20260925` passed with the source
   commit and three forward-stage files checked. Record:
   `/home/qinhaiyan/weave-td-build-20260925/preflight.json`.
-- Four CPU tests pass on B300-M4 with host Python 3.12 / NumPy 2.5.3, including
+- Five CPU tests pass on B300-M4 with host Python 3.12 / NumPy 2.5.3, including
   BF16 tie rounding, owner-specific expert weights, rejection of one corrupted
-  rank output, and creation/reuse of all four input snapshots. Log:
-  `/home/qinhaiyan/weave-td-build-20260925/cpu-tests.log`.
-- The same four tests, Python syntax, shell syntax and contract JSON passed in
-  detached local worktree `/tmp/cake-weave-baseline-gate-9d05b6e9` at the
-  adapter commit named above (Mac Python 3.11 / NumPy 1.24.2).
+  rank output, creation/reuse of all four input snapshots, and refusal to run
+  the device launcher without a broker lease. Latest log:
+  `/home/qinhaiyan/weave-td-build-20260925/cpu-tests-694c84f2.log`.
+- The original four tests, Python syntax, shell syntax and contract JSON passed
+  in detached local worktree `/tmp/cake-weave-baseline-gate-9d05b6e9` at
+  `df63fbd7` (Mac Python 3.11 / NumPy 1.24.2). The fifth broker-refusal
+  check also passed in the task checkout and remote CPU test above.
 - The isolated CPU container environment was initialized by
   `prepare_cpu.sh init <source> <build>`. Its dependency stage is retained as
   `deps.log` (initial DNS failure) and `deps-retry1.log` (host proxy forwarded).
@@ -43,6 +45,11 @@ produced for this baseline yet.
   packages visible from the base SGLang image; the upstream source build and
   `triton_dist` import remain unverified. The build container has no GPU
   mapping; its startup message reports no driver.
+  A later audit of the selected commit's `python/setup.py` found that its
+  Blackwell/CUDA 13 dependency pins are NVSHMEM 3.6.5 and nvshmem4py 0.3.0,
+  unlike the older CUDA 12 README example used in the first dependency pass.
+  The successor `prepare_cpu.sh` pins CUDA 13 packages; this venv must run its
+  `cu13` correction stage and pass an import probe before any device request.
 - First CPU-only editable build: `prepare_cpu.sh build <source> <build>` exited
   1. `build.log` shows the direct cause: CMake was absent in the base image,
   while upstream requires CMake >=3.20 for its Triton C++ extensions. This is
@@ -51,6 +58,15 @@ produced for this baseline yet.
   remains unchanged.
 - `prepare_cpu.sh cmake <source> <build>` completed and
   `cmake-install.log` records `cmake==3.31.10` in the isolated venv.
+- A second CPU-only editable build reached `running build_ext` and began
+  fetching the selected Triton submodule's prebuilt LLVM archive from
+  `oaitriton.blob.core.windows.net/public/llvm-builds/llvm-8957e64a-ubuntu-x64.tar.gz`.
+  The server advertises 1,242,831,658 bytes. With no cached copy and a slow
+  remote path, the bounded attempt was stopped after several minutes; its
+  `build-retry1.log` and exit 137 reflect this deliberate stop, not a compiler
+  error or B300 incompatibility. The exact CPU build command remains runnable.
+  A successor `prepare_cpu.sh` keeps future toolchain downloads in the isolated
+  build directory instead of an ephemeral container home.
 - Full-scale CPU inputs and oracle were generated **before any baseline GPU
   lease** by `create_oracle_cpu.sh
   /home/qinhaiyan/weave-td-build-20260925
@@ -86,6 +102,9 @@ its host monotonic spans are diagnostic. The declared `sm_103a` CUPTI/FlashInfer
 timer inputs under `/mnt/b300-shared` currently return ENODEV on B300-M4
 (read-only observation from the parallel Cake task). The adapter therefore
 reports `qualified_latency_ns: null` and a measurement-coverage limitation.
-A source build, four-card broker admission, device output, after-release oracle
-comparison and profiler remain open gates. The create-only CPU model-scale
-oracle has already completed as recorded above.
+A completed source build, CUDA 13 dependency correction/import probe, four-card
+broker admission, device output, after-release oracle comparison and profiler
+remain open gates. The create-only CPU model-scale oracle has already completed
+as recorded above. No baseline GPU lease was requested. The bounded CPU build
+container was stopped and verified absent; the broker had no running jobs in
+the final read-only snapshot.

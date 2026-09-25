@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [[ $# -lt 3 || $# -gt 4 ]]; then
-  echo "usage: $0 <init|deps|cmake|build|probe> <upstream-checkout> <isolated-build-dir> [image]" >&2
+  echo "usage: $0 <init|deps|cmake|cu13|build|probe> <upstream-checkout> <isolated-build-dir> [image]" >&2
   exit 2
 fi
 stage=$1
@@ -35,18 +35,20 @@ else
     exit 1
   fi
 fi
+mkdir -p "$build_root/cache-home" "$build_root/runtime-cache"
 
 case "$stage" in
   init) command='python3 -m venv --system-site-packages /build/venv && /build/venv/bin/python -m pip --version' ;;
-  deps) command='/build/venv/bin/python -m pip install --no-cache-dir numpy==1.26.4 cuda.core==0.2.0 cuda-python==12.4 nvidia-nvshmem-cu12==3.3.9 Cython==0.29.24 nvshmem4py-cu12==0.1.2 setuptools==69.0.0 cmake==3.31.10 wheel pybind11' ;;
+  deps) command='/build/venv/bin/python -m pip install --no-cache-dir numpy==1.26.4 cuda.core==1.0.1 cuda-python==13.2.0 nvidia-nvshmem-cu13==3.6.5 Cython==0.29.24 nvshmem4py-cu13==0.3.0 setuptools==69.0.0 cmake==3.31.10 wheel pybind11' ;;
   cmake) command='/build/venv/bin/python -m pip install --no-cache-dir cmake==3.31.10' ;;
+  cu13) command='/build/venv/bin/python -m pip uninstall -y cuda.core cuda-python nvidia-nvshmem-cu12 nvshmem4py-cu12 && /build/venv/bin/python -m pip install --no-cache-dir cuda.core==1.0.1 cuda-python==13.2.0 nvidia-nvshmem-cu13==3.6.5 nvshmem4py-cu13==0.3.0' ;;
   build) command='cd /src && export PATH=/build/venv/bin:$PATH && USE_TRITON_DISTRIBUTED_AOT=0 MAX_JOBS=8 /build/venv/bin/python -m pip install --no-cache-dir -e python --verbose --no-build-isolation --use-pep517' ;;
   probe) command='/build/venv/bin/python -c "import torch, triton, triton_dist, numpy; print(torch.__version__, triton.__version__, numpy.__version__)"' ;;
   *) echo "unknown stage: $stage" >&2; exit 2 ;;
 esac
 
 docker run --rm --network host --user "$(id -u):$(id -g)" \
-  -e HOME=/tmp/weave-td-home -e NVIDIA_VISIBLE_DEVICES=void \
+  -e HOME=/build/cache-home -e NVIDIA_VISIBLE_DEVICES=void \
   -e HTTP_PROXY -e HTTPS_PROXY -e NO_PROXY \
   -e http_proxy -e https_proxy -e no_proxy \
   -v "$source_root:/src" -v "$build_root:/build" -w /src \

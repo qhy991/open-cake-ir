@@ -9,6 +9,7 @@ source_root=$(realpath "$1")
 build_root=$(realpath "$2")
 input_root=$(realpath "$3")
 output_root=$(realpath "$4")
+cache_root=$build_root/runtime-cache
 adapter_root=$(cd "$(dirname "$0")" && pwd)
 if [[ -z ${GPUQ_JOB_ID:-} || ${GPUQ_MODE:-} != exclusive || ${GPUQ_BACKEND:-} != nvidia ]]; then
   echo "This adapter requires a broker-issued exclusive NVIDIA lease" >&2
@@ -27,6 +28,10 @@ if [[ ! -f $input_root/cpu-oracle-observation.json || ! -f $output_root/admissio
   echo "Expected new output with broker admission receipt" >&2
   exit 1
 fi
+if [[ ! -d $cache_root ]]; then
+  echo "Runtime cache directory absent; prepare it before the GPU lease" >&2
+  exit 1
+fi
 for rank in 0 1 2 3; do
   if [[ -e $output_root/rank$rank-output.npy ]]; then
     echo "Output already exists for rank $rank" >&2
@@ -37,9 +42,10 @@ done
 docker run --rm --network host --ipc host \
   --gpus "\"device=$GPUQ_DEVICE_IDS\"" \
   --user "$(id -u):$(id -g)" \
-  -e HOME=/tmp/weave-td-home -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
+  -e HOME=/cache -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
   -e GPUQ_JOB_ID -e GPUQ_MODE -e GPUQ_DEVICE_IDS \
   -v "$source_root:/src:ro" -v "$build_root:/build:ro" \
+  -v "$cache_root:/cache" \
   -v "$adapter_root:/adapter:ro" -v "$input_root:/inputs:ro" \
   -v "$output_root:/out" -w /adapter \
   lmsysorg/sglang:latest-cu130-runtime \

@@ -21,6 +21,12 @@ path and checks saved outputs with an independent CPU calculation. The
 [tuning defaults](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/function/nvidia/common.py)
 are H800 oriented. Source comments mention Hopper/Blackwell, but B300-M4
 execution and accuracy remain **unverified** until a broker run succeeds.
+At this pinned commit, [the package setup](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/setup.py)
+declares CUDA 13 builds with `nvidia-nvshmem-cu13==3.6.5` and
+`nvshmem4py-cu13==0.3.0`; the 3.4 README's CUDA 12 install example is stale
+for B300. `prepare_cpu.sh` pins the source-owned CUDA 13 dependencies. Its
+no-GPU container does not expose `nvidia-smi`, so setup's platform-detection
+printout alone cannot establish device support.
 
 ## Source audit against Weave §5.1
 
@@ -71,8 +77,10 @@ experiment's provisional times.
    `prepare_cpu.sh init`, `prepare_cpu.sh deps`, `prepare_cpu.sh build`, then
    `prepare_cpu.sh probe`, passing the upstream checkout and a new isolated
    build directory to each command. This script launches a container with no
-   GPU devices, installs into a private venv and leaves build logs under the
-   caller's chosen path. Keep the complete commands, logs and `git status`.
+   GPU devices, installs into a private venv and keeps upstream toolchain
+   downloads under `<build>/cache-home`. Keep the complete commands, logs and
+   `git status`. The selected source's Triton build fetches a 1.24 GB LLVM
+   archive; absence or slow access is a CPU build gate, not B300 device evidence.
 2. Run `python runner.py preflight --upstream /path/to/Triton-distributed`.
    This checks the exact upstream and Triton submodule commits, clean tracked
    source, all three forward stages and Python syntax. Run
@@ -87,6 +95,7 @@ experiment's provisional times.
    <cpu-input-dir> <output>`
    as its child command. The script checks the broker-owned allocation and
    passes exactly those four physical devices into the GPU container.
+   JIT files stay under `<build>/runtime-cache` outside the source checkout.
    Preserve broker stdout/stderr and the admission receipt. The broker sets
    `CUDA_VISIBLE_DEVICES`; do not set it in the launcher.
 4. After the broker's lease has ended, run `check_after_release.sh <build>
