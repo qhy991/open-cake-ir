@@ -36,6 +36,13 @@ B. The analysis also reports the largest execution-group count and shared/
 tensor allocation among the sequential local Program stages. The Target owns
 the lane width and any actual cooperative residency decision.
 
+`RankedTileAnalysis.check_plan` replays one materialized task plan against
+the declared route IDs. It checks every source/item/route exactly once,
+expert placement, dense per-expert tile indices, valid-row extents, the
+wave-end partial threshold, terminal flush and the static capacities. Its
+publication markers are a serial witness to when rows are *eligible*;
+they do not establish live CUDA memory ordering or concurrent progress.
+
 Using the separately developed model-width Cake Program and source combine
 Schedule with EP4, T512, K8, E128, B128, W4 and a 64-row wave threshold
 produces 1,536 payload slots, 16,384 packed rows, 255 tile tasks and 4,096
@@ -45,6 +52,10 @@ resource requirements**, not allocations or achieved occupancy. At the
 no-early-flush threshold B128 the tile-task bound is 159. The CPU route
 packing study observed 64 tasks per destination rank under the 64-row
 threshold, below the static bound.
+The retained 16,384-route synthetic input and both CPU tile manifests
+replayed through this checker: the 64-row policy has 64 tasks per owner
+(128 early partial plus 128 terminal tasks total), while the no-early policy
+has owner counts 47/53/42/52 (70 full plus 124 terminal tasks total).
 
 The current core API deliberately refuses `lower_ranked_tiles`: no backend
 yet proves device peer ownership, system release/acquire handoffs, exact

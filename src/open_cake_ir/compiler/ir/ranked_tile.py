@@ -6,7 +6,7 @@ runtime route domain, CTA residency and progress before a ranked launch.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from math import ceil
 
@@ -79,6 +79,120 @@ class RankedTileAnalysis:
     required_execution_groups: int
     maximum_shared_bytes: int
     maximum_tensor_bytes: int
+
+    def check_plan(self, expert_ids: Sequence, tasks: Sequence,
+                   *, source_chunk_tokens: int) -> 'RankedTilePlanCheck':
+        """Replay one materialized task plan, without claiming GPU liveness.
+
+        Publication events are a serial witness: `[source_rank, chunk]` for
+        a full tile, `["wave_end", chunk]` for an early partial tile, or
+        `"all_dispatch_done"` for a terminal partial tile. GPU arrival order
+        and release/acquire implementation remain backend responsibilities.
+        """
+        if (type(source_chunk_tokens) is not int or source_chunk_tokens < 1
+                or ceil(self.items_per_rank / source_chunk_tokens)
+                > self.maximum_chunks_per_rank):
+            raise ValueError('tile plan source chunks exceed the admitted bound')
+        if not isinstance(expert_ids, Sequence) or len(expert_ids) != self.world_size:
+            raise ValueError('tile plan source rank count differs')
+        expected: dict[tuple[int, int, int], int] = {}
+        for source_rank, items in enumerate(expert_ids):
+            if not isinstance(items, Sequence) or len(items) != self.items_per_rank:
+                raise ValueError('tile plan source item extent differs')
+            for item, routes in enumerate(items):
+                if not isinstance(routes, Sequence) or len(routes) != self.routes_per_item:
+                    raise ValueError('tile plan route extent differs')
+                if (any(type(expert) is not int or not 0 <= expert < self.experts
+                        for expert in routes)
+                        or len(set(routes)) != len(routes)):
+                    raise ValueError('tile plan expert IDs violate the distinct input domain')
+                expected.update({(source_rank, item, route): expert
+                                 for route, expert in enumerate(routes)})
+        if not isinstance(tasks, Sequence):
+            raise ValueError('tile plan tasks must be a sequence')
+        seen: set[tuple[int, int, int]] = set()
+        next_tile = [0] * self.experts
+        expert_rows = [0] * self.experts
+        owner_rows = [0] * self.world_size
+        owner_tasks = [0] * self.world_size
+        full = early = terminal = 0
+        waves = ceil(self.items_per_rank / source_chunk_tokens)
+        for index, task in enumerate(tasks):
+            if not isinstance(task, Mapping) or set(task) != {
+                    'owner_rank', 'expert_id', 'tile_index', 'valid_rows',
+                    'published_after', 'rows'}:
+                raise ValueError(f'tile plan task {index} fields differ')
+            owner, expert, tile, valid = (task[field] for field in
+                                          ('owner_rank', 'expert_id',
+                                           'tile_index', 'valid_rows'))
+            rows = task['rows']
+            if (any(type(value) is not int for value in
+                    (owner, expert, tile, valid))
+                    or not 0 <= expert < self.experts
+                    or owner != expert // self.experts_per_rank
+                    or tile != next_tile[expert]
+                    or not 1 <= valid <= self.tile_rows
+                    or not isinstance(rows, Sequence) or len(rows) != valid):
+                raise ValueError(f'tile plan task {index} owner, tile or valid rows differ')
+            next_tile[expert] += 1
+            owner_tasks[owner] += 1
+            owner_rows[owner] += valid
+            expert_rows[expert] += valid
+            latest_event = (-1, -1)
+            latest_wave = -1
+            for raw in rows:
+                if (not isinstance(raw, Sequence) or len(raw) != 3
+                        or any(type(part) is not int for part in raw)):
+                    raise ValueError(f'tile plan task {index} route key differs')
+                key = tuple(raw)
+                if key not in expected or key in seen or expected[key] != expert:
+                    raise ValueError(f'tile plan task {index} route is lost, duplicated or misrouted')
+                seen.add(key)
+                source, item, _ = key
+                wave = item // source_chunk_tokens
+                latest_event = max(latest_event, (wave, source))
+                latest_wave = max(latest_wave, wave)
+            publication = task['published_after']
+            if valid == self.tile_rows:
+                if (not isinstance(publication, (list, tuple))
+                        or len(publication) != 2
+                        or any(type(part) is not int for part in publication)
+                        or not 0 <= publication[0] < self.world_size
+                        or not 0 <= publication[1] < waves
+                        or latest_event > (publication[1], publication[0])):
+                    raise ValueError(f'tile plan task {index} full publication precedes a row')
+                full += 1
+            elif (isinstance(publication, (list, tuple))
+                  and len(publication) == 2
+                  and publication[0] == 'wave_end'):
+                wave = publication[1]
+                if (type(wave) is not int or not 0 <= wave < waves - 1
+                        or valid < self.partial_threshold_rows
+                        or latest_wave > wave):
+                    raise ValueError(f'tile plan task {index} early partial publication differs')
+                early += 1
+            elif publication == 'all_dispatch_done':
+                terminal += 1
+            else:
+                raise ValueError(f'tile plan task {index} publication kind differs')
+        if seen != set(expected):
+            raise ValueError('tile plan has missing source return routes')
+        if (any(rows > self.rows_per_expert for rows in expert_rows)
+                or any(rows > self.packed_route_rows_per_rank for rows in owner_rows)
+                or any(count > self.tile_task_slots_per_rank
+                       for count in owner_tasks)):
+            raise ValueError('tile plan exceeds an admitted bin or task capacity')
+        return RankedTilePlanCheck(tuple(owner_tasks), tuple(owner_rows),
+                                   full, early, terminal)
+
+
+@dataclass(frozen=True)
+class RankedTilePlanCheck:
+    tasks_by_owner: tuple[int, ...]
+    rows_by_owner: tuple[int, ...]
+    full_tiles: int
+    early_partial_tiles: int
+    terminal_partial_tiles: int
 
 
 @dataclass(frozen=True)

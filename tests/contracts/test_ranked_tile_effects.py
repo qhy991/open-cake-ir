@@ -35,7 +35,7 @@ def local_tile_program() -> Program:
     return Program.from_dict(document)
 
 
-def combine() -> Schedule:
+def combine(tokens: int = 8) -> Schedule:
     document=json.loads((ROOT/'examples/schedules/triton/'
                          'weave-weighted-combine-t8-h16.json').read_text())
     document['target']='sm_103a'
@@ -45,7 +45,28 @@ def combine() -> Schedule:
             'summed':[256],'rounded':[256]}
     for buffer in document['buffers']:
         buffer['shape']=shapes[buffer['name']]
+        if buffer['name'] in ('contributions','weights','output'):
+            buffer['shape'][0]=tokens
     return Schedule.from_dict(document)
+
+
+def two_wave_plan():
+    ids=[[[0,1] if token%2==0 else [2,3] for token in range(64)]
+         for _ in range(4)]
+    tasks=[]
+    for expert in range(4):
+        for wave in range(2):
+            rows=[(source,token,route)
+                  for source in range(4)
+                  for token in range(wave*32,(wave+1)*32)
+                  for route,value in enumerate(ids[source][token])
+                  if value==expert]
+            tasks.append({'owner_rank':expert//2,'expert_id':expert,
+                          'tile_index':wave,'valid_rows':len(rows),
+                          'published_after':['wave_end',0] if wave==0
+                                            else 'all_dispatch_done',
+                          'rows':rows})
+    return ids,tasks
 
 
 class RankedTileEffectsContract(unittest.TestCase):
@@ -117,6 +138,35 @@ class RankedTileEffectsContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'combine shape'):
             RankedTileEffects.from_dict(base).analyze(
                 local_tile_program(),Schedule.from_dict(wrong))
+
+    def test_materialized_two_wave_plan_preserves_every_return_key(self):
+        effects=RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
+        analysis=effects.analyze(local_tile_program(),combine(64))
+        ids,tasks=two_wave_plan()
+        checked=analysis.check_plan(ids,tasks,source_chunk_tokens=32)
+        self.assertEqual(checked.tasks_by_owner,(4,4,0,0))
+        self.assertEqual(checked.rows_by_owner,(256,256,0,0))
+        self.assertEqual((checked.full_tiles,checked.early_partial_tiles,
+                          checked.terminal_partial_tiles),(0,4,4))
+
+    def test_plan_refuses_duplicate_route_and_premature_partial(self):
+        effects=RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
+        analysis=effects.analyze(local_tile_program(),combine(64))
+        ids,tasks=two_wave_plan()
+        duplicate=deepcopy(tasks)
+        duplicate[0]['rows'][1]=duplicate[0]['rows'][0]
+        with self.assertRaisesRegex(ValueError,'duplicated'):
+            analysis.check_plan(ids,duplicate,source_chunk_tokens=32)
+        premature=deepcopy(tasks)
+        premature[1]['published_after']=['wave_end',0]
+        with self.assertRaisesRegex(ValueError,'early partial'):
+            analysis.check_plan(ids,premature,source_chunk_tokens=32)
+        with self.assertRaisesRegex(ValueError,'chunks exceed'):
+            analysis.check_plan(ids,tasks,source_chunk_tokens=1)
+        bad_ids=deepcopy(ids)
+        bad_ids[0][0]=[0,0]
+        with self.assertRaisesRegex(ValueError,'distinct input'):
+            analysis.check_plan(bad_ids,tasks,source_chunk_tokens=32)
 
 
 if __name__=='__main__':

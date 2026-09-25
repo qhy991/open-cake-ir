@@ -26,7 +26,7 @@ from .performance.compiled_resources import CompiledResources
 from .performance.empirical_cost import EmpiricalCostModel
 from .ir import Program, ProgramBinding, ProgramStage, ProgramTensor
 from .ir import RankedMailboxAnalysis, RankedMailboxEffects
-from .ir import RankedTileAnalysis, RankedTileEffects
+from .ir import RankedTileAnalysis, RankedTileEffects, RankedTilePlanCheck
 from .program import LoweredProgram, LoweredRankedMailbox
 from .program_passes import ProgramRewriteResult, TRANSFORMATIONS
 from .ir import LoweringBackend, LoweringRoute, Schedule, ScheduleParseError
@@ -46,6 +46,7 @@ __all__ = [
     "RankedMailboxEffects",
     "RankedTileAnalysis",
     "RankedTileEffects",
+    "RankedTilePlanCheck",
     "LoweredProgram",
     "LoweredRankedMailbox",
     "Assessment",
