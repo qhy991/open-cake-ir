@@ -20,6 +20,7 @@ output_parent=$(dirname "$output_root")
 mkdir -p "$output_parent"
 docker run --rm --network none --user "$(id -u):$(id -g)" \
   -e HOME=/tmp/weave-td-home -e NVIDIA_VISIBLE_DEVICES=void \
+  -e OPENBLAS_NUM_THREADS=8 -e OMP_NUM_THREADS=8 -e MKL_NUM_THREADS=8 \
   -v "$build_root:/build:ro" -v "$adapter_root:/adapter:ro" \
   -v "$output_parent:/outputs" -w /adapter \
   lmsysorg/sglang:latest-cu130-runtime \

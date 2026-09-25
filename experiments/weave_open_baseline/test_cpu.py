@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,16 @@ def small_contract() -> dict:
 
 
 class CpuOracleTest(unittest.TestCase):
+    def test_device_launcher_refuses_without_broker_lease(self):
+        directory = str(Path(__file__).parent)
+        environment = {key: value for key, value in os.environ.items()
+                       if not key.startswith("GPUQ_")}
+        result = subprocess.run([str(Path(directory) / "run_under_broker.sh"),
+                                 directory, directory, directory, directory],
+                                capture_output=True, text=True, check=False, env=environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("broker-issued exclusive", result.stderr)
+
     def test_bf16_rounds_ties_to_even(self):
         values = np.array([1.0 + 1.0 / 256.0, 1.0 + 3.0 / 256.0], dtype=np.float32)
         np.testing.assert_array_equal(round_bf16(values), [1.0, 1.0 + 2.0 / 128.0])
