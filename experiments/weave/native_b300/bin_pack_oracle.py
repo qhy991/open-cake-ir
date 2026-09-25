@@ -12,9 +12,11 @@ LOCAL_E, MAX_ROWS = E // R, R * T
 ROUTES = R * T * K
 
 
-def verify_rows(root: Path, *, observed_global_ids: bool = True) -> list[dict]:
-    hidden_bytes = (root / 'hidden.bf16').read_bytes()
-    ids_bytes = (root / 'expert_ids.i32').read_bytes()
+def verify_rows(root: Path, *, observed_global_ids: bool = True,
+                input_root: Path | None = None) -> list[dict]:
+    source = root if input_root is None else input_root
+    hidden_bytes = (source / 'hidden.bf16').read_bytes()
+    ids_bytes = (source / 'expert_ids.i32').read_bytes()
     if len(hidden_bytes) != R*T*H*2 or len(ids_bytes) != ROUTES*4:
         raise ValueError('source BF16 row or expert-id extent differs')
     hidden = np.frombuffer(hidden_bytes, dtype='<u2').reshape(R*T, H)
