@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +16,7 @@ import numpy as np
 from data import compare_outputs, load_contract, make_rank, reference, round_bf16
 from runner import input_observation, load_rank_snapshot
 from runner_sglang_deepep import load_experiment
+from verify_broker_lease import verify
 
 
 def small_contract() -> dict:
@@ -25,6 +27,26 @@ def small_contract() -> dict:
 
 
 class CpuOracleTest(unittest.TestCase):
+    def test_live_broker_receipt_must_match_all_four_devices(self):
+        receipt = {"schema": "gpuq.admission-receipt.v1", "job_id": "gpuq-test",
+                   "mode": "exclusive", "gpu_count": 4, "gpu_ids": [0, 2, 3, 4],
+                   "broker_instance_id": "instance", "owner": "researcher",
+                   "receipt_sha256": "saved-receipt-id"}
+        status = {"probe_error": None, "instance_id": "instance", "running": [{
+            "job_id": "gpuq-test", "mode": "exclusive", "gpu_count": 4,
+            "gpu_ids": [0, 2, 3, 4], "owner": "researcher",
+            "admission_receipt_sha256": "saved-receipt-id"}]}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "admission.json"
+            path.write_text(json.dumps(receipt))
+            with (patch("verify_broker_lease.subprocess.check_output",
+                        side_effect=lambda *args, **kwargs: json.dumps(status)),
+                  patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "0,2,3,4"})):
+                self.assertEqual(verify(path), ("gpuq-test", "0,2,3,4"))
+                status["running"][0]["gpu_ids"] = [0, 1, 3, 4]
+                with self.assertRaisesRegex(RuntimeError, "differs"):
+                    verify(path)
+
     def test_fallback_contract_reuses_exact_model_scale_input(self):
         experiment, workload = load_experiment()
         self.assertEqual(experiment["geometry"], workload["geometry"])

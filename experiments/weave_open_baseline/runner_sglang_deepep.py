@@ -85,8 +85,7 @@ def preflight(experiment: dict, workload: dict, input_dir: Path) -> dict:
 
 
 def run(experiment: dict, workload: dict, input_dir: Path, output_dir: Path) -> None:
-    if (not os.environ.get("GPUQ_JOB_ID") or os.environ.get("GPUQ_MODE") != "exclusive"
-            or os.environ.get("GPUQ_BACKEND") != "nvidia"):
+    if not os.environ.get("WEAVE_BROKER_JOB_ID") or not os.environ.get("WEAVE_BROKER_DEVICE_IDS"):
         raise RuntimeError("GPU execution requires a broker-issued exclusive NVIDIA lease")
     import torch
     import torch.distributed as dist
@@ -170,8 +169,8 @@ def run(experiment: dict, workload: dict, input_dir: Path, output_dir: Path) -> 
                 "experiment_id": experiment["experiment_id"],
                 "sglang_commit": experiment["source"]["sglang_commit"],
                 "deep_ep_version": experiment["source"]["deep_ep_version"],
-                "broker_job_id": os.environ["GPUQ_JOB_ID"],
-                "broker_device_ids": os.environ["GPUQ_DEVICE_IDS"],
+                "broker_job_id": os.environ["WEAVE_BROKER_JOB_ID"],
+                "broker_device_ids": os.environ["WEAVE_BROKER_DEVICE_IDS"],
                 "input_snapshot_experiment_id": workload["experiment_id"],
                 "chunk_tokens_per_rank": chunk_tokens,
                 "chunks_per_rank": experiment["execution"]["chunks_per_rank"],

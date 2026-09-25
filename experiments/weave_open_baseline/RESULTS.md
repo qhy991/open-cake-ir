@@ -1,8 +1,9 @@
 # EP4 open baseline execution record
 
 Status: **CPU source and adapter gates pass; device qualification pending.**
-No GPU lease, oracle comparison, profiler trace or comparable latency has been
-produced for this baseline yet.
+One fallback broker request failed in its admission wrapper before CUDA. No
+device forward, oracle comparison, profiler trace or comparable latency has
+been produced yet.
 
 ## Fixed sources
 
@@ -111,7 +112,7 @@ reports `qualified_latency_ns: null` and a measurement-coverage limitation.
 A completed source build, CUDA 13 dependency correction/import probe, four-card
 broker admission, device output, after-release oracle comparison and profiler
 remain open gates. The create-only CPU model-scale oracle has already completed
-as recorded above. No baseline GPU lease was requested. The bounded CPU build
+as recorded above. The TD candidate did not request a GPU lease. Its bounded CPU build
 container was stopped and verified absent; the broker had no running jobs in
 the final read-only snapshot.
 
@@ -134,3 +135,15 @@ reported the exact SGLang source commit, package versions, source syntax and
 `/home/qinhaiyan/weave-td-build-20260925/sglang-preflight-image-pinned.log`.
 Device correctness, profiler and qualified timing are still pending at this
 point; see [fallback reproduction steps](README_SGLANG_DEEPEP.md).
+
+The first fallback broker request, `gpuq-fbf6458ba421`, was admitted for four
+physical GPUs and then failed in the launcher **before Docker/CUDA**. The
+launcher expected `GPUQ_JOB_ID/GPUQ_MODE/GPUQ_BACKEND`; the running B300-M4
+broker v0.6 injects only `CUDA_VISIBLE_DEVICES` into child commands. The
+receipt and `broker.log` are retained under
+`/home/qinhaiyan/weave-sglang-deepep-ep4-run-d78c69c9-20260925/`.
+Live broker status confirmed terminal failure and released devices. A
+successor launcher validates the saved broker-issued receipt against live
+broker status, including job identity, exclusive four-GPU allocation and
+visibility, before passing only those devices into Docker. This is an
+admission-boundary correction, not device correctness evidence.

@@ -102,7 +102,7 @@ def _run_on_broker(document: dict, upstream: Path, input_dir: Path,
     import torch.distributed as dist
 
     shape = document["geometry"]
-    if not os.environ.get("GPUQ_JOB_ID") or os.environ.get("GPUQ_MODE") != "exclusive":
+    if not os.environ.get("WEAVE_BROKER_JOB_ID") or not os.environ.get("WEAVE_BROKER_DEVICE_IDS"):
         raise RuntimeError("GPU execution requires a broker-issued exclusive lease")
     if int(os.environ.get("WORLD_SIZE", "0")) != 4 or torch.cuda.device_count() != 4:
         raise RuntimeError("EP4 requires exactly four broker-mapped CUDA devices")
@@ -167,8 +167,8 @@ def _run_on_broker(document: dict, upstream: Path, input_dir: Path,
             (output_dir / "device-observation.json").write_text(json.dumps({
                 "experiment_id": document["experiment_id"],
                 "upstream_commit": document["upstream"]["commit"],
-                "broker_job_id": os.environ["GPUQ_JOB_ID"],
-                "broker_device_ids": os.environ["GPUQ_DEVICE_IDS"],
+                "broker_job_id": os.environ["WEAVE_BROKER_JOB_ID"],
+                "broker_device_ids": os.environ["WEAVE_BROKER_DEVICE_IDS"],
                 "geometry": shape,
                 "cpu_input_numpy_version": np.__version__,
                 "configuration": {"num_sm": 64, "capacity": 4.0, "num_buffers": 1,

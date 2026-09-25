@@ -37,8 +37,10 @@ T7/T8 workload or the paper's original SGLang v0.5.9 path.
    asking for GPUs. Submit `run_sglang_under_broker.sh <cpu-input-dir>
    <new-output-dir>` as the child of `gpu-run --mode exclusive --gpu-count 4`,
    with `--receipt-out <new-output-dir>/admission.json` and a bounded run
-   timeout. The broker supplies physical device IDs; the wrapper exposes only
-   those four IDs to Docker and checks the broker-owned job identity.
+   timeout. The B300-M4 broker v0.6 supplies `CUDA_VISIBLE_DEVICES` but no
+   `GPUQ_JOB_ID` environment field. The wrapper compares its broker-issued
+   admission receipt with live broker status and visibility, then exposes only
+   those four physical device IDs to Docker.
 3. After the broker has released the lease, run
    `python3.12 runner_sglang_deepep.py check --inputs <cpu-input-dir>
    --output <device-output-dir>` using a CPU-only host Python with NumPy.

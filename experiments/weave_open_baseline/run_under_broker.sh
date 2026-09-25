@@ -11,20 +11,13 @@ input_root=$(realpath "$3")
 output_root=$(realpath "$4")
 cache_root=$build_root/runtime-cache
 adapter_root=$(cd "$(dirname "$0")" && pwd)
-if [[ -z ${GPUQ_JOB_ID:-} || ${GPUQ_MODE:-} != exclusive || ${GPUQ_BACKEND:-} != nvidia ]]; then
+if [[ ! -f $output_root/admission.json ]]; then
   echo "This adapter requires a broker-issued exclusive NVIDIA lease" >&2
   exit 1
 fi
-if [[ ${CUDA_VISIBLE_DEVICES:-} != "${GPUQ_DEVICE_IDS:-}" ]]; then
-  echo "Broker visibility and device allocation disagree" >&2
-  exit 1
-fi
-IFS=, read -ra device_ids <<< "$GPUQ_DEVICE_IDS"
-if [[ ${#device_ids[@]} != 4 ]]; then
-  echo "This EP4 run requires exactly four broker-allocated GPUs" >&2
-  exit 1
-fi
-if [[ ! -f $input_root/cpu-oracle-observation.json || ! -f $output_root/admission.json || -e $output_root/device-observation.json ]]; then
+lease_info=$(python3 "$adapter_root/verify_broker_lease.py" "$output_root/admission.json")
+read -r broker_job_id broker_device_ids <<< "$lease_info"
+if [[ ! -f $input_root/cpu-oracle-observation.json || -e $output_root/device-observation.json ]]; then
   echo "Expected new output with broker admission receipt" >&2
   exit 1
 fi
@@ -40,10 +33,10 @@ for rank in 0 1 2 3; do
 done
 
 docker run --rm --network host --ipc host \
-  --gpus "\"device=$GPUQ_DEVICE_IDS\"" \
+  --gpus "\"device=$broker_device_ids\"" \
   --user "$(id -u):$(id -g)" \
   -e HOME=/cache -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
-  -e GPUQ_JOB_ID -e GPUQ_MODE -e GPUQ_DEVICE_IDS \
+  -e WEAVE_BROKER_JOB_ID="$broker_job_id" -e WEAVE_BROKER_DEVICE_IDS="$broker_device_ids" \
   -v "$source_root:/src:ro" -v "$build_root:/build:ro" \
   -v "$cache_root:/cache" \
   -v "$adapter_root:/adapter:ro" -v "$input_root:/inputs:ro" \
