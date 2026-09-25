@@ -141,6 +141,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                 op.kind is OperationKind.ATOMIC_RMW for op in s.operations):
             from .native_cuda_pointwise import preflight as pointwise_preflight
             return pointwise_preflight(s, target)
+        if (any(op.kind is OperationKind.ATOMIC_RMW for op in s.operations)
+                and any(buffer.dtype is DType.BF16 for buffer in s.buffers)):
+            from .native_cuda_expert_bin import preflight as bin_preflight
+            return bin_preflight(s, target)
         from .native_cuda_work_claim import preflight as work_claim_preflight
         return work_claim_preflight(s, target)
     def check(ok, code, path, message):
@@ -1023,6 +1027,10 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
                 op.kind is OperationKind.ATOMIC_RMW for op in schedule.operations):
             from .native_cuda_pointwise import Emitter as PointwiseEmitter
             return PointwiseEmitter(schedule,target,schedule.lowering.entry_point).emit()
+        if (any(op.kind is OperationKind.ATOMIC_RMW for op in schedule.operations)
+                and any(buffer.dtype is DType.BF16 for buffer in schedule.buffers)):
+            from .native_cuda_expert_bin import Emitter as ExpertBinEmitter
+            return ExpertBinEmitter(schedule,target,schedule.lowering.entry_point).emit()
         from .native_cuda_work_claim import Emitter as WorkClaimEmitter
         return WorkClaimEmitter(schedule,target,schedule.lowering.entry_point).emit()
     return _Emitter(schedule,target,schedule.lowering.entry_point).emit()

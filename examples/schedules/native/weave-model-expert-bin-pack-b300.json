@@ -1,0 +1,404 @@
+{
+  "schema_version": 2,
+  "schedule_id": "weave-model-expert-bin-pack-b300",
+  "target": "sm_103a",
+  "roles": [
+    {
+      "name": "pack",
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "expert_ids_local",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        2048,
+        8
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "token_index",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        2048,
+        8
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "route_key_input",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        2048,
+        8
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "hidden",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        2048,
+        2048
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "counts",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        32
+      ],
+      "mode": "state"
+    },
+    {
+      "name": "route_keys",
+      "space": "global",
+      "dtype": "int32",
+      "shape": [
+        32,
+        2048
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "packed",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        32,
+        2048,
+        2048
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "expert",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "token",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "key",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "row",
+      "space": "register",
+      "dtype": "int32",
+      "shape": [
+        1
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "hidden_tile",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        1,
+        2048
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_expert",
+      "kind": "load",
+      "role": "pack",
+      "reads": [
+        "expert_ids_local"
+      ],
+      "writes": [
+        "expert"
+      ],
+      "parameters": {
+        "movement": "global"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "load_token",
+      "kind": "load",
+      "role": "pack",
+      "reads": [
+        "token_index"
+      ],
+      "writes": [
+        "token"
+      ],
+      "parameters": {
+        "movement": "global"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "load_key",
+      "kind": "load",
+      "role": "pack",
+      "reads": [
+        "route_key_input"
+      ],
+      "writes": [
+        "key"
+      ],
+      "parameters": {
+        "movement": "global"
+      },
+      "depends_on": []
+    },
+    {
+      "id": "reserve_row",
+      "kind": "atomic_rmw",
+      "role": "pack",
+      "reads": [
+        "counts",
+        "expert"
+      ],
+      "writes": [
+        "counts",
+        "row"
+      ],
+      "parameters": {
+        "op": "add",
+        "value": 1,
+        "order": "relaxed",
+        "scope": "device"
+      },
+      "depends_on": [
+        "load_expert"
+      ]
+    },
+    {
+      "id": "load_hidden",
+      "kind": "load",
+      "role": "pack",
+      "reads": [
+        "hidden",
+        "token"
+      ],
+      "writes": [
+        "hidden_tile"
+      ],
+      "parameters": {
+        "movement": "global"
+      },
+      "depends_on": [
+        "load_token"
+      ]
+    },
+    {
+      "id": "store_key",
+      "kind": "store",
+      "role": "pack",
+      "reads": [
+        "key",
+        "expert",
+        "row"
+      ],
+      "writes": [
+        "route_keys"
+      ],
+      "parameters": {
+        "coalesced": true
+      },
+      "depends_on": [
+        "load_key",
+        "reserve_row"
+      ]
+    },
+    {
+      "id": "store_hidden",
+      "kind": "store",
+      "role": "pack",
+      "reads": [
+        "hidden_tile",
+        "expert",
+        "row"
+      ],
+      "writes": [
+        "packed"
+      ],
+      "parameters": {
+        "coalesced": true
+      },
+      "depends_on": [
+        "load_hidden",
+        "reserve_row"
+      ]
+    }
+  ],
+  "outputs": [
+    "route_keys",
+    "packed"
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "token_axis",
+        "axis": 0,
+        "buffer": "expert_ids_local",
+        "dimension": 0,
+        "tile": 1
+      },
+      {
+        "name": "route_axis",
+        "axis": 1,
+        "buffer": "expert_ids_local",
+        "dimension": 1,
+        "tile": 1
+      }
+    ],
+    "persistent": false
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_expert",
+      "buffer": "expert_ids_local",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token_axis"
+        },
+        {
+          "source": "program",
+          "name": "route_axis"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_token",
+      "buffer": "token_index",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token_axis"
+        },
+        {
+          "source": "program",
+          "name": "route_axis"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_key",
+      "buffer": "route_key_input",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token_axis"
+        },
+        {
+          "source": "program",
+          "name": "route_axis"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "reserve_row",
+      "buffer": "counts",
+      "indices": [
+        {
+          "source": "buffer",
+          "name": "expert"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_hidden",
+      "buffer": "hidden",
+      "indices": [
+        {
+          "source": "buffer",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_key",
+      "buffer": "route_keys",
+      "indices": [
+        {
+          "source": "buffer",
+          "name": "expert"
+        },
+        {
+          "source": "buffer",
+          "name": "row"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_hidden",
+      "buffer": "packed",
+      "indices": [
+        {
+          "source": "buffer",
+          "name": "expert"
+        },
+        {
+          "source": "buffer",
+          "name": "row"
+        },
+        {
+          "source": "dimension",
+          "dimension": 2
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_weave_model_expert_bin_pack"
+  }
+}
