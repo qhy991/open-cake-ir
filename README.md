@@ -26,7 +26,7 @@ An open research system for agent-driven GPU kernel and compiler co-evolution.</
 
 | 你想做什么 | 直接入口 | 能看到什么 |
 |---|---|---|
-| 第一次了解或运行项目 | [快速开始](#快速开始) · [入门教程](docs/GETTING_STARTED.md) | 安装、无需 GPU 的检查与源码生成 |
+| 第一次了解或运行项目 | [快速开始](#快速开始) · [入门教程](docs/GETTING_STARTED.md) · [Wiki 导览](docs/wiki/README.md) | 安装、无需 GPU 的检查与源码生成 |
 | 阅读或引用技术报告 | [PDF 正文](docs/open-cake-ir-technical-report.pdf) · [TeX 源码](docs/open-cake-ir-technical-report.tex) · [引用与配套专题](docs/README.md) | 设计、实例、方法、结果及其证据范围 |
 | 查看 FlashInfer 改写与外部实现差距 | [逐任务实验综述](docs/results/nvidia/FLASHINFER_STATUS.md) | starter 身份、配对性能、正确性、失败边与未完成项 |
 | 查看各硬件成果和使用方法 | [实验结果](#按硬件查看成果) · [硬件指南](#硬件指南) | 已收录观察、平台工具链和验收范围 |
