@@ -181,8 +181,22 @@ readout, then stores the next BF16 state and publishes the next phase. The per-t
 MMA completion barrier is drained and invalidated before reuse. Dynamic chunk bounds,
 multiple carried tiles, KDA normalization, triangular solve and five-role overlap
 remain outside this route. Core IR and native emission have CPU contract and Corpus
-Gate coverage; both generated CUDA witnesses still need exact-target NVCC and B300
-numerical validation. Neither witness is a KDA prefill performance candidate.
+Gate coverage. The root and two-chunk generated CUDA witnesses now compile for exact
+`sm_103a` without spills and pass three-seed, complete-output broker-shared B300
+numerical checks; their immutable inputs remain unchanged. Neither witness is a
+complete KDA prefill or a performance result.
+
+The KDA base-key/query contraction needs K128 with a dynamic TMEM A tile. The
+earlier K-major B stage is refused because one BF16 row occupies 256 bytes, beyond
+the backend's modeled 128-byte swizzle row. A standalone edited PTX probe then
+qualified one MN-major B mapping on B300: physical B `[K128,N32]`, 64-byte
+swizzle, B-major instruction bit, and a 1024-byte shared-descriptor step per K16.
+Its three-seed 128x32 FP32 outputs pass the independent product; the probe is
+not a Cake lowering. The successor native route admits exactly BF16 TMEM-A
+M128/N32/K128 with that swizzle on `sm_103a`, and refuses other geometries by
+`NATIVE_MN_MAJOR_B_UNQUALIFIED`. The shared verifier reads the declared major
+mode to require B `[K,N]` only when MN-major is named. Generated-source NVCC,
+B300 execution and the complete recurrent KDA state consumer are separate gates.
 
 Native examples are complete hardware Schedules, not backend-renamed Triton inputs.
 The KMeans core explicitly takes `centroid_sq`, matching the existing portfolio runtime
@@ -203,8 +217,8 @@ the exact device, records buffers and configures shared memory. It does not copy
 compute norms or run kernels. Launch checks the device binding and launches on the
 supplied stream. The caller owns all buffer storage and synchronization. The handle must
 outlive queued launches. The emitted metadata is a projection of Schedule/Target, not a
-second workload registry. GPU correctness is pending until the separate qualification
-worker evaluates the unchanged oracle and case requirements.
+second workload registry. Every new route still needs a separate qualification
+worker against its unchanged oracle and case requirements.
 
 ## Completion phases and nested reduction scopes
 

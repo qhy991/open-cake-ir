@@ -29,6 +29,9 @@ _TYPES = {DType.BF16: '__nv_bfloat16', DType.FP16: '__half',
           DType.FP32: 'float', DType.INT32: 'int32_t'}
 _SWIZZLE = {Swizzle.B32: (32, 6), Swizzle.B64: (64, 4), Swizzle.B128: (128, 2)}
 _CONTRACT = 'tcgen05.mma.cta_group::1.kind::f16'
+# Exact B300 device proof: BF16 TMEM-A M128 x MN-major B N32 x K128,
+# swizzle-64B shared B, in F-2026-09-24-003. Other geometries remain refused.
+_TMEM_A_MN_B_EVIDENCE = frozenset({'sm_103a'})
 
 
 def _scope(s, op):
@@ -360,6 +363,8 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             p = op.parameters; instruction = p.instruction
             tensor_a = (len(op.reads) == 2
                         and buffers[op.reads[0]].space is MemorySpace.TENSOR)
+            major = instruction.operand_major if instruction is not None else None
+            mn_b = major == (OperandMajorMode.K, OperandMajorMode.MN)
             placement = (
                 (tensor_a and instruction is not None
                  and instruction.operand_source is OperandSource.TENSOR
@@ -370,7 +375,8 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             )
             good = (instruction is not None and instruction.contract == _CONTRACT
                     and instruction.cta_group == 1 and placement
-                    and instruction.operand_major == (OperandMajorMode.K, OperandMajorMode.K)
+                    and (major == (OperandMajorMode.K, OperandMajorMode.K)
+                         or tensor_a and mn_b)
                     and p.tile_shape is not None and instruction.shape == (128,p.tile_shape[1],16)
                     and p.tile_shape[0] == 128 and 8 <= p.tile_shape[1] <= 256 and p.tile_shape[1] % 8 == 0
                     and len(op.reads) == 2
@@ -379,18 +385,28 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                     and dst.space is MemorySpace.TENSOR)
             check(good, 'NATIVE_MMA_CONTRACT', path+'.parameters.instruction',
                   'native MMA requires explicit M128/N8..256/K16 f16-family and either shared/shared or TMEM-A/shared-B operands')
+            if mn_b:
+                b_operand = buffers[op.reads[1]] if len(op.reads) == 2 else None
+                check(tensor_a and target.target_id in _TMEM_A_MN_B_EVIDENCE
+                      and p.tile_shape == (128, 32, 128)
+                      and b_operand is not None and b_operand.dtype is DType.BF16
+                      and b_operand.swizzle is Swizzle.B64,
+                      'NATIVE_MN_MAJOR_B_UNQUALIFIED', path+'.parameters.instruction.operand_major',
+                      'MN-major shared B is qualified only for BF16 TMEM-A M128/N32/K128 on sm_103a with 64-byte swizzle')
             if p.k_ranges is not None:
                 check(good and all(endpoint % instruction.shape[2] == 0
                                    for interval in p.k_ranges for endpoint in interval),
                       'NATIVE_MMA_K_RANGES', path+'.parameters.k_ranges',
                       'native K contributions require the f16-family contract and endpoints aligned to its declared instruction K')
             if p.tile_shape is not None:
+                b_shape = ((p.tile_shape[2], p.tile_shape[1]) if mn_b
+                           else (p.tile_shape[1], p.tile_shape[2]))
                 check(len(op.reads) == 2
                       and buffers[op.reads[0]].shape == (p.tile_shape[0], p.tile_shape[2])
-                      and buffers[op.reads[1]].shape == (p.tile_shape[1], p.tile_shape[2])
+                      and buffers[op.reads[1]].shape == b_shape
                       and dst.shape == p.tile_shape[:2],
                       'NATIVE_MMA_TILE_DOMAIN', path+'.parameters.tile_shape',
-                      'the full input and result tile domains must match A[M,K], B[N,K] and result[M,N]')
+                      'the full tile domains must match A[M,K], B[N,K] for K-major or B[K,N] for MN-major, and result[M,N]')
             check(len(op.reads) == 2 and all(
                 name in writers and writers[name].kind is (
                     OperationKind.TMEM_STORE if buffers[name].space is MemorySpace.TENSOR
@@ -835,7 +851,9 @@ class _Emitter:
                     a,b = [self.b(n) for n in op.reads]; dst=self.b(op.writes[0])
                     m,n,k = op.parameters.tile_shape
                     dtype_bit = 1 if a.dtype is DType.BF16 else 0
-                    desc = (1<<4) | (dtype_bit<<7) | (dtype_bit<<10) | ((n>>3)<<17) | ((m>>4)<<24)
+                    mn_b = op.parameters.instruction.operand_major[1] is OperandMajorMode.MN
+                    desc = ((1<<4) | (dtype_bit<<7) | (dtype_bit<<10)
+                            | (int(mn_b)<<16) | ((n>>3)<<17) | ((m>>4)<<24))
                     atom_k = op.parameters.instruction.shape[2]
                     ranges = op.parameters.contribution_ranges
                     first_atom = ranges[0][0] // atom_k
@@ -844,7 +862,8 @@ class _Emitter:
                         self.begin(f'for (int atom={start//atom_k}; atom<{end//atom_k}; ++atom)')
                         if a.space is MemorySpace.TENSOR:
                             width,mode = _SWIZZLE[b.swizzle]
-                            b_desc = f'cake_desc(cake_smem({self.pointer(b,"stage")}) + atom*{atom_k*b.dtype.itemsize}, {width*8}, {mode})'
+                            b_step = atom_k*b.dtype.itemsize*(n if mn_b else 1)
+                            b_desc = f'cake_desc(cake_smem({self.pointer(b,"stage")}) + atom*{b_step}, {width*8}, {mode})'
                             self.line(f'cake_mma_tmem_a({self.taddr(dst)}, {self.taddr(a)} + atom*{atom_k//2}, {b_desc}, {desc}u, {var} != 0 || atom != {first_atom});')
                         else:
                             expr=[]
