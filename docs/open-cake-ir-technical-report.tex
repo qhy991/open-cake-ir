@@ -1179,6 +1179,42 @@ Triton chunk16、V tile32 & 456.259 & 83,264.993 & 182.495$\times$ \\
 该状态与同步合同，再做同一形状的设备验证；目前没有可称为 CAKE 性能提升的
 KDA 结果。完整实验路径由本地 Finding \code{F-2026-09-24-003} 索引。
 
+\paragraph{2026 年 9 月 25 日组件后继。}
+Cake 生成的 TMEM-A 根收缩、双 chunk 状态传递，以及 BF16 $K=128$ 的
+MN-major B 收缩，现均在精确 B300 上通过三组完整输出检查；这三项仍不是完整
+KDA。七输出融合预处理也已通过 H64/T8192 的全部元素检查，包含参考值和设备值
+的有限性检查。其冷 L2 CUPTI 诊断见表\ref{tab:kda-b300-prep-followup}。
+
+\begin{table}[htbp]
+\centering\small\renewcommand{\arraystretch}{1.12}
+\caption{B300-M4 固定 H64/T8192 的不同计算范围诊断中位数（$\mu$s）。各行来自
+不同作业，未进行成对性能比较；预处理行只产出中间值，不能与完整 prefill 行
+当作同一算子的加速比。预处理各有五轮、每轮 25 次 CUPTI 冷 L2 样本。}
+\label{tab:kda-b300-prep-followup}
+\begin{tabularx}{\textwidth}{@{}Y r Y@{}}
+\toprule
+范围 & 中位数 & 当前结论 \\
+\midrule
+适配 CAKE 完整 prefill & 456.034 & 单内核完整输出及最终状态通过 \\
+21-MMA 七输出预处理 & 637.606 & 组件正确；单阶段已超过参考完整内核 \\
+2-MMA 七输出预处理 & 389.507 & 组件正确；状态内核尚未实现和计时 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+\FloatBarrier
+
+后继将显式逆矩阵的 18 个 BF16 MMA 改为待实现的逐 token 三角求解：CPU 上
+以严格下三角 BF16 系数 $P$ 计算
+$U_t=RHS_t+\sum_{i<t}P_{t,i}U_i$，再将 $U$ 舍入为 BF16 供输出及状态收缩。
+T65、T257 和完整 H64/T8192 的独立逐 token oracle 均通过。改动同时把
+预处理的编译后寄存器数从 227 降到 185、动态 shared 从 32~KiB 降到
+24~KiB；组件延迟减少 248.099\,$\mu$s，但这几项变化共同发生，现有
+数据不能把收益拆归到单一原因。按不同作业的中位数相减，新的预处理距旧参考
+完整内核仅余约 66.527\,$\mu$s；这只是非配对的设计余量，不是端到端收益。
+Nsight Compute 因 \code{ERR\_NVGPUCTRPERM} 无法读取性能计数器，因此尚无
+硬件计数器归因。原生状态消费者、成对完整任务计时，以及高保留门值下逐 token
+BF16 状态舍入导致的最终状态失败，仍需分别解决。
+
 \section{跨硬件复用：从一次改写到可检验的收益}
 
 \subsection{可复用的是机制，参数要在目标卡重选}
