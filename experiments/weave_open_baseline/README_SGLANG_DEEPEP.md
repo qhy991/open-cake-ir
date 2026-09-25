@@ -53,3 +53,27 @@ through final weighted combine and synchronization, with qualified latency
 left null. The `sm_103a` CUPTI/L2-reset timer inputs currently return ENODEV,
 so no Cake-vs-fallback latency or speedup can be published. A profiler trace
 and a qualified common timer remain separate gates.
+
+## Numerical successor contract
+
+The first full-scale synthetic input used a fixed 0.1 standard deviation for
+all expert matrices, independent of their input width. Its FP64 oracle output
+has mean magnitude about 3, and the executed SGLang BF16 layer failed the
+predeclared `0.01 + 0.01·|reference|` elementwise tolerance. The failure and
+device outputs are retained. Separate CPU references that round BF16 after
+each FFN tensor boundary reduced the failure count sharply but did not pass
+the same tolerance; those analyses do not replace the FP64 oracle.
+
+`model_scale_inputs_fanin_v2.json` is an **independent successor input
+distribution**, not a revision of the failed result. It keeps EP4, 2,048
+tokens, E128/K8/H2048/I768, seed, route IDs and route weights, but declares
+unit-variance activations and expert weight standard deviations
+`1/sqrt(H)` for gate/up and `1/sqrt(I)` for down. This gives a documented
+fan-in scale for synthetic weights; it is not a claim about measured Qwen3
+weights or ShareGPT routes. The FP64 CPU oracle and original tolerance stay
+the same. `create_fanin_oracle.py` creates a fresh input/oracle directory before
+GPU time and checks that an all-zero output fails substantially. Pass
+`contract_sglang_deepep_fanin_v2.json` as the optional contract name to the
+CPU preflight and broker launcher, then pass the corresponding full path to
+`runner_sglang_deepep.py check`. A v2 pass would qualify only this separate
+model-scale synthetic setting, leaving v1's failure intact.

@@ -17,21 +17,28 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from data import compare_outputs, load_contract
+from data import compare_outputs, load_contract, load_fanin_contract
 from runner import load_rank_snapshot
 
 
 HERE = Path(__file__).resolve().parent
 CONTRACT = HERE / "contract_sglang_deepep.json"
+FANIN_CONTRACT = HERE / "contract_sglang_deepep_fanin_v2.json"
 SGLANG_ROOT = Path("/sgl-workspace/sglang")
 SGLANG_LAYER = SGLANG_ROOT / "python/sglang/srt/layers/moe/ep_moe/layer.py"
 SGLANG_DISPATCHER = SGLANG_ROOT / "python/sglang/srt/layers/moe/token_dispatcher/deepep.py"
 DEEP_EP_BUFFER = Path("/usr/local/lib/python3.12/dist-packages/deep_ep/buffer.py")
 
 
-def load_experiment() -> tuple[dict, dict]:
-    experiment = json.loads(CONTRACT.read_text())
-    workload = load_contract(HERE / "contract.json")
+def load_experiment(path: Path = CONTRACT) -> tuple[dict, dict]:
+    path = path.resolve()
+    if path == CONTRACT.resolve():
+        workload = load_contract(HERE / "contract.json")
+    elif path == FANIN_CONTRACT.resolve():
+        workload = load_fanin_contract(HERE / "model_scale_inputs_fanin_v2.json")
+    else:
+        raise ValueError("Unreviewed SGLang/DeepEP experiment contract")
+    experiment = json.loads(path.read_text())
     geometry = experiment["geometry"]
     if (experiment["target"] != "sm_103a"
             or geometry != workload["geometry"]
@@ -216,10 +223,11 @@ def check(experiment: dict, workload: dict, input_dir: Path, output_dir: Path) -
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("mode", choices=("preflight", "run", "check"))
+    parser.add_argument("--experiment-contract", type=Path, default=CONTRACT)
     parser.add_argument("--inputs", required=True, type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    experiment, workload = load_experiment()
+    experiment, workload = load_experiment(args.experiment_contract)
     if args.mode == "preflight":
         print(json.dumps(preflight(experiment, workload, args.inputs), indent=2))
     else:

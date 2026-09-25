@@ -13,7 +13,8 @@ from pathlib import Path
 
 import numpy as np
 
-from data import compare_outputs, load_contract, make_rank, reference, round_bf16
+from data import (compare_outputs, load_contract, make_rank, reference,
+                  reference_bf16_stages, round_bf16, load_fanin_contract)
 from runner import input_observation, load_rank_snapshot
 from runner_sglang_deepep import load_experiment
 from verify_broker_lease import verify
@@ -52,6 +53,21 @@ class CpuOracleTest(unittest.TestCase):
         self.assertEqual(experiment["geometry"], workload["geometry"])
         self.assertEqual(experiment["execution"]["chunk_tokens_per_rank"], 128)
         self.assertEqual(experiment["execution"]["chunks_per_rank"], 4)
+
+    def test_fanin_successor_preserves_routes_and_changes_only_input_scale(self):
+        successor = load_fanin_contract(
+            Path(__file__).with_name("model_scale_inputs_fanin_v2.json"))
+        original = load_contract()
+        experiment, workload = load_experiment(
+            Path(__file__).with_name("contract_sglang_deepep_fanin_v2.json"))
+        self.assertEqual(workload["experiment_id"], successor["experiment_id"])
+        self.assertEqual(experiment["geometry"], original["geometry"])
+        old_rank = make_rank(original, 0)
+        new_rank = make_rank(successor, 0)
+        np.testing.assert_array_equal(old_rank["ids"], new_rank["ids"])
+        np.testing.assert_array_equal(old_rank["weights"], new_rank["weights"])
+        self.assertLess(float(np.abs(new_rank["gate"]).mean()),
+                        float(np.abs(old_rank["gate"]).mean()))
 
     def test_fallback_launcher_refuses_without_broker_lease(self):
         directory = str(Path(__file__).parent)
@@ -92,6 +108,14 @@ class CpuOracleTest(unittest.TestCase):
             down = data[owner]["down"][0].astype(np.float64) @ activated
             contribution += float(data[0]["weights"][0, slot]) * down
         np.testing.assert_array_equal(expected[0, 0], round_bf16(contribution.astype(np.float32)))
+
+    def test_bf16_stage_oracle_preserves_shape_and_changes_arithmetic(self):
+        document = small_contract()
+        ranks = [make_rank(document, rank) for rank in range(4)]
+        staged = reference_bf16_stages(document, ranks)
+        self.assertEqual(staged.shape, (4, 2, 4))
+        self.assertTrue(np.all(np.isfinite(staged)))
+        self.assertFalse(np.array_equal(staged, reference(document, ranks)))
 
     def test_output_gate_rejects_a_wrong_rank(self):
         document = small_contract()

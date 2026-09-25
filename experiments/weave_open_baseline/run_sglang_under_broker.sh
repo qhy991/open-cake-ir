@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # Invoke only as the child command of gpu-run --mode exclusive --gpu-count 4.
 set -euo pipefail
-if [[ $# != 2 ]]; then
-  echo "usage: $0 <retained-cpu-input-dir> <new-output-dir>" >&2
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "usage: $0 <retained-cpu-input-dir> <new-output-dir> [contract_sglang_deepep_fanin_v2.json]" >&2
   exit 2
 fi
 input_root=$(realpath "$1")
 output_root=$(realpath "$2")
 adapter_root=$(cd "$(dirname "$0")" && pwd)
-image_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"]["container_image_id"])' "$adapter_root/contract_sglang_deepep.json")
+contract_name=${3:-contract_sglang_deepep.json}
+if [[ $contract_name != contract_sglang_deepep.json && $contract_name != contract_sglang_deepep_fanin_v2.json ]]; then
+  echo "Unreviewed SGLang/DeepEP contract name" >&2
+  exit 2
+fi
+image_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"]["container_image_id"])' "$adapter_root/$contract_name")
 if [[ ! -f $output_root/admission.json ]]; then
   echo "This adapter requires a broker-issued exclusive NVIDIA lease" >&2
   exit 1
@@ -41,4 +46,5 @@ docker run --rm --network host --ipc host \
   -v "$output_root:/out" -v "$cache_root:/cache" -w /adapter \
   "$image_id" \
   torchrun --standalone --nproc_per_node=4 \
-  /adapter/runner_sglang_deepep.py run --inputs /inputs --output /out
+  /adapter/runner_sglang_deepep.py run --inputs /inputs --output /out \
+  --experiment-contract "/adapter/$contract_name"

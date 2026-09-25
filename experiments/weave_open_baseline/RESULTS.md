@@ -1,9 +1,9 @@
 # EP4 open baseline execution record
 
-Status: **CPU source and adapter gates pass; device qualification pending.**
-Two fallback broker requests failed before MoE execution. No
-device forward, oracle comparison, profiler trace or comparable latency has
-been produced yet.
+Status: **A complete SGLang/DeepEP layer executed on four B300s, but its first
+synthetic input failed the predeclared FP64 CPU oracle tolerance.** No
+correctness-qualified baseline, profiler trace or comparable latency exists
+yet.
 
 ## Fixed sources
 
@@ -159,3 +159,29 @@ The broker reported terminal failure and released all four GPUs. A no-GPU
 container probe then showed `USER`/`LOGNAME` resolves this exact import gate;
 the successor wrapper supplies them and the CPU preflight exercises the
 TorchDynamo import.
+
+The third request, `gpuq-027816b4d71c`, used commit `4a11da6a` and completed
+the full four-rank path (four sequential 128-token chunks per rank) on physical
+GPUs `0,1,2,3`. The broker reported exit 0 and released its allocation. All
+four rank outputs, admission receipt, raw diagnostic window and full log live
+under `/home/qinhaiyan/weave-sglang-deepep-ep4-run-4a11da6a-20260925/`.
+DeepEP logged failed IBGDA transport probes before completing this intra-node
+execution; a successful process exit by itself is not correctness.
+
+The post-release independent FP64 CPU oracle comparison **failed**:
+353,538 / 4,194,304 elements exceeded `atol=rtol=0.01`, with maximum absolute
+error 0.125. Its `oracle-result.json` remains unchanged. CPU-only localization
+found similar errors on all four ranks, mean absolute error about 0.011 and
+observed/reference least-squares scale about 0.9999. Independent diagnostic
+references with BF16 rounding at expert tensor boundaries still failed the
+same tolerance: 1,923 elements with FP64 dots, 1,910 with FP32 dots and
+1,925 with Torch CPU BF16 operations. These are retained in separate analysis
+directories and do **not** reclassify the original result as correct.
+
+The fixed 0.1 standard deviation of the original synthetic expert weights is
+independent of H and I and produces a mean FP64 oracle magnitude near 3.
+`model_scale_inputs_fanin_v2.json` and
+`contract_sglang_deepep_fanin_v2.json` define a separate fan-in-scaled
+synthetic successor with the same geometry, seed, routing and unchanged FP64
+oracle tolerance. It must get a new CPU input/oracle snapshot and a new broker
+job; the v1 failure is retained. No v2 device claim exists in this record yet.

@@ -6,6 +6,7 @@ the broker has released the GPUs; no device result is used to form the oracle.
 from __future__ import annotations
 
 import json
+from math import sqrt
 from pathlib import Path
 
 import numpy as np
@@ -29,6 +30,19 @@ def load_contract(path: Path = CONTRACT) -> dict:
     return document
 
 
+def load_fanin_contract(path: Path) -> dict:
+    document = json.loads(path.read_text())
+    original = load_contract()
+    if (document["schema_version"] != 1
+            or document["experiment_id"] != "weave-ep4-qwen3-30b-fanin-b300-v2"
+            or document["target"] != "sm_103a"
+            or document["geometry"] != original["geometry"]
+            or document["input"]["scaling"] != "fan_in_v2"
+            or document["input"]["seed"] != original["input"]["seed"]):
+        raise ValueError("Fan-in-scaled input contract differs from reviewed successor")
+    return document
+
+
 def round_bf16(values: np.ndarray) -> np.ndarray:
     """Round finite float32 values to BF16 with round-to-nearest-even."""
     a = np.ascontiguousarray(values, dtype=np.float32)
@@ -44,17 +58,27 @@ def make_rank(document: dict, rank: int) -> dict[str, np.ndarray]:
     seed = document["input"]["seed"]
     t, e, k = (shape[key] for key in ("tokens_per_rank", "experts", "top_k"))
     h, f = shape["hidden"], shape["intermediate"]
+    scale_policy = document["input"].get("scaling", "fixed_v1")
+    if scale_policy == "fan_in_v2":
+        hidden_scale, gate_up_scale, down_scale = 1.0, 1.0 / sqrt(h), 1.0 / sqrt(f)
+    elif scale_policy == "fixed_v1":
+        hidden_scale, gate_up_scale, down_scale = 0.5, 0.1, 0.1
+    else:
+        raise ValueError("Unknown synthetic input scale policy")
     input_rng = np.random.default_rng(seed + rank)
     weight_rng = np.random.default_rng(seed + 1000 + rank)
-    hidden = round_bf16(input_rng.standard_normal((t, h), dtype=np.float32) * 0.5)
+    hidden = round_bf16(input_rng.standard_normal((t, h), dtype=np.float32) * hidden_scale)
     scores = input_rng.random((t, e), dtype=np.float32)
     ids = np.argsort(-scores, axis=1, kind="stable")[:, :k].astype(np.int32)
     weights = input_rng.random((t, k), dtype=np.float32) + np.float32(0.1)
     weights /= weights.sum(axis=1, keepdims=True)
     local_e = e // 4
-    gate = round_bf16(weight_rng.standard_normal((local_e, f, h), dtype=np.float32) * 0.1)
-    up = round_bf16(weight_rng.standard_normal((local_e, f, h), dtype=np.float32) * 0.1)
-    down = round_bf16(weight_rng.standard_normal((local_e, h, f), dtype=np.float32) * 0.1)
+    gate = round_bf16(weight_rng.standard_normal((local_e, f, h), dtype=np.float32)
+                      * gate_up_scale)
+    up = round_bf16(weight_rng.standard_normal((local_e, f, h), dtype=np.float32)
+                    * gate_up_scale)
+    down = round_bf16(weight_rng.standard_normal((local_e, h, f), dtype=np.float32)
+                      * down_scale)
     return {"hidden": hidden, "ids": ids, "weights": weights,
             "gate": gate, "up": up, "down": down}
 
@@ -81,6 +105,42 @@ def reference(document: dict, ranks: list[dict[str, np.ndarray]] | None = None) 
         route_weight = np.array([ranks[int(s)]["weights"][int(tok), int(sl)]
                                  for s, tok, sl in zip(source, token, slot, strict=True)])
         np.add.at(output, (source, token), projected * route_weight[:, None])
+    return round_bf16(output.astype(np.float32))
+
+
+def reference_bf16_stages(document: dict,
+                          ranks: list[dict[str, np.ndarray]],
+                          dot_dtype=np.float64) -> np.ndarray:
+    """CPU reference for SGLang's BF16 output at each FFN tensor boundary.
+
+    NumPy FP64 dot products isolate arithmetic order from the device kernel;
+    only the output of each BF16 tensor operation is rounded. The original
+    FP64 oracle remains separate and unchanged.
+    """
+    shape = document["geometry"]
+    t, h, e = (shape[key] for key in ("tokens_per_rank", "hidden", "experts"))
+    ids = np.stack([rank["ids"] for rank in ranks])
+    output = np.zeros((4, t, h), dtype=np.float64)
+    for expert in range(e):
+        source, token, slot = np.nonzero(ids == expert)
+        if not source.size:
+            continue
+        owner, local = divmod(expert, e // 4)
+        x = np.stack([ranks[int(s)]["hidden"][int(tok)]
+                      for s, tok in zip(source, token, strict=True)]).astype(dot_dtype)
+        gate = round_bf16((x @ ranks[owner]["gate"][local].astype(dot_dtype).T)
+                          .astype(np.float32))
+        up = round_bf16((x @ ranks[owner]["up"][local].astype(dot_dtype).T)
+                        .astype(np.float32))
+        silu = round_bf16((gate / (1.0 + np.exp(-gate))).astype(np.float32))
+        activated = round_bf16((silu * up).astype(np.float32))
+        projected = round_bf16((activated.astype(dot_dtype)
+                                @ ranks[owner]["down"][local].astype(dot_dtype).T)
+                               .astype(np.float32))
+        route_weight = np.array([ranks[int(s)]["weights"][int(tok), int(sl)]
+                                 for s, tok, sl in zip(source, token, slot, strict=True)])
+        np.add.at(output, (source, token), projected.astype(np.float64)
+                  * route_weight[:, None])
     return round_bf16(output.astype(np.float32))
 
 
