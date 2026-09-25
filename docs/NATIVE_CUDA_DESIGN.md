@@ -622,6 +622,13 @@ or internal comm/compute-overlap claim. The raw `.nsys-rep`, SQLite, receipt,
 oracle and exact scope are under
 `cake-ranked-ep4-nsys-development-f9bfd64d/PROFILE.md` in the Weave evidence
 root.
+`experiments/weave/native_b300/ranked_activity.py` is a post-lease
+development projection of that SQLite trace. It requires an exclusive
+four-GPU receipt, matching source and one-launch identities, a complete
+four-rank CPU oracle, and exactly one correctly named kernel record per
+logical rank; it refuses missing/duplicate ranks or invalid timestamps.
+The retained derived JSON names only kernel activity union and intersection,
+not a qualified MoE-layer timer.
 
 ## Completion phases and nested reduction scopes
 
