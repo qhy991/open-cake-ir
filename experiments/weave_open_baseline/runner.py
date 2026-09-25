@@ -16,7 +16,7 @@ import time
 
 import numpy as np
 
-from data import compare_outputs, load_contract, make_rank
+from data import compare_outputs, load_contract, make_rank, reference
 
 
 HERE = Path(__file__).resolve().parent
@@ -141,7 +141,7 @@ def _run_on_broker(document: dict, upstream: Path, output_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=("preflight", "run", "check"))
+    parser.add_argument("mode", choices=("preflight", "oracle", "run", "check"))
     parser.add_argument("--contract", type=Path, default=HERE / "contract.json")
     parser.add_argument("--upstream", type=Path)
     parser.add_argument("--output", type=Path)
@@ -149,10 +149,27 @@ def main() -> None:
     document = load_contract(args.contract)
     if args.mode in ("preflight", "run") and args.upstream is None:
         parser.error("--upstream is required for preflight and run")
-    if args.mode in ("run", "check") and args.output is None:
-        parser.error("--output is required for run and check")
+    if args.mode in ("oracle", "run", "check") and args.output is None:
+        parser.error("--output is required for oracle, run and check")
     if args.mode == "preflight":
         print(json.dumps(preflight(document, args.upstream), indent=2))
+    elif args.mode == "oracle":
+        if os.environ.get("GPUQ_JOB_ID"):
+            raise RuntimeError("CPU oracle must run outside a GPU lease")
+        args.output.mkdir(parents=True, exist_ok=False)
+        start = time.perf_counter_ns()
+        expected = reference(document)
+        elapsed_ns = time.perf_counter_ns() - start
+        np.save(args.output / "oracle-expected.npy", expected)
+        observation = {"experiment_id": document["experiment_id"],
+                       "numpy_version": np.__version__, "shape": list(expected.shape),
+                       "all_finite": bool(np.all(np.isfinite(expected))),
+                       "nonzero_elements": int(np.count_nonzero(expected)),
+                       "cpu_oracle_wall_ns": elapsed_ns,
+                       "note": "CPU generation evidence; not a device latency"}
+        (args.output / "cpu-oracle-observation.json").write_text(
+            json.dumps(observation, indent=2) + "\n")
+        print(json.dumps(observation, indent=2))
     elif args.mode == "run":
         preflight(document, args.upstream)
         _run_on_broker(document, args.upstream, args.output)
