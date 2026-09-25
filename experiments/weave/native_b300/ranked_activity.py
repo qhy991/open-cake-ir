@@ -7,13 +7,15 @@ record per logical rank before describing relative kernel activity.
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
 
 
 def read_kernel_rows(database: Path) -> list[dict]:
-    with sqlite3.connect(f'file:{database.resolve()}?mode=ro', uri=True) as connection:
+    with closing(sqlite3.connect(
+            f'file:{database.resolve()}?mode=ro', uri=True)) as connection:
         try:
             rows = connection.execute('''
                 SELECT k.deviceId, k.start, k.end, k.registersPerThread,

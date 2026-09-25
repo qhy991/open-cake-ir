@@ -1,6 +1,7 @@
 """A four-rank activity view requires complete device and oracle evidence."""
 from __future__ import annotations
 
+from contextlib import closing
 from copy import deepcopy
 from pathlib import Path
 import sqlite3
@@ -68,7 +69,7 @@ class RankedActivity(unittest.TestCase):
     def test_reads_nsys_kernel_identity_from_string_table(self):
         with tempfile.TemporaryDirectory(prefix='cake-ranked-activity-') as directory:
             database = Path(directory) / 'trace.sqlite'
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 connection.execute('CREATE TABLE StringIds (id INTEGER, value TEXT)')
                 connection.execute('''CREATE TABLE CUPTI_ACTIVITY_KIND_KERNEL (
                     deviceId INTEGER, start INTEGER, end INTEGER,
@@ -78,6 +79,7 @@ class RankedActivity(unittest.TestCase):
                                    (7, 'cake_ranked_ep4_kernel'))
                 connection.execute('''INSERT INTO CUPTI_ACTIVITY_KIND_KERNEL
                     VALUES (?, ?, ?, ?, ?, ?, ?)''', (0, 100, 200, 44, 148, 32, 7))
+                connection.commit()
             rows = read_kernel_rows(database)
             self.assertEqual(rows[0]['name'], 'cake_ranked_ep4_kernel')
             self.assertEqual(rows[0]['device_id'], 0)
