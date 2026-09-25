@@ -35,6 +35,9 @@ produced for this baseline yet.
   in detached local worktree `/tmp/cake-weave-baseline-gate-9d05b6e9` at
   `df63fbd7` (Mac Python 3.11 / NumPy 1.24.2). The fifth broker-refusal
   check also passed in the task checkout and remote CPU test above.
+- A later detached local gate at `0fa108e6` passed all five CPU tests plus
+  Python syntax, all shell syntax and contract JSON, with a clean fixed-commit
+  worktree. This gate covers the current adapter and resource scripts.
 - The isolated CPU container environment was initialized by
   `prepare_cpu.sh init <source> <build>`. Its dependency stage is retained as
   `deps.log` (initial DNS failure) and `deps-retry1.log` (host proxy forwarded).
@@ -67,6 +70,9 @@ produced for this baseline yet.
   error or B300 incompatibility. The exact CPU build command remains runnable.
   A successor `prepare_cpu.sh` keeps future toolchain downloads in the isolated
   build directory instead of an ephemeral container home.
+  The upstream checkout has no tracked edits; its Triton submodule retains an
+  untracked generated `third_party/nvidia/backend/bin/` from the incomplete
+  build. Keep it as build evidence, not as a qualified executable.
 - Full-scale CPU inputs and oracle were generated **before any baseline GPU
   lease** by `create_oracle_cpu.sh
   /home/qinhaiyan/weave-td-build-20260925
