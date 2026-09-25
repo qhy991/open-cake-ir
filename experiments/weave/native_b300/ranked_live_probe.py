@@ -82,8 +82,8 @@ class ProbedRuntime(adapter.Runtime):
             launch = original_bind(inputs, mailboxes, plans, contexts)
 
             def launch_with_probe(bound):
-                self.start_probe(mailboxes)
                 launch(bound)
+                self.start_probe(mailboxes)
 
             return launch_with_probe
 
