@@ -136,6 +136,15 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    `c=148`, communication CTAs actually stole 4,096 and 8,192 stage units.
    Its input repeats one dense-dyadic tile and it still has no TMA/MMA stage,
    live expert-bin readiness or P2P handoff.
+   The next one-GPU probe (`cake-weave-model-upgate-queue-afe75c51/`)
+   executed the **real Cake up/gate TMA/MMA body** from host-encoded tensor
+   maps stored in device global memory. Four cooperative cases each
+   completed 1,536 N-subtile CTA work units (64 logical tiles × 24) over
+   four waves with bitwise FP32 oracle equality. At `c=147` and `c=148`,
+   communication CTAs stole 768 and 1,536 real up/gate subtasks. The
+   persistent worker compiled with 79 registers/thread and no spills.
+   Inputs still repeat one dense-dyadic tile; dynamic expert selection,
+   activation/down completion and P2P return remain open.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -148,9 +157,9 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 - Integrate the separate core schema-2 tile/stage effect after its review,
   then lower the evidenced host tile formation, padding, expert weight
   selection and **stage CTA completion counters** into a live B300 queue.
-  Reuse the proven activation CTA task/steal lifetime, then execute the
-  24 up/gate and 32 down tensor-core CTA work units with their actual TMA
-  descriptors and predecessor-stage completion rules.
+  Reuse the proven activation and up/gate CTA task/steal lifetimes, then
+  execute the 32 down tensor-core CTA work units with dynamic descriptors
+  and enforce predecessor-stage completion before activation and down.
   Communication CTA steal must claim the same ready stage unit as computation
   CTAs; connect the admitted GPU combine to the live ranked return path.
   Exercise empty, highly skewed and tail experts, and replay small T7/T8
