@@ -110,6 +110,16 @@ claim is oracle correctness, not bitwise equality or a layer latency.
    each stage's queried cooperative grid bound. Communication and computation
    CTAs must share that total budget if the future combined worker retains
    the same limit; the ranked worker itself has not been compiled or queried.
+   A successor one-GPU control probe (`cake-weave-model-tile-cooperative-
+   3423429c/`) completed 64- and 148-CTA cooperative grids over four
+   source-chunk waves with the tensor-core worker's 192 threads, 49,200 B
+   dynamic SMEM and a real `tcgen05.alloc/dealloc` transition. It covered
+   `c=1,74,147,148`; at `c=147` a 32-task steal budget claimed 32 dummy
+   tiles, and at `c=148` a 64-task budget claimed all 64. The first source
+   (`01643c32`) failed with CUDA 719 when a persistent CTA relinquished TMEM
+   after every task; holding it until the CTA finished all waves resolved
+   the observed failure. These are resource/control probes with no FFN math
+   or peer mailbox, so they do not qualify the complete ranked worker.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
