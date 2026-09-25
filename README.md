@@ -1,26 +1,42 @@
-# open-cake-ir
+<p align="center">
+  <img src="docs/figures/open-cake-ir-mark.svg" width="112" alt="open-cake-ir：代码括号中的三层执行计划" />
+</p>
 
-**Agent 驱动的 GPU Kernel 搜索与 Compiler 演进。**
+<h1 align="center">open-cake-ir</h1>
 
-Agent 用 Python 编写 Schedule（单个 Kernel 的执行计划），用 Program 组合完整的多阶段计算；
-Compiler 检查并生成目标源码，独立评测核对正确性和性能，实验反馈再推动候选与编译器改进。
-支持从任务定义开始探索，也支持参考已有优秀实现进行 Cake 改写。
+<p align="center"><strong>让 GPU 执行计划可编写、可检查、可复查。</strong><br />
+An open research system for agent-driven GPU kernel and compiler co-evolution.</p>
 
-A research system for agent-driven GPU kernel search and compiler evolution.
-[English reading guide](docs/en/README.md) · [中文阅读入口](docs/zh-CN/README.md)
+<p align="center">
+  <a href="docs/open-cake-ir-technical-report.pdf">技术报告 PDF</a> ·
+  <a href="docs/open-cake-ir-technical-report.tex">TeX 源码</a> ·
+  <a href="docs/GETTING_STARTED.md">快速开始</a> ·
+  <a href="docs/RESULTS.md">实验结果</a> ·
+  <a href="docs/en/README.md">English</a>
+</p>
+
+智能体用 Python 编写单内核的 Schedule，或用 Program 组合多阶段计算。Compiler 检查
+执行计划并生成目标源码；独立评测依据外部答案和目标设备的测量协议确认候选。反复出现
+的问题再推动编译器改进。项目独立探索 [CAKE 论文](https://arxiv.org/abs/2608.12629v1)
+的研究思路，属于研究预览。
+
+[中文阅读入口](docs/zh-CN/README.md) · [项目当前状态](reports/current/STATUS.md)
 
 ## 快速导航
 
 | 你想做什么 | 直接入口 | 能看到什么 |
 |---|---|---|
 | 第一次了解或运行项目 | [快速开始](#快速开始) · [入门教程](docs/GETTING_STARTED.md) | 安装、无需 GPU 的检查与源码生成 |
-| 阅读或引用技术报告 | [技术报告](docs/README.md) · [完整中英文目录](docs/catalog.md) | 架构、IR、方法、结果章节与引用方式 |
+| 阅读或引用技术报告 | [PDF 正文](docs/open-cake-ir-technical-report.pdf) · [TeX 源码](docs/open-cake-ir-technical-report.tex) · [引用与配套专题](docs/README.md) | 设计、实例、方法、结果及其证据范围 |
 | 查看 FlashInfer 改写与外部实现差距 | [逐任务实验综述](docs/results/nvidia/FLASHINFER_STATUS.md) | starter 身份、配对性能、正确性、失败边与未完成项 |
 | 查看各硬件成果和使用方法 | [实验结果](#按硬件查看成果) · [硬件指南](#硬件指南) | 已收录观察、平台工具链和验收范围 |
 | 编写 Kernel、发起优化或改写已有实现 | [Python 前端](docs/zh-CN/PYTHON_FRONTEND.md) · [Lab 任务流程](docs/wiki/experiments.md) · [改写指南](docs/KERNEL_REPRODUCTION.md) | 输入格式、任务用途、参考材料、预算与评测 |
 | 修改实现或定位问题 | [源码结构](#源码与文档结构) · [系统架构](docs/ARCHITECTURE.md) · [开发流程](docs/DEVELOPMENT_BRANCHES.md) | 模块职责、扩展位置、分支与测试要求 |
 
-当前能力与版本见[生成状态页](reports/current/STATUS.md)；具体实验的结论以其绑定的源码、硬件、Workload 和计时协议为准。
+**报告与当前状态：**PDF 由仓库中的 TeX 编译，封面标注它所读的源码快照；
+[报告索引](docs/README.md)提供引用方式和持续维护的专题文档。当前实现见
+[生成状态页](reports/current/STATUS.md)。具体实验仍按各自绑定的源码、硬件、Workload
+和计时协议解释。
 
 ## 系统怎样工作
 
@@ -40,24 +56,23 @@ Compiler 可以独立使用，Research Lab 负责组织优化或受控研究。
 
 ## 快速开始
 
-需要 Python 3.10+，从源码安装：
+需要 Python 3.10+。下面先离线检查 Softmax，再生成可阅读的 Triton 源码；这些步骤不需要 GPU：
 
 ```bash
 git clone https://github.com/qhy991/open-cake-ir.git
 cd open-cake-ir
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
+CAKE_DEMO_DIR=$(mktemp -d)
+.venv/bin/open-cake-ir compiler assess --format text examples/python/softmax.py
+.venv/bin/open-cake-ir compiler lower --format text examples/python/softmax.py \
+  --output "$CAKE_DEMO_DIR/softmax.py"
 ```
 
-先检查 Python 编写的 FMA kernel，无需 GPU，也无需载入 Schedule JSON：
-
-```bash
-.venv/bin/python -m open_cake_ir.cli compiler assess --format text \
-  examples/python/fma.py
-```
-
-[完整入门教程](docs/GETTING_STARTED.md)继续介绍源码生成与反例检查。
-真实 GPU 构建和评测还需对应工具链与设备环境，按下面的硬件指南准备。
+检查结果中的“结构检查：通过”与“生成代码：允许”说明这份计划通过了当前软件门；
+生成文件在 `$CAKE_DEMO_DIR/softmax.py`。[技术报告的 Softmax 实例](docs/open-cake-ir-technical-report.pdf)
+逐项对照 Python Schedule 和生成的 Triton 代码。[完整入门教程](docs/GETTING_STARTED.md)
+从更小的 FMA 示例解释诊断。设备正确性和性能还需对应工具链与 GPU 环境，见下方硬件指南。
 
 <!-- hardware-results:start -->
 ## 按硬件查看成果
@@ -103,26 +118,19 @@ python3 -m venv .venv
 
 | 位置 | 内容与入口 |
 |---|---|
-| [src/open_cake_ir/compiler/](src/open_cake_ir/compiler/) | IR、Verifier、后端、pass 与性能分析；[实现导读](docs/IR_GUIDE.md) |
-| [src/open_cake_ir/lab/](src/open_cake_ir/lab/) | Agent 与实验组织；[模块导航](src/open_cake_ir/lab/README.md) |
-| [src/open_cake_ir/evaluation/](src/open_cake_ir/evaluation/) · [src/open_cake_ir/evidence/](src/open_cake_ir/evidence/) | 公共评测、执行与证据存储；[职责地图](CONTEXT-MAP.md) |
-| [src/open_cake_ir/tasks/](src/open_cake_ir/tasks/) · [contracts/](contracts/) | 具体任务实现与语义契约；[任务目录](docs/wiki/workloads.md) |
-| [compiler/](compiler/) · [runtime/](runtime/) | 编译与执行配置；[硬件声明](compiler/targets/) · [主机环境](runtime/hosts/) |
-| [tools/](tools/) · [tests/](tests/) · [corpus/](corpus/) | CLI 工具、合同测试和编译器验证用例；[贡献说明](CONTRIBUTING.md) |
-| [docs/](docs/README.md) | 技术报告和使用文档；[完整目录](docs/catalog.md) · [概念与算子导读](docs/wiki/README.md) |
-| [findings/](findings/) · [reports/](reports/) | 问题与改进记录、报告与[生成的当前状态](reports/current/STATUS.md) |
-| [examples/](examples/) · [experiments/](experiments/) | 示例与实验输入；[FlashInfer 改写任务包](experiments/flashinfer_rewrites/README.md)，具体范围见各目录说明 |
-| [evidence/](evidence/README.md) · [inventory/](inventory/) · [migration/](migration/README.md) | 保留的证据、调查与迁移材料；[历史阅读索引](docs/catalog.md) |
-| [skills/](skills/) · [.github/](.github/) | 项目操作流程与 CI；[Agent 开发约定](AGENTS.md) |
+| [compiler/](src/open_cake_ir/compiler/) · [Target 文档](compiler/targets/) | IR、Verifier、后端和精确硬件声明；[IR 指南](docs/IR_GUIDE.md) |
+| [lab/](src/open_cake_ir/lab/) · [evaluation/](src/open_cake_ir/evaluation/) · [evidence/](src/open_cake_ir/evidence/) | 候选搜索、外部评测和运行证据；[职责地图](CONTEXT-MAP.md) |
+| [tasks/](src/open_cake_ir/tasks/) · [contracts/](contracts/) | Workload、oracle 和任务实现；[任务目录](docs/wiki/workloads.md) |
+| [examples/](examples/) · [corpus/](corpus/) · [tests/](tests/) | 可读示例、编译器语料和合同测试；[贡献说明](CONTRIBUTING.md) |
+| [docs/](docs/README.md) · [findings/](findings/) · [reports/](reports/) | 报告索引、问题记录与[当前状态](reports/current/STATUS.md)；[完整目录](docs/catalog.md) |
 
-README 提供快速入口；[报告首页](docs/README.md)组织章节与引用；[文档总目录](docs/catalog.md)收纳详细专题与历史材料。
-文档职责由 [Context map](CONTEXT-MAP.md)维护，新增内容按已有负责位置补充。
+更细的模块边界见 [Context map](CONTEXT-MAP.md)，平台操作与历史材料见[文档总目录](docs/catalog.md)。
 
 ## 参与与引用
 
 - **参与开发：** [贡献说明](CONTRIBUTING.md) · [平台与分支维护](docs/DEVELOPMENT_BRANCHES.md) · [设计决策](docs/adr/README.md) · [研究路线](docs/ROADMAP.md)。
-- **引用报告：** [报告题名、作者、推荐引用与 BibTeX](docs/README.md#引用--citation) · [机器可读引用](CITATION.cff)。中英文文档共同构成本仓库的技术报告；引用具体章节使用提交永久链接，实验结果另注明其自身版本与测量范围。
+- **引用报告：** [PDF 正文](docs/open-cake-ir-technical-report.pdf) · [TeX 源码](docs/open-cake-ir-technical-report.tex) · [推荐引用与 BibTeX](docs/README.md#引用--citation) · [机器可读引用](CITATION.cff)。引用具体论点请记录所读提交；实验结果还需注明各自的源码版本与测量范围。
 - **问题与许可：** [安全问题](SECURITY.md) · [Apache-2.0](LICENSE) · [NOTICE](NOTICE) · [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 作者：秦海岩（Haiyan Qin），联系：<haiyanq@buaa.edu.cn>。
-本项目独立探索 [CAKE 论文](https://arxiv.org/abs/2608.12629v1)的部分思路，属于源码研究预览，并非官方实现。
+本项目是独立研究实现，不是 CAKE 论文的官方源码。
