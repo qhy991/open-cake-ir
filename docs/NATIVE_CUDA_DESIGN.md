@@ -576,6 +576,29 @@ the failing device for that run without identifying a CTA or wait flag.
 No protocol change is promoted until the failing plans replay successfully
 under a successor source.
 
+At Compiler source commit `f9bfd64d`, the regular compute worker's
+`no_more_inbound` exit became warp-uniform: only lane 0 samples the changing
+queue/dispatch state, and `__shfl_sync` broadcasts its decision before the
+next full-mask work claim. The predecessor let lanes independently break or
+continue, so lane 0 could leave a warp whose remaining lanes still required
+its shuffle value. This matches the observed missing lane 0 in the stalled
+rank-0 CUDA-GDB warp, though that one snapshot alone cannot prove causality.
+The generated T7/T8 sources differ from their predecessors only in this
+control-flow change. Fixed-commit related contracts and the Corpus Gate pass;
+CUDA 13.1 nvcc/PTXAS retains 44 registers and no spills.
+
+First broker-held B300-M4 successor replays passed four-rank independent
+oracles for the three previously timing-out plans: low-`c` remote-only,
+T7 mixed `K=(2,3,7,1)` without steal, and low-`c` skew. The skew steal
+control also passed with 29 successful rank-0 claims under budget 32, and
+balanced passed. Every run used exactly four exclusive broker GPUs and
+released them before CPU oracle comparison. The
+`cake-ranked-ep4-warp-uniform-replay-f9bfd64d/RESULTS.md` evidence index
+retains receipts, logs, counters and results. These are first replays, not a
+statistical liveness qualification or latency result. Repeat the failing
+plans on the successor before closing this backend defect or promoting the
+source to a maintained platform branch.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline
