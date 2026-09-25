@@ -15,6 +15,7 @@ do not imply model-scale throughput.
 | Tensor-core local FFN | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. Separate no-bias model-width up/gate (`cc1715b5`) and down (`de0c4824`) tiles each passed two full one-GPU FP32 comparisons bitwise against an independent FP64 oracle. A model-width SwiGLU Schedule (`cb72263a`) explicitly casts FP32 to BF16; a three-stage Program (`98431873`) binds up/gate → SwiGLU → down without an implicit cast. CUDA 13.1 compiled all three Program stages on B300-M4 with 74/24/74 registers per thread and no spills. One brokered B300 GPU run passed two full stage-by-stage cases bitwise against an independent oracle. | The ordered Program is one fixed expert tile; the model-scale bridge below invokes it from host orchestration rather than a tile-keyed GPU worker. No distributed EP4 or performance result follows. |
 | Dynamic expert-bin input | Cake now admits a complete Schedule using three metadata loads, returned-old `atomic_rmw`, BF16 row load and two reservation-owned indexed stores. The exact B300 native CUDA emitter (`66e97f3a`) compiled and passed a brokered one-GPU oracle on all 16,384 routes; host admission rejected duplicate local experts and unreset counts. The earlier standalone PTX probe (`a4bcc968`) remains separate evidence. | Its host domain check synchronizes and copies route metadata before launch, and each expert bin has a fixed 2,048-row capacity. There is no cross-device release/acquire publication, tile-ready queue or FFN invocation from these bins. |
 | Routed arithmetic bridge | A one-GPU run (`975abc3a`) connected Cake bins to 194 padded 128-row Cake FFN tiles across all 128 experts and retained every FP32 route contribution. Post-lease CPU weighted combine matched the independent model-scale FP64 oracle at the predeclared tolerance: 0 / 4,194,304 failing elements. | Four source ranks were staged on one GPU; host code read counts, padded tails and selected weights, and CPU performed the final combine. It has no GPU tile-ready queue, distributed return, `c/K/steal` result or qualified latency. |
+| Model top-8 combine | A complete Cake LOAD→MUL→SUM→CAST→STORE Schedule (`fd698ba9`) lowered to 256-thread native CUDA CTAs. A separate one-GPU run consumed the bridge's saved FP32 route contributions and passed the same independent FP64 oracle with 0 / 4,194,304 failures. | Combine ran in a separate GPU job on retained contributions, rather than as the return phase of a live four-GPU ranked layer. It establishes no dispatch/compute/return overlap or speedup. |
 
 The tensor-tile source, exact synthetic Schedule, nonblocking
 `RESIDENCY_BOUND` finding, nvcc command/log and cubin are retained in
@@ -75,6 +76,10 @@ to the tensor-core FFN Program on one GPU. It proves routed arithmetic for
 the baseline's fan-in synthetic case while exposing the remaining scheduling
 boundary: Python host orchestration, not the ranked worker, owns tile
 formation, padding, weight selection and completion.
+The `cake-weave-model-combine-fd698ba9/` record separately validates GPU
+top-8 combine on those retained contributions. Its 223 BF16 bit differences
+from the CPU FP64 combine are within the unchanged external tolerance; the
+claim is oracle correctness, not bitwise equality or a layer latency.
 
 ## Required joint change
 
@@ -110,7 +115,8 @@ formation, padding, weight selection and completion.
 
 - Promote the evidenced host tile-formation, partial-row padding, expert
   weight selection and route-keyed completion into explicit Cake scheduling
-  effects, static capacity/liveness analysis and native CUDA emission.
+  effects, static capacity/liveness analysis and native CUDA emission; connect
+  the admitted GPU combine to the same live ranked return path.
   Exercise empty, highly skewed and tail experts in addition to the current
   fan-in case. Move the pre-launch domain check off the critical path only
   with an equally explicit admission and failure signal.
