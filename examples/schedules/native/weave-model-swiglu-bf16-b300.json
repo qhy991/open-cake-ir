@@ -1,0 +1,334 @@
+{
+  "schema_version": 2,
+  "schedule_id": "weave-model-swiglu-bf16-b300",
+  "target": "sm_103a",
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "up_gate",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        128,
+        1536
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "activated",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        128,
+        768
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "up",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        768
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "gate",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        768
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "neg",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        768
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "exponential",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        768
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "denominator",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        768
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "silu",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        768
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "result",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        768
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rounded",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        768
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_up",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "up_gate"
+      ],
+      "writes": [
+        "up"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "load_gate",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "up_gate"
+      ],
+      "writes": [
+        "gate"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "neg_gate",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "gate"
+      ],
+      "writes": [
+        "neg"
+      ],
+      "parameters": {
+        "op": "mul",
+        "scalar": -1
+      },
+      "depends_on": [
+        "load_gate"
+      ]
+    },
+    {
+      "id": "exp_gate",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "neg"
+      ],
+      "writes": [
+        "exponential"
+      ],
+      "parameters": {
+        "op": "exp"
+      },
+      "depends_on": [
+        "neg_gate"
+      ]
+    },
+    {
+      "id": "denom",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "exponential"
+      ],
+      "writes": [
+        "denominator"
+      ],
+      "parameters": {
+        "op": "add",
+        "scalar": 1
+      },
+      "depends_on": [
+        "exp_gate"
+      ]
+    },
+    {
+      "id": "silu",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "gate",
+        "denominator"
+      ],
+      "writes": [
+        "silu"
+      ],
+      "parameters": {
+        "op": "div"
+      },
+      "depends_on": [
+        "load_gate",
+        "denom"
+      ]
+    },
+    {
+      "id": "multiply",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "up",
+        "silu"
+      ],
+      "writes": [
+        "result"
+      ],
+      "parameters": {
+        "op": "mul"
+      },
+      "depends_on": [
+        "load_up",
+        "silu"
+      ]
+    },
+    {
+      "id": "round_bf16",
+      "kind": "cast",
+      "role": "compute",
+      "reads": [
+        "result"
+      ],
+      "writes": [
+        "rounded"
+      ],
+      "parameters": {
+        "to": "bf16"
+      },
+      "depends_on": [
+        "multiply"
+      ]
+    },
+    {
+      "id": "store",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "rounded"
+      ],
+      "writes": [
+        "activated"
+      ],
+      "parameters": {
+        "coalesced": true
+      },
+      "depends_on": [
+        "round_bf16"
+      ]
+    }
+  ],
+  "outputs": [
+    "activated"
+  ],
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_up",
+      "buffer": "up_gate",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1,
+          "extent": 768
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_gate",
+      "buffer": "up_gate",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1,
+          "offset": 768
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store",
+      "buffer": "activated",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_weave_model_swiglu"
+  },
+  "program_map": {
+    "axes": [
+      {
+        "name": "token",
+        "axis": 0,
+        "buffer": "up_gate",
+        "dimension": 0,
+        "tile": 1
+      }
+    ]
+  }
+}

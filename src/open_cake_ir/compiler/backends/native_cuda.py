@@ -131,6 +131,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             return row_dot_preflight(s, target)
         if any(op.kind is OperationKind.ELEMENTWISE
                and op.parameters.op is ElementwiseOp.EXP for op in s.operations):
+            if any(op.kind is OperationKind.CAST and op.parameters.to is DType.BF16
+                   for op in s.operations):
+                from .native_cuda_activation import preflight_model
+                return preflight_model(s, target)
             from .native_cuda_activation import preflight as activation_preflight
             return activation_preflight(s, target)
         if any(op.kind is OperationKind.ELEMENTWISE for op in s.operations) and not any(
@@ -1009,6 +1013,10 @@ def emit(schedule: Schedule, target: Target, *, entry_point: str | None = None) 
             return RowDotEmitter(schedule,target,schedule.lowering.entry_point).emit()
         if any(op.kind is OperationKind.ELEMENTWISE
                and op.parameters.op is ElementwiseOp.EXP for op in schedule.operations):
+            if any(op.kind is OperationKind.CAST and op.parameters.to is DType.BF16
+                   for op in schedule.operations):
+                from .native_cuda_activation import ModelEmitter
+                return ModelEmitter(schedule,target,schedule.lowering.entry_point).emit()
             from .native_cuda_activation import Emitter as ActivationEmitter
             return ActivationEmitter(schedule,target,schedule.lowering.entry_point).emit()
         if any(op.kind is OperationKind.ELEMENTWISE for op in schedule.operations) and not any(
