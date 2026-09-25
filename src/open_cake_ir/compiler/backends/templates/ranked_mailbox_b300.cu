@@ -286,8 +286,15 @@ __global__ void @ENTRY@_kernel(Params* params) {
             slot = __shfl_sync(0xffffffffu, slot, 0);
             if (slot >= 0) {
                 compute_one(params, slot, lane);
-            } else if (no_more_inbound(local)) break;
-            else __nanosleep(64);
+            } else {
+                // The queue can become terminal between two lanes' loads.
+                // Keep the exit decision warp-uniform before the next
+                // full-mask task claim or the final warp barrier.
+                int done = lane == 0 ? int(no_more_inbound(local)) : 0;
+                done = __shfl_sync(0xffffffffu, done, 0);
+                if (done) break;
+                __nanosleep(64);
+            }
         }
     }
     if (lane == 0)
