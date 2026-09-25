@@ -14,12 +14,17 @@ import math
 import os
 from pathlib import Path
 import struct
+import subprocess
 import time
 
 
 SOURCE_COMMIT = '984318739f135354f3ce03741d25904940d93f86'
 LABEL = 'cake-weave-model-local-ffn-98431873'
 CUDA_RUNTIME = '/usr/local/cuda-13.1/lib64/libcudart.so'
+NVCC = '/usr/local/cuda-13.1/bin/nvcc'
+NVCC_FLAGS = ['-std=c++17', '--gpu-architecture=compute_103a',
+              '--gpu-code=sm_103a', '-O3', '--fmad=false', '-lineinfo',
+              '-Xptxas=-v']
 CASES = ('sparse_one_hot', 'dense_dyadic')
 TENSORS = {
     'x': ([128, 2048], 'bf16'),
@@ -81,6 +86,8 @@ def prepare(root: Path) -> dict:
                 or row['source_language'] != 'cuda_cpp'
                 or row['grid'] != grid or row['block'] != block
                 or row['dynamic_shared_bytes'] != shared
+                or row['nvcc_flags'] != NVCC_FLAGS
+                or row['link_libraries'] != ['cuda', 'cudart']
                 or row['argument_order'] != list(bindings)
                 or [(arg['name'], arg['dtype'], arg['shape'])
                     for arg in row['arguments']] != [
@@ -104,6 +111,62 @@ def prepare(root: Path) -> dict:
             if (root / name / filename).stat().st_size != nbytes(tensor):
                 raise ValueError(f'{name}/{filename} oracle extent differs')
     return requirements
+
+
+def build(root: Path) -> None:
+    """Compile the three sealed stage sources without acquiring a GPU."""
+    if os.environ.get('GPUQ_JOB_ID'):
+        raise RuntimeError('nvcc build must run outside a broker GPU lease')
+    requirements = prepare(root)
+    compiler = Path(NVCC)
+    if not compiler.is_file() or not os.access(compiler, os.X_OK):
+        raise FileNotFoundError(f'exact CUDA 13.1 nvcc missing: {compiler}')
+    for name, _, _, _, _ in STAGES:
+        stage = root / name
+        if any((stage / filename).exists() for filename in (
+                'kernel.so', 'kernel.cubin', 'compile_plan.json',
+                'build_report.json', 'build_failure.json')):
+            raise ValueError(f'{name} build evidence must be create-only')
+    for name, _, _, _, _ in STAGES:
+        stage = root / name
+        common = [str(compiler), *requirements[name]['nvcc_flags']]
+        commands = {
+            'host_wrapper': [*common, '-Xcompiler=-fPIC', '-shared',
+                             'kernel.cu', '-o', 'kernel.so', '-lcuda', '-lcudart'],
+            'cubin': [*common, '--cubin', 'kernel.cu', '-o', 'kernel.cubin'],
+        }
+        (stage / 'compile_plan.json').write_text(json.dumps(
+            {'compiler_commit': SOURCE_COMMIT, 'target': 'sm_103a',
+             'commands': commands}, indent=2) + '\n')
+        exits = {}
+        for phase, command in commands.items():
+            try:
+                result = subprocess.run(command, cwd=stage, capture_output=True,
+                                        text=True, timeout=180, check=False)
+            except (OSError, subprocess.TimeoutExpired) as error:
+                (stage / 'build_failure.json').write_text(json.dumps({
+                    'phase': phase, 'error': f'{type(error).__name__}: {error}',
+                    'exit_codes': exits}, indent=2) + '\n')
+                raise RuntimeError(f'{name} {phase} nvcc invocation failed') from error
+            (stage / f'{phase}.compile.log').write_text(
+                result.stdout + result.stderr or '(no compiler output)\n')
+            exits[phase] = result.returncode
+            if result.returncode:
+                (stage / 'build_failure.json').write_text(json.dumps({
+                    'phase': phase, 'exit_codes': exits}, indent=2) + '\n')
+                raise RuntimeError(f'{name} {phase} nvcc rejected source')
+        if any(not (stage / filename).is_file()
+               or (stage / filename).read_bytes()[:4] != b'\x7fELF'
+               for filename in ('kernel.so', 'kernel.cubin')):
+            (stage / 'build_failure.json').write_text(json.dumps({
+                'error': 'missing or non-ELF compiler product',
+                'exit_codes': exits}, indent=2) + '\n')
+            raise RuntimeError(f'{name} compiler product differs')
+        (stage / 'build_report.json').write_text(json.dumps({
+            'compiler_commit': SOURCE_COMMIT, 'target': 'sm_103a',
+            'exit_codes': exits,
+            'scope': 'CPU nvcc/PTXAS build only; no GPU correctness or performance',
+        }, indent=2) + '\n')
 
 
 def admitted() -> str:
@@ -350,11 +413,12 @@ def verify(root: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument('phase', choices=('prepare', 'run', 'verify'))
+    parser.add_argument('phase', choices=('prepare', 'build', 'run', 'verify'))
     parser.add_argument('--root', type=Path, required=True)
     args = parser.parse_args()
     root = args.root.expanduser().resolve(strict=True)
-    {'prepare': prepare, 'run': device_run, 'verify': verify}[args.phase](root)
+    {'prepare': prepare, 'build': build, 'run': device_run,
+     'verify': verify}[args.phase](root)
 
 
 if __name__ == '__main__':
