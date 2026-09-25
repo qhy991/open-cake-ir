@@ -1,7 +1,7 @@
 """Bounded CUDA-GDB snapshot of an unchanged ranked development bundle.
 
 Copy beside `adapter_run.py` and run only inside its four-GPU broker job.
-CUDA-GDB starts the exact bundle runner, interrupts it after eight seconds,
+CUDA-GDB starts the exact bundle runner, interrupts it after a bounded delay,
 records host and CUDA focus, then exits. The diagnostic deliberately stops
 this one test process; its output is not an oracle or a timing sample.
 """
@@ -21,6 +21,12 @@ GDB = Path('/usr/local/cuda-13.1/bin/cuda-gdb')
 def main():
     if not GDB.is_file() or not GDB.stat().st_mode & 0o111:
         raise RuntimeError('qualified CUDA-GDB executable is unavailable')
+    try:
+        delay = int(os.environ.get('CAKE_GDB_INTERRUPT_SECONDS', '8'))
+    except ValueError:
+        raise ValueError('CUDA-GDB interrupt delay must be an integer') from None
+    if not 5 <= delay <= 25:
+        raise ValueError('CUDA-GDB interrupt delay must be 5 to 25 seconds')
     log = HERE / 'cuda_gdb.log'
     if log.exists():
         raise RuntimeError('CUDA-GDB log must be create-only')
@@ -31,14 +37,14 @@ def main():
             '-ex', 'info cuda devices',
             '-ex', 'info cuda kernels',
             '-ex', 'info cuda warps',
-            '-ex', 'bt 12',
+            '-ex', 'bt 32',
             '--args', sys.executable, str(HERE / 'adapter_run.py'), 'run']
     with log.open('w') as output:
         process = subprocess.Popen(argv, cwd=HERE, stdout=output,
                                    stderr=subprocess.STDOUT,
                                    start_new_session=True)
         try:
-            process.wait(timeout=8)
+            process.wait(timeout=delay)
         except subprocess.TimeoutExpired:
             if process.poll() is None:
                 os.kill(process.pid, signal.SIGINT)
