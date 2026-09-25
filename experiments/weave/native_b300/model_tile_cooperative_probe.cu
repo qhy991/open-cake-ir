@@ -1,6 +1,7 @@
 // B300 development probe for a tile worker's spatial, wave and steal roles.
 // One cooperative grid reserves the tensor-core worker's 192-thread/49,200-B
-// CTA footprint. Each claimed dummy tile enters tcgen05 alloc/dealloc.
+// CTA footprint. A CTA allocates TMEM at its first claimed tile and releases
+// it once after all waves, matching a persistent worker's resource lifetime.
 // There is no FFN arithmetic or cross-device mailbox in this probe.
 #include <cuda_runtime.h>
 #include <cooperative_groups.h>
@@ -40,6 +41,7 @@ __global__ void tile_schedule_probe(
   const int block = int(blockIdx.x);
   const int warp = int(threadIdx.x) / 32;
   cg::grid_group grid = cg::this_grid();
+  bool tensor_owned = false;
   for (int wave = 0; wave < kWaves; ++wave) {
     if (threadIdx.x == 0 && block < communication_ctas)
       atomicAdd(&dispatched[wave], 1);
@@ -72,28 +74,34 @@ __global__ void tile_schedule_probe(
       }
       __syncthreads();
       if (claimed < 0) break;
-      if (warp == 0) {
-        asm volatile(
-            "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
-            :: "r"(smem_address(tensor_address)), "n"(64) : "memory");
+      if (!tensor_owned) {
+        if (warp == 0) {
+          asm volatile(
+              "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
+              :: "r"(smem_address(tensor_address)), "n"(64) : "memory");
+        }
+        __syncthreads();
+        tensor_owned = true;
       }
-      __syncthreads();
       if (threadIdx.x == 0) {
         task_owner[wave * kMaxTasks + claimed] = block;
         atomicAdd(&processed[wave], 1);
         if (borrowed) atomicAdd(&stolen[wave], 1);
       }
       __syncthreads();
-      if (warp == 0) {
-        asm volatile("tcgen05.dealloc.cta_group::1.sync.aligned.b32 %0, %1;"
-                     :: "r"(*tensor_address), "n"(64) : "memory");
-        asm volatile(
-            "tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;"
-            ::: "memory");
-      }
-      __syncthreads();
     }
     grid.sync();  // All tiles from this wave finish before the next wave.
+  }
+  if (tensor_owned) {
+    __syncthreads();
+    if (warp == 0) {
+      asm volatile("tcgen05.dealloc.cta_group::1.sync.aligned.b32 %0, %1;"
+                   :: "r"(*tensor_address), "n"(64) : "memory");
+      asm volatile(
+          "tcgen05.relinquish_alloc_permit.cta_group::1.sync.aligned;"
+          ::: "memory");
+    }
+    __syncthreads();
   }
 }
 
