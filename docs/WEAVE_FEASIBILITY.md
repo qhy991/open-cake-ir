@@ -220,6 +220,10 @@ and cubin products. Fake-compiler tests pin both command routes and retained
 failure/timeout evidence. No actual nvcc, sealed `LaunchableCandidate`,
 distributed loader or B300 device result follows from this builder yet.
 
+Its refreshed `tail_tokens` development bundle includes the frozen Workload,
+pre-seal manifest, source, builder and Evaluation adapter. Fresh CPU binding
+and fake-nvcc routing checks pass; no real compiled artifact is claimed.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
