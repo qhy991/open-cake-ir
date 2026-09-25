@@ -77,3 +77,9 @@ GPU time and checks that an all-zero output fails substantially. Pass
 CPU preflight and broker launcher, then pass the corresponding full path to
 `runner_sglang_deepep.py check`. A v2 pass would qualify only this separate
 model-scale synthetic setting, leaving v1's failure intact.
+
+After a v2 correctness pass, a separate broker run can add the optional fourth
+launcher argument `profile`. It writes one CPU/CUDA Chrome trace per rank in a
+new output directory, followed by the same post-release oracle comparison.
+Trace spans are development evidence; they carry no qualified latency or
+hardware NVLink/SM counter claim.

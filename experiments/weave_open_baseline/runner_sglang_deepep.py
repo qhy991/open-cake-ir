@@ -96,7 +96,8 @@ def preflight(experiment: dict, workload: dict, input_dir: Path) -> dict:
             "numpy_version": np.__version__, "input_snapshot": str(input_dir)}
 
 
-def run(experiment: dict, workload: dict, input_dir: Path, output_dir: Path) -> None:
+def run(experiment: dict, workload: dict, input_dir: Path, output_dir: Path,
+        profile_enabled: bool = False) -> None:
     if not os.environ.get("WEAVE_BROKER_JOB_ID") or not os.environ.get("WEAVE_BROKER_DEVICE_IDS"):
         raise RuntimeError("GPU execution requires a broker-issued exclusive NVIDIA lease")
     import torch
@@ -170,9 +171,18 @@ def run(experiment: dict, workload: dict, input_dir: Path, output_dir: Path) -> 
         dist.barrier(group)
         torch.cuda.synchronize()
         started = time.perf_counter_ns()
-        output = forward()
-        torch.cuda.synchronize()
-        finished = time.perf_counter_ns()
+        if profile_enabled:
+            from torch.profiler import ProfilerActivity, profile
+            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                         record_shapes=False) as trace:
+                output = forward()
+                torch.cuda.synchronize()
+            finished = time.perf_counter_ns()
+            trace.export_chrome_trace(str(output_dir / f"rank{rank}-trace.json"))
+        else:
+            output = forward()
+            torch.cuda.synchronize()
+            finished = time.perf_counter_ns()
         np.save(output_dir / f"rank{rank}-output.npy", output.float().cpu().numpy())
         bounds = [None] * 4
         dist.all_gather_object(bounds, (started, finished), group=group)
@@ -186,6 +196,7 @@ def run(experiment: dict, workload: dict, input_dir: Path, output_dir: Path) -> 
                 "input_snapshot_experiment_id": workload["experiment_id"],
                 "chunk_tokens_per_rank": chunk_tokens,
                 "chunks_per_rank": experiment["execution"]["chunks_per_rank"],
+                "profiled": profile_enabled,
                 "rank_start_end_ns": bounds,
                 "diagnostic_global_span_ns": max(item[1] for item in bounds)
                 - min(item[0] for item in bounds),
@@ -226,6 +237,7 @@ def main() -> None:
     parser.add_argument("--experiment-contract", type=Path, default=CONTRACT)
     parser.add_argument("--inputs", required=True, type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--profile", action="store_true")
     args = parser.parse_args()
     experiment, workload = load_experiment(args.experiment_contract)
     if args.mode == "preflight":
@@ -234,7 +246,8 @@ def main() -> None:
         if args.output is None:
             parser.error("--output is required for run and check")
         if args.mode == "run":
-            run(experiment, workload, args.inputs, args.output)
+            run(experiment, workload, args.inputs, args.output,
+                profile_enabled=args.profile)
         else:
             result = check(experiment, workload, args.inputs, args.output)
             print(json.dumps(result, indent=2))
