@@ -69,6 +69,7 @@ _NON_ARITHMETIC_KINDS = frozenset(
     {
         OperationKind.LOAD,
         OperationKind.STORE,
+        OperationKind.TRANSPOSE,
         OperationKind.REDUCE_ARGMIN,
         OperationKind.TOP_K,
         OperationKind.ATOMIC_RMW,

@@ -100,6 +100,7 @@ from .operations import (
     ScanParameters,
     StoreParameters,
     TmemStoreParameters,
+    TransposeParameters,
     TopKParameters,
 )
 

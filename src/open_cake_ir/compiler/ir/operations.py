@@ -431,6 +431,11 @@ class TmemStoreParameters:
 
 
 @dataclass(frozen=True)
+class TransposeParameters:
+    """Swap the axes of one rank-two register tile without changing its values."""
+
+
+@dataclass(frozen=True)
 class FenceProxyParameters:
     pass
 
@@ -451,6 +456,7 @@ OperationParameters = Union[
     ElementwiseParameters,
     StoreParameters,
     TmemStoreParameters,
+    TransposeParameters,
     FenceProxyParameters,
 ]
 
@@ -780,6 +786,10 @@ def _operation_parameters(
         return TmemStoreParameters(CopyAtom.from_dict(
             obj["destination_atom"], f"{context}.destination_atom"
         ))
+
+    if kind is OperationKind.TRANSPOSE:
+        _strict_object(value, required=set(), context=context)
+        return TransposeParameters()
 
     _strict_object(value, required=set(), context=context)
     return FenceProxyParameters()

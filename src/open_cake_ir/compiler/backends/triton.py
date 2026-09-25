@@ -120,6 +120,7 @@ OUTSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.INDEX_EXPAND: "_emit_index_expand",
     OperationKind.ATOMIC_RMW: "_emit_atomic_rmw",
     OperationKind.CAST: "_emit_cast",
+    OperationKind.TRANSPOSE: "_emit_transpose",
     OperationKind.STORE: "_emit_store",
 }
 
@@ -137,6 +138,7 @@ INSIDE_LOOP_EMITTERS: dict[OperationKind, str] = {
     OperationKind.ONLINE_SOFTMAX: "_emit_online_softmax",
     OperationKind.ELEMENTWISE: "_emit_elementwise",
     OperationKind.CAST: "_emit_cast",
+    OperationKind.TRANSPOSE: "_emit_transpose",
 }
 
 # A kind outside this union can never be emitted, wherever it is placed, so the Compiler
@@ -458,6 +460,18 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
         "the Triton backend supports at most one reduce_argmin operation",
     )
     for index, operation in enumerate(schedule.operations):
+        if operation.kind is OperationKind.TRANSPOSE:
+            source = schedule.buffer(operation.reads[0]) if len(operation.reads) == 1 else None
+            result = schedule.buffer(operation.writes[0]) if len(operation.writes) == 1 else None
+            add(
+                source is not None and result is not None
+                and source.space is MemorySpace.REGISTER
+                and result.space is MemorySpace.REGISTER
+                and len(source.shape) == 2 and result.shape == source.shape[::-1]
+                and result.dtype is source.dtype,
+                "TRITON_TRANSPOSE_CONTRACT", f"operations[{index}]",
+                "Triton transpose swaps one rank-two register tile and preserves its dtype",
+            )
         if operation.kind is OperationKind.REDUCE_ARGMIN:
             source = schedule.buffer(operation.reads[0]) if len(operation.reads) == 1 else None
             result = schedule.buffer(operation.writes[0]) if len(operation.writes) == 1 else None
@@ -2325,6 +2339,15 @@ class _TritonEmitter:
         self.line(
             f"{pad}{operation.writes[0]} = "
             f"{operation.reads[0]}.to({_TL_DTYPE[operation.parameters.to]})",
+            declares=(operation.writes[0],),
+        )
+
+    def _emit_transpose(self, operation, pad: str) -> None:
+        """The Schedule explicitly swaps the two register axes."""
+
+        self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        self.line(
+            f"{pad}{operation.writes[0]} = tl.trans({operation.reads[0]})",
             declares=(operation.writes[0],),
         )
 

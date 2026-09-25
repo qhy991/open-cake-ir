@@ -292,6 +292,7 @@ _PARAMETERS = {
         "op": {"const": "tcgen05.St32x32b"},
         "repetition": {"const": 8},
     })}),
+    OperationKind.TRANSPOSE: _object({}),
 }
 
 
