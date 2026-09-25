@@ -145,6 +145,13 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    persistent worker compiled with 79 registers/thread and no spills.
    Inputs still repeat one dense-dyadic tile; dynamic expert selection,
    activation/down completion and P2P return remain open.
+   The corresponding one-GPU down probe (`cake-weave-model-down-queue-
+   9c9dc158/`) completed 64 logical tiles × 32 N-subtile work units under
+   the same four-wave controls, again with bitwise FP32 oracle equality.
+   Its `c=147` and `c=148` cases actually stole 1,024 and 2,048 down tasks.
+   Thus each of the three FFN stages has **separate** cooperative queue
+   evidence; no result yet executes their predecessor/completion chain in
+   one live worker or combines them with P2P mailbox traffic.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -157,9 +164,12 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 - Integrate the separate core schema-2 tile/stage effect after its review,
   then lower the evidenced host tile formation, padding, expert weight
   selection and **stage CTA completion counters** into a live B300 queue.
-  Reuse the proven activation and up/gate CTA task/steal lifetimes, then
-  execute the 32 down tensor-core CTA work units with dynamic descriptors
-  and enforce predecessor-stage completion before activation and down.
+  Join the three individually proven stage-task bodies in one worker.
+  Publish activation tasks only after all 24 up/gate subtasks for their
+  logical tile complete, and down tasks only after all 128 activation
+  subtasks complete; then publish the route-keyed return after all 32 down
+  subtasks. Verify empty/tail bins and dynamic expert/weight descriptors
+  before coupling the worker to the four-rank mailbox.
   Communication CTA steal must claim the same ready stage unit as computation
   CTAs; connect the admitted GPU combine to the live ranked return path.
   Exercise empty, highly skewed and tail experts, and replay small T7/T8
