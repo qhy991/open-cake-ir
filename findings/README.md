@@ -43,7 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle at about 456 µs. Correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in paired diagnostics. Cake's root and two-chunk TMEM-A witnesses now pass exact-B300 checks; the typed seven-output preparation passes complete H64/T8192 B300 output checks after a strict finite-reference host replay. A standalone MN-major B K128 PTX mapping also passes B300 numerics, but has not been admitted into Cake's lowering. The complete state consumer, end-to-end timing and high-retention BF16 state-rounding remedy remain open.
+- F-2026-09-24-003 — A B300 adapted CAKE KDA prefill M64 reference passes the full H64/T8192 oracle at about 456 µs. Correct scalar native and two Triton chunk mappings remain 37.221×, 210.687× and 182.495× slower in paired diagnostics. Cake's root, two-chunk and MN-major B K128 TMEM-A witnesses now pass exact-B300 checks; mixed-major seven-output preparation passes complete H64/T8192 B300 output checks. Its standalone cold-L2 CUPTI median is 637.606 µs, already above the earlier full-reference diagnostic in separate jobs, so the 21-MMA inverse preparation must be redesigned. The complete state consumer, paired end-to-end timing and high-retention BF16 state-rounding remedy remain open; NCU counters are unavailable to this user.
 
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 
