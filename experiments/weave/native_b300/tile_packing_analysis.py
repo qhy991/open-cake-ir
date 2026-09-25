@@ -16,11 +16,14 @@ import numpy as np
 
 
 def analyze(ids_by_rank: list[np.ndarray], *, experts: int,
-            tile_rows: int, source_chunk_tokens: int) -> dict:
+            tile_rows: int, source_chunk_tokens: int,
+            early_flush_min_rows: int = 0) -> dict:
     if (not ids_by_rank or type(experts) is not int or experts < 1
             or experts % len(ids_by_rank)
             or type(tile_rows) is not int or tile_rows < 1
-            or type(source_chunk_tokens) is not int or source_chunk_tokens < 1):
+            or type(source_chunk_tokens) is not int or source_chunk_tokens < 1
+            or type(early_flush_min_rows) is not int
+            or not 0 <= early_flush_min_rows < tile_rows):
         raise ValueError('world, experts, tile rows or source chunk differs')
     shape = ids_by_rank[0].shape
     if len(shape) != 2 or min(shape) < 1 or shape[1] > experts:
@@ -42,6 +45,7 @@ def analyze(ids_by_rank: list[np.ndarray], *, experts: int,
     tile_number = [0] * experts
     tasks = []
     full_by_step = []
+    early_by_wave = []
     direct_tasks = 0
     for chunk_index, start in enumerate(range(0, tokens, source_chunk_tokens)):
         stop = min(start + source_chunk_tokens, tokens)
@@ -69,6 +73,23 @@ def analyze(ids_by_rank: list[np.ndarray], *, experts: int,
             full_by_step.append({'source_rank': rank,
                                  'source_chunk': chunk_index,
                                  'full_tiles_published': full})
+        early = 0
+        if early_flush_min_rows and stop < tokens:
+            for expert, rows in enumerate(pending):
+                if len(rows) >= early_flush_min_rows:
+                    tasks.append({
+                        'owner_rank': expert // experts_per_rank,
+                        'expert_id': expert,
+                        'tile_index': tile_number[expert],
+                        'valid_rows': len(rows),
+                        'published_after': ['wave_end', chunk_index],
+                        'rows': rows,
+                    })
+                    tile_number[expert] += 1
+                    pending[expert] = []
+                    early += 1
+        early_by_wave.append({'source_chunk': chunk_index,
+                              'partial_tiles_published': early})
     partial = 0
     for expert, rows in enumerate(pending):
         if rows:
@@ -98,23 +119,30 @@ def analyze(ids_by_rank: list[np.ndarray], *, experts: int,
     total_routes = len(expected)
     # For A routes spread over at most E local experts, sum ceil(n_e/M)
     # is at most min(A, ceil(A/M)+E-1). A cannot exceed all routes here.
+    waves = ceil(tokens / source_chunk_tokens)
+    possible_partial_waves = waves if early_flush_min_rows else 1
     capacity_per_owner = min(total_routes,
-                             ceil(total_routes / tile_rows) + experts_per_rank - 1)
+                             ceil(total_routes / tile_rows)
+                             + experts_per_rank * possible_partial_waves - 1)
     if any(count > capacity_per_owner for count in owner_counts):
         raise AssertionError('declared tile queue upper bound was violated')
     return {
-        'schema_version': 1,
-        'policy': 'append routes by source chunk then rank; publish full expert tiles immediately and partial tiles after all dispatch',
+        'schema_version': 2,
+        'policy': 'append routes by source chunk then rank; publish full expert tiles immediately, optionally flush thresholded partial tiles at wave end, flush the rest after all dispatch',
         'geometry': {'world_size': world, 'tokens_per_rank': tokens,
                      'routes_per_token': routes, 'experts': experts,
                      'experts_per_rank': experts_per_rank,
                      'tile_rows': tile_rows,
-                     'source_chunk_tokens': source_chunk_tokens},
+                     'source_chunk_tokens': source_chunk_tokens,
+                     'early_flush_min_rows': early_flush_min_rows},
         'summary': {
             'routes': total_routes,
             'tile_tasks': len(tasks),
-            'full_tiles_published_during_dispatch': len(tasks) - partial,
+            'full_tiles_published_during_dispatch': sum(
+                row['full_tiles_published'] for row in full_by_step),
             'terminal_partial_tiles': partial,
+            'early_partial_tiles': sum(row['partial_tiles_published']
+                                       for row in early_by_wave),
             'tile_padding_rows': len(tasks) * tile_rows - total_routes,
             'owner_routes': owner_routes,
             'owner_tile_tasks': owner_counts,
@@ -123,6 +151,7 @@ def analyze(ids_by_rank: list[np.ndarray], *, experts: int,
             'direct_per_source_chunk_padding_rows': direct_tasks * tile_rows - total_routes,
         },
         'full_tile_publication': full_by_step,
+        'early_partial_publication': early_by_wave,
         'tasks': tasks,
     }
 
@@ -135,13 +164,15 @@ def main() -> None:
     parser.add_argument('--experts', type=int, required=True)
     parser.add_argument('--tile-rows', type=int, required=True)
     parser.add_argument('--source-chunk-tokens', type=int, required=True)
+    parser.add_argument('--early-flush-min-rows', type=int, default=0)
     args = parser.parse_args()
     ids = []
     for rank in range(args.world_size):
         with np.load(args.input_root / f'rank{rank}-input.npz') as snapshot:
             ids.append(snapshot['ids'].copy())
     plan = analyze(ids, experts=args.experts, tile_rows=args.tile_rows,
-                   source_chunk_tokens=args.source_chunk_tokens)
+                   source_chunk_tokens=args.source_chunk_tokens,
+                   early_flush_min_rows=args.early_flush_min_rows)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('x') as stream:
         json.dump(plan, stream, separators=(',', ':'))
