@@ -45,7 +45,7 @@ from open_cake_ir.tasks.workloads import materialize_evaluation_inputs, referenc
 from open_cake_ir.lab.process import SupervisedProcessOutputLimit, SupervisedProcessTimeout, sanitized_environment
 from open_cake_ir.evaluation.paired import (
     METAL_KINDS, paired_protocol, paired_summary, candidate_identity, validation_case_ids,
-    candidate_from_identity, validate_pair_candidates,
+    candidate_from_identity, validate_pair_candidates, hip_synchronized_reset,
 )
 from open_cake_ir.tasks.devices import allocation_mode
 
@@ -925,6 +925,10 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
     result["job_id"] = admission.broker_job_id
     result["mode"] = job_mode(admission.broker_job_id)
     result["admitted"] = True
+    paired = authority.request['evaluation_protocol'].get('paired_timing') or {}
+    kind = paired.get('kind')
+    synchronize_after_reset = (hip_synchronized_reset(kind, authority.candidate.target)
+                               if kind is not None else False)
     if authority.request["purpose"] == "attribution":
         # Attribution is correctness plus one instrumented dispatch. It is neither timed
         # nor paired: a cohort here would be a second latency taken under different device
@@ -941,9 +945,11 @@ def _evaluate_hip_candidate(authority, result, *, collect_timing, admission=None
         # arm because it attributes by kernel name.
         _evaluate_paired_tile(
             authority, result,
-            lambda role, manifest: HipDispatchBenchmark(manifest.kernel_name), admission)
+            lambda role, manifest: HipDispatchBenchmark(
+                manifest.kernel_name, synchronize_after_reset=synchronize_after_reset), admission)
         return
-    benchmark = (HipDispatchBenchmark(authority.manifest.kernel_name)
+    benchmark = (HipDispatchBenchmark(authority.manifest.kernel_name,
+                                     synchronize_after_reset=synchronize_after_reset)
                  if collect_timing else None)
     _evaluate_tile_candidate(authority, result, benchmark, admission, collect_timing,
                              route_calls_per_cohort=_route_calls_per_cohort(authority))

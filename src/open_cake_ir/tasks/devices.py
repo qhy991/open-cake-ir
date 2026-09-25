@@ -77,22 +77,16 @@ BACKENDS = {
     # Strix Halo, an RDNA3.5 iGPU on ROCm 7.2.1. It reaches its device the way the DCU
     # does -- one visible device on one machine, serialized by the local broker -- and
     # lowers through Triton like a B200, which is why those two axes are separate rows.
-    # `timing_source` was None until something measured on this device. `HipDispatchBenchmark`
-    # was then run here against the gfx1151-rmsnorm-b8-smoke kernel, ROCm 7.2.1, torch
-    # 2.9.1: 25 dispatches with the device reset before each, median 31.858us, min 31.217,
-    # max 36.226, CV 0.038, 23 distinct values out of 25 -- a resolved cohort, not a
-    # quantum. Without the reset the same cohort reads CV 0.52, which is why the assay
-    # takes one. Its misattribution guard was checked too: a cohort it cannot attribute to
-    # the named kernel is refused, not averaged.
-    #
-    # Two device-side sources disagree on this kernel by 31% -- `rocprofv3 --kernel-trace`
-    # read 24.224us against this assay's 31.858us, both with the device reset. Retained,
-    # with what it does and does not bound, in F-2026-09-17-002; a ranking under one source
-    # is unaffected, an absolute latency is not supported, and the two are not comparable.
+    # The original timing source was admitted by the bounded gfx1151 smoke in
+    # F-2026-09-17-002. F-2026-09-24-002 retains six Runs with periodic sample spikes
+    # under that v1 source; two sealed HSACO probes separate the reset-to-launch handoff
+    # from session chunking and reset-buffer size. This target alone selects the synced
+    # v2 successor. Old Runs keep v1 at their pinned commit, and a fresh device run must
+    # qualify v2 before any successor Campaign uses its performance evidence.
     "triton-gfx1151": {"target": "gfx1151", "device_name": "AMD Radeon Graphics",
                        "provenance_token": "gfx1151", "route": "triton",
                        "allocation": "local_broker",
-                       "timing_source": "hip_dispatch",
+                       "timing_source": "hip_dispatch_sync",
                        "power_of_two_width": True},
     "triton-metax": {"target": "xcore1002", "device_name": "MetaX C550",
                      "provenance_token": "C550", "route": "triton",

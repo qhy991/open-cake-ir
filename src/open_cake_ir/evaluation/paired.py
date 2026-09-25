@@ -43,6 +43,20 @@ PAIRED_METAL_BATCHED_KIND = 'fixed_baseline_paired_metal_v2'
 # the others are: what the interval includes and what resets the device are part of the
 # policy, and a successor states its own.
 PAIRED_HIP_KIND = 'fixed_baseline_paired_hip_dispatch_v1'
+PAIRED_HIP_SYNC_KIND = 'fixed_baseline_paired_hip_dispatch_v2'
+HIP_KINDS = PLATFORMS[CodeObject.HSACO].paired_kinds
+# Synchronizing after the L2 reset has device evidence only on this exact target.
+_HIP_SYNC_RESET_EVIDENCE = frozenset({'gfx1151'})
+
+
+def hip_synchronized_reset(kind: str, target: str) -> bool:
+    if kind not in HIP_KINDS:
+        raise ValueError(f'HIP dispatch assay {kind!r} is unsupported')
+    if kind == PAIRED_HIP_SYNC_KIND and target not in _HIP_SYNC_RESET_EVIDENCE:
+        raise ValueError(f'synchronized HIP reset is not qualified for {target!r}')
+    return kind == PAIRED_HIP_SYNC_KIND
+
+
 PAIRED_MACA_KIND = 'fixed_baseline_paired_mcpti_dispatch_v1'
 METAL_KINDS = PLATFORMS[CodeObject.METAL_BINARY_ARCHIVE].paired_kinds
 PAIRED_KINDS = frozenset().union(*(row.paired_kinds for row in PLATFORMS.values()))
@@ -108,7 +122,7 @@ def paired_protocol(evaluation: Mapping[str, object]) -> PairedTimingProtocol | 
         raise ValueError('paired policy differs from retained CUPTI callback contract')
     # The HIP benchmark calls the route exactly once per warmup and once per sample; it
     # has no calibration callbacks of its own, which is where CUPTI's extra six go.
-    if value['kind'] == PAIRED_HIP_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
+    if value['kind'] in HIP_KINDS and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from the HIP dispatch invocation contract')
     if value['kind'] == PAIRED_MACA_KIND and protocol.route_calls_per_cohort != 11 + protocol.samples_per_cohort:
         raise ValueError('paired policy differs from the MACA dispatch invocation contract')
@@ -266,12 +280,13 @@ def admit_device_identity(raw, launch, participants) -> None:
                 or raw['job_id'] == f'{row.exclusive_job_prefix}-000000000000'
                 or launch.get('gpu_uuid') != raw['gpu_uuid']):
             raise ValueError('paired CUDA device/host identity differs')
-    elif raw['kind'] == PAIRED_HIP_KIND:
+    elif raw['kind'] in HIP_KINDS:
         # An AMDGCN pair: the hsaco role, a local-broker job, and whatever the runtime
         # says about a device id. A DTK device reports no UUID and `observe_local_hip`
         # records that in words rather than inventing one, so the check is that both
         # records agree on what was said -- not that something UUID-shaped was said.
-        row = platform_for_paired_kind(PAIRED_HIP_KIND)
+        row = platform_for_paired_kind(raw['kind'])
+        hip_synchronized_reset(raw['kind'], participants['candidate']['target'])
         if (executable_role(participants['candidate']['target']) != row.code_object.value
                 or not isinstance(raw.get('gpu_uuid'), str) or not raw['gpu_uuid']
                 or (not broker_pair and (re.fullmatch(rf'{row.local_job_prefix}-[0-9a-f]{{12}}', raw['job_id']) is None
