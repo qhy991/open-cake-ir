@@ -13,6 +13,7 @@ do not imply model-scale throughput.
 | Ranked payload/task/return effects | `RankedMailboxEffects` types rank owners, system release/acquire, capacities, `c/K/steal`; the B300 source passed five small cases and replayed three former liveness failures after the warp-uniform fix. | Effect key is one `(source,item,route)` compute task; no tensor-core tile task, expert bin, tile completion or multi-warp role transition. |
 | Inline expert math | `native_cuda_ep_math.py` verifies a three-stage Program and combine Schedule, then emits a one-warp SIMT BF16 row-dot / FP32 activation/down body. | Admission fixes H16, I32, two local experts and T7/T8. Increasing constants would leave one-token/route SIMT work and not implement grouped tensor-core GEMM. |
 | Tensor-core local FFN | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. Separate no-bias model-width up/gate (`cc1715b5`) and down (`de0c4824`) tiles each passed two full one-GPU FP32 comparisons bitwise against an independent FP64 oracle. A model-width SwiGLU Schedule (`cb72263a`) explicitly casts FP32 to BF16; a three-stage Program (`98431873`) binds up/gate → SwiGLU → down without an implicit cast. CUDA 13.1 compiled all three Program stages on B300-M4 with 74/24/74 registers per thread and no spills. One brokered B300 GPU run passed two full stage-by-stage cases bitwise against an independent oracle. | The ordered Program is one fixed expert tile. There is no routed token bin, rank placement, tile-keyed mailbox or transition from the current 32-thread ranked CTA to the 192-thread tensor-core worker. No EP4 or performance result follows. |
+| Dynamic expert-bin input | A standalone B300 kernel uses a PTX GPU-scope returned-old atomic reservation to pack BF16 rows and route keys by expert. One brokered GPU run passed all 16,384 synthetic model-scale routes with exact BF16 rows and unique keys (`a4bcc968`). | It is a one-GPU layout probe with fixed per-expert capacity. Cake has not yet admitted its dynamic address/effect graph; no cross-device release/acquire publication, tile-ready queue or FFN invocation follows. |
 
 The tensor-tile source, exact synthetic Schedule, nonblocking
 `RESIDENCY_BOUND` finding, nvcc command/log and cubin are retained in
@@ -58,6 +59,10 @@ counterexamples and exact source are retained in
 root. This is a deterministic publication witness, not GPU execution or a
 timing model. It motivates a tile queue that accumulates across temporal
 chunks and permits an explicit partial-bin publication rule.
+The B300 `cake-weave-model-expert-bin-pack-a4bcc968/` record separately
+validates the actual BF16 row and return-key placement for all routes on one
+GPU. Its relaxed GPU-scope atomic is only a row reservation; it cannot stand
+in for the system release/acquire handoff needed by the ranked EP4 worker.
 
 ## Required joint change
 
@@ -91,10 +96,11 @@ chunks and permits an explicit partial-bin publication rule.
 
 ## Bounded implementation order
 
-- Add dynamic expert-owned token bins to the validated ordered local expert
-  FFN Program and test varied expert loads, including empty and partial bins.
-  Retain the existing stage-by-stage B300 oracle as a seed, then obtain
-  routed model-scale correctness and profiler evidence.
+- Evolve Cake's dynamic addressing/effect analysis and native CUDA lowering
+  together so the proven expert-bin row reservation, route-key store and BF16
+  copy become an admitted Schedule rather than a standalone probe. Then
+  connect the bins to the validated local FFN Program, including empty and
+  partial experts, and obtain routed model-scale correctness evidence.
 - Then add tile-keyed ranked effects, capacity/liveness analyses and native
   emission in a successor Compiler commit; replay small T7/T8 counterexamples
   and the separate model-scale Workload before a new Campaign.
