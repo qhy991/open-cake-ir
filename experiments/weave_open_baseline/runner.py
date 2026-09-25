@@ -9,7 +9,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import statistics
 import subprocess
 import sys
 import time
@@ -162,9 +161,9 @@ def _run_on_broker(document: dict, upstream: Path, input_dir: Path,
         all_samples = [None] * 4
         dist.all_gather_object(all_samples, samples, group=group)
         if rank == 0:
-            complete_ns = [max(all_samples[r][i][1] for r in range(4))
-                           - min(all_samples[r][i][0] for r in range(4))
-                           for i in range(len(samples))]
+            diagnostic_span_ns = [max(all_samples[r][i][1] for r in range(4))
+                                  - min(all_samples[r][i][0] for r in range(4))
+                                  for i in range(len(samples))]
             (output_dir / "device-observation.json").write_text(json.dumps({
                 "experiment_id": document["experiment_id"],
                 "upstream_commit": document["upstream"]["commit"],
@@ -176,8 +175,10 @@ def _run_on_broker(document: dict, upstream: Path, input_dir: Path,
                                   "warmups": document["measurement"]["warmups"],
                                   "iterations": document["measurement"]["iterations"]},
                 "rank_start_end_ns": all_samples,
-                "complete_layer_ns": complete_ns,
-                "median_complete_layer_ns": statistics.median(complete_ns),
+                "diagnostic_global_span_ns": diagnostic_span_ns,
+                "qualified_latency_ns": None,
+                "measurement_coverage_limitation":
+                    "Target CUPTI/L2-reset timer unavailable; host spans are diagnostic only",
                 "timer": document["measurement"]["timer"],
                 "device_state_reset": document["measurement"]["device_state_reset"],
                 "software": {"torch": torch.__version__, "numpy": np.__version__,

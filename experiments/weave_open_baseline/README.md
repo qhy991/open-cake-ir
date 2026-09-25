@@ -95,13 +95,15 @@ experiment's provisional times.
    `oracle-result.json`, commands and logs. A failing/missing oracle is not a
    successful baseline.
 
-The measured function includes route preprocessing, dispatch, gate/up GEMM,
+The observed function includes route preprocessing, dispatch, gate/up GEMM,
 SwiGLU, down GEMM and combine, ending only after each rank synchronizes. The
-per-iteration layer time is latest rank completion minus earliest rank start
-on the same host's monotonic clock. Input generation and the CPU oracle run
+diagnostic span is latest rank completion minus earliest rank start on the
+same host's monotonic clock. Input generation and the CPU oracle run
 before the lease. Loading retained inputs, device transfer and initialization
 occur inside the lease but outside the measured window.
-The current timer is a host steady clock without a verified L2 flush or CUPTI
-target timing contract. Its output is diagnostic only; it cannot support a
-Cake-vs-TD latency or overlap claim. A profiler trace and target-aligned
-device-state reset are still required for a comparable performance result.
+The `sm_103a` Host document declares CUPTI/FlashInfer timer inputs under
+`/mnt/b300-shared`, but a current read-only B300-M4 check reported ENODEV for
+those paths. The adapter therefore records raw diagnostic spans and an explicit
+measurement-coverage limitation, with `qualified_latency_ns: null`. It cannot
+support a Cake-vs-TD latency or overlap claim. A profiler trace and
+target-aligned device-state reset are still required for a comparable result.

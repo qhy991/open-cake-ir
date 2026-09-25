@@ -49,6 +49,8 @@ produced for this baseline yet.
   a build-environment failure, not a device compatibility result. The private
   venv will be given pinned `cmake==3.31.10` before retrying; the original log
   remains unchanged.
+- `prepare_cpu.sh cmake <source> <build>` completed and
+  `cmake-install.log` records `cmake==3.31.10` in the isolated venv.
 - Full-scale CPU inputs and oracle were generated **before any baseline GPU
   lease** by `create_oracle_cpu.sh
   /home/qinhaiyan/weave-td-build-20260925
@@ -79,9 +81,11 @@ and its fused GEMM tiles use K64/N256, so the frozen small cases have no
 upstream compatibility evidence. No result from one geometry is labeled as an
 equivalent result for the other.
 
-The adapter times the complete upstream forward window across four ranks;
-its timer is a host monotonic clock with no verified target L2 reset or CUPTI
-policy. Any eventual value is diagnostic until the target measurement contract
-and profiler overlap evidence are established. A source build, create-only CPU
-model-scale oracle, four-card broker admission, device output, after-release
-oracle comparison and profiler remain open gates.
+The adapter observes the complete upstream forward window across four ranks;
+its host monotonic spans are diagnostic. The declared `sm_103a` CUPTI/FlashInfer
+timer inputs under `/mnt/b300-shared` currently return ENODEV on B300-M4
+(read-only observation from the parallel Cake task). The adapter therefore
+reports `qualified_latency_ns: null` and a measurement-coverage limitation.
+A source build, four-card broker admission, device output, after-release oracle
+comparison and profiler remain open gates. The create-only CPU model-scale
+oracle has already completed as recorded above.
