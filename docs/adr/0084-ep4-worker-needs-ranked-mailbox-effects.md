@@ -193,6 +193,12 @@ The common `LaunchableCandidate` constructor now explicitly refuses a
 when the supplied artifact bytes satisfy their existing seals. This is a
 negative admission gate, not a distributed candidate implementation.
 
+The NVIDIA task at `e7d0015c` adds a create-only CPU development build that
+requests a host wrapper and cubin from one exact Cake source and retains
+both compile logs and partial failures. It is tested with a fake compiler;
+actual B300 nvcc/PTXAS, compiled-symbol inspection, artifact sealing and
+ranked loader replay remain separate gates.
+
 The ranked loader must use the declared four-rank Evaluation adapter, the
 selected exact peer pairs and one broker lease of at most four GPUs. It must
 verify rank-local input ownership, compiled mailbox/output offsets, reset

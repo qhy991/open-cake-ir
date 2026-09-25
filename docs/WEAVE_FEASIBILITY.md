@@ -214,6 +214,12 @@ The existing candidate constructor now refuses a ranked manifest presented
 as an ordinary single-device CUBIN, so pre-seal evidence cannot be mistaken
 for a launchable ranked artifact while that builder/loader is missing.
 
+At NVIDIA task commit `e7d0015c`, a create-only CPU development builder can
+invoke a supplied nvcc on the exact ranked source for separate host-wrapper
+and cubin products. Fake-compiler tests pin both command routes and retained
+failure/timeout evidence. No actual nvcc, sealed `LaunchableCandidate`,
+distributed loader or B300 device result follows from this builder yet.
+
 An exact native-route admission audit of the existing T=1 FP8 SoL MoE plan
 explains why it cannot simply become the EP4 kernel. `moe_gemm1` is blocked by
 FP8 dtype admission, dynamic access indices, cast realization, arithmetic
