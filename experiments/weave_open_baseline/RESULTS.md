@@ -1,7 +1,7 @@
 # EP4 open baseline execution record
 
 Status: **CPU source and adapter gates pass; device qualification pending.**
-One fallback broker request failed in its admission wrapper before CUDA. No
+Two fallback broker requests failed before MoE execution. No
 device forward, oracle comparison, profiler trace or comparable latency has
 been produced yet.
 
@@ -147,3 +147,15 @@ successor launcher validates the saved broker-issued receipt against live
 broker status, including job identity, exclusive four-GPU allocation and
 visibility, before passing only those devices into Docker. This is an
 admission-boundary correction, not device correctness evidence.
+
+The second fallback request, `gpuq-c328d93fc4fd`, passed the receipt/live
+broker check and started its pinned container on four GPUs. All four ranks
+failed while importing SGLang: the image has no passwd entry for the mapped
+host UID 1010, and TorchDynamo's `getpass.getuser()` raised `KeyError`.
+No dispatch or expert computation occurred. The retained `broker.log` and
+admission receipt are under
+`/home/qinhaiyan/weave-sglang-deepep-ep4-run-828c2c54-20260925/`.
+The broker reported terminal failure and released all four GPUs. A no-GPU
+container probe then showed `USER`/`LOGNAME` resolves this exact import gate;
+the successor wrapper supplies them and the CPU preflight exercises the
+TorchDynamo import.

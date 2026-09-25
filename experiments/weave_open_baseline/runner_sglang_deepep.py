@@ -6,6 +6,7 @@ are separate phases. This later SGLang path is not the paper's v0.5.9 setup.
 from __future__ import annotations
 
 import argparse
+import getpass
 import importlib.metadata
 import json
 import os
@@ -59,6 +60,10 @@ def inspect_inputs(experiment: dict, workload: dict, input_dir: Path,
 
 def preflight(experiment: dict, workload: dict, input_dir: Path) -> dict:
     inspect_inputs(experiment, workload, input_dir, all_ranks=True)
+    # SGLang's import reaches TorchDynamo, which requires a resolvable user.
+    if not getpass.getuser():
+        raise ValueError("Container user is unresolved")
+    import torch._dynamo  # noqa: F401
     if subprocess.check_output(["git", "-c", f"safe.directory={SGLANG_ROOT}",
                                 "-C", str(SGLANG_ROOT), "rev-parse", "HEAD"],
                                text=True).strip() != experiment["source"]["sglang_commit"]:

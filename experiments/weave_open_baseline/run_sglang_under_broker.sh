@@ -34,7 +34,8 @@ done
 docker run --rm --network host --ipc host \
   --gpus "\"device=$broker_device_ids\"" \
   --user "$(id -u):$(id -g)" \
-  -e HOME=/cache -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
+  -e HOME=/cache -e USER="$(id -un)" -e LOGNAME="$(id -un)" \
+  -e CUDA_VISIBLE_DEVICES=0,1,2,3 \
   -e WEAVE_BROKER_JOB_ID="$broker_job_id" -e WEAVE_BROKER_DEVICE_IDS="$broker_device_ids" \
   -v "$adapter_root:/adapter:ro" -v "$input_root:/inputs:ro" \
   -v "$output_root:/out" -v "$cache_root:/cache" -w /adapter \
