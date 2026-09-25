@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # CPU-only oracle, deliberately outside the broker's device phase.
 set -euo pipefail
-if [[ $# != 2 ]]; then
-  echo "usage: $0 <isolated-build-dir> <completed-output-dir>" >&2
+if [[ $# != 3 ]]; then
+  echo "usage: $0 <isolated-build-dir> <cpu-input-dir> <completed-output-dir>" >&2
   exit 2
 fi
 if [[ -n ${GPUQ_JOB_ID:-} ]]; then
@@ -10,7 +10,8 @@ if [[ -n ${GPUQ_JOB_ID:-} ]]; then
   exit 1
 fi
 build_root=$(realpath "$1")
-output_root=$(realpath "$2")
+input_root=$(realpath "$2")
+output_root=$(realpath "$3")
 adapter_root=$(cd "$(dirname "$0")" && pwd)
 if [[ ! -f $output_root/device-observation.json ]]; then
   echo "Device observation absent" >&2
@@ -19,6 +20,7 @@ fi
 docker run --rm --network none --user "$(id -u):$(id -g)" \
   -e HOME=/tmp/weave-td-home -e NVIDIA_VISIBLE_DEVICES=void \
   -v "$build_root:/build:ro" -v "$adapter_root:/adapter:ro" \
+  -v "$input_root:/inputs:ro" \
   -v "$output_root:/out" -w /adapter \
   lmsysorg/sglang:latest-cu130-runtime \
-  /build/venv/bin/python /adapter/runner.py check --output /out
+  /build/venv/bin/python /adapter/runner.py check --inputs /inputs --output /out

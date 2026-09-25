@@ -15,8 +15,10 @@ calls `mega_dispatch_group_gemm`, `swiglu_forward`, then
 `mega_group_gemm_combine`. Its
 [upstream EP test](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/test/nvidia/test_ep_moe_fused.py)
 supports BF16 and four ranks. The test itself also runs backward and smaller
-cases, so `runner.py` invokes only the full forward path and captures its exact
-window. The [tuning defaults](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/function/nvidia/common.py)
+cases, but its forward precision variable is hard-coded `True` with a TODO
+rather than compared to an oracle. `runner.py` invokes only the full forward
+path and checks saved outputs with an independent CPU calculation. The
+[tuning defaults](https://github.com/ByteDance-Seed/Triton-distributed/blob/63de69e48dde17f32b0ee80ba83901c6950404cd/python/triton_dist/function/nvidia/common.py)
 are H800 oriented. Source comments mention Hopper/Blackwell, but B300-M4
 execution and accuracy remain **unverified** until a broker run succeeds.
 
@@ -64,16 +66,21 @@ experiment's provisional times.
    caller's chosen path. Keep the complete commands, logs and `git status`.
 2. Run `python runner.py preflight --upstream /path/to/Triton-distributed`.
    This checks the exact upstream commit, clean tracked source, all three
-   forward stages and Python syntax. It is CPU only.
+   forward stages and Python syntax. Run `create_oracle_cpu.sh <build>
+   /path/to/new-cpu-oracle` in the same isolated Python/NumPy environment
+   used for the device job. Both are CPU only; the oracle writes four rank
+   input snapshots, every expected output and an observation record before
+   any lease.
 3. Create a new output directory and submit one `gpu-run --mode exclusive
    --gpu-count 4 --receipt-out /path/to/new-output/admission.json` job through
-   the B300-M4 broker, with `run_under_broker.sh <upstream> <build> <output>`
+   the B300-M4 broker, with `run_under_broker.sh <upstream> <build>
+   <cpu-input-dir> <output>`
    as its child command. The script checks the broker-owned allocation and
    passes exactly those four physical devices into the GPU container.
    Preserve broker stdout/stderr and the admission receipt. The broker sets
    `CUDA_VISIBLE_DEVICES`; do not set it in the launcher.
 4. After the broker's lease has ended, run `check_after_release.sh <build>
-   <output>` on the CPU with the **same NumPy version** used for
+   <cpu-input-dir> <output>` on the CPU with the **same NumPy version** used for
    input generation. Retain `rank*-output.npy`, `device-observation.json`,
    `oracle-result.json`, commands and logs. A failing/missing oracle is not a
    successful baseline.
@@ -81,8 +88,9 @@ experiment's provisional times.
 The measured function includes route preprocessing, dispatch, gate/up GEMM,
 SwiGLU, down GEMM and combine, ending only after each rank synchronizes. The
 per-iteration layer time is latest rank completion minus earliest rank start
-on the same host's monotonic clock. Input
-generation, weight transfer, initialization and oracle run outside the window.
+on the same host's monotonic clock. Input generation and the CPU oracle run
+before the lease. Loading retained inputs, device transfer and initialization
+occur inside the lease but outside the measured window.
 The current timer is a host steady clock without a verified L2 flush or CUPTI
 target timing contract. Its output is diagnostic only; it cannot support a
 Cake-vs-TD latency or overlap claim. A profiler trace and target-aligned

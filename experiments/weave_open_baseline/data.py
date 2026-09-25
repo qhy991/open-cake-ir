@@ -59,11 +59,12 @@ def make_rank(document: dict, rank: int) -> dict[str, np.ndarray]:
             "gate": gate, "up": up, "down": down}
 
 
-def reference(document: dict) -> np.ndarray:
+def reference(document: dict, ranks: list[dict[str, np.ndarray]] | None = None) -> np.ndarray:
     """Compute every routed contribution in FP64 on the CPU, then BF16 round."""
     shape = document["geometry"]
     t, h, e = (shape[key] for key in ("tokens_per_rank", "hidden", "experts"))
-    ranks = [make_rank(document, rank) for rank in range(4)]
+    if ranks is None:
+        ranks = [make_rank(document, rank) for rank in range(4)]
     output = np.zeros((4, t, h), dtype=np.float64)
     ids = np.stack([rank["ids"] for rank in ranks])
     for expert in range(e):
@@ -83,8 +84,10 @@ def reference(document: dict) -> np.ndarray:
     return round_bf16(output.astype(np.float32))
 
 
-def compare_outputs(document: dict, output_dir: Path) -> dict:
-    expected = reference(document)
+def compare_outputs(document: dict, output_dir: Path,
+                    expected: np.ndarray | None = None) -> dict:
+    if expected is None:
+        expected = reference(document)
     actual = np.stack([np.load(output_dir / f"rank{rank}-output.npy")
                        for rank in range(4)])
     if actual.shape != expected.shape:

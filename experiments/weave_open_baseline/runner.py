@@ -50,7 +50,49 @@ def preflight(document: dict, upstream: Path) -> dict:
             "numpy_version": np.__version__, "mode": "cpu_only_static"}
 
 
-def _run_on_broker(document: dict, upstream: Path, output_dir: Path) -> None:
+def input_observation(document: dict, input_dir: Path) -> dict:
+    observation = json.loads((input_dir / "cpu-oracle-observation.json").read_text())
+    if observation["experiment_id"] != document["experiment_id"]:
+        raise ValueError("CPU input snapshot belongs to another experiment")
+    if observation["numpy_version"] != np.__version__:
+        raise ValueError("NumPy version differs from CPU input snapshot")
+    if not observation["all_finite"] or not observation["nonzero_elements"]:
+        raise ValueError("CPU oracle is empty or non-finite")
+    return observation
+
+
+def load_rank_snapshot(document: dict, input_dir: Path, rank: int,
+                       check_values: bool = False) -> dict[str, np.ndarray]:
+    shape = document["geometry"]
+    t, h, f, k, local_e = (shape["tokens_per_rank"], shape["hidden"],
+                          shape["intermediate"], shape["top_k"], shape["experts"] // 4)
+    expected = {"hidden": ((t, h), np.float32), "ids": ((t, k), np.int32),
+                "weights": ((t, k), np.float32),
+                "gate": ((local_e, f, h), np.float32),
+                "up": ((local_e, f, h), np.float32),
+                "down": ((local_e, h, f), np.float32)}
+    with np.load(input_dir / f"rank{rank}-input.npz", allow_pickle=False) as saved:
+        if set(saved.files) != set(expected):
+            raise ValueError("Rank input ABI differs")
+        result = {name: saved[name] for name in expected}
+    for name, (dims, dtype) in expected.items():
+        value = result[name]
+        if value.shape != dims or value.dtype != dtype:
+            raise ValueError(f"Invalid rank input: {name}")
+        if check_values and not np.all(np.isfinite(value)):
+            raise ValueError(f"Non-finite rank input: {name}")
+    ids = result["ids"]
+    if (np.any(ids < 0) or np.any(ids >= shape["experts"])
+            or np.any(np.diff(np.sort(ids, axis=1), axis=1) == 0)):
+        raise ValueError("Invalid or duplicate expert route")
+    weights = result["weights"]
+    if np.any(weights < 0) or not np.allclose(weights.sum(axis=1), 1.0, atol=1e-6):
+        raise ValueError("Invalid route weights")
+    return result
+
+
+def _run_on_broker(document: dict, upstream: Path, input_dir: Path,
+                   output_dir: Path) -> None:
     import torch
     import torch.distributed as dist
 
@@ -73,7 +115,8 @@ def _run_on_broker(document: dict, upstream: Path, output_dir: Path) -> None:
     torch.cuda.set_device(local_rank)
     dist.init_process_group(backend="cpu:gloo,cuda:nccl")
     group = dist.new_group(ranks=list(range(4)), backend="nccl")
-    inputs = make_rank(document, rank)
+    input_observation(document, input_dir)
+    inputs = load_rank_snapshot(document, input_dir, rank)
     def tensor(name: str, dtype):
         return torch.from_numpy(inputs[name]).to(device="cuda", dtype=dtype)
     hidden = tensor("hidden", torch.bfloat16)
@@ -122,6 +165,7 @@ def _run_on_broker(document: dict, upstream: Path, output_dir: Path) -> None:
                 "broker_job_id": os.environ["GPUQ_JOB_ID"],
                 "broker_device_ids": os.environ["GPUQ_DEVICE_IDS"],
                 "geometry": shape,
+                "cpu_input_numpy_version": np.__version__,
                 "configuration": {"num_sm": 64, "capacity": 4.0, "num_buffers": 1,
                                   "warmups": document["measurement"]["warmups"],
                                   "iterations": document["measurement"]["iterations"]},
@@ -146,6 +190,7 @@ def main() -> None:
     parser.add_argument("mode", choices=("preflight", "oracle", "run", "check"))
     parser.add_argument("--contract", type=Path, default=HERE / "contract.json")
     parser.add_argument("--upstream", type=Path)
+    parser.add_argument("--inputs", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     document = load_contract(args.contract)
@@ -153,6 +198,8 @@ def main() -> None:
         parser.error("--upstream is required for preflight and run")
     if args.mode in ("oracle", "run", "check") and args.output is None:
         parser.error("--output is required for oracle, run and check")
+    if args.mode in ("run", "check") and args.inputs is None:
+        parser.error("--inputs is required for run and check")
     if args.mode == "preflight":
         print(json.dumps(preflight(document, args.upstream), indent=2))
     elif args.mode == "oracle":
@@ -160,7 +207,13 @@ def main() -> None:
             raise RuntimeError("CPU oracle must run outside a GPU lease")
         args.output.mkdir(parents=True, exist_ok=False)
         start = time.perf_counter_ns()
-        expected = reference(document)
+        ranks = [make_rank(document, rank) for rank in range(4)]
+        for rank, inputs in enumerate(ranks):
+            np.savez(args.output / f"rank{rank}-input.npz", **inputs)
+            load_rank_snapshot(document, args.output, rank, check_values=True)
+        expected = reference(document, ranks)
+        if not np.all(np.isfinite(expected)):
+            raise ValueError("Non-finite CPU oracle")
         elapsed_ns = time.perf_counter_ns() - start
         np.save(args.output / "oracle-expected.npy", expected)
         observation = {"experiment_id": document["experiment_id"],
@@ -174,8 +227,9 @@ def main() -> None:
         print(json.dumps(observation, indent=2))
     elif args.mode == "run":
         preflight(document, args.upstream)
-        _run_on_broker(document, args.upstream, args.output)
+        _run_on_broker(document, args.upstream, args.inputs, args.output)
     else:
+        input_observation(document, args.inputs)
         observation = json.loads((args.output / "device-observation.json").read_text())
         if observation["experiment_id"] != document["experiment_id"]:
             raise ValueError("Device result belongs to another experiment")
@@ -183,7 +237,8 @@ def main() -> None:
             raise ValueError("Device result used another upstream commit")
         if observation["software"]["numpy"] != np.__version__:
             raise ValueError("NumPy version differs from device input generator")
-        result = compare_outputs(document, args.output)
+        expected = np.load(args.inputs / "oracle-expected.npy", allow_pickle=False)
+        result = compare_outputs(document, args.output, expected=expected)
         (args.output / "oracle-result.json").write_text(json.dumps(result, indent=2) + "\n")
         print(json.dumps(result, indent=2))
         if not result["pass"]:

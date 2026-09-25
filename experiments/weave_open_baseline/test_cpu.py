@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import copy
+import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from data import compare_outputs, load_contract, make_rank, reference, round_bf16
+from runner import input_observation, load_rank_snapshot
 
 
 def small_contract() -> dict:
@@ -53,6 +57,23 @@ class CpuOracleTest(unittest.TestCase):
             result = compare_outputs(document, path)
             self.assertFalse(result["pass"])
             self.assertEqual(result["failing_elements"], 1)
+
+    def test_cpu_phase_retains_inputs_for_device_phase(self):
+        document = small_contract()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            contract_path = path / "contract.json"
+            contract_path.write_text(json.dumps(document))
+            input_path = path / "inputs"
+            subprocess.run([sys.executable, str(Path(__file__).with_name("runner.py")),
+                            "oracle", "--contract", str(contract_path),
+                            "--output", str(input_path)], check=True,
+                           stdout=subprocess.DEVNULL)
+            self.assertEqual(input_observation(document, input_path)["shape"], [4, 2, 4])
+            for rank in range(4):
+                np.testing.assert_array_equal(load_rank_snapshot(document, input_path, rank)["ids"],
+                                              make_rank(document, rank)["ids"])
+            self.assertTrue(np.all(np.isfinite(np.load(input_path / "oracle-expected.npy"))))
 
 
 if __name__ == "__main__":
