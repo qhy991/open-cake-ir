@@ -12,7 +12,7 @@ do not imply model-scale throughput.
 | --- | --- | --- |
 | Ranked payload/task/return effects | `RankedMailboxEffects` types rank owners, system release/acquire, capacities, `c/K/steal`; the B300 source passed five small cases and replayed three former liveness failures after the warp-uniform fix. | Effect key is one `(source,item,route)` compute task; no tensor-core tile task, expert bin, tile completion or multi-warp role transition. |
 | Inline expert math | `native_cuda_ep_math.py` verifies a three-stage Program and combine Schedule, then emits a one-warp SIMT BF16 row-dot / FP32 activation/down body. | Admission fixes H16, I32, two local experts and T7/T8. Increasing constants would leave one-token/route SIMT work and not implement grouped tensor-core GEMM. |
-| Tensor-core local FFN | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. Separate no-bias model-width up/gate (`cc1715b5`) and down (`de0c4824`) tiles each passed two full one-GPU FP32 comparisons bitwise against an independent FP64 oracle. A model-width SwiGLU Schedule (`cb72263a`) explicitly casts FP32 to BF16; a three-stage Program (`98431873`) binds up/gate → SwiGLU → down without an implicit cast. CUDA 13.1 compiled all three Program stages on B300-M4 with 74/24/74 registers per thread and no spills. | The ordered Program is one fixed expert tile. Its full device oracle is pending. There is no routed token bin, rank placement, tile-keyed mailbox or transition from the current 32-thread ranked CTA to the 192-thread tensor-core worker. No EP4 or performance result follows. |
+| Tensor-core local FFN | A complete native CUDA TMA/`tcgen05` GEMM Schedule exists. Separate no-bias model-width up/gate (`cc1715b5`) and down (`de0c4824`) tiles each passed two full one-GPU FP32 comparisons bitwise against an independent FP64 oracle. A model-width SwiGLU Schedule (`cb72263a`) explicitly casts FP32 to BF16; a three-stage Program (`98431873`) binds up/gate → SwiGLU → down without an implicit cast. CUDA 13.1 compiled all three Program stages on B300-M4 with 74/24/74 registers per thread and no spills. One brokered B300 GPU run passed two full stage-by-stage cases bitwise against an independent oracle. | The ordered Program is one fixed expert tile. There is no routed token bin, rank placement, tile-keyed mailbox or transition from the current 32-thread ranked CTA to the 192-thread tensor-core worker. No EP4 or performance result follows. |
 
 The tensor-tile source, exact synthetic Schedule, nonblocking
 `RESIDENCY_BOUND` finding, nvcc command/log and cubin are retained in
@@ -26,8 +26,9 @@ bitwise reports are separately retained in
 `cake-weave-model-down-tile-de0c4824/`. Their exact fixed shapes and input
 domains do not qualify the full model-scale FFN. The ordered Program, three
 generated sources, two full CPU input/oracle cases and CPU nvcc/PTXAS build
-products are in `cake-weave-model-local-ffn-98431873/`; they do not yet
-establish device correctness for the full Program.
+products and one-GPU stage-by-stage bitwise device report are in
+`cake-weave-model-local-ffn-98431873/`. This establishes the fixed tile's
+ordered arithmetic, not dynamic routing or an EP4 result.
 
 ## Provisional Qwen3-30B geometry pressure
 
@@ -76,11 +77,10 @@ also differ from the paper's ShareGPT routing.
 
 ## Bounded implementation order
 
-- Validate the ordered local expert FFN Program against its independent
-  stage-by-stage oracle on B300, then add dynamic expert-owned token bins and
-  test varied expert loads. Retain nvcc/PTXAS, oracle and profiler evidence.
-  The current fixed expert tile and dyadic projection cases are correctness
-  seeds, not a routed model-scale result.
+- Add dynamic expert-owned token bins to the validated ordered local expert
+  FFN Program and test varied expert loads, including empty and partial bins.
+  Retain the existing stage-by-stage B300 oracle as a seed, then obtain
+  routed model-scale correctness and profiler evidence.
 - Then add tile-keyed ranked effects, capacity/liveness analyses and native
   emission in a successor Compiler commit; replay small T7/T8 counterexamples
   and the separate model-scale Workload before a new Campaign.
