@@ -38,7 +38,14 @@ def load_fanin_contract(path: Path) -> dict:
             or document["target"] != "sm_103a"
             or document["geometry"] != original["geometry"]
             or document["input"]["scaling"] != "fan_in_v2"
-            or document["input"]["seed"] != original["input"]["seed"]):
+            or document["input"]["seed"] != original["input"]["seed"]
+            or document["input"]["hidden_stddev"] != 1.0
+            or document["input"]["gate_up_weight_stddev"] != "1/sqrt(H)"
+            or document["input"]["down_weight_stddev"] != "1/sqrt(I)"
+            or document["input"]["route_ids"] != original["input"]["route_ids"]
+            or document["input"]["route_weights"] != original["input"]["route_weights"]
+            or document["oracle"]["atol"] != original["oracle"]["atol"]
+            or document["oracle"]["rtol"] != original["oracle"]["rtol"]):
         raise ValueError("Fan-in-scaled input contract differs from reviewed successor")
     return document
 
