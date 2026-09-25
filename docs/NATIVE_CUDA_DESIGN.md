@@ -523,6 +523,16 @@ adapter. A fresh extraction passes source/Workload binding and a fake-nvcc
 invocation of both output routes. It has no real compiled products or GPU
 result.
 
+The next source revision makes `steal_budget` bound successful communication
+CTA task claims, as in the EP4 event model. A communication CTA reserves one
+permit before trying the shared task head and refunds it when the inbound
+queue is temporarily empty. Contending CTAs wait for a permit to be released
+or for the first chunk, all inbound dispatch, or the successful-claim budget
+to end the steal window. The older `e7d0015c` bundle spent a permit on every
+attempt, so its source remains a distinct predecessor. This change still
+needs nvcc/PTXAS and B300-M4 correctness and counter evidence before it can
+support a steal-performance claim.
+
 ## Completion phases and nested reduction scopes
 
 A contraction loop carries its TMEM accumulator across K iterations. Its non-pipeline

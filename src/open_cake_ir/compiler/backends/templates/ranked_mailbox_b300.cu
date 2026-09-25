@@ -241,19 +241,42 @@ __global__ void @ENTRY@_kernel(Params* params) {
         __syncwarp();
         while (true) {
             int stop = 0;
+            int permit = 0;
             if (lane == 0) {
                 stop = sys_load_acquire(&local->chunk_completed[0]) >=
                        cake_weave::chunk_size<T>(0, params->chunks) * K ||
-                       atomicAdd(&local->steal_permits, 1) >= params->steal_budget;
+                       atomicAdd(&local->stolen, 0) >= params->steal_budget ||
+                       no_more_inbound(local);
+                if (!stop) {
+                    int used = atomicAdd(&local->steal_permits, 0);
+                    while (used < params->steal_budget) {
+                        const int observed = atomicCAS(&local->steal_permits,
+                                                       used, used + 1);
+                        if (observed == used) {
+                            permit = 1;
+                            break;
+                        }
+                        used = observed;
+                    }
+                }
             }
             stop = __shfl_sync(0xffffffffu, stop, 0);
             if (stop) break;
+            permit = __shfl_sync(0xffffffffu, permit, 0);
+            if (!permit) {
+                __nanosleep(64);
+                continue;
+            }
             int slot = lane == 0 ? try_claim(local) : 0;
             slot = __shfl_sync(0xffffffffu, slot, 0);
             if (slot >= 0) {
                 compute_one(params, slot, lane);
                 if (lane == 0) atomicAdd(&local->stolen, 1);
-            } else if (no_more_inbound(local)) break;
+            } else {
+                // A temporary empty queue does not spend the steal budget.
+                if (lane == 0) atomicSub(&local->steal_permits, 1);
+                __nanosleep(64);
+            }
         }
         if (lane == 0) atomicAdd(&local->comm_done, 1);
         __syncwarp();
@@ -286,6 +309,7 @@ extern "C" size_t @ENTRY@_output_bytes() { return T * H * sizeof(__nv_bfloat16);
 extern "C" size_t @ENTRY@_status_offset() { return offsetof(Mailbox, status); }
 extern "C" size_t @ENTRY@_payload_tail_offset() { return offsetof(Mailbox, payload_tail); }
 extern "C" size_t @ENTRY@_task_tail_offset() { return offsetof(Mailbox, task_tail); }
+extern "C" size_t @ENTRY@_steal_permits_offset() { return offsetof(Mailbox, steal_permits); }
 extern "C" size_t @ENTRY@_stolen_offset() { return offsetof(Mailbox, stolen); }
 extern "C" size_t @ENTRY@_compute_completed_offset() {
     return offsetof(Mailbox, compute_completed);

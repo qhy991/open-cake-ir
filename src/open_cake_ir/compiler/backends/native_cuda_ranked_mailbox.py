@@ -120,7 +120,8 @@ def lower_ranked_mailbox(compiler, effects: RankedMailboxEffects,
     names = {name: entry + '_' + name for name in (
         'mailbox_bytes', 'tokens', 'output_offset', 'output_bytes',
         'status_offset', 'payload_tail_offset', 'task_tail_offset',
-        'stolen_offset', 'compute_completed_offset', 'dispatch_done_offset',
+        'steal_permits_offset', 'stolen_offset', 'compute_completed_offset',
+        'dispatch_done_offset',
         'prepare_rank', 'launch')}
     requirements = {
         'source_language': 'cuda_cpp', 'target': local.target,
