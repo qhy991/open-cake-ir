@@ -212,9 +212,9 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
               'local storage is addressed by its declared view, not a global AccessMap')
         for j, component in enumerate(access.indices):
             check(component.source in (AccessIndexKind.DIMENSION, AccessIndexKind.PROGRAM, AccessIndexKind.PROGRAM_TILE,
-                                        AccessIndexKind.LOOP_TILE),
+                                        AccessIndexKind.LOOP, AccessIndexKind.LOOP_TILE),
                   'NATIVE_ACCESS_UNSUPPORTED', f'access_maps[{i}].indices[{j}]',
-                  'native accesses admit contiguous dimension, program_tile and loop_tile coordinates')
+                  'native accesses admit contiguous dimension, program and loop coordinates')
     if s.program_map:
         for i, axis in enumerate(s.program_map.axes):
             check(axis.tile >= 1, 'NATIVE_PROGRAM_AXIS', f'program_map.axes[{i}]',
@@ -348,15 +348,28 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                             if producer is not None and len(producer.reads) == 1 else None)
                 access_b = s.access_map(producer.op_id, source_b.name) if source_b else None
                 loop_source = buffers.get(loop.buffer)
-                check(tensor_a and staged_b is not None and producer is not None
-                      and source_b is not None and loop_source is not None
-                      and len(source_b.shape) == len(loop_source.shape) == 2
-                      and source_b.shape[0] == loop_source.shape[0]
-                      and loop.dimension == 0 and staged_b.shape[0] == loop.tile
-                      and access_b is not None and len(access_b.indices) == 2
-                      and access_b.indices[0].source is AccessIndexKind.LOOP_TILE
-                      and access_b.indices[0].name == loop.iterator
-                      and access_b.indices[1].source is AccessIndexKind.DIMENSION,
+                rank2_domain = (source_b is not None and loop_source is not None
+                                and staged_b is not None and access_b is not None
+                                and len(source_b.shape) == len(loop_source.shape) == 2
+                                and source_b.shape[0] == loop_source.shape[0]
+                                and loop.dimension == 0 and staged_b.shape[0] == loop.tile
+                                and len(access_b.indices) == 2
+                                and access_b.indices[0].source is AccessIndexKind.LOOP_TILE
+                                and access_b.indices[0].name == loop.iterator
+                                and access_b.indices[1].source is AccessIndexKind.DIMENSION)
+                rank3_domain = (source_b is not None and loop_source is not None
+                                and staged_b is not None and access_b is not None
+                                and len(source_b.shape) == len(loop_source.shape) == 3
+                                and source_b.shape[0] == loop_source.shape[0]
+                                and loop.dimension == 0 and loop.tile == 1
+                                and staged_b.shape == source_b.shape[1:]
+                                and len(access_b.indices) == 3
+                                and access_b.indices[0].source is AccessIndexKind.LOOP
+                                and access_b.indices[0].name == loop.iterator
+                                and all(component.source is AccessIndexKind.DIMENSION
+                                        and component.dimension == axis
+                                        for axis, component in enumerate(access_b.indices[1:], 1)))
+                check(tensor_a and producer is not None and (rank2_domain or rank3_domain),
                       'NATIVE_CARRIED_MMA_DOMAIN', f'operations[{s.operations.index(mma)}]',
                       'each carried MMA consumes one staged B tile selected by the outer chunk loop')
             check(loop is None or carried or (s.mma_accumulates_over(mma, loop)
@@ -530,11 +543,12 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                       'every global transfer requires an explicit AccessMap')
                 access=s.access_map(op.op_id,src.name)
                 if access is not None:
-                    check(sum(c.source is not AccessIndexKind.PROGRAM for c in access.indices) == len(dst.shape),
+                    check(sum(c.is_vector for c in access.indices) == len(dst.shape),
                           'NATIVE_ACCESS_RANK', path, 'global access vector axes must match the local tile rank')
                     if p.movement is LoadMovement.TMA:
-                        check(all(c.source is AccessIndexKind.PROGRAM for c in access.indices[:-2])
-                              and all(c.source is not AccessIndexKind.PROGRAM for c in access.indices[-2:]),
+                        check(all(c.source in {AccessIndexKind.PROGRAM, AccessIndexKind.LOOP}
+                                  for c in access.indices[:-2])
+                              and all(c.is_vector for c in access.indices[-2:]),
                               'NATIVE_TMA_COORDINATES', path, 'TMA scalar program axes precede the two tiled matrix axes')
 
         elif op.kind is OperationKind.FORWARD_SUBSTITUTE:
@@ -709,6 +723,9 @@ class _Emitter:
         for axis, component in enumerate(access.indices):
             if component.source is AccessIndexKind.PROGRAM:
                 coords.append(f'int({self.axisvars[component.name]})')
+                continue
+            if component.source is AccessIndexKind.LOOP:
+                coords.append(self.loopvars[component.name])
                 continue
             value = local[local_axis]
             local_axis += 1
