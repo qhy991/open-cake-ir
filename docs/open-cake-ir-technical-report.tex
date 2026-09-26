@@ -1561,6 +1561,12 @@ AOT 为 57,472 字节 dynamic shared、255 寄存器、0 spill。Cake 实际
 \(456.578\,\mu\mathrm{s}\)，范围不同，当前 1.953 ms 仍只是预物化
 输入组件。真实上游 Q/K/G、原位 state、逐 token BF16 舍入、高保留输入
 和六形状还未获得完整 Workload 资格。
+双槽版的八点 MMA warp 时钟探针经完整输出/状态 oracle 复核后，
+在 CTA0 稳态 chunk 观测到 P 暂存区间中位数从旧探针的 9,793 降为
+5,416.5 cycles，carried state-ready 等待仍约 5,503 cycles；两处
+B-ready 等待仅 72 和 77 cycles。区间包含 warp 调度，不是指令级
+因果分解；它支持优先调查状态发布与 P/compute 重叠，而非继续盲目
+加深 B ring。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
