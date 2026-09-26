@@ -285,6 +285,16 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    disposition: no Compiler pass or automatic budget rule yet. The exact
    residual-work bound belongs in a future Lab pre-GPU filter once the
    complete-layer timer and broader routing confirm its decision value.
+   A subsequent temporal-binding audit found the retained threshold-64 plan
+   has rank-specific early tile counts: wave 1/2 = 17/15, 20/12, 14/18 and
+   19/13. The earlier complete-chain runs used 17/15 for every rank. Their
+   arithmetic and spatial steal observations remain valid because all tiles
+   were prepared before the FFN launch, but they do not validate rank 1–3's
+   declared publication waves. Source `cd2f5a11` derives stage-task counts
+   from each rank's materialized plan; one four-GPU `c=74` replay passed
+   those exact wave counts and the unchanged full oracle. Its plan and wave
+   counts are still CPU supplied, so GPU runtime tile publication and a
+   meaningful temporal-`K` sweep remain open.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
