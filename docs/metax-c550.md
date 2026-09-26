@@ -8,6 +8,8 @@ Workload oracle 和 common Evaluation；MACA 编译产物、加载器和 host ad
 当前范围是 **FP32 / FP16 / BF16 / INT32 缓冲区、load / cast / elementwise / reduce / store、
 完整输出正确性验证**，以及下述受限的 E4M3FN 存储和解码。转换复用现有 typed cast 规则：三种浮点格式之间，以及有向的
 INT32→FP32；浮点转整数仍被拒绝。FP32 tanh 使用独立的 `maca.tanh.f32` 契约。
+FP32 单次舍入乘加使用 `maca.fma.f32`：三个同形寄存器操作数在 MetaX Triton
+路径发射 `tl.fma`，不借用 NVIDIA 的 PTX inline assembly。
 矩阵路径复用现有 `mma` 与 `triton.dot.fp16_fp32`、`triton.dot.bf16_fp32`、
 `triton.dot.fp32_ieee` 三条契约；FP16、FP32 已有下述正式任务结果，BF16 尚限于
 单 tile 原生诊断。TF32 和 FP8 矩阵尚未准入；FP8 的范围限于下述存储和解码。原生 MCPTI 成对计时和独立 profiler 已接入；
@@ -38,6 +40,23 @@ bitcode。检查器验证声明的 family、成员边界和 MXC ELF 类型，loa
 
 当前 vendor launcher 只传非 constexpr 参数。封存 manifest 读取实际 TTGIR
 signature 并验证 tensor 参数数量，隐藏指针数为 0。
+
+### FP32 FMA 指令 lowering
+
+源码提交 `28982965` 的 `[8,128]` Cake Schedule 通过 assessment 和 kernel-only
+投影；C550-1 已捕获的 Triton 3.1 与 C550-2 Triton 3.6 均把投影源码离线编译成
+`mcfatbin`，TTIR/TTGIR 各保留一个 `math.fma`。C550-2 的单卡 broker job
+`maca-f697166c27ba` 对全部 1024 个输出逐 bit 比较独立精确有理数 RNE 参考：
+128 个区分融合与分步舍入的点、892 个有限常规点和 4 个次正规边界点均为
+0 mismatch，输入 bits 未改变。先行的独立 `tl.fma` 探针 job
+`maca-feef2fc7be92` 也在 644 点上逐 bit 通过。原始输入/输出、参考脚本、
+编译产物与收据位于 checkout 外的
+`open-cake-ir-evidence/metax-fma-probe-20260926/`。
+
+设备作业使用 C550-2 的 Triton 3.6 对 Cake 生成源码 JIT；并未加载上述离线
+`mcfatbin`。C550-1 Triton 3.1 只有离线编译证据，没有对应设备数值结果。
+这些点支持本次有界 FP32 指令准入，不覆盖所有异常值、注册 Workload 的
+Evaluation、延迟或性能收益；也没有物理独占声明。
 
 ### 固定循环的 MetaX 专属 full-unroll lowering
 
