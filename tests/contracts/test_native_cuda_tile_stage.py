@@ -100,7 +100,9 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertEqual(len(result.stages),3)
         device=emit_source_event_device(
             result,combine_source='#include "combine/kernel.cu"')
-        self.assertIn('__global__ void dispatch_source_wave',device)
+        self.assertIn('__device__ void dispatch_source_chunk',device)
+        self.assertIn('dispatch_source_chunk(source_params,block',device)
+        self.assertNotIn('__global__ void dispatch_source_wave',device)
         self.assertIn('atom.relaxed.sys.global.add.s32',device)
         self.assertNotIn('int main(',device)
         with self.assertRaisesRegex(EmitError,'exact checked B300 composition'):
