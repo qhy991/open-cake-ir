@@ -94,7 +94,7 @@ class RankedTileEffectsContract(unittest.TestCase):
                           analysis.maximum_shared_bytes,
                           analysis.maximum_tensor_bytes),(6,49152,32768))
         if compiler.commit is not None:
-            with self.assertRaisesRegex(ValueError,'dedicated backend lowering'):
+            with self.assertRaisesRegex(ValueError,'exact model EP4 domain'):
                 compiler.lower_ranked_tiles(effects,local_tile_program(),combine())
 
     def test_waiting_for_full_tile_has_smaller_task_capacity(self):

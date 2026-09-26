@@ -1052,3 +1052,9 @@ def lower_ranked_mailbox(compiler, effects, local_program, combine_schedule, ana
     """One exact four-rank source from explicit effects and complete math."""
     from .native_cuda_ranked_mailbox import lower_ranked_mailbox as lower
     return lower(compiler, effects, local_program, combine_schedule, analysis)
+
+
+def lower_ranked_tiles(compiler, effects, local_program, combine_schedule, analysis):
+    """Exact B300 ranked-tile source with a rank-local tensor-pointer ABI."""
+    from .native_cuda_ranked_tile import lower_ranked_tiles as lower
+    return lower(compiler, effects, local_program, combine_schedule, analysis)

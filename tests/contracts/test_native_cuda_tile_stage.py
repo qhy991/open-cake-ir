@@ -249,6 +249,25 @@ class NativeCudaTileStageTest(unittest.TestCase):
             self.assertEqual(len([name for name in report['source_map']
                                   if name.startswith('effect.')]),27)
 
+    def test_exact_model_program_has_complete_ranked_tile_lowering(self):
+        compiler=Compiler.load(ROOT)
+        if compiler.commit is None:
+            self.skipTest('public ranked-tile lowering needs a clean Compiler')
+        effects=RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
+        combine=Schedule.from_dict(json.loads(COMBINE.read_text()))
+        lowered=compiler.lower_ranked_tiles(effects,self.program,combine)
+        lowered.validate_binding()
+        req=lowered.toolchain_requirements
+        self.assertEqual((req['world_size'],req['logical_tile_capacity'],
+                          req['stage_task_capacity'],req['source_events']),
+                         (4,255,46920,20))
+        self.assertEqual(req['source_chunk_tokens'],128)
+        self.assertEqual(req['rank_inputs'][0],
+                         {'name':'hidden','shape':[512,2048],'dtype':'bf16'})
+        self.assertEqual(len([name for name in lowered.source_map
+                              if name.startswith('effect.')]),27)
+        self.assertIn('cake_ranked_tile_b300_launch(',lowered.source)
+
 
 if __name__ == '__main__':
     unittest.main()
