@@ -1295,6 +1295,15 @@ int main(int argc,char** argv) {
     cudaFree(s.tile_input);cudaFree(s.tile_experts);cudaFree(s.tile_keys);
     cudaFree(s.ids);cudaFree(s.hidden);cudaFree(s.bin);
   }
-  std::printf("full four-rank chain: 16384 routes, 64 tiles/rank, 11776 stage tasks/rank\n");
+  constexpr int stage_units=kUpGateTasksPerTile+kActivationTasksPerTile+
+                            kDownTasksPerTile;
+  std::printf("full four-rank chain: %d routes, tiles/rank [%d,%d,%d,%d], "
+              "stage tasks/rank [%d,%d,%d,%d]\n",ROUTES,
+              planned_tiles_by_rank[0],planned_tiles_by_rank[1],
+              planned_tiles_by_rank[2],planned_tiles_by_rank[3],
+              planned_tiles_by_rank[0]*stage_units,
+              planned_tiles_by_rank[1]*stage_units,
+              planned_tiles_by_rank[2]*stage_units,
+              planned_tiles_by_rank[3]*stage_units);
   return 0;
 }
