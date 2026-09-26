@@ -11,7 +11,7 @@ from pathlib import Path
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.solx_fib.authoring import starter_source
+from open_cake_ir.tasks.solx_fib.authoring import rmsnorm025_cta_source, starter_source
 from open_cake_ir.tasks.solx_fib.workload import (
     ATOL, CASES, RTOL, SEED_ELEMENT_CAP, SPECS, TASKS,
     admitting_backends, default_rows, launchable_tasks, materialize_case,
@@ -298,6 +298,23 @@ class StarterTests(unittest.TestCase):
             self.assertIn(f'tile={width & -width}', source)
             self.assertIn('square_sum = ' + ' + '.join(
                 f'sum_{i}' for i in range(len(row_spans(width)))), source)
+
+    def test_025_cta_width_changes_mapping_without_changing_the_row_graph(self):
+        workload = _tiny("fib_rmsnorm_h4096", rows=64)
+        starter = parse(starter_source(workload)).document
+        for groups in (4, 8, 16):
+            source = rmsnorm025_cta_source(workload, execution_groups=groups)
+            schedule = parse(source).document
+            self.assertEqual(schedule["operations"], starter["operations"])
+            self.assertEqual(schedule["access_maps"], starter["access_maps"])
+            self.assertEqual(schedule["roles"][0]["execution_groups"], list(range(groups)))
+            assessment = self.compiler.assess(schedule)
+            self.assertEqual(assessment.findings, ())
+            self.assertTrue(self.compiler.lower(assessment).generated)
+        with self.assertRaises(ValueError):
+            rmsnorm025_cta_source(_tiny("fib_rmsnorm_h512", rows=8))
+        with self.assertRaises(ValueError):
+            rmsnorm025_cta_source(workload, execution_groups=2)
 
     def test_the_starter_keeps_the_bf16_abi_and_widens_only_in_between(self):
         for task in launchable_tasks():

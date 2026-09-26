@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.devices import BACKENDS, backend_for_target
-from .workload import row_spans, validate_solx_fib_contract
+from .workload import TASKS, row_spans, validate_solx_fib_contract
 
 
 def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
@@ -13,6 +13,26 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     and the affine scale happen in FP32, and one narrowing cast produces the result. That
     is what the upstream definition's reference does and what the tolerance assumes.
     """
+    return _rowwise_source(workload, case_id, execution_groups=1)
+
+
+def rmsnorm025_cta_source(workload: WorkloadContract, case_id: str = "primary", *,
+                          execution_groups: int = 8) -> str:
+    """Keep FIB 025's row algorithm while assigning more lanes to its 4096 columns."""
+    validate_solx_fib_contract(workload.document)
+    if (workload.target != "sm_103a"
+            or workload.document["operator"] != TASKS["fib_rmsnorm_h4096"][0]):
+        raise ValueError("RMSNorm 025 CTA-width mapping requires its exact B300 Workload")
+    if type(execution_groups) is not int or execution_groups not in (4, 8, 16):
+        raise ValueError("RMSNorm 025 CTA-width mapping admits 4, 8 or 16 groups")
+    return _rowwise_source(workload, case_id, execution_groups=execution_groups,
+                           schedule_suffix=f"-cta-w{execution_groups}",
+                           entry_point=f"cake_fib025_cta_w{execution_groups}")
+
+
+def _rowwise_source(workload: WorkloadContract, case_id: str, *,
+                    execution_groups: int, schedule_suffix: str = "",
+                    entry_point: str | None = None) -> str:
     validate_solx_fib_contract(workload.document)
     operator = workload.document["operator"]
     args = workload.tensor_abi(case_id)
@@ -44,11 +64,13 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     device = BACKENDS[backend_for_target(workload.target)]
     declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
                     + (', mode="output")' if arg.mode == "output" else ')') for arg in args]
+    schedule_name = workload.workload_id + schedule_suffix
+    entry = entry_point or f"cake_{operator}"
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
-            f'@cake.schedule(name="{workload.workload_id}", target="{workload.target}",\n'
-            f'               backend="{device["route"]}", entry_point="cake_{operator}")\n'
+            f'@cake.schedule(name="{schedule_name}", target="{workload.target}",\n'
+            f'               backend="{device["route"]}", entry_point="{entry}")\n'
             f'def candidate(lm, {", ".join(declarations)}):\n'
-            '    compute = lm.role(execution_groups=[0])\n'
+            f'    compute = lm.role(execution_groups={list(range(execution_groups))!r})\n'
             '    row = lm.program(x, axis=0, dimension=0, tile=1)\n'
             '    with compute:\n        ' + '\n        '.join(body) + '\n')
 
