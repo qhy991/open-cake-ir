@@ -396,6 +396,17 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    It does not prove immediate publication inside a source kernel,
    arbitrary concurrent arrival order, useful-work overlap throughout
    each interval, or a qualified latency gain.
+   At `6ed4c82a`, the source-event device protocol moved into the
+   NVIDIA backend's own CUDA template. The stage composer now binds the
+   complete Cake FFN Program to that control source; the experimental
+   runner supplies its file-based host separately. The first handoff
+   emitted bytes identical to `c918c5cc`. A successor `11da4970` removed
+   experimental file helpers from the backend template; exact B300
+   compilation and a fresh four-GPU mixed-route FP64-oracle replay passed
+   after that source change. The device code is backend-owned, but
+   `Compiler.lower_ranked_tiles` still refuses until a complete tensor-
+   pointer launch ABI, state reset, status reporting and Evaluation
+   binding replace the experimental host runner.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
