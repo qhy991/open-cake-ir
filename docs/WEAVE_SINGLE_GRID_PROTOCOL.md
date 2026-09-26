@@ -1,6 +1,6 @@
 # B300 single-grid ranked-tile protocol candidate
 
-Commit `8b244681` is a development successor to the resident CTA transport
+Code commit `33f28b88` is a development successor to the resident CTA transport
 proof. It puts source dispatch, expert-bin snapshot and tile construction,
 row gather, and the three Cake FFN stage-task bodies in **one cooperative
 grid per rank and source event**. The generated pointer ABI is version 4;
@@ -45,7 +45,7 @@ state reset, all-rank status checks and isolated-process cleanup.
 
 ## Verification boundary
 
-At `8b244681`, 21 related contract tests and the 179-case Corpus Gate pass
+At `33f28b88`, 21 related contract tests and the 179-case Corpus Gate pass
 in a detached fixed-commit worktree. The emitted source maps each of the 27
 ranked effects and 25 Cake math operations once. No B300-M4 NVCC/PTXAS
 build or device run exists for this successor: direct and jump SSH both timed
