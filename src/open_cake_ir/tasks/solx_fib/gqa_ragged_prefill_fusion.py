@@ -1,4 +1,4 @@
-"""One-stage Cake candidate for exact B300 FlashInfer ragged GQA prefill 016."""
+"""One-stage Cake candidates for exact B300 FlashInfer ragged GQA prefill."""
 from __future__ import annotations
 
 import math
@@ -10,6 +10,7 @@ from .plan_authoring import PlanAuthor
 
 
 TASK = "fib_gqa_ragged_prefill_causal_h32_kv4_d128"
+FUSED_TASKS = (TASK, "fib_gqa_ragged_prefill_causal_h32_kv8_d128")
 
 
 def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAuthor:
@@ -19,10 +20,11 @@ def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAut
     an empty segment produces zero output and -inf LSE, as the frozen oracle does.
     """
     attention.validate_contract(workload.document)
+    task = workload.document["semantics"]["task"]
     if (workload.target != "sm_103a"
-            or workload.document["semantics"]["task"] != TASK):
-        raise ValueError("fused ragged GQA prefill requires its exact B300 Workload")
-    spec = attention.SPECS[TASK]
+            or task not in FUSED_TASKS):
+        raise ValueError("fused ragged GQA prefill requires an admitted B300 Workload")
+    spec = attention.SPECS[task]
     axes = workload.case(case_id)["shape"]
     length = attention._power_two(axes["total_kv"])
     segments = attention._power_two(axes["len_indptr"] - 1)
