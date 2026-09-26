@@ -84,6 +84,19 @@ def _head64_token_major_shape(s, scope, shape):
             and shape[1:] == (32, 64, 128))
 
 
+def _persistent_carried_domain(s, target, loop):
+    """Exact H64/T8192 route whose single-stage barriers can keep their phases."""
+    source = s.buffer(loop.buffer)
+    pipelines = [p for p in s.pipelines if _pipeline_loop(s, p) == loop]
+    return (target.target_id == 'sm_103a' and loop.carried_buffers
+            and loop.dimension == 0 and loop.tile == 1
+            and source is not None and len(source.shape) == 4
+            and source.shape[:2] == (256, 64) and _head64_axis(s) is not None
+            and len(pipelines) == 2 and all(p.stages == 1 for p in pipelines)
+            and all(sum(op.kind is OperationKind.MMA and op.pipeline == p.name
+                        for op in s.operations) == 2 for p in pipelines))
+
+
 def _scalar_row(s, buffer):
     """Prove a rank-one tile has one scalar per physical row, not 128 replicas."""
     def walk(name, seen):
@@ -892,6 +905,8 @@ class _Emitter:
         self.loads = [op for op in s.operations if op.kind is OperationKind.LOAD and op.parameters.movement is LoadMovement.TMA]
         self.mapnames = {op.op_id: f'map{i}' for i,op in enumerate(self.loads)}
         self.pipeloops = {loop.name:p for p in s.pipelines if (loop := _pipeline_loop(s,p)) is not None}
+        self.persistent_carried = {loop.name for loop in s.tile_loops
+                                   if _persistent_carried_domain(s, target, loop)}
         self.rootpipes = [p for p in s.pipelines if _pipeline_loop(s,p) is None]
         self.loopvars = {loop.iterator:f'it{i}' for i,loop in enumerate(s.tile_loops)}
         self.axisvars = {axis.name:f'blockIdx.{"xyz"[axis.axis]}' for axis in s.program_map.axes} if s.program_map else {}
@@ -1088,16 +1103,40 @@ class _Emitter:
         covered = {op.op_id for op in self.s.loop_operations(loop)
                    if op.pipeline in {p.name for p in pipelines}}
         variable = self.loopvars[loop.iterator]
+        persistent = loop.name in self.persistent_carried
+        if persistent:
+            self.line('// CAKE_NATIVE_PERSISTENT_CARRIED_MBAR: one initialization, parity per chunk')
+            self.begin('if (threadIdx.x == 0)')
+            for p in pipelines:
+                ready = next(b for b in self.s.barriers if b.pipeline == p.name)
+                free = f'free{self.s.pipelines.index(p)}'
+                self.line(f'cake_init({self.barvars[ready.name]}, {ready.count}); cake_init({free}, 1);')
+                for mma in self.s.operations:
+                    if mma.kind is OperationKind.MMA and mma.pipeline == p.name:
+                        self.line(f'cake_init({self.barvars[mma.signals[0]]}, 1);')
+            self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
+            self.end()
+            self.line('__syncthreads();')
         self.line('#pragma unroll 1')
         self.begin(f'for (int {variable}=0; {variable}<{self.trip(loop)}; ++{variable})')
         for operation in self.s.loop_operations(loop):
             if operation.op_id in groups:
-                self.pipeline(None, groups[operation.op_id], carried_phase=f'({variable}&1)')
+                self.pipeline(None, groups[operation.op_id], carried_phase=f'({variable}&1)',
+                              persistent_phase=f'({variable}&1)' if persistent else None)
             elif operation.op_id not in covered:
                 self.operation(operation)
         self.line('__syncthreads();')
-        self.invalidate_completions(loop)
+        if not persistent:
+            self.invalidate_completions(loop)
         self.end()
+        if persistent:
+            self.begin('if (threadIdx.x == 0)')
+            for p in pipelines:
+                ready = next(b for b in self.s.barriers if b.pipeline == p.name)
+                self.line(f'cake_inval({self.barvars[ready.name]});')
+                self.line(f'cake_inval(free{self.s.pipelines.index(p)});')
+            self.end()
+            self.invalidate_completions(loop)
 
     def invalidate_completions(self, scope):
         # Only the immediate parent of a contraction owns its final-publication
@@ -1113,7 +1152,7 @@ class _Emitter:
             self.end()
             self.line('__syncthreads();')
 
-    def pipeline(self, loop, p, *, carried_phase=None):
+    def pipeline(self, loop, p, *, carried_phase=None, persistent_phase=None):
         ops = self.s.loop_operations(loop) if loop is not None else [op for op in self.s.operations if op.pipeline == p.name]
         trips = self.trip(loop) if loop is not None else 1
         loads = [op for op in ops if op.kind is OperationKind.LOAD]
@@ -1121,14 +1160,15 @@ class _Emitter:
         ready = next(b for b in self.s.barriers if b.pipeline == p.name)
         readyvar = self.barvars[ready.name]
         freevar = f'free{self.s.pipelines.index(p)}'
-        self.begin('if (threadIdx.x == 0)')
-        self.begin(f'for (int stage=0; stage<{p.stages}; ++stage)')
-        self.line(f'cake_init({readyvar}+stage, {ready.count}); cake_init({freevar}+stage, 1);')
-        self.end()
-        for mma in mmas:
-            self.line(f'cake_init({self.barvars[mma.signals[0]]}, 1);')
-        self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
-        self.end(); self.line('__syncthreads();')
+        if persistent_phase is None:
+            self.begin('if (threadIdx.x == 0)')
+            self.begin(f'for (int stage=0; stage<{p.stages}; ++stage)')
+            self.line(f'cake_init({readyvar}+stage, {ready.count}); cake_init({freevar}+stage, 1);')
+            self.end()
+            for mma in mmas:
+                self.line(f'cake_init({self.barvars[mma.signals[0]]}, 1);')
+            self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
+            self.end(); self.line('__syncthreads();')
         var = self.loopvars[loop.iterator] if loop is not None else f'once{self.s.pipelines.index(p)}'
         for producer in (True,False):
             role = loads[0].role if producer else mmas[0].role
@@ -1167,7 +1207,8 @@ class _Emitter:
                         self.line('__syncwarp();')
                         self.line(f'if ((threadIdx.x & 31) == 0) cake_arrive({readyvar}+stage);')
             else:
-                self.line(f'cake_wait({readyvar}+stage, ({var}/{p.stages})&1);')
+                phase = persistent_phase if persistent_phase is not None else f'({var}/{p.stages})&1'
+                self.line(f'cake_wait({readyvar}+stage, {phase});')
                 self.line('asm volatile("tcgen05.fence::after_thread_sync;" ::: "memory");')
                 for op in mmas:
                     self.line(f'// CAKE_OP: {op.op_id}')
@@ -1208,14 +1249,16 @@ class _Emitter:
                 # on another slot does not prove this object's arrival has completed.
                 for stage in range(min(p.stages, trips)):
                     final_iteration = stage + ((trips-1-stage)//p.stages)*p.stages
-                    self.line(f'cake_wait({freevar}+{stage}, {(final_iteration//p.stages)&1});')
+                    phase = persistent_phase if persistent_phase is not None else f'{(final_iteration//p.stages)&1}'
+                    self.line(f'cake_wait({freevar}+{stage}, {phase});')
             self.end()
         self.line('__syncthreads();')
-        # Ready/free slots are drained before reinitialization in a parent iteration.
-        self.begin('if (threadIdx.x == 0)')
-        self.begin(f'for (int stage=0; stage<{p.stages}; ++stage)')
-        self.line(f'cake_inval({readyvar}+stage); cake_inval({freevar}+stage);')
-        self.end(); self.end()
+        if persistent_phase is None:
+            # Ready/free slots are drained before reinitialization in a parent iteration.
+            self.begin('if (threadIdx.x == 0)')
+            self.begin(f'for (int stage=0; stage<{p.stages}; ++stage)')
+            self.line(f'cake_inval({readyvar}+stage); cake_inval({freevar}+stage);')
+            self.end(); self.end()
 
     def operation(self, op):
         self.line(f'// CAKE_OP: {op.op_id}')
@@ -1244,7 +1287,9 @@ class _Emitter:
         if op.kind is OperationKind.LOAD and op.parameters.movement is LoadMovement.TMEM:
             scope = _scope(self.s, op)
             phase = (f'({self.loopvars[scope.iterator]}&1)'
-                     if src.dtype is DType.BF16 and scope is not None else '0')
+                     if scope is not None and (src.dtype is DType.BF16
+                                               or scope.name in self.persistent_carried)
+                     else '0')
             self.line(f'cake_wait({self.barvars[op.waits[0]]}, {phase});')
             self.line('asm volatile("tcgen05.fence::after_thread_sync;" ::: "memory");')
             rep=op.parameters.source_atom.repetition
