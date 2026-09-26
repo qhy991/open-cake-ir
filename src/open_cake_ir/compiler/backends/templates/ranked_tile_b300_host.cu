@@ -230,7 +230,8 @@ extern "C" int @ENTRY@_create(
   int devices=0;
   cudaError_t error=cudaGetDeviceCount(&devices);
   if (error!=cudaSuccess || devices!=R) return int(cudaErrorInvalidDevice);
-  auto* state=new RankedTileHostState{};
+  auto* state=new (std::nothrow) RankedTileHostState{};
+  if (!state) return int(cudaErrorMemoryAllocation);
   for (int rank=0;rank<R;++rank) {
     RankedTileRankState& s=state->ranks[rank];
     s.rank=rank;
@@ -421,6 +422,17 @@ extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
                         cudaMemcpyDeviceToHost));
     for (int index=0;index<kStages*kEvents;++index)
       if (completed[index]!=required[index]) return 1100+index;
+    int stolen[kStages*kEvents],permits=-1;
+    CAKE_RUN(cudaMemcpy(stolen,s.stolen,sizeof(stolen),
+                        cudaMemcpyDeviceToHost));
+    CAKE_RUN(cudaMemcpy(&permits,s.permits,sizeof(int),
+                        cudaMemcpyDeviceToHost));
+    int borrowed=0;
+    for (int count:stolen) {
+      if (count<0) return 1300;
+      borrowed+=count;
+    }
+    if (borrowed>steal_budget || permits!=borrowed) return 1301;
     int flags[LOCAL_ROUTES];
     CAKE_RUN(cudaMemcpy(flags,s.return_ready,sizeof(flags),
                         cudaMemcpyDeviceToHost));

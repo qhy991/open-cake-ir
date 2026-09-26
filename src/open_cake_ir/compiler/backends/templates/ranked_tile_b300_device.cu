@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <chrono>
+#include <new>
 #include <thread>
 #include <vector>
 @COMBINE_SOURCE@
