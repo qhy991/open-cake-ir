@@ -1603,6 +1603,13 @@ Workload 取 V 与 BF16 初始状态。\code{gpuq-dc7242edf640} 设备作业
 将在同一 GPU 上运行准备与 native 消费，把七项设备指针直接传递，
 并使初始/最终 BF16 状态共用存储。即使通过，它仍是固定 H64 两 kernel
 候选；与原始 CAKE 的同机完整配对必须把准备值物化写回和重读都计入。
+正式 Program 资格还需一个共享合同：当前 Program 构造拒绝公共输入/输出
+同一 tensor，Evaluation 为输出分配独立存储且要求输入保持；这无法代表
+Workload 要求的原位状态。Lab 的 Program 作者环境还要求各 stage 使用同一
+backend，而现有两阶段分别由 Triton 准备和 native CUDA 消费。独立直连
+脚本仅先验证这条候选的数值和延迟；要推广，需让 IR、别名分析、
+LaunchManifest、Executor 状态重置和反例一起支持精确全范围别名，
+并另行审查混合 backend 的作者权限。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
@@ -1651,6 +1658,7 @@ tile、执行组和流水线深度，则要在目标卡上重新选择。可确�
 \Delta_P&=\tfrac12[(p_{01}-p_{00})+(p_{11}-p_{10})],\\
 \Delta_{EP}&=p_{11}-p_{10}-p_{01}+p_{00}.
 \end{align*}
+\Needspace{6\baselineskip}
 一次独立运行是重复单位。正式研究按任务等权汇总，保留各任务内四组的配对关系；
 搜索成本、预算耗尽和基础设施缺失也按事先约定记录。四组全部运行并经共同确认后，
 才能计算上面三个处理效果。
