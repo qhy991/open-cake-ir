@@ -1418,6 +1418,23 @@ CAKE 的约 \(456\,\mu\mathrm{s}\) 完整参考。可见的原始 CAKE CUDA 发�
 使用五槽 shared 流水、分开的 producer/compute/MMA/epilogue 角色及
 每 head 两个 M64 value slice；下一轮必须改变跨 chunk 重叠与准备阶段
 物化，而非仅缩短 solve 源码。
+
+\paragraph{末态写回的支配成本。}
+检查 native 发射还发现 \code{store\_final} 被放在 256 次 chunk 循环内，
+每轮对同一 \code{[head,V,K]} 全局目的地写约 2 MiB，前 255 轮约
+510 MiB 是无内部读者的死覆盖。直接将 store 移出 Schedule 循环会触发
+\code{BUFFER\_ESCAPES\_LOOP}，因为最后的 register 状态在循环内定义；
+该 Verifier 门禁保持不变。后继 \code{5ac55ad4} 只在精确 H64/256、
+末操作全量同址覆盖、唯一 writer、无 reader 的结构域，将写回条件限制为
+最后一个 chunk；不满足条件的路径仍按原 Schedule 发射。
+它通过 Corpus Gate 179/179、适用 CPU 测试 2,680 passed；B300 数值检查
+再次通过全部 67,108,864 个 BF16 输出与 1,048,576 个 BF16 最终状态。
+同一独占 GPU 的五轮交替配对 CUPTI 测得旧版组件中位数
+\(7{,}217.556\,\mu\mathrm{s}\)、末块写回版
+\(2{,}999.349\,\mu\mathrm{s}\)，\(2.40637\times\)；五轮比值
+\(2.40552\)--\(2.40744\)，两臂计时后逐位复核通过。
+这明确定位了重复状态写回的成本，但 3 ms 仍是合成准备值的组件延迟，
+原位状态别名、逐 token BF16 舍入和完整 KDA 的配对性能仍未验收。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
