@@ -113,6 +113,14 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 剩余成本主要落在 256 次依赖串行的状态转移、TMEM/MMA 相位与未重叠的 B 输入准备上，具体份额仍需同作业阶段探针或有效硬件计数器才能归因。可见的原始 CAKE CUDA 用五槽 shared ring 和分开的 producer/compute/MMA/epilogue 角色，当前 native 仅有单槽、每 head 一个 CTA 且在两条流水及 chunk 边界做完整 CTA drain。下一种 lowering 应先明确多槽 B 预取的所有权、phase、free/ready 反例和 carried-state 依赖，保证同一 chunk 的状态语义；再考虑准备值片上融合与 M64 价值行切分。现有输出消融的 disposition 是 **No promotion**，它只选择下一步工作，不能成为候选或性能结论。
 
+### 2.14 阶段时钟证据与分角色多槽预取的设计边界
+
+针对 `5ac55ad4` 的独立阶段探针只给 CTA0 在每个 chunk 写五个 `clock64` 值，trace 放在**显式扩容**的输出末尾，逻辑输出和最终状态在设备后检查仍与未插桩版本逐位相同。第一次作业把 trace 错接到未扩容的 V 输入，发生 illegal access 并由 broker 终结释放；修正为输出指针后的 `gpuq-3dcb525965c7` 完成且释放。修正探针的 AOT 比原 kernel 多 8 字节 stack、4 字节 spill store/load，因此它只用于**粗粒度、单 CTA 的阶段占比**，不用于接受延迟。在稳态 chunk 1–254，单块四段 clock 中位数依次为 142、13,567、91、6,609 cycles，合计的中位数约 20,487 cycles；第二段占各段中位数之和约 66.5%，第四段约 32.4%。前两段的分界是基础流水发射结束而非 MMA 完成，异步完成的等待可能落在第二段；校正流水同理。更细的 11 点和前半段五点探针分别造成 1,016 与 488 字节 stack/spill，已在 CPU-only AOT 门禁停止，没有引用它们的设备计时。这些数据支持改变相位重叠，但不支持把某条 TMA、MMA、V load 或 FMA 单独定为瓶颈。
+
+下一种 **尚未实现或资格化** 的映射应让 copy warp 在独立循环中预取未来 chunk 的四个 B box，计算/MMA warp 仍按 carried state 的顺序消费当前 chunk。Schedule 已能声明 Pipeline 的 `stages` 与 Role 所有权，但 native 的 `NATIVE_CARRIED_PIPELINE_STAGES` 当前只准单槽；新发射需先保证每槽两条 `ready` 各自在对应两次 TMA 完成后供 MMA 等待、生产者在复用槽前等待对应 `free`、`phase=(chunk//stages)&1`，最后排空所有槽才失效。state 的 `ready` 仍按 chunk 顺序发布，禁止下一块 MMA 越过前一块的 BF16 状态更新。四个当前 B box 合计约 26 KiB/槽，五槽的 shared 存储与 mbarrier 控制须由精确 `sm_103a` Target 资源检查和 AOT 实证；不能只因为原始 CAKE 有五槽就自动准入。缺 `free`、错 parity、过早重用 shared box、遗漏最终 drain、错误 carried-state 相位都应有各自的拒绝，而非靠另一个规则偶然拦截。
+
+原始 CAKE 的 B300 适配 CUDA 可见五槽生产/消费/epilogue 分工、每 head 两个 M64 value slice，并在同一 kernel 内准备因子；当前 native 是单槽、每 head 一个 CTA，输入因子单独物化。二者语言都能发射 TMA/PTX，差别是 **IR 可见的所有权、相位及 emitter 的并行循环**。上述多槽设计先验证完整 H64/256 chunk 的合成输出/状态，再接真实 Q/K/G 和原位状态、逐 token BF16 舍入及 packed/tail，最后用完整 Workload 与适配 CAKE 在同一独占作业配对测量。当前提议没有性能数字，也不授权 Target 扩表或公共 pass。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
