@@ -1,5 +1,7 @@
 # Native CUDA lowering (development successor)
 
+For the current B300 KDA rationale, evidence, route comparison and open performance gates, see [KDA B300 native lowering](KDA_B300_NATIVE_LOWERING.md). This page retains the general native backend design and the sequence of bounded prototypes.
+
 The native backend owns operation traversal, warp dispatch, shared storage, tensor-memory
 allocation and release, TMA tensor maps, instruction descriptors and circular stage/phase
 protocols. NVIDIA nvcc/ptxas owns compilation and physical register allocation. The target
@@ -26,8 +28,9 @@ algorithmic precision or placement. Register-role redistribution, persistent gri
 cluster operations and unsupported range controls are refused. Reported physical
 registers and device correctness remain unknown until target compilation/evaluation.
 
-P4/P7: the new transfer is typed tensor FP32 to identically shaped register FP32, with
-an explicit tcgen05 load atom. The verifier checks these effects; other backends refuse
+P4/P7: TMEM load is typed tensor FP32 or BF16 to an identically shaped,
+same-dtype register tile, with an explicit tcgen05 load atom. BF16 reads
+account for two values per 32-bit physical word. The verifier checks these effects; other backends refuse
 it. Backend admission also checks role ownership, access coordinates, instruction
 shapes, synchronization scope and supported resource refinements before emission.
 
@@ -230,17 +233,19 @@ The clean `2e365222` source compiles for exact B300 with 119 registers and no
 stack/spills; three broker-shared device seeds match every BF16 final-state element
 (4,096 per seed, maximum absolute error zero). A separate scalar unit-loop
 coordinate and rank-3 native TMA route form the K128/C32 two-phase successor.
-Its clean `a81a6948` source compiles with 230 registers and no stack/spills,
-but device correctness remains unverified.
+Its clean `a81a6948` source compiles with 230 registers and no stack/spills;
+three exact-B300 seeds pass all 16,384 BF16 final-state elements each after
+broker release and independent host comparison. This is still not full KDA.
 
 A further isolated BF16 TMEM read emits `tcgen05.ld.sync.aligned.32x32b`
 into packed 32-bit registers, unpacks two BF16 values per word and waits on
 the carried state's current mbarrier phase. Shared-core typing and the carried
 phase proof require an identical register tile, whole copy-atom repetitions
 and a read before the loop's state update. The native backend admits only that
-proven carried-state subset; its emitted source has CPU contracts and no AOT
-or device qualification yet. The read is a prerequisite for combining the
-decayed prior state with correction MMA without a global state round trip.
+proven carried-state subset. The `d579e917` two-chunk successor combines
+decayed prior state and correction, compiles for exact `sm_103a` at 255
+registers without stack/spills, and passes three broker-shared B300 final-state
+checks of 16,384 BF16 elements each. Full KDA output and latency remain open.
 
 The KDA base-key/query contraction needs K128 with a dynamic TMEM A tile. The
 earlier K-major B stage is refused because one BF16 row occupies 256 bytes, beyond
