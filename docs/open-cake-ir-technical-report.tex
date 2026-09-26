@@ -1356,6 +1356,23 @@ token-major 输出和 16,384 个 BF16 最终状态，全部 0 超差且输入未
 \(3.06\times10^{-5}\)。准备阶段的 Q/K/G/prefix 等值仍为合成输入，
 逐 token BF16 状态舍入、64-head/256-chunk 绑定、完整六形状及与原始 CAKE
 的同作业计时都尚未通过；因此这些数值不能解释为完整 KDA 性能提升。
+
+\paragraph{H64 的标量 head 与四维 TMA 后继。}
+固定源码 \code{d5a9648a} 用一个 \code{ProgramMap} 标量 head 坐标指定每个
+CTA 的所有权，chunk 仍由循环标量选定；四个 B 输入用
+\code{[chunk,head,matrix]} 的四维 tensor-map 直接装入二维 shared box，
+公开 V、beta、初始/最终状态和 token-major 输出也都显式携带 head 地址。
+错误 head、rank-5、其他 head 数量和遗漏输出所有权均由后端拒绝。
+离线编译为 255 寄存器、0 stack/spill；Corpus Gate 为 179/179，
+远端完整适用 CPU 套件为 2,672 passed、16 skipped，另有 1 项 Apple
+MLX 实机测试取消选择。首次设备作业因链接遗漏 CUDA driver 库，
+在加载 cubin 前失败；修正同一源码的 CPU-only 链接后，broker 作业
+\code{gpuq-ad57c793c89c} 完成并释放设备。独立 host oracle 在三组
+H64、两 chunk 输入上，每组检查 1,048,576 个 BF16 最终状态及
+524,288 个 BF16 token-major 输出，均为 0 超差且输入未改写；
+最大绝对误差分别为 \(6.11\times10^{-5}\) 和
+\(3.82\times10^{-6}\)。这只验证地址与有界发射：准备值仍为合成输入，
+256 chunk、逐 token BF16 舍入、完整六形状和 CUPTI 配对延迟均待完成。
 \FloatBarrier
 
 \section{跨硬件复用：从一次改写到可检验的收益}
