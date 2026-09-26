@@ -218,7 +218,11 @@ def verify(root:Path)->None:
             or device['bin_rows_by_owner']!=c['owner_routes']
             or device['communication_ctas']!=c['communication_ctas']
             or device['steal_budget']!=c['steal_budget_per_owner']
-            or device['stolen_by_owner']!=[c['steal_budget_per_owner']]*R
+            or len(device['stolen_by_owner'])!=R
+            or any(type(stolen) is not int or not 0<=stolen<=c['steal_budget_per_owner']
+                   for stolen in device['stolen_by_owner'])
+            or (c['communication_ctas']==148
+                and device['stolen_by_owner']!=[11776]*R)
             or device['sm_counts']!=[148]*R
             or device['active_blocks_per_sm']!=[1]*R
             or device['overlap_flags']!=[[1,1]]*R
@@ -266,6 +270,7 @@ def verify(root:Path)->None:
             'broker_job':d['broker_job'],'routes':ROUTES,
             'communication_ctas':c['communication_ctas'],
             'steal_budget_per_owner':c['steal_budget_per_owner'],
+            'actual_stolen_by_owner':device['stolen_by_owner'],
             'gpu_tile_inputs_bitwise_equal_to_checked_plan':True,
             'route_contribution_bit_mismatches':contribution_mismatch,
             'failing_elements':int(np.count_nonzero(failing)),

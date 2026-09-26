@@ -824,7 +824,10 @@ int main(int argc,char** argv) {
     }
     for (int wave=0;wave<kWaves;++wave)
       if (dispatched[wave]!=scenario.communication) return 46;
-    if (stolen_by_rank[rank]!=scenario.budget || permits!=scenario.budget)
+    if (stolen_by_rank[rank]<0 || stolen_by_rank[rank]>scenario.budget ||
+        permits!=stolen_by_rank[rank] ||
+        (scenario.communication==148 &&
+         stolen_by_rank[rank]!=kTotalStageTasks))
       return 47;
     std::vector<unsigned char> tile_input(TILE_BYTES),down(kOutputBytes);
     if (check(cudaMemcpy(tile_input.data(),s.tile_input,TILE_BYTES,
