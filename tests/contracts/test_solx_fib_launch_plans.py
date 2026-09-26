@@ -17,20 +17,20 @@ ROOT=Path(__file__).resolve().parents[2]
 
 
 class CompletePackPlanTests(unittest.TestCase):
-    def test_012_fused_decode_is_one_complete_stage_on_both_declared_shapes(self):
+    def test_paged_gqa_fusion_is_one_complete_stage_on_both_declared_shapes(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
-        task = gqa_decode_fusion.TASK
-        for variant in ('boundary', 'captured'):
-            workload = WorkloadContract(attention.workload_document(task, variant=variant))
-            plan = gqa_decode_fusion.launch_plan(workload)
-            self.assertEqual(len(plan.stages), 1)
-            self.assertEqual(set(plan.outputs), {'output', 'lse'})
-            self.assertEqual(set(plan.tensors), set(plan.inputs) | set(plan.outputs))
-            assessment = compiler.assess(json.loads(plan.stages[0].schedule_bytes))
-            self.assertEqual(assessment.findings, (), variant)
-            self.assertTrue(compiler.lower(assessment).generated)
+        for task in gqa_decode_fusion.FUSED_TASKS:
+            for variant in ('boundary', 'captured'):
+                workload = WorkloadContract(attention.workload_document(task, variant=variant))
+                plan = gqa_decode_fusion.launch_plan(workload)
+                self.assertEqual(len(plan.stages), 1)
+                self.assertEqual(set(plan.outputs), {'output', 'lse'})
+                self.assertEqual(set(plan.tensors), set(plan.inputs) | set(plan.outputs))
+                assessment = compiler.assess(json.loads(plan.stages[0].schedule_bytes))
+                self.assertEqual(assessment.findings, (), (task, variant))
+                self.assertTrue(compiler.lower(assessment).generated)
         other = WorkloadContract(attention.workload_document(
-            'fib_gqa_paged_decode_h32_kv8_d128_ps1', variant='boundary'))
+            'fib_gqa_paged_prefill_causal_h32_kv4_d128_ps1', variant='boundary'))
         with self.assertRaises(ValueError):
             gqa_decode_fusion.author_plan(other)
 

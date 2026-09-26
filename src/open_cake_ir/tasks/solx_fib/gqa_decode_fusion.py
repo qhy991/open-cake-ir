@@ -1,4 +1,4 @@
-"""One-stage Cake candidate for FlashInfer GQA paged decode 012."""
+"""One-stage Cake candidates for the two FlashInfer GQA paged-decode tasks."""
 from __future__ import annotations
 
 import math
@@ -10,6 +10,7 @@ from .plan_authoring import PlanAuthor
 
 
 TASK = "fib_gqa_paged_decode_h32_kv4_d128_ps1"
+FUSED_TASKS = (TASK, "fib_gqa_paged_decode_h32_kv8_d128_ps1")
 
 
 def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAuthor:
@@ -19,10 +20,10 @@ def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAut
     keys contribute zero; an empty segment writes zero output and -inf LSE.
     """
     attention.validate_contract(workload.document)
-    if (workload.target != "sm_103a"
-            or workload.document["semantics"]["task"] != TASK):
-        raise ValueError("fused GQA decode requires its exact B300 Workload")
-    spec = attention.SPECS[TASK]
+    task = workload.document["semantics"]["task"]
+    if workload.target != "sm_103a" or task not in FUSED_TASKS:
+        raise ValueError("fused GQA decode requires an admitted B300 Workload")
+    spec = attention.SPECS[task]
     axes = workload.case(case_id)["shape"]
     length = attention._power_two(axes["num_kv_indices"])
     group = spec["constants"]["num_qo_heads"] // spec["constants"]["num_kv_heads"]
