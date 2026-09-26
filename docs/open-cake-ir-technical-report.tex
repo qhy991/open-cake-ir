@@ -1387,6 +1387,13 @@ H64/T8192 合成输入的 67,108,864 个 BF16 输出及 1,048,576 个 BF16
 且状态在 chunk 边界舍入。随后单组件独占 CUPTI 诊断一次因 Python
 环境缺 CUPTI 包路径而拒绝 event 回退，两次因分配设备上有外部进程而在
 采样前退出；\textbf{没有有效延迟数据}，不能据此比较原始 CAKE。
+完整 KDA 的关键剩余差异是状态舍入位置：外部 oracle 每个 token 都把
+更新后状态舍入 BF16，当前 chunk 分解只在块末舍入。量化算子不与线性
+状态转移交换，\(Q(Q(sd+u)d+u)\) 一般不等于
+\(Q(sd^2+ud+u)\)；Finding \code{F-2026-09-24-003} 的高保留反例中，
+chunk1 与独立状态 oracle 完全一致，而 chunk2/4/8/16/32 均出现
+超容差元素。因此当前全形状的合成输入检查仍不能替代 Workload 验收；
+后继需要片上逐 token BF16 更新，或有可证明误差界与精确 fallback 的分流。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
