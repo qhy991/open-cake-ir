@@ -403,10 +403,26 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    emitted bytes identical to `c918c5cc`. A successor `11da4970` removed
    experimental file helpers from the backend template; exact B300
    compilation and a fresh four-GPU mixed-route FP64-oracle replay passed
-   after that source change. The device code is backend-owned, but
-   `Compiler.lower_ranked_tiles` still refuses until a complete tensor-
-   pointer launch ABI, state reset, status reporting and Evaluation
-   binding replace the experimental host runner.
+   after that source change. A backend-owned tensor-pointer ABI followed
+   at `221252bc`: caller-owned device inputs/outputs and one reusable
+   handle ran `c=1,b=0` and `c=74,b=5888` consecutively with bitwise-
+   equal outputs and zero failures against the independent FP64 oracle.
+   The ABI now reports actual stolen stage tasks. At `aff2ea61`, remote
+   token payloads were deduplicated by destination rank to match the
+   schema-2 payload channel: on the mixed case, 12,288 remote route rows
+   used 1,536 payload transfers, with 618/312/306/300 payload slots by
+   owner. The compiled Bin shrank to 7,484,392 B per rank; both launch
+   outputs stayed bitwise equal to the pre-dedup version and passed the
+   FP64 oracle. A hot-8 postcheck verified the 1,536-slot capacity
+   boundary and correctly allowed zero steal on empty owners. At
+   `3c75a716`, three launches on one handle exercised uniform and
+   rank-local `c/steal` controls; the alternating control produced actual
+   steals [5888,0,5888,0], and all three outputs were bitwise equal with
+   zero oracle failures. These are correctness and byte-volume facts,
+   not an on-device bandwidth or latency measurement. The public
+   `Compiler.lower_ranked_tiles` still refuses pending Evaluation binding,
+   failure cleanup/progress guarantees and a review of the IR's task
+   reservation mapping against the emitted per-tile claim heads.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -417,14 +433,13 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 ## Bounded implementation order
 
 - Review and integrate the separate core schema-2 effect through `main`,
-  then let the NVIDIA task consume it. The B300 stage composer reports the
-  complete Program's work units and emitted resources; the experimental
-  device path already handles empty and skewed experts, variable tile
-  counts, source-keyed P2P returns, and bounded steal on the named route
-  sets. A public `lower_ranked_tiles` still needs to own the complete
-  launch ABI, runtime route-domain admission, peer memory order, queue
-  capacity, and failure/progress diagnostics instead of importing an
-  experiment's file-based host runner.
+  then let the NVIDIA task consume it. The B300 backend now owns the
+  device protocol and a tested development tensor-pointer ABI, including
+  deduplicated peer payloads, rank-local controls and repeated state
+  reset. Before exposing `lower_ranked_tiles`, match every ranked effect
+  to its actual PTX/queue owner, make failure cleanup and diagnostics
+  safe after a partial launch, and bind exact inputs/outputs through
+  Evaluation without importing the experiment's file runner.
 - Carry the source-completion full-tile publication protocol into a
   backend-owned launch ABI with explicit per-rank state and status. Decide
   whether the admitted schema also requires publication at the exact
