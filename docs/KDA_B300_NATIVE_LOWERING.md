@@ -183,6 +183,14 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 原始 CAKE CUDA 把准备和状态递推放在一个 kernel 与更深的角色流水中；目前两阶段 Cake 路线即使数值直连成功，还会承受准备值约 480 MB 的写回/重读和两次 kernel 活动。Triton 已能生成准备值；这里缺的是现有 Cake/native 消费者对其具体存储方向和别名的表达与资格，而不是说 CUDA 或 Triton 语言无法读取 beta。下一步同范围计时很可能暴露物化边界的成本，然后才决定哪些准备值需要片上融合，并给出相应 Schedule、资源和同步合同。
 
+### 2.21 原始 CAKE CUDA 的机制对照：下一轮 lowering 应承诺什么
+
+冻结的[原始 CAKE M64 绑定](../experiments/flashinfer_rewrites/references/027_cake_kda_prefill/csrc/kda/flashkda_bf16_fused_m64_binding.cu)声明 **1,024 threads/CTA、219,136 字节 dynamic shared**，固定 H64 单序列时以每 head 两个 M64 value slice 发射 **128 个 CTA**；这些是源码与适配 B300 的已测几何，不是根据 native 计时反推。[CUDA kernel](../experiments/flashinfer_rewrites/references/027_cake_kda_prefill/csrc/kda/flashkda_bf16_fused_m64.cu)可见不同的 compute、epilogue、MMA、load 和 preparation 分工：compute warp0–3 持续递推，epilogue warp4–7 等 `final_ready` 后从 TMEM 读输出，用 `stmatrix` 写双槽 shared，再由 TMA store 写 token-major 输出；MMA warp9 与 load warp10 分别持有发射和装载，preparation 角色在后续 warps 中用五槽 shared 流水。可见的 `setmaxnreg.dec/inc` 把部分角色的寄存器预算让给 compute，且多个 mbarrier phase、`free/ready` 和末尾 drain 明确规定槽的重用。源码中这些机制共存；没有逐项消融，不能把约 456.578 µs 的完整 H64 延迟单独归因于任一机制。
+
+当前 native `5974e33e` 是 **192 threads/CTA、57,472 字节 dynamic shared、64 CTA**：四个 compute warp 自己完成 solve、状态更新和 token-major 输出写回；一个 MMA warp、一个 B copy warp，P 与 B 分别有两个槽。它没有独立 epilogue/TMA 输出角色，也没有在同 CTA 内形成 Q/K/G 的两 MMA 因子准备；两阶段候选必须写回、重读七项值。双槽 P 的设计原因是本机观测到单槽向量化的跨块混值，它只关闭这条数据生命周期缺口；当前 1.953 ms 组件仍不能等同原始 CAKE 的融合 kernel。现有 Triton 准备 emitter 能计算七项值，先前单独的 Triton 状态消费者也能算出固定 H64，但其配对完整诊断比原始 CAKE 慢得多（Finding event 68）；因此“现有 Triton 方案没有追上”是本仓库实测实现的结论，不能写成 Triton 语言无法生成共享槽、同步或 PTX。
+
+下一种大幅下降所需的 lowering 不是单纯添加 `setmaxnreg` 或五槽常数，而是先在 Cake Schedule 中给**同 CTA 准备→MMA→状态递推→epilogue**的每条存储边指定生产者、消费者、槽数、release/acquire 和读完后的复用条件；共享 IR/Verifier 维护值和别名语义，NVIDIA backend 负责 TMA/TMEM/PTX 发射，Target 检查真实 1,024-thread/约 219 KiB 路线资源，Lab 才选择何时采用。先以真实固定 H64 的完整输出、最终原位状态和同机计时比较，再看 packed/tail 与高保留反例。没有完整候选前，原始 CAKE 的代码只能作为**已知实现的设计证据**，不能把它的隐含机制直接当成新 Compiler pass。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
