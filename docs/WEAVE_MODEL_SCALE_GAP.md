@@ -505,6 +505,30 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    rewrite or Lab budget recipe until a real communication/compute mapping,
    more route distributions and the qualified interval are measured.
 
+   The temporal successor `667a7bdb` made K=1,2,4 a runtime control in
+   the exact B300 source and versioned its pointer ABI. All four frozen
+   Workload routes ran at all three K values under four-GPU broker job
+   `gpuq-cca7a4ebd80a`; every output passed its independent FP64 oracle
+   and was bitwise equal across K. On the mixed route with fixed c=1 and
+   budget=5888, development CUPTI job `gpuq-6aa8329b649b` observed
+   median complete GPU activity spans of 6.967/4.545/3.485 ms for
+   K=4/2/1, respectively (three samples per K, internal reset included).
+   This is a useful time-schedule signal, not a qualified speedup.
+   The `53f712ce` ABI added a read-only 20-event tile counter; four-GPU
+   job `gpuq-c9f1c9acc8a8` checked every owner/event against the
+   independent CPU planner for all four routes and all three K values.
+   On the mixed route, K=4 built 80/64/64/64 owner tiles while K=2 and
+   K=1 each built 56/32/32/32. On the dense route, one owner built
+   192 tiles at K=4 and 128 at K=2 or K=1. All 12 outputs again passed
+   the FP64 oracle and matched bitwise across K. Source, build,
+   per-event counters, inputs and reports are retained under the external
+   `cake-weave-temporal-k124-667a7bdb`,
+   `cake-weave-cupti-temporal-667a7bdb` and
+   `cake-weave-temporal-tile-audit-53f712ce` evidence roots. K remains
+   uniform across ranks in this ordered-source backend; differing
+   rank-local K values are refused before launch. No general temporal
+   mapping or automatic K selection is promoted from these four routes.
+
 ## Bounded implementation order
 
 - Review and integrate the separate core schema-2 effect and model Workload
@@ -530,8 +554,9 @@ CPU capacity/plan facts, not an emitted live GPU queue.
   A cost estimate only filters candidates; on-device correctness and the
   qualified interval decide acceptance.
 
-Promotion disposition: **exact-model public Compiler lowering and Workload
-case binding are retained; no general ranked-tile lowering, Compiler rewrite
-pass or automatic Lab scheduling rule is promoted.** The named B300
+Promotion disposition: **exact-model public Compiler lowering, Workload
+case binding and bounded K=1,2,4 native execution are retained; no general
+ranked-tile lowering, Compiler rewrite pass or automatic Lab scheduling
+rule is promoted.** The named B300
 correctness results support this bounded implementation; they do not replace
 the remaining candidate-seal, failure-progress or qualified-measurement gates.
