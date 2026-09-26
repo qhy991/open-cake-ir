@@ -191,6 +191,14 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 下一种大幅下降所需的 lowering 不是单纯添加 `setmaxnreg` 或五槽常数，而是先在 Cake Schedule 中给**同 CTA 准备→MMA→状态递推→epilogue**的每条存储边指定生产者、消费者、槽数、release/acquire 和读完后的复用条件；共享 IR/Verifier 维护值和别名语义，NVIDIA backend 负责 TMA/TMEM/PTX 发射，Target 检查真实 1,024-thread/约 219 KiB 路线资源，Lab 才选择何时采用。先以真实固定 H64 的完整输出、最终原位状态和同机计时比较，再看 packed/tail 与高保留反例。没有完整候选前，原始 CAKE 的代码只能作为**已知实现的设计证据**，不能把它的隐含机制直接当成新 Compiler pass。
 
+### 2.22 完整候选的 Program 与 Evaluation 别名边界
+
+冻结 Workload 要求 `final_state` 与 `initial_state` **完全同址**，后者在调用中被改写；其余输入必须保持不变。当前单独的 native Schedule 在源码顺序上先把初始状态装入 TMEM，最后一块才写回 final state，host ABI 也没有拒绝把这两个参数设为同一地址，所以可以做有界设备别名试验。但当前通用 [Program IR](../src/open_cake_ir/compiler/ir/program.py) 的 `Program.from_dict` 明确拒绝输入/输出同一公共 tensor 及同一 stage 中两个绑定指向同一 tensor；[LoadedProgram](../src/open_cake_ir/evaluation/program.py) 又拒绝任何 Program tensor 的物理存储重叠。[通用 tensor 输入装载](../src/open_cake_ir/evaluation/torch_tensor_inputs.py)为所有 output 分配新缓冲，并把全部 input 的逐字节保持作为后检查。因此，把 `initial_state` 与 `final_state` 虽命名为两个公共 tensor、却在手写 wrapper 中传同一指针，尚无法在当前 Program/Evaluation 中作为有证据的 Workload 候选提交；只检查两个张量的形状/dtype 会遗漏别名合同。
+
+两阶段路径还有另一个作者环境边界：[Lab Program admission](../src/open_cake_ir/lab/environments.py)要求同一 Program 的所有 stage 使用该 arm 的一个 backend；目前两 MMA 准备由 Triton emitter 发射，状态消费者由 native CUDA emitter 发射。Evaluation 的 ordered Program 在 CUBIN 上可绑定各自已编译 stage，但这不自动授予 Lab 跨 backend 的作者权限或状态 alias。现有**独立设备直连脚本**只用于先证明数值、地址和性能范围，不能伪装成正式 Program 或完整 Evaluation。
+
+若直连通过，需另立共享 core/Executor successor：在 Program 声明输出到输入的**精确全范围别名**与读先于写，构造时拒绝形状/dtype 不同、部分重叠、过早覆盖和其它读者；Evaluation 为别名输出复用输入存储，按 Workload 区分可变状态与不可变输入，每次计时恢复初始状态，并在同一外部 oracle 下验证两个名称确实同址。共享 IR、静态分析、LaunchManifest、loader、计时与反例测试必须同一变更链演进；NVIDIA backend 只负责已验证的两阶段发射。是否让 Lab authoring 接纳经过审核的混合 backend Program 是另一项策略决定，不由本次 KDA 性能数字自动扩大权限。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
