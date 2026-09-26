@@ -114,6 +114,48 @@ def _prefetch_carried_domain(s, target, loop):
                         for op in s.operations) == 2 for p in pipelines))
 
 
+def _role_carried_domain(s, target, loop):
+    """The exact three-role H64 route with MMA-owned P publication."""
+    if (not _prefetch_carried_domain(s, target, loop)
+            or len(s.tile_loops) != 1 or s.loop_parent().get(loop.name) is not None):
+        return False
+    roles = {role.name: role.execution_groups for role in s.roles}
+    if (roles.get('compute') != (0, 1, 2, 3)
+            or roles.get('mma') != (4,) or roles.get('copy') != (5,)):
+        return False
+    p_loads = [op for op in s.loop_operations(loop)
+               if op.kind is OperationKind.LOAD and len(op.writes) == 1
+               and (dst := s.buffer(op.writes[0])) is not None
+               and dst.space is MemorySpace.SHARED and dst.shape == (32, 32)
+               and op.pipeline is None]
+    solves = [op for op in s.loop_operations(loop)
+              if op.kind is OperationKind.FORWARD_SUBSTITUTE]
+    if len(p_loads) != 1 or len(solves) != 1:
+        return False
+    p_load, solve = p_loads[0], solves[0]
+    staged = s.buffer(p_load.writes[0])
+    p_barrier = next((b for b in s.barriers if b.name in p_load.signals), None)
+    if (p_load.role != 'mma' or p_load.parameters.movement is not LoadMovement.GLOBAL
+            or p_load.waits or p_load.pipeline is not None
+            or staged.dtype is not DType.BF16 or staged.stages != 1
+            or p_barrier is None or p_barrier.count != 1
+            or p_barrier.pipeline is not None or p_barrier.producers != ('mma',)
+            or p_barrier.consumers != ('compute',)
+            or solve.role != 'compute' or solve.reads[0] != staged.name
+            or solve.waits != p_load.signals
+            or [op for op in s.operations if staged.name in op.reads] != [solve]
+            or loop.body.index(p_load.op_id) >= loop.body.index(solve.op_id)):
+        return False
+    for op in s.loop_operations(loop):
+        if op.pipeline is None and op is not p_load and op.role != 'compute':
+            return False
+        if op.pipeline is not None:
+            expected = ('copy' if op.kind is OperationKind.LOAD else 'mma')
+            if op.role != expected:
+                return False
+    return True
+
+
 def _last_chunk_terminal_store(s, target, op):
     """A loop-invariant output is observable only after its final full overwrite."""
     scope = _scope(s, op)
@@ -444,6 +486,16 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'NATIVE_CARRIED_PIPELINE_STAGES',
                   f'pipelines[{s.pipelines.index(owner)}].stages',
                   'carried contractions use one completed stage per chunk or the qualified H64 two-slot prefetch ring')
+        if _prefetch_carried_domain(s, target, loop):
+            p_writers = [op for op in s.loop_operations(loop)
+                         if op.kind is OperationKind.LOAD and op.pipeline is None
+                         and op.role == 'mma' and len(op.writes) == 1
+                         and (dst := s.buffer(op.writes[0])) is not None
+                         and dst.space is MemorySpace.SHARED]
+            if p_writers:
+                check(_role_carried_domain(s, target, loop),
+                      'NATIVE_ROLE_PIPELINE_DOMAIN', f'tile_loops[{loop_index}]',
+                      'MMA-owned P staging requires the exact three-role carried pipeline, one sole solve reader and ordered B rings')
         if len(owners) == 2:
             owners.sort(key=lambda p: next(
                 (loop.body.index(op.op_id) for op in s.operations
@@ -960,6 +1012,8 @@ class _Emitter:
         self.pipeloops = {loop.name:p for p in s.pipelines if (loop := _pipeline_loop(s,p)) is not None}
         self.prefetch_carried = {loop.name for loop in s.tile_loops
                                  if _prefetch_carried_domain(s, target, loop)}
+        self.role_carried = {loop.name for loop in s.tile_loops
+                             if _role_carried_domain(s, target, loop)}
         self.persistent_carried = {loop.name for loop in s.tile_loops
                                    if (_persistent_carried_domain(s, target, loop)
                                        or loop.name in self.prefetch_carried)}
@@ -1153,6 +1207,9 @@ class _Emitter:
 
     def carried_loop(self, loop):
         """Run one complete chunk per trip, publishing the next TMEM phase last."""
+        if loop.name in self.role_carried:
+            self.carried_role_loop(loop)
+            return
         pipelines = [p for p in self.s.pipelines if _pipeline_loop(self.s, p) == loop]
         groups = {
             next(op.op_id for op in self.s.loop_operations(loop) if op.pipeline == p.name): p
@@ -1216,6 +1273,67 @@ class _Emitter:
             self.end()
             self.invalidate_completions(loop)
 
+    def carried_role_loop(self, loop):
+        """Run copy, MMA and compute at independent chunk positions via barriers."""
+        pipelines = [p for p in self.s.pipelines if _pipeline_loop(self.s, p) == loop]
+        p_load = next(op for op in self.s.loop_operations(loop)
+                      if op.kind is OperationKind.LOAD and op.pipeline is None
+                      and self.b(op.writes[0]).space is MemorySpace.SHARED)
+        var = self.loopvars[loop.iterator]
+        self.line('// CAKE_NATIVE_ROLE_CARRIED_PIPELINE: two-slot producer and ordered state')
+        self.begin('if (threadIdx.x == 0)')
+        for p in pipelines:
+            ready = next(b for b in self.s.barriers if b.pipeline == p.name)
+            for stage in range(p.stages):
+                self.line(f'cake_init({self.barvars[ready.name]}+{stage}, {ready.count}); '
+                          f'cake_init(free{self.s.pipelines.index(p)}+{stage}, 1);')
+            for mma in self.s.operations:
+                if mma.kind is OperationKind.MMA and mma.pipeline == p.name:
+                    self.line(f'cake_init({self.barvars[mma.signals[0]]}, 1);')
+        self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
+        self.end()
+        self.line('__syncthreads();')
+
+        self.begin('if (warp == 5)')
+        self.line('// CAKE_ROLE_COPY_LOOP')
+        self.line('#pragma unroll 1')
+        self.begin(f'for (int {var}=0; {var}<{self.trip(loop)}; ++{var})')
+        for p in pipelines:
+            self.prefetch_operands(loop, p, chunk=var,
+                                   stage=f'({var}&1)', wait_previous=True)
+        self.end()
+        self.end()
+
+        self.begin('else if (warp == 4)')
+        self.line('// CAKE_ROLE_MMA_LOOP')
+        self.line('#pragma unroll 1')
+        self.begin(f'for (int {var}=0; {var}<{self.trip(loop)}; ++{var})')
+        self.issue_prefetched_mma(loop, pipelines[0])
+        self.operation(p_load)
+        self.issue_prefetched_mma(loop, pipelines[1])
+        self.end()
+        self.end()
+
+        self.begin('else if (warp >= 0 && warp <= 3)')
+        self.line('// CAKE_ROLE_COMPUTE_LOOP')
+        self.line('#pragma unroll 1')
+        self.begin(f'for (int {var}=0; {var}<{self.trip(loop)}; ++{var})')
+        for op in self.s.loop_operations(loop):
+            if op.pipeline is None and op is not p_load:
+                self.operation(op)
+        self.end()
+        self.end()
+
+        self.line('__syncthreads();')
+        self.begin('if (threadIdx.x == 0)')
+        for p in pipelines:
+            ready = next(b for b in self.s.barriers if b.pipeline == p.name)
+            for stage in range(p.stages):
+                self.line(f'cake_inval({self.barvars[ready.name]}+{stage});')
+                self.line(f'cake_inval(free{self.s.pipelines.index(p)}+{stage});')
+        self.end()
+        self.invalidate_completions(loop)
+
     def invalidate_completions(self, scope):
         # Only the immediate parent of a contraction owns its final-publication
         # barrier. Ancestors must not invalidate the same object a second time.
@@ -1255,6 +1373,16 @@ class _Emitter:
     def pipeline_prefetched(self, loop, p):
         """Let the copy warp stage j+1 while the MMA warp consumes j."""
         var = self.loopvars[loop.iterator]
+        self.begin(f'if (({var}+1)<{self.trip(loop)})')
+        self.prefetch_operands(loop, p, chunk=f'({var}+1)',
+                               stage=f'(({var}+1)&1)', wait_previous=True)
+        self.end()
+        self.issue_prefetched_mma(loop, p)
+        self.line('__syncthreads();')
+
+    def issue_prefetched_mma(self, loop, p):
+        """Consume one B ring slot and publish the two completion phases."""
+        var = self.loopvars[loop.iterator]
         stage = f'({var}&1)'
         phase = f'(({var}/2)&1)'
         ready = next(b for b in self.s.barriers if b.pipeline == p.name)
@@ -1262,10 +1390,6 @@ class _Emitter:
         freevar = f'free{self.s.pipelines.index(p)}'
         mmas = [op for op in self.s.operations
                 if op.pipeline == p.name and op.kind is OperationKind.MMA]
-        self.begin(f'if (({var}+1)<{self.trip(loop)})')
-        self.prefetch_operands(loop, p, chunk=f'({var}+1)',
-                               stage=f'(({var}+1)&1)', wait_previous=True)
-        self.end()
         self.begin(f'if ({self.role_condition(mmas[0].role)} && (threadIdx.x & 31) == 0)')
         for mma in mmas:
             for name in mma.reads:
@@ -1301,7 +1425,6 @@ class _Emitter:
             self.line(f'cake_commit({self.barvars[mma.signals[0]]});')
         self.line(f'cake_wait({freevar}+{stage}, {phase});')
         self.end()
-        self.line('__syncthreads();')
 
     def pipeline(self, loop, p, *, carried_phase=None, persistent_phase=None):
         ops = self.s.loop_operations(loop) if loop is not None else [op for op in self.s.operations if op.pipeline == p.name]
