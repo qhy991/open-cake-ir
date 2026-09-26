@@ -30,6 +30,8 @@ TEMPLATES = {
         'model_ep4_live_chain_template.cu'),
     'cake_ep4_gpu_plan_stages': Path(__file__).with_name(
         'model_ep4_gpu_plan_template.cu'),
+    'cake_ep4_temporal_stages': Path(__file__).with_name(
+        'model_ep4_temporal_template.cu'),
 }
 OUTPUT = 'model_tile_ready_ffn_capped.cu'
 MARKS = ('@CAKE_HELPERS@', '@UPGATE_STAGE@',

@@ -84,7 +84,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
         for generation in ('cake_full_ffn_stages', 'cake_two_expert_stages',
                            'cake_ep4_owner_stages',
                            'cake_ep4_live_chain_stages',
-                           'cake_ep4_gpu_plan_stages'):
+                           'cake_ep4_gpu_plan_stages',
+                           'cake_ep4_temporal_stages'):
             with self.subTest(generation=generation), tempfile.TemporaryDirectory(
                     prefix='cake-tile-stage-') as directory:
                 root = Path(directory)
@@ -123,6 +124,10 @@ class NativeCudaTileStageTest(unittest.TestCase):
                     self.assertIn('derive_expert_order<<<', source)
                     self.assertIn('assign_tile_plan<<<', source)
                     self.assertIn('expand_stage_tasks<<<', source)
+                if generation == 'cake_ep4_temporal_stages':
+                    self.assertIn('derive_early_wave<<<', source)
+                    self.assertIn('assign_terminal_tiles<<<', source)
+                    self.assertIn('publish_wave_ready<<<', source)
 
 
 if __name__ == '__main__':
