@@ -168,6 +168,19 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    with 88 registers/thread and no spills and again queried one active
    CTA/SM. It uses successive wave-wide stage barriers, so per-tile
    readiness and overlap, dynamic expert choice and P2P traffic remain open.
+   A tile-ready successor (`cake-weave-model-tile-ready-capped-449c19b8/`)
+   replaces those stage barriers with per-tile GPU-scope release/acquire
+   completion: 24 up/gate subtasks publish 128 activation rows, which
+   publish 32 down subtasks. Two separate one-GPU runs at the same source
+   commit each completed all 11,776 units in all four `c`/steal cases,
+   matched all three saved stage tensors bitwise and observed successor
+   claims while other tiles' predecessor tasks remained unfinished.
+   The `c=148` case stole every unit in both runs. An earlier fetch-add/
+   subtract permit variant (`cake-weave-model-tile-ready-ffn-f1b6fdfe/`)
+   passed three cases but timed out at `c=148`; replacing its reservation
+   with bounded CAS made that exact case complete twice. This does not
+   prove arbitrary interleavings safe, and neither version includes
+   dynamic expert bins, P2P communication or qualified latency.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -180,10 +193,9 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 - Integrate the separate core schema-2 tile/stage effect after its review,
   then lower the evidenced host tile formation, padding, expert weight
   selection and **stage CTA completion counters** into a live B300 queue.
-  Replace the validated wave-wide stage barriers with tile-local ready
-  publication. Publish activation tasks only after all 24 up/gate subtasks for their
-  logical tile complete, and down tasks only after all 128 activation
-  subtasks complete; then publish the route-keyed return after all 32 down
+  The one-GPU tile-ready prototype has validated the 24→128→32 predecessor
+  chain on repeated fixed tiles; connect its completion to the real
+  expert-bin publication and publish the route-keyed return after all 32 down
   subtasks. Verify empty/tail bins and dynamic expert/weight descriptors
   before coupling the worker to the four-rank mailbox.
   Communication CTA steal must claim the same ready stage unit as computation
