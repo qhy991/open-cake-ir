@@ -24,24 +24,24 @@
 #include <vector>
 @COMBINE_SOURCE@
 
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ != 1030
-#error "Exact sm_103a is required"
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ != @CUDA_ARCH@
+#error "Exact @TARGET_ID@ is required"
 #endif
 
 namespace cg = cooperative_groups;
 namespace {
-constexpr int kThreads = 192;
-constexpr int kDynamicShared = 49200;
+constexpr int kThreads = @THREADS@;
+constexpr int kDynamicShared = @SHARED_BYTES@;
 constexpr int kWaves = 4;
 constexpr int kSourceRanks = 4;
 constexpr int kEvents = kWaves * (kSourceRanks+1);
 constexpr int kStages = 3;
-constexpr int kLogicalTiles = 255;  // schema-2 safe queue capacity per rank
+constexpr int kLogicalTiles = @TILE_CAPACITY@;
 constexpr int kExpectedTiles = 64;  // retained route-set oracle only
 constexpr int kExperts = 32;
-constexpr int kUpGateTasksPerTile = 24;
-constexpr int kActivationTasksPerTile = 128;
-constexpr int kDownTasksPerTile = 32;
+constexpr int kUpGateTasksPerTile = @UPGATE_UNITS@;
+constexpr int kActivationTasksPerTile = @ACTIVATION_UNITS@;
+constexpr int kDownTasksPerTile = @DOWN_UNITS@;
 constexpr int kMaxTasks = kLogicalTiles*kActivationTasksPerTile;
 constexpr int kTotalStageTasks = kLogicalTiles *
                                  (kUpGateTasksPerTile+kActivationTasksPerTile+
@@ -120,6 +120,8 @@ __global__ void tile_schedule_probe(
   for (int earlier=0;earlier<selected_wave;++earlier)
     logical_offset+=task_counts[earlier]/kUpGateTasksPerTile;
   for (int wave=selected_wave; wave<=selected_wave; ++wave) {
+    // CAKE_EFFECT: tile.acquire
+    // CAKE_EFFECT: task.acquire
     if (threadIdx.x==0)
       while (worker_wave_acquire(&wave_ready[wave])==0)
         __nanosleep(64);
@@ -136,6 +138,7 @@ __global__ void tile_schedule_probe(
         bool permitted=!comm;
         bool reserved=false;
         if (comm && total_tasks>0 && steal_budget>0) {
+          // CAKE_EFFECT: steal.permit
           reserved=reserve_bounded(steal_permits,steal_budget);
           permitted=reserved;
         }
@@ -152,11 +155,14 @@ __global__ void tile_schedule_probe(
             for (int attempt=0; attempt<tile_count && claimed<0; ++attempt) {
               const int tile=logical_offset+(block+attempt)%tile_count;
               if (stage>0 &&
+                  // CAKE_EFFECT: task.predecessor.acquire
                   completion_acquire(&tile_completed[(stage-1)*kLogicalTiles+tile])
                     !=predecessor) continue;
               int* head=&task_heads[stage*kLogicalTiles+tile];
               int old=atomicAdd(head,0);
               while (old<units) {
+                // CAKE_EFFECT: task.reserve
+                // CAKE_EFFECT: task.claim
                 int observed=atomicCAS(head,old,old+1);
                 if (observed==old) {
                   claimed=(tile-logical_offset)*units+old;
@@ -223,9 +229,11 @@ __global__ void tile_schedule_probe(
       if (threadIdx.x==0) {
         const int work_index=stage*kEvents+wave;
         task_owner[work_index*kMaxTasks+claimed]=block;
+        // CAKE_EFFECT: task.predecessor.publish
         completion_release_increment(
             &tile_completed[stage*kLogicalTiles+tile]);
         atomicAdd(&processed[work_index],1);
+        // CAKE_EFFECT: steal.account
         if (borrowed) atomicAdd(&stolen[work_index],1);
       }
       __syncthreads();
@@ -351,6 +359,7 @@ __global__ void dispatch_source_wave(const BinParams* params,int wave) {
       for (int owner=0;owner<R;++owner) {
         if (owner==params->rank || owner_slot[owner]!=-1) continue;
         Bin* remote=params->bins[owner];
+        // CAKE_EFFECT: payload.reserve
         int slot=system_reserve(&remote->payload_count);
         if (slot<0 || slot>=PAYLOAD_CAP) {
           atomicCAS(&params->bins[params->rank]->error,0,12);
@@ -371,6 +380,7 @@ __global__ void dispatch_source_wave(const BinParams* params,int wave) {
     for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
       output[feature]=input[feature];
     __syncthreads();
+    // CAKE_EFFECT: payload.publish
     if (threadIdx.x==0) system_publish(&remote->payload_ready[slot]);
     __syncthreads();
   }
@@ -378,6 +388,7 @@ __global__ void dispatch_source_wave(const BinParams* params,int wave) {
     for (int route=0;route<K;++route) {
       int expert=route_expert[route],owner=route_owner[route];
       Bin* remote=params->bins[owner];
+      // CAKE_EFFECT: bin.reserve
       int slot=system_reserve(&remote->count[expert%LOCAL_E]);
       if (slot<0 || slot>=MAX_ROWS) {
         atomicCAS(&params->bins[params->rank]->error,0,13);
@@ -388,6 +399,7 @@ __global__ void dispatch_source_wave(const BinParams* params,int wave) {
       remote->keys[index]=key;
       remote->route_location[key]=index;
       remote->row_payload_slot[index]=owner_slot[owner];
+      // CAKE_EFFECT: bin.publish
       system_publish(&remote->ready[index]);
       system_publish(&remote->route_ready[key]);
     }
@@ -395,6 +407,7 @@ __global__ void dispatch_source_wave(const BinParams* params,int wave) {
 }
 __global__ void mark_source_wave_done(const BinParams* params,int wave) {
   if (threadIdx.x!=0) return;
+  // CAKE_EFFECT: source.complete
   for (int owner=0;owner<R;++owner)
     system_publish(&params->bins[owner]->source_wave_done[params->rank][wave]);
 }
@@ -479,6 +492,7 @@ __global__ void assign_wave_tiles(const BinParams* params,int event) {
   for (int piece=0;piece<local->wave_tile_counts[expert];++piece) {
     int slot=base+prior+piece;
     int valid=piece<full ? kRows : partial;
+    // CAKE_EFFECT: tile.construct
     params->tile_experts[slot]=expert;
     for (int row=0;row<kRows;++row)
       params->tile_keys[slot*kRows+row]=row<valid
@@ -520,6 +534,7 @@ __global__ void gather_wave_tiles(const BinParams* params,int event,
       continue;
     }
     if (key>=ROUTES) asm volatile("trap;");
+    // CAKE_EFFECT: bin.acquire
     if (threadIdx.x==0)
       while (system_acquire(&local->route_ready[key])==0) __nanosleep(64);
     __syncthreads();
@@ -544,6 +559,7 @@ __global__ void gather_wave_tiles(const BinParams* params,int event,
         if (threadIdx.x==0) atomicCAS(&local->error,0,20);
         return;
       }
+      // CAKE_EFFECT: payload.acquire
       if (threadIdx.x==0)
         while (system_acquire(&local->payload_ready[payload_slot])==0)
           __nanosleep(64);
@@ -566,6 +582,8 @@ __global__ void publish_wave_ready(const BinParams* params,int event,
   for (int peer=source<R ? source : 0;peer<needed;++peer)
     while (system_acquire(&local->source_wave_done[peer][wave])==0)
       __nanosleep(64);
+  // CAKE_EFFECT: tile.publish
+  // CAKE_EFFECT: task.publish
   system_publish(&local->wave_consumed[event]);
 }
 __global__ void wait_all_destinations(const BinParams* params,int event) {
@@ -579,17 +597,20 @@ __global__ void scatter_returns(const ReturnParams* params) {
   int key=params->tile_keys[tile*kRows+row];
   if (key<0) return;
   if (key>=ROUTES) asm volatile("trap;");
+  // CAKE_EFFECT: return.index
   int source=key/LOCAL_ROUTES,slot=key%LOCAL_ROUTES;
   const float* input=params->down+(size_t(tile)*kRows+row)*H;
   float* output=params->contributions[source]+size_t(slot)*H;
   for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
     output[feature]=input[feature];
   __syncthreads();
+  // CAKE_EFFECT: return.publish
   if (threadIdx.x==0) system_publish(params->ready[source]+slot);
 }
 __global__ void wait_returns(const ReturnParams* params) {
   int slot=int(blockIdx.x)*int(blockDim.x)+int(threadIdx.x);
   if (slot>=LOCAL_ROUTES) return;
+  // CAKE_EFFECT: return.acquire
   while (system_acquire(params->ready[params->rank]+slot)==0)
     __nanosleep(64);
 }

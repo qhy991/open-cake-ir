@@ -170,6 +170,7 @@ cudaError_t ranked_tile_bind(RankedTileHostState& state,int rank) {
 }
 
 cudaError_t ranked_tile_validate_routes(const RankedTileRankState& s) {
+  // CAKE_EFFECT: input_domain.admit
   int host_ids[T*K];
   cudaError_t error=cudaMemcpy(host_ids,s.ids,sizeof(host_ids),
                                cudaMemcpyDeviceToHost);
@@ -186,6 +187,7 @@ cudaError_t ranked_tile_validate_routes(const RankedTileRankState& s) {
 }
 
 cudaError_t ranked_tile_reset(RankedTileRankState& s) {
+  // CAKE_EFFECT: state.reset
   cudaError_t error;
 #define CAKE_CLEAR(pointer, bytes, value) \
   do { error=cudaMemset((pointer),(value),(bytes)); if (error!=cudaSuccess) return error; } while (0)
@@ -244,9 +246,8 @@ extern "C" int @ENTRY@_create(
     cudaDeviceProp prop{};
     error=cudaGetDeviceProperties(&prop,rank);
     if (error!=cudaSuccess) break;
-    if (prop.major!=10 || prop.minor!=3 || prop.multiProcessorCount!=148 ||
-        (std::strcmp(prop.name,"NVIDIA B300") &&
-         std::strcmp(prop.name,"NVIDIA B300 SXM6 AC"))) {
+    if (prop.major!=@CC_MAJOR@ || prop.minor!=@CC_MINOR@ ||
+        prop.multiProcessorCount!=@SMS@ || (@DEVICE_NAME_CHECK@)) {
       error=cudaErrorInvalidDevice;break;
     }
     int cooperative=0,resident=0;
@@ -272,6 +273,7 @@ extern "C" int @ENTRY@_create(
     for (int peer=0;peer<R;++peer) {
       if (peer==rank) continue;
       int access=0,atomic=0;
+      // CAKE_EFFECT: peer_pair.admit
       error=cudaDeviceCanAccessPeer(&access,rank,peer);
       if (error!=cudaSuccess || access!=1) {
         error=cudaErrorNotSupported;break;
@@ -352,6 +354,7 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
   auto* state=static_cast<RankedTileHostState*>(opaque);
   if (!state || state->poisoned || !communication_ctas || !steal_budgets)
     return int(cudaErrorInvalidValue);
+  // CAKE_EFFECT: controls.admit
   for (int rank=0;rank<R;++rank)
     if (communication_ctas[rank]<1 || communication_ctas[rank]>96 ||
         steal_budgets[rank]<0 || steal_budgets[rank]>kTotalStageTasks)
@@ -420,6 +423,7 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
                       &s.activated,&s.up_maps_a,&s.up_map_b,&s.down_maps_a,
                       &s.down_map_b,&s.down,&communication,&budget,
                       &selected_event};
+        // CAKE_EFFECT: launch.rank
         CAKE_RUN(cudaLaunchCooperativeKernel(
             reinterpret_cast<const void*>(tile_schedule_probe),
             dim3(96),dim3(kThreads),args,kDynamicShared,s.compute));
@@ -452,6 +456,7 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
     CAKE_RUN(cudaSetDevice(rank));
     RankedTileRankState& s=state->ranks[rank];
     int device_error=0;
+    // CAKE_EFFECT: status.acquire
     CAKE_RUN(cudaMemcpy(&device_error,&s.bin->error,sizeof(int),
                         cudaMemcpyDeviceToHost));
     if (device_error!=0) return 1000+device_error;

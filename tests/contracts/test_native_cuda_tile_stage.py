@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -13,7 +14,7 @@ import unittest
 from open_cake_ir.compiler import Compiler, Program, RankedTileEffects, Schedule
 from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.backends.native_cuda_ranked_tile import (
-    emit_source_event_device, emit_source_event_library,
+    emit_source_event_device, emit_source_event_library, source_event_map,
 )
 from open_cake_ir.compiler.backends import native_cuda
 from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
@@ -104,8 +105,9 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertNotIn('int main(',device)
         with self.assertRaisesRegex(EmitError,'exact checked B300 composition'):
             emit_source_event_device(result,combine_source='')
+        combine_source=native_cuda.emit(combine,self.target).source
         library=emit_source_event_library(
-            result,combine_source=native_cuda.emit(combine,self.target).source,
+            result,combine_source=combine_source,
             entry=effects.lowering.entry_point)
         self.assertIn('cake_ranked_tile_b300_create(',library)
         self.assertIn('cake_ranked_tile_b300_launch(',library)
@@ -116,6 +118,29 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertIn('cake_ranked_tile_b300_bin_bytes(',library)
         self.assertNotIn('int main(',library)
         self.assertNotIn('fopen(',library)
+        mapped=source_event_map(library,result,combine_source=combine_source)
+        self.assertEqual(len([name for name in mapped
+                              if name.startswith('effect.')]),27)
+        self.assertEqual({name for name in mapped if name.startswith('up_gate.')},
+                         {'up_gate.'+op.op_id for op in
+                          self.program.stages[0].schedule.operations})
+        self.assertEqual({name for name in mapped if name.startswith('combine.')},
+                         {'combine.'+op.op_id for op in combine.operations})
+        with self.assertRaisesRegex(EmitError,'omits'):
+            source_event_map(library.replace('// CAKE_EFFECT: payload.publish',''),
+                             result,combine_source=combine_source)
+        observed=replace(self.target,
+                         occupancy=replace(self.target.occupancy,
+                                           multiprocessor_count=149),
+                         device_names=('Synthetic B300 audit',))
+        changed=compose_model_ranked_tile_stages(
+            effects,self.program,combine,observed)
+        routed=emit_source_event_library(
+            changed,combine_source=native_cuda.emit(combine,observed).source,
+            entry=effects.lowering.entry_point)
+        self.assertIn('prop.multiProcessorCount!=149',routed)
+        self.assertIn('Synthetic B300 audit',routed)
+        self.assertNotIn('NVIDIA B300 SXM6 AC',routed)
         bad=effects.document
         bad['partial_threshold_rows']=128
         with self.assertRaisesRegex(EmitError,'exact model EP4 domain'):

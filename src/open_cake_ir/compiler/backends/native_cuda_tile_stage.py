@@ -73,6 +73,10 @@ class RankedTileStageComposition:
     emitted_shared_bytes: int
     tensor_bytes: int
     required_execution_groups: int
+    target_id: str
+    compute_capability: tuple[int, int]
+    device_names: tuple[str, ...]
+    warp_size: int
     target_multiprocessors: int
 
 
@@ -287,4 +291,8 @@ def compose_model_ranked_tile_stages(
         analysis.maximum_shared_bytes, shared,
         analysis.maximum_tensor_bytes,
         analysis.required_execution_groups,
+        target.target_id,
+        target.compute_capability,
+        target.device_names,
+        target.warp_size,
         target.occupancy.multiprocessor_count)
