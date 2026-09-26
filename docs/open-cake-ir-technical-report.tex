@@ -1496,7 +1496,7 @@ MMA、compute warp 各自运行一条 256 块循环；MMA warp 在基础投影�
 
 重复启动时，三角色版相对一次设备抓取在 head40 从 chunk17 起会出现
 少量 BF16 位差异，首个保留快照的最大绝对输出/状态差仅为
-\(3.82\times10^{-6}\) / \(3.06\times10^{-5}\)，独立合成 oracle
+\(3.82\times10^{-6}\) / \(6.10\times10^{-5}\)，独立合成 oracle
 仍报 0 超容差。因而首个要求\emph{逐位相同}的计时作业被拒绝，
 失败记录保留。后继先在 CPU 独立保存期望值，再于同一独占 GPU 交替
 采样五轮、每臂每轮 25 个冷 L2 CUPTI 样本；每轮两臂完整输出与状态
@@ -1505,6 +1505,38 @@ MMA、compute warp 各自运行一条 256 块循环；MMA warp 在基础投影�
 分角色版 \(2{,}462.161\,\mu\mathrm{s}\)，\(1.15098\times\)。
 这是合成准备值范围内的数值合格组件收益；位确定性、高保留输入、
 逐 token BF16 状态舍入及完整 CAKE 对照均未获资格。
+
+\paragraph{后续负向筛选与向量 P 暂存反例。}
+在同卡受控消融中，去掉 V 读取的错误路径只缩短约
+\(10.53\,\mu\mathrm{s}\)；把前代入改为错误的 \code{U=RHS} 则缩短约
+\(256.83\,\mu\mathrm{s}\)。两者都改变语义，只用于估计值得继续调查的
+成本范围。低扰动 MMA warp 时钟探针显示，CTA0 稳态 chunk 中
+跨 P shared 暂存的区间中位数为 9,793 cycles，carried state-ready
+等待为 5,473 cycles，而两处 B-ready 等待分别只有 72 和 76 cycles。
+区间会包含 warp 调度，不能直接归因于 P 指令。将输出 STORE 移到
+state 发布后的 \code{efa8bbad} 在正确性门禁后同卡配对仍从
+\(2{,}461.235\,\mu\mathrm{s}\) 回退到
+\(2{,}624.436\,\mu\mathrm{s}\)，五轮均回退，故不推广。
+
+\Needspace{15\baselineskip}
+提交 \code{fbd64306} 在精确 H64/256、P 单生产者/单消费者、
+BF16 32\(\times\)32/B64 swizzle 的 native 域内以 16B
+\code{LDG.E.128}/\code{STS.128} 暂存 P，未对齐输入保留标量回退。
+它通过 Corpus Gate 179/179、适用 CPU 测试 2,689 passed，
+精确 B300 AOT 为 255 寄存器、0 spill；全部合成输出/状态通过独立
+数值 oracle。同一独占 GPU 的五轮交替冷 L2 CUPTI 配对得到基线
+\(2{,}481.104\,\mu\mathrm{s}\)、向量版
+\(1{,}950.861\,\mu\mathrm{s}\)，诊断比 \(1.27180\times\)。
+但向量版跨轮约 66.9\% 的输出 BF16 位模式变化；compute warp 在
+\code{p\_ready} 等待后回显 P，首块 head0 的连续 128 个元素已是下一块
+的 P 值。发布前回显及标量基线消费者回显均正确；补一个显式
+\code{p\_free} barrier 的源码探针仍有 96 个元素错误。因而
+\(1.951\,\mathrm{ms}\) 是\emph{未获发布/复用正确性资格的诊断数}，
+不能列为已接受的 Compiler 性能提升。下一轮需在同一次启动定位 P 的
+写入可见性、barrier 相位和共享槽复用，再让 Schedule、验证器及发射一起
+承担这个合同。原始 CAKE CUDA 显式管理槽与角色；现有 Triton lowering
+缺这条 carried TMEM/P 路由，差别是当前实现范围，不能推断语言本身
+无法表达。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
