@@ -77,11 +77,11 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 ### 2.9 256 chunk 的相位复用与完整固定形状地址
 
-`61892f81` 将同一 H64 Schedule 的 chunk 轴从 2 精确扩展为 256，保留一个 head/CTA、标量 chunk、rank-4 TMA 与 token-major V/输出地址。后端仍拒绝未资格化的 3-chunk 形状；这并非硬件不能运行 3 chunk，而是资格证据目前只覆盖 2 和 256。所有 carried mbarrier 在 256 次迭代中重复使用相位，AOT 源码保留 `#pragma unroll 1` 并按 `trip & 1` 等待/发布；不能从两次迭代推断其跨偶奇相位循环正确。固定提交通过 Corpus Gate 179/179 和远端完整适用 CPU 合同 2,674 passed、16 skipped、1 项 Apple MLX 实机测试取消选择；精确 `sm_103a` AOT 为 254 寄存器、0 stack/spill。
+`61892f81` 将同一 H64 Schedule 的 chunk 轴从 2 精确扩展为 256，保留一个 head/CTA、标量 chunk、rank-4 TMA 与 token-major V/输出地址。后端仍拒绝未资格化的 3-chunk 形状；这并非硬件不能运行 3 chunk，而是资格证据目前只覆盖 2 和 256。carried state 与 P 的 mbarrier 按 `trip & 1` 重复使用相位，两个 MMA 流水的 ready/free/completion barrier **每 chunk 重新初始化与失效**；AOT 源码保留 `#pragma unroll 1`。不能从两次迭代推断其跨偶奇相位循环正确。固定提交通过 Corpus Gate 179/179 和远端完整适用 CPU 合同 2,674 passed、16 skipped、1 项 Apple MLX 实机测试取消选择；精确 `sm_103a` AOT 为 254 寄存器、0 stack/spill。
 
 broker-shared 作业 `gpuq-1f1423e7d3da` 完成并释放 GPU1 后，独立 host oracle 用一组各 head 不同的合成准备值检查完整固定 H64/T8192 地址范围：**67,108,864 个 BF16 token-major 输出和 1,048,576 个 BF16 最终状态**均为 0 超差、无非有限值，所有不可变输入未改写。最大绝对输出/状态误差分别是 `3.814697265625e-06` / `6.103515625e-05`。这是 256 次 chunk 循环、相位及输出地址的设备证明，**不是完整 KDA 的外部 oracle 通过**：Q/K/G/prefix/P/query/coupling 等准备值仍为合成输入，状态仍在 chunk 边界而非逐 token 舍入，packed、六形状与框架 ABI 尚未验收。
 
-首次独占 CUPTI 组件诊断因 Python 环境缺失已安装的 `cupti-python` 路径而被严格封装拒绝，不能使用其 CUDA event fallback。补齐依赖后，两次作业分别在 GPU0、GPU1 启动前发现外部计算进程并退出；broker 均已终结释放，外部进程未被干预。因此 **没有有效状态 kernel 延迟，更没有相对原始 CAKE 的加速比**。准备阶段单独 389.507 µs 的旧诊断已接近完整参考 456.260 µs；即使该状态路径未来测得很快，超越 CAKE 仍需要减少准备/状态间物化、额外启动和状态搬运，并以完整 Workload 的配对 CUPTI 实验检验。
+首次独占 CUPTI 组件诊断因 Python 环境缺失已安装的 `cupti-python` 路径而被严格封装拒绝，不能使用其 CUDA event fallback。补齐依赖后，两次作业分别在 GPU0、GPU1 启动前发现外部计算进程并退出；broker 均已终结释放，外部进程未被干预。新作业 `gpuq-95ff801f95c4` 在干净的独占 GPU1 上取得 5 轮各 25 个 CUPTI 冷 L2 样本、无 graph，计时后输出/状态与已资格化抓取逐位一致：组件中位数 **7,678.607 µs**，轮中位数 7,677.390–7,681.713 µs，轮内变异系数均小于 0.13%。这比适配 CAKE 完整参考约 456 µs 还慢很多；两者不是同作业、同计算范围的 speedup 比较，但已足以否决“再加独立准备阶段即可追平”的想法。准备阶段单独 389.507 µs 的旧诊断也已接近完整参考；超越 CAKE 需要改变求解/流水与准备/状态间的物化边界，再做完整 Workload 的配对实验。
 
 ### 2.10 为什么长循环数值通过仍不能证明逐 token BF16 语义
 
@@ -90,6 +90,14 @@ broker-shared 作业 `gpuq-1f1423e7d3da` 完成并释放 GPU1 后，独立 host 
 Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留输入下 chunk1 的最终状态与独立 oracle 完全一致，chunk2/4/8/16/32 均出现超容差状态元素；常数 gate 试验从 `g=-4`（decay 约 0.914）通过，变为 `g=-6`（decay 约 0.988）时有 123 个失败元素。它未给出可证明的分流阈值。当前 `61892f81` 的 67,108,864 输出检查只与**同一块级代数的合成 host oracle**比较，不能覆盖这个缺陷。原始 CAKE CUDA 在冻结 Workload 的完整输入上通过外部 oracle；不能因此推断它对任意高保留输入也完全逐 token 精确。既有 Triton 路线可以写循环与 BF16 cast，但当前实测的 chunk16/32 映射仍有昂贵串行/重复工作；既有 native 路线尚无逐 token 状态舍入的有界同步与存储合同。这些是具体实现与资格差距，不是 CUDA 或 Triton 语言的表达上限。
 
 可验证的后继有两条：在片上保留 BF16 状态并**每 token 更新和舍入**，用外部 oracle 与高保留反例先证明正确，再测其顺序成本；或为快速块级路径推导能在运行前检查的误差上界，并为不满足条件的输入提供已验证的精确 fallback。前者不能退回每 token 全局读写状态（该已正确的 direct CUDA 路线为 16,979.920 µs）；后者不能用一次通过的普通随机输入猜 guard。两者都需要把 IR 可见的舍入位置、状态所有权、phase 和读写分析同时补齐，然后在完整六形状及配对计时下决定是否保留。
+
+### 2.11 测量驱动的 barrier 生命周期修订及其限度
+
+`61892f81` 每个 chunk 为两条 TMA/MMA 流水重新执行 ready/free 与四个 completion mbarrier 的 `init`、CTA 同步、`inval`。为了定位耗时，保留 P stage 和 wait、但故意把 `forward_substitute` 改成 `U=RHS` 的**不正确**独立消融，在另一独占作业测得 7,232.558 µs；与有效组件的 7,678.607 µs 相差约 446 µs，但这两个数字跨作业、跨设备，只能削弱“496 项顺序 FMA 单独解释 7 ms”的假设，不能当作正式消融加速比。生成源码还有每 chunk 多次 `__syncthreads`；原始 CAKE 导出的 B300 适配源码则使用五槽 shared 流水、分开的 producer/compute/MMA/epilogue 角色，以及每 head 两个 M64 value slice。它并不靠缩短一个 solve 函数得到完整的约 456 µs。
+
+目标专属后继 `92994711` 在**同一 H64、256 chunk、两条单槽流水且每条恰好两次 MMA** 的结构域，将两条 ready/free 和四个 completion barrier 的初始化/失效移到 carried loop 两端；循环内 producer/consumer 使用 `trip & 1`，每次重新到达前仍等待上一 phase 完成，保留每 chunk 的 CTA drain。其它两 chunk 路径保持原发射，专门合同固定这组前后条件与反例。[NVIDIA PTX mbarrier 生命周期](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html)说明 phase 完成后自动重新就绪、下一 phase 的 arrive 之前须有成功的 wait；这支持该映射的硬件意图，设备验证仍不可省略。固定后继通过 Corpus Gate 179/179、远端完整适用 CPU 合同 2,676 passed、16 skipped、1 项 Apple MLX 实机测试取消选择；AOT 为 255 寄存器、0 stack/spill。broker-shared `gpuq-072c72413d0e` 释放后，独立 host oracle 对同一固定 H64/T8192 合成输入的全部 67,108,864 输出及 1,048,576 最终状态元素均为 0 超差，输入未改写。
+
+随后 `gpuq-259eacb16124` 在**同一独占 GPU0、同一输入、交替顺序**比较两个固定 cubin：五轮每臂各 25 个 CUPTI 冷 L2 样本、无 graph，两臂末次输出/状态均与先前抓取逐位相同、后检查无其它计算 PID。旧版 pooled 中位数 **7,611.606 µs**，复用版 **7,228.691 µs**；五轮比值 1.05218–1.05306，pooled 比值 **1.05297×**，轮内变异系数均低于 0.16%。这是同范围组件的约 5.3% 收益，但 **7.23 ms 仍无法作为追赶 CAKE 的主体路线**。当前 disposition：保留 NVIDIA 任务分支的有界机制，不提升为共享 pass 或完整 KDA 候选。后继需要使 B 输入预取与状态消费跨 chunk 重叠，并考虑原始 CAKE 的多槽/多角色分工与准备阶段片上融合；每一项仍须保留完整数值和配对计时证据。
 
 ## 3. 对照：谁拥有哪个拒绝
 
@@ -100,7 +108,8 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | 标量 `loop` 地址 | unit tile、作用域、地址范围和局部结果维度 | rank-3 TMA 坐标与两个 staged B 域 | `test_scalar_loop_access.py`、`test_native_two_phase_k128.py`；错误首轴由 `NATIVE_CARRIED_MMA_DOMAIN` 拒绝。 |
 | BF16 TMEM 回读 | 同 dtype、32-bit word/双 BF16 packing、carried read-before-update | 当前 phase 等待、word load、位模式解包 | `test_tmem_state_contract.py`、`test_native_bf16_tmem_read.py`；错误 atom/wait/非 carried 源被拒绝。 |
 | 旧状态衰减 | FP32 cast/mul/add 与 BF16 cast 保持独立语义 | 行拥有者逐列计算并发布下一 TMEM phase | `test_native_kda_decayed_state.py`；去掉 prefix producer 触发 `BUFFER_UNPRODUCED`。 |
-| H64 标量 head / rank-4 TMA | `ProgramMap` 和 AccessMap 明示 head、chunk 与本地二维 tile | 只为 H64 两 chunk 发射 4D tensor-map、TMA4 与直接 V/输出地址 | `test_native_kda_head_address.py`；错误 head、rank-5、H32、漏 store 所有权各有拒绝。 |
+| H64 标量 head / rank-4 TMA | `ProgramMap` 和 AccessMap 明示 head、chunk 与本地二维 tile | 只为 H64 两或 256 chunk 发射 4D tensor-map、TMA4 与直接 V/输出地址 | `test_native_kda_head_address.py`、`test_native_kda_chunk256.py`；错误 head、rank-5、H32、未资格化 chunk 数与漏 store 所有权各有拒绝。 |
+| carried barrier 生命周期 | carried TMEM 与 producer/consumer 的 phase、读先于写保持原分析 | H64/256 的两条单槽 TMA/MMA 流水在 loop 两端初始化/失效，块内按 parity 等待 | `test_native_carried_barrier_reuse.py`；两 chunk 控制仍保留旧生命周期；B300 全输出设备证明及配对 CUPTI 见 §2.11。 |
 
 ### 一次没有推广的 lowering 尝试
 
@@ -118,7 +127,8 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `42b78a5d` / `gpuq-7177fb25c220` | 显式 transpose→直接 token-major store；三组各 8,192 输出、16,384 状态在 B300 均通过，AOT 0 spill | 原始 V/beta RHS、完整 Workload 与性能胜出 |
 | `ac102f0e` / `gpuq-c841e1995072` | 公开 V/beta 输入到行拥有 RHS；远端完整适用 CPU 合同 2,601 passed、Corpus Gate 179/179，B300 三组各 8,192 输出及 16,384 状态均通过，AOT 255 寄存器、0 stack/spill | 真实上游准备值、逐 token BF16 状态舍入、64-head/256-chunk、六形状和配对延迟 |
 | `d5a9648a` / `gpuq-ad57c793c89c` | H64 两 chunk 的 rank-4 TMA、公开 V/beta 与 token-major 输出；完整适用 CPU 合同 2,672 passed、Corpus Gate 179/179，B300 三组各 524,288 输出及 1,048,576 状态均通过，AOT 255 寄存器、0 stack/spill | 256 chunk、真实准备值、逐 token BF16 舍入、完整六形状和配对延迟 |
-| `61892f81` / `gpuq-1f1423e7d3da` | H64/256 chunk 的长循环相位和地址；完整适用 CPU 合同 2,674 passed、Corpus Gate 179/179，B300 一组 67,108,864 输出及 1,048,576 状态均通过，AOT 254 寄存器、0 stack/spill | 真实准备值、逐 token BF16 舍入、packed/六形状、组件及配对延迟 |
+| `61892f81` / `gpuq-1f1423e7d3da`、`gpuq-95ff801f95c4` | H64/256 chunk 的长循环相位和地址；完整适用 CPU 合同 2,674 passed、Corpus Gate 179/179，B300 一组 67,108,864 输出及 1,048,576 状态均通过；单组件 CUPTI 中位数 7,678.607 µs，AOT 254 寄存器、0 stack/spill | 真实准备值、逐 token BF16 舍入、packed/六形状和完整 Workload 配对延迟 |
+| `92994711` / `gpuq-072c72413d0e`、`gpuq-259eacb16124` | ready/free/completion barrier 生命周期跨 256 chunk 复用；适用 CPU 合同 2,676 passed、Corpus Gate 179/179，全输出/状态设备检查通过；同 GPU 配对组件比 1.05297×，AOT 255 寄存器、0 stack/spill | 准备阶段融合、逐 token BF16 舍入、六形状、相对 CAKE 的完整配对性能 |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
@@ -131,6 +141,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
 | `state_after_update @ query` 与输出耦合 | `61892f81` 已在 B300 固定 H64/T8192 合成输入上通过公开 V/beta、token-major 输出及最终状态，AOT 0 spill | 真实准备值、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
+| 跨 chunk 流水成本 | `92994711` 的 barrier phase 复用经同 GPU 组件配对获约 5.3% 收益，但仍需 7.23 ms | 减少完整 CTA drain，分离 B 预取与状态消费，让多槽流水与准备值在片上衔接；以相同正确性/计时范围验证。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 
 1. 把准备阶段的 base/query、P、beta、prefix、final-key 接到同一状态/输出路径，明确哪些值留片上、哪些必须物化；核算额外 CTA、TMA 和 global traffic。原先七输出准备的 389.507 µs 是组件成本，不可与完整 CAKE 456 µs 非配对相减后宣称剩余预算。
