@@ -1327,8 +1327,20 @@ native lowering 从三维输入提取 K128/C32 的两个 B 块；该变体通过
 离线编译为 255 个寄存器、无栈和 spill；寄存器占用已很高，后续需测量
 其实际驻留与耗时。两项 K128 验证只覆盖有界状态递推，尚无完整 KDA
 输出、六形状或成对计时结论。
+
+\Needspace{12\baselineskip}
+\paragraph{同日的四 MMA 输出后继。}
+在两个 carried pipeline 中分别增加 base-query 投影和 U-output 校正，
+合成两 chunk Schedule 因而同时产出 BF16 输出与最终状态。首次排列过早
+将 base-query 的 FP32 结果从 TMEM 搬到寄存器，使它跨越整个顺序求解：
+精确 B300 离线编译为 255 寄存器、112 字节 stack，并报告 108 字节
+spill 读写。仅将该 TMEM 回读移到输出合并前后，仍为 255 寄存器，
+但 stack 和 spill 均降为 0；这是寄存器活跃区间缩短的实证，
+不是设备延迟收益。后版在 B300-M4 的 3 组输入上分别检查每组 8,192 个
+BF16 输出和 16,384 个 BF16 最终状态，全部 0 超差，输入未改写。
+该原型的 RHS 仍为合成输入，尚未接入公开 V/beta、逐 token BF16
+状态舍入或完整六形状；也没有与原始 CAKE 的同作业计时。
 \FloatBarrier
-\clearpage
 
 \section{跨硬件复用：从一次改写到可检验的收益}
 
