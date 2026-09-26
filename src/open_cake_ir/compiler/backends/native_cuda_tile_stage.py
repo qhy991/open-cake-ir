@@ -13,11 +13,35 @@ import re
 from . import native_cuda
 from .common import EmitError
 from .native_cuda_activation import ModelEmitter
-from ..ir import DType, LoadMovement, LoweringBackend, MemorySpace, OperationKind
+from ..ir import (AccessIndexKind, BoundaryPolicy, DType, LoadMovement,
+                  LoweringBackend, MemorySpace, OperationKind)
 
 
 _IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
 _ROUTE_EVIDENCE = frozenset({'sm_103a'})
+
+
+class _WorkerTensorEmitter(native_cuda._Emitter):
+    """Use the caller's checked N-subtile range for one complete store tile."""
+
+    def __init__(self, schedule, target, entry, *, output_width: int):
+        super().__init__(schedule, target, entry)
+        self.output_width = output_width
+
+    def operation(self, op):
+        if op.kind is not OperationKind.STORE:
+            return super().operation(op)
+        source = self.b(op.reads[0])
+        output = self.b(op.writes[0])
+        self.line(f'// CAKE_OP: {op.op_id}')
+        self.begin(f'if ({self.role_condition(op.role)})')
+        self.line('#pragma unroll')
+        self.begin(f'for (int col=0; col<{native_cuda._slots(self.s, source)}; ++col)')
+        self.line(f'{self.names[output.name]}[{self.row(op)} * '
+                  f'{self.output_width} + n_tile * 64 + col] = '
+                  f'{self.names[source.name]}[col];')
+        self.end()
+        self.end()
 
 
 @dataclass(frozen=True)
@@ -73,11 +97,25 @@ def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStage
             or output.shape != (128, b.shape[0])
             or b.shape[0] % 64 or a.shape[1] % 64):
         raise EmitError('worker tensor tile BF16 M128/K/N global shapes differ')
+    store = other[-1]
+    store_input = schedule.buffer(store.reads[0])
+    access = schedule.access_map(store.op_id, output.name)
+    epilogue = next(role for role in schedule.roles if role.name == store.role)
+    if (store_input.shape != (128, 64)
+            or epilogue.execution_groups != (0, 1, 2, 3)
+            or access is None or access.boundary is not BoundaryPolicy.MASK_TILED_AXES
+            or len(access.indices) != 2
+            or tuple((item.source, item.name, item.offset)
+                     for item in access.indices)
+            != ((AccessIndexKind.PROGRAM_TILE, mapping.axes[0].name, 0),
+                (AccessIndexKind.PROGRAM_TILE, mapping.axes[1].name, 0))):
+        raise EmitError('worker unmasked store needs full row/column tile ownership')
     tensor = [alloc for alloc in schedule.allocations
               if alloc.space is MemorySpace.TENSOR]
     if len(tensor) != 1 or tensor[0].tensor_columns != 64:
         raise EmitError('worker tensor tile needs one externally owned 64-column TMEM allocation')
-    emitter = native_cuda._Emitter(schedule, target, function_name)
+    emitter = _WorkerTensorEmitter(schedule, target, function_name,
+                                   output_width=output.shape[1])
     if emitter.shared_bytes > 49200:
         raise EmitError('worker tensor tile exceeds the evidenced CTA shared-memory footprint')
     emitter.axisvars = {mapping.axes[0].name: '0', mapping.axes[1].name: 'n_tile'}
@@ -88,6 +126,8 @@ def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStage
     emitter.begin(f'__device__ __forceinline__ void {function_name}('
                   'unsigned char* smem, uint32_t* tm1, int warp, float* output, '
                   'const CUtensorMap* maps_a, const CUtensorMap* map_b, int n_tile)')
+    emitter.line(f'if (n_tile < 0 || n_tile >= {output.shape[1] // 64}) '
+                 'asm volatile("trap;");')
     for barrier in schedule.barriers:
         key = 'barrier:' + barrier.name
         emitter.line(f'uint64_t* {emitter.barvars[barrier.name]} = '

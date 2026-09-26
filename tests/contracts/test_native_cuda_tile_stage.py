@@ -43,6 +43,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
                 self.assertIn('maps_a[0]', result.source)
                 self.assertIn('map_b[0]', result.source)
                 self.assertIn('n_tile * 64', result.source)
+                self.assertIn('asm volatile("trap;")', result.source)
+                self.assertNotIn('if (((0 * 128', result.source)
                 self.assertNotIn('tcgen05.alloc', result.source)
                 self.assertNotIn('tcgen05.dealloc', result.source)
                 self.assertEqual(result.source.count('CAKE_OP:'), 5)
