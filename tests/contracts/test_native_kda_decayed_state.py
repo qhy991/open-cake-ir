@@ -72,6 +72,10 @@ class NativeKdaDecayedState(unittest.TestCase):
                             ("// CAKE_OP: combine_state", "// CAKE_OP: publish_state")):
             self.assertLess(source.index(left), source.index(right))
         self.assertIn("cake_wait(bar0, (it0&1));", source)
+        self.assertEqual(source.count("Lowered together at round_state"), 3)
+        self.assertIn("float decayed = __fmul_rn(state_value,", source)
+        self.assertIn("float corrected = __fadd_rn(decayed,", source)
+        self.assertIn("= __float2bfloat16_rn(corrected);", source)
         self.assertIsNotNone(work_bound(schedule))
 
     def test_missing_decay_input_has_a_data_edge_refusal(self):
@@ -80,6 +84,27 @@ class NativeKdaDecayedState(unittest.TestCase):
                                if op["id"] != "load_prefix"]
         self.assertIn("BUFFER_UNPRODUCED",
                       {f.code for f in verify(Schedule.from_dict(value), target())})
+
+    def test_extra_reader_keeps_the_unfused_correct_mapping(self):
+        value = document()
+        value["buffers"].append({
+            "name": "retained_state_fp", "space": "register", "dtype": "fp32",
+            "shape": [128, 128], "mode": "scratch",
+        })
+        extra = {"id": "retain_state_fp", "kind": "elementwise", "role": "compute",
+                 "reads": ["state_fp"], "writes": ["retained_state_fp"],
+                 "depends_on": ["cast_state"], "parameters": {"op": "relu"}}
+        operations = value["operations"]
+        operations.insert(next(i for i, op in enumerate(operations)
+                               if op["id"] == "round_state"), extra)
+        body = value["tile_loops"][0]["body"]
+        body.insert(body.index("round_state"), extra["id"])
+        schedule = Schedule.from_dict(value)
+        self.assertEqual([f for f in verify(schedule, target()) if f.blocks_lowering], [])
+        self.assertEqual(native_cuda.preflight(schedule, target()), ())
+        source = native_cuda.emit(schedule, target()).source
+        self.assertNotIn("Lowered together at round_state", source)
+        self.assertNotIn("float state_value =", source)
 
 
 if __name__ == "__main__":

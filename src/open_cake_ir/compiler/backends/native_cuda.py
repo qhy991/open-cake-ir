@@ -80,6 +80,80 @@ def _scalar_row(s, buffer):
     return walk(buffer.name, set())
 
 
+def _fused_decayed_state(s):
+    """Map an exclusive typed BF16-state epilogue to one register pass.
+
+    The Schedule keeps all four operations and their FP32 rounding boundaries.
+    This is only a native row mapping; a shared IR rewrite is not inferred from
+    one KDA witness.
+    """
+    writer = {name: op for op in s.operations for name in op.writes}
+    readers = {b.name: [op for op in s.operations if b.name in op.reads]
+               for b in s.buffers}
+    dependents = {op.op_id: [other for other in s.operations
+                             if op.op_id in other.depends_on]
+                  for op in s.operations}
+    result = {}
+    for rounded in s.operations:
+        if (rounded.kind is not OperationKind.CAST
+                or rounded.parameters.to is not DType.BF16
+                or len(rounded.reads) != 1 or len(rounded.writes) != 1):
+            continue
+        combined = writer.get(rounded.reads[0])
+        if (combined is None or combined.kind is not OperationKind.ELEMENTWISE
+                or combined.parameters.op is not ElementwiseOp.ADD
+                or combined.parameters.scalar is not None
+                or combined.parameters.broadcast_axis is not None
+                or len(combined.reads) != 2):
+            continue
+        scaled = writer.get(combined.reads[0])
+        if (scaled is None or scaled.kind is not OperationKind.ELEMENTWISE
+                or scaled.parameters.op is not ElementwiseOp.MUL
+                or scaled.parameters.scalar is not None
+                or scaled.parameters.broadcast_axis != 1
+                or len(scaled.reads) != 2):
+            continue
+        converted = writer.get(scaled.reads[0])
+        if (converted is None or converted.kind is not OperationKind.CAST
+                or converted.parameters.to is not DType.FP32
+                or len(converted.reads) != 1):
+            continue
+        chain = (converted, scaled, combined, rounded)
+        scope = _scope(s, rounded)
+        if (scope is None or not scope.carried_buffers
+                or any(_scope(s, op) != scope or op.role != rounded.role
+                       or op.waits or op.signals or op.pipeline for op in chain)):
+            continue
+        positions = [scope.body.index(op.op_id) for op in chain]
+        if positions != list(range(positions[0], positions[0] + 4)):
+            continue
+        if any(readers[op.writes[0]] != [next_op]
+               or dependents[op.op_id] != [next_op]
+               for op, next_op in zip(chain, chain[1:])):
+            continue
+        state = s.buffer(converted.reads[0])
+        state_fp = s.buffer(converted.writes[0])
+        prefix = s.buffer(scaled.reads[1])
+        scaled_value = s.buffer(scaled.writes[0])
+        correction = s.buffer(combined.reads[1])
+        sum_value = s.buffer(combined.writes[0])
+        destination = s.buffer(rounded.writes[0])
+        if (any(b is None or b.space is not MemorySpace.REGISTER for b in
+                (state, state_fp, prefix, scaled_value, correction, sum_value, destination))
+                or state.dtype is not DType.BF16 or destination.dtype is not DType.BF16
+                or prefix.dtype is not DType.FP32
+                or any(b.dtype is not DType.FP32 for b in
+                       (state_fp, scaled_value, correction, sum_value))
+                or any(b.shape != (128, 128) for b in
+                       (state, state_fp, scaled_value, correction, sum_value, destination))
+                or prefix.shape != (128,)):
+            continue
+        for op in chain:
+            result[op.op_id] = (chain, state.name, prefix.name,
+                                correction.name, destination.name)
+    return result
+
+
 def _slots(s, buffer):
     return 1 if _scalar_row(s, buffer) else buffer.shape[-1]
 
@@ -714,6 +788,7 @@ class _Emitter:
         self.axisvars = {axis.name:f'blockIdx.{"xyz"[axis.axis]}' for axis in s.program_map.axes} if s.program_map else {}
         self.barvars = {b.name:f'bar{i}' for i,b in enumerate(s.barriers)}
         self.tmemvars = {a.name:f'tm{i}' for i,a in enumerate(s.allocations) if a.space is MemorySpace.TENSOR}
+        self.state_fusions = _fused_decayed_state(s)
 
     def line(self, text=''):
         self.lines.append('  '*self.indent + text)
@@ -1032,6 +1107,21 @@ class _Emitter:
 
     def operation(self, op):
         self.line(f'// CAKE_OP: {op.op_id}')
+        fusion = self.state_fusions.get(op.op_id)
+        if fusion is not None:
+            chain, state, prefix, correction, output = fusion
+            if op is not chain[-1]:
+                self.line(f'// Lowered together at {chain[-1].op_id}')
+                return
+            self.begin(f'if ({self.role_condition(op.role)})')
+            self.line('#pragma unroll')
+            self.begin('for (int col=0; col<128; ++col)')
+            self.line(f'float state_value = __bfloat162float({self.names[state]}[col]);')
+            self.line(f'float decayed = __fmul_rn(state_value, {self.names[prefix]}[col]);')
+            self.line(f'float corrected = __fadd_rn(decayed, {self.names[correction]}[col]);')
+            self.line(f'{self.names[output]}[col] = __float2bfloat16_rn(corrected);')
+            self.end(); self.end()
+            return
         self.begin(f'if ({self.role_condition(op.role)})')
         dst=self.b(op.writes[0]); d=self.names[dst.name]
         src=self.b(op.reads[0]); a=self.names[src.name]
