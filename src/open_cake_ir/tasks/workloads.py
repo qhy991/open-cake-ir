@@ -35,9 +35,11 @@ from .solx_fib import workload as solx_fib_math
 from .solx_fib.authoring import starter_source as solx_fib_starter_source
 from .tinygemm import reproduction as tinygemm_reproduction
 from .weave_ep import workload as weave_ep_workload
+from .weave_ep import model_workload as weave_model_workload
 
 _TASKS = {
     "bf16_expert_parallel_moe": (weave_ep_workload.validate_contract, WorkloadContract),
+    weave_model_workload.OPERATOR: (weave_model_workload.validate_contract, WorkloadContract),
     tinygemm_reproduction.OPERATOR: (tinygemm_reproduction.validate_contract, WorkloadContract),
     add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
     "flash_kmeans_assign": (_validate_flash_contract, FlashWorkloadContract),
@@ -108,6 +110,8 @@ def load_workload(path) -> WorkloadContract:
 def _tensor_math(workload: WorkloadContract):
     """Task-owned routing for the common tensor Evaluation input/oracle interface."""
     operator = workload.document["operator"]
+    if operator == weave_model_workload.OPERATOR:
+        return weave_model_workload
     if operator == tinygemm_reproduction.OPERATOR:
         return tinygemm_reproduction
     if operator == add_rmsnorm.TASK:
