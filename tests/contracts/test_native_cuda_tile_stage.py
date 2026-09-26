@@ -12,7 +12,9 @@ import unittest
 
 from open_cake_ir.compiler import Compiler, Program, Schedule
 from open_cake_ir.compiler.backends.common import EmitError
-from open_cake_ir.compiler.backends.native_cuda_tile_stage import emit_tensor_tile_stage
+from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
+    emit_model_activation_stage, emit_tensor_tile_stage,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,6 +62,18 @@ class NativeCudaTileStageTest(unittest.TestCase):
             emit_tensor_tile_stage(stage.schedule, other,
                                    function_name='tile_stage')
 
+    def test_activation_stage_comes_from_its_cast_explicit_schedule(self):
+        schedule = self.program.stages[1].schedule
+        result = emit_model_activation_stage(schedule, self.target,
+                                             function_name='cake_activation_stage_work')
+        self.assertEqual(result.mapped_operations,
+                         tuple(op.op_id for op in schedule.operations))
+        self.assertIn('expf(', result.source)
+        self.assertIn('__float2bfloat16_rn', result.source)
+        self.assertIn('fence.proxy.async.global', result.source)
+        self.assertEqual(result.dynamic_shared_bytes, 0)
+        self.assertNotIn('tcgen05', result.source)
+
     def test_clean_compiler_composes_tensor_stages_into_worker(self):
         commit = Compiler.load(ROOT).commit
         if commit is None:
@@ -69,7 +83,7 @@ class NativeCudaTileStageTest(unittest.TestCase):
             root = Path(directory)
             (root / 'manifest.json').write_text(json.dumps({
                 'target': 'sm_103a', 'source_commit': commit,
-                'generation': 'cake_tensor_stages',
+                'generation': 'cake_full_ffn_stages',
             }))
             environment = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
             subprocess.run([sys.executable, str(script), '--evidence-root',
@@ -80,11 +94,12 @@ class NativeCudaTileStageTest(unittest.TestCase):
             self.assertNotIn('@CAKE_', source)
             self.assertNotIn('#include "down/kernel.cu"', source)
             self.assertEqual([stage['mapped_operations']
-                              for stage in lowering['tensor_stages']],
+                              for stage in lowering['stages']],
                              [[op.op_id for op in self.program.stages[index].schedule.operations]
-                              for index in (0, 2)])
+                              for index in (0, 1, 2)])
             self.assertEqual(source.count('CAKE_OP: up_gate.'), 0)
             self.assertEqual(source.count('CAKE_OP: load_a'), 2)
+            self.assertEqual(source.count('CAKE_OP: exp_gate'), 1)
 
 
 if __name__ == '__main__':

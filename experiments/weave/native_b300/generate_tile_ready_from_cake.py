@@ -1,7 +1,7 @@
-"""Compose the proven B300 tile-ready control plane with Cake tensor stages.
+"""Compose the proven B300 tile-ready control plane with Cake FFN stages.
 
 This is an offline generation step. The input Program and Target come from one
-clean Compiler commit; its two tensor-core stage bodies are emitted from their
+clean Compiler commit; all three stage bodies are emitted from their
 Schedules. The worker template owns dispatch, completion and stealing only.
 """
 from __future__ import annotations
@@ -12,14 +12,17 @@ from pathlib import Path
 import re
 
 from open_cake_ir.compiler import Compiler, Program
-from open_cake_ir.compiler.backends.native_cuda_tile_stage import emit_tensor_tile_stage
+from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
+    emit_model_activation_stage, emit_tensor_tile_stage,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
 PROGRAM = ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300.json'
 TEMPLATE = Path(__file__).with_name('model_tile_ready_from_cake_template.cu')
 OUTPUT = 'model_tile_ready_ffn_capped.cu'
-MARKS = ('@CAKE_HELPERS@', '@UPGATE_STAGE@', '@DOWN_STAGE@')
+MARKS = ('@CAKE_HELPERS@', '@UPGATE_STAGE@',
+         '@ACTIVATION_STAGE@', '@DOWN_STAGE@')
 
 
 def generate(evidence_root: Path) -> None:
@@ -29,7 +32,7 @@ def generate(evidence_root: Path) -> None:
     manifest = json.loads((evidence_root / 'manifest.json').read_text())
     if (manifest.get('target') != 'sm_103a'
             or manifest.get('source_commit') != compiler.commit
-            or manifest.get('generation') != 'cake_tensor_stages'
+            or manifest.get('generation') != 'cake_full_ffn_stages'
             or any((evidence_root / name).exists()
                    for name in (OUTPUT, 'stage_lowering.json'))):
         raise ValueError('tile-ready generation root or source identity differs')
@@ -40,21 +43,24 @@ def generate(evidence_root: Path) -> None:
         raise ValueError('complete model FFN Program stage order differs')
     results = []
     for index, name in ((0, 'cake_upgate_stage_work'),
+                        (1, 'cake_activation_stage_work'),
                         (2, 'cake_down_stage_work')):
         stage = program.stages[index]
         assessment = compiler.assess(program_document['stages'][index]['schedule'])
         if not assessment.lowering_eligible:
             raise ValueError(f'{stage.name} Schedule refused before worker composition')
-        results.append(emit_tensor_tile_stage(stage.schedule, target,
-                                              function_name=name))
-    if results[0].instruction_helpers != results[1].instruction_helpers:
+        lower = (emit_model_activation_stage if index == 1
+                 else emit_tensor_tile_stage)
+        results.append(lower(stage.schedule, target, function_name=name))
+    if results[0].instruction_helpers != results[2].instruction_helpers:
         raise ValueError('tensor stages disagree on native CUDA PTX helper contract')
     template = TEMPLATE.read_text()
     if any(template.count(mark) != 1 for mark in MARKS):
         raise ValueError('worker template stage seams differ')
     source = (template.replace('@CAKE_HELPERS@', results[0].instruction_helpers)
                       .replace('@UPGATE_STAGE@', results[0].source)
-                      .replace('@DOWN_STAGE@', results[1].source))
+                      .replace('@ACTIVATION_STAGE@', results[1].source)
+                      .replace('@DOWN_STAGE@', results[2].source))
     if re.search(r'@[A-Z_]+@', source):
         raise ValueError('worker source retains an unbound lowering seam')
     (evidence_root / OUTPUT).write_text(source)
@@ -62,16 +68,15 @@ def generate(evidence_root: Path) -> None:
         'source_commit': compiler.commit,
         'program': str(PROGRAM.relative_to(ROOT)),
         'target': target.target_id,
-        'tensor_stages': [
+        'stages': [
             {'name': program.stages[index].name,
              'function': emitted.function_name,
              'dynamic_shared_bytes': emitted.dynamic_shared_bytes,
              'tmem_columns': emitted.tmem_columns,
              'mapped_operations': list(emitted.mapped_operations)}
-            for (index, _), emitted in zip(((0, 'up_gate'), (2, 'down')), results)
+            for index, emitted in enumerate(results)
         ],
-        'activation': 'retained Cake graph body in worker template',
-        'scope': 'tensor-stage math from Cake; tile-ready worker control retained',
+        'scope': 'all three stage math bodies from Cake; tile-ready worker control retained',
     }, indent=2) + '\n')
 
 

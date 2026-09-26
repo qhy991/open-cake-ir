@@ -12,6 +12,7 @@ import re
 
 from . import native_cuda
 from .common import EmitError
+from .native_cuda_activation import ModelEmitter
 from ..ir import DType, LoadMovement, LoweringBackend, MemorySpace, OperationKind
 
 
@@ -112,3 +113,48 @@ def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStage
     return TileStageEmission(source, native_cuda._INSTRUCTIONS,
                              function_name, emitter.shared_bytes,
                              tensor[0].tensor_columns, mapped)
+
+
+def emit_model_activation_stage(schedule, target, *, function_name: str) -> TileStageEmission:
+    """Emit the model SwiGLU row from its Cake Schedule inside the worker."""
+    if _IDENTIFIER.fullmatch(function_name) is None:
+        raise EmitError('worker activation function needs an ASCII C identifier')
+    if (schedule.target != target.target_id
+            or target.target_id not in _ROUTE_EVIDENCE
+            or schedule.lowering.backend is not LoweringBackend.NATIVE_CUDA):
+        raise EmitError('worker activation needs the evidenced exact B300 native CUDA route')
+    for check in (native_cuda.verify, native_cuda.preflight):
+        failures = [finding for finding in check(schedule, target)
+                    if finding.blocks_lowering or finding.blocks_acceptance]
+        if failures:
+            raise EmitError('; '.join(f'{f.code} at {f.path}: {f.message}'
+                                      for f in failures))
+    emitter = ModelEmitter(schedule, target, function_name)
+    globals_ = [b for b in schedule.buffers if b.space is MemorySpace.GLOBAL]
+    if (len(globals_) != 2 or len(schedule.program_map.axes) != 1
+            or globals_[0].shape != (128, 1536)
+            or globals_[1].shape != (128, 768)):
+        raise EmitError('worker activation needs the exact model-width row domain')
+    emitter.axisvars = {schedule.program_map.axes[0].name: 'row'}
+    emitter.names[globals_[0].name] = 'tile_input'
+    emitter.names[globals_[1].name] = 'tile_output'
+    emitter.begin(f'__device__ __forceinline__ void {function_name}('
+                  'const float* up_gate, __nv_bfloat16* activated, '
+                  'int logical_tile, int row)')
+    emitter.line('const float* tile_input = up_gate + logical_tile * 128 * 1536;')
+    emitter.line('__nv_bfloat16* tile_output = activated + logical_tile * 128 * 768;')
+    emitter.begin('if (threadIdx.x < 32)')
+    emitter.line('const int cake_lane = int(threadIdx.x);')
+    emitter.begin('for (int cake_feature=cake_lane; cake_feature<768; cake_feature+=32)')
+    emitter.emit_model_graph()
+    emitter.end()
+    emitter.line('asm volatile("fence.proxy.async.global;" ::: "memory");')
+    emitter.end()
+    emitter.line('__syncthreads();')
+    emitter.end()
+    source = '\n'.join(emitter.lines) + '\n'
+    mapped = tuple(line.split('// CAKE_OP: ', 1)[1].strip()
+                   for line in emitter.lines if '// CAKE_OP: ' in line)
+    if mapped != tuple(op.op_id for op in schedule.operations):
+        raise EmitError('worker activation source map differs from its Schedule operations')
+    return TileStageEmission(source, '', function_name, 0, 0, mapped)

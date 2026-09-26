@@ -79,32 +79,7 @@ __device__ __forceinline__ int completion_release_increment(int* pointer) {
 }
 
 @UPGATE_STAGE@
-__device__ __forceinline__ void cake_activation_stage_work(
-    const float* up_gate, __nv_bfloat16* activated,
-    int logical_tile, int row) {
-  if (threadIdx.x < 32) {
-    int lane=int(threadIdx.x);
-    const float* source=up_gate+(logical_tile*kRows+row)*(2*kHidden);
-    __nv_bfloat16* destination=activated+
-        (logical_tile*kRows+row)*kHidden;
-    for (int feature=lane; feature<kHidden; feature+=32) {
-      // CAKE_OP: activation.load_up/load_gate/neg_gate/exp_gate/denom/
-      // silu/multiply/round_bf16/store.
-      float up=source[feature];
-      float gate=source[kHidden+feature];
-      float negative=gate*-1.0f;
-      float exponential=expf(negative);
-      float denominator=exponential+1.0f;
-      float silu=gate/denominator;
-      float product=up*silu;
-      destination[feature]=__float2bfloat16_rn(product);
-    }
-    // Normal global stores precede the following stage's async TMA reads.
-    asm volatile("fence.proxy.async.global;" ::: "memory");
-  }
-  __syncthreads();
-}
-
+@ACTIVATION_STAGE@
 @DOWN_STAGE@
 __global__ void tile_schedule_probe(
     int* task_heads, int* tile_completed, int* task_owner,
