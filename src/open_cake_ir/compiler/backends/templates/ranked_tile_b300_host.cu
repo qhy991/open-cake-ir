@@ -143,15 +143,17 @@ cudaError_t ranked_tile_bind(RankedTileHostState& state,int rank) {
     if (up!=CUDA_SUCCESS || down!=CUDA_SUCCESS) return cudaErrorInvalidValue;
   }
   for (int expert=0;expert<kExperts;++expert) {
+    // The Driver tensor-map API takes a mutable address even for operands
+    // whose Cake buffers are INPUT and are only read by TMA.
     CUresult up=cuTensorMapEncodeTiled(&up_b[expert],
       CU_TENSOR_MAP_DATA_TYPE_BFLOAT16,2,
-      s.up_weight+expert*kUpGateWeightBytes/2,
+      const_cast<__nv_bfloat16*>(s.up_weight+expert*kUpGateWeightBytes/2),
       up_dims_b,up_stride,box_b,steps,
       CU_TENSOR_MAP_INTERLEAVE_NONE,CU_TENSOR_MAP_SWIZZLE_128B,
       CU_TENSOR_MAP_L2_PROMOTION_NONE,CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
     CUresult down=cuTensorMapEncodeTiled(&down_b[expert],
       CU_TENSOR_MAP_DATA_TYPE_BFLOAT16,2,
-      s.down_weight+expert*kDownWeightBytes/2,
+      const_cast<__nv_bfloat16*>(s.down_weight+expert*kDownWeightBytes/2),
       down_dims_b,down_stride,box_b,steps,
       CU_TENSOR_MAP_INTERLEAVE_NONE,CU_TENSOR_MAP_SWIZZLE_128B,
       CU_TENSOR_MAP_L2_PROMOTION_NONE,CU_TENSOR_MAP_FLOAT_OOB_FILL_NONE);
@@ -395,8 +397,10 @@ extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
     RankedTileRankState& s=state->ranks[rank];
     wait_returns<<<(LOCAL_ROUTES+255)/256,256,0,s.compute>>>(s.return_params);
     CAKE_RUN(cudaGetLastError());
+    // The current generated combine kernel spells every global argument as
+    // mutable; its Schedule marks route_weights INPUT and emission only reads it.
     cake_weave_rank512_combine_kernel<<<dim3(T,8),256,0,s.compute>>>(
-        s.contributions,s.route_weights,s.output);
+        s.contributions,const_cast<float*>(s.route_weights),s.output);
     CAKE_RUN(cudaGetLastError());
   }
   for (int rank=0;rank<R;++rank) {
