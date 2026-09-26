@@ -216,6 +216,18 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    still **separate** transport, CPU publication and FFN worker results;
    no GPU tile consumer has yet acquired the bin flags or returned a full
    EP4 layer contribution.
+   A follow-on bridge (`cake-weave-ep4-worker-bridge-014d1f55/`) consumes
+   those actual four-rank P2P bin rows. The host first checks every route key
+   and BF16 row, then materializes the schema-2 threshold-64 plan into 64
+   padded M128 tiles per owner. Four B300 workers use the Cake-generated
+   three-stage FFN and 32 rank-local expert weight descriptors. Under
+   `c=147`, each processed 11,776 stage CTA units and stole 5,888. All
+   16,384 route contributions matched the earlier Cake bridge bitwise;
+   CPU weighted combine had 0 / 4,194,304 elements outside the independent
+   oracle's unchanged 0.01/0.01 tolerance (maximum absolute error 0.0078125).
+   The peer bin and worker were separate jobs; tile formation, route-key
+   gathering and final combine ran on the host. Live GPU tile publication,
+   rank return, overlap and qualified latency remain unverified.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
