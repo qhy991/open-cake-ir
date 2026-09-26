@@ -2345,6 +2345,11 @@
       }
     },
     {
+      "case_id": "xcore1002-fp8-compensated-simt-64",
+      "schedule": "examples/python/xcore1002_fp8_compensated.py",
+      "expected": {}
+    },
+    {
       "case_id": "xcore1002-fp8-encode-unqualified",
       "schedule": "corpus/schedules/xcore1002-fp8-encode-unqualified.py",
       "expected": {
