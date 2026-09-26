@@ -7,6 +7,7 @@ import unittest
 
 from open_cake_ir.compiler import Schedule, Target
 from open_cake_ir.compiler.backends import native_cuda
+from open_cake_ir.compiler.performance.work import work_bound
 from open_cake_ir.compiler.verifier import verify
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -155,6 +156,12 @@ class NativeTwoPhaseCarried(unittest.TestCase):
         source=native_cuda.emit(schedule,target()).source
         self.assertLess(source.index("// CAKE_OP: mma_base"),source.index("// CAKE_OP: solve"))
         self.assertLess(source.index("// CAKE_OP: solve"),source.index("// CAKE_OP: mma_correction"))
+        work=work_bound(schedule)
+        self.assertIsNotNone(work)
+        self.assertEqual(next(row.whole_grid for row in work.operation_repetitions
+                              if row.operation=="solve"),2)
+        self.assertEqual(work.flops-work.mma_flops,
+                         2*128*32*31 + 2*128*32)  # solve FMAs plus RHS subtraction
 
     def test_correction_cannot_run_before_solve_and_u_publication(self):
         value=document()
