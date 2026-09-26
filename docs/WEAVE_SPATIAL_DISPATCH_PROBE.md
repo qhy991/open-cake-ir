@@ -32,3 +32,34 @@ the four-rank output oracle and explicit failure progress. The prototype
 alone establishes no model FFN overlap, complete-layer latency, or speedup.
 Promotion disposition: no public Compiler lowering or automatic Lab rule
 from this standalone proof.
+
+## Cross-stream progress audit of the first FFN integration candidate
+
+`4100a9d5` moves source dispatch into `tile_schedule_probe` and launches
+that 96-CTA cooperative worker before separate tile-planner kernels. The
+worker waits on `wave_consumed[event]` for the planner, while the planner
+waits on `source_wave_done` from the worker. Host stream ordering and
+system-scope publication make the *data* dependency explicit, but progress
+also depends on the worker and planner kernels executing concurrently on
+one GPU. The Target's 148 SMs and the runtime occupancy check admit the
+96-CTA cooperative grid; they do not themselves guarantee that another
+stream's dependent planner kernel runs while the grid is resident.
+
+The CUDA [stream guidance](https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-host-programming.html)
+says different streams **may** execute concurrently under resource and
+dependency conditions. The [programmatic dependent launch guidance](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/programmatic-dependent-launch.html)
+explicitly warns that relying on opportunistic concurrent execution for
+progress is unsafe. This is a forward-progress gap in `4100a9d5`, not a
+measured deadlock. The direct and jump SSH paths to B300-M4 timed out before
+that candidate's successor source could be compiled; no FFN device result
+exists for it.
+
+The next implementation should put source dispatch, expert snapshot and
+tile planning, row gather, and Cake stage-task execution into one bounded
+cooperative grid per rank. A grid-wide barrier can separate each local
+phase; system-scope release/acquire mailboxes still synchronize ranks.
+Keeping the planner in the grid removes the cross-stream scheduling
+dependency, while exact-target residency, cross-rank source order, finite
+worker progress and the four-case output oracle still require verification.
+Until then, keep this integration candidate on the task branch and make no
+liveness or performance claim from it.
