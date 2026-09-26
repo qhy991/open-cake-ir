@@ -129,6 +129,12 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 这个约 5.7% 的组件收益证明一块超前 B 预取有效，却仍留下 **2.835 ms**；只增加槽深不等于原始 CAKE 的五槽生产、计算和 epilogue 并行。当前 disposition：保留目标专属任务分支，**No promotion** 到共享 pass 或完整 KDA 候选。下一轮需决定是否将 copy、MMA、compute、epilogue 发射为各自持续的 loop，并验证 `free/ready` 相位、state 依赖和最终排空；上游准备值融合与逐 token BF16 状态语义仍独立缺失。
 
+### 2.16 原始 CAKE M64 与 M128 在 B300 的同形状控制
+
+冻结的原始 CAKE 导出同时有 M64、M128 两条 CUDA 路径；其 B300 端口只把 exact target 检查从 `sm_100a` 改为 `sm_103a`。原始 H64/T8192 路由选 **M64：每 head 两个 CTA、128 个 CTA、219,136 字节 dynamic shared/CTA**；M128 使用每 head 一个 CTA、64 个 CTA、227,328 字节 dynamic shared/CTA。为确认几何选择，`gpuq-33d167583f48` 在同一冻结输入上运行 M128，broker 释放后由独立 Workload oracle 检查全部 67,108,864 输出及 1,048,576 原位状态元素，0 超差；其它输入保持不变。M128 的 BF16 输出/状态还与先前资格化的 M64 抓取**逐位相同**。这使两条原始实现成为可配对的硬件控制，但没有资格化我们的 native emitter。
+
+`gpuq-a9ad7fc9ec06` 在同一独占 GPU0、同一输入、两臂各用 512 个独立初始状态槽、五轮交替顺序且每轮每臂 25 个 CUPTI 冷 L2 样本下，得到 M64 pooled **456.578 µs**、M128 **493.923 µs**，M128/M64 为 **1.08179×**。两臂每轮末次输出及原位状态均与独立 oracle 资格化抓取逐位相同，输入不变、后检查无其它计算 PID。代码、CTA 数、角色映射和 shared 占用同时变化，因此不能把约 8.18% 差距单独归因于 M 值；但在这个 B300 固定形状上，直接把 M64 替换为 M128 **不会**超过原始 CAKE 路线。更早的 native M64 消费者还因重复 B 转移与半 lane 使用而比其 M128 控制慢（Finding event 90），说明几何结论不可脱离 lowering 实现继承。当前 disposition：这个对照只作为 Lab 硬件选择证据，不提升原始实现代码为 Open-Cake Compiler 结果。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -163,6 +169,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `92994711` / `gpuq-072c72413d0e`、`gpuq-259eacb16124` | ready/free/completion barrier 生命周期跨 256 chunk 复用；适用 CPU 合同 2,676 passed、Corpus Gate 179/179，全输出/状态设备检查通过；同 GPU 配对组件比 1.05297×，AOT 255 寄存器、0 stack/spill | 准备阶段融合、逐 token BF16 舍入、六形状、相对 CAKE 的完整配对性能 |
 | `5ac55ad4` / `gpuq-4548098ec2d4`、`gpuq-5dee2913c2e2` | 最终状态只在第 256 个 chunk 写回；适用 CPU 合同 2,680 passed、Corpus Gate 179/179，全输出/状态设备检查通过；同 GPU 配对组件比 2.40637×、中位数 2,999.349 µs，AOT 255 寄存器、0 stack/spill | 原位状态别名、真实准备值、逐 token BF16 舍入、packed/六形状、相对 CAKE 的完整配对性能 |
 | `671b2a90` / `gpuq-a64939fffae5`、`gpuq-8e520f65c628` | 两槽 B 预取，适用 CPU 合同 2,683 passed、Corpus Gate 179/179，H64/256 全输出及状态设备通过；同 GPU 配对组件比 1.05729×、中位数 2,835.220 µs，AOT 255 寄存器、0 spill | 完整角色级流水、原位别名、真实准备值、逐 token BF16 舍入、六形状及 CAKE 配对性能 |
+| 原始 CAKE B300 端口 M64/M128 / `gpuq-a9ad7fc9ec06` | 同一 H64/T8192 输入上两版均通过独立 Workload oracle、输出/状态逐位相同；同 GPU 配对 M64 456.578 µs、M128 493.923 µs | 我们的 native M64 资格、任何 Compiler 收益或六形状迁移 |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
