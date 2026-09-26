@@ -64,6 +64,17 @@ def prepare(root: Path, bin_root: Path, bridge: Path,
     if (np.any(ids < 0) or np.any(ids >= E)
             or any(len(set(map(int,row))) != K for rank in ids for row in rank)):
         raise ValueError('pointer ABI route IDs violate the distinct domain')
+    payloads_by_owner=[0]*R
+    remote_route_rows=0
+    for source in range(R):
+        for token in range(T):
+            owners=(ids[source,token]//(E//R)).tolist()
+            remote_route_rows+=sum(owner!=source for owner in owners)
+            for owner in set(owners):
+                if owner!=source:
+                    payloads_by_owner[owner]+=1
+    if max(payloads_by_owner)>(R-1)*T:
+        raise ValueError('remote payload plan exceeds ranked-tile capacity')
     (root / 'device_outputs').mkdir()
     (root / 'case.json').write_text(json.dumps({
         'source_commit': manifest['source_commit'],
@@ -72,6 +83,8 @@ def prepare(root: Path, bin_root: Path, bridge: Path,
         'oracle_root': str(oracle_root.resolve()),
         'geometry': {'R':R,'T':T,'K':K,'E':E,'H':H},
         'controls': [[1,0],[74,5888]],
+        'remote_route_rows':remote_route_rows,
+        'remote_payloads_by_owner':payloads_by_owner,
         'scope': 'same external GPU tensors, two complete ABI launches with reset',
     },indent=2)+'\n')
 
@@ -179,11 +192,19 @@ def run(root: Path) -> None:
     stolen.argtypes=[ctypes.c_void_p,ctypes.c_int,
                      ctypes.POINTER(ctypes.c_int)]
     stolen.restype=ctypes.c_int
+    payloads=getattr(library,prefix+'payloads')
+    payloads.argtypes=[ctypes.c_void_p,ctypes.c_int,
+                       ctypes.POINTER(ctypes.c_int)]
+    payloads.restype=ctypes.c_int
     ranks=getattr(library,prefix+'ranks');ranks.restype=ctypes.c_int
     events=getattr(library,prefix+'source_events');events.restype=ctypes.c_int
+    bin_bytes=getattr(library,prefix+'bin_bytes')
+    bin_bytes.restype=ctypes.c_size_t
     output_bytes=getattr(library,prefix+'output_bytes')
     output_bytes.restype=ctypes.c_size_t
-    if ranks()!=R or events()!=20 or output_bytes()!=T*H*2:
+    bin_extent=bin_bytes()
+    if (ranks()!=R or events()!=20 or output_bytes()!=T*H*2
+            or not (R-1)*T*H*2 < bin_extent < 16*1024*1024):
         raise ValueError('compiled pointer ABI rank/event/output facts differ')
     bin_root=Path(case['bin_root'])
     bridge=Path(case['bridge_root'])
@@ -197,6 +218,7 @@ def run(root: Path) -> None:
     handle=ctypes.c_void_p()
     created=False
     stolen_by_control=[]
+    payloads_by_control=[]
     try:
         for rank in range(R):
             _call(cuda.cudaSetDevice(rank),'select rank')
@@ -226,6 +248,13 @@ def run(root: Path) -> None:
                       f'rank {rank} actual stolen read')
                 counts.append(value.value)
             stolen_by_control.append(counts)
+            payload_counts=[]
+            for rank in range(R):
+                value=ctypes.c_int(-1)
+                _call(payloads(handle,rank,ctypes.byref(value)),
+                      f'rank {rank} remote payload count read')
+                payload_counts.append(value.value)
+            payloads_by_control.append(payload_counts)
             output=np.empty((R,T,H),dtype='<u2')
             for rank in range(R):
                 _call(cuda.cudaSetDevice(rank),'select result rank')
@@ -242,7 +271,9 @@ def run(root: Path) -> None:
             'source_commit':manifest['source_commit'],
             'broker_job':job,'target':'sm_103a','world_size':R,
             'source_events':20,'controls':case['controls'],
+            'bin_bytes_per_rank':bin_extent,
             'stolen_by_control':stolen_by_control,
+            'payloads_by_control':payloads_by_control,
             'scope':'two launches on one pointer ABI state; no qualified timing',
         },indent=2)+'\n')
     except Exception as error:
@@ -273,15 +304,19 @@ def verify(root: Path) -> None:
     if (device['source_commit']!=manifest['source_commit']
             or device['broker_job']!=receipt['job_id']
             or device['source_events']!=20
+            or not (R-1)*T*H*2<device['bin_bytes_per_rank']<16*1024*1024
             or device['controls']!=case['controls']
-            or len(device['stolen_by_control'])!=len(case['controls'])):
+            or len(device['stolen_by_control'])!=len(case['controls'])
+            or device['payloads_by_control']
+            != [case['remote_payloads_by_owner']]*len(case['controls'])):
         raise ValueError('pointer ABI source, broker or repeated launch differs')
     expected=np.load(Path(case['oracle_root']) / 'expected_output.npy',
                      mmap_mode='r')
     results=[]
     output_bits=[]
-    for (communication,budget),stolen in zip(
-            case['controls'],device['stolen_by_control'],strict=True):
+    for (communication,budget),stolen,payload_counts in zip(
+            case['controls'],device['stolen_by_control'],
+            device['payloads_by_control'],strict=True):
         if (len(stolen)!=R
                 or any(type(value) is not int or not 0<=value<=budget
                        for value in stolen)
@@ -300,6 +335,7 @@ def verify(root: Path) -> None:
         results.append({'communication_ctas':communication,
                         'steal_budget':budget,
                         'actual_stolen_by_rank':stolen,
+                        'remote_payloads_by_owner':payload_counts,
                         'failing_elements':int(np.count_nonzero(failing)),
                         'max_abs_error':float(np.max(difference))})
         output_bits.append(raw)
@@ -310,6 +346,8 @@ def verify(root: Path) -> None:
             'broker_job':device['broker_job'],
             'source_events':20,'controls':results,
             'repeated_launch_bit_mismatches':mismatches,
+            'remote_route_rows':case['remote_route_rows'],
+            'remote_payloads_per_launch':sum(case['remote_payloads_by_owner']),
             'atol':.01,'rtol':.01,
             'scope':'pointer ABI correctness and state reset against independent FP64 oracle; no qualified timing'}
     (root/'report.json').write_text(json.dumps(report,indent=2)+'\n')

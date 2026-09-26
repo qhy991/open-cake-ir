@@ -1,5 +1,7 @@
-// B300 source-event development: a source completion publishes every newly
-// full tile, and the wave-end event flushes thresholded partial tiles.
+// B300 source-event development: each source token sends one BF16 payload
+// per remote destination rank, and expert-bin rows reference that payload.
+// A source completion publishes every newly full tile; the wave-end event
+// flushes thresholded partial tiles.
 // Each finite cooperative Cake worker uses the 192-thread/49,200-B CTA
 // footprint, allocating TMEM at its first task and releasing it on exit.
 // The stage body below follows the retained Cake
@@ -254,6 +256,7 @@ int check(cudaError_t status, const char* operation) {
 constexpr int R=4,T=512,K=8,E=128,H=2048;
 static_assert(R==kSourceRanks,"source-event count follows the EP world size");
 constexpr int LOCAL_E=E/R,MAX_ROWS=R*T,ROUTES=R*T*K,LOCAL_ROUTES=T*K;
+constexpr int PAYLOAD_CAP=(R-1)*T;
 constexpr size_t HIDDEN_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 constexpr size_t IDS_BYTES=size_t(ROUTES)*sizeof(int);
 constexpr size_t TILE_BYTES=size_t(kLogicalTiles)*kRows*H*sizeof(uint16_t);
@@ -263,10 +266,14 @@ constexpr size_t FINAL_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 
 struct Bin {
   int count[LOCAL_E];
+  int payload_count;
+  int payload_ready[PAYLOAD_CAP];
+  int payload_key[PAYLOAD_CAP];
   int source_wave_done[R][kWaves];
   int wave_consumed[kEvents];
   int ready[LOCAL_E*MAX_ROWS];
   int keys[LOCAL_E*MAX_ROWS];
+  int row_payload_slot[LOCAL_E*MAX_ROWS];
   int route_location[ROUTES];
   int route_ready[ROUTES];
   uint32_t sorted_order[LOCAL_E*MAX_ROWS];
@@ -276,7 +283,7 @@ struct Bin {
   int wave_partial_rows[LOCAL_E];
   int wave_tile_counts[LOCAL_E];
   int wave_counts[kEvents];
-  __nv_bfloat16 rows[size_t(LOCAL_E)*MAX_ROWS*H];
+  __nv_bfloat16 payload[size_t(PAYLOAD_CAP)*H];
   int error;
 };
 struct BinParams {
@@ -325,37 +332,65 @@ __device__ __forceinline__ int original_route_key(uint32_t ordered) {
   return (source*T+wave*128+token)*K+route;
 }
 __global__ void dispatch_source_wave(const BinParams* params,int wave) {
-  int token=wave*128+int(blockIdx.x),route=int(blockIdx.y);
-  int expert=params->ids[token*K+route];
-  if (expert<0 || expert>=E) {
-    if (threadIdx.x==0) atomicCAS(&params->bins[params->rank]->error,0,11);
-    return;
-  }
-  int owner=expert/LOCAL_E,local_expert=expert%LOCAL_E;
-  Bin* remote=params->bins[owner];
-  __shared__ int slot;
-  if (threadIdx.x==0) slot=system_reserve(&remote->count[local_expert]);
-  __syncthreads();
-  if (slot<0 || slot>=MAX_ROWS) {
-    if (threadIdx.x==0) atomicCAS(&params->bins[params->rank]->error,0,12);
-    return;
-  }
-  int index=local_expert*MAX_ROWS+slot;
-  int key=(params->rank*T+token)*K+route;
-  const uint16_t* input=reinterpret_cast<const uint16_t*>(params->hidden)
-      +size_t(token)*H;
-  uint16_t* output=reinterpret_cast<uint16_t*>(remote->rows)
-      +size_t(index)*H;
-  for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
-    output[feature]=input[feature];
+  int token=wave*128+int(blockIdx.x);
+  __shared__ int owner_slot[R],route_expert[K],route_owner[K],valid;
   if (threadIdx.x==0) {
-    remote->keys[index]=key;
-    remote->route_location[key]=index;
+    valid=1;
+    for (int owner=0;owner<R;++owner) owner_slot[owner]=-2;
+    for (int route=0;route<K;++route) {
+      int expert=params->ids[token*K+route];
+      if (expert<0 || expert>=E) {
+        atomicCAS(&params->bins[params->rank]->error,0,11);
+        valid=0;break;
+      }
+      route_expert[route]=expert;
+      route_owner[route]=expert/LOCAL_E;
+      owner_slot[route_owner[route]]=-1;
+    }
+    if (valid)
+      for (int owner=0;owner<R;++owner) {
+        if (owner==params->rank || owner_slot[owner]!=-1) continue;
+        Bin* remote=params->bins[owner];
+        int slot=system_reserve(&remote->payload_count);
+        if (slot<0 || slot>=PAYLOAD_CAP) {
+          atomicCAS(&params->bins[params->rank]->error,0,12);
+          valid=0;break;
+        }
+        owner_slot[owner]=slot;
+        remote->payload_key[slot]=params->rank*T+token;
+      }
   }
   __syncthreads();
+  if (!valid) return;
+  const __nv_bfloat16* input=params->hidden+size_t(token)*H;
+  for (int owner=0;owner<R;++owner) {
+    int slot=owner_slot[owner];
+    if (slot<0) continue;
+    Bin* remote=params->bins[owner];
+    __nv_bfloat16* output=remote->payload+size_t(slot)*H;
+    for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
+      output[feature]=input[feature];
+    __syncthreads();
+    if (threadIdx.x==0) system_publish(&remote->payload_ready[slot]);
+    __syncthreads();
+  }
   if (threadIdx.x==0) {
-    system_publish(&remote->ready[index]);
-    system_publish(&remote->route_ready[key]);
+    for (int route=0;route<K;++route) {
+      int expert=route_expert[route],owner=route_owner[route];
+      Bin* remote=params->bins[owner];
+      int slot=system_reserve(&remote->count[expert%LOCAL_E]);
+      if (slot<0 || slot>=MAX_ROWS) {
+        atomicCAS(&params->bins[params->rank]->error,0,13);
+        continue;
+      }
+      int index=(expert%LOCAL_E)*MAX_ROWS+slot;
+      int key=(params->rank*T+token)*K+route;
+      remote->keys[index]=key;
+      remote->route_location[key]=index;
+      remote->row_payload_slot[index]=owner_slot[owner];
+      system_publish(&remote->ready[index]);
+      system_publish(&remote->route_ready[key]);
+    }
   }
 }
 __global__ void mark_source_wave_done(const BinParams* params,int wave) {
@@ -495,7 +530,30 @@ __global__ void gather_wave_tiles(const BinParams* params,int event,
       if (threadIdx.x==0) atomicCAS(&local->error,0,18);
       return;
     }
-    const __nv_bfloat16* input=local->rows+size_t(location)*H;
+    int source_rank=key/(T*K),token=(key/K)%T;
+    int payload_slot=local->row_payload_slot[location];
+    const __nv_bfloat16* input=nullptr;
+    if (source_rank==params->rank) {
+      if (payload_slot!=-1) {
+        if (threadIdx.x==0) atomicCAS(&local->error,0,19);
+        return;
+      }
+      input=params->hidden+size_t(token)*H;
+    } else {
+      if (payload_slot<0 || payload_slot>=PAYLOAD_CAP) {
+        if (threadIdx.x==0) atomicCAS(&local->error,0,20);
+        return;
+      }
+      if (threadIdx.x==0)
+        while (system_acquire(&local->payload_ready[payload_slot])==0)
+          __nanosleep(64);
+      __syncthreads();
+      if (local->payload_key[payload_slot]!=source_rank*T+token) {
+        if (threadIdx.x==0) atomicCAS(&local->error,0,21);
+        return;
+      }
+      input=local->payload+size_t(payload_slot)*H;
+    }
     for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
       output[feature]=input[feature];
   }

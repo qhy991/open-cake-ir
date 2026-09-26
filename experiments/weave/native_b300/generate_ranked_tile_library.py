@@ -58,8 +58,8 @@ def generate(evidence_root: Path) -> None:
         'stage_work_units': [list(item) for item in composition.stage_work_units],
         'emitted_shared_bytes': composition.emitted_shared_bytes,
         'host_abi': [effects.lowering.entry_point + '_' + name for name in
-                     ('ranks', 'source_events', 'output_bytes',
-                      'create', 'launch', 'destroy', 'stolen')],
+                     ('ranks', 'source_events', 'bin_bytes', 'output_bytes',
+                      'create', 'launch', 'destroy', 'stolen', 'payloads')],
         'scope': 'development tensor-pointer ABI source; no public Compiler.lower_ranked_tiles result or device qualification',
     }, indent=2) + '\n')
 

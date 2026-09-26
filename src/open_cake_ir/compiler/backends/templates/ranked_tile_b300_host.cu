@@ -191,6 +191,8 @@ cudaError_t ranked_tile_reset(RankedTileRankState& s) {
   do { error=cudaMemset((pointer),(value),(bytes)); if (error!=cudaSuccess) return error; } while (0)
   CAKE_CLEAR(s.bin,sizeof(Bin),0);
   CAKE_CLEAR(&s.bin->keys,sizeof(Bin::keys),0xff);
+  CAKE_CLEAR(&s.bin->payload_key,sizeof(Bin::payload_key),0xff);
+  CAKE_CLEAR(&s.bin->row_payload_slot,sizeof(Bin::row_payload_slot),0xff);
   CAKE_CLEAR(&s.bin->route_location,sizeof(Bin::route_location),0xff);
   CAKE_CLEAR(s.tile_keys,TILE_KEY_BYTES,0xff);
   CAKE_CLEAR(s.tile_experts,kLogicalTiles*sizeof(int),0xff);
@@ -217,6 +219,7 @@ cudaError_t ranked_tile_reset(RankedTileRankState& s) {
 
 extern "C" int @ENTRY@_ranks() { return R; }
 extern "C" int @ENTRY@_source_events() { return kEvents; }
+extern "C" size_t @ENTRY@_bin_bytes() { return sizeof(Bin); }
 extern "C" size_t @ENTRY@_output_bytes() {
   return size_t(T)*H*sizeof(__nv_bfloat16);
 }
@@ -332,6 +335,18 @@ extern "C" int @ENTRY@_stolen(void* opaque,int rank,int* result) {
   return 0;
 }
 
+extern "C" int @ENTRY@_payloads(void* opaque,int rank,int* result) {
+  auto* state=static_cast<RankedTileHostState*>(opaque);
+  if (!state || state->poisoned || state->completed_launches<1 ||
+      rank<0 || rank>=R || !result) return int(cudaErrorInvalidValue);
+  cudaError_t error=cudaSetDevice(rank);
+  if (error!=cudaSuccess) return int(error);
+  error=cudaMemcpy(result,&state->ranks[rank].bin->payload_count,
+                   sizeof(int),cudaMemcpyDeviceToHost);
+  if (error!=cudaSuccess) return int(error);
+  return *result>=0 && *result<=PAYLOAD_CAP ? 0 : int(cudaErrorUnknown);
+}
+
 extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
                                int steal_budget) {
   auto* state=static_cast<RankedTileHostState*>(opaque);
@@ -356,7 +371,7 @@ extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
       if (source<R) {
         CAKE_RUN(cudaSetDevice(source));
         RankedTileRankState& s=state->ranks[source];
-        dispatch_source_wave<<<dim3(128,K),256,0,s.communication>>>(
+        dispatch_source_wave<<<dim3(128),256,0,s.communication>>>(
             s.bin_params,wave);
         CAKE_RUN(cudaGetLastError());
         mark_source_wave_done<<<1,1,0,s.communication>>>(s.bin_params,wave);

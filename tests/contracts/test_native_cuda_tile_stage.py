@@ -111,6 +111,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertIn('cake_ranked_tile_b300_launch(',library)
         self.assertIn('cake_ranked_tile_b300_destroy(',library)
         self.assertIn('cake_ranked_tile_b300_stolen(',library)
+        self.assertIn('cake_ranked_tile_b300_payloads(',library)
+        self.assertIn('cake_ranked_tile_b300_bin_bytes(',library)
         self.assertNotIn('int main(',library)
         self.assertNotIn('fopen(',library)
         bad=effects.document

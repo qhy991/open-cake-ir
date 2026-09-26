@@ -215,6 +215,10 @@ int main(int argc,char** argv) {
     if (check(cudaMemset(s.bin,0,sizeof(Bin)),"bin reset") ||
         check(cudaMemset(&s.bin->keys,0xff,sizeof(Bin::keys)),
               "bin key sentinel") ||
+        check(cudaMemset(&s.bin->payload_key,0xff,sizeof(Bin::payload_key)),
+              "payload key sentinel") ||
+        check(cudaMemset(&s.bin->row_payload_slot,0xff,
+                         sizeof(Bin::row_payload_slot)),"row payload sentinel") ||
         check(cudaMemset(&s.bin->route_location,0xff,
                          sizeof(Bin::route_location)),"location sentinel") ||
         check(cudaMemset(s.tile_keys,0xff,TILE_KEY_BYTES),
@@ -360,7 +364,7 @@ int main(int argc,char** argv) {
       int event=wave*(R+1)+source;
       if (source<R) {
         if (check(cudaSetDevice(source),"select source rank")) return 27;
-        dispatch_source_wave<<<dim3(128,K),256,0,
+        dispatch_source_wave<<<dim3(128),256,0,
                                communication_stream[source]>>>(
             state[source].bin_params,wave);
         if (check(cudaGetLastError(),"source dispatch launch")) return 27;
