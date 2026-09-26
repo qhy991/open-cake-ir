@@ -37,6 +37,8 @@ TEMPLATES = {
         'model_ep4_temporal_template.cu'),
     'cake_ep4_capacity_stages': Path(__file__).with_name(
         'model_ep4_capacity_template.cu'),
+    'cake_ep4_source_event_stages': Path(__file__).with_name(
+        'model_ep4_source_event_template.cu'),
 }
 OUTPUT = 'model_tile_ready_ffn_capped.cu'
 MARKS = ('@CAKE_HELPERS@', '@UPGATE_STAGE@',
@@ -61,7 +63,8 @@ def generate(evidence_root: Path) -> None:
     if [stage.name for stage in program.stages] != ['up_gate', 'activation', 'down']:
         raise ValueError('complete model FFN Program stage order differs')
     composition = None
-    if generation in ('cake_ep4_temporal_stages', 'cake_ep4_capacity_stages'):
+    if generation in ('cake_ep4_temporal_stages', 'cake_ep4_capacity_stages',
+                      'cake_ep4_source_event_stages'):
         effects = RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
         combine = Schedule.from_dict(json.loads(COMBINE.read_text()))
         composition = compose_model_ranked_tile_stages(
