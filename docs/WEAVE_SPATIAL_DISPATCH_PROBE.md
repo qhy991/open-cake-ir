@@ -49,7 +49,11 @@ The CUDA [stream guidance](https://docs.nvidia.com/cuda/cuda-programming-guide/0
 says different streams **may** execute concurrently under resource and
 dependency conditions. The [programmatic dependent launch guidance](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/programmatic-dependent-launch.html)
 explicitly warns that relying on opportunistic concurrent execution for
-progress is unsafe. This is a forward-progress gap in `4100a9d5`, not a
+progress is unsafe. [Green contexts](https://docs.nvidia.com/cuda/cuda-driver-api/cuda_driver_api/group__CUDA__GREEN__CONTEXTS.html)
+can partition SMs, but NVIDIA likewise states that disjoint partitions
+do not guarantee concurrent kernel execution or forward progress, so
+they do not close this dependency. This is a forward-progress gap in
+`4100a9d5`, not a
 measured deadlock. The direct and jump SSH paths to B300-M4 timed out before
 that candidate's successor source could be compiled; no FFN device result
 exists for it.
