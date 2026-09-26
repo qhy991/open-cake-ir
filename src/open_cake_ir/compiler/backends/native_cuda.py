@@ -1659,6 +1659,12 @@ class _Emitter:
                 scalar_copy()
             self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
             self.line('__syncwarp();')
+            if op.op_id in self.vector_p_stages:
+                # The 128-bit shared stores must be visible to the compute
+                # warps before the MMA warp publishes p_ready. The scalar
+                # path has its own qualified publication sequence.
+                self.line('__threadfence_block();')
+                self.line('__syncwarp();')
             self.begin('if ((threadIdx.x & 31) == 0)')
             self.line(f'cake_arrive({self.barvars[op.signals[0]]});')
             self.end()

@@ -25,6 +25,9 @@ class NativeKdaVectorPStage(unittest.TestCase):
         self.assertIn("reinterpret_cast<uintptr_t>(p_base) & 15", source)
         self.assertIn("e=int(threadIdx.x & 31)*8; e<1024; e+=256", source)
         self.assertIn("e=int(threadIdx.x & 31); e<1024; e+=32", source)
+        stage = source[source.index("CAKE_NATIVE_VECTOR_P_STAGE"):
+                       source.index("cake_arrive(bar3)", source.index("CAKE_NATIVE_VECTOR_P_STAGE"))]
+        self.assertIn("__syncwarp();\n        __threadfence_block();\n        __syncwarp();", stage)
 
     def test_copy_owned_p_stage_keeps_ordinary_scalar_emission(self):
         schedule = Schedule.from_dict(copy_p_document())
