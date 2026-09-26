@@ -225,6 +225,33 @@ class McptiActivity:
 
 
 
+def collect_activity(collector, function, *, synchronize):
+    """Finish an owned capture and retain partial rows when launch or drain fails."""
+    from .loaders import LifecycleError
+    synchronize()
+    collector.begin()
+    primary = None
+    activity = None
+    try:
+        function()
+        synchronize()
+    except BaseException as error:
+        primary = error
+        try:
+            synchronize()
+        except BaseException as cleanup:
+            primary = LifecycleError(primary, cleanup)
+    try:
+        activity = collector.finish()
+    except BaseException as cleanup:
+        activity = getattr(cleanup, 'activity_snapshot', None)
+        primary = LifecycleError(primary, cleanup) if primary is not None else cleanup
+    if primary is not None:
+        primary.activity_snapshot = activity
+        raise primary
+    return activity
+
+
 def activity_collector(library: str) -> McptiActivity:
     global _COLLECTOR
     with _CREATION:

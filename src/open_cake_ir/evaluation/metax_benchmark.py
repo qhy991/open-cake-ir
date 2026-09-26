@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 from typing import Mapping
 
-from .metax_activity import activity_collector
+from .metax_activity import activity_collector, collect_activity
 
 TIMER = "mcpti_concurrent_kernel_start_end_ns"
 RESET = "fp32_fill_ones_4x_declared_l2_same_stream_before_each_sample"
@@ -120,11 +120,10 @@ def dispatch_samples(activity: Mapping, *, kernel_name: str, grid, block,
     return samples
 
 
-class McptiDispatchBenchmark:
+class _McptiBenchmark:
+    """Shared collector, reset and cohort lifecycle; subclasses own the interval."""
+
     def __init__(self, manifest, *, activity_library: str, l2_cache_bytes: int):
-        from .program import ProgramLaunchManifest
-        if isinstance(manifest, ProgramLaunchManifest):
-            raise ValueError('MACA ordered Program timing is not qualified; the timer admits one native dispatch')
         if type(l2_cache_bytes) is not int or l2_cache_bytes <= 0 or l2_cache_bytes % 4:
             raise ValueError("MACA timing requires a declared positive FP32-aligned L2 capacity")
         self.manifest = manifest
@@ -139,26 +138,7 @@ class McptiDispatchBenchmark:
 
     def _collect(self, function):
         import torch
-        torch.cuda.synchronize()
-        self._collector.begin()
-        try:
-            function()
-            torch.cuda.synchronize()
-        except BaseException as primary:
-            failures = [primary]
-            try:
-                torch.cuda.synchronize()
-            except BaseException as synchronization:
-                failures.append(synchronization)
-            try:
-                self._collector.finish()
-            except BaseException as teardown:
-                failures.append(teardown)
-            if len(failures) > 1:
-                from .loaders import LifecycleError
-                raise LifecycleError(*failures) from primary
-            raise
-        return self._collector.finish()
+        return collect_activity(self._collector, function, synchronize=torch.cuda.synchronize)
 
     def _prepare_reset(self):
         import torch
@@ -170,11 +150,20 @@ class McptiDispatchBenchmark:
             self._reset = torch.empty(self.l2_cache_bytes, dtype=torch.float32, device="cuda:0")
             self._reset.fill_(1.0)
             activity = self._collect(lambda: self._reset.fill_(1.0))
+            self._reset_activity = activity
+            if self.last_activity is not None:
+                self.last_activity['reset_activity'] = activity
             records = kernel_records(activity)
-            if len(records) != 1 or records[0]["name"] == self.manifest.kernel_name:
+            if len(records) != 1 or records[0]["name"] in self.kernel_names:
                 raise ValueError("MACA reset is not one independently identified device fill")
             self._reset_record = records[0]
             self._reset_activity = activity
+
+    def _launch_sample(self, function):
+        function()
+
+    def _capture_fields(self):
+        return {}
 
     def __call__(self, function, *, dry_run_iters, repeat_iters, cold_l2_cache, use_cuda_graph):
         import torch
@@ -183,8 +172,17 @@ class McptiDispatchBenchmark:
             raise ValueError("MACA dispatch timing does not measure graph replay")
         if type(cold_l2_cache) is not bool or any(type(v) is not int or v <= 0 for v in (dry_run_iters, repeat_iters)):
             raise ValueError("MACA timing iteration or reset contract differs")
+        self.last_activity = {"timer": self.timer, "cache_policy": RESET if cold_l2_cache else "none",
+            "l2_cache_bytes": self.l2_cache_bytes, "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
+            "reset_record": None, "reset_activity": None, "activity": None, **self._capture_fields()}
         if cold_l2_cache:
-            self._prepare_reset()
+            try:
+                self._prepare_reset()
+            except BaseException as error:
+                if self.last_activity['reset_activity'] is None:
+                    self.last_activity['reset_activity'] = getattr(error, 'activity_snapshot', None)
+                raise
+            self.last_activity.update(reset_record=self._reset_record, reset_activity=self._reset_activity)
         for _ in range(dry_run_iters):
             function()
         torch.cuda.synchronize()
@@ -192,19 +190,40 @@ class McptiDispatchBenchmark:
             for _ in range(repeat_iters):
                 if cold_l2_cache:
                     self._reset.fill_(1.0)
-                function()
-        activity = self._collect(cohort)
+                self._launch_sample(function)
         reset = self._reset_record if cold_l2_cache else None
-        self.last_activity = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
+        self.last_activity = {"timer": self.timer, "cache_policy": RESET if cold_l2_cache else "none",
             "l2_cache_bytes": self.l2_cache_bytes, "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
             "reset_record": reset, "reset_activity": self._reset_activity if cold_l2_cache else None,
-            "activity": activity}
-        samples = dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
-            grid=self.manifest.grid, block=self.manifest.block, repeats=repeat_iters, reset_record=reset)
+            "activity": None, **self._capture_fields()}
+        try:
+            self.last_activity['activity'] = self._collect(cohort)
+        except BaseException as error:
+            self.last_activity['activity'] = getattr(error, 'activity_snapshot', None)
+            raise
+        samples = self._samples(repeat_iters, reset)
         self.non_target_dispatches = 0  # Proven above; any extra device activity is refused.
         unique = sorted(set(int(round(sample * 1e6)) for sample in samples))
         self.resolution_us = min((b - a for a, b in zip(unique, unique[1:])), default=0) / 1000 or None
         return samples
+
+
+class McptiDispatchBenchmark(_McptiBenchmark):
+    timer = TIMER
+
+    def __init__(self, manifest, *, activity_library: str, l2_cache_bytes: int):
+        from .program import ProgramLaunchManifest
+        if isinstance(manifest, ProgramLaunchManifest):
+            raise ValueError('MACA ordered Program timing is not qualified; the timer admits one native dispatch')
+        super().__init__(manifest, activity_library=activity_library, l2_cache_bytes=l2_cache_bytes)
+
+    @property
+    def kernel_names(self):
+        return (self.manifest.kernel_name,)
+
+    def _samples(self, repeats, reset):
+        return dispatch_samples(self.last_activity['activity'], kernel_name=self.manifest.kernel_name,
+            grid=self.manifest.grid, block=self.manifest.block, repeats=repeats, reset_record=reset)
 
 
 def validate_cohort(record, manifest, *, sample_count: int) -> None:
