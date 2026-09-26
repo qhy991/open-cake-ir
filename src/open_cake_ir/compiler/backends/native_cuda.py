@@ -137,7 +137,7 @@ def _role_carried_domain(s, target, loop):
     p_barrier = next((b for b in s.barriers if b.name in p_load.signals), None)
     if (p_load.role != 'mma' or p_load.parameters.movement is not LoadMovement.GLOBAL
             or p_load.waits or p_load.pipeline is not None
-            or staged.dtype is not DType.BF16 or staged.stages != 1
+            or staged.dtype is not DType.BF16 or staged.stages not in (1, 2)
             or p_barrier is None or p_barrier.count != 1
             or p_barrier.pipeline is not None or p_barrier.producers != ('mma',)
             or p_barrier.consumers != ('compute',)
@@ -172,7 +172,7 @@ def _vector_p_stage(s, target, op):
             and destination.space is MemorySpace.SHARED
             and destination.dtype is DType.BF16
             and destination.shape == (32, 32)
-            and destination.stages == 1 and destination.swizzle is Swizzle.B64
+            and destination.stages in (1, 2) and destination.swizzle is Swizzle.B64
             and op.role == 'mma' and op.pipeline is None
             and op.parameters.movement is LoadMovement.GLOBAL
             and access is not None and len(access.indices) == 4
@@ -1103,6 +1103,13 @@ class _Emitter:
     def pointer(self, buffer, stage):
         size = buffer.elements*buffer.dtype.itemsize
         return f'(smem + {self.offsets[buffer.allocation]+buffer.byte_offset} + ({stage})*{size})'
+    def p_stage(self, op, buffer):
+        """Keep one P view per parity while compute consumes the prior chunk."""
+        scope = _scope(self.s, op)
+        if (buffer.stages == 2 and scope is not None
+                and scope.name in self.role_carried):
+            return f'({self.loopvars[scope.iterator]}&1)'
+        return '0'
     def taddr(self, buffer):
         return f'(*{self.tmemvars[buffer.allocation]} + {buffer.byte_offset//512})'
 
@@ -1633,12 +1640,13 @@ class _Emitter:
             self.end()
         elif op.kind is OperationKind.LOAD and dst.space is MemorySpace.SHARED:
             width, _ = _SWIZZLE[dst.swizzle]
+            stage = self.p_stage(op, dst)
             def scalar_copy():
                 self.begin(f'for (int e=int(threadIdx.x & 31); e<{dst.elements}; e+=32)')
                 address, mask = self.address(op, src, [f'e/{dst.shape[1]}', f'e%{dst.shape[1]}'])
                 self.line(f'const int byte = e * {dst.dtype.itemsize};')
                 self.line(f'const int swizzled = byte ^ (((byte >> 7) & {(width//16)-1}) << 4);')
-                self.line(f'*reinterpret_cast<{_TYPES[dst.dtype]}*>({self.pointer(dst,"0")} + swizzled) = ({mask}) ? {address} : {_TYPES[dst.dtype]}(0);')
+                self.line(f'*reinterpret_cast<{_TYPES[dst.dtype]}*>({self.pointer(dst,stage)} + swizzled) = ({mask}) ? {address} : {_TYPES[dst.dtype]}(0);')
                 self.end()
             if op.op_id in self.vector_p_stages:
                 first, _ = self.address(op, src, ['0', '0'])
@@ -1650,7 +1658,7 @@ class _Emitter:
                 self.line('const uint4 packed = *reinterpret_cast<const uint4*>(p_base + e);')
                 self.line('const int byte = e * 2;')
                 self.line('const int swizzled = byte ^ (((byte >> 7) & 3) << 4);')
-                self.line(f'*reinterpret_cast<uint4*>({self.pointer(dst,"0")} + swizzled) = packed;')
+                self.line(f'*reinterpret_cast<uint4*>({self.pointer(dst,stage)} + swizzled) = packed;')
                 self.end(); self.end()
                 self.begin('else')
                 scalar_copy()
@@ -1671,6 +1679,7 @@ class _Emitter:
             self.end()
         elif op.kind is OperationKind.FORWARD_SUBSTITUTE:
             coefficient = src
+            p_stage = self.p_stage(op, coefficient)
             rhs = self.names[op.reads[1]]
             solve_scope = _scope(self.s, op)
             phase = (f'({self.loopvars[solve_scope.iterator]}&1)'
@@ -1684,7 +1693,7 @@ class _Emitter:
                     self.line(
                         f'u{token} = __fmaf_rn(__bfloat162float('
                         f'*reinterpret_cast<const __nv_bfloat16*>('
-                        f'{self.pointer(coefficient,"0")} + {swizzled})), '
+                        f'{self.pointer(coefficient,p_stage)} + {swizzled})), '
                         f'u{prior}, u{token});'
                     )
                 self.line(f'{d}[{token}] = u{token};')
