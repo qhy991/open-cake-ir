@@ -246,6 +246,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
             self.assertNotIn('fopen(',source)
             self.assertEqual(report['logical_tile_capacity'],255)
             self.assertEqual(report['stage_task_capacity'],46920)
+            self.assertEqual(len([name for name in report['source_map']
+                                  if name.startswith('effect.')]),27)
 
 
 if __name__ == '__main__':

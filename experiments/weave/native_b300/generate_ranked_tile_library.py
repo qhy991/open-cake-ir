@@ -7,7 +7,7 @@ from pathlib import Path
 
 from open_cake_ir.compiler import Compiler, Program, RankedTileEffects, Schedule
 from open_cake_ir.compiler.backends.native_cuda_ranked_tile import (
-    emit_source_event_library,
+    emit_source_event_library, source_event_map,
 )
 from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
     compose_model_ranked_tile_stages,
@@ -45,6 +45,8 @@ def generate(evidence_root: Path) -> None:
     source = emit_source_event_library(
         composition, combine_source=lowered_combine.source,
         entry=effects.lowering.entry_point)
+    source_map = source_event_map(
+        source, composition, combine_source=lowered_combine.source)
     (evidence_root / 'ranked_tile.cu').write_text(source)
     (evidence_root / 'lowering_report.json').write_text(json.dumps({
         'source_commit': compiler.commit,
@@ -61,6 +63,7 @@ def generate(evidence_root: Path) -> None:
                      ('ranks', 'source_events', 'bin_bytes', 'output_bytes',
                       'create', 'launch', 'destroy', 'stolen', 'payloads')],
         'controls_abi': 'rank_local_int32_arrays',
+        'source_map': {name:list(lines) for name,lines in source_map.items()},
         'scope': 'development tensor-pointer ABI source; no public Compiler.lower_ranked_tiles result or device qualification',
     }, indent=2) + '\n')
 
