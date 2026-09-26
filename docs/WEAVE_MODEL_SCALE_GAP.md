@@ -308,6 +308,16 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    currently waits for **all dispatches** before planning. Incremental
    tile publication, temporal-`K` overlap, arbitrary-route qualification
    and the complete-layer timer remain open.
+   A correctness-gated one-shot Nsight activity replay (`cake-weave-ep4-gpu-
+   plan-nsys-3fe5c425/`) observed ten kernel phases per rank. Its rank-
+   median diagnostic intervals were about 0.014 ms for expert route sort,
+   0.051 ms for tile-slot assignment and 2.908 ms for the FFN worker.
+   No cross-rank dispatch/sort, sort/gather or gather/FFN kernel intervals
+   intersected in that replay, matching the explicit all-source completion
+   barrier and rank-local stream order. This is a single profiler-perturbed
+   observation, not a timer or speedup. The next temporal design must
+   publish tile waves incrementally and reserve SM capacity so dispatch
+   can progress while the 192-thread worker is resident.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
