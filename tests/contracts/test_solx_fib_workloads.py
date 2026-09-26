@@ -11,7 +11,9 @@ from pathlib import Path
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.solx_fib.authoring import starter_source
+from open_cake_ir.tasks.solx_fib.authoring import (
+    masked_whole_026_source, sliced_026_source, starter_source,
+)
 from open_cake_ir.tasks.solx_fib.workload import (
     ATOL, CASES, RTOL, SEED_ELEMENT_CAP, SPECS, TASKS,
     admitting_backends, default_rows, launchable_tasks, materialize_case,
@@ -298,6 +300,27 @@ class StarterTests(unittest.TestCase):
             self.assertIn(f'tile={width & -width}', source)
             self.assertIn('square_sum = ' + ' + '.join(
                 f'sum_{i}' for i in range(len(row_spans(width)))), source)
+
+    def test_026_candidates_keep_the_sliced_graph_or_mask_one_whole_row(self):
+        workload = _tiny("fib_rmsnorm_h7168", rows=64)
+        starter = parse(starter_source(workload)).document
+        sliced = parse(sliced_026_source(workload)).document
+        self.assertEqual(sliced["operations"], starter["operations"])
+        self.assertEqual(sliced["access_maps"], starter["access_maps"])
+        self.assertEqual(sliced["roles"][0]["execution_groups"], list(range(8)))
+        self.assertEqual(self.compiler.assess(sliced).findings, ())
+        for groups in (8, 16):
+            source = masked_whole_026_source(workload, execution_groups=groups)
+            schedule = parse(source).document
+            self.assertEqual(sum(op["kind"] == "store" for op in schedule["operations"]), 1)
+            assessment = self.compiler.assess(schedule)
+            self.assertEqual(assessment.findings, ())
+            lowered = self.compiler.lower(assessment).source
+            self.assertIn("BLOCK_COLUMN=8192", lowered)
+            self.assertEqual(lowered.count("other=0.0"), 2)
+            self.assertIn("mean_square = square_sum / 7168.0", lowered)
+        with self.assertRaises(ValueError):
+            sliced_026_source(_tiny("fib_fused_add_rmsnorm_h7168", rows=64))
 
     def test_the_starter_keeps_the_bf16_abi_and_widens_only_in_between(self):
         for task in launchable_tasks():
