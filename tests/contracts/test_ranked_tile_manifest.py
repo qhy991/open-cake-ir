@@ -83,12 +83,22 @@ class RankedTileManifestTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'sealed source, plan or library'):
                 candidate.check(self.lowered,self.workload,
                                 'mixed_full_early_terminal',self.plans(1),library)
+            with self.assertRaisesRegex(ValueError,'isolated process'):
+                prepare_sealed_ranked_tile_case(
+                    candidate,self.lowered,self.workload,
+                    'mixed_full_early_terminal',{}, {},self.plans(),
+                    library_path=library,pointer_of=lambda _:0,
+                    isolated_process=False,
+                    check_tensor=lambda *_:None,
+                    storage_span=lambda _:None,
+                    execution_context=lambda _:None)
             library.write_bytes(b'\x7fELFother')
             with self.assertRaisesRegex(ValueError,'sealed source, plan or library'):
                 prepare_sealed_ranked_tile_case(
                     candidate,self.lowered,self.workload,
                     'mixed_full_early_terminal',{}, {},self.plans(),
                     library_path=library,pointer_of=lambda _:0,
+                    isolated_process=True,
                     check_tensor=lambda *_:None,
                     storage_span=lambda _:None,
                     execution_context=lambda _:None)

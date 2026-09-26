@@ -11,6 +11,9 @@ requirements, source map and ordered rank plans. The candidate retains
 immutable manifest, emitted source and ELF bytes. At load, the library on
 disk must match those bytes and the source and plan must match the current
 lowering and Workload.
+The loader requires the caller to assert an isolated process explicitly;
+a partial multi-rank launch can leave device waiters live, so the adapter
+may not silently claim process isolation on the caller's behalf.
 
 This is deliberately a **pre-launch byte binding**, not a claim that NVCC
 produced the ELF from the retained source. The CPU build command/report must
