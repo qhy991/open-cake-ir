@@ -53,6 +53,8 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 首个四 MMA 排列过早将 base-query FP32 `[V128,C32]` 从 TMEM 读到寄存器，穿过全部 496 项/行的顺序 solve 才用于输出。`sm_103a` AOT 使用 255 寄存器、112 字节 stack，报告 108 字节 spill 读写；SASS 的 `STL` 出现在 `subtract_base` 源码附近。后继 `fbafa719` 只把这个 query 回读移到输出合并前，保留同一 TMEM accumulator、输出公式与 BF16 边界，AOT 仍用 255 寄存器但 **0 stack、0 spill**。这给出一个明确的 lowering 原因：跨顺序求解保留早期 FP32 结果会制造寄存器活跃区间；延迟具有独立 completion barrier 的 TMEM readout 可缩短该区间。在完整适用 CPU 合同与 Corpus Gate 通过后，`fbafa719` 的 broker-shared B300 抓取完成了 3 组检查：每组 8,192 个 BF16 chunk 输出和 16,384 个 BF16 最终状态均为 0 超差，输入未改写，作业终结后才运行 host oracle。这证明有界合成 RHS 的输出/状态发射正确；尚无配对延迟或公共 pass 收益证据。合成 RHS 仍未接入公开 V/beta，因此不能当作完整 KDA 输出。
 
+公开输出的物理方向仍是独立缺口：当前 CTA 按 V 行拥有寄存器，合成输出是 `[chunk,V128,token32]`，而 Workload 以 token 为前轴。`59855c8b` 的合同探针在共享 IR 中显式加入 `transpose` 与 token-major store，通过通用 Verifier 和 Target 检查；当前 native CUDA 后端以 `BACKEND_OPERATION_UNEMITTABLE` 拒绝。不能在 CUDA store 地址里私下转置、却让 Schedule 继续声称旧形状。下一步可以为严格限定的 transpose→store 链实现正确的行线程写回，也可以由另一阶段显式承担转换，但必须同一 Workload 测量额外流量与启动成本。原始 V 输入的 `[token,V]` 到行拥有者 `[V,token]` 也需同等显式映射，尚未完成后端准入。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -86,7 +88,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | Q/K 归一化、decay、beta 与 32-token 耦合 | 独立准备组件在 B300 通过 H64 元素检查；两 MMA 版本单独计时 389.507 µs | 与状态/输出 CTA 融合或有证据地选择物化边界，避免七个中间张量往返。 |
 | `state @ base_key` 与 P 前代入 | K128 两阶段合成状态在 B300 三种输入通过 | 把合成 RHS 换成公开 V、beta、base prediction 的真实组合。 |
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
-| `state_after_update @ query` 与输出耦合 | `fbafa719` 的四 MMA 合成 Schedule 已在 B300 三组输入上通过全部 chunk 输出/最终状态，AOT 0 spill | 公开 V/beta RHS、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
+| `state_after_update @ query` 与输出耦合 | `fbafa719` 的四 MMA 合成 Schedule 已在 B300 三组输入上通过全部 chunk 输出/最终状态，AOT 0 spill | 公开 V/beta RHS、token-major 输出方向、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 
