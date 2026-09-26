@@ -1,12 +1,37 @@
 """The bounded MACA capability checks used by the shared Triton emitter."""
 
 from ..diagnostics import Finding
-from ..ir import DType, OperationKind, Schedule, TileLoop
+from ..ir import BufferMode, DType, MemorySpace, OperationKind, Schedule, TileLoop
+from ..ir.instruction_contracts import COMPENSATED_FP8_MMA
 from ..target import Target
 from .common import refusal
 
 
 _BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
+
+
+def emit_compensated_fp8_mma(line, *, left: str, right: str, output: str, pad: str) -> None:
+    """Emit the measured 2x64x64 SIMT body; no native FP8 dot is implied."""
+    line(f"{pad}_maca_fp8_ks = tl.arange(0, 64)")
+    line(f"{pad}_maca_fp8_left_values = {left}.to(tl.float32)")
+    line(f"{pad}_maca_fp8_right_tile = {right}.to(tl.float32)")
+    line(f"{pad}_maca_fp8_total = tl.zeros((2, 64), tl.float32)")
+    line(f"{pad}_maca_fp8_correction = tl.zeros((2, 64), tl.float32)")
+    line(f"{pad}for _maca_fp8_k in tl.range(0, 64):")
+    body = pad + "    "
+    line(f"{body}_maca_fp8_left = tl.sum(tl.where("
+         "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_left_values, 0.0), axis=1)")
+    line(f"{body}_maca_fp8_right = tl.sum(tl.where("
+         "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_right_tile, 0.0), axis=1)")
+    line(f"{body}_maca_fp8_product = _maca_fp8_left[:, None] * _maca_fp8_right[None, :]")
+    line(f"{body}_maca_fp8_updated = _maca_fp8_total + _maca_fp8_product")
+    line(f"{body}_maca_fp8_error = tl.where("
+         "tl.abs(_maca_fp8_total) >= tl.abs(_maca_fp8_product), "
+         "(_maca_fp8_total - _maca_fp8_updated) + _maca_fp8_product, "
+         "(_maca_fp8_product - _maca_fp8_updated) + _maca_fp8_total)")
+    line(f"{body}_maca_fp8_correction = _maca_fp8_correction + _maca_fp8_error")
+    line(f"{body}_maca_fp8_total = _maca_fp8_updated")
+    line(f"{pad}{output} = _maca_fp8_total + _maca_fp8_correction", declares=(output,))
 
 
 def _full_unroll_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:
@@ -39,6 +64,14 @@ def loop_range(loop: TileLoop, schedule: Schedule, extent: str, tile: str) -> st
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     findings = []
+    compensated = [op for op in schedule.operations
+                   if op.kind is OperationKind.MMA and op.parameters.instruction is not None
+                   and op.parameters.instruction.contract == COMPENSATED_FP8_MMA]
+    if len(compensated) > 1:
+        findings.append(refusal(
+            "MACA_FP8_COMPENSATED_COUNT", "operations",
+            "the bounded MACA compensated FP8 route emits one contraction per program",
+        ))
     for index, buffer in enumerate(schedule.buffers):
         if buffer.dtype not in _BUFFER_DTYPES:
             findings.append(refusal(
@@ -77,6 +110,47 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                     "MACA_FP8_SCALAR_CAST_UNSUPPORTED", path,
                     "the captured MACA compiler asserts on scalar FP8 conversion; "
                     "this route requires a non-scalar FP8 tile before casting",
+                ))
+        elif (operation.kind is OperationKind.MMA
+              and operation.parameters.instruction is not None
+              and operation.parameters.instruction.contract == COMPENSATED_FP8_MMA):
+            left = schedule.buffer(operation.reads[0]) if len(operation.reads) == 2 else None
+            right = schedule.buffer(operation.reads[1]) if len(operation.reads) == 2 else None
+            result = schedule.buffer(operation.writes[0]) if len(operation.writes) == 1 else None
+            global_inputs = [buffer for buffer in schedule.buffers
+                             if buffer.space is MemorySpace.GLOBAL
+                             and buffer.mode is BufferMode.INPUT]
+            global_outputs = [buffer for buffer in schedule.buffers
+                              if buffer.space is MemorySpace.GLOBAL
+                              and buffer.mode is BufferMode.OUTPUT]
+            axes = schedule.program_map.axes if schedule.program_map is not None else ()
+            if not (left is not None and right is not None and result is not None
+                    and left.dtype is DType.FP8_E4M3 and right.dtype is DType.FP8_E4M3
+                    and result.dtype is DType.FP32
+                    and left.shape == (2, 64) and right.shape == (64, 64)
+                    and result.shape == (2, 64)
+                    and operation.parameters.tile_shape == (2, 64, 64)
+                    and operation.parameters.k_ranges is None
+                    and not schedule.tile_loops and not schedule.pipelines
+                    and len(global_inputs) == 2 and len(global_outputs) == 1
+                    and len([buffer for buffer in schedule.buffers
+                             if buffer.space is MemorySpace.GLOBAL]) == 3
+                    and all(buffer.shape == (64, 64) and buffer.dtype is DType.FP8_E4M3
+                            for buffer in global_inputs)
+                    and global_outputs[0].shape == (64, 64)
+                    and global_outputs[0].dtype is DType.FP32
+                    and schedule.program_map is not None
+                    and not schedule.program_map.persistent
+                    and len(axes) == 1 and axes[0].axis == 0
+                    and axes[0].dimension == 0 and axes[0].tile == 2
+                    and axes[0].buffer in {buffer.name for buffer in global_inputs}
+                    and len(schedule.roles) == 1
+                    and len(schedule.roles[0].execution_groups) == 4):
+                findings.append(refusal(
+                    "MACA_FP8_COMPENSATED_DOMAIN_UNQUALIFIED", path,
+                    "the measured SIMT compensated FP8 route takes one 64x64 input/output "
+                    "case, resident 2x64 by 64x64 tiles, one FP32 result, a two-row "
+                    "program map and four execution groups; other domains require qualification",
                 ))
         elif operation.kind not in (OperationKind.LOAD, OperationKind.STORE):
             findings.append(refusal(

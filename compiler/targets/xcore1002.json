@@ -21,9 +21,14 @@
     "shared_memory_per_multiprocessor_bytes": 65536,
     "maximum_threads_per_multiprocessor": 2048
   },
-  "instruction_contracts": ["maca.tanh.f32", "maca.fma.f32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
+  "instruction_contracts": ["maca.tanh.f32", "maca.fma.f32", "maca.simt.fp8e4m3_compensated_fp32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
   "synchronization_contracts": [],
   "citations": [
+    {
+      "kind": "device_observation",
+      "source": "c550-2 MetaX C550, Triton 3.6 / MACA PyTorch 2.10.0+metax3.8.0.4.c600u, 2026-09-26",
+      "locator": "The maca.simt.fp8e4m3_compensated_fp32 route decodes resident E4M3FN tiles to FP32 and uses Neumaier compensated SIMT products; it does not issue a native FP8 dot. The exact Cake kernel projected from source a0f16157 compiled offline to native xcore1000 mcfatbin on the captured C550-1 Triton 3.1 and C550-2 Triton 3.6 routes, with no tt.dot in TTIR/TTGIR. The one-visible-device broker job maca-8b89488ad3be JITed that Cake source and matched all 20480 FP32 output words bitwise across the original frozen primary, zeros, identity, alternating and mixed_magnitude cases; both FP8 input byte arrays were unchanged. The later 878afb61 admission guard narrows the global case and program map while emitting the same kernel bytes. Raw source, frozen inputs/reference, compiled artifacts, output arrays and receipt: open-cake-ir-evidence/metax-fp8-resident-simt-m2-20260926/. This is bounded software lowering evidence for a fixed 64x64 case, not Triton 3.1 device correctness, a native FP8 instruction, formal Workload Evaluation or performance qualification."
+    },
     {
       "kind": "device_observation",
       "source": "c550-2, Triton 3.6 / MACA PyTorch 2.10.0+metax3.8.0.4.c600u, 2026-09-26",
