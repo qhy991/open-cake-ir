@@ -321,6 +321,25 @@ checkout 外的 `open-cake-ir-evidence/metax-fp8-resident-simt-m2-20260926/`。
 没有该实现的设备数值结果。这是有界软件 lowering 的正确性诊断，尚不是注册
 Workload Evaluation、原生 FP8 矩阵指令或性能收益。
 
+### 一行与两行的诊断性 MCPTI 对照
+
+在 C550-2 已捕获的 Triton 3.6 Host、同一冻结 `64×64` 输入下，broker job
+`maca-55df39af5db2` 先让一行、两行和 Cake 两行三份源码各通过五组完整输出的
+逐 bit 检查，再按同 stream 4×L2 reset 采集一行/两行各 250 个 MCPTI dispatch
+样本。10 个反向顺序 pair 中一行赢 10/10；pooled median 为一行 **31.232 µs**、
+两行 **42.496 µs**。四个前后 A/A pair 的两 arm pooled median 均为
+**31.488 µs**，cohort CV 门槛通过。Cake 两行源码另有一个 25 样本 cohort，
+median **39.168 µs**，不能拿它与前两个 pooled median 作配对速度比。
+29 份原生活动已由仓库 `dispatch_samples` 和纯配对派生独立重放；原始输出与
+活动在 checkout 外的 `open-cake-ir-evidence/metax-fp8-paired-screen-20260926-v4/attempt4/`。
+先前 v3 在第一个主 cohort 的第 20 样本因 256 ns 的 MCPTI 记录重叠被拒绝，
+失败记录保留，未用后继通过结果改判旧尝试。
+
+这项 `local_serialized` 对照不排除外部 GPU 活动，也没有注册 Workload、封存
+候选和正式 EvaluationReceipt；它只能指向下一条优化调查，**不构成已合格的
+1 行加速结论**。Cake 当前一行程序的最早结构性拒绝与所需 IR/Verifier 审查见
+[F-2026-09-26-001](../findings/2026-09-26-001-metax-fp8-one-row-capacity.json)。
+
 调查还发现当前 SDK 对标量 FP8→FP32 的最小程序触发 `RankedTensorType` 内部断言。
 补偿 control 先按 tensor 转换，再在 FP32 上选择元素，才通过编译；这没有修复或
 取得标量 FP8 转换的资格。全部原始源码、编译失败、封存参考、NPZ 观察与结果保留于

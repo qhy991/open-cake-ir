@@ -19,7 +19,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 FINDINGS = ROOT / "findings"
 
-# Every field that is a string in all 73 records today. `backend`, `target`, `evidence`
+# Every field that is a string in every current record. `backend`, `target`, `evidence`
 # and `verified_by` are deliberately absent: the ledger carries more than one shape for
 # each, and a test that pinned one record's shape would refuse the others rather than
 # catch anything.
