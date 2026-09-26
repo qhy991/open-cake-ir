@@ -24,6 +24,8 @@ TEMPLATES = {
         'model_tile_ready_from_cake_template.cu'),
     'cake_two_expert_stages': Path(__file__).with_name(
         'model_tile_ready_two_expert_template.cu'),
+    'cake_ep4_owner_stages': Path(__file__).with_name(
+        'model_ep4_worker_owner_template.cu'),
 }
 OUTPUT = 'model_tile_ready_ffn_capped.cu'
 MARKS = ('@CAKE_HELPERS@', '@UPGATE_STAGE@',

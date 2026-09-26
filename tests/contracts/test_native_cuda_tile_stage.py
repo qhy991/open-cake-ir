@@ -81,7 +81,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
         if commit is None:
             self.skipTest('generated worker needs a fixed clean Compiler commit')
         script = ROOT / 'experiments/weave/native_b300/generate_tile_ready_from_cake.py'
-        for generation in ('cake_full_ffn_stages', 'cake_two_expert_stages'):
+        for generation in ('cake_full_ffn_stages', 'cake_two_expert_stages',
+                           'cake_ep4_owner_stages'):
             with self.subTest(generation=generation), tempfile.TemporaryDirectory(
                     prefix='cake-tile-stage-') as directory:
                 root = Path(directory)
@@ -108,6 +109,9 @@ class NativeCudaTileStageTest(unittest.TestCase):
                     self.assertIn('tile_expert[tile]', source)
                     self.assertIn('up_map_b+expert', source)
                     self.assertIn('down_map_b+expert', source)
+                if generation == 'cake_ep4_owner_stages':
+                    self.assertIn('constexpr int kExperts = 32;', source)
+                    self.assertIn('up_map_b+expert', source)
 
 
 if __name__ == '__main__':
