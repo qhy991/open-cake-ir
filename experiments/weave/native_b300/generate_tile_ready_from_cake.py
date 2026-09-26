@@ -16,6 +16,9 @@ from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
     compose_model_ranked_tile_stages, emit_model_activation_stage,
     emit_tensor_tile_stage,
 )
+from open_cake_ir.compiler.backends.native_cuda_ranked_tile import (
+    emit_source_event_device,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -85,12 +88,19 @@ def generate(evidence_root: Path) -> None:
     if results[0].instruction_helpers != results[2].instruction_helpers:
         raise ValueError('tensor stages disagree on native CUDA PTX helper contract')
     template = TEMPLATES[generation].read_text()
-    if any(template.count(mark) != 1 for mark in MARKS):
-        raise ValueError('worker template stage seams differ')
-    source = (template.replace('@CAKE_HELPERS@', results[0].instruction_helpers)
-                      .replace('@UPGATE_STAGE@', results[0].source)
-                      .replace('@ACTIVATION_STAGE@', results[1].source)
-                      .replace('@DOWN_STAGE@', results[2].source))
+    if generation == 'cake_ep4_source_event_stages':
+        if template.count('@CAKE_RANKED_TILE_DEVICE@') != 1 or composition is None:
+            raise ValueError('source-event host needs one backend device seam')
+        device = emit_source_event_device(
+            composition, combine_source='#include "combine/kernel.cu"')
+        source = template.replace('@CAKE_RANKED_TILE_DEVICE@', device)
+    else:
+        if any(template.count(mark) != 1 for mark in MARKS):
+            raise ValueError('worker template stage seams differ')
+        source = (template.replace('@CAKE_HELPERS@', results[0].instruction_helpers)
+                          .replace('@UPGATE_STAGE@', results[0].source)
+                          .replace('@ACTIVATION_STAGE@', results[1].source)
+                          .replace('@DOWN_STAGE@', results[2].source))
     if re.search(r'@[A-Z_]+@', source):
         raise ValueError('worker source retains an unbound lowering seam')
     (evidence_root / OUTPUT).write_text(source)

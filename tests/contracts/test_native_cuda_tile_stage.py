@@ -12,6 +12,9 @@ import unittest
 
 from open_cake_ir.compiler import Compiler, Program, RankedTileEffects, Schedule
 from open_cake_ir.compiler.backends.common import EmitError
+from open_cake_ir.compiler.backends.native_cuda_ranked_tile import (
+    emit_source_event_device,
+)
 from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
     compose_model_ranked_tile_stages, emit_model_activation_stage,
     emit_tensor_tile_stage,
@@ -93,6 +96,13 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertEqual((result.tensor_bytes,result.required_execution_groups,
                           result.target_multiprocessors),(32768,6,148))
         self.assertEqual(len(result.stages),3)
+        device=emit_source_event_device(
+            result,combine_source='#include "combine/kernel.cu"')
+        self.assertIn('__global__ void dispatch_source_wave',device)
+        self.assertIn('atom.relaxed.sys.global.add.s32',device)
+        self.assertNotIn('int main(',device)
+        with self.assertRaisesRegex(EmitError,'exact checked B300 composition'):
+            emit_source_event_device(result,combine_source='')
         bad=effects.document
         bad['partial_threshold_rows']=128
         with self.assertRaisesRegex(EmitError,'exact model EP4 domain'):
