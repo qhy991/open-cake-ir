@@ -198,6 +198,13 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    PTXAS register use fell from 96 to 88 per thread without spills; the
    same one-GPU four-case oracle, completion and steal checks passed.
    Occupancy remains one CTA/SM, and no latency or speedup claim follows.
+   A further one-GPU step (`cake-weave-tile-ready-two-expert-9a0d6eeb/`)
+   selects separate up/gate and down TMA weight descriptors by each tile's
+   expert ID. Sixty-four tiles alternate two distinct input/weight sets with
+   independent saved stage oracles. All four c/steal cases again completed
+   11,776 work units with bitwise agreement at every stage; `c=148` stole
+   every unit. IDs were prepacked before launch, so this validates selected
+   weight mapping, not live expert-bin formation or four-rank routing.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
