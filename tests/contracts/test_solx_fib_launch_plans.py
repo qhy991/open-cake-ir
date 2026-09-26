@@ -8,7 +8,7 @@ import unittest
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.solx_fib import attention, moe
+from open_cake_ir.tasks.solx_fib import attention, gqa_ragged_prefill_fusion, moe
 from open_cake_ir.tasks.solx_fib.catalog import TASK_IDS, task_owner
 from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.evaluation.core import compare_tile_outputs
@@ -17,6 +17,28 @@ ROOT=Path(__file__).resolve().parents[2]
 
 
 class CompletePackPlanTests(unittest.TestCase):
+    def test_016_fused_ragged_prefill_keeps_both_outputs_and_mask_semantics(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        for variant in ('boundary', 'captured'):
+            workload = WorkloadContract(attention.workload_document(
+                gqa_ragged_prefill_fusion.TASK, variant=variant))
+            plan = gqa_ragged_prefill_fusion.launch_plan(workload)
+            self.assertEqual(len(plan.stages), 1)
+            self.assertEqual(set(plan.outputs), {'output', 'lse'})
+            self.assertEqual(set(plan.tensors), set(plan.inputs) | set(plan.outputs))
+            assessment = compiler.assess(json.loads(plan.stages[0].schedule_bytes))
+            self.assertEqual(assessment.findings, (), variant)
+            source = compiler.lower(assessment).source
+            self.assertIn('masked_absolute = tl.where(keep != 0, absolute, -1)', source)
+            self.assertIn('key_ptrs = k + masked_absolute[:, None]', source)
+            self.assertIn('value_ptrs = v + masked_absolute[:, None]', source)
+            self.assertEqual(source.count('masked_absolute[:, None] >= 0'), 2)
+            self.assertIn('denominator = tl.where(nonempty != 0, total, 1.0)', source)
+        wrong = WorkloadContract(attention.workload_document(
+            'fib_gqa_ragged_prefill_causal_h32_kv8_d128', variant='boundary'))
+        with self.assertRaises(ValueError):
+            gqa_ragged_prefill_fusion.author_plan(wrong)
+
     def test_all_26_tasks_have_one_owning_implementation(self):
         self.assertEqual(len(TASK_IDS),26)
         self.assertEqual(len({t.split('_',1)[0] for t in TASK_IDS}),26)
