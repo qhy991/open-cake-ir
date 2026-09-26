@@ -1,0 +1,23 @@
+sequenceDiagram
+  autonumber
+  participant Copy as copy warp
+  participant Ready as base/correction ready[2]
+  participant MMA as MMA warp
+  participant Compute as compute + BF16 state
+  participant Free as base/correction free[2]
+  Note over Copy,Free: 初始化两槽和完成 barrier；预取 chunk 0 到槽 0
+  loop chunk j = 0..255
+    Copy->>Free: 复用 next=(j+1)%2 前等上次 free phase
+    Copy->>Ready: 若 j+1<256，TMA 预取 base/query B(j+1)
+    MMA->>Compute: 等待 carried state 当前 phase
+    MMA->>Ready: 等 base ready[j%2]，phase=(j//2)%2
+    MMA->>Free: 消费 base B(j)，提交本槽 free
+    MMA->>Compute: 发布 base/query 完成
+    Compute->>Compute: RHS、前代入、BF16 U 发布
+    Copy->>Ready: 若 j+1<256，TMA 预取 correction/output B(j+1)
+    MMA->>Ready: 等 correction ready[j%2]，同一槽 phase
+    MMA->>Free: 消费 correction B(j)，提交本槽 free
+    MMA->>Compute: 发布 correction/output 完成
+    Compute->>Compute: 输出和旧状态合并，发布下一 BF16 state
+  end
+  Note over Copy,Free: 最后排空两槽，失效 mbarrier；final state 只在末块写回
