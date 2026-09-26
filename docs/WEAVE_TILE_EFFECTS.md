@@ -10,6 +10,10 @@ version-1 effects.
 The payload is keyed by source item and destination rank. Each expert-bin row
 retains its `(source_rank, item, route)` identity. A **logical tile** is keyed
 by `(destination_rank, expert, tile_index)` and publishes a valid-row count.
+Sources reserve rows in a destination-owned expert bin through a returned-old
+**system-scope** atomic. A GPU-scope atomic cannot own the cross-rank row
+index used by the evidenced P2P dispatcher; stage-task claims stay GPU-scope
+because they are local to the destination rank.
 Its claimable **stage task** is keyed by that tile plus the Program stage and
 one flattened ProgramMap CTA coordinate. Every CTA of a predecessor stage
 must complete before a successor stage becomes ready.

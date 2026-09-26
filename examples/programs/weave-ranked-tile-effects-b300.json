@@ -21,7 +21,7 @@
     "bin": {
       "owner": "destination_rank",
       "key": ["destination_rank", "expert", "row"],
-      "reservation": "returned_old_atomic_gpu",
+      "reservation": "returned_old_atomic_system",
       "ready": "release_acquire_system",
       "row_identity": ["source_rank", "item", "route"]
     },

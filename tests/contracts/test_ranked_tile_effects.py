@@ -111,6 +111,9 @@ class RankedTileEffectsContract(unittest.TestCase):
         changes=(
             (lambda d:d['channels']['task'].__setitem__('owner','source_rank'),
              'channel keys'),
+            (lambda d:d['channels']['bin'].__setitem__(
+                'reservation','returned_old_atomic_gpu'),
+             'channel keys'),
             (lambda d:d['channels']['task']['key'].pop(),
              'channel keys'),
             (lambda d:d['channels']['task'].__setitem__(
