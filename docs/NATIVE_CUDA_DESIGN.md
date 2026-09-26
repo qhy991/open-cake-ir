@@ -186,15 +186,21 @@ waits for its own
 in explicitly swizzled shared memory. FP32 TMEM readout and the final global store
 retain their existing completion contract. A later bounded prototype accepts one
 static outer `TileLoop.carried_buffers` tile: prologue store publishes phase zero,
-each trip TMA-loads its B tile, waits for phase `trip & 1`, completes the MMA and
+each trip TMA-loads its declared B tiles, waits for phase `trip & 1`, completes the MMAs and
 readout, then stores the next BF16 state and publishes the next phase. The per-trip
 MMA completion barrier is drained and invalidated before reuse. Dynamic chunk bounds,
 multiple carried tiles, KDA normalization, triangular solve and five-role overlap
 remain outside this route. Core IR and native emission have CPU contract and Corpus
-Gate coverage. The root and two-chunk generated CUDA witnesses now compile for exact
-`sm_103a` without spills and pass three-seed, complete-output broker-shared B300
-numerical checks; their immutable inputs remain unchanged. Neither witness is a
-complete KDA prefill or a performance result.
+Gate coverage. The root and two-chunk single-B generated CUDA witnesses compile for
+exact `sm_103a` without spills and pass three-seed, complete-output broker-shared
+B300 numerical checks. A successor matches each carried MMA to its own loop-indexed
+staged B producer and requires the ready barrier's arrival count to cover every
+load. Its typed two-B/two-MMA witness passes the full Corpus Gate (179 cases), exact
+`sm_103a` AOT (168 registers, no spills), and three-seed B300 numerical checks of
+both products (49,152 elements, zero failures); immutable inputs remain unchanged.
+This qualifies only the two-B carried contraction, not the two-phase
+projection/triangular-solve/correction sequence of a complete KDA prefill or a
+performance result (F-2026-09-24-003, event 107).
 
 The KDA base-key/query contraction needs K128 with a dynamic TMEM A tile. The
 earlier K-major B stage is refused because one BF16 row occupies 256 bytes, beyond
@@ -208,7 +214,8 @@ M128/N32/K128 with that swizzle on `sm_103a`, and refuses other geometries by
 mode to require B `[K,N]` only when MN-major is named. The Cake-emitted
 successor compiled for exact `sm_103a` with 40 registers and zero spills and
 passed three full-output B300 checks against the independent product. The
-complete recurrent KDA state consumer and its paired timing remain separate gates.
+complete Cake-admitted recurrent KDA state consumer and its paired timing remain
+separate gates.
 
 Native examples are complete hardware Schedules, not backend-renamed Triton inputs.
 The KMeans core explicitly takes `centroid_sq`, matching the existing portfolio runtime
