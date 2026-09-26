@@ -11,6 +11,9 @@ from open_cake_ir.evaluation.ranked_tile_manifest import (
     RankedTileCandidate, RankedTileLaunchManifest,
     prepare_sealed_ranked_tile_case,
 )
+from open_cake_ir.lab.ranked_tile_build import (
+    RankedTileBuildError, compile_ranked_tile_candidate,
+)
 from open_cake_ir.tasks.workloads import load_workload
 
 
@@ -86,6 +89,40 @@ class RankedTileManifestTest(unittest.TestCase):
                     check_tensor=lambda *_:None,
                     storage_span=lambda _:None,
                     execution_context=lambda _:None)
+
+    def test_cpu_build_retains_source_library_and_failure(self):
+        manifest=self.manifest()
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            nvcc=root/'fake_nvcc'
+            nvcc.write_text('#!/usr/bin/env python3\n'
+                'import pathlib,sys\n'
+                'p=pathlib.Path(sys.argv[sys.argv.index("-o")+1])\n'
+                'p.write_bytes(b"\\x7fELFtest")\n')
+            nvcc.chmod(0o755)
+            output=root/'candidate'
+            products=compile_ranked_tile_candidate(
+                self.lowered,manifest,self.workload,
+                'mixed_full_early_terminal',nvcc=nvcc,output_dir=output)
+            self.assertEqual(products.source.read_bytes(),
+                             self.lowered.source.encode('utf-8'))
+            products.candidate.check(self.lowered,self.workload,
+                'mixed_full_early_terminal',self.plans(),products.library)
+            with self.assertRaisesRegex(ValueError,'create-only'):
+                compile_ranked_tile_candidate(
+                    self.lowered,manifest,self.workload,
+                    'mixed_full_early_terminal',nvcc=nvcc,output_dir=output)
+            nvcc.write_text('#!/usr/bin/env python3\nimport sys\n'
+                            'print("build refused",file=sys.stderr)\n'
+                            'raise SystemExit(7)\n')
+            with self.assertRaisesRegex(RankedTileBuildError,'rejected source'):
+                compile_ranked_tile_candidate(
+                    self.lowered,manifest,self.workload,
+                    'mixed_full_early_terminal',nvcc=nvcc,
+                    output_dir=root/'failed')
+            self.assertTrue((root/'failed/build_failure.json').is_file())
+            self.assertIn('build refused',
+                          (root/'failed/compile.log').read_text())
             library.write_bytes(b'\x7fELFother')
             with self.assertRaisesRegex(ValueError,'sealed source, plan or library'):
                 prepare_sealed_ranked_tile_case(
