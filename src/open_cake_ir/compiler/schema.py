@@ -204,6 +204,7 @@ _PARAMETERS = {
         {"op": _enum(ScanOp), "axis": _NONNEGATIVE},
         {"direction": _enum(ScanDirection)},
     ),
+    OperationKind.FORWARD_SUBSTITUTE: _object({}),
     OperationKind.TOP_K: _object(
         {
             "k": _POSITIVE,

@@ -432,6 +432,16 @@ def _operation_flops(schedule: Schedule, operation: Operation) -> int | None:
             k = parameters.selected_k
         return MULTIPLY_ADD_FLOPS * m * n * k
 
+    if operation.kind is OperationKind.FORWARD_SUBSTITUTE:
+        if len(operation.reads) != 2 or len(operation.writes) != 1:
+            return None
+        rhs = schedule.buffer(operation.reads[1])
+        if rhs is None or len(rhs.shape) != 2:
+            return None
+        rows, tokens = rhs.shape
+        # Each row solves token t from all i<t with one FP32 FMA per prior.
+        return MULTIPLY_ADD_FLOPS * rows * tokens * (tokens - 1) // 2
+
     if operation.kind is OperationKind.ELEMENTWISE:
         parameters = operation.parameters
         if not isinstance(parameters, ElementwiseParameters) or len(operation.writes) != 1:

@@ -330,6 +330,9 @@ def _synchronization_risk(schedule: Schedule, top_k: list[dict[str, object]]) ->
             reasons.append(f"resident top_k k={row['k']}")
     if any(operation.kind is OperationKind.SCAN for operation in schedule.operations):
         reasons.append("scan lowering owns a parallel synchronization decomposition")
+    if any(operation.kind is OperationKind.FORWARD_SUBSTITUTE
+           for operation in schedule.operations):
+        reasons.append("forward_substitute carries ordered token dependencies within each row")
     if any(
         operation.kind is OperationKind.ONLINE_SOFTMAX
         for operation in schedule.operations

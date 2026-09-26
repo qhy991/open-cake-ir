@@ -185,6 +185,7 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 | `reduce_argmin` | `ReduceArgminParameters` | 选择最小值位置，声明并列与 NaN 策略，可跨循环累计 |
 | `top_k` | `TopKParameters` | 同时给出最大值与索引，固定降序及确定性并列规则，可声明跨循环和合并节奏 |
 | `scan` | `ScanParameters` | 沿轴保留每一步的包含式前缀和，方向为 forward 或 reverse |
+| `forward_substitute` | `ForwardSubstituteParameters` | 每条行独立解严格下三角系统；BF16 系数 `P[C,C]`、FP32 右端 `RHS[M,C]` 与结果 `U[M,C]`，token 是末轴 |
 | `index_expand` | `IndexExpandParameters` | 根据 scale、extent、sentinel 把来源组索引展开成位置序列 |
 | `online_softmax` | `OnlineSoftmaxParameters` | 逐 tile 累积稳定的 softmax 加权归约，显式最大值、归一化量与累加状态 |
 | `atomic_rmw` | `AtomicRmwParameters` | 原子更新并返回更新前的值；现有词汇为 add、relaxed、device |
@@ -198,6 +199,7 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 - `MmaInstruction` 的 operand placement 只适用于相应的硬件指令合同；`triton.dot` 的操作数布局由后端处理，不能随意添加它不会兑现的 placement 字段。
 - `reduce` 的历史默认是跨循环累计；文档中省略 `across_loop` 表示该默认，显式 `true` 被拒绝，`false` 表示不跨循环累计。`top_k` 与 `reduce_argmin` 的默认则是 `false`，不能照搬。
 - `top_k` 保留所选维度并返回 values 与 indices；它不是 argmin 加一个开关。驻留 signed INT32 top-k 与跨循环 FP32 top-k 也有不同后端边界。
+- `forward_substitute` 的参数是空对象：对每条行、每个 token `t`，从 FP32 `RHS[t]` 开始，按 `i=0..t-1` 的次序累加 `float(P[t,i]) * U[i]`；对角线和上三角不读取。随后如需 BF16 表示，由独立 `cast` 显式承担舍入。构造阶段检查全部形状和 dtype；Target 与后端分别决定能否执行该操作，目前既有 Target 未因词汇增加而自动准入。
 - `FenceProxyParameters` 是保留的 Python 参数类型，但 `OperationKind` 中没有可提交的 fence kind；不要把类型列表当成可编写操作清单。
 
 ## 7. 同步与硬件承诺

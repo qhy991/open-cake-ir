@@ -75,6 +75,7 @@ class OperationKind(str, Enum):
     CAST = "cast"
     ELEMENTWISE = "elementwise"
     SCAN = "scan"
+    FORWARD_SUBSTITUTE = "forward_substitute"
     STORE = "store"
 
 

@@ -587,6 +587,11 @@ class _Builder:
                     self.fail(node, "automatic MMA results require two rank-two operands")
                 right = self.buffer(reads[1], node)
                 shape, dtype = [first.shape[0], right.shape[0]], "fp32"
+            elif kind == "forward_substitute":
+                if len(reads) != 2:
+                    self.fail(node, "forward_substitute requires P and RHS")
+                rhs = self.buffer(reads[1], node)
+                shape, dtype = list(rhs.shape), "fp32"
             elif kind not in {"elementwise", "scan", "coordinate", "compare", "select"}:
                 self.fail(node, f"{kind} requires explicit result buffers via out")
             result_name = target or self.fresh()
