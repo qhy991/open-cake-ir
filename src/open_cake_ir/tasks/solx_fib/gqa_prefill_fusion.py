@@ -54,12 +54,14 @@ def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAut
         f'    positions = lm.coordinate(source="range", start=0, extent={length})',
         '    absolute = positions + start',
         '    pages = lm.load(kv_indices[absolute])',
+        '    keep = lm.compare(positions, valid, op="lt")',
+        '    masked_pages = lm.select(keep, pages, -1)',
         '    zero = lm.coordinate(source="range", start=0, extent=1)',
         f'    kv_head = head // {group}',
         '    query = lm.load(q[q_row, h_head, :])',
-        '    key = lm.load(k_cache[pages, lm.scalar_index(zero), '
+        '    key = lm.load(k_cache[masked_pages, lm.scalar_index(zero), '
         'lm.scalar_index(kv_head), :])',
-        '    value = lm.load(v_cache[pages, lm.scalar_index(zero), '
+        '    value = lm.load(v_cache[masked_pages, lm.scalar_index(zero), '
         'lm.scalar_index(kv_head), :])',
         '    query32 = lm.cast(query, to="fp32")',
         '    key32 = lm.cast(key, to="fp32")',
@@ -68,7 +70,6 @@ def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAut
         '    dot = lm.reduce(products, op="sum", axis=1, across_loop=False)',
         '    scale = lm.load(sm_scale[:])',
         '    scaled = dot * scale',
-        '    keep = lm.compare(positions, valid, op="lt")',
         '    masked = lm.select(keep, scaled, "negative_infinity")',
         '    valid_row = lm.compare(valid, 0, op="gt")',
         '    maximum = lm.reduce(masked, op="max", axis=0, across_loop=False)',
