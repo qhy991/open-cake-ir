@@ -17,6 +17,20 @@ ROOT=Path(__file__).resolve().parents[2]
 
 
 class CompletePackPlanTests(unittest.TestCase):
+    def test_020_fused_routing_produces_ids_and_weights_in_one_stage(self):
+        workload = WorkloadContract(moe.workload_document())
+        program = moe.fused_routing_plan(workload)
+        self.assertEqual(len(program.stages), 7)
+        self.assertEqual(program.stages[2].name, 'moe_expert_selection_weights')
+        self.assertEqual(set(program.stages[2].schedule.outputs),
+                         {'expert_ids', 'route_weights'})
+        self.assertNotIn('moe_route_weights', [stage.name for stage in program.stages])
+        self.assertEqual(set(program.outputs), {'output'})
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        lowered = compiler.lower_program(program)
+        lowered.validate_binding()
+        self.assertEqual(len(lowered.lowerings), 7)
+
     def test_all_26_tasks_have_one_owning_implementation(self):
         self.assertEqual(len(TASK_IDS),26)
         self.assertEqual(len({t.split('_',1)[0] for t in TASK_IDS}),26)

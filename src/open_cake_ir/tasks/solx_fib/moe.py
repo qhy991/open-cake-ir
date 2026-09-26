@@ -155,8 +155,10 @@ def reference_tensors(workload,case_id,inputs):
     return {'output':output.to(torch.bfloat16)}
 
 
-def author_plan(workload,case_id='primary'):
+def author_plan(workload,case_id='primary',*,fuse_route_weights=False):
     validate_contract(workload.document)
+    if fuse_route_weights and workload.target != 'sm_103a':
+        raise ValueError('fused MoE routing requires the exact B300 Workload')
     plan=PlanAuthor(workload,case_id)
     for name,shape,dtype in [
         ('group_scores',(1,8),'fp32'),('selected_groups',(1,4),'int32'),
@@ -199,20 +201,37 @@ def author_plan(workload,case_id='primary'):
              '    pruned = lm.select(allowed, scores, "negative_infinity")',
              '    best = lm.buffer(shape=(8,), dtype="fp32")',
              '    chosen = lm.buffer(shape=(8,), dtype="int32")',
-             '    lm.top_k(pruned, k=8, tie_break="lowest_index", nan_policy="reject_input", out=[best, chosen])',
-             '    lm.store(expert_ids[token, :], chosen, coalesced=False)']
-    plan.stage('moe_expert_selection',['routing_logits','routing_bias','selected_groups'],['expert_ids'],
-               [('token','expert_ids',0,1)],body)
-    body=['with compute:', '    chosen = lm.load(expert_ids[token, :])',
-          '    logits = lm.load(routing_logits[token, chosen])',
-          '    negative = logits * -1.0','    exp_negative = lm.exp(negative)',
-          '    denominator = exp_negative + 1.0','    sigmoid = lm.reciprocal(denominator)',
-          '    total = lm.reduce(sigmoid, op="sum", axis=0, across_loop=False)',
-          '    safe_total = total + 1e-20','    normalized = sigmoid / safe_total',
-          '    factor = lm.load(routed_scaling_factor[:])','    weights = normalized * factor',
-          '    lm.store(route_weights[token, :], weights, coalesced=False)']
-    plan.stage('moe_route_weights',['routing_logits','expert_ids','routed_scaling_factor'],['route_weights'],
-               [('token','route_weights',0,1)],body)
+             '    lm.top_k(pruned, k=8, tie_break="lowest_index", nan_policy="reject_input", out=[best, chosen])']
+    if fuse_route_weights:
+        body += ['    selected_logits = lm.load(routing_logits[token, chosen])',
+                 '    selected_negative = selected_logits * -1.0',
+                 '    selected_exp = lm.exp(selected_negative)',
+                 '    selected_denominator = selected_exp + 1.0',
+                 '    selected_sigmoid = lm.reciprocal(selected_denominator)',
+                 '    selected_total = lm.reduce(selected_sigmoid, op="sum", axis=0, across_loop=False)',
+                 '    safe_total = selected_total + 1e-20',
+                 '    normalized = selected_sigmoid / safe_total',
+                 '    factor = lm.load(routed_scaling_factor[:])',
+                 '    weights = normalized * factor',
+                 '    lm.store(expert_ids[token, :], chosen, coalesced=False)',
+                 '    lm.store(route_weights[token, :], weights, coalesced=False)']
+        plan.stage('moe_expert_selection_weights',
+                   ['routing_logits','routing_bias','selected_groups','routed_scaling_factor'],
+                   ['expert_ids','route_weights'],[('token','expert_ids',0,1)],body)
+    else:
+        body.append('    lm.store(expert_ids[token, :], chosen, coalesced=False)')
+        plan.stage('moe_expert_selection',['routing_logits','routing_bias','selected_groups'],['expert_ids'],
+                   [('token','expert_ids',0,1)],body)
+        body=['with compute:', '    chosen = lm.load(expert_ids[token, :])',
+              '    logits = lm.load(routing_logits[token, chosen])',
+              '    negative = logits * -1.0','    exp_negative = lm.exp(negative)',
+              '    denominator = exp_negative + 1.0','    sigmoid = lm.reciprocal(denominator)',
+              '    total = lm.reduce(sigmoid, op="sum", axis=0, across_loop=False)',
+              '    safe_total = total + 1e-20','    normalized = sigmoid / safe_total',
+              '    factor = lm.load(routed_scaling_factor[:])','    weights = normalized * factor',
+              '    lm.store(route_weights[token, :], weights, coalesced=False)']
+        plan.stage('moe_route_weights',['routing_logits','expert_ids','routed_scaling_factor'],['route_weights'],
+                   [('token','route_weights',0,1)],body)
 
     def projection(first):
         prefix='gemm1' if first else 'gemm2'
@@ -270,6 +289,11 @@ def author_plan(workload,case_id='primary'):
 
 def launch_plan(workload,case_id='primary'):
     return author_plan(workload,case_id).finish()
+
+
+def fused_routing_plan(workload,case_id='primary'):
+    """Fuse top-k expert selection and normalized route weights in one Cake stage."""
+    return author_plan(workload,case_id,fuse_route_weights=True).finish()
 
 
 def routing_reference(logits,bias,factor):
