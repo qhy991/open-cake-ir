@@ -225,8 +225,22 @@ contiguous and ordered around the solve; `NATIVE_TWO_PHASE_ORDER` refuses a
 correction before U publication. State/U/P handoffs have separate declared
 barriers and parity, while the final global result is written by the same CTA
 after each chunk. This checks the synchronization vocabulary and emitter
-structure; it does not include KDA normalization, decay, beta, output formula,
-K128 operand mapping or numerical/device qualification.
+structure; it does not include KDA normalization, decay, beta or output formula.
+The clean `2e365222` source compiles for exact B300 with 119 registers and no
+stack/spills; three broker-shared device seeds match every BF16 final-state element
+(4,096 per seed, maximum absolute error zero). A separate scalar unit-loop
+coordinate and rank-3 native TMA route form the K128/C32 two-phase successor.
+Its clean `a81a6948` source compiles with 230 registers and no stack/spills,
+but device correctness remains unverified.
+
+A further isolated BF16 TMEM read emits `tcgen05.ld.sync.aligned.32x32b`
+into packed 32-bit registers, unpacks two BF16 values per word and waits on
+the carried state's current mbarrier phase. Shared-core typing and the carried
+phase proof require an identical register tile, whole copy-atom repetitions
+and a read before the loop's state update. The native backend admits only that
+proven carried-state subset; its emitted source has CPU contracts and no AOT
+or device qualification yet. The read is a prerequisite for combining the
+decayed prior state with correction MMA without a global state round trip.
 
 The KDA base-key/query contraction needs K128 with a dynamic TMEM A tile. The
 earlier K-major B stage is refused because one BF16 row occupies 256 bytes, beyond

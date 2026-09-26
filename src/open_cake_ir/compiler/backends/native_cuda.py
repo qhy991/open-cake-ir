@@ -18,6 +18,7 @@ from ..ir import (
 )
 from ..target import CodeObject, Target
 from ..verifier import verify
+from ..verifier.carried_tmem import analyze_carried_tmem
 
 SUPPORTED_DTYPES = frozenset({DType.BF16, DType.FP16, DType.FP32, DType.INT32})
 CODE_OBJECTS = frozenset({CodeObject.CUBIN})
@@ -144,6 +145,7 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     roles = {r.name: r for r in s.roles}
     buffers = {b.name: b for b in s.buffers}
     writers = {name: op for op in s.operations for name in op.writes}
+    carried_pairs, _ = analyze_carried_tmem(s)
     # Public Compiler verification normally diagnoses these first; the backend's
     # direct preflight must remain total over structurally parsed Schedules as well.
     unknown = []
@@ -526,14 +528,27 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                       'TMA requires a contiguous rank-2 input with 16-byte row stride and a declared shared box')
             elif p.movement is LoadMovement.TMEM:
                 producer = writers.get(src.name)
-                check(producer is not None and producer.kind is OperationKind.MMA and op.waits == producer.signals
-                      and len(src.shape) == 2 and src.shape[0] == 128
-                      and p.source_atom is not None and src.shape[1] % p.source_atom.repetition == 0,
-                      'NATIVE_TMEM_COMPLETION', path,
-                      'TMEM load must wait its MMA completion and read full atom repetitions')
-                if producer:
-                    check((_scope(s, op).name if _scope(s, op) else None) == _publication_scope(s, producer),
-                          'NATIVE_TMEM_LIFETIME', path, 'TMEM readout must share the contraction loop parent scope, before the next output tile overwrites it')
+                if src.dtype is DType.BF16:
+                    pair = carried_pairs.get(src.name)
+                    scope = _scope(s, op)
+                    check(pair is not None and scope is not None
+                          and scope.name == pair.loop
+                          and producer is not None and producer.op_id == pair.updater
+                          and op.waits == (pair.barrier,)
+                          and p.source_atom is not None
+                          and len(src.shape) == 2 and src.shape[0] == 128
+                          and src.shape[1] % (2 * p.source_atom.repetition) == 0,
+                          'NATIVE_TMEM_BF16_STATE', path,
+                          'BF16 TMEM reads require one proven carried state phase and whole packed 32-bit copy atoms')
+                else:
+                    check(producer is not None and producer.kind is OperationKind.MMA and op.waits == producer.signals
+                          and len(src.shape) == 2 and src.shape[0] == 128
+                          and p.source_atom is not None and src.shape[1] % p.source_atom.repetition == 0,
+                          'NATIVE_TMEM_COMPLETION', path,
+                          'FP32 TMEM load must wait its MMA completion and read full atom repetitions')
+                    if producer:
+                        check((_scope(s, op).name if _scope(s, op) else None) == _publication_scope(s, producer),
+                              'NATIVE_TMEM_LIFETIME', path, 'TMEM readout must share the contraction loop parent scope, before the next output tile overwrites it')
             else:
                 check(src.space is MemorySpace.GLOBAL and dst.space in (MemorySpace.REGISTER, MemorySpace.SHARED)
                       and src.dtype == dst.dtype and len(dst.shape) in (1,2),
@@ -1022,15 +1037,29 @@ class _Emitter:
         src=self.b(op.reads[0]); a=self.names[src.name]
         row=self.row(op)
         if op.kind is OperationKind.LOAD and op.parameters.movement is LoadMovement.TMEM:
-            self.line(f'cake_wait({self.barvars[op.waits[0]]}, 0);')
+            scope = _scope(self.s, op)
+            phase = (f'({self.loopvars[scope.iterator]}&1)'
+                     if src.dtype is DType.BF16 and scope is not None else '0')
+            self.line(f'cake_wait({self.barvars[op.waits[0]]}, {phase});')
             self.line('asm volatile("tcgen05.fence::after_thread_sync;" ::: "memory");')
             rep=op.parameters.source_atom.repetition
             self.line('#pragma unroll')
-            self.begin(f'for (int col=0; col<{src.shape[1]}; col+={rep})')
+            self.begin(f'for (int col=0; col<{src.shape[1]}; col+={rep * (2 if src.dtype is DType.BF16 else 1)})')
             operands=', '.join(f'%{i}' for i in range(rep))
-            outputs=', '.join(f'"=f"({d}[col+{i}])' for i in range(rep))
-            self.line(f'asm volatile("tcgen05.ld.sync.aligned.32x32b.x{rep}.b32 {{{operands}}}, [%{rep}];" : {outputs} : "r"({self.taddr(src)} + (({row}/32)*32 << 16) + col) : "memory");')
+            if src.dtype is DType.BF16:
+                for i in range(rep):
+                    self.line(f'uint32_t word{i};')
+                outputs=', '.join(f'"=r"(word{i})' for i in range(rep))
+                address=f'{self.taddr(src)} + (({row}/32)*32 << 16) + col/2'
+            else:
+                outputs=', '.join(f'"=f"({d}[col+{i}])' for i in range(rep))
+                address=f'{self.taddr(src)} + (({row}/32)*32 << 16) + col'
+            self.line(f'asm volatile("tcgen05.ld.sync.aligned.32x32b.x{rep}.b32 {{{operands}}}, [%{rep}];" : {outputs} : "r"({address}) : "memory");')
             self.line('asm volatile("tcgen05.wait::ld.sync.aligned;" ::: "memory");')
+            if src.dtype is DType.BF16:
+                for i in range(rep):
+                    self.line(f'{d}[col+{2*i}] = __ushort_as_bfloat16(uint16_t(word{i}));')
+                    self.line(f'{d}[col+{2*i+1}] = __ushort_as_bfloat16(uint16_t(word{i} >> 16));')
             self.end()
         elif op.kind is OperationKind.TMEM_STORE:
             self.line('#pragma unroll')
