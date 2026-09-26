@@ -1,25 +1,36 @@
 flowchart TB
-  subgraph prep["已独立验证的准备阶段；当前仍物化中间值"]
-    raw["Q / K / G / beta / A_log / dt_bias"] --> factors["归一化、decay 前缀、两次 MMA 与耦合"]
-    factors --> base_b["base B: BF16 K128 × C32"]
-    factors --> coeff["P: BF16 C32 × C32"]
-    factors --> correction_b["correction B: BF16 N128 × K32"]
-    factors --> prefix["prefix_end: FP32 K128"]
+  subgraph prep["准备阶段：当前仍物化，H64 设备试验使用合成值"]
+    raw["Q / K / G / A_log / dt_bias"] --> factors["归一化、前缀、两次 MMA 与耦合"]
+    factors --> base_b["base/query B：BF16 K128 × C32"]
+    factors --> coeff["P：BF16 C32 × C32"]
+    factors --> correction_b["correction/output B：BF16 N × K32"]
+    factors --> prefix["prefix_end：FP32 K128"]
   end
 
-  subgraph state["单 CTA、两 chunk 的有界状态原型"]
-    old_state["BF16 state, TMEM 128 × 128"] --> base["TMA + tcgen05 基础投影"]
+  head["ProgramMap head64 → 64 个 CTA；chunk 为循环标量"]
+  public_v["公开 V：[chunk,token,head,V]"]
+  beta["公开 beta_gate：[chunk,token,head]"]
+
+  subgraph state["每个 head 一个 CTA、两 chunk 的有界原型"]
+    old_state["BF16 state：TMEM 128 × 128"] --> base["rank-4 TMA + tcgen05 基础/查询投影"]
     base_b --> base
-    base --> rhs["FP32 RHS（此原型为合成输入）"]
-    rhs --> solve["按 token 顺序的 FP32 前代入求解"]
+    base --> rhs["FP32 RHS = beta × (V - base prediction)"]
+    public_v --> rhs
+    beta --> rhs
+    rhs --> solve["按 token 顺序的 FP32 前代入"]
     coeff --> solve
-    solve --> updates["BF16 U, TMEM"]
-    updates --> correction["TMA + tcgen05 校正投影"]
+    solve --> updates["BF16 U：TMEM"]
+    updates --> correction["rank-4 TMA + tcgen05 状态/输出校正"]
     correction_b --> correction
-    old_state --> read_state["按当前 phase 读取 BF16 TMEM"]
-    read_state --> decay["FP32 衰减乘法"]
+    old_state --> read_state["按 phase 读取 BF16 TMEM"]
+    read_state --> decay["FP32 旧状态 × prefix_end"]
     prefix --> decay
-    decay --> combine["FP32 相加与 BF16 舍入"]
+    decay --> combine["FP32 状态合并与 BF16 块级舍入"]
     correction --> combine
-    combine --> old_state
+    combine --> next_state["下一 chunk 的 BF16 TMEM state"]
+    base --> output["查询与校正合并、scale、BF16 舍入"]
+    correction --> output
+    output --> store["直接写 [chunk,token,head,V]"]
   end
+
+  head --> base

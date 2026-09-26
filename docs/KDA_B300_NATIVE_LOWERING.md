@@ -21,7 +21,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 ![KDA B300 有界状态 lowering 数据流](figures/kda-b300-native-lowering.svg)
 
-可编辑源图是 [kda-b300-native-lowering.mmd](figures/kda-b300-native-lowering.mmd)。图中准备阶段到状态 kernel 的连线表示 **当前物化的输入接口**，不表示已经融合成一个生产 kernel；图中也没有完整 KDA 输出路径。
+可编辑源图是 [kda-b300-native-lowering.mmd](figures/kda-b300-native-lowering.mmd)。图中准备阶段到状态 kernel 的连线表示 **当前物化的输入接口**，不表示已经融合成一个生产 kernel；输出与状态路径只对应 H64、两 chunk 的有界原型。
 
 ### 2.1 严格下三角前代入，而非展开矩阵逆
 
@@ -67,9 +67,13 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 这条输入映射与 §2.6 的 token-major 输出写回构成方向相反、但相互独立的两个有界规则。定向合同与 Corpus Gate 179/179 已通过；精确 B300 AOT 为 255 寄存器、0 stack/spill。本机完整 CPU 套件因复制历史/Lab 夹具时磁盘空间耗尽而失败；随后在远端固定 `ac102f0e` 的隔离检出、标准 `umask 0022` 下重新运行，得到 2,601 passed、16 skipped，另有 1 项 Apple MLX 实机测试不适用而取消选择，退出码为 0。远端默认 `umask 0002` 曾使 `test_author_home` 的私有目录权限检查失败，故两次运行及环境差异均保留在 Finding 中，没有改写夹具或期望。broker-shared B300 作业 `gpuq-c841e1995072` 在 3 组输入上分别检查 8,192 个 BF16 token-major 输出和 16,384 个 BF16 最终状态，均为 0 超差、无非有限值、输入未改写；最大绝对误差分别为 `1.1920928955078125e-07` 和 `3.0517578125e-05`。这证明合成准备值接入**公开 V/beta 的有界输入/输出映射**；真实上游 Q/K/G/prefix、逐 token BF16 状态舍入、64-head/256-chunk 及完整 Workload 尚待验收。它不能靠一句“CUDA 或 Triton 无法转置”来解释：缺口是当前 native 后端此前未兑现已存在的 IR `transpose`，而让 Triton 另起转置 kernel 则必须把额外启动和读写算进同一 Workload。
 
-### 2.8 从两 chunk/单 head 到 H64/T8192 的地址边界
+### 2.8 H64 的标量 head 所有权与 rank-4 TMA
 
-合成设备证明目前只绑定一个 head、两个 chunk。真实准备输出以 `[chunk256,head64,...]` 组织，V/输出沿 `[token,head,V]`，初始/最终状态还多一个 head 轴。共享 ProgramMap 可以声明标量 head 的 CTA 所有权。一次只读 rank-4/64-head Schedule 探针在构造及通用 Verifier 均无 blocking Finding；它不是保留的设备 fixture，也不证明整算子可执行。native preflight 对四个 MMA B 输入给出 `NATIVE_CARRIED_MMA_DOMAIN`，对四个 TMA load 给出 `NATIVE_TMA_DESCRIPTOR`，对 V 输入及输出分别给出 `NATIVE_TRANSPOSE_LOAD_DOMAIN`、`NATIVE_TRANSPOSE_STORE_DOMAIN`。随后的 register-layout/store-role 拒绝与转置规则未准入共同出现，不能冒充独立的硬件限制。当前 native TMA preflight 只承认 rank-2/3 输入、device helper 只发射 `cake_tma2/3`，carried-MMA B 域也只验证 rank-2/3；V 输入和 token-major 输出的有界转置映射当前只准 `[2,32,128]`。把 `[chunk,head]` 私自 flatten 成一个地址轴，或者将 rank-3 设备证据直接当作 rank-4 资格，都会绕过 exact Target/AccessMap 合同。下一步需在两条候选中择一并测量：有文档与负例的 rank-4 TMA/AccessMap + 标量 head 坐标，或由上游显式提供合法的 flatten 存储并计入其物化成本。跨 256 chunk 的相位复用、packed 序列边界与逐 token BF16 舍入也各自需要新的设备 oracle，而非从两次迭代推出。
+原有合成设备证明只绑定一个 head、两个 chunk。真实准备输出以 `[chunk256,head64,...]` 组织，V/输出沿 `[token,head,V]`，初始/最终状态还多一个 head 轴。只读探针先证实共享 IR 的 `ProgramMap` 标量 head、`AccessIndexKind.PROGRAM` 与 `AccessIndexKind.LOOP` 可以无阻塞地表达这些轴；当时的 native preflight 分别以 `NATIVE_CARRIED_MMA_DOMAIN`、`NATIVE_TMA_DESCRIPTOR`、`NATIVE_TRANSPOSE_LOAD_DOMAIN`、`NATIVE_TRANSPOSE_STORE_DOMAIN` 拒绝，而随后的 register-layout/store-role 报告是转置未准入的连带诊断。这些是具体 backend 缺口，不是 CUDA 或 Triton 语言的不可表达性。
+
+后继 `d5a9648a` 不把 `[chunk,head]` 私自 flatten：一个 `ProgramMap` 标量 head 坐标选定一个 CTA，循环标量 chunk 选定当前块；四个 `[chunk2,head64,K/N,C]` BF16 B 输入以 rank-4 `CUtensorMap` 描述，shared box 仍为原 `[K/N,C]`，高两维 box 均为 1。native helper 把二维块坐标、head、chunk 按 TMA 的内到外顺序送入 `cp.async.bulk.tensor.4d`；P 的普通 global→shared 地址、初始/最终状态、prefix 与 beta 的地址也都显式带 head。公开 V 的 `[chunk,token,head,V]` load 和相同方向的输出 store 沿用独占转置规则，让 128 个 V 行线程直接访问正确的 token-major 地址，不生成全局转置缓冲。NVIDIA 的 [PTX tensor copy 指令](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html)与 [tensor-map 编码合同](https://docs.nvidia.com/cuda/cuda-driver-api/cuda_driver_api/group__CUDA__TENSOR__MEMORY.html)允许这类 4D 坐标；具体组合仍由本 Target 的离线编译及设备数值证据限定。
+
+准入只覆盖 head64、unit chunk、一个标量 head CTA 轴与上述精确映射。错误 head 选择、rank-5 TMA、H32 直接沿用 H64 规则、漏掉输出 head 所有权都有专门反例。最初将 `cake_tma4` helper 无条件加入所有 native 源码，改变了旧 Corpus 的发射源快照；后继仅在有 rank-4 TMA 的 Schedule 发射该 helper，固定源码的 Corpus Gate 恢复为 179/179。远端隔离完整适用 CPU 套件在标准 `umask 0022` 下为 2,672 passed、16 skipped、1 项 Apple MLX 实机测试取消选择，退出码 0。精确 `sm_103a` CPU-only AOT 为 255 寄存器、0 stack/spill。第一次 broker 作业 `gpuq-337fef5a99a0` 在 kernel 加载前因 CPU-only 链接漏掉 `libcuda` 而失败；只修正链接后，同一源码的 `gpuq-ad57c793c89c` 完成，租约释放后独立 host oracle 对三组各 **1,048,576 状态元素和 524,288 输出元素** 均检查为 0 超差，所有不可变输入未改写。最大绝对状态误差 `6.103515625e-05`，输出误差 `3.814697265625e-06`。这证明 H64 两 chunk 的地址及发射路径；准备值仍是合成的，256 chunk 的相位复用、逐 token BF16 舍入、packed 边界、完整六形状及配对 CAKE 延迟仍无资格结论。
 
 ## 3. 对照：谁拥有哪个拒绝
 
@@ -80,6 +84,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | 标量 `loop` 地址 | unit tile、作用域、地址范围和局部结果维度 | rank-3 TMA 坐标与两个 staged B 域 | `test_scalar_loop_access.py`、`test_native_two_phase_k128.py`；错误首轴由 `NATIVE_CARRIED_MMA_DOMAIN` 拒绝。 |
 | BF16 TMEM 回读 | 同 dtype、32-bit word/双 BF16 packing、carried read-before-update | 当前 phase 等待、word load、位模式解包 | `test_tmem_state_contract.py`、`test_native_bf16_tmem_read.py`；错误 atom/wait/非 carried 源被拒绝。 |
 | 旧状态衰减 | FP32 cast/mul/add 与 BF16 cast 保持独立语义 | 行拥有者逐列计算并发布下一 TMEM phase | `test_native_kda_decayed_state.py`；去掉 prefix producer 触发 `BUFFER_UNPRODUCED`。 |
+| H64 标量 head / rank-4 TMA | `ProgramMap` 和 AccessMap 明示 head、chunk 与本地二维 tile | 只为 H64 两 chunk 发射 4D tensor-map、TMA4 与直接 V/输出地址 | `test_native_kda_head_address.py`；错误 head、rank-5、H32、漏 store 所有权各有拒绝。 |
 
 ### 一次没有推广的 lowering 尝试
 
@@ -96,6 +101,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | `3ce392dc` → `fbafa719` / `gpuq-1b12eb3b5932` | 同一四 MMA 合成输出/状态图，延迟 query TMEM 回读将 stack 112B、spill 108B 降到 0；两版均 255 寄存器。后版三组各 8,192 输出及 16,384 状态均通过 B300 检查 | 公开 V/beta ABI、逐 token BF16 状态舍入、六形状及配对延迟 |
 | `42b78a5d` / `gpuq-7177fb25c220` | 显式 transpose→直接 token-major store；三组各 8,192 输出、16,384 状态在 B300 均通过，AOT 0 spill | 原始 V/beta RHS、完整 Workload 与性能胜出 |
 | `ac102f0e` / `gpuq-c841e1995072` | 公开 V/beta 输入到行拥有 RHS；远端完整适用 CPU 合同 2,601 passed、Corpus Gate 179/179，B300 三组各 8,192 输出及 16,384 状态均通过，AOT 255 寄存器、0 stack/spill | 真实上游准备值、逐 token BF16 状态舍入、64-head/256-chunk、六形状和配对延迟 |
+| `d5a9648a` / `gpuq-ad57c793c89c` | H64 两 chunk 的 rank-4 TMA、公开 V/beta 与 token-major 输出；完整适用 CPU 合同 2,672 passed、Corpus Gate 179/179，B300 三组各 524,288 输出及 1,048,576 状态均通过，AOT 255 寄存器、0 stack/spill | 256 chunk、真实准备值、逐 token BF16 舍入、完整六形状和配对延迟 |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
@@ -104,9 +110,9 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | 完整 KDA 的数据边 | 当前最低证据 | 尚缺的工作 |
 | --- | --- | --- |
 | Q/K 归一化、decay、beta 与 32-token 耦合 | 独立准备组件在 B300 通过 H64 元素检查；两 MMA 版本单独计时 389.507 µs | 与状态/输出 CTA 融合或有证据地选择物化边界，避免七个中间张量往返。 |
-| `state @ base_key` 与 P 前代入 | `ac102f0e` 的公开 V/beta 到 RHS 映射在远端完整适用 CPU 门禁和 B300 三组设备数值检查均通过；准备值仍为合成输入 | 接入真实上游 Q/K/G/prefix，并验证完整状态语义。 |
+| `state @ base_key` 与 P 前代入 | `d5a9648a` 的 H64 两 chunk 地址、公开 V/beta 到 RHS 映射在完整适用 CPU 门禁和 B300 三组设备数值检查均通过；准备值仍为合成输入 | 接入真实上游 Q/K/G/prefix，并验证 256 chunk 与完整状态语义。 |
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
-| `state_after_update @ query` 与输出耦合 | `ac102f0e` 已在 B300 三组输入上通过公开 V/beta 与 token-major chunk 输出及最终状态，AOT 0 spill | 真实准备值、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
+| `state_after_update @ query` 与输出耦合 | `d5a9648a` 已在 B300 三组 H64 两 chunk 输入上通过公开 V/beta、token-major 输出及最终状态，AOT 0 spill | 真实准备值、256 chunk、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 
