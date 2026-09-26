@@ -289,6 +289,10 @@ _PARAMETERS = {
         ]
     },
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
+    OperationKind.TMEM_STORE: _object({"destination_atom": _object({
+        "op": {"const": "tcgen05.St32x32b"},
+        "repetition": {"const": 8},
+    })}),
 }
 
 
@@ -551,7 +555,11 @@ def schedule_schema() -> dict[str, Any]:
                                 "add": {"type": "integer"},
                                 "floor_div": _POSITIVE,
                             }
-                        )
+                        ),
+                        "carried_buffers": dict(
+                            _NAMES, minItems=1, uniqueItems=True,
+                            description="TMEM scratch buffers with one pre-loop initializer and one ordered in-loop update.",
+                        ),
                     },
                 ),
             },

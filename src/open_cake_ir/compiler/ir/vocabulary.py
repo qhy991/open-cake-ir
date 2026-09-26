@@ -77,6 +77,7 @@ class OperationKind(str, Enum):
     SCAN = "scan"
     FORWARD_SUBSTITUTE = "forward_substitute"
     STORE = "store"
+    TMEM_STORE = "tmem_store"
 
 
 class LoweringBackend(str, Enum):

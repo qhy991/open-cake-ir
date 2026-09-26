@@ -16,6 +16,7 @@ from ..ir import (
 from ..diagnostics import FindingCategory, FindingSeverity
 from ..target import Target
 from ._collector import _Collector
+from .carried_tmem import analyze_carried_tmem
 
 
 def declared_barrier_mechanisms(target: Target) -> frozenset[BarrierMechanism]:
@@ -149,6 +150,44 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
     pipelines = {pipeline.name for pipeline in schedule.pipelines}
     barriers = {barrier.name: barrier for barrier in schedule.barriers}
     active = {operation.role for operation in schedule.operations}
+    carried_pairs, _ = analyze_carried_tmem(schedule)
+
+    # A TMEM store completes asynchronously. Every physical warp that writes its
+    # 128-lane tile must finish and arrive before a consumer may read the tensor tile.
+    role_by_name = {role.name: role for role in schedule.roles}
+    for index, operation in enumerate(schedule.operations):
+        if operation.kind is not OperationKind.TMEM_STORE:
+            continue
+        path = f"operations[{index}]"
+        role = role_by_name.get(operation.role)
+        if role is not None and (
+            target.warp_size != 32 or len(role.execution_groups) != 4
+        ):
+            out.add(
+                "TMEM_STORE_ROLE_WIDTH", f"{path}.role",
+                "tcgen05.St32x32b requires four 32-lane execution groups",
+                category,
+            )
+        barrier = barriers.get(operation.signals[0]) if len(operation.signals) == 1 else None
+        if (barrier is None or barrier.mechanism is not BarrierMechanism.MBARRIER
+                or barrier.count != 4):
+            out.add(
+                "TMEM_STORE_COMPLETION", f"{path}.signals",
+                "a TMEM store requires one mbarrier with four warp arrivals",
+                category,
+            )
+        if operation.writes:
+            tile = operation.writes[0]
+            readers = [reader for reader in schedule.operations if tile in reader.reads]
+            if not readers or any(
+                len(operation.signals) != 1
+                or operation.signals[0] not in reader.waits for reader in readers
+            ):
+                out.add(
+                    "TMEM_STORE_CONSUMER_WAIT", f"{path}.signals",
+                    "every reader of a TMEM store must wait on its completion barrier",
+                    category,
+                )
 
     _verify_state_store_ownership(schedule, out)
 
@@ -305,15 +344,19 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
                     and buffers[operation.reads[0]].space is MemorySpace.GLOBAL
                     and buffers.get(operation.writes[0]) is not None
                     and buffers[operation.writes[0]].space is MemorySpace.SHARED)
+        def tmem_stage(operation):
+            return operation.kind is OperationKind.TMEM_STORE
         unsupported = [operation for operation in producers
-                       if operation.produced_pipeline_kind is None and not thread_stage(operation)]
+                       if operation.produced_pipeline_kind is None
+                       and not thread_stage(operation) and not tmem_stage(operation)]
         for operation in unsupported:
             operation_index = schedule.operations.index(operation)
             out.add(
                 "BARRIER_PIPELINE_PRODUCER_UNSUPPORTED",
                 f"operations[{operation_index}].signals",
                 f"operation {operation.op_id!r} cannot drive an mbarrier pipeline; "
-                "the implemented producers are TMA load, global-to-shared load and MMA",
+                "the implemented producers are TMA load, global-to-shared load, "
+                "TMEM store and MMA",
                 category,
             )
         kinds = {
@@ -321,6 +364,23 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
             for operation in producers
             if operation.produced_pipeline_kind is not None
         }
+        carried_pair = next(
+            (pair for pair in carried_pairs.values() if pair.barrier == barrier.name), None
+        )
+        carried_producers = (
+            carried_pair is not None
+            and {op.op_id for op in producers}
+            == {carried_pair.initializer, carried_pair.updater}
+        )
+        if any(tmem_stage(op) for op in producers) and not (
+            (len(producers) == 1 and barrier.pipeline is None) or carried_producers
+        ):
+            out.add(
+                "TMEM_STORE_COMPLETION_OWNERSHIP", path,
+                "a TMEM store completion barrier has one store producer and no "
+                "contraction pipeline owner",
+                category,
+            )
         if len(kinds) > 1 or (any(thread_stage(op) for op in producers)
                              and any(op.kind is OperationKind.MMA for op in producers)):
             out.add(
