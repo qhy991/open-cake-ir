@@ -175,6 +175,10 @@ def run(root: Path) -> None:
     destroy=getattr(library,prefix+'destroy')
     destroy.argtypes=[ctypes.c_void_p]
     destroy.restype=ctypes.c_int
+    stolen=getattr(library,prefix+'stolen')
+    stolen.argtypes=[ctypes.c_void_p,ctypes.c_int,
+                     ctypes.POINTER(ctypes.c_int)]
+    stolen.restype=ctypes.c_int
     ranks=getattr(library,prefix+'ranks');ranks.restype=ctypes.c_int
     events=getattr(library,prefix+'source_events');events.restype=ctypes.c_int
     output_bytes=getattr(library,prefix+'output_bytes')
@@ -192,6 +196,7 @@ def run(root: Path) -> None:
     buffers=[(ctypes.c_void_p*R)() for _ in range(6)]
     handle=ctypes.c_void_p()
     created=False
+    stolen_by_control=[]
     try:
         for rank in range(R):
             _call(cuda.cudaSetDevice(rank),'select rank')
@@ -214,6 +219,13 @@ def run(root: Path) -> None:
         for communication,budget in case['controls']:
             _call(launch(handle,communication,budget),
                   f'ranked-tile launch c={communication},b={budget}')
+            counts=[]
+            for rank in range(R):
+                value=ctypes.c_int(-1)
+                _call(stolen(handle,rank,ctypes.byref(value)),
+                      f'rank {rank} actual stolen read')
+                counts.append(value.value)
+            stolen_by_control.append(counts)
             output=np.empty((R,T,H),dtype='<u2')
             for rank in range(R):
                 _call(cuda.cudaSetDevice(rank),'select result rank')
@@ -230,6 +242,7 @@ def run(root: Path) -> None:
             'source_commit':manifest['source_commit'],
             'broker_job':job,'target':'sm_103a','world_size':R,
             'source_events':20,'controls':case['controls'],
+            'stolen_by_control':stolen_by_control,
             'scope':'two launches on one pointer ABI state; no qualified timing',
         },indent=2)+'\n')
     except Exception as error:
@@ -260,13 +273,21 @@ def verify(root: Path) -> None:
     if (device['source_commit']!=manifest['source_commit']
             or device['broker_job']!=receipt['job_id']
             or device['source_events']!=20
-            or device['controls']!=case['controls']):
+            or device['controls']!=case['controls']
+            or len(device['stolen_by_control'])!=len(case['controls'])):
         raise ValueError('pointer ABI source, broker or repeated launch differs')
     expected=np.load(Path(case['oracle_root']) / 'expected_output.npy',
                      mmap_mode='r')
     results=[]
     output_bits=[]
-    for communication,budget in case['controls']:
+    for (communication,budget),stolen in zip(
+            case['controls'],device['stolen_by_control'],strict=True):
+        if (len(stolen)!=R
+                or any(type(value) is not int or not 0<=value<=budget
+                       for value in stolen)
+                or (budget==0 and stolen!=[0]*R)
+                or (budget>0 and any(value==0 for value in stolen))):
+            raise ValueError('pointer ABI steal cap or coverage differs')
         raw=np.fromfile(root/'device_outputs'/
                         f'output_c{communication}_b{budget}.bf16',dtype='<u2')
         if raw.size!=R*T*H:
@@ -278,6 +299,7 @@ def verify(root: Path) -> None:
         failing=difference>.01+.01*np.abs(expected.astype(np.float64))
         results.append({'communication_ctas':communication,
                         'steal_budget':budget,
+                        'actual_stolen_by_rank':stolen,
                         'failing_elements':int(np.count_nonzero(failing)),
                         'max_abs_error':float(np.max(difference))})
         output_bits.append(raw)

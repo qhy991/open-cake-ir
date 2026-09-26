@@ -22,6 +22,7 @@ struct RankedTileRankState {
 struct RankedTileHostState {
   RankedTileRankState ranks[R];
   bool poisoned=false;
+  int completed_launches=0;
 };
 
 void ranked_tile_release(RankedTileHostState* state) {
@@ -312,6 +313,25 @@ extern "C" int @ENTRY@_destroy(void* opaque) {
   return 0;
 }
 
+extern "C" int @ENTRY@_stolen(void* opaque,int rank,int* result) {
+  auto* state=static_cast<RankedTileHostState*>(opaque);
+  if (!state || state->poisoned || state->completed_launches<1 ||
+      rank<0 || rank>=R || !result) return int(cudaErrorInvalidValue);
+  cudaError_t error=cudaSetDevice(rank);
+  if (error!=cudaSuccess) return int(error);
+  int observed[kStages*kEvents];
+  error=cudaMemcpy(observed,state->ranks[rank].stolen,sizeof(observed),
+                   cudaMemcpyDeviceToHost);
+  if (error!=cudaSuccess) return int(error);
+  int total=0;
+  for (int count:observed) {
+    if (count<0) return int(cudaErrorUnknown);
+    total+=count;
+  }
+  *result=total;
+  return 0;
+}
+
 extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
                                int steal_budget) {
   auto* state=static_cast<RankedTileHostState*>(opaque);
@@ -440,5 +460,6 @@ extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
       if (flags[slot]!=1) return 1200+slot;
   }
 #undef CAKE_RUN
+  ++state->completed_launches;
   return 0;
 }
