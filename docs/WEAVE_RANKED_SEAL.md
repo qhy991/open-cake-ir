@@ -31,3 +31,13 @@ wrong library bytes and refusal before the device loader. B300-M4 is not
 reachable from the current host, so no device library was loaded through
 this new boundary. Promotion disposition: retain the task branch pending
 one real four-GPU sealed replay and common Evaluation integration.
+
+The successor at `004953b3` adds a create-only CPU NVCC builder that writes
+the exact lowered source and launch manifest, invokes the Target's exact
+`compute_103a`/`sm_103a` route, retains its command and any compilation
+failure, and seals the resulting ELF bytes in the same process. It refuses
+an output path inside a Git checkout. Fake-NVCC contract tests check the
+successful byte handoff, create-only refusal and retained failure; 13
+related contracts and the 179-case Corpus Gate pass at that commit. A fake
+ELF in a test is not a hardware build result. The first actual NVCC/PTXAS
+build and four-GPU candidate load still require B300-M4 connectivity.
