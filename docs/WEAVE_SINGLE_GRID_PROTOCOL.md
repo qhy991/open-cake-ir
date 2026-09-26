@@ -53,6 +53,15 @@ out while preparing the earlier cross-stream candidate. The static checks
 do not measure the new planner's register/static shared footprint, confirm
 cooperative residency, or verify exact GPU tile events and FP64 outputs.
 
+A source-declaration audit counts 8,192 B for the per-CTA expert sort,
+84 B for source-dispatch scratch and 20 B for worker claims, in addition to
+49,200 B of emitted dynamic shared memory: 57,496 B before compiler
+padding. Four such CTAs would require 229,984 B, below the B300 Target's
+declared 233,472 B per SM. This rules out an obvious shared-memory-only
+four-CTA refusal; it does **not** establish actual occupancy. The compiled
+register/static-shared report and `cudaOccupancyMaxActiveBlocksPerMultiprocessor`
+gate remain authoritative before the cooperative launch.
+
 The first device validation should compile this clean commit outside a GPU
 lease, then use the broker for at most four GPUs. Start with one mixed-route
 K=4,c=1,budget=5888 case under an isolated process and bounded runtime;
