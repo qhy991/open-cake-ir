@@ -124,6 +124,22 @@ class RankedTileManifestTest(unittest.TestCase):
                              self.lowered.source.encode('utf-8'))
             products.candidate.check(self.lowered,self.workload,
                 'mixed_full_early_terminal',self.plans(),products.library)
+            record=json.loads((output/'candidate_record.json').read_text())
+            replayed=RankedTileCandidate.from_artifacts(
+                record,source_path=products.source,
+                library_path=products.library,
+                manifest_path=output/'launch_manifest.json',
+                lowered=self.lowered,workload=self.workload,
+                case_id='mixed_full_early_terminal',plans=self.plans())
+            self.assertEqual(replayed,products.candidate)
+            products.library.write_bytes(b'\x7fELFother')
+            with self.assertRaisesRegex(ValueError,'retained artifact bytes'):
+                RankedTileCandidate.from_artifacts(
+                    record,source_path=products.source,
+                    library_path=products.library,
+                    manifest_path=output/'launch_manifest.json',
+                    lowered=self.lowered,workload=self.workload,
+                    case_id='mixed_full_early_terminal',plans=self.plans())
             with self.assertRaisesRegex(ValueError,'create-only'):
                 compile_ranked_tile_candidate(
                     self.lowered,manifest,self.workload,
