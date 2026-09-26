@@ -138,6 +138,17 @@
 扫描中的顺序和浮点舍入属于实际数值行为；不要用一个普通求和结果替代整列累计输出。
 例子：[前向累计](../../corpus/schedules/chunk-cumsum-b8-smoke.json)、[反向累计](../../corpus/schedules/chunk-cumsum-reverse-b8-smoke.json)。
 
+## forward_substitute
+
+**每条行独立、按 token 顺序解严格下三角系统。** 设 BF16 系数 `P[1,0]=-0.5`，
+FP32 右端一行是 `[3,4]`，则 FP32 结果为 `[3,2.5]`：第二项从 4 开始，
+加上 `P[1,0] * 3`。更一般地，`U[t]=RHS[t]+sum(i<t)P[t,i]U[i]`，按先前
+token 的升序累加。`P` 的对角线和上三角不参与；随后如需 BF16，使用显式 `cast`。
+
+输入形状固定为 `P[C,C]`、`RHS[M,C]`，结果为 `U[M,C]`；构造时检查全部
+形状和 dtype。这个词汇当前仍需目标和后端各自准入，不能仅凭 IR 可表达就推断
+某块 GPU 已有可执行 kernel。
+
 ## index_expand
 
 **把一个块编号展开成多个元素编号。** 示例中 `scale=4、extent=4`，块编号 `2` 对应 `[8,9,10,11]`。

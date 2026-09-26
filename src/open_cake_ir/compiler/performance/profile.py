@@ -330,9 +330,6 @@ def _synchronization_risk(schedule: Schedule, top_k: list[dict[str, object]]) ->
             reasons.append(f"resident top_k k={row['k']}")
     if any(operation.kind is OperationKind.SCAN for operation in schedule.operations):
         reasons.append("scan lowering owns a parallel synchronization decomposition")
-    if any(operation.kind is OperationKind.FORWARD_SUBSTITUTE
-           for operation in schedule.operations):
-        reasons.append("forward_substitute carries ordered token dependencies within each row")
     if any(
         operation.kind is OperationKind.ONLINE_SOFTMAX
         for operation in schedule.operations
@@ -651,6 +648,11 @@ def profile_envelope(
         ))
     if backend_intrinsics:
         abstentions.extend(backend_intrinsics)
+    if any(operation.kind is OperationKind.FORWARD_SUBSTITUTE
+           for operation in schedule.operations):
+        abstentions.append(
+            "forward_substitute has ordered token dependencies; no target latency calibration"
+        )
     return ProfileEnvelope(
         schedule.schedule_id,
         target.target_id,

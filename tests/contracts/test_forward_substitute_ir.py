@@ -15,6 +15,7 @@ from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.compiler.ir import ForwardSubstituteParameters, ScheduleParseError
 from open_cake_ir.compiler.ir import DType
 from open_cake_ir.compiler.performance.work import work_bound
+from open_cake_ir.compiler.performance.profile import profile_envelope
 from open_cake_ir.compiler.schema import schedule_schema
 from open_cake_ir.compiler.verifier import verify
 
@@ -98,6 +99,11 @@ def candidate(lm, p: cake.Tensor((32,32), "bf16"), rhs: cake.Tensor((128,32), "f
         self.assertIsNotNone(work)
         self.assertEqual(work.flops, 128 * 32 * 31)
         self.assertNotIn("solve", work.uncounted_arithmetic)
+        profile = profile_envelope(schedule, target()).as_dict()
+        self.assertIn(
+            "forward_substitute has ordered token dependencies; no target latency calibration",
+            profile["abstentions"],
+        )
         compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
         assessment = compiler.assess(source)
         self.assertIn("TARGET_OPERATION_UNSUPPORTED",
