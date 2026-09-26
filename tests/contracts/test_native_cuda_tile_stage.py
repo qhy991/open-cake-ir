@@ -81,27 +81,33 @@ class NativeCudaTileStageTest(unittest.TestCase):
         if commit is None:
             self.skipTest('generated worker needs a fixed clean Compiler commit')
         script = ROOT / 'experiments/weave/native_b300/generate_tile_ready_from_cake.py'
-        with tempfile.TemporaryDirectory(prefix='cake-tile-stage-') as directory:
-            root = Path(directory)
-            (root / 'manifest.json').write_text(json.dumps({
-                'target': 'sm_103a', 'source_commit': commit,
-                'generation': 'cake_full_ffn_stages',
-            }))
-            environment = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
-            subprocess.run([sys.executable, str(script), '--evidence-root',
-                            str(root)], env=environment, check=True,
-                           capture_output=True, text=True)
-            source = (root / 'model_tile_ready_ffn_capped.cu').read_text()
-            lowering = json.loads((root / 'stage_lowering.json').read_text())
-            self.assertNotIn('@CAKE_', source)
-            self.assertNotIn('#include "down/kernel.cu"', source)
-            self.assertEqual([stage['mapped_operations']
-                              for stage in lowering['stages']],
-                             [[op.op_id for op in self.program.stages[index].schedule.operations]
-                              for index in (0, 1, 2)])
-            self.assertEqual(source.count('CAKE_OP: up_gate.'), 0)
-            self.assertEqual(source.count('CAKE_OP: load_a'), 2)
-            self.assertEqual(source.count('CAKE_OP: exp_gate'), 1)
+        for generation in ('cake_full_ffn_stages', 'cake_two_expert_stages'):
+            with self.subTest(generation=generation), tempfile.TemporaryDirectory(
+                    prefix='cake-tile-stage-') as directory:
+                root = Path(directory)
+                (root / 'manifest.json').write_text(json.dumps({
+                    'target': 'sm_103a', 'source_commit': commit,
+                    'generation': generation,
+                }))
+                environment = dict(os.environ, PYTHONPATH=str(ROOT / 'src'))
+                subprocess.run([sys.executable, str(script), '--evidence-root',
+                                str(root)], env=environment, check=True,
+                               capture_output=True, text=True)
+                source = (root / 'model_tile_ready_ffn_capped.cu').read_text()
+                lowering = json.loads((root / 'stage_lowering.json').read_text())
+                self.assertNotIn('@CAKE_', source)
+                self.assertNotIn('#include "down/kernel.cu"', source)
+                self.assertEqual([stage['mapped_operations']
+                                  for stage in lowering['stages']],
+                                 [[op.op_id for op in self.program.stages[index].schedule.operations]
+                                  for index in (0, 1, 2)])
+                self.assertEqual(source.count('CAKE_OP: up_gate.'), 0)
+                self.assertEqual(source.count('CAKE_OP: load_a'), 2)
+                self.assertEqual(source.count('CAKE_OP: exp_gate'), 1)
+                if generation == 'cake_two_expert_stages':
+                    self.assertIn('tile_expert[tile]', source)
+                    self.assertIn('up_map_b+expert', source)
+                    self.assertIn('down_map_b+expert', source)
 
 
 if __name__ == '__main__':

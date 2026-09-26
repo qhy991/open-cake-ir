@@ -19,7 +19,12 @@ from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
 
 ROOT = Path(__file__).resolve().parents[3]
 PROGRAM = ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300.json'
-TEMPLATE = Path(__file__).with_name('model_tile_ready_from_cake_template.cu')
+TEMPLATES = {
+    'cake_full_ffn_stages': Path(__file__).with_name(
+        'model_tile_ready_from_cake_template.cu'),
+    'cake_two_expert_stages': Path(__file__).with_name(
+        'model_tile_ready_two_expert_template.cu'),
+}
 OUTPUT = 'model_tile_ready_ffn_capped.cu'
 MARKS = ('@CAKE_HELPERS@', '@UPGATE_STAGE@',
          '@ACTIVATION_STAGE@', '@DOWN_STAGE@')
@@ -30,9 +35,10 @@ def generate(evidence_root: Path) -> None:
     if compiler.commit is None:
         raise ValueError('tile-ready generation needs a clean fixed Compiler commit')
     manifest = json.loads((evidence_root / 'manifest.json').read_text())
+    generation=manifest.get('generation')
     if (manifest.get('target') != 'sm_103a'
             or manifest.get('source_commit') != compiler.commit
-            or manifest.get('generation') != 'cake_full_ffn_stages'
+            or not isinstance(generation, str) or generation not in TEMPLATES
             or any((evidence_root / name).exists()
                    for name in (OUTPUT, 'stage_lowering.json'))):
         raise ValueError('tile-ready generation root or source identity differs')
@@ -54,7 +60,7 @@ def generate(evidence_root: Path) -> None:
         results.append(lower(stage.schedule, target, function_name=name))
     if results[0].instruction_helpers != results[2].instruction_helpers:
         raise ValueError('tensor stages disagree on native CUDA PTX helper contract')
-    template = TEMPLATE.read_text()
+    template = TEMPLATES[generation].read_text()
     if any(template.count(mark) != 1 for mark in MARKS):
         raise ValueError('worker template stage seams differ')
     source = (template.replace('@CAKE_HELPERS@', results[0].instruction_helpers)
@@ -68,6 +74,7 @@ def generate(evidence_root: Path) -> None:
         'source_commit': compiler.commit,
         'program': str(PROGRAM.relative_to(ROOT)),
         'target': target.target_id,
+        'generation': generation,
         'stages': [
             {'name': program.stages[index].name,
              'function': emitted.function_name,
