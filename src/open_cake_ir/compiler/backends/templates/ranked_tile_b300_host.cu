@@ -395,7 +395,7 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
   if (chunks!=1 && chunks!=2 && chunks!=4)
     return int(cudaErrorInvalidValue);
   for (int rank=0;rank<R;++rank)
-    if (communication_ctas[rank]<1 || communication_ctas[rank]>96 ||
+    if (communication_ctas[rank]<1 || communication_ctas[rank]>=96 ||
         steal_budgets[rank]<0 || steal_budgets[rank]>kTotalStageTasks ||
         chunks_by_rank[rank]!=chunks)
       return int(cudaErrorInvalidValue);
@@ -415,14 +415,27 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
   for (int wave=0;wave<chunks;++wave) {
     for (int source=0;source<=R;++source) {
       int event=wave*(R+1)+source;
-      if (source<R) {
-        CAKE_RUN(cudaSetDevice(source));
-        RankedTileRankState& s=state->ranks[source];
-        dispatch_source_wave<<<dim3(chunk_tokens),256,0,s.communication>>>(
-            s.bin_params,wave,chunk_tokens);
-        CAKE_RUN(cudaGetLastError());
-        mark_source_wave_done<<<1,1,0,s.communication>>>(s.bin_params,wave);
-        CAKE_RUN(cudaGetLastError());
+      for (int rank=0;rank<R;++rank) {
+        CAKE_RUN(cudaSetDevice(rank));
+        RankedTileRankState& s=state->ranks[rank];
+        // The next source cannot publish rows until every destination has
+        // finished constructing the previous event's tile snapshot.
+        if (event>0)
+          CAKE_RUN(cudaStreamWaitEvent(s.compute,s.fence[event-1]));
+        int* event_ready=&s.bin->wave_consumed[0];
+        int selected_event=event;
+        int communication=communication_ctas[rank];
+        int budget=steal_budgets[rank];
+        void* args[]={&s.heads,&s.completed,&s.owners,&s.processed,
+                      &s.dispatched,&s.stolen,&s.permits,&s.tasks,
+                      &event_ready,&s.overlap,&s.tile_experts,&s.upgate,
+                      &s.activated,&s.up_maps_a,&s.up_map_b,&s.down_maps_a,
+                      &s.down_map_b,&s.down,&communication,&budget,
+                      &s.bin_params,&chunk_tokens,&selected_event};
+        // CAKE_EFFECT: launch.rank
+        CAKE_RUN(cudaLaunchCooperativeKernel(
+            reinterpret_cast<const void*>(tile_schedule_probe),
+            dim3(96),dim3(kThreads),args,kDynamicShared,s.compute));
       }
       for (int rank=0;rank<R;++rank) {
         CAKE_RUN(cudaSetDevice(rank));
@@ -450,25 +463,6 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
         wait_all_destinations<<<1,1,0,s.communication>>>(s.bin_params,event);
         CAKE_RUN(cudaGetLastError());
         CAKE_RUN(cudaEventRecord(s.fence[event],s.communication));
-      }
-      for (int rank=0;rank<R;++rank) {
-        CAKE_RUN(cudaSetDevice(rank));
-        RankedTileRankState& s=state->ranks[rank];
-        CAKE_RUN(cudaStreamWaitEvent(s.compute,s.ready[event]));
-        int* event_ready=&s.bin->wave_consumed[0];
-        int selected_event=event;
-        int communication=communication_ctas[rank];
-        int budget=steal_budgets[rank];
-        void* args[]={&s.heads,&s.completed,&s.owners,&s.processed,
-                      &s.dispatched,&s.stolen,&s.permits,&s.tasks,
-                      &event_ready,&s.overlap,&s.tile_experts,&s.upgate,
-                      &s.activated,&s.up_maps_a,&s.up_map_b,&s.down_maps_a,
-                      &s.down_map_b,&s.down,&communication,&budget,
-                      &selected_event};
-        // CAKE_EFFECT: launch.rank
-        CAKE_RUN(cudaLaunchCooperativeKernel(
-            reinterpret_cast<const void*>(tile_schedule_probe),
-            dim3(96),dim3(kThreads),args,kDynamicShared,s.compute));
       }
     }
   }

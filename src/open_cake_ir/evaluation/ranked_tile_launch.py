@@ -149,7 +149,7 @@ def _controls(plans, world: int, task_capacity: int):
         c,chunks,budget=(row[name] for name in
                          ('communication_ctas','chunks','steal_budget'))
         if (any(type(value) is not int for value in (c,chunks,budget))
-                or not 1<=c<=96 or chunks not in (1,2,4)
+                or not 1<=c<96 or chunks not in (1,2,4)
                 or not 0<=budget<=task_capacity):
             raise ValueError(f'rank {rank} controls exceed the B300 lowering domain')
         controls[rank]=MappingProxyType(dict(row))

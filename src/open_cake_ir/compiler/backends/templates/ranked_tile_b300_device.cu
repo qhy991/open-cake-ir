@@ -95,6 +95,13 @@ __device__ __forceinline__ int completion_release_increment(int* pointer) {
   return old;
 }
 
+struct BinParams;
+__device__ void dispatch_source_chunk(const BinParams* params,int block,
+                                      int communication_ctas,int wave,
+                                      int chunk_tokens,int source_rank);
+__device__ void publish_source_completion(const BinParams* params,int wave,
+                                          int source_rank);
+
 @UPGATE_STAGE@
 @ACTIVATION_STAGE@
 @DOWN_STAGE@
@@ -107,7 +114,7 @@ __global__ void tile_schedule_probe(
     const CUtensorMap* up_maps_a, const CUtensorMap* up_map_b,
     const CUtensorMap* down_maps_a, const CUtensorMap* down_map_b,
     float* outputs, int communication_ctas, int steal_budget,
-    int selected_wave) {
+    const BinParams* source_params,int chunk_tokens,int selected_wave) {
   extern __shared__ __align__(1024) unsigned char shared[];
   uint32_t* tensor_address = reinterpret_cast<uint32_t*>(shared + 49192);
   __shared__ int claimed, claimed_stage, claimed_tile, claimed_subtile;
@@ -115,6 +122,17 @@ __global__ void tile_schedule_probe(
   const int block = int(blockIdx.x);
   const int warp = int(threadIdx.x) / 32;
   cg::grid_group grid = cg::this_grid();
+  const int source_rank=selected_wave%(kSourceRanks+1);
+  const int source_wave=selected_wave/(kSourceRanks+1);
+  if (source_rank<kSourceRanks && block<communication_ctas) {
+    dispatch_source_chunk(source_params,block,communication_ctas,
+                          source_wave,chunk_tokens,source_rank);
+    __threadfence_system();
+  }
+  grid.sync();
+  if (source_rank<kSourceRanks && block==0 && threadIdx.x==0)
+    publish_source_completion(source_params,source_wave,source_rank);
+  grid.sync();
   bool tensor_owned = false;
   int logical_offset=0;
   for (int earlier=0;earlier<selected_wave;++earlier)
@@ -341,75 +359,81 @@ __device__ __forceinline__ int original_route_key(
   int route=remainder%K;
   return (source*T+wave*chunk_tokens+token)*K+route;
 }
-__global__ void dispatch_source_wave(
-    const BinParams* params,int wave,int chunk_tokens) {
-  int token=wave*chunk_tokens+int(blockIdx.x);
+__device__ void dispatch_source_chunk(const BinParams* params,int block,
+                                      int communication_ctas,int wave,
+                                      int chunk_tokens,int source_rank) {
+  if (params->rank!=source_rank) return;
   __shared__ int owner_slot[R],route_expert[K],route_owner[K],valid;
-  if (threadIdx.x==0) {
-    valid=1;
-    for (int owner=0;owner<R;++owner) owner_slot[owner]=-2;
-    for (int route=0;route<K;++route) {
-      int expert=params->ids[token*K+route];
-      if (expert<0 || expert>=E) {
-        atomicCAS(&params->bins[params->rank]->error,0,11);
-        valid=0;break;
-      }
-      route_expert[route]=expert;
-      route_owner[route]=expert/LOCAL_E;
-      owner_slot[route_owner[route]]=-1;
-    }
-    if (valid)
-      for (int owner=0;owner<R;++owner) {
-        if (owner==params->rank || owner_slot[owner]!=-1) continue;
-        Bin* remote=params->bins[owner];
-        // CAKE_EFFECT: payload.reserve
-        int slot=system_reserve(&remote->payload_count);
-        if (slot<0 || slot>=PAYLOAD_CAP) {
-          atomicCAS(&params->bins[params->rank]->error,0,12);
+  for (int token=wave*chunk_tokens+block;
+       token<(wave+1)*chunk_tokens;token+=communication_ctas) {
+    if (threadIdx.x==0) {
+      valid=1;
+      for (int owner=0;owner<R;++owner) owner_slot[owner]=-2;
+      for (int route=0;route<K;++route) {
+        int expert=params->ids[token*K+route];
+        if (expert<0 || expert>=E) {
+          atomicCAS(&params->bins[params->rank]->error,0,11);
           valid=0;break;
         }
-        owner_slot[owner]=slot;
-        remote->payload_key[slot]=params->rank*T+token;
+        route_expert[route]=expert;
+        route_owner[route]=expert/LOCAL_E;
+        owner_slot[route_owner[route]]=-1;
       }
-  }
-  __syncthreads();
-  if (!valid) return;
-  const __nv_bfloat16* input=params->hidden+size_t(token)*H;
-  for (int owner=0;owner<R;++owner) {
-    int slot=owner_slot[owner];
-    if (slot<0) continue;
-    Bin* remote=params->bins[owner];
-    __nv_bfloat16* output=remote->payload+size_t(slot)*H;
-    for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
-      output[feature]=input[feature];
-    __syncthreads();
-    // CAKE_EFFECT: payload.publish
-    if (threadIdx.x==0) system_publish(&remote->payload_ready[slot]);
-    __syncthreads();
-  }
-  if (threadIdx.x==0) {
-    for (int route=0;route<K;++route) {
-      int expert=route_expert[route],owner=route_owner[route];
-      Bin* remote=params->bins[owner];
-      // CAKE_EFFECT: bin.reserve
-      int slot=system_reserve(&remote->count[expert%LOCAL_E]);
-      if (slot<0 || slot>=MAX_ROWS) {
-        atomicCAS(&params->bins[params->rank]->error,0,13);
-        continue;
-      }
-      int index=(expert%LOCAL_E)*MAX_ROWS+slot;
-      int key=(params->rank*T+token)*K+route;
-      remote->keys[index]=key;
-      remote->route_location[key]=index;
-      remote->row_payload_slot[index]=owner_slot[owner];
-      // CAKE_EFFECT: bin.publish
-      system_publish(&remote->ready[index]);
-      system_publish(&remote->route_ready[key]);
+      if (valid)
+        for (int owner=0;owner<R;++owner) {
+          if (owner==params->rank || owner_slot[owner]!=-1) continue;
+          Bin* remote=params->bins[owner];
+          // CAKE_EFFECT: payload.reserve
+          int slot=system_reserve(&remote->payload_count);
+          if (slot<0 || slot>=PAYLOAD_CAP) {
+            atomicCAS(&params->bins[params->rank]->error,0,12);
+            valid=0;break;
+          }
+          owner_slot[owner]=slot;
+          remote->payload_key[slot]=params->rank*T+token;
+        }
     }
+    __syncthreads();
+    if (!valid) return;
+    const __nv_bfloat16* input=params->hidden+size_t(token)*H;
+    for (int owner=0;owner<R;++owner) {
+      int slot=owner_slot[owner];
+      if (slot<0) continue;
+      Bin* remote=params->bins[owner];
+      __nv_bfloat16* output=remote->payload+size_t(slot)*H;
+      for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
+        output[feature]=input[feature];
+      __syncthreads();
+      // CAKE_EFFECT: payload.publish
+      if (threadIdx.x==0) system_publish(&remote->payload_ready[slot]);
+      __syncthreads();
+    }
+    if (threadIdx.x==0) {
+      for (int route=0;route<K;++route) {
+        int expert=route_expert[route],owner=route_owner[route];
+        Bin* remote=params->bins[owner];
+        // CAKE_EFFECT: bin.reserve
+        int slot=system_reserve(&remote->count[expert%LOCAL_E]);
+        if (slot<0 || slot>=MAX_ROWS) {
+          atomicCAS(&params->bins[params->rank]->error,0,13);
+          continue;
+        }
+        int index=(expert%LOCAL_E)*MAX_ROWS+slot;
+        int key=(params->rank*T+token)*K+route;
+        remote->keys[index]=key;
+        remote->route_location[key]=index;
+        remote->row_payload_slot[index]=owner_slot[owner];
+        // CAKE_EFFECT: bin.publish
+        system_publish(&remote->ready[index]);
+        system_publish(&remote->route_ready[key]);
+      }
+    }
+    __syncthreads();
   }
 }
-__global__ void mark_source_wave_done(const BinParams* params,int wave) {
-  if (threadIdx.x!=0) return;
+__device__ void publish_source_completion(const BinParams* params,int wave,
+                                          int source_rank) {
+  if (params->rank!=source_rank) return;
   // CAKE_EFFECT: source.complete
   for (int owner=0;owner<R;++owner)
     system_publish(&params->bins[owner]->source_wave_done[params->rank][wave]);

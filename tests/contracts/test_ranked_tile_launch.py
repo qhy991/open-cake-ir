@@ -152,6 +152,10 @@ class RankedTileLaunchContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'chunks must agree'):
             self.prepare(inputs,outputs,plans)
         inputs,outputs,plans=self.fixtures()
+        plans[0]['communication_ctas']=96
+        with self.assertRaisesRegex(ValueError,'controls'):
+            self.prepare(inputs,outputs,plans)
+        inputs,outputs,plans=self.fixtures()
         with self.assertRaisesRegex(ValueError,'isolation'):
             self.prepare(inputs,outputs,plans,isolated=False)
 
