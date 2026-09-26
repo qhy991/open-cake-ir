@@ -18,6 +18,7 @@ LABEL = 'cake-weave-ep4-capacity-general-b300'
 R, T, K, E, H, ROWS = (planner.R, planner.T, planner.K,
                        planner.E, planner.H, planner.ROWS)
 ROUTES = R*T*K
+ADMITTED_CONTROLS = {(1, 0), (74, 5888)}
 
 
 def prepare(root: Path, bin_root: Path, bridge: Path,
@@ -25,6 +26,10 @@ def prepare(root: Path, bin_root: Path, bridge: Path,
     if os.environ.get('GPUQ_JOB_ID'):
         raise RuntimeError('full-chain preparation must be outside a GPU lease')
     manifest = planner.contract(root)
+    controls = (manifest.get('communication_ctas'),
+                manifest.get('steal_budget'))
+    if controls not in ADMITTED_CONTROLS:
+        raise ValueError('full-chain spatial or steal control is not admitted')
     if (root / 'case.json').exists() or (root / 'device_outputs').exists():
         raise ValueError('full-chain inputs are create-only')
     ids = np.fromfile(bin_root / 'expert_ids.i32', dtype='<i4')
@@ -67,8 +72,8 @@ def prepare(root: Path, bin_root: Path, bridge: Path,
         'early_tiles': plan['summary']['early_partial_tiles'],
         'terminal_tiles': plan['summary']['terminal_partial_tiles'],
         'safe_tile_capacity': 255,
-        'communication_ctas': 1,
-        'steal_budget': 0,
+        'communication_ctas': controls[0],
+        'steal_budget': controls[1],
         'scope': 'one four-GPU full chain with changed expert IDs and external FP64 CPU oracle',
     }, indent=2) + '\n')
 
@@ -101,7 +106,8 @@ def run(root: Path) -> None:
     try:
         result = subprocess.run([
             str(root / 'live_probe'), str(root), case['bin_root'],
-            case['bridge_root'], '1', '0', 'general',
+            case['bridge_root'], str(case['communication_ctas']),
+            str(case['steal_budget']), 'general',
         ], cwd=root, capture_output=True, text=True,
             timeout=300, check=False)
         (root / 'device.log').write_text(result.stdout + result.stderr or
@@ -142,11 +148,19 @@ def verify(root: Path) -> None:
             or observed['valid_routes_by_owner'] != case['owner_routes']
             or observed['bin_rows_by_owner'] != case['owner_routes']
             or observed['logical_tiles_by_owner'] != case['owner_tiles']
-            or observed['communication_ctas'] != 1
-            or observed['steal_budget'] != 0
-            or observed['stolen_by_owner'] != [0]*R
+            or observed['communication_ctas'] != case['communication_ctas']
+            or observed['steal_budget'] != case['steal_budget']
             or observed['worker_grid_ctas'] != [96]*R):
         raise ValueError('full-chain broker, source or device capacity differs')
+    stolen = observed['stolen_by_owner']
+    if (len(stolen) != R
+            or any(type(value) is not int or value < 0
+                   or value > case['steal_budget'] for value in stolen)
+            or (case['steal_budget'] == 0 and stolen != [0]*R)
+            or (case['steal_budget'] > 0 and
+                any(value == 0 for value, tiles in zip(
+                    stolen, case['owner_tiles'], strict=True) if tiles > 0))):
+        raise ValueError('bounded-steal device or coverage evidence differs')
     bin_root = Path(case['bin_root'])
     output = root / 'device_outputs'
     if ((output / 'observed_hidden.bf16').read_bytes()
@@ -232,6 +246,9 @@ def verify(root: Path) -> None:
         'source_commit': manifest['source_commit'],
         'broker_job': device['broker_job'], 'case_id': case['case_id'],
         'routes': ROUTES, 'owner_tiles': case['owner_tiles'],
+        'communication_ctas': case['communication_ctas'],
+        'steal_budget': case['steal_budget'],
+        'actual_stolen_by_owner': stolen,
         'tile_waves_by_owner': expected_waves,
         'manifest_mismatches': manifest_mismatches,
         'gathered_input_bit_mismatches': gather_mismatches,
