@@ -205,6 +205,17 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    11,776 work units with bitwise agreement at every stage; `c=148` stole
    every unit. IDs were prepacked before launch, so this validates selected
    weight mapping, not live expert-bin formation or four-rank routing.
+   A separate four-GPU transport probe (`cake-weave-ep4-p2p-bin-a14d758a/`)
+   routes the exact 16,384 synthetic model route rows into destination-owned
+   expert bins using system-scope peer atomic row reservations and release
+   flags. Its independent post-lease oracle verified every return key,
+   destination expert and BF16 row bitwise: 4,039 / 4,196 / 4,016 / 4,133
+   rows by owner, including 12,271 remote-owner routes. At a 64-row partial
+   threshold, a clean temporary schema-2 integration check accepts the same
+   route IDs as 64 logical tiles and 11,776 stage tasks per owner. These are
+   still **separate** transport, CPU publication and FFN worker results;
+   no GPU tile consumer has yet acquired the bin flags or returned a full
+   EP4 layer contribution.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
