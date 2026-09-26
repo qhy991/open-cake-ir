@@ -16,6 +16,23 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FlashInferGemmTests(unittest.TestCase):
+    def test_008_column_reuse_candidate_lowers_with_carried_reduction(self):
+        workload = WorkloadContract(gemm.workload_document(
+            'fib_gemm_n4096_k14336', rows=1, backend='triton-b300'))
+        source = gemm.column_reuse_source(workload)
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        assessment = compiler.assess(parse(source).document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        lowered = compiler.lower(assessment).source
+        self.assertIn('accum += tl.sum(products.to(tl.float32), axis=1)', lowered)
+        self.assertIn('for k_loop in range(', lowered)
+        with self.assertRaises(ValueError):
+            gemm.column_reuse_source(workload, columns_per_program=3)
+        other = WorkloadContract(gemm.workload_document(
+            'fib_gemm_n128_k2048', rows=1, backend='triton-b300'))
+        with self.assertRaises(ValueError):
+            gemm.column_reuse_source(other)
+
     def test_all_eight_exact_tasks_have_fp16_abi_and_lower_on_b300(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         self.assertEqual(len(gemm.TASKS), 8)
