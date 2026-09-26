@@ -367,7 +367,15 @@ C550-1 Triton 3.1 和 C550-2 Triton 3.6 均离线生成原生 bundle；C550-2 jo
 
 Cake 目前不能显式声明内部 FP64 累积：在干净源码 `435b1a3c`，
 `lm.cast(products, to='fp64')` 由前端拒绝。两行 FP64 变体只取得 3.1/3.6
-离线编译；唯一设备尝试被 broker 判为 busy，没有执行 kernel。原始收据位于
+离线编译；首个设备尝试被 broker 判为 busy，没有执行 kernel。后继单卡作业
+`maca-592f5a04698b` 对旧五组和首个 held-out 失败矩阵共 24576 个输出逐 bit
+匹配参考，FP8 输入未变。同形两行 FP64／两行 FP32 补偿的 MCPTI 诊断
+`maca-b068fa1df581` 通过 cohort 质量门：10/10 pair 朝 FP64 方向，
+pooled median **17.152 / 42.240 µs**，四个 A/A pair 均同中位数 **42.240 µs**；
+28 份原生活动已独立重放。这仍不是封存候选的正式 Workload 性能资格，也未证明
+FP64 原生指令。新增证据在 checkout 外的
+`metax-fp8-fp64-m2-20260926-v2/` 与
+`metax-fp8-fp64-m2-vs-compensated-20260926/attempt1/`。原始收据位于
 checkout 外的 `open-cake-ir-evidence/metax-fp8-fp64-reduction-20260926/`、
 `metax-fp8-fp64-vs-compensated-20260926*/` 与 `metax-fp8-fp64-ir-gap-20260926/`。
 后继 IR/Target 判断和缺失证据见
