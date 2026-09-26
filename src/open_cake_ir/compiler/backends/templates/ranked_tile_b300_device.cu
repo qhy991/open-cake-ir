@@ -243,38 +243,6 @@ __global__ void tile_schedule_probe(
   }
 }
 
-struct Case {
-  const char* name;
-  int grid;
-  int communication;
-  int budget;
-  int tasks[kStages][kEvents];
-};
-
-bool read_exact(const char* directory, const char* name,
-                std::vector<unsigned char>& bytes) {
-  char path[512];
-  int length=std::snprintf(path,sizeof(path),"%s/%s",directory,name);
-  if (length<=0 || length>=int(sizeof(path))) return false;
-  FILE* file=std::fopen(path,"rb");
-  if (!file) return false;
-  bool okay=std::fread(bytes.data(),1,bytes.size(),file)==bytes.size()
-            && std::fgetc(file)==EOF;
-  return std::fclose(file)==0 && okay;
-}
-
-bool write_actual(const char* directory, const char* name, const char* stage,
-                  const std::vector<unsigned char>& bytes) {
-  char path[512];
-  int length=std::snprintf(path,sizeof(path),"%s/%s.%s",
-                           directory,name,stage);
-  if (length<=0 || length>=int(sizeof(path))) return false;
-  FILE* file=std::fopen(path,"wbx");
-  if (!file) return false;
-  bool okay=std::fwrite(bytes.data(),1,bytes.size(),file)==bytes.size();
-  return std::fclose(file)==0 && okay;
-}
-
 int check(cudaError_t status, const char* operation) {
   if (status == cudaSuccess) return 0;
   std::fprintf(stderr, "%s: %s (%d)\n", operation,
