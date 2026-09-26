@@ -194,6 +194,30 @@ class NativeCudaTileStageTest(unittest.TestCase):
                     self.assertIn('derive_wave_order<<<', source)
                     self.assertIn('tile_events_by_owner', source)
 
+    def test_clean_compiler_emits_one_pointer_abi_with_cake_combine(self):
+        commit=Compiler.load(ROOT).commit
+        if commit is None:
+            self.skipTest('ranked-tile ABI generation needs a clean commit')
+        script=ROOT/'experiments/weave/native_b300/generate_ranked_tile_library.py'
+        with tempfile.TemporaryDirectory(prefix='cake-ranked-tile-abi-') as directory:
+            root=Path(directory)
+            (root/'manifest.json').write_text(json.dumps({
+                'target':'sm_103a','source_commit':commit,
+                'generation':'cake_ranked_tile_pointer_abi'}))
+            environment=dict(os.environ,PYTHONPATH=str(ROOT/'src'))
+            subprocess.run([sys.executable,str(script),'--evidence-root',str(root)],
+                           env=environment,check=True,capture_output=True,text=True)
+            source=(root/'ranked_tile.cu').read_text()
+            report=json.loads((root/'lowering_report.json').read_text())
+            self.assertIn('cake_ranked_tile_b300_create(',source)
+            self.assertIn('cake_ranked_tile_b300_launch(',source)
+            self.assertIn('cake_weave_rank512_combine_kernel',source)
+            self.assertIn('CAKE_OP: exp_gate',source)
+            self.assertNotIn('int main(',source)
+            self.assertNotIn('fopen(',source)
+            self.assertEqual(report['logical_tile_capacity'],255)
+            self.assertEqual(report['stage_task_capacity'],46920)
+
 
 if __name__ == '__main__':
     unittest.main()
