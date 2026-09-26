@@ -149,9 +149,18 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    9c9dc158/`) completed 64 logical tiles × 32 N-subtile work units under
    the same four-wave controls, again with bitwise FP32 oracle equality.
    Its `c=147` and `c=148` cases actually stole 1,024 and 2,048 down tasks.
-   Thus each of the three FFN stages has **separate** cooperative queue
-   evidence; no result yet executes their predecessor/completion chain in
-   one live worker or combines them with P2P mailbox traffic.
+   A successor activation→down chain (`cake-weave-model-activation-down-
+   chain-08b46b5c-r2/`) executes both real stages in **one cooperative
+   launch**, with a grid barrier after each stage of each source wave and
+   an async-proxy fence between activation's global BF16 writes and down's
+   TMA reads. Each of four cases completed 8,192 activation and 2,048 down
+   units, with both output tensors bitwise equal to the retained Cake FFN
+   oracles. At `c=147`, communication CTAs stole 4,104 activation plus
+   1,016 down units; at `c=148`, they stole all 10,240 units. The 192-thread
+   worker compiled with 78 registers/thread and no spills, and CUDA queried
+   one active CTA/SM on 148 SMs. The barrier is wave-wide, not a per-tile
+   ready publication. Up/gate remains a separate run; no result yet executes
+   all three stages in one live worker or combines them with P2P traffic.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
