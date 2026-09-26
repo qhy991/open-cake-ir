@@ -340,6 +340,21 @@ median **39.168 µs**，不能拿它与前两个 pooled median 作配对速度�
 1 行加速结论**。Cake 当前一行程序的最早结构性拒绝与所需 IR/Verifier 审查见
 [F-2026-09-26-001](../findings/2026-09-26-001-metax-fp8-one-row-capacity.json)。
 
+后继还用现有 `cast + broadcast + mul + reduce` 拼出一行 Cake 普通求和候选，
+无需新指令或 rank-one MMA 规则。源码 `936fd3b6` 在 Triton 3.1/3.6 均离线编译；
+C550-2 job `maca-7d524849272b` 对原五组共 20480 个输出在未变容差内为 0 失败，
+但 primary、mixed_magnitude 分别有 2166、1263 个 FP32 word 与参考不同。
+另一次受控 MCPTI 诊断 `maca-c9ed1ea563b8` 的 10 个反向 pair 均由普通求和
+胜出，pooled median 为 **5.120 / 31.232 µs**（普通求和／一行补偿），
+A/A 为 `close_null`，28 份原生活动经独立重放通过。它仍缺注册 Workload 和封存候选。
+更关键的是，固定种子额外 100 个有限 FP8 矩阵、409600 个 CPU 输出出现
+**14 个原容差超差**，首个失败点由 `math.fsum` 复核。因此不能把这条快路径推广为
+保精度的一般 lowering；本次收益仅用于选下一条机制，不改变补偿路线的准入。
+原始设备、配对及 held-out 证据分别在 checkout 外的
+`open-cake-ir-evidence/metax-fp8-plain-sum-20260926/` 和
+`open-cake-ir-evidence/metax-fp8-plain-vs-compensated-20260926/attempt1/`，
+后继处置追加在 [F-2026-09-26-001](../findings/2026-09-26-001-metax-fp8-one-row-capacity.json)。
+
 调查还发现当前 SDK 对标量 FP8→FP32 的最小程序触发 `RankedTensorType` 内部断言。
 补偿 control 先按 tensor 转换，再在 FP32 上选择元素，才通过编译；这没有修复或
 取得标量 FP8 转换的资格。全部原始源码、编译失败、封存参考、NPZ 观察与结果保留于
