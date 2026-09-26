@@ -159,8 +159,15 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    1,016 down units; at `c=148`, they stole all 10,240 units. The 192-thread
    worker compiled with 78 registers/thread and no spills, and CUDA queried
    one active CTA/SM on 148 SMs. The barrier is wave-wide, not a per-tile
-   ready publication. Up/gate remains a separate run; no result yet executes
-   all three stages in one live worker or combines them with P2P traffic.
+   ready publication. The next one-GPU chain (`cake-weave-model-full-ffn-
+   chain-3777c9a1/`) joins the Cake up/gate, activation and down bodies in
+   **one cooperative launch**. Four cases each processed 1,536 / 8,192 /
+   2,048 stage CTA units, with zero bit mismatches in all three saved stage
+   tensors. At `c=147`, communication CTAs stole 803 / 4,069 / 1,016
+   units respectively; at `c=148` they stole every unit. The worker compiled
+   with 88 registers/thread and no spills and again queried one active
+   CTA/SM. It uses successive wave-wide stage barriers, so per-tile
+   readiness and overlap, dynamic expert choice and P2P traffic remain open.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -173,8 +180,8 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 - Integrate the separate core schema-2 tile/stage effect after its review,
   then lower the evidenced host tile formation, padding, expert weight
   selection and **stage CTA completion counters** into a live B300 queue.
-  Join the three individually proven stage-task bodies in one worker.
-  Publish activation tasks only after all 24 up/gate subtasks for their
+  Replace the validated wave-wide stage barriers with tile-local ready
+  publication. Publish activation tasks only after all 24 up/gate subtasks for their
   logical tile complete, and down tasks only after all 128 activation
   subtasks complete; then publish the route-keyed return after all 32 down
   subtasks. Verify empty/tail bins and dynamic expert/weight descriptors
