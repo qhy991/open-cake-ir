@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .triton_selection import top_k_selection_structure
+from .metax import COMPENSATED_FP8_MMA
 from .common import PythonNamespace, emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
@@ -177,7 +178,7 @@ _K_RANGES_EVIDENCE = frozenset({"sm_100a", "sm_103a"})
 # and the Compiler refuses a Target whose code object is neither before preflight.
 PYTHON_NAMESPACE = PythonNamespace(
     reserved_names=frozenset({"tl", "torch", "triton"}),
-    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work"),
+    generated_prefixes=("N_", "D_", "BLOCK_", "NUM_WARPS", "_work", "_maca_fp8_"),
 )
 
 
@@ -554,7 +555,9 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             add(
                 instruction is None
                 or instruction.contract not in target.instruction_contracts
-                or instruction.contract in _TRITON_MMA_CONTRACTS,
+                or instruction.contract in _TRITON_MMA_CONTRACTS
+                or (target.code_object is CodeObject.MCFATBIN
+                    and instruction.contract == COMPENSATED_FP8_MMA),
                 "TRITON_MMA_INSTRUCTION_UNSUPPORTED",
                 f"operations[{index}].parameters.instruction.contract",
                 "the Triton backend does not implement instruction contract "
@@ -1807,6 +1810,13 @@ class _TritonEmitter:
         instruction = operation.parameters.instruction
         contract = instruction.contract if instruction is not None else None
         self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+        if contract == COMPENSATED_FP8_MMA:
+            _require(self.target.code_object is CodeObject.MCFATBIN,
+                     "the compensated FP8 SIMT body requires a MACA code object")
+            _require(len(operation.reads) == 2 and len(tiles) == 2,
+                     "the compensated FP8 SIMT body takes two staged operands")
+            self._emit_maca_compensated_fp8_mma(operation, tiles, pad)
+            return
         if contract == "triton.dot.fp8e4m3_block_scale_fp32":
             _require(
                 len(operation.reads) == 4 and len(tiles) == 4,
@@ -1904,6 +1914,30 @@ class _TritonEmitter:
             f"{tiles[0]}, tl.trans({tiles[1]}){precision})",
             declares=(operation.writes[0],),
         )
+
+    def _emit_maca_compensated_fp8_mma(self, operation, tiles: list[str], pad: str) -> None:
+        """The measured 2x64x64 SIMT route, with no native FP8 dot claim."""
+        self.line(f"{pad}_maca_fp8_ks = tl.arange(0, 64)")
+        self.line(f"{pad}_maca_fp8_left_values = {tiles[0]}.to(tl.float32)")
+        self.line(f"{pad}_maca_fp8_right_tile = {tiles[1]}.to(tl.float32)")
+        self.line(f"{pad}_maca_fp8_total = tl.zeros((2, 64), tl.float32)")
+        self.line(f"{pad}_maca_fp8_correction = tl.zeros((2, 64), tl.float32)")
+        self.line(f"{pad}for _maca_fp8_k in tl.range(0, 64):")
+        body = pad + "    "
+        self.line(f"{body}_maca_fp8_left = tl.sum(tl.where("
+                  "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_left_values, 0.0), axis=1)")
+        self.line(f"{body}_maca_fp8_right = tl.sum(tl.where("
+                  "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_right_tile, 0.0), axis=1)")
+        self.line(f"{body}_maca_fp8_product = _maca_fp8_left[:, None] * _maca_fp8_right[None, :]")
+        self.line(f"{body}_maca_fp8_updated = _maca_fp8_total + _maca_fp8_product")
+        self.line(f"{body}_maca_fp8_error = tl.where("
+                  "tl.abs(_maca_fp8_total) >= tl.abs(_maca_fp8_product), "
+                  "(_maca_fp8_total - _maca_fp8_updated) + _maca_fp8_product, "
+                  "(_maca_fp8_product - _maca_fp8_updated) + _maca_fp8_total)")
+        self.line(f"{body}_maca_fp8_correction = _maca_fp8_correction + _maca_fp8_error")
+        self.line(f"{body}_maca_fp8_total = _maca_fp8_updated")
+        self.line(f"{pad}{operation.writes[0]} = _maca_fp8_total + _maca_fp8_correction",
+                  declares=(operation.writes[0],))
 
     def _accumulating(self, operation) -> bool:
         """Whether this contraction sums across the loop it sits in."""

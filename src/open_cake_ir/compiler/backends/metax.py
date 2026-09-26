@@ -7,6 +7,7 @@ from .common import refusal
 
 
 _BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
+COMPENSATED_FP8_MMA = "maca.simt.fp8e4m3_compensated_fp32"
 
 
 def _full_unroll_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:
@@ -39,6 +40,14 @@ def loop_range(loop: TileLoop, schedule: Schedule, extent: str, tile: str) -> st
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     findings = []
+    compensated = [op for op in schedule.operations
+                   if op.kind is OperationKind.MMA and op.parameters.instruction is not None
+                   and op.parameters.instruction.contract == COMPENSATED_FP8_MMA]
+    if len(compensated) > 1:
+        findings.append(refusal(
+            "MACA_FP8_COMPENSATED_COUNT", "operations",
+            "the bounded MACA compensated FP8 route emits one contraction per program",
+        ))
     for index, buffer in enumerate(schedule.buffers):
         if buffer.dtype not in _BUFFER_DTYPES:
             findings.append(refusal(
@@ -77,6 +86,28 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                     "MACA_FP8_SCALAR_CAST_UNSUPPORTED", path,
                     "the captured MACA compiler asserts on scalar FP8 conversion; "
                     "this route requires a non-scalar FP8 tile before casting",
+                ))
+        elif (operation.kind is OperationKind.MMA
+              and operation.parameters.instruction is not None
+              and operation.parameters.instruction.contract == COMPENSATED_FP8_MMA):
+            left = schedule.buffer(operation.reads[0]) if len(operation.reads) == 2 else None
+            right = schedule.buffer(operation.reads[1]) if len(operation.reads) == 2 else None
+            result = schedule.buffer(operation.writes[0]) if len(operation.writes) == 1 else None
+            if not (left is not None and right is not None and result is not None
+                    and left.dtype is DType.FP8_E4M3 and right.dtype is DType.FP8_E4M3
+                    and result.dtype is DType.FP32
+                    and left.shape == (2, 64) and right.shape == (64, 64)
+                    and result.shape == (2, 64)
+                    and operation.parameters.tile_shape == (2, 64, 64)
+                    and operation.parameters.k_ranges is None
+                    and not schedule.enclosing_loops(operation)
+                    and len(schedule.roles) == 1
+                    and len(schedule.roles[0].execution_groups) == 4):
+                findings.append(refusal(
+                    "MACA_FP8_COMPENSATED_DOMAIN_UNQUALIFIED", path,
+                    "the measured SIMT compensated FP8 route takes one resident "
+                    "2x64 by 64x64 tile, one FP32 result and four execution groups; "
+                    "looped accumulation or another tile requires separate qualification",
                 ))
         elif operation.kind not in (OperationKind.LOAD, OperationKind.STORE):
             findings.append(refusal(

@@ -85,7 +85,8 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             # Each target retains exactly its own measured instruction contracts.
             "gfx1151": {"elementwise": ["ocml.tanh.f32"]},
             "xcore1002": {"elementwise": ["maca.fma.f32", "maca.tanh.f32"],
-                          "mma": ["triton.dot.bf16_fp32", "triton.dot.fp16_fp32", "triton.dot.fp32_ieee"]},
+                          "mma": ["maca.simt.fp8e4m3_compensated_fp32", "triton.dot.bf16_fp32",
+                                  "triton.dot.fp16_fp32", "triton.dot.fp32_ieee"]},
             "gfx938": {"elementwise": ["ocml.tanh.f32"],
                        "mma": ["triton.dot.fp16_fp32", "triton.dot.fp32_ieee",
                                "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_fp32"]},
@@ -111,7 +112,7 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
 
     def test_the_registry_is_closed_and_every_record_says_what_it_is(self) -> None:
         """Every record carries exactly the fields its analyses read."""
-        self.assertEqual(len(CONTRACTS), 19)
+        self.assertEqual(len(CONTRACTS), 20)
         for name, record in CONTRACTS.items():
             with self.subTest(contract=name):
                 self.assertEqual(record.name, name)
@@ -188,7 +189,7 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
         # metal_fma.py reaches its fma, and sm_100a has none because its atomic is bound
         # implicitly.
         self.assertEqual(unreached, {
-            "xcore1002": ["maca.fma.f32", "maca.tanh.f32"],
+            "xcore1002": ["maca.fma.f32", "maca.simt.fp8e4m3_compensated_fp32", "maca.tanh.f32"],
             "apple_gpu_family7": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "apple_gpu_family8": ["metal.precise.tanh.f32"],
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
@@ -199,7 +200,7 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
         })
         # gfx1151 and xcore1002 retain their device evidence but have no tanh
         # Corpus case. Preserve both explicit gaps without manufacturing cases.
-        self.assertEqual(sum(len(v) for v in unreached.values()), 14)
+        self.assertEqual(sum(len(v) for v in unreached.values()), 15)
         for target in ("gfx938", "sm_100a"):
             self.assertNotIn(target, unreached)
 

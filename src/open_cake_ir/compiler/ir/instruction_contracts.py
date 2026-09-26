@@ -77,6 +77,9 @@ _RECORDS = (
     # in fp32; neither carries a scale operand.
     _mma("triton.dot.fp16_fp32", {DType.FP16}),
     _mma("triton.dot.fp8e4m3_fp32", {DType.FP8_E4M3}),
+    # C550's measured software route: decoded FP32 products with compensated
+    # accumulation. It is deliberately not named as a native FP8 dot atom.
+    _mma("maca.simt.fp8e4m3_compensated_fp32", {DType.FP8_E4M3}),
     InstructionContract("triton.atomic_add.i32.relaxed.gpu", ContractKind.ATOMIC),
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),

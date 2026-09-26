@@ -21,7 +21,7 @@
     "shared_memory_per_multiprocessor_bytes": 65536,
     "maximum_threads_per_multiprocessor": 2048
   },
-  "instruction_contracts": ["maca.tanh.f32", "maca.fma.f32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
+  "instruction_contracts": ["maca.tanh.f32", "maca.fma.f32", "maca.simt.fp8e4m3_compensated_fp32", "triton.dot.fp16_fp32", "triton.dot.bf16_fp32", "triton.dot.fp32_ieee"],
   "synchronization_contracts": [],
   "citations": [
     {
