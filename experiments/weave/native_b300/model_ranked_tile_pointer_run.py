@@ -82,7 +82,14 @@ def prepare(root: Path, bin_root: Path, bridge: Path,
         'bridge_root': str(bridge.resolve()),
         'oracle_root': str(oracle_root.resolve()),
         'geometry': {'R':R,'T':T,'K':K,'E':E,'H':H},
-        'controls': [[1,0],[74,5888]],
+        'controls': [
+            {'name':'uniform_c1','communication_ctas':[1]*R,
+             'steal_budget':[0]*R},
+            {'name':'uniform_c74','communication_ctas':[74]*R,
+             'steal_budget':[5888]*R},
+            {'name':'alternating','communication_ctas':[74,1,74,1],
+             'steal_budget':[5888,0,5888,0]},
+        ],
         'remote_route_rows':remote_route_rows,
         'remote_payloads_by_owner':payloads_by_owner,
         'scope': 'same external GPU tensors, two complete ABI launches with reset',
@@ -155,16 +162,19 @@ def _call(status: int, operation: str) -> None:
         raise RuntimeError(f'{operation} returned CUDA status {status}')
 
 
-def validate_stolen(stolen: list[int], budget: int,
+def validate_stolen(stolen: list[int], budget: int | list[int],
                     owner_routes: list[int]) -> None:
     """Require exercised steal only where the route plan has stage tasks."""
+    budgets=[budget]*R if type(budget) is int else budget
     if (len(stolen) != R or len(owner_routes) != R
-            or any(type(value) is not int or value < 0 or value > budget
-                   for value in stolen)
+            or len(budgets) != R
+            or any(type(value) is not int or type(cap) is not int
+                   or value < 0 or cap < 0 or value > cap
+                   for value,cap in zip(stolen,budgets,strict=True))
             or any((routes == 0 and value != 0)
-                   or (routes > 0 and budget > 0 and value == 0)
-                   for value, routes in zip(stolen, owner_routes, strict=True))
-            or (budget == 0 and stolen != [0]*R)):
+                   or (routes > 0 and cap > 0 and value == 0)
+                   for value,routes,cap in zip(
+                       stolen,owner_routes,budgets,strict=True))):
         raise ValueError('pointer ABI steal cap or nonempty-owner coverage differs')
 
 
@@ -196,7 +206,8 @@ def run(root: Path) -> None:
     create.argtypes=[void_array]*6+[ctypes.POINTER(ctypes.c_void_p)]
     create.restype=ctypes.c_int
     launch=getattr(library,prefix+'launch')
-    launch.argtypes=[ctypes.c_void_p,ctypes.c_int,ctypes.c_int]
+    launch.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_int),
+                     ctypes.POINTER(ctypes.c_int)]
     launch.restype=ctypes.c_int
     destroy=getattr(library,prefix+'destroy')
     destroy.argtypes=[ctypes.c_void_p]
@@ -251,9 +262,11 @@ def run(root: Path) -> None:
                           extents[4],buffers[4][rank])
         _call(create(*buffers,ctypes.byref(handle)),'ranked-tile create')
         created=True
-        for communication,budget in case['controls']:
+        for plan in case['controls']:
+            communication=(ctypes.c_int*R)(*plan['communication_ctas'])
+            budget=(ctypes.c_int*R)(*plan['steal_budget'])
             _call(launch(handle,communication,budget),
-                  f'ranked-tile launch c={communication},b={budget}')
+                  f'ranked-tile launch {plan["name"]}')
             counts=[]
             for rank in range(R):
                 value=ctypes.c_int(-1)
@@ -276,7 +289,7 @@ def run(root: Path) -> None:
                     buffers[5][rank],T*H*2,D2H),
                     'ranked-tile output D2H')
             (root / 'device_outputs' /
-             f'output_c{communication}_b{budget}.bf16').write_bytes(
+             f'output_{plan["name"]}.bf16').write_bytes(
                 output.tobytes())
         _call(destroy(handle),'ranked-tile destroy')
         created=False
@@ -331,12 +344,12 @@ def verify(root: Path) -> None:
     owner_routes=np.bincount(ids//(E//R),minlength=R).tolist()
     results=[]
     output_bits=[]
-    for (communication,budget),stolen,payload_counts in zip(
+    for plan,stolen,payload_counts in zip(
             case['controls'],device['stolen_by_control'],
             device['payloads_by_control'],strict=True):
-        validate_stolen(stolen,budget,owner_routes)
+        validate_stolen(stolen,plan['steal_budget'],owner_routes)
         raw=np.fromfile(root/'device_outputs'/
-                        f'output_c{communication}_b{budget}.bf16',dtype='<u2')
+                        f'output_{plan["name"]}.bf16',dtype='<u2')
         if raw.size!=R*T*H:
             raise ValueError('pointer ABI output extent differs')
         actual=(raw.astype('<u4')<<16).view('<f4').reshape(R,T,H)
@@ -344,14 +357,16 @@ def verify(root: Path) -> None:
             raise ValueError('pointer ABI output contains nonfinite values')
         difference=np.abs(actual.astype(np.float64)-expected.astype(np.float64))
         failing=difference>.01+.01*np.abs(expected.astype(np.float64))
-        results.append({'communication_ctas':communication,
-                        'steal_budget':budget,
+        results.append({'name':plan['name'],
+                        'communication_ctas':plan['communication_ctas'],
+                        'steal_budget':plan['steal_budget'],
                         'actual_stolen_by_rank':stolen,
                         'remote_payloads_by_owner':payload_counts,
                         'failing_elements':int(np.count_nonzero(failing)),
                         'max_abs_error':float(np.max(difference))})
         output_bits.append(raw)
-    mismatches=int(np.count_nonzero(output_bits[0]!=output_bits[1]))
+    mismatches=sum(int(np.count_nonzero(output_bits[0]!=other))
+                   for other in output_bits[1:])
     report={'passed':all(row['failing_elements']==0 for row in results)
                      and mismatches==0,
             'source_commit':manifest['source_commit'],

@@ -109,6 +109,7 @@ class NativeCudaTileStageTest(unittest.TestCase):
             entry=effects.lowering.entry_point)
         self.assertIn('cake_ranked_tile_b300_create(',library)
         self.assertIn('cake_ranked_tile_b300_launch(',library)
+        self.assertIn('const int* communication_ctas',library)
         self.assertIn('cake_ranked_tile_b300_destroy(',library)
         self.assertIn('cake_ranked_tile_b300_stolen(',library)
         self.assertIn('cake_ranked_tile_b300_payloads(',library)

@@ -60,6 +60,7 @@ def generate(evidence_root: Path) -> None:
         'host_abi': [effects.lowering.entry_point + '_' + name for name in
                      ('ranks', 'source_events', 'bin_bytes', 'output_bytes',
                       'create', 'launch', 'destroy', 'stolen', 'payloads')],
+        'controls_abi': 'rank_local_int32_arrays',
         'scope': 'development tensor-pointer ABI source; no public Compiler.lower_ranked_tiles result or device qualification',
     }, indent=2) + '\n')
 

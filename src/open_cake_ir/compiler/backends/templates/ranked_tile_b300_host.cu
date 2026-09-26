@@ -347,12 +347,15 @@ extern "C" int @ENTRY@_payloads(void* opaque,int rank,int* result) {
   return *result>=0 && *result<=PAYLOAD_CAP ? 0 : int(cudaErrorUnknown);
 }
 
-extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
-                               int steal_budget) {
+extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
+                               const int* steal_budgets) {
   auto* state=static_cast<RankedTileHostState*>(opaque);
-  if (!state || state->poisoned || communication_ctas<1 ||
-      communication_ctas>96 || steal_budget<0 ||
-      steal_budget>kTotalStageTasks) return int(cudaErrorInvalidValue);
+  if (!state || state->poisoned || !communication_ctas || !steal_budgets)
+    return int(cudaErrorInvalidValue);
+  for (int rank=0;rank<R;++rank)
+    if (communication_ctas[rank]<1 || communication_ctas[rank]>96 ||
+        steal_budgets[rank]<0 || steal_budgets[rank]>kTotalStageTasks)
+      return int(cudaErrorInvalidValue);
   cudaError_t error=cudaSuccess;
 #define CAKE_RUN(call) \
   do { error=(call); if (error!=cudaSuccess) { state->poisoned=true; return int(error); } } while (0)
@@ -409,11 +412,13 @@ extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
         CAKE_RUN(cudaStreamWaitEvent(s.compute,s.ready[event]));
         int* event_ready=&s.bin->wave_consumed[0];
         int selected_event=event;
+        int communication=communication_ctas[rank];
+        int budget=steal_budgets[rank];
         void* args[]={&s.heads,&s.completed,&s.owners,&s.processed,
                       &s.dispatched,&s.stolen,&s.permits,&s.tasks,
                       &event_ready,&s.overlap,&s.tile_experts,&s.upgate,
                       &s.activated,&s.up_maps_a,&s.up_map_b,&s.down_maps_a,
-                      &s.down_map_b,&s.down,&communication_ctas,&steal_budget,
+                      &s.down_map_b,&s.down,&communication,&budget,
                       &selected_event};
         CAKE_RUN(cudaLaunchCooperativeKernel(
             reinterpret_cast<const void*>(tile_schedule_probe),
@@ -467,7 +472,7 @@ extern "C" int @ENTRY@_launch(void* opaque,int communication_ctas,
       if (count<0) return 1300;
       borrowed+=count;
     }
-    if (borrowed>steal_budget || permits!=borrowed) return 1301;
+    if (borrowed>steal_budgets[rank] || permits!=borrowed) return 1301;
     int flags[LOCAL_ROUTES];
     CAKE_RUN(cudaMemcpy(flags,s.return_ready,sizeof(flags),
                         cudaMemcpyDeviceToHost));
