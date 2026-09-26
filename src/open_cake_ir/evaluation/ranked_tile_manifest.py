@@ -204,13 +204,17 @@ class RankedTileCandidate:
 def prepare_sealed_ranked_tile_case(candidate: RankedTileCandidate,
         lowered: NativeRankedTileLowering, workload: WorkloadContract,
         case_id: str, inputs, outputs, plans, *, library_path: Path,
-        pointer_of: Callable, check_tensor: Callable,
+        pointer_of: Callable, isolated_process: bool,
+        check_tensor: Callable,
         storage_span: Callable, execution_context: Callable):
     """Check the source/library/Workload seal before any device state is created."""
+    if isolated_process is not True:
+        raise ValueError('sealed ranked tile requires an isolated process')
     candidate.check(lowered, workload, case_id, plans, library_path)
     return prepare_ranked_tile_case(
         lowered, workload, case_id, inputs, outputs, plans,
         load_source=lambda source: load_ranked_tile_ctypes(
-            source, library_path, pointer_of=pointer_of, isolated_process=True),
+            source, library_path, pointer_of=pointer_of,
+            isolated_process=isolated_process),
         check_tensor=check_tensor, storage_span=storage_span,
         execution_context=execution_context)
