@@ -33,6 +33,18 @@ class FlashInferGemmTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gemm.column_reuse_source(other)
 
+    def test_008_two_column_static_reduction_lowers_without_tile_loop(self):
+        workload = WorkloadContract(gemm.workload_document(
+            'fib_gemm_n4096_k14336', rows=1, backend='triton-b300'))
+        source = gemm.column_reuse_unrolled_source(workload)
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        assessment = compiler.assess(parse(source).document)
+        self.assertTrue(assessment.lowering_eligible, assessment.findings)
+        lowered = compiler.lower(assessment).source
+        self.assertNotIn('for k in tl.range(', lowered)
+        self.assertIn('BLOCK_COLUMN=2', lowered)
+        self.assertEqual(lowered.count('tl.sum(products_'), 3)
+
     def test_all_eight_exact_tasks_have_fp16_abi_and_lower_on_b300(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         self.assertEqual(len(gemm.TASKS), 8)

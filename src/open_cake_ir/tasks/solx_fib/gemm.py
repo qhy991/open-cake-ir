@@ -444,6 +444,18 @@ def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
             '    with compute:\n        '+'\n        '.join(body)+'\n')
 
 
+def _fib008_arguments(workload: WorkloadContract, case_id: str):
+    validate_contract(workload.document)
+    shape = workload.case(case_id)["shape"]
+    if (workload.target != "sm_103a"
+            or workload.document["operator"] != TASKS["fib_gemm_n4096_k14336"][0]):
+        raise ValueError("column reuse is scoped to FlashInfer GEMM 008 on sm_103a")
+    args = workload.tensor_abi(case_id)
+    declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"' +
+                    (', mode="output")' if arg.mode == "output" else ')') for arg in args]
+    return shape, declarations
+
+
 def column_reuse_source(workload: WorkloadContract, case_id: str = "primary", *,
                         columns_per_program: int = 4, k_tile: int = 256) -> str:
     """Explicit B300 008 candidate: reuse one A tile across output columns.
@@ -451,20 +463,13 @@ def column_reuse_source(workload: WorkloadContract, case_id: str = "primary", *,
     The reduction is carried across K tiles. This changes the reduction order, so
     the candidate still needs the external oracle and device measurement before use.
     """
-    validate_contract(workload.document)
-    shape = workload.case(case_id)["shape"]
-    if (workload.target != "sm_103a"
-            or workload.document["operator"] != TASKS["fib_gemm_n4096_k14336"][0]):
-        raise ValueError("column reuse is scoped to FlashInfer GEMM 008 on sm_103a")
+    shape, declarations = _fib008_arguments(workload, case_id)
     for name, value, extent in (("columns_per_program", columns_per_program, shape["N"]),
                                 ("k_tile", k_tile, shape["K"])):
         if type(value) is not int or value <= 0 or value & (value - 1) or extent % value:
             raise ValueError(f"{name} must be a power of two that divides its axis")
     if columns_per_program not in (2, 4, 8) or k_tile not in (128, 256, 512):
         raise ValueError("column reuse candidate requires 2/4/8 columns and 128/256/512 K tiles")
-    args = workload.tensor_abi(case_id)
-    declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"' +
-                    (', mode="output")' if arg.mode == "output" else ')') for arg in args]
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
             f'@cake.schedule(name="{workload.workload_id}-column-reuse-c{columns_per_program}-k{k_tile}", '
             f'target="{workload.target}", backend="triton", entry_point="cake_fib008_column_reuse")\n'
@@ -483,3 +488,35 @@ def column_reuse_source(workload: WorkloadContract, case_id: str = "primary", *,
             '    with compute:\n'
             '        rounded = lm.cast(accum, to="fp16", id="round_out")\n'
             '        lm.store(out[row, column], rounded, coalesced=False, id="store_out")\n')
+
+
+def column_reuse_unrolled_source(workload: WorkloadContract,
+                                 case_id: str = "primary") -> str:
+    """FIB 008 two-column candidate with three static K reductions, without a tile loop."""
+    shape, declarations = _fib008_arguments(workload, case_id)
+    body = []
+    spans = row_spans(shape["K"])
+    for index, (start, stop) in enumerate(spans):
+        body.extend([
+            f'a_{index} = lm.load(a[row, {start}:{stop}], id="load_a_{index}")',
+            f'b_{index} = lm.load(b[column, {start}:{stop}], id="load_b_{index}")',
+            f'a32_{index} = lm.cast(a_{index}, to="fp32", id="cast_a_{index}")',
+            f'b32_{index} = lm.cast(b_{index}, to="fp32", id="cast_b_{index}")',
+            f'products_{index} = b32_{index} * lm.broadcast(a32_{index}, axis=1)',
+            f'sum_{index} = lm.reduce(products_{index}, op="sum", axis=1, '
+            f'scope="cta", across_loop=False, id="sum_{index}")',
+        ])
+    body.extend([
+        'total = ' + ' + '.join(f'sum_{index}' for index in range(len(spans))),
+        'rounded = lm.cast(total, to="fp16", id="round_out")',
+        'lm.store(out[row, column], rounded, coalesced=False, id="store_out")',
+    ])
+    return ('from open_cake_ir.compiler import frontend as cake\n\n'
+            f'@cake.schedule(name="{workload.workload_id}-column-reuse-unrolled-c2", '
+            f'target="{workload.target}", backend="triton", '
+            'entry_point="cake_fib008_column_reuse_unrolled")\n'
+            f'def candidate(lm, {", ".join(declarations)}):\n'
+            '    compute = lm.role(execution_groups=[0, 1, 2, 3])\n'
+            '    row = lm.program(a, axis=0, dimension=0, tile=1)\n'
+            '    column = lm.program(b, axis=1, dimension=0, tile=2)\n'
+            '    with compute:\n        ' + '\n        '.join(body) + '\n')
