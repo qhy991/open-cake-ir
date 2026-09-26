@@ -155,17 +155,20 @@ def reference_tensors(workload,case_id,inputs):
     return {'output':output.to(torch.bfloat16)}
 
 
-def author_plan(workload,case_id='primary',*,fuse_route_weights=False):
+def author_plan(workload,case_id='primary',*,fuse_route_weights=False,fuse_swiglu=False):
     validate_contract(workload.document)
-    if fuse_route_weights and workload.target != 'sm_103a':
-        raise ValueError('fused MoE routing requires the exact B300 Workload')
+    if (fuse_route_weights or fuse_swiglu) and workload.target != 'sm_103a':
+        raise ValueError('fused MoE mapping requires the exact B300 Workload')
     plan=PlanAuthor(workload,case_id)
-    for name,shape,dtype in [
+    tensors=[
         ('group_scores',(1,8),'fp32'),('selected_groups',(1,4),'int32'),
         ('expert_ids',(1,8),'int32'),('route_weights',(1,8),'fp32'),
-        ('first_projection',(1,8,4096),'fp32'),('activations',(1,8,2048),'fp32'),
+        ('activations',(1,8,2048),'fp32'),
         ('contributions',(1,8,7168),'fp32'),
-    ]:plan.tensor(name,shape,dtype)
+    ]
+    if not fuse_swiglu:
+        tensors.append(('first_projection',(1,8,4096),'fp32'))
+    for name,shape,dtype in tensors:plan.tensor(name,shape,dtype)
     body=['with compute:',
           '    group_id = lm.coordinate(source="program", name="group")',
           '    lanes = lm.coordinate(source="range", start=0, extent=32)',
@@ -266,17 +269,62 @@ def author_plan(workload,case_id='primary',*,fuse_route_weights=False):
         body += [f'    lm.store({output}[token, slot, feature], {result}, coalesced=False)']
         plan.stage('moe_'+prefix,inputs,[output],
                    [('token',output,0,1),('slot',output,1,1),('feature',output,2,16)],body)
-    projection(True)
-    body=['with compute:', '    columns = lm.coordinate(source="program_tile", name="feature")',
-          '    second_columns = columns + 2048',
-          '    x1 = lm.load(first_projection[token, slot, columns])',
-          '    x2 = lm.load(first_projection[token, slot, second_columns])',
-          '    negative = x2 * -1.0','    exp_negative = lm.exp(negative)',
-          '    denominator = exp_negative + 1.0','    silu = x2 / denominator',
-          '    activation = x1 * silu',
-          '    lm.store(activations[token, slot, feature], activation, coalesced=False)']
-    plan.stage('moe_swiglu',['first_projection'],['activations'],
-               [('token','activations',0,1),('slot','activations',1,1),('feature','activations',2,128)],body)
+    if fuse_swiglu:
+        body=['with compute:',
+              '    expert = lm.load(expert_ids[token, slot])',
+              '    offset = lm.load(local_expert_offset[:])',
+              '    local = expert - offset',
+              '    feature_block = lm.coordinate(source="program", name="feature")',
+              '    feature_start = feature_block * 16',
+              '    second_feature = feature + 2048',
+              '    second_start = feature_start + 2048',
+              '    scale_row_0 = feature_start // 128',
+              '    scale_row_1 = second_start // 128',
+              'for k in lm.range(gemm1_weights, name="contraction", dimension=2, tile=128, num_stages=1):',
+              '    with compute:',
+              '        k_start = lm.coordinate(source="loop", name="k")',
+              '        scale_column = k_start // 128',
+              '        a_raw = lm.load(hidden_states[token, k])',
+              '        a32 = lm.cast(a_raw, to="fp32")',
+              '        a_scale = lm.load(hidden_states_scale[lm.scalar_index(scale_column), token])',
+              '        activation_values = a32 * a_scale',
+              '        w0_raw = lm.load(gemm1_weights[lm.scalar_index(local), feature, k])',
+              '        w1_raw = lm.load(gemm1_weights[lm.scalar_index(local), second_feature, k])',
+              '        w0 = lm.cast(w0_raw, to="fp32")',
+              '        w1 = lm.cast(w1_raw, to="fp32")',
+              '        scale_0 = lm.load(gemm1_weights_scale[lm.scalar_index(local), lm.scalar_index(scale_row_0), lm.scalar_index(scale_column)])',
+              '        scale_1 = lm.load(gemm1_weights_scale[lm.scalar_index(local), lm.scalar_index(scale_row_1), lm.scalar_index(scale_column)])',
+              '        weighted_0 = w0 * scale_0',
+              '        weighted_1 = w1 * scale_1',
+              '        products_0 = weighted_0 * lm.broadcast(activation_values, axis=1)',
+              '        products_1 = weighted_1 * lm.broadcast(activation_values, axis=1)',
+              '        first_half = lm.reduce(products_0, op="sum", axis=1)',
+              '        second_half = lm.reduce(products_1, op="sum", axis=1)',
+              'with compute:',
+              '    negative = second_half * -1.0',
+              '    exp_negative = lm.exp(negative)',
+              '    denominator = exp_negative + 1.0',
+              '    silu = second_half / denominator',
+              '    activation = first_half * silu',
+              '    lm.store(activations[token, slot, feature], activation, coalesced=False)']
+        plan.stage('moe_gemm1_swiglu',
+                   ['expert_ids','local_expert_offset','hidden_states',
+                    'gemm1_weights','gemm1_weights_scale','hidden_states_scale'],
+                   ['activations'],
+                   [('token','activations',0,1),('slot','activations',1,1),
+                    ('feature','activations',2,16)],body)
+    else:
+        projection(True)
+        body=['with compute:', '    columns = lm.coordinate(source="program_tile", name="feature")',
+              '    second_columns = columns + 2048',
+              '    x1 = lm.load(first_projection[token, slot, columns])',
+              '    x2 = lm.load(first_projection[token, slot, second_columns])',
+              '    negative = x2 * -1.0','    exp_negative = lm.exp(negative)',
+              '    denominator = exp_negative + 1.0','    silu = x2 / denominator',
+              '    activation = x1 * silu',
+              '    lm.store(activations[token, slot, feature], activation, coalesced=False)']
+        plan.stage('moe_swiglu',['first_projection'],['activations'],
+                   [('token','activations',0,1),('slot','activations',1,1),('feature','activations',2,128)],body)
     projection(False)
     body=['with compute:', '    values = lm.load(contributions[token, :, feature])',
           '    total = lm.reduce(values, op="sum", axis=0, across_loop=False)',
@@ -294,6 +342,16 @@ def launch_plan(workload,case_id='primary'):
 def fused_routing_plan(workload,case_id='primary'):
     """Fuse top-k expert selection and normalized route weights in one Cake stage."""
     return author_plan(workload,case_id,fuse_route_weights=True).finish()
+
+
+def fused_projection_plan(workload,case_id='primary'):
+    """Keep both first-projection halves in one CTA through SwiGLU."""
+    return author_plan(workload,case_id,fuse_swiglu=True).finish()
+
+
+def combined_fusion_plan(workload,case_id='primary'):
+    """Combine routing and first-projection fusion without changing the Workload."""
+    return author_plan(workload,case_id,fuse_route_weights=True,fuse_swiglu=True).finish()
 
 
 def routing_reference(logits,bias,factor):

@@ -31,6 +31,19 @@ class CompletePackPlanTests(unittest.TestCase):
         lowered.validate_binding()
         self.assertEqual(len(lowered.lowerings), 7)
 
+    def test_020_fused_first_projection_reuses_input_for_both_swiglu_halves(self):
+        workload = WorkloadContract(moe.workload_document())
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        for program, count in ((moe.fused_projection_plan(workload), 7),
+                               (moe.combined_fusion_plan(workload), 6)):
+            self.assertEqual(len(program.stages), count)
+            self.assertNotIn('first_projection', program.tensors)
+            self.assertIn('moe_gemm1_swiglu', [stage.name for stage in program.stages])
+            self.assertNotIn('moe_swiglu', [stage.name for stage in program.stages])
+            lowered = compiler.lower_program(program)
+            lowered.validate_binding()
+            self.assertEqual(len(lowered.lowerings), count)
+
     def test_all_26_tasks_have_one_owning_implementation(self):
         self.assertEqual(len(TASK_IDS),26)
         self.assertEqual(len({t.split('_',1)[0] for t in TASK_IDS}),26)
