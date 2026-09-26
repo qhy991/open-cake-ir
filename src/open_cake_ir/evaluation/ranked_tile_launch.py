@@ -87,6 +87,7 @@ class RankedTileBound:
     launch: Callable[[tuple[int, ...], tuple[int, ...], tuple[int, ...]], int]
     stolen: Callable[[int], int]
     payloads: Callable[[int], int]
+    tile_counts: Callable[[int], tuple[int, ...]]
     destroy: Callable[[], int]
 
 
@@ -185,7 +186,7 @@ def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
             or not isinstance(abi, Mapping)
             or set(abi) != {'abi_version','ranks','source_events','bin_bytes',
                             'output_bytes','create','launch','destroy',
-                            'stolen','payloads'}
+                            'stolen','payloads','tile_counts'}
             or any(not isinstance(name, str) or not name
                    for name in abi.values())):
         raise ValueError('ranked tile source, state or host ABI differs')
@@ -229,7 +230,7 @@ def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
                             MappingProxyType(frozen_outputs), contexts)
     if (not isinstance(bound, RankedTileBound)
             or any(not callable(getattr(bound, name)) for name in
-                   ('launch','stolen','payloads','destroy'))):
+                   ('launch','stolen','payloads','tile_counts','destroy'))):
         raise ValueError('ranked tile loaded ABI binder differs')
     if tuple(execution_context(rank) for rank in range(world)) != contexts:
         raise ValueError('ranked tile execution contexts changed during binding')
@@ -289,15 +290,23 @@ class PreparedRankedTiles:
                     raise ValueError(f'ranked tile launch status {status!r}')
                 stolen = tuple(self.bound.stolen(rank) for rank in range(4))
                 payloads = tuple(self.bound.payloads(rank) for rank in range(4))
+                tile_counts = tuple(tuple(self.bound.tile_counts(rank))
+                                    for rank in range(4))
             except Exception:
                 self.poisoned = True
                 raise
             if (any(type(value) is not int or not 0 <= value <= budgets[rank]
                     for rank,value in enumerate(stolen))
                     or any(type(value) is not int or not 0 <= value <= 1536
-                           for value in payloads)):
+                           for value in payloads)
+                    or any(len(row)!=20
+                           or any(type(value) is not int or value<0
+                                  for value in row)
+                           or sum(row)>self.lowering.analysis.logical_tile_slots_per_rank
+                           or any(row[5*chunks[rank]:])
+                           for rank,row in enumerate(tile_counts))):
                 self.poisoned = True
-                raise ValueError('ranked tile stolen or payload status differs')
+                raise ValueError('ranked tile stolen, payload or tile status differs')
             if tuple(self.execution_context(rank) for rank in range(4)) != self.contexts:
                 self.poisoned = True
                 raise ValueError('ranked tile execution contexts changed after launch')
@@ -306,6 +315,7 @@ class PreparedRankedTiles:
                 'stolen_by_rank':stolen,
                 'remote_payloads_by_owner':payloads,
                 'chunks_by_rank':chunks,
+                'tile_counts_by_rank':tile_counts,
             })
 
     def close(self) -> None:

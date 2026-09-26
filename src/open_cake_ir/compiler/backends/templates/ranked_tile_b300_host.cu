@@ -219,7 +219,7 @@ cudaError_t ranked_tile_reset(RankedTileRankState& s) {
 }
 } // namespace
 
-extern "C" int @ENTRY@_abi_version() { return 2; }
+extern "C" int @ENTRY@_abi_version() { return 3; }
 extern "C" int @ENTRY@_ranks() { return R; }
 extern "C" int @ENTRY@_source_events() { return kEvents; }
 extern "C" size_t @ENTRY@_bin_bytes() { return sizeof(Bin); }
@@ -361,6 +361,26 @@ extern "C" int @ENTRY@_payloads(void* opaque,int rank,int* result) {
                    sizeof(int),cudaMemcpyDeviceToHost);
   if (error!=cudaSuccess) return int(error);
   return *result>=0 && *result<=PAYLOAD_CAP ? 0 : int(cudaErrorUnknown);
+}
+
+extern "C" int @ENTRY@_tile_counts(void* opaque,int rank,int* result,
+                                    int capacity) {
+  auto* state=static_cast<RankedTileHostState*>(opaque);
+  if (!state || state->poisoned || state->completed_launches<1 ||
+      rank<0 || rank>=R || !result || capacity!=kEvents)
+    return int(cudaErrorInvalidValue);
+  cudaError_t error=cudaSetDevice(rank);
+  if (error!=cudaSuccess) return int(error);
+  error=cudaMemcpy(result,state->ranks[rank].bin->wave_counts,
+                   kEvents*sizeof(int),cudaMemcpyDeviceToHost);
+  if (error!=cudaSuccess) return int(error);
+  int total=0;
+  for (int event=0;event<kEvents;++event) {
+    if (result[event]<0 || result[event]>kLogicalTiles)
+      return int(cudaErrorUnknown);
+    total+=result[event];
+  }
+  return total<=kLogicalTiles ? 0 : int(cudaErrorUnknown);
 }
 
 extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,

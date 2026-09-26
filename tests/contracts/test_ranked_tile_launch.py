@@ -65,7 +65,7 @@ class RankedTileLaunchContract(unittest.TestCase):
         return inputs,outputs,plans
 
     def prepare(self,inputs,outputs,plans,*,isolated=True,launch_status=0,
-                calls=None):
+                calls=None,tile_counts=None):
         events=[] if calls is None else calls
         def bind(bound_inputs,bound_outputs,contexts):
             events.append(('bind',tuple(contexts)))
@@ -75,6 +75,7 @@ class RankedTileLaunchContract(unittest.TestCase):
                 launch=lambda c,b,k:(events.append(('launch',c,b,k)) or launch_status),
                 stolen=lambda rank:5888 if rank%2==0 else 0,
                 payloads=lambda rank:(618,312,306,300)[rank],
+                tile_counts=lambda rank:tile_counts or (1,)+(0,)*19,
                 destroy=lambda:(events.append(('destroy',)) or 0),
             )
         def loader(lowered):
@@ -109,6 +110,7 @@ class RankedTileLaunchContract(unittest.TestCase):
         self.assertEqual(actual,outputs)
         self.assertEqual(status['stolen_by_rank'],(5888,0,5888,0))
         self.assertEqual(status['remote_payloads_by_owner'],(618,312,306,300))
+        self.assertEqual(status['tile_counts_by_rank'][0],(1,)+(0,)*19)
         self.assertEqual(bound.launch_calls,1)
         self.assertIn(('launch',(74,1,74,1),(5888,0,5888,0),(4,4,4,4)),events)
         replay={rank:{**plan,'communication_ctas':73 if rank%2==0 else 2}
@@ -161,6 +163,17 @@ class RankedTileLaunchContract(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'isolated process exit'):
             bound.close()
         self.assertNotIn(('destroy',),events)
+
+    def test_inactive_temporal_event_count_poison_is_retained(self):
+        inputs,outputs,plans=self.fixtures()
+        for row in plans.values():
+            row['chunks']=1
+        invalid=(1,)+(0,)*18+(1,)
+        bound,_=self.prepare(inputs,outputs,plans,tile_counts=invalid)
+        with self.assertRaisesRegex(ValueError,'tile status'):
+            bound.run()
+        with self.assertRaisesRegex(ValueError,'isolated process exit'):
+            bound.close()
 
 
 if __name__ == '__main__':

@@ -273,6 +273,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
                          {'1':512,'2':256,'4':128})
         self.assertEqual(req['host_abi']['abi_version'],
                          'cake_ranked_tile_b300_abi_version')
+        self.assertEqual(req['host_abi']['tile_counts'],
+                         'cake_ranked_tile_b300_tile_counts')
         self.assertEqual(req['rank_inputs'][0],
                          {'name':'hidden','shape':[512,2048],'dtype':'bf16'})
         self.assertEqual(len([name for name in lowered.source_map

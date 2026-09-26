@@ -25,7 +25,7 @@ def load_ranked_tile_ctypes(lowered: NativeRankedTileLowering,
     library=ctypes.CDLL(str(library_path.resolve(strict=True)))
     names=lowered.toolchain_requirements['host_abi']
     required={'abi_version','ranks','source_events','bin_bytes','output_bytes',
-              'create','launch','destroy','stolen','payloads'}
+              'create','launch','destroy','stolen','payloads','tile_counts'}
     if set(names)!=required:
         raise ValueError('ranked tile compiled ABI names differ')
     try:
@@ -51,10 +51,13 @@ def load_ranked_tile_ctypes(lowered: NativeRankedTileLowering,
         functions[name].argtypes=[ctypes.c_void_p,ctypes.c_int,
                                   ctypes.POINTER(ctypes.c_int)]
         functions[name].restype=ctypes.c_int
+    functions['tile_counts'].argtypes=[ctypes.c_void_p,ctypes.c_int,
+                                      ctypes.POINTER(ctypes.c_int),ctypes.c_int]
+    functions['tile_counts'].restype=ctypes.c_int
     world=lowered.analysis.world_size
     output_bytes=lowered.analysis.items_per_rank*lowered.analysis.feature_width*2
     bin_bytes=functions['bin_bytes']()
-    if (functions['abi_version']()!=2
+    if (functions['abi_version']()!=3
             or functions['ranks']()!=world or functions['source_events']()!=20
             or functions['output_bytes']()!=output_bytes
             or not (world-1)*lowered.analysis.items_per_rank*
@@ -97,10 +100,18 @@ def load_ranked_tile_ctypes(lowered: NativeRankedTileLowering,
                 raise ValueError(f'ranked tile {name} status {status!r}')
             return value.value
 
+        def tile_counts(rank):
+            counts=(ctypes.c_int*20)()
+            status=functions['tile_counts'](handle,rank,counts,20)
+            if status!=0:
+                raise ValueError(f'ranked tile tile_counts status {status!r}')
+            return tuple(counts)
+
         return RankedTileBound(
             launch=launch,
             stolen=lambda rank:observe('stolen',rank),
             payloads=lambda rank:observe('payloads',rank),
+            tile_counts=tile_counts,
             destroy=lambda:functions['destroy'](handle),
         )
 

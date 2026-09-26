@@ -264,7 +264,7 @@ def lower_ranked_tiles(compiler, effects: RankedTileEffects,
     mapped=source_event_map(source,composition,combine_source=combine)
     abi={name:entry+'_'+name for name in
          ('abi_version','ranks','source_events','bin_bytes','output_bytes',
-          'create','launch','destroy','stolen','payloads')}
+          'create','launch','destroy','stolen','payloads','tile_counts')}
     requirements={
         'source_language':'cuda_cpp','target':local_program.target,
         'entry_point':entry,'compiler_commit':compiler.commit,
