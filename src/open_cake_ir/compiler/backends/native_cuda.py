@@ -225,13 +225,45 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         if not loop.carried_buffers:
             continue
         owners = [p for p in s.pipelines if _pipeline_loop(s, p) == loop]
-        check(len(owners) == 1, 'NATIVE_CARRIED_PIPELINE_COUNT',
+        check(len(owners) in (1, 2), 'NATIVE_CARRIED_PIPELINE_COUNT',
               f'tile_loops[{loop_index}].body',
-              'one carried-state loop has exactly one staged B/MMA pipeline')
-        if len(owners) == 1:
-            check(owners[0].stages == 1, 'NATIVE_CARRIED_PIPELINE_STAGES',
-                  f'pipelines[{s.pipelines.index(owners[0])}].stages',
-                  'the current carried-state route completes one stage per chunk')
+              'a carried-state loop has one contraction or two ordered contractions')
+        for owner in owners:
+            check(owner.stages == 1, 'NATIVE_CARRIED_PIPELINE_STAGES',
+                  f'pipelines[{s.pipelines.index(owner)}].stages',
+                  'each carried contraction completes one stage per chunk')
+        if len(owners) == 2:
+            owners.sort(key=lambda p: next(
+                (loop.body.index(op.op_id) for op in s.operations
+                 if op.pipeline == p.name and op.op_id in loop.body),
+                len(loop.body),
+            ))
+            first, second = owners
+            first_ops = [op for op in s.operations if op.pipeline == first.name]
+            second_ops = [op for op in s.operations if op.pipeline == second.name]
+            first_mma = [op for op in first_ops if op.kind is OperationKind.MMA]
+            second_mma = [op for op in second_ops if op.kind is OperationKind.MMA]
+            solves = [op for op in s.loop_operations(loop)
+                      if op.kind is OperationKind.FORWARD_SUBSTITUTE]
+            second_state = (second_mma[0].reads[0]
+                            if len(second_mma) == 1 and second_mma[0].reads else None)
+            update = writers.get(second_state) if second_state else None
+            first_end = max((loop.body.index(op.op_id) for op in first_ops
+                             if op.op_id in loop.body), default=-1)
+            second_start = min((loop.body.index(op.op_id) for op in second_ops
+                                if op.op_id in loop.body), default=-1)
+            solve_at = loop.body.index(solves[0].op_id) if len(solves) == 1 else -1
+            update_at = (loop.body.index(update.op_id) if update is not None
+                         and update.op_id in loop.body else -1)
+            check(len(first_mma) == len(second_mma) == len(solves) == 1
+                  and bool(first_mma[0].reads)
+                  and first_mma[0].reads[0] in loop.carried_buffers
+                  and second_state not in loop.carried_buffers
+                  and update is not None and update.kind is OperationKind.TMEM_STORE
+                  and first_end < solve_at < update_at < second_start,
+                  'NATIVE_TWO_PHASE_ORDER', f'tile_loops[{loop_index}].body',
+                  'the carried-state MMA precedes the row solve and U publication, '
+                  'which precede the correction MMA')
     for i, pipeline in enumerate(s.pipelines):
         tagged = [op for op in s.operations if op.pipeline == pipeline.name]
         scopes = {_scope(s, op).name if _scope(s, op) else None for op in tagged}
@@ -253,9 +285,12 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'one contraction tile without a K loop uses one explicitly declared stage')
         loads = [op for op in body if op.kind is OperationKind.LOAD and op.parameters.movement in (LoadMovement.TMA, LoadMovement.GLOBAL)]
         mmas = [op for op in body if op.kind is OperationKind.MMA]
+        body_ids = [op.op_id for op in body]
         body_matches = loop is None or (
-            list(loop.body[:len(body)]) == [op.op_id for op in body]
-            if carried else list(loop.body) == [op.op_id for op in body]
+            bool(body_ids) and body_ids[0] in loop.body
+            and list(loop.body[loop.body.index(body_ids[0]):
+                               loop.body.index(body_ids[0]) + len(body)]) == body_ids
+            if carried else list(loop.body) == body_ids
         )
         check(bool(loads) and bool(mmas) and len(loads)+len(mmas) == len(body)
               and all(op.pipeline == pipeline.name for op in body)
@@ -453,7 +488,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                                  and dst.name in reader.reads]
                 if op.pipeline is None and len(solve_readers) == 1:
                     barrier = next((b for b in s.barriers if b.name in op.signals), None)
-                    check(scope is None and p.movement is LoadMovement.GLOBAL
+                    solve_scope = _scope(s, solve_readers[0])
+                    check((scope is None or scope.carried_buffers)
+                          and solve_scope == scope
+                          and p.movement is LoadMovement.GLOBAL
                           and len(op.signals) == 1 and barrier is not None
                           and barrier.count == 1 and barrier.pipeline is None
                           and barrier.mechanism is BarrierMechanism.MBARRIER
@@ -518,7 +556,8 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   and producer.parameters.movement is LoadMovement.GLOBAL
                   and producer.writes == (coefficient.name,)
                   and len(op.waits) == 1 and op.waits == producer.signals
-                  and op.pipeline is None and _scope(s, op) is None,
+                  and op.pipeline is None
+                  and _scope(s, op) == _scope(s, producer),
                   'NATIVE_FORWARD_SOLVE_OWNER', path,
                   'one root P stage owns the solve input and its completion barrier')
 
@@ -526,9 +565,14 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             src = buffers[op.reads[0]]
             atom = op.parameters.destination_atom
             scope = _scope(s, op)
-            check(scope is None or dst.name in scope.carried_buffers,
+            transient = (scope is not None and dst.name not in scope.carried_buffers
+                         and all(_scope(s, reader) == scope
+                                 and reader.kind is OperationKind.MMA
+                                 for reader in s.operations if dst.name in reader.reads)
+                         and any(dst.name in reader.reads for reader in s.operations))
+            check(scope is None or dst.name in scope.carried_buffers or transient,
                   'NATIVE_TMEM_STORE_SCOPE', path,
-                  'an in-loop TMEM store must update its loop-declared carried tile')
+                  'an in-loop TMEM store updates carried state or feeds a same-loop MMA')
             check(src.space is MemorySpace.REGISTER and dst.space is MemorySpace.TENSOR
                   and src.dtype is dst.dtype is DType.BF16
                   and src.shape == dst.shape and len(src.shape) == 2
@@ -817,13 +861,20 @@ class _Emitter:
 
     def carried_loop(self, loop):
         """Run one complete chunk per trip, publishing the next TMEM phase last."""
-        pipeline = self.pipeloops[loop.name]
+        pipelines = [p for p in self.s.pipelines if _pipeline_loop(self.s, p) == loop]
+        groups = {
+            next(op.op_id for op in self.s.loop_operations(loop) if op.pipeline == p.name): p
+            for p in pipelines
+        }
+        covered = {op.op_id for op in self.s.loop_operations(loop)
+                   if op.pipeline in {p.name for p in pipelines}}
         variable = self.loopvars[loop.iterator]
         self.line('#pragma unroll 1')
         self.begin(f'for (int {variable}=0; {variable}<{self.trip(loop)}; ++{variable})')
-        self.pipeline(None, pipeline, carried_phase=f'({variable}&1)')
         for operation in self.s.loop_operations(loop):
-            if operation.pipeline != pipeline.name:
+            if operation.op_id in groups:
+                self.pipeline(None, groups[operation.op_id], carried_phase=f'({variable}&1)')
+            elif operation.op_id not in covered:
                 self.operation(operation)
         self.line('__syncthreads();')
         self.invalidate_completions(loop)
@@ -1003,7 +1054,10 @@ class _Emitter:
         elif op.kind is OperationKind.FORWARD_SUBSTITUTE:
             coefficient = src
             rhs = self.names[op.reads[1]]
-            self.line(f'cake_wait({self.barvars[op.waits[0]]}, 0);')
+            solve_scope = _scope(self.s, op)
+            phase = (f'({self.loopvars[solve_scope.iterator]}&1)'
+                     if solve_scope is not None and solve_scope.carried_buffers else '0')
+            self.line(f'cake_wait({self.barvars[op.waits[0]]}, {phase});')
             for token in range(32):
                 self.line(f'float u{token} = {rhs}[{token}];')
                 for prior in range(token):

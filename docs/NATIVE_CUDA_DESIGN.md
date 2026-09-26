@@ -215,6 +215,19 @@ synthetic Target adds the operation kind only for this proof; the committed
 registers with zero stack/spills. Device numerical proof and any latency
 measurement remain separate gates (F-2026-09-24-003).
 
+A further isolated two-chunk **K32/C32 synchronization witness** keeps one
+BF16 `[128,32]` state tile in TMEM, not the full KDA K128 state. Its first
+carried TMA/MMA phase projects that state, then a copy warp stages BF16
+P[32,32] and the four row-owning compute warps solve FP32 U. An explicit cast
+and TMEM store publish BF16 U before the second TMA/MMA phase forms a next
+state and republishes the carried TMEM phase. Both pipeline groups must be
+contiguous and ordered around the solve; `NATIVE_TWO_PHASE_ORDER` refuses a
+correction before U publication. State/U/P handoffs have separate declared
+barriers and parity, while the final global result is written by the same CTA
+after each chunk. This checks the synchronization vocabulary and emitter
+structure; it does not include KDA normalization, decay, beta, output formula,
+K128 operand mapping or numerical/device qualification.
+
 The KDA base-key/query contraction needs K128 with a dynamic TMEM A tile. The
 earlier K-major B stage is refused because one BF16 row occupies 256 bytes, beyond
 the backend's modeled 128-byte swizzle row. A standalone edited PTX probe then
