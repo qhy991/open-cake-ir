@@ -23,7 +23,11 @@ four B300 ranks, model-width BF16 tensors, K=1/2/4 uniform across ranks,
 3. All 96 CTAs gather tile rows in a grid-stride loop. After system fences
    and a grid barrier, block 0 release-publishes `wave_consumed[event]`.
    The next source's wait uses that flag, so later source rows cannot enter
-   this event's expert snapshot.
+   this event's expert snapshot. Every thread then executes
+   `fence.proxy.async.global` before Cake's TMA reads those tile rows:
+   the gather's generic global stores and the TMA async-proxy reads now
+   occur inside the same kernel, so the [PTX proxy-fence rule](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html)
+   applies at this new boundary.
 4. CTAs claim complete Cake stage work units from per-tile GPU-scope queues.
    CTAs in the `c` communication class need a bounded steal permit; the
    other `96-c` CTAs are ordinary computation workers. Predecessor-stage

@@ -172,6 +172,9 @@ __global__ void tile_schedule_probe(
   if (block==0 && threadIdx.x==0)
     publish_event_snapshot(source_params,selected_wave);
   grid.sync();
+  // Gather wrote tile rows through the generic proxy in this same kernel.
+  // The Cake up/gate TMA reads them through the async proxy.
+  asm volatile("fence.proxy.async.global;" ::: "memory");
   bool tensor_owned = false;
   int logical_offset=0;
   for (int earlier=0;earlier<selected_wave;++earlier)
