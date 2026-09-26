@@ -93,6 +93,12 @@ class RankedTileLaunchContract(unittest.TestCase):
         self.assertEqual(status['remote_payloads_by_owner'],(618,312,306,300))
         self.assertEqual(bound.launch_calls,1)
         self.assertIn(('launch',(74,1,74,1),(5888,0,5888,0)),events)
+        replay={rank:{**plan,'communication_ctas':73 if rank%2==0 else 2}
+                for rank,plan in plans.items()}
+        _,again=bound.run(replay)
+        self.assertEqual(again['stolen_by_rank'],(5888,0,5888,0))
+        self.assertEqual(bound.launch_calls,2)
+        self.assertIn(('launch',(73,2,73,2),(5888,0,5888,0)),events)
         bound.close()
         self.assertIn(('destroy',),events)
         with self.assertRaisesRegex(ValueError,'closed'):

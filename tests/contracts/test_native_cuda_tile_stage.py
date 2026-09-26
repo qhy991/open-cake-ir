@@ -238,6 +238,11 @@ class NativeCudaTileStageTest(unittest.TestCase):
                            env=environment,check=True,capture_output=True,text=True)
             source=(root/'ranked_tile.cu').read_text()
             report=json.loads((root/'lowering_report.json').read_text())
+            self.assertEqual(Program.from_dict(json.loads(
+                (root/'local_program.json').read_text())),self.program)
+            self.assertEqual(RankedTileEffects.from_dict(json.loads(
+                (root/'effects.json').read_text())).lowering.entry_point,
+                             report['entry_point'])
             self.assertIn('cake_ranked_tile_b300_create(',source)
             self.assertIn('cake_ranked_tile_b300_launch(',source)
             self.assertIn('cake_weave_rank512_combine_kernel',source)
@@ -246,6 +251,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
             self.assertNotIn('fopen(',source)
             self.assertEqual(report['logical_tile_capacity'],255)
             self.assertEqual(report['stage_task_capacity'],46920)
+            self.assertEqual(report['toolchain_requirements']['rank_local_controls'],
+                             True)
             self.assertEqual(len([name for name in report['source_map']
                                   if name.startswith('effect.')]),27)
 

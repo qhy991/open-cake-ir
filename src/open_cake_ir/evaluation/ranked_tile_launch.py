@@ -72,6 +72,25 @@ def _span(tensor, expected: ProgramTensor, rank: int, storage_span,
     occupied.append((device, start, end))
 
 
+def _controls(plans, world: int, task_capacity: int):
+    ranks=set(range(world))
+    if not isinstance(plans, Mapping) or set(plans)!=ranks:
+        raise ValueError('ranked tile needs one rank-local control plan per rank')
+    controls={}
+    for rank in range(world):
+        row=plans[rank]
+        if (not isinstance(row, Mapping)
+                or set(row)!={'communication_ctas','chunks','steal_budget'}):
+            raise ValueError(f'rank {rank} spatial, temporal or steal plan differs')
+        c,chunks,budget=(row[name] for name in
+                         ('communication_ctas','chunks','steal_budget'))
+        if (any(type(value) is not int for value in (c,chunks,budget))
+                or not 1<=c<=96 or chunks!=4 or not 0<=budget<=task_capacity):
+            raise ValueError(f'rank {rank} controls exceed the B300 lowering domain')
+        controls[rank]=MappingProxyType(dict(row))
+    return MappingProxyType(controls)
+
+
 def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
         inputs: Mapping[int, Mapping[str, object]],
         outputs: Mapping[int, object],
@@ -113,19 +132,7 @@ def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
             or not isinstance(outputs, Mapping) or set(outputs) != ranks
             or not isinstance(plans, Mapping) or set(plans) != ranks):
         raise ValueError('ranked tile needs every rank input, output and plan')
-    controls = {}
-    for rank in range(world):
-        row = plans[rank]
-        if (not isinstance(row, Mapping)
-                or set(row) != {'communication_ctas','chunks','steal_budget'}):
-            raise ValueError(f'rank {rank} spatial, temporal or steal plan differs')
-        c, chunks, budget = (row[name] for name in
-                             ('communication_ctas','chunks','steal_budget'))
-        if (any(type(value) is not int for value in (c,chunks,budget))
-                or not 1 <= c <= 96 or chunks != 4
-                or not 0 <= budget <= lowered.analysis.stage_task_slots_per_rank):
-            raise ValueError(f'rank {rank} controls exceed the B300 lowering domain')
-        controls[rank] = MappingProxyType(dict(row))
+    controls=_controls(plans,world,lowered.analysis.stage_task_slots_per_rank)
     contexts = tuple(execution_context(rank) for rank in range(world))
     spans = []
     frozen_inputs = {}
@@ -160,7 +167,7 @@ def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
         raise ValueError('ranked tile execution contexts changed during binding')
     return PreparedRankedTiles(
         lowered, bound, MappingProxyType(frozen_inputs),
-        MappingProxyType(frozen_outputs), MappingProxyType(controls),
+        MappingProxyType(frozen_outputs), controls,
         execution_context, contexts)
 
 
@@ -178,16 +185,19 @@ class PreparedRankedTiles:
     closed: bool = False
     _lock: object = field(default_factory=Lock, repr=False)
 
-    def run(self):
+    def run(self, plans: Mapping[int, Mapping[str, int]] | None = None):
         """One synchronous four-rank launch and source-owned status audit."""
         with self._lock:
             if self.closed or self.poisoned:
                 raise ValueError('ranked tile state is closed or poisoned')
             if tuple(self.execution_context(rank) for rank in range(4)) != self.contexts:
                 raise ValueError('ranked tile execution contexts changed')
-            communication = tuple(self.controls[rank]['communication_ctas']
+            controls=(self.controls if plans is None else _controls(
+                plans,self.lowering.analysis.world_size,
+                self.lowering.analysis.stage_task_slots_per_rank))
+            communication = tuple(controls[rank]['communication_ctas']
                                   for rank in range(4))
-            budgets = tuple(self.controls[rank]['steal_budget']
+            budgets = tuple(controls[rank]['steal_budget']
                             for rank in range(4))
             try:
                 status = self.bound.launch(communication,budgets)

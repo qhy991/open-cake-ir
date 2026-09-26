@@ -23,7 +23,9 @@ def generate(evidence_root: Path) -> None:
             or manifest.get('target') != 'sm_103a'
             or manifest.get('generation') != 'cake_ranked_tile_pointer_abi'
             or any((evidence_root / name).exists()
-                   for name in ('ranked_tile.cu', 'lowering_report.json'))):
+                   for name in ('ranked_tile.cu', 'lowering_report.json',
+                                'local_program.json', 'effects.json',
+                                'combine.json'))):
         raise ValueError('ranked-tile library source or create-only root differs')
     local = Program.from_dict(json.loads(PROGRAM.read_text()))
     effects = RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
@@ -32,8 +34,14 @@ def generate(evidence_root: Path) -> None:
     lowered.validate_binding()
     req = lowered.toolchain_requirements
     (evidence_root / 'ranked_tile.cu').write_text(lowered.source)
+    for name,document in (
+            ('local_program.json',json.loads(PROGRAM.read_text())),
+            ('effects.json',effects.document),
+            ('combine.json',json.loads(COMBINE.read_text()))):
+        (evidence_root / name).write_text(json.dumps(document,indent=2)+'\n')
     (evidence_root / 'lowering_report.json').write_text(json.dumps({
         'source_commit': compiler.commit,
+        'compiler_revision_id': lowered.compiler_revision_id,
         'target': local.target,
         'effects': str(EFFECTS.relative_to(ROOT)),
         'program': str(PROGRAM.relative_to(ROOT)),
@@ -48,6 +56,7 @@ def generate(evidence_root: Path) -> None:
         'controls_abi': 'rank_local_int32_arrays',
         'source_map': {name:list(lines) for name,lines in
                        lowered.source_map.items()},
+        'toolchain_requirements': dict(req),
         'scope': 'public Compiler.lower_ranked_tiles source for exact B300; device and Evaluation qualification remain separate',
     }, indent=2) + '\n')
 
