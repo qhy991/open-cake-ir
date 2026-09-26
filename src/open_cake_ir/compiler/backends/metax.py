@@ -1,7 +1,7 @@
 """The bounded MACA capability checks used by the shared Triton emitter."""
 
 from ..diagnostics import Finding
-from ..ir import DType, OperationKind, Schedule, TileLoop
+from ..ir import BufferMode, DType, MemorySpace, OperationKind, Schedule, TileLoop
 from ..target import Target
 from .common import refusal
 
@@ -93,6 +93,13 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             left = schedule.buffer(operation.reads[0]) if len(operation.reads) == 2 else None
             right = schedule.buffer(operation.reads[1]) if len(operation.reads) == 2 else None
             result = schedule.buffer(operation.writes[0]) if len(operation.writes) == 1 else None
+            global_inputs = [buffer for buffer in schedule.buffers
+                             if buffer.space is MemorySpace.GLOBAL
+                             and buffer.mode is BufferMode.INPUT]
+            global_outputs = [buffer for buffer in schedule.buffers
+                              if buffer.space is MemorySpace.GLOBAL
+                              and buffer.mode is BufferMode.OUTPUT]
+            axes = schedule.program_map.axes if schedule.program_map is not None else ()
             if not (left is not None and right is not None and result is not None
                     and left.dtype is DType.FP8_E4M3 and right.dtype is DType.FP8_E4M3
                     and result.dtype is DType.FP32
@@ -100,14 +107,26 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                     and result.shape == (2, 64)
                     and operation.parameters.tile_shape == (2, 64, 64)
                     and operation.parameters.k_ranges is None
-                    and not schedule.enclosing_loops(operation)
+                    and not schedule.tile_loops and not schedule.pipelines
+                    and len(global_inputs) == 2 and len(global_outputs) == 1
+                    and len([buffer for buffer in schedule.buffers
+                             if buffer.space is MemorySpace.GLOBAL]) == 3
+                    and all(buffer.shape == (64, 64) and buffer.dtype is DType.FP8_E4M3
+                            for buffer in global_inputs)
+                    and global_outputs[0].shape == (64, 64)
+                    and global_outputs[0].dtype is DType.FP32
+                    and schedule.program_map is not None
+                    and not schedule.program_map.persistent
+                    and len(axes) == 1 and axes[0].axis == 0
+                    and axes[0].dimension == 0 and axes[0].tile == 2
+                    and axes[0].buffer in {buffer.name for buffer in global_inputs}
                     and len(schedule.roles) == 1
                     and len(schedule.roles[0].execution_groups) == 4):
                 findings.append(refusal(
                     "MACA_FP8_COMPENSATED_DOMAIN_UNQUALIFIED", path,
-                    "the measured SIMT compensated FP8 route takes one resident "
-                    "2x64 by 64x64 tile, one FP32 result and four execution groups; "
-                    "looped accumulation or another tile requires separate qualification",
+                    "the measured SIMT compensated FP8 route takes one 64x64 input/output "
+                    "case, resident 2x64 by 64x64 tiles, one FP32 result, a two-row "
+                    "program map and four execution groups; other domains require qualification",
                 ))
         elif operation.kind not in (OperationKind.LOAD, OperationKind.STORE):
             findings.append(refusal(

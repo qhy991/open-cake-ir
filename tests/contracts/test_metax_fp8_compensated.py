@@ -32,14 +32,20 @@ class MetaxCompensatedFP8(unittest.TestCase):
         kernel = project_triton_kernel(lowering.source.encode(), lowering.toolchain_requirements)
         self.assertIn(b'for _maca_fp8_k in tl.range(0, 64):', kernel)
 
-    def test_unmeasured_shape_or_warp_count_is_refused_by_maca(self):
-        for mutation in ('tile_shape', 'warps'):
+    def test_unmeasured_domain_is_refused_by_maca(self):
+        for mutation in ('tile_shape', 'warps', 'global_shape', 'program_tile', 'persistent'):
             with self.subTest(mutation=mutation):
                 document = copy.deepcopy(self.document)
                 if mutation == 'tile_shape':
                     next(op for op in document['operations'] if op['kind'] == 'mma')['parameters']['tile_shape'] = [4, 64, 64]
-                else:
+                elif mutation == 'warps':
                     document['roles'][0]['execution_groups'] = list(range(8))
+                elif mutation == 'global_shape':
+                    next(buffer for buffer in document['buffers'] if buffer['name'] == 'out')['shape'] = [128, 64]
+                elif mutation == 'program_tile':
+                    document['program_map']['axes'][0]['tile'] = 4
+                else:
+                    document['program_map']['persistent'] = True
                 findings = triton.preflight(Schedule.from_dict(document), declared_target('xcore1002'))
                 self.assertIn('MACA_FP8_COMPENSATED_DOMAIN_UNQUALIFIED', [f.code for f in findings])
 
