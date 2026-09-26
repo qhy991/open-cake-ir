@@ -248,7 +248,7 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             solves = [op for op in s.loop_operations(loop)
                       if op.kind is OperationKind.FORWARD_SUBSTITUTE]
             second_state = (second_mma[0].reads[0]
-                            if len(second_mma) == 1 and second_mma[0].reads else None)
+                            if second_mma and second_mma[0].reads else None)
             update = writers.get(second_state) if second_state else None
             first_end = max((loop.body.index(op.op_id) for op in first_ops
                              if op.op_id in loop.body), default=-1)
@@ -257,15 +257,20 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             solve_at = loop.body.index(solves[0].op_id) if len(solves) == 1 else -1
             update_at = (loop.body.index(update.op_id) if update is not None
                          and update.op_id in loop.body else -1)
-            check(len(first_mma) == len(second_mma) == len(solves) == 1
-                  and bool(first_mma[0].reads)
-                  and first_mma[0].reads[0] in loop.carried_buffers
+            check(1 <= len(first_mma) <= 2 and 1 <= len(second_mma) <= 2
+                  and len(solves) == 1
+                  and all(mma.reads and mma.reads[0] in loop.carried_buffers
+                          for mma in first_mma)
+                  and all(mma.reads and mma.reads[0] == second_state
+                          for mma in second_mma)
+                  and len({mma.writes[0] for mma in first_mma + second_mma
+                           if mma.writes}) == len(first_mma) + len(second_mma)
                   and second_state not in loop.carried_buffers
                   and update is not None and update.kind is OperationKind.TMEM_STORE
                   and first_end < solve_at < update_at < second_start,
                   'NATIVE_TWO_PHASE_ORDER', f'tile_loops[{loop_index}].body',
-                  'the carried-state MMA precedes the row solve and U publication, '
-                  'which precede the correction MMA')
+                  'one or two carried-state projections precede the row solve and U '
+                  'publication, then one or two U corrections follow')
     for i, pipeline in enumerate(s.pipelines):
         tagged = [op for op in s.operations if op.pipeline == pipeline.name]
         scopes = {_scope(s, op).name if _scope(s, op) else None for op in tagged}
