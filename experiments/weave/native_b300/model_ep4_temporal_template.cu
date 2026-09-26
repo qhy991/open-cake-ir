@@ -100,7 +100,8 @@ __global__ void tile_schedule_probe(
     float* up_gate, __nv_bfloat16* activated,
     const CUtensorMap* up_maps_a, const CUtensorMap* up_map_b,
     const CUtensorMap* down_maps_a, const CUtensorMap* down_map_b,
-    float* outputs, int communication_ctas, int steal_budget) {
+    float* outputs, int communication_ctas, int steal_budget,
+    int selected_wave) {
   extern __shared__ __align__(1024) unsigned char shared[];
   uint32_t* tensor_address = reinterpret_cast<uint32_t*>(shared + 49192);
   __shared__ int claimed, claimed_stage, claimed_tile, claimed_subtile;
@@ -109,8 +110,9 @@ __global__ void tile_schedule_probe(
   const int warp = int(threadIdx.x) / 32;
   cg::grid_group grid = cg::this_grid();
   bool tensor_owned = false;
-  int logical_offset = 0;
-  for (int wave=0; wave<kWaves; ++wave) {
+  int logical_offset=selected_wave==2 ? task_counts[1]/kUpGateTasksPerTile :
+                     selected_wave==3 ? kExperts : 0;
+  for (int wave=selected_wave; wave<=selected_wave; ++wave) {
     if (threadIdx.x==0)
       while (worker_wave_acquire(&wave_ready[wave])==0)
         __nanosleep(64);
@@ -1041,21 +1043,6 @@ int main(int argc,char** argv) {
                 cudaEventDisableTiming),"fence event")) return 26;
   }
   int communication=communication_control,budget=steal_control;
-  for (int rank=0;rank<R;++rank) {
-    if (check(cudaSetDevice(rank),"select Cake worker rank")) return 30;
-    RankState& s=state[rank];
-    int* wave_ready=&s.bin->wave_consumed[0];
-    void* args[]={&s.heads,&s.completed,&s.owners,&s.processed,
-                  &s.dispatched,&s.stolen,&s.permits,&s.tasks,&wave_ready,&s.overlap,
-                  &s.tile_experts,&s.upgate,&s.activated,
-                  &s.up_maps_a,&s.up_map_b,&s.down_maps_a,&s.down_map_b,
-                  &s.down,&communication,&budget};
-    if (check(cudaLaunchCooperativeKernel(
-             reinterpret_cast<const void*>(tile_schedule_probe),
-             dim3(scenario[rank].grid),dim3(kThreads),args,
-             kDynamicShared,compute_stream[rank]),
-             "Cake worker launch")) return 31;
-  }
   for (int wave=0;wave<kWaves;++wave) {
     for (int rank=0;rank<R;++rank) {
       if (check(cudaSetDevice(rank),"select source wave rank")) return 27;
@@ -1105,6 +1092,26 @@ int main(int argc,char** argv) {
       if (check(cudaEventRecord(fence_events[rank][wave],
                                 communication_stream[rank]),
                 "fence event record")) return 30;
+    }
+    for (int rank=0;rank<R;++rank) {
+      if (check(cudaSetDevice(rank),"select Cake wave rank")) return 31;
+      RankState& s=state[rank];
+      if (check(cudaStreamWaitEvent(compute_stream[rank],
+                                    ready_events[rank][wave]),
+                "wait for published Cake wave")) return 31;
+      int* wave_ready=&s.bin->wave_consumed[0];
+      int selected_wave=wave;
+      void* args[]={&s.heads,&s.completed,&s.owners,&s.processed,
+                    &s.dispatched,&s.stolen,&s.permits,&s.tasks,
+                    &wave_ready,&s.overlap,&s.tile_experts,&s.upgate,
+                    &s.activated,&s.up_maps_a,&s.up_map_b,&s.down_maps_a,
+                    &s.down_map_b,&s.down,&communication,&budget,
+                    &selected_wave};
+      if (check(cudaLaunchCooperativeKernel(
+               reinterpret_cast<const void*>(tile_schedule_probe),
+               dim3(scenario[rank].grid),dim3(kThreads),args,
+               kDynamicShared,compute_stream[rank]),
+               "Cake wave worker launch")) return 31;
     }
   }
   for (int rank=0;rank<R;++rank) {
