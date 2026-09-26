@@ -143,6 +143,18 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 后继测量先在 CPU-only 阶段独立保存完整合成 oracle 期望值，再由 `gpuq-d399ee7aa697` 在同一独占 GPU0、同一输入、交替顺序进行五轮每臂各 25 个 CUPTI 冷 L2 样本、无 graph；每轮两臂的完整输出/状态快照均保留，租约释放后由 host **逐轮逐元素**用比 Workload 更紧的输出 `atol=0.00005`、状态 `atol=0.0005`、共同 `rtol=0.01` 复核，十份快照均为 0 超差/无非有限值、输入未改写、设备无其它计算 PID。两槽单循环 pooled **2,833.908 µs**，分角色 pooled **2,462.161 µs**，五轮比值 1.15050–1.15162，pooled **1.15098×**。这是受外部数值 oracle 约束的同范围约 15.1% 组件收益，不是位确定性或完整 KDA 资格。当前 disposition：保留有界 NVIDIA 任务分支，**No promotion** 到共享 pass 或平台；原始 CAKE 有更深的生产/计算/epilogue 重叠和片上因子准备，当前六 warp 两槽路径仍有约 2.46 ms，且逐 token BF16 舍入、原位别名与六形状未验收。
 
+### 2.18 分角色流水后续消融与 P 暂存的发布反例
+
+`db979435` 后的三项同卡诊断把下一轮优化范围缩小了。故意把 V 全局读取换为零的**错误**消融保留其余计算，五轮每臂 25 个冷 L2 CUPTI 样本中，有效版 2,461.426 µs、错误版 2,450.896 µs，仅相差约 10.53 µs；它只是 V 读取/地址/寄存器压力的诊断上界。故意把 496 项前代入 FMA 和 P 系数读取去掉、令 `U=RHS` 的**错误**消融，则得到有效版 2,488.402 µs、错误版 2,231.568 µs，约 257 µs 的上界；这个差别不能解释剩余约 2.2 ms。低扰动 MMA warp `clock64` 探针在 CTA0 的稳态 chunk 1–254 观察到：carried state-ready 等待 5,473 cycles，base B-ready 等待 72，base/query MMA 至完成 1,646，跨 P shared 装载的区间 9,793，U-ready 等待 172，correction B-ready 等待 76，correction/output MMA 至完成 625。区间可包含 warp 调度干扰，不是 P 指令的纯耗时；但 B-ready 等待很短，继续盲目加深 B ring 缺少依据。这三项分别由 Finding event 163、166、167 索引，均 **No promotion**。
+
+另一种改变把输出 STORE 排在 carried state 发布后，让下一块 MMA 有机会与本块写回重叠。`efa8bbad` 通过 Corpus Gate 179/179、适用 CPU 2,688 passed、AOT 255 寄存器/0 spill、完整合成输出和状态 oracle；同 GPU 纯净配对 `gpuq-8673c413e6a4` 却从原分角色版 2,461.235 µs 变慢到 2,624.436 µs，五轮均回退 6.63%。新增的 `NATIVE_CARRIED_OUTPUT_READ_BEFORE_PUBLICATION` 禁止在 query/output TMEM 读出之前发布 state；先前的受其它 PID 干扰的配对记录只保留而不用于结论。此路线 **No promotion**，说明仅移动 publication 顺序没有获得足以抵消排程/活跃范围成本的重叠。
+
+`fbd64306` 针对时钟探针中的 P 区间，只在精确 H64/256、MMA warp 唯一生产 P、compute warp 唯一消费 solve、BF16 32×32/B64 swizzle 的域内，把每 lane 四次 16B `uint4` 全局读取和 shared 写入替代标量路径；源地址不满足 16B 对齐时回退标量。`test_native_kda_vector_p_stage.py` 锁定准入、未对齐回退及额外读者/错误角色反例。固定提交的 Corpus Gate 为 179/179、适用 CPU 2,689 passed，B300 AOT 255 寄存器/0 spill，SASS 实际出现 `LDG.E.128` 和 `STS.128`。单独的 swizzle 往返及在 MMA warp 发布前的集成 P 回显，对抽查的三个 chunk/head 全部 1,024 个 P 位模式均正确；H64/256 全部合成输出和最终状态也对独立数值 oracle 0 超差。
+
+但是这条发射**尚未通过 P 生命周期资格**。独占、同 GPU、交替五轮各 25 个 CUPTI 样本的 `gpuq-df9355066ce1` 测得基线 2,481.104 µs、向量版 1,950.861 µs（诊断比 1.27180×），十份完整输出/状态快照均通过独立数值 oracle、输入未改写、无其它计算 PID。向量版跨轮 BF16 输出位模式约 66.9% 不同；消费者在 `cake_wait(p_ready)` 后直接回显，首块 head0 的 P 元素 128–255 已等于下一块相同位置，而发布前回显与输入逐位相同。相同消费者探针在标量基线的三处抽查全部逐位正确。这个反例证明当前向量发射存在 P 发布/复用时序风险；不能把 1.95 ms 当成已资格化的正确性稳定性能，也不能仅凭普通输入容差推广。一个显式四 compute warp `p_free` 的源码探针通过一次完整合成数值检查，但后继消费者回显在相同位置仍有 96 个错误元素；**仅增加消费完成 barrier 没有修复它**。下一步须在同一次启动同时回显发布前、等待后、复用前的 P，定位是共享写入可见性、barrier 相位还是源码重排，再把确证的所有权、phase、合法性和反例一并纳入 Cake Schedule/Compiler。Finding event 168–171 保留原始路径和失败作业。
+
+原始 CAKE CUDA 已写出具体的 shared ring 及生产/消费同步，现有 native CUDA 对 P 只靠 `p_ready` 和后继 U barrier 的隐含约束；本轮直接观测说明向量化会暴露该约束的不足。Triton 语言原则上也能表达向量读取和同步，但仓库现有 Triton lowering 没有这条 carried TMEM、B TMA、P 所有权与 solve 发射路径；因此差别是**现有实现的表达与分析范围**，不是宣称 CUDA 或 Triton 在原则上做不到。后续设计须同时给出 P stage 的生产、消费完成、重用和 phase 合同，不能把更宽的访存指令单独视作创新或性能保证。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -157,6 +169,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | 无读者的末态写回 | 保持 `BUFFER_ESCAPES_LOOP`，循环出口 register 值不能暗中越界 | 仅对 H64/256、每轮同址完整覆盖的最终 STORE 发射最后一次写回 | `test_native_terminal_state_store.py`；内部 reader、错误地址与两 chunk 控制均不准入；设备及配对证据见 §2.12。 |
 | 两槽 B 预取 | Pipeline.stages、四个 shared B view 和 RangeOptions 同时声明两槽，carried state 顺序不变 | 在 copy warp 中预取 `j+1`，MMA 消费 `j`；槽复用等 free、消费等 ready，各自用两轮 parity | `test_native_kda_two_stage_prefetch.py`；三槽和两条 Pipeline stage 不匹配均由 `NATIVE_CARRIED_PIPELINE_STAGES` 拒绝；设备及配对证据见 §2.15。 |
 | 分角色 carried loop | P shared stage 唯一读者为 solve，Role 与 `p_ready` producer 明示 MMA warp，原 carried state 顺序不变 | copy/MMA/compute 各自推进块循环，以 ready/free、P、U、state barrier 同步，块内无 CTA 会合 | `test_native_kda_role_pipeline.py`；额外 P 读者由 `NATIVE_ROLE_PIPELINE_DOMAIN` 拒绝；重复启动与逐轮 oracle 见 §2.17。 |
+| 向量 P shared 暂存 | H64/256、唯一生产/消费、BF16 32×32/B64 swizzle、对齐条件及标量 fallback | MMA warp 用 16B 全局读取和 shared 写入，后接 `p_ready`；消费者发布/复用仍有失败反例 | `test_native_kda_vector_p_stage.py`；§2.18 的等待后 P 回显失败，当前 No promotion。 |
 
 ### 一次没有推广的 lowering 尝试
 
@@ -180,6 +193,8 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `671b2a90` / `gpuq-a64939fffae5`、`gpuq-8e520f65c628` | 两槽 B 预取，适用 CPU 合同 2,683 passed、Corpus Gate 179/179，H64/256 全输出及状态设备通过；同 GPU 配对组件比 1.05729×、中位数 2,835.220 µs，AOT 255 寄存器、0 spill | 完整角色级流水、原位别名、真实准备值、逐 token BF16 舍入、六形状及 CAKE 配对性能 |
 | 原始 CAKE B300 端口 M64/M128 / `gpuq-a9ad7fc9ec06` | 同一 H64/T8192 输入上两版均通过独立 Workload oracle、输出/状态逐位相同；同 GPU 配对 M64 456.578 µs、M128 493.923 µs | 我们的 native M64 资格、任何 Compiler 收益或六形状迁移 |
 | `db979435` / `gpuq-77d31d7028e7`、`gpuq-d399ee7aa697` | copy/MMA/compute 独立循环；适用 CPU 合同 2,686 passed、Corpus Gate 179/179；合成 H64 全输出/状态及十份配对快照均通过独立数值 oracle；同 GPU 组件比 1.15098×、中位数 2,462.161 µs，AOT 255 寄存器、0 spill | 位确定性、高保留及逐 token BF16、原位别名、真实准备值、六形状及相对 CAKE 的完整配对性能 |
+| `efa8bbad` / `gpuq-8673c413e6a4` | state 提前发布后的数值正确性；纯净配对相对 `db979435` 回退 6.63%，2,624.436 µs；No promotion | epilogue 与下一块产生净重叠收益 |
+| `fbd64306` / `gpuq-df9355066ce1`、`gpuq-d51bfab6a37f` | 精确域内 16B P 暂存 AOT/数值 oracle；诊断中位数 1,950.861 µs；等待后 P 回显首块 128 个元素被下一块值覆盖，位结果跨轮不稳；No promotion | P 的发布/复用正确性、正式性能收益及完整 KDA |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
