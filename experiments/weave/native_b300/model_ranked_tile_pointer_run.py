@@ -155,6 +155,19 @@ def _call(status: int, operation: str) -> None:
         raise RuntimeError(f'{operation} returned CUDA status {status}')
 
 
+def validate_stolen(stolen: list[int], budget: int,
+                    owner_routes: list[int]) -> None:
+    """Require exercised steal only where the route plan has stage tasks."""
+    if (len(stolen) != R or len(owner_routes) != R
+            or any(type(value) is not int or value < 0 or value > budget
+                   for value in stolen)
+            or any((routes == 0 and value != 0)
+                   or (routes > 0 and budget > 0 and value == 0)
+                   for value, routes in zip(stolen, owner_routes, strict=True))
+            or (budget == 0 and stolen != [0]*R)):
+        raise ValueError('pointer ABI steal cap or nonempty-owner coverage differs')
+
+
 def _copy_weights(cuda,rank:int,path:Path,extent:int,pointer:ctypes.c_void_p) -> None:
     with path.open('rb') as file:
         file.seek(rank*extent)
@@ -312,17 +325,16 @@ def verify(root: Path) -> None:
         raise ValueError('pointer ABI source, broker or repeated launch differs')
     expected=np.load(Path(case['oracle_root']) / 'expected_output.npy',
                      mmap_mode='r')
+    ids=np.fromfile(Path(case['bin_root'])/'expert_ids.i32',dtype='<i4')
+    if ids.size != R*T*K or np.any(ids < 0) or np.any(ids >= E):
+        raise ValueError('pointer ABI route IDs differ during post-lease verification')
+    owner_routes=np.bincount(ids//(E//R),minlength=R).tolist()
     results=[]
     output_bits=[]
     for (communication,budget),stolen,payload_counts in zip(
             case['controls'],device['stolen_by_control'],
             device['payloads_by_control'],strict=True):
-        if (len(stolen)!=R
-                or any(type(value) is not int or not 0<=value<=budget
-                       for value in stolen)
-                or (budget==0 and stolen!=[0]*R)
-                or (budget>0 and any(value==0 for value in stolen))):
-            raise ValueError('pointer ABI steal cap or coverage differs')
+        validate_stolen(stolen,budget,owner_routes)
         raw=np.fromfile(root/'device_outputs'/
                         f'output_c{communication}_b{budget}.bf16',dtype='<u2')
         if raw.size!=R*T*H:
@@ -348,6 +360,7 @@ def verify(root: Path) -> None:
             'repeated_launch_bit_mismatches':mismatches,
             'remote_route_rows':case['remote_route_rows'],
             'remote_payloads_per_launch':sum(case['remote_payloads_by_owner']),
+            'owner_routes':owner_routes,
             'atol':.01,'rtol':.01,
             'scope':'pointer ABI correctness and state reset against independent FP64 oracle; no qualified timing'}
     (root/'report.json').write_text(json.dumps(report,indent=2)+'\n')
