@@ -65,7 +65,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 公开 V 输入按 `[chunk,token32,V128]` 存储，而四 MMA 状态 kernel 的 128 个 compute 线程各自拥有一个 V 行。`ac102f0e` 的 Schedule 使用已有的 BF16 `load` `[token32,V128]`、显式 `transpose` `[V128,token32]` 和 BF16→FP32 `cast`；后端在有且只有这个紧邻读者、unit chunk 轴及精确 AccessMap 时，直接让每个 V 行线程对每个 token 从 `[chunk,token,V]` 读取连续线程地址。没有隐式寄存器 reshape，也不新增全局转置张量。第二条 FP32 beta-gate `[chunk,token]` load 在每行形成 32 值列向量，`RHS = beta * (V - base_prediction)` 仍由两个有类型 FP32 elementwise 操作显式承担，再交给 strict-lower solve。额外读取原始 `[token,V]` register tile 时由 `NATIVE_TRANSPOSE_LOAD_DOMAIN` 拒绝。
 
-这条输入映射与 §2.6 的 token-major 输出写回构成方向相反、但相互独立的两个有界规则。定向合同与 Corpus Gate 179/179 已通过；精确 B300 AOT、设备数值、真实上游 Q/K/G/prefix 接口与完整 CPU 门禁仍待验收。它不能靠一句“CUDA 或 Triton 无法转置”来解释：缺口是当前 native 后端此前未兑现已存在的 IR `transpose`，而让 Triton 另起转置 kernel 则必须把额外启动和读写算进同一 Workload。
+这条输入映射与 §2.6 的 token-major 输出写回构成方向相反、但相互独立的两个有界规则。定向合同与 Corpus Gate 179/179 已通过；精确 B300 无 GPU AOT 为 255 寄存器、0 stack/spill。完整 CPU 套件在复制历史/Lab 夹具时因本机磁盘空间耗尽而失败，不能记作通过；因此没有启动这版 GPU 作业。真实上游 Q/K/G/prefix 接口、设备数值与完整门禁仍待验收。它不能靠一句“CUDA 或 Triton 无法转置”来解释：缺口是当前 native 后端此前未兑现已存在的 IR `transpose`，而让 Triton 另起转置 kernel 则必须把额外启动和读写算进同一 Workload。
 
 ## 3. 对照：谁拥有哪个拒绝
 
@@ -99,7 +99,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | 完整 KDA 的数据边 | 当前最低证据 | 尚缺的工作 |
 | --- | --- | --- |
 | Q/K 归一化、decay、beta 与 32-token 耦合 | 独立准备组件在 B300 通过 H64 元素检查；两 MMA 版本单独计时 389.507 µs | 与状态/输出 CTA 融合或有证据地选择物化边界，避免七个中间张量往返。 |
-| `state @ base_key` 与 P 前代入 | `ac102f0e` 已有公开 V 的显式 transpose load 与 FP32 beta RHS 的有类型源码；既有两阶段合成状态在 B300 三种输入通过 | 新 V/beta 路径尚无 AOT/设备结果；还需接入真实上游准备值。 |
+| `state @ base_key` 与 P 前代入 | `ac102f0e` 已有公开 V 的显式 transpose load 与 FP32 beta RHS，有精确 B300 AOT 但完整 CPU 门禁遭本机磁盘错误；既有两阶段合成状态在 B300 三种输入通过 | 新 V/beta 路径尚无设备结果；还需接入真实上游准备值。 |
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
 | `state_after_update @ query` 与输出耦合 | `42b78a5d` 已在 B300 三组输入上通过 token-major chunk 输出及最终状态，AOT 0 spill | 公开 V/beta RHS、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
