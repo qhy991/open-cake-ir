@@ -1,0 +1,16 @@
+flowchart TB
+  input["BF16 activation B × K"] --> tma_a["activation TMA：4 个 producer warp"]
+  weight["BF16 weight N × K"] --> tma_b["weight TMA：4 个 producer warp"]
+  bias["BF16 bias N"] --> early_bias["提前载入并转 FP32"]
+
+  subgraph cta["一个 CTA：16 × 8 × K1024 tile"]
+    tma_a --> boxes_a["activation：每分区 4 个 K64 TMA box"]
+    tma_b --> boxes_b["weight：每分区 4 个 K64 TMA box"]
+    boxes_a --> warps["4 个 compute warp：ldmatrix + warp MMA"]
+    boxes_b --> warps
+    warps --> partials["K0:256、256:512、512:768、768:1024 的 FP32 partial"]
+    partials --> merge["按声明顺序相加"]
+    early_bias --> epilogue["FP32 bias 加法、BF16 舍入"]
+    merge --> epilogue
+  end
+  epilogue --> output["BF16 output B × N；逐元素 peer 校验"]

@@ -51,6 +51,7 @@ Original paths and dated conclusions stay intact. Reading companions do not crea
 | Hygon DCU | [设计与运行](dcu-gfx938-design.md) · [设备结果](dcu-gfx938-results.md) · [发布记录](results/dcu/README.md) |
 | MetaX C550 | [当前路径与验收范围](metax-c550.md) · [bring-up 记录](metax-c550-bringup.md) |
 | 原生 CUDA / PTX 与 CuTe DSL | [CUDA 中文](zh-CN/NATIVE_CUDA.md) · [CUDA English](NATIVE_CUDA.md) · [CuTe 中文](zh-CN/PAIRED_CUTE.md) · [CuTe English](en/PAIRED_CUTE.md) |
+| B300 TinyGEMM K 分区 warp MMA lowering | [设计与证据](TINYGEMM_B300_NATIVE_LOWERING.md) · [数据流图](figures/tinygemm-b300-warp-mma.svg) · [可编辑 Mermaid](figures/tinygemm-b300-warp-mma.mmd) |
 | 优化知识迁移与受控消融 | [机制设计](OPTIMIZATION_TRANSFER.md) · [English](en/OPTIMIZATION_TRANSFER.md) · [消融方法](OPTIMIZATION_TRANSFER_ABLATION.md) |
 | 显式变换与性能解释 | [CTA 宽度](TRITON_CTA_WIDTH.md) · [输出列特化](OUTPUT_COLUMN_SPECIALIZATION_PASS.md) · [Epilogue fusion](EPILOGUE_FUSION_PASS.md) · [效率评分](PERFORMANCE_SCORING.md) |
 | Agent、预算与实验操作 | [Lab 用途与流程](wiki/experiments.md) · [English](en/wiki/experiments.md) · [执行手册](RUNBOOK.md) · [Claude artifact-only v4](CLAUDE_PROVIDER_V4.md) |

@@ -1,5 +1,9 @@
 # NVIDIA CAKE reproduction support
 
+The later B300 TinyGEMM mechanism and paired optimization evidence is in
+[K-partitioned TMA + warp-MMA lowering](TINYGEMM_B300_NATIVE_LOWERING.md).
+This page retains the earlier correct-but-slow baseline and its original scope.
+
 This page retains the measured snapshot from [NVIDIA support PR #82](https://github.com/qhy991/open-cake-ir/pull/82).
 The reference collection, component assessment and bounded TinyGEMM implementation are
 now integrated into `main`. Measurements below remain the original task-branch snapshot;
