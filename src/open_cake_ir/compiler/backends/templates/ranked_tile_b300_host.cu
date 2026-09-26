@@ -284,7 +284,15 @@ extern "C" int @ENTRY@_create(
         error=cudaErrorNotSupported;break;
       }
       error=cudaDeviceEnablePeerAccess(peer,0);
-      if (error==cudaErrorPeerAccessAlreadyEnabled) error=cudaSuccess;
+      if (error==cudaErrorPeerAccessAlreadyEnabled) {
+        // Reusing a process is valid, but the handled error remains in this
+        // host thread's CUDA error slot until cudaGetLastError clears it.
+        // Otherwise the next kernel-launch check mistakes 704 for its launch.
+        cudaError_t pending=cudaGetLastError();
+        error=(pending==cudaSuccess ||
+               pending==cudaErrorPeerAccessAlreadyEnabled)
+            ? cudaSuccess : pending;
+      }
       if (error!=cudaSuccess) break;
     }
     if (error!=cudaSuccess) break;
