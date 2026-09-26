@@ -330,7 +330,7 @@ class _Builder:
                     continue
                 if not isinstance(index, _Ref) or index.collection not in {"program", "loop"}:
                     self.fail(component, "indices must be program coordinates, loop tiles or static slices")
-                source = "loop_tile" if index.collection == "loop" else (
+                source = ("loop" if self.record(index)["tile"] == 1 else "loop_tile") if index.collection == "loop" else (
                     "program" if self.record(index)["tile"] == 1 else "program_tile")
                 item = dict(source=source, name=index.name)
             indices.append(item)
@@ -355,7 +355,7 @@ class _Builder:
                     shape.extend(current)
             elif item["source"] == "dimension":
                 shape.append(item.get("extent", source.shape[item["dimension"]] - item.get("offset", 0)))
-            elif item["source"] not in {"program", "scalar_buffer"}:
+            elif item["source"] not in {"program", "loop", "scalar_buffer"}:
                 shape.append(self.record(self.symbols[item["name"]])["tile"])
         return shape or [1]
 

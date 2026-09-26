@@ -286,6 +286,7 @@ class AccessIndexKind(str, Enum):
     PROGRAM = "program"
     PROGRAM_TILE = "program_tile"
     LOOP_TILE = "loop_tile"
+    LOOP = "loop"
     DIMENSION = "dimension"
     BUFFER = "buffer"
     SCALAR_BUFFER = "scalar_buffer"

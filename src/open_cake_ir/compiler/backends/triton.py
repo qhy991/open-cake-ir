@@ -707,7 +707,7 @@ def preflight(schedule: Schedule, target: Target, *, _namespace: bool = True) ->
             coordinates = [
                 component.name for component in access.indices
                 if component.source in {
-                    AccessIndexKind.PROGRAM, AccessIndexKind.PROGRAM_TILE,
+                    AccessIndexKind.PROGRAM, AccessIndexKind.LOOP, AccessIndexKind.PROGRAM_TILE,
                     AccessIndexKind.LOOP_TILE,
                 }
             ]
@@ -926,7 +926,7 @@ class _TritonEmitter:
         expressions: list[str] = []
         vectors: list[str] = []
         for position, component in enumerate(access.indices):
-            if component.source is AccessIndexKind.PROGRAM:
+            if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.LOOP}:
                 expressions.append(str(component.name))
             elif component.source is AccessIndexKind.PROGRAM_TILE:
                 name = f"{component.name}_offsets"
@@ -1073,7 +1073,7 @@ class _TritonEmitter:
         expressions: list[str] = []
         component_domains: list[str | None] = []
         for component in access.indices:
-            if component.source is AccessIndexKind.PROGRAM:
+            if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.LOOP}:
                 expression = str(component.name)
                 domain = None
             elif component.source is AccessIndexKind.SCALAR_BUFFER:
@@ -2356,7 +2356,8 @@ class _TritonEmitter:
         value = self.schedule.buffer(operation.reads[0])
         _require(value is not None, f"store {operation.op_id!r} has no value buffer")
         if value.is_scalar and all(
-            component.source is AccessIndexKind.PROGRAM for component in access.indices
+            component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.LOOP}
+            for component in access.indices
         ):
             # A canonical [1] value can be a native scalar or a one-element block.
             # Give both the same one-element pointer domain; adding [0] preserves

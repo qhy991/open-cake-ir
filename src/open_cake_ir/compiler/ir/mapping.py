@@ -239,7 +239,7 @@ class AccessIndex:
     def is_vector(self) -> bool:
         """Whether this component contributes a tile axis rather than a scalar index."""
 
-        return self.source not in {AccessIndexKind.PROGRAM, AccessIndexKind.SCALAR_BUFFER}
+        return self.source not in {AccessIndexKind.PROGRAM, AccessIndexKind.LOOP, AccessIndexKind.SCALAR_BUFFER}
 
     def span(self, size: int) -> int:
         """How many elements of an axis of `size` this component covers."""
