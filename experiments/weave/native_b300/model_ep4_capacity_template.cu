@@ -294,7 +294,6 @@ constexpr size_t FINAL_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 
 struct Bin {
   int count[LOCAL_E];
-  int source_done[R];
   int source_wave_done[R][kWaves];
   int wave_consumed[kWaves];
   int ready[LOCAL_E*MAX_ROWS];
@@ -355,135 +354,6 @@ __device__ __forceinline__ int original_route_key(uint32_t ordered) {
   int token=(remainder%(128*K))/K;
   int route=remainder%K;
   return (source*T+wave*128+token)*K+route;
-}
-__global__ void dispatch_routes(const BinParams* params) {
-  int token=int(blockIdx.x),route=int(blockIdx.y);
-  int expert=params->ids[token*K+route];
-  if (expert<0 || expert>=E) {
-    if (threadIdx.x==0) atomicCAS(&params->bins[params->rank]->error,0,1);
-    return;
-  }
-  int owner=expert/LOCAL_E,local_expert=expert%LOCAL_E;
-  Bin* remote=params->bins[owner];
-  __shared__ int slot;
-  if (threadIdx.x==0) slot=system_reserve(&remote->count[local_expert]);
-  __syncthreads();
-  if (slot<0 || slot>=MAX_ROWS) {
-    if (threadIdx.x==0) atomicCAS(&params->bins[params->rank]->error,0,2);
-    return;
-  }
-  int index=local_expert*MAX_ROWS+slot;
-  int key=(params->rank*T+token)*K+route;
-  const uint16_t* input=reinterpret_cast<const uint16_t*>(params->hidden)
-      +size_t(token)*H;
-  uint16_t* output=reinterpret_cast<uint16_t*>(remote->rows)
-      +size_t(index)*H;
-  for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
-    output[feature]=input[feature];
-  if (threadIdx.x==0) {
-    remote->keys[index]=key;
-    remote->route_location[key]=index;
-  }
-  __syncthreads();
-  if (threadIdx.x==0) {
-    system_publish(&remote->ready[index]);
-    system_publish(&remote->route_ready[key]);
-  }
-}
-__global__ void mark_source_done(const BinParams* params) {
-  if (threadIdx.x!=0) return;
-  for (int owner=0;owner<R;++owner)
-    system_publish(&params->bins[owner]->source_done[params->rank]);
-}
-__global__ void derive_expert_order(const BinParams* params) {
-  int expert=int(blockIdx.x),lane=int(threadIdx.x);
-  Bin* local=params->bins[params->rank];
-  if (lane==0)
-    for (int source=0;source<R;++source)
-      while (system_acquire(&local->source_done[source])==0)
-        __nanosleep(64);
-  __syncthreads();
-  int count=local->count[expert];
-  if (count<1 || count>256) {
-    if (lane==0) atomicCAS(&local->error,0,4);
-    return;
-  }
-  __shared__ uint32_t order[256];
-  order[lane]=lane<count
-      ? route_order(local->keys[expert*MAX_ROWS+lane]) : 0xffffffffu;
-  __syncthreads();
-  for (int width=2;width<=256;width<<=1) {
-    for (int span=width>>1;span>0;span>>=1) {
-      uint32_t self=order[lane],partner=order[lane^span];
-      bool minimum=((lane&width)==0)==((lane&span)==0);
-      bool take_partner=minimum ? self>partner : self<partner;
-      __syncthreads();
-      order[lane]=take_partner ? partner : self;
-      __syncthreads();
-    }
-  }
-  if (lane<count) local->sorted_order[expert*256+lane]=order[lane];
-  __syncthreads();
-  if (lane==0) {
-    int cumulative[4]{};
-    for (int index=0;index<count;++index) {
-      int wave=int(order[index])/(R*128*K);
-      if (wave<0 || wave>=kWaves) {
-        atomicCAS(&local->error,0,5);return;
-      }
-      ++cumulative[wave];
-    }
-    int through1=cumulative[0]+cumulative[1];
-    int through2=through1+cumulative[2];
-    int early=through1>=64 ? 1 : (through2>=64 ? 2 : -1);
-    int split=early==1 ? through1 : through2;
-    if (cumulative[0]>=64 || early<0 || split<64 || split>=kRows ||
-        count-split<1 || count-split>kRows) {
-      atomicCAS(&local->error,0,6);return;
-    }
-    local->early_wave[expert]=early;
-    local->early_count[expert]=split;
-  }
-}
-__global__ void assign_tile_plan(const BinParams* params) {
-  int expert=int(threadIdx.x);
-  Bin* local=params->bins[params->rank];
-  if (expert>=LOCAL_E) return;
-  int wave=local->early_wave[expert];
-  int wave1=0,prior=0;
-  for (int other=0;other<LOCAL_E;++other) {
-    int other_wave=local->early_wave[other];
-    wave1+=other_wave==1;
-    if (other<expert && other_wave==wave) ++prior;
-  }
-  if (wave!=1 && wave!=2) {
-    atomicCAS(&local->error,0,7);return;
-  }
-  int first=(wave==1 ? 0 : wave1)+prior;
-  int terminal=LOCAL_E+expert;
-  params->tile_experts[first]=expert;
-  params->tile_experts[terminal]=expert;
-  int split=local->early_count[expert],count=local->count[expert];
-  for (int row=0;row<kRows;++row) {
-    params->tile_keys[first*kRows+row]=row<split
-        ? original_route_key(local->sorted_order[expert*256+row]) : -1;
-    params->tile_keys[terminal*kRows+row]=row<count-split
-        ? original_route_key(local->sorted_order[expert*256+split+row]) : -1;
-  }
-  if (expert==0) {
-    local->wave_counts[0]=0;
-    local->wave_counts[1]=wave1;
-    local->wave_counts[2]=LOCAL_E-wave1;
-    local->wave_counts[3]=LOCAL_E;
-  }
-}
-__global__ void expand_stage_tasks(const BinParams* params,int* tasks) {
-  int index=int(threadIdx.x);
-  if (index>=kStages*kWaves) return;
-  int stage=index/kWaves,wave=index%kWaves;
-  int factor=stage==0 ? kUpGateTasksPerTile :
-             stage==1 ? kActivationTasksPerTile : kDownTasksPerTile;
-  tasks[index]=params->bins[params->rank]->wave_counts[wave]*factor;
 }
 __global__ void dispatch_source_wave(const BinParams* params,int wave) {
   int token=wave*128+int(blockIdx.x),route=int(blockIdx.y);
@@ -669,31 +539,6 @@ __global__ void wait_all_destinations(const BinParams* params,int wave) {
   for (int owner=0;owner<R;++owner)
     while (system_acquire(&params->bins[owner]->wave_consumed[wave])==0)
       __nanosleep(64);
-}
-__global__ void gather_tiles(const BinParams* params) {
-  int tile=int(blockIdx.x),row=int(blockIdx.y);
-  int key=params->tile_keys[tile*kRows+row];
-  __nv_bfloat16* output=params->tile_rows+(size_t(tile)*kRows+row)*H;
-  if (key<0) {
-    for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
-      output[feature]=__float2bfloat16_rn(0.0f);
-    return;
-  }
-  if (key>=ROUTES) asm volatile("trap;");
-  Bin* local=params->bins[params->rank];
-  if (threadIdx.x==0)
-    while (system_acquire(&local->route_ready[key])==0) __nanosleep(64);
-  __syncthreads();
-  int location=local->route_location[key];
-  int expert=params->tile_experts[tile];
-  if (location<0 || location>=LOCAL_E*MAX_ROWS ||
-      location/MAX_ROWS!=expert) {
-    if (threadIdx.x==0) atomicCAS(&local->error,0,3);
-    return;
-  }
-  const __nv_bfloat16* input=local->rows+size_t(location)*H;
-  for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
-    output[feature]=input[feature];
 }
 __global__ void scatter_returns(const ReturnParams* params) {
   int tile=int(blockIdx.x),row=int(blockIdx.y);
