@@ -56,6 +56,25 @@ def _publication_scope(s, operation):
     return s.loop_parent().get(loop.name) if loop is not None else None
 
 
+def _head64_axis(s):
+    """One scalar CTA head coordinate owned by the KDA B source."""
+    if s.program_map is None or len(s.program_map.axes) != 1:
+        return None
+    axis = s.program_map.axes[0]
+    owner = s.buffer(axis.buffer)
+    return (axis if axis.tile == 1 and axis.dimension == 1
+            and owner is not None and len(owner.shape) == 4
+            and owner.shape[1] == 64 else None)
+
+
+def _head64_access(s, access, position):
+    axis = _head64_axis(s)
+    return (axis is not None and access is not None
+            and len(access.indices) > position
+            and access.indices[position].source is AccessIndexKind.PROGRAM
+            and access.indices[position].name == axis.name)
+
+
 def _scalar_row(s, buffer):
     """Prove a rank-one tile has one scalar per physical row, not 128 replicas."""
     def walk(name, seen):
@@ -105,7 +124,7 @@ def _terminal_transpose_stores(s):
                 or destination.mode is not BufferMode.OUTPUT
                 or not (source.dtype is view.dtype is destination.dtype is DType.BF16)
                 or source.shape != (128, 32) or view.shape != (32, 128)
-                or destination.shape != (2, 32, 128)
+                or destination.shape not in ((2, 32, 128), (2, 32, 64, 128))
                 or store.role != transpose.role or _scope(s, store) != scope
                 or transpose.waits or transpose.signals or transpose.pipeline
                 or store.waits or store.signals or store.pipeline
@@ -115,12 +134,16 @@ def _terminal_transpose_stores(s):
                 or any(transpose.op_id in op.depends_on and op is not store
                        for op in s.operations)
                 or access is None or access.boundary is not BoundaryPolicy.MASK_TILED_AXES
-                or len(access.indices) != 3):
+                or len(access.indices) != len(destination.shape)):
             continue
-        first, second, third = access.indices
-        if (first.source is not AccessIndexKind.LOOP or first.name != scope.iterator
-                or second.source is not AccessIndexKind.DIMENSION or second.dimension != 1
-                or third.source is not AccessIndexKind.DIMENSION or third.dimension != 2):
+        indices = access.indices
+        if (indices[0].source is not AccessIndexKind.LOOP
+                or indices[0].name != scope.iterator
+                or indices[1].source is not AccessIndexKind.DIMENSION
+                or indices[1].dimension != 1
+                or indices[-1].source is not AccessIndexKind.DIMENSION
+                or indices[-1].dimension != len(indices)-1
+                or len(indices) == 4 and not _head64_access(s, access, 2)):
             continue
         result[transpose.op_id] = (store.op_id, source.name, view.name)
         result[store.op_id] = (transpose.op_id, source.name, view.name)
@@ -154,7 +177,7 @@ def _input_transpose_loads(s):
                 or source.mode is not BufferMode.INPUT
                 or not (raw.space is row_tile.space is MemorySpace.REGISTER)
                 or not (source.dtype is raw.dtype is row_tile.dtype is DType.BF16)
-                or source.shape != (2, 32, 128)
+                or source.shape not in ((2, 32, 128), (2, 32, 64, 128))
                 or raw.shape != (32, 128) or row_tile.shape != (128, 32)
                 or load.parameters.movement is not LoadMovement.GLOBAL
                 or load.role != transpose.role or _scope(s, load) != scope
@@ -166,12 +189,16 @@ def _input_transpose_loads(s):
                 or any(load.op_id in op.depends_on and op is not transpose
                        for op in s.operations)
                 or access is None or access.boundary is not BoundaryPolicy.MASK_TILED_AXES
-                or len(access.indices) != 3):
+                or len(access.indices) != len(source.shape)):
             continue
-        first, second, third = access.indices
-        if (first.source is not AccessIndexKind.LOOP or first.name != scope.iterator
-                or second.source is not AccessIndexKind.DIMENSION or second.dimension != 1
-                or third.source is not AccessIndexKind.DIMENSION or third.dimension != 2):
+        indices = access.indices
+        if (indices[0].source is not AccessIndexKind.LOOP
+                or indices[0].name != scope.iterator
+                or indices[1].source is not AccessIndexKind.DIMENSION
+                or indices[1].dimension != 1
+                or indices[-1].source is not AccessIndexKind.DIMENSION
+                or indices[-1].dimension != len(indices)-1
+                or len(indices) == 4 and not _head64_access(s, access, 2)):
             continue
         result[load.op_id] = (transpose.op_id, row_tile.name, raw.name)
         result[transpose.op_id] = (load.op_id, row_tile.name, raw.name)
@@ -482,7 +509,22 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                                 and all(component.source is AccessIndexKind.DIMENSION
                                         and component.dimension == axis
                                         for axis, component in enumerate(access_b.indices[1:], 1)))
-                check(tensor_a and producer is not None and (rank2_domain or rank3_domain),
+                rank4_head_domain = (source_b is not None and loop_source is not None
+                                     and staged_b is not None and access_b is not None
+                                     and len(source_b.shape) == len(loop_source.shape) == 4
+                                     and source_b.shape[0] == loop_source.shape[0]
+                                     and source_b.shape[1] == loop_source.shape[1] == 64
+                                     and loop.dimension == 0 and loop.tile == 1
+                                     and staged_b.shape == source_b.shape[2:]
+                                     and len(access_b.indices) == 4
+                                     and access_b.indices[0].source is AccessIndexKind.LOOP
+                                     and access_b.indices[0].name == loop.iterator
+                                     and _head64_access(s, access_b, 1)
+                                     and all(component.source is AccessIndexKind.DIMENSION
+                                             and component.dimension == axis
+                                             for axis, component in enumerate(access_b.indices[2:], 2)))
+                check(tensor_a and producer is not None
+                      and (rank2_domain or rank3_domain or rank4_head_domain),
                       'NATIVE_CARRIED_MMA_DOMAIN', f'operations[{s.operations.index(mma)}]',
                       'each carried MMA consumes one staged B tile selected by the outer chunk loop')
             check(loop is None or carried or (s.mma_accumulates_over(mma, loop)
@@ -631,12 +673,20 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                           'NATIVE_SHARED_LOAD_SCOPE', path+'.pipeline',
                           'other native global-to-shared staging belongs to a contraction pipeline')
             if p.movement is LoadMovement.TMA:
+                access = s.access_map(op.op_id, src.name)
+                rank4_head = (len(src.shape) == 4 and src.shape[1] == 64
+                              and _head64_access(s, access, 1)
+                              and access.indices[0].source is AccessIndexKind.LOOP
+                              and all(component.source is AccessIndexKind.DIMENSION
+                                      and component.dimension == axis
+                                      for axis, component in enumerate(access.indices[2:], 2)))
                 check(src.space is MemorySpace.GLOBAL and src.mode is BufferMode.INPUT
-                      and len(src.shape) in (2,3) and dst.space is MemorySpace.SHARED
+                      and (len(src.shape) in (2,3) or rank4_head)
+                      and dst.space is MemorySpace.SHARED
                       and p.descriptor_box == dst.shape and src.dtype == dst.dtype
                       and src.shape[-1]*src.dtype.itemsize % 16 == 0 and op.pipeline is not None,
                       'NATIVE_TMA_DESCRIPTOR', path+'.parameters',
-                      'TMA requires a contiguous rank-2 input with 16-byte row stride and a declared shared box')
+                      'TMA requires a contiguous rank-2/3 input or bounded rank-4 H64 input with 16-byte row stride and a declared shared box')
             elif p.movement is LoadMovement.TMEM:
                 producer = writers.get(src.name)
                 if src.dtype is DType.BF16:
@@ -1393,6 +1443,9 @@ __device__ __forceinline__ void cake_arrive(uint64_t* p) {
 }
 __device__ __forceinline__ void cake_tma3(void* dst, const CUtensorMap* map, int x, int y, int z, uint64_t* barrier) {
   asm volatile("cp.async.bulk.tensor.3d.shared::cluster.global.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3, %4}], [%5];" :: "r"(cake_smem(dst)), "l"(map), "r"(x), "r"(y), "r"(z), "r"(cake_smem(barrier)) : "memory");
+}
+__device__ __forceinline__ void cake_tma4(void* dst, const CUtensorMap* map, int x, int y, int z, int w, uint64_t* barrier) {
+  asm volatile("cp.async.bulk.tensor.4d.shared::cluster.global.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3, %4, %5}], [%6];" :: "r"(cake_smem(dst)), "l"(map), "r"(x), "r"(y), "r"(z), "r"(w), "r"(cake_smem(barrier)) : "memory");
 }
 __device__ __forceinline__ uint64_t cake_desc(uint32_t address, uint32_t stride, uint32_t swizzle) {
   return uint64_t(address >> 4) | (1ull << 16) | (uint64_t(stride >> 4) << 32) | (1ull << 46) | (uint64_t(swizzle) << 61);
