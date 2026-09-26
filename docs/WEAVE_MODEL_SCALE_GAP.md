@@ -419,10 +419,19 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    rank-local `c/steal` controls; the alternating control produced actual
    steals [5888,0,5888,0], and all three outputs were bitwise equal with
    zero oracle failures. These are correctness and byte-volume facts,
-   not an on-device bandwidth or latency measurement. The public
-   `Compiler.lower_ranked_tiles` still refuses pending Evaluation binding,
-   failure cleanup/progress guarantees and a review of the IR's task
-   reservation mapping against the emitted per-tile claim heads.
+   not an on-device bandwidth or latency measurement. At `e9c6b496`,
+   exact-model `Compiler.lower_ranked_tiles` began returning the native
+   CUDA source with Target-owned facts and a map of 27 ranked effects plus
+   all 25 Cake math operations. At `f7cb1ac5`, an Evaluation adapter bound
+   caller-owned device tensors, checked rank placement, aliases and
+   controls, then ran that *public lowering's source* under one isolated
+   four-GPU broker job. All three repeated launches again matched the
+   independent FP64 oracle with zero failures and bitwise-identical
+   outputs. This validates the Compiler→backend→Evaluation→B300 route for
+   the exact model and route set. The shared core schema-2 branch still
+   needs independent integration; a common Evaluation launch manifest,
+   device-fault cleanup/progress guarantees and qualified timing are not
+   yet established.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -433,13 +442,13 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 ## Bounded implementation order
 
 - Review and integrate the separate core schema-2 effect through `main`,
-  then let the NVIDIA task consume it. The B300 backend now owns the
-  device protocol and a tested development tensor-pointer ABI, including
-  deduplicated peer payloads, rank-local controls and repeated state
-  reset. Before exposing `lower_ranked_tiles`, match every ranked effect
-  to its actual PTX/queue owner, make failure cleanup and diagnostics
-  safe after a partial launch, and bind exact inputs/outputs through
-  Evaluation without importing the experiment's file runner.
+  then let the NVIDIA task consume it. The B300 task now emits an exact
+  source through `lower_ranked_tiles` and runs its tensor-pointer ABI
+  through an Evaluation adapter; it retains no file IO in the backend.
+  Before promotion, independently review the source-map claim for each
+  ranked effect against its PTX/queue owner, establish a common Workload
+  launch manifest and candidate seal, and make partial-launch failure
+  cleanup/progress safe under that evaluator's isolated process policy.
 - Carry the source-completion full-tile publication protocol into a
   backend-owned launch ABI with explicit per-rank state and status. Decide
   whether the admitted schema also requires publication at the exact
