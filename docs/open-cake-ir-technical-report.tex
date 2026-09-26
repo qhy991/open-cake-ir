@@ -1394,6 +1394,30 @@ H64/T8192 合成输入的 67,108,864 个 BF16 输出及 1,048,576 个 BF16
 chunk1 与独立状态 oracle 完全一致，而 chunk2/4/8/16/32 均出现
 超容差元素。因此当前全形状的合成输入检查仍不能替代 Workload 验收；
 后继需要片上逐 token BF16 更新，或有可证明误差界与精确 fallback 的分流。
+
+\paragraph{状态路径的 CUPTI 归因与 barrier 后继。}
+固定 \code{61892f81} 的完整 H64/256-chunk 合成状态/输出 kernel 在独占
+B300 上取得五轮各 25 个冷 L2 CUPTI 样本，组件 pooled 中位数
+\(7{,}678.607\,\mu\mathrm{s}\)。只把顺序求解算术改为
+\(U=\mathrm{RHS}\)、保留 P 装载和等待的\emph{错误语义}消融，在另一作业测得
+\(7{,}232.558\,\mu\mathrm{s}\)；跨作业差值不能算正式加速比，却表明
+496 项/行的 FMA 不能单独解释超过 7 ms 的延迟。源码检查发现两条
+单槽 TMA/MMA 流水每 chunk 都重建 ready/free 与 completion mbarrier。
+后继 \code{92994711} 只在有界 H64/256-chunk 路由将这些 barrier 的生命周期
+移到循环两端，块内按奇偶 phase 等待；两 chunk 控制仍走旧发射。它通过
+Corpus Gate 179/179、适用 CPU 测试 2,676 passed，精确 B300 AOT 为
+255 寄存器、0 stack/spill，并再次通过全部 67,108,864 输出及
+1,048,576 状态元素的独立设备检查。
+
+随后同一独占 GPU、交替顺序、每臂五轮各 25 个冷 L2 CUPTI 样本的
+配对组件诊断，得到旧版 \(7{,}611.606\,\mu\mathrm{s}\)、相位复用版
+\(7{,}228.691\,\mu\mathrm{s}\) 的 pooled 中位数，\(1.05297\times\)；
+五轮比值均在 \(1.05218\)--\(1.05306\)，两臂计时后输出/状态都与已验证
+抓取逐位一致，GPU 无其他计算 PID。这是有界组件收益，仍远慢于适配
+CAKE 的约 \(456\,\mu\mathrm{s}\) 完整参考。可见的原始 CAKE CUDA 发射
+使用五槽 shared 流水、分开的 producer/compute/MMA/epilogue 角色及
+每 head 两个 M64 value slice；下一轮必须改变跨 chunk 重叠与准备阶段
+物化，而非仅缩短 solve 源码。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
