@@ -8,6 +8,7 @@
   ],
   "vendor": "nvidia",
   "code_object": "cubin",
+  "l2_cache_bytes": 132644864,
   "compute_capability": [
     10,
     3
@@ -142,6 +143,11 @@
       "kind": "device_observation",
       "source": "cudaDeviceGetAttribute cudaDevAttrCooperativeLaunch on NVIDIA B300-M4",
       "locator": "B300-M4:/home/qinhaiyan/cake-weave-worker-b300-m4-863eb3fd/report.json; value 1 under exclusive broker job gpuq-07e90df5e32c; observed 2026-09-24"
+    },
+    {
+      "kind": "device_observation",
+      "source": "torch.cuda.get_device_properties().L2_cache_size on NVIDIA B300-M4",
+      "locator": "B300-M4:/home/qinhaiyan/cake-weave-cupti-factorial-772bb03c/mixed_full_early_terminal/cupti_raw.json and /home/qinhaiyan/cake-weave-cupti-steal-budget-772bb03c/mixed_full_early_terminal/cupti_raw.json; 132644864 on each of four selected GPUs in jobs gpuq-45acb5638dd9 and gpuq-489b9dc93bcd; observed 2026-09-27"
     }
   ],
   "cooperative_grid": true,

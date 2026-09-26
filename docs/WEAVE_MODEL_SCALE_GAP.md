@@ -473,6 +473,37 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    the pinned open baseline. The former captured helper path returns
    `ENODEV`; the successor host capture resolves that availability defect,
    but the one-shot Nsight trace and CUPTI probes are development evidence only.
+   A follow-up development CUPTI assay on the frozen mixed-route Workload
+   captured three samples per control. Before each sample it launched one
+   write kernel per device over a buffer twice that device's queried
+   132,644,864-byte L2 size, now declared by the `sm_103a` Target, and the
+   subsequent layer window contained
+   604 kernels and 92 memsets across four ranks. Its GPU activity span
+   includes the current ABI's internal state reset, so it is not the
+   proposed qualified complete-layer interval. All compared outputs still
+   passed the FP64 oracle and were bitwise equal. In one four-card job
+   (`gpuq-45acb5638dd9`), median spans were 7.418 ms for c=1/budget=0,
+   24.164 ms for c=74/budget=0, 7.014 ms for c=1/budget=5888 and
+   12.635 ms for c=74/budget=5888. The c=74/budget=5888 ranks all
+   saturated that budget; c=1 borrowed only 115–148 tasks. A second
+   four-card job (`gpuq-489b9dc93bcd`) held c=74 fixed: budget=5888
+   gave 12.541 ms, while budget=46920 gave 7.225 ms and actually borrowed
+   8,924–10,736 tasks per rank. In the same job c=1/budget=5888 gave
+   6.926 ms. CUPTI attributes the large difference primarily to
+   `tile_schedule_probe` worker activity. Raw activities, controls,
+   outputs and post-lease oracle checks are retained under the external
+   `cake-weave-cupti-factorial-772bb03c` and
+   `cake-weave-cupti-steal-budget-772bb03c` evidence roots.
+
+   This isolates budget exhaustion as the main cause of the measured
+   c=74 slowdown on **this** route, but it does not qualify a latency or
+   justify an automatic budget rule. The current source launches dispatch
+   in separate kernels; `communication_ctas` partitions the worker grid
+   into ordinary and borrow-eligible CTAs and reserves no physical SMs.
+   Thus this finite-launch source has not yet realized the paper's
+   spatial communication worker. Promotion disposition: no Compiler
+   rewrite or Lab budget recipe until a real communication/compute mapping,
+   more route distributions and the qualified interval are measured.
 
 ## Bounded implementation order
 

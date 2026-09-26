@@ -5,6 +5,13 @@ import unittest
 from open_cake_ir.compiler.target import Target,TargetParseError
 ROOT=Path(__file__).resolve().parents[2]
 class DeclaredCacheCapacityTests(unittest.TestCase):
+    def test_b300_declares_its_measured_reset_capacity_without_inheritance(self):
+        b300=Target.load(ROOT/'compiler/targets/sm_103a.json')
+        b200=Target.load(ROOT/'compiler/targets/sm_100a.json')
+        self.assertIsInstance(b300.l2_cache_bytes,int)
+        self.assertGreater(b300.l2_cache_bytes,0)
+        self.assertIsNone(b200.l2_cache_bytes)
+
     def test_absence_remains_unknown_and_each_vendor_can_declare_its_own_value(self):
         for path in (ROOT/'compiler/targets').glob('*.json'):
             document=json.loads(path.read_text());document.pop('l2_cache_bytes',None)
