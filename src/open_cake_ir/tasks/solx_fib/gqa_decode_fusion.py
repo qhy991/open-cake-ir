@@ -44,11 +44,8 @@ def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAut
         "    query = lm.load(q[q_row, h_head, :])",
         "    key = lm.load(k_cache[pages, lm.scalar_index(zero), "
         "lm.scalar_index(kv_head), :])",
-        "    value = lm.load(v_cache[pages, lm.scalar_index(zero), "
-        "lm.scalar_index(kv_head), :])",
         '    query32 = lm.cast(query, to="fp32")',
         '    key32 = lm.cast(key, to="fp32")',
-        '    value32 = lm.cast(value, to="fp32")',
         "    products = key32 * lm.broadcast(query32, axis=1)",
         '    dot = lm.reduce(products, op="sum", axis=1, across_loop=False)',
         "    scale = lm.load(sm_scale[:])",
@@ -67,6 +64,9 @@ def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAut
         f"    log_max = safe_maximum * {math.log2(math.e)!r}",
         "    logarithm = log_total + log_max",
         '    final_lse = lm.select(valid_row, logarithm, "negative_infinity")',
+        "    value = lm.load(v_cache[pages, lm.scalar_index(zero), "
+        "lm.scalar_index(kv_head), :])",
+        '    value32 = lm.cast(value, to="fp32")',
         "    weighted_values = value32 * lm.broadcast(weights, axis=0)",
         '    accum = lm.reduce(weighted_values, op="sum", axis=0, across_loop=False)',
         '    rounded = lm.cast(accum, to="bf16")',
