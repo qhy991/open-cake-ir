@@ -1532,11 +1532,35 @@ BF16 32\(\times\)32/B64 swizzle 的 native 域内以 16B
 的 P 值。发布前回显及标量基线消费者回显均正确；补一个显式
 \code{p\_free} barrier 的源码探针仍有 96 个元素错误。因而
 \(1.951\,\mathrm{ms}\) 是\emph{未获发布/复用正确性资格的诊断数}，
-不能列为已接受的 Compiler 性能提升。下一轮需在同一次启动定位 P 的
-写入可见性、barrier 相位和共享槽复用，再让 Schedule、验证器及发射一起
-承担这个合同。原始 CAKE CUDA 显式管理槽与角色；现有 Triton lowering
+不能列为已接受的 Compiler 性能提升。后继须在 Schedule、验证器及发射中
+共同承担 P 的槽地址与相位合同。原始 CAKE CUDA 显式管理槽与角色；现有 Triton lowering
 缺这条 carried TMEM/P 路由，差别是当前实现范围，不能推断语言本身
 无法表达。
+
+\paragraph{双槽 P 的受限资格。}
+另一个只加 block fence 的提交 \code{0c2f522f} 和让 32 个 MMA lane
+分别发布 \code{p\_ready} 的源码探针，均在五次重复的消费者 P 回显中
+复现跨块混值；单次通过不能取代生命周期证明。提交 \code{5974e33e}
+把 P 的 2 KiB shared tile 明确扩为两个槽，MMA warp 对 chunk \(j\)
+写槽 \(j\bmod2\)，compute warp 在相同 \code{p\_ready} 相位等待并从
+同槽读取。共享 IR 声明两个 stage 和 4 KiB Allocation；不足容量由
+\code{BUFFER\_ALLOCATION\_OVERFLOW} 拒绝，native 角色域拒绝三槽。
+它通过 Corpus Gate 179/179、适用 CPU 测试 2,692 passed；精确 B300
+AOT 为 57,472 字节 dynamic shared、255 寄存器、0 spill。Cake 实际
+发射源码的五次重复中，15 个抽查消费者 P 瓦片逐 bit 正确；末次全部
+67,108,864 个合成输出及 1,048,576 个状态元素 0 超差。P 指针故意
+偏移一个 BF16 时，标量回退的完整输出/状态也 0 超差。
+
+同一独占 GPU 的五轮交替、每臂每轮 25 个冷 L2 CUPTI 样本，将
+固定分角色基线从 \(2{,}481.231\,\mu\mathrm{s}\) 降到双槽版
+\(1{,}953.451\,\mu\mathrm{s}\)，受检组件收益 \(1.27018\times\)。
+十份完整输出/状态快照通过独立合成 oracle，输入未改写，后检查无其它
+计算 PID；两臂首末轮的 BF16 输出和状态逐 bit 相同。收益属于双槽
+地址隔离与向量暂存的\emph{组合}，不能单独归因于多一个槽。
+原始 CAKE 适配的 H64/T8192 完整 kernel 在另一作业约
+\(456.578\,\mu\mathrm{s}\)，范围不同，当前 1.953 ms 仍只是预物化
+输入组件。真实上游 Q/K/G、原位 state、逐 token BF16 舍入、高保留输入
+和六形状还未获得完整 Workload 资格。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
