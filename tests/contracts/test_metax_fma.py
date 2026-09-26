@@ -8,7 +8,7 @@ from open_cake_ir.compiler.backends import triton
 from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.ir import Schedule
 from open_cake_ir.compiler.target import declared_target
-from open_cake_ir.compiler.toolchain import validate_triton_kernel
+from open_cake_ir.compiler.toolchain import project_triton_kernel
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,7 +34,8 @@ class MetaxFmaLowering(unittest.TestCase):
         self.assertIn('tl.fma(a_tile, b_tile, c_tile)', lowering.source)
         self.assertNotIn('inline_asm_elementwise', lowering.source)
         self.assertEqual(lowering.toolchain_requirements['code_object'], 'mcfatbin')
-        validate_triton_kernel(lowering.source.encode(), lowering.toolchain_requirements)
+        kernel = project_triton_kernel(lowering.source.encode(), lowering.toolchain_requirements)
+        self.assertIn(b'tl.fma(a_tile, b_tile, c_tile)', kernel)
 
     def test_vendor_instruction_names_do_not_cross_routes(self):
         document = fma_document()
