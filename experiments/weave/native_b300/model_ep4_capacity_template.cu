@@ -286,9 +286,6 @@ constexpr size_t HIDDEN_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 constexpr size_t IDS_BYTES=size_t(ROUTES)*sizeof(int);
 constexpr size_t TILE_BYTES=size_t(kLogicalTiles)*kRows*H*sizeof(uint16_t);
 constexpr size_t TILE_KEY_BYTES=size_t(kLogicalTiles)*kRows*sizeof(int);
-constexpr size_t EXPECTED_TILE_BYTES=size_t(kExpectedTiles)*kRows*H*sizeof(uint16_t);
-constexpr size_t EXPECTED_TILE_KEY_BYTES=size_t(kExpectedTiles)*kRows*sizeof(int);
-constexpr size_t EXPECTED_OUTPUT_BYTES=size_t(kExpectedTiles)*kRows*H*sizeof(float);
 constexpr size_t ROUTE_CONTRIBUTION_BYTES=size_t(ROUTES)*H*sizeof(float);
 constexpr size_t FINAL_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 
@@ -607,7 +604,8 @@ struct RankState {
 
 int main(int argc,char** argv) {
   bool plan_only=argc==7 && std::strcmp(argv[6],"plan-only")==0;
-  if (argc!=6 && !plan_only) return 2;
+  bool general=argc==7 && std::strcmp(argv[6],"general")==0;
+  if (argc!=6 && !plan_only && !general) return 2;
   int communication_control=-1,steal_control=-1;
   if (std::sscanf(argv[4],"%d",&communication_control)!=1 ||
       std::sscanf(argv[5],"%d",&steal_control)!=1 ||
@@ -636,11 +634,13 @@ int main(int argc,char** argv) {
     }
   }
   for (int expert=0;expert<E;++expert)
-    if (!plan_only && (expert_counts[expert]<64 || expert_counts[expert]>256))
+    if (!plan_only && !general &&
+        (expert_counts[expert]<64 || expert_counts[expert]>256))
       return 6;
   const int expected_owner_rows[R]={4039,4196,4016,4133};
   for (int rank=0;rank<R;++rank)
-    if (!plan_only && valid_by_owner[rank]!=expected_owner_rows[rank]) return 7;
+    if (!plan_only && !general &&
+        valid_by_owner[rank]!=expected_owner_rows[rank]) return 7;
   Case scenario[R]{};
   int wave_counts[R][kWaves]{};
   for (int rank=0;rank<R;++rank) {
@@ -1093,6 +1093,7 @@ int main(int argc,char** argv) {
   std::vector<unsigned char> final_output(FINAL_BYTES);
   std::vector<int> return_flags(ROUTES);
   int stolen_by_rank[R]{},bin_rows_by_rank[R]{},bin_error[R]{};
+  int planned_tiles_by_rank[R]{};
   int overlap_by_rank[R][2]{};
   for (int rank=0;rank<R;++rank) {
     if (check(cudaSetDevice(rank),"select result rank")) return 38;
@@ -1137,8 +1138,9 @@ int main(int argc,char** argv) {
         check(cudaMemcpy(return_flags.data()+size_t(rank)*LOCAL_ROUTES,
                          s.return_ready,LOCAL_ROUTES*4,
                          cudaMemcpyDeviceToHost),"return flags read")) return 39;
-    if (bin_error[rank]!=0 || overlap_by_rank[rank][0]!=1 ||
-        overlap_by_rank[rank][1]!=1) return 40;
+    if (bin_error[rank]!=0 ||
+        (!general && (overlap_by_rank[rank][0]!=1 ||
+                      overlap_by_rank[rank][1]!=1))) return 40;
     for (int expert=0;expert<LOCAL_E;++expert) {
       if (counts[expert]<0 || counts[expert]>MAX_ROWS) return 41;
       bin_rows_by_rank[rank]+=counts[expert];
@@ -1156,8 +1158,11 @@ int main(int argc,char** argv) {
       scenario[rank].tasks[2][wave]=
           wave_counts[rank][wave]*kDownTasksPerTile;
     }
-    if (planned_tiles!=kExpectedTiles || wave_counts[rank][0]!=0 ||
-        wave_counts[rank][3]!=kExperts) return 42;
+    if ((!general && (planned_tiles!=kExpectedTiles ||
+                      wave_counts[rank][0]!=0 ||
+                      wave_counts[rank][3]!=kExperts)) ||
+        planned_tiles>kLogicalTiles) return 42;
+    planned_tiles_by_rank[rank]=planned_tiles;
     for (int stage=0;stage<kStages;++stage) {
       int units=stage==0 ? kUpGateTasksPerTile :
                 stage==1 ? kActivationTasksPerTile : kDownTasksPerTile;
@@ -1181,19 +1186,22 @@ int main(int argc,char** argv) {
         (scenario[rank].communication==148 &&
          stolen_by_rank[rank]!=kTotalStageTasks))
       return 47;
-    std::vector<unsigned char> tile_input(EXPECTED_TILE_BYTES),
-                               down(EXPECTED_OUTPUT_BYTES);
-    std::vector<unsigned char> manifest_keys(EXPECTED_TILE_KEY_BYTES),
-                               manifest_experts(kExpectedTiles*sizeof(int));
-    if (check(cudaMemcpy(tile_input.data(),s.tile_input,EXPECTED_TILE_BYTES,
+    size_t tile_input_bytes=size_t(planned_tiles)*kRows*H*sizeof(uint16_t);
+    size_t down_bytes=size_t(planned_tiles)*kRows*H*sizeof(float);
+    size_t tile_key_bytes=size_t(planned_tiles)*kRows*sizeof(int);
+    std::vector<unsigned char> tile_input(tile_input_bytes),down(down_bytes);
+    std::vector<unsigned char> manifest_keys(tile_key_bytes),
+                               manifest_experts(size_t(planned_tiles)*sizeof(int));
+    if (planned_tiles>0 &&
+        (check(cudaMemcpy(tile_input.data(),s.tile_input,tile_input_bytes,
                          cudaMemcpyDeviceToHost),"tile input read") ||
-        check(cudaMemcpy(manifest_keys.data(),s.tile_keys,EXPECTED_TILE_KEY_BYTES,
+        check(cudaMemcpy(manifest_keys.data(),s.tile_keys,tile_key_bytes,
                          cudaMemcpyDeviceToHost),"GPU tile route keys read") ||
         check(cudaMemcpy(manifest_experts.data(),s.tile_experts,
                          manifest_experts.size(),cudaMemcpyDeviceToHost),
               "GPU tile experts read") ||
-        check(cudaMemcpy(down.data(),s.down,EXPECTED_OUTPUT_BYTES,
-                         cudaMemcpyDeviceToHost),"down read")) return 48;
+        check(cudaMemcpy(down.data(),s.down,down_bytes,
+                         cudaMemcpyDeviceToHost),"down read"))) return 48;
     char name[128];
     std::snprintf(name,sizeof(name),"device_outputs/rank%d/tile_input.bf16",rank);
     if (!write_exact(argv[1],name,tile_input.data(),tile_input.size())) return 49;
@@ -1228,6 +1236,7 @@ int main(int argc,char** argv) {
   if (!report) return 54;
   std::fprintf(report,"{\"target\":\"sm_103a\",\"ranks\":4,"
                       "\"safe_tile_capacity\":255,"
+                      "\"logical_tiles_by_owner\":[%d,%d,%d,%d],"
                       "\"communication_ctas\":%d,\"steal_budget\":%d,"
                       "\"valid_routes_by_owner\":[%d,%d,%d,%d],"
                       "\"bin_rows_by_owner\":[%d,%d,%d,%d],"
@@ -1239,6 +1248,8 @@ int main(int argc,char** argv) {
                       "\"no_interphase_host_sync\":true,"
                       "\"device_names\":[\"%s\",\"%s\",\"%s\",\"%s\"],"
                       "\"tile_waves_by_owner\":[",
+              planned_tiles_by_rank[0],planned_tiles_by_rank[1],
+              planned_tiles_by_rank[2],planned_tiles_by_rank[3],
               communication_control,steal_control,
               valid_by_owner[0],valid_by_owner[1],valid_by_owner[2],
               valid_by_owner[3],bin_rows_by_rank[0],bin_rows_by_rank[1],
