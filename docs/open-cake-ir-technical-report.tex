@@ -1483,6 +1483,28 @@ M128 以每 head 一个 CTA 发射。M128 在设备释放后通过独立外部 o
 两臂每轮结果再次逐位通过。CTA 数、shared 用量和发射代码同时不同，
 故不能只归因于 tile 值；这项对照也不是我们当前 native Compiler 的
 性能。它说明直接改成每 head 一个 M128 CTA 无法在此形状超过原始 CAKE。
+
+\paragraph{分角色持续循环的后继。}
+提交 \code{db979435} 在精确 H64/256-chunk、两槽 B 输入路由中让 copy、
+MMA、compute warp 各自运行一条 256 块循环；MMA warp 在基础投影后
+装入独占的 2 KiB P stage，并以 \code{p\_ready} 交给 compute warp。
+块间仅通过 B ready/free、P、U 与 carried state 的 mbarrier 相位联系，
+循环内部不再执行全 CTA 同步。它通过 Corpus Gate 179/179、适用 CPU
+测试 2,686 passed，精确 B300 AOT 为 55,424 字节 dynamic shared、
+255 寄存器、0 spill；独立设备作业检查全部 67,108,864 输出与
+1,048,576 最终状态元素，均为 0 超差。
+
+重复启动时，三角色版相对一次设备抓取在 head40 从 chunk17 起会出现
+少量 BF16 位差异，首个保留快照的最大绝对输出/状态差仅为
+\(3.82\times10^{-6}\) / \(3.06\times10^{-5}\)，独立合成 oracle
+仍报 0 超容差。因而首个要求\emph{逐位相同}的计时作业被拒绝，
+失败记录保留。后继先在 CPU 独立保存期望值，再于同一独占 GPU 交替
+采样五轮、每臂每轮 25 个冷 L2 CUPTI 样本；每轮两臂完整输出与状态
+快照在租约释放后逐元素复查，十份快照均 0 超差、无非有限值，输入未改写。
+两槽单循环的 pooled 中位数 \(2{,}833.908\,\mu\mathrm{s}\)，
+分角色版 \(2{,}462.161\,\mu\mathrm{s}\)，\(1.15098\times\)。
+这是合成准备值范围内的数值合格组件收益；位确定性、高保留输入、
+逐 token BF16 状态舍入及完整 CAKE 对照均未获资格。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
