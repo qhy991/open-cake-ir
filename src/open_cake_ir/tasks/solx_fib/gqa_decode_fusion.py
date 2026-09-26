@@ -13,7 +13,8 @@ TASK = "fib_gqa_paged_decode_h32_kv4_d128_ps1"
 FUSED_TASKS = (TASK, "fib_gqa_paged_decode_h32_kv8_d128_ps1")
 
 
-def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAuthor:
+def author_plan(workload: WorkloadContract, case_id: str = "primary",
+                *, split_values: bool = False) -> PlanAuthor:
     """One CTA owns a query/head and its padded KV axis on exact B300 GQA decode.
 
     Scores, softmax and weighted values share the same loaded page data. Invalid
@@ -64,6 +65,49 @@ def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAut
         f"    log_max = safe_maximum * {math.log2(math.e)!r}",
         "    logarithm = log_total + log_max",
         '    final_lse = lm.select(valid_row, logarithm, "negative_infinity")',
+    ]
+    if split_values:
+        if task != FUSED_TASKS[1]:
+            raise ValueError("split-value mapping is admitted only for long-KV GQA")
+        plan.tensor("probabilities", (axes["batch_size"],
+                                      spec["constants"]["num_qo_heads"], length), "fp32")
+        body += [
+            "    lm.store(probabilities[q_row, h_head, :], weights, coalesced=False)",
+            "    lm.store(lse[q_row, h_head], final_lse, coalesced=False)",
+        ]
+        plan.stage(
+            "gqa_fused_scores", ["q", "k_cache", "kv_indptr", "kv_indices", "sm_scale"],
+            ["probabilities", "lse"],
+            [("q_row", "lse", 0, 1), ("h_head", "lse", 1, 1)], body,
+        )
+        value_body = [
+            "with compute:",
+            '    qi = lm.coordinate(source="program", name="q_row")',
+            '    head = lm.coordinate(source="program", name="h_head")',
+            "    start = lm.load(kv_indptr[lm.scalar_index(qi)])",
+            '    zero = lm.coordinate(source="range", start=0, extent=1)',
+            f"    kv_head = head // {group}",
+            'for key in lm.range(probabilities, name="key_loop", dimension=2, tile=16, num_stages=1):',
+            '    with compute:',
+            '        positions = lm.coordinate(source="loop_tile", name="key")',
+            '        absolute = positions + start',
+            '        pages = lm.load(kv_indices[absolute])',
+            '        values = lm.load(v_cache[pages, lm.scalar_index(zero), lm.scalar_index(kv_head), :])',
+            '        values32 = lm.cast(values, to="fp32")',
+            '        weights = lm.load(probabilities[q_row, h_head, key])',
+            '        products = values32 * lm.broadcast(weights, axis=0)',
+            '        accum = lm.reduce(products, op="sum", axis=0)',
+            'with compute:',
+            '    rounded = lm.cast(accum, to="bf16")',
+            '    lm.store(output[q_row, h_head, :], rounded, coalesced=False)',
+        ]
+        plan.stage(
+            "gqa_tiled_values", ["v_cache", "kv_indptr", "kv_indices", "probabilities"],
+            ["output"],
+            [("q_row", "output", 0, 1), ("h_head", "output", 1, 1)], value_body,
+        )
+        return plan
+    body += [
         "    value = lm.load(v_cache[pages, lm.scalar_index(zero), "
         "lm.scalar_index(kv_head), :])",
         '    value32 = lm.cast(value, to="fp32")',

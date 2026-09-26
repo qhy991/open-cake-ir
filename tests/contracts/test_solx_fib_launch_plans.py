@@ -34,6 +34,25 @@ class CompletePackPlanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gqa_decode_fusion.author_plan(other)
 
+    def test_013_split_value_mapping_has_two_complete_stages(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        task = gqa_decode_fusion.FUSED_TASKS[1]
+        for variant in ('boundary', 'captured'):
+            workload = WorkloadContract(attention.workload_document(task, variant=variant))
+            plan = gqa_decode_fusion.author_plan(workload, split_values=True).finish()
+            self.assertEqual([stage.name for stage in plan.stages],
+                             ['gqa_fused_scores', 'gqa_tiled_values'])
+            self.assertEqual(set(plan.outputs), {'output', 'lse'})
+            self.assertEqual(set(plan.tensors) - set(plan.inputs) - set(plan.outputs),
+                             {'probabilities'})
+            lowered = compiler.lower_program(plan)
+            lowered.validate_binding()
+            self.assertEqual(len(lowered.lowerings), 2)
+        wrong = WorkloadContract(attention.workload_document(
+            gqa_decode_fusion.TASK, variant='captured'))
+        with self.assertRaises(ValueError):
+            gqa_decode_fusion.author_plan(wrong, split_values=True)
+
     def test_all_26_tasks_have_one_owning_implementation(self):
         self.assertEqual(len(TASK_IDS),26)
         self.assertEqual(len({t.split('_',1)[0] for t in TASK_IDS}),26)
