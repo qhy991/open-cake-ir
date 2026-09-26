@@ -171,6 +171,31 @@ class NativeKdaStateOutput(unittest.TestCase):
         self.assertIn("NATIVE_TWO_PHASE_ORDER",
                       {f.code for f in native_cuda.preflight(
                           Schedule.from_dict(value), target())})
+
+    def test_public_token_major_output_has_an_explicit_transpose_gap(self):
+        value = document()
+        value["buffers"].append({
+            "name": "public_output_tile", "space": "register", "dtype": "bf16",
+            "shape": [32, 128], "mode": "scratch",
+        })
+        public = next(b for b in value["buffers"] if b["name"] == "chunk_output")
+        public["shape"] = [2, 32, 128]
+        transpose = {"id": "transpose_public_output", "kind": "transpose",
+                     "role": "compute", "reads": ["output_bf16"],
+                     "writes": ["public_output_tile"],
+                     "depends_on": ["round_output"], "parameters": {}}
+        operations = value["operations"]
+        index = next(i for i, op in enumerate(operations) if op["id"] == "store_output")
+        operations.insert(index, transpose)
+        body = value["tile_loops"][0]["body"]
+        body.insert(body.index("store_output"), transpose["id"])
+        store = next(op for op in operations if op["id"] == "store_output")
+        store["reads"] = ["public_output_tile"]
+        store["depends_on"] = [transpose["id"]]
+        schedule = Schedule.from_dict(value)
+        self.assertEqual([f for f in verify(schedule, target()) if f.blocks_lowering], [])
+        self.assertIn("BACKEND_OPERATION_UNEMITTABLE",
+                      {f.code for f in native_cuda.preflight(schedule, target())})
         value = document()
         output = next(op for op in value["operations"] if op["id"] == "mma_output")
         output["reads"][0] = "state_tmem"
