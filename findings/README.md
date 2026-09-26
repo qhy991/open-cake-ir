@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-26-001 — a bounded, quality-passed C550-2 MCPTI screen favors the one-row compensated FP8 SIMT kernel over the two-row route, but Cake cannot express the one-row rank-one input as its rank-two MMA tile; public assessment isolates AccessMap and MMA shape owners. This is a proposed IR capacity investigation, not a qualified performance win.
+
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
 - F-2026-09-21-004 — a Kimi gateway response uses a namespaced model identifier; explicit frozen response aliases preserve exact request/init/usage authority and native evidence.
 - F-2026-09-21-003 — MACA pointer-count inspection rejected comma-adjacent TTGIR pointer types; parser repair with closed-pointer CPU replay.
