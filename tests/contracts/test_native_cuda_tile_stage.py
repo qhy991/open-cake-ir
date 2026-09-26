@@ -111,7 +111,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
                            'cake_ep4_owner_stages',
                            'cake_ep4_live_chain_stages',
                            'cake_ep4_gpu_plan_stages',
-                           'cake_ep4_temporal_stages'):
+                           'cake_ep4_temporal_stages',
+                           'cake_ep4_capacity_stages'):
             with self.subTest(generation=generation), tempfile.TemporaryDirectory(
                     prefix='cake-tile-stage-') as directory:
                 root = Path(directory)
@@ -159,6 +160,13 @@ class NativeCudaTileStageTest(unittest.TestCase):
                     self.assertEqual(composition['safe_stage_task_slots_per_rank'],46920)
                     self.assertEqual(composition['emitted_shared_bytes'],49200)
                     self.assertIs(composition['complete_ranked_tile_lowering'],False)
+                if generation == 'cake_ep4_capacity_stages':
+                    self.assertIn('constexpr int kLogicalTiles = 255;', source)
+                    self.assertIn('derive_wave_order<<<', source)
+                    self.assertIn('assign_wave_tiles<<<', source)
+                    self.assertEqual(
+                        lowering['ranked_tile_stage_composition'][
+                            'safe_logical_tile_slots_per_rank'],255)
 
 
 if __name__ == '__main__':
