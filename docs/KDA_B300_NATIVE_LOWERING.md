@@ -67,6 +67,10 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 这条输入映射与 §2.6 的 token-major 输出写回构成方向相反、但相互独立的两个有界规则。定向合同与 Corpus Gate 179/179 已通过；精确 B300 无 GPU AOT 为 255 寄存器、0 stack/spill。完整 CPU 套件在复制历史/Lab 夹具时因本机磁盘空间耗尽而失败，不能记作通过；因此没有启动这版 GPU 作业。真实上游 Q/K/G/prefix 接口、设备数值与完整门禁仍待验收。它不能靠一句“CUDA 或 Triton 无法转置”来解释：缺口是当前 native 后端此前未兑现已存在的 IR `transpose`，而让 Triton 另起转置 kernel 则必须把额外启动和读写算进同一 Workload。
 
+### 2.8 从两 chunk/单 head 到 H64/T8192 的地址边界
+
+合成设备证明目前只绑定一个 head、两个 chunk。真实准备输出以 `[chunk256,head64,...]` 组织，V/输出沿 `[token,head,V]`，初始/最终状态还多一个 head 轴。共享 ProgramMap 可以声明标量 head 的 CTA 所有权，但当前 native TMA preflight 只承认 rank-2/3 输入、device helper 只发射 `cake_tma2/3`，carried-MMA B 域也只验证 rank-2/3；V 输入和 token-major 输出的有界转置映射当前只准 `[2,32,128]`。把 `[chunk,head]` 私自 flatten 成一个地址轴，或者将 rank-3 设备证据直接当作 rank-4 资格，都会绕过 exact Target/AccessMap 合同。下一步需在两条候选中择一并测量：有文档与负例的 rank-4 TMA/AccessMap + 标量 head 坐标，或由上游显式提供合法的 flatten 存储并计入其物化成本。跨 256 chunk 的相位复用、packed 序列边界与逐 token BF16 舍入也各自需要新的设备 oracle，而非从两次迭代推出。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
