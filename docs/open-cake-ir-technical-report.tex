@@ -1483,6 +1483,13 @@ M128 以每 head 一个 CTA 发射。M128 在设备释放后通过独立外部 o
 两臂每轮结果再次逐位通过。CTA 数、shared 用量和发射代码同时不同，
 故不能只归因于 tile 值；这项对照也不是我们当前 native Compiler 的
 性能。它说明直接改成每 head 一个 M128 CTA 无法在此形状超过原始 CAKE。
+源码还显示 M64 使用 1,024 threads/CTA、219,136 字节 dynamic shared，
+以 compute、epilogue、MMA、load、preparation 等角色和五槽 shared
+流水持续推进；独立 epilogue 从 TMEM 回读，以 \code{stmatrix} 和 TMA
+store 写输出，并用 \code{setmaxnreg} 在角色间重分配寄存器。当前 native
+双槽路线为 192 threads/CTA、57,472 字节 shared，compute warp 自己
+执行输出写回，七项准备值需先物化。上述结构与资源同时变化，尚无逐项
+消融支持将整体延迟差归因于某一个角色或一条 PTX 指令。
 
 \paragraph{分角色持续循环的后继。}
 提交 \code{db979435} 在精确 H64/256-chunk、两槽 B 输入路由中让 copy、
@@ -1574,7 +1581,7 @@ B-ready 等待仅 72 和 77 cycles。区间包含 warp 调度，不是指令级
 或 0.54\%。十份完整输出/状态仍通过独立合成 oracle，五轮均小幅
 胜出；此收益不足以支撑新的 Compiler 排程分支，当前不推广。
 
-\Needspace{20\baselineskip}
+\Needspace{10\baselineskip}
 \paragraph{真实准备值的数值对接。}
 已通过 B300 独立准备值 oracle 的两 BF16 MMA Cake 组件，给出完整
 H64/T8192 的 P、B、base-key/query、final-key、beta 和 prefix 七项值。
@@ -1588,6 +1595,7 @@ Workload 取 V 与 BF16 初始状态。\code{gpuq-dc7242edf640} 设备作业
 准备值与当前双槽块代数在这个形状上数值兼容，仍未覆盖原位状态别名、
 设备内 beta 转换和完整 callable 计时。
 
+\Needspace{8\baselineskip}
 后继 \code{4dc1561e} 用 Schedule 的具体 AccessMap 直接读取
 \code{[chunk,head,token]} beta：聚焦合同 5/5、Corpus Gate 179/179，
 旧形状误接由共享访问分析拒绝。该路径尚无 B300 AOT 或设备验收；
