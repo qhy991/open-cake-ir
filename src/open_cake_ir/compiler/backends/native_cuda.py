@@ -127,6 +127,57 @@ def _terminal_transpose_stores(s):
     return result
 
 
+def _input_transpose_loads(s):
+    """Map one public [chunk,token,V] BF16 load to V-row register ownership."""
+    result = {}
+    for transpose in s.operations:
+        if (transpose.kind is not OperationKind.TRANSPOSE
+                or len(transpose.reads) != 1 or len(transpose.writes) != 1):
+            continue
+        raw = s.buffer(transpose.reads[0])
+        row_tile = s.buffer(transpose.writes[0])
+        writers = [op for op in s.operations if raw is not None
+                   and raw.name in op.writes]
+        readers = [op for op in s.operations if raw is not None
+                   and raw.name in op.reads]
+        if (len(writers) != 1 or writers[0].kind is not OperationKind.LOAD
+                or readers != [transpose]):
+            continue
+        load = writers[0]
+        source = s.buffer(load.reads[0]) if len(load.reads) == 1 else None
+        scope = _scope(s, transpose)
+        access = (s.access_map(load.op_id, source.name)
+                  if source is not None else None)
+        if (raw is None or row_tile is None or source is None or scope is None
+                or not scope.carried_buffers or scope.tile != 1
+                or source.space is not MemorySpace.GLOBAL
+                or source.mode is not BufferMode.INPUT
+                or not (raw.space is row_tile.space is MemorySpace.REGISTER)
+                or not (source.dtype is raw.dtype is row_tile.dtype is DType.BF16)
+                or source.shape != (2, 32, 128)
+                or raw.shape != (32, 128) or row_tile.shape != (128, 32)
+                or load.parameters.movement is not LoadMovement.GLOBAL
+                or load.role != transpose.role or _scope(s, load) != scope
+                or load.waits or load.signals or load.pipeline
+                or transpose.waits or transpose.signals or transpose.pipeline
+                or s.operations.index(transpose) != s.operations.index(load) + 1
+                or scope.body.index(transpose.op_id) != scope.body.index(load.op_id) + 1
+                or transpose.depends_on != (load.op_id,)
+                or any(load.op_id in op.depends_on and op is not transpose
+                       for op in s.operations)
+                or access is None or access.boundary is not BoundaryPolicy.MASK_TILED_AXES
+                or len(access.indices) != 3):
+            continue
+        first, second, third = access.indices
+        if (first.source is not AccessIndexKind.LOOP or first.name != scope.iterator
+                or second.source is not AccessIndexKind.DIMENSION or second.dimension != 1
+                or third.source is not AccessIndexKind.DIMENSION or third.dimension != 2):
+            continue
+        result[load.op_id] = (transpose.op_id, row_tile.name, raw.name)
+        result[transpose.op_id] = (load.op_id, row_tile.name, raw.name)
+    return result
+
+
 def _slots(s, buffer):
     return 1 if _scalar_row(s, buffer) else buffer.shape[-1]
 
@@ -209,9 +260,12 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
     if unknown:
         return tuple(failures+unknown)
     transpose_stores = _terminal_transpose_stores(s)
+    transpose_loads = _input_transpose_loads(s)
     transpose_views = {op.writes[0] for op in s.operations
                        if op.kind is OperationKind.TRANSPOSE
                        and op.op_id in transpose_stores and op.writes}
+    transpose_views.update(raw for op_id, (_, _, raw) in transpose_loads.items()
+                           if s.operation(op_id).kind is OperationKind.LOAD)
     for i, role in enumerate(s.roles):
         check(all(c not in role.name for c in '\\\r\n'), 'NATIVE_NAME_UNSUPPORTED',
               f'roles[{i}].name', 'source-map names must occupy one line')
@@ -726,9 +780,15 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             check(dst.space is MemorySpace.REGISTER and buffers[op.reads[0]].space is MemorySpace.REGISTER,
                   'NATIVE_CAST_SPACE', path, 'cast preserves row-owned register storage')
         elif op.kind is OperationKind.TRANSPOSE:
-            check(op.op_id in transpose_stores,
-                  'NATIVE_TRANSPOSE_STORE_DOMAIN', path,
-                  'native transpose is only a BF16 [V128,C32] view immediately consumed by one token-major store')
+            source_writer = writers.get(op.reads[0]) if op.reads else None
+            input_view = (source_writer is not None
+                          and source_writer.kind is OperationKind.LOAD
+                          and source_writer.parameters.movement is LoadMovement.GLOBAL)
+            check(op.op_id in transpose_stores or op.op_id in transpose_loads,
+                  'NATIVE_TRANSPOSE_LOAD_DOMAIN' if input_view
+                  else 'NATIVE_TRANSPOSE_STORE_DOMAIN', path,
+                  'native transpose requires one exclusive BF16 token/V global load '
+                  'or one exclusive row-owned token-major store')
         elif op.kind is OperationKind.STORE:
             src = buffers[op.reads[0]]
             check(dst.space is MemorySpace.GLOBAL and src.space is MemorySpace.REGISTER
@@ -777,6 +837,7 @@ class _Emitter:
         self.barvars = {b.name:f'bar{i}' for i,b in enumerate(s.barriers)}
         self.tmemvars = {a.name:f'tm{i}' for i,a in enumerate(s.allocations) if a.space is MemorySpace.TENSOR}
         self.transpose_stores = _terminal_transpose_stores(s)
+        self.transpose_loads = _input_transpose_loads(s)
 
     def line(self, text=''):
         self.lines.append('  '*self.indent + text)
@@ -1095,8 +1156,23 @@ class _Emitter:
 
     def operation(self, op):
         self.line(f'// CAKE_OP: {op.op_id}')
+        input_view = self.transpose_loads.get(op.op_id)
+        if op.kind is OperationKind.LOAD and input_view is not None:
+            src = self.b(op.reads[0])
+            row = self.row(op)
+            self.begin(f'if ({self.role_condition(op.role)})')
+            self.line('#pragma unroll')
+            self.begin('for (int col=0; col<32; ++col)')
+            address, mask = self.address(op, src, ['col', row])
+            self.line(f'{self.names[input_view[1]]}[col] = ({mask}) ? '
+                      f'{address} : __nv_bfloat16(0);')
+            self.end(); self.end()
+            return
         if op.kind is OperationKind.TRANSPOSE:
-            self.line('// The sole store addresses this row-owned tile in token-major order.')
+            if input_view is not None:
+                self.line('// The preceding load placed token-major input in V-row registers.')
+            else:
+                self.line('// The sole store addresses this row-owned tile in token-major order.')
             return
         self.begin(f'if ({self.role_condition(op.role)})')
         dst=self.b(op.writes[0]); d=self.names[dst.name]
