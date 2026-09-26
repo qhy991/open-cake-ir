@@ -1373,8 +1373,23 @@ H64、两 chunk 输入上，每组检查 1,048,576 个 BF16 最终状态及
 最大绝对误差分别为 \(6.11\times10^{-5}\) 和
 \(3.82\times10^{-6}\)。这只验证地址与有界发射：准备值仍为合成输入，
 256 chunk、逐 token BF16 舍入、完整六形状和 CUPTI 配对延迟均待完成。
+
+\paragraph{256 chunk 的固定形状后继。}
+提交 \code{61892f81} 把上述 head 映射扩到 256 次单元 chunk 循环，仍让
+每个 head 由一个 CTA 持有。它通过 Corpus Gate 179/179 和远端完整适用
+CPU 套件 2,674 passed、16 skipped，另有 1 项 Apple MLX 实机测试取消选择；
+精确 B300 AOT 为 254 寄存器、0 stack/spill。broker 作业
+\code{gpuq-1f1423e7d3da} 释放 GPU 后，独立 host oracle 对一组固定
+H64/T8192 合成输入的 67,108,864 个 BF16 输出及 1,048,576 个 BF16
+最终状态逐元素检查，均为 0 超差、无非有限值、输入未改写；最大绝对
+输出/状态误差为 \(3.82\times10^{-6}\) / \(6.11\times10^{-5}\)。
+该结果只证明长循环相位和完整固定形状地址，准备值仍为合成输入，
+且状态在 chunk 边界舍入。随后单组件独占 CUPTI 诊断一次因 Python
+环境缺 CUPTI 包路径而拒绝 event 回退，两次因分配设备上有外部进程而在
+采样前退出；\textbf{没有有效延迟数据}，不能据此比较原始 CAKE。
 \FloatBarrier
 
+\Needspace{10\baselineskip}
 \section{跨硬件复用：从一次改写到可检验的收益}
 
 \subsection{可复用的是机制，参数要在目标卡重选}
