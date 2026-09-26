@@ -362,11 +362,24 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    tiles. The GPU manifests matched the independent CPU planner exactly
    in each run, including empty owners and per-wave counts. These
    planner-only runs did not execute or verify the FFN on their changed
-   routes. The current planner publishes full tiles at wave boundaries,
-   later than the schema-2 `full_on_capacity` opportunity; exact
-   capacity-triggered publication, general-route FFN correctness and a
-   complete Compiler lowering remain open. Promotion disposition: no
-   public ranked-tile lowering or automatic scheduling rule.
+   routes at that point. A later `general` path used the independent
+   open-baseline FP64 CPU reference with the same hidden tensor, expert
+   weights and route weights but changed expert IDs. Full four-GPU runs
+   passed for the mixed route set (`c9fc9a42`, 80/64/64/64 tiles), all
+   routes to eight hot experts (`bf6764bb`, 128/0/0/0 tiles) and the dense
+   one-owner set (`bf6764bb`, 192/0/0/0 tiles). For each, the GPU tile
+   manifest, gathered BF16 rows and FP32 P2P return matched their
+   producing data bitwise, and the final 4,194,304-element BF16 output
+   had zero failures at `atol=rtol=0.01` against its independent FP64
+   oracle. A changed-route mixed replay at `fd3d629a` also passed with
+   `c=74,budget=5888` and exactly 5,888 actual stolen stage tasks per
+   rank. These are correctness runs on three named route distributions,
+   not arbitrary-route qualification. The current planner publishes full
+   tiles at wave boundaries, later than the schema-2 `full_on_capacity`
+   opportunity. Exact capacity-triggered publication, a complete public
+   Compiler lowering and qualified complete-layer timing remain open.
+   Promotion disposition: no public ranked-tile lowering or automatic
+   scheduling rule.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -376,25 +389,27 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 
 ## Bounded implementation order
 
-- Integrate the separate core schema-2 tile/stage effect after its review,
-  then lower the evidenced host tile formation, padding, expert weight
-  selection and **stage CTA completion counters** into a live B300 queue.
-  The one-GPU tile-ready prototype has validated the 24→128→32 predecessor
-  chain on repeated fixed tiles; connect its completion to the real
-  expert-bin publication and publish the route-keyed return after all 32 down
-  subtasks. Verify empty/tail bins and dynamic expert/weight descriptors
-  before coupling the worker to the four-rank mailbox.
-  Communication CTA steal must claim the same ready stage unit as computation
-  CTAs; connect the admitted GPU combine to the live ranked return path.
-  Exercise empty, highly skewed and tail experts, and replay small T7/T8
-  counterexamples before a new Campaign. Move pre-launch domain checks off
-  the critical path only with equally explicit admission/failure signals.
-- Finally evaluate spatial `c`, temporal chunks and stealing under a common
+- Review and integrate the separate core schema-2 effect through `main`,
+  then let the NVIDIA task consume it. The B300 stage composer reports the
+  complete Program's work units and emitted resources; the experimental
+  device path already handles empty and skewed experts, variable tile
+  counts, source-keyed P2P returns, and bounded steal on the named route
+  sets. A public `lower_ranked_tiles` still needs to own the complete
+  launch ABI, runtime route-domain admission, peer memory order, queue
+  capacity, and failure/progress diagnostics instead of importing an
+  experiment's file-based host runner.
+- Implement capacity-triggered full-tile publication and verify its
+  progress against adversarial source arrival order. Keep finite worker
+  launches or provide a stronger scheduling proof before reintroducing a
+  persistent wait. Replay empty, tail and T7/T8 counterexamples under the
+  appropriate Workload contract; do not infer arbitrary-route support from
+  the three tested model-width distributions.
+- Evaluate spatial `c`, temporal chunks and stealing under a common
   complete-layer timer and the upstream baseline's exact source/semantics.
   A cost estimate only filters candidates; on-device correctness and the
   qualified interval decide acceptance.
 
-Promotion disposition: **no promotion** from the synthetic tensor-tile
-compile. Existing small-worker source remains a correctness prototype until
-the tile math, ranked effects and their analyses evolve together and pass the
-new Workload, Corpus Gate and device evidence.
+Promotion disposition: **no public Compiler lowering or automatic Lab rule**
+from the current bounded prototype. The named B300 correctness results are
+evidence for the next native CUDA backend change, not permission to skip its
+complete admission or qualified measurement gates.
