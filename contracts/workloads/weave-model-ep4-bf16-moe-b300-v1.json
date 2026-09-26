@@ -1,0 +1,182 @@
+{
+  "schema_version": 1,
+  "workload_id": "weave-model-ep4-bf16-moe-b300-v1",
+  "revision": "1",
+  "state": "frozen",
+  "operator": "bf16_model_expert_parallel_moe",
+  "provenance": [
+    {
+      "kind": "retained_baseline_input",
+      "source": "open-cake-ir@4d2ebd4dfa8867e8ec5a9bbc474c4fbb79f6d645:experiments/weave_open_baseline/model_scale_inputs_fanin_v2.json",
+      "scope": "fan-in-scaled deterministic synthetic inputs; not measured Qwen weights or ShareGPT routing"
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "fanin_v2",
+      "shape": {
+        "R": 4,
+        "T": 512,
+        "E": 128,
+        "H": 2048,
+        "I": 768,
+        "F": 1536,
+        "K": 8
+      },
+      "seed": 260921483,
+      "mode": "retained_fanin_v2"
+    },
+    {
+      "case_id": "hot8_full_tiles",
+      "shape": {
+        "R": 4,
+        "T": 512,
+        "E": 128,
+        "H": 2048,
+        "I": 768,
+        "F": 1536,
+        "K": 8
+      },
+      "seed": 260921483,
+      "mode": "override_hot8_ids"
+    },
+    {
+      "case_id": "mixed_full_early_terminal",
+      "shape": {
+        "R": 4,
+        "T": 512,
+        "E": 128,
+        "H": 2048,
+        "I": 768,
+        "F": 1536,
+        "K": 8
+      },
+      "seed": 260921483,
+      "mode": "override_mixed_ids"
+    },
+    {
+      "case_id": "dense_full_and_partial",
+      "shape": {
+        "R": 4,
+        "T": 512,
+        "E": 128,
+        "H": 2048,
+        "I": 768,
+        "F": 1536,
+        "K": 8
+      },
+      "seed": 260921483,
+      "mode": "override_dense_ids"
+    }
+  ],
+  "tensors": {
+    "hidden_states": {
+      "shape": [
+        "R",
+        "T",
+        "H"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "expert_ids": {
+      "shape": [
+        "R",
+        "T",
+        "K"
+      ],
+      "dtype": "int32",
+      "layout": "contiguous_row_major"
+    },
+    "route_weights": {
+      "shape": [
+        "R",
+        "T",
+        "K"
+      ],
+      "dtype": "fp32",
+      "layout": "contiguous_row_major"
+    },
+    "w_up_gate": {
+      "shape": [
+        "E",
+        "F",
+        "H"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "w_down": {
+      "shape": [
+        "E",
+        "H",
+        "I"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    },
+    "output": {
+      "shape": [
+        "R",
+        "T",
+        "H"
+      ],
+      "dtype": "bf16",
+      "layout": "contiguous_row_major"
+    }
+  },
+  "semantics": {
+    "target": "sm_103a",
+    "execution_topology": {
+      "kind": "expert_parallel",
+      "world_size": 4
+    },
+    "expert_placement": "contiguous_equal_ranges_by_rank",
+    "tensor_placement": {
+      "hidden_states": "rank_sharded_axis_0",
+      "expert_ids": "rank_sharded_axis_0",
+      "route_weights": "rank_sharded_axis_0",
+      "w_up_gate": "expert_sharded_axis_0",
+      "w_down": "expert_sharded_axis_0",
+      "output": "rank_sharded_axis_0"
+    },
+    "candidate_abi": {
+      "inputs": [
+        "hidden_states",
+        "expert_ids",
+        "route_weights",
+        "w_up_gate",
+        "w_down"
+      ],
+      "outputs": [
+        "output"
+      ]
+    },
+    "definition": "for each rank/token/route: dispatch BF16 activation to its expert owner; the independent FP64 reference computes up and gate projections, up*silu(gate), down projection, and a source-rank FP32-weighted route sum; round the final output to BF16",
+    "top_k": 8,
+    "route_ids": "distinct_in_range_per_token",
+    "route_weights": "finite_nonnegative_sum_one_per_token",
+    "input_effects": "unchanged",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "exclusions": [
+      "no_model_forward",
+      "no_serving",
+      "no_automatic_single_device_fallback",
+      "synthetic_inputs_not_paper_routing_or_real_model_weights"
+    ]
+  },
+  "oracle": {
+    "kind": "independent_cpu_ep4_model_bf16_moe",
+    "callable": "open_cake_ir.tasks.weave_ep.model_workload.reference_tensors",
+    "implementation": "CPU_FP64_per_expert_linear_layers_and_weighted_combine"
+  },
+  "validation": {
+    "primary_case": "fanin_v2",
+    "all_cases_required": true,
+    "comparison": "elementwise_atol_rtol",
+    "atol": 0.01,
+    "rtol": 0.01,
+    "equal_nan": false,
+    "qualification": "CPU_oracle_and_development_B300_correctness_only; qualified_timing_pending"
+  }
+}
