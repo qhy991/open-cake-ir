@@ -1,6 +1,6 @@
 ---
 name: metax-c550-hardware-exploration
-description: Research and optimize Cake kernels for MetaX C550 using version-matched MXMACA/Triton documentation, exact Target facts, and C550 measurements. Use for C550 hardware-document research, kernel tuning hypotheses, profiler interpretation, or hardware-limit analysis; not for generic GPU support or unqualified whole-model performance claims.
+description: Research, extend lowering for, and optimize Cake kernels on MetaX C550 using version-matched MXMACA/Triton documentation, exact Target facts, and C550 measurements. Use for C550 hardware documents, backend gaps, kernel tuning, profiler interpretation, or hardware-limit analysis; not for generic GPU support or unqualified whole-model performance claims.
 ---
 
 # MetaX C550 hardware exploration
@@ -43,6 +43,14 @@ Prefer the version-matched `mcTriton` guide and MXMACA release notes for the cur
 4. Treat static estimates and profiler attribution as guidance. Compile and admit the exact artifact; check full output correctness and input immutability; then use the C550-declared timer and reset protocol, paired baseline measurements, quality gates and independent confirmation. Keep profiling evidence separate from the timing score.
 5. State measurement gaps plainly. In particular, distinguish MCPTI single-dispatch time from host/framework time; distinguish measured device-memory traffic from logical tensor bytes; do not call interconnect bandwidth HBM bandwidth. Build a Roofline only from a version-matched, target-applicable measured or vendor-documented ceiling, with assumptions and missing counters recorded.
 6. Preserve negative, flat, slow, unsupported and provider-fault results. A provider fault is not a hardware limitation; a correct candidate is not necessarily faster; a task-level win is not an end-to-end win.
+
+## Extend a MetaX lowering rule
+
+Trace one Schedule from construction through `Compiler.assess`, `backends.triton.preflight`, emitted source, TTIR/TTGIR and device execution. Record the first divergence. A rejection by a Target contract, a MACA API keyword error, a compiler assertion, an incorrect result and a slow but correct kernel call for different changes. Keep the shared Triton emitter and put a MetaX-specific source spelling or admission rule with `compiler/backends/metax.py` when that is the actual difference; add a new `LoweringBackend` only if a distinct source-generation mechanism is required.
+
+The captured 3.1 route accepts `num_stages` on `tl.range` but refuses other unsupported keywords. `tl.static_range` exists in that installation and is the narrow source spelling for an explicitly full-unrolled, fixed, single-stage loop; it is not a way to drop a partial-unroll or pipelining commitment. Check the emitted loop, actual TTIR/TTGIR and complete output on the exact captured runtime before extending the admitted scope. Upstream Triton API documentation explains the iterator, but does not qualify the installed MACA backend.
+
+For a new rule, retain a positive Schedule and a counterexample naming the rule that refuses it. Validate unchanged source and findings for other vendors, then compile with the exact installed MetaX distribution. Run any authorized device check through the existing `maca` broker and compare against the Workload oracle; do not infer speedup from successful lowering or correctness.
 
 ## Reference-access and action boundaries
 
