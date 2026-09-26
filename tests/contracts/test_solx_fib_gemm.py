@@ -25,7 +25,7 @@ class FlashInferGemmTests(unittest.TestCase):
         self.assertTrue(assessment.lowering_eligible, assessment.findings)
         lowered = compiler.lower(assessment).source
         self.assertIn('accum += tl.sum(products.to(tl.float32), axis=1)', lowered)
-        self.assertIn('for k_loop in range(', lowered)
+        self.assertIn('for k in tl.range(', lowered)
         with self.assertRaises(ValueError):
             gemm.column_reuse_source(workload, columns_per_program=3)
         other = WorkloadContract(gemm.workload_document(
