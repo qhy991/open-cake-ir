@@ -228,6 +228,16 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    The peer bin and worker were separate jobs; tile formation, route-key
    gathering and final combine ran on the host. Live GPU tile publication,
    rank return, overlap and qualified latency remain unverified.
+   A subsequent four-GPU return probe (`cake-weave-ep4-return-combine-
+   5cc8b83a/`) writes those down outputs to origin-rank contribution slots
+   by deterministic route key, publishes a system-scope release flag, and
+   has each origin GPU acquire all 4,096 ready slots before its Cake-lowered
+   T512/top-8 combine. All 16,384 returned FP32 contributions and the
+   4,194,304 GPU BF16 output elements matched the prior Cake results
+   bitwise; the independent FP64 CPU oracle again had zero elements beyond
+   the fixed 0.01/0.01 tolerance. The bin, FFN and return/combine remain
+   **separate jobs with host tile formation**. A single live ranked worker,
+   full communication-compute overlap and qualified layer timing remain open.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
