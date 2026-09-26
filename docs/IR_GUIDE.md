@@ -149,17 +149,18 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 
 ### AccessMap 与 AccessIndex
 
-`AccessMap` 绑定 `(operation, buffer)`，列出对应 Buffer 各维度的坐标，并声明 `boundary="mask_tiled_axes"`。坐标有五类：
+`AccessMap` 绑定 `(operation, buffer)`，列出对应 Buffer 各维度的坐标，并声明 `boundary="mask_tiled_axes"`。常用坐标如下：
 
 | `source` | 含义 |
 | --- | --- |
 | `program` | 一个程序轴的标量位置 |
 | `program_tile` | 一个程序轴负责的向量 tile |
+| `loop` | tile 为 1 的循环当前标量位置；不增加局部结果的维度 |
 | `loop_tile` | 某个循环 iterator 对应的 tile |
 | `dimension` | 整个维度，或以 `offset`、`extent` 指定的连续子范围 |
 | `buffer` | 来自已存在 INT32 Buffer 的运行时索引 |
 
-多个 buffer-valued 索引在共同索引域上逐项配对，不能按笛卡尔积解释。load 的寄存器结果形状必须等于实际访问域：标量程序坐标消去相应维度，向量坐标保留取出的范围，全标量访问以 `[1]` 表示单值结果。
+多个 buffer-valued 索引在共同索引域上逐项配对，不能按笛卡尔积解释。load 的寄存器结果形状必须等于实际访问域：标量程序和循环坐标消去相应维度，向量坐标保留取出的范围，全标量访问以 `[1]` 表示单值结果。`loop_tile` 即使 tile 为 1 仍保留长度为 1 的向量维度；需要标量语义时使用 `loop`。
 
 例如输入 `a` 的形状是 `[8,128]`，每个程序负责一行。`program(batch)` 指定行，`dimension(1)` 读取这一行的 128 项，因此 load 的结果是 `[128]`。同样的第一维配合 `dimension` 子范围可以读取半行，但不能继续把结果标成 `[128]`。
 

@@ -251,7 +251,7 @@ class Schedule:
                 if any(index.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER} for index in access.indices):
                     return None
                 vectors = [(position, index) for position, index in enumerate(access.indices)
-                           if index.source is not AccessIndexKind.PROGRAM]
+                           if index.source not in {AccessIndexKind.PROGRAM, AccessIndexKind.LOOP}]
                 if axis >= len(vectors):
                     return None
                 position, index = vectors[axis]
@@ -371,7 +371,7 @@ class Schedule:
         axis = 0
         saw_buffer_domain = False
         for component in access.indices:
-            if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.SCALAR_BUFFER}:
+            if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.LOOP, AccessIndexKind.SCALAR_BUFFER}:
                 continue
             if component.source is AccessIndexKind.BUFFER:
                 # All buffer-valued coordinates in one access are zipped over one

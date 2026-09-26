@@ -1840,7 +1840,7 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                             f"has extent {buffer.shape[position]}",
                             category,
                         )
-            elif component.source is AccessIndexKind.LOOP_TILE:
+            elif component.source in {AccessIndexKind.LOOP_TILE, AccessIndexKind.LOOP}:
                 if component.name not in loop_iterators:
                     out.add(
                         "ACCESS_LOOP_UNKNOWN",
@@ -1858,6 +1858,28 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                         f"operation {operation.op_id!r}'s lexical scope",
                         category,
                     )
+                elif component.source is AccessIndexKind.LOOP:
+                    loop = next((item for item in schedule.tile_loops if item.iterator == component.name), None)
+                    if loop is not None:
+                        if loop.tile != 1:
+                            out.add(
+                                "ACCESS_LOOP_SCALAR_TILE",
+                                component_path,
+                                "scalar loop coordinates require a unit tile; use loop_tile for a wider tile",
+                                category,
+                            )
+                        owner = buffers.get(loop.buffer)
+                        if (owner is not None and loop.dimension < len(owner.shape)
+                                and position < len(buffer.shape)
+                                and owner.shape[loop.dimension] > buffer.shape[position]):
+                            out.add(
+                                "ACCESS_LOOP_EXTENT_MISMATCH",
+                                component_path,
+                                f"loop {component.name!r} spans {owner.shape[loop.dimension]} coordinates, "
+                                f"but dimension {position} of {buffer.name!r} has extent "
+                                f"{buffer.shape[position]}",
+                                category,
+                            )
             elif component.source in {AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER}:
                 index_buffer = buffers.get(component.name)
                 if index_buffer is None:
@@ -2205,7 +2227,7 @@ def _verify_access_maps(schedule: Schedule, buffers, out: _Collector) -> None:
                 added_index_domain = False
                 shape_known = all(item is not None for item in all_index_buffers)
                 for component in access.indices:
-                    if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.SCALAR_BUFFER}:
+                    if component.source in {AccessIndexKind.PROGRAM, AccessIndexKind.LOOP, AccessIndexKind.SCALAR_BUFFER}:
                         continue
                     if component.source is AccessIndexKind.BUFFER:
                         if not added_index_domain and shape_known:
