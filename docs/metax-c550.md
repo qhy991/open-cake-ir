@@ -373,9 +373,14 @@ Cake 目前不能显式声明内部 FP64 累积：在干净源码 `435b1a3c`，
 `maca-b068fa1df581` 通过 cohort 质量门：10/10 pair 朝 FP64 方向，
 pooled median **17.152 / 42.240 µs**，四个 A/A pair 均同中位数 **42.240 µs**；
 28 份原生活动已独立重放。这仍不是封存候选的正式 Workload 性能资格，也未证明
-FP64 原生指令。新增证据在 checkout 外的
+FP64 原生指令。另一次 broker job `maca-d3139a67520f` 在固定种子生成的 100 个
+额外有限 FP8 矩阵上，将两行 FP64 归约的 **409600 个输出 word** 与留存的 CPU
+FP64 求和参考逐 bit 比较，差异为 0、输入字节不变；原始输入、参考和 GPU 输出均已
+保留并独立复核。这增强了固定形状的数值证据，不覆盖所有编码组合、其他形状或
+Triton 3.1 的设备结果。新增证据在 checkout 外的
 `metax-fp8-fp64-m2-20260926-v2/` 与
-`metax-fp8-fp64-m2-vs-compensated-20260926/attempt1/`。原始收据位于
+`metax-fp8-fp64-m2-vs-compensated-20260926/attempt1/`、
+`metax-fp8-fp64-m2-heldout-20260926/c5502-triton36/`。原始收据位于
 checkout 外的 `open-cake-ir-evidence/metax-fp8-fp64-reduction-20260926/`、
 `metax-fp8-fp64-vs-compensated-20260926*/` 与 `metax-fp8-fp64-ir-gap-20260926/`。
 后继 IR/Target 判断和缺失证据见
