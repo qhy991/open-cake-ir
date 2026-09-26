@@ -107,6 +107,12 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 同一独占 GPU0、同一输入、交替顺序的 `gpuq-5dee2913c2e2` 做五轮每臂各 25 个冷 L2 CUPTI 样本、无 graph。两臂计时后均与各自先前设备抓取**逐位相同**，且没有其它计算 PID。原版 pooled 中位数 **7,217.556 µs**，仅末块写回版 **2,999.349 µs**，五轮比值 2.40552–2.40744，pooled **2.40637×**，轮内变异系数均低于 0.1%。这是同范围的真实组件收益，也定位了重复的行线程全状态写回是主要成本之一；它仍不能与适配 CAKE 的完整约 456 µs 非配对地称作加速比。当前 disposition：保留在 NVIDIA 任务分支，尚不推广共享 pass 或完整 KDA 候选。下一轮先分辨 token-major 输出交通与 TMEM/MMA 相位成本，再决定 TMA store、更多并行 CTA 或多槽流水的设计。
 
+### 2.13 输出 epilogue 的上界诊断与下一种流水
+
+为了判断剩余约 3 ms 是否主要耗在 token-major 输出，保留 `5ac55ad4` 的状态递推、故意去掉最终输出 STORE 的独立源码消融；其输出**不正确**，且编译器可能连带删除仅供输出使用的寄存器计算，因此不能把时差归到 store 指令。`gpuq-98fa41502e4e` 在同一独占 GPU0、同一输入、交替顺序五轮每臂各 25 个 CUPTI 冷 L2 样本中，得到有效版 pooled **2,997.653 µs**、消融版 **2,846.931 µs**，比值 1.05294；有效版输出与状态逐位复核、消融版的状态逐位复核均通过，后检查无外部计算 PID。最大轮内变异系数为 0.10%。这给输出 epilogue 与写回合计约 151 µs 的**诊断上界**，不支持优先把直接 token-major store 换成更复杂的 TMA store 来追赶 CAKE。
+
+剩余成本主要落在 256 次依赖串行的状态转移、TMEM/MMA 相位与未重叠的 B 输入准备上，具体份额仍需同作业阶段探针或有效硬件计数器才能归因。可见的原始 CAKE CUDA 用五槽 shared ring 和分开的 producer/compute/MMA/epilogue 角色，当前 native 仅有单槽、每 head 一个 CTA 且在两条流水及 chunk 边界做完整 CTA drain。下一种 lowering 应先明确多槽 B 预取的所有权、phase、free/ready 反例和 carried-state 依赖，保证同一 chunk 的状态语义；再考虑准备值片上融合与 M64 价值行切分。现有输出消融的 disposition 是 **No promotion**，它只选择下一步工作，不能成为候选或性能结论。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -151,7 +157,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
 | `state_after_update @ query` 与输出耦合 | `61892f81` 已在 B300 固定 H64/T8192 合成输入上通过公开 V/beta、token-major 输出及最终状态，AOT 0 spill | 真实准备值、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
-| 跨 chunk 流水与最终状态写回 | `92994711` barrier phase 复用获约 5.3% 配对收益；`5ac55ad4` 去掉 255 次死写回后组件中位数降到 2,999.349 µs | 分离 B 预取与状态消费，让多槽流水与准备值在片上衔接；验证原位别名和完整语义，以相同正确性/计时范围判断后续收益。 |
+| 跨 chunk 流水与最终状态写回 | `92994711` barrier phase 复用获约 5.3% 配对收益；`5ac55ad4` 去掉 255 次死写回后组件中位数降到 2,999.349 µs；输出 sink 消融最多又降约 151 µs | 优先分离 B 预取与状态消费，让多槽流水与准备值在片上衔接；验证原位别名和完整语义，以相同正确性/计时范围判断后续收益。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 
 1. 把准备阶段的 base/query、P、beta、prefix、final-key 接到同一状态/输出路径，明确哪些值留片上、哪些必须物化；核算额外 CTA、TMA 和 global traffic。原先七输出准备的 389.507 µs 是组件成本，不可与完整 CAKE 456 µs 非配对相减后宣称剩余预算。
