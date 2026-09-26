@@ -295,6 +295,19 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    those exact wave counts and the unchanged full oracle. Its plan and wave
    counts are still CPU supplied, so GPU runtime tile publication and a
    meaningful temporal-`K` sweep remain open.
+   A GPU planner successor (`cake-weave-ep4-gpu-plan-c74-3fe5c425/`) then
+   removed those host tile-key/expert/wave inputs. After system-acquiring all
+   source completion flags, each destination GPU sorts the actual bin route
+   keys by `(source wave, source rank, token, route)`, applies the 64-row
+   early-flush split, constructs its 64 M128 tile manifests and expands
+   stage-work-unit counts before GPU gather and the Cake worker. In one
+   four-GPU continuous run, all 256 GPU-derived tile manifests, four rank
+   wave counts and BF16 tile tensors matched the retained CPU plan bitwise;
+   all 16,384 route contributions and final output oracle passed. The
+   planner is admitted only for this exact synthetic route domain and
+   currently waits for **all dispatches** before planning. Incremental
+   tile publication, temporal-`K` overlap, arbitrary-route qualification
+   and the complete-layer timer remain open.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
