@@ -25,6 +25,7 @@ TILE_BYTES=TILES*ROWS*H*2
 DOWN_BYTES=TILES*ROWS*H*4
 CONTRIBUTION_BYTES=ROUTES*H*4
 OUTPUT_BYTES=R*T*H*2
+ADMITTED_CONTROLS={(1,0),(74,5888),(147,5888),(148,11776)}
 
 
 def doc(path:Path)->dict:
@@ -38,6 +39,10 @@ def require_root(root:Path)->dict:
             or len(m.get('combine_compiler_commit',''))!=40
             or m.get('generation')!='cake_ep4_live_chain_stages'
             or m.get('world_size')!=R
+            or type(m.get('communication_ctas')) is not int
+            or type(m.get('steal_budget')) is not int
+            or (m.get('communication_ctas'),m.get('steal_budget'))
+               not in ADMITTED_CONTROLS
             or not (root/'model_tile_ready_ffn_capped.cu').is_file()
             or not (root/'combine/kernel.cu').is_file()):
         raise ValueError('live EP4 Cake source or manifest differs')
@@ -104,7 +109,9 @@ def prepare(root:Path,bin_root:Path,prepared:Path,bridge:Path)->None:
         'bridge_root':str(bridge.resolve()),
         'geometry':{'R':R,'T':T,'K':K,'E':E,'H':H,'tile_rows':ROWS},
         'owner_routes':owner_rows,'logical_tiles_per_owner':TILES,
-        'stage_work_units_per_owner':11776,'steal_budget_per_owner':5888,
+        'stage_work_units_per_owner':11776,
+        'communication_ctas':m['communication_ctas'],
+        'steal_budget_per_owner':m['steal_budget'],
         'scope':'one four-GPU allocation, CPU route-key plan, GPU dispatch/gather/FFN/return/combine',
     },indent=2)+'\n')
 
@@ -116,7 +123,9 @@ def build(root:Path)->None:
     if (c.get('source_commit')!=m['source_commit']
             or c.get('combine_compiler_commit')!=m['combine_compiler_commit']
             or c.get('owner_routes')!=[4039,4196,4016,4133]
-            or c.get('stage_work_units_per_owner')!=11776):
+            or c.get('stage_work_units_per_owner')!=11776
+            or (c.get('communication_ctas'),c.get('steal_budget_per_owner'))
+               !=(m['communication_ctas'],m['steal_budget'])):
         raise ValueError('live chain source or plan binding differs')
     if not Path(NVCC).is_file() or any((root/name).exists() for name in
                                          ('live_probe','build_plan.json',
@@ -167,7 +176,8 @@ def run(root:Path)->None:
     try:
         result=subprocess.run([str(root/'live_probe'),str(root),
                                c['bin_root'],c['prepared_root'],
-                               c['bridge_root']],cwd=root,
+                               c['bridge_root'],str(c['communication_ctas']),
+                               str(c['steal_budget_per_owner'])],cwd=root,
                               capture_output=True,text=True,timeout=300,
                               check=False)
         (root/'device.log').write_text(result.stdout+result.stderr or
@@ -206,7 +216,9 @@ def verify(root:Path)->None:
             or device['target']!='sm_103a'
             or device['valid_routes_by_owner']!=c['owner_routes']
             or device['bin_rows_by_owner']!=c['owner_routes']
-            or device['stolen_by_owner']!=[5888]*R
+            or device['communication_ctas']!=c['communication_ctas']
+            or device['steal_budget']!=c['steal_budget_per_owner']
+            or device['stolen_by_owner']!=[c['steal_budget_per_owner']]*R
             or device['sm_counts']!=[148]*R
             or device['active_blocks_per_sm']!=[1]*R
             or device['overlap_flags']!=[[1,1]]*R
@@ -252,6 +264,8 @@ def verify(root:Path)->None:
             'target':'sm_103a','source_commit':m['source_commit'],
             'combine_compiler_commit':m['combine_compiler_commit'],
             'broker_job':d['broker_job'],'routes':ROUTES,
+            'communication_ctas':c['communication_ctas'],
+            'steal_budget_per_owner':c['steal_budget_per_owner'],
             'gpu_tile_inputs_bitwise_equal_to_checked_plan':True,
             'route_contribution_bit_mismatches':contribution_mismatch,
             'failing_elements':int(np.count_nonzero(failing)),

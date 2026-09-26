@@ -66,7 +66,9 @@ def run(root:Path)->None:
              '--cpuctxsw=none','--force-overwrite=false',
              '--output='+str(root/'nsys-live-chain'),
              str(root/'live_probe'),str(root),case['bin_root'],
-             case['prepared_root'],case['bridge_root']]
+             case['prepared_root'],case['bridge_root'],
+             str(case['communication_ctas']),
+             str(case['steal_budget_per_owner'])]
     (root/'profile_plan.json').write_text(json.dumps(command,indent=2)+'\n')
     try:
         result=subprocess.run(command,cwd=root,capture_output=True,
@@ -126,7 +128,7 @@ def analyze(root:Path)->None:
         raise RuntimeError('activity analysis requires released GPU lease')
     if (root/'activity.json').exists():
         raise ValueError('activity report must be create-only')
-    manifest,_=root_contract(root)
+    manifest,case=root_contract(root)
     receipt=doc(root/'gpuq-admission.json')
     device=doc(root/'device.json')
     report=doc(root/'report.json')
@@ -137,6 +139,10 @@ def analyze(root:Path)->None:
             or report.get('broker_job')!=receipt.get('job_id')
             or report.get('passed') is not True
             or device.get('source_commit')!=manifest['source_commit']
+            or device_report.get('communication_ctas')
+               !=case['communication_ctas']
+            or device_report.get('steal_budget')
+               !=case['steal_budget_per_owner']
             or device_report.get('no_interphase_host_sync') is not True):
         raise ValueError('profile broker/source or complete oracle differs')
     rows=read_rows(root/'nsys-live-chain.sqlite')
@@ -180,6 +186,8 @@ def analyze(root:Path)->None:
             'scope':'single Nsight CUDA-activity development trace; no CUPTI/L2-reset qualification or speedup',
             'source_commit':manifest['source_commit'],
             'broker_job':receipt['job_id'],
+            'communication_ctas':case['communication_ctas'],
+            'steal_budget_per_owner':case['steal_budget_per_owner'],
             'kernel_activity_union_ns':last-first,
             'cross_rank_phase_overlap':cross_rank,
             'ranks':[

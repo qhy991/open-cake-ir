@@ -437,7 +437,14 @@ struct RankState {
 } // namespace
 
 int main(int argc,char** argv) {
-  if (argc!=5) return 2;
+  if (argc!=7) return 2;
+  int communication_control=-1,steal_control=-1;
+  if (std::sscanf(argv[5],"%d",&communication_control)!=1 ||
+      std::sscanf(argv[6],"%d",&steal_control)!=1 ||
+      communication_control<1 || communication_control>148 ||
+      steal_control<0 || steal_control>kTotalStageTasks ||
+      (communication_control==148 && steal_control!=kTotalStageTasks))
+    return 2;
   int devices=0;
   if (check(cudaGetDeviceCount(&devices),"device count") || devices!=R)
     return 3;
@@ -484,7 +491,7 @@ int main(int argc,char** argv) {
       distinct[expert]=true;
     }
   }
-  const Case scenario={"near_full_c147_budget5888",148,147,5888,
+  const Case scenario={"controlled_ep4",148,communication_control,steal_control,
       {{0,408,360,768},{0,2176,1920,4096},{0,544,480,1024}}};
   RankState state[R]{};
   int sm_counts[R]{},occupancy[R]{};
@@ -848,6 +855,7 @@ int main(int argc,char** argv) {
   FILE* report=std::fopen(path,"wx");
   if (!report) return 54;
   std::fprintf(report,"{\"target\":\"sm_103a\",\"ranks\":4,"
+                      "\"communication_ctas\":%d,\"steal_budget\":%d,"
                       "\"valid_routes_by_owner\":[%d,%d,%d,%d],"
                       "\"bin_rows_by_owner\":[%d,%d,%d,%d],"
                       "\"stolen_by_owner\":[%d,%d,%d,%d],"
@@ -856,6 +864,7 @@ int main(int argc,char** argv) {
                       "\"overlap_flags\":[[%d,%d],[%d,%d],[%d,%d],[%d,%d]],"
                       "\"no_interphase_host_sync\":true,"
                       "\"device_names\":[\"%s\",\"%s\",\"%s\",\"%s\"]}\n",
+              scenario.communication,scenario.budget,
               valid_by_owner[0],valid_by_owner[1],valid_by_owner[2],
               valid_by_owner[3],bin_rows_by_rank[0],bin_rows_by_rank[1],
               bin_rows_by_rank[2],bin_rows_by_rank[3],
