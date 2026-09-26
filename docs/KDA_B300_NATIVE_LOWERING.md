@@ -47,6 +47,12 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 合成 K128/C32 两 chunk Schedule 随后将旧状态显式转 FP32，乘 FP32 `prefix_end`，加 FP32 校正结果，最后显式舍入 BF16 并发布下一 phase。它在 `sm_103a` 编译为 255 寄存器、0 stack、0 spill；B300 三组完整状态对照各覆盖 16,384 元素、0 超差，最大绝对误差不超过 `1.1920928955078125e-07`。255 寄存器是紧迫的资源信号，但没有 CUPTI/occupancy 测量可证明它对完整 KDA 延迟的贡献。
 
+### 2.5 两组投影、两组校正与延迟 TMEM 回读
+
+有界后继 `3ce392dc` 将基础 pipeline 增为两次 K128 投影：`state @ base_key` 供 solve，`state @ base_query` 供输出；U 发布后的 pipeline 也增为两次 K32 收缩：`U @ final_key` 更新状态，`U @ output_coupling` 修正输出。每条 TMA load 仍有自己的 shared B view，两条 load 共用 count=2 的 ready barrier；每个 MMA 有独立 completion barrier，输出路径显式 FP32 相加、scale 与 BF16 舍入。所需 TMEM view 在 512-column 分配内互不重叠。此前 `NATIVE_TWO_PHASE_ORDER` 只准每条 pipeline 一次 MMA，这个后继将上限有界扩成两次，并要求首组都读 carried state、第二组都读 BF16 U；错误的 tensor-A owner 有专门反例。
+
+首个四 MMA 排列过早将 base-query FP32 `[V128,C32]` 从 TMEM 读到寄存器，穿过全部 496 项/行的顺序 solve 才用于输出。`sm_103a` AOT 使用 255 寄存器、112 字节 stack，报告 108 字节 spill 读写；SASS 的 `STL` 出现在 `subtract_base` 源码附近。后继 `fbafa719` 只把这个 query 回读移到输出合并前，保留同一 TMEM accumulator、输出公式与 BF16 边界，AOT 仍用 255 寄存器但 **0 stack、0 spill**。这给出一个明确的 lowering 原因：跨顺序求解保留早期 FP32 结果会制造寄存器活跃区间；延迟具有独立 completion barrier 的 TMEM readout 可缩短该区间。当前它仅有静态和 CPU/Corpus 证据，尚未通过 B300 输出数值或延迟验收，也不构成公共 pass 的收益证明。合成 RHS 仍未接入公开 V/beta，因此不能当作完整 KDA 输出。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -69,6 +75,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | `a81a6948` / `gpuq-2eac9e60295d` | K128/C32 两阶段，三组每组 16,384 最终状态全部通过；230 寄存器，0 spill | 旧状态衰减、beta、查询输出或延迟 |
 | `d579e917` / `gpuq-85485a66ccbf` | K128/C32 加 BF16 TMEM 回读和 FP32 prefix 衰减，三组每组 16,384 最终状态全部通过；255 寄存器，0 spill | 逐 token BF16 舍入、高保留输入、完整输出或延迟 |
 | `5bd8e2c1` / CPU-only AOT | 独占四操作的后端融合可编译，仍为 255 寄存器、0 spill | 设备数值、动态成本或任何可推广收益 |
+| `3ce392dc` → `fbafa719` / CPU-only AOT | 同一四 MMA 合成输出/状态图，延迟 query TMEM 回读将 stack 112B、spill 108B 降到 0；两版均 255 寄存器 | 两块输出的设备数值、完整公开 ABI 与配对延迟 |
 
 上述作业均使用 exact `sm_103a`、broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
@@ -79,7 +86,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | Q/K 归一化、decay、beta 与 32-token 耦合 | 独立准备组件在 B300 通过 H64 元素检查；两 MMA 版本单独计时 389.507 µs | 与状态/输出 CTA 融合或有证据地选择物化边界，避免七个中间张量往返。 |
 | `state @ base_key` 与 P 前代入 | K128 两阶段合成状态在 B300 三种输入通过 | 把合成 RHS 换成公开 V、beta、base prediction 的真实组合。 |
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
-| `state_after_update @ query` 与输出耦合 | 准备组件有 base-query、输出耦合的有类型中间结果 | 状态 kernel 仍没有第二个输出投影/校正、scale、逐 token 输出舍入和完整写回。 |
+| `state_after_update @ query` 与输出耦合 | `fbafa719` 的四 MMA 合成 Schedule 已发射 base-query、U-output 校正、scale 与 BF16 chunk 输出；AOT 0 spill | 尚无 B300 数值、公开 V/beta RHS、逐 token 输出舍入及完整 Workload 写回证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 
