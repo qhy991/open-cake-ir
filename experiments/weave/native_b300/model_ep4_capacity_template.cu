@@ -606,7 +606,8 @@ struct RankState {
 } // namespace
 
 int main(int argc,char** argv) {
-  if (argc!=6) return 2;
+  bool plan_only=argc==7 && std::strcmp(argv[6],"plan-only")==0;
+  if (argc!=6 && !plan_only) return 2;
   int communication_control=-1,steal_control=-1;
   if (std::sscanf(argv[4],"%d",&communication_control)!=1 ||
       std::sscanf(argv[5],"%d",&steal_control)!=1 ||
@@ -635,10 +636,11 @@ int main(int argc,char** argv) {
     }
   }
   for (int expert=0;expert<E;++expert)
-    if (expert_counts[expert]<64 || expert_counts[expert]>256) return 6;
+    if (!plan_only && (expert_counts[expert]<64 || expert_counts[expert]>256))
+      return 6;
   const int expected_owner_rows[R]={4039,4196,4016,4133};
   for (int rank=0;rank<R;++rank)
-    if (valid_by_owner[rank]!=expected_owner_rows[rank]) return 7;
+    if (!plan_only && valid_by_owner[rank]!=expected_owner_rows[rank]) return 7;
   Case scenario[R]{};
   int wave_counts[R][kWaves]{};
   for (int rank=0;rank<R;++rank) {
@@ -925,6 +927,7 @@ int main(int argc,char** argv) {
     }
     for (int rank=0;rank<R;++rank) {
       if (check(cudaSetDevice(rank),"select Cake wave rank")) return 31;
+      if (plan_only) continue;
       RankState& s=state[rank];
       if (check(cudaStreamWaitEvent(compute_stream[rank],
                                     ready_events[rank][wave]),
@@ -944,13 +947,13 @@ int main(int argc,char** argv) {
                "Cake wave worker launch")) return 31;
     }
   }
-  for (int rank=0;rank<R;++rank) {
+  for (int rank=0;rank<R && !plan_only;++rank) {
     if (check(cudaSetDevice(rank),"select return rank")) return 32;
     scatter_returns<<<dim3(kLogicalTiles,kRows),256,0,compute_stream[rank]>>>(
         state[rank].return_params);
     if (check(cudaGetLastError(),"return launch")) return 33;
   }
-  for (int rank=0;rank<R;++rank) {
+  for (int rank=0;rank<R && !plan_only;++rank) {
     if (check(cudaSetDevice(rank),"select combine rank")) return 34;
     wait_returns<<<(LOCAL_ROUTES+255)/256,256,0,compute_stream[rank]>>>(
         state[rank].return_params);
@@ -993,6 +996,97 @@ int main(int argc,char** argv) {
   for (int rank=0;rank<R;++rank) {
     if (check(cudaSetDevice(rank),"select completion rank") ||
         check(cudaDeviceSynchronize(),"full chain completion")) return 37;
+  }
+  if (plan_only) {
+    int logical_tiles[R]{},observed_rows[R]{};
+    std::vector<unsigned char> seen(ROUTES);
+    for (int rank=0;rank<R;++rank) {
+      if (check(cudaSetDevice(rank),"select plan result rank")) return 57;
+      Bin* bin=state[rank].bin;
+      int counts[LOCAL_E],error=0;
+      if (check(cudaMemcpy(&error,&bin->error,4,cudaMemcpyDeviceToHost),
+                "plan error read") ||
+          check(cudaMemcpy(counts,bin->count,sizeof(counts),
+                           cudaMemcpyDeviceToHost),"plan bin counts read") ||
+          check(cudaMemcpy(wave_counts[rank],bin->wave_counts,
+                           sizeof(wave_counts[rank]),cudaMemcpyDeviceToHost),
+                "plan wave counts read")) return 57;
+      if (error!=0) {
+        std::fprintf(stderr,"rank %d planner error %d\n",rank,error);
+        return 58;
+      }
+      for (int expert=0;expert<LOCAL_E;++expert) {
+        if (counts[expert]<0 || counts[expert]>MAX_ROWS) return 58;
+        observed_rows[rank]+=counts[expert];
+      }
+      if (observed_rows[rank]!=valid_by_owner[rank]) return 58;
+      for (int wave=0;wave<kWaves;++wave) {
+        if (wave_counts[rank][wave]<0 ||
+            logical_tiles[rank]+wave_counts[rank][wave]>kLogicalTiles)
+          return 58;
+        logical_tiles[rank]+=wave_counts[rank][wave];
+      }
+      std::vector<int> keys(size_t(logical_tiles[rank])*kRows);
+      std::vector<int> experts(logical_tiles[rank]);
+      if (logical_tiles[rank]>0 &&
+          (check(cudaMemcpy(keys.data(),state[rank].tile_keys,
+                            keys.size()*sizeof(int),cudaMemcpyDeviceToHost),
+                 "plan tile keys read") ||
+           check(cudaMemcpy(experts.data(),state[rank].tile_experts,
+                            experts.size()*sizeof(int),cudaMemcpyDeviceToHost),
+                 "plan tile experts read"))) return 59;
+      int covered=0;
+      for (int tile=0;tile<logical_tiles[rank];++tile) {
+        int expert=experts[tile];
+        if (expert<0 || expert>=LOCAL_E) return 59;
+        for (int row=0;row<kRows;++row) {
+          int key=keys[tile*kRows+row];
+          if (key<0) continue;
+          int assigned=-1;
+          if (key>=ROUTES || seen[key]) return 59;
+          std::memcpy(&assigned,ids.data()+size_t(key)*sizeof(int),4);
+          if (assigned!=rank*LOCAL_E+expert) return 59;
+          seen[key]=1;
+          ++covered;
+        }
+      }
+      if (covered!=valid_by_owner[rank]) return 59;
+      char name[128];
+      std::snprintf(name,sizeof(name),
+                    "device_outputs/rank%d/tile_route_keys.i32",rank);
+      if (!write_exact(argv[1],name,keys.data(),keys.size()*sizeof(int)))
+        return 60;
+      std::snprintf(name,sizeof(name),"device_outputs/rank%d/tile_expert.i32",rank);
+      if (!write_exact(argv[1],name,experts.data(),experts.size()*sizeof(int)))
+        return 60;
+      std::snprintf(name,sizeof(name),"device_outputs/rank%d/wave_counts.i32",rank);
+      if (!write_exact(argv[1],name,wave_counts[rank],
+                       sizeof(wave_counts[rank]))) return 60;
+    }
+    for (unsigned char flag:seen) if (flag!=1) return 61;
+    char path[512];
+    int n=std::snprintf(path,sizeof(path),"%s/plan_device_report.json",argv[1]);
+    if (n<1 || n>=int(sizeof(path))) return 62;
+    FILE* report=std::fopen(path,"wx");
+    if (!report) return 62;
+    std::fprintf(report,"{\"target\":\"sm_103a\",\"safe_tile_capacity\":255,"
+                        "\"routes\":%d,\"owner_routes\":[%d,%d,%d,%d],"
+                        "\"logical_tiles_by_owner\":[%d,%d,%d,%d],"
+                        "\"tile_waves_by_owner\":[",ROUTES,
+                 observed_rows[0],observed_rows[1],observed_rows[2],observed_rows[3],
+                 logical_tiles[0],logical_tiles[1],logical_tiles[2],logical_tiles[3]);
+    for (int rank=0;rank<R;++rank) {
+      std::fprintf(report,"%s[",rank ? "," : "");
+      for (int wave=0;wave<kWaves;++wave)
+        std::fprintf(report,"%s%d",wave ? "," : "",wave_counts[rank][wave]);
+      std::fprintf(report,"]");
+    }
+    std::fprintf(report,"]}\n");
+    if (std::fclose(report)) return 62;
+    std::fprintf(stderr,"capacity planner: %d routes, tiles [%d,%d,%d,%d]\n",
+                 ROUTES,logical_tiles[0],logical_tiles[1],
+                 logical_tiles[2],logical_tiles[3]);
+    return 0;
   }
   std::vector<unsigned char> observed_hidden(HIDDEN_BYTES),observed_ids(IDS_BYTES);
   std::vector<unsigned char> route_contributions(ROUTE_CONTRIBUTION_BYTES);

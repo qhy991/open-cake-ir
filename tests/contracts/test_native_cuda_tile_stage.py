@@ -164,6 +164,7 @@ class NativeCudaTileStageTest(unittest.TestCase):
                     self.assertIn('constexpr int kLogicalTiles = 255;', source)
                     self.assertIn('derive_wave_order<<<', source)
                     self.assertIn('assign_wave_tiles<<<', source)
+                    self.assertIn('plan_device_report.json', source)
                     self.assertEqual(
                         lowering['ranked_tile_stage_composition'][
                             'safe_logical_tile_slots_per_rank'],255)
