@@ -399,7 +399,7 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
         steal_budgets[rank]<0 || steal_budgets[rank]>kTotalStageTasks ||
         chunks_by_rank[rank]!=chunks)
       return int(cudaErrorInvalidValue);
-  const int chunk_tokens=T/chunks;
+  int chunk_tokens=T/chunks;
   cudaError_t error=cudaSuccess;
 #define CAKE_RUN(call) \
   do { error=(call); if (error!=cudaSuccess) { state->poisoned=true; return int(error); } } while (0)
