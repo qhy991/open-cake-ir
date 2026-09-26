@@ -8,7 +8,7 @@ import unittest
 
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.solx_fib import attention, moe
+from open_cake_ir.tasks.solx_fib import attention, mla_decode_fusion, moe
 from open_cake_ir.tasks.solx_fib.catalog import TASK_IDS, task_owner
 from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.evaluation.core import compare_tile_outputs
@@ -17,6 +17,25 @@ ROOT=Path(__file__).resolve().parents[2]
 
 
 class CompletePackPlanTests(unittest.TestCase):
+    def test_018_fused_decode_is_one_complete_stage_on_both_declared_shapes(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        task = mla_decode_fusion.TASK
+        for variant in ('boundary', 'captured'):
+            workload = WorkloadContract(attention.workload_document(task, variant=variant))
+            author = mla_decode_fusion.author_plan(workload)
+            plan = author.finish()
+            self.assertEqual(len(plan.stages), 1)
+            self.assertEqual(set(plan.outputs), {'output', 'lse'})
+            self.assertEqual(set(plan.tensors), set(plan.inputs) | set(plan.outputs))
+            stage = plan.stages[0]
+            assessment = compiler.assess(json.loads(stage.schedule_bytes))
+            self.assertEqual(assessment.findings, (), variant)
+            self.assertTrue(compiler.lower(assessment).generated)
+        other = WorkloadContract(attention.workload_document(
+            'fib_mla_paged_prefill_causal_h16_ckv512_kpe64_ps1', variant='boundary'))
+        with self.assertRaises(ValueError):
+            mla_decode_fusion.author_plan(other)
+
     def test_all_26_tasks_have_one_owning_implementation(self):
         self.assertEqual(len(TASK_IDS),26)
         self.assertEqual(len({t.split('_',1)[0] for t in TASK_IDS}),26)
