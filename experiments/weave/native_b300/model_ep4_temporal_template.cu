@@ -1023,13 +1023,15 @@ int main(int argc,char** argv) {
   // The cooperative worker waits for each wave on the default stream. A
   // nonblocking stream on each rank publishes source chunks, tile manifests,
   // gathered rows and task counts. No host-side synchronization divides them.
-  cudaStream_t communication_stream[R]{};
+  cudaStream_t communication_stream[R]{},compute_stream[R]{};
   cudaEvent_t dispatch_events[R][kWaves]{},ready_events[R][kWaves]{},
               fence_events[R][kWaves]{};
   for (int rank=0;rank<R;++rank) {
     if (check(cudaSetDevice(rank),"select communication stream rank") ||
         check(cudaStreamCreateWithFlags(&communication_stream[rank],
-              cudaStreamNonBlocking),"create communication stream")) return 26;
+              cudaStreamNonBlocking),"create communication stream") ||
+        check(cudaStreamCreateWithFlags(&compute_stream[rank],
+              cudaStreamNonBlocking),"create compute stream")) return 26;
     for (int wave=0;wave<kWaves;++wave)
       if (check(cudaEventCreateWithFlags(&dispatch_events[rank][wave],
                 cudaEventDisableTiming),"dispatch event") ||
@@ -1051,7 +1053,7 @@ int main(int argc,char** argv) {
     if (check(cudaLaunchCooperativeKernel(
              reinterpret_cast<const void*>(tile_schedule_probe),
              dim3(scenario[rank].grid),dim3(kThreads),args,
-             kDynamicShared,nullptr),
+             kDynamicShared,compute_stream[rank]),
              "Cake worker launch")) return 31;
   }
   for (int wave=0;wave<kWaves;++wave) {
@@ -1107,16 +1109,16 @@ int main(int argc,char** argv) {
   }
   for (int rank=0;rank<R;++rank) {
     if (check(cudaSetDevice(rank),"select return rank")) return 32;
-    scatter_returns<<<dim3(kLogicalTiles,kRows),256>>>(
+    scatter_returns<<<dim3(kLogicalTiles,kRows),256,0,compute_stream[rank]>>>(
         state[rank].return_params);
     if (check(cudaGetLastError(),"return launch")) return 33;
   }
   for (int rank=0;rank<R;++rank) {
     if (check(cudaSetDevice(rank),"select combine rank")) return 34;
-    wait_returns<<<(LOCAL_ROUTES+255)/256,256>>>(
+    wait_returns<<<(LOCAL_ROUTES+255)/256,256,0,compute_stream[rank]>>>(
         state[rank].return_params);
     if (check(cudaGetLastError(),"return acquire launch")) return 35;
-    cake_weave_rank512_combine_kernel<<<dim3(T,8),256>>>(
+    cake_weave_rank512_combine_kernel<<<dim3(T,8),256,0,compute_stream[rank]>>>(
         state[rank].contributions,state[rank].route_weights,
         state[rank].final_output);
     if (check(cudaGetLastError(),"Cake combine launch")) return 36;
@@ -1129,11 +1131,20 @@ int main(int argc,char** argv) {
       if (check(cudaSetDevice(rank),"select wave event rank")) return 56;
       int dispatched=-1,ready=-1,fenced=-1;
       for (int wave=0;wave<kWaves;++wave) {
-        if (cudaEventQuery(dispatch_events[rank][wave])==cudaSuccess)
+        cudaError_t dispatch_status=cudaEventQuery(dispatch_events[rank][wave]);
+        cudaError_t ready_status=cudaEventQuery(ready_events[rank][wave]);
+        cudaError_t fence_status=cudaEventQuery(fence_events[rank][wave]);
+        if (dispatch_status!=cudaSuccess && dispatch_status!=cudaErrorNotReady)
+          check(dispatch_status,"dispatch event query");
+        if (ready_status!=cudaSuccess && ready_status!=cudaErrorNotReady)
+          check(ready_status,"ready event query");
+        if (fence_status!=cudaSuccess && fence_status!=cudaErrorNotReady)
+          check(fence_status,"fence event query");
+        if (dispatch_status==cudaSuccess)
           dispatched=wave;
-        if (cudaEventQuery(ready_events[rank][wave])==cudaSuccess)
+        if (ready_status==cudaSuccess)
           ready=wave;
-        if (cudaEventQuery(fence_events[rank][wave])==cudaSuccess)
+        if (fence_status==cudaSuccess)
           fenced=wave;
       }
       if (fenced!=kWaves-1) published_all=false;
@@ -1320,6 +1331,7 @@ int main(int argc,char** argv) {
   for (int rank=0;rank<R;++rank) {
     cudaSetDevice(rank);
     cudaStreamDestroy(communication_stream[rank]);
+    cudaStreamDestroy(compute_stream[rank]);
     for (int wave=0;wave<kWaves;++wave) {
       cudaEventDestroy(dispatch_events[rank][wave]);
       cudaEventDestroy(ready_events[rank][wave]);
