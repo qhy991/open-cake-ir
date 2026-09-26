@@ -10,15 +10,18 @@ import sys
 import tempfile
 import unittest
 
-from open_cake_ir.compiler import Compiler, Program, Schedule
+from open_cake_ir.compiler import Compiler, Program, RankedTileEffects, Schedule
 from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
-    emit_model_activation_stage, emit_tensor_tile_stage,
+    compose_model_ranked_tile_stages, emit_model_activation_stage,
+    emit_tensor_tile_stage,
 )
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PROGRAM = ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300.json'
+EFFECTS = ROOT / 'examples/programs/weave-model-ranked-tile-effects-b300.json'
+COMBINE = ROOT / 'examples/schedules/native/weave-model-weighted-combine-rank512-b300.json'
 
 
 class NativeCudaTileStageTest(unittest.TestCase):
@@ -76,6 +79,29 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertEqual(result.dynamic_shared_bytes, 0)
         self.assertNotIn('tcgen05', result.source)
 
+    def test_ranked_tile_composition_reports_safe_capacity_and_actual_shared_bytes(self):
+        effects = RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
+        combine = Schedule.from_dict(json.loads(COMBINE.read_text()))
+        result = compose_model_ranked_tile_stages(
+            effects, self.program, combine, self.target)
+        self.assertEqual(result.stage_work_units,
+                         (('up_gate',24),('activation',128),('down',32)))
+        self.assertEqual((result.safe_logical_tile_slots_per_rank,
+                          result.safe_stage_task_slots_per_rank),(255,46920))
+        self.assertEqual((result.declared_shared_bytes,
+                          result.emitted_shared_bytes),(49152,49200))
+        self.assertEqual((result.tensor_bytes,result.required_execution_groups,
+                          result.target_multiprocessors),(32768,6,148))
+        self.assertEqual(len(result.stages),3)
+        bad=effects.document
+        bad['partial_threshold_rows']=128
+        with self.assertRaisesRegex(EmitError,'exact model EP4 domain'):
+            compose_model_ranked_tile_stages(
+                RankedTileEffects.from_dict(bad),self.program,combine,self.target)
+        other=Compiler.load(ROOT)._revision.targets['sm_100a']
+        with self.assertRaisesRegex(EmitError,'exact observed B300'):
+            compose_model_ranked_tile_stages(effects,self.program,combine,other)
+
     def test_clean_compiler_composes_tensor_stages_into_worker(self):
         commit = Compiler.load(ROOT).commit
         if commit is None:
@@ -128,6 +154,11 @@ class NativeCudaTileStageTest(unittest.TestCase):
                     self.assertIn('derive_early_wave<<<', source)
                     self.assertIn('assign_terminal_tiles<<<', source)
                     self.assertIn('publish_wave_ready<<<', source)
+                    composition=lowering['ranked_tile_stage_composition']
+                    self.assertEqual(composition['safe_logical_tile_slots_per_rank'],255)
+                    self.assertEqual(composition['safe_stage_task_slots_per_rank'],46920)
+                    self.assertEqual(composition['emitted_shared_bytes'],49200)
+                    self.assertIs(composition['complete_ranked_tile_lowering'],False)
 
 
 if __name__ == '__main__':

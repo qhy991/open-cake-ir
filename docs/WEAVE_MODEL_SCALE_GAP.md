@@ -340,6 +340,16 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    bounded-steal control. This is kernel-activity overlap on one route set,
    not a qualified latency, useful-work overlap or speedup claim. No
    Compiler pass or automatic Lab budget rule is promoted from it.
+   In this finite-launch variant, `c` classifies worker CTAs as eligible
+   borrowers; dispatch runs in a separate kernel. The fixed 96-CTA worker
+   grid leaves device capacity for that kernel, but `c=74` does not reserve
+   74 physical SMs for communication. The schema-2 stage composer now joins
+   the Cake FFN Program, combine Schedule and ranked effects before
+   generation. It reports the safe 255-tile/46,920-task capacity and the
+   emitted 49,200-byte CTA shared footprint beside the IR's 49,152-byte
+   allocation. The experimental 64-tile arrays remain admissible only for
+   the checked route plan; this composer is not a complete
+   `lower_ranked_tiles` implementation.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device

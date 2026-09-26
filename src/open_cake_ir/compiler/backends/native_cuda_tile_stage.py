@@ -14,7 +14,9 @@ from . import native_cuda
 from .common import EmitError
 from .native_cuda_activation import ModelEmitter
 from ..ir import (AccessIndexKind, BoundaryPolicy, DType, LoadMovement,
-                  LoweringBackend, MemorySpace, OperationKind)
+                  LoweringBackend, MemorySpace, OperationKind, Program,
+                  RankedTileEffects, Schedule)
+from ..target import CodeObject, Target
 
 
 _IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
@@ -52,6 +54,26 @@ class TileStageEmission:
     dynamic_shared_bytes: int
     tmem_columns: int
     mapped_operations: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RankedTileStageComposition:
+    """Cake math and safe queue bounds for the evidenced B300 tile worker.
+
+    This is a stage composition, not a ranked-tile executable lowering. The
+    caller still owes runtime route admission, peer ownership, tile publication,
+    worker launch and source-keyed return before a complete Program exists.
+    """
+
+    stages: tuple[TileStageEmission, ...]
+    stage_work_units: tuple[tuple[str, int], ...]
+    safe_logical_tile_slots_per_rank: int
+    safe_stage_task_slots_per_rank: int
+    declared_shared_bytes: int
+    emitted_shared_bytes: int
+    tensor_bytes: int
+    required_execution_groups: int
+    target_multiprocessors: int
 
 
 def emit_tensor_tile_stage(schedule, target, *, function_name: str) -> TileStageEmission:
@@ -198,3 +220,71 @@ def emit_model_activation_stage(schedule, target, *, function_name: str) -> Tile
     if mapped != tuple(op.op_id for op in schedule.operations):
         raise EmitError('worker activation source map differs from its Schedule operations')
     return TileStageEmission(source, '', function_name, 0, 0, mapped)
+
+
+def compose_model_ranked_tile_stages(
+        effects: RankedTileEffects, local_program: Program,
+        combine_schedule: Schedule, target: Target) -> RankedTileStageComposition:
+    """Bind schema-2 effects to the three evidenced Cake FFN stage bodies.
+
+    The 255-tile bound is intentionally retained beside the 64-tile synthetic
+    experiment. A future complete backend must either allocate the safe bound
+    or make a checked runtime route-plan admission part of its launch ABI.
+    """
+    effects = RankedTileEffects.from_dict(effects.document)
+    local_program = Program.from_dict(local_program.document)
+    if (target.target_id != 'sm_103a' or target.code_object is not CodeObject.CUBIN
+            or target.compute_capability != (10, 3)
+            or target.warp_size != 32 or target.cooperative_grid is not True
+            or target.occupancy is None):
+        raise EmitError('ranked tile stages require exact observed B300 resources')
+    if (effects.lowering.backend is not LoweringBackend.NATIVE_CUDA
+            or effects.lowering.entry_point != 'cake_ranked_tile_b300'
+            or (effects.world_size, effects.experts, effects.tile_rows,
+                effects.maximum_chunks_per_rank, effects.partial_threshold_rows)
+            != (4, 128, 128, 4, 64)
+            or local_program.target != target.target_id
+            or combine_schedule.target != target.target_id
+            or tuple(stage.name for stage in local_program.stages)
+            != ('up_gate', 'activation', 'down')):
+        raise EmitError('ranked tile stage composition needs the exact model EP4 domain')
+    analysis = effects.analyze(local_program, combine_schedule)
+    if (analysis.items_per_rank != 512 or analysis.routes_per_item != 8
+            or analysis.feature_width != 2048
+            or analysis.stage_work_units
+            != (('up_gate', 24), ('activation', 128), ('down', 32))
+            or analysis.logical_tile_slots_per_rank != 255
+            or analysis.stage_task_slots_per_rank != 46920
+            or analysis.required_execution_groups != 6):
+        raise EmitError('ranked tile safe capacity or Cake stage work units differ')
+    from .native_cuda_model_combine import preflight as combine_preflight
+    failures = [finding for check in (native_cuda.verify, combine_preflight)
+                for finding in check(combine_schedule, target)
+                if finding.blocks_lowering or finding.blocks_acceptance]
+    if failures:
+        raise EmitError('; '.join(f'{f.code} at {f.path}: {f.message}'
+                                  for f in failures))
+    stages = tuple(
+        (emit_model_activation_stage if index == 1 else emit_tensor_tile_stage)(
+            stage.schedule, target, function_name=function_name)
+        for index, (stage, function_name) in enumerate(zip(
+            local_program.stages,
+            ('cake_upgate_stage_work', 'cake_activation_stage_work',
+             'cake_down_stage_work'), strict=True))
+    )
+    if stages[0].instruction_helpers != stages[2].instruction_helpers:
+        raise EmitError('ranked tile tensor stages disagree on PTX helpers')
+    shared = max(stage.dynamic_shared_bytes for stage in stages)
+    if (shared < analysis.maximum_shared_bytes
+            or shared > target.resource_limits.maximum_shared_memory_bytes
+            or analysis.maximum_tensor_bytes
+            > (target.resource_limits.maximum_tensor_memory_bytes or 0)):
+        raise EmitError('ranked tile emitted worker exceeds declared B300 resources')
+    return RankedTileStageComposition(
+        stages, analysis.stage_work_units,
+        analysis.logical_tile_slots_per_rank,
+        analysis.stage_task_slots_per_rank,
+        analysis.maximum_shared_bytes, shared,
+        analysis.maximum_tensor_bytes,
+        analysis.required_execution_groups,
+        target.occupancy.multiprocessor_count)

@@ -1,0 +1,94 @@
+{
+  "schema_version": 2,
+  "world_size": 4,
+  "experts": 128,
+  "tile_rows": 128,
+  "maximum_chunks_per_rank": 4,
+  "partial_threshold_rows": 64,
+  "workers": [
+    "communication",
+    "computation"
+  ],
+  "controls": {
+    "communication_ctas": "rank_local_int32",
+    "chunks": "rank_local_int32",
+    "steal_budget": "rank_local_int32"
+  },
+  "channels": {
+    "payload": {
+      "owner": "destination_rank",
+      "key": [
+        "source_rank",
+        "item",
+        "destination_rank"
+      ],
+      "reservation": "returned_old_atomic_system",
+      "ready": "release_acquire_system"
+    },
+    "bin": {
+      "owner": "destination_rank",
+      "key": [
+        "destination_rank",
+        "expert",
+        "row"
+      ],
+      "reservation": "returned_old_atomic_system",
+      "ready": "release_acquire_system",
+      "row_identity": [
+        "source_rank",
+        "item",
+        "route"
+      ]
+    },
+    "tile": {
+      "owner": "destination_rank",
+      "key": [
+        "destination_rank",
+        "expert",
+        "tile_index"
+      ],
+      "payload": "expert_bin_rows_with_valid_count",
+      "ready": "release_acquire_system"
+    },
+    "task": {
+      "owner": "destination_rank",
+      "key": [
+        "destination_rank",
+        "expert",
+        "tile_index",
+        "stage",
+        "subtile"
+      ],
+      "reservation": "returned_old_atomic_gpu",
+      "ready": "release_acquire_system",
+      "claim": "atomic_gpu",
+      "payload": "one_stage_program_map_cta_with_valid_rows",
+      "precondition": "all_predecessor_stage_work_units_completed"
+    },
+    "return": {
+      "owner": "source_rank",
+      "key": [
+        "source_rank",
+        "item",
+        "route"
+      ],
+      "reservation": "deterministic_index",
+      "ready": "release_acquire_system"
+    }
+  },
+  "publication": "full_on_capacity_partial_at_wave_threshold_and_terminal",
+  "stage_work_unit_order": "flatten_program_map_axes_xyz",
+  "input_domain": "distinct_expert_ids_in_range_per_item",
+  "steal": {
+    "borrower": "communication",
+    "queue": "stage_task",
+    "after": "dispatch_chunk",
+    "before": "combine",
+    "resource_transition": "maximum_stage_worker"
+  },
+  "reset": "zero_all_rank_mailboxes_before_launch",
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_ranked_tile_b300"
+  }
+}

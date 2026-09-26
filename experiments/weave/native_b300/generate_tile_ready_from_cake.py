@@ -11,14 +11,17 @@ import json
 from pathlib import Path
 import re
 
-from open_cake_ir.compiler import Compiler, Program
+from open_cake_ir.compiler import Compiler, Program, RankedTileEffects, Schedule
 from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
-    emit_model_activation_stage, emit_tensor_tile_stage,
+    compose_model_ranked_tile_stages, emit_model_activation_stage,
+    emit_tensor_tile_stage,
 )
 
 
 ROOT = Path(__file__).resolve().parents[3]
 PROGRAM = ROOT / 'examples/programs/weave-model-local-expert-ffn-native-b300.json'
+EFFECTS = ROOT / 'examples/programs/weave-model-ranked-tile-effects-b300.json'
+COMBINE = ROOT / 'examples/schedules/native/weave-model-weighted-combine-rank512-b300.json'
 TEMPLATES = {
     'cake_full_ffn_stages': Path(__file__).with_name(
         'model_tile_ready_from_cake_template.cu'),
@@ -55,17 +58,25 @@ def generate(evidence_root: Path) -> None:
     target = compiler._revision.targets['sm_103a']
     if [stage.name for stage in program.stages] != ['up_gate', 'activation', 'down']:
         raise ValueError('complete model FFN Program stage order differs')
-    results = []
-    for index, name in ((0, 'cake_upgate_stage_work'),
-                        (1, 'cake_activation_stage_work'),
-                        (2, 'cake_down_stage_work')):
-        stage = program.stages[index]
-        assessment = compiler.assess(program_document['stages'][index]['schedule'])
-        if not assessment.lowering_eligible:
-            raise ValueError(f'{stage.name} Schedule refused before worker composition')
-        lower = (emit_model_activation_stage if index == 1
-                 else emit_tensor_tile_stage)
-        results.append(lower(stage.schedule, target, function_name=name))
+    composition = None
+    if generation == 'cake_ep4_temporal_stages':
+        effects = RankedTileEffects.from_dict(json.loads(EFFECTS.read_text()))
+        combine = Schedule.from_dict(json.loads(COMBINE.read_text()))
+        composition = compose_model_ranked_tile_stages(
+            effects, program, combine, target)
+        results = list(composition.stages)
+    else:
+        results = []
+        for index, name in ((0, 'cake_upgate_stage_work'),
+                            (1, 'cake_activation_stage_work'),
+                            (2, 'cake_down_stage_work')):
+            stage = program.stages[index]
+            assessment = compiler.assess(program_document['stages'][index]['schedule'])
+            if not assessment.lowering_eligible:
+                raise ValueError(f'{stage.name} Schedule refused before worker composition')
+            lower = (emit_model_activation_stage if index == 1
+                     else emit_tensor_tile_stage)
+            results.append(lower(stage.schedule, target, function_name=name))
     if results[0].instruction_helpers != results[2].instruction_helpers:
         raise ValueError('tensor stages disagree on native CUDA PTX helper contract')
     template = TEMPLATES[generation].read_text()
@@ -78,7 +89,7 @@ def generate(evidence_root: Path) -> None:
     if re.search(r'@[A-Z_]+@', source):
         raise ValueError('worker source retains an unbound lowering seam')
     (evidence_root / OUTPUT).write_text(source)
-    (evidence_root / 'stage_lowering.json').write_text(json.dumps({
+    report = {
         'source_commit': compiler.commit,
         'program': str(PROGRAM.relative_to(ROOT)),
         'target': target.target_id,
@@ -92,7 +103,22 @@ def generate(evidence_root: Path) -> None:
             for index, emitted in enumerate(results)
         ],
         'scope': 'all three stage math bodies from Cake; tile-ready worker control retained',
-    }, indent=2) + '\n')
+    }
+    if composition is not None:
+        report['ranked_tile_stage_composition'] = {
+            'effects': str(EFFECTS.relative_to(ROOT)),
+            'combine': str(COMBINE.relative_to(ROOT)),
+            'stage_work_units': [list(item) for item in composition.stage_work_units],
+            'safe_logical_tile_slots_per_rank': composition.safe_logical_tile_slots_per_rank,
+            'safe_stage_task_slots_per_rank': composition.safe_stage_task_slots_per_rank,
+            'declared_shared_bytes': composition.declared_shared_bytes,
+            'emitted_shared_bytes': composition.emitted_shared_bytes,
+            'tensor_bytes': composition.tensor_bytes,
+            'required_execution_groups': composition.required_execution_groups,
+            'target_multiprocessors': composition.target_multiprocessors,
+            'complete_ranked_tile_lowering': False,
+        }
+    (evidence_root / 'stage_lowering.json').write_text(json.dumps(report, indent=2) + '\n')
 
 
 if __name__ == '__main__':
