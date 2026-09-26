@@ -167,6 +167,8 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 `gpuq-683ba77be918` 在同一独占 GPU1、交替顺序五轮、每臂每轮 25 个 CUPTI 冷 L2/no-graph 样本中，对固定分角色单槽基线 `db979435` 与双槽后继 `5974e33e` 配对。租约释放后的独立 host replay 对十份完整输出/状态快照均 0 超差、无非有限值；输入未改写、后检查无其它计算 PID。pooled 中位数分别为 **2,481.231 µs** 与 **1,953.451 µs**，组件比 **1.27018×**，五轮均胜出，最大轮内 CV 约 0.11%；两臂第 1 与第 5 轮的 BF16 输出和最终状态都逐 bit 相同。这个合格收益归于**双槽地址隔离与向量 P 暂存的组合**，不能把 27% 全归因于多一个槽或 16B 指令。当前 disposition：保留并资格化这个精确 NVIDIA 组件映射，**No promotion** 到共享 pass、完整 KDA 候选或六形状 dispatcher。
 
+同一固定源码的低扰动八点 MMA warp 时钟探针 `gpuq-76a9173f4e7c` 结束释放后，插桩完整输出/状态仍由独立 host oracle 检查为 0 超差；AOT 仍为 255 寄存器、0 stack/spill。在 CTA0 的稳态 chunk 1–254，七段中位数依次为 carried state-ready **5,503**、base B-ready **72**、base/query MMA 至完成 **1,648**、跨 P 暂存 **5,416.5**、U-ready **174.5**、correction B-ready **77**、correction/output MMA 至完成 **625 cycles**；段中位数之和的占比分别为 40.71%、0.53%、12.19%、40.07%、1.29%、0.57%、4.62%。相对 §2.18 的单槽向量化前探针，P 区间从 9,793 降到 5,416.5 cycles，而 state-ready 仍约 5.5k cycles。插桩区间包含 warp 调度，不是指令级归因，也不与未插桩延迟直接相减。B-ready 仍很短，下一步优先验证 carried state 的发布依赖与 P/compute 重叠；继续加深 B ring 缺少这份证据的支持。Finding event 178 保留 trace 与 host 报告。
+
 原始 CAKE CUDA 已有更深的 shared 槽、角色流水和片上准备值；本后继仍把准备值预先物化、每 head 一个 CTA、256 次状态依赖串行，并且只在块末舍入 BF16 状态。原始 CAKE 适配的 H64/T8192 完整 kernel 在另一作业约 **456.578 µs**，不能与本组件的 1.953 ms 做同范围加速比；数值上仍有明显追赶空间。现有 native CUDA 的单槽 P 在向量化后暴露跨块混值，双槽合同把地址与相位显式留给 Schedule 和检查；现有 Triton lowering 缺 TMEM carried state、两条 B TMA 流水和这条 P/solve 发射，不是 Triton 语言原则上无法表达双槽。下一步先在真实上游 Q/K/G、原位 state、逐 token BF16 舍入与高保留输入上建立完整 Workload 候选，再与适配 CAKE 同机同范围配对；单凭本组件不能声称追上或超过 CAKE。
 
 ## 3. 对照：谁拥有哪个拒绝
