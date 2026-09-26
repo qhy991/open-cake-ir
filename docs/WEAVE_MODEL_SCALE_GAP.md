@@ -259,6 +259,16 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    order local phases, and no qualified profiler/timer establishes actual
    communication-compute overlap or a speedup. The runtime tile publisher
    and variable plan admission are the next Compiler/backend boundary.
+   A separate Nsight CUDA-activity replay (`cake-weave-ep4-live-nsys-
+   2b8f97e7/`) passed the same complete oracle and retained six kernel
+   phases on each rank. In that single profiled run, cross-rank dispatch and
+   gather activity intersected for four rank pairs, gather and FFN did not
+   intersect, and FFN/return activity intersected for six pairs. The FFN
+   kernel under `c=147`, budget 5,888 occupied about 218–220 ms of each
+   rank's profiled timeline; earlier ranks subsequently waited for return
+   flags from the last rank. Nsight profiling, one sample and no L2 reset
+   make these diagnostic intervals unsuitable for a latency/speedup claim.
+   They motivate a controlled spatial-`c`/steal-budget sweep next.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
