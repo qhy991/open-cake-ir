@@ -1,4 +1,4 @@
-"""One-stage Cake candidate for exact B300 FlashInfer GQA paged prefill 014."""
+"""One-stage Cake candidates for exact B300 FlashInfer GQA paged prefill."""
 from __future__ import annotations
 
 import math
@@ -10,15 +10,17 @@ from .plan_authoring import PlanAuthor
 
 
 TASK = "fib_gqa_paged_prefill_causal_h32_kv4_d128_ps1"
+FUSED_TASKS = (TASK, "fib_gqa_paged_prefill_causal_h32_kv8_d128_ps1")
 
 
 def author_plan(workload: WorkloadContract, case_id: str = "primary") -> PlanAuthor:
     """One CTA owns one query/head, its causal KV prefix and both public outputs."""
     attention.validate_contract(workload.document)
+    task = workload.document["semantics"]["task"]
     if (workload.target != "sm_103a"
-            or workload.document["semantics"]["task"] != TASK):
-        raise ValueError("fused GQA prefill requires its exact B300 Workload")
-    spec = attention.SPECS[TASK]
+            or task not in FUSED_TASKS):
+        raise ValueError("fused GQA prefill requires an admitted B300 Workload")
+    spec = attention.SPECS[task]
     axes = workload.case(case_id)["shape"]
     length = attention._power_two(axes["num_kv_indices"])
     segments = attention._power_two(axes["len_indptr"] - 1)
