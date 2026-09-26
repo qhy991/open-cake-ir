@@ -24,11 +24,15 @@ def load_ranked_tile_ctypes(lowered: NativeRankedTileLowering,
         raise ValueError('ranked tile loader needs pointer and process owners')
     library=ctypes.CDLL(str(library_path.resolve(strict=True)))
     names=lowered.toolchain_requirements['host_abi']
-    required={'ranks','source_events','bin_bytes','output_bytes',
+    required={'abi_version','ranks','source_events','bin_bytes','output_bytes',
               'create','launch','destroy','stolen','payloads'}
     if set(names)!=required:
         raise ValueError('ranked tile compiled ABI names differ')
-    functions={name:getattr(library,spelling) for name,spelling in names.items()}
+    try:
+        functions={name:getattr(library,spelling) for name,spelling in names.items()}
+    except AttributeError:
+        raise ValueError('ranked tile compiled ABI symbol differs') from None
+    functions['abi_version'].restype=ctypes.c_int
     functions['ranks'].restype=ctypes.c_int
     functions['source_events'].restype=ctypes.c_int
     functions['bin_bytes'].restype=ctypes.c_size_t
@@ -37,6 +41,7 @@ def load_ranked_tile_ctypes(lowered: NativeRankedTileLowering,
     functions['create'].argtypes=[void_array]*6+[ctypes.POINTER(ctypes.c_void_p)]
     functions['create'].restype=ctypes.c_int
     functions['launch'].argtypes=[ctypes.c_void_p,
+                                  ctypes.POINTER(ctypes.c_int),
                                   ctypes.POINTER(ctypes.c_int),
                                   ctypes.POINTER(ctypes.c_int)]
     functions['launch'].restype=ctypes.c_int
@@ -49,7 +54,8 @@ def load_ranked_tile_ctypes(lowered: NativeRankedTileLowering,
     world=lowered.analysis.world_size
     output_bytes=lowered.analysis.items_per_rank*lowered.analysis.feature_width*2
     bin_bytes=functions['bin_bytes']()
-    if (functions['ranks']()!=world or functions['source_events']()!=20
+    if (functions['abi_version']()!=2
+            or functions['ranks']()!=world or functions['source_events']()!=20
             or functions['output_bytes']()!=output_bytes
             or not (world-1)*lowered.analysis.items_per_rank*
                    lowered.analysis.feature_width*2 < bin_bytes < 16*1024*1024):
@@ -78,10 +84,11 @@ def load_ranked_tile_ctypes(lowered: NativeRankedTileLowering,
         if status!=0 or not handle.value:
             raise ValueError(f'ranked tile create status {status!r}')
 
-        def launch(communication,budgets):
+        def launch(communication,budgets,chunks):
             return functions['launch'](
                 handle,(ctypes.c_int*world)(*communication),
-                (ctypes.c_int*world)(*budgets))
+                (ctypes.c_int*world)(*budgets),
+                (ctypes.c_int*world)(*chunks))
 
         def observe(name,rank):
             value=ctypes.c_int(-1)

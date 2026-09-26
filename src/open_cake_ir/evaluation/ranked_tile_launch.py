@@ -84,7 +84,7 @@ def validate_ranked_tile_case(lowered: NativeRankedTileLowering,
 class RankedTileBound:
     """Compiled ABI callbacks with one created CUDA state handle."""
 
-    launch: Callable[[tuple[int, ...], tuple[int, ...]], int]
+    launch: Callable[[tuple[int, ...], tuple[int, ...], tuple[int, ...]], int]
     stolen: Callable[[int], int]
     payloads: Callable[[int], int]
     destroy: Callable[[], int]
@@ -148,9 +148,12 @@ def _controls(plans, world: int, task_capacity: int):
         c,chunks,budget=(row[name] for name in
                          ('communication_ctas','chunks','steal_budget'))
         if (any(type(value) is not int for value in (c,chunks,budget))
-                or not 1<=c<=96 or chunks!=4 or not 0<=budget<=task_capacity):
+                or not 1<=c<=96 or chunks not in (1,2,4)
+                or not 0<=budget<=task_capacity):
             raise ValueError(f'rank {rank} controls exceed the B300 lowering domain')
         controls[rank]=MappingProxyType(dict(row))
+    if len({controls[rank]['chunks'] for rank in range(world)})!=1:
+        raise ValueError('ranked tile temporal chunks must agree across ranks')
     return MappingProxyType(controls)
 
 
@@ -168,7 +171,9 @@ def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
     abi = req.get('host_abi')
     if (req.get('target') != lowered.local_program.target
             or req.get('source_events') != 20
-            or req.get('source_chunk_tokens') != 128
+            or req.get('supported_chunks') != [1,2,4]
+            or req.get('source_chunk_tokens_by_chunks')
+               != {'1':512,'2':256,'4':128}
             or req.get('logical_tile_capacity') != 255
             or req.get('stage_task_capacity') != 46920
             or req.get('rank_local_controls') is not True
@@ -178,7 +183,7 @@ def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
             or req.get('synchronous_launch') is not True
             or req.get('failed_partial_launch_requires_process_exit') is not True
             or not isinstance(abi, Mapping)
-            or set(abi) != {'ranks','source_events','bin_bytes',
+            or set(abi) != {'abi_version','ranks','source_events','bin_bytes',
                             'output_bytes','create','launch','destroy',
                             'stolen','payloads'}
             or any(not isinstance(name, str) or not name
@@ -277,8 +282,9 @@ class PreparedRankedTiles:
                                   for rank in range(4))
             budgets = tuple(controls[rank]['steal_budget']
                             for rank in range(4))
+            chunks = tuple(controls[rank]['chunks'] for rank in range(4))
             try:
-                status = self.bound.launch(communication,budgets)
+                status = self.bound.launch(communication,budgets,chunks)
                 if type(status) is not int or status != 0:
                     raise ValueError(f'ranked tile launch status {status!r}')
                 stolen = tuple(self.bound.stolen(rank) for rank in range(4))
@@ -299,6 +305,7 @@ class PreparedRankedTiles:
             return self.outputs, MappingProxyType({
                 'stolen_by_rank':stolen,
                 'remote_payloads_by_owner':payloads,
+                'chunks_by_rank':chunks,
             })
 
     def close(self) -> None:

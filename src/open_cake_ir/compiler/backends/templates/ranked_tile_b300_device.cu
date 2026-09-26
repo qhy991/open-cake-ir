@@ -326,21 +326,24 @@ __device__ __forceinline__ int system_acquire(const int* pointer) {
                : "=r"(value) : "l"(pointer) : "memory");
   return value;
 }
-__device__ __forceinline__ uint32_t route_order(int key) {
+__device__ __forceinline__ uint32_t route_order(int key,int chunk_tokens) {
   int source=key/(T*K),token=(key/K)%T,route=key%K;
-  return uint32_t((token/128)*(R*128*K)+source*(128*K)
-                  +(token%128)*K+route);
+  return uint32_t((token/chunk_tokens)*(R*chunk_tokens*K)
+                  +source*(chunk_tokens*K)
+                  +(token%chunk_tokens)*K+route);
 }
-__device__ __forceinline__ int original_route_key(uint32_t ordered) {
-  int wave=int(ordered)/(R*128*K);
-  int remainder=int(ordered)%(R*128*K);
-  int source=remainder/(128*K);
-  int token=(remainder%(128*K))/K;
+__device__ __forceinline__ int original_route_key(
+    uint32_t ordered,int chunk_tokens) {
+  int wave=int(ordered)/(R*chunk_tokens*K);
+  int remainder=int(ordered)%(R*chunk_tokens*K);
+  int source=remainder/(chunk_tokens*K);
+  int token=(remainder%(chunk_tokens*K))/K;
   int route=remainder%K;
-  return (source*T+wave*128+token)*K+route;
+  return (source*T+wave*chunk_tokens+token)*K+route;
 }
-__global__ void dispatch_source_wave(const BinParams* params,int wave) {
-  int token=wave*128+int(blockIdx.x);
+__global__ void dispatch_source_wave(
+    const BinParams* params,int wave,int chunk_tokens) {
+  int token=wave*chunk_tokens+int(blockIdx.x);
   __shared__ int owner_slot[R],route_expert[K],route_owner[K],valid;
   if (threadIdx.x==0) {
     valid=1;
@@ -412,10 +415,12 @@ __global__ void mark_source_wave_done(const BinParams* params,int wave) {
     system_publish(&params->bins[owner]->source_wave_done[params->rank][wave]);
 }
 __device__ __forceinline__ void sort_expert_snapshot(
-    Bin* local,int expert,int lane,int count,uint32_t* order) {
+    Bin* local,int expert,int lane,int count,uint32_t* order,
+    int chunk_tokens) {
   for (int index=lane;index<MAX_ROWS;index+=int(blockDim.x))
     order[index]=index<count
-        ? route_order(local->keys[expert*MAX_ROWS+index]) : 0xffffffffu;
+        ? route_order(local->keys[expert*MAX_ROWS+index],chunk_tokens)
+        : 0xffffffffu;
   __syncthreads();
   for (int width=2;width<=MAX_ROWS;width<<=1) {
     for (int span=width>>1;span>0;span>>=1) {
@@ -434,7 +439,8 @@ __device__ __forceinline__ void sort_expert_snapshot(
     }
   }
 }
-__global__ void derive_wave_order(const BinParams* params,int wave,int source) {
+__global__ void derive_wave_order(const BinParams* params,int wave,
+                                  int source,int chunks,int chunk_tokens) {
   int expert=int(blockIdx.x),lane=int(threadIdx.x);
   Bin* local=params->bins[params->rank];
   if (lane==0) {
@@ -451,15 +457,15 @@ __global__ void derive_wave_order(const BinParams* params,int wave,int source) {
     return;
   }
   __shared__ uint32_t order[MAX_ROWS];
-  sort_expert_snapshot(local,expert,lane,count,order);
+  sort_expert_snapshot(local,expert,lane,count,order,chunk_tokens);
   if (lane==0) {
-    if (count>0 && order[count-1]/(R*128*K)>uint32_t(wave)) {
+    if (count>0 && order[count-1]/(R*chunk_tokens*K)>uint32_t(wave)) {
       atomicCAS(&local->error,0,14);return;
     }
     int available=count-consumed;
     int full=available/kRows;
     int tail=available%kRows;
-    int partial=(source==R && (wave==kWaves-1 || tail>=64)) ? tail : 0;
+    int partial=(source==R && (wave==chunks-1 || tail>=64)) ? tail : 0;
     local->wave_row_start[expert]=consumed;
     local->wave_full_tiles[expert]=full;
     local->wave_partial_rows[expert]=partial;
@@ -470,7 +476,8 @@ __global__ void derive_wave_order(const BinParams* params,int wave,int source) {
   for (int index=consumed+lane;index<count;index+=int(blockDim.x))
     local->sorted_order[expert*MAX_ROWS+index]=order[index];
 }
-__global__ void assign_wave_tiles(const BinParams* params,int event) {
+__global__ void assign_wave_tiles(const BinParams* params,int event,
+                                  int chunk_tokens) {
   int expert=int(threadIdx.x);
   Bin* local=params->bins[params->rank];
   if (expert>=LOCAL_E) return;
@@ -497,7 +504,7 @@ __global__ void assign_wave_tiles(const BinParams* params,int event) {
     for (int row=0;row<kRows;++row)
       params->tile_keys[slot*kRows+row]=row<valid
           ? original_route_key(local->sorted_order[
-              expert*MAX_ROWS+start+piece*kRows+row]) : -1;
+              expert*MAX_ROWS+start+piece*kRows+row],chunk_tokens) : -1;
   }
   if (expert==0) local->wave_counts[event]=total;
 }

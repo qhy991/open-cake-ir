@@ -1,8 +1,8 @@
 """Backend-owned B300 ranked-tile control plane source composition.
 
-The device protocol lives beside the native CUDA emitters. This renderer
-joins it to checked Cake stage bodies; an executable ranked-tile lowering
-still needs a backend-owned host ABI and Evaluation binding.
+The device protocol and pointer ABI live beside the native CUDA emitters.
+This renderer joins them to checked Cake stage bodies, with runtime chunk
+choices bounded by the ranked effect's four-wave capacity.
 """
 from __future__ import annotations
 
@@ -77,6 +77,11 @@ class NativeRankedTileLowering:
                 !=self.analysis.stage_task_slots_per_rank
                 or req.get('return_slots')!=self.analysis.return_slots_per_rank
                 or req.get('source_events')!=20
+                or req.get('supported_chunks')!=[1,2,4]
+                or req.get('source_chunk_tokens_by_chunks')!={
+                    '1':self.analysis.items_per_rank,
+                    '2':self.analysis.items_per_rank//2,
+                    '4':self.analysis.items_per_rank//4}
                 or req.get('input_domain_runtime_check') is not True
                 or req.get('peer_pair_runtime_check') is not True
                 or req.get('failed_partial_launch_requires_process_exit')
@@ -106,9 +111,7 @@ def emit_source_event_device(composition: RankedTileStageComposition,
                              *, combine_source: str) -> str:
     """Render the evidenced four-rank device protocol without a host runner.
 
-    `combine_source` is an explicit backend dependency. The experiment uses
-    its separately retained Cake combine translation unit; a complete public
-    lowering must inline the combine emitted from the same clean Compiler.
+    `combine_source` is the Cake combine emitted by the same clean Compiler.
     """
     if (not isinstance(composition, RankedTileStageComposition)
             or len(composition.stages) != 3
@@ -159,9 +162,8 @@ def emit_source_event_library(composition: RankedTileStageComposition,
                               *, combine_source: str, entry: str) -> str:
     """Render the pointer-based development ABI beside the device protocol.
 
-    This emits no Workload inputs or experiment paths. The public Compiler
-    remains a refusal until Evaluation can bind and audit this ABI, including
-    failure cleanup and repeated-run state ownership.
+    This emits no Workload inputs or experiment paths. Evaluation binds the
+    pointer ABI and owns isolated-process failure cleanup and repeated state.
     """
     if _IDENTIFIER.fullmatch(entry) is None:
         raise EmitError('ranked tile host ABI needs an ASCII C identifier')
@@ -261,7 +263,7 @@ def lower_ranked_tiles(compiler, effects: RankedTileEffects,
                                      entry=entry)
     mapped=source_event_map(source,composition,combine_source=combine)
     abi={name:entry+'_'+name for name in
-         ('ranks','source_events','bin_bytes','output_bytes',
+         ('abi_version','ranks','source_events','bin_bytes','output_bytes',
           'create','launch','destroy','stolen','payloads')}
     requirements={
         'source_language':'cuda_cpp','target':local_program.target,
@@ -275,7 +277,9 @@ def lower_ranked_tiles(compiler, effects: RankedTileEffects,
         'logical_tile_capacity':analysis.logical_tile_slots_per_rank,
         'stage_task_capacity':analysis.stage_task_slots_per_rank,
         'return_slots':analysis.return_slots_per_rank,
-        'source_events':20,'source_chunk_tokens':128,
+        'source_events':20,'supported_chunks':[1,2,4],
+        'source_chunk_tokens_by_chunks':{
+            str(chunks):analysis.items_per_rank//chunks for chunks in (1,2,4)},
         'rank_inputs':[
             {'name':'hidden','shape':[512,2048],'dtype':'bf16'},
             {'name':'expert_ids','shape':[512,8],'dtype':'int32'},

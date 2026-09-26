@@ -219,6 +219,7 @@ cudaError_t ranked_tile_reset(RankedTileRankState& s) {
 }
 } // namespace
 
+extern "C" int @ENTRY@_abi_version() { return 2; }
 extern "C" int @ENTRY@_ranks() { return R; }
 extern "C" int @ENTRY@_source_events() { return kEvents; }
 extern "C" size_t @ENTRY@_bin_bytes() { return sizeof(Bin); }
@@ -363,15 +364,22 @@ extern "C" int @ENTRY@_payloads(void* opaque,int rank,int* result) {
 }
 
 extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
-                               const int* steal_budgets) {
+                               const int* steal_budgets,
+                               const int* chunks_by_rank) {
   auto* state=static_cast<RankedTileHostState*>(opaque);
-  if (!state || state->poisoned || !communication_ctas || !steal_budgets)
+  if (!state || state->poisoned || !communication_ctas || !steal_budgets ||
+      !chunks_by_rank)
     return int(cudaErrorInvalidValue);
   // CAKE_EFFECT: controls.admit
+  const int chunks=chunks_by_rank[0];
+  if (chunks!=1 && chunks!=2 && chunks!=4)
+    return int(cudaErrorInvalidValue);
   for (int rank=0;rank<R;++rank)
     if (communication_ctas[rank]<1 || communication_ctas[rank]>96 ||
-        steal_budgets[rank]<0 || steal_budgets[rank]>kTotalStageTasks)
+        steal_budgets[rank]<0 || steal_budgets[rank]>kTotalStageTasks ||
+        chunks_by_rank[rank]!=chunks)
       return int(cudaErrorInvalidValue);
+  const int chunk_tokens=T/chunks;
   cudaError_t error=cudaSuccess;
 #define CAKE_RUN(call) \
   do { error=(call); if (error!=cudaSuccess) { state->poisoned=true; return int(error); } } while (0)
@@ -384,14 +392,14 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
     CAKE_RUN(cudaSetDevice(rank));
     CAKE_RUN(ranked_tile_reset(state->ranks[rank]));
   }
-  for (int wave=0;wave<kWaves;++wave) {
+  for (int wave=0;wave<chunks;++wave) {
     for (int source=0;source<=R;++source) {
       int event=wave*(R+1)+source;
       if (source<R) {
         CAKE_RUN(cudaSetDevice(source));
         RankedTileRankState& s=state->ranks[source];
-        dispatch_source_wave<<<dim3(128),256,0,s.communication>>>(
-            s.bin_params,wave);
+        dispatch_source_wave<<<dim3(chunk_tokens),256,0,s.communication>>>(
+            s.bin_params,wave,chunk_tokens);
         CAKE_RUN(cudaGetLastError());
         mark_source_wave_done<<<1,1,0,s.communication>>>(s.bin_params,wave);
         CAKE_RUN(cudaGetLastError());
@@ -400,9 +408,10 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
         CAKE_RUN(cudaSetDevice(rank));
         RankedTileRankState& s=state->ranks[rank];
         derive_wave_order<<<LOCAL_E,256,0,s.communication>>>(
-            s.bin_params,wave,source);
+            s.bin_params,wave,source,chunks,chunk_tokens);
         CAKE_RUN(cudaGetLastError());
-        assign_wave_tiles<<<1,LOCAL_E,0,s.communication>>>(s.bin_params,event);
+        assign_wave_tiles<<<1,LOCAL_E,0,s.communication>>>(
+            s.bin_params,event,chunk_tokens);
         CAKE_RUN(cudaGetLastError());
         expand_tasks_for_wave<<<1,kStages,0,s.communication>>>(
             s.bin_params,s.tasks,event);

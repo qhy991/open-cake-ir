@@ -72,7 +72,7 @@ class RankedTileLaunchContract(unittest.TestCase):
             self.assertEqual(set(bound_inputs),set(range(4)))
             self.assertEqual(set(bound_outputs),set(range(4)))
             return RankedTileBound(
-                launch=lambda c,b:(events.append(('launch',c,b)) or launch_status),
+                launch=lambda c,b,k:(events.append(('launch',c,b,k)) or launch_status),
                 stolen=lambda rank:5888 if rank%2==0 else 0,
                 payloads=lambda rank:(618,312,306,300)[rank],
                 destroy=lambda:(events.append(('destroy',)) or 0),
@@ -110,13 +110,20 @@ class RankedTileLaunchContract(unittest.TestCase):
         self.assertEqual(status['stolen_by_rank'],(5888,0,5888,0))
         self.assertEqual(status['remote_payloads_by_owner'],(618,312,306,300))
         self.assertEqual(bound.launch_calls,1)
-        self.assertIn(('launch',(74,1,74,1),(5888,0,5888,0)),events)
+        self.assertIn(('launch',(74,1,74,1),(5888,0,5888,0),(4,4,4,4)),events)
         replay={rank:{**plan,'communication_ctas':73 if rank%2==0 else 2}
                 for rank,plan in plans.items()}
         _,again=bound.run(replay)
         self.assertEqual(again['stolen_by_rank'],(5888,0,5888,0))
         self.assertEqual(bound.launch_calls,2)
-        self.assertIn(('launch',(73,2,73,2),(5888,0,5888,0)),events)
+        self.assertIn(('launch',(73,2,73,2),(5888,0,5888,0),(4,4,4,4)),events)
+        for chunks in (2,1):
+            temporal={rank:{**plan,'chunks':chunks}
+                      for rank,plan in plans.items()}
+            _,status=bound.run(temporal)
+            self.assertEqual(status['chunks_by_rank'],(chunks,)*4)
+            self.assertIn(('launch',(74,1,74,1),(5888,0,5888,0),
+                           (chunks,)*4),events)
         bound.close()
         self.assertIn(('destroy',),events)
         with self.assertRaisesRegex(ValueError,'closed'):
@@ -137,6 +144,10 @@ class RankedTileLaunchContract(unittest.TestCase):
         inputs,outputs,plans=self.fixtures()
         plans[1]['chunks']=3
         with self.assertRaisesRegex(ValueError,'controls'):
+            self.prepare(inputs,outputs,plans)
+        inputs,outputs,plans=self.fixtures()
+        plans[1]['chunks']=2
+        with self.assertRaisesRegex(ValueError,'chunks must agree'):
             self.prepare(inputs,outputs,plans)
         inputs,outputs,plans=self.fixtures()
         with self.assertRaisesRegex(ValueError,'isolation'):

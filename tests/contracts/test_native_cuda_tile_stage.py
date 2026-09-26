@@ -268,7 +268,11 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertEqual((req['world_size'],req['logical_tile_capacity'],
                           req['stage_task_capacity'],req['source_events']),
                          (4,255,46920,20))
-        self.assertEqual(req['source_chunk_tokens'],128)
+        self.assertEqual(req['supported_chunks'],[1,2,4])
+        self.assertEqual(req['source_chunk_tokens_by_chunks'],
+                         {'1':512,'2':256,'4':128})
+        self.assertEqual(req['host_abi']['abi_version'],
+                         'cake_ranked_tile_b300_abi_version')
         self.assertEqual(req['rank_inputs'][0],
                          {'name':'hidden','shape':[512,2048],'dtype':'bf16'})
         self.assertEqual(len([name for name in lowered.source_map
