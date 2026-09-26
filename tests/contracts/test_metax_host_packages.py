@@ -15,6 +15,9 @@ ROOT = Path(__file__).resolve().parents[2]
 class MetaxHostPackagesTest(unittest.TestCase):
     def test_flagtree_and_triton_are_separate_valid_host_variants(self):
         host = json.loads((ROOT / "runtime/hosts/xcore1002.json").read_text())["host_environment"]
+        host["packages"].pop("flagtree", None)
+        host["packages"].pop("triton", None)
+        host["packages"]["flagtree"] = "0.5.1+metax3.1"
         validate_host(host)
         host["packages"]["triton"] = "3.6.0+metax3.8.0.4.c600u"
         del host["packages"]["flagtree"]

@@ -14,14 +14,11 @@ from dataclasses import dataclass
 
 
 _BUNDLE_MAGIC = b"__CLANG_OFFLOAD_BUNDLE__"
+HIDDEN_POINTER_COUNTS = frozenset({0, 2})
 
 
 def pointer_parameters(ttgir: bytes) -> int:
-    """The admitted 3.1 launcher passes only non-constexpr source parameters.
-
-    This backend adds no scratch parameters to that list. Check the actual emitted
-    public TTGIR signature before sealing a pointer-only tensor manifest.
-    """
+    """Count the non-constexpr pointer parameters in the public TTGIR signature."""
     text = ttgir.decode("utf-8")
     signatures = re.findall(r"tt\.func public @\w+\((.*?)\)\s*attributes", text, re.S)
     if len(signatures) != 1:
@@ -30,6 +27,84 @@ def pointer_parameters(ttgir: bytes) -> int:
     if not types or any(re.fullmatch(r"!tt\.ptr<\w+>", value) is None for value in types):
         raise ValueError("MACA kernel ABI is not a nonempty pointer-only signature")
     return len(types)
+
+
+def native_pointer_parameters(payload: bytes, architecture: str, kernel_name: str) -> int:
+    """Count explicit pointer arguments in the sole native MACA kernel note.
+
+    The MetaX 3.8 Triton launcher appends global and profile scratch pointers to
+    the source signature; FlagTree 3.1 did not. The native ELF note, rather than a
+    package-version table, states which ABI this compilation actually emitted.
+    """
+    try:
+        import msgpack
+    except ImportError as error:
+        raise ValueError("MACA binary metadata requires msgpack") from error
+    image = device_image(payload, architecture)
+    section_offset = struct.unpack_from("<Q", image, 40)[0]
+    section_size, section_count = struct.unpack_from("<HH", image, 58)
+    if (section_size < 64 or section_count == 0 or section_offset > len(image)
+            or section_count > (len(image) - section_offset) // section_size):
+        raise ValueError("MACA ELF section directory differs")
+    notes = []
+    for index in range(section_count):
+        section = section_offset + index * section_size
+        if struct.unpack_from("<I", image, section + 4)[0] != 7:  # SHT_NOTE
+            continue
+        offset, size = struct.unpack_from("<QQ", image, section + 24)
+        if offset > len(image) or size > len(image) - offset:
+            raise ValueError("MACA ELF note bounds differ")
+        end = offset + size
+        while offset < end:
+            if end - offset < 12:
+                raise ValueError("MACA ELF note is truncated")
+            name_size, data_size, note_type = struct.unpack_from("<III", image, offset)
+            offset += 12
+            name_end = offset + ((name_size + 3) & ~3)
+            data_end = name_end + ((data_size + 3) & ~3)
+            if name_end > end or data_end > end:
+                raise ValueError("MACA ELF note is truncated")
+            if image[offset:offset + name_size].rstrip(b"\0") == b"MetaX" and note_type == 48:
+                notes.append(image[name_end:name_end + data_size])
+            offset = data_end
+    if len(notes) != 1:
+        raise ValueError("MACA ELF must declare one MetaX kernel note")
+    try:
+        document = msgpack.unpackb(notes[0], raw=False)
+    except (ValueError, TypeError) as error:
+        raise ValueError("MACA kernel note is not MessagePack") from error
+    kernels = document.get("macahca.kernels") if isinstance(document, dict) else None
+    if (not isinstance(kernels, list) or len(kernels) != 1
+            or not isinstance(kernels[0], dict) or kernels[0].get(".name") != kernel_name):
+        raise ValueError("MACA kernel note does not name the sealed entry point")
+    args = kernels[0].get(".args")
+    if not isinstance(args, list) or not args:
+        raise ValueError("MACA kernel note declares no arguments")
+    pointers = 0
+    for index, row in enumerate(args):
+        if not isinstance(row, dict):
+            raise ValueError("MACA kernel argument record differs")
+        kind = row.get(".arg_param_pass")
+        if kind == "global_buffer":
+            if (pointers * 8 != row.get(".arg_offset_bytes")
+                    or row.get(".arg_size_bytes") != 8 or pointers != index):
+                raise ValueError("MACA pointer arguments are not contiguous 64-bit values")
+            pointers += 1
+        elif not isinstance(kind, str) or not kind.startswith("hidden_"):
+            raise ValueError("MACA kernel argument kind differs")
+    if (not pointers or type(kernels[0].get(".kernarg_size_bytes")) is not int
+            or kernels[0][".kernarg_size_bytes"] < 8 * pointers):
+        raise ValueError("MACA kernel pointer segment differs")
+    return pointers
+
+
+def hidden_pointer_parameters(ttgir: bytes, payload: bytes, architecture: str, kernel_name: str) -> int:
+    """Require the native ABI to add either no scratch or exactly two null scratch pointers."""
+    tensors = pointer_parameters(ttgir)
+    hidden = native_pointer_parameters(payload, architecture, kernel_name) - tensors
+    if hidden not in HIDDEN_POINTER_COUNTS:
+        raise ValueError(f"MACA kernel declares {hidden} unsupported hidden pointer parameters")
+    return hidden
 
 
 def device_image(payload: bytes, architecture: str) -> bytes:
@@ -95,12 +170,12 @@ def device_image(payload: bytes, architecture: str) -> bytes:
 
 @dataclass(frozen=True)
 class MetaxRoute:
-    """The observed FlagTree 0.5.1+metax3.1 compilation interface.
+    """The observed FlagTree 3.1 and MetaX Triton 3.6 compilation interfaces.
 
     This package emits no source/LLVM/PTX assembly entries. The source role records
     the exact kernel module passed to compilation; TTIR and TTGIR are actual outputs.
-    It declares no explicit scratch pointers or scratch-size metadata. The SDK fills
-    its own hidden dispatch fields; these are not user parameters to mcModuleLaunchKernel.
+    The native kernel note owns the launch pointer count. The SDK fills its own
+    hidden dispatch fields; those are not user parameters to mcModuleLaunchKernel.
     """
 
     gpu_backend: str = "maca"
@@ -138,4 +213,12 @@ class MetaxRoute:
         if (target.backend != self.gpu_backend or target.arch != requirements["triton_arch"]
                 or target.warp_size != requirements["warp_size"]):
             raise ValueError("MACA compiler metadata differs from the declared target")
-        device_image(artifacts[self.binary_role], requirements.get("codegen_arch"))
+        hidden = hidden_pointer_parameters(artifacts["ttgir"], artifacts[self.binary_role],
+            requirements.get("codegen_arch"), requirements["kernel_entry_point"])
+        scratch = (getattr(metadata, "global_scratch_size", None),
+                   getattr(metadata, "profile_scratch_size", None))
+        if any(value is not None and (type(value) is not int or value != 0)
+               for value in scratch):
+            raise ValueError("MACA compilation requires nonzero scratch buffers")
+        if hidden == 2 and any(value is None for value in scratch):
+            raise ValueError("MACA compilation omits scratch allocation metadata")

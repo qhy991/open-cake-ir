@@ -6,6 +6,7 @@ gaps are attribution observations, never paired latency or performance evidence.
 from dataclasses import asdict
 from typing import Mapping
 
+from open_cake_ir.compiler.metax_toolchain import HIDDEN_POINTER_COUNTS
 from open_cake_ir.serialization import canonical_json_bytes
 from .attribution import TensorProfileFormat, load_instrumented_profile
 from .metax_activity import activity_collector
@@ -84,7 +85,8 @@ def program_profile_summary(raw):
                 or child.target != spec.target or child.entry_point != spec.kernel_name
                 or child.launch_spec_sha256 != spec.canonical_sha256
                 or child.artifact_roles.get('lowered_source') != manifest.lowered_sources[stage.name]
-                or spec.hidden_null_pointer_parameters != 0 or spec.aligned_variant
+                or spec.hidden_null_pointer_parameters not in HIDDEN_POINTER_COUNTS
+                or spec.aligned_variant
                 or kernel['name'] != spec.kernel_name or tuple(kernel['grid']) != spec.grid
                 or tuple(kernel['block']) != spec.block
                 or kernel['dynamic_shared_bytes'] != spec.dynamic_shared_memory_bytes

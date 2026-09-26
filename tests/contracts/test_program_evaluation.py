@@ -24,6 +24,7 @@ from open_cake_ir.serialization import canonical_json_bytes
 from tests.contracts.test_program_rewrites import epilogue_program
 from tests.contracts.test_epilogue_fusion import execute, rounded
 from tests.contracts.test_native_triton_pairing import CompilationFixture
+from tests.contracts.test_metax_binary import bundle
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -193,6 +194,9 @@ class ProgramEvaluationTests(unittest.TestCase):
                         elif route.gpu_backend=='maca':
                             parameters = ', '.join(f'%arg{index}: !tt.ptr<f32> ' for index in range(count))
                             artifacts['ttgir'] = f'tt.func public @k({parameters}) attributes {{}}'.encode()
+                            artifacts['mcfatbin'] = bundle(architecture=requirements['codegen_arch'],
+                                note_pointer_arguments=count,
+                                note_kernel_name=requirements['kernel_entry_point'])[0]
                         return TritonCompilation(source,requirements['target'],requirements['kernel_entry_point'],artifacts,
                             requirements['compile_options']['num_warps']*requirements['warp_size'],0,'CPU fixture',route.code_object.value)
                 class KernelBuilder:

@@ -9,6 +9,7 @@ from dataclasses import asdict
 import math
 from typing import Mapping
 
+from open_cake_ir.compiler.metax_toolchain import HIDDEN_POINTER_COUNTS
 from open_cake_ir.compiler.target import declared_target
 from .attribution import TensorProfileFormat, load_instrumented_profile
 from .metax_activity import activity_collector
@@ -55,7 +56,7 @@ def maca_profile_summary(raw: Mapping) -> dict:
         raise ValueError('MACA profile coverage differs')
     manifest = TensorLaunchManifest.from_dict(raw.get('manifest'))
     manifest.check_complete_domain()
-    if manifest.hidden_null_pointer_parameters != 0:
+    if manifest.hidden_null_pointer_parameters not in HIDDEN_POINTER_COUNTS:
         raise ValueError('MACA profile declares unsupported hidden launch parameters')
     target = declared_target(manifest.target)
     admission = raw.get('device_admission')

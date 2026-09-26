@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from open_cake_ir.compiler import Compiler, Program, frontend
 from open_cake_ir.compiler.toolchain import TritonCompilation, triton_route
-from open_cake_ir.evaluation.core import EvaluationProtocol, load_torch_program, _MODULE_LOADERS
+from open_cake_ir.evaluation.core import EvaluationProtocol, load_torch_program
 from open_cake_ir.evaluation.paired import candidate_identity, participant_work, validate_receipt_policy
 from open_cake_ir.evaluation.platforms import platform_for
 from open_cake_ir.evaluation.program import (
@@ -24,6 +24,7 @@ from open_cake_ir.tasks.normalization.study import evaluation_policy
 from open_cake_ir.tasks.tiles.evaluation import evaluate_tile_workload
 from open_cake_ir.tasks.workloads import create_task, reference_outputs
 from tests.contracts.test_epilogue_fusion import execute
+from tests.contracts.test_metax_binary import bundle
 from tests.contracts.test_program_evaluation import replay_program_candidate
 from tests.contracts.test_qsa_common_program import Torch
 
@@ -48,12 +49,23 @@ class NativeCompiler:
             entries = '\n'.join('      - .address_space: global\n'
                 f'        .offset: {index * 8}\n        .size: 8\n'
                 '        .value_kind: global_buffer' for index in range(count + 2))
-            artifacts['amdgcn'] = ('\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n'
+            artifacts['amdgcn'] = (f'.amdhsa_kernel {requirements["kernel_entry_point"]}\n'
+                '  .amdhsa_group_segment_fixed_size 0\n'
+                '  .amdhsa_private_segment_fixed_size 0\n'
+                f'  .amdhsa_kernarg_size {(count + 2) * 8}\n'
+                '  .amdhsa_uses_dynamic_stack 0\n'
+                '  .amdhsa_next_free_vgpr 16\n'
+                '  .amdhsa_next_free_sgpr 16\n'
+                '.end_amdhsa_kernel\n'
+                '\t.amdgpu_metadata\n---\namdhsa.kernels:\n  - .args:\n'
                 f'{entries}\n    .kernarg_segment_size: {(count + 2) * 8}\n    .name: k\n...\n'
                 '\t.end_amdgpu_metadata\n').encode()
         else:
             parameters = ', '.join(f'%arg{index}: !tt.ptr<f32> ' for index in range(count))
             artifacts['ttgir'] = f'tt.func public @k({parameters}) attributes {{}}'.encode()
+        if route.gpu_backend == 'maca':
+            artifacts['mcfatbin'] = bundle(architecture=requirements['codegen_arch'],
+                note_pointer_arguments=count, note_kernel_name=requirements['kernel_entry_point'])[0]
         return TritonCompilation(source, requirements['target'], requirements['kernel_entry_point'],
             artifacts, requirements['compile_options']['num_warps'] * requirements['warp_size'],
             0, 'CPU fixture', route.code_object.value)
@@ -137,16 +149,14 @@ class PortableProgramEvaluation(unittest.TestCase):
             def close(self, *, synchronize): synchronize(); self.closed = True
         def loader(bound, *args):
             kernel = Kernel(by_entry[bound.entry_point]); kernels.append(kernel); return kernel
-        native = ('open_cake_ir.evaluation.hip_driver.LoadedHipModuleCandidate.load'
-                  if candidate.target.startswith('gfx') else
-                  'open_cake_ir.evaluation.metax_driver.LoadedMetaxCandidate.load')
         admission = SimpleNamespace(device_arch=candidate.target)
         arguments = [torch.full(shape, 0., dtype=dtype, device='cuda:0')
                      for _, shape, dtype, _ in manifest.tensor_abi]
-        with patch.dict('sys.modules', {'torch': torch}), patch(native, side_effect=loader) as native_load:
-            loaded, tensors = load_torch_program(candidate, manifest, arguments, admission,
-                _MODULE_LOADERS[platform_for(candidate.target).code_object])
-        self.assertEqual(native_load.call_count, len(program.stages))
+        # Program ownership is under test here; the native HIP/MACA loaders have
+        # separate contracts and must not resolve this host's installed GPU runtime.
+        with patch.dict('sys.modules', {'torch': torch}):
+            loaded, tensors = load_torch_program(candidate, manifest, arguments, admission, loader)
+        self.assertEqual(len(kernels), len(program.stages))
         return torch, loaded, manifest, arguments, tensors, kernels, calls
 
     def assay(self, workload, program, candidate, *, broken_last=False):
