@@ -202,6 +202,19 @@ This qualifies only the two-B carried contraction, not the two-phase
 projection/triangular-solve/correction sequence of a complete KDA prefill or a
 performance result (F-2026-09-24-003, event 107).
 
+An isolated successor pairs the shared-core `forward_substitute` meaning with a
+bounded native CUDA root schedule. One copy warp stages BF16 P[32,32] into an
+explicit 2 KiB swizzle-64B shared allocation and publishes one mbarrier; four
+compute warps each own one of 128 FP32 RHS rows, wait for P, then issue the
+ordered strict-lower C32 solve as 496 named `__fmaf_rn` updates per row. A later
+explicit cast would own BF16 rounding. The route refuses wrong P placement,
+shape or swizzle, missing completion wait and unrelated shared loads. Its
+synthetic Target adds the operation kind only for this proof; the committed
+`sm_103a` document and a complete KDA Schedule do not admit it yet. At clean
+`56a145f3`, CPU contracts and Corpus Gate pass; exact-sm_103a AOT uses 119
+registers with zero stack/spills. Device numerical proof and any latency
+measurement remain separate gates (F-2026-09-24-003).
+
 The KDA base-key/query contraction needs K128 with a dynamic TMEM A tile. The
 earlier K-major B stage is refused because one BF16 row occupies 256 bytes, beyond
 the backend's modeled 128-byte swizzle row. A standalone edited PTX probe then
