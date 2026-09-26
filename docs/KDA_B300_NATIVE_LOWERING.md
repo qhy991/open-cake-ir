@@ -74,6 +74,15 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 ## 5. 下一步性能闭环
 
+| 完整 KDA 的数据边 | 当前最低证据 | 尚缺的工作 |
+| --- | --- | --- |
+| Q/K 归一化、decay、beta 与 32-token 耦合 | 独立准备组件在 B300 通过 H64 元素检查；两 MMA 版本单独计时 389.507 µs | 与状态/输出 CTA 融合或有证据地选择物化边界，避免七个中间张量往返。 |
+| `state @ base_key` 与 P 前代入 | K128 两阶段合成状态在 B300 三种输入通过 | 把合成 RHS 换成公开 V、beta、base prediction 的真实组合。 |
+| `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
+| `state_after_update @ query` 与输出耦合 | 准备组件有 base-query、输出耦合的有类型中间结果 | 状态 kernel 仍没有第二个输出投影/校正、scale、逐 token 输出舍入和完整写回。 |
+| 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
+| 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
+
 1. 把准备阶段的 base/query、P、beta、prefix、final-key 接到同一状态/输出路径，明确哪些值留片上、哪些必须物化；核算额外 CTA、TMA 和 global traffic。原先七输出准备的 389.507 µs 是组件成本，不可与完整 CAKE 456 µs 非配对相减后宣称剩余预算。
 2. 增加更新后状态的 query 输出和 in-place 最终状态效果；同一外部 oracle 检查 H64/T8192 全部 67,108,864 输出与 1,048,576 状态元素，并覆盖 T65/T257、packed 边界和六个 benchmark 形状。
 3. 块级代数省略了逐 token BF16 状态舍入，高保留反例已失败。需要可证明的精确路径或有完整 fallback 的 guard；一组固定输入的通过不能授权 dispatcher。
