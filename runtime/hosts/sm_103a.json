@@ -60,16 +60,16 @@
         },
         {
           "path": "cupti_python-13.0.1.dist-info/RECORD",
-          "sha256": "382598a3890fceba4e062a0205ca01e6741054419333c5c5b5949d6de73672b9",
-          "size_bytes": 2624
+          "sha256": "b9618e09916b15fe3ea6e50315669775ebcae27d0bb64a3e9506f1ee6def69c9",
+          "size_bytes": 2522
         }
       ],
-      "site_packages_path": "/mnt/b300-shared/home/qinhaiyan/open-cake-round3-20260906-JdwgrZ/venv/lib/python3.12/site-packages",
+      "site_packages_path": "/home/qinhaiyan/opt/cake-cupti-python-13.0.1",
       "version": "13.0.1"
     },
     "flashinfer_helper": {
       "distribution": "flashinfer-python",
-      "path": "/mnt/b300-shared/home/qinhaiyan/miniconda3/envs/sglang/lib/python3.12/site-packages/flashinfer/testing/utils.py",
+      "path": "/home/qinhaiyan/.local/lib/python3.12/site-packages/flashinfer/testing/utils.py",
       "sha256": "3a7515a237a3c6531ffa15829a5d46e3d399b3c23f7d3dba853f9e6be46da490",
       "size_bytes": 67087,
       "version": "0.6.12"
@@ -81,17 +81,17 @@
       "version": "2025.4.1.0"
     },
     "packages": {
-      "cuda-bindings": "13.3.1",
+      "cuda-bindings": "13.4.2",
       "cupti-python": "13.0.1",
       "flashinfer-python": "0.6.12",
-      "numpy": "2.3.5",
+      "numpy": "2.5.3",
       "torch": "2.11.0",
       "triton": "3.6.0"
     },
     "python": {
-      "invocation_path": "/mnt/b300-shared/home/qinhaiyan/open-cake-round3-20260906-JdwgrZ/venv/bin/python",
-      "resolved_sha256": "1eb639ad5a6a5ed98e9fe1e138f9961718cc250d57ac93eea52871f935ed83cf",
-      "version": "3.12.13"
+      "invocation_path": "/home/qinhaiyan/opt/python312/bin/python3.12",
+      "resolved_sha256": "aa01d96348989f33ed998b42c83e98593b41dba83914d9899730b90c36f2e5c9",
+      "version": "3.12.14"
     }
   },
   "schema_version": 1,

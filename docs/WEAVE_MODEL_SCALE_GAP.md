@@ -456,12 +456,23 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    a common sealed Candidate, qualified timer and general liveness proof
    remain open. `c` classifies eligible worker CTAs; it is not a physical
    SM reservation.
+   A successor host capture now pins the accessible B300 Python 3.12.14,
+   isolated CUPTI Python 13.0.1, installed FlashInfer helper and NCU paths.
+   A one-GPU strict CUPTI smoke returned three activities; a separate
+   four-GPU staggered probe retained eight launches and eight kernel
+   activities on four device IDs. Each activity lay inside its matched
+   host timestamp window. These are timer-availability and clock-order
+   checks only: the four-device L2 reset, independent profiler comparison,
+   complete-layer interval and baseline timing are still unqualified.
+   Probe evidence is external under
+   `open-cake-ir-workspaces/evidence/weave-b300-m4-20260927/cake-weave-cupti-probe/`.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
    CUPTI/L2-reset interval before ranking `c/K/steal` or comparing against
-   the pinned open baseline. The captured B300 helper currently returns
-   `ENODEV`; the one-shot Nsight activity trace is development evidence only.
+   the pinned open baseline. The former captured helper path returns
+   `ENODEV`; the successor host capture resolves that availability defect,
+   but the one-shot Nsight trace and CUPTI probes are development evidence only.
 
 ## Bounded implementation order
 
