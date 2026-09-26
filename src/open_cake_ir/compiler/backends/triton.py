@@ -1487,6 +1487,16 @@ class _TritonEmitter:
         options = loop.range_options
         extent = self._loop_stop(loop)
         tile = self._tile(loop.name)
+        if self.target.code_object is CodeObject.MCFATBIN:
+            from .metax import loop_range
+            maca_range = loop_range(loop, self.schedule, extent, tile)
+            if maca_range is not None:
+                self.line(
+                    f"{pad}for {loop.iterator} in {maca_range}:",
+                    declares=(loop.iterator,),
+                )
+                self._emit_loop_body(loop, pad, tile)
+                return
         knobs = [f"num_stages={options.num_stages}"]
         if options.disallow_acc_multi_buffer:
             knobs.append("disallow_acc_multi_buffer=True")
@@ -1504,6 +1514,9 @@ class _TritonEmitter:
             + "):",
             declares=(loop.iterator,),
         )
+        self._emit_loop_body(loop, pad, tile)
+
+    def _emit_loop_body(self, loop: TileLoop, pad: str, tile: str) -> None:
         self.line(
             f"{pad}    {loop.iterator}_offsets = "
             f"{loop.iterator} + tl.arange(0, {tile})"

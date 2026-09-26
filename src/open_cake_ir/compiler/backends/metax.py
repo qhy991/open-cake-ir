@@ -1,12 +1,35 @@
 """The bounded MACA capability checks used by the shared Triton emitter."""
 
 from ..diagnostics import Finding
-from ..ir import DType, OperationKind, Schedule
+from ..ir import DType, OperationKind, Schedule, TileLoop
 from ..target import Target
 from .common import refusal
 
 
 _BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
+
+
+def _full_unroll_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:
+    """Only a fixed loop can carry an exact full-unroll commitment."""
+    buffer = schedule.buffer(loop.buffer)
+    if buffer is None or loop.stop is not None or loop.dimension >= len(buffer.shape):
+        return None
+    return (buffer.shape[loop.dimension] + loop.tile - 1) // loop.tile
+
+
+def loop_range(loop: TileLoop, schedule: Schedule, extent: str, tile: str) -> str | None:
+    """Use the MACA 3.1 static iterator for an explicitly full-unrolled loop.
+
+    None leaves the shared tl.range spelling in control. Preflight refuses every
+    other non-default unroll request before this function is called by emission.
+    """
+    factor = loop.range_options.loop_unroll_factor
+    if factor == 1:
+        return None
+    if (loop.range_options.num_stages != 1
+            or _full_unroll_trip_count(loop, schedule) != factor):
+        return None
+    return f"tl.static_range(0, {extent}, {tile})"
 
 
 def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
@@ -66,12 +89,22 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
             "MACA_WARP_SPECIALIZATION_UNSUPPORTED", "tile_loops",
             "the admitted MACA Triton version has no qualified warp-specialization route",
         ))
-    # The captured MACA Triton 3.1 range accepts num_stages only. These options
-    # would otherwise reach its JIT as unknown keywords; dropping them would
-    # silently change the authored Schedule's performance commitments.
+    # The captured MACA Triton 3.1 range accepts num_stages only. A fixed,
+    # single-stage full unroll has its own static_range spelling; partial or
+    # dynamic unrolls cannot be silently weakened to that spelling.
     for index, loop in enumerate(schedule.tile_loops):
-        for name, default in (("loop_unroll_factor", 1), ("flatten", False),
-                              ("disallow_acc_multi_buffer", False), ("disable_licm", False)):
+        factor = loop.range_options.loop_unroll_factor
+        if factor != 1 and (loop.range_options.num_stages != 1
+                            or _full_unroll_trip_count(loop, schedule) != factor):
+            findings.append(refusal(
+                "MACA_LOOP_UNROLL_UNSUPPORTED",
+                f"tile_loops[{index}].range_options.loop_unroll_factor",
+                "MACA lowering admits a non-default unroll factor only when it equals "
+                "the trip count of a fixed, single-stage loop; partial, query-bounded "
+                "or pipelined unrolls have no faithful spelling",
+            ))
+        for name, default in (("flatten", False), ("disallow_acc_multi_buffer", False),
+                              ("disable_licm", False)):
             if getattr(loop.range_options, name) != default:
                 findings.append(refusal(
                     "MACA_LOOP_OPTION_UNSUPPORTED", f"tile_loops[{index}].range_options.{name}",
