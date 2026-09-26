@@ -135,6 +135,14 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 `gpuq-a9ad7fc9ec06` 在同一独占 GPU0、同一输入、两臂各用 512 个独立初始状态槽、五轮交替顺序且每轮每臂 25 个 CUPTI 冷 L2 样本下，得到 M64 pooled **456.578 µs**、M128 **493.923 µs**，M128/M64 为 **1.08179×**。两臂每轮末次输出及原位状态均与独立 oracle 资格化抓取逐位相同，输入不变、后检查无其它计算 PID。代码、CTA 数、角色映射和 shared 占用同时变化，因此不能把约 8.18% 差距单独归因于 M 值；但在这个 B300 固定形状上，直接把 M64 替换为 M128 **不会**超过原始 CAKE 路线。更早的 native M64 消费者还因重复 B 转移与半 lane 使用而比其 M128 控制慢（Finding event 90），说明几何结论不可脱离 lowering 实现继承。当前 disposition：这个对照只作为 Lab 硬件选择证据，不提升原始实现代码为 Open-Cake Compiler 结果。
 
+### 2.17 分角色 carried loop：把块边 CTA 会合移到 kernel 边界
+
+两槽 B 超前预取仍让 copy、MMA、compute 跟随同一块循环，base/correction 流水及每块末尾各做 CTA 会合。后继 `db979435` 不扩大 IR 词汇：在精确 H64/256、两条两槽 B Pipeline、四个 compute warp、一个 MMA warp、一个 copy warp 的结构域，把 `P` 的 2 KiB shared stage 所有权从 copy warp 改为 MMA warp。共享 IR/Verifier 接受这项 Role 与 `p_ready` producer 变更；native 的专门 `NATIVE_ROLE_PIPELINE_DOMAIN` 要求 P 只有 solve 一个读者、同作用域和发布 barrier，否则拒绝这条分角色发射。copy warp 在自己的 256 块循环用 ready/free 槽相位预取 B；MMA warp 在另一循环等 carried state、消费 base B、发布 base 完成、装 P 并发布 `p_ready`，再等 U、消费 correction B；compute warps 在第三循环做 V/beta、solve、输出与 BF16 状态更新。块内无全 CTA `__syncthreads`，三条循环结束后才共同排空、失效 barrier。可编辑[分角色时序图](figures/kda-b300-role-pipeline.mmd)及其[SVG](figures/kda-b300-role-pipeline.svg)将 B ready/free、P、U 与 carried state 的依赖分开显示。
+
+固定提交通过 Corpus Gate 179/179 和远端完整适用 CPU 合同 2,686 passed、16 skipped、1 项 Apple MLX 实机测试取消选择；`sm_103a` AOT 为 **55,424 字节 dynamic shared、255 寄存器、0 stack/spill**。broker-shared `gpuq-77d31d7028e7` 释放设备后，独立 host oracle 在一组普通 H64/T8192 合成准备值上对全部 67,108,864 BF16 输出及 1,048,576 BF16 最终状态检查为 0 超差，输入未改写。重复启动时相对该一次抓取并不逐位稳定：频繁有 head40 从 chunk17 起出现约 66,270 个输出位值及 637 个状态位值差异，另有少数不同计数；首个保留快照对独立合成 oracle 的全部元素仍为 0 超容差，最大绝对输出/状态差分别约 `3.814697265625e-06` / `6.103515625e-05`。首个以**逐位相同**作为计时后条件的独占作业据此拒绝成绩，失败原始记录保留。此差异未定位到具体异步指令，也不能据普通输入容差通过推断高保留输入安全。
+
+后继测量先在 CPU-only 阶段独立保存完整合成 oracle 期望值，再由 `gpuq-d399ee7aa697` 在同一独占 GPU0、同一输入、交替顺序进行五轮每臂各 25 个 CUPTI 冷 L2 样本、无 graph；每轮两臂的完整输出/状态快照均保留，租约释放后由 host **逐轮逐元素**用比 Workload 更紧的输出 `atol=0.00005`、状态 `atol=0.0005`、共同 `rtol=0.01` 复核，十份快照均为 0 超差/无非有限值、输入未改写、设备无其它计算 PID。两槽单循环 pooled **2,833.908 µs**，分角色 pooled **2,462.161 µs**，五轮比值 1.15050–1.15162，pooled **1.15098×**。这是受外部数值 oracle 约束的同范围约 15.1% 组件收益，不是位确定性或完整 KDA 资格。当前 disposition：保留有界 NVIDIA 任务分支，**No promotion** 到共享 pass 或平台；原始 CAKE 有更深的生产/计算/epilogue 重叠和片上因子准备，当前六 warp 两槽路径仍有约 2.46 ms，且逐 token BF16 舍入、原位别名与六形状未验收。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -148,6 +156,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | carried barrier 生命周期 | carried TMEM 与 producer/consumer 的 phase、读先于写保持原分析 | H64/256 的两条单槽 TMA/MMA 流水在 loop 两端初始化/失效，块内按 parity 等待 | `test_native_carried_barrier_reuse.py`；两 chunk 控制仍保留旧生命周期；B300 全输出设备证明及配对 CUPTI 见 §2.11。 |
 | 无读者的末态写回 | 保持 `BUFFER_ESCAPES_LOOP`，循环出口 register 值不能暗中越界 | 仅对 H64/256、每轮同址完整覆盖的最终 STORE 发射最后一次写回 | `test_native_terminal_state_store.py`；内部 reader、错误地址与两 chunk 控制均不准入；设备及配对证据见 §2.12。 |
 | 两槽 B 预取 | Pipeline.stages、四个 shared B view 和 RangeOptions 同时声明两槽，carried state 顺序不变 | 在 copy warp 中预取 `j+1`，MMA 消费 `j`；槽复用等 free、消费等 ready，各自用两轮 parity | `test_native_kda_two_stage_prefetch.py`；三槽和两条 Pipeline stage 不匹配均由 `NATIVE_CARRIED_PIPELINE_STAGES` 拒绝；设备及配对证据见 §2.15。 |
+| 分角色 carried loop | P shared stage 唯一读者为 solve，Role 与 `p_ready` producer 明示 MMA warp，原 carried state 顺序不变 | copy/MMA/compute 各自推进块循环，以 ready/free、P、U、state barrier 同步，块内无 CTA 会合 | `test_native_kda_role_pipeline.py`；额外 P 读者由 `NATIVE_ROLE_PIPELINE_DOMAIN` 拒绝；重复启动与逐轮 oracle 见 §2.17。 |
 
 ### 一次没有推广的 lowering 尝试
 
@@ -170,6 +179,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `5ac55ad4` / `gpuq-4548098ec2d4`、`gpuq-5dee2913c2e2` | 最终状态只在第 256 个 chunk 写回；适用 CPU 合同 2,680 passed、Corpus Gate 179/179，全输出/状态设备检查通过；同 GPU 配对组件比 2.40637×、中位数 2,999.349 µs，AOT 255 寄存器、0 stack/spill | 原位状态别名、真实准备值、逐 token BF16 舍入、packed/六形状、相对 CAKE 的完整配对性能 |
 | `671b2a90` / `gpuq-a64939fffae5`、`gpuq-8e520f65c628` | 两槽 B 预取，适用 CPU 合同 2,683 passed、Corpus Gate 179/179，H64/256 全输出及状态设备通过；同 GPU 配对组件比 1.05729×、中位数 2,835.220 µs，AOT 255 寄存器、0 spill | 完整角色级流水、原位别名、真实准备值、逐 token BF16 舍入、六形状及 CAKE 配对性能 |
 | 原始 CAKE B300 端口 M64/M128 / `gpuq-a9ad7fc9ec06` | 同一 H64/T8192 输入上两版均通过独立 Workload oracle、输出/状态逐位相同；同 GPU 配对 M64 456.578 µs、M128 493.923 µs | 我们的 native M64 资格、任何 Compiler 收益或六形状迁移 |
+| `db979435` / `gpuq-77d31d7028e7`、`gpuq-d399ee7aa697` | copy/MMA/compute 独立循环；适用 CPU 合同 2,686 passed、Corpus Gate 179/179；合成 H64 全输出/状态及十份配对快照均通过独立数值 oracle；同 GPU 组件比 1.15098×、中位数 2,462.161 µs，AOT 255 寄存器、0 spill | 位确定性、高保留及逐 token BF16、原位别名、真实准备值、六形状及相对 CAKE 的完整配对性能 |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
@@ -182,7 +192,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
 | `state_after_update @ query` 与输出耦合 | `61892f81` 已在 B300 固定 H64/T8192 合成输入上通过公开 V/beta、token-major 输出及最终状态，AOT 0 spill | 真实准备值、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
-| 跨 chunk 流水与最终状态写回 | `92994711` barrier phase 复用获约 5.3% 配对收益；`5ac55ad4` 去掉 255 次死写回后组件中位数降到 2,999.349 µs；`671b2a90` 两槽 B 超前预取又降到 2,835.220 µs；输出 sink 消融最多降约 151 µs | 优先把 copy/MMA/compute/epilogue 分角色持续执行，再让准备值在片上衔接；验证原位别名和完整语义，以相同正确性/计时范围判断后续收益。 |
+| 跨 chunk 流水与最终状态写回 | `92994711` barrier phase 复用获约 5.3% 配对收益；`5ac55ad4` 去掉死写回降到 2,999.349 µs；`671b2a90` 两槽 B 超前预取降到 2,835.220 µs；`db979435` 分角色循环再降到 2,462.161 µs；输出 sink 消融最多降约 151 µs | 优先让 epilogue 与下一块计算重叠、准备值片上衔接，同时调查位差来源；验证原位别名和完整语义，以相同正确性/计时范围判断后续收益。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 
 1. 把准备阶段的 base/query、P、beta、prefix、final-key 接到同一状态/输出路径，明确哪些值留片上、哪些必须物化；核算额外 CTA、TMA 和 global traffic。原先七输出准备的 389.507 µs 是组件成本，不可与完整 CAKE 456 µs 非配对相减后宣称剩余预算。

@@ -1,0 +1,36 @@
+sequenceDiagram
+  autonumber
+  participant Copy as copy warp 5
+  participant B as 两槽 B ready/free
+  participant MMA as MMA warp 4
+  participant P as P ready
+  participant U as U ready
+  participant Compute as compute warps 0–3
+  participant State as BF16 TMEM state
+  Note over Copy,State: 三条角色循环同时存在；初始化和最终排空才做 CTA 会合
+  par copy 角色循环
+    loop chunk j = 0..255
+      Copy->>B: 等待槽 j%2 的上轮 free
+      Copy->>B: TMA 装 base/query/correction/output B(j)
+    end
+  and MMA 角色循环
+    loop chunk j = 0..255
+      MMA->>State: 等当前 carried state phase
+      MMA->>B: 等 base ready，槽 phase=(j//2)%2
+      MMA->>B: 消费 base/query B，发布 free
+      MMA->>Compute: 发布 base/query 完成
+      MMA->>P: 装 P(j) 到 shared，发布 p_ready
+      MMA->>U: 等 U(j) 的 BF16 TMEM 发布
+      MMA->>B: 等 correction ready，消费并发布 free
+      MMA->>Compute: 发布 correction/output 完成
+    end
+  and compute 角色循环
+    loop chunk j = 0..255
+      Compute->>Compute: 读 base、V/beta，形成 RHS
+      Compute->>P: 等 p_ready 后做顺序 solve
+      Compute->>U: 发布 BF16 U(j)
+      Compute->>Compute: 输出、旧状态合并及 BF16 块末舍入
+      Compute->>State: 发布下一 chunk state
+    end
+  end
+  Note over Copy,State: 末块写最终状态；两槽和完成 barrier 排空后失效
