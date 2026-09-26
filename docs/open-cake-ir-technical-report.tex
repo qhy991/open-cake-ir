@@ -1471,6 +1471,18 @@ backend 原有的两槽 carried Pipeline 检查是当时唯一的准入缺口。
 已保留原记录并由独立分析明确两臂提交。这个约 5.7\% 的组件收益
 不足以追上 CAKE，下一种 lowering 需要分角色持续执行的 producer、MMA、
 compute、epilogue 循环，而不能只把 B 输入超前一个 chunk。
+
+\paragraph{原始 CAKE 在 B300 的 M64/M128 几何控制。}
+冻结的原始 CUDA 导出对同一 H64/T8192 输入还可运行 M128 变体。
+两条 B300 端口只修改了目标架构检查；M64 以每 head 两个 CTA 发射，
+M128 以每 head 一个 CTA 发射。M128 在设备释放后通过独立外部 oracle 的
+全部 67,108,864 个输出及 1,048,576 个原位状态元素检查，且与 M64
+抓取逐位相同。同一独占 GPU 上五轮交替、每臂每轮 25 个冷 L2 CUPTI
+样本得到 M64 pooled \(456.578\,\mu\mathrm{s}\)、M128
+\(493.923\,\mu\mathrm{s}\)，后者慢 \(1.08179\times\)；
+两臂每轮结果再次逐位通过。CTA 数、shared 用量和发射代码同时不同，
+故不能只归因于 tile 值；这项对照也不是我们当前 native Compiler 的
+性能。它说明直接改成每 head 一个 M128 CTA 无法在此形状超过原始 CAKE。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
