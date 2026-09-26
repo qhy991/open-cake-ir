@@ -6,6 +6,7 @@ from array import array
 import json
 import os
 from pathlib import Path
+import struct
 import subprocess
 import sys
 import time
@@ -49,15 +50,54 @@ def require_root(root:Path)->dict:
     return m
 
 
+def tile_waves_from_plan(plan:dict)->list[list[int]]:
+    if (plan.get('schema_version')!=2
+            or plan.get('geometry')!={
+                'world_size':R,'tokens_per_rank':T,'routes_per_token':K,
+                'experts':E,'experts_per_rank':E//R,'tile_rows':ROWS,
+                'source_chunk_tokens':128,'early_flush_min_rows':64}
+            or len(plan.get('tasks',[]))!=R*TILES):
+        raise ValueError('threshold-64 tile plan geometry differs')
+    result=[]
+    for owner in range(R):
+        counts=[0,0,0,0]
+        last_wave=-1
+        tasks=[task for task in plan['tasks'] if task['owner_rank']==owner]
+        if len(tasks)!=TILES:
+            raise ValueError(f'owner {owner} tile-plan extent differs')
+        for task in tasks:
+            publication=task['published_after']
+            if publication=='all_dispatch_done':
+                wave=3
+            elif (isinstance(publication,list) and len(publication)==2
+                    and publication[0]=='wave_end'
+                    and type(publication[1]) is int
+                    and 0<=publication[1]<3):
+                wave=publication[1]
+            else:
+                raise ValueError(f'owner {owner} publication form differs')
+            if wave<last_wave:
+                raise ValueError(f'owner {owner} tile publication order differs')
+            counts[wave]+=1
+            last_wave=wave
+        if counts[0]!=0 or counts[3]!=E//R or sum(counts)!=TILES:
+            raise ValueError(f'owner {owner} temporal tile boundary differs')
+        result.append(counts)
+    return result
+
+
 def prepare(root:Path,bin_root:Path,prepared:Path,bridge:Path)->None:
     if os.environ.get('GPUQ_JOB_ID'):
         raise RuntimeError('live chain preparation must be outside GPU lease')
     m=require_root(root)
-    if (root/'case.json').exists() or (root/'device_outputs').exists():
+    if ((root/'case.json').exists() or (root/'device_outputs').exists()
+            or any((root/f'wave_counts-rank{rank}.i32').exists()
+                   for rank in range(R))):
         raise ValueError('live chain inputs must be create-only')
     bin_report=doc(bin_root/'report.json')
     bridge_report=doc(bridge/'report.json')
     p=doc(prepared/'case.json')
+    tile_waves=tile_waves_from_plan(doc(Path(p['plan']).resolve(strict=True)))
     if (not bin_report.get('passed') or not bridge_report.get('passed')
             or bridge_report.get('routes')!=ROUTES
             or p.get('geometry')!={'R':R,'T':T,'K':K,'E':E,'H':H,
@@ -99,6 +139,9 @@ def prepare(root:Path,bin_root:Path,prepared:Path,bridge:Path)->None:
         owner_rows.append(count)
     if any(flag!=1 for flag in seen) or owner_rows!=[4039,4196,4016,4133]:
         raise ValueError('live chain plan does not cover all model routes')
+    for owner,waves in enumerate(tile_waves):
+        (root/f'wave_counts-rank{owner}.i32').write_bytes(
+            struct.pack('<4i',*waves))
     (root/'device_outputs').mkdir()
     for owner in range(R):(root/'device_outputs'/f'rank{owner}').mkdir()
     (root/'case.json').write_text(json.dumps({
@@ -109,6 +152,7 @@ def prepare(root:Path,bin_root:Path,prepared:Path,bridge:Path)->None:
         'bridge_root':str(bridge.resolve()),
         'geometry':{'R':R,'T':T,'K':K,'E':E,'H':H,'tile_rows':ROWS},
         'owner_routes':owner_rows,'logical_tiles_per_owner':TILES,
+        'tile_waves_by_owner':tile_waves,
         'stage_work_units_per_owner':11776,
         'communication_ctas':m['communication_ctas'],
         'steal_budget_per_owner':m['steal_budget'],
@@ -124,6 +168,10 @@ def build(root:Path)->None:
             or c.get('combine_compiler_commit')!=m['combine_compiler_commit']
             or c.get('owner_routes')!=[4039,4196,4016,4133]
             or c.get('stage_work_units_per_owner')!=11776
+            or len(c.get('tile_waves_by_owner',[]))!=R
+            or any((root/f'wave_counts-rank{owner}.i32').read_bytes()
+                   !=struct.pack('<4i',*c['tile_waves_by_owner'][owner])
+                   for owner in range(R))
             or (c.get('communication_ctas'),c.get('steal_budget_per_owner'))
                !=(m['communication_ctas'],m['steal_budget'])):
         raise ValueError('live chain source or plan binding differs')
@@ -216,6 +264,7 @@ def verify(root:Path)->None:
             or device['target']!='sm_103a'
             or device['valid_routes_by_owner']!=c['owner_routes']
             or device['bin_rows_by_owner']!=c['owner_routes']
+            or device['tile_waves_by_owner']!=c['tile_waves_by_owner']
             or device['communication_ctas']!=c['communication_ctas']
             or device['steal_budget']!=c['steal_budget_per_owner']
             or len(device['stolen_by_owner'])!=R
@@ -272,6 +321,7 @@ def verify(root:Path)->None:
             'steal_budget_per_owner':c['steal_budget_per_owner'],
             'actual_stolen_by_owner':device['stolen_by_owner'],
             'gpu_tile_inputs_bitwise_equal_to_checked_plan':True,
+            'tile_waves_by_owner':c['tile_waves_by_owner'],
             'route_contribution_bit_mismatches':contribution_mismatch,
             'failing_elements':int(np.count_nonzero(failing)),
             'per_rank_failing_elements':[

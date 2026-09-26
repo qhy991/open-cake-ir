@@ -491,8 +491,32 @@ int main(int argc,char** argv) {
       distinct[expert]=true;
     }
   }
-  const Case scenario={"controlled_ep4",148,communication_control,steal_control,
-      {{0,408,360,768},{0,2176,1920,4096},{0,544,480,1024}}};
+  Case scenario[R]{};
+  int wave_counts[R][kWaves]{};
+  for (int rank=0;rank<R;++rank) {
+    char filename[64];
+    std::snprintf(filename,sizeof(filename),"wave_counts-rank%d.i32",rank);
+    std::vector<unsigned char> raw(kWaves*sizeof(int));
+    if (!read_exact(argv[1],filename,raw)) return 10;
+    std::memcpy(wave_counts[rank],raw.data(),raw.size());
+    int total=0;
+    for (int wave=0;wave<kWaves;++wave) {
+      if (wave_counts[rank][wave]<0 || wave_counts[rank][wave]>kLogicalTiles)
+        return 10;
+      total+=wave_counts[rank][wave];
+    }
+    if (total!=kLogicalTiles || wave_counts[rank][0]!=0 ||
+        wave_counts[rank][3]!=kExperts) return 10;
+    scenario[rank].name="controlled_ep4";
+    scenario[rank].grid=148;
+    scenario[rank].communication=communication_control;
+    scenario[rank].budget=steal_control;
+    for (int wave=0;wave<kWaves;++wave) {
+      scenario[rank].tasks[0][wave]=wave_counts[rank][wave]*kUpGateTasksPerTile;
+      scenario[rank].tasks[1][wave]=wave_counts[rank][wave]*kActivationTasksPerTile;
+      scenario[rank].tasks[2][wave]=wave_counts[rank][wave]*kDownTasksPerTile;
+    }
+  }
   RankState state[R]{};
   int sm_counts[R]{},occupancy[R]{};
   char device_names[R][256]{};
@@ -627,7 +651,8 @@ int main(int argc,char** argv) {
                          route_weights.data()+size_t(rank)*LOCAL_ROUTES*4,
                          LOCAL_ROUTES*4,cudaMemcpyHostToDevice),
               "route weights H2D") ||
-        check(cudaMemcpy(s.tasks,scenario.tasks,sizeof(scenario.tasks),
+        check(cudaMemcpy(s.tasks,scenario[rank].tasks,
+                         sizeof(scenario[rank].tasks),
                          cudaMemcpyHostToDevice),"worker task plan H2D"))
       return 19;
   }
@@ -720,7 +745,7 @@ int main(int argc,char** argv) {
     gather_tiles<<<dim3(kLogicalTiles,kRows),256>>>(state[rank].bin_params);
     if (check(cudaGetLastError(),"gather launch")) return 29;
   }
-  int communication=scenario.communication,budget=scenario.budget;
+  int communication=communication_control,budget=steal_control;
   for (int rank=0;rank<R;++rank) {
     if (check(cudaSetDevice(rank),"select Cake worker rank")) return 30;
     RankState& s=state[rank];
@@ -731,7 +756,8 @@ int main(int argc,char** argv) {
                   &s.down,&communication,&budget};
     if (check(cudaLaunchCooperativeKernel(
              reinterpret_cast<const void*>(tile_schedule_probe),
-             dim3(scenario.grid),dim3(kThreads),args,kDynamicShared,nullptr),
+             dim3(scenario[rank].grid),dim3(kThreads),args,
+             kDynamicShared,nullptr),
              "Cake worker launch")) return 31;
   }
   for (int rank=0;rank<R;++rank) {
@@ -814,19 +840,20 @@ int main(int argc,char** argv) {
         if (completed[stage*kLogicalTiles+tile]!=units) return 43;
       for (int wave=0;wave<kWaves;++wave) {
         int index=stage*kWaves+wave;
-        if (processed[index]!=scenario.tasks[stage][wave]) return 44;
+        if (processed[index]!=scenario[rank].tasks[stage][wave]) return 44;
         stolen_by_rank[rank]+=stolen[index];
-        for (int task=0;task<scenario.tasks[stage][wave];++task) {
+        for (int task=0;task<scenario[rank].tasks[stage][wave];++task) {
           int who=owner_ids[index*kMaxTasks+task];
-          if (who<0 || who>=scenario.grid) return 45;
+          if (who<0 || who>=scenario[rank].grid) return 45;
         }
       }
     }
     for (int wave=0;wave<kWaves;++wave)
-      if (dispatched[wave]!=scenario.communication) return 46;
-    if (stolen_by_rank[rank]<0 || stolen_by_rank[rank]>scenario.budget ||
+      if (dispatched[wave]!=scenario[rank].communication) return 46;
+    if (stolen_by_rank[rank]<0 ||
+        stolen_by_rank[rank]>scenario[rank].budget ||
         permits!=stolen_by_rank[rank] ||
-        (scenario.communication==148 &&
+        (scenario[rank].communication==148 &&
          stolen_by_rank[rank]!=kTotalStageTasks))
       return 47;
     std::vector<unsigned char> tile_input(TILE_BYTES),down(kOutputBytes);
@@ -866,8 +893,9 @@ int main(int argc,char** argv) {
                       "\"active_blocks_per_sm\":[%d,%d,%d,%d],"
                       "\"overlap_flags\":[[%d,%d],[%d,%d],[%d,%d],[%d,%d]],"
                       "\"no_interphase_host_sync\":true,"
-                      "\"device_names\":[\"%s\",\"%s\",\"%s\",\"%s\"]}\n",
-              scenario.communication,scenario.budget,
+                      "\"device_names\":[\"%s\",\"%s\",\"%s\",\"%s\"],"
+                      "\"tile_waves_by_owner\":[",
+              communication_control,steal_control,
               valid_by_owner[0],valid_by_owner[1],valid_by_owner[2],
               valid_by_owner[3],bin_rows_by_rank[0],bin_rows_by_rank[1],
               bin_rows_by_rank[2],bin_rows_by_rank[3],
@@ -879,6 +907,13 @@ int main(int argc,char** argv) {
               overlap_by_rank[2][0],overlap_by_rank[2][1],
               overlap_by_rank[3][0],overlap_by_rank[3][1],
               device_names[0],device_names[1],device_names[2],device_names[3]);
+  for (int rank=0;rank<R;++rank) {
+    std::fprintf(report,"%s[",rank ? "," : "");
+    for (int wave=0;wave<kWaves;++wave)
+      std::fprintf(report,"%s%d",wave ? "," : "",wave_counts[rank][wave]);
+    std::fprintf(report,"]");
+  }
+  std::fprintf(report,"]}\n");
   if (std::fclose(report)) return 55;
   for (int rank=0;rank<R;++rank) {
     cudaSetDevice(rank);
