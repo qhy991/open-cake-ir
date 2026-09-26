@@ -81,6 +81,7 @@ _RECORDS = (
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("maca.tanh.f32", ElementwiseOp.TANH, DType.FP32),
+    _elementwise("maca.fma.f32", ElementwiseOp.FMA, DType.FP32),
     # Metal's own named-precision spelling; the fast:: namespace is a different function.
     _elementwise("metal.precise.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("metal.fma.f32", ElementwiseOp.FMA, DType.FP32),
