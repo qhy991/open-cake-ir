@@ -68,6 +68,31 @@ def carried_document() -> dict:
     return value
 
 
+def readable_carried_document() -> dict:
+    value = carried_document()
+    value["buffers"].append({
+        "name": "state_copy", "space": "register", "dtype": "bf16",
+        "shape": [128, 64], "mode": "scratch",
+    })
+    read = {
+        "id": "read_state", "kind": "load", "role": "compute",
+        "reads": ["a_tmem"], "writes": ["state_copy"],
+        "waits": ["state_ready"], "depends_on": ["read_acc"],
+        "parameters": {
+            "movement": "tmem",
+            "source_atom": {"op": "tcgen05.Ld32x32b", "repetition": 16},
+        },
+    }
+    value["operations"].insert(
+        next(i for i, op in enumerate(value["operations"]) if op["id"] == "cast_next"),
+        read,
+    )
+    body = value["tile_loops"][0]["body"]
+    body.insert(body.index("cast_next"), "read_state")
+    value["barriers"][0]["consumers"].append("compute")
+    return value
+
+
 def target(*, admit_store: bool) -> Target:
     value = json.loads((ROOT / "compiler/targets/sm_103a.json").read_text())
     value["operation_kinds"] = [
@@ -172,6 +197,33 @@ class TmemStateContract(unittest.TestCase):
         body = value["tile_loops"][0]["body"]
         body.remove("store_update")
         body.insert(1, "store_update")
+        self.assertIn("CARRIED_TMEM_UPDATE_ORDER", codes(value))
+
+    def test_bf16_read_observes_the_carried_state_phase(self):
+        value = readable_carried_document()
+        jsonschema.Draft202012Validator(schedule_schema()).validate(value)
+        self.assertEqual(codes(value), set())
+        value["operations"][5]["waits"] = []
+        self.assertIn("CARRIED_TMEM_BARRIER", codes(value))
+
+    def test_bf16_read_requires_matching_packed_words_and_dtype(self):
+        value = readable_carried_document()
+        value["operations"][5]["parameters"]["source_atom"]["repetition"] = 64
+        self.assertIn("TMEM_LOAD_BF16_PACKING", codes(value))
+        value = readable_carried_document()
+        next(b for b in value["buffers"] if b["name"] == "state_copy")["dtype"] = "fp32"
+        self.assertIn("TMEM_LOAD_CONTRACT", codes(value))
+        value = readable_carried_document()
+        body = value["tile_loops"][0]["body"]
+        body.remove("read_state")
+        body.insert(body.index("store_update") + 1, "read_state")
+        operations = value["operations"]
+        read = next(op for op in operations if op["id"] == "read_state")
+        operations.remove(read)
+        operations.insert(
+            next(i for i, op in enumerate(operations) if op["id"] == "store_update") + 1,
+            read,
+        )
         self.assertIn("CARRIED_TMEM_UPDATE_ORDER", codes(value))
 
 

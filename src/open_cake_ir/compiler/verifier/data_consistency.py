@@ -1379,14 +1379,23 @@ def _verify_operation_shape(
         dest = buffers.get(operation.writes[0]) if len(operation.writes) == 1 else None
         atom = operation.parameters.source_atom
         if (source is None or dest is None or source.space is not MemorySpace.TENSOR
-                or dest.space is not MemorySpace.REGISTER or source.dtype is not DType.FP32
-                or dest.dtype is not DType.FP32 or source.shape != dest.shape):
+                or dest.space is not MemorySpace.REGISTER
+                or source.dtype not in {DType.FP32, DType.BF16}
+                or dest.dtype is not source.dtype or source.shape != dest.shape):
             out.add("TMEM_LOAD_CONTRACT", path,
-                    "tmem load moves one FP32 tensor tile into an identical register tile",
+                    "tmem load moves one FP32 or BF16 tensor tile into an identical register tile",
                     FindingCategory.DATA_CONSISTENCY)
         if atom is None or atom.op != "tcgen05.Ld32x32b" or atom.repetition not in (1,2,4,8,16,32,64,128):
             out.add("TMEM_LOAD_ATOM", f"{path}.parameters.source_atom",
                     "tmem load requires an explicit 32x32b power-of-two repetition in [1,128]",
+                    FindingCategory.HARDWARE_CONFORMANCE)
+        if (source is not None and source.space is MemorySpace.TENSOR
+                and source.dtype is DType.BF16 and len(source.shape) == 2
+                and atom is not None and atom.repetition in (1,2,4,8,16,32,64,128)
+                and source.shape[1] % (2 * atom.repetition)):
+            out.add("TMEM_LOAD_BF16_PACKING", f"{path}.parameters.source_atom",
+                    "each 32-bit TMEM word packs two BF16 columns; the row width "
+                    "must contain whole copy-atom repetitions",
                     FindingCategory.HARDWARE_CONFORMANCE)
     if operation.kind is OperationKind.ATOMIC_RMW:
         if not _fits_int32(operation.parameters.value):

@@ -412,6 +412,18 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
                 # Same role: program order is real ordering. It must still run forwards.
                 if order.get(producer.op_id, -1) > index:
                     buffer = buffers.get(name)
+                    carried = carried_pairs.get(name)
+                    carried_loop = schedule.tile_loop(carried.loop) if carried is not None else None
+                    if (
+                        carried is not None
+                        and carried_loop is not None
+                        and producer.op_id == carried.updater
+                        and operation.op_id in carried_loop.body
+                    ):
+                        # The carried-TMEM proof owns the phase: this read sees the
+                        # initializer in trip zero and the prior trip's update later.
+                        # The update is deliberately later in the lexical body.
+                        continue
                     if (
                         buffer is not None
                         and buffer.mode is BufferMode.STATE
