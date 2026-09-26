@@ -2,12 +2,36 @@
 
 from ..diagnostics import Finding
 from ..ir import BufferMode, DType, MemorySpace, OperationKind, Schedule, TileLoop
+from ..ir.instruction_contracts import COMPENSATED_FP8_MMA
 from ..target import Target
 from .common import refusal
 
 
 _BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
-COMPENSATED_FP8_MMA = "maca.simt.fp8e4m3_compensated_fp32"
+
+
+def emit_compensated_fp8_mma(line, *, left: str, right: str, output: str, pad: str) -> None:
+    """Emit the measured 2x64x64 SIMT body; no native FP8 dot is implied."""
+    line(f"{pad}_maca_fp8_ks = tl.arange(0, 64)")
+    line(f"{pad}_maca_fp8_left_values = {left}.to(tl.float32)")
+    line(f"{pad}_maca_fp8_right_tile = {right}.to(tl.float32)")
+    line(f"{pad}_maca_fp8_total = tl.zeros((2, 64), tl.float32)")
+    line(f"{pad}_maca_fp8_correction = tl.zeros((2, 64), tl.float32)")
+    line(f"{pad}for _maca_fp8_k in tl.range(0, 64):")
+    body = pad + "    "
+    line(f"{body}_maca_fp8_left = tl.sum(tl.where("
+         "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_left_values, 0.0), axis=1)")
+    line(f"{body}_maca_fp8_right = tl.sum(tl.where("
+         "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_right_tile, 0.0), axis=1)")
+    line(f"{body}_maca_fp8_product = _maca_fp8_left[:, None] * _maca_fp8_right[None, :]")
+    line(f"{body}_maca_fp8_updated = _maca_fp8_total + _maca_fp8_product")
+    line(f"{body}_maca_fp8_error = tl.where("
+         "tl.abs(_maca_fp8_total) >= tl.abs(_maca_fp8_product), "
+         "(_maca_fp8_total - _maca_fp8_updated) + _maca_fp8_product, "
+         "(_maca_fp8_product - _maca_fp8_updated) + _maca_fp8_total)")
+    line(f"{body}_maca_fp8_correction = _maca_fp8_correction + _maca_fp8_error")
+    line(f"{body}_maca_fp8_total = _maca_fp8_updated")
+    line(f"{pad}{output} = _maca_fp8_total + _maca_fp8_correction", declares=(output,))
 
 
 def _full_unroll_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:

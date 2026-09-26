@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .triton_selection import top_k_selection_structure
-from .metax import COMPENSATED_FP8_MMA
+from .metax import emit_compensated_fp8_mma
 from .common import PythonNamespace, emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
@@ -39,7 +39,7 @@ from ..ir import (
     Schedule,
     TileLoop,
 )
-from ..ir.instruction_contracts import ContractKind, contracts_of
+from ..ir.instruction_contracts import COMPENSATED_FP8_MMA, ContractKind, contracts_of
 from ..target import CodeObject, Target
 from ..diagnostics import Finding
 
@@ -1815,7 +1815,8 @@ class _TritonEmitter:
                      "the compensated FP8 SIMT body requires a MACA code object")
             _require(len(operation.reads) == 2 and len(tiles) == 2,
                      "the compensated FP8 SIMT body takes two staged operands")
-            self._emit_maca_compensated_fp8_mma(operation, tiles, pad)
+            emit_compensated_fp8_mma(self.line, left=tiles[0], right=tiles[1],
+                                     output=operation.writes[0], pad=pad)
             return
         if contract == "triton.dot.fp8e4m3_block_scale_fp32":
             _require(
@@ -1914,30 +1915,6 @@ class _TritonEmitter:
             f"{tiles[0]}, tl.trans({tiles[1]}){precision})",
             declares=(operation.writes[0],),
         )
-
-    def _emit_maca_compensated_fp8_mma(self, operation, tiles: list[str], pad: str) -> None:
-        """The measured 2x64x64 SIMT route, with no native FP8 dot claim."""
-        self.line(f"{pad}_maca_fp8_ks = tl.arange(0, 64)")
-        self.line(f"{pad}_maca_fp8_left_values = {tiles[0]}.to(tl.float32)")
-        self.line(f"{pad}_maca_fp8_right_tile = {tiles[1]}.to(tl.float32)")
-        self.line(f"{pad}_maca_fp8_total = tl.zeros((2, 64), tl.float32)")
-        self.line(f"{pad}_maca_fp8_correction = tl.zeros((2, 64), tl.float32)")
-        self.line(f"{pad}for _maca_fp8_k in tl.range(0, 64):")
-        body = pad + "    "
-        self.line(f"{body}_maca_fp8_left = tl.sum(tl.where("
-                  "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_left_values, 0.0), axis=1)")
-        self.line(f"{body}_maca_fp8_right = tl.sum(tl.where("
-                  "_maca_fp8_ks[None, :] == _maca_fp8_k, _maca_fp8_right_tile, 0.0), axis=1)")
-        self.line(f"{body}_maca_fp8_product = _maca_fp8_left[:, None] * _maca_fp8_right[None, :]")
-        self.line(f"{body}_maca_fp8_updated = _maca_fp8_total + _maca_fp8_product")
-        self.line(f"{body}_maca_fp8_error = tl.where("
-                  "tl.abs(_maca_fp8_total) >= tl.abs(_maca_fp8_product), "
-                  "(_maca_fp8_total - _maca_fp8_updated) + _maca_fp8_product, "
-                  "(_maca_fp8_product - _maca_fp8_updated) + _maca_fp8_total)")
-        self.line(f"{body}_maca_fp8_correction = _maca_fp8_correction + _maca_fp8_error")
-        self.line(f"{body}_maca_fp8_total = _maca_fp8_updated")
-        self.line(f"{pad}{operation.writes[0]} = _maca_fp8_total + _maca_fp8_correction",
-                  declares=(operation.writes[0],))
 
     def _accumulating(self, operation) -> bool:
         """Whether this contraction sums across the loop it sits in."""

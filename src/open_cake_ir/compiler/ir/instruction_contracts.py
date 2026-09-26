@@ -63,6 +63,9 @@ def _sync(name: str, realizes: BarrierMechanism | None) -> InstructionContract:
     return InstructionContract(name, ContractKind.SYNCHRONIZATION, realizes=realizes)
 
 
+COMPENSATED_FP8_MMA = "maca.simt.fp8e4m3_compensated_fp32"
+
+
 _RECORDS = (
     # NVIDIA tensor-core atoms that place their operands.
     _mma("tcgen05.mma.cta_group::1.kind::f16", {DType.BF16, DType.FP16}, places=True),
@@ -79,7 +82,7 @@ _RECORDS = (
     _mma("triton.dot.fp8e4m3_fp32", {DType.FP8_E4M3}),
     # C550's measured software route: decoded FP32 products with compensated
     # accumulation. It is deliberately not named as a native FP8 dot atom.
-    _mma("maca.simt.fp8e4m3_compensated_fp32", {DType.FP8_E4M3}),
+    _mma(COMPENSATED_FP8_MMA, {DType.FP8_E4M3}),
     InstructionContract("triton.atomic_add.i32.relaxed.gpu", ContractKind.ATOMIC),
     _elementwise("ocml.tanh.f32", ElementwiseOp.TANH, DType.FP32),
     _elementwise("libdevice.tanh.f32", ElementwiseOp.TANH, DType.FP32),

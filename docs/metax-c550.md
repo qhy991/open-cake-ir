@@ -284,7 +284,9 @@ E5M2 或错误宽度均在 dispatch 前拒绝。Compiler 允许 E4M3FN 的 load/
 `MACA_FP8_CAST_UNQUALIFIED` 拒绝逆向编码和 FP8→BF16 等未验收转换；
 `MACA_FP8_SCALAR_CAST_UNSUPPORTED` 在外部编译前拒绝当前 SDK 会断言的
 单值转换。直接 FP8 算术由 `MACA_FP8_OPERATION_UNQUALIFIED` 拒绝，
-FP8 MMA 契约仍未在 Target 声明。存储准入不改变这几个边界。
+直接 FP8 dot 契约仍未在 Target 声明。唯一新增的 FP8 矩阵路线是下述
+`maca.simt.fp8e4m3_compensated_fp32`，先解码再做 FP32 SIMT 补偿累加；
+存储准入本身不改变算术边界。
 
 冻结执行源码 `6d997c3d` 的独立诊断直接传输原始 bytes，再 view 为真实 FN tensor，
 launch 前后先 view uint8 再复制到 CPU，避免数值转换改变 NaN 编码或负零。
@@ -306,6 +308,18 @@ launch 前后先 view uint8 再复制到 CPU，避免数值转换改变 NaN 编�
   Neumaier 补偿累加。原五个 case 的 20480 个输出 word 全部与参考相等，输入 bytes
   未改变；五次 native call，21 registers/thread，shared/local 为 0。
   这是精度 control，不是 FP16 dot、native FP8 MMA 或性能替代，也不改判前两次失败。
+
+后继 Cake 以 `2×64×64` staged tile 明示这条 SIMT 补偿机制，Target 仅准入固定的
+`64×64` 两个 E4M3FN 输入、FP32 输出、两行 program map、四执行组和无跨循环累积。
+源码 `a0f16157` 的 kernel-only 投影在 C550-1 Triton 3.1 与 C550-2 Triton 3.6
+都生成 `mcfatbin`，TTIR/TTGIR 均无 `tt.dot`；后继 `878afb61` 收窄准入并把
+MetaX 发射体移入平台模块，投影 kernel 的字节与 `a0f16157` 相同。
+C550-2 单卡 broker job `maca-8b89488ad3be` 对旧五组冻结输入的全部 20480 个输出
+逐 bit 匹配原参考，输入字节未改变。源码、两版编译产物、完整输入/输出和收据保存在
+checkout 外的 `open-cake-ir-evidence/metax-fp8-resident-simt-m2-20260926/`。
+设备作业 JIT 了 Cake 生成源码，并未加载离线 bundle；Triton 3.1 只有离线编译，
+没有该实现的设备数值结果。这是有界软件 lowering 的正确性诊断，尚不是注册
+Workload Evaluation、原生 FP8 矩阵指令或性能收益。
 
 调查还发现当前 SDK 对标量 FP8→FP32 的最小程序触发 `RankedTensorType` 内部断言。
 补偿 control 先按 tensor 转换，再在 FP32 上选择元素，才通过编译；这没有修复或

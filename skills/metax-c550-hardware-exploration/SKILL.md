@@ -55,6 +55,7 @@ For a new rule, retain a positive Schedule and a counterexample naming the rule 
 For a rounding-sensitive instruction, include an input that distinguishes it from a composition of older operations. Compare complete output bits with an independent oracle; a `math.fma` node in TTIR/TTGIR establishes compiler intent, while the device result tests its realized numerics.
 
 E4M3FN load/store or decoding evidence does not admit direct FP8 `tl.dot`. The captured 3.1 route and a later 3.6 C550-2 offline probe both failed before a native artifact. Keep the Target's direct FP8 dot contract absent, retain the exact compiler diagnostic, and treat any explicit FP8-to-BF16/FP32 matrix path as a separate numerical mechanism with its own oracle and precision boundary.
+The admitted `maca.simt.fp8e4m3_compensated_fp32` mechanism is such a separate path: a fixed 64x64 case with 2x64x64 staged tiles, FP32 products and compensation. Read its current preflight and [platform evidence](../../docs/metax-c550.md) before using it; its name and receipt do not imply native FP8 matrix execution, other shapes, or a measured speedup.
 
 ## Reference-access and action boundaries
 
