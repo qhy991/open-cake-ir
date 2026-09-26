@@ -355,6 +355,24 @@ A/A 为 `close_null`，28 份原生活动经独立重放通过。它仍缺注册
 `open-cake-ir-evidence/metax-fp8-plain-vs-compensated-20260926/attempt1/`，
 后继处置追加在 [F-2026-09-26-001](../findings/2026-09-26-001-metax-fp8-one-row-capacity.json)。
 
+另一条独立精度探针把已解码的 FP32 乘积只在 K 归约时提升为 FP64，输出仍为 FP32。
+C550-1 Triton 3.1 和 C550-2 Triton 3.6 均离线生成原生 bundle；C550-2 job
+`maca-d52933c85e85` 对旧五组的 20480 个输出及普通求和首个 held-out 失败矩阵的
+4096 个输出均逐 bit 匹配高精度参考，FP8 输入不变。首轮 MCPTI 配对保留原始活动，
+但一个候选 cohort 的 CV 为 **0.052775**，超过预先固定的 **0.05**，不能用作有效速度比。
+同源码的新目录后继 job `maca-fa47df57195d` 的 28 个 cohort 经独立重放，质量门通过；
+10/10 pair 中 FP64 方向较快，pooled median 为 **6.144 / 31.232 µs**
+（FP64 归约／一行 FP32 补偿），A/A 为 `close_null`。这仍是 `local_serialized` 下、
+外部活动未排除的诊断，不是注册 Workload 的正式加速资格。
+
+Cake 目前不能显式声明内部 FP64 累积：在干净源码 `435b1a3c`，
+`lm.cast(products, to='fp64')` 由前端拒绝。两行 FP64 变体只取得 3.1/3.6
+离线编译；唯一设备尝试被 broker 判为 busy，没有执行 kernel。原始收据位于
+checkout 外的 `open-cake-ir-evidence/metax-fp8-fp64-reduction-20260926/`、
+`metax-fp8-fp64-vs-compensated-20260926*/` 与 `metax-fp8-fp64-ir-gap-20260926/`。
+后继 IR/Target 判断和缺失证据见
+[F-2026-09-26-002](../findings/2026-09-26-002-metax-fp64-reduction-capacity.json)。
+
 调查还发现当前 SDK 对标量 FP8→FP32 的最小程序触发 `RankedTensorType` 内部断言。
 补偿 control 先按 tensor 转换，再在 FP32 上选择元素，才通过编译；这没有修复或
 取得标量 FP8 转换的资格。全部原始源码、编译失败、封存参考、NPZ 观察与结果保留于

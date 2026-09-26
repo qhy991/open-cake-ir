@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-26-002 — one-row FP64 K reduction for the fixed C550 FP8 matrix compiles on Triton 3.1/3.6, passes bounded bitwise device checks and has a quality-passed directional MCPTI successor after one retained quality failure. Cake cannot name FP64 accumulation today; a formal Workload and reviewed precision owner are required before a Compiler or performance promotion.
+
 - F-2026-09-26-001 — a bounded C550-2 MCPTI screen favors one-row compensated FP8 over two rows, but Cake's rank-two MMA tile cannot express the one-row input. A faster one-row plain-sum composition passes the frozen cases yet fails additional finite-input precision checks, so neither timing screen qualifies a general replacement; the IR capacity question remains proposed.
 
 - F-2026-09-21-005 — Metal output-column specialization can reduce a valid Schedule below the private-storage cap, but originally required the input already be lowerable; bounded resource-only rescue retains all result gates (capacity, accepted; CPU verification recorded, GPU campaign pending).
