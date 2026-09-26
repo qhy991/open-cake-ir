@@ -1636,12 +1636,16 @@ class _TritonEmitter:
             operands.append(repr(int(parameters.scalar) if integer else parameters.scalar))
         if parameters.op is ElementwiseOp.FMA:
             instruction = parameters.instruction
-            _require(
-                instruction is not None
-                and instruction.contract == "ptx.fma.rn.f32",
-                "the Triton fma body requires ptx.fma.rn.f32",
-            )
-        if parameters.op is ElementwiseOp.TANH:
+            contract = instruction.contract if instruction is not None else None
+            if contract == "ptx.fma.rn.f32" and self.target.code_object is CodeObject.CUBIN:
+                expression = self._ELEMENTWISE_TEXT[ElementwiseOp.FMA].format(
+                    a=operands[0], b=operands[1], c=operands[2]
+                )
+            elif contract == "maca.fma.f32" and self.target.code_object is CodeObject.MCFATBIN:
+                expression = f"tl.fma({operands[0]}, {operands[1]}, {operands[2]})"
+            else:
+                raise EmitError("the Triton fma body requires its target's admitted FMA contract")
+        elif parameters.op is ElementwiseOp.TANH:
             instruction = parameters.instruction
             _require(
                 instruction is not None
