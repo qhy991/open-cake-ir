@@ -55,6 +55,12 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 公开输出的物理方向仍是独立缺口：当前 CTA 按 V 行拥有寄存器，合成输出是 `[chunk,V128,token32]`，而 Workload 以 token 为前轴。`59855c8b` 的合同探针在共享 IR 中显式加入 `transpose` 与 token-major store，通过通用 Verifier 和 Target 检查；当前 native CUDA 后端以 `BACKEND_OPERATION_UNEMITTABLE` 拒绝。不能在 CUDA store 地址里私下转置、却让 Schedule 继续声称旧形状。下一步可以为严格限定的 transpose→store 链实现正确的行线程写回，也可以由另一阶段显式承担转换，但必须同一 Workload 测量额外流量与启动成本。原始 V 输入的 `[token,V]` 到行拥有者 `[V,token]` 也需同等显式映射，尚未完成后端准入。
 
+### 2.6 显式 transpose 后的 token-major 直接写回
+
+`59855c8b` 首先证明共享 IR 的 BF16 `[V128,C32] → [C32,V128]` `transpose` 与对应 global `store` 可通过 Verifier/Target，而原 native emitter 报 `BACKEND_OPERATION_UNEMITTABLE`。`42b78a5d` 仅准入一条紧邻且独占的 transpose→store 链：transpose 在 IR 中保留语义，但物理数据仍由 128 个 V 行线程持有；store 在每个 token 列迭代时，把相邻线程的 V 行值写到连续的 `[chunk,token,V]` 地址。没有额外全局中间张量，也没有让作者暗中接受另一种输出布局。多一个读取者、错误形状/类型/AccessMap 或不在同一 carried scope 都被 `NATIVE_TRANSPOSE_STORE_DOMAIN` 拒绝。
+
+该固定源码通过 Corpus Gate 179/179、适用 CPU 合同 2610 passed，以及 exact-B300 AOT（255 寄存器、0 stack/spill）。broker-shared 三组数值试验各对照 8,192 个 token-major BF16 输出与 16,384 个 V-first BF16 最终状态，全部 0 超差并保持输入不变。这是**合成 RHS** 的物理输出映射资格；原始 V 输入 `[token,V]` 到行拥有者 `[V,token]` 的读取和公开 beta 仍需单独实现，性能更未比较。这个限定也解释了为什么不能把 Triton 的通用 `tl.trans` 或原始 CAKE CUDA 地址拼写直接当作本 backend 的合法性证明。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -78,6 +84,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | `d579e917` / `gpuq-85485a66ccbf` | K128/C32 加 BF16 TMEM 回读和 FP32 prefix 衰减，三组每组 16,384 最终状态全部通过；255 寄存器，0 spill | 逐 token BF16 舍入、高保留输入、完整输出或延迟 |
 | `5bd8e2c1` / CPU-only AOT | 独占四操作的后端融合可编译，仍为 255 寄存器、0 spill | 设备数值、动态成本或任何可推广收益 |
 | `3ce392dc` → `fbafa719` / `gpuq-1b12eb3b5932` | 同一四 MMA 合成输出/状态图，延迟 query TMEM 回读将 stack 112B、spill 108B 降到 0；两版均 255 寄存器。后版三组各 8,192 输出及 16,384 状态均通过 B300 检查 | 公开 V/beta ABI、逐 token BF16 状态舍入、六形状及配对延迟 |
+| `42b78a5d` / `gpuq-7177fb25c220` | 显式 transpose→直接 token-major store；三组各 8,192 输出、16,384 状态在 B300 均通过，AOT 0 spill | 原始 V/beta RHS、完整 Workload 与性能胜出 |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
@@ -88,7 +95,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | Q/K 归一化、decay、beta 与 32-token 耦合 | 独立准备组件在 B300 通过 H64 元素检查；两 MMA 版本单独计时 389.507 µs | 与状态/输出 CTA 融合或有证据地选择物化边界，避免七个中间张量往返。 |
 | `state @ base_key` 与 P 前代入 | K128 两阶段合成状态在 B300 三种输入通过 | 把合成 RHS 换成公开 V、beta、base prediction 的真实组合。 |
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
-| `state_after_update @ query` 与输出耦合 | `fbafa719` 的四 MMA 合成 Schedule 已在 B300 三组输入上通过全部 chunk 输出/最终状态，AOT 0 spill | 公开 V/beta RHS、token-major 输出方向、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
+| `state_after_update @ query` 与输出耦合 | `42b78a5d` 已在 B300 三组输入上通过 token-major chunk 输出及最终状态，AOT 0 spill | 公开 V/beta RHS、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 
