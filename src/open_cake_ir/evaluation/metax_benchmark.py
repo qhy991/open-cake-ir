@@ -176,6 +176,39 @@ class McptiDispatchBenchmark:
             self._reset_record = records[0]
             self._reset_activity = activity
 
+    @staticmethod
+    def _merge_sample_activity(samples):
+        """Merge independent MCPTI sessions without inventing or sorting records.
+
+        MACA occasionally reports two adjacent kernel intervals as overlapping when
+        25 resets and launches are collected in one long callback session. Each sample
+        is already a complete reset+candidate pair, so separate sessions preserve the
+        same device interval and make the session boundary explicit. API and kernel
+        records remain in collector order; ``kernel_records`` owns validation and
+        timestamp ordering after the merge.
+        """
+        if not samples:
+            raise ValueError("MACA sample activity is empty")
+        first = samples[0]
+        merged = {key: first[key] for key in
+                  ("source", "api_version", "dropped_records", "pending_buffers")}
+        merged["records"] = []
+        errors = []
+        dropped = 0
+        pending = 0
+        for sample in samples:
+            if sample.get("source") != merged["source"] or sample.get("api_version") != merged["api_version"]:
+                raise ValueError("MACA sample activity sessions differ")
+            merged["records"].extend(sample.get("records", ()))
+            dropped += int(sample.get("dropped_records", 0))
+            pending += int(sample.get("pending_buffers", 0))
+            errors.extend(sample.get("collection_errors", ()))
+        merged["dropped_records"] = dropped
+        merged["pending_buffers"] = pending
+        if errors:
+            merged["collection_errors"] = errors
+        return merged
+
     def __call__(self, function, *, dry_run_iters, repeat_iters, cold_l2_cache, use_cuda_graph):
         import torch
         self.last_activity = self.non_target_dispatches = self.resolution_us = None
@@ -188,17 +221,36 @@ class McptiDispatchBenchmark:
         for _ in range(dry_run_iters):
             function()
         torch.cuda.synchronize()
-        def cohort():
-            for _ in range(repeat_iters):
+        reset = self._reset_record if cold_l2_cache else None
+        context = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
+            "l2_cache_bytes": self.l2_cache_bytes,
+            "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
+            "reset_record": reset,
+            "reset_activity": self._reset_activity if cold_l2_cache else None}
+        # Collect one reset+candidate pair per MCPTI session. The device launch
+        # sequence is unchanged, but MACA's long-session activity stream can report
+        # adjacent intervals with a small backwards timestamp. Independent sessions
+        # preserve each complete pair and let the same overlap gate inspect the merged
+        # records without dropping or smoothing a sample.
+        sessions = []
+        for _ in range(repeat_iters):
+            def sample():
                 if cold_l2_cache:
                     self._reset.fill_(1.0)
                 function()
-        activity = self._collect(cohort)
-        reset = self._reset_record if cold_l2_cache else None
-        self.last_activity = {"timer": TIMER, "cache_policy": RESET if cold_l2_cache else "none",
-            "l2_cache_bytes": self.l2_cache_bytes, "reset_bytes": 4 * self.l2_cache_bytes if cold_l2_cache else 0,
-            "reset_record": reset, "reset_activity": self._reset_activity if cold_l2_cache else None,
-            "activity": activity}
+            activity = self._collect(sample)
+            # Keep the actual rejected session, plus preceding complete sessions,
+            # before a per-session refusal can end this cohort.
+            self.last_activity = {**context, "activity": activity,
+                "captured_sessions": [*sessions, activity]}
+            # A missing dispatch in one session cannot be supplied by an extra
+            # dispatch in another just because the merged count still matches.
+            dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
+                grid=self.manifest.grid, block=self.manifest.block, repeats=1,
+                reset_record=reset)
+            sessions.append(activity)
+        activity = self._merge_sample_activity(sessions)
+        self.last_activity = {**context, "activity": activity}
         samples = dispatch_samples(activity, kernel_name=self.manifest.kernel_name,
             grid=self.manifest.grid, block=self.manifest.block, repeats=repeat_iters, reset_record=reset)
         self.non_target_dispatches = 0  # Proven above; any extra device activity is refused.

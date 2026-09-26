@@ -2,12 +2,14 @@
 from copy import deepcopy
 from pathlib import Path
 import ctypes
+import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 from open_cake_ir.evaluation.metax_activity import McptiActivity, _ApiActivity, _Kernel8Prefix
-from open_cake_ir.evaluation.metax_benchmark import dispatch_samples, kernel_records
+from open_cake_ir.evaluation.metax_benchmark import McptiDispatchBenchmark, dispatch_samples, kernel_records
 
 
 def kernel(name, correlation, start, *, grid=(8, 1, 1), block=(64, 1, 1)):
@@ -68,6 +70,29 @@ class McptiMeasurements(unittest.TestCase):
                                          repeats=2,reset_record=None),[0.002048]*2)
         with self.assertRaises(ValueError):
             dispatch_samples(raw,kernel_name="cak",grid=(8,1,1),block=(64,1,1),repeats=2,reset_record=None)
+
+    def test_independent_sessions_cannot_cover_each_others_missing_dispatches(self):
+        sessions = [capture(kernel("cake", 1, 1000), kernel("cake", 2, 5000)), capture()]
+        # An aggregate-only count would accept these two kernels as two samples.
+        merged = McptiDispatchBenchmark._merge_sample_activity(sessions)
+        self.assertEqual(dispatch_samples(merged, kernel_name="cake", grid=(8,1,1),
+                                          block=(64,1,1), repeats=2, reset_record=None), [0.002048] * 2)
+        pending = list(sessions)
+        class Collector:
+            def begin(self):
+                pass
+            def finish(self):
+                return pending.pop(0)
+        fake_torch = SimpleNamespace(cuda=SimpleNamespace(synchronize=lambda: None))
+        manifest = SimpleNamespace(kernel_name="cake", grid=(8,1,1), block=(64,1,1))
+        with patch.dict(sys.modules, {"torch": fake_torch}), patch(
+                "open_cake_ir.evaluation.metax_benchmark.activity_collector", return_value=Collector()):
+            benchmark = McptiDispatchBenchmark(manifest, activity_library="fixture", l2_cache_bytes=4)
+            with self.assertRaisesRegex(ValueError, "observed dispatch count"):
+                benchmark(lambda: None, dry_run_iters=1, repeat_iters=2,
+                          cold_l2_cache=False, use_cuda_graph=False)
+            self.assertEqual(benchmark.last_activity["activity"], sessions[0])
+            self.assertEqual(benchmark.last_activity["captured_sessions"], sessions[:1])
 
     def test_overlap_diagnostic_keeps_the_adjacent_interval_boundaries(self):
         raw = capture(kernel("cake", 1, 1000), kernel("cake", 2, 2500))
