@@ -268,7 +268,23 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    rank's profiled timeline; earlier ranks subsequently waited for return
    flags from the last rank. Nsight profiling, one sample and no L2 reset
    make these diagnostic intervals unsuitable for a latency/speedup claim.
-   They motivate a controlled spatial-`c`/steal-budget sweep next.
+   A controlled spatial development sweep (`cake-weave-ep4-spatial-sweep-
+   4900b162/`) then held the model, routes, tile plan, Cake kernels and
+   source commit fixed across `(c,budget)=(1,0),(74,5888),(147,5888),
+   (148,11776)`. All four passed the full oracle. Actual steals at `c=74`
+   were 4,654–5,063, demonstrating that budget is a cap, not a target; an
+   earlier host check that required equality was corrected in `4900b162`.
+   A structural bound on non-steal work per ordinary compute CTA is about
+   81, 80, 5,888 and 0 work units respectively. The four single-run Nsight
+   FFN activity medians were 2.711, 2.862, 218.787 and 3.875 ms. A further
+   `c=147` run changed only the budget to 11,776; its generated CUDA source
+   was byte-equal to the half-budget case, actual steals rose to 11,643–
+   11,662 and the single-run FFN activity median was 3.810 ms, again with a
+   passing oracle. This diagnoses steal-cap tail work on the tested plan;
+   it is **not** a qualified speedup or general plan ranking. Promotion
+   disposition: no Compiler pass or automatic budget rule yet. The exact
+   residual-work bound belongs in a future Lab pre-GPU filter once the
+   complete-layer timer and broader routing confirm its decision value.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
