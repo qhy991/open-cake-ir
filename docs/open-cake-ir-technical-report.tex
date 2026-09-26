@@ -1341,8 +1341,21 @@ BF16 输出和 16,384 个 BF16 最终状态，全部 0 超差，输入未改写�
 进一步用显式 transpose→store 将行拥有的 BF16 tile 直接写为
 \code{[chunk,token,V]}，没有额外全局转置缓冲；精确 B300 AOT 保持
 255 寄存器、0 spill，3 组输入的输出与状态也全部通过。
-该原型的 RHS 仍为合成输入，尚未接入公开 V/beta、逐 token BF16
-状态舍入或完整六形状；也没有与原始 CAKE 的同作业计时。
+随后把公开 BF16 V 的 \code{[chunk,token,V]} 读取显式转为按 V 行拥有的
+寄存器视图，并把公开 FP32 beta-gate 用于
+\(\mathrm{RHS}=\beta\,(V-\mathrm{base\_prediction})\)。这条有界 native
+映射直接按行线程读取，不产生全局转置缓冲；额外读取者或不匹配的访问映射
+会被后端拒绝。固定源码 \code{ac102f0e} 的远端隔离完整适用 CPU 套件在
+标准 \code{umask 0022} 下为 2,601 passed、16 skipped，另有 1 项 Apple
+MLX 实机测试不适用；Corpus Gate 为 179/179。本机同套件曾因磁盘空间不足
+中断，远端默认 \code{umask 0002} 又使私有目录权限检查失败；两者均为
+保留的环境失败，而非数值结论。精确 B300 AOT 使用 255 寄存器、0 stack/spill。
+broker 作业 \code{gpuq-c841e1995072} 的 3 组输入各检查 8,192 个 BF16
+token-major 输出和 16,384 个 BF16 最终状态，全部 0 超差且输入未改写；
+最大绝对误差分别为 \(1.20\times10^{-7}\) 和
+\(3.06\times10^{-5}\)。准备阶段的 Q/K/G/prefix 等值仍为合成输入，
+逐 token BF16 状态舍入、64-head/256-chunk 绑定、完整六形状及与原始 CAKE
+的同作业计时都尚未通过；因此这些数值不能解释为完整 KDA 性能提升。
 \FloatBarrier
 
 \section{跨硬件复用：从一次改写到可检验的收益}
