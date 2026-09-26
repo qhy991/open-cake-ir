@@ -21,8 +21,11 @@ establish that provenance separately, and the compiled ABI query still
 refuses an incompatible library before CUDA state creation. The module does
 not yet turn a distributed launch into the repository's common
 `LaunchableCandidate`, append-only Evaluation receipt or qualified timer.
-It does not add a digest catalogue; the byte comparison happens once at the
-candidate-to-library handoff, where a mismatch changes the next action.
+The build writes one `candidate_record.json` using the repository's existing
+artifact-role vocabulary for source, library and manifest. A later process
+checks those three identities once at the retained build-to-load handoff;
+the result determines whether CUDA state may be created. It is not a
+routine tree-hash inventory or evidence of semantic correctness.
 
 At `c65531f6`, the 14 related contracts and 179-case Corpus Gate pass in a
 clean detached worktree. The tests exercise manifest round-trip, wrong

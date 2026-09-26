@@ -15,6 +15,7 @@ from open_cake_ir.evaluation.ranked_tile_manifest import (
     RankedTileCandidate, RankedTileLaunchManifest,
 )
 from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.serialization import canonical_json_bytes
 
 
 _LIBRARY = re.compile(r'[A-Za-z0-9_]+\Z')
@@ -108,6 +109,8 @@ def compile_ranked_tile_candidate(lowered: NativeRankedTileLowering,
     candidate = RankedTileCandidate.seal(
         lowered,manifest,workload=workload,case_id=case_id,
         library=library.read_bytes())
+    (output/'candidate_record.json').write_bytes(
+        canonical_json_bytes(candidate.artifact_record()))
     report = output/'build_report.json'
     report.write_text(json.dumps({
         'schema_version':1,'target':lowered.local_program.target,

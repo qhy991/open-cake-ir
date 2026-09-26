@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 import json
 from pathlib import Path
 
@@ -174,6 +175,67 @@ class RankedTileCandidate:
                 or not isinstance(self.library, bytes)
                 or not self.library.startswith(b'\x7fELF')):
             raise ValueError('ranked tile candidate needs source, manifest and ELF bytes')
+
+    def artifact_record(self) -> dict:
+        """One build-to-load handoff, using the existing artifact-role vocabulary."""
+        document=self.manifest.as_dict()
+        return {
+            'schema_version':1,'target':document['target'],
+            'entry_point':document['entry_point'],
+            'compiler_commit':document['compiler_commit'],
+            'case_id':document['case_id'],
+            'artifact_roles':{
+                'compiler_expanded_source':sha256(self.source).hexdigest(),
+                'cuda_host_library':sha256(self.library).hexdigest(),
+                'launch_manifest':sha256(self.manifest._bytes).hexdigest(),
+            },
+        }
+
+    @classmethod
+    def from_artifacts(cls, record: object, *,
+            source_path: Path, library_path: Path, manifest_path: Path,
+            lowered: NativeRankedTileLowering,
+            workload: WorkloadContract, case_id: str,
+            plans: Mapping[int, Mapping[str, int]]) -> 'RankedTileCandidate':
+        """Read and verify one retained build record before device loading."""
+        expected_fields={'schema_version','target','entry_point',
+                         'compiler_commit','case_id','artifact_roles'}
+        roles={'compiler_expanded_source','cuda_host_library','launch_manifest'}
+        if (not isinstance(record,Mapping) or set(record)!=expected_fields
+                or type(record.get('schema_version')) is not int
+                or record['schema_version']!=1
+                or not isinstance(record.get('artifact_roles'),Mapping)
+                or set(record['artifact_roles'])!=roles
+                or any(not isinstance(value,str) or len(value)!=64
+                       or any(char not in '0123456789abcdef' for char in value)
+                       for value in record['artifact_roles'].values())):
+            raise ValueError('ranked tile candidate artifact record differs')
+        source=Path(source_path).resolve(strict=True).read_bytes()
+        library=Path(library_path).resolve(strict=True).read_bytes()
+        manifest_bytes=Path(manifest_path).resolve(strict=True).read_bytes()
+        observed={'compiler_expanded_source':sha256(source).hexdigest(),
+                  'cuda_host_library':sha256(library).hexdigest(),
+                  'launch_manifest':sha256(manifest_bytes).hexdigest()}
+        if observed!=record['artifact_roles']:
+            raise ValueError('ranked tile retained artifact bytes differ from build record')
+        try:
+            manifest=RankedTileLaunchManifest.from_dict(json.loads(manifest_bytes))
+        except (ValueError,UnicodeError,TypeError) as error:
+            raise ValueError('ranked tile retained launch manifest differs') from error
+        document=manifest.as_dict()
+        if (manifest_bytes!=manifest._bytes
+                or any(record[name]!=document[name]
+                       for name in ('target','entry_point','compiler_commit','case_id'))):
+            raise ValueError('ranked tile retained candidate identity differs')
+        manifest.check_lowered(lowered)
+        manifest.check_workload(workload,case_id,lowered)
+        checked=_controls(plans,lowered.analysis.world_size,
+                          lowered.analysis.stage_task_slots_per_rank)
+        if (manifest.plans()!={rank:dict(checked[rank])
+                              for rank in range(lowered.analysis.world_size)}
+                or source!=lowered.source.encode('utf-8')):
+            raise ValueError('ranked tile retained source or plan differs')
+        return cls(manifest,source,library)
 
     @classmethod
     def seal(cls, lowered: NativeRankedTileLowering,
