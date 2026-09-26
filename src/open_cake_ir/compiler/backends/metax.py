@@ -17,6 +17,12 @@ def _full_unroll_trip_count(loop: TileLoop, schedule: Schedule) -> int | None:
     return (buffer.shape[loop.dimension] + loop.tile - 1) // loop.tile
 
 
+def _full_unroll_admitted(loop: TileLoop, schedule: Schedule) -> bool:
+    return (loop.range_options.num_stages == 1
+            and _full_unroll_trip_count(loop, schedule)
+            == loop.range_options.loop_unroll_factor)
+
+
 def loop_range(loop: TileLoop, schedule: Schedule, extent: str, tile: str) -> str | None:
     """Use the MACA 3.1 static iterator for an explicitly full-unrolled loop.
 
@@ -26,8 +32,7 @@ def loop_range(loop: TileLoop, schedule: Schedule, extent: str, tile: str) -> st
     factor = loop.range_options.loop_unroll_factor
     if factor == 1:
         return None
-    if (loop.range_options.num_stages != 1
-            or _full_unroll_trip_count(loop, schedule) != factor):
+    if not _full_unroll_admitted(loop, schedule):
         return None
     return f"tl.static_range(0, {extent}, {tile})"
 
@@ -94,8 +99,7 @@ def preflight(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
     # dynamic unrolls cannot be silently weakened to that spelling.
     for index, loop in enumerate(schedule.tile_loops):
         factor = loop.range_options.loop_unroll_factor
-        if factor != 1 and (loop.range_options.num_stages != 1
-                            or _full_unroll_trip_count(loop, schedule) != factor):
+        if factor != 1 and not _full_unroll_admitted(loop, schedule):
             findings.append(refusal(
                 "MACA_LOOP_UNROLL_UNSUPPORTED",
                 f"tile_loops[{index}].range_options.loop_unroll_factor",
