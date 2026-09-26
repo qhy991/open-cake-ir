@@ -192,6 +192,12 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    versus 84 in the hand-composed version, with the same one-CTA/SM
    shared-memory occupancy; no qualified timing compares them. This is
    offline stage composition, not yet schema-2 ranked-tile backend lowering.
+   A successor store-lowering tick (`6c70bb37`) proves full M128×N64 output
+   ownership from the exact Schedule axes and AccessMap, traps an invalid
+   N-subtile, then omits the per-element store mask inside the worker.
+   PTXAS register use fell from 96 to 88 per thread without spills; the
+   same one-GPU four-case oracle, completion and steal checks passed.
+   Occupancy remains one CTA/SM, and no latency or speedup claim follows.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
