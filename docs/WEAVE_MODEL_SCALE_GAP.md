@@ -432,6 +432,30 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    needs independent integration; a common Evaluation launch manifest,
    device-fault cleanup/progress guarantees and qualified timing are not
    yet established.
+   At `ea41074b`, a frozen model-width EP4 Workload added the same BF16
+   hidden/weight geometry and four named route cases, with an independent
+   FP64 CPU oracle. CPU materialization matched every retained fan-in-v2
+   input tensor byte-for-byte on all four ranks and reproduced the retained
+   oracle without a differing element. The NVIDIA integration at
+   `9e1c719d` checks that Workload's topology, public tensor shards and
+   exact target before device loading. A four-case replay exposed a
+   same-process bug: an already-enabled peer link left CUDA error 704 in
+   the host thread's error slot, and the next kernel-launch check read it.
+   `772bb03c` clears only that handled error and propagates any different
+   pending error. The successor B300 job `gpuq-b55ae3555e16` completed
+   three c/steal controls for each of the four Workload cases (12 launches)
+   with at most four GPUs. Every 4,194,304-element output had zero
+   failures against its case's FP64 oracle at atol=rtol=0.01; controls
+   within a case were bitwise equal. Active owners with steal enabled
+   reported 5,888 stolen stage tasks, while empty owners reported zero.
+   Fan-in-v2 remote routes used 1,391/1,402/1,397/1,436 payload slots;
+   hot-8 and dense each reached 1,536 on their sole owner. The run report
+   is retained outside source under
+   `open-cake-ir-workspaces/evidence/weave-b300-m4-20260927/cake-weave-workload-cases-772bb03c/report.json`.
+   This establishes correctness only for those four synthetic route sets;
+   a common sealed Candidate, qualified timer and general liveness proof
+   remain open. `c` classifies eligible worker CTAs; it is not a physical
+   SM reservation.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -441,10 +465,11 @@ CPU capacity/plan facts, not an emitted live GPU queue.
 
 ## Bounded implementation order
 
-- Review and integrate the separate core schema-2 effect through `main`,
-  then let the NVIDIA task consume it. The B300 task now emits an exact
-  source through `lower_ranked_tiles` and runs its tensor-pointer ABI
-  through an Evaluation adapter; it retains no file IO in the backend.
+- Review and integrate the separate core schema-2 effect and model Workload
+  through `main`, then let the NVIDIA task consume them. The NVIDIA task
+  currently merges both for local integration and emits an exact source
+  through `lower_ranked_tiles`. Its tensor-pointer ABI runs through an
+  Evaluation adapter and retains no file IO in the backend.
   Before promotion, independently review the source-map claim for each
   ranked effect against its PTX/queue owner, establish a common Workload
   launch manifest and candidate seal, and make partial-launch failure
@@ -463,7 +488,8 @@ CPU capacity/plan facts, not an emitted live GPU queue.
   A cost estimate only filters candidates; on-device correctness and the
   qualified interval decide acceptance.
 
-Promotion disposition: **no public Compiler lowering or automatic Lab rule**
-from the current bounded prototype. The named B300 correctness results are
-evidence for the next native CUDA backend change, not permission to skip its
-complete admission or qualified measurement gates.
+Promotion disposition: **exact-model public Compiler lowering and Workload
+case binding are retained; no general ranked-tile lowering, Compiler rewrite
+pass or automatic Lab scheduling rule is promoted.** The named B300
+correctness results support this bounded implementation; they do not replace
+the remaining candidate-seal, failure-progress or qualified-measurement gates.
