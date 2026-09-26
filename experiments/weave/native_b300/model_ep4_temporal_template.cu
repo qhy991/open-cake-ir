@@ -16,6 +16,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <chrono>
+#include <thread>
 #include <vector>
 #include "combine/kernel.cu"
 
@@ -1022,10 +1024,19 @@ int main(int argc,char** argv) {
   // nonblocking stream on each rank publishes source chunks, tile manifests,
   // gathered rows and task counts. No host-side synchronization divides them.
   cudaStream_t communication_stream[R]{};
+  cudaEvent_t dispatch_events[R][kWaves]{},ready_events[R][kWaves]{},
+              fence_events[R][kWaves]{};
   for (int rank=0;rank<R;++rank) {
     if (check(cudaSetDevice(rank),"select communication stream rank") ||
         check(cudaStreamCreateWithFlags(&communication_stream[rank],
               cudaStreamNonBlocking),"create communication stream")) return 26;
+    for (int wave=0;wave<kWaves;++wave)
+      if (check(cudaEventCreateWithFlags(&dispatch_events[rank][wave],
+                cudaEventDisableTiming),"dispatch event") ||
+          check(cudaEventCreateWithFlags(&ready_events[rank][wave],
+                cudaEventDisableTiming),"ready event") ||
+          check(cudaEventCreateWithFlags(&fence_events[rank][wave],
+                cudaEventDisableTiming),"fence event")) return 26;
   }
   int communication=communication_control,budget=steal_control;
   for (int rank=0;rank<R;++rank) {
@@ -1052,6 +1063,9 @@ int main(int argc,char** argv) {
       mark_source_wave_done<<<1,1,0,communication_stream[rank]>>>(
           state[rank].bin_params,wave);
       if (check(cudaGetLastError(),"source wave publish launch")) return 28;
+      if (check(cudaEventRecord(dispatch_events[rank][wave],
+                                communication_stream[rank]),
+                "dispatch event record")) return 28;
     }
     for (int rank=0;rank<R;++rank) {
       if (check(cudaSetDevice(rank),"select destination wave rank")) return 29;
@@ -1076,6 +1090,8 @@ int main(int argc,char** argv) {
       }
       publish_wave_ready<<<1,1,0,stream>>>(s.bin_params,wave);
       if (check(cudaGetLastError(),"wave ready publish launch")) return 30;
+      if (check(cudaEventRecord(ready_events[rank][wave],stream),
+                "ready event record")) return 30;
     }
     // A source cannot begin the next wave until every destination has
     // snapshotted its current expert counts and gathered published tiles.
@@ -1084,6 +1100,9 @@ int main(int argc,char** argv) {
       wait_all_destinations<<<1,1,0,communication_stream[rank]>>>(
           state[rank].bin_params,wave);
       if (check(cudaGetLastError(),"wave fence launch")) return 30;
+      if (check(cudaEventRecord(fence_events[rank][wave],
+                                communication_stream[rank]),
+                "fence event record")) return 30;
     }
   }
   for (int rank=0;rank<R;++rank) {
@@ -1102,6 +1121,27 @@ int main(int argc,char** argv) {
         state[rank].final_output);
     if (check(cudaGetLastError(),"Cake combine launch")) return 36;
   }
+  bool published_all=false;
+  for (int second=0;second<20 && !published_all;++second) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    published_all=true;
+    for (int rank=0;rank<R;++rank) {
+      if (check(cudaSetDevice(rank),"select wave event rank")) return 56;
+      int dispatched=-1,ready=-1,fenced=-1;
+      for (int wave=0;wave<kWaves;++wave) {
+        if (cudaEventQuery(dispatch_events[rank][wave])==cudaSuccess)
+          dispatched=wave;
+        if (cudaEventQuery(ready_events[rank][wave])==cudaSuccess)
+          ready=wave;
+        if (cudaEventQuery(fence_events[rank][wave])==cudaSuccess)
+          fenced=wave;
+      }
+      if (fenced!=kWaves-1) published_all=false;
+      std::fprintf(stderr,"wave_progress second=%d rank=%d dispatch=%d ready=%d fence=%d\n",
+                   second+1,rank,dispatched,ready,fenced);
+    }
+  }
+  if (!published_all) return 56;
   for (int rank=0;rank<R;++rank) {
     if (check(cudaSetDevice(rank),"select completion rank") ||
         check(cudaDeviceSynchronize(),"full chain completion")) return 37;
@@ -1280,6 +1320,11 @@ int main(int argc,char** argv) {
   for (int rank=0;rank<R;++rank) {
     cudaSetDevice(rank);
     cudaStreamDestroy(communication_stream[rank]);
+    for (int wave=0;wave<kWaves;++wave) {
+      cudaEventDestroy(dispatch_events[rank][wave]);
+      cudaEventDestroy(ready_events[rank][wave]);
+      cudaEventDestroy(fence_events[rank][wave]);
+    }
     RankState& s=state[rank];
     cudaFree(s.return_params);cudaFree(s.bin_params);
     cudaFree(s.down_map_b);cudaFree(s.down_maps_a);
