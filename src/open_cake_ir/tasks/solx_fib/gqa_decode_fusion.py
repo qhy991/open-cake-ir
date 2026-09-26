@@ -101,6 +101,25 @@ def author_plan(workload: WorkloadContract, case_id: str = "primary",
             '    rounded = lm.cast(accum, to="bf16")',
             '    lm.store(output[q_row, h_head, :], rounded, coalesced=False)',
         ]
+        if length <= 16:
+            single = []
+            for line in value_body:
+                if line.startswith('for key in '):
+                    single.append('with compute:')
+                elif line == '    with compute:':
+                    continue
+                elif line.startswith('        '):
+                    line = line[4:]
+                    line = line.replace('source="loop_tile", name="key"',
+                                        f'source="range", start=0, extent={length}')
+                    line = line.replace('probabilities[q_row, h_head, key]',
+                                        'probabilities[q_row, h_head, :]')
+                    line = line.replace('op="sum", axis=0)',
+                                        'op="sum", axis=0, across_loop=False)')
+                    single.append(line)
+                else:
+                    single.append(line)
+            value_body = single
         plan.stage(
             "gqa_tiled_values", ["v_cache", "kv_indptr", "kv_indices", "probabilities"],
             ["output"],
