@@ -21,7 +21,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 ![KDA B300 有界状态 lowering 数据流](figures/kda-b300-native-lowering.svg)
 
-可编辑源图是 [kda-b300-native-lowering.mmd](figures/kda-b300-native-lowering.mmd)。图中准备阶段到状态 kernel 的连线表示 **当前物化的输入接口**，不表示已经融合成一个生产 kernel；输出与状态路径只对应 H64、两 chunk 的有界原型。
+可编辑源图是 [kda-b300-native-lowering.mmd](figures/kda-b300-native-lowering.mmd)。图中准备阶段到状态 kernel 的连线表示 **当前物化的输入接口**，不表示已经融合成一个生产 kernel；输出与状态路径只对应 H64、两或 256 chunk 的合成准备值原型。
 
 ### 2.1 严格下三角前代入，而非展开矩阵逆
 
@@ -73,7 +73,15 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 
 后继 `d5a9648a` 不把 `[chunk,head]` 私自 flatten：一个 `ProgramMap` 标量 head 坐标选定一个 CTA，循环标量 chunk 选定当前块；四个 `[chunk2,head64,K/N,C]` BF16 B 输入以 rank-4 `CUtensorMap` 描述，shared box 仍为原 `[K/N,C]`，高两维 box 均为 1。native helper 把二维块坐标、head、chunk 按 TMA 的内到外顺序送入 `cp.async.bulk.tensor.4d`；P 的普通 global→shared 地址、初始/最终状态、prefix 与 beta 的地址也都显式带 head。公开 V 的 `[chunk,token,head,V]` load 和相同方向的输出 store 沿用独占转置规则，让 128 个 V 行线程直接访问正确的 token-major 地址，不生成全局转置缓冲。NVIDIA 的 [PTX tensor copy 指令](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html)与 [tensor-map 编码合同](https://docs.nvidia.com/cuda/cuda-driver-api/cuda_driver_api/group__CUDA__TENSOR__MEMORY.html)允许这类 4D 坐标；具体组合仍由本 Target 的离线编译及设备数值证据限定。
 
-准入只覆盖 head64、unit chunk、一个标量 head CTA 轴与上述精确映射。错误 head 选择、rank-5 TMA、H32 直接沿用 H64 规则、漏掉输出 head 所有权都有专门反例。最初将 `cake_tma4` helper 无条件加入所有 native 源码，改变了旧 Corpus 的发射源快照；后继仅在有 rank-4 TMA 的 Schedule 发射该 helper，固定源码的 Corpus Gate 恢复为 179/179。远端隔离完整适用 CPU 套件在标准 `umask 0022` 下为 2,672 passed、16 skipped、1 项 Apple MLX 实机测试取消选择，退出码 0。精确 `sm_103a` CPU-only AOT 为 255 寄存器、0 stack/spill。第一次 broker 作业 `gpuq-337fef5a99a0` 在 kernel 加载前因 CPU-only 链接漏掉 `libcuda` 而失败；只修正链接后，同一源码的 `gpuq-ad57c793c89c` 完成，租约释放后独立 host oracle 对三组各 **1,048,576 状态元素和 524,288 输出元素** 均检查为 0 超差，所有不可变输入未改写。最大绝对状态误差 `6.103515625e-05`，输出误差 `3.814697265625e-06`。这证明 H64 两 chunk 的地址及发射路径；准备值仍是合成的，256 chunk 的相位复用、逐 token BF16 舍入、packed 边界、完整六形状及配对 CAKE 延迟仍无资格结论。
+准入只覆盖 head64、unit chunk、一个标量 head CTA 轴与上述精确映射。错误 head 选择、rank-5 TMA、H32 直接沿用 H64 规则、漏掉输出 head 所有权都有专门反例。最初将 `cake_tma4` helper 无条件加入所有 native 源码，改变了旧 Corpus 的发射源快照；后继仅在有 rank-4 TMA 的 Schedule 发射该 helper，固定源码的 Corpus Gate 恢复为 179/179。远端隔离完整适用 CPU 套件在标准 `umask 0022` 下为 2,672 passed、16 skipped、1 项 Apple MLX 实机测试取消选择，退出码 0。精确 `sm_103a` CPU-only AOT 为 255 寄存器、0 stack/spill。第一次 broker 作业 `gpuq-337fef5a99a0` 在 kernel 加载前因 CPU-only 链接漏掉 `libcuda` 而失败；只修正链接后，同一源码的 `gpuq-ad57c793c89c` 完成，租约释放后独立 host oracle 对三组各 **1,048,576 状态元素和 524,288 输出元素** 均检查为 0 超差，所有不可变输入未改写。最大绝对状态误差 `6.103515625e-05`，输出误差 `3.814697265625e-06`。这证明 H64 两 chunk 的地址及发射路径；长循环继承性由 §2.9 单独验证，准备值仍是合成的。
+
+### 2.9 256 chunk 的相位复用与完整固定形状地址
+
+`61892f81` 将同一 H64 Schedule 的 chunk 轴从 2 精确扩展为 256，保留一个 head/CTA、标量 chunk、rank-4 TMA 与 token-major V/输出地址。后端仍拒绝未资格化的 3-chunk 形状；这并非硬件不能运行 3 chunk，而是资格证据目前只覆盖 2 和 256。所有 carried mbarrier 在 256 次迭代中重复使用相位，AOT 源码保留 `#pragma unroll 1` 并按 `trip & 1` 等待/发布；不能从两次迭代推断其跨偶奇相位循环正确。固定提交通过 Corpus Gate 179/179 和远端完整适用 CPU 合同 2,674 passed、16 skipped、1 项 Apple MLX 实机测试取消选择；精确 `sm_103a` AOT 为 254 寄存器、0 stack/spill。
+
+broker-shared 作业 `gpuq-1f1423e7d3da` 完成并释放 GPU1 后，独立 host oracle 用一组各 head 不同的合成准备值检查完整固定 H64/T8192 地址范围：**67,108,864 个 BF16 token-major 输出和 1,048,576 个 BF16 最终状态**均为 0 超差、无非有限值，所有不可变输入未改写。最大绝对输出/状态误差分别是 `3.814697265625e-06` / `6.103515625e-05`。这是 256 次 chunk 循环、相位及输出地址的设备证明，**不是完整 KDA 的外部 oracle 通过**：Q/K/G/prefix/P/query/coupling 等准备值仍为合成输入，状态仍在 chunk 边界而非逐 token 舍入，packed、六形状与框架 ABI 尚未验收。
+
+首次独占 CUPTI 组件诊断因 Python 环境缺失已安装的 `cupti-python` 路径而被严格封装拒绝，不能使用其 CUDA event fallback。补齐依赖后，两次作业分别在 GPU0、GPU1 启动前发现外部计算进程并退出；broker 均已终结释放，外部进程未被干预。因此 **没有有效状态 kernel 延迟，更没有相对原始 CAKE 的加速比**。准备阶段单独 389.507 µs 的旧诊断已接近完整参考 456.260 µs；即使该状态路径未来测得很快，超越 CAKE 仍需要减少准备/状态间物化、额外启动和状态搬运，并以完整 Workload 的配对 CUPTI 实验检验。
 
 ## 3. 对照：谁拥有哪个拒绝
 
@@ -102,6 +110,7 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | `42b78a5d` / `gpuq-7177fb25c220` | 显式 transpose→直接 token-major store；三组各 8,192 输出、16,384 状态在 B300 均通过，AOT 0 spill | 原始 V/beta RHS、完整 Workload 与性能胜出 |
 | `ac102f0e` / `gpuq-c841e1995072` | 公开 V/beta 输入到行拥有 RHS；远端完整适用 CPU 合同 2,601 passed、Corpus Gate 179/179，B300 三组各 8,192 输出及 16,384 状态均通过，AOT 255 寄存器、0 stack/spill | 真实上游准备值、逐 token BF16 状态舍入、64-head/256-chunk、六形状和配对延迟 |
 | `d5a9648a` / `gpuq-ad57c793c89c` | H64 两 chunk 的 rank-4 TMA、公开 V/beta 与 token-major 输出；完整适用 CPU 合同 2,672 passed、Corpus Gate 179/179，B300 三组各 524,288 输出及 1,048,576 状态均通过，AOT 255 寄存器、0 stack/spill | 256 chunk、真实准备值、逐 token BF16 舍入、完整六形状和配对延迟 |
+| `61892f81` / `gpuq-1f1423e7d3da` | H64/256 chunk 的长循环相位和地址；完整适用 CPU 合同 2,674 passed、Corpus Gate 179/179，B300 一组 67,108,864 输出及 1,048,576 状态均通过，AOT 254 寄存器、0 stack/spill | 真实准备值、逐 token BF16 舍入、packed/六形状、组件及配对延迟 |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
@@ -110,9 +119,9 @@ Workload 的状态是 BF16、V-first 的 `[sequence, head, V128, K128]`。每个
 | 完整 KDA 的数据边 | 当前最低证据 | 尚缺的工作 |
 | --- | --- | --- |
 | Q/K 归一化、decay、beta 与 32-token 耦合 | 独立准备组件在 B300 通过 H64 元素检查；两 MMA 版本单独计时 389.507 µs | 与状态/输出 CTA 融合或有证据地选择物化边界，避免七个中间张量往返。 |
-| `state @ base_key` 与 P 前代入 | `d5a9648a` 的 H64 两 chunk 地址、公开 V/beta 到 RHS 映射在完整适用 CPU 门禁和 B300 三组设备数值检查均通过；准备值仍为合成输入 | 接入真实上游 Q/K/G/prefix，并验证 256 chunk 与完整状态语义。 |
+| `state @ base_key` 与 P 前代入 | `61892f81` 的 H64/256 chunk 地址、公开 V/beta 到 RHS 映射在完整适用 CPU 门禁和 B300 全输出设备数值检查均通过；准备值仍为合成输入 | 接入真实上游 Q/K/G/prefix，并验证完整状态语义。 |
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
-| `state_after_update @ query` 与输出耦合 | `d5a9648a` 已在 B300 三组 H64 两 chunk 输入上通过公开 V/beta、token-major 输出及最终状态，AOT 0 spill | 真实准备值、256 chunk、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
+| `state_after_update @ query` 与输出耦合 | `61892f81` 已在 B300 固定 H64/T8192 合成输入上通过公开 V/beta、token-major 输出及最终状态，AOT 0 spill | 真实准备值、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 

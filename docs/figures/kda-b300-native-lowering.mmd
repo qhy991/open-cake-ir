@@ -11,7 +11,7 @@ flowchart TB
   public_v["公开 V：[chunk,token,head,V]"]
   beta["公开 beta_gate：[chunk,token,head]"]
 
-  subgraph state["每个 head 一个 CTA、两 chunk 的有界原型"]
+  subgraph state["每个 head 一个 CTA、两或 256 chunk 的有界原型"]
     old_state["BF16 state：TMEM 128 × 128"] --> base["rank-4 TMA + tcgen05 基础/查询投影"]
     base_b --> base
     base --> rhs["FP32 RHS = beta × (V - base prediction)"]
