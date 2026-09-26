@@ -13,8 +13,9 @@ import unittest
 from open_cake_ir.compiler import Compiler, Program, RankedTileEffects, Schedule
 from open_cake_ir.compiler.backends.common import EmitError
 from open_cake_ir.compiler.backends.native_cuda_ranked_tile import (
-    emit_source_event_device,
+    emit_source_event_device, emit_source_event_library,
 )
+from open_cake_ir.compiler.backends import native_cuda
 from open_cake_ir.compiler.backends.native_cuda_tile_stage import (
     compose_model_ranked_tile_stages, emit_model_activation_stage,
     emit_tensor_tile_stage,
@@ -103,6 +104,14 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertNotIn('int main(',device)
         with self.assertRaisesRegex(EmitError,'exact checked B300 composition'):
             emit_source_event_device(result,combine_source='')
+        library=emit_source_event_library(
+            result,combine_source=native_cuda.emit(combine,self.target).source,
+            entry=effects.lowering.entry_point)
+        self.assertIn('cake_ranked_tile_b300_create(',library)
+        self.assertIn('cake_ranked_tile_b300_launch(',library)
+        self.assertIn('cake_ranked_tile_b300_destroy(',library)
+        self.assertNotIn('int main(',library)
+        self.assertNotIn('fopen(',library)
         bad=effects.document
         bad['partial_threshold_rows']=128
         with self.assertRaisesRegex(EmitError,'exact model EP4 domain'):

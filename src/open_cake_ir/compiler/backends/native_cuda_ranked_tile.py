@@ -14,7 +14,9 @@ from .native_cuda_tile_stage import RankedTileStageComposition
 
 
 _TEMPLATE = Path(__file__).resolve().parent / 'templates/ranked_tile_b300_device.cu'
+_HOST_TEMPLATE = Path(__file__).resolve().parent / 'templates/ranked_tile_b300_host.cu'
 _PLACEHOLDER = re.compile(r'@[A-Z_]+@')
+_IDENTIFIER = re.compile(r'[A-Za-z_][A-Za-z_0-9]*\Z')
 
 
 def emit_source_event_device(composition: RankedTileStageComposition,
@@ -53,4 +55,27 @@ def emit_source_event_device(composition: RankedTileStageComposition,
         source = source.replace(mark, value)
     if _PLACEHOLDER.search(source) or 'int main(' in source:
         raise EmitError('ranked tile device retains a placeholder or host main')
+    return source
+
+
+def emit_source_event_library(composition: RankedTileStageComposition,
+                              *, combine_source: str, entry: str) -> str:
+    """Render the pointer-based development ABI beside the device protocol.
+
+    This emits no Workload inputs or experiment paths. The public Compiler
+    remains a refusal until Evaluation can bind and audit this ABI, including
+    failure cleanup and repeated-run state ownership.
+    """
+    if _IDENTIFIER.fullmatch(entry) is None:
+        raise EmitError('ranked tile host ABI needs an ASCII C identifier')
+    if 'cake_weave_rank512_combine_kernel' not in combine_source:
+        raise EmitError('ranked tile host ABI needs the checked Cake combine')
+    device = emit_source_event_device(composition, combine_source=combine_source)
+    host = _HOST_TEMPLATE.read_text()
+    if host.count('@ENTRY@') < 4:
+        raise EmitError('ranked tile host ABI entry seams differ')
+    source = device + host.replace('@ENTRY@', entry)
+    if (_PLACEHOLDER.search(source) or 'int main(' in source
+            or 'fopen(' in source or 'fread(' in source or 'fwrite(' in source):
+        raise EmitError('ranked tile library retained a template or file runner')
     return source
