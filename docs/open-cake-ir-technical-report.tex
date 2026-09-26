@@ -1567,6 +1567,12 @@ AOT 为 57,472 字节 dynamic shared、255 寄存器、0 spill。Cake 实际
 B-ready 等待仅 72 和 77 cycles。区间包含 warp 调度，不是指令级
 因果分解；它支持优先调查状态发布与 P/compute 重叠，而非继续盲目
 加深 B ring。
+独立源码试验把双槽 P 装载提前到本块的 state-ready 等待前；同机
+五轮交替配对、每轮每臂 25 个冷 L2 CUPTI 样本，固定双槽版
+\(1{,}907.338\,\mu\mathrm{s}\)，提前版
+\(1{,}897.003\,\mu\mathrm{s}\)，仅改善约 10.3 \(\mu\mathrm{s}\)
+或 0.54\%。十份完整输出/状态仍通过独立合成 oracle，五轮均小幅
+胜出；此收益不足以支撑新的 Compiler 排程分支，当前不推广。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
