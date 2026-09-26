@@ -491,9 +491,12 @@ def column_reuse_source(workload: WorkloadContract, case_id: str = "primary", *,
 
 
 def column_reuse_unrolled_source(workload: WorkloadContract,
-                                 case_id: str = "primary") -> str:
-    """FIB 008 two-column candidate with three static K reductions, without a tile loop."""
+                                 case_id: str = "primary", *,
+                                 columns_per_program: int = 2) -> str:
+    """FIB 008 column reuse with three static K reductions, without a tile loop."""
     shape, declarations = _fib008_arguments(workload, case_id)
+    if type(columns_per_program) is not int or columns_per_program not in (2, 4):
+        raise ValueError("static column reuse admits two or four columns per program")
     body = []
     spans = row_spans(shape["K"])
     for index, (start, stop) in enumerate(spans):
@@ -512,11 +515,11 @@ def column_reuse_unrolled_source(workload: WorkloadContract,
         'lm.store(out[row, column], rounded, coalesced=False, id="store_out")',
     ])
     return ('from open_cake_ir.compiler import frontend as cake\n\n'
-            f'@cake.schedule(name="{workload.workload_id}-column-reuse-unrolled-c2", '
+            f'@cake.schedule(name="{workload.workload_id}-column-reuse-unrolled-c{columns_per_program}", '
             f'target="{workload.target}", backend="triton", '
-            'entry_point="cake_fib008_column_reuse_unrolled")\n'
+            f'entry_point="cake_fib008_column_reuse_unrolled_c{columns_per_program}")\n'
             f'def candidate(lm, {", ".join(declarations)}):\n'
             '    compute = lm.role(execution_groups=[0, 1, 2, 3])\n'
             '    row = lm.program(a, axis=0, dimension=0, tile=1)\n'
-            '    column = lm.program(b, axis=1, dimension=0, tile=2)\n'
+            f'    column = lm.program(b, axis=1, dimension=0, tile={columns_per_program})\n'
             '    with compute:\n        ' + '\n        '.join(body) + '\n')

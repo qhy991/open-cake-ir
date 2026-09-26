@@ -44,6 +44,12 @@ class FlashInferGemmTests(unittest.TestCase):
         self.assertNotIn('for k in tl.range(', lowered)
         self.assertIn('BLOCK_COLUMN=2', lowered)
         self.assertEqual(lowered.count('tl.sum(products_'), 3)
+        wider = gemm.column_reuse_unrolled_source(workload, columns_per_program=4)
+        wider_assessment = compiler.assess(parse(wider).document)
+        self.assertTrue(wider_assessment.lowering_eligible, wider_assessment.findings)
+        self.assertIn('BLOCK_COLUMN=4', compiler.lower(wider_assessment).source)
+        with self.assertRaises(ValueError):
+            gemm.column_reuse_unrolled_source(workload, columns_per_program=3)
 
     def test_all_eight_exact_tasks_have_fp16_abi_and_lower_on_b300(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
