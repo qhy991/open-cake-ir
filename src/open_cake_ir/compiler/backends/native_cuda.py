@@ -97,6 +97,40 @@ def _persistent_carried_domain(s, target, loop):
                         for op in s.operations) == 2 for p in pipelines))
 
 
+def _last_chunk_terminal_store(s, target, op):
+    """A loop-invariant output is observable only after its final full overwrite."""
+    scope = _scope(s, op)
+    if (op.kind is not OperationKind.STORE or scope is None
+            or not _persistent_carried_domain(s, target, scope)
+            or len(op.reads) != 1 or len(op.writes) != 1
+            or scope.body[-1] != op.op_id):
+        return False
+    source, destination = s.buffer(op.reads[0]), s.buffer(op.writes[0])
+    access = s.access_map(op.op_id, destination.name) if destination else None
+    prior = s.operation(scope.body[-2]) if len(scope.body) >= 2 else None
+    writers = [writer for writer in s.operations if destination is not None
+               and destination.name in writer.writes]
+    readers = [reader for reader in s.operations if destination is not None
+               and destination.name in reader.reads]
+    return (source is not None and destination is not None
+            and source.space is MemorySpace.REGISTER and source.dtype is DType.BF16
+            and source.shape == (128, 128)
+            and destination.space is MemorySpace.GLOBAL
+            and destination.mode is BufferMode.OUTPUT
+            and destination.dtype is DType.BF16
+            and destination.shape == (64, 128, 128)
+            and writers == [op] and not readers
+            and prior is not None and prior.kind is OperationKind.TMEM_STORE
+            and prior.reads == op.reads and op.depends_on == (prior.op_id,)
+            and op.pipeline is None and not op.waits and not op.signals
+            and access is not None and access.boundary is BoundaryPolicy.MASK_TILED_AXES
+            and len(access.indices) == 3
+            and _head64_access(s, access, 0)
+            and all(component.source is AccessIndexKind.DIMENSION
+                    and component.dimension == axis
+                    for axis, component in enumerate(access.indices[1:], 1)))
+
+
 def _scalar_row(s, buffer):
     """Prove a rank-one tile has one scalar per physical row, not 128 replicas."""
     def walk(name, seen):
@@ -914,6 +948,8 @@ class _Emitter:
         self.tmemvars = {a.name:f'tm{i}' for i,a in enumerate(s.allocations) if a.space is MemorySpace.TENSOR}
         self.transpose_stores = _terminal_transpose_stores(s)
         self.transpose_loads = _input_transpose_loads(s)
+        self.last_chunk_stores = {op.op_id for op in s.operations
+                                  if _last_chunk_terminal_store(s, target, op)}
 
     def line(self, text=''):
         self.lines.append('  '*self.indent + text)
@@ -1416,11 +1452,18 @@ class _Emitter:
                 self.end()
                 self.end()
                 return
+            last_chunk = op.op_id in self.last_chunk_stores
+            if last_chunk:
+                scope = _scope(self.s, op)
+                self.line('// CAKE_NATIVE_TERMINAL_STATE_STORE: final chunk only')
+                self.begin(f'if ({self.loopvars[scope.iterator]} == {self.trip(scope)-1})')
             self.line('#pragma unroll')
             self.begin(f'for (int col=0; col<{_slots(self.s,src)}; ++col)')
             local=[row,'col'] if len(src.shape)==2 else [row if _scalar_row(self.s,src) else 'col']
             address,mask=self.address(op,dst,local)
             self.line(f'if ({mask}) {address} = {a}[col];'); self.end()
+            if last_chunk:
+                self.end()
         self.end()
 
     def host(self):
