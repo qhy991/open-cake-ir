@@ -55,8 +55,12 @@ cooperative residency, or verify exact GPU tile events and FP64 outputs.
 The local integration now carries `RankedTileLaunchManifest` and a
 byte-bearing `RankedTileCandidate` for pointer ABI v4: they refuse a wrong
 Workload case, source, rank plan or library bytes before CUDA state creation.
-This is not yet the common sealed Evaluation Candidate or a proof of NVCC
-provenance; those remain separate gates.
+Its create-only Lab builder writes the exact lowered source, invokes the
+Target's NVCC route outside a GPU lease, retains failures and seals the
+resulting ELF bytes in the same process. This establishes a CPU build
+handoff once run on B300-M4; no real NVCC build has happened for the
+single-grid successor yet. It is not yet the common sealed Evaluation
+Candidate or a qualified device/timing result.
 
 A source-declaration audit counts 8,192 B for the per-CTA expert sort,
 84 B for source-dispatch scratch and 20 B for worker claims, in addition to
