@@ -64,11 +64,13 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         return tuple(findings)
     contributions,weights,output,route_values,route_weights,weighted,summed,rounded=(
         buffers[name] for name in names)
-    check(contributions.shape==(2048,8,2048)
-          and weights.shape==(2048,8)
-          and output.shape==(2048,2048),
+    tokens=contributions.shape[0] if len(contributions.shape)==3 else None
+    check(tokens in (512,2048)
+          and contributions.shape==(tokens,8,2048)
+          and weights.shape==(tokens,8)
+          and output.shape==(tokens,2048),
           'NATIVE_MODEL_COMBINE_SHAPE', 'buffers',
-          'the evidenced combine has 2048 tokens, top-8 and H2048')
+          'the evidenced combine has 512 or 2048 tokens, top-8 and H2048')
     check((contributions.space,weights.space,output.space)
           ==(MemorySpace.GLOBAL,)*3
           and (contributions.mode,weights.mode,output.mode)

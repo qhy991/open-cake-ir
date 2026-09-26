@@ -12,6 +12,7 @@ from open_cake_ir.compiler.backends.native_cuda_model_combine import preflight
 
 ROOT=Path(__file__).resolve().parents[2]
 DOCUMENT=ROOT/'examples/schedules/native/weave-model-weighted-combine-b300.json'
+RANK512=ROOT/'examples/schedules/native/weave-model-weighted-combine-rank512-b300.json'
 
 
 class NativeModelCombine(unittest.TestCase):
@@ -50,6 +51,25 @@ class NativeModelCombine(unittest.TestCase):
                  'source':'dimension','dimension':1}
         self.assertIn('NATIVE_MODEL_COMBINE_ACCESS',
                       [f.code for f in preflight(Schedule.from_dict(changed),target)])
+
+    def test_rank_local_512_tokens_admits_the_same_explicit_reduction(self):
+        short=json.loads(RANK512.read_text())
+        assessment=self.compiler.assess(short)
+        self.assertTrue(assessment.lowering_eligible,
+                        [(f.code,f.path) for f in assessment.findings
+                         if f.blocks_lowering])
+        if self.compiler.commit is not None:
+            lowered=self.compiler.lower(assessment)
+            self.assertEqual(lowered.toolchain_requirements['grid'],[512,8,1])
+            self.assertIn('cake_token < 512',lowered.source)
+            self.assertIn('__float2bfloat16_rn(cake_sum)',lowered.source)
+        wrong=deepcopy(short)
+        for buffer in wrong['buffers']:
+            if buffer['space']=='global' and buffer['shape'][0]==512:
+                buffer['shape'][0]=513
+        target=Target.load(ROOT/'compiler/targets/sm_103a.json')
+        self.assertIn('NATIVE_MODEL_COMBINE_SHAPE',
+                      [f.code for f in preflight(Schedule.from_dict(wrong),target)])
 
     def test_other_target_and_fp32_output_are_refused(self):
         schedule=Schedule.from_dict(self.document)

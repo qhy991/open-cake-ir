@@ -1,0 +1,285 @@
+{
+  "schema_version": 2,
+  "schedule_id": "weave-model-weighted-combine-rank512-b300",
+  "target": "sm_103a",
+  "roles": [
+    {
+      "name": "compute",
+      "execution_groups": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ]
+    }
+  ],
+  "allocations": [],
+  "pipelines": [],
+  "barriers": [],
+  "buffers": [
+    {
+      "name": "contributions",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        512,
+        8,
+        2048
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "weights",
+      "space": "global",
+      "dtype": "fp32",
+      "shape": [
+        512,
+        8
+      ],
+      "mode": "input"
+    },
+    {
+      "name": "output",
+      "space": "global",
+      "dtype": "bf16",
+      "shape": [
+        512,
+        2048
+      ],
+      "mode": "output"
+    },
+    {
+      "name": "route_values",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        256
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "route_weights",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        8
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "weighted",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        8,
+        256
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "summed",
+      "space": "register",
+      "dtype": "fp32",
+      "shape": [
+        256
+      ],
+      "mode": "scratch"
+    },
+    {
+      "name": "rounded",
+      "space": "register",
+      "dtype": "bf16",
+      "shape": [
+        256
+      ],
+      "mode": "scratch"
+    }
+  ],
+  "operations": [
+    {
+      "id": "load_contributions",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "contributions"
+      ],
+      "writes": [
+        "route_values"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "load_weights",
+      "kind": "load",
+      "role": "compute",
+      "reads": [
+        "weights"
+      ],
+      "writes": [
+        "route_weights"
+      ],
+      "parameters": {
+        "movement": "global"
+      }
+    },
+    {
+      "id": "weight",
+      "kind": "elementwise",
+      "role": "compute",
+      "reads": [
+        "route_values",
+        "route_weights"
+      ],
+      "writes": [
+        "weighted"
+      ],
+      "parameters": {
+        "op": "mul",
+        "broadcast_axis": 0
+      },
+      "depends_on": [
+        "load_contributions",
+        "load_weights"
+      ]
+    },
+    {
+      "id": "reduce_routes",
+      "kind": "reduce",
+      "role": "compute",
+      "reads": [
+        "weighted"
+      ],
+      "writes": [
+        "summed"
+      ],
+      "parameters": {
+        "op": "sum",
+        "axis": 0,
+        "scope": "cta",
+        "across_loop": false
+      },
+      "depends_on": [
+        "weight"
+      ]
+    },
+    {
+      "id": "round_bf16",
+      "kind": "cast",
+      "role": "compute",
+      "reads": [
+        "summed"
+      ],
+      "writes": [
+        "rounded"
+      ],
+      "parameters": {
+        "to": "bf16"
+      },
+      "depends_on": [
+        "reduce_routes"
+      ]
+    },
+    {
+      "id": "store_output",
+      "kind": "store",
+      "role": "compute",
+      "reads": [
+        "rounded"
+      ],
+      "writes": [
+        "output"
+      ],
+      "parameters": {
+        "coalesced": true
+      },
+      "depends_on": [
+        "round_bf16"
+      ]
+    }
+  ],
+  "outputs": [
+    "output"
+  ],
+  "program_map": {
+    "axes": [
+      {
+        "name": "token",
+        "axis": 0,
+        "buffer": "contributions",
+        "dimension": 0,
+        "tile": 1
+      },
+      {
+        "name": "feature",
+        "axis": 1,
+        "buffer": "contributions",
+        "dimension": 2,
+        "tile": 256
+      }
+    ]
+  },
+  "tile_loops": [],
+  "access_maps": [
+    {
+      "operation": "load_contributions",
+      "buffer": "contributions",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        },
+        {
+          "source": "program_tile",
+          "name": "feature"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "load_weights",
+      "buffer": "weights",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "dimension",
+          "dimension": 1
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    },
+    {
+      "operation": "store_output",
+      "buffer": "output",
+      "indices": [
+        {
+          "source": "program",
+          "name": "token"
+        },
+        {
+          "source": "program_tile",
+          "name": "feature"
+        }
+      ],
+      "boundary": "mask_tiled_axes"
+    }
+  ],
+  "metadata": {},
+  "lowering": {
+    "backend": "native_cuda",
+    "entry_point": "cake_weave_rank512_combine"
+  }
+}
