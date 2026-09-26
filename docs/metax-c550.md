@@ -38,6 +38,32 @@ bitcode。检查器验证声明的 family、成员边界和 MXC ELF 类型，loa
 
 当前 vendor launcher 只传非 constexpr 参数。封存 manifest 读取实际 TTGIR
 signature 并验证 tensor 参数数量，隐藏指针数为 0。
+
+### 固定循环的 MetaX 专属 full-unroll lowering
+
+在源码提交 `667c8c93`，`loop_unroll_factor > 1` 只有在循环边界来自静态
+Buffer 维度、`num_stages=1`、且因子恰好等于完整迭代次数时才生成 MACA
+`tl.static_range`。部分展开、查询决定的边界和带流水阶段的展开由
+`MACA_LOOP_UNROLL_UNSUPPORTED` 拒绝；NVIDIA 等目标仍发射原有 `tl.range`
+选项。该规则改变生成源码，并没有引入第二套 Triton emitter。
+
+以 BF16 GEMM-bias `512×256×256`、K tile 64、4 次 K 累积为固定切片：
+已捕获的 C550-1 FlagTree/Triton 3.1 环境离线编译得到 TTIR、TTGIR 和
+mcfatbin；两层 IR 各有 4 个 dot、没有 `scf.for`，产物位于
+`c550-1:/root/.local/share/open-cake-ir/metax-c550-20260920/full-unroll-667c8c93/`。
+C550-2 现有 Triton 3.6
+容器也完成相同源码的离线编译。在 C550-2 上，新建短时容器只暴露 1 张卡，
+使用与宿主同 inode 的 `maca` 锁执行生成源码的 JIT 路径；随机与交替符号
+两组各 131072 个输出元素，对独立 CPU FP32 dot+bias 参考在
+`atol=rtol=0.001` 下均为 0 mismatch，最大绝对误差分别为
+`3.0517578125e-05` 和 `1.7881393432617188e-07`，输入未改变。
+原始源码、编译产物和设备诊断收据保存在 checkout 外的
+`open-cake-ir-evidence/metax-full-unroll-20260926/full-unroll-667c8c93/`，
+对应 broker job 为 `maca-8970a53c0f29`。设备诊断由生成源码重新 JIT，
+没有加载前述离线 mcfatbin；C550-2 运行时也不是当前已捕获的 C550-1
+3.1 Host。它不构成正式 Workload Evaluation、精度普适证明或性能资格，
+没有计时样本，也不声明整机 GPU 独占。
+
 Evaluation 验证全部 Workload input cases、每个输出元素及输入不变性，并保留
 PCI 标识和 runtime 路径。无计时收据使用 JSON `null` 的 `timing_samples`，
 不会给出零延迟。CUDA/NCU 的 profile child 仍保留自己的单次校验与独立 profiler 路径。
