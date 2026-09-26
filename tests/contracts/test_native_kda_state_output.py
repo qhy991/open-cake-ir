@@ -124,10 +124,13 @@ def document() -> dict:
 
     insert_before("mma_base", [load_query])
     insert_after("mma_base", [query_mma])
-    insert_after("read_base", [query_read])
     insert_before("mma_correction", [load_output])
     insert_after("mma_correction", [output_mma])
-    insert_after("read_correction", [output_read, combine, scale, rounded, stored])
+    # The query accumulator stays in its own TMEM columns while the row solve
+    # runs. Reading it just before the output epilogue avoids keeping 32 FP32
+    # values live per row across all 496 strict-lower FMAs.
+    insert_after("read_correction", [output_read, query_read,
+                                     combine, scale, rounded, stored])
 
     chunk = {"source": "loop", "name": "chunk_index"}
     dim1 = {"source": "dimension", "dimension": 1}
@@ -157,6 +160,8 @@ class NativeKdaStateOutput(unittest.TestCase):
                         source.index("// CAKE_OP: mma_query"))
         self.assertLess(source.index("// CAKE_OP: mma_correction"),
                         source.index("// CAKE_OP: mma_output"))
+        self.assertLess(source.index("// CAKE_OP: solve"),
+                        source.index("// CAKE_OP: read_query"))
         self.assertEqual(source.count("cake_tma3((smem"), 4)
 
     def test_both_projection_and_correction_groups_keep_tensor_ownership(self):
