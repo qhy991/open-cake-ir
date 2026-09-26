@@ -232,8 +232,19 @@ BF16 的范围仍是 `64×64×64`、五个分布的原生独立诊断，尚未�
 FP8 直接 dot 保留 LLVM lowering 失败。AKA 的 `N=80,K=130` 请求被现有任务工厂的
 row-span 限制拒绝，本表不声称 N/K 尾部或任意矩阵形状已验收。
 
-MACA 预检还会拒绝当前 Triton API 不接受的非默认 `loop_unroll_factor`、`flatten`、
-`disallow_acc_multi_buffer`、`disable_licm`；`num_stages` 保持可表达。
+2026-09-26 在 C550-2 的 Triton 3.6.0 容器中，无 GPU 的 `64×64×64` E4M3FN
+直接 `tl.dot` 探针仍未产生 native artifact：`ConvertTritonGPUToLLVM` 走到
+`GenericFMAVectorMultiplier::multiplyVectors` 时触发
+`aElem.getType() == tgtTy` 断言。重试只为保留完整编译 stderr，源码、请求、
+失败结果和原始日志位于 checkout 外的
+`open-cake-ir-evidence/metax-fp8-dot-3p6-probe-20260926/`。这说明该固定源码在
+这套工具链上编译失败，不是 C550 物理 FP8 能力、设备数值或性能的结论；
+`xcore1002` 仍不声明 FP8 dot 合同。其他软件栈的显式解码矩阵路径属于不同机制，
+需要自己的精度合同与完整输出验证，不能拿来替代直接 FP8 dot 的失败记录。
+
+MACA 预检只准入固定、单阶段且完整展开的非默认 `loop_unroll_factor`，其余展开
+请求会明确拒绝。非默认 `flatten`、`disallow_acc_multi_buffer`、`disable_licm`
+仍被拒绝；`num_stages` 保持可表达。
 partial-K 仍由 `TRITON_MMA_K_RANGES_UNSUPPORTED` 拒绝，不会落入 NVIDIA inline assembly。
 新增三个正例和两个反例使完整 Corpus 成为 169 项，其中五项检查 xcore1002；
 静态 Corpus、上述设备证据和完整后端能力仍分别报告。

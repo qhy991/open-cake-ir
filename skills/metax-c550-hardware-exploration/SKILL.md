@@ -51,7 +51,10 @@ Trace one Schedule from construction through `Compiler.assess`, `backends.triton
 The captured 3.1 route accepts `num_stages` on `tl.range` but refuses other unsupported keywords. `tl.static_range` exists in that installation and is the narrow source spelling for an explicitly full-unrolled, fixed, single-stage loop; it is not a way to drop a partial-unroll or pipelining commitment. Check the emitted loop, actual TTIR/TTGIR and complete output on the exact captured runtime before extending the admitted scope. Upstream Triton API documentation explains the iterator, but does not qualify the installed MACA backend.
 
 For a new rule, retain a positive Schedule and a counterexample naming the rule that refuses it. Validate unchanged source and findings for other vendors, then compile with the exact installed MetaX distribution. Run any authorized device check through the existing `maca` broker and compare against the Workload oracle; do not infer speedup from successful lowering or correctness.
+
 For a rounding-sensitive instruction, include an input that distinguishes it from a composition of older operations. Compare complete output bits with an independent oracle; a `math.fma` node in TTIR/TTGIR establishes compiler intent, while the device result tests its realized numerics.
+
+E4M3FN load/store or decoding evidence does not admit direct FP8 `tl.dot`. The captured 3.1 route and a later 3.6 C550-2 offline probe both failed before a native artifact. Keep the Target's direct FP8 dot contract absent, retain the exact compiler diagnostic, and treat any explicit FP8-to-BF16/FP32 matrix path as a separate numerical mechanism with its own oracle and precision boundary.
 
 ## Reference-access and action boundaries
 
