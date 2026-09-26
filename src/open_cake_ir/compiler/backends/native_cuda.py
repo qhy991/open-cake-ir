@@ -303,18 +303,24 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                 tensor_a = (len(mma.reads) == 2
                             and buffers[mma.reads[0]].space is MemorySpace.TENSOR)
                 staged_b = buffers[mma.reads[1]] if len(mma.reads) == 2 else None
-                source_b = buffers[loads[0].reads[0]] if loads and loads[0].reads else None
-                access_b = s.access_map(loads[0].op_id, source_b.name) if source_b else None
-                check(tensor_a and len(loads) == 1 and staged_b is not None
-                      and loads[0].writes == (staged_b.name,)
-                      and source_b is not None and loop.buffer == source_b.name
+                producers = [load for load in loads
+                             if staged_b is not None and load.writes == (staged_b.name,)]
+                producer = producers[0] if len(producers) == 1 else None
+                source_b = (buffers[producer.reads[0]]
+                            if producer is not None and len(producer.reads) == 1 else None)
+                access_b = s.access_map(producer.op_id, source_b.name) if source_b else None
+                loop_source = buffers.get(loop.buffer)
+                check(tensor_a and staged_b is not None and producer is not None
+                      and source_b is not None and loop_source is not None
+                      and len(source_b.shape) == len(loop_source.shape) == 2
+                      and source_b.shape[0] == loop_source.shape[0]
                       and loop.dimension == 0 and staged_b.shape[0] == loop.tile
                       and access_b is not None and len(access_b.indices) == 2
                       and access_b.indices[0].source is AccessIndexKind.LOOP_TILE
                       and access_b.indices[0].name == loop.iterator
                       and access_b.indices[1].source is AccessIndexKind.DIMENSION,
                       'NATIVE_CARRIED_MMA_DOMAIN', f'operations[{s.operations.index(mma)}]',
-                      'a carried chunk uses one TMA B tile selected by the outer chunk loop')
+                      'each carried MMA consumes one staged B tile selected by the outer chunk loop')
             check(loop is None or carried or (s.mma_accumulates_over(mma, loop)
                   and all(s._staged_axis_filled_by(name, loop) == 1 for name in mma.reads
                           if buffers[name].space is MemorySpace.SHARED)),
