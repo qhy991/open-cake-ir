@@ -380,6 +380,22 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    Compiler lowering and qualified complete-layer timing remain open.
    Promotion disposition: no public ranked-tile lowering or automatic
    scheduling rule.
+   A source-event successor (`c918c5cc`) serializes the four source-rank
+   completions within each wave and adds a fifth wave-end event. It emits
+   newly full tiles after the source completion that reached capacity;
+   thresholded partial tiles still publish at wave end. The dense
+   192-tile planner replay matched all 20 CPU event counts, including
+   16 full tiles after source 2 and 32 partial tiles at each wave end.
+   The full dense FFN then passed manifest, BF16 gather, FP32 P2P return
+   and independent FP64 final-output checks with zero mismatches/failures.
+   A full mixed-route `c=74,budget=5888` replay also passed those checks
+   while all four ranks actually stole 5,888 stage tasks. One
+   correctness-gated Nsight replay recorded 25 active-worker/future-
+   source-dispatch kernel interval overlaps, up to 49.8 microseconds.
+   This verifies the ordered source-event protocol for those routes.
+   It does not prove immediate publication inside a source kernel,
+   arbitrary concurrent arrival order, useful-work overlap throughout
+   each interval, or a qualified latency gain.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
@@ -398,12 +414,15 @@ CPU capacity/plan facts, not an emitted live GPU queue.
   launch ABI, runtime route-domain admission, peer memory order, queue
   capacity, and failure/progress diagnostics instead of importing an
   experiment's file-based host runner.
-- Implement capacity-triggered full-tile publication and verify its
-  progress against adversarial source arrival order. Keep finite worker
-  launches or provide a stronger scheduling proof before reintroducing a
-  persistent wait. Replay empty, tail and T7/T8 counterexamples under the
-  appropriate Workload contract; do not infer arbitrary-route support from
-  the three tested model-width distributions.
+- Carry the source-completion full-tile publication protocol into a
+  backend-owned launch ABI with explicit per-rank state and status. Decide
+  whether the admitted schema also requires publication at the exact
+  128th-row arrival inside a source kernel; if so, implement and test that
+  stronger edge. Prove progress for adversarial concurrent source arrival
+  before relaxing the ordered source events. Keep finite worker launches or
+  supply a stronger scheduling proof for a persistent wait. Replay empty,
+  tail and T7/T8 counterexamples under their Workload contracts before
+  claiming arbitrary-route support.
 - Evaluate spatial `c`, temporal chunks and stealing under a common
   complete-layer timer and the upstream baseline's exact source/semantics.
   A cost estimate only filters candidates; on-device correctness and the
