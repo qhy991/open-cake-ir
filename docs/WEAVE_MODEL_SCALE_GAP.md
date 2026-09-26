@@ -181,6 +181,17 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    with bounded CAS made that exact case complete twice. This does not
    prove arbitrary interleavings safe, and neither version includes
    dynamic expert bins, P2P communication or qualified latency.
+   The next backend tick (`native_cuda_tile_stage.py`, source `a8cd20f5`)
+   removes the remaining hand-written FFN math from the worker template.
+   It reuses native CUDA TMA/MMA lowering for up/gate and down and the model
+   activation emitter for SwiGLU/BF16 cast, with operation IDs mapped back
+   to the complete Cake Program. Six related tests and the 179-case Corpus
+   Gate passed at that fixed commit. On B300-M4, one brokered GPU run of
+   the generated source passed all four 11,776-unit cases bitwise, including
+   full `c=148` stealing. The generated worker used 96 registers/thread,
+   versus 84 in the hand-composed version, with the same one-CTA/SM
+   shared-memory occupancy; no qualified timing compares them. This is
+   offline stage composition, not yet schema-2 ranked-tile backend lowering.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
