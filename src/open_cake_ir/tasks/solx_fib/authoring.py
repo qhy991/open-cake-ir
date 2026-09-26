@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.devices import BACKENDS, backend_for_target
-from .workload import row_spans, validate_solx_fib_contract
+from .workload import TASKS, row_spans, validate_solx_fib_contract
 
 
 def starter_source(workload: WorkloadContract, case_id: str = "primary") -> str:
@@ -101,3 +101,52 @@ def _partitioned_body(width: int, epsilon: float, *, residual: bool) -> list[str
     ])
     body.extend('    ' + statement for statement in write)
     return body
+
+
+def masked_whole_row_source(workload: WorkloadContract, case_id: str = "primary", *,
+                            execution_groups: int = 16) -> str:
+    """FIB 003 whole-row candidate with one masked load and store per operand.
+
+    The program tile is rounded up to a power of two; padded input lanes load zero,
+    while the mean still divides by the declared hidden width. The FP32 combined
+    values stay available after reduction, avoiding the starter's output reread.
+    """
+    validate_solx_fib_contract(workload.document)
+    if (workload.target != "sm_103a"
+            or workload.document["operator"] != TASKS["fib_fused_add_rmsnorm_h7168"][0]):
+        raise ValueError("masked whole-row authoring is scoped to FlashInfer 003 on sm_103a")
+    if type(execution_groups) is not int or execution_groups not in (8, 16):
+        raise ValueError("masked whole-row authoring admits 8 or 16 execution groups")
+    args = workload.tensor_abi(case_id)
+    width = args[0].shape[-1]
+    epsilon = workload.document["semantics"]["epsilon"]
+    declarations = [f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
+                    + (', mode="output")' if arg.mode == "output" else ')') for arg in args]
+    tile = 1 << (width - 1).bit_length()
+    body = [
+        'stored_x = lm.load(x[row, column], id="load_x")',
+        'x32 = lm.cast(stored_x, to="fp32", id="widen_x")',
+        'stored_residual = lm.load(residual[row, column], id="load_residual")',
+        'residual32 = lm.cast(stored_residual, to="fp32", id="widen_residual")',
+        'combined = x32 + residual32',
+        'squares = lm.square(combined, id="square")',
+        'square_sum = lm.reduce(squares, op="sum", axis=0, scope="cta", '
+        'across_loop=False, id="sum_square")',
+        f'mean_square = square_sum / {float(width)!r}',
+        f'inverse = lm.rsqrt(mean_square + {epsilon!r}, id="inverse")',
+        'stored_weight = lm.load(weight[column], id="load_weight")',
+        'weight32 = lm.cast(stored_weight, to="fp32", id="widen_weight")',
+        'normalized = combined * inverse',
+        'weighted = normalized * weight32',
+        'narrowed = lm.cast(weighted, to="bf16", id="narrow_out")',
+        'lm.store(out[row, column], narrowed, coalesced=False, id="store_out")',
+    ]
+    return ('from open_cake_ir.compiler import frontend as cake\n\n'
+            f'@cake.schedule(name="{workload.workload_id}-masked-whole-w{execution_groups}", '
+            f'target="{workload.target}", backend="triton", '
+            f'entry_point="cake_fib003_whole_w{execution_groups}")\n'
+            f'def candidate(lm, {", ".join(declarations)}):\n'
+            f'    compute = lm.role(execution_groups={list(range(execution_groups))!r})\n'
+            '    row = lm.program(x, axis=0, dimension=0, tile=1)\n'
+            f'    column = lm.program(x, axis=1, dimension=1, tile={tile})\n'
+            '    with compute:\n        ' + '\n        '.join(body) + '\n')
