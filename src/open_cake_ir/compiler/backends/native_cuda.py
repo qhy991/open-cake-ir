@@ -945,6 +945,8 @@ class _Emitter:
         arch = major*100 + minor*10
         self.line(f'#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ != {arch}\n#error "Schedule requires exact {self.s.target}"\n#endif')
         self.line(_INSTRUCTIONS)
+        if any(len(self.b(op.reads[0]).shape) == 4 for op in self.loads):
+            self.line(_TMA4_INSTRUCTIONS)
         if any(op.kind is OperationKind.MMA and
                any(self.b(name).space is MemorySpace.TENSOR for name in op.reads)
                for op in self.s.operations):
@@ -1444,9 +1446,6 @@ __device__ __forceinline__ void cake_arrive(uint64_t* p) {
 __device__ __forceinline__ void cake_tma3(void* dst, const CUtensorMap* map, int x, int y, int z, uint64_t* barrier) {
   asm volatile("cp.async.bulk.tensor.3d.shared::cluster.global.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3, %4}], [%5];" :: "r"(cake_smem(dst)), "l"(map), "r"(x), "r"(y), "r"(z), "r"(cake_smem(barrier)) : "memory");
 }
-__device__ __forceinline__ void cake_tma4(void* dst, const CUtensorMap* map, int x, int y, int z, int w, uint64_t* barrier) {
-  asm volatile("cp.async.bulk.tensor.4d.shared::cluster.global.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3, %4, %5}], [%6];" :: "r"(cake_smem(dst)), "l"(map), "r"(x), "r"(y), "r"(z), "r"(w), "r"(cake_smem(barrier)) : "memory");
-}
 __device__ __forceinline__ uint64_t cake_desc(uint32_t address, uint32_t stride, uint32_t swizzle) {
   return uint64_t(address >> 4) | (1ull << 16) | (uint64_t(stride >> 4) << 32) | (1ull << 46) | (uint64_t(swizzle) << 61);
 }
@@ -1455,6 +1454,12 @@ __device__ __forceinline__ void cake_mma(uint32_t dst, uint64_t a, uint64_t b, u
 }
 __device__ __forceinline__ void cake_commit(uint64_t* p) {
   asm volatile("tcgen05.commit.cta_group::1.mbarrier::arrive::one.shared::cluster.b64 [%0];" :: "r"(cake_smem(p)) : "memory");
+}
+'''
+
+_TMA4_INSTRUCTIONS = r'''
+__device__ __forceinline__ void cake_tma4(void* dst, const CUtensorMap* map, int x, int y, int z, int w, uint64_t* barrier) {
+  asm volatile("cp.async.bulk.tensor.4d.shared::cluster.global.mbarrier::complete_tx::bytes [%0], [%1, {%2, %3, %4, %5}], [%6];" :: "r"(cake_smem(dst)), "l"(map), "r"(x), "r"(y), "r"(z), "r"(w), "r"(cake_smem(barrier)) : "memory");
 }
 '''
 
