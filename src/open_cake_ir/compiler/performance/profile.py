@@ -648,6 +648,11 @@ def profile_envelope(
         ))
     if backend_intrinsics:
         abstentions.extend(backend_intrinsics)
+    if any(operation.kind is OperationKind.FORWARD_SUBSTITUTE
+           for operation in schedule.operations):
+        abstentions.append(
+            "forward_substitute has ordered token dependencies; no target latency calibration"
+        )
     return ProfileEnvelope(
         schedule.schedule_id,
         target.target_id,

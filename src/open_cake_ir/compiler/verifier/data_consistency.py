@@ -1324,6 +1324,27 @@ def _verify_operation_shape(
                     category,
                 )
 
+    if operation.kind is OperationKind.FORWARD_SUBSTITUTE:
+        if len(operation.reads) != 2 or len(operation.writes) != 1:
+            out.add("FORWARD_SUBSTITUTE_ARITY", path,
+                    "forward_substitute reads P and RHS and writes one U tile", category)
+        else:
+            p = buffers.get(operation.reads[0])
+            rhs = buffers.get(operation.reads[1])
+            result = buffers.get(operation.writes[0])
+            if p is not None and rhs is not None and result is not None:
+                if (len(p.shape) != 2 or p.shape[0] != p.shape[1]
+                        or len(rhs.shape) != 2 or rhs.shape[1] != p.shape[0]
+                        or result.shape != rhs.shape):
+                    out.add("FORWARD_SUBSTITUTE_SHAPE", f"{path}.reads",
+                            "forward_substitute requires P[C,C], RHS[M,C], U[M,C]",
+                            category)
+                if (p.dtype is not DType.BF16 or rhs.dtype is not DType.FP32
+                        or result.dtype is not DType.FP32):
+                    out.add("FORWARD_SUBSTITUTE_DTYPE", f"{path}.writes",
+                            "forward_substitute requires BF16 P and FP32 RHS/U",
+                            category)
+
     expected = _ARITY.get(operation.kind)
     if expected is not None:
         reads, writes, label = expected

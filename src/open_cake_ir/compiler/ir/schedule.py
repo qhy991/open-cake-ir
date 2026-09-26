@@ -30,6 +30,7 @@ from .resources import (
 )
 from .vocabulary import (
     AccessIndexKind,
+    DType,
     LoadMovement,
     LoweringBackend,
     MemorySpace,
@@ -53,6 +54,37 @@ _SCHEDULE_REQUIRED = {
     "metadata",
 }
 _SCHEDULE_OPTIONAL = {"grid", "program_map", "residency", "tile_loops", "access_maps"}
+
+
+def _check_forward_substitution_types(
+    buffers: tuple[Buffer, ...], operations: tuple[Operation, ...]
+) -> None:
+    """The row solve's complete numeric type is known without a Target."""
+
+    by_name = {buffer.name: buffer for buffer in buffers}
+    for index, operation in enumerate(operations):
+        if operation.kind is not OperationKind.FORWARD_SUBSTITUTE:
+            continue
+        path = f"schedule.operations[{index}]"
+        if len(operation.reads) != 2 or len(operation.writes) != 1:
+            raise ScheduleParseError(
+                f"{path} forward_substitute requires exactly P, RHS and one U result"
+            )
+        p, rhs, result = (by_name.get(name) for name in
+                          (*operation.reads, *operation.writes))
+        if p is None or rhs is None or result is None:
+            raise ScheduleParseError(f"{path} forward_substitute names an undeclared buffer")
+        if (len(p.shape) != 2 or p.shape[0] != p.shape[1]
+                or len(rhs.shape) != 2 or rhs.shape[1] != p.shape[0]
+                or result.shape != rhs.shape):
+            raise ScheduleParseError(
+                f"{path} forward_substitute requires P[C,C], RHS[M,C], U[M,C]"
+            )
+        if (p.dtype is not DType.BF16 or rhs.dtype is not DType.FP32
+                or result.dtype is not DType.FP32):
+            raise ScheduleParseError(
+                f"{path} forward_substitute requires BF16 P and FP32 RHS/U"
+            )
 
 
 @dataclass(frozen=True)
@@ -513,6 +545,9 @@ class Schedule:
                 for index, item in enumerate(items)
             )
 
+        buffers = parse_list("buffers", Buffer.from_dict)
+        operations = parse_list("operations", Operation.from_dict)
+        _check_forward_substitution_types(buffers, operations)
         return cls(
             schema_version=2,
             schedule_id=_string(obj["schedule_id"], "schedule.schedule_id"),
@@ -531,12 +566,12 @@ class Schedule:
             ),
             roles=parse_list("roles", Role.from_dict),
             allocations=parse_list("allocations", Allocation.from_dict),
-            buffers=parse_list("buffers", Buffer.from_dict),
+            buffers=buffers,
             pipelines=parse_list("pipelines", Pipeline.from_dict),
             barriers=parse_list("barriers", Barrier.from_dict),
             tile_loops=parse_list("tile_loops", TileLoop.from_dict),
             access_maps=parse_list("access_maps", AccessMap.from_dict),
-            operations=parse_list("operations", Operation.from_dict),
+            operations=operations,
             outputs=_string_tuple(obj["outputs"], "schedule.outputs"),
             metadata=_metadata(obj["metadata"]),
         )

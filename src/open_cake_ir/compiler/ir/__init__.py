@@ -87,6 +87,7 @@ from .operations import (
     ElementwiseParameters,
     EpilogueParameters,
     FenceProxyParameters,
+    ForwardSubstituteParameters,
     IndexExpandParameters,
     LoadParameters,
     MmaInstruction,

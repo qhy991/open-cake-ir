@@ -279,6 +279,17 @@ class ScanParameters:
 
 
 @dataclass(frozen=True)
+class ForwardSubstituteParameters:
+    """Ordered strict-lower row solve with an implicit unit diagonal.
+
+    For each row independently, U[t] starts at FP32 RHS[t], then accumulates
+    BF16 P[t, i] * U[i] for i=0..t-1 in increasing order. P's diagonal and
+    upper triangle are never read. The last axis is the token axis; an explicit
+    subsequent cast owns any BF16 rounding of U.
+    """
+
+
+@dataclass(frozen=True)
 class TopKParameters:
     """Greatest FP32 or signed-INT32 values and positions from rank-one tiles.
 
@@ -448,6 +459,7 @@ OperationParameters = Union[
     ReduceArgminParameters,
     ReduceParameters,
     ScanParameters,
+    ForwardSubstituteParameters,
     TopKParameters,
     IndexExpandParameters,
     OnlineSoftmaxParameters,
@@ -653,6 +665,10 @@ def _operation_parameters(
                 f"{context}.direction",
             ),
         )
+
+    if kind is OperationKind.FORWARD_SUBSTITUTE:
+        _strict_object(value, required=set(), context=context)
+        return ForwardSubstituteParameters()
 
     if kind is OperationKind.TOP_K:
         obj = _strict_object(

@@ -554,7 +554,7 @@ class LocalizedDiagnosticTest(unittest.TestCase):
                 B32,
                 lambda d: _op(d, "load_centroids").update(kind="tma_load"),
                 "schedule.operations[1].kind",
-                "atomic_rmw, cast, compare, coordinate, elementwise, epilogue, index_expand, load, mma, "
+                "atomic_rmw, cast, compare, coordinate, elementwise, epilogue, forward_substitute, index_expand, load, mma, "
                 "online_softmax, reduce, reduce_argmin, scan, select, store, tmem_store, top_k",
             ),
             (

@@ -76,6 +76,7 @@ class OperationKind(str, Enum):
     TRANSPOSE = "transpose"
     ELEMENTWISE = "elementwise"
     SCAN = "scan"
+    FORWARD_SUBSTITUTE = "forward_substitute"
     STORE = "store"
     TMEM_STORE = "tmem_store"
 
