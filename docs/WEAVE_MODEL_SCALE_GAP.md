@@ -347,9 +347,26 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    the Cake FFN Program, combine Schedule and ranked effects before
    generation. It reports the safe 255-tile/46,920-task capacity and the
    emitted 49,200-byte CTA shared footprint beside the IR's 49,152-byte
-   allocation. The experimental 64-tile arrays remain admissible only for
+   allocation. The earlier 64-tile arrays remain admissible only for
    the checked route plan; this composer is not a complete
    `lower_ranked_tiles` implementation.
+   A successor B300 source (`438eb0fc`) allocated the 255-tile capacity and
+   derived variable per-wave expert tiles from 2,048-row bins. Its fixed
+   16,384-route full-chain replay preserved all 256 CPU tile manifests and
+   BF16 inputs bitwise, all route contributions bitwise and the final
+   output oracle. At `5b8d509b`, planner-only replays exercised three
+   other route sets: eight hot experts produced 128 full tiles on one
+   owner; a mixed set produced 80/64/64/64 owner tiles, comprising 32
+   full, 120 early and 120 terminal tiles; and a dense one-owner set
+   produced 192 tiles, comprising 64 full, 96 early and 32 terminal
+   tiles. The GPU manifests matched the independent CPU planner exactly
+   in each run, including empty owners and per-wave counts. These
+   planner-only runs did not execute or verify the FFN on their changed
+   routes. The current planner publishes full tiles at wave boundaries,
+   later than the schema-2 `full_on_capacity` opportunity; exact
+   capacity-triggered publication, general-route FFN correctness and a
+   complete Compiler lowering remain open. Promotion disposition: no
+   public ranked-tile lowering or automatic scheduling rule.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
