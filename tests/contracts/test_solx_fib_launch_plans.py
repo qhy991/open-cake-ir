@@ -35,6 +35,17 @@ class CompletePackPlanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gqa_prefill_fusion.author_plan(wrong)
 
+    def test_causal_tail_masks_both_cache_loads_before_the_dot(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        workload = WorkloadContract(attention.workload_document(
+            gqa_prefill_fusion.FUSED_TASKS[1], variant='captured'))
+        plan = gqa_prefill_fusion.launch_plan(workload)
+        source = compiler.lower_program(plan).lowerings[0].source
+        self.assertIn('masked_pages = tl.where(keep != 0, pages, -1)', source)
+        self.assertIn('key_ptrs = k_cache + masked_pages[:, None]', source)
+        self.assertIn('value_ptrs = v_cache + masked_pages[:, None]', source)
+        self.assertEqual(source.count('masked_pages[:, None] >= 0'), 2)
+
     def test_all_26_tasks_have_one_owning_implementation(self):
         self.assertEqual(len(TASK_IDS),26)
         self.assertEqual(len({t.split('_',1)[0] for t in TASK_IDS}),26)
