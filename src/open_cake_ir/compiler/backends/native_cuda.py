@@ -156,6 +156,34 @@ def _role_carried_domain(s, target, loop):
     return True
 
 
+def _vector_p_stage(s, target, op):
+    """A 16-byte contiguous BF16 P copy with a scalar unaligned fallback."""
+    scope = _scope(s, op)
+    if (op.kind is not OperationKind.LOAD or scope is None
+            or not _role_carried_domain(s, target, scope)
+            or len(op.reads) != 1 or len(op.writes) != 1):
+        return False
+    source, destination = s.buffer(op.reads[0]), s.buffer(op.writes[0])
+    access = s.access_map(op.op_id, source.name) if source else None
+    return (source is not None and destination is not None
+            and source.space is MemorySpace.GLOBAL
+            and source.dtype is DType.BF16
+            and source.shape == (256, 64, 32, 32)
+            and destination.space is MemorySpace.SHARED
+            and destination.dtype is DType.BF16
+            and destination.shape == (32, 32)
+            and destination.stages == 1 and destination.swizzle is Swizzle.B64
+            and op.role == 'mma' and op.pipeline is None
+            and op.parameters.movement is LoadMovement.GLOBAL
+            and access is not None and len(access.indices) == 4
+            and access.indices[0].source is AccessIndexKind.LOOP
+            and access.indices[0].name == scope.iterator
+            and _head64_access(s, access, 1)
+            and all(component.source is AccessIndexKind.DIMENSION
+                    and component.dimension == axis
+                    for axis, component in enumerate(access.indices[2:], 2)))
+
+
 def _last_chunk_terminal_store(s, target, op):
     """A loop-invariant output is observable only after its final full overwrite."""
     scope = _scope(s, op)
@@ -1014,6 +1042,8 @@ class _Emitter:
                                  if _prefetch_carried_domain(s, target, loop)}
         self.role_carried = {loop.name for loop in s.tile_loops
                              if _role_carried_domain(s, target, loop)}
+        self.vector_p_stages = {op.op_id for op in s.operations
+                                if _vector_p_stage(s, target, op)}
         self.persistent_carried = {loop.name for loop in s.tile_loops
                                    if (_persistent_carried_domain(s, target, loop)
                                        or loop.name in self.prefetch_carried)}
@@ -1603,12 +1633,30 @@ class _Emitter:
             self.end()
         elif op.kind is OperationKind.LOAD and dst.space is MemorySpace.SHARED:
             width, _ = _SWIZZLE[dst.swizzle]
-            self.begin(f'for (int e=int(threadIdx.x & 31); e<{dst.elements}; e+=32)')
-            address, mask = self.address(op, src, [f'e/{dst.shape[1]}', f'e%{dst.shape[1]}'])
-            self.line(f'const int byte = e * {dst.dtype.itemsize};')
-            self.line(f'const int swizzled = byte ^ (((byte >> 7) & {(width//16)-1}) << 4);')
-            self.line(f'*reinterpret_cast<{_TYPES[dst.dtype]}*>({self.pointer(dst,"0")} + swizzled) = ({mask}) ? {address} : {_TYPES[dst.dtype]}(0);')
-            self.end()
+            def scalar_copy():
+                self.begin(f'for (int e=int(threadIdx.x & 31); e<{dst.elements}; e+=32)')
+                address, mask = self.address(op, src, [f'e/{dst.shape[1]}', f'e%{dst.shape[1]}'])
+                self.line(f'const int byte = e * {dst.dtype.itemsize};')
+                self.line(f'const int swizzled = byte ^ (((byte >> 7) & {(width//16)-1}) << 4);')
+                self.line(f'*reinterpret_cast<{_TYPES[dst.dtype]}*>({self.pointer(dst,"0")} + swizzled) = ({mask}) ? {address} : {_TYPES[dst.dtype]}(0);')
+                self.end()
+            if op.op_id in self.vector_p_stages:
+                first, _ = self.address(op, src, ['0', '0'])
+                self.line('// CAKE_NATIVE_VECTOR_P_STAGE: 16B aligned copy, scalar fallback')
+                self.line(f'const __nv_bfloat16* p_base = &{first};')
+                self.begin('if ((reinterpret_cast<uintptr_t>(p_base) & 15) == 0)')
+                self.line('#pragma unroll 1')
+                self.begin('for (int e=int(threadIdx.x & 31)*8; e<1024; e+=256)')
+                self.line('const uint4 packed = *reinterpret_cast<const uint4*>(p_base + e);')
+                self.line('const int byte = e * 2;')
+                self.line('const int swizzled = byte ^ (((byte >> 7) & 3) << 4);')
+                self.line(f'*reinterpret_cast<uint4*>({self.pointer(dst,"0")} + swizzled) = packed;')
+                self.end(); self.end()
+                self.begin('else')
+                scalar_copy()
+                self.end()
+            else:
+                scalar_copy()
             self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
             self.line('__syncwarp();')
             self.begin('if ((threadIdx.x & 31) == 0)')
