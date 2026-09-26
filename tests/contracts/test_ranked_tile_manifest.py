@@ -1,6 +1,7 @@
 """One frozen EP4 Workload and Compiler source bind a single rank plan."""
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 import tempfile
@@ -48,6 +49,7 @@ class RankedTileManifestTest(unittest.TestCase):
         manifest=self.manifest()
         restored=RankedTileLaunchManifest.from_dict(manifest.as_dict())
         self.assertEqual(restored,manifest)
+        self.assertEqual(restored.as_dict()['abi'],'ranked_tile_b300_pointer_v4')
         self.assertEqual(restored.plans(),self.plans())
         restored.check_lowered(self.lowered)
         restored.check_workload(self.workload,'mixed_full_early_terminal',
@@ -60,6 +62,10 @@ class RankedTileManifestTest(unittest.TestCase):
         changed['source_map']['effect.bin.reserve']=[0,0]
         with self.assertRaisesRegex(ValueError,'source map'):
             RankedTileLaunchManifest.from_dict(changed)
+        older=replace(self.lowered,source=self.lowered.source.replace(
+            '_abi_version() { return 4; }','_abi_version() { return 3; }'))
+        with self.assertRaisesRegex(ValueError,'emitted ABI source'):
+            restored.check_lowered(older)
 
     def test_compiled_bytes_and_case_plan_refused_before_device_binding(self):
         manifest=self.manifest()

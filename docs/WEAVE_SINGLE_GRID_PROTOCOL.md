@@ -52,6 +52,11 @@ build or device run exists for this successor: direct and jump SSH both timed
 out while preparing the earlier cross-stream candidate. The static checks
 do not measure the new planner's register/static shared footprint, confirm
 cooperative residency, or verify exact GPU tile events and FP64 outputs.
+The local integration now carries `RankedTileLaunchManifest` and a
+byte-bearing `RankedTileCandidate` for pointer ABI v4: they refuse a wrong
+Workload case, source, rank plan or library bytes before CUDA state creation.
+This is not yet the common sealed Evaluation Candidate or a proof of NVCC
+provenance; those remain separate gates.
 
 A source-declaration audit counts 8,192 B for the per-CTA expert sort,
 84 B for source-dispatch scratch and 20 B for worker claims, in addition to

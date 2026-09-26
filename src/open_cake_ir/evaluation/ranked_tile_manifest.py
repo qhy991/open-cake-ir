@@ -35,7 +35,7 @@ _FIELDS = frozenset({
 @dataclass(frozen=True)
 class RankedTileLaunchManifest:
     _bytes: bytes
-    abi = 'ranked_tile_b300_pointer_v3'
+    abi = 'ranked_tile_b300_pointer_v4'
 
     @classmethod
     def from_dict(cls, document: object) -> 'RankedTileLaunchManifest':
@@ -134,6 +134,10 @@ class RankedTileLaunchManifest:
 
     def check_lowered(self, lowered: NativeRankedTileLowering) -> None:
         lowered.validate_binding()
+        abi_entry=(f'extern "C" int {lowered.effects.lowering.entry_point}'
+                   '_abi_version() { return 4; }')
+        if lowered.source.count(abi_entry)!=1:
+            raise ValueError('ranked tile v4 manifest differs from emitted ABI source')
         doc = self.as_dict()
         if (doc['target'] != lowered.local_program.target
                 or doc['compiler_revision_id'] != lowered.compiler_revision_id
