@@ -167,7 +167,9 @@ def _last_chunk_terminal_store(s, target, op):
         return False
     source, destination = s.buffer(op.reads[0]), s.buffer(op.writes[0])
     access = s.access_map(op.op_id, destination.name) if destination else None
-    prior = s.operation(scope.body[-2]) if len(scope.body) >= 2 else None
+    prior = s.operation(op.depends_on[0]) if len(op.depends_on) == 1 else None
+    prior_index = scope.body.index(prior.op_id) if prior is not None and prior.op_id in scope.body else -1
+    intervening = (s.operation(name) for name in scope.body[prior_index + 1:-1])
     writers = [writer for writer in s.operations if destination is not None
                and destination.name in writer.writes]
     readers = [reader for reader in s.operations if destination is not None
@@ -182,6 +184,8 @@ def _last_chunk_terminal_store(s, target, op):
             and writers == [op] and not readers
             and prior is not None and prior.kind is OperationKind.TMEM_STORE
             and prior.reads == op.reads and op.depends_on == (prior.op_id,)
+            and prior_index >= 0
+            and not any(source.name in other.writes for other in intervening)
             and op.pipeline is None and not op.waits and not op.signals
             and access is not None and access.boundary is BoundaryPolicy.MASK_TILED_AXES
             and len(access.indices) == 3
@@ -496,6 +500,21 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                 check(_role_carried_domain(s, target, loop),
                       'NATIVE_ROLE_PIPELINE_DOMAIN', f'tile_loops[{loop_index}]',
                       'MMA-owned P staging requires the exact three-role carried pipeline, one sole solve reader and ordered B rings')
+        if _role_carried_domain(s, target, loop):
+            publishers = [op for op in s.loop_operations(loop)
+                          if op.kind is OperationKind.TMEM_STORE
+                          and op.writes == (loop.carried_buffers[0],)]
+            if len(publishers) == 1:
+                published_at = loop.body.index(publishers[0].op_id)
+                output_reads = [op for op in s.loop_operations(loop)
+                                if op.kind is OperationKind.LOAD
+                                and op.parameters.movement is LoadMovement.TMEM
+                                and (source := s.buffer(op.reads[0])) is not None
+                                and source.dtype is DType.FP32]
+                check(all(loop.body.index(op.op_id) < published_at for op in output_reads),
+                      'NATIVE_CARRIED_OUTPUT_READ_BEFORE_PUBLICATION',
+                      f'tile_loops[{loop_index}].body',
+                      'all FP32 TMEM results must be read before the next carried state enables MMA overwrite')
         if len(owners) == 2:
             owners.sort(key=lambda p: next(
                 (loop.body.index(op.op_id) for op in s.operations
