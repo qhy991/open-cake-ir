@@ -28,6 +28,7 @@ flowchart TB
     decay --> combine["FP32 状态合并与 BF16 块级舍入"]
     correction --> combine
     combine --> next_state["下一 chunk 的 BF16 TMEM state"]
+    next_state --> final_state["仅末块写 final_state：[head,V,K]"]
     base --> output["查询与校正合并、scale、BF16 舍入"]
     correction --> output
     output --> store["直接写 [chunk,token,head,V]"]

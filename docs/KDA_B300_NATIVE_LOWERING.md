@@ -99,6 +99,14 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 随后 `gpuq-259eacb16124` 在**同一独占 GPU0、同一输入、交替顺序**比较两个固定 cubin：五轮每臂各 25 个 CUPTI 冷 L2 样本、无 graph，两臂末次输出/状态均与先前抓取逐位相同、后检查无其它计算 PID。旧版 pooled 中位数 **7,611.606 µs**，复用版 **7,228.691 µs**；五轮比值 1.05218–1.05306，pooled 比值 **1.05297×**，轮内变异系数均低于 0.16%。这是同范围组件的约 5.3% 收益，但 **7.23 ms 仍无法作为追赶 CAKE 的主体路线**。当前 disposition：保留 NVIDIA 任务分支的有界机制，不提升为共享 pass 或完整 KDA 候选。后继需要使 B 输入预取与状态消费跨 chunk 重叠，并考虑原始 CAKE 的多槽/多角色分工与准备阶段片上融合；每一项仍须保留完整数值和配对计时证据。
 
+### 2.12 末态写回：把每块的死覆盖缩成最后一次
+
+测过 barrier 后再检查生成源码，发现 `store_final` 位于 256 次 carried loop **内部**，但它的全局目的地 `[head64,V128,K128]` 与 chunk 无关，且无内核内读者；每次都完整覆盖前一次结果。全局目的地每轮约 2 MiB，其中前 255 轮是约 510 MiB 的逻辑死写回。直接把 `store_final` 移到 Schedule 的循环外时，通用 Verifier 以 `BUFFER_ESCAPES_LOOP` 拒绝循环内 register `next_state` 的越界读取。这是正确的生命周期门禁，不应为优化而绕开；未来的共享 IR 若要表达循环出口值，应连同生存期和别名分析一并设计。
+
+有界 NVIDIA 后继 `5ac55ad4` 保留可验证的 Schedule 结构，只在精确 H64/256 carried 路径中，确认最终 STORE 是 loop 末操作、紧随使用同一 register 状态的 TMEM 发布、目的地 BF16 `[64,128,128]` 完整写入、AccessMap 只含标量 head 与本地 row/column、唯一 writer 且没有任何 reader，才发射 `if (it0 == 255)`。其他形状与读者存在的反例不走此映射，两个 chunk 的控制版本保持原发射。这个规则使性能决定可在 emitter 源码里检查，但尚未将 loop-exit 值推广成共享 IR 的新语法。固定源码通过 Corpus Gate 179/179、远端完整适用 CPU 合同 2,680 passed、16 skipped、1 项 Apple MLX 实机测试取消选择；精确 `sm_103a` AOT 为 255 寄存器、0 stack/spill。broker-shared `gpuq-4548098ec2d4` 释放设备后，独立 host oracle 对 H64/T8192 的 67,108,864 输出和 1,048,576 最终状态元素均为 0 超差，所有不可变输入未改写。
+
+同一独占 GPU0、同一输入、交替顺序的 `gpuq-5dee2913c2e2` 做五轮每臂各 25 个冷 L2 CUPTI 样本、无 graph。两臂计时后均与各自先前设备抓取**逐位相同**，且没有其它计算 PID。原版 pooled 中位数 **7,217.556 µs**，仅末块写回版 **2,999.349 µs**，五轮比值 2.40552–2.40744，pooled **2.40637×**，轮内变异系数均低于 0.1%。这是同范围的真实组件收益，也定位了重复的行线程全状态写回是主要成本之一；它仍不能与适配 CAKE 的完整约 456 µs 非配对地称作加速比。当前 disposition：保留在 NVIDIA 任务分支，尚不推广共享 pass 或完整 KDA 候选。下一轮先分辨 token-major 输出交通与 TMEM/MMA 相位成本，再决定 TMA store、更多并行 CTA 或多槽流水的设计。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -110,6 +118,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | 旧状态衰减 | FP32 cast/mul/add 与 BF16 cast 保持独立语义 | 行拥有者逐列计算并发布下一 TMEM phase | `test_native_kda_decayed_state.py`；去掉 prefix producer 触发 `BUFFER_UNPRODUCED`。 |
 | H64 标量 head / rank-4 TMA | `ProgramMap` 和 AccessMap 明示 head、chunk 与本地二维 tile | 只为 H64 两或 256 chunk 发射 4D tensor-map、TMA4 与直接 V/输出地址 | `test_native_kda_head_address.py`、`test_native_kda_chunk256.py`；错误 head、rank-5、H32、未资格化 chunk 数与漏 store 所有权各有拒绝。 |
 | carried barrier 生命周期 | carried TMEM 与 producer/consumer 的 phase、读先于写保持原分析 | H64/256 的两条单槽 TMA/MMA 流水在 loop 两端初始化/失效，块内按 parity 等待 | `test_native_carried_barrier_reuse.py`；两 chunk 控制仍保留旧生命周期；B300 全输出设备证明及配对 CUPTI 见 §2.11。 |
+| 无读者的末态写回 | 保持 `BUFFER_ESCAPES_LOOP`，循环出口 register 值不能暗中越界 | 仅对 H64/256、每轮同址完整覆盖的最终 STORE 发射最后一次写回 | `test_native_terminal_state_store.py`；内部 reader、错误地址与两 chunk 控制均不准入；设备及配对证据见 §2.12。 |
 
 ### 一次没有推广的 lowering 尝试
 
@@ -129,6 +138,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `d5a9648a` / `gpuq-ad57c793c89c` | H64 两 chunk 的 rank-4 TMA、公开 V/beta 与 token-major 输出；完整适用 CPU 合同 2,672 passed、Corpus Gate 179/179，B300 三组各 524,288 输出及 1,048,576 状态均通过，AOT 255 寄存器、0 stack/spill | 256 chunk、真实准备值、逐 token BF16 舍入、完整六形状和配对延迟 |
 | `61892f81` / `gpuq-1f1423e7d3da`、`gpuq-95ff801f95c4` | H64/256 chunk 的长循环相位和地址；完整适用 CPU 合同 2,674 passed、Corpus Gate 179/179，B300 一组 67,108,864 输出及 1,048,576 状态均通过；单组件 CUPTI 中位数 7,678.607 µs，AOT 254 寄存器、0 stack/spill | 真实准备值、逐 token BF16 舍入、packed/六形状和完整 Workload 配对延迟 |
 | `92994711` / `gpuq-072c72413d0e`、`gpuq-259eacb16124` | ready/free/completion barrier 生命周期跨 256 chunk 复用；适用 CPU 合同 2,676 passed、Corpus Gate 179/179，全输出/状态设备检查通过；同 GPU 配对组件比 1.05297×，AOT 255 寄存器、0 stack/spill | 准备阶段融合、逐 token BF16 舍入、六形状、相对 CAKE 的完整配对性能 |
+| `5ac55ad4` / `gpuq-4548098ec2d4`、`gpuq-5dee2913c2e2` | 最终状态只在第 256 个 chunk 写回；适用 CPU 合同 2,680 passed、Corpus Gate 179/179，全输出/状态设备检查通过；同 GPU 配对组件比 2.40637×、中位数 2,999.349 µs，AOT 255 寄存器、0 stack/spill | 原位状态别名、真实准备值、逐 token BF16 舍入、packed/六形状、相对 CAKE 的完整配对性能 |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
@@ -141,7 +151,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `state * prefix_end + U @ final_key` | BF16 TMEM 回读/FP32 合并的两 chunk 合成状态在 B300 三种输入通过 | 接入准备组件的真实 FP32 prefix/final-key，并检验更多 chunk、尾块及原位状态别名。 |
 | `state_after_update @ query` 与输出耦合 | `61892f81` 已在 B300 固定 H64/T8192 合成输入上通过公开 V/beta、token-major 输出及最终状态，AOT 0 spill | 真实准备值、逐 token 状态舍入、packed/tail 与完整 Workload 写回仍未证明。 |
 | 逐 token BF16 状态舍入 | 独立 Workload oracle 和高保留失败反例 | 当前块代数只在块边界舍入；需精确路径或有证明且含 fallback 的输入 guard。 |
-| 跨 chunk 流水成本 | `92994711` 的 barrier phase 复用经同 GPU 组件配对获约 5.3% 收益，但仍需 7.23 ms | 减少完整 CTA drain，分离 B 预取与状态消费，让多槽流水与准备值在片上衔接；以相同正确性/计时范围验证。 |
+| 跨 chunk 流水与最终状态写回 | `92994711` barrier phase 复用获约 5.3% 配对收益；`5ac55ad4` 去掉 255 次死写回后组件中位数降到 2,999.349 µs | 分离 B 预取与状态消费，让多槽流水与准备值在片上衔接；验证原位别名和完整语义，以相同正确性/计时范围判断后续收益。 |
 | 六形状、packed/tail、框架 ABI | Workload 与 guardrail 已冻结 | 完整候选、Target admission、正式 Evaluation、CUPTI 配对和 profiler 均未完成。 |
 
 1. 把准备阶段的 base/query、P、beta、prefix、final-key 接到同一状态/输出路径，明确哪些值留片上、哪些必须物化；核算额外 CTA、TMA 和 global traffic。原先七输出准备的 389.507 µs 是组件成本，不可与完整 CAKE 456 µs 非配对相减后宣称剩余预算。
