@@ -118,6 +118,10 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertIn('cake_ranked_tile_b300_stolen(',library)
         self.assertIn('cake_ranked_tile_b300_payloads(',library)
         self.assertIn('cake_ranked_tile_b300_bin_bytes(',library)
+        self.assertIn('cudaStreamWaitEvent(s.compute,s.fence[event-1])',library)
+        self.assertNotIn('dispatch_source_wave<<<',library)
+        self.assertLess(library.index('// CAKE_EFFECT: launch.rank'),
+                        library.index('derive_wave_order<<<'))
         self.assertNotIn('int main(',library)
         self.assertNotIn('fopen(',library)
         mapped=source_event_map(library,result,combine_source=combine_source)
