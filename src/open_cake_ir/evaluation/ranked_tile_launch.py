@@ -15,6 +15,69 @@ from open_cake_ir.compiler.backends.native_cuda_ranked_tile import (
     NativeRankedTileLowering,
 )
 from open_cake_ir.compiler.ir import DType, ProgramTensor
+from .workload import WorkloadContract
+
+
+_PUBLIC_INPUTS = {
+    'hidden_states': 'hidden',
+    'expert_ids': 'expert_ids',
+    'route_weights': 'route_weights',
+    'w_up_gate': 'w_up_gate',
+    'w_down': 'w_down',
+}
+
+
+def validate_ranked_tile_case(lowered: NativeRankedTileLowering,
+                              workload: WorkloadContract, case_id: str) -> None:
+    """Match a frozen distributed Workload to every local pointer ABI row."""
+    lowered.validate_binding()
+    analysis = lowered.analysis
+    req = lowered.toolchain_requirements
+    if (not isinstance(workload, WorkloadContract)
+            or not workload.requires_distributed_execution
+            or workload.target != lowered.local_program.target
+            or workload.document['state'] != 'frozen'):
+        raise ValueError('ranked tile needs a frozen exact-target distributed Workload')
+    semantics = workload.document['semantics']
+    if (semantics.get('execution_topology') != {
+                'kind': 'expert_parallel', 'world_size': analysis.world_size}
+            or semantics.get('expert_placement')
+               != 'contiguous_equal_ranges_by_rank'
+            or semantics.get('top_k') != analysis.routes_per_item
+            or semantics.get('route_ids') != 'distinct_in_range_per_token'
+            or semantics.get('route_weights')
+               != 'finite_nonnegative_sum_one_per_token'):
+        raise ValueError('ranked tile Workload topology or route domain differs')
+    public = {row.name: row for row in workload.tensor_abi(case_id)}
+    if set(public) != set(_PUBLIC_INPUTS) | {'output'}:
+        raise ValueError('ranked tile Workload public tensor set differs')
+    rank_inputs = _specs(req.get('rank_inputs'))
+    if set(rank_inputs) != set(_PUBLIC_INPUTS.values()):
+        raise ValueError('ranked tile Compiler input set differs from Workload binding')
+    placement = semantics.get('tensor_placement')
+    if not isinstance(placement, Mapping):
+        raise ValueError('ranked tile Workload tensor placement differs')
+    for name, local_name in _PUBLIC_INPUTS.items():
+        row = public[name]
+        spec = rank_inputs[local_name]
+        owner = ('expert_sharded_axis_0' if name.startswith('w_')
+                 else 'rank_sharded_axis_0')
+        first = (analysis.world_size * spec.shape[0]
+                 if owner == 'expert_sharded_axis_0'
+                 else analysis.world_size)
+        expected = (first,) + (spec.shape[1:] if owner == 'expert_sharded_axis_0'
+                               else spec.shape)
+        if (row.mode != 'input' or row.shape != expected
+                or row.dtype != spec.dtype.value or placement.get(name) != owner):
+            raise ValueError(f'ranked tile Workload {name!r} shard ABI differs')
+    output = public['output']
+    out = req.get('rank_output')
+    if (not isinstance(out, Mapping)
+            or output.mode != 'output'
+            or output.shape != (analysis.world_size, *out.get('shape', ()))
+            or output.dtype != out.get('dtype')
+            or placement.get('output') != 'rank_sharded_axis_0'):
+        raise ValueError('ranked tile Workload output shard ABI differs')
 
 
 @dataclass(frozen=True)
@@ -169,6 +232,21 @@ def prepare_ranked_tiles(lowered: NativeRankedTileLowering,
         lowered, bound, MappingProxyType(frozen_inputs),
         MappingProxyType(frozen_outputs), controls,
         execution_context, contexts)
+
+
+def prepare_ranked_tile_case(lowered: NativeRankedTileLowering,
+        workload: WorkloadContract, case_id: str,
+        inputs: Mapping[int, Mapping[str, object]],
+        outputs: Mapping[int, object],
+        plans: Mapping[int, Mapping[str, int]], *,
+        load_source: Callable, check_tensor: Callable,
+        storage_span: Callable, execution_context: Callable):
+    """Bind a checked Workload case before loading any device executable."""
+    validate_ranked_tile_case(lowered, workload, case_id)
+    return prepare_ranked_tiles(
+        lowered, inputs, outputs, plans, load_source=load_source,
+        check_tensor=check_tensor, storage_span=storage_span,
+        execution_context=execution_context)
 
 
 @dataclass

@@ -9,8 +9,11 @@ import unittest
 from open_cake_ir.compiler import Compiler, Program, RankedTileEffects, Schedule
 from open_cake_ir.compiler.ir import DType, ProgramTensor
 from open_cake_ir.evaluation.ranked_tile_launch import (
-    RankedTileBound, RankedTileExecutable, prepare_ranked_tiles,
+    RankedTileBound, RankedTileExecutable, prepare_ranked_tile_case,
+    validate_ranked_tile_case,
 )
+from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.tasks.workloads import load_workload
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +43,8 @@ class RankedTileLaunchContract(unittest.TestCase):
         combine=Schedule.from_dict(json.loads((ROOT/'examples/schedules/native/'
             'weave-model-weighted-combine-rank512-b300.json').read_text()))
         cls.lowered=compiler.lower_ranked_tiles(effects,local,combine)
+        cls.workload=load_workload(ROOT/'contracts/workloads/'
+            'weave-model-ep4-bf16-moe-b300-v1.json')
 
     def fixtures(self):
         req=self.lowered.toolchain_requirements
@@ -76,13 +81,26 @@ class RankedTileLaunchContract(unittest.TestCase):
             self.assertIs(lowered,self.lowered)
             events.append(('load',))
             return RankedTileExecutable(4,20,512*2048*2,isolated,bind)
-        bound=prepare_ranked_tiles(
-            self.lowered,inputs,outputs,plans,load_source=loader,
+        bound=prepare_ranked_tile_case(
+            self.lowered,self.workload,'fanin_v2',inputs,outputs,plans,
+            load_source=loader,
             check_tensor=lambda tensor,spec:self.assertEqual(tensor.spec,spec),
             storage_span=lambda tensor:(tensor.device,tensor.start,tensor.end),
             execution_context=lambda rank:f'ctx{rank}',
         )
         return bound,events
+
+    def test_workload_case_binding_and_shard_refusals(self):
+        for case_id in self.workload.case_ids:
+            validate_ranked_tile_case(self.lowered,self.workload,case_id)
+        changed=self.workload.document
+        changed['semantics']['tensor_placement']['w_down']='rank_sharded_axis_0'
+        with self.assertRaisesRegex(ValueError,'w_down.*shard ABI'):
+            validate_ranked_tile_case(self.lowered,WorkloadContract(changed),'fanin_v2')
+        changed=self.workload.document
+        changed['cases'][0]['shape']['H']=1024
+        with self.assertRaisesRegex(ValueError,'shard ABI'):
+            validate_ranked_tile_case(self.lowered,WorkloadContract(changed),'fanin_v2')
 
     def test_rank_local_controls_and_repeated_lifecycle(self):
         inputs,outputs,plans=self.fixtures()
