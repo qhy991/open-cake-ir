@@ -1441,6 +1441,17 @@ CAKE 的约 \(456\,\mu\mathrm{s}\) 完整参考。可见的原始 CAKE CUDA 发�
 故这约 151\,$\mu$s 只能作为输出 epilogue 加写回的诊断上界。
 它表明下一轮应优先处理状态依赖下的多槽 B 预取与跨 chunk 流水，
 而不是先把输出地址改为 TMA store；高保留输入的舍入正确性仍须独立解决。
+最后在扩容的输出末尾给单个 CTA 留下每块五点 \code{clock64} trace，
+修正探针取得与原 kernel 逐位相同的逻辑输出和状态。稳态块的粗分段中位数
+约为 142、13,567、91、6,609 cycles：异步基础投影完成到 U 发布的区间
+占约 66.5\%，校正完成到输出/状态发布约 32.4\%。这两个区间都包含等待，
+不能按指令类别直接归因。探针 AOT 多 8 字节 stack 和少量 spill；更细
+探针分别出现 488 与 1,016 字节 stack/spill，因扰动过大未做设备测量。
+下一种待实现的 native lowering 应让 copy warp 用多槽 shared ring 预取
+未来 B box，让 MMA/compute warp 按 carried state 顺序消费；两条 ready/free
+的 phase、槽重用与最终排空须有独立拒绝反例，再以完整外部 oracle 和
+CUPTI 验证。原始 CAKE 的五槽分角色流水提供机制线索，并不直接证明这项
+新映射会在 B300 获益。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
