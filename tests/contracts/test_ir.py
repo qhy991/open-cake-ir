@@ -567,7 +567,7 @@ class LocalizedDiagnosticTest(unittest.TestCase):
                 B32,
                 lambda d: d["access_maps"][0]["indices"][0].update(source="thread"),
                 "schedule.access_maps[0].indices[0].source",
-                "dimension, loop_tile, program, program_tile",
+                "dimension, loop, loop_tile, program, program_tile",
             ),
         ]
         for path, mutate, expected_path, admitted in cases:
