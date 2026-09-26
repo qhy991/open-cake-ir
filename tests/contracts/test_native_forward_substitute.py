@@ -41,9 +41,10 @@ class NativeForwardSubstitute(unittest.TestCase):
         self.assertIn("cake_init(bar0, 1)", source)
         self.assertIn("cake_arrive(bar0)", source)
         self.assertIn("cake_wait(bar0, 0)", source)
-        self.assertIn("for (int token=0; token<32; ++token)", source)
-        self.assertIn("for (int prior=0; prior<token; ++prior)", source)
-        self.assertIn("__fmaf_rn(__bfloat162float(coefficient)", source)
+        self.assertIn("float u0 = b4[0];", source)
+        self.assertIn("float u31 = b4[31];", source)
+        self.assertEqual(source.count("= __fmaf_rn(__bfloat162float("), 496)
+        self.assertNotIn("for (int prior=", source)
         self.assertIn("cake_inval(bar0)", source)
 
     def test_wrong_stage_or_wait_is_refused_by_owner(self):

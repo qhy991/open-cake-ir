@@ -1004,18 +1004,18 @@ class _Emitter:
             coefficient = src
             rhs = self.names[op.reads[1]]
             self.line(f'cake_wait({self.barvars[op.waits[0]]}, 0);')
-            self.line('#pragma unroll 1')
-            self.begin('for (int token=0; token<32; ++token)')
-            self.line(f'float update = {rhs}[token];')
-            self.line('#pragma unroll 1')
-            self.begin('for (int prior=0; prior<token; ++prior)')
-            self.line('const int byte = (token*32 + prior)*2;')
-            self.line('const int swizzled = byte ^ (((byte >> 7) & 3) << 4);')
-            self.line(f'const __nv_bfloat16 coefficient = *reinterpret_cast<const __nv_bfloat16*>({self.pointer(coefficient,"0")} + swizzled);')
-            self.line(f'update = __fmaf_rn(__bfloat162float(coefficient), {d}[prior], update);')
-            self.end()
-            self.line(f'{d}[token] = update;')
-            self.end()
+            for token in range(32):
+                self.line(f'float u{token} = {rhs}[{token}];')
+                for prior in range(token):
+                    byte = (token * 32 + prior) * 2
+                    swizzled = byte ^ (((byte >> 7) & 3) << 4)
+                    self.line(
+                        f'u{token} = __fmaf_rn(__bfloat162float('
+                        f'*reinterpret_cast<const __nv_bfloat16*>('
+                        f'{self.pointer(coefficient,"0")} + {swizzled})), '
+                        f'u{prior}, u{token});'
+                    )
+                self.line(f'{d}[{token}] = u{token};')
         elif op.kind is OperationKind.ELEMENTWISE:
             p=op.parameters
             self.line('#pragma unroll')
