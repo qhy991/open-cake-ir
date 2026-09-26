@@ -194,8 +194,26 @@ class NativeKdaStateOutput(unittest.TestCase):
         store["depends_on"] = [transpose["id"]]
         schedule = Schedule.from_dict(value)
         self.assertEqual([f for f in verify(schedule, target()) if f.blocks_lowering], [])
-        self.assertIn("BACKEND_OPERATION_UNEMITTABLE",
-                      {f.code for f in native_cuda.preflight(schedule, target())})
+        self.assertEqual(native_cuda.preflight(schedule, target()), ())
+        source = native_cuda.emit(schedule, target()).source
+        store_source = source[source.index("// CAKE_OP: store_output"):]
+        self.assertIn("((0 + col)) * 128", store_source)
+        self.assertIn("((0 + (int(threadIdx.x) - 0))) * 1", store_source)
+        self.assertIn("for (int col=0; col<32; ++col)", store_source)
+
+        value["buffers"].append({
+            "name": "second_view_user", "space": "register", "dtype": "bf16",
+            "shape": [32, 128], "mode": "scratch",
+        })
+        value["operations"].append({
+            "id": "second_transpose_reader", "kind": "elementwise", "role": "compute",
+            "reads": ["public_output_tile"], "writes": ["second_view_user"],
+            "depends_on": ["transpose_public_output"], "parameters": {"op": "relu"},
+        })
+        value["tile_loops"][0]["body"].append("second_transpose_reader")
+        self.assertIn("NATIVE_TRANSPOSE_STORE_DOMAIN",
+                      {f.code for f in native_cuda.preflight(
+                          Schedule.from_dict(value), target())})
         value = document()
         output = next(op for op in value["operations"] if op["id"] == "mma_output")
         output["reads"][0] = "state_tmem"

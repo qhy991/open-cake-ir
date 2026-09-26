@@ -12,7 +12,7 @@ import math
 from .common import Emission, EmitError, refusal, vocabulary_findings
 from ..diagnostics import Finding
 from ..ir import (
-    AccessIndexKind, BarrierMechanism, BufferMode, DType, ElementwiseOp,
+    AccessIndexKind, BarrierMechanism, BoundaryPolicy, BufferMode, DType, ElementwiseOp,
     LoadMovement, LoweringBackend, MemorySpace, OperandMajorMode, OperandSource,
     OperationKind, ReduceOp, ReductionScope, Schedule, Swizzle,
 )
@@ -25,7 +25,7 @@ CODE_OBJECTS = frozenset({CodeObject.CUBIN})
 SUPPORTED_OPERATION_KINDS = frozenset({OperationKind.LOAD, OperationKind.MMA,
     OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE,
     OperationKind.REDUCE_ARGMIN,
-    OperationKind.STORE, OperationKind.TMEM_STORE,
+    OperationKind.STORE, OperationKind.TMEM_STORE, OperationKind.TRANSPOSE,
     OperationKind.FORWARD_SUBSTITUTE})
 _TYPES = {DType.BF16: '__nv_bfloat16', DType.FP16: '__half',
           DType.FP32: 'float', DType.INT32: 'int32_t'}
@@ -78,6 +78,53 @@ def _scalar_row(s, buffer):
             for source_name in writer.reads
         )
     return walk(buffer.name, set())
+
+
+def _terminal_transpose_stores(s):
+    """Map an exclusive BF16 transpose/store pair to row-owned global writes."""
+    result = {}
+    for transpose in s.operations:
+        if (transpose.kind is not OperationKind.TRANSPOSE
+                or len(transpose.reads) != 1 or len(transpose.writes) != 1):
+            continue
+        source = s.buffer(transpose.reads[0])
+        view = s.buffer(transpose.writes[0])
+        readers = [op for op in s.operations if view is not None
+                   and view.name in op.reads]
+        if len(readers) != 1 or readers[0].kind is not OperationKind.STORE:
+            continue
+        store = readers[0]
+        destination = s.buffer(store.writes[0]) if len(store.writes) == 1 else None
+        scope = _scope(s, transpose)
+        access = (s.access_map(store.op_id, destination.name)
+                  if destination is not None else None)
+        if (source is None or view is None or destination is None or scope is None
+                or not scope.carried_buffers or scope.tile != 1
+                or not (source.space is view.space is MemorySpace.REGISTER)
+                or destination.space is not MemorySpace.GLOBAL
+                or destination.mode is not BufferMode.OUTPUT
+                or not (source.dtype is view.dtype is destination.dtype is DType.BF16)
+                or source.shape != (128, 32) or view.shape != (32, 128)
+                or destination.shape != (2, 32, 128)
+                or store.role != transpose.role or _scope(s, store) != scope
+                or transpose.waits or transpose.signals or transpose.pipeline
+                or store.waits or store.signals or store.pipeline
+                or s.operations.index(store) != s.operations.index(transpose) + 1
+                or scope.body.index(store.op_id) != scope.body.index(transpose.op_id) + 1
+                or store.depends_on != (transpose.op_id,)
+                or any(transpose.op_id in op.depends_on and op is not store
+                       for op in s.operations)
+                or access is None or access.boundary is not BoundaryPolicy.MASK_TILED_AXES
+                or len(access.indices) != 3):
+            continue
+        first, second, third = access.indices
+        if (first.source is not AccessIndexKind.LOOP or first.name != scope.iterator
+                or second.source is not AccessIndexKind.DIMENSION or second.dimension != 1
+                or third.source is not AccessIndexKind.DIMENSION or third.dimension != 2):
+            continue
+        result[transpose.op_id] = (store.op_id, source.name, view.name)
+        result[store.op_id] = (transpose.op_id, source.name, view.name)
+    return result
 
 
 def _slots(s, buffer):
@@ -161,6 +208,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
             unknown.append(refusal('NATIVE_REFERENCE_UNKNOWN', f'access_maps[{i}].buffer', f'unknown buffer {access.buffer!r}'))
     if unknown:
         return tuple(failures+unknown)
+    transpose_stores = _terminal_transpose_stores(s)
+    transpose_views = {op.writes[0] for op in s.operations
+                       if op.kind is OperationKind.TRANSPOSE
+                       and op.op_id in transpose_stores and op.writes}
     for i, role in enumerate(s.roles):
         check(all(c not in role.name for c in '\\\r\n'), 'NATIVE_NAME_UNSUPPORTED',
               f'roles[{i}].name', 'source-map names must occupy one line')
@@ -197,7 +248,8 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'NATIVE_TMEM_LAYOUT', path,
                   'native FP32 accumulators or BF16 state use 128 rows and whole TMEM columns')
         if b.space is MemorySpace.REGISTER:
-            check(len(b.shape) in (1,2) and (len(b.shape) == 1 or b.shape[0] == 128),
+            check(len(b.shape) in (1,2) and
+                  (len(b.shape) == 1 or b.shape[0] == 128 or b.name in transpose_views),
                   'NATIVE_REGISTER_LAYOUT', path, 'register tiles use 128 row-owning threads or replicated vectors')
     for i, allocation in enumerate(s.allocations):
         check(allocation.space in (MemorySpace.SHARED, MemorySpace.TENSOR),
@@ -673,12 +725,17 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
         elif op.kind is OperationKind.CAST:
             check(dst.space is MemorySpace.REGISTER and buffers[op.reads[0]].space is MemorySpace.REGISTER,
                   'NATIVE_CAST_SPACE', path, 'cast preserves row-owned register storage')
+        elif op.kind is OperationKind.TRANSPOSE:
+            check(op.op_id in transpose_stores,
+                  'NATIVE_TRANSPOSE_STORE_DOMAIN', path,
+                  'native transpose is only a BF16 [V128,C32] view immediately consumed by one token-major store')
         elif op.kind is OperationKind.STORE:
             src = buffers[op.reads[0]]
             check(dst.space is MemorySpace.GLOBAL and src.space is MemorySpace.REGISTER
                   and dst.dtype == src.dtype,
                   'NATIVE_STORE_CONTRACT', path, 'native stores preserve register dtype to global output')
-            check(len(src.shape) == 2 and src.shape[0] == 128 or _scalar_row(s,src),
+            check(len(src.shape) == 2 and src.shape[0] == 128
+                  or op.op_id in transpose_stores or _scalar_row(s,src),
                   'NATIVE_STORE_ROLE_OWNERSHIP', path+'.reads',
                   'native stores require a row-owned matrix or one argmin result per row; replicated vectors have no unique writing thread')
             check(not op.parameters.coalesced, 'NATIVE_STORE_COALESCING', path+'.parameters.coalesced',
@@ -719,6 +776,7 @@ class _Emitter:
         self.axisvars = {axis.name:f'blockIdx.{"xyz"[axis.axis]}' for axis in s.program_map.axes} if s.program_map else {}
         self.barvars = {b.name:f'bar{i}' for i,b in enumerate(s.barriers)}
         self.tmemvars = {a.name:f'tm{i}' for i,a in enumerate(s.allocations) if a.space is MemorySpace.TENSOR}
+        self.transpose_stores = _terminal_transpose_stores(s)
 
     def line(self, text=''):
         self.lines.append('  '*self.indent + text)
@@ -1037,6 +1095,9 @@ class _Emitter:
 
     def operation(self, op):
         self.line(f'// CAKE_OP: {op.op_id}')
+        if op.kind is OperationKind.TRANSPOSE:
+            self.line('// The sole store addresses this row-owned tile in token-major order.')
+            return
         self.begin(f'if ({self.role_condition(op.role)})')
         dst=self.b(op.writes[0]); d=self.names[dst.name]
         src=self.b(op.reads[0]); a=self.names[src.name]
@@ -1161,6 +1222,16 @@ class _Emitter:
             self.line(f'best{idx} = {a}[col]; {d}[0] = index;')
             self.end();self.end()
         elif op.kind is OperationKind.STORE:
+            terminal = self.transpose_stores.get(op.op_id)
+            if terminal is not None:
+                source_name = terminal[1]
+                self.line('#pragma unroll')
+                self.begin('for (int col=0; col<32; ++col)')
+                address, mask = self.address(op, dst, ['col', row])
+                self.line(f'if ({mask}) {address} = {self.names[source_name]}[col];')
+                self.end()
+                self.end()
+                return
             self.line('#pragma unroll')
             self.begin(f'for (int col=0; col<{_slots(self.s,src)}; ++col)')
             local=[row,'col'] if len(src.shape)==2 else [row if _scalar_row(self.s,src) else 'col']
