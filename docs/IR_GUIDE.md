@@ -213,6 +213,8 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 
 `tmem_store` 是 BF16 register tile 到 TMEM scratch tile 的异步物理传输，不是写回全局输出的 `store`。两侧同为 128 行、列数为 16 的倍数，`destination_atom` 明确指定 `tcgen05.St32x32b` 的 x8 重复。四个 32-lane execution group 在各自的 store 完成后向一个 count=4 的 `mbarrier` 报到；读取该 TMEM tile 的每个操作都须等待此 barrier。`tcgen05.mma` 若声明 `operand_source=tensor`，A 必须来自 TMEM、B 必须来自 shared memory。当前目标文档尚未声明 `tmem_store`，后端也尚未获得这条路径的完整 lowering 资格；仅能在明确声明它的 Target 上通过该合同检查。
 
+同一个 `load` 的 `movement=tmem` 可从 TMEM 读取 FP32 累加器或 BF16 状态，写入相同形状与 dtype 的寄存器 tile。BF16 状态的每个 32-bit TMEM word 装两个相邻列；`source_atom` 的 `tcgen05.Ld32x32b` 重复数按 word 计，列宽必须含有整数个完整重复。该读取须等待生产者的 completion barrier；循环携带状态时每轮读取旧 phase，更新写入下一 phase。类型和相位通过 Verifier 检查，具体发射仍由目标后端单独准入。
+
 需要跨 TileLoop 迭代复用同一块 TMEM 时，`TileLoop.carried_buffers` 明确声明该状态：一个循环前 `tmem_store` 初始化 phase 0，循环体读取当前值后由另一个 `tmem_store` 更新下一 phase，两者使用同一 count=4 的 `mbarrier`。Verifier 只在写入次数、角色、作用域、读写顺序和所有读取方的等待都能证明时允许这两个静态写者；未声明 carry 仍报 `BUFFER_MULTIPLE_WRITERS`。目前这条合同限于静态外层循环、每循环一个 BF16 TMEM tile，尚无 native 循环相位 lowering。该声明不引入布局代数，也不使一次单 tile 的 GPU 资格自动覆盖多 chunk KDA。
 
 ## 8. 从读取计划到生成代码
