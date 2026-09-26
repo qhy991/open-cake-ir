@@ -96,11 +96,25 @@ __device__ __forceinline__ int completion_release_increment(int* pointer) {
 }
 
 struct BinParams;
+__device__ void wait_prior_snapshot(const BinParams* params,int event,
+                                    int source_rank);
 __device__ void dispatch_source_chunk(const BinParams* params,int block,
                                       int communication_ctas,int wave,
                                       int chunk_tokens,int source_rank);
 __device__ void publish_source_completion(const BinParams* params,int wave,
                                           int source_rank);
+__device__ void wait_source_completion(const BinParams* params,int wave,
+                                       int source_rank);
+__device__ void derive_expert_snapshot(const BinParams* params,int expert,
+                                       int wave,int source,int chunks,
+                                       int chunk_tokens);
+__device__ void assign_expert_tiles(const BinParams* params,int event,
+                                    int chunk_tokens,int expert);
+__device__ void expand_event_tasks(const BinParams* params,int* tasks,
+                                   int event,int stage);
+__device__ void gather_event_rows(const BinParams* params,int event,int block,
+                                  int grid_blocks);
+__device__ void publish_event_snapshot(const BinParams* params,int event);
 
 @UPGATE_STAGE@
 @ACTIVATION_STAGE@
@@ -108,13 +122,14 @@ __device__ void publish_source_completion(const BinParams* params,int wave,
 __global__ void tile_schedule_probe(
     int* task_heads, int* tile_completed, int* task_owner,
     int* processed, int* dispatched, int* stolen, int* steal_permits,
-    const int* task_counts, const int* wave_ready, int* overlap,
+    int* task_counts, const int* wave_ready, int* overlap,
     const int* tile_expert,
     float* up_gate, __nv_bfloat16* activated,
     const CUtensorMap* up_maps_a, const CUtensorMap* up_map_b,
     const CUtensorMap* down_maps_a, const CUtensorMap* down_map_b,
     float* outputs, int communication_ctas, int steal_budget,
-    const BinParams* source_params,int chunk_tokens,int selected_wave) {
+    const BinParams* source_params,int chunk_tokens,int chunks,
+    int selected_wave) {
   extern __shared__ __align__(1024) unsigned char shared[];
   uint32_t* tensor_address = reinterpret_cast<uint32_t*>(shared + 49192);
   __shared__ int claimed, claimed_stage, claimed_tile, claimed_subtile;
@@ -124,6 +139,9 @@ __global__ void tile_schedule_probe(
   cg::grid_group grid = cg::this_grid();
   const int source_rank=selected_wave%(kSourceRanks+1);
   const int source_wave=selected_wave/(kSourceRanks+1);
+  if (block==0 && threadIdx.x==0 && source_rank<kSourceRanks)
+    wait_prior_snapshot(source_params,selected_wave,source_rank);
+  grid.sync();
   if (source_rank<kSourceRanks && block<communication_ctas) {
     dispatch_source_chunk(source_params,block,communication_ctas,
                           source_wave,chunk_tokens,source_rank);
@@ -132,6 +150,27 @@ __global__ void tile_schedule_probe(
   grid.sync();
   if (source_rank<kSourceRanks && block==0 && threadIdx.x==0)
     publish_source_completion(source_params,source_wave,source_rank);
+  grid.sync();
+  if (block==0 && threadIdx.x==0)
+    wait_source_completion(source_params,source_wave,source_rank);
+  grid.sync();
+  if (block<kExperts)
+    derive_expert_snapshot(source_params,block,source_wave,source_rank,
+                           chunks,chunk_tokens);
+  grid.sync();
+  if (block==0 && threadIdx.x<kExperts)
+    assign_expert_tiles(source_params,selected_wave,chunk_tokens,
+                        int(threadIdx.x));
+  grid.sync();
+  if (block==0 && threadIdx.x<kStages)
+    expand_event_tasks(source_params,task_counts,
+                       selected_wave,int(threadIdx.x));
+  grid.sync();
+  gather_event_rows(source_params,selected_wave,block,int(gridDim.x));
+  __threadfence_system();
+  grid.sync();
+  if (block==0 && threadIdx.x==0)
+    publish_event_snapshot(source_params,selected_wave);
   grid.sync();
   bool tensor_owned = false;
   int logical_offset=0;
@@ -344,6 +383,22 @@ __device__ __forceinline__ int system_acquire(const int* pointer) {
                : "=r"(value) : "l"(pointer) : "memory");
   return value;
 }
+__device__ void wait_prior_snapshot(const BinParams* params,int event,
+                                    int source_rank) {
+  if (params->rank!=source_rank || event==0) return;
+  for (int owner=0;owner<R;++owner)
+    while (system_acquire(&params->bins[owner]->wave_consumed[event-1])==0)
+      __nanosleep(64);
+}
+__device__ void wait_source_completion(const BinParams* params,int wave,
+                                       int source_rank) {
+  Bin* local=params->bins[params->rank];
+  int first=source_rank<R ? source_rank : 0;
+  int stop=source_rank<R ? source_rank+1 : R;
+  for (int peer=first;peer<stop;++peer)
+    while (system_acquire(&local->source_wave_done[peer][wave])==0)
+      __nanosleep(64);
+}
 __device__ __forceinline__ uint32_t route_order(int key,int chunk_tokens) {
   int source=key/(T*K),token=(key/K)%T,route=key%K;
   return uint32_t((token/chunk_tokens)*(R*chunk_tokens*K)
@@ -463,17 +518,11 @@ __device__ __forceinline__ void sort_expert_snapshot(
     }
   }
 }
-__global__ void derive_wave_order(const BinParams* params,int wave,
-                                  int source,int chunks,int chunk_tokens) {
-  int expert=int(blockIdx.x),lane=int(threadIdx.x);
+__device__ void derive_expert_snapshot(const BinParams* params,int expert,
+                                       int wave,int source,int chunks,
+                                       int chunk_tokens) {
+  int lane=int(threadIdx.x);
   Bin* local=params->bins[params->rank];
-  if (lane==0) {
-    int needed=source<R ? source+1 : R;
-    for (int peer=source<R ? source : 0;peer<needed;++peer)
-      while (system_acquire(&local->source_wave_done[peer][wave])==0)
-        __nanosleep(64);
-  }
-  __syncthreads();
   int count=local->count[expert];
   int consumed=local->consumed_rows[expert];
   if (count<consumed || count>MAX_ROWS) {
@@ -500,11 +549,9 @@ __global__ void derive_wave_order(const BinParams* params,int wave,
   for (int index=consumed+lane;index<count;index+=int(blockDim.x))
     local->sorted_order[expert*MAX_ROWS+index]=order[index];
 }
-__global__ void assign_wave_tiles(const BinParams* params,int event,
-                                  int chunk_tokens) {
-  int expert=int(threadIdx.x);
+__device__ void assign_expert_tiles(const BinParams* params,int event,
+                                    int chunk_tokens,int expert) {
   Bin* local=params->bins[params->rank];
-  if (expert>=LOCAL_E) return;
   int base=0,prior=0,total=0;
   for (int earlier=0;earlier<event;++earlier)
     base+=local->wave_counts[earlier];
@@ -532,31 +579,22 @@ __global__ void assign_wave_tiles(const BinParams* params,int event,
   }
   if (expert==0) local->wave_counts[event]=total;
 }
-__global__ void expand_tasks_for_wave(const BinParams* params,int* tasks,
-                                      int event) {
-  int stage=int(threadIdx.x);
-  if (stage>=kStages) return;
+__device__ void expand_event_tasks(const BinParams* params,int* tasks,
+                                   int event,int stage) {
   int factor=stage==0 ? kUpGateTasksPerTile :
              stage==1 ? kActivationTasksPerTile : kDownTasksPerTile;
   tasks[stage*kEvents+event]=
       params->bins[params->rank]->wave_counts[event]*factor;
 }
-__global__ void gather_wave_tiles(const BinParams* params,int event,
-                                  int wave,int source) {
+__device__ void gather_event_rows(const BinParams* params,int event,int block,
+                                  int grid_blocks) {
   Bin* local=params->bins[params->rank];
-  if (threadIdx.x==0) {
-    int needed=source<R ? source+1 : R;
-    for (int peer=source<R ? source : 0;peer<needed;++peer)
-      while (system_acquire(&local->source_wave_done[peer][wave])==0)
-        __nanosleep(64);
-  }
-  __syncthreads();
   int count=local->wave_counts[event];
   int offset=0;
   for (int earlier=0;earlier<event;++earlier)
     offset+=local->wave_counts[earlier];
-  for (int logical=int(blockIdx.x);logical<count;logical+=LOCAL_E) {
-    int tile=offset+logical,row=int(blockIdx.y);
+  for (int linear=block;linear<count*kRows;linear+=grid_blocks) {
+    int tile=offset+linear/kRows,row=linear%kRows;
     int key=params->tile_keys[tile*kRows+row];
     __nv_bfloat16* output=params->tile_rows+(size_t(tile)*kRows+row)*H;
     if (key<0) {
@@ -603,25 +641,14 @@ __global__ void gather_wave_tiles(const BinParams* params,int event,
     }
     for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
       output[feature]=input[feature];
+    __syncthreads();
   }
 }
-__global__ void publish_wave_ready(const BinParams* params,int event,
-                                   int wave,int source) {
-  if (threadIdx.x!=0) return;
+__device__ void publish_event_snapshot(const BinParams* params,int event) {
   Bin* local=params->bins[params->rank];
-  int needed=source<R ? source+1 : R;
-  for (int peer=source<R ? source : 0;peer<needed;++peer)
-    while (system_acquire(&local->source_wave_done[peer][wave])==0)
-      __nanosleep(64);
   // CAKE_EFFECT: tile.publish
   // CAKE_EFFECT: task.publish
   system_publish(&local->wave_consumed[event]);
-}
-__global__ void wait_all_destinations(const BinParams* params,int event) {
-  if (threadIdx.x!=0) return;
-  for (int owner=0;owner<R;++owner)
-    while (system_acquire(&params->bins[owner]->wave_consumed[event])==0)
-      __nanosleep(64);
 }
 __global__ void scatter_returns(const ReturnParams* params) {
   int tile=int(blockIdx.x),row=int(blockIdx.y);

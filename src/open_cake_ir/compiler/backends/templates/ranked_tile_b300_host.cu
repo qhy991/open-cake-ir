@@ -1,6 +1,6 @@
 // Tensor-pointer ABI for the exact B300 ranked-tile source-event protocol.
 // Input and output allocations belong to the caller. This wrapper owns only
-// rank-local scratch, peer bins, descriptors, streams and completion events.
+// rank-local scratch, peer bins, descriptors and one compute stream.
 struct RankedTileRankState {
   int rank=-1;
   const __nv_bfloat16 *hidden{},*up_weight{},*down_weight{};
@@ -16,8 +16,7 @@ struct RankedTileRankState {
   CUtensorMap *up_maps_a{},*up_map_b{},*down_maps_a{},*down_map_b{};
   BinParams* bin_params{};
   ReturnParams* return_params{};
-  cudaStream_t communication{},compute{};
-  cudaEvent_t ready[kEvents]{},fence[kEvents]{};
+  cudaStream_t compute{};
 };
 struct RankedTileHostState {
   RankedTileRankState ranks[R];
@@ -32,11 +31,6 @@ void ranked_tile_release(RankedTileHostState* state) {
     if (s.rank!=rank) continue;
     cudaSetDevice(rank);
     cudaDeviceSynchronize();
-    for (int event=0;event<kEvents;++event) {
-      if (s.ready[event]) cudaEventDestroy(s.ready[event]);
-      if (s.fence[event]) cudaEventDestroy(s.fence[event]);
-    }
-    if (s.communication) cudaStreamDestroy(s.communication);
     if (s.compute) cudaStreamDestroy(s.compute);
     void* allocated[] = {
       s.return_params,s.bin_params,s.down_map_b,s.down_maps_a,
@@ -88,16 +82,8 @@ cudaError_t ranked_tile_allocate(RankedTileRankState& s) {
   CAKE_ALLOC(s.bin_params,sizeof(BinParams));
   CAKE_ALLOC(s.return_params,sizeof(ReturnParams));
 #undef CAKE_ALLOC
-  error=cudaStreamCreateWithFlags(&s.communication,cudaStreamNonBlocking);
-  if (error!=cudaSuccess) return error;
   error=cudaStreamCreateWithFlags(&s.compute,cudaStreamNonBlocking);
   if (error!=cudaSuccess) return error;
-  for (int event=0;event<kEvents;++event) {
-    error=cudaEventCreateWithFlags(&s.ready[event],cudaEventDisableTiming);
-    if (error!=cudaSuccess) return error;
-    error=cudaEventCreateWithFlags(&s.fence[event],cudaEventDisableTiming);
-    if (error!=cudaSuccess) return error;
-  }
   return cudaSuccess;
 }
 
@@ -219,7 +205,7 @@ cudaError_t ranked_tile_reset(RankedTileRankState& s) {
 }
 } // namespace
 
-extern "C" int @ENTRY@_abi_version() { return 3; }
+extern "C" int @ENTRY@_abi_version() { return 4; }
 extern "C" int @ENTRY@_ranks() { return R; }
 extern "C" int @ENTRY@_source_events() { return kEvents; }
 extern "C" size_t @ENTRY@_bin_bytes() { return sizeof(Bin); }
@@ -400,6 +386,7 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
         chunks_by_rank[rank]!=chunks)
       return int(cudaErrorInvalidValue);
   int chunk_tokens=T/chunks;
+  int active_chunks=chunks;
   cudaError_t error=cudaSuccess;
 #define CAKE_RUN(call) \
   do { error=(call); if (error!=cudaSuccess) { state->poisoned=true; return int(error); } } while (0)
@@ -418,10 +405,6 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
       for (int rank=0;rank<R;++rank) {
         CAKE_RUN(cudaSetDevice(rank));
         RankedTileRankState& s=state->ranks[rank];
-        // The next source cannot publish rows until every destination has
-        // finished constructing the previous event's tile snapshot.
-        if (event>0)
-          CAKE_RUN(cudaStreamWaitEvent(s.compute,s.fence[event-1]));
         int* event_ready=&s.bin->wave_consumed[0];
         int selected_event=event;
         int communication=communication_ctas[rank];
@@ -431,38 +414,12 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
                       &event_ready,&s.overlap,&s.tile_experts,&s.upgate,
                       &s.activated,&s.up_maps_a,&s.up_map_b,&s.down_maps_a,
                       &s.down_map_b,&s.down,&communication,&budget,
-                      &s.bin_params,&chunk_tokens,&selected_event};
+                      &s.bin_params,&chunk_tokens,&active_chunks,
+                      &selected_event};
         // CAKE_EFFECT: launch.rank
         CAKE_RUN(cudaLaunchCooperativeKernel(
             reinterpret_cast<const void*>(tile_schedule_probe),
             dim3(96),dim3(kThreads),args,kDynamicShared,s.compute));
-      }
-      for (int rank=0;rank<R;++rank) {
-        CAKE_RUN(cudaSetDevice(rank));
-        RankedTileRankState& s=state->ranks[rank];
-        derive_wave_order<<<LOCAL_E,256,0,s.communication>>>(
-            s.bin_params,wave,source,chunks,chunk_tokens);
-        CAKE_RUN(cudaGetLastError());
-        assign_wave_tiles<<<1,LOCAL_E,0,s.communication>>>(
-            s.bin_params,event,chunk_tokens);
-        CAKE_RUN(cudaGetLastError());
-        expand_tasks_for_wave<<<1,kStages,0,s.communication>>>(
-            s.bin_params,s.tasks,event);
-        CAKE_RUN(cudaGetLastError());
-        gather_wave_tiles<<<dim3(LOCAL_E,kRows),256,0,s.communication>>>(
-            s.bin_params,event,wave,source);
-        CAKE_RUN(cudaGetLastError());
-        publish_wave_ready<<<1,1,0,s.communication>>>(
-            s.bin_params,event,wave,source);
-        CAKE_RUN(cudaGetLastError());
-        CAKE_RUN(cudaEventRecord(s.ready[event],s.communication));
-      }
-      for (int rank=0;rank<R;++rank) {
-        CAKE_RUN(cudaSetDevice(rank));
-        RankedTileRankState& s=state->ranks[rank];
-        wait_all_destinations<<<1,1,0,s.communication>>>(s.bin_params,event);
-        CAKE_RUN(cudaGetLastError());
-        CAKE_RUN(cudaEventRecord(s.fence[event],s.communication));
       }
     }
   }

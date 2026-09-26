@@ -57,7 +57,7 @@ def load_ranked_tile_ctypes(lowered: NativeRankedTileLowering,
     world=lowered.analysis.world_size
     output_bytes=lowered.analysis.items_per_rank*lowered.analysis.feature_width*2
     bin_bytes=functions['bin_bytes']()
-    if (functions['abi_version']()!=3
+    if (functions['abi_version']()!=4
             or functions['ranks']()!=world or functions['source_events']()!=20
             or functions['output_bytes']()!=output_bytes
             or not (world-1)*lowered.analysis.items_per_rank*
