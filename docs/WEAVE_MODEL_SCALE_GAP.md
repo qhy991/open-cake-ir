@@ -247,6 +247,18 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    submitted before gather kernels without a host device sync between them.
    The tile-key plan remains CPU supplied, and the FFN/return kernels were
    not in this same allocation; overlap and latency were not measured.
+   One-allocation development successor (`cake-weave-ep4-live-chain-
+   46a4b844/`) now submits peer dispatch, GPU tile gather, the three-stage
+   Cake worker, P2P return, GPU acquire and Cake T512 combine for all four
+   B300 ranks before the first host device-wide sync. At `c=147`, each rank
+   completed 64 logical tiles, 11,776 stage units and 5,888 real steals.
+   All 16,384 FP32 returned route contributions and 4,194,304 final BF16
+   outputs matched the prior Cake results bitwise; zero outputs exceeded the
+   independent CPU oracle's 0.01/0.01 tolerance. The **CPU still supplies**
+   the threshold-64 tile-key plan and stage-task waves. Per-rank streams
+   order local phases, and no qualified profiler/timer establishes actual
+   communication-compute overlap or a speedup. The runtime tile publisher
+   and variable plan admission are the next Compiler/backend boundary.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
