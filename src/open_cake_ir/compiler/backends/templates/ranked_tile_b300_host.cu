@@ -314,7 +314,12 @@ extern "C" int @ENTRY@_create(
 
 extern "C" int @ENTRY@_destroy(void* opaque) {
   if (!opaque) return int(cudaErrorInvalidValue);
-  ranked_tile_release(static_cast<RankedTileHostState*>(opaque));
+  auto* state=static_cast<RankedTileHostState*>(opaque);
+  // A failed partial multi-rank enqueue can leave device waiters live.
+  // The isolated evaluator process must exit and let CUDA tear down those
+  // contexts; freeing the buffers underneath the waiters is unsafe.
+  if (state->poisoned) return int(cudaErrorNotReady);
+  ranked_tile_release(state);
   return 0;
 }
 
