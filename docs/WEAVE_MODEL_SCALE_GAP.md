@@ -238,6 +238,15 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    the fixed 0.01/0.01 tolerance. The bin, FFN and return/combine remain
    **separate jobs with host tile formation**. A single live ranked worker,
    full communication-compute overlap and qualified layer timing remain open.
+   The next four-GPU transport successor (`cake-weave-ep4-gpu-tile-gather-
+   8346d6e0/`) records route-to-bin locations during peer dispatch and
+   publishes a per-route system release flag. Destination GPU gather CTAs
+   acquire the flags and form all 64 M128 BF16 tiles per owner; every GPU
+   tile tensor matched the prior checked host materialization bitwise,
+   while the 16,384-route bin oracle still passed. Dispatch kernels were
+   submitted before gather kernels without a host device sync between them.
+   The tile-key plan remains CPU supplied, and the FFN/return kernels were
+   not in this same allocation; overlap and latency were not measured.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
