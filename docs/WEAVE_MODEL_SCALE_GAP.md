@@ -315,9 +315,31 @@ CPU capacity/plan facts, not an emitted live GPU queue.
    No cross-rank dispatch/sort, sort/gather or gather/FFN kernel intervals
    intersected in that replay, matching the explicit all-source completion
    barrier and rank-local stream order. This is a single profiler-perturbed
-   observation, not a timer or speedup. The next temporal design must
-   publish tile waves incrementally and reserve SM capacity so dispatch
-   can progress while the 192-thread worker is resident.
+   observation, not a timer or speedup. That run left incremental tile
+   publication and dispatch/FFN overlap untested.
+   That successor is now tested at `c9373c45` and `52e4b3a0` under
+   `cake-weave-ep4-temporal-wave-c9373c45/`,
+   `cake-weave-ep4-temporal-nsys-c9373c45/`,
+   `cake-weave-ep4-temporal-steal-52e4b3a0/` and
+   `cake-weave-ep4-temporal-steal-nsys-52e4b3a0/`. The first attempt kept
+   one cooperative worker grid alive while waiting for future waves; no
+   source-wave dispatch completed and the four-GPU job timed out. Moving
+   that grid to a separate nonblocking stream did not restore progress.
+   The successor launches one finite Cake worker per GPU-published wave,
+   with a CUDA event between tile gather and FFN. A destination snapshots
+   its expert counts before any source starts the next wave. For the fixed
+   EP4 model and threshold-64 route set, both `c=1,budget=0` and
+   `c=74,budget=5888` passed the full four-rank oracle: all 256 GPU tile
+   manifests and BF16 tile inputs matched the retained plan bitwise, all
+   16,384 FP32 route contributions matched prior Cake evidence bitwise,
+   and zero of 4,194,304 final BF16 outputs failed the external oracle.
+   At `c=74`, each rank actually stole 5,888 stage tasks under the cap.
+   Separate correctness-gated Nsight replays at both controls showed
+   wave-1 FFN kernel intervals intersecting later source-wave dispatch
+   intervals on every rank, including about 44–49 microseconds at the
+   bounded-steal control. This is kernel-activity overlap on one route set,
+   not a qualified latency, useful-work overlap or speedup claim. No
+   Compiler pass or automatic Lab budget rule is promoted from it.
 4. **Complete host and measurement contract.** Preserve exact four-rank
    tensor placement, selected peer pairs, broker ownership, reset and
    all-rank statuses. Establish one qualified complete-layer four-device
