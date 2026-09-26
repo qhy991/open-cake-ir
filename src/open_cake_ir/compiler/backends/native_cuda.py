@@ -75,6 +75,15 @@ def _head64_access(s, access, position):
             and access.indices[position].name == axis.name)
 
 
+def _head64_token_major_shape(s, scope, shape):
+    """Qualify only the two proved chunk extents with the same loop owner."""
+    loop_source = s.buffer(scope.buffer)
+    return (loop_source is not None and len(loop_source.shape) == 4
+            and len(shape) == 4 and shape[0] in (2, 256)
+            and shape[0] == loop_source.shape[scope.dimension]
+            and shape[1:] == (32, 64, 128))
+
+
 def _scalar_row(s, buffer):
     """Prove a rank-one tile has one scalar per physical row, not 128 replicas."""
     def walk(name, seen):
@@ -124,7 +133,8 @@ def _terminal_transpose_stores(s):
                 or destination.mode is not BufferMode.OUTPUT
                 or not (source.dtype is view.dtype is destination.dtype is DType.BF16)
                 or source.shape != (128, 32) or view.shape != (32, 128)
-                or destination.shape not in ((2, 32, 128), (2, 32, 64, 128))
+                or not (destination.shape == (2, 32, 128)
+                        or _head64_token_major_shape(s, scope, destination.shape))
                 or store.role != transpose.role or _scope(s, store) != scope
                 or transpose.waits or transpose.signals or transpose.pipeline
                 or store.waits or store.signals or store.pipeline
@@ -177,7 +187,8 @@ def _input_transpose_loads(s):
                 or source.mode is not BufferMode.INPUT
                 or not (raw.space is row_tile.space is MemorySpace.REGISTER)
                 or not (source.dtype is raw.dtype is row_tile.dtype is DType.BF16)
-                or source.shape not in ((2, 32, 128), (2, 32, 64, 128))
+                or not (source.shape == (2, 32, 128)
+                        or _head64_token_major_shape(s, scope, source.shape))
                 or raw.shape != (32, 128) or row_tile.shape != (128, 32)
                 or load.parameters.movement is not LoadMovement.GLOBAL
                 or load.role != transpose.role or _scope(s, load) != scope
