@@ -1610,6 +1610,13 @@ backend，而现有两阶段分别由 Triton 准备和 native CUDA 消费。独�
 脚本仅先验证这条候选的数值和延迟；要推广，需让 IR、别名分析、
 LaunchManifest、Executor 状态重置和反例一起支持精确全范围别名，
 并另行审查混合 backend 的作者权限。
+冻结 KDA Workload 的 12 项 \code{candidate\_abi} 还是有序列表，
+通用 \code{WorkloadContract.tensor\_abi} 目前只接收显式输入/输出对象；
+对固定 H64 的实际调用会在运行前拒绝。这是需保留原 Workload 身份的
+ABI 适配问题，不能算作 GPU kernel 的正确性失败。
+此外，冻结公共参数含 \code{cu\_seqlens:int64}，当前 Cake IR
+\code{DType} 与通用 tensor launch ABI 尚未接纳 int64。固定 H64
+脚本在 host 检查单序列元数据，不能作为 packed 六形状设备访问的证明。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
