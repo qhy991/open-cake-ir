@@ -24,7 +24,8 @@ CODE_OBJECTS = frozenset({CodeObject.CUBIN})
 SUPPORTED_OPERATION_KINDS = frozenset({OperationKind.LOAD, OperationKind.MMA,
     OperationKind.ELEMENTWISE, OperationKind.CAST, OperationKind.REDUCE,
     OperationKind.REDUCE_ARGMIN,
-    OperationKind.STORE, OperationKind.TMEM_STORE})
+    OperationKind.STORE, OperationKind.TMEM_STORE,
+    OperationKind.FORWARD_SUBSTITUTE})
 _TYPES = {DType.BF16: '__nv_bfloat16', DType.FP16: '__half',
           DType.FP32: 'float', DType.INT32: 'int32_t'}
 _SWIZZLE = {Swizzle.B32: (32, 6), Swizzle.B64: (64, 4), Swizzle.B128: (128, 2)}
@@ -132,8 +133,10 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
           'native CUDA does not yet enforce register caps or requested CTA residency')
     check(s.grid in (None, (1, 1, 1)), 'NATIVE_GRID_UNSUPPORTED', 'grid',
           'multi-CTA ownership must be expressed by ProgramMap')
-    check(bool(s.pipelines), 'NATIVE_PIPELINE_REQUIRED', 'pipelines',
-          'explicit TMA/MMA lowering requires at least one pipeline')
+    check(bool(s.pipelines) or any(op.kind is OperationKind.FORWARD_SUBSTITUTE
+                                   for op in s.operations),
+          'NATIVE_PIPELINE_REQUIRED', 'pipelines',
+          'TMA/MMA lowering requires a pipeline; the root row solve has its own P stage')
     for field in ('allocations','barriers','pipelines'):
         for i,item in enumerate(getattr(s,field)):
             check(not any(c in item.name for c in '\\\r\n'), 'NATIVE_NAME_UNSUPPORTED',
@@ -358,7 +361,8 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   (not op.signals or op.kind is OperationKind.TMEM_STORE),
                   'NATIVE_OPERATION_SYNC', path,
                   'register operations do not produce asynchronous stage signals')
-            if not (op.kind is OperationKind.LOAD and op.parameters.movement is LoadMovement.TMEM):
+            if not ((op.kind is OperationKind.LOAD and op.parameters.movement is LoadMovement.TMEM)
+                    or op.kind is OperationKind.FORWARD_SUBSTITUTE):
                 check(not op.waits, 'NATIVE_OPERATION_SYNC', path+'.waits', 'this operation has no asynchronous wait protocol')
         for name in op.reads:
             b = buffers[name]
@@ -444,9 +448,24 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                   'native loads use one source without cache/reuse refinements; no cache policy is emitted')
             if dst.space is MemorySpace.SHARED:
                 scope = _scope(s, op)
-                check(op.pipeline is not None and (scope is None or scope.name in pipe_loops),
-                      'NATIVE_SHARED_LOAD_SCOPE', path+'.pipeline',
-                      'native global-to-shared staging must belong to an explicit contraction pipeline')
+                solve_readers = [reader for reader in s.operations
+                                 if reader.kind is OperationKind.FORWARD_SUBSTITUTE
+                                 and dst.name in reader.reads]
+                if op.pipeline is None and len(solve_readers) == 1:
+                    barrier = next((b for b in s.barriers if b.name in op.signals), None)
+                    check(scope is None and p.movement is LoadMovement.GLOBAL
+                          and len(op.signals) == 1 and barrier is not None
+                          and barrier.count == 1 and barrier.pipeline is None
+                          and barrier.mechanism is BarrierMechanism.MBARRIER
+                          and solve_readers[0].waits == op.signals,
+                          'NATIVE_SOLVE_P_STAGE', path,
+                          'one root global-to-shared P stage publishes one mbarrier to its row solve')
+                    if barrier is not None:
+                        owned_barriers.add(barrier.name)
+                else:
+                    check(op.pipeline is not None and (scope is None or scope.name in pipe_loops),
+                          'NATIVE_SHARED_LOAD_SCOPE', path+'.pipeline',
+                          'other native global-to-shared staging belongs to a contraction pipeline')
             if p.movement is LoadMovement.TMA:
                 check(src.space is MemorySpace.GLOBAL and src.mode is BufferMode.INPUT
                       and len(src.shape) in (2,3) and dst.space is MemorySpace.SHARED
@@ -479,6 +498,29 @@ def preflight(s: Schedule, target: Target) -> tuple[Finding, ...]:
                         check(all(c.source is AccessIndexKind.PROGRAM for c in access.indices[:-2])
                               and all(c.source is not AccessIndexKind.PROGRAM for c in access.indices[-2:]),
                               'NATIVE_TMA_COORDINATES', path, 'TMA scalar program axes precede the two tiled matrix axes')
+
+        elif op.kind is OperationKind.FORWARD_SUBSTITUTE:
+            coefficient = buffers[op.reads[0]] if len(op.reads) == 2 else None
+            rhs = buffers[op.reads[1]] if len(op.reads) == 2 else None
+            producer = writers.get(coefficient.name) if coefficient is not None else None
+            check(coefficient is not None and rhs is not None
+                  and coefficient.space is MemorySpace.SHARED
+                  and coefficient.swizzle is Swizzle.B64
+                  and coefficient.dtype is DType.BF16
+                  and coefficient.shape == (32, 32)
+                  and rhs.space is MemorySpace.REGISTER
+                  and rhs.dtype is DType.FP32 and rhs.shape == (128, 32)
+                  and dst.space is MemorySpace.REGISTER
+                  and dst.dtype is DType.FP32 and dst.shape == (128, 32),
+                  'NATIVE_FORWARD_SOLVE_DOMAIN', path,
+                  'native row solve requires shared BF16 P[32,32] and register FP32 RHS/U[128,32]')
+            check(producer is not None and producer.kind is OperationKind.LOAD
+                  and producer.parameters.movement is LoadMovement.GLOBAL
+                  and producer.writes == (coefficient.name,)
+                  and len(op.waits) == 1 and op.waits == producer.signals
+                  and op.pipeline is None and _scope(s, op) is None,
+                  'NATIVE_FORWARD_SOLVE_OWNER', path,
+                  'one root P stage owns the solve input and its completion barrier')
 
         elif op.kind is OperationKind.TMEM_STORE:
             src = buffers[op.reads[0]]
@@ -679,13 +721,18 @@ class _Emitter:
                 self.line(f'asm volatile("tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;" :: "r"(cake_smem({name})), "n"({a.tensor_columns}) : "memory");')
                 self.end()
         self.line('__syncthreads();')
-        tmem_store_barriers = {
+        root_barriers = {
             name for op in self.s.operations if op.kind is OperationKind.TMEM_STORE
             for name in op.signals
+        } | {
+            name for op in self.s.operations
+            if op.kind is OperationKind.LOAD and op.pipeline is None
+            and self.b(op.writes[0]).space is MemorySpace.SHARED
+            for name in op.signals
         }
-        if tmem_store_barriers:
+        if root_barriers:
             self.begin('if (threadIdx.x == 0)')
-            for name in sorted(tmem_store_barriers):
+            for name in sorted(root_barriers):
                 barrier = next(b for b in self.s.barriers if b.name == name)
                 self.line(f'cake_init({self.barvars[name]}, {barrier.count});')
             self.line('asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");')
@@ -700,9 +747,9 @@ class _Emitter:
         self.sequence(None)
         self.line('__syncthreads();')
         self.invalidate_completions(None)
-        if tmem_store_barriers:
+        if root_barriers:
             self.begin('if (threadIdx.x == 0)')
-            for name in sorted(tmem_store_barriers):
+            for name in sorted(root_barriers):
                 self.line(f'cake_inval({self.barvars[name]});')
             self.end()
         for a in self.s.allocations:
@@ -933,12 +980,41 @@ class _Emitter:
             self.begin('if ((threadIdx.x & 31) == 0)')
             self.line(f'cake_arrive({self.barvars[op.signals[0]]});')
             self.end()
+        elif op.kind is OperationKind.LOAD and dst.space is MemorySpace.SHARED:
+            width, _ = _SWIZZLE[dst.swizzle]
+            self.begin(f'for (int e=int(threadIdx.x & 31); e<{dst.elements}; e+=32)')
+            address, mask = self.address(op, src, [f'e/{dst.shape[1]}', f'e%{dst.shape[1]}'])
+            self.line(f'const int byte = e * {dst.dtype.itemsize};')
+            self.line(f'const int swizzled = byte ^ (((byte >> 7) & {(width//16)-1}) << 4);')
+            self.line(f'*reinterpret_cast<{_TYPES[dst.dtype]}*>({self.pointer(dst,"0")} + swizzled) = ({mask}) ? {address} : {_TYPES[dst.dtype]}(0);')
+            self.end()
+            self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
+            self.line('__syncwarp();')
+            self.begin('if ((threadIdx.x & 31) == 0)')
+            self.line(f'cake_arrive({self.barvars[op.signals[0]]});')
+            self.end()
         elif op.kind is OperationKind.LOAD:
             self.line('#pragma unroll')
             self.begin(f'for (int col=0; col<{_slots(self.s,dst)}; ++col)')
             local=[row,'col'] if len(dst.shape)==2 else ['col']
             address,mask=self.address(op,src,local)
             self.line(f'{d}[col] = ({mask}) ? {address} : {_TYPES[dst.dtype]}(0);')
+            self.end()
+        elif op.kind is OperationKind.FORWARD_SUBSTITUTE:
+            coefficient = src
+            rhs = self.names[op.reads[1]]
+            self.line(f'cake_wait({self.barvars[op.waits[0]]}, 0);')
+            self.line('#pragma unroll 1')
+            self.begin('for (int token=0; token<32; ++token)')
+            self.line(f'float update = {rhs}[token];')
+            self.line('#pragma unroll 1')
+            self.begin('for (int prior=0; prior<token; ++prior)')
+            self.line('const int byte = (token*32 + prior)*2;')
+            self.line('const int swizzled = byte ^ (((byte >> 7) & 3) << 4);')
+            self.line(f'const __nv_bfloat16 coefficient = *reinterpret_cast<const __nv_bfloat16*>({self.pointer(coefficient,"0")} + swizzled);')
+            self.line(f'update = __fmaf_rn(__bfloat162float(coefficient), {d}[prior], update);')
+            self.end()
+            self.line(f'{d}[token] = update;')
             self.end()
         elif op.kind is OperationKind.ELEMENTWISE:
             p=op.parameters

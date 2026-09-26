@@ -108,9 +108,9 @@ def candidate(lm, p: cake.Tensor((32,32), "bf16"), rhs: cake.Tensor((128,32), "f
         assessment = compiler.assess(source)
         self.assertIn("TARGET_OPERATION_UNSUPPORTED",
                       {finding.code for finding in assessment.findings})
-        for backend in (native_cuda, triton):
-            self.assertIn("BACKEND_OPERATION_UNEMITTABLE",
-                          {finding.code for finding in backend.requirements(schedule)})
+        self.assertIn("BACKEND_OPERATION_UNEMITTABLE",
+                      {finding.code for finding in triton.requirements(schedule)})
+        self.assertEqual(native_cuda.requirements(schedule), ())
 
     def test_bad_edges_are_rejected_at_construction(self):
         source = document()
