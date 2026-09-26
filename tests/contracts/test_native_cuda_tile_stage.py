@@ -83,7 +83,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
         script = ROOT / 'experiments/weave/native_b300/generate_tile_ready_from_cake.py'
         for generation in ('cake_full_ffn_stages', 'cake_two_expert_stages',
                            'cake_ep4_owner_stages',
-                           'cake_ep4_live_chain_stages'):
+                           'cake_ep4_live_chain_stages',
+                           'cake_ep4_gpu_plan_stages'):
             with self.subTest(generation=generation), tempfile.TemporaryDirectory(
                     prefix='cake-tile-stage-') as directory:
                 root = Path(directory)
@@ -118,6 +119,10 @@ class NativeCudaTileStageTest(unittest.TestCase):
                     self.assertIn('gather_tiles<<<', source)
                     self.assertIn('scatter_returns<<<', source)
                     self.assertIn('cake_weave_rank512_combine_kernel<<<', source)
+                if generation == 'cake_ep4_gpu_plan_stages':
+                    self.assertIn('derive_expert_order<<<', source)
+                    self.assertIn('assign_tile_plan<<<', source)
+                    self.assertIn('expand_stage_tasks<<<', source)
 
 
 if __name__ == '__main__':
