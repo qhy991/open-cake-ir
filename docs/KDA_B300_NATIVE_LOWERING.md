@@ -221,6 +221,8 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 共享 core 原型 `29148390` 把 `St16x256b.x8` 限定为 BF16 64×128 state，把 `.x2` 限定为 BF16 64×32 U，把 `Ld16x256b.x8` 限定为 BF16 64×128 回读；错误形状、旧 atom 和不匹配的 barrier count 有反例，旧 M128 路线保持通过。固定提交的 Corpus Gate 179/179、相关合同 20/20 已通过。远端完整 CPU 套件为 **2,700 passed、16 skipped、1 Apple MLX 实机 deselected、1 failed**；唯一失败是 `test_author_home` 在远端 `umask 0002` 下新建的 `skills` 目录有组写权限，被预期的 custody 规则拒绝。失败日志和启动时缺少 pytest `PYTHONPATH` 的首次环境错误均保留；没有改权限、改期望或补跑全套使其变绿。相同固定提交的本地 `test_author_home.py` 3/3 通过。这个 commit 暂承接 NVIDIA 探针祖先，**还不能直接作为 core→main PR**；须按 `docs/DEVELOPMENT_BRANCHES.md` 拆分共享改动和平台祖先、完成独立评审。下一步在 NVIDIA 任务分支实现精确四 warp M64 native emission，以 one-chunk、two-chunk、完整 H64 oracle 和同卡冷 L2 配对逐级判断净收益；若完整候选仍远慢于 CAKE，再量化两 CTA B 重复和准备阶段物化。
 
+性能优先级须受已有配对控制约束：同 GPU 的原始 CAKE M64/M128 完整 H64 仅差 `493.923/456.578 = 1.08179×`（§2.21），而当前两 kernel 路径比原始 CAKE M64 慢 `5.20476×`（§2.20）。**推论**：仅把当前每 head 一 CTA 改成两个 M64 CTA，不足以作为追平差距的主要假设；两种实现的其它映射不同，这个 8.18% 不是当前 native M64 的收益预测。native 发射还必须让每 warp 的 16 个 V 行在四个 lane/row 间分摊列片，协调 strict-lower solve 的跨 lane 值；直接把现有 `row = threadIdx.x`、128 行 register 数组和 `.32x32b` 发射门禁放宽会产生错误的所有权。M64 atom 因而暂是有根据的表达能力工作，性能主线先量化准备 kernel 与 carried-state 消费者的同作业分段时间，再围绕片上生产/消费与关键路径设计可完成的融合候选；分段时间之和不当作可加的因果归因。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
