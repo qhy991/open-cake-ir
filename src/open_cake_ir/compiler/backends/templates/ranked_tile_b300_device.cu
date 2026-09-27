@@ -332,6 +332,14 @@ constexpr size_t TILE_KEY_BYTES=size_t(kLogicalTiles)*kRows*sizeof(int);
 constexpr size_t ROUTE_CONTRIBUTION_BYTES=size_t(ROUTES)*H*sizeof(float);
 constexpr size_t FINAL_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 
+struct RouteMismatch {
+  int event;
+  int block;
+  int key;
+  int location;
+  int expected_expert;
+  int location_key;
+};
 struct Bin {
   int count[LOCAL_E];
   int payload_count;
@@ -353,6 +361,7 @@ struct Bin {
   int wave_counts[kEvents];
   __nv_bfloat16 payload[size_t(PAYLOAD_CAP)*H];
   int error;
+  RouteMismatch route_mismatch;
 };
 struct BinParams {
   Bin* bins[R];
@@ -614,7 +623,16 @@ __device__ void gather_event_rows(const BinParams* params,int event,int block,
     int expert=params->tile_experts[tile];
     if (location<0 || location>=LOCAL_E*MAX_ROWS ||
         location/MAX_ROWS!=expert) {
-      if (threadIdx.x==0) atomicCAS(&local->error,0,18);
+      if (threadIdx.x==0 && atomicCAS(&local->error,0,18)==0) {
+        local->route_mismatch.event=event;
+        local->route_mismatch.block=block;
+        local->route_mismatch.key=key;
+        local->route_mismatch.location=location;
+        local->route_mismatch.expected_expert=expert;
+        local->route_mismatch.location_key=
+            location>=0 && location<LOCAL_E*MAX_ROWS
+                ? local->keys[location] : -1;
+      }
       return;
     }
     int source_rank=key/(T*K),token=(key/K)%T;

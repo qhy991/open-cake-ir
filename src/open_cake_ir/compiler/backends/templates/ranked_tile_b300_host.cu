@@ -452,7 +452,19 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
     // CAKE_EFFECT: status.acquire
     CAKE_RUN(cudaMemcpy(&device_error,&s.bin->error,sizeof(int),
                         cudaMemcpyDeviceToHost));
-    if (device_error!=0) return 1000+device_error;
+    if (device_error!=0) {
+      if (device_error==18) {
+        RouteMismatch detail{};
+        CAKE_RUN(cudaMemcpy(&detail,&s.bin->route_mismatch,sizeof(detail),
+                            cudaMemcpyDeviceToHost));
+        std::fprintf(stderr,
+            "ranked tile route mismatch rank=%d event=%d block=%d key=%d "
+            "location=%d expected_expert=%d location_key=%d\n",
+            rank,detail.event,detail.block,detail.key,detail.location,
+            detail.expected_expert,detail.location_key);
+      }
+      return 1000+device_error;
+    }
     int completed[kStages*kEvents],required[kStages*kEvents];
     CAKE_RUN(cudaMemcpy(completed,s.processed,sizeof(completed),
                         cudaMemcpyDeviceToHost));
