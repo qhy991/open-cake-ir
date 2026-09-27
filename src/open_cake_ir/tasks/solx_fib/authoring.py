@@ -137,8 +137,8 @@ def masked_whole_026_source(workload: WorkloadContract, case_id: str = "primary"
                             execution_groups: int = 8) -> str:
     """Compute one zero-masked whole-row reduction and reuse its loaded values."""
     width, epsilon, declarations = _rmsnorm026_arguments(workload, case_id)
-    if type(execution_groups) is not int or execution_groups not in (8, 16):
-        raise ValueError("RMSNorm 026 whole-row candidate admits 8 or 16 groups")
+    if type(execution_groups) is not int or execution_groups not in (4, 8, 16):
+        raise ValueError("RMSNorm 026 whole-row candidate admits 4, 8 or 16 groups")
     tile = 1 << (width - 1).bit_length()
     body = [
         'stored_x = lm.load(x[row, column], id="load_x")',

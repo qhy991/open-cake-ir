@@ -310,7 +310,7 @@ class StarterTests(unittest.TestCase):
         self.assertEqual(sliced["access_maps"], starter["access_maps"])
         self.assertEqual(sliced["roles"][0]["execution_groups"], list(range(8)))
         self.assertEqual(self.compiler.assess(sliced).findings, ())
-        for groups in (8, 16):
+        for groups in (4, 8, 16):
             source = masked_whole_026_source(workload, execution_groups=groups)
             schedule = parse(source).document
             self.assertEqual(sum(op["kind"] == "store" for op in schedule["operations"]), 1)
@@ -320,6 +320,7 @@ class StarterTests(unittest.TestCase):
             self.assertIn("BLOCK_COLUMN=8192", lowered)
             self.assertEqual(lowered.count("other=0.0"), 2)
             self.assertIn("mean_square = square_sum / 7168.0", lowered)
+            self.assertIn(f"num_warps={groups}", lowered)
         with self.assertRaises(ValueError):
             sliced_026_source(_tiny("fib_fused_add_rmsnorm_h7168", rows=64))
 
