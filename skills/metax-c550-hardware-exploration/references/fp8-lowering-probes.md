@@ -194,3 +194,14 @@ Compiler-generated artifact before publishing its score or accepting a Lab
 recipe. Do not introduce a new instruction or dtype solely to hide an expressible
 composition, infer native FP8 dot, or substitute the native-source score for the
 Cake-generated route.
+
+
+The public `bucketed_source(workload)` projection now uses the canonical example
+[`xcore1002_fp8_bucketed.py`](../../../examples/python/xcore1002_fp8_bucketed.py).
+Producer `0183264c` passes all-case device correctness, paired search, fresh
+confirmation, A/A and a separately validated profile. Read the
+[platform result](../../../docs/metax-c550.md#有限-fp8-分桶-fp16-dot-组合)
+for its generated-source score and evidence boundary. The native/generated gap
+remains observed, not causally attributed; preserve both artifacts when choosing
+the next source-level hypothesis. Promotion belongs to the task recipe because
+existing Cake primitives already express the mechanism.

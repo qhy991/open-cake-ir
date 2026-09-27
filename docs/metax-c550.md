@@ -74,6 +74,40 @@ shared bytes；带宽、指令计数和 achieved occupancy 未采集。
 `open-cake-ir-evidence/metax-cake-streaming-c3be4379-v2/device-verification.json`，
 详见 [F-2026-09-27-002](../findings/2026-09-27-002-metax-fp8-streaming-lowering.json)。
 
+## 有限 FP8 分桶 FP16 dot 组合
+
+[分桶例子](../examples/python/xcore1002_fp8_bucketed.py)由任务的
+`bucketed_source(workload)` 绑定同一固定 NT v2 Workload。它显式组合已有的
+cast、compare、select、`triton.dot.fp16_fp32` 与 FP32 加减原语：每个操作数按
+幅值分成四桶，计算 16 个 FP16 dot 部分结果，再做 Neumaier 合并。输入与输出
+ABI 仍为 FP8 A[M,K]／B[N,K] 和 FP32 `A @ B.T`，固定 M=N=K=64，M16 program
+和四个 execution groups。这是 task-owned 的有限输入优化配方。
+
+单个 FP16 dot 候选虽能精确表示输入，仍在六个 full-finite case 上产生八个超容差
+输出，因而停止计时。分桶候选的 CPU 枚举将每个 K64 部分结果的绝对整数界限
+限定在 921600（20 bits）；设备正确性仍由外部 oracle 决定。
+
+真正的 Cake 投影在提交 `0183264cb4f3a1dbcd5fdada90dbd1944f3512eb` 构建、封存。
+Job `maca-c76edeedfaa9` 通过全部 37 个 case（151552 个输出），输入不变，
+最大绝对误差 **0.015625**，零个超容差输出。这是容差验证，非 bitwise 一致。
+
+| 阶段 | Job | 分桶／生成流式中位数 | 结果 |
+| --- | --- | --- | --- |
+| search | `maca-432596723612` | 11.776／26.880 µs | 2.2826×，10/10 pairs 获胜 |
+| fresh confirmation | `maca-e6c41c8a4e93` | 11.776／26.624 µs | 2.2609×，10/10 pairs 获胜 |
+| 生成流式 A/A | `maca-18988d19e68d` | 26.880／26.880 µs | close-null，0/5 wins、5 ties |
+
+三组质量门均通过，每臂 250 个样本，60 个原始 cohort 已重算并核对原生活动。
+单独 profile `maca-262539604f7b` 的仪器输出正确：182 registers/thread、4096
+动态 shared bytes、0 静态 shared 和 function-local bytes。Profile 的单次时间仅用于
+归因，不参与上述成绩；带宽、指令计数及 achieved occupancy 未采集。
+
+手写 native-source 的独立确认是 10.240／26.880 µs（2.625×、140 registers/thread），
+该结果与上述生成源码成绩分开保留。分配为 `local_serialized`，外部活动未排除。
+验收只覆盖该 Workload 的有限输入、固定形状和 primary MCPTI timing 边界；没有
+直接 FP8 dot、其他形状或框架／serving 外推。复核与全部原始收据位于 checkout 外：
+`/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-bucket16dot-cake-confirm-0183264c/verification.json`。
+
 ## 编译与执行
 
 编译通过现有 bubblewrap 路径运行，不挂载 GPU，也不暴露作者工作目录。
