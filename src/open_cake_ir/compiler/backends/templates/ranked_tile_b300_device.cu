@@ -118,6 +118,7 @@ __device__ void gather_event_rows(const BinParams* params,int event,int block,
 __device__ void publish_event_snapshot(const BinParams* params,int event);
 __device__ void record_phase(const BinParams* params,int event,int point,
                              int block);
+__device__ bool owns_source_event(const BinParams* params,int source_rank);
 
 @UPGATE_STAGE@
 @ACTIVATION_STAGE@
@@ -200,7 +201,8 @@ __global__ void tile_schedule_probe(
     const int next_source=next_event%(kSourceRanks+1);
     if (next_event<chunks*(kSourceRanks+1) &&
         next_source<kSourceRanks &&
-        source_params->rank==next_source && block<communication_ctas) {
+        owns_source_event(source_params,next_source) &&
+        block<communication_ctas) {
       if (threadIdx.x==0)
         wait_prior_snapshot(source_params,next_event,next_source);
       __syncthreads();
@@ -420,6 +422,9 @@ struct BinParams {
   __nv_bfloat16* tile_rows;
   int rank;
 };
+__device__ bool owns_source_event(const BinParams* params,int source_rank) {
+  return params->rank==source_rank;
+}
 __device__ void record_phase(const BinParams* params,int event,int point,
                              int block) {
   if (block!=0 || threadIdx.x!=0) return;
