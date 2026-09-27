@@ -4,6 +4,15 @@ from ..diagnostics import Finding
 from ..ir import DType, OperationKind, Schedule
 from ..target import Target
 from .common import refusal
+from types import MappingProxyType
+
+
+# Emission spelling only; instruction kind and dtype belong to the registry.
+DIRECTED_FMA_FUNCTIONS = MappingProxyType({
+    "maca.fma.rz.f32": "fma_rz",
+    "maca.fma.rd.f32": "fma_rd",
+    "maca.fma.ru.f32": "fma_ru",
+})
 
 
 _BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
