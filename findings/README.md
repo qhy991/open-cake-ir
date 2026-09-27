@@ -34,6 +34,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-27-004 — directed MACA FMA modes pass standalone native bit/class checks and mixed ordinary arithmetic restores RN at508/510/506 distinguishing positions; current Cake Target and source boundaries refuse them. Shared registration/source admission and actual generated-source qualification remain proposed; no performance claim.
+
 - F-2026-09-27-003 — closed by guarded MACA comparison-only magnitude emission at 2f44686e and generated-source qualification at 90739901: all 37 cases pass; search/confirmation repeat 1.0976x, close-null A/A and correct profile; FP16 all-encoding/FP32 boundary device audit preserves comparisons and stored negative zero. Stored/arithmetic magnitudes retain SELECT; native-source evidence remains separate.
 
 - F-2026-09-27-002 — sealed NT K-streaming FP8 compensation passes all 37 cases and repeats 22.784/155.904 us against resident source with quality-passed reversed pairs, null A/A and bounded profiles. Public K1 Schedule is legal but outside resident admission; explicit loop-state lowering and generated-source requalification remain proposed. Closed by explicit loop-owned Cake lowering: generated-source all-case replay plus 26.880/155.904 us confirmation (5.80x), null A/A and instrumented resources; authored-source 6.84x evidence remains separate.
