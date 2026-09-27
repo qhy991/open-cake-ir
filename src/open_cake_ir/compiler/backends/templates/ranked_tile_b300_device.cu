@@ -132,7 +132,7 @@ __global__ void tile_schedule_probe(
     const CUtensorMap* down_maps_a, const CUtensorMap* down_map_b,
     float* outputs, int communication_ctas, int steal_budget,
     const BinParams* source_params,int chunk_tokens,int chunks,
-    int selected_wave) {
+    int first_event) {
   extern __shared__ __align__(1024) unsigned char shared[];
   uint32_t* tensor_address = reinterpret_cast<uint32_t*>(shared + 49192);
   __shared__ int claimed, claimed_stage, claimed_tile, claimed_subtile;
@@ -140,180 +140,181 @@ __global__ void tile_schedule_probe(
   const int block = int(blockIdx.x);
   const int warp = int(threadIdx.x) / 32;
   cg::grid_group grid = cg::this_grid();
-  const int source_rank=selected_wave%(kSourceRanks+1);
-  const int source_wave=selected_wave/(kSourceRanks+1);
-  record_phase(source_params,selected_wave,0,block);
-  if (block==0 && threadIdx.x==0 && source_rank<kSourceRanks)
-    wait_prior_snapshot(source_params,selected_wave,source_rank);
-  grid.sync();
-  record_phase(source_params,selected_wave,1,block);
-  if (source_rank<kSourceRanks && block<communication_ctas) {
-    dispatch_source_chunk(source_params,block,communication_ctas,
-                          source_wave,chunk_tokens,source_rank);
-    __threadfence_system();
-  }
-  grid.sync();
-  record_phase(source_params,selected_wave,2,block);
-  if (source_rank<kSourceRanks && block==0 && threadIdx.x==0)
-    publish_source_completion(source_params,source_wave,source_rank);
-  grid.sync();
-  record_phase(source_params,selected_wave,3,block);
-  if (block==0 && threadIdx.x==0)
-    wait_source_completion(source_params,source_wave,source_rank);
-  grid.sync();
-  record_phase(source_params,selected_wave,4,block);
-  if (block<kExperts)
-    derive_expert_snapshot(source_params,block,source_wave,source_rank,
-                           chunks,chunk_tokens);
-  grid.sync();
-  record_phase(source_params,selected_wave,5,block);
-  if (block==0 && threadIdx.x<kExperts)
-    assign_expert_tiles(source_params,selected_wave,chunk_tokens,
-                        int(threadIdx.x));
-  grid.sync();
-  record_phase(source_params,selected_wave,6,block);
-  if (block==0 && threadIdx.x<kStages)
-    expand_event_tasks(source_params,task_counts,
-                       selected_wave,int(threadIdx.x));
-  grid.sync();
-  record_phase(source_params,selected_wave,7,block);
-  gather_event_rows(source_params,selected_wave,block,int(gridDim.x));
-  __threadfence_system();
-  grid.sync();
-  record_phase(source_params,selected_wave,8,block);
-  if (block==0 && threadIdx.x==0)
-    publish_event_snapshot(source_params,selected_wave);
-  grid.sync();
-  record_phase(source_params,selected_wave,9,block);
-  // Gather wrote tile rows through the generic proxy in this same kernel.
-  // The Cake up/gate TMA reads them through the async proxy.
-  asm volatile("fence.proxy.async.global;" ::: "memory");
   bool tensor_owned = false;
   int logical_offset=0;
-  for (int earlier=0;earlier<selected_wave;++earlier)
-    logical_offset+=task_counts[earlier]/kUpGateTasksPerTile;
-  for (int wave=selected_wave; wave<=selected_wave; ++wave) {
-    // CAKE_EFFECT: tile.acquire
-    // CAKE_EFFECT: task.acquire
-    if (threadIdx.x==0)
-      while (worker_wave_acquire(&wave_ready[wave])==0)
-        __nanosleep(64);
-    __syncthreads();
-    const int tile_count=task_counts[wave]/kUpGateTasksPerTile;
-    const int total_tasks=task_counts[wave]+task_counts[kEvents+wave]+
-                          task_counts[2*kEvents+wave];
-    if (threadIdx.x==0 && block<communication_ctas)
-      atomicAdd(&dispatched[wave],1);
-    grid.sync();  // Source wave becomes visible before any tile claim.
-    while (true) {
-      if (threadIdx.x==0) {
-        const bool comm=block<communication_ctas;
-        bool permitted=!comm;
-        bool reserved=false;
-        if (comm && total_tasks>0 && steal_budget>0) {
-          // CAKE_EFFECT: steal.permit
-          reserved=reserve_bounded(steal_permits,steal_budget);
-          permitted=reserved;
-        }
-        claimed=-1; borrowed=0;
-        if (permitted) {
-          // Prefer a ready successor. Each tile owns its own stage heads;
-          // another tile may still be computing a predecessor stage.
-          for (int stage=kStages-1; stage>=0 && claimed<0; --stage) {
-            const int units=stage==0 ? kUpGateTasksPerTile :
-                            stage==1 ? kActivationTasksPerTile :
-                                       kDownTasksPerTile;
-            const int predecessor=stage==1 ? kUpGateTasksPerTile :
-                                  kActivationTasksPerTile;
-            for (int attempt=0; attempt<tile_count && claimed<0; ++attempt) {
-              const int tile=logical_offset+(block+attempt)%tile_count;
-              if (stage>0 &&
-                  // CAKE_EFFECT: task.predecessor.acquire
-                  completion_acquire(&tile_completed[(stage-1)*kLogicalTiles+tile])
-                    !=predecessor) continue;
-              int* head=&task_heads[stage*kLogicalTiles+tile];
-              int old=atomicAdd(head,0);
-              while (old<units) {
-                // CAKE_EFFECT: task.reserve
-                // CAKE_EFFECT: task.claim
-                int observed=atomicCAS(head,old,old+1);
-                if (observed==old) {
-                  claimed=(tile-logical_offset)*units+old;
-                  claimed_stage=stage;
-                  claimed_tile=tile;
-                  claimed_subtile=old;
-                  borrowed=int(comm);
-                  break;
+  for (int selected_event=first_event;
+       selected_event<chunks*(kSourceRanks+1);++selected_event) {
+    const int source_rank=selected_event%(kSourceRanks+1);
+    const int source_wave=selected_event/(kSourceRanks+1);
+    record_phase(source_params,selected_event,0,block);
+    if (block==0 && threadIdx.x==0 && source_rank<kSourceRanks)
+      wait_prior_snapshot(source_params,selected_event,source_rank);
+    grid.sync();
+    record_phase(source_params,selected_event,1,block);
+    if (source_rank<kSourceRanks && block<communication_ctas) {
+      dispatch_source_chunk(source_params,block,communication_ctas,
+                            source_wave,chunk_tokens,source_rank);
+      __threadfence_system();
+    }
+    grid.sync();
+    record_phase(source_params,selected_event,2,block);
+    if (source_rank<kSourceRanks && block==0 && threadIdx.x==0)
+      publish_source_completion(source_params,source_wave,source_rank);
+    grid.sync();
+    record_phase(source_params,selected_event,3,block);
+    if (block==0 && threadIdx.x==0)
+      wait_source_completion(source_params,source_wave,source_rank);
+    grid.sync();
+    record_phase(source_params,selected_event,4,block);
+    if (block<kExperts)
+      derive_expert_snapshot(source_params,block,source_wave,source_rank,
+                             chunks,chunk_tokens);
+    grid.sync();
+    record_phase(source_params,selected_event,5,block);
+    if (block==0 && threadIdx.x<kExperts)
+      assign_expert_tiles(source_params,selected_event,chunk_tokens,
+                          int(threadIdx.x));
+    grid.sync();
+    record_phase(source_params,selected_event,6,block);
+    if (block==0 && threadIdx.x<kStages)
+      expand_event_tasks(source_params,task_counts,
+                         selected_event,int(threadIdx.x));
+    grid.sync();
+    record_phase(source_params,selected_event,7,block);
+    gather_event_rows(source_params,selected_event,block,int(gridDim.x));
+    __threadfence_system();
+    grid.sync();
+    record_phase(source_params,selected_event,8,block);
+    if (block==0 && threadIdx.x==0)
+      publish_event_snapshot(source_params,selected_event);
+    grid.sync();
+    record_phase(source_params,selected_event,9,block);
+    // Gather wrote tile rows through the generic proxy in this same kernel.
+    // The Cake up/gate TMA reads them through the async proxy.
+    asm volatile("fence.proxy.async.global;" ::: "memory");
+    for (int wave=selected_event; wave<=selected_event; ++wave) {
+      // CAKE_EFFECT: tile.acquire
+      // CAKE_EFFECT: task.acquire
+      if (threadIdx.x==0)
+        while (worker_wave_acquire(&wave_ready[wave])==0)
+          __nanosleep(64);
+      __syncthreads();
+      const int tile_count=task_counts[wave]/kUpGateTasksPerTile;
+      const int total_tasks=task_counts[wave]+task_counts[kEvents+wave]+
+                            task_counts[2*kEvents+wave];
+      if (threadIdx.x==0 && block<communication_ctas)
+        atomicAdd(&dispatched[wave],1);
+      grid.sync();  // Source wave becomes visible before any tile claim.
+      while (true) {
+        if (threadIdx.x==0) {
+          const bool comm=block<communication_ctas;
+          bool permitted=!comm;
+          bool reserved=false;
+          if (comm && total_tasks>0 && steal_budget>0) {
+            // CAKE_EFFECT: steal.permit
+            reserved=reserve_bounded(steal_permits,steal_budget);
+            permitted=reserved;
+          }
+          claimed=-1; borrowed=0;
+          if (permitted) {
+            // Prefer a ready successor. Each tile owns its own stage heads;
+            // another tile may still be computing a predecessor stage.
+            for (int stage=kStages-1; stage>=0 && claimed<0; --stage) {
+              const int units=stage==0 ? kUpGateTasksPerTile :
+                              stage==1 ? kActivationTasksPerTile :
+                                         kDownTasksPerTile;
+              const int predecessor=stage==1 ? kUpGateTasksPerTile :
+                                    kActivationTasksPerTile;
+              for (int attempt=0; attempt<tile_count && claimed<0; ++attempt) {
+                const int tile=logical_offset+(block+attempt)%tile_count;
+                if (stage>0 &&
+                    // CAKE_EFFECT: task.predecessor.acquire
+                    completion_acquire(&tile_completed[(stage-1)*kLogicalTiles+tile])
+                      !=predecessor) continue;
+                int* head=&task_heads[stage*kLogicalTiles+tile];
+                int old=atomicAdd(head,0);
+                while (old<units) {
+                  // CAKE_EFFECT: task.reserve
+                  // CAKE_EFFECT: task.claim
+                  int observed=atomicCAS(head,old,old+1);
+                  if (observed==old) {
+                    claimed=(tile-logical_offset)*units+old;
+                    claimed_stage=stage;
+                    claimed_tile=tile;
+                    claimed_subtile=old;
+                    borrowed=int(comm);
+                    break;
+                  }
+                  old=observed;
                 }
-                old=observed;
               }
             }
           }
+          if (claimed<0 && reserved) atomicSub(steal_permits,1);
+          if (claimed>=0 && claimed_stage>0) {
+            const int preceding=(claimed_stage-1)*kEvents+wave;
+            if (atomicAdd(&processed[preceding],0)<task_counts[preceding])
+              atomicExch(&overlap[claimed_stage-1],1);
+          }
         }
-        if (claimed<0 && reserved) atomicSub(steal_permits,1);
-        if (claimed>=0 && claimed_stage>0) {
-          const int preceding=(claimed_stage-1)*kEvents+wave;
-          if (atomicAdd(&processed[preceding],0)<task_counts[preceding])
-            atomicExch(&overlap[claimed_stage-1],1);
+        __syncthreads();
+        if (claimed<0) {
+          if (threadIdx.x==0) {
+            int completed_total=0;
+            for (int stage=0;stage<kStages;++stage)
+              completed_total+=atomicAdd(&processed[stage*kEvents+wave],0);
+            claimed=(completed_total==total_tasks) ? -2 : -1;
+          }
+          __syncthreads();
+          if (claimed==-2) break;
+          __nanosleep(128);
+          continue;
         }
-      }
-      __syncthreads();
-      if (claimed<0) {
+        if (!tensor_owned) {
+          if (warp==0) {
+            asm volatile(
+                "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
+                :: "r"(smem_address(tensor_address)), "n"(64) : "memory");
+          }
+          __syncthreads();
+          tensor_owned=true;
+        }
+        const int stage=claimed_stage;
+        const int tile=claimed_tile;
+        const int subtile=claimed_subtile;
+        const int expert=tile_expert[tile];
+        if (expert<0 || expert>=kExperts) asm volatile("trap;");
+        if (stage==0) {
+          cake_upgate_stage_work(shared,tensor_address,warp,
+                                 up_gate+tile*kRows*kUpGateWidth,
+                                 up_maps_a+tile,up_map_b+expert,subtile);
+        } else if (stage==1) {
+          cake_activation_stage_work(up_gate,activated,tile,subtile);
+        } else {
+          cake_down_stage_work(shared,tensor_address,warp,
+                               outputs+tile*kRows*kOutput,
+                               down_maps_a+tile,down_map_b+expert,subtile);
+        }
+        // The completion RMW represents every writer in this CTA. Activation
+        // writers also issue an async-proxy fence before down's TMA read.
+        __threadfence();
+        __syncthreads();
         if (threadIdx.x==0) {
-          int completed_total=0;
-          for (int stage=0;stage<kStages;++stage)
-            completed_total+=atomicAdd(&processed[stage*kEvents+wave],0);
-          claimed=(completed_total==total_tasks) ? -2 : -1;
+          const int work_index=stage*kEvents+wave;
+          task_owner[work_index*kMaxTasks+claimed]=block;
+          // CAKE_EFFECT: task.predecessor.publish
+          completion_release_increment(
+              &tile_completed[stage*kLogicalTiles+tile]);
+          atomicAdd(&processed[work_index],1);
+          // CAKE_EFFECT: steal.account
+          if (borrowed) atomicAdd(&stolen[work_index],1);
         }
         __syncthreads();
-        if (claimed==-2) break;
-        __nanosleep(128);
-        continue;
       }
-      if (!tensor_owned) {
-        if (warp==0) {
-          asm volatile(
-              "tcgen05.alloc.cta_group::1.sync.aligned.shared::cta.b32 [%0], %1;"
-              :: "r"(smem_address(tensor_address)), "n"(64) : "memory");
-        }
-        __syncthreads();
-        tensor_owned=true;
-      }
-      const int stage=claimed_stage;
-      const int tile=claimed_tile;
-      const int subtile=claimed_subtile;
-      const int expert=tile_expert[tile];
-      if (expert<0 || expert>=kExperts) asm volatile("trap;");
-      if (stage==0) {
-        cake_upgate_stage_work(shared,tensor_address,warp,
-                               up_gate+tile*kRows*kUpGateWidth,
-                               up_maps_a+tile,up_map_b+expert,subtile);
-      } else if (stage==1) {
-        cake_activation_stage_work(up_gate,activated,tile,subtile);
-      } else {
-        cake_down_stage_work(shared,tensor_address,warp,
-                             outputs+tile*kRows*kOutput,
-                             down_maps_a+tile,down_map_b+expert,subtile);
-      }
-      // The completion RMW represents every writer in this CTA. Activation
-      // writers also issue an async-proxy fence before down's TMA read.
-      __threadfence();
-      __syncthreads();
-      if (threadIdx.x==0) {
-        const int work_index=stage*kEvents+wave;
-        task_owner[work_index*kMaxTasks+claimed]=block;
-        // CAKE_EFFECT: task.predecessor.publish
-        completion_release_increment(
-            &tile_completed[stage*kLogicalTiles+tile]);
-        atomicAdd(&processed[work_index],1);
-        // CAKE_EFFECT: steal.account
-        if (borrowed) atomicAdd(&stolen[work_index],1);
-      }
-      __syncthreads();
+      grid.sync();  // Only the next source wave waits for the whole grid.
+      record_phase(source_params,selected_event,10,block);
+      logical_offset+=tile_count;
     }
-    grid.sync();  // Only the next source wave waits for the whole grid.
-    record_phase(source_params,selected_wave,10,block);
-    logical_offset+=tile_count;
   }
   if (tensor_owned) {
     __syncthreads();

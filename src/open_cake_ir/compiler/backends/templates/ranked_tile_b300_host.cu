@@ -399,29 +399,24 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
     CAKE_RUN(cudaSetDevice(rank));
     CAKE_RUN(ranked_tile_reset(state->ranks[rank]));
   }
-  for (int wave=0;wave<chunks;++wave) {
-    for (int source=0;source<=R;++source) {
-      int event=wave*(R+1)+source;
-      for (int rank=0;rank<R;++rank) {
-        CAKE_RUN(cudaSetDevice(rank));
-        RankedTileRankState& s=state->ranks[rank];
-        int* event_ready=&s.bin->wave_consumed[0];
-        int selected_event=event;
-        int communication=communication_ctas[rank];
-        int budget=steal_budgets[rank];
-        void* args[]={&s.heads,&s.completed,&s.owners,&s.processed,
-                      &s.dispatched,&s.stolen,&s.permits,&s.tasks,
-                      &event_ready,&s.overlap,&s.tile_experts,&s.upgate,
-                      &s.activated,&s.up_maps_a,&s.up_map_b,&s.down_maps_a,
-                      &s.down_map_b,&s.down,&communication,&budget,
-                      &s.bin_params,&chunk_tokens,&active_chunks,
-                      &selected_event};
-        // CAKE_EFFECT: launch.rank
-        CAKE_RUN(cudaLaunchCooperativeKernel(
-            reinterpret_cast<const void*>(tile_schedule_probe),
-            dim3(96),dim3(kThreads),args,kDynamicShared,s.compute));
-      }
-    }
+  for (int rank=0;rank<R;++rank) {
+    CAKE_RUN(cudaSetDevice(rank));
+    RankedTileRankState& s=state->ranks[rank];
+    int* event_ready=&s.bin->wave_consumed[0];
+    int first_event=0;
+    int communication=communication_ctas[rank];
+    int budget=steal_budgets[rank];
+    void* args[]={&s.heads,&s.completed,&s.owners,&s.processed,
+                  &s.dispatched,&s.stolen,&s.permits,&s.tasks,
+                  &event_ready,&s.overlap,&s.tile_experts,&s.upgate,
+                  &s.activated,&s.up_maps_a,&s.up_map_b,&s.down_maps_a,
+                  &s.down_map_b,&s.down,&communication,&budget,
+                  &s.bin_params,&chunk_tokens,&active_chunks,
+                  &first_event};
+    // CAKE_EFFECT: launch.rank
+    CAKE_RUN(cudaLaunchCooperativeKernel(
+        reinterpret_cast<const void*>(tile_schedule_probe),
+        dim3(96),dim3(kThreads),args,kDynamicShared,s.compute));
   }
   for (int rank=0;rank<R;++rank) {
     CAKE_RUN(cudaSetDevice(rank));
