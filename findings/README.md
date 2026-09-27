@@ -43,7 +43,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-27-004 — directed MACA FMA modes pass standalone native bit/class checks and mixed ordinary arithmetic restores RN at508/510/506 distinguishing positions; current Cake Target and source boundaries refuse them. Shared registration/source admission and actual generated-source qualification remain proposed; no performance claim.
+- F-2026-09-27-004 — accepted bounded MetaX FP32 FMA RZ/RD/RU lowering at aee427d9, generated-source validation at b5da553f and platform merge30d3895d/PR272 under user direction. Two native audits pass12228exact words/60NaN classes each, including disjoint initial outputs and restored ordinary RN; no performance claim. Shared main PR269 review remains pending.
 
 - F-2026-09-27-003 — closed by guarded MACA comparison-only magnitude emission at 2f44686e and generated-source qualification at 90739901: all 37 cases pass; search/confirmation repeat 1.0976x, close-null A/A and correct profile; FP16 all-encoding/FP32 boundary device audit preserves comparisons and stored negative zero. Stored/arithmetic magnitudes retain SELECT; native-source evidence remains separate.
 

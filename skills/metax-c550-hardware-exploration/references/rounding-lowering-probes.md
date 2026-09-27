@@ -50,8 +50,8 @@ RN at508/510/506rows, and subsequent ordinary outputs match RN. Raw outputs reta
 The successor also covers exact signed zero, cancellation, subnormal underflow,
 overflow/fused cancellation, infinity and NaN. This closes the previously untested
 compositions for these inputs, not every hidden state bit or exception/NaN payload.
-The original finite-only scope remains unchanged in its old receipts. Current Cake
-still refuses the proposed names and native source. Shared contract/source work
+The original finite-only scope remains unchanged in its old receipts. At7451c2bc Cake
+still refused the proposed names and native source. Shared contract/source work
 must precede platform admission; require real Cake-generated successor evidence,
 not this standalone native result, before closing the capacity finding.
 
@@ -68,5 +68,6 @@ The tested ordinary ADD/FMA depend on the directed result, with508/510/506rows
 that distinguish restored RN from leaked mode. Do not turn this observation into
 hidden-state, NaN-payload, exception-flag or arbitrary-runtime guarantees. Normal
 FMA reports14registers/thread versus58for directed calls; no latency or causal
-performance inference follows. Shared registration/source review and platform
-integration are still pending; the capacity finding remains proposed.
+performance inference follows. Platform PR272 was merged into metax at30d3895d on2026-09-28 under explicit user
+direction; the capacity finding is accepted with generated-source verification.
+Shared main PR269 still awaits independent review; no main-review completion is claimed.
