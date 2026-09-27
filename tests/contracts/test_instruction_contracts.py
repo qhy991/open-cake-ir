@@ -102,7 +102,8 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
                         "elementwise": ["libdevice.tanh.f32", "ptx.fma.rn.f32"],
                         "mma": ["mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
                                 "tcgen05.mma.cta_group::1.kind::f16",
-                                "triton.dot.bf16_fp32", "triton.dot.fp32_ieee",
+                                "triton.dot.bf16_fp32", "triton.dot.fp16_fp32",
+                                "triton.dot.fp32_ieee",
                                 "triton.dot.fp32_tf32",
                                 "triton.dot.fp8e4m3_block_scale_fp32"],
                         "synchronization": ["barrier.sync", "mbarrier",
@@ -194,12 +195,13 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "gfx1151": ["ocml.tanh.f32"],
             "sm_103a": ["libdevice.tanh.f32", "ptx.fma.rn.f32",
-                        "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp32_ieee",
+                        "triton.atomic_add.i32.relaxed.gpu", "triton.dot.fp16_fp32",
+                        "triton.dot.fp32_ieee",
                         "triton.dot.fp32_tf32", "triton.dot.fp8e4m3_block_scale_fp32"],
         })
         # gfx1151 and xcore1002 retain their device evidence but have no tanh
         # Corpus case. Preserve both explicit gaps without manufacturing cases.
-        self.assertEqual(sum(len(v) for v in unreached.values()), 13)
+        self.assertEqual(sum(len(v) for v in unreached.values()), 14)
         for target in ("gfx938", "sm_100a"):
             self.assertNotIn(target, unreached)
 

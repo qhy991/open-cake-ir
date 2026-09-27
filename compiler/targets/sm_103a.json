@@ -52,6 +52,7 @@
     "tcgen05.mma.cta_group::1.kind::f16",
     "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32",
     "triton.dot.bf16_fp32",
+    "triton.dot.fp16_fp32",
     "triton.dot.fp32_ieee",
     "triton.dot.fp32_tf32",
     "triton.dot.fp8e4m3_block_scale_fp32",
@@ -91,6 +92,16 @@
       "kind": "instruction_set",
       "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html",
       "locator": "PTX target sm_103a; common sm_100f tensor-memory and tcgen05 f16 instructions; no new instruction form is admitted here"
+    },
+    {
+      "kind": "instruction_set",
+      "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html",
+      "locator": "Multiply-and-Accumulate Instruction mma: mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 uses FP16 operands and FP32 accumulation; the m16n8k16 FP16 form requires sm_80 or higher"
+    },
+    {
+      "kind": "device_observation",
+      "source": "Triton 3.6.0 on B300-M4, cake-fib004-fp16-dot-probe-20260927",
+      "locator": "Exact sm_103a offline compilation emits mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32; broker job gpuq-d9c31bd9f02c ran M=16 and M=17, N=128, K=2048 under three distributions each. CPU FP64 matmul rounded to FP16 checked all 12672 outputs with atol=0.01, rtol=0.01 and zero failures. Retained result.json, correctness.json, device_run.json and admission-r2.json in the named experiment; observed 2026-09-27"
     },
     {
       "kind": "device_specification",
