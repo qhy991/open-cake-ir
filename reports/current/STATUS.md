@@ -56,7 +56,7 @@
 ### `xcore1002`
 
 - 主机类型： `maca`
-- 解释器： `/opt/conda/bin/python3`（3.12.11）
+- 解释器： `/opt/conda/bin/python3`（3.10.10）
 - 采集文件： [`runtime/hosts/xcore1002.json`](../../runtime/hosts/xcore1002.json)
 
 - 负责记录： [`runtime/hosts/`](../../runtime/hosts)

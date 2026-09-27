@@ -23,9 +23,11 @@ FP32 单次舍入乘加使用 `maca.fma.f32`：三个同形寄存器操作数在
 `80` 是 MACA Triton API 的兼容值，不是 NVIDIA SM80；设备 admission 还会从
 原生 MACA 属性查询实际物理架构。
 
-已验证环境使用 MACA PyTorch `2.8.0+metax3.5.3.9`、FlagTree
-`0.5.1+metax3.1`，其提供的 Triton **API 版本为 3.1.0**。系统 Python 不等于
-该环境：实际解释器是 `/opt/conda/bin/python3`。
+当前捕获的 C550-2 环境使用 MACA PyTorch `2.10.0+metax3.8.0.4.c600u`、
+MetaX Triton `3.6.0+metax3.8.0.4.c600u`，Triton API 版本为 `3.6.0`，
+解释器是 `/opt/conda/bin/python3`（Python 3.10.10）。先前 C550-1 的
+FlagTree `0.5.1+metax3.1`／Triton API `3.1.0` 捕获仍由旧源码提交
+`b0709b38` 及其原始收据绑定，不由新环境重释。
 [`runtime/hosts/xcore1002.json`](../runtime/hosts/xcore1002.json) 由 canonical capture
 命令生成并绑定解释器、包、构建工具、MACA runtime、MCPTI 库及其 API 版本。
 每个 worker 都重新 admission；实际已映射的库必须是捕获的绝对路径。
