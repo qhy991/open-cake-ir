@@ -211,6 +211,16 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 若直连通过，需另立共享 core/Executor successor：在 Program 声明输出到输入的**精确全范围别名**与读先于写，构造时拒绝形状/dtype 不同、部分重叠、过早覆盖和其它读者；Evaluation 为别名输出复用输入存储，按 Workload 区分可变状态与不可变输入，每次计时恢复初始状态，并在同一外部 oracle 下验证两个名称确实同址。共享 IR、静态分析、LaunchManifest、loader、计时与反例测试必须同一变更链演进；NVIDIA backend 只负责已验证的两阶段发射。是否让 Lab authoring 接纳经过审核的混合 backend Program 是另一项策略决定，不由本次 KDA 性能数字自动扩大权限。
 
+### 2.23 M64 双 value slice 的表达边界与最小 PTX witness
+
+完整配对的 5.20476× 差距使 M64 拆分值得独立筛选，但不能把 `grid.x` 从 64 改为 128 就称作原始 CAKE M64。一个 CPU-only Schedule 可行性探针从 `4dc1561e` 克隆固定 H64 输入，给 `ProgramMap` 增加物理 `blockIdx.y∈{0,1}`、tile=64 的 `value_slice`，把状态/V/输出的 V 行 AccessMap 改为 `program_tile(value_slice)` 并把对应局部张量与 MMA 的 M 改为 64。这个**向量 program tile** 让全局地址同时带 `slice*64+local_row`，避免最初错误使用标量 `program` 时的四项 load/store 形状不一致。原始两 compute-warp/旧 atom 探针被共享 verifier 拒绝 13 项、native preflight 拒绝 87 项。改用原始 CAKE 的四 compute warp、count-four barrier 和精确 M64 atom 后，提交 `29148390` 的共享 verifier 对这个有界探针报 0 项阻断；native preflight 仍有 56 项 128 行寄存器/TMEM、输入转置和输出所有权特化拒绝。两份探针及逐项诊断均在仓库外；**verifier 通过不是可发射 M64 kernel**。原来减少为两个 compute warp 的假设也未获得硬件资格。
+
+原始 CAKE M64 CUDA 仍用**四个** compute warp：每 warp 负责 16 个 V 行，以 `lane/4` 和 `lane&3` 分配两行及列片，再用 `tcgen05.st/ld.sync.aligned.16x256b.x8.b32` 在寄存器和 TMEM 间搬运。NVIDIA [PTX ISA](https://docs.nvidia.com/cuda/pdf/ptx_isa_9.2.pdf)把 `.16x256b` 列为独立的数据搬运形状；`.x8` 每 lane 使用 32 个 32-bit 寄存器，warp 内线程必须一致执行且指定相同 TMEM 基址。[CUTLASS tcgen05 API](https://docs.nvidia.com/cutlass/latest/media/docs/pythonDSL/cute_dsl_api/cute_nvgpu_tcgen05.html)也将单 CTA MMA 的 M=64 列为支持的指令形状，但它不证明本 Schedule 的 operand major、TMEM 列、同步或数值语义。这是**具体 lane/row/column 所有权**，不是可由现有 `St32x32b` 重命名得到的 tile 常数。它需要共享 IR 的 CopyAtom 类型、数据一致性、程序安全和 carried-state 分析同 native CUDA 发射一起扩展；若要把新指令名声明到 Target，也须由已有的指令注册表持有合同并经本卡 AOT/设备证明，不能从原始 CAKE 的 B200 资格自动继承。
+
+为了先隔离这个未知量，仓库外生成了两项四 warp BF16 逐 bit 往返 witness；它们不调用 KDA oracle，也不计入完整延迟。64×128 state 的 `St16x256b.x8`→`Ld16x256b.x8` 首次 AOT 因手写 `cvta.to.shared` 参数宽度不匹配被 ptxas 拒绝并保留；改用 native backend 已有的 `__cvta_generic_to_shared` 后，精确 `sm_103a` AOT 为 **40 寄存器、16 字节 shared、0 stack/spill**。broker-shared `gpuq-ca97529e05dd` 完成并释放 GPU2；独立 host 对三组各 **8,192 个**随机原始 BF16 位、特殊位（包括 signed zero/Inf/NaN payload）和行列编码逐 bit 检查，输出零位差、输入未改写。64×32 U 的 `St16x256b.x2`→`Ld16x256b.x2` 最初因内联 PTX 占位符编号错误而 AOT 失败并保留；修正后 AOT 为 **28 寄存器、16 字节 shared、0 stack/spill**。broker-shared `gpuq-8c871f33ee0c` 完成并释放 GPU5；相同三类各 **2,048 个**BF16 位全部零位差、输入未改写。Finding events 190–191 保留 device/host 报告。两项只资格化精确 B300 的**数据搬运原子与 lane 映射**，并未证明 M64 MMA、两 CTA/head 的 B 盒重复、64 行 state-ready 关键路径、P 生命周期、完整 KDA 或延迟。
+
+共享 core 原型 `29148390` 把 `St16x256b.x8` 限定为 BF16 64×128 state，把 `.x2` 限定为 BF16 64×32 U，把 `Ld16x256b.x8` 限定为 BF16 64×128 回读；错误形状、旧 atom 和不匹配的 barrier count 有反例，旧 M128 路线保持通过。固定提交的 Corpus Gate 179/179、相关合同 20/20 已通过。远端完整 CPU 套件为 **2,700 passed、16 skipped、1 Apple MLX 实机 deselected、1 failed**；唯一失败是 `test_author_home` 在远端 `umask 0002` 下新建的 `skills` 目录有组写权限，被预期的 custody 规则拒绝。失败日志和启动时缺少 pytest `PYTHONPATH` 的首次环境错误均保留；没有改权限、改期望或补跑全套使其变绿。相同固定提交的本地 `test_author_home.py` 3/3 通过。这个 commit 暂承接 NVIDIA 探针祖先，**还不能直接作为 core→main PR**；须按 `docs/DEVELOPMENT_BRANCHES.md` 拆分共享改动和平台祖先、完成独立评审。下一步在 NVIDIA 任务分支实现精确四 warp M64 native emission，以 one-chunk、two-chunk、完整 H64 oracle 和同卡冷 L2 配对逐级判断净收益；若完整候选仍远慢于 CAKE，再量化两 CTA B 重复和准备阶段物化。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -227,7 +237,8 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | 分角色 carried loop | P shared stage 唯一读者为 solve，Role 与 `p_ready` producer 明示 MMA warp，原 carried state 顺序不变 | copy/MMA/compute 各自推进块循环，以 ready/free、P、U、state barrier 同步，块内无 CTA 会合 | `test_native_kda_role_pipeline.py`；额外 P 读者由 `NATIVE_ROLE_PIPELINE_DOMAIN` 拒绝；重复启动与逐轮 oracle 见 §2.17。 |
 | 向量 P shared 暂存 | H64/256、唯一生产/消费、BF16 32×32/B64 swizzle、对齐条件及标量 fallback | MMA warp 用 16B 全局读取和 shared 写入，后接 `p_ready`；消费者发布/复用仍有失败反例 | `test_native_kda_vector_p_stage.py`；§2.18 的等待后 P 回显失败，当前 No promotion。 |
 | 双槽 P 地址隔离 | `Buffer.stages=2`、`p_smem` 4 KiB，单一 P 生产者/solve 读者与顺序 carried loop；不足容量由共享分析拒绝 | MMA 写槽 `j&1`，compute solve 读同槽；三槽由角色域拒绝，B ready/free 和 U/state 顺序维持 | `test_native_kda_p_double_slot.py`；§2.19 的五次 P 回显、未对齐 fallback 和配对 CUPTI；只资格化该 NVIDIA 组件。 |
-| 准备 beta 直连 | `beta_gate` 明示 `[chunk,head,token]`，AccessMap 逐轴对应真实准备输出 | native 使用 `chunk*2048+head*32+token` 普通全局加载，无额外转置指令 | `test_native_kda_prepared_beta_bridge.py`；旧形状误接被 `ACCESS_PROGRAM_EXTENT_MISMATCH` / `ACCESS_TILE_MISMATCH` 拒绝；§2.20 的 GPU 直连仍待资格化。 |
+| 准备 beta 直连 | `beta_gate` 明示 `[chunk,head,token]`，AccessMap 逐轴对应真实准备输出 | native 使用 `chunk*2048+head*32+token` 普通全局加载，无额外转置指令 | `test_native_kda_prepared_beta_bridge.py`；旧形状误接被 `ACCESS_PROGRAM_EXTENT_MISMATCH` / `ACCESS_TILE_MISMATCH` 拒绝；§2.20 的固定 H64 GPU 直连和完整配对已通过。 |
+| M64 BF16 TMEM atom | `St16x256b.x8` 限定 64×128 state，`.x2` 限定 64×32 U，`Ld16x256b.x8` 限定 64×128 回读；四 warp/count-four carried barrier 不变 | 需实现每 warp 16 行的寄存器打包、TMEM 地址与 M64 MMA/转置/输出所有权；当前 preflight 仍拒绝 | `test_kda_m64_tmem_copy_atoms.py` 与 §2.23 两项 B300 位级 witness；错误形状/旧 atom 被共享合同拒绝，完整 native M64 尚未发射。 |
 
 ### 一次没有推广的 lowering 尝试
 
