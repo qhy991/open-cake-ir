@@ -34,7 +34,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-27-001 — C550-2 Triton 3.6 native ELF declares two launcher scratch pointers absent from the public TTGIR signature; the three-pointer manifest crashes at launch, while a same-artifact five-pointer primary-case control passes. Native metadata inspection and all-case Executor replay are required; no performance claim.
+- F-2026-09-27-001 — C550-2 Triton 3.6 native ELF declares two launcher scratch pointers absent from the public TTGIR signature; the three-pointer manifest crashes at launch, while a same-artifact five-pointer primary-case control passes. Native metadata inspection and all-case Executor replay are required; no performance claim. Closed by artifact-derived pointer sealing/loader checks at 875724d4 and broker job maca-1a6e9f748221: all 37 NT v2 cases pass with unchanged inputs and no timing.
 
 - F-2026-09-26-002 — one-row FP64 K reduction for the fixed C550 FP8 matrix compiles on Triton 3.1/3.6, passes bounded bitwise device checks and has a quality-passed directional MCPTI successor after one retained quality failure. Cake cannot name FP64 accumulation today; a formal Workload and reviewed precision owner are required before a Compiler or performance promotion.
 

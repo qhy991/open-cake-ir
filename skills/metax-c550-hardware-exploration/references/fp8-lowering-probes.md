@@ -59,3 +59,22 @@ all-case device correctness and the declared timing and confirmation gates.
 ## RHS orientation correction
 
 The v1 Workload defined `A @ B` while the resident instruction and its original frozen oracle compute `A @ B.T`. Square ABI checks missed this semantic mismatch. At `fe47e4cc`, the original frozen identity case has zero word differences against `A @ B.T` and 4,006 against `A @ B`; the new v1 identity input has 3,998 tolerance failures against the resident result. The pending sealed v1 request must not qualify this resident route. Its first broker attempt executed zero kernels. Keep the v1 contract and all historical observations intact. Use the explicit NT v2 successor, reseal the baseline under that Workload, and separately adapt streaming RHS addresses before its device check. The observation is retained at `open-cake-ir-evidence/metax-fp8-rhs-orientation-20260927/result.json`.
+
+## Native launch ABI and repaired all-case replay
+
+A captured Triton 3.6 native ELF can declare two zero scratch pointers beyond the
+public TTGIR tensor signature. Derive and verify the launch count from the actual
+native metadata; the retained 3.1 ELF has no such additional slots. Do not use
+TTGIR alone or a universal vendor/version default. Nonzero or unmodeled scratch
+requirements remain refused at compilation. The loader must reject a sealed
+count mismatch before runtime calls.
+
+The exact NT v2 sealed baseline at `875724d4` completed broker job
+`maca-1a6e9f748221`: 37 cases and 151552 elements, zero mismatches/maximum absolute
+error, unchanged inputs, 37 native module loads, 37 kernel calls and zero
+compilation/fallback/timing calls. This closes
+[F-2026-09-27-001](../../../findings/2026-09-27-001-metax-native-scratch-abi.json).
+The collected worker artifacts are at
+`open-cake-ir-evidence/metax-native-abi-request-875724d4/device-run/`; the case and
+counter audit is `device-verification.json` in its parent. This is registered
+Workload native correctness, not a GPU bitwise audit, timing or full-backend claim.
