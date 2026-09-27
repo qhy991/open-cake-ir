@@ -243,7 +243,10 @@ differences from v3, and positive useful-work overlap records in every
 control. Its report is retained at
 `/home/qinhaiyan/cake-weave-dual-role-acqrel-c8550363-matrix12/` and
 mirrored locally. The successor now has the same frozen route/K correctness
-scope as `b360415f`; neither is a qualified timing result.
+scope as `b360415f`; neither is a qualified timing result. Same-lease ABBA
+comparison against the equal-reset sequential persistent control remains a
+separate gate; the two code paths' correctness reports cannot answer whether
+full producer/consumer overlap improves layer latency.
 
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
