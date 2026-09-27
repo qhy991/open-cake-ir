@@ -94,6 +94,52 @@ def _positive_number(value, label, *, allow_zero=False):
         raise ValueError(f"{label} must be finite and {'nonnegative' if allow_zero else 'positive'}")
 
 
+def _input_scope(plan):
+    """Parse the oracle's shape domain rather than trusting free-text equality."""
+    try:
+        scope = json.loads(plan["input_scope"])
+    except (TypeError, ValueError) as error:
+        raise ValueError("calibration input_scope must be canonical structured JSON") from error
+    if (not isinstance(scope, dict)
+            or plan["input_scope"] != json.dumps(scope, sort_keys=True, separators=(",", ":"))
+            or set(scope) != {"schema_version", "oracle", "distributions", "families"}
+            or scope["schema_version"] != 1
+            or scope["oracle"] != "independent_cpu_case_v1"
+            or scope["distributions"] != [0, 1]
+            or not isinstance(scope["families"], list) or not scope["families"]):
+        raise ValueError("calibration input_scope must be canonical structured JSON")
+    admitted = {"fma": {"a", "b", "c", "y"},
+                "gemm_bias": {"a", "b", "bias", "c"}}
+    families = {}
+    for item in scope["families"]:
+        if (not isinstance(item, dict) or set(item) != {"family", "buffers"}
+                or item["family"] not in admitted or item["family"] in families
+                or not isinstance(item["buffers"], dict)
+                or set(item["buffers"]) != admitted[item["family"]]):
+            raise ValueError("calibration input_scope family fields differ")
+        for shape in item["buffers"].values():
+            if (not isinstance(shape, list) or not shape
+                    or any(value is not None and (type(value) is not int or value <= 0)
+                           for value in shape)):
+                raise ValueError("calibration input_scope buffer shape differs")
+        families[item["family"]] = item["buffers"]
+    return families
+
+
+def _check_input_scope_case(families, case, document):
+    patterns = families.get(case["family"])
+    actual = {row["name"]: row["shape"] for row in document["buffers"]
+              if row["space"] == "global"}
+    if patterns is None or set(actual) != set(patterns):
+        raise ValueError("Schedule family or global buffers differ from input_scope")
+    for name, shape in actual.items():
+        pattern = patterns[name]
+        if (len(shape) != len(pattern)
+                or any(value != (case["extent"] if declared is None else declared)
+                       for value, declared in zip(shape, pattern, strict=True))):
+            raise ValueError("Schedule shape differs from declared input_scope")
+
+
 def _candidate_file(candidate, relative, label):
     if not isinstance(relative, str) or not relative:
         raise ValueError(f"{label} path differs")
@@ -220,6 +266,7 @@ def _check_plan(candidate):
     for key in ("model_id", "input_scope"):
         if not isinstance(plan.get(key), str) or not plan[key].strip():
             raise ValueError(f"calibration {key} differs")
+    input_families = _input_scope(plan)
     sampling = plan.get("sampling")
     if not isinstance(sampling, dict):
         raise ValueError("calibration sampling differs")
@@ -275,6 +322,7 @@ def _check_plan(candidate):
         if lowering.toolchain_requirements.get("signature") != signature:
             raise ValueError("calibration Schedule ABI differs")
         document = json.loads(assessment.schedule_bytes)
+        _check_input_scope_case(input_families, case, document)
         buffers = {row["name"]: row for row in document["buffers"]}
         bindings = curve.get("varying_dimensions")
         if not isinstance(bindings, list) or not bindings:
