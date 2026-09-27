@@ -169,3 +169,16 @@ about 4.1 million same-CTA cycles in each FFN interval; terminal events 4 and
 TMEM release and are not cross-GPU or qualified wall-clock latency. They
 motivate a controlled K comparison and investigation of late tile work rather
 than another unmeasured change to the sorting network.
+
+Job `gpuq-4d803fc79d2c` then held the frozen mixed route, c=64 and budget
+46920 fixed while varying K=4/2/1 on the instrumented source. Each arm
+passed 4,194,304 FP64-oracle elements and the retained v3 bitwise comparison;
+all 240 rank/event tile counts matched the CPU plan. The CUPTI development
+median spans were 9.70/6.60/5.83 ms, respectively. K=4 published owner tile
+totals [80, 64, 64, 64], while K=2 and K=1 both published [56, 32, 32, 32].
+Nonempty terminal FFN intervals were about four million same-CTA cycles for
+all three K settings, so the extra partial tiles and source events at K=4
+carry real work on this route. K=2 kept the K=1 tile totals but still paid
+for more source events. These are route-specific development observations,
+not a general K=1 rule or qualified latency. The retained report is
+`/home/qinhaiyan/cake-weave-phase-temporal-57bc00ec/temporal_phase_report.json`.
