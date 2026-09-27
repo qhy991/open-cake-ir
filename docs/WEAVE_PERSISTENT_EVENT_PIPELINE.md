@@ -320,6 +320,17 @@ broker receipt retained the prior matrix label due to script templating;
 the sealed source, build, launch manifests and leaf case records all name
 `00a2fc14`, and the receipt's job id binds the device outputs.
 
+Job `gpuq-0f37f64eb3a3` extended `00a2fc14` to six sealed mixed K=4
+spatial/steal controls: c=1 at budgets 0/5888, c=74 at 0/5888/46920,
+and c=95 at 46920. All six passed with 0/25,165,824 oracle failures,
+480 exact CPU/GPU event-count slots, zero v3 bit mismatches and positive
+next-event overlap. The two budget-zero controls stole zero tasks; c=74
+with budget 5888 reached exactly 5888 stolen tasks on every rank. The
+report is retained at
+`/home/qinhaiyan/cake-weave-device-barrier-00a2fc14-sweep6/` and mirrored
+locally. One passing c=95 trial does not close F-2026-09-27-001's
+intermittent route-location mismatch.
+
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
 four-device timing reset and matched open baseline. This task branch remains
