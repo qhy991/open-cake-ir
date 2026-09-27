@@ -152,3 +152,20 @@ prevents attributing the first ABBA's 1.11× result to dynamic sorting alone.
 The code-size and correctness changes are established; timing improvement
 and an external-baseline gain remain unqualified. Promotion disposition:
 **no merge or Lab rule** from these development timing comparisons.
+
+Diagnostic successor `57bc00ec` records same-CTA PTX `clock64` differences at
+eleven boundaries inside every event kernel. It passed 15 related contracts,
+the 179-case Corpus Gate and B300 NVCC (80 registers, 9,216 B static shared,
+zero spills). Four-GPU job `gpuq-446a8b285c35` passed the mixed K=4, c=64,
+budget=46920 FP64 oracle over 4,194,304 elements, matched all 80 CPU tile
+event counts and retained five launches × four ranks × 20 events = 400 phase
+records. Across its three CUPTI samples, source-rank dispatch took a median
+407,159 clock cycles per source event. Expert snapshot sorting had a median
+12,592 cycles across rank/events. The heavy FFN work clustered at terminal
+events 14 and 19: ranks 1–3 each published 32 tiles in both events and spent
+about 4.1 million same-CTA cycles in each FFN interval; terminal events 4 and
+9 published no tiles. The records and post-lease audit live at
+`/home/qinhaiyan/cake-weave-phase-57bc00ec/`. These counters exclude final
+TMEM release and are not cross-GPU or qualified wall-clock latency. They
+motivate a controlled K comparison and investigation of late tile work rather
+than another unmeasured change to the sorting network.
