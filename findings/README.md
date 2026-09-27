@@ -43,6 +43,8 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
+- F-2026-09-27-001 — B300 single-grid c95 returned route-location status 18 once after two warmups; a diagnostic successor passed 22 further launches without reproducing it, so publication ownership and frequency remain open (bug, proposed).
+
 - F-2026-09-24-001 — Claude native retry delay may be fractional milliseconds; exact finite numeric admission retains all other event and candidate gates (protocol, original-stream replay and CPU contracts; fresh GPU run pending).
 - F-2026-09-24-002 — gfx1151 paired HIP timing has repeatable task-dependent sample spikes sixteen dispatches apart across five tasks; the cause remains unproven, and a fixed A/A device probe must precede any timer or CV-policy change (protocol, proposed).
 

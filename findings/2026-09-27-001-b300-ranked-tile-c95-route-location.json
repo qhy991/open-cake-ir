@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-001",
+  "kind": "bug",
+  "date": "2026-09-27",
+  "title": "B300 single-grid c95 once published a route location outside its tile expert",
+  "backend": "native_cuda ranked_tile_b300_pointer_v4",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@f7ae17fe30a350ea4395863404e598fddae8cc46",
+  "executor_revision": "sm_103a@f7ae17fe30a350ea4395863404e598fddae8cc46",
+  "evidence": {
+    "failed_job": "gpuq-637084680df8",
+    "failed_control": "/home/qinhaiyan/cake-weave-single-grid-f7ae17fe-c-sweep/c95_b46920/launch_failure.json",
+    "broker_log": "/home/qinhaiyan/cake-weave-single-grid-f7ae17fe-c-sweep/gpu-run.log",
+    "completed_controls": "/home/qinhaiyan/cake-weave-single-grid-f7ae17fe-c-sweep/partial_report.json",
+    "diagnostic_successor": "/home/qinhaiyan/cake-weave-route-diag-c4c79545-repeat20/report.json",
+    "diagnostic_broker_job": "gpuq-cb1d18c20183"
+  },
+  "observation": "With the frozen mixed route, K=4, c=95 and steal budget 46920, two warmups completed but the first CUPTI/L2-flushed sample returned status 1018. Status 18 is the gather invariant that route_location[key] must lie in the tile's declared expert range. The broker released all four GPUs; there is no accepted output or timing for this arm. The same source's c=8 through c=74 arms completed in the job and passed the post-lease oracle and activity audit. The failure's key, event and slot were not retained by the f7 ABI, so its cause is unknown. Successor c4c79545 added failure-only context and passed real NVCC, 15 related contracts and the 179-case Corpus Gate. One isolated c=95 run and a separate run of two warmups plus 20 CUPTI samples on c4c79545 completed with zero oracle failures and exact tile counts; they did not reproduce status 18. This does not prove the old failure fixed or identify its frequency.",
+  "proposed_change": "Use the successor's retained key, event, slot and expected expert on a bounded reproduction to distinguish a stale route_location from a wrong tile key. Inspect the exact system-scope publication and source-wave snapshot handoff before changing admission. If a mechanism is found, repair its B300 emission and matching legality analysis in a further clean Compiler commit, exercise the failing control plus counterexamples on device, and keep the Workload, FP64 oracle and CUPTI reset contract fixed. Do not silently narrow the declared c=1..95 domain or promote a general scheduling rule from the six passing controls.",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null
+}
