@@ -121,8 +121,17 @@ source event. This is direct evidence of useful-work overlap in **one** frozen
 complete-FFN case, not a general liveness result or qualified latency gain.
 The output and overlap reports are retained at
 `/home/qinhaiyan/cake-weave-lookahead-1aff5d01/` and mirrored locally.
-Before promotion, replay all frozen routes and K settings, verify every
-status and return, and compare against the equal-reset persistent control
+Broker job `gpuq-34381e97168b` extended the same source to four frozen
+routes × K=4/2/1. The post-lease audit found zero FP64-oracle failures over
+50,331,648 output elements, exact CPU/GPU agreement for 960 tile-event
+slots, and zero bit differences from the corresponding v3 outputs. All phase
+and overlap records were retained. Completed Cake tasks advanced during
+next-source dispatch in fanin K=4, fanin K=2 and mixed K=4; the other nine
+controls had no positive overlap flag in this run. The report is retained at
+`/home/qinhaiyan/cake-weave-lookahead-1aff5d01-matrix12/` and mirrored
+locally. This establishes bounded useful-work overlap on three frozen
+controls, not a general performance gain. Before promotion, check further
+c/steal controls and compare against the equal-reset persistent control
 under the Target's qualified timing contract.
 
 ## Required next transition
