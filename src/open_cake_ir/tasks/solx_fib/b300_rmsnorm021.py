@@ -7,6 +7,7 @@ from .workload import SPECS, TASKS, validate_solx_fib_contract
 
 TASK = "fib_rmsnorm_h128"
 ROW_GROUPS = frozenset((4, 8, 16))
+QUALIFIED_T16_ROWS = frozenset((49532, 65016))
 
 
 def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
@@ -59,3 +60,18 @@ def row_group_source(workload: WorkloadContract, case_id: str = "primary", *,
         '        lm.store(out[row, column], narrowed, '
         'coalesced=False, id="store_out")\n'
     )
+
+
+def qualified_rowgroup16_source(workload: WorkloadContract,
+                                 case_id: str = "primary") -> str:
+    """Select only the two measured large-batch T16 development leads.
+
+    Each passed task-pack correctness, five input distributions with all
+    elements checked, and two independent quality-passed 10/10 paired assays.
+    This is a shape-level Lab recipe, not a complete-task dispatcher.
+    """
+    validate_solx_fib_contract(workload.document)
+    rows = workload.tensor_abi(case_id)[0].shape[0]
+    if rows not in QUALIFIED_T16_ROWS:
+        raise ValueError("FIB 021 T16 development lead is qualified only at R49532 and R65016")
+    return row_group_source(workload, case_id, rows_per_cta=16)

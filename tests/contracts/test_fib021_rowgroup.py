@@ -7,7 +7,8 @@ from pathlib import Path
 from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.solx_fib.b300_rmsnorm021 import row_group_source
+from open_cake_ir.tasks.solx_fib.b300_rmsnorm021 import (
+    qualified_rowgroup16_source, row_group_source)
 from open_cake_ir.tasks.solx_fib.workload import SPECS, workload_document
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -62,6 +63,27 @@ class Fib021RowGroupTest(unittest.TestCase):
             "fib_rmsnorm_h512", rows=7, columns=512, backend="triton-b300"))
         with self.assertRaisesRegex(ValueError, "exact B300 task"):
             row_group_source(other)
+
+    def test_measured_t16_recipe_keeps_its_batch_boundary(self) -> None:
+        for rows in (49532, 65016):
+            with self.subTest(rows=rows):
+                workload = WorkloadContract(workload_document(
+                    TASK, rows=rows, columns=128, backend="triton-b300"))
+                source = qualified_rowgroup16_source(workload)
+                self.assertEqual(source, row_group_source(
+                    workload, rows_per_cta=16))
+                assessment = self.compiler.assess(parse(source).document)
+                self.assertFalse(
+                    [f for f in assessment.findings if f.blocks_lowering],
+                    assessment.findings)
+                self.assertIn("axis=1", self.compiler.lower(assessment).source)
+        for rows in (24, 2528, 520128):
+            with self.subTest(rows=rows):
+                workload = WorkloadContract(workload_document(
+                    TASK, rows=rows, columns=128, backend="triton-b300"))
+                with self.assertRaisesRegex(ValueError,
+                                            "qualified only at R49532 and R65016"):
+                    qualified_rowgroup16_source(workload)
 
 
 if __name__ == "__main__":
