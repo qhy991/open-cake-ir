@@ -52,6 +52,21 @@ class MetaxFP8Workload(unittest.TestCase):
                     create_task(metax_fp8_gemm.TASK, backend=backend, rows=rows,
                                 columns=columns, depth=depth)
 
+    def test_bucketed_projection_binds_only_the_frozen_nt_workload(self):
+        workload = load_workload(CONTRACT)
+        source = metax_fp8_gemm.bucketed_source(workload)
+        schedule = frontend.parse(source).document
+        self.assertEqual(schedule["metadata"]["workload_contract_sha256"], workload.canonical_sha256)
+        globals_ = [(b["name"], tuple(b["shape"]), b["dtype"], b["mode"])
+                    for b in schedule["buffers"] if b["space"] == "global"]
+        self.assertEqual(globals_, [(arg.name, arg.shape, arg.dtype, arg.mode)
+                                  for arg in workload.tensor_abi("primary")])
+        old = load_workload(CONTRACT.with_name(CONTRACT.name.replace("v2.json", "v1.json")))
+        with self.assertRaisesRegex(ValueError, "NT Workload successor"):
+            metax_fp8_gemm.bucketed_source(old)
+        with self.assertRaisesRegex(KeyError, "unknown workload case"):
+            metax_fp8_gemm.bucketed_source(workload, "missing_case")
+
     def test_frozen_contract_and_exact_candidate_abi(self):
         workload = load_workload(CONTRACT)
         self.assertEqual(workload.workload_id, metax_fp8_gemm.WORKLOAD_ID)

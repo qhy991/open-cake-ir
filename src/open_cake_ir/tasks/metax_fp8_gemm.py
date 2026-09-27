@@ -108,6 +108,16 @@ def streaming_source(workload: WorkloadContract, case_id: str = "primary") -> st
                          "cake_fp8_streaming_compensated_64")
 
 
+def bucketed_source(workload: WorkloadContract, case_id: str = "primary") -> str:
+    """Project finite NT64 magnitude-bucket dots through existing Cake primitives.
+
+    This task specialization uses FP16 dot partials and FP32 compensation.
+    The frozen Workload owns its finite input domain and numerical acceptance.
+    """
+    return _bound_source(workload, case_id, "xcore1002_fp8_bucketed.py",
+                         "cake_fp8_bucket16_dot_64")
+
+
 def _bound_source(workload: WorkloadContract, case_id: str, example: str, entry_point: str) -> str:
     validate_contract(workload.document)
     workload.case(case_id)

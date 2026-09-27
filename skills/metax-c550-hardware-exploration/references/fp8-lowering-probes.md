@@ -131,3 +131,77 @@ original report as a resident-baseline measurement.
 When investigating the remaining gap, isolate another source difference and
 replay the sealed device result; static IR simplification alone is insufficient
 reason to add a MetaX lowering rule.
+
+
+## Scalar K and explicit FP16 dot precision screens
+
+At `c3be4379`, replacing only the generated K singleton vector with a scalar
+preserved all source masks, the RHS transpose and compensation. After removing
+debug locations, TTGIR differed only in constant declaration order. Canonical
+native-image extraction found the complete 13,872-byte ELF identical to the
+qualified generated-stream baseline, including code and metadata. No distinct
+native instruction mechanism remained to time. The unsubmitted resource waiter
+was cancelled, the paired request was never launched, and the disposition is
+**No promotion**. This exact comparison selects the next action; do not repeat it
+as a routine fingerprint check. Evidence:
+`/Users/haiyan-infiniai/open-cake-ir-evidence/metax-streaming-scalark-sealed-20260927/native-image-identity.json`
+and `metax-streaming-scalark-request-20260927/cancellation.json`.
+
+A separate native-source candidate explicitly decoded FP8 inputs to FP16 and
+performed one FP16 `tl.dot` with FP32 accumulation (M16/N64, grid 4). All 254 finite
+E4M3FN encodings roundtrip exactly through IEEE FP16 on CPU, and their 64,516
+product pairs roundtrip exactly through IEEE FP32. These value facts do not
+establish device accumulated-result accuracy. Its TTGIR contains MACA MMA and a
+FP16 dot; it is not a native FP8 dot.
+
+C550-2 job `maca-723eda450b48` executed all 37 NT v2 cases with unchanged inputs,
+but six full-finite cases failed: suffixes `03`, `11`, `12`, `13`, `14`, `15`.
+Eight outputs were outside tolerance; maximum absolute error was 0.0625.
+No timing was run. **No promotion**: exact input representation does not make the
+changed matrix accumulation numerically eligible. The raw receipt does not
+identify the internal arithmetic stage responsible for the error. Evidence:
+`/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-via-fp16dot-request-20260927/verification.json`,
+its `device-preparation/correctness-output.json`, and the adjacent sealed
+collection's `precision-preconditions.json`.
+
+
+The numerical successor partitions each operand into four magnitude intervals
+`[0, .125)`, `[.125, 2)`, `[2, 32)`, `[32, 512)`, computes 16 FP16 dot partials,
+and combines them with FP32 Neumaier updates. CPU enumeration bounds each K64
+partial at 921,600 integer quanta (20 bits); this supports representability,
+not an unmeasured hardware arithmetic guarantee.
+
+At the same producer, native-source job `maca-b5d1e0cba9fa` passed all 37 cases
+with unchanged inputs and zero tolerance failures; maximum absolute error
+0.015625 means this is not bitwise agreement. Paired search `maca-afdaa03d03e0`
+and fresh confirmation `maca-83e79c2c85a7` passed quality and 10/10 pair wins:
+10.240/26.624 us (2.60x) and 10.240/26.880 us (2.625x), respectively, against the
+sealed generated-stream baseline. The generated-stream A/A control
+`maca-7468491f8004` passed quality and was close-null at 26.880/26.624 us
+(0.9905x, 0/8 wins and 2 ties). All 60 raw cohorts were replayed.
+
+Separate profile `maca-3dcad48f50d5` has correct instrumented outputs and reports
+140 registers/thread, 4,096 dynamic shared bytes, zero static shared and
+function-local bytes. Achieved occupancy, bandwidth and instruction counters
+were not collected. Allocation is `local_serialized`; external activity is not
+excluded. Evidence:
+`/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-bucket16dot-confirm-20260927/verification.json`.
+
+This qualifies the **native-source candidate** in the fixed finite NT64 domain.
+A composition of existing Cake cast/compare/select/FP16-MMA/arithmetic primitives
+is already structurally accepted and eligible for lowering. Requalify that
+Compiler-generated artifact before publishing its score or accepting a Lab
+recipe. Do not introduce a new instruction or dtype solely to hide an expressible
+composition, infer native FP8 dot, or substitute the native-source score for the
+Cake-generated route.
+
+
+The public `bucketed_source(workload)` projection now uses the canonical example
+[`xcore1002_fp8_bucketed.py`](../../../examples/python/xcore1002_fp8_bucketed.py).
+Producer `0183264c` passes all-case device correctness, paired search, fresh
+confirmation, A/A and a separately validated profile. Read the
+[platform result](../../../docs/metax-c550.md#有限-fp8-分桶-fp16-dot-组合)
+for its generated-source score and evidence boundary. The native/generated gap
+remains observed, not causally attributed; preserve both artifacts when choosing
+the next source-level hypothesis. Promotion belongs to the task recipe because
+existing Cake primitives already express the mechanism.
