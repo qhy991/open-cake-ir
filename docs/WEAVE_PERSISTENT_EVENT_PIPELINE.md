@@ -461,6 +461,45 @@ mirrored locally. Promotion disposition: retain the four-row B300
 Schedule/lowering as a development candidate; do not infer a generic
 cross-target rule or an external-baseline speedup from this scope.
 
+Successor `1c02cd74` uses all six worker warps for the Cake activation:
+the Schedule declares a six-row ProgramMap tile, six execution groups and
+`[6,768]` register values. The native CUDA lowering gives one row to each
+warp and masks rows beyond 128 in the final work unit, which has only two
+valid rows. Ranked-tile analysis derives `24+22+32=78` tasks per tile and
+a 19,890-task bound. The fixed commit passed 33 related contracts and the
+179-case Corpus Gate. B300 NVCC compiled standalone activation at 25
+registers and the complete grid at 84 registers, 9,216 B static shared
+memory, with no spills. Job `gpuq-28c73e1326aa` passed mixed K=4,
+c=64, budget=19,890 with 0/4,194,304 oracle failures, 80 exact event
+slots, zero v3 bit differences and positive overlap. This includes the
+masked activation tail in a complete layer.
+
+Two same-lease ABBA jobs compared the four-row `48b811b3` control with
+the six-row successor at the **same 19,890 budget**. Job
+`gpuq-7e5afc2adc8c` measured old/new development medians of
+6.796/6.730 ms (1.010x); `gpuq-f257e40154a6` measured 7.000/6.696 ms
+(1.045x) on a different GPU set. Every arm passed the external oracle,
+tile plan and v3 bitwise comparison. The direction repeated, but the
+incremental gain is small and variable; it does not replace the much
+larger one-row to four-row finding. Reports and raw CUPTI records are
+retained at `/home/qinhaiyan/cake-weave-activation6-vs-row4-abba-1c02cd74/`
+and its `-rep2` successor, and mirrored locally.
+
+Job `gpuq-539e3bed3d9a` checked four frozen routes × K=4/2/1 at c=64
+and budget 19,890. All 12 controls passed with 0/50,331,648 oracle
+failures, 960 exact CPU/GPU event-count slots, zero v3 bit mismatches and
+positive overlap. Job `gpuq-abdfebc0ec7b` checked six mixed K=4
+spatial/steal controls: c=1 at budgets 0/5888, c=74 at 0/5888/19,890
+and c=95 at 19,890. All six passed with 0/25,165,824 oracle failures,
+480 exact event slots, zero v3 bit mismatches and positive overlap; the
+zero-budget controls stole zero tasks. A separate c=74, budget=1024 job
+`gpuq-adc8823fb59f` passed 0/4,194,304 oracle failures and reached
+**exactly 1024 stolen tasks on each rank**. One c=95 pass does not close
+F-2026-09-27-001. Results are retained under the matching
+`/home/qinhaiyan/cake-weave-activation6-1c02cd74*/` roots and mirrored
+locally. Promotion disposition: keep this six-warp B300 Schedule and
+lowering as a development candidate; no generic rule or Lab recipe yet.
+
 Before promotion, resolve the open c=95 mismatch Finding, qualify the
 target's four-device timing reset, and run a matched open baseline under
 the same measurement contract. This task branch remains a development
