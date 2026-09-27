@@ -244,9 +244,14 @@ control. Its report is retained at
 `/home/qinhaiyan/cake-weave-dual-role-acqrel-c8550363-matrix12/` and
 mirrored locally. The successor now has the same frozen route/K correctness
 scope as `b360415f`; neither is a qualified timing result. Same-lease ABBA
-comparison against the equal-reset sequential persistent control remains a
-separate gate; the two code paths' correctness reports cannot answer whether
-full producer/consumer overlap improves layer latency.
+job `gpuq-9d2f8521be29` compared `c8550363` with the equal-reset sequential
+persistent source `3e1ecb94` on mixed K=4, c=64, budget=46920. All four
+arms passed the oracle, tile plan and v3 bitwise checks. With L2 flushed
+before each sample, the development CUPTI medians were 10.051 ms for the
+sequential control and 10.074 ms for the producer/consumer grid, a 0.998x
+old/new ratio. The retained report is
+`/home/qinhaiyan/cake-weave-dual-role-acqrel-vs-persistent-abba/report.json`.
+Observed work overlap alone did not improve this complete-layer assay.
 
 Broker job `gpuq-e6b37e5feec8` also checked six sealed spatial/steal plans
 on the frozen mixed K=4 route: c=1 with budgets 0/5888, c=74 with budgets
@@ -273,6 +278,47 @@ every rank. The same-lease c=64, budget=46920 ABBA above had a roughly
 These are development observations on one route: they guide barrier and
 partition investigation, but do not qualify a c selection or external
 baseline speedup.
+
+Successor `00a2fc14` scopes only the **producer CTA barrier** to the device:
+its arrivals use `atom.acq_rel.gpu.global.add.s32`, with GPU-scope
+release/acquire phase flags. Cross-GPU payload, bin, tile and source-completion
+handoffs retain system scope. The PTX instructions are explicit B300 Target
+contracts and lowering requirements. This clean commit passed 15 related
+contract tests, seven instruction-contract tests and the 179-case Corpus
+Gate. B300 NVCC compiled the main kernel at 84 registers and 9,216 B static
+shared memory with zero spills. Its one-case broker job `gpuq-f9ec0886774d`
+passed the mixed K=4, c=64, budget=46920 oracle over 4,194,304 elements,
+matched all 80 CPU/GPU tile-event slots, was bitwise equal to v3, and recorded
+positive same-rank next-event overlap on all four ranks. Evidence is retained
+at `/home/qinhaiyan/cake-weave-device-barrier-00a2fc14/` and mirrored locally.
+
+Two independent four-GPU same-lease ABBA jobs compared `c8550363` against
+`00a2fc14` on that control. Job `gpuq-aa942d495aec` measured old/new
+development CUPTI medians of 9.991/9.526 ms (old/new 1.049x); job
+`gpuq-027d892feb0a` measured 10.131/9.079 ms (1.116x) on a different
+physical GPU set. Each arm had two warmups, three L2-flushed samples, four
+reset kernels, 16 layer kernels, 92 layer memsets, 400 phase records, zero
+oracle failures and zero v3 bit mismatches. The two reports and raw CUPTI
+records are retained at
+`/home/qinhaiyan/cake-weave-device-vs-system-barrier-abba-00a2fc14/` and
+`/home/qinhaiyan/cake-weave-device-vs-system-barrier-abba-00a2fc14-rep2/`,
+and mirrored locally. The repeated direction supports investigating this
+local barrier cost, but the 1.049x–1.116x range is a development observation:
+clock calibration, common Candidate timing and a matched external baseline
+remain unqualified.
+
+Broker job `gpuq-15c78b154f1c` separately validated `00a2fc14` over four
+frozen routes × K=4/2/1, all at c=64 and budget=46920. All 12 sealed
+controls passed with 0/50,331,648 oracle failures, 960 exact CPU/GPU
+tile-event slots, zero v3 output bit mismatches, positive useful-work
+overlap in every control and nonzero stolen tasks in every control. The
+report is retained at
+`/home/qinhaiyan/cake-weave-device-barrier-00a2fc14-matrix12/` and
+mirrored locally. This restores the bounded route/K correctness scope for
+the device-scope successor; the c=95 intermittent Finding remains open. The
+broker receipt retained the prior matrix label due to script templating;
+the sealed source, build, launch manifests and leaf case records all name
+`00a2fc14`, and the receipt's job id binds the device outputs.
 
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
