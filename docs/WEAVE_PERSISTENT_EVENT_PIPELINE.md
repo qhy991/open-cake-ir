@@ -177,6 +177,36 @@ wait for an unscheduled CTA or for consumer completion at event `e`. This
 wait graph, per-event capacity and cross-CTA proxy handoff need explicit
 Compiler admission/analysis and B300 counterexamples before launch.
 
+## Dual-role grid development result
+
+Code commit `b360415f` implements this producer/consumer split in the B300
+native CUDA lowering. Six per-event barriers involve only the `c`
+communication CTAs; the other `96-c` CTAs acquire each published event and
+execute the existing complete Cake stage-task queue. Communication CTAs join
+that queue after producing all events and remain subject to the same steal
+budget. The producer fences generic tile-row stores before release-publishing
+tile readiness; consumers acquire readiness and issue an async-proxy fence
+before Cake TMA reads. The final grid barrier waits for every CTA before TMEM
+release. This is a development memory-ordering implementation, still requiring
+counterexamples and broader device verification.
+
+The clean commit passes 15 related contracts, the 179-case Corpus Gate and
+B300 NVCC (84 registers, 9,216 B static shared memory, zero spills). Broker
+job `gpuq-330dbd2e9627` completed the frozen mixed K=4, c=64,
+budget=46920 case on four GPUs. Its post-lease audit found 0/4,194,304
+FP64-oracle failures, exact agreement for all 80 rank/event tile counts,
+zero bit differences from v3, matching P2P payload counts and actual stolen
+work [5426, 7129, 7305, 7293] by rank. All 80 overlap records were present;
+four recorded Cake stage-task completions during the **next event's dispatch,
+planning and gather**: rank 0 at completed event 0, and ranks 1–3 at
+completed event 14. Reports are retained at
+`/home/qinhaiyan/cake-weave-dual-role-b360415f/` and mirrored locally.
+This proves one complete-layer execution and useful-work overlap on this
+frozen route. It does not prove all c/K domains, arbitrary liveness, the open
+c=95 case, qualified latency, or a gain against the equal-reset sequential
+control. Promotion disposition remains **no merge or Lab rule** pending those
+gates.
+
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
 four-device timing reset and matched open baseline. This task branch remains
