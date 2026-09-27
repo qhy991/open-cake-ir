@@ -1208,6 +1208,7 @@ class _Emitter:
         # Ordinal identifiers avoid both C++ keywords and sanitized-name collisions.
         self.names = {b.name: f'b{i}' for i,b in enumerate(s.buffers)}
         self.roles = {r.name: r for r in s.roles}
+        self.pipeline_by_name = {p.name: p for p in s.pipelines}
         self.offsets, self.shared_bytes = _storage(s)
         self.globals = [b for b in s.buffers if b.space is MemorySpace.GLOBAL]
         self.loads = [op for op in s.operations if op.kind is OperationKind.LOAD and op.parameters.movement is LoadMovement.TMA]
@@ -1335,6 +1336,17 @@ class _Emitter:
             and self.b(op.writes[0]).space is MemorySpace.SHARED
             for name in op.signals
         }
+        # The inverse MMA completion survives all 256 chunk trips. Its owner is
+        # the kernel root, like the carried TMEM publication barriers; moving
+        # init/inval into the role loop changes the generated PTX live ranges.
+        root_barriers.update(
+            name for op in self.s.operations
+            if op.kind is OperationKind.MMA
+            and (scope := _scope(self.s, op)) is not None
+            and scope.name in self.inverse_carried
+            and op.pipeline is not None
+            and self.pipeline_by_name[op.pipeline].stages == 1
+            for name in op.signals)
         if root_barriers:
             self.begin('if (threadIdx.x == 0)')
             for name in sorted(root_barriers):
@@ -1523,8 +1535,6 @@ class _Emitter:
             for mma in self.s.operations:
                 if mma.kind is OperationKind.MMA and mma.pipeline == p.name:
                     self.line(f'cake_init({self.barvars[mma.signals[0]]}, 1);')
-        if inverse_mma is not None:
-            self.line(f'cake_init({self.barvars[inverse_mma.signals[0]]}, 1);')
         self.line('asm volatile("fence.proxy.async.shared::cta;" ::: "memory");')
         self.end()
         self.line('__syncthreads();')
@@ -1637,10 +1647,15 @@ class _Emitter:
 
     def invalidate_completions(self, scope):
         # Only the immediate parent of a contraction owns its final-publication
-        # barrier. Ancestors must not invalidate the same object a second time.
+        # barrier. The inverse completion is instead root-owned across chunks;
+        # ancestors and this loop must not invalidate it a second time.
         parent = scope.name if scope is not None else None
         barriers = [name for op in self.s.operations if op.kind is OperationKind.MMA
                     and _publication_scope(self.s, op) == parent
+                    and not (_scope(self.s, op) is not None
+                             and _scope(self.s, op).name in self.inverse_carried
+                             and op.pipeline is not None
+                             and self.pipeline_by_name[op.pipeline].stages == 1)
                     for name in op.signals]
         if barriers:
             self.begin('if (threadIdx.x == 0)')

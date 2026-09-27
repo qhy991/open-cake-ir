@@ -117,6 +117,12 @@ class NativeKdaInverseMmaTest(unittest.TestCase):
         self.assertIn("(*tm3 + 304)", emission.source)
         self.assertIn("(*tm3 + 320)", emission.source)
         self.assertNotIn("// CAKE_OP: solve\n", emission.source)
+        self.assertEqual(emission.source.count("cake_init(bar9, 1);"), 1)
+        self.assertEqual(emission.source.count("cake_inval(bar9);"), 1)
+        self.assertLess(emission.source.index("cake_init(bar9, 1);"),
+                        emission.source.index("// CAKE_OP: store_initial"))
+        self.assertGreater(emission.source.index("cake_inval(bar9);"),
+                           emission.source.index("// CAKE_ROLE_COMPUTE_LOOP"))
         self.assertEqual(blocked_codes(base_document()), set())
 
     def test_rhs_barrier_must_wait_for_four_compute_warps(self):
@@ -140,6 +146,12 @@ class NativeKdaInverseMmaTest(unittest.TestCase):
         value = inverse_document()
         next(op for op in value["operations"] if op["id"] == "mma_query")[
             "reads"][1] = "inverse_stage"
+        self.assertIn("NATIVE_INVERSE_MMA_DOMAIN", blocked_codes(value))
+
+    def test_inverse_completion_is_a_single_mma_owned_phase(self):
+        value = inverse_document()
+        next(b for b in value["barriers"] if b["name"] == "inverse_done")[
+            "count"] = 2
         self.assertIn("NATIVE_INVERSE_MMA_DOMAIN", blocked_codes(value))
 
     def test_same_warp_inverse_stage_never_invents_a_barrier(self):
