@@ -1602,12 +1602,26 @@ Workload 取 V 与 BF16 初始状态。\code{gpuq-dc7242edf640} 设备作业
 dynamic shared、243 寄存器、0 stack/spill；七项准备/消费 ABI 形状
 在 CPU-only 检查中吻合。第一次完整适用 CPU 套件为 2,689 passed、
 2 failed、3 errors：历史回放测试再克隆多层共享对象库时，Git 报
-\code{alternate object stores, nesting too deep}。这是检出环境错误，
-并非 beta lowering 失败；未改测试或期望，新的浅层检出尚未跑完整套件。
-因此该路径仍无设备验收或 broker 作业。已准备的直连实验
-将在同一 GPU 上运行准备与 native 消费，把七项设备指针直接传递，
-并使初始/最终 BF16 状态共用存储。即使通过，它仍是固定 H64 两 kernel
-候选；与原始 CAKE 的同机完整配对必须把准备值物化写回和重读都计入。
+\code{alternate object stores, nesting too deep}。保留这次环境失败；
+新的浅层固定检出先成功重放两个历史提交，再运行相同套件得到
+\textbf{2,694 passed、16 skipped、1 项 Apple MLX 实机测试 deselected}，
+未改测试、期望或历史对象。
+
+broker-shared \code{gpuq-94c0353bcca5} 在同一 GPU 流上将七项 Cake
+准备值的设备指针直接传给 native 消费者，beta 无 CPU 转置，初始与最终
+BF16 状态使用同一地址。租约释放后，冻结 H64 Workload 的全部
+67,108,864 个输出与 1,048,576 个最终状态元素均 0 超差，最大绝对
+误差分别为 0.00048828125、0.00390625，公开不可变输入保持不变。
+它是固定 H64 的真实准备值、原位状态\emph{数值}资格。
+
+同一独占 GPU 上的完整五轮交替配对 \code{gpuq-6992cec5fb2a}，
+每轮每臂取 25 个冷 L2 CUPTI 样本，无 graph；两臂各有 512 个独立
+初始状态槽。十份完整输出/状态快照在设备释放后均通过冻结外部 oracle。
+原始 CAKE M64 每轮中位数约 \(456\,\mu\mathrm{s}\)，两 kernel
+Cake 准备加 native 消费约 \(2{,}374\,\mu\mathrm{s}\)，候选/参考
+轮比值中位数为 \(5.20476\times\)，最大轮内 CV 为 0.1231\%。
+这一同范围结果确认数值路径可运行，也证明目前的物化准备与串行消费者
+远未超过原始 CAKE；跨作业的组件时间不可作为本次分段归因。
 正式 Program 资格还需一个共享合同：当前 Program 构造拒绝公共输入/输出
 同一 tensor，Evaluation 为输出分配独立存储且要求输入保持；这无法代表
 Workload 要求的原位状态。Lab 的 Program 作者环境还要求各 stage 使用同一
@@ -1622,6 +1636,9 @@ ABI 适配问题，不能算作 GPU kernel 的正确性失败。
 此外，冻结公共参数含 \code{cu\_seqlens:int64}，当前 Cake IR
 \code{DType} 与通用 tensor launch ABI 尚未接纳 int64。固定 H64
 脚本在 host 检查单序列元数据，不能作为 packed 六形状设备访问的证明。
+下一轮应同时缩短消费者 256 次 carried-state 依赖的关键路径，
+并把准备值留在原始 CAKE 那样的片上角色流水中；只调 beta 地址或继续
+加深 B ring，无法由当前阶段时钟和完整配对证据支持为主要追赶手段。
 \FloatBarrier
 
 \Needspace{10\baselineskip}
