@@ -27,9 +27,42 @@ event `e-1`; a destination's source-completion wait reads the same event's
 source after its dispatch; the next event starts only after the current
 grid-wide FFN completion. The host still checks exact B300 identity, peer
 reachability and cooperative occupancy before launch and checks all ranks'
-status afterward. Device correctness and arbitrary cross-rank liveness remain
-to be verified on B300-M4; CPU tests and source inspection alone do not close
-those gates.
+status afterward. A bounded hot8 K=2 device replay is described below;
+broader correctness and arbitrary cross-rank liveness remain open.
+
+## Reset ordering correction and bounded replay
+
+The earlier per-event source `57bc00ec` timed out in broker job
+`gpuq-18e11319d003` after a complete first hot8 K=2 launch: its next launch
+never returned before the 12-minute run limit. The retained worker log has
+the first launch's 40 rank/event phase records, but no accepted second output.
+This does not by itself identify the stalled instruction.
+
+The host reset boundary had a separate, concrete ordering defect:
+`ranked_tile_reset` issued device `cudaMemset` operations through the default
+stream, while every rank's worker stream was created with
+`cudaStreamNonBlocking`. NVIDIA documents that [device `cudaMemset` may return
+before it completes](https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html)
+and that [nonblocking streams do not synchronize with the legacy default
+stream](https://docs.nvidia.com/cuda/cuda-runtime-api/stream-sync-behavior.html).
+A source rank could therefore publish into a peer Bin while that peer's reset
+was still outstanding. Successor `3e1ecb94` enqueues each reset in its own
+compute stream and synchronizes all four streams before launching any grid.
+The fix changes neither the frozen Workload nor its oracle.
+
+At `3e1ecb94`, 15 related contracts and the 179-case Corpus Gate pass; B300
+NVCC reports 93 registers, 9,216 B static shared memory and zero spills for
+the persistent worker. Isolated broker job `gpuq-8fea3de7b6ba` replayed the
+same hot8 K=2, c=64, budget=46920 case with two warmups and three CUPTI
+samples. All five complete-layer launches returned, the final 4,194,304
+outputs had zero FP64-oracle failures and zero bit differences from the
+retained v3 output, all 80 tile-event counts matched the CPU plan, and all
+200 expected phase records were present. Every CUPTI sample had four reset
+kernels, 16 layer kernels and 92 layer memsets. The report is retained at
+`/home/qinhaiyan/cake-weave-peer-reset-3e1ecb94-hot8-k2/report.json`.
+This bounded replay supports the reset correction; it does not prove the old
+timeout's sole cause, arbitrary cross-rank liveness or closure of the open
+c=95 route-location Finding.
 
 ## Required next transition
 
