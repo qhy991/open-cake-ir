@@ -1,13 +1,15 @@
 """FIB 023's one-pass masked Cake mapping and its owned refusal boundary."""
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
 from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
-from open_cake_ir.tasks.solx_fib.b300_rmsnorm023 import padded_one_pass_source
+from open_cake_ir.tasks.solx_fib.b300_rmsnorm023 import (
+    padded_one_pass_source, padded_warp_program)
 from open_cake_ir.tasks.solx_fib.workload import SPECS, workload_document
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,6 +62,29 @@ class Fib023PaddedMappingTest(unittest.TestCase):
         self.assertFalse(assessment.lowering_eligible)
         self.assertIn("TRITON_ARANGE_RANGE_UNSUPPORTED",
                       {finding.code for finding in assessment.findings})
+
+    def test_warp_specialization_preserves_the_masked_program(self) -> None:
+        for rows in (539, 11949):
+            workload = WorkloadContract(workload_document(
+                TASK, rows=rows, columns=1536, backend="triton-b300"))
+            starter = parse(padded_one_pass_source(workload)).document
+            for warps in (2, 8):
+                with self.subTest(rows=rows, warps=warps):
+                    program = padded_warp_program(
+                        self.compiler, workload, num_warps=warps)
+                    self.assertEqual(set(program.inputs), {"x", "weight"})
+                    self.assertEqual(program.outputs, ("out",))
+                    schedule = json.loads(program.stages[0].schedule_bytes)
+                    self.assertEqual(schedule["operations"], starter["operations"])
+                    self.assertEqual(schedule["access_maps"], starter["access_maps"])
+                    self.assertEqual(schedule["program_map"], starter["program_map"])
+                    self.assertEqual(schedule["roles"][0]["execution_groups"],
+                                     list(range(warps)))
+                    lowered = self.compiler.lower_program(program)
+                    lowered.validate_binding()
+                    self.assertIn(f"num_warps={warps}", lowered.lowerings[0].source)
+        with self.assertRaisesRegex(ValueError, "positive power of two"):
+            padded_warp_program(self.compiler, workload, num_warps=3)
 
     def test_other_target_and_operator_are_refused_by_the_task_recipe(self) -> None:
         b200 = WorkloadContract(workload_document(

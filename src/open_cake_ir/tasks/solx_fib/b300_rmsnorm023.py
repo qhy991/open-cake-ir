@@ -1,6 +1,8 @@
 """One-pass B300 Cake mapping for the exact FIB 023 RMSNorm workload."""
 from __future__ import annotations
 
+from open_cake_ir.compiler import Program
+from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 from .workload import SPECS, TASKS, validate_solx_fib_contract
@@ -58,3 +60,24 @@ def padded_one_pass_source(workload: WorkloadContract,
         '        lm.store(out[row, column], narrowed, '
         'coalesced=False, id="store_out")\n'
     )
+
+
+def padded_warp_program(compiler, workload: WorkloadContract,
+                        case_id: str = "primary", *, num_warps: int) -> Program:
+    """Specialize CTA width without changing the masked operation graph.
+
+    The Compiler pass owns warp legality and returns a complete Program or a
+    reason. Numerical and timing evidence must qualify each width separately.
+    """
+    starter = parse(padded_one_pass_source(workload, case_id)).document
+    program = Program.from_schedule(starter)
+    result = compiler.rewrite_program(program, "specialize_triton_warps", {
+        "stage": program.stages[0].name,
+        "num_warps": num_warps,
+        "schedule_id": f"{workload.workload_id}-padded-w{num_warps}",
+        "entry_point": f"cake_fib023_padded_w{num_warps}",
+    })
+    if not result.applied or result.program is None:
+        raise ValueError(
+            f"FIB 023 padded width refused: {result.reason}: {result.message}")
+    return result.program
