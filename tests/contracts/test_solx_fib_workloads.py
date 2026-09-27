@@ -310,7 +310,7 @@ class StarterTests(unittest.TestCase):
         self.assertEqual(sliced["access_maps"], starter["access_maps"])
         self.assertEqual(sliced["roles"][0]["execution_groups"], list(range(8)))
         self.assertEqual(self.compiler.assess(sliced).findings, ())
-        for groups in (4, 8, 16):
+        for groups in (2, 4, 8, 16):
             source = masked_whole_026_source(workload, execution_groups=groups)
             schedule = parse(source).document
             self.assertEqual(sum(op["kind"] == "store" for op in schedule["operations"]), 1)
