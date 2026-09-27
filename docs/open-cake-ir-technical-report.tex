@@ -1702,6 +1702,53 @@ shared 到寄存器装载和 MMA 同步合同也不覆盖该四 warp 方案。
 因此下一步需要 IR/Verifier 与 native 发射一起扩展，并在完整
 H64 输出、原位状态及同卡 CUPTI 计时下验收。
 
+\paragraph{完整准备阶段的配对结果。}
+单 CTA 映射扩展到 H64 的 16,384 个 \(chunk,head\) 后，七项
+约 480 MB 输出的全部元素对留存 Cake 准备快照零超差。
+同卡五轮冷 L2 CUPTI 对照给出 Triton 390.243\,$\mu$s，
+初版 native 1,694.541\,$\mu$s。静态 SASS 的 33 条
+\code{CALL} 经无 FTZ 的 PTX \code{ex2.approx.f32} 与
+\code{rcp.approx.f32} 消除；两指令的误差界见
+NVIDIA PTX ISA\footnote{\url{https://docs.nvidia.com/cuda/parallel-thread-execution/}}。
+三臂同卡配对中，PTX 版为 1,344.809\,$\mu$s，
+比初版降低约 20.65\%，但仍比 Triton 慢 3.447\(\times\)。
+并行 warp 扫描缩短每 warp 的静态指令序列，却未带来完整准备收益：
+32-warp 版在独立三臂配对为 1,722.253\,$\mu$s，
+8/16-warp 结果见表\ref{tab:kda-b300-prep-ptx}。
+
+\begin{table}[htbp]
+\centering
+\caption{B300-M4 七项准备组件的同 GPU5 四臂配对，五轮、每臂每轮
+25 次冷 L2 CUPTI，无 graph；四臂全量输出均通过 oracle。}
+\label{tab:kda-b300-prep-ptx}
+\small
+\begin{tabular}{lrr}
+\toprule
+实现 & 轮中位数的中位数（\,$\mu$s） & 相对 Triton \\
+\midrule
+Cake Triton & 389.092 & 1.000\(\times\) \\
+128-thread 串行 PTX \code{ex2+rcp} & 1,352.043 & 3.475\(\times\) \\
+256-thread／8-warp scan & 1,579.276 & 4.059\(\times\) \\
+512-thread／16-warp scan & 1,556.813 & 4.001\(\times\) \\
+\bottomrule
+\end{tabular}
+\end{table}
+并行扫描的数值检查覆盖全部 H64 七项，8/16/32-warp 输出彼此逐位一致；
+最大轮内 CV 为 0.218\%。静态代码缩短与 CTA 线程数改变同时发生，
+尚无硬件计数器把退化归到某一种资源。准备阶段当前
+\emph{No promotion}：PTX 算术优化仅作为后续片上准备与状态递推
+联合设计的有界候选，不是完整 KDA 超过原始 CAKE 的结果。
+
+\paragraph{合体 kernel 的 shared 容量。}
+当前消费者的 57,472 字节 dynamic shared 与已验证单 chunk 准备
+的 41,088 字节 static shared 直接相加为 98,560 字节，低于
+\code{sm\_103a} 每 CTA 的 232,448 字节上限；这只支持开始
+one-chunk 片上生产／消费验证。把五槽七输出与 V ring 的
+187,520 字节再直接叠到该消费者则达 244,992 字节，超过上限
+12,544 字节。这个朴素加法重复计算部分已有 B/P 槽；真正五槽
+lowering 须复用确切 shared 字节，重新约束 swizzle、槽 phase、
+barrier 和 TMEM 生命周期，不能由容量公式推断最终延迟。
+
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
 路径做五轮交替、每臂每轮 25 次冷 L2 CUPTI 计时：准备
