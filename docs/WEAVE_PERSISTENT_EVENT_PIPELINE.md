@@ -91,6 +91,30 @@ Promotion disposition: **no merge or Lab schedule rule** from the sequential
 persistent scaffold. Same-rank cross-event communication/FFN overlap is the
 next performance mechanism to implement and validate.
 
+## One-event source lookahead experiment
+
+Successor `1aff5d01` adds a bounded first overlap step. After the grid has
+gathered and published event `e`'s tile snapshot, communication CTAs owned by
+the next source rank may dispatch event `e+1` into peer bins while computation
+CTAs work on event `e`'s immutable tile rows. Each source CTA waits for the
+previous snapshot's peer flags before dispatch; all source writers issue a
+system fence. The end-of-event grid barrier waits for both the prefetched
+dispatch and current FFN before block 0 publishes the next source completion.
+Thus the changed interval overlaps **source dispatch with FFN**, while tile
+planning and row gather for the next event still wait. No dependent kernel in
+another stream is needed for progress.
+
+The lookahead path records, per rank and event, whether completed Cake stage
+tasks increased while the source CTA performed the next dispatch. A positive
+flag is an actual-work overlap observation; an empty flag is inconclusive
+about latency. The experiment keeps the same source/plan seal, FP64 oracle,
+CPU tile-event planner and four-GPU broker boundary. `1aff5d01` passes 15
+related contracts, the 179-case Corpus Gate and real B300 NVCC (95 registers,
+9,216 B static shared memory, zero spills). The first device result and any
+performance claim are pending. Before promotion, replay all frozen routes and
+K settings, verify every status and return, and compare against the
+equal-reset persistent control under the Target's qualified timing contract.
+
 ## Required next transition
 
 This first step is **sequential across events within each rank**. It removes
