@@ -1622,6 +1622,26 @@ Cake 准备加 native 消费约 \(2{,}374\,\mu\mathrm{s}\)，候选/参考
 轮比值中位数为 \(5.20476\times\)，最大轮内 CV 为 0.1231\%。
 这一同范围结果确认数值路径可运行，也证明目前的物化准备与串行消费者
 远未超过原始 CAKE；跨作业的组件时间不可作为本次分段归因。
+
+\paragraph{M64 拆分的原子验证。}
+CPU-only M64 探针用第二 CTA 轴与 \code{program\_tile} 切分
+状态/V/输出，旧 \code{St32x32b} 探针被 verifier/native 分别拒绝
+13/87 项。四 compute warp、count-four barrier 与精确
+\code{St16x256b} 的原型提交 \code{29148390} 使共享阻断降为 0，
+native 仍拒绝 56 项，尚无可发射 M64 Schedule。固定提交
+Corpus Gate 179/179、相关合同 20/20；远端完整 CPU 套件
+2,700 passed、16 skipped、1 Apple MLX 实机 deselected、1 failed。
+唯一失败是 \code{umask 0002} 导致临时 skills 目录组可写，触发
+custody 拒绝；未改权限补跑，本地同合同 3/3 通过。该原型含 NVIDIA
+祖先，未进入主线。原始 CAKE M64 使用四 warp 的
+\code{tcgen05.st/ld.sync.aligned.16x256b.x8.b32}。
+精确 B300 的 64\(\times\)128 state 与 64\(\times\)32 U 独立往返
+分别以 40/28 寄存器、0 spill 编译；broker 作业
+\code{gpuq-ca97529e05dd}/\code{gpuq-8c871f33ee0c} 释放后，
+三组各 8,192/2,048 个 BF16 原始位均零错，输入未改写；失败的
+首版 AOT 保留。这只证明搬运原子和 lane 映射。M64 MMA、状态
+递推和完整延迟仍无证据；准备值物化及 256 次串行转移的延迟贡献
+尚未分解。
 正式 Program 资格还需一个共享合同：当前 Program 构造拒绝公共输入/输出
 同一 tensor，Evaluation 为输出分配独立存储且要求输入保持；这无法代表
 Workload 要求的原位状态。Lab 的 Program 作者环境还要求各 stage 使用同一
