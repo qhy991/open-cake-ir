@@ -217,6 +217,25 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 将现成的完整 `kda-b300-h64-fused-upstream-factor-coupling` Schedule 只改为 `native_cuda` 路线做 CPU-only 审查，当前 Compiler 在七处报 `BACKEND_OPERATION_UNEMITTABLE`：`scan/coordinate/compare/select` 四类操作无 native 发射。为看清后续边界，一个**只在进程内、只用于诊断**的 preflight 暂把这四类加入词汇集合；它仍报 50 项 `NATIVE_REGISTER_LAYOUT`，以及行广播/规约、角色宽度、MMA 合同/operand writer/pipeline/completion 等拒绝。没有发射或授予能力，实际门禁仍是七项阻断。Finding event 226 保留分层报告。这说明可运行的 PTX 片段离 Cake-emitted 同 CTA lowering 还有**操作语义、warp tile 所有权、shared→register 装载和同步**四处成套工作；不能在 native backend 只放宽 `MMA` 名称或靠硬编码 Schedule id 越过 P1–P8。可用现有 register MMA 指令合同，但 `LoadMovement` 目前没有 shared→warp fragment 的类型，native domain 则硬限定 M128/TMEM 的行布局。下一次 Compiler tick 应让该搬运原子、角色/fragment 所有权、生产消费边与反例同一变更链演进；性能是否值得推广仍须完整 H64 的冻结 oracle、独占同卡计时决定。
 
+#### 完整 H64 七项准备：PTX 算术与 CTA 宽度的性能筛选
+
+把上述七输出 CTA 映射到 256×64 个 `(chunk,head)` 后，精确 B300 AOT 为 **64 寄存器、41,088 字节 shared、0 spill、128 threads/CTA**。broker-shared `gpuq-52fcbd14bd8e` 完成释放后，host 与此前经独立准备 oracle 验证的 Cake 快照逐元素比较全部七项约 **480.25 MB**：P/B 各 16,777,216 项，三项 BF16 因子各 67,108,864 项，FP32 beta 524,288 项、prefix 2,097,152 项，全部零超差/无非有限值，掩码零位逐 bit 正确，输入未改写。五轮、每臂每轮 25 次、冷 L2 CUPTI、无 graph 的同 GPU6 配对 `gpuq-df79e778a3b9` 两臂快照又全量通过：Triton 准备 **390.243 µs**，这个 source-only native 准备 **1,694.541 µs**，成对轮比值中位数 native/Triton **4.34139×**，最大轮内 CV 0.1935%。它比原始 CAKE 的完整约 456 µs 还慢，不能因“已融合七项准备”而推广当前单 CTA 计算顺序。Finding events 227–228。
+
+静态 SASS 显示该 native 发射的 sigmoid 路径有 33 条 `CALL`。单独把 `expf` 换成无 FTZ 的 `ex2.approx.f32` 后，AOT 从 64 降至 56 寄存器但 **CALL 仍为 33**；再把 sigmoid 的 FP32 倒数换成无 FTZ 的 `rcp.approx.f32`，CALL 降为 **0**，HMMA/LDSM 仍各 32 条，且无 spill。[NVIDIA PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/)给 `ex2.approx.f32` 最大 2 ULP、`rcp.approx.f32` 最大 1 ULP 的误差界；本机实际数值仍必须由 Workload 证据决定。最终 `ex2+rcp` 版本 broker-shared `gpuq-4caaaf10f697` 在完整七项输出上零超差、beta 与 Cake 快照逐 bit 相同；共享 GPU5 的外来 PID 只记录，不作计时。三臂同 GPU6 `gpuq-8b187515b962` 的五轮冷 L2 配对及三臂全量快照均通过：Triton **390.018 µs**，原 native **1,694.508 µs**，`ex2+rcp` native **1,344.809 µs**，新/原中位轮比值 **0.79348×**，即当前映射的准备组件约 **20.65%** 净降；但仍比 Triton 慢 **3.44730×**，且未验证高保留及六形状。Finding events 229–230。这个 PTX 算术映射是可复用的**候选 tactic**，不是 blanket Compiler rewrite。
+
+为缩短每特征维度串行 32-token 前缀，另做 warp shuffle 并行扫描：32-warp CTA 先按 token 并行归一化，再让每 warp 对 4 个特征维度执行 5 步 inclusive scan，最后前四 warp 做两项 MMA。完整 H64 七项输出 `gpuq-4f0ab1258a93` 零超差；同 GPU0 三臂 `gpuq-cab90839ff04` 反而为 Triton **390.403 µs**、串行 `ex2+rcp` **1,345.546 µs**、32-warp scan **1,722.253 µs**。再把宽度收成 8 或 16 warp/CTA，分别经 `gpuq-2e341bf325ab` 与 `gpuq-95ee4eea326f` 完整 oracle；四臂同 GPU5 `gpuq-7c646b09ca6c` 的五轮冷 L2 样本及四臂快照全部通过，轮中位数的中位数为：
+
+| 完整七项准备路线 | µs | 相对 Triton |
+| --- | ---: | ---: |
+| Cake Triton `a6dc8c6d` | 389.092 | 1.000× |
+| 128-thread 串行前缀 PTX `ex2+rcp` | 1,352.043 | 3.475× |
+| 256-thread、8-warp shuffle scan | 1,579.276 | 4.059× |
+| 512-thread、16-warp shuffle scan | 1,556.813 | 4.001× |
+
+32-warp/1,024-thread 的先前同卡对照为 1,722.253 µs，作为独立作业而不混入表中四臂比例。四臂最大轮内 CV 0.2180%，各输入未改写；所有 scan 版本对七项输出与 Cake 快照均零超差。增宽降低每 warp 静态 EX2/RCP 和串行 scan 工作，却也让未参与最终 MMA 的 warp 增多；**哪个资源使时间倒退尚无硬件计数器证明**，不能把静态指令数或 CTA 线程数直接当成占用率测量。Finding events 231–235。当前 disposition：**No promotion** of any standalone native preparation mapping to maintained `nvidia`/Compiler；`ex2+rcp` 的条件性 PTX tactic 留作后续同 CTA carried-state 融合的一个数值已筛选部件。下一轮不再仅调准备 warp 数，而要让准备与状态消费者复用片上因子、消除七项约 480 MB 的物化，并减少 256 次 carried-state 转移的同步关键路径；完整 H64 输出、原位状态与同卡相对 CAKE 延迟仍是接受条件。
+
+融合不能通过把两边 shared 数组直接相加来实现。新的固定源码容量筛查读取 `4dc1561e` 消费者的 **57,472 B** dynamic shared、单 chunk 准备 AOT 的 **41,088 B** static shared 和 Target 声明的 **232,448 B/CTA**：one-chunk 直加 **98,560 B**，纸面余 **133,888 B**，适合先做带真实 P/B/其它因子的单 chunk producer→consumer witness；把五槽七输出加 V ring 的 **187,520 B** 直接叠到现有消费者则需 **244,992 B**，超上限 **12,544 B**。后一算式会重复计算一部分现有 B/P 槽，说明真正五槽设计必须让准备生产者与消费者**共用这些具体 shared 字节及其 swizzle/phase 所有权**，并对 barrier、TMEM、寄存器驻留重新验证；它不是融合不可行的证明。原始 CAKE M64 实际 219,136 B 进一步给出可行几何对照，但不能把其隐式地址直接导入新 IR。Finding event 237 保留计算脚本及来源。性能主线先实现 one-chunk 合体与外部 oracle，再设计跨 chunk 槽复用，而不提升上述慢的 standalone 准备路线。
+
 下一种大幅下降所需的 lowering 不是单纯添加 `setmaxnreg` 或五槽常数，而是先在 Cake Schedule 中给**同 CTA 准备→MMA→状态递推→epilogue**的每条存储边指定生产者、消费者、槽数、release/acquire 和读完后的复用条件；共享 IR/Verifier 维护值和别名语义，NVIDIA backend 负责 TMA/TMEM/PTX 发射，Target 检查真实 1,024-thread/约 219 KiB 路线资源，Lab 才选择何时采用。先以真实固定 H64 的完整输出、最终原位状态和同机计时比较，再看 packed/tail 与高保留反例。没有完整候选前，原始 CAKE 的代码只能作为**已知实现的设计证据**，不能把它的隐含机制直接当成新 Compiler pass。
 
 ### 2.22 完整候选的 Program 与 Evaluation 别名边界
