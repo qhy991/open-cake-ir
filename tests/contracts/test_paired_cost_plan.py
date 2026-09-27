@@ -171,7 +171,7 @@ class PairedCostPlanTest(unittest.TestCase):
     def test_cpu_compile_seals_all_three_common_candidates(self):
         with tempfile.TemporaryDirectory() as directory:
             snapshot, plan = self.fixture(directory)
-            stage = Path(directory) / "compile"
+            stage = Path(directory).resolve() / "compile"
             stage.mkdir()
             isolated = self.FakeIsolatedCompiler(plan["toolchain_identity"])
             with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
@@ -190,7 +190,7 @@ class PairedCostPlanTest(unittest.TestCase):
     def test_cpu_compile_refuses_unpinned_toolchain_and_visible_gpu(self):
         with tempfile.TemporaryDirectory() as directory:
             snapshot, plan = self.fixture(directory)
-            stage = Path(directory) / "compile"
+            stage = Path(directory).resolve() / "compile"
             stage.mkdir()
             isolated = self.FakeIsolatedCompiler({**plan["toolchain_identity"], "triton_version": "other"})
             with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
