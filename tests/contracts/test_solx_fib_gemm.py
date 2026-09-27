@@ -5,11 +5,12 @@ import math
 import unittest
 from pathlib import Path
 
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, Program
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
 from open_cake_ir.tasks.solx_fib.b300_gemv004 import column_tiled_source, scalar_warp_program
+from open_cake_ir.tasks.solx_fib.b300_native004 import native_m8828_source
 from open_cake_ir.tasks.solx_fib.b300_tensorcore004 import (
     n32_k512_development_lead_source, tensorcore_source)
 from open_cake_ir.tasks.tiles.workload import _round
@@ -20,6 +21,33 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FlashInferGemmTests(unittest.TestCase):
+    def test_004_native_seed_is_one_complete_exact_m8828_program(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        workload = WorkloadContract(gemm.workload_document(
+            'fib_gemm_n128_k2048', rows=8828))
+        schedule = parse(native_m8828_source(workload)).document
+        self.assertEqual(schedule['lowering']['backend'], 'native_cuda')
+        self.assertEqual(schedule['target'], 'sm_103a')
+        self.assertEqual(schedule['outputs'], ['out'])
+        mma = next(op for op in schedule['operations'] if op['kind'] == 'mma')
+        self.assertEqual(mma['parameters']['instruction']['contract'],
+                         'tcgen05.mma.cta_group::1.kind::f16')
+        self.assertEqual([op['kind'] for op in schedule['operations'][-3:]],
+                         ['load', 'cast', 'store'])
+        assessment = compiler.assess(schedule)
+        self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                         assessment.findings)
+        lowered = compiler.lower_program(Program.from_schedule(schedule))
+        lowered.validate_binding()
+        leaf = lowered.lowerings[0]
+        self.assertEqual(leaf.toolchain_requirements['grid'], [69, 2, 1])
+        self.assertEqual(leaf.toolchain_requirements['argument_order'],
+                         ['a', 'b', 'out'])
+        self.assertIn('tcgen05.mma.cta_group::1.kind::f16', leaf.source)
+        with self.assertRaisesRegex(ValueError, 'bounded to official M8828'):
+            native_m8828_source(WorkloadContract(gemm.workload_document(
+                'fib_gemm_n128_k2048', rows=952)))
+
     def test_004_measured_tensorcore_recipe_keeps_its_shape_boundary(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         for rows in (128, 172):
