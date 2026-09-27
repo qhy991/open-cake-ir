@@ -104,6 +104,11 @@
       "locator": "Exact sm_103a offline compilation emits mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32; broker job gpuq-d9c31bd9f02c ran M=16 and M=17, N=128, K=2048 under three distributions each. CPU FP64 matmul rounded to FP16 checked all 12672 outputs with atol=0.01, rtol=0.01 and zero failures. Retained result.json, correctness.json, device_run.json and admission-r2.json in the named experiment; observed 2026-09-27"
     },
     {
+      "kind": "device_observation",
+      "source": "Cake lowering at open-cake-ir@310f849a on B300-M4, cake-fib004-fp16-dot-probe-20260927/cake-lowering",
+      "locator": "The FP16 triton.dot.fp16_fp32 schedule lowers through Cake to Triton and exact sm_103a cubin with tcgen05.mma.cta_group::1.kind::f16 at a 64x64x64 tile. Broker job gpuq-5a4fb852f333 ran that lowered kernel at 512x256x256 with FP16 inputs and FP32 output; three input distributions, 393216 outputs, CPU FP64 matmul plus bias reference, atol=0.001 and rtol=0.001, zero failing elements, maximum absolute error 4.19617e-05. Retained offline_result.json, correctness.json, device_run.json and admission.json in the named experiment; observed 2026-09-27"
+    },
+    {
       "kind": "device_specification",
       "source": "https://docs.nvidia.com/cuda/blackwell-tuning-guide/index.html#occupancy",
       "locator": "Blackwell maximum number of registers per thread:255; compile-time cap capacity, separate from setmaxnreg immediate encoding"
