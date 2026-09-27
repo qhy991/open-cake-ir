@@ -49,8 +49,12 @@ class Sm103aFp16DotTest(unittest.TestCase):
         ast.parse(source)
         self.assertIn("tl.dot(", source)
 
-        unsupported = [finding for finding in verify(schedule, b200)
-                       if finding.code == "TARGET_INSTRUCTION_UNSUPPORTED"]
+        b200_document = _fp16_document()
+        b200_document["target"] = "sm_100a"
+        unsupported = [
+            finding for finding in verify(Schedule.from_dict(b200_document), b200)
+            if finding.code == "TARGET_INSTRUCTION_UNSUPPORTED"
+        ]
         self.assertEqual(len(unsupported), 1)
         self.assertEqual(unsupported[0].path,
                          "operations[2].parameters.instruction.contract")
@@ -64,9 +68,15 @@ class Sm103aFp16DotTest(unittest.TestCase):
                           Target.load(ROOT / "compiler/targets/sm_103a.json"))
         mismatch = [finding for finding in findings
                     if finding.code == "MMA_OPERAND_DTYPE_DIFFERS"]
-        self.assertEqual(len(mismatch), 1)
-        self.assertEqual(mismatch[0].path,
-                         "operations[2].parameters.instruction.contract")
+        self.assertEqual(len(mismatch), 2)
+        self.assertEqual(
+            {finding.path for finding in mismatch},
+            {"operations[2].parameters.instruction.contract"},
+        )
+        self.assertTrue(any("'a_tile' is fp16" in finding.message
+                            for finding in mismatch))
+        self.assertTrue(any("'b_tile' is fp16" in finding.message
+                            for finding in mismatch))
 
 
 if __name__ == "__main__":
