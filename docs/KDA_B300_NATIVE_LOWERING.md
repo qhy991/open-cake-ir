@@ -223,6 +223,14 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 性能优先级须受已有配对控制约束：同 GPU 的原始 CAKE M64/M128 完整 H64 仅差 `493.923/456.578 = 1.08179×`（§2.21），而当前两 kernel 路径比原始 CAKE M64 慢 `5.20476×`（§2.20）。**推论**：仅把当前每 head 一 CTA 改成两个 M64 CTA，不足以作为追平差距的主要假设；两种实现的其它映射不同，这个 8.18% 不是当前 native M64 的收益预测。native 发射还必须让每 warp 的 16 个 V 行在四个 lane/row 间分摊列片，协调 strict-lower solve 的跨 lane 值；直接把现有 `row = threadIdx.x`、128 行 register 数组和 `.32x32b` 发射门禁放宽会产生错误的所有权。M64 atom 因而暂是有根据的表达能力工作，性能主线先量化准备 kernel 与 carried-state 消费者的同作业分段时间，再围绕片上生产/消费与关键路径设计可完成的融合候选；分段时间之和不当作可加的因果归因。
 
+### 2.24 同卡分段诊断与 P 双槽回压原型
+
+第一次分段作业 `gpuq-7389dc37a0ac` 虽获 broker-exclusive GPU0，却在第一项 CUPTI 测量前失败：启动环境只加入了固定源码目录，漏掉已有的 `cupti-python` 路径。FlashInfer 发出回退 CUDA event 的 warning，`StrictCuptiBenchmark` 正确拒绝；作业退出后 broker 标为 failed，GPU0 释放，无有效延迟样本。失败及依赖缺口保留，没有将 event 回退称作 CUPTI。CPU-only 阶段验证现成 `cupti-python 13.0.1` 的导入、严格 helper 表面和 native 动态库装载后，独立继任作业 `gpuq-f324d5a4677f` 在同一 B300-M4 的 GPU1 完成并释放：固定 `4dc1561e`、冻结 H64/T8192、五轮交替顺序、每臂每轮 25 次冷 L2 CUPTI、无 graph。三臂轮中位数的中位数分别为**准备 389.507 µs、消费者 1,973.835 µs、完整两 kernel 2,360.238 µs**；分段和 2,363.342 µs，与完整路径差 3.104 µs，最大轮内 CV 0.2161%。消费者占两段独立计时和的 **83.52%**。消费者单独运行与完整路径的十份输出/状态快照全部通过冻结外部 oracle：每份 67,108,864 输出和 1,048,576 状态均零超差，最大绝对误差 0.000488/0.003906。这证明当前固定输入上的主要时间在消费者；分段在不同调用中测量，不能把 83.52% 当作去掉消费者后的因果加速上限。
+
+基于 §2.19 的双槽 P，仓库外构造了一个**尚未准入 Cake IR** 的 native CUDA 源级候选：把 16B 向量化 `load_p` 从 MMA warp 移到已有 copy warp，在其两槽 shared P 上加入每槽 `p_ready`（copy warp 一次到达）和 `p_free`（四个 compute warp 各一次到达）。copy 在写 chunk `j` 的槽前等待 `j-2` 的四次 free；compute 等对应槽的 ready、完成本 chunk strict-lower solve 后才发布 free。这样规定槽的**生产、读取、复用顺序**，而非仅改变代码块位置。原单一 `p_ready` 若让 copy 领先两个 chunk，无法区分槽及 phase，会允许旧 P 在读完之前被覆盖。源级 attempt1 首次 AOT 误用 `-arch=sm_103a`，PTX 实际退到 `sm_103` 并拒绝 `tcgen05`；attempt2 用明确 `compute_103a`/`sm_103a`，AOT 243 寄存器、0 stack/spill。attempt2 的共享库漏链接 CUDA Driver，在 broker-shared `gpuq-4d5ccff3f910` 加载阶段因 `cuTensorMapEncodeTiled` 未解析而失败，未执行 kernel。attempt3 显式链接 `libcuda`/`libcudart` 并在 CPU-only 阶段通过 `ctypes.CDLL` 和 ABI 符号检查，AOT 仍为 243 寄存器、0 spill；broker-shared `gpuq-5f1244cb31ba` 运行完成并释放。独立 host 对冻结 H64 的全部输出和最终状态给出零超差，最大绝对误差 0.000488/0.003906，输入未改写、初末状态同一地址。
+
+同 GPU1 的完整两 kernel 配对 `gpuq-953e035179c4` 随后在五轮交替顺序、每轮每臂 25 次冷 L2 CUPTI、无 graph、独立 512 槽原位状态下比较**相同准备 kernel**加原 `4dc1561e` 消费者与加仓库外 P copy-role 消费者。broker 完成并释放；两臂十份完整输出/状态快照全部通过冻结 oracle，最大轮内 CV 0.1094%。原路径轮中位数的中位数 **2,362.286 µs**，原型 **2,351.215 µs**；成对轮比值中位数 `1.004873×`，五轮均小幅领先，净差约 11 µs。它是有界真实收益，但距约 456 µs 的原始 CAKE 完整参考仍约 5.15 倍（跨作业仅作量级参照）。**Promotion disposition：No promotion。** 为固定 H64 的约 0.49% 净收益引入新的共享 barrier/phase 规则和后端特化，当前缺少跨形状及更大性能意义；不要把 source-only 变换偷偷塞进 native emitter。继续从消费者的 carried-state/MMA 依赖和片上准备入手，待能产生显著完整收益的候选再推进对应 IR、Verifier 和 CUDA lowering。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
@@ -241,6 +249,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | 双槽 P 地址隔离 | `Buffer.stages=2`、`p_smem` 4 KiB，单一 P 生产者/solve 读者与顺序 carried loop；不足容量由共享分析拒绝 | MMA 写槽 `j&1`，compute solve 读同槽；三槽由角色域拒绝，B ready/free 和 U/state 顺序维持 | `test_native_kda_p_double_slot.py`；§2.19 的五次 P 回显、未对齐 fallback 和配对 CUPTI；只资格化该 NVIDIA 组件。 |
 | 准备 beta 直连 | `beta_gate` 明示 `[chunk,head,token]`，AccessMap 逐轴对应真实准备输出 | native 使用 `chunk*2048+head*32+token` 普通全局加载，无额外转置指令 | `test_native_kda_prepared_beta_bridge.py`；旧形状误接被 `ACCESS_PROGRAM_EXTENT_MISMATCH` / `ACCESS_TILE_MISMATCH` 拒绝；§2.20 的固定 H64 GPU 直连和完整配对已通过。 |
 | M64 BF16 TMEM atom | `St16x256b.x8` 限定 64×128 state，`.x2` 限定 64×32 U，`Ld16x256b.x8` 限定 64×128 回读；四 warp/count-four carried barrier 不变 | 需实现每 warp 16 行的寄存器打包、TMEM 地址与 M64 MMA/转置/输出所有权；当前 preflight 仍拒绝 | `test_kda_m64_tmem_copy_atoms.py` 与 §2.23 两项 B300 位级 witness；错误形状/旧 atom 被共享合同拒绝，完整 native M64 尚未发射。 |
+| P copy-role 双槽回压（源级待准入） | 需声明两槽 `p_ready/p_free`、每槽 phase、四个 solve 读者全部释放后方可复用，维持原来的 strict-lower 顺序 | copy warp 先写 P 并发 ready，compute 四 warp 读完 P 发 free；现有 native 只让 MMA warp 生产 P | §2.24 的完整 oracle 与同卡配对通过，但只快约 0.49%；当前 **No promotion**，缺对应 IR/Verifier 反例与多输入资格。 |
 
 ### 一次没有推广的 lowering 尝试
 
