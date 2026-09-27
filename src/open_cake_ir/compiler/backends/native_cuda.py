@@ -184,6 +184,69 @@ def _vector_p_stage(s, target, op):
                     for axis, component in enumerate(access.indices[2:], 2)))
 
 
+def _packed_state_pair(s, target, multiply):
+    """Return the sole add of an exact row-owned MUL then ADD state path."""
+    scope = _scope(s, multiply)
+    if (multiply.kind is not OperationKind.ELEMENTWISE
+            or multiply.parameters.op is not ElementwiseOp.MUL
+            or scope is None or not _role_carried_domain(s, target, scope)
+            or multiply.role != 'compute' or multiply.pipeline is not None
+            or multiply.parameters.scalar is not None
+            or multiply.parameters.broadcast_axis != 1
+            or len(multiply.reads) != 2 or len(multiply.writes) != 1):
+        return None
+    buffers = [s.buffer(name) for name in multiply.reads + multiply.writes]
+    if (any(b is None or b.space is not MemorySpace.REGISTER
+            or b.dtype is not DType.FP32 for b in buffers)
+            or buffers[0].shape != (128, 128)
+            or buffers[1].shape != (128,)
+            or buffers[2].shape != (128, 128)):
+        return None
+    product = multiply.writes[0]
+    readers = [op for op in s.operations if product in op.reads]
+    if len(readers) != 1 or readers[0].kind is not OperationKind.ELEMENTWISE:
+        return None
+    add = readers[0]
+    if (add.parameters.op is not ElementwiseOp.ADD
+            or add.role != multiply.role or add.pipeline is not None
+            or add.parameters.scalar is not None
+            or add.parameters.broadcast_axis is not None
+            or len(add.reads) != 2 or len(add.writes) != 1
+            or _scope(s, add) != scope):
+        return None
+    add_buffers = [s.buffer(name) for name in add.reads + add.writes]
+    if any(b is None or b.space is not MemorySpace.REGISTER
+           or b.dtype is not DType.FP32 or b.shape != (128, 128)
+           for b in add_buffers):
+        return None
+    sum_readers = [op for op in s.operations if add.writes[0] in op.reads]
+    if len(sum_readers) != 1 or sum_readers[0].kind is not OperationKind.CAST:
+        return None
+    cast = sum_readers[0]
+    rounded = s.buffer(cast.writes[0]) if len(cast.writes) == 1 else None
+    if (cast.role != 'compute' or _scope(s, cast) != scope
+            or rounded is None or rounded.space is not MemorySpace.REGISTER
+            or rounded.dtype is not DType.BF16 or rounded.shape != (128, 128)):
+        return None
+    rounded_readers = [op for op in s.operations if rounded.name in op.reads]
+    state_writers = [op for op in rounded_readers
+                     if op.kind is OperationKind.TMEM_STORE]
+    if (len(state_writers) != 1
+            or any(op.kind not in (OperationKind.TMEM_STORE, OperationKind.STORE)
+                   for op in rounded_readers)):
+        return None
+    store = state_writers[0]
+    published = s.buffer(store.writes[0]) if len(store.writes) == 1 else None
+    if (store.role != 'compute' or _scope(s, store) != scope
+            or published is None or published.name not in scope.carried_buffers
+            or published.space is not MemorySpace.TENSOR
+            or published.dtype is not DType.BF16 or published.shape != (128, 128)
+            or not (scope.body.index(multiply.op_id) < scope.body.index(add.op_id)
+                    < scope.body.index(cast.op_id) < scope.body.index(store.op_id))):
+        return None
+    return add
+
+
 def _last_chunk_terminal_store(s, target, op):
     """A loop-invariant output is observable only after its final full overwrite."""
     scope = _scope(s, op)
@@ -1044,6 +1107,11 @@ class _Emitter:
                              if _role_carried_domain(s, target, loop)}
         self.vector_p_stages = {op.op_id for op in s.operations
                                 if _vector_p_stage(s, target, op)}
+        self.packed_state_ops = {}
+        for op in s.operations:
+            if (paired_add := _packed_state_pair(s, target, op)) is not None:
+                self.packed_state_ops[op.op_id] = 'mul'
+                self.packed_state_ops[paired_add.op_id] = 'add'
         self.persistent_carried = {loop.name for loop in s.tile_loops
                                    if (_persistent_carried_domain(s, target, loop)
                                        or loop.name in self.prefetch_carried)}
@@ -1126,6 +1194,8 @@ class _Emitter:
                any(self.b(name).space is MemorySpace.TENSOR for name in op.reads)
                for op in self.s.operations):
             self.line(_TMEM_A_INSTRUCTIONS)
+        if self.packed_state_ops:
+            self.line(_PACKED_FP32_INSTRUCTIONS)
         params = [f'{_TYPES[b.dtype]}* {self.names[b.name]}' for b in self.globals]
         params += [f'const __grid_constant__ CUtensorMap {self.mapnames[op.op_id]}' for op in self.loads]
         self.begin(f'extern "C" __global__ void {self.entry}_kernel('+', '.join(params)+')')
@@ -1591,6 +1661,19 @@ class _Emitter:
             else:
                 self.line('// The sole store addresses this row-owned tile in token-major order.')
             return
+        if op.op_id in self.packed_state_ops:
+            self.line('// CAKE_NATIVE_FP32X2_STATE_NO_FTZ: independent RN lanes')
+            self.begin(f'if ({self.role_condition(op.role)})')
+            lhs, rhs = (self.names[name] for name in op.reads)
+            dst_name = self.names[op.writes[0]]
+            helper = 'cake_mul2_rn' if self.packed_state_ops[op.op_id] == 'mul' else 'cake_add2_rn'
+            self.line('#pragma unroll')
+            self.begin('for (int pair=0; pair<64; ++pair)')
+            self.line(f'const float2 lhs = *reinterpret_cast<const float2*>(&{lhs}[pair*2]);')
+            self.line(f'const float2 rhs = *reinterpret_cast<const float2*>(&{rhs}[pair*2]);')
+            self.line(f'*reinterpret_cast<float2*>(&{dst_name}[pair*2]) = {helper}(lhs, rhs);')
+            self.end(); self.end()
+            return
         self.begin(f'if ({self.role_condition(op.role)})')
         dst=self.b(op.writes[0]); d=self.names[dst.name]
         src=self.b(op.reads[0]); a=self.names[src.name]
@@ -1860,6 +1943,23 @@ __device__ __forceinline__ void cake_tma4(void* dst, const CUtensorMap* map, int
 _TMEM_A_INSTRUCTIONS = r'''
 __device__ __forceinline__ void cake_mma_tmem_a(uint32_t dst, uint32_t a, uint64_t b, uint32_t desc, bool accumulate) {
   asm volatile("{ .reg .pred p; setp.ne.b32 p, %4, 0; tcgen05.mma.cta_group::1.kind::f16 [%0], [%1], %2, %3, p; }" :: "r"(dst), "r"(a), "l"(b), "r"(desc), "r"(int(accumulate)) : "memory");
+}
+'''
+
+_PACKED_FP32_INSTRUCTIONS = r'''
+__device__ __forceinline__ float2 cake_mul2_rn(float2 a, float2 b) {
+  unsigned long long result;
+  asm volatile("mul.rn.f32x2 %0, %1, %2;" : "=l"(result)
+               : "l"(*reinterpret_cast<const unsigned long long*>(&a)),
+                 "l"(*reinterpret_cast<const unsigned long long*>(&b)));
+  return *reinterpret_cast<float2*>(&result);
+}
+__device__ __forceinline__ float2 cake_add2_rn(float2 a, float2 b) {
+  unsigned long long result;
+  asm volatile("add.rn.f32x2 %0, %1, %2;" : "=l"(result)
+               : "l"(*reinterpret_cast<const unsigned long long*>(&a)),
+                 "l"(*reinterpret_cast<const unsigned long long*>(&b)));
+  return *reinterpret_cast<float2*>(&result);
 }
 '''
 
