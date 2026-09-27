@@ -299,6 +299,30 @@ job `maca-0a696d72a07a` 加载8个原生模块，执行8次，各比较1024个�
 下一步是验证同kernel混合算术的状态恢复，再考虑既有FMA原语的显式指令合同；
 如需更改共享IR或源码 admission，应按开发分支流程由相应公共owner验收。
 
+### 定向 FMA 后的混合算术与边界结果
+
+独立 job `maca-25874d0cb439` 运行4个封存原生 FMA 模式 kernel；每个都在定向
+FMA 后，用其结果执行普通 FP32 add 和 `tl.fma`，后者的乘数来自输入而非编译常量。
+CPU oracle在GPU分配前完成；完整输出、输入和参考保留。全部12288输出位置通过：
+**12228个精确word、60个NaN类别判定**，输入不变，模块正常关闭，零fallback，
+设备阶段零编译。NaN只按类别验收，不声称payload或异常标志一致。
+
+RZ/RD/RU各有508/510/506位置可区分“后续普通算术恢复RN”与“沿用定向模式”；
+这些位置均符合RN参考，未观察到舍入状态泄漏。边界输入覆盖精确抵消、正负零、
+次正规下溢、正负溢出、融合溢出抵消、infinity和NaN。结论仍是安装版本与这些
+组合的可观察结果，不是所有隐藏硬件状态位或穷尽FP32输入的证明。
+
+每个模块报告63registers/thread、0shared/local bytes。没有计时、profiler或性能
+资格；allocation仍为local_serialized，外部活动不排除。外部记录：
+`metax-rounding-mixed-20260927/{oracle-inputs,device-result,verification}.json`。
+
+`7451c2bc` 的三个拟议 FMA 名字均先由 `TARGET_INSTRUCTION_UNSUPPORTED` 拒绝；
+手写对应library调用又被原生源码边界拒绝。证据在
+`metax-directed-fma-admission-7451c2bc/result.json`。见
+[F-2026-09-27-004](../findings/2026-09-27-004-metax-directed-fma-lowering.json)：
+复用既有FMA原语，先由共享owner注册合同与源码边界，再接入MetaX声明/发射；
+当前不推广Target能力，实际Cake生成产物仍须独立验收。
+
 ### 固定循环的 MetaX 专属 full-unroll lowering
 
 在源码提交 `667c8c93`，`loop_unroll_factor > 1` 只有在循环边界来自静态

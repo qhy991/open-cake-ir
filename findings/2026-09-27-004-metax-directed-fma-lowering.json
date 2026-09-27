@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-004",
+  "date": "2026-09-27",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@7451c2bc3f33524b5055a1a4151e1ebb9039d49f",
+  "executor_revision": "xcore1002@66ca6c83aebd0eea8b0760fdb4090732bc266bc8",
+  "title": "MACA directed FP32 FMA realizes distinct rounding and restores ordinary arithmetic, but Cake has no admitted contract",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "evidence": {
+    "original_intrinsics": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-rounding-device-v2-20260927/verification.json",
+    "mixed_state_and_edges": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-rounding-mixed-20260927/verification.json",
+    "current_schedule_and_source_refusals": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-directed-fma-admission-7451c2bc/result.json",
+    "installed_linked_implementation": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-rounding-offline-20260927/linked-bodies.json",
+    "selector_interpretation": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-rounding-offline-20260927/hardware-state-selector.json"
+  },
+  "observation": "Eight standalone add/FMA RN/RZ/RD/RU interfaces compile to native xcore1000 artifacts and job maca-0a696d72a07a matches8192 finite nonzero-result words. Complete linked functions save/set/restore hardware state through get/sethwreg selector2049; physical register/bitfield decoding is unknown. Mixed job maca-25874d0cb439 loads four sealed FMA mode kernels and executes four calls. Directed output plus result-dependent ordinary ADD and ordinary FMA checks12288positions:12228 exact words and60 NaN-class comparisons, zero mismatches, inputs unchanged, modules closed, zero fallback/device-phase compilation. Directed RZ/RD/RU inputs distinguish leaked mode from restored RN on508/510/506rows. Edge inputs include exact cancellation, signed zero, subnormal underflow, overflow, fused overflow cancellation, infinity and NaN. Each kernel reports63registers/thread and0shared/local bytes. Timing null; local_serialized does not exclude external activity. These are standalone native diagnostics, not a Cake-generated successor or performance qualification.",
+  "first_divergence": "At7451c2bc complete existing FMA Schedules with maca.fma.rz.f32, maca.fma.rd.f32 or maca.fma.ru.f32 are refused by TARGET_INSTRUCTION_UNSUPPORTED. Manually spelling the measured library functions in the otherwise accepted kernel projection is independently refused by native source admission. Merely extending a Target document leaves registry, emission and source validation gaps.",
+  "proposed_change": "Reuse existing typed ternary ElementwiseOp.FMA. Register three explicit result-rounding names (RZ/RD/RU), keep Target admission explicit, and place only their library spelling in the MACA emitter. Keep existing nearest-route contract and ordinary arithmetic unchanged; add no global mode, hidden register mutation, layout algebra or new operation. Shared registry/source admission goes through main before MetaX target/emission integration. The source boundary admits only direct three-positional-argument calls of the three spellings on declared mcfatbin, refusing aliases, splats, keyword arguments and other code objects. Require actual Cake-generated native artifacts with mixed arithmetic and edge cases before capability promotion.",
+  "principles": "P1 reuses lm.fma and explicit instruction names; P2 exposes rounding in the authored contract and generated source; P3 keeps the existing FMA form and adds no second primitive or nearest alias; P4 retains three same-shaped FP32 register operands; P5/P7 keep existing FMA typing/effects and require observable state restoration; P6 requires intended-guard counterexamples, unchanged Target admission snapshots and Corpus expectations, fixed-commit software gates and generated-source successor evidence; P8 binds measured numerics and linked state handling to the captured C550-2 installation.",
+  "semantic_boundary": "NaN payloads, floating exception flags, exhaustive FP32 inputs and arbitrary runtime versions remain unqualified. State-restoration evidence is observable result equality for the tested compositions, not a proof of every hidden hardware-state bit. Resource queries and instruction API names establish no performance improvement.",
+  "promotion_disposition": "No capability promotion yet. The measured mechanism justifies a shared admission proposal and explicit MetaX integration; proposed names remain unadmitted on the current platform. Close only after reviewed implementation commit and new Cake-generated device evidence."
+}

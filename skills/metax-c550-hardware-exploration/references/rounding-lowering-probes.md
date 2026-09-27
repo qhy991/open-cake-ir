@@ -37,3 +37,20 @@ The first CPU oracle assertion found an accidental exact-zero add on a FMA test 
 no broker allocation occurred. Preserve that failure and its successor rather than
 restarting or relabelling it as hardware failure. This diagnostic has no timing score,
 profiler or generic precision guarantee; resource queries are not performance proof.
+
+## Mixed-state and edge successor
+
+Read the [new platform record](../../../docs/metax-c550.md#定向-fma-后的混合算术与边界结果)
+and [F-2026-09-27-004](../../../findings/2026-09-27-004-metax-directed-fma-lowering.json).
+Job maca-25874d0cb439 uses four sealed FMA mode kernels; each directed result feeds
+ordinary ADD and a tl.fma with a loaded multiplier. All12288positions pass:12228exact
+words and60NaN-class checks. Directed modes distinguish leaked state from restored
+RN at508/510/506rows, and subsequent ordinary outputs match RN. Raw outputs retained.
+
+The successor also covers exact signed zero, cancellation, subnormal underflow,
+overflow/fused cancellation, infinity and NaN. This closes the previously untested
+compositions for these inputs, not every hidden state bit or exception/NaN payload.
+The original finite-only scope remains unchanged in its old receipts. Current Cake
+still refuses the proposed names and native source. Shared contract/source work
+must precede platform admission; require real Cake-generated successor evidence,
+not this standalone native result, before closing the capacity finding.
