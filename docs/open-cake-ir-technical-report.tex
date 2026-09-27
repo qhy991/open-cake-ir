@@ -1684,6 +1684,24 @@ BF16 Q/K/G/beta 和 FP32 门控参数开始，完成归一化、32-token
 这些是单 chunk 正确性结果；其余五项准备值、跨 chunk 槽复用、
 状态递推及完整延迟仍待实现和测量。
 
+\paragraph{七项准备与 native lowering 门禁。}
+继任单 CTA 版本同时生成 P、B、三项 BF16
+\(128\times32\) 基础/最终因子、FP32 beta 与 prefix；
+精确 B300 AOT 为 56 寄存器、41,088 字节 shared、0 spill。
+前两次 broker 作业分别因 CPU 报告遗漏任务/目标身份、设备脚本读取
+旧字段名，在 kernel 前被拒绝，失败记录保留。将冻结身份检查收敛为
+设备脚本与 CPU-only preflight 共用的函数后，
+\code{gpuq-f2d43cdf9c5d} 完成并释放。首、中、末三个冻结位置
+的全部七项输出对独立 CPU 公式和留存 Cake 准备快照均 0 超差，
+无非有限值，输入未改写；每位置的输出合计 29,312 字节。
+这仍是单 chunk 正确性，不是 H64 完整延迟。
+现有完整融合准备 Schedule 改走 native 路线的离线审查先在
+\code{scan/coordinate/compare/select} 四类操作共七处被拒绝；
+进一步的诊断揭示当前 native 的 M128 行布局、warp 所有权、
+shared 到寄存器装载和 MMA 同步合同也不覆盖该四 warp 方案。
+因此下一步需要 IR/Verifier 与 native 发射一起扩展，并在完整
+H64 输出、原位状态及同卡 CUPTI 计时下验收。
+
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
 路径做五轮交替、每臂每轮 25 次冷 L2 CUPTI 计时：准备
