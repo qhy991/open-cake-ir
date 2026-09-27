@@ -258,6 +258,11 @@ extern "C" int @ENTRY@_create(
       if (error!=cudaSuccess) break;
     }
     if (error!=cudaSuccess) break;
+    // The B300 payload path uses PTX 16-byte vector loads from each token.
+    // Its token stride is aligned; reject an unaligned caller base up front.
+    if ((reinterpret_cast<std::uintptr_t>(hidden[rank]) & 15u)!=0) {
+      error=cudaErrorInvalidValue;break;
+    }
     for (int peer=0;peer<R;++peer) {
       if (peer==rank) continue;
       int access=0,atomic=0;

@@ -16,6 +16,7 @@
 @CAKE_HELPERS@
 #include <cmath>
 #include <cstdlib>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -401,11 +402,14 @@ struct Bin {
   int wave_partial_rows[LOCAL_E];
   int wave_tile_counts[LOCAL_E];
   int wave_counts[kEvents];
-  __nv_bfloat16 payload[size_t(PAYLOAD_CAP)*H];
+  alignas(16) __nv_bfloat16 payload[size_t(PAYLOAD_CAP)*H];
   int error;
   RouteMismatch route_mismatch;
   unsigned long long phase_cycles[kEvents][kPhasePoints];
 };
+static_assert(offsetof(Bin,payload)%16==0 &&
+              (H*sizeof(__nv_bfloat16))%16==0,
+              "vector payload copies require 16-byte aligned slots");
 struct BinParams {
   Bin* bins[R];
   const __nv_bfloat16* hidden;
@@ -551,8 +555,21 @@ __device__ void dispatch_source_chunk(const BinParams* params,int block,
       if (slot<0) continue;
       Bin* remote=params->bins[owner];
       __nv_bfloat16* output=remote->payload+size_t(slot)*H;
-      for (int feature=int(threadIdx.x);feature<H;feature+=int(blockDim.x))
-        output[feature]=input[feature];
+      // Each slot and token starts on a 16-byte boundary. Move 16 bytes per
+      // instruction pair; the subsequent CTA barrier and system release keep
+      // the existing cross-GPU payload publication order.
+      for (int byte=int(threadIdx.x)*16;
+           byte<H*int(sizeof(__nv_bfloat16));byte+=int(blockDim.x)*16) {
+        const char* source=reinterpret_cast<const char*>(input)+byte;
+        char* destination=reinterpret_cast<char*>(output)+byte;
+        uint32_t a,b,c,d;
+        asm volatile("ld.global.v4.b32 {%0,%1,%2,%3}, [%4];"
+                     : "=r"(a),"=r"(b),"=r"(c),"=r"(d)
+                     : "l"(source) : "memory");
+        asm volatile("st.global.v4.b32 [%0], {%1,%2,%3,%4};"
+                     :: "l"(destination),"r"(a),"r"(b),"r"(c),"r"(d)
+                     : "memory");
+      }
       __syncthreads();
       // CAKE_EFFECT: payload.publish
       if (threadIdx.x==0) system_publish(&remote->payload_ready[slot]);
