@@ -272,6 +272,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
             self.assertNotIn('fopen(',source)
             self.assertEqual(report['logical_tile_capacity'],255)
             self.assertEqual(report['stage_task_capacity'],22440)
+            from experiments.weave.native_b300.model_ranked_tile_pointer_run import contract
+            self.assertEqual(contract(root)['source_commit'],commit)
             self.assertEqual(report['toolchain_requirements']['rank_local_controls'],
                              True)
             self.assertEqual(len([name for name in report['source_map']
