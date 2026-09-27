@@ -1623,6 +1623,26 @@ Cake 准备加 native 消费约 \(2{,}374\,\mu\mathrm{s}\)，候选/参考
 这一同范围结果确认数值路径可运行，也证明目前的物化准备与串行消费者
 远未超过原始 CAKE；跨作业的组件时间不可作为本次分段归因。
 
+\paragraph{同卡阶段定位与 P 角色迁移。}
+继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
+路径做五轮交替、每臂每轮 25 次冷 L2 CUPTI 计时：准备
+389.507\,$\mu$s、native 消费者 1,973.835\,$\mu$s、完整路径
+2,360.238\,$\mu$s，最大轮内 CV 0.2161\%。消费者占两段独立
+计时之和的 83.52\%；三臂分别计时，这不是删除消费者可获收益的
+因果估计。消费者及完整路径的十份输出/状态快照均通过冻结外部
+oracle。首次分段作业因缺少 \code{cupti-python} 触发严格计时拒绝，
+没有纳入上述数据。源级 P 角色原型把双槽 P 搬到 copy warp，以
+每槽 ready 和四 compute warp 完成后的 free 限定重用；B300 AOT
+为 243 寄存器、0 spill，\code{gpuq-5f1244cb31ba} 的固定 H64
+完整输出/状态通过 oracle。同 GPU 的完整路径配对
+\code{gpuq-953e035179c4} 中，原消费者 2,362.286\,$\mu$s，
+P copy-role 原型 2,351.215\,$\mu$s；五轮均小幅领先，成对轮比值
+中位数 1.004873\(\times\)，两臂十份完整快照均通过 oracle，最大
+轮内 CV 0.1094\%。约 11\,$\mu$s 的净收益不足以支撑新增共享
+barrier/phase 合同，当前 \emph{No promotion}；消费者串行状态与
+MMA 关键路径仍是主要追赶对象。
+
+\Needspace{12\baselineskip}
 \paragraph{M64 拆分的原子验证。}
 CPU-only M64 探针用第二 CTA 轴与 \code{program\_tile} 切分
 状态/V/输出，旧 \code{St32x32b} 探针被 verifier/native 分别拒绝
@@ -1642,6 +1662,8 @@ custody 拒绝；未改权限补跑，本地同合同 3/3 通过。该原型含 
 首版 AOT 保留。这只证明搬运原子和 lane 映射。M64 MMA、状态
 递推和完整延迟仍无证据；准备值物化及 256 次串行转移的延迟贡献
 尚未分解。
+
+\Needspace{8\baselineskip}
 正式 Program 资格还需一个共享合同：当前 Program 构造拒绝公共输入/输出
 同一 tensor，Evaluation 为输出分配独立存储且要求输入保持；这无法代表
 Workload 要求的原位状态。Lab 的 Program 作者环境还要求各 stage 使用同一
