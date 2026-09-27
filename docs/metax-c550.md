@@ -328,7 +328,8 @@ RZ/RD/RU各有508/510/506位置可区分“后续普通算术恢复RN”与“�
 任务原型 `b5da553f` 复用 `lm.fma`，新增显式 `maca.fma.{rz,rd,ru}.f32` 发射，
 保留原 `maca.fma.f32` 最近舍入路径。三个新名字由共享注册表拥有，MetaX只拥有
 library拼写；源边界只允许mcfatbin上的直接三实参调用，错误dtype由既有FMA规则拒绝。
-源码、声明与指令合同仍在任务分支，尚未合入平台。
+源码、声明与指令合同已于2026-09-28按用户明确指示，通过PR #272合入`metax`，
+平台合并提交为`30d3895d`；该PR的五项CI均通过。
 
 四个真实生成的RN/RZ/RD/RU Schedule采用[16,64]全局tensor、每CTA一行、group4，
 grid[16,1,1]/block[256,1,1]。普通add和原最近舍入FMA依赖定向结果。
@@ -353,9 +354,10 @@ manifest、mcfatbin和native ELF与已验收的66ca6c83产物逐字节相同。�
 性能证据绑定同一产物，未做新设备重测；此结果不证明整个Compiler的等价性。
 外部边界记录为`metax-fp8-sync-handoff-b5da553f/handoff.json`。
 
-共享Compiler独立评审仍待授权/完成，之后才能main合入与MetaX平台集成。
-[F-2026-09-27-004](../findings/2026-09-27-004-metax-directed-fma-lowering.json)保留proposed，
-不把任务分支的正确产物称为已发布能力或性能优化。
+[F-2026-09-27-004](../findings/2026-09-27-004-metax-directed-fma-lowering.json)已回填accepted，
+实现提交aee427d9、验证产物来源b5da553f及平台合并30d3895d均保留。共享PR #269
+仍在main的独立评审流程中，未宣称main评审完成。此次接受的是上述有界lowering能力，
+不是性能优化、任意运行时或完整模型资格。
 
 ### 固定循环的 MetaX 专属 full-unroll lowering
 
