@@ -8,6 +8,7 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
+from open_cake_ir.tasks.solx_fib.b300_gemv004 import column_tiled_source
 from open_cake_ir.tasks.tiles.workload import _round
 from open_cake_ir.tasks.workloads import create_task, reference_outputs, load_workload
 from open_cake_ir.tasks.efficiency import task_work
@@ -16,6 +17,27 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FlashInferGemmTests(unittest.TestCase):
+    def test_004_column_tiles_reuse_a_and_reduce_each_b_row(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        workload = WorkloadContract(gemm.workload_document('fib_gemm_n128_k2048', rows=1))
+        for tile in (2, 4, 8):
+            source = column_tiled_source(workload, columns_per_cta=tile)
+            schedule = parse(source).document
+            self.assertEqual(sum(op['kind'] == 'store' for op in schedule['operations']), 1)
+            assessment = compiler.assess(schedule)
+            self.assertEqual(assessment.findings, ())
+            lowered = compiler.lower(assessment)
+            self.assertIn(f'_kernel[(1, {128 // tile}, 1)]', lowered.source)
+            self.assertIn(f'BLOCK_COLUMN={tile}', lowered.source)
+            self.assertIn('products = b32 * a32[None, :]', lowered.source)
+            self.assertIn('totals = tl.sum(products.to(tl.float32), axis=1)', lowered.source)
+            self.assertIn('num_warps=4', lowered.source)
+        with self.assertRaises(ValueError):
+            column_tiled_source(WorkloadContract(gemm.workload_document(
+                'fib_gemm_n128_k2048', rows=2)))
+        with self.assertRaises(ValueError):
+            column_tiled_source(workload, columns_per_cta=3)
+
     def test_all_eight_exact_tasks_have_fp16_abi_and_lower_on_b300(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         self.assertEqual(len(gemm.TASKS), 8)
