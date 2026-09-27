@@ -1648,13 +1648,22 @@ MMA 关键路径仍是主要追赶对象。
 对外部逐 token oracle 零超差。B300 的独立 K32 TMEM-A/shared-B
 MMA witness 三组各 4,096 个结果零超差；从真实 P 生成的
 16,777,216 个转置逆因子元素与 CPU doubling 比较零超差。
-源级 native 消费者把 BF16 RHS 写入 TMEM，以两条 K16 MMA
-代替逐行求解；AOT 为 241 寄存器、0 spill。三 kernel
-准备→逆因子→消费者作业 \code{gpuq-982a93410f49} 的全部
-67,108,864 个输出与 1,048,576 个原位最终状态对冻结 oracle
-零超差，最大绝对误差为 0.000732/0.003906。它仍是固定 H64
-源级候选；与原始 CAKE、现有两 kernel 基线的同卡配对已提交，
-延迟结果待作业终态和完整快照核对，尚无 Compiler promotion。
+源级候选先把 BF16 RHS 写入 TMEM，以两条 K16 MMA 代替逐行
+求解；\code{gpuq-982a93410f49} 对完整固定 H64 外部 oracle
+零超差。继任 \code{38288646} 用已有 IR 运算与明确 barrier/列
+所有权将它变成 Cake-emitted native CUDA；把跨 chunk 的完成
+barrier 放在 kernel 根作用域，使精确 B300 AOT 从 255 寄存器、
+136 字节 spill 变为 241 寄存器、0 spill。固定提交的
+Corpus Gate 179/179、相关合同 17/17、完整适用 CPU 套件
+2,701 passed。\code{gpuq-dd76e0c72685} 的 Cake 生成版输出
+和原位最终状态均通过完整冻结 oracle。同 GPU 的五轮三臂配对
+\code{gpuq-362b7594e4dc}：原始 CAKE M64 456.100、现有
+两 kernel native 2,360.022、逆因子三 kernel 2,393.655\,$\mu$s；
+十五份完整快照均通过 oracle，最大轮内 CV 0.1295\%。候选比
+原始参考慢 5.24872\(\times\)，也比现有 native 基线慢约 1.43\%。
+额外逆因子准备及同步抵消了求解改写，当前 \emph{No promotion}。
+此前配对 \code{gpuq-92adb0eb2600} 因外来计算 PID 在首轮前拒绝，
+没有计时样本；正式 Program ABI 与六形状仍未验收。
 
 \Needspace{12\baselineskip}
 \paragraph{M64 拆分的原子验证。}
