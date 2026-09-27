@@ -144,7 +144,7 @@ def _validate_search_selection(candidate, plan):
             or context["timer"] != "PyTorch Kineto CUPTI GPU kernel activity"
             or context["cache_protocol"] != f"{plan['sampling']['l2_flush_bytes']}-byte zeroing before each sample on same stream"
             or context["input_scope"] != plan["input_scope"]
-            or any(context["runtime"].get(key) != value for key, value in plan["expected_runtime"].items())):
+            or context["runtime"] != plan["expected_runtime"]):
         raise ValueError("empirical model differs from the frozen assay")
     if (frozen.get("schema_version") != 1
             or frozen.get("kind") != "frozen_prior_model_predictions_for_prospective_audit"
@@ -424,9 +424,14 @@ def _prepare():
     inspectors = {row["profile"]["compiled_resources"]["inspector_version"] for row in rows}
     if len(versions) != 1 or len(inspectors) != 1:
         raise ValueError("compilation context changed within local stage")
+    compiler_version = versions.pop()
+    inspector_version = inspectors.pop()
+    if (plan["expected_runtime"].get("compiler_version", compiler_version) != compiler_version
+            or plan["expected_runtime"].get("inspector_version", inspector_version) != inspector_version):
+        raise ValueError("local compiler or inspector differs from frozen model context")
     _write(stage / "observations.json", {"schema_version": 1, "rows": rows,
-                                          "compiler_version": versions.pop(),
-                                          "inspector_version": inspectors.pop()})
+                                          "compiler_version": compiler_version,
+                                          "inspector_version": inspector_version})
     artifacts = {path.relative_to(stage).as_posix(): path.relative_to(stage).as_posix()
                  for path in sorted(stage.rglob("*")) if path.is_file() and path != result}
     _write(result, {"schema": "kernelinfra.stage-result.v1", "status": "passed",
@@ -653,7 +658,8 @@ def _collect():
         raise RuntimeError("multiprocessor count differs")
     (driver_version,) = _driver_call(driver, "cuDriverGetVersion", outputs=1)
     runtime = {"python": sys.version, "torch": str(torch.__version__), "torch_cuda": str(torch.version.cuda), "cuda_driver": str(driver_version), "cuda_bindings": importlib.metadata.version("cuda-bindings"), "triton_package": importlib.metadata.version("triton")}
-    if any(runtime[key] != value for key, value in plan["expected_runtime"].items()):
+    if any(runtime.get(key) != value for key, value in plan["expected_runtime"].items()
+           if key not in {"compiler_version", "inspector_version"}):
         raise ValueError("runtime differs from the frozen collection boundary")
     stream = driver.CUstream(torch.cuda.current_stream().cuda_stream)
     rows, launches = [], []
@@ -704,6 +710,8 @@ def _collect():
         launches.append((invoke, module, cpu, inputs, output, expected, tolerance))
         print(json.dumps({"loaded": case["id"], "count": index + 1}), flush=True)
     runtime.update(compiler_version=prepared["compiler_version"], inspector_version=prepared["inspector_version"])
+    if any(runtime.get(key) != value for key, value in plan["expected_runtime"].items()):
+        raise ValueError("runtime differs from the frozen model context")
     if kind == "profile":
         for invoke, *_ in launches:
             for _ in range(plan["sampling"]["warmup"]):invoke()

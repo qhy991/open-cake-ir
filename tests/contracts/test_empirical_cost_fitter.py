@@ -267,6 +267,13 @@ class FitterBindingTest(unittest.TestCase):
             write(frozen_path, frozen)
             with self.assertRaisesRegex(ValueError, "prediction differs from model replay"):
                 instrument._check_plan(candidate)
+            frozen["predictions"][0]["predicted_us"] -= 1
+            write(frozen_path, frozen)
+            drifted_plan = copy.deepcopy(admitted)
+            drifted_plan["expected_runtime"]["torch"] = "different-runtime"
+            write(candidate / "plan.json", drifted_plan)
+            with self.assertRaisesRegex(ValueError, "model differs from the frozen assay"):
+                instrument._check_plan(candidate)
 
     def test_selected_run_audits_only_the_two_measured_candidates(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
