@@ -297,3 +297,27 @@ allocation limits remain. Read the [closed Finding](../../../findings/2026-09-27
 and `/Users/haiyan-infiniai/open-cake-ir-evidence/metax-magnitude-generated-confirm-90739901/verification.json`
 for generated-source and special-value evidence. Keep the earlier native-source
 qualification separate.
+
+
+## N16 output tiling
+
+For the fixed finite NT64 recipe, the public `bucketed_source()` projection now
+uses M16/N16, B[16,64], result[16,16] and grid[4,4,1]. This is an existing-primitive
+task choice. The frozen N64 artifact remains its measurement baseline.
+
+At Compiler `90739901`, all 37 cases pass and search/fresh confirmation both
+repeat 9.728/10.240 us (1.0526x), quality-passed with 10/10 pair wins. This is only
+just above fixed materiality1.05; do not round it into a larger or general benefit.
+A/A is close-null at equal10.240 us. Correct separate profile reports 180
+registers/thread and1024 dynamic shared bytes; N64 reports178/4096. Lower shared
+usage does not establish occupancy or register causality. Sixty raw cohorts replay.
+
+The public task producer `02561cff` independently builds identical lowered-source,
+launch, mcfatbin and native-image bytes to the measured prototype. The handoff
+identity settles evidence binding once; do not repeat this as a routine digest
+ritual or claim a fresh device measurement at the public producer. Task binding
+and magnitude contracts and unchanged Corpus pass. Read the
+[platform result](../../../docs/metax-c550.md#分桶配方的-n16-输出-tile) and
+`/Users/haiyan-infiniai/open-cake-ir-evidence/metax-bucket-n16-public-sealed-02561cff/verification.json`.
+Allocation remains local_serialized with external activity not excluded; other
+shapes and framework/serving performance remain outside this qualification.

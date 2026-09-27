@@ -138,6 +138,36 @@ A/A `maca-4224867cdcc4` 为 11.776／11.520 µs（0.9783×、close-null），0/8
 详见 [F-2026-09-27-003](../findings/2026-09-27-003-metax-comparison-magnitude-emission.json)
 及 checkout 外 `open-cake-ir-evidence/metax-magnitude-generated-confirm-90739901/verification.json`。
 
+## 分桶配方的 N16 输出 tile
+
+任务的 `bucketed_source(workload)` 在提交 `02561cff` 将固定 NT64 输出切成 M16/N16，
+用现有二维 program map、B[16,64] 加载、16×16 FP32 部分结果及 grid[4,4,1]。
+四桶划分、16 个 FP16 dot、Neumaier 公式和求和顺序、四个 execution groups、
+Workload／oracle／容差不变。旧 M16/N64 封存产物仍是独立固定对照。
+
+在冻结 Compiler `90739901` 构建的 N16 原型由 `maca-752c395a454b` 通过全部
+37 case（最大绝对误差 0.015625、零超容差输出、输入不变）。Search
+`maca-37f922264ee8` 与 fresh confirmation `maca-aadcf3feffc8` 均通过质量门和
+10/10 pair 胜出，每臂 250 样本，中位数均为 **9.728／10.240 µs（1.0526×）**。
+这仅略高于固定 1.05 materiality，门槛没有调整。A/A `maca-b76cd72c85df` 是
+10.240／10.240 µs、close-null。60 个原始 cohort 已回放。
+
+单独 profile `maca-5463f4c1d9a1` 的仪器输出正确，报告 180 registers/thread、
+1024 动态 shared bytes、0 静态 shared 和 function-local bytes。寄存器相对 N64
+的 178 增加，而 shared 从 4096 降低；这不支持“减少寄存器”或 occupancy 因果解释。
+带宽、ISA 计数和 achieved occupancy 未采集，profile 单次时间不参与成绩。
+
+公开任务投影在固定提交 `02561cff` 经现有隔离构建器独立封存。交接边界的一次
+逐字节检查确认其 lowered source、launch manifest、mcfatbin 及 native ELF 与上述
+已测原型完全相同，因此设备证据绑定同一产物；没有宣称该提交另跑了一次测量。
+该提交通过任务／magnitude 合同 11 tests、10 subtests 和未改变 expectations 的
+Corpus。Compiler 和 Target 未修改，选择归属任务配方。
+
+资格仍仅覆盖捕获的 C550-2 Triton 3.6、固定有限 NT64 Workload 与 primary MCPTI
+边界，`local_serialized` 不排除外部活动。复核位于 checkout 外：
+`open-cake-ir-evidence/metax-bucket-n16-public-sealed-02561cff/verification.json`，
+相邻 `handoff-identity.json` 记录交接，原始测量为 `metax-bucket-n16-*-20260927/`。
+
 ## 编译与执行
 
 编译通过现有 bubblewrap 路径运行，不挂载 GPU，也不暴露作者工作目录。
