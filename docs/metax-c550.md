@@ -264,6 +264,38 @@ Triton 3.1 的原捕获 launcher 只传非 constexpr 参数。C550-2 Triton 3.6
 这些点支持本次有界 FP32 指令准入，不覆盖所有异常值、注册 Workload 的
 Evaluation、延迟或性能收益；也没有物理独占声明。
 
+### 显式舍入 add/FMA 的工具链探针
+
+2026-09-27 在 C550-2 的 Triton3.6 / MACA3.8.0.4.c600u 上，
+`libdevice.add_{rn,rz,rd,ru}` 和 `libdevice.fma_{rn,rz,rd,ru}` 共8个独立
+源码 specialization 均离线生成原生 xcore1000 ELF。通用 libdevice 模块的占位声明
+不是实现：MetaX `get_module_map` 将调用映射至 CUDA 命名包装，编译器再链接
+MACA 自己的数学库。包装命名不能作为 NVIDIA 指令执行的证据。
+
+完整 linked LLVM 函数体先读寄存器2049，设置模式，执行 `fadd` 或 `llvm.fma.f32`，
+再恢复原值；本安装观察到 RN=0、RU=1、RD=2、RZ=3。早期只筛选算术行漏掉了
+get/sethwreg，不能据此得出“忽略舍入模式”。这是安装版本的实现观察，不是普适 ISA 说明。
+
+封存通过现有 source/artifact sealer 与原生参数检查，使用既有 MACA broker；
+job `maca-0a696d72a07a` 加载8个原生模块，执行8次，各比较1024个完整 FP32 word。
+全部8192word逐 bit符合独立精确 Fraction 参考，输入不变、模块关闭、零 fallback，
+设备阶段没有编译。六种定向舍入均存在与 RN 不同的输出；复核另按相邻 IEEE word
+的区间不等式重算定向结果。报告加法59、FMA62 registers/thread，0shared/local bytes；
+没有计时、性能或占用率结论，allocation为local_serialized，外部活动不排除。
+
+输入覆盖正负半ULP、融合/分步区分点、次正规点及固定seed的有限随机word。
+范围是有限输入、精确非零且有限的结果；没有覆盖 NaN/inf、精确零符号、异常标志，
+也没有同kernel内“定向调用后普通运算”的状态恢复证据。**No Cake capability promotion**：
+当前 IR 只为 tanh/FMA允许显式instruction，普通add不允许；现有FMA emitter和
+源码 admission也未接受这些新名字。不得隐藏硬件寄存器改写或扩大通用数值承诺。
+
+首轮CPU参考检查因一个FMA区分输入的加法恰好取消到零而停止，尚未申请GPU；
+修正后的新证据目录保留原输入失败日志并复用同一封存二进制。外部证据：
+`metax-rounding-offline-20260927/{result,seal-result,linked-bodies-interpretation}.json`、
+`metax-rounding-device-v2-20260927/{oracle-inputs,device-result,verification}.json`。
+下一步是验证同kernel混合算术的状态恢复，再考虑既有FMA原语的显式指令合同；
+如需更改共享IR或源码 admission，应按开发分支流程由相应公共owner验收。
+
 ### 固定循环的 MetaX 专属 full-unroll lowering
 
 在源码提交 `667c8c93`，`loop_unroll_factor > 1` 只有在循环边界来自静态
