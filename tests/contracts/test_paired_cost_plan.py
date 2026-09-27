@@ -3,20 +3,24 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import sys
 import tempfile
 import unittest
 from hashlib import sha256
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import calibrate_paired_cost as instrument
 
 from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler.toolchain import TritonCompilation
 from open_cake_ir.evaluation import LaunchableCandidate
 from open_cake_ir.evaluation.core import TensorLaunchManifest
 from open_cake_ir.evaluation.paired import candidate_identity
+from open_cake_ir.lab.bindings import load_baseline_bundle
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks.workloads import load_workload
@@ -82,12 +86,37 @@ class PairedCostPlanTest(unittest.TestCase):
                 "baseline_bundle_path": "baseline/candidate.json", "candidates": candidates,
                 "observations": instrument.observation_order([row["id"] for row in candidates]),
                 "varying_dimensions": [{"buffer": name, "dimension": 0} for name in ("a", "c")],
+                "toolchain_identity": {"kind": "bubblewrap_triton_kernel_v1",
+                                       "python": self.executor.document["host_environment"]["python"]["invocation_path"],
+                                       "triton_version": self.executor.document["host_environment"]["packages"]["triton"],
+                                       "fixture": "synthetic; no executable compiler"},
                 "acceptance": {"maximum_baseline_drift_ratio": 1.05,
                                "maximum_mape": .1, "maximum_relative_error": .2,
                                "maximum_top2_regret_ratio": 1.05,
                                "envelope_allowance": .05}}
         write(snapshot / "plan.json", plan)
         return snapshot, plan
+
+    class FakeIsolatedCompiler:
+        def __init__(self, identity):
+            self.identity = identity
+            self.checked = False
+            self.calls = 0
+
+        def check_executor(self, executor, *, author_workspace):
+            self.checked = executor.document["target"] == "sm_103a" and Path(author_workspace).is_dir()
+
+        def compile(self, source, requirements):
+            self.calls += 1
+            artifacts = {role: f"SYNTHETIC NONEXECUTABLE {role}".encode()
+                         for role in ("ttir", "ttgir", "llir", "ptx", "cubin")}
+            artifacts["cubin"] = b"\x7fELF SYNTHETIC NONEXECUTABLE " + str(self.calls).encode()
+            artifacts["source"] = source + b"\n# synthetic compiler expansion\n"
+            return TritonCompilation(
+                source, "sm_103a", requirements["kernel_entry_point"], artifacts,
+                requirements["compile_options"]["num_warps"] * 32, 0,
+                self.identity["triton_version"], "cubin",
+            )
 
     def test_frozen_b300_study_and_complete_schedule_pool_are_admitted(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -138,6 +167,40 @@ class PairedCostPlanTest(unittest.TestCase):
             write(bundle, document)
             with self.assertRaisesRegex(ValueError, "launch seal differs"):
                 instrument.check_plan(snapshot)
+
+    def test_cpu_compile_seals_all_three_common_candidates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            stage = Path(directory) / "compile"
+            stage.mkdir()
+            isolated = self.FakeIsolatedCompiler(plan["toolchain_identity"])
+            with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
+                index = instrument.prepare_compile(snapshot, stage, isolated)
+            self.assertTrue(isolated.checked)
+            self.assertEqual(isolated.calls, 3)
+            self.assertEqual(len(index["candidates"]), 3)
+            self.assertEqual(json.loads((stage / "compile-index.json").read_text()), index)
+            for spec in plan["candidates"]:
+                candidate = load_baseline_bundle(ROOT, stage / spec["id"] / "candidate.json")
+                self.assertIn("cubin", candidate.artifact_payloads)
+                self.assertIn("launch_manifest", candidate.artifact_payloads)
+                self.assertEqual(candidate.target, "sm_103a")
+
+    def test_cpu_compile_refuses_unpinned_toolchain_and_visible_gpu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            stage = Path(directory) / "compile"
+            stage.mkdir()
+            isolated = self.FakeIsolatedCompiler({**plan["toolchain_identity"], "triton_version": "other"})
+            with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
+                with self.assertRaisesRegex(ValueError, "isolated toolchain differs"):
+                    instrument.prepare_compile(snapshot, stage, isolated)
+            self.assertEqual(list(stage.iterdir()), [])
+            with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "0", "GPUQ_JOB_ID": ""}):
+                with self.assertRaisesRegex(ValueError, "must not inherit a GPU"):
+                    instrument.prepare_compile(snapshot, stage, self.FakeIsolatedCompiler(plan["toolchain_identity"]))
+            self.assertEqual(list(stage.iterdir()), [])
 
 
 if __name__ == "__main__":

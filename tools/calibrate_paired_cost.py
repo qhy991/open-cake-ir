@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import sys
 from pathlib import Path
@@ -18,9 +19,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from open_cake_ir.compiler import Compiler  # noqa: E402
 from open_cake_ir.evaluation.paired import PAIRED_KIND, candidate_identity, paired_protocol  # noqa: E402
+from open_cake_ir.lab.build import TritonToolchainBuilder  # noqa: E402
 from open_cake_ir.lab.bindings import load_baseline_bundle, load_compiler_reference  # noqa: E402
+from open_cake_ir.lab.environments import CandidateSubmission  # noqa: E402
 from open_cake_ir.lab.executor import ExecutorRevision, _external_file  # noqa: E402
 from open_cake_ir.lab.selection import _paired_empirical_context  # noqa: E402
+from open_cake_ir.serialization import canonical_json_bytes  # noqa: E402
+from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment  # noqa: E402
 from open_cake_ir.tasks.launch import parse_launch_manifest  # noqa: E402
 from open_cake_ir.tasks.workloads import load_workload  # noqa: E402
 
@@ -53,7 +58,7 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
     fields = {"schema_version", "state", "plan_id", "model_id", "compiler_revision",
               "executor_revision", "study_path", "workload", "case_id", "target",
               "baseline_bundle_path", "candidates", "observations",
-              "varying_dimensions", "acceptance"}
+              "varying_dimensions", "acceptance", "toolchain_identity"}
     if (not isinstance(plan, dict) or set(plan) != fields
             or type(plan["schema_version"]) is not int or plan["schema_version"] != 1
             or plan["state"] != "frozen"
@@ -65,6 +70,11 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
     executor = ExecutorRevision.load_reference(ROOT, plan["executor_revision"], "paired_cost.executor_revision")
     if revision.revision_id != compiler._revision.revision_id or executor.document["target"] != plan["target"]:
         raise ValueError("paired cost Compiler or Executor target differs")
+    toolchain = plan["toolchain_identity"]
+    if (not isinstance(toolchain, dict) or toolchain.get("kind") != "bubblewrap_triton_kernel_v1"
+            or toolchain.get("python") != executor.document["host_environment"]["python"]["invocation_path"]
+            or toolchain.get("triton_version") != executor.document["host_environment"]["packages"]["triton"]):
+        raise ValueError("paired cost toolchain differs from Executor")
     if (plan["target"] != "sm_103a" or plan["case_id"] != "primary"
             or not isinstance(plan["study_path"], str)):
         raise ValueError("paired cost currently admits the B300 primary case")
@@ -156,6 +166,71 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
             "executor_revision_id": executor.executor_id, "workload_id": workload.workload_id,
             "target": plan["target"], "candidate_count": 3,
             "observation_count": len(plan["observations"]), "context": context}
+
+
+def _write_new(path: Path, value: object) -> None:
+    with path.open("xb") as stream:
+        stream.write(canonical_json_bytes(value))
+
+
+def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) -> dict[str, object]:
+    """CPU-only build of every frozen Schedule through the Lab's isolated builder."""
+    if os.environ.get("CUDA_VISIBLE_DEVICES") or os.environ.get("GPUQ_JOB_ID"):
+        raise ValueError("paired cost compile must not inherit a GPU allocation")
+    checked = check_plan(snapshot)
+    snapshot, stage = _external(snapshot), _external(stage)
+    if not stage.is_dir() or any(stage.iterdir()):
+        raise ValueError("paired cost compile stage must be a new empty directory")
+    plan = _read(_external_file(snapshot, "plan.json", "paired cost plan"))
+    if canonical_json_bytes(isolated_compiler.identity) != canonical_json_bytes(plan["toolchain_identity"]):
+        raise ValueError("paired cost isolated toolchain differs from frozen plan")
+    executor = ExecutorRevision.load_reference(ROOT, plan["executor_revision"], "paired_cost.executor_revision")
+    executor.admit_host()
+    isolated_compiler.check_executor(executor, author_workspace=snapshot)
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+    workload = load_workload(_external_file(ROOT, plan["workload"]["path"], "paired cost Workload"))
+    study = _read(_external_file(ROOT, plan["study_path"], "paired cost Study"))
+    builder = TritonToolchainBuilder(
+        workload=workload, case_id=plan["case_id"], isolated_compiler=isolated_compiler,
+    )
+    environment = TaskOpenCakeEnvironment(
+        compiler, builder,
+        authority_document={"lowering_route": study["arms"]["open_cake"]["lowering_route"]},
+        workload=workload, case_id=plan["case_id"], executor=executor,
+    )
+    rows = []
+    for spec in plan["candidates"]:
+        source = _external_file(snapshot, spec["schedule"], "paired cost Schedule").read_bytes()
+        assessment = compiler.assess(json.loads(source))
+        lowering = compiler.lower(assessment)
+        built = environment.build(CandidateSubmission.seal(environment.media_type, source))
+        if built.disposition != "launchable" or built.launchable is None:
+            raise ValueError(f"paired cost candidate {spec['id']} build refused: {built.feedback}")
+        candidate = built.launchable
+        if candidate.artifact_payloads.get("lowered_source") != lowering.source.encode():
+            raise ValueError("paired cost compiled source differs from frozen Schedule")
+        directory = stage / spec["id"]
+        directory.mkdir()
+        with (directory / "schedule.json").open("xb") as stream:
+            stream.write(assessment.schedule_bytes)
+        paths = {}
+        for role, payload in candidate.artifact_payloads.items():
+            if not role.isidentifier():
+                raise ValueError("paired cost artifact role cannot be a file name")
+            filename = f"candidate-{role}.bin"
+            with (directory / filename).open("xb") as stream:
+                stream.write(payload)
+            paths[role] = filename
+        _write_new(directory / "candidate.json", {
+            "candidate": candidate_identity(candidate), "artifact_paths": paths,
+        })
+        rows.append({"candidate_id": spec["id"], "schedule": spec["schedule"],
+                     "candidate": candidate_identity(candidate)})
+    index = {"plan_id": plan["plan_id"], "source_commit": compiler.commit,
+             "context": checked["context"], "toolchain_identity": plan["toolchain_identity"],
+             "candidates": rows}
+    _write_new(stage / "compile-index.json", index)
+    return index
 
 
 def main() -> int:
