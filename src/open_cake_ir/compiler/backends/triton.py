@@ -1242,11 +1242,15 @@ class _TritonEmitter:
         self.line("import torch")
         self.line("import triton")
         self.line("import triton.language as tl")
+        from .metax import DIRECTED_FMA_FUNCTIONS
         if any(
             operation.kind is OperationKind.ELEMENTWISE
-            and operation.parameters.op is ElementwiseOp.TANH
             and operation.parameters.instruction is not None
-            and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
+            and (operation.parameters.op is ElementwiseOp.TANH
+                 and operation.parameters.instruction.contract in _TRITON_TANH_CONTRACTS
+                 or self.target.code_object is CodeObject.MCFATBIN
+                 and operation.parameters.op is ElementwiseOp.FMA
+                 and operation.parameters.instruction.contract in DIRECTED_FMA_FUNCTIONS)
             for operation in self.schedule.operations
         ):
             self.line("from triton.language.extra import libdevice")
@@ -1664,7 +1668,11 @@ class _TritonEmitter:
             elif contract == "maca.fma.f32" and self.target.code_object is CodeObject.MCFATBIN:
                 expression = f"tl.fma({operands[0]}, {operands[1]}, {operands[2]})"
             else:
-                raise EmitError("the Triton fma body requires its target's admitted FMA contract")
+                from .metax import DIRECTED_FMA_FUNCTIONS
+                function = DIRECTED_FMA_FUNCTIONS.get(contract)
+                if self.target.code_object is not CodeObject.MCFATBIN or function is None:
+                    raise EmitError("the Triton fma body requires its target's admitted FMA contract")
+                expression = f"libdevice.{function}({operands[0]}, {operands[1]}, {operands[2]})"
         elif parameters.op is ElementwiseOp.TANH:
             instruction = parameters.instruction
             _require(
