@@ -79,6 +79,7 @@ class FitterBindingTest(unittest.TestCase):
         stages = [{"id": "compile", "status": "passed", "validity": "valid"}]
         for phase in ("correctness", "collection"):
             path = run / "stages" / phase
+            path.mkdir(parents=True, exist_ok=True)
             (path / "collector.py").write_bytes(collector)
             write(path / "plan.json", plan)
             write(path / "observations.json", {"schema_version": 1, "runtime": {"compiler_version": "synthetic"}, "quality_passed": True, "rows": rows})
