@@ -108,6 +108,36 @@ Job `maca-c76edeedfaa9` 通过全部 37 个 case（151552 个输出），输入�
 直接 FP8 dot、其他形状或框架／serving 外推。复核与全部原始收据位于 checkout 外：
 `/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-bucket16dot-cake-confirm-0183264c/verification.json`。
 
+## 比较专用绝对值发射
+
+MetaX emitter 在 typed graph 中识别 `select(x >= 0, x, x * -1)`，仅当结果只供
+数值 compare 读取时发射 `tl.abs`。它要求同形非 scalar FP16/FP32 寄存器、唯一
+生产者、同一 role、scratch 非输出结果；存储、算术、间接索引、allocation、
+scale/extent、loop/pipeline 或不匹配模式继续原 SELECT 发射。原生产者保留，
+其他 code object 的发射不变。这没有新增 IR primitive、dtype 或 Target 契约。
+
+实现 `2f44686e` 在固定提交 `90739901` 验证：完整合同 2467 passed、26 skips、
+8917 subtests，Corpus 通过且 expectations 未更新，五项 CI 全部通过。
+特殊值 job `maca-8688065fd452` 加载四个封存原生 kernel，44 次调用覆盖全部
+65536 FP16 编码与 512 FP32 边界／固定随机 words、11 个阈值及双向十二种比较位，
+1453056 个 mask 与 CPU oracle 精确一致；输入不变，存储负零保留。Worker 检查
+逐元素 mask，原始 mask 未保留；不声明 NaN 原始 payload 或浮点异常标志等价。
+
+真正的 Compiler 生成分桶版本 job `maca-328ef2b1b828` 通过全部 37 case，
+最大绝对误差 0.015625、零超容差输出、输入不变。Search `maca-52ca53dfcdbb` 和
+fresh confirmation `maca-3e6ee7df1ca8` 均通过质量门及 10/10 pairs 获胜，
+每臂 250 样本，中位数 **10.496／11.520 µs（1.0976×）**，基线是旧生成分桶产物。
+A/A `maca-4224867cdcc4` 为 11.776／11.520 µs（0.9783×、close-null），0/8 wins、
+2 ties。60 原始 cohort 已回放。Profile `maca-b8c01e3d2aca` 仪器输出正确，报告
+178 registers/thread、4096 动态 shared、0 静态 shared 和 function-local bytes；
+带宽、ISA 计数及 achieved occupancy 未采集。Profile 单次时间不参与成绩。
+
+上述资格限定为捕获的 C550-2 Triton 3.6、固定 NT64 Workload 和 primary MCPTI
+边界，分配仍为 `local_serialized`、外部活动未排除。原 native-source 探针的
+1.125× search／1.0976× confirmation 保留独立身份，不替代生成产物结果。
+详见 [F-2026-09-27-003](../findings/2026-09-27-003-metax-comparison-magnitude-emission.json)
+及 checkout 外 `open-cake-ir-evidence/metax-magnitude-generated-confirm-90739901/verification.json`。
+
 ## 编译与执行
 
 编译通过现有 bubblewrap 路径运行，不挂载 GPU，也不暴露作者工作目录。

@@ -8,9 +8,19 @@
   "compiler_revision_id": "open-cake-ir@0183264cb4f3a1dbcd5fdada90dbd1944f3512eb",
   "executor_revision": "xcore1002@0183264cb4f3a1dbcd5fdada90dbd1944f3512eb",
   "title": "Comparison-only magnitude selects have qualified native tl.abs headroom on C550",
-  "decision": "proposed",
-  "implemented_in": null,
-  "verified_by": null,
+  "decision": "accepted",
+  "implemented_in": "2f44686e0838ca3daf231fcbe4615ddf608e3af4",
+  "verified_by": {
+    "source_commit": "90739901d751de225a6c869c0c7b67d928ffc19c",
+    "generated_qualification": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-magnitude-generated-confirm-90739901/verification.json",
+    "all_case_job": "maca-328ef2b1b828",
+    "search_job": "maca-52ca53dfcdbb",
+    "confirmation_job": "maca-3e6ee7df1ca8",
+    "AA_job": "maca-4224867cdcc4",
+    "profile_job": "maca-b8c01e3d2aca",
+    "special_value_job": "maca-8688065fd452",
+    "software_gates": "2467 passed, 26 skips, 8917 subtests; focused 11/10; unchanged Corpus passed; all five CI checks passed"
+  },
   "evidence": {
     "source_and_proposal": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-compare-abs-sealed-20260927/",
     "CPU_semantics": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-compare-abs-sealed-20260927/semantic-preconditions.json",
@@ -21,5 +31,11 @@
   "semantic_boundary": "CPU exhaustive checks cover all 65536 FP16 encodings, 11 thresholds, all six numeric comparisons and both operand orders (8650752 relations), plus 16 FP32 boundary words including signed zeros, subnormals, normals, infinities and NaNs. Stored negative zero is a counterexample: the existing select returns 80000000 while abs returns 00000000. Float sign/payload differences are unobservable only through the modeled numerical comparisons; floating exception flags are not modeled. This CPU argument is not a device special-value audit.",
   "proposed_change": "Implement a guarded MACA emitter spelling in compiler/backends/metax.py, used by shared Triton SELECT emission. Match typed non-scalar FP16/FP32 register values, zero GE predicate and exact -1 multiplication, unique producers in the same role/region, and scratch selected results with only numerical COMPARE readers. Reject optimization for outputs, stores, arithmetic/casts, indirect or other semantic references, unsupported dtypes, instruction/broadcast overrides and ambiguous writers/regions. Preserve ordinary SELECT emission for those legal counterexamples. Establish a special-value device boundary before widening beyond the measured finite Workload. No new IR operation, instruction contract, dtype, layout or Target hardware fact is proposed.",
   "principles": "P1 retains existing arithmetic authoring; P2 makes emitted tl.abs inspectable; P3 adds no second IR operation for the same compare projection; P4/P5/P7 derive legality from typed producers, consumers and semantic references without changing effects; P6 requires positive and guard-owned negative emission checks, unchanged other-vendor emission, full Corpus/contracts at a fixed clean commit and successor device requalification; P8 binds the spelling and measured benefit to the captured C550-2 runtime, retaining missing profiler coverage.",
-  "promotion_disposition": "Proposed Compiler emission improvement. Native-source hypothesis qualifies, but Finding remains open until implementation commit, modeled semantic safeguards, software gates and new Compiler-generated all-case/paired/confirmation/A-A/profile evidence are recorded."
+  "promotion_disposition": "Accepted guarded MACA emitter spelling after fixed-commit software gates, special-value comparison/stored-zero device audit and Compiler-generated all-case/search/fresh confirmation/A-A/profile qualification. Generated search and confirmation both 10.496/11.520 us (1.0976x); native authored-source score remains distinct. Comparison-only semantics, captured C550-2 runtime and fixed Workload performance scope; no stored magnitude, raw NaN payload or exception-flag equivalence claim.",
+  "generated_source_successor": {
+    "source_role": "lowered_source",
+    "observation": "At 90739901 the real Compiler emits 32 guarded tl.abs calls in the bucketed recipe. All 37 cases (151552 outputs) pass with unchanged inputs, zero tolerance failures and max absolute error 0.015625. Quality-passed search and fresh confirmation both repeat 10.496/11.520 us and 10/10 pair wins. A/A is close-null at 11.776/11.520 us (0.9783x, 0/8 wins and two ties). All 60 raw cohorts replay. Separate correct profile reports 178 registers/thread, 4096 dynamic shared bytes, zero static shared and independent function-local bytes; occupancy/bandwidth/ISA counters not collected. Special-value audit loads four sealed FP16/FP32 comparison/stored-control kernels for 44 launches: 1453056 exact twelve-bit masks, input immutability and stored negative zero pass. Worker checked per-element masks but raw masks were not retained. Allocation local_serialized; external activity not excluded.",
+    "guard": "Non-scalar same-shaped FP16/FP32 registers, unique typed zero-GE/-1-MUL producers, same role, scratch non-output selected result with only numeric comparison readers. Loops/pipelines, allocations, scale/extent semantics, indirect result indices and unsupported patterns preserve ordinary SELECT.",
+    "verification_scope": "CPU all FP16 encodings and FP32 boundaries; device all FP16 encodings and 512 FP32 boundary/random words at eleven thresholds, both comparison operand orders and stored-zero guard. Raw NaN payloads and floating exception flags are outside modeled observables."
+  }
 }
