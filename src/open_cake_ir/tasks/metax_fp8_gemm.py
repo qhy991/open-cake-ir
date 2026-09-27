@@ -95,7 +95,16 @@ def starter_source(workload: WorkloadContract, case_id: str) -> str:
     workload.case(case_id)
     source = (Path(__file__).resolve().parents[3]
               / "examples/python/xcore1002_fp8_compensated.py")
-    return source.read_text(encoding="utf-8")
+    original = source.read_text(encoding="utf-8")
+    marker = "entry_point='cake_fp8_resident_compensated_64')"
+    if original.count(marker) != 1:
+        raise ValueError("MetaX FP8 starter source entry point differs")
+    return original.replace(
+        marker,
+        "entry_point='cake_fp8_resident_compensated_64', "
+        f"metadata={{'workload_contract_sha256': '{workload.canonical_sha256}'}})",
+        1,
+    )
 
 
 def _bytes_for_case(case: Mapping) -> tuple[bytes, bytes]:

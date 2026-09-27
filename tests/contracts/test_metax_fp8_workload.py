@@ -21,8 +21,14 @@ class MetaxFP8Workload(unittest.TestCase):
         self.assertEqual(_default_shape(metax_fp8_gemm.TASK, None, None), (64, 64))
         document, source = create_task(metax_fp8_gemm.TASK, backend="triton-metax",
                                        rows=64, columns=64, case_id="primary")
-        self.assertEqual(document, load_workload(CONTRACT).document)
-        self.assertEqual(source, (ROOT / "examples/python/xcore1002_fp8_compensated.py").read_text())
+        workload = load_workload(CONTRACT)
+        self.assertEqual(document, workload.document)
+        schedule = frontend.parse(source).document
+        self.assertEqual(schedule["metadata"]["workload_contract_sha256"], workload.canonical_sha256)
+        self.assertEqual(
+            source.replace(f", metadata={{'workload_contract_sha256': '{workload.canonical_sha256}'}}", ""),
+            (ROOT / "examples/python/xcore1002_fp8_compensated.py").read_text(),
+        )
         for backend, rows, columns, depth in (("triton-b300", 64, 64, None),
                                                ("triton-metax", 32, 64, None),
                                                ("triton-metax", 64, 64, 32),
