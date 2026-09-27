@@ -5,7 +5,8 @@ import json
 from pathlib import Path
 import unittest
 
-from open_cake_ir.compiler import Compiler
+from open_cake_ir.compiler import Compiler, Schedule
+from open_cake_ir.compiler.backends.native_cuda_activation import preflight_model
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,7 +45,7 @@ class WeaveModelSwiGLU(unittest.TestCase):
         for name, change, expected in (
             ('two rows per CTA',
              lambda document: document['program_map']['axes'][0].update(tile=2),
-             'NATIVE_MODEL_ACTIVATION_MAP'),
+             'ACCESS_TILE_MISMATCH'),
             ('one warp for four rows',
              lambda document: document['roles'][0].update(execution_groups=[0]),
              'NATIVE_MODEL_ACTIVATION_ROLE'),
@@ -60,6 +61,12 @@ class WeaveModelSwiGLU(unittest.TestCase):
                 findings = self.compiler.assess(document).findings
                 self.assertTrue(any(finding.code == expected and finding.blocks_lowering
                                     for finding in findings))
+                if name == 'two rows per CTA':
+                    native = preflight_model(
+                        Schedule.from_dict(document),
+                        self.compiler._revision.targets['sm_103a'])
+                    self.assertTrue(any(finding.code == 'NATIVE_MODEL_ACTIVATION_MAP'
+                                        and finding.blocks_lowering for finding in native))
 
 
 if __name__ == '__main__':
