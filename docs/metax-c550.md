@@ -323,6 +323,35 @@ RZ/RD/RU各有508/510/506位置可区分“后续普通算术恢复RN”与“�
 复用既有FMA原语，先由共享owner注册合同与源码边界，再接入MetaX声明/发射；
 当前不推广Target能力，实际Cake生成产物仍须独立验收。
 
+### 实际 Cake 定向 FMA 原型
+
+任务原型 `b5da553f` 复用 `lm.fma`，新增显式 `maca.fma.{rz,rd,ru}.f32` 发射，
+保留原 `maca.fma.f32` 最近舍入路径。三个新名字由共享注册表拥有，MetaX只拥有
+library拼写；源边界只允许mcfatbin上的直接三实参调用，错误dtype由既有FMA规则拒绝。
+源码、声明与指令合同仍在任务分支，尚未合入平台。
+
+四个真实生成的RN/RZ/RD/RU Schedule采用[16,64]全局tensor、每CTA一行、group4，
+grid[16,1,1]/block[256,1,1]。普通add和原最近舍入FMA依赖定向结果。
+封存native artifacts通过完整源码/ABI边界，job `maca-aa65c27211f0` 对12288位置
+零不匹配。后继 `maca-dcaa8af7c7af` 将每个输出预置为与参考不同的word，NaN参考
+位置预置有限值，再次通过12228精确word和60NaN类别；没有用初始NaN掩盖未写输出。
+输入不变，模块关闭，每次4native calls、零fallback/设备阶段编译。原始输入、参考、
+输出及独立重算保留在外部 `metax-directed-fma-{device,sentinel}-b5da553f/`。
+
+RZ/RD/RU后续普通算术在508/510/506区分位置符合RN。native query报告最近路径
+14registers/thread、定向路径58、function-local bytes为0；资源差异不是性能结论。
+没有计时或profiler。本结果仍不覆盖NaN payload、异常标志、任意shape或SDK版本。
+
+共享PR #269在16b407f5通过2504合同/26skips/8968subtests及五项CI；额外五项CPU
+oracle在已有Torch容器隐藏GPU后通过。早期本地广义套件的五项缺Torch失败及继承的
+README缺链接失败均保留：前者由上述已有环境复核，后者修复后31检查/1224subtests通过。
+平台集成原型d2cc61a3通过2533合同/26skips/9090subtests，focused26/118及Corpus；
+合入了主线既有expectations变化，没有在本任务中生成期望来使Gate通过。
+
+共享Compiler独立评审仍待授权/完成，之后才能main合入与MetaX平台集成。
+[F-2026-09-27-004](../findings/2026-09-27-004-metax-directed-fma-lowering.json)保留proposed，
+不把任务分支的正确产物称为已发布能力或性能优化。
+
 ### 固定循环的 MetaX 专属 full-unroll lowering
 
 在源码提交 `667c8c93`，`loop_unroll_factor > 1` 只有在循环边界来自静态
