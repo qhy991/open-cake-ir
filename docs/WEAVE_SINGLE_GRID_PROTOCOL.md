@@ -53,9 +53,17 @@ Its exact source compiled with B300-M4 CUDA 13.1 NVCC outside a GPU lease at
 `/home/qinhaiyan/cake-weave-single-grid-f7ae17fe/build-mixed-k4-c1-b5888/`:
 the build produced a 502,584-byte ELF with pointer ABI version 4. PTXAS
 reported 80 registers and 9,216 bytes of static shared memory for
-`tile_schedule_probe`. No device run exists for this single-grid successor.
-The CPU checks and NVCC build do not confirm cooperative residency or verify
-exact GPU tile events and FP64 outputs.
+`tile_schedule_probe`. A later isolated four-GPU development trial
+`gpuq-da4acd47acce` used the sealed ABI-v4 library for the frozen mixed route
+at K=4, c=1 and steal budget=5888. It completed and the post-lease audit
+found zero FP64-oracle failures across 4,194,304 outputs, zero bit differences
+from the earlier v3 K=4 output, and exact agreement for all 80 rank/event tile
+counts. Owner tile totals were [80, 64, 64, 64]; actual stolen task counts
+were [147, 116, 121, 123]. The report is retained at
+`/home/qinhaiyan/cake-weave-single-grid-f7ae17fe-r2/report.json` and mirrored
+under the local `cake-weave-single-grid-f7ae17fe-r2` evidence directory.
+This one case proves cooperative launch admission and correctness for that
+control, but not the other routes or K/c/steal settings.
 The local integration now carries `RankedTileLaunchManifest` and a
 byte-bearing `RankedTileCandidate` for pointer ABI v4: they refuse a wrong
 Workload case, source, rank plan or library bytes before CUDA state creation.
@@ -76,11 +84,9 @@ CTA per SM; the host's `cudaOccupancyMaxActiveBlocksPerMultiprocessor` check
 remains authoritative before launch. The source-only four-CTA estimate must
 not be used as an occupancy result.
 
-The first device validation should compile this clean commit outside a GPU
-lease, then use the broker for at most four GPUs. Start with one mixed-route
-K=4,c=1,budget=5888 case under an isolated process and bounded runtime;
-after it passes, audit K=1/2/4 and the other frozen routes against the
-external FP64 oracle and CPU event-tile planner. CUPTI intervals remain
-development evidence until the four-device reset/clock and sealed Candidate
+The next validation should audit K=1/2/4 and the other frozen routes against
+the external FP64 oracle and CPU event-tile planner, then vary c and the
+steal budget with the same sealed candidate discipline. CUPTI intervals remain
+development evidence until the four-device reset/clock and common Candidate
 gates are qualified. Promotion disposition: **no merge or Lab rule** from
-the static single-grid candidate.
+this single-case result.
