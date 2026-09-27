@@ -228,8 +228,14 @@ The [PTX memory model](https://docs.nvidia.com/cuda/parallel-thread-execution/in
 defines the acquire and release patterns used for this handoff. Its clean
 commit passes 15 related contracts, the 179-case Corpus Gate and B300 NVCC
 (84 registers, 9,216 B static shared memory, zero spills). The frozen
-`b360415f` matrix remains a separate run; successor device qualification is
-pending and cannot be borrowed from that run.
+`b360415f` matrix remains a separate run. Broker job `gpuq-9972c6f1c4cf`
+validated `c8550363` on the frozen mixed K=4, c=64, budget=46920 case:
+0/4,194,304 FP64-oracle failures, 80 exact CPU/GPU event-count slots,
+zero bit differences from v3, and four positive same-rank task-progress
+overlap records. The report is retained at
+`/home/qinhaiyan/cake-weave-dual-role-acqrel-c8550363/` and mirrored
+locally. This one-case successor result does not yet inherit the earlier
+four-route matrix's coverage or qualify latency.
 
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
