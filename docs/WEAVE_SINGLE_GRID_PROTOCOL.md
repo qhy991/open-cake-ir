@@ -95,9 +95,33 @@ CTA per SM; the host's `cudaOccupancyMaxActiveBlocksPerMultiprocessor` check
 remains authoritative before launch. The source-only four-CTA estimate must
 not be used as an occupancy result.
 
-The next validation should measure the single-grid path with the Target's
-CUPTI/L2-reset protocol, distinguish source dispatch, tile planning, Cake FFN
-and return/combine costs, and compare against the matched open baseline only
-after the common Candidate and four-device reset/clock gates are qualified.
-CUPTI intervals remain development evidence until then. Promotion
-disposition: **no merge or Lab rule** from correctness alone.
+## Development timing and open diagnostic
+
+Job `gpuq-a2d23c16f7ac` sampled seven mixed-route controls under CUPTI with
+two warmups and three L2-flushed samples each. The post-lease audit found the
+expected four reset kernels, 92 layer kernels and 92 layer memsets per K=4
+sample (52/92 at K=2, 32/92 at K=1), with zero oracle failures. Median
+four-device GPU activity spans, including the layer's internal reset, were
+102.49/99.89/97.67 ms for K=4/2/1 at c=1, budget 5888. At K=4, c=74 and
+budgets 0/5888/46920, they were 45.83/16.84/11.13 ms. These control names
+are not matched performance treatments against the earlier v3 path: c now
+also partitions the real P2P source dispatch, while the older transport had
+different parallelism.
+
+Job `gpuq-637084680df8` explored c=8/16/32/48/64/74 with budget 46920;
+their valid CUPTI medians were 21.39/14.48/12.92/11.74/10.69/10.99 ms.
+The c=95 arm returned device status 1018 after two successful warmups, so the
+seven-arm job is failed; its six completed arms passed the oracle and activity
+checks. Status 18 is the gather check that a published route location belongs
+to the tile's expert. The retained failure is at
+`/home/qinhaiyan/cake-weave-single-grid-f7ae17fe-c-sweep/c95_b46920/launch_failure.json`.
+Successor `c4c79545` records the key, event and slot on that error. Its exact
+source passed 15 related contracts, the unchanged 179-case Corpus Gate and
+real B300 NVCC. One isolated trial and a separate run with two warmups plus
+20 CUPTI samples at c=95 passed the oracle and tile checks; the failure did
+not recur, so its cause and frequency remain open. No control is promoted
+from this sweep. The next investigation should localize the single-grid
+source-dispatch, tile-plan and Cake FFN phase costs, and reproduce or close
+status 18 before broadening the admitted domain. Comparison with the matched
+open baseline waits for the common Candidate and four-device reset/clock
+gates; these CUPTI spans are development evidence, not qualified speedups.
