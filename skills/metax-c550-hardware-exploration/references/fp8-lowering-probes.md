@@ -377,3 +377,36 @@ Read the [platform record](../../../docs/metax-c550.md#三桶九-dot-配方) and
 `/Users/haiyan-infiniai/open-cake-ir-evidence/metax-bucket3-public-sealed-ef3ef161/verification.json`.
 Keep old four-bucket sealed receipts as the fixed comparison rather than overwriting
 them with the new projection.
+
+
+## Asymmetric bucket and explicit K-subrange screens
+
+At producer ef3ef161, two existing-primitive candidates retain global finite NT64,
+M16/N16 and group4/grid4x4, comparing against the qualified A3/B3 K64 nine-dot
+recipe. Both pass all37cases, inputs unchanged, zero tolerance failures, candidate
+max absolute error0.015625. CPU finite-encoding enumeration aligns each partial to
+integer quanta; it is not a hardware arithmetic guarantee.
+
+| Mechanism | K-partial integer bound | Dot / merge count | Correctness / paired jobs | Candidate / baseline median us | Pair wins candidate / baseline / ties | Launch-query registers / shared bytes |
+| --- | --- | --- | --- | --- | --- | --- |
+| A3/B2, two explicit K32 slices | 13762560 (<2^24) | 12 / 11 | `maca-c95f2fc09110` / `maca-1b27583394ec` | 8.448 / 8.448 | 0 / 0 / 10 | 94 / 1024 |
+| A4/B2, full K64 | 13762560 (<2^24) | 8 / 7 | `maca-5736e3d2163c` / `maca-3bbb3ef5af25` | 8.192 / 8.448 | 9 / 0 / 1 | 126 / 1024 |
+
+Both paired quality gates pass with250samples/arm;20raw cohorts per screen replay
+through native MCPTI activity verification and paired_summary. **No performance
+promotion**: K32 is close-null at1.0x; K64 has directional1.03125x below frozen
+materiality1.05. No threshold was adjusted and no confirmation/instrumented profile
+was run for either non-survivor. Launch queries do not establish occupancy or
+causal register benefit: K32's94 registers did not select a faster kernel here.
+
+Static slices `[0:32]` and `[32:64]` are expressible through current AccessMaps;
+this does not admit a hidden selected-K instruction or another target/shape.
+Asymmetric grouping changes the partial-sum decomposition and must retain external
+oracle acceptance; fewer dot calls or lower dense-K work does not decide promotion.
+Keep the existing A3/B3 K64 public recipe and immutable baseline artifacts.
+
+Evidence under `/Users/haiyan-infiniai/open-cake-ir-evidence/`:
+`metax-asym-k{32,64}-paired-20260927/verification.json`, adjacent raw timing,
+corresponding all-case receipts and sealed source/precision-precondition roots.
+Allocation local_serialized, external activity not excluded; no other-shape,
+raw-payload or framework/serving claim.
