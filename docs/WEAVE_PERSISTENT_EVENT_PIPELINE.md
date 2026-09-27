@@ -64,6 +64,18 @@ This bounded replay supports the reset correction; it does not prove the old
 timeout's sole cause, arbitrary cross-rank liveness or closure of the open
 c=95 route-location Finding.
 
+Job `gpuq-7ba6ab50e85e` then ran 12 separately sealed controls at
+`3e1ecb94`: four frozen routes × K=4/2/1, uniformly c=64 and budget 46920.
+The post-lease audit found zero FP64-oracle failures across 50,331,648 output
+elements, exact CPU/GPU agreement for all 960 rank/event tile-count slots,
+zero output bit differences from the retained v3 controls, and no steal-cap
+or P2P payload discrepancy. The job completed and released its four-GPU
+lease; its report is retained at
+`/home/qinhaiyan/cake-weave-peer-reset-3e1ecb94-matrix12/report.json`.
+This establishes the sequential persistent lifecycle for those twelve
+frozen configurations. The c=95 Finding, boundary/tail guards outside those
+cases, same-rank cross-event overlap and qualified timing remain open.
+
 ## Required next transition
 
 This first step is **sequential across events within each rank**. It removes
@@ -79,9 +91,8 @@ handoff needs its own reviewed proxy-ordering rule and counterexamples before
 removing the current grid barrier. No dependent planner kernel in another
 stream may be required for progress.
 
-Before promotion, compile the clean commit with B300 NVCC, replay the four
-frozen routes at K=1/2/4 against the external FP64 oracle and CPU tile-event
-planner, check c/steal controls including the open c=95 mismatch Finding,
-retain profiler evidence, and qualify the target's four-device timing reset
-and matched open baseline. This task branch is a development successor, not a
-claim of Weave speedup or full temporal overlap.
+Before promotion, check further c/steal controls including the open c=95
+mismatch Finding, retain profiler evidence, and qualify the target's
+four-device timing reset and matched open baseline. This task branch remains
+a development successor, not a claim of Weave speedup or full temporal
+overlap.
