@@ -6,10 +6,15 @@ import copy
 import importlib.util
 import io
 import json
+import os
+import shutil
+import sys
 import tempfile
+import types
 import unittest
 from hashlib import sha256
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("empirical_fitter", ROOT / "tools/calibrate_empirical_cost.py")
@@ -147,6 +152,54 @@ class FitterBindingTest(unittest.TestCase):
             write(schedule, drifted)
             with self.assertRaisesRegex(ValueError, "curve template drifts"):
                 instrument._check_plan(run / "candidate")
+
+    def test_local_compile_stage_prepares_without_a_gpu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = self.fixture(root, target="sm_103a")
+            stage = run / "stages/compile"
+            shutil.rmtree(stage)
+            stage.mkdir()
+            fake_torch = types.SimpleNamespace(
+                set_num_threads=lambda count: self.assertEqual(count, 1),
+                save=lambda value, path: Path(path).write_text(json.dumps(value)),
+            )
+
+            def compile_source(source, requirements):
+                binary = b"\x7fELF-SYNTHETIC-NONEXECUTABLE-" + sha256(source).digest()
+                return types.SimpleNamespace(
+                    source=source, target="sm_103a",
+                    entry_point=requirements["kernel_entry_point"],
+                    artifacts={"cubin": binary, "ptx": b"SYNTHETIC PTX"},
+                    threads_per_cta=requirements["compile_options"]["num_warps"] * 32,
+                    dynamic_shared_bytes=0, compiler_version="synthetic",
+                )
+
+            def inspect(compilation, _cuobjdump):
+                return CompiledResources(
+                    sha256(compilation.source).hexdigest(),
+                    sha256(compilation.artifacts["cubin"]).hexdigest(),
+                    "sm_103a", compilation.entry_point,
+                    compilation.threads_per_cta, 16, 0, 0, 0, 0,
+                    "synthetic", "synthetic",
+                )
+
+            environment = {"KERNELINFRA_RUN_DIR": str(run),
+                           "KERNELINFRA_STAGE_DIR": str(stage),
+                           "KERNELINFRA_CANDIDATE_DIR": str(run / "candidate"),
+                           "KERNELINFRA_RESULT": str(stage / "result.json"),
+                           "KERNELINFRA_STAGE_KIND": "compile",
+                           "KERNELINFRA_STAGE_ID": "compile",
+                           "CUDA_VISIBLE_DEVICES": ""}
+            with patch.dict(os.environ, environment), patch.dict(sys.modules, {"torch": fake_torch}), \
+                    patch.object(instrument, "compile_triton", side_effect=compile_source), \
+                    patch.object(instrument, "inspect_triton_resources", side_effect=inspect), \
+                    patch.object(instrument, "_cpu_case", return_value=([1, 2, 3], 4, 0.0)):
+                instrument._prepare()
+            result = json.loads((stage / "result.json").read_text())
+            self.assertEqual(result["status"], "passed")
+            self.assertEqual(result["metrics"]["case_count"], 12)
+            self.assertEqual(len(json.loads((stage / "observations.json").read_text())["rows"]), 12)
 
     def test_three_member_subsets_expose_regret_hidden_by_full_pool(self):
         audit = [
