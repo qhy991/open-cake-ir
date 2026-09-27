@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import math
+from hashlib import sha256
 from typing import Mapping, cast
 
 from open_cake_ir.compiler.performance.empirical_cost import EmpiricalCostModel
 from open_cake_ir.evaluation import EvaluationReceipt
+from open_cake_ir.evaluation.paired import PAIRED_KIND, candidate_from_identity, paired_protocol
+from open_cake_ir.serialization import canonical_json_bytes
 
 from ._documents import _object, differs
 from .executor import ExecutorRevision
@@ -81,6 +84,35 @@ def _empirical_context(
             sort_keys=True, separators=(",", ":"),
         ),
     }
+
+
+def _paired_empirical_context(
+    executor: ExecutorRevision, *, workload_sha256: str, case_id: str,
+    evaluation_protocol: Mapping[str, object], baseline_identity: Mapping[str, object],
+) -> dict[str, object]:
+    """Bind a prospective model to the exact fixed-baseline CUPTI assay.
+
+    The existing single-candidate context remains distinct. A paired baseline,
+    order or protocol change is a different measurement, even on the same device.
+    """
+    protocol = paired_protocol(evaluation_protocol)
+    if (protocol is None or evaluation_protocol["paired_timing"]["kind"] != PAIRED_KIND
+            or evaluation_protocol.get("case_id") != case_id):
+        raise ValueError("paired empirical context requires the fixed-baseline CUPTI case")
+    baseline = candidate_from_identity(baseline_identity)
+    if baseline.target != executor.document.get("target"):
+        raise ValueError("paired empirical baseline target differs from Executor")
+    context = _empirical_context(
+        executor, workload_sha256=workload_sha256, case_id=case_id,
+    )
+    context["timer"] += f";paired={PAIRED_KIND}"
+    context["input_scope"] = json.dumps(
+        {"workload_contract_sha256": workload_sha256, "case_id": case_id,
+         "evaluation_protocol_sha256": sha256(canonical_json_bytes(evaluation_protocol)).hexdigest(),
+         "baseline_candidate_record_sha256": baseline.canonical_sha256},
+        sort_keys=True, separators=(",", ":"),
+    )
+    return context
 
 
 _EMPIRICAL_SELECTION = "external_empirical_advisory_v1"
