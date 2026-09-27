@@ -205,3 +205,40 @@ for its generated-source score and evidence boundary. The native/generated gap
 remains observed, not causally attributed; preserve both artifacts when choosing
 the next source-level hypothesis. Promotion belongs to the task recipe because
 existing Cake primitives already express the mechanism.
+
+
+## Bucketed recipe endpoint and lifetime screens
+
+Two generated-source screens at producer `0183264c` retain the frozen NT v2
+Workload, M16/N64/grid4, 16 FP16 dots and the same FP32 Neumaier arithmetic.
+Both pass all 37 cases with unchanged inputs, zero tolerance failures and maximum
+absolute error 0.015625. The baseline is the qualified generated bucketed recipe,
+not the earlier streaming or resident kernel.
+
+| Source change | Correctness / paired jobs | Candidate / baseline median us | Pair wins candidate / baseline / ties | Launch-reported registers/thread |
+| --- | --- | --- | --- | --- |
+| Remove bucket0 `abs >= 0` and bucket3 `abs < 512` predicates | `maca-18786af04b14` / `maca-bedf30acd5b9` | 11.008 / 11.520 | 10 / 0 / 0 | 180 versus baseline 182 |
+| Interleave each dot partial with its existing Neumaier merge; retain all original predicates | `maca-c1635e3e81f5` / `maca-7ee0c5aa6e84` | 11.520 / 11.520 | 0 / 2 / 8 | 186 versus baseline 182 |
+
+Both paired quality gates pass, with 250 samples per arm and 20 raw cohorts
+independently replayed per screen. The endpoint screen is a directional 1.0465x
+improvement, below the fixed 1.05 materiality threshold: **No performance
+promotion**. Do not relax that threshold after observing the score. CPU exhaustive
+selection comparison covers 254 finite encodings and 1,016 bucket outputs,
+including zero signs. TTGIR loses four float comparisons and four integer
+multiplications; native `.text` shrinks from 19,320 to 18,296 bytes. These static
+changes do not establish a qualified performance rule.
+
+The interleaving screen preserves the same 271 named operations, parameters,
+operands, buffers and dot order in another valid topological order. Native `.text`
+grows to 19,416 bytes and launch-reported registers increase. **No promotion**:
+shorter source-level partial lifetimes do not predict the realized allocation or
+justify a backend scheduling rule from this probe. No fresh confirmation or
+separate instrumented profile was run for either non-survivor. Launch resource
+queries are distinct from an instrumented attribution profile. Allocation is
+`local_serialized`, with external GPU activity not excluded.
+
+Evidence under `/Users/haiyan-infiniai/open-cake-ir-evidence/`:
+`metax-fp8-bucket-{endmask,interleaved}-paired-20260927/verification.json`,
+adjacent `device-run/timing-samples.json`, and the corresponding sealed roots'
+finite-domain / operation-graph equivalence and compiled-code comparisons.
