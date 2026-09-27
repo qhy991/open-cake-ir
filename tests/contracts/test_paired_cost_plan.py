@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,6 +25,7 @@ from open_cake_ir.lab.bindings import load_baseline_bundle
 from open_cake_ir.lab.executor import ExecutorRevision
 from open_cake_ir.serialization import canonical_json_bytes
 from open_cake_ir.tasks.workloads import load_workload
+from open_cake_ir.tasks import evaluate as worker
 
 
 def write(path, value):
@@ -312,6 +314,94 @@ class PairedCostPlanTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "compiled Schedule differs"):
                 instrument._compiled_candidates(run, plan, checked,
                                                 self.compiler, self.workload)
+
+    def test_paired_request_uses_common_worker_admission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            run = snapshot.parent
+            stage = run / "stages/compile"
+            stage.mkdir(parents=True)
+            isolated = self.FakeIsolatedCompiler(plan["toolchain_identity"])
+            with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
+                instrument.prepare_compile(snapshot, stage, isolated)
+            candidate = load_baseline_bundle(ROOT, stage / "tile-64/candidate.json")
+            baseline = load_baseline_bundle(ROOT, snapshot / plan["baseline_bundle_path"])
+            study = json.loads((ROOT / plan["study_path"]).read_text())
+            observation = run / "stages/collection/fit-tile-64"
+            observation.parent.mkdir()
+            request = instrument._seal_observation(
+                observation, candidate, baseline, plan, study["evaluation_protocol"])
+            admitted = worker._load_authority(observation / "request.json")
+            self.assertEqual(admitted.candidate.canonical_sha256, candidate.canonical_sha256)
+            self.assertEqual(admitted.baseline.canonical_sha256, baseline.canonical_sha256)
+            self.assertEqual(admitted.request["evaluation_protocol"], study["evaluation_protocol"])
+            self.assertEqual(request["purpose"], "search")
+
+    def test_broker_controller_observes_frozen_nine_without_gpu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            run = snapshot.parent
+            task = self.task_fixture(run, plan)
+            compile_stage = run / "stages/compile"
+            compile_stage.mkdir(parents=True)
+            isolated = self.FakeIsolatedCompiler(plan["toolchain_identity"])
+            with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
+                instrument.prepare_compile(snapshot, compile_stage, isolated)
+            write(compile_stage / "result.json", {"schema": "kernelinfra.stage-result.v1",
+                                                   "status": "passed", "validity": "valid"})
+            write(compile_stage / "receipt.json", {"execution": "local", "exit_code": 0,
+                                                    "judge_result_valid": True})
+            stage = run / "stages/collection"
+            stage.mkdir()
+            identity = {"run_id": "SYNTHETIC-NOT-A-GPU-RUN", "task_id": task["task_id"],
+                        "task_sha256": "a" * 64, "candidate_sha256": "b" * 64}
+            write(run / "request.json", {"schema": "kernelinfra.request.v1", **identity})
+            write(run / "state.json", {"schema": "kernelinfra.state.v1", **identity,
+                                       "stage_id": "collection", "stage_kind": "judge", "stage_index": 1,
+                                       "state": "running", "broker_job_id": "gpuq-123456789abc",
+                                       "gpu_ids": [7], "run_dir": str(run), "terminal_at": None})
+            seen = []
+            real_run = subprocess.run
+
+            def fake_evaluator(command, **kwargs):
+                if len(command) < 2 or command[1] != str(ROOT / "src/open_cake_ir/tasks/evaluate.py"):
+                    return real_run(command, **kwargs)
+                self.assertNotIn("start_new_session", kwargs)
+                self.assertEqual(kwargs["env"]["GPUQ_JOB_ID"], "gpuq-123456789abc")
+                self.assertEqual(kwargs["env"]["CUDA_VISIBLE_DEVICES"], "7")
+                seen.append(Path(command[3]).parent.name)
+                Path(command[5]).write_text('{"synthetic":true}')
+                return subprocess.CompletedProcess(command, 0)
+
+            def fake_observation(directory, spec, plan, policy, candidate, baseline, job_id, schedule):
+                self.assertEqual(directory.name, spec["id"])
+                return {"candidate_id": spec["candidate_id"], "split": spec["split"],
+                        "schedule": schedule,
+                        "observation": {"baseline_us": 100, "gpu_uuid": "GPU-SYNTHETIC",
+                                        "candidate_us": 10}}
+
+            environment = {"KERNELINFRA_RUN_DIR": str(run),
+                           "KERNELINFRA_CANDIDATE_DIR": str(snapshot),
+                           "KERNELINFRA_STAGE_DIR": str(stage),
+                           "KERNELINFRA_RESULT": str(stage / "result.json"),
+                           "KERNELINFRA_TASK": str(run / "task.json"),
+                           "KERNELINFRA_RUN_ID": identity["run_id"],
+                           "KERNELINFRA_STAGE_KIND": "judge",
+                           "KERNELINFRA_STAGE_ID": "collection",
+                           "CUDA_VISIBLE_DEVICES": "7",
+                           "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+            with patch.dict(os.environ, environment, clear=True), \
+                    patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.object(instrument, "_broker_parent", return_value=(100, 321, 654)), \
+                    patch.object(instrument.subprocess, "run", side_effect=fake_evaluator), \
+                    patch.object(instrument, "_observed_evaluation", side_effect=fake_observation):
+                self.assertEqual(instrument.collect_device(), 0)
+            self.assertEqual(seen, [row["id"] for row in plan["observations"]])
+            result = json.loads((stage / "result.json").read_text())
+            self.assertEqual((result["status"], result["validity"]), ("passed", "valid"))
+            self.assertEqual(result["metrics"]["observation_count"], 9)
 
 
 if __name__ == "__main__":

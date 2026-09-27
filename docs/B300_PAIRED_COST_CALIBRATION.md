@@ -49,8 +49,12 @@ Before a broker-owned collection can launch, the device stage checks the exact
 two-stage GPU Infra task, the daemon's running assignment and broker parent,
 then replays all three compile bundles against their frozen Schedules, lowerings,
 Workload ABI and launch seals. The node's broker job is read from its retained
-state; a missing child `GPUQ_JOB_ID` is never replaced by a guessed job. The
-common paired evaluator invocation and post-release fit remain to be integrated.
+state; a missing child `GPUQ_JOB_ID` is never replaced by a guessed job. Under
+that assignment the controller seals the candidate and baseline for each of
+the nine observations and calls the common paired evaluator in the inherited
+broker process group. Each worker receipt is checked before its cost row is
+retained. Post-release Run and stage-receipt replay, followed by the fitter,
+remains to be integrated.
 
 | Model context field | Paired owner |
 | --- | --- |
