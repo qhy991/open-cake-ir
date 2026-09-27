@@ -38,11 +38,14 @@ _EFFECTS = frozenset({
 _REQUIRED_INSTRUCTIONS = frozenset({
     'tcgen05.mma.cta_group::1.kind::f16',
     'ptx.atom.relaxed.gpu.global.add.s32',
+    'ptx.atom.acq_rel.gpu.global.add.s32',
     'ptx.atom.relaxed.sys.global.add.s32',
 })
 _REQUIRED_HANDOFFS = frozenset({
     'ptx.st.release.sys.global.s32',
     'ptx.ld.acquire.sys.global.s32',
+    'ptx.st.release.gpu.global.s32',
+    'ptx.ld.acquire.gpu.global.s32',
 })
 
 

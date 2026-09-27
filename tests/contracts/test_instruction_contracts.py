@@ -99,7 +99,8 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
                                 "triton.dot.fp8e4m3_block_scale_fp32"],
                         "synchronization": ["barrier.sync", "mbarrier",
                                             "triton_program_order"]},
-            "sm_103a": {"atomic": ["ptx.atom.acq_rel.sys.global.add.s32",
+            "sm_103a": {"atomic": ["ptx.atom.acq_rel.gpu.global.add.s32",
+                                   "ptx.atom.acq_rel.sys.global.add.s32",
                                    "ptx.atom.relaxed.gpu.global.add.s32",
                                    "ptx.atom.relaxed.sys.global.add.s32",
                                    "ptx.atom.release.sys.global.add.s32",
@@ -111,7 +112,9 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
                                 "triton.dot.fp32_tf32",
                                 "triton.dot.fp8e4m3_block_scale_fp32"],
                         "synchronization": ["barrier.sync", "mbarrier",
+                                            "ptx.ld.acquire.gpu.global.s32",
                                             "ptx.ld.acquire.sys.global.s32",
+                                            "ptx.st.release.gpu.global.s32",
                                             "ptx.st.release.sys.global.s32",
                                             "triton_program_order"]},
         })
@@ -137,20 +140,25 @@ class AdmittedContractsHaveTheirAnalyses(unittest.TestCase):
             "mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32"})
         self.assertEqual({contract(name).kind for name in (
             'ptx.st.release.sys.global.s32',
-            'ptx.ld.acquire.sys.global.s32')}, {ContractKind.SYNCHRONIZATION})
+            'ptx.ld.acquire.sys.global.s32',
+            'ptx.st.release.gpu.global.s32',
+            'ptx.ld.acquire.gpu.global.s32')}, {ContractKind.SYNCHRONIZATION})
 
     def test_native_atomic_contract_is_a_distinct_backend_realization(self) -> None:
         native = contract("ptx.atom.relaxed.gpu.global.add.s32")
+        device_acq_rel = contract("ptx.atom.acq_rel.gpu.global.add.s32")
         system = contract("ptx.atom.relaxed.sys.global.add.s32")
         acq_rel = contract("ptx.atom.acq_rel.sys.global.add.s32")
         release = contract("ptx.atom.release.sys.global.add.s32")
         triton = contract("triton.atomic_add.i32.relaxed.gpu")
         self.assertIsNotNone(native)
+        self.assertIsNotNone(device_acq_rel)
         self.assertIsNotNone(system)
         self.assertIsNotNone(acq_rel)
         self.assertIsNotNone(release)
         self.assertIsNotNone(triton)
         self.assertIs(native.kind, ContractKind.ATOMIC)
+        self.assertIs(device_acq_rel.kind, ContractKind.ATOMIC)
         self.assertIs(system.kind, ContractKind.ATOMIC)
         self.assertIs(acq_rel.kind, ContractKind.ATOMIC)
         self.assertIs(release.kind, ContractKind.ATOMIC)
@@ -224,7 +232,8 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
             "apple_gpu_family9": ["metal.fma.f32", "metal.precise.tanh.f32"],
             "gfx1151": ["ocml.tanh.f32"],
             "sm_100a": ["ptx.atom.relaxed.gpu.global.add.s32"],
-            "sm_103a": ["libdevice.tanh.f32", "ptx.atom.acq_rel.sys.global.add.s32",
+            "sm_103a": ["libdevice.tanh.f32", "ptx.atom.acq_rel.gpu.global.add.s32",
+                        "ptx.atom.acq_rel.sys.global.add.s32",
                         "ptx.atom.relaxed.gpu.global.add.s32",
                         "ptx.atom.relaxed.sys.global.add.s32",
                         "ptx.atom.release.sys.global.add.s32",
@@ -234,7 +243,7 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
         })
         # gfx1151 and xcore1002 retain their device evidence but have no tanh
         # Corpus case. Preserve both explicit gaps without manufacturing cases.
-        self.assertEqual(sum(len(v) for v in unreached.values()), 18)
+        self.assertEqual(sum(len(v) for v in unreached.values()), 19)
         self.assertNotIn("gfx938", unreached)
 
     def test_a_python_schedule_is_read_rather_than_skipped(self) -> None:

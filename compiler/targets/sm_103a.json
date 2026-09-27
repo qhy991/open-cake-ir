@@ -58,6 +58,7 @@
     "triton.dot.fp8e4m3_block_scale_fp32",
     "triton.atomic_add.i32.relaxed.gpu",
     "ptx.atom.relaxed.gpu.global.add.s32",
+    "ptx.atom.acq_rel.gpu.global.add.s32",
     "ptx.atom.relaxed.sys.global.add.s32",
     "ptx.atom.acq_rel.sys.global.add.s32",
     "ptx.atom.release.sys.global.add.s32",
@@ -69,7 +70,9 @@
     "barrier.sync",
     "triton_program_order",
     "ptx.st.release.sys.global.s32",
-    "ptx.ld.acquire.sys.global.s32"
+    "ptx.ld.acquire.sys.global.s32",
+    "ptx.st.release.gpu.global.s32",
+    "ptx.ld.acquire.gpu.global.s32"
   ],
   "peak": {
     "memory_bandwidth": {
@@ -98,6 +101,11 @@
       "kind": "instruction_set",
       "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#parallel-synchronization-and-communication-instructions-atom",
       "locator": "PTX atom.acq_rel.sys.global.add.s32 and atom.release.sys.global.add.s32 are distinct returned-old-value INT32 forms for the ranked dispatch-completion chain; peer access and native P2P atomics remain runtime pair facts"
+    },
+    {
+      "kind": "instruction_set",
+      "source": "https://docs.nvidia.com/cuda/parallel-thread-execution/index.html",
+      "locator": "atom.acq_rel.gpu.global.add.s32 plus st.release.gpu.global.s32 and ld.acquire.gpu.global.s32 synchronize only resident producer CTAs on this GPU; the peer payload and source-completion handoffs retain their separate system-scope contracts"
     },
     {
       "kind": "instruction_set",

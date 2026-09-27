@@ -82,6 +82,10 @@ _RECORDS = (
     # through an explicit PTX instruction. Claiming a work index provides no
     # release/acquire visibility for the work item or a later CTA handoff.
     InstructionContract("ptx.atom.relaxed.gpu.global.add.s32", ContractKind.ATOMIC),
+    # A resident producer group synchronizes only CTAs on one GPU. Its
+    # returned-old-value barrier arrival carries prior CTA writes into the
+    # next arrival without widening that local chain to system scope.
+    InstructionContract("ptx.atom.acq_rel.gpu.global.add.s32", ContractKind.ATOMIC),
     # System scope is a distinct instruction effect. A remote GPU allocation
     # additionally needs peer access and native P2P atomic admission at runtime;
     # the Target's ISA declaration alone never grants that topology fact.
@@ -105,6 +109,8 @@ _RECORDS = (
     # creates a barrier object; the Program verifier owns producer/consumer edges.
     _sync("ptx.st.release.sys.global.s32", None),
     _sync("ptx.ld.acquire.sys.global.s32", None),
+    _sync("ptx.st.release.gpu.global.s32", None),
+    _sync("ptx.ld.acquire.gpu.global.s32", None),
 )
 
 CONTRACTS: Mapping[str, InstructionContract] = MappingProxyType(
