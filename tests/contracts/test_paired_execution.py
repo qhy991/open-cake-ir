@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
 from contextlib import ExitStack
 from dataclasses import replace
 from hashlib import sha256
@@ -32,6 +33,7 @@ from open_cake_ir.lab.contracts import CampaignLock, StudyContract
 from open_cake_ir.lab.archive import _validate_receipt_authority, _archive_evaluation_receipt
 from open_cake_ir.lab.pairing import bind_baseline
 from open_cake_ir.lab.runtime import CommandBrokerSubmitter
+from open_cake_ir.lab.paired_cost_calibration import observed_paired_cost
 from tests.contracts.test_native_triton_pairing import DraftCompilerFixture
 
 
@@ -47,6 +49,10 @@ from open_cake_ir.tasks import evaluate as worker
 
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = ROOT / 'contracts/studies/matched-search-triton-b300-optimization-template.json'
+_PAIRED_COST_SPEC = importlib.util.spec_from_file_location(
+    'paired_cost_instrument', ROOT / 'tools/calibrate_paired_cost.py')
+paired_cost_instrument = importlib.util.module_from_spec(_PAIRED_COST_SPEC)
+_PAIRED_COST_SPEC.loader.exec_module(paired_cost_instrument)
 
 
 def encoded(value):
@@ -231,6 +237,69 @@ class PairedExecutionTests(unittest.TestCase):
         changed['launch_manifests']['candidate']['workload_sha256'] = 'f' * 64
         with self.assertRaisesRegex(ValueError, 'participant seal'):
             self.receipt(payloads={**receipt.artifact_payloads, 'timing_samples': encoded(changed)})
+
+    def test_cost_observation_replays_the_common_pair_and_broker_work(self):
+        receipt = self.execute()
+        # This fixture enters the paired producer directly, before the outer
+        # evaluator writes its broker admission fields.
+        worker_result = {**self.result, 'admitted': True, 'mode': 'exclusive'}
+        observed = observed_paired_cost(
+            receipt, candidate=self.candidate, baseline=self.baseline,
+            evaluation_protocol=self.protocol, worker_result=worker_result,
+        )
+        self.assertEqual(observed['candidate_us'], 1000)
+        self.assertEqual(observed['baseline_us'], 1000)
+        self.assertEqual(observed['sample_count'], 250)
+        self.assertEqual(observed['baseline_record_sha256'], self.baseline.canonical_sha256)
+        foreign, _ = sealed(self.workload, 'other_baseline')
+        with self.assertRaisesRegex(ValueError, 'fixed baseline differs'):
+            observed_paired_cost(receipt, candidate=self.candidate, baseline=foreign,
+                                 evaluation_protocol=self.protocol, worker_result=worker_result)
+        protocol = copy.deepcopy(self.protocol)
+        protocol['paired_timing']['pair_order'] = protocol['paired_timing']['pair_order'][::-1]
+        with self.assertRaisesRegex(ValueError, 'Campaign evaluation policy'):
+            observed_paired_cost(receipt, candidate=self.candidate, baseline=self.baseline,
+                                 evaluation_protocol=protocol, worker_result=worker_result)
+        changed = copy.deepcopy(worker_result)
+        changed['counters']['timing_samples'] -= 1
+        with self.assertRaisesRegex(ValueError, 'work counters differ'):
+            observed_paired_cost(receipt, candidate=self.candidate, baseline=self.baseline,
+                                 evaluation_protocol=self.protocol, worker_result=changed)
+
+    def test_cost_collector_replays_sealed_worker_artifacts(self):
+        receipt = self.execute()
+        from open_cake_ir.compiler import Compiler
+        from open_cake_ir.lab.executor import ExecutorRevision
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        executor = ExecutorRevision.for_target(ROOT, 'sm_103a')
+        plan = {'compiler_revision': {'path': 'compiler/revision.json',
+                                      'revision_id': compiler._revision.revision_id},
+                'executor_revision': dict(executor.reference),
+                'workload': {'path': 'contracts/workloads/rmsnorm-fp32-v2.json',
+                             'canonical_sha256': self.workload.canonical_sha256},
+                'case_id': self.case_id}
+        directory = self.output / 'cost-observation'
+        paired_cost_instrument._seal_observation(directory, self.candidate,
+                                                 self.baseline, plan, self.protocol)
+        for role, payload in receipt.artifact_payloads.items():
+            (directory / {'correctness_output': 'correctness-output.json',
+                          'launch_receipt': 'launch-receipt.json',
+                          'timing_samples': 'timing-samples.json'}[role]).write_bytes(payload)
+        result = {**self.result, 'admitted': True, 'mode': 'exclusive'}
+        (directory / 'result.json').write_text(json.dumps(result))
+        spec = {'id': 'fit-candidate', 'candidate_id': 'candidate', 'split': 'fit'}
+        row = paired_cost_instrument._observed_evaluation(
+            directory, spec, plan, self.protocol, self.candidate, self.baseline,
+            'gpuq-123456789abc', {'schedule_id': 'synthetic-no-compiler-schedule'})
+        self.assertEqual(row['observation']['candidate_us'], 1000)
+        self.assertEqual(row['observation']['baseline_us'], 1000)
+        changed = copy.deepcopy(result)
+        changed['receipt']['timing']['pooled_median_ms'] *= 2
+        (directory / 'result.json').write_text(json.dumps(changed))
+        with self.assertRaises(ValueError):
+            paired_cost_instrument._observed_evaluation(
+                directory, spec, plan, self.protocol, self.candidate, self.baseline,
+                'gpuq-123456789abc', {'schedule_id': 'synthetic-no-compiler-schedule'})
 
     def receipt(self, *, payloads=None, timing=None):
         values = self.result['receipt']
