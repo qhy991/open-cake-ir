@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-002",
+  "date": "2026-09-27",
+  "kind": "capacity",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@875724d4a089d491fc901aa79ccc8f18ce73846c",
+  "executor_revision": "xcore1002@875724d4a089d491fc901aa79ccc8f18ce73846c",
+  "title": "Explicit NT K-streaming FP8 compensation has verified native-source headroom but is outside the resident Cake route",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "evidence": {
+    "native_candidate": "open-cake-ir-evidence/metax-nt-streaming-sealed-20260927/c5502-sealed/",
+    "all_case_correctness": "open-cake-ir-evidence/metax-nt-streaming-request-20260927/device-verification.json",
+    "search": "open-cake-ir-evidence/metax-nt-streaming-paired-20260927/timing-verification.json",
+    "AA": "open-cake-ir-evidence/metax-nt-streaming-aa-20260927/timing-verification.json",
+    "confirmation_and_profiles": "open-cake-ir-evidence/metax-nt-streaming-confirm-20260927/verification.json",
+    "public_schedule": "open-cake-ir-evidence/metax-fp8-nt-streaming-schedule-gap-20260927/result.json"
+  },
+  "observation": "The authored native Triton K-streaming source decodes two A elements and one B[N,K] column per K iteration, preserving FP32 Neumaier updates. Sealed job maca-0bd47e87cda7 passes all 37 NT v2 cases, 151552 output elements, with zero mismatches/max absolute error and unchanged inputs. Common paired MCPTI search maca-dcd7edef9ea0 and fresh confirmation maca-70d0d0104787 both pass the frozen quality gate: 250 samples per arm, pooled medians 22.784 us streaming / 155.904 us resident, 10/10 reversed-pair wins, 6.8427x on the fixed primary case. Baseline A/A job maca-4e54414a3aab passes quality with equal 155.904 us medians and ten ties. All 60 raw cohorts replay through paired_summary and native activity verification. Independent instrumented profiles report 26 versus 76 registers/thread, 0 versus 256 dynamic shared bytes, with correct instrumented outputs; bandwidth, instruction counters and achieved occupancy are not collected. Allocation is local_serialized, external activity not excluded. The legal public NT K1 Schedule is accepted structurally but the resident compensated contract refuses it with MACA_FP8_COMPENSATED_DOMAIN_UNQUALIFIED.",
+  "proposed_change": "Implement a narrow explicit streaming lowering through existing NT tile-loop loads A[2,1], B[64,1] and FP32 result[2,64], retaining fixed global M=N=K=64, two-row program mapping and four execution groups. Preserve resident emission and numerical contract. Initialize and carry both FP32 total and correction at the owning K loop, finalize the corrected result at its legal live-out boundary, and refuse alternate writers, unsupported consumers, loop/tile domains or control commitments with the owning guard. Extend the existing compensated instruction only if its complete state/lifetime semantics and all analyses remain correct; otherwise make the precision/state contract explicit rather than hiding new global loads inside the resident emitter. No FP64 DType, layout algebra, new backend or direct FP8 dot is justified by this result.",
+  "principles": "P1 uses existing range/load/mma authoring; P2 exposes K loads and compensation source/state; P3 keeps one canonical compensated contraction; P4/P5/P7 require correct typing, effects, lifetime and analysis coverage with emission; P6 requires generated positive and owned-refusal counterexamples plus unchanged resident/other-target sources; P8 binds software SIMT numerics and timing to the measured C550-2 runtime without inventing native FP8 matrix instructions or missing hardware counters.",
+  "promotion_disposition": "Native-source mechanism evidence is sufficient to justify a reviewed lowering tick, not a Cake optimization win yet. Recompile the generated Cake streaming source, rerun all 37 cases, then repeat paired quality, A/A, fresh confirmation and profiler evidence against the fixed sealed resident baseline before accepting its measured benefit."
+}
