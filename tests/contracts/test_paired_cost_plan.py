@@ -105,6 +105,26 @@ class PairedCostPlanTest(unittest.TestCase):
         write(snapshot / "plan.json", plan)
         return snapshot, plan
 
+    def task_fixture(self, run, plan):
+        python = self.executor.document["host_environment"]["python"]["invocation_path"]
+        tool = str(ROOT / "tools/calibrate_paired_cost.py")
+        stages = []
+        for name, kind, execution, action in (
+            ("compile", "compile", "local", "collect-compile"),
+            ("collection", "judge", "broker", "collect-device"),
+        ):
+            stage = {"id": name, "kind": kind, "execution": execution,
+                     "judge": {"identity": self.executor.executor_id, "cwd": str(ROOT),
+                               "command": [python, tool, action]}}
+            if name == "collection":
+                stage["resources"] = {"mode": "exclusive", "gpu_count": 1,
+                                       "run_timeout_s": 3600}
+            stages.append(stage)
+        task = {"schema": "kernelinfra.task.v1", "task_id": plan["plan_id"],
+                "workloads": [self.workload.workload_id], "stages": stages}
+        write(run / "task.json", task)
+        return task
+
     class FakeIsolatedCompiler:
         def __init__(self, identity):
             self.identity = identity
@@ -239,6 +259,59 @@ class PairedCostPlanTest(unittest.TestCase):
             self.assertEqual(result["metrics"]["candidate_count"], 3)
             self.assertIn("tile-64/candidate.json", result["artifacts"])
             self.assertEqual(isolated.calls, 3)
+
+    def test_device_stage_requires_own_task_and_node_assignment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            run = snapshot.parent
+            task = self.task_fixture(run, plan)
+            checked = instrument._task(run, plan, self.executor, self.workload)
+            self.assertEqual(checked, task)
+            identity = {"run_id": "SYNTHETIC-NOT-A-GPU-RUN",
+                        "task_id": plan["plan_id"],
+                        "task_sha256": "a" * 64, "candidate_sha256": "b" * 64}
+            write(run / "request.json", {"schema": "kernelinfra.request.v1", **identity})
+            state = {"schema": "kernelinfra.state.v1", **identity,
+                     "stage_id": "collection", "stage_kind": "judge", "stage_index": 1,
+                     "state": "running", "broker_job_id": "gpuq-123456789abc",
+                     "gpu_ids": [7], "run_dir": str(run), "terminal_at": None}
+            write(run / "state.json", state)
+            environment = {"KERNELINFRA_RUN_ID": identity["run_id"],
+                           "CUDA_VISIBLE_DEVICES": "7"}
+            with patch.dict(os.environ, environment, clear=True):
+                assignment = instrument._node_assignment(run, task)
+            self.assertEqual(assignment["broker_job_id"], state["broker_job_id"])
+            self.assertEqual(assignment["physical_gpu"], 7)
+            state["candidate_sha256"] = "c" * 64
+            write(run / "state.json", state)
+            with patch.dict(os.environ, environment, clear=True), \
+                    self.assertRaisesRegex(ValueError, "another run or stage"):
+                instrument._node_assignment(run, task)
+
+    def test_device_replays_cpu_compiled_candidate_seals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            run = snapshot.parent
+            stage = run / "stages/compile"
+            stage.mkdir(parents=True)
+            isolated = self.FakeIsolatedCompiler(plan["toolchain_identity"])
+            with patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}):
+                instrument.prepare_compile(snapshot, stage, isolated)
+            write(stage / "result.json", {"schema": "kernelinfra.stage-result.v1",
+                                          "status": "passed", "validity": "valid"})
+            write(stage / "receipt.json", {"execution": "local", "exit_code": 0,
+                                           "judge_result_valid": True})
+            checked = instrument.check_plan(snapshot)
+            compiled = instrument._compiled_candidates(run, plan, checked,
+                                                        self.compiler, self.workload)
+            self.assertEqual(set(compiled), {row["id"] for row in plan["candidates"]})
+            index = json.loads((stage / "compile-index.json").read_text())
+            index["candidates"][0]["candidate_id"] = "another"
+            write(stage / "compile-index.json", index)
+            with self.assertRaisesRegex(ValueError, "compiled Schedule differs"):
+                instrument._compiled_candidates(run, plan, checked,
+                                                self.compiler, self.workload)
 
 
 if __name__ == "__main__":

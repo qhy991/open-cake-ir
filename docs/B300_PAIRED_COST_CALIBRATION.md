@@ -45,6 +45,13 @@ index in the stage. It refuses a visible GPU allocation and a toolchain that
 differs from the frozen identity. This stage does not claim numerical correctness
 or candidate performance.
 
+Before a broker-owned collection can launch, the device stage checks the exact
+two-stage GPU Infra task, the daemon's running assignment and broker parent,
+then replays all three compile bundles against their frozen Schedules, lowerings,
+Workload ABI and launch seals. The node's broker job is read from its retained
+state; a missing child `GPUQ_JOB_ID` is never replaced by a guessed job. The
+common paired evaluator invocation and post-release fit remain to be integrated.
+
 | Model context field | Paired owner |
 | --- | --- |
 | `timer` | FlashInfer CUPTI helper plus `fixed_baseline_paired_cupti_v1` |

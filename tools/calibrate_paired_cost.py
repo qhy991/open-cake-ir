@@ -11,7 +11,10 @@ import json
 import math
 import os
 import re
+import socket
+import struct
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -281,6 +284,138 @@ def collect_compile() -> int:
                                 "validity": "unknown", "summary": f"{type(error).__name__}: {error}",
                                 "workloads": [], "artifacts": {}, "metrics": {}})
         return 1
+
+
+def _task(run: Path, plan: dict, executor: ExecutorRevision, workload) -> dict:
+    """Bind this run's two stages to one frozen source and Executor."""
+    task = _read(_external_file(run, "task.json", "paired cost GPU Infra task"))
+    if (task.get("schema") != "kernelinfra.task.v1"
+            or task.get("task_id") != plan["plan_id"]
+            or task.get("workloads") != [workload.workload_id]
+            or not isinstance(task.get("stages"), list)
+            or len(task["stages"]) != 2):
+        raise ValueError("paired cost GPU Infra task differs")
+    stages = task["stages"]
+    if [(item.get("id"), item.get("kind"), item.get("execution", "broker")) for item in stages] != [
+        ("compile", "compile", "local"), ("collection", "judge", "broker")
+    ] or "resources" in stages[0]:
+        raise ValueError("paired cost stage order or CPU/GPU resource boundary differs")
+    python = executor.document["host_environment"]["python"]["invocation_path"]
+    for stage, action in zip(stages, ("collect-compile", "collect-device"), strict=True):
+        judge = stage.get("judge")
+        if (not isinstance(judge, dict)
+                or judge.get("identity") != executor.executor_id
+                or judge.get("cwd") != str(ROOT)
+                or judge.get("command") != [python, str(ROOT / "tools/calibrate_paired_cost.py"), action]):
+            raise ValueError("paired cost judge source or Executor differs")
+    resources = stages[1].get("resources")
+    if (not isinstance(resources, dict) or resources.get("mode") != "exclusive"
+            or type(resources.get("gpu_count")) is not int or resources["gpu_count"] != 1
+            or type(resources.get("run_timeout_s")) not in (int, float)
+            or not math.isfinite(resources["run_timeout_s"]) or resources["run_timeout_s"] <= 2):
+        raise ValueError("paired cost collection requires one exclusive broker GPU")
+    return task
+
+
+def _broker_parent() -> tuple[int, int, int]:
+    """The collection controller must be the direct child of the owning broker."""
+    if sys.platform != "linux":
+        raise ValueError("paired cost broker admission requires Linux")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(10)
+        connection.connect("/tmp/agent-gpu-broker.sock")
+        peer = struct.unpack("3i", connection.getsockopt(
+            socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
+    if os.getppid() != peer[0] or os.geteuid() != peer[1]:
+        raise ValueError("paired cost stage is not the broker's direct child")
+    return peer
+
+
+def _node_assignment(run: Path, task: dict, *, timeout_s: float = 2) -> dict:
+    """Read the node-owned broker job; a missing child env var is not guessed."""
+    request = _read(_external_file(run, "request.json", "paired cost node request"))
+    run_id = os.environ.get("KERNELINFRA_RUN_ID")
+    if (not isinstance(run_id, str) or not run_id
+            or request.get("schema") != "kernelinfra.request.v1"
+            or request.get("run_id") != run_id
+            or request.get("task_id") != task["task_id"]
+            or any(not isinstance(request.get(key), str)
+                   or re.fullmatch(r"[0-9a-f]{64}", request[key]) is None
+                   for key in ("task_sha256", "candidate_sha256"))):
+        raise ValueError("paired cost node request identity differs")
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if not isinstance(visible, str) or re.fullmatch(r"[0-9]+", visible) is None:
+        raise ValueError("paired cost requires one broker-visible CUDA device")
+    deadline = time.monotonic() + timeout_s
+    while True:
+        state = _read(_external_file(run, "state.json", "paired cost node state"))
+        expected = {"schema": "kernelinfra.state.v1", "run_id": run_id,
+                    "task_id": task["task_id"], "task_sha256": request["task_sha256"],
+                    "candidate_sha256": request["candidate_sha256"],
+                    "stage_id": "collection", "stage_kind": "judge", "stage_index": 1}
+        if (any(state.get(key) != value for key, value in expected.items())
+                or state.get("run_dir") != str(run)
+                or state.get("terminal_at") is not None):
+            raise ValueError("paired cost node state belongs to another run or stage")
+        job_id = state.get("broker_job_id")
+        if (state.get("state") == "running"
+                and isinstance(job_id, str)
+                and re.fullmatch(r"gpuq-[0-9a-f]{12}", job_id) is not None
+                and job_id != "gpuq-000000000000"
+                and state.get("gpu_ids") == [int(visible)]):
+            exported = os.environ.get("GPUQ_JOB_ID")
+            if exported is not None and exported != job_id:
+                raise ValueError("paired cost exported broker job differs from node assignment")
+            return {"run_id": run_id, "broker_job_id": job_id,
+                    "physical_gpu": int(visible), "node_state": expected}
+        if (state.get("state") not in {"submitting", "queued"}
+                or state.get("gpu_ids") != [] or time.monotonic() >= deadline):
+            raise ValueError("paired cost node has no matching running broker assignment")
+        time.sleep(.05)
+
+
+def _compiled_candidates(run: Path, plan: dict, checked: dict, compiler: Compiler, workload) -> dict:
+    """Replay every compile seal against the frozen Schedule and current Compiler."""
+    stage = run / "stages/compile"
+    result = _read(_external_file(stage, "result.json", "paired cost compile stage result"))
+    receipt = _read(_external_file(stage, "receipt.json", "paired cost compile stage receipt"))
+    if (result.get("schema") != "kernelinfra.stage-result.v1"
+            or result.get("status") != "passed" or result.get("validity") != "valid"
+            or receipt.get("execution") != "local" or receipt.get("exit_code") != 0
+            or receipt.get("judge_result_valid") is not True):
+        raise ValueError("paired cost CPU compile stage did not pass")
+    index = _read(_external_file(stage, "compile-index.json", "paired cost compile index"))
+    if (index.get("plan_id") != plan["plan_id"]
+            or index.get("source_commit") != compiler.commit
+            or index.get("context") != checked["context"]
+            or index.get("toolchain_identity") != plan["toolchain_identity"]
+            or not isinstance(index.get("candidates"), list)
+            or len(index["candidates"]) != len(plan["candidates"])):
+        raise ValueError("paired cost compile index differs from frozen plan")
+    admitted = {}
+    for spec, row in zip(plan["candidates"], index["candidates"], strict=True):
+        source = _external_file(run / "candidate", spec["schedule"], "frozen paired Schedule").read_bytes()
+        assessment = compiler.assess(json.loads(source))
+        lowering = compiler.lower(assessment)
+        if (row.get("candidate_id") != spec["id"] or row.get("schedule") != spec["schedule"]
+                or _external_file(stage / spec["id"], "schedule.json", "compiled Schedule").read_bytes()
+                != assessment.schedule_bytes):
+            raise ValueError("paired cost compiled Schedule differs")
+        candidate = load_baseline_bundle(ROOT, stage / spec["id"] / "candidate.json")
+        expected_submission = CandidateSubmission.seal(TaskOpenCakeEnvironment.media_type, source)
+        manifest = parse_launch_manifest(json.loads(candidate.artifact_payloads["launch_manifest"]))
+        manifest.check_workload(workload, plan["case_id"])
+        requirements = lowering.toolchain_requirements
+        if (row.get("candidate") != candidate_identity(candidate)
+                or candidate.candidate_sha256 != expected_submission.sha256
+                or candidate.target != plan["target"]
+                or candidate.artifact_payloads.get("lowered_source") != lowering.source.encode()
+                or candidate.entry_point != requirements["kernel_entry_point"]
+                or candidate.launch_spec_sha256 != manifest.canonical_sha256
+                or list(manifest.grid) != requirements["grid"]):
+            raise ValueError("paired cost compiled artifact differs from frozen lowering")
+        admitted[spec["id"]] = candidate
+    return admitted
 
 
 def main() -> int:
