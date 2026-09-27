@@ -235,7 +235,15 @@ zero bit differences from v3, and four positive same-rank task-progress
 overlap records. The report is retained at
 `/home/qinhaiyan/cake-weave-dual-role-acqrel-c8550363/` and mirrored
 locally. This one-case successor result does not yet inherit the earlier
-four-route matrix's coverage or qualify latency.
+four-route matrix's coverage or qualify latency. Broker job
+`gpuq-b982dd9436ba` subsequently ran its own four-route × K=4/2/1 matrix.
+All twelve separately sealed controls passed with 0/50,331,648 FP64-oracle
+failures, exact agreement for 960 CPU/GPU tile-event slots, zero bit
+differences from v3, and positive useful-work overlap records in every
+control. Its report is retained at
+`/home/qinhaiyan/cake-weave-dual-role-acqrel-c8550363-matrix12/` and
+mirrored locally. The successor now has the same frozen route/K correctness
+scope as `b360415f`; neither is a qualified timing result.
 
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
