@@ -36,6 +36,8 @@ GPU 编译、正确性、计时、profiler 和框架验收仍待 R2 验证。
 
 [合同](../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1.json)固定 `M=N=K=64`、E4M3FN 输入、FP32 输出与逐元素容差。任务所有的字节生成器覆盖 5 个基础用例和 32 个额外有限值用例；[独立 CPU oracle](../../src/open_cake_ir/tasks/metax_fp8_gemm.py)先解码，再高精度求和并只在输出处舍入为 FP32。现有[补偿求和 Schedule](../../examples/python/xcore1002_fp8_compensated.py)与输入输出 ABI 相符；这份合同本身不证明新用例的设备正确性或性能收益。
 
+后继 [v2](../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v2.json) 明确 B 的存储为 `[N,K]`，计算 `A @ B.T`，与 resident 补偿指令一致。v1 的 `A @ B` 定义保留，但不能用该 resident 示例充当符合语义的基线。方阵 ABI 相同不证明方向相同；v2 的 identity 用例检查非对称 B 的完整转置输出。
+
 ## Flash-KMeans
 
 - **输入：** 一批点和聚类中心，BF16 存储；距离计算与累加遵守 FP32 约定。
