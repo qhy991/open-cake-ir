@@ -24,6 +24,7 @@ import statistics
 import struct
 import subprocess
 import sys
+import time
 import traceback
 from hashlib import sha256
 from pathlib import Path
@@ -361,6 +362,23 @@ def _broker_parent(plan):
     return peer
 
 
+def _node_broker_assignment(run, stage_id, physical_gpu, *, timeout_s=2.0):
+    """Read the daemon's accepted broker job after its started event."""
+    deadline = time.monotonic() + timeout_s
+    while True:
+        state = _read(run / "state.json")
+        job_id = state.get("broker_job_id")
+        if (state.get("run_id") == os.environ.get("KERNELINFRA_RUN_ID")
+                and state.get("stage_id") == stage_id
+                and state.get("state") == "running"
+                and isinstance(job_id, str) and job_id.startswith("gpuq-")
+                and state.get("gpu_ids") == [physical_gpu]):
+            return job_id
+        if time.monotonic() >= deadline:
+            raise ValueError("daemon broker assignment does not match this running stage")
+        time.sleep(0.05)
+
+
 def _run_named_container(command, name):
     """Keep a task-owned Docker child inside the stage process lifecycle."""
     active = True
@@ -435,9 +453,10 @@ def _collect_container():
         raise ValueError("container calibration frozen source or image differs")
     peer = _broker_parent(plan)
     physical = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-    if re.fullmatch(r"[0-7]", physical) is None or not os.environ.get("GPUQ_JOB_ID"):
+    if re.fullmatch(r"[0-7]", physical) is None:
         raise ValueError("container calibration requires one broker-assigned GPU")
-    context = {"broker_peer": list(peer), "broker_job_id": os.environ["GPUQ_JOB_ID"],
+    job_id = _node_broker_assignment(run, stage_id, int(physical))
+    context = {"broker_peer": list(peer), "broker_job_id": job_id,
                "physical_gpu": int(physical), "run_id": os.environ["KERNELINFRA_RUN_ID"],
                "stage_id": stage_id}
     _write(stage / "broker-container.json", context)
@@ -493,14 +512,16 @@ def _collect():
             raise ValueError("container broker assignment differs")
         peer = context["broker_peer"]
         physical_gpu = context["physical_gpu"]
+        job_id = context["broker_job_id"]
     else:
         peer = _broker_parent(plan)
         visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-        if re.fullmatch(r"[0-7]", visible) is None or not os.environ.get("GPUQ_JOB_ID"):
+        if re.fullmatch(r"[0-7]", visible) is None:
             raise ValueError("direct calibration requires one broker-assigned GPU")
         physical_gpu = int(visible)
+        job_id = _node_broker_assignment(run, stage_id, physical_gpu)
     _write(stage / "execution-context.json", {"broker_peer": peer,
-        "broker_job_id": os.environ["GPUQ_JOB_ID"], "physical_gpu": physical_gpu,
+        "broker_job_id": job_id, "physical_gpu": physical_gpu,
         "uid": os.geteuid(), "gid": os.getegid(),
         "run_id": os.environ["KERNELINFRA_RUN_ID"],
         "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")})

@@ -244,6 +244,9 @@ class FitterBindingTest(unittest.TestCase):
             root = Path(directory)
             run = self.fixture(root, target="sm_103a")
             stage = run / "stages/collection"
+            write(run / "state.json", {"run_id": "synthetic-run", "stage_id": "collection",
+                                        "state": "running", "broker_job_id": "gpuq-synthetic",
+                                        "gpu_ids": [3]})
             environment = {"KERNELINFRA_RUN_DIR": str(run),
                            "KERNELINFRA_STAGE_DIR": str(stage),
                            "KERNELINFRA_CANDIDATE_DIR": str(run / "candidate"),
@@ -252,13 +255,12 @@ class FitterBindingTest(unittest.TestCase):
                            "KERNELINFRA_STAGE_KIND": "profile",
                            "KERNELINFRA_STAGE_ID": "collection",
                            "KERNELINFRA_RUN_ID": "synthetic-run",
-                           "GPUQ_JOB_ID": "synthetic-broker-job",
                            "CUDA_VISIBLE_DEVICES": "3"}
             commands = []
             def fake_run(command, **_kwargs):
                 commands.append(command)
                 return types.SimpleNamespace(returncode=0)
-            with patch.dict(os.environ, environment), \
+            with patch.dict(os.environ, environment, clear=True), \
                     patch.object(instrument, "_broker_parent", return_value=(123, 1000, 1000)), \
                     patch.object(instrument.subprocess, "run", side_effect=fake_run):
                 instrument._collect_container()
@@ -268,7 +270,19 @@ class FitterBindingTest(unittest.TestCase):
             self.assertNotIn("device=all", commands[0])
             context = json.loads((stage / "broker-container.json").read_text())
             self.assertEqual(context["physical_gpu"], 3)
-            self.assertEqual(context["broker_job_id"], "synthetic-broker-job")
+            self.assertEqual(context["broker_job_id"], "gpuq-synthetic")
+
+    def test_daemon_state_binds_broker_job_to_the_running_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            state = {"run_id": "synthetic-run", "stage_id": "collection",
+                     "state": "running", "broker_job_id": "gpuq-synthetic",
+                     "gpu_ids": [3]}
+            write(run / "state.json", state)
+            with patch.dict(os.environ, {"KERNELINFRA_RUN_ID": "synthetic-run"}):
+                self.assertEqual(instrument._node_broker_assignment(run, "collection", 3), "gpuq-synthetic")
+                with self.assertRaisesRegex(ValueError, "daemon broker assignment"):
+                    instrument._node_broker_assignment(run, "collection", 2, timeout_s=0)
 
     def test_local_container_stage_exposes_no_gpu(self):
         with tempfile.TemporaryDirectory() as directory:
