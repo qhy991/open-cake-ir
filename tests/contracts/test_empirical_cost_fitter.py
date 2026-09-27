@@ -270,6 +270,29 @@ class FitterBindingTest(unittest.TestCase):
             self.assertEqual(context["physical_gpu"], 3)
             self.assertEqual(context["broker_job_id"], "synthetic-broker-job")
 
+    def test_local_container_stage_exposes_no_gpu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = self.fixture(root, target="sm_103a")
+            stage = run / "stages/compile"
+            environment = {"KERNELINFRA_RUN_DIR": str(run),
+                           "KERNELINFRA_STAGE_DIR": str(stage),
+                           "KERNELINFRA_CANDIDATE_DIR": str(run / "candidate"),
+                           "KERNELINFRA_RESULT": str(stage / "result.json"),
+                           "KERNELINFRA_TASK": str(run / "task.json"),
+                           "KERNELINFRA_STAGE_KIND": "compile",
+                           "KERNELINFRA_STAGE_ID": "compile",
+                           "KERNELINFRA_RUN_ID": "synthetic-run",
+                           "CUDA_VISIBLE_DEVICES": ""}
+            commands = []
+            with patch.dict(os.environ, environment), \
+                    patch.object(instrument, "_run_named_container", side_effect=lambda command, _name: commands.append(command)):
+                instrument._compile_container()
+            self.assertEqual(len(commands), 1)
+            self.assertNotIn("--gpus", commands[0])
+            self.assertIn("NVIDIA_VISIBLE_DEVICES=void", commands[0])
+            self.assertIn("CUDA_VISIBLE_DEVICES=", commands[0])
+
     def test_changed_stage_templates_cannot_relabel_original_measurements(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

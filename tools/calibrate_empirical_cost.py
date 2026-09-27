@@ -4,7 +4,7 @@
 Plans, candidates and output directories are external artifacts. A plan binds this
 collector's bytes and the released Compiler. The plan owns domains and thresholds;
 the workload oracle below owns the two explicitly supported evaluation contracts.
-Run the compile action in a CPU-only GPU Infra local stage, followed by
+Run the compile-container action in a CPU-only GPU Infra local stage, followed by
 broker-owned collect-container correctness and profile stages. Fitting audits
 the retained device observations after the broker releases the GPU.
 """
@@ -361,6 +361,61 @@ def _broker_parent(plan):
     return peer
 
 
+def _run_named_container(command, name):
+    """Keep a task-owned Docker child inside the stage process lifecycle."""
+    active = True
+
+    def cleanup():
+        if active:
+            subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=15, check=False)
+
+    atexit.register(cleanup)
+
+    def stop(signum, _frame):
+        cleanup()
+        raise SystemExit(128 + signum)
+
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, stop)
+    result = subprocess.run(command, check=False)
+    if result.returncode:
+        raise RuntimeError(f"container calibration exited {result.returncode}")
+    active = False
+
+
+def _compile_container():
+    """Run the pinned toolchain without exposing any GPU to the local stage."""
+    if os.environ.get("CUDA_VISIBLE_DEVICES") or os.environ.get("GPUQ_JOB_ID"):
+        raise ValueError("local calibration compile must not inherit a GPU allocation")
+    run = _external(os.environ["KERNELINFRA_RUN_DIR"])
+    stage = _external(os.environ["KERNELINFRA_STAGE_DIR"])
+    if (stage != run / "stages/compile"
+            or _external(os.environ["KERNELINFRA_CANDIDATE_DIR"]) != run / "candidate"
+            or _external(os.environ["KERNELINFRA_RESULT"]) != stage / "result.json"
+            or os.environ.get("KERNELINFRA_STAGE_KIND") != "compile"
+            or os.environ.get("KERNELINFRA_STAGE_ID") != "compile"):
+        raise ValueError("local container stage binding differs")
+    plan, _ = _check_plan(run / "candidate")
+    scratch = stage / "scratch"
+    scratch.mkdir()
+    name = f"cake-cost-{os.getpid()}-compile"
+    command = ["docker", "run", "--rm", "--network", "none", "--cap-drop", "ALL",
+               "--security-opt", "no-new-privileges", "--pids-limit", "256",
+               "--name", name, "--label", f"cake-cost.run_id={os.environ['KERNELINFRA_RUN_ID']}",
+               "--label", "cake-cost.stage_id=compile",
+               "--user", f"{os.geteuid()}:{os.getegid()}",
+               "-v", f"{ROOT}:{ROOT}:ro", "-v", f"{run}:{run}", "-v", f"{scratch}:/tmp",
+               "-w", str(ROOT), "-e", "NVIDIA_VISIBLE_DEVICES=void",
+               "-e", "CUDA_VISIBLE_DEVICES=", "-e", "HOME=/tmp/fibhome"]
+    for key in ("KERNELINFRA_RUN_ID", "KERNELINFRA_RUN_DIR", "KERNELINFRA_TASK",
+                "KERNELINFRA_CANDIDATE_DIR", "KERNELINFRA_STAGE_ID", "KERNELINFRA_STAGE_KIND",
+                "KERNELINFRA_STAGE_DIR", "KERNELINFRA_RESULT"):
+        command.extend(["-e", f"{key}={os.environ[key]}"])
+    command.extend([plan["container_image_id"], "python3", str(ROOT / "tools/calibrate_empirical_cost.py"), "compile"])
+    _run_named_container(command, name)
+
+
 def _collect_container():
     """Map exactly one broker-assigned GPU into a pinned container image."""
     run = _external(os.environ["KERNELINFRA_RUN_DIR"])
@@ -389,21 +444,6 @@ def _collect_container():
     scratch = stage / "scratch"
     scratch.mkdir()
     name = f"cake-cost-{os.getpid()}-{stage_id}"
-    active = True
-
-    def cleanup():
-        if active:
-            subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, timeout=15, check=False)
-
-    atexit.register(cleanup)
-
-    def stop(signum, _frame):
-        cleanup()
-        raise SystemExit(128 + signum)
-
-    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        signal.signal(signum, stop)
     command = ["docker", "run", "--rm", "--network", "none", "--cap-drop", "ALL",
                "--security-opt", "no-new-privileges", "--pids-limit", "256",
                "--name", name, "--label", f"cake-cost.run_id={context['run_id']}",
@@ -418,10 +458,7 @@ def _collect_container():
                 "KERNELINFRA_STAGE_DIR", "KERNELINFRA_RESULT"):
         command.extend(["-e", f"{key}={os.environ[key]}"])
     command.extend([plan["container_image_id"], "python3", str(ROOT / "tools/calibrate_empirical_cost.py"), "collect"])
-    result = subprocess.run(command, check=False)
-    if result.returncode:
-        raise RuntimeError(f"container calibration exited {result.returncode}")
-    active = False
+    _run_named_container(command, name)
 
 
 def _collect():
@@ -745,6 +782,7 @@ def main():
     check = sub.add_parser("check-plan", help="validate a frozen candidate pool without a GPU")
     check.add_argument("candidate", type=Path)
     sub.add_parser("compile", help="CPU-only preparation in a GPU Infra local stage")
+    sub.add_parser("compile-container", help="run CPU preparation in the pinned image without a GPU")
     sub.add_parser("collect")
     sub.add_parser("collect-container", help="broker-owned GPU stage with exact container mapping")
     fit = sub.add_parser("fit")
@@ -759,6 +797,8 @@ def main():
     try:
         if args.action == "compile":
             _prepare()
+        elif args.action == "compile-container":
+            _compile_container()
         elif args.action == "collect-container":
             _collect_container()
         else:
