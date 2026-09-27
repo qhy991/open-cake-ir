@@ -2,18 +2,41 @@ from __future__ import annotations
 
 import sys
 import json
+from dataclasses import replace
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from open_cake_ir.compiler import Compiler  # noqa: E402
+from open_cake_ir.compiler import Compiler, Program  # noqa: E402
+from open_cake_ir.compiler.ir import ProgramStage  # noqa: E402
+from open_cake_ir.serialization import canonical_json_bytes  # noqa: E402
 from open_cake_ir.tasks.qsa.program import ProgramContract
 from tests.contracts._historical_qsa_program import replay_program_v2
 
 
 class ProgramContractTest(unittest.TestCase):
+    def test_program_stage_reuses_its_validated_typed_schedule(self) -> None:
+        document = json.loads((ROOT / 'corpus/schedules/fma-b8-smoke.json').read_text())
+        program = Program.from_schedule(document)
+        stage = program.stages[0]
+        self.assertIs(stage.schedule, stage.schedule)
+        self.assertEqual(stage.schedule.schedule_id, document['schedule_id'])
+        self.assertEqual(json.loads(stage.schedule_bytes), document)
+        changed = json.loads(stage.schedule_bytes)
+        changed['schedule_id'] = 'different-id'
+        replaced = replace(stage, schedule_bytes=canonical_json_bytes(changed))
+        self.assertEqual(replaced.schedule.schedule_id, 'different-id')
+        with self.assertRaisesRegex(TypeError, 'immutable bytes'):
+            ProgramStage(stage.name, bytearray(stage.schedule_bytes), stage.bindings)
+        bindings = dict(stage.bindings)
+        direct = ProgramStage(stage.name, stage.schedule_bytes, bindings)
+        bindings.clear()
+        self.assertEqual(direct.bindings, stage.bindings)
+        with self.assertRaises(TypeError):
+            direct.bindings['a'] = stage.bindings['a']
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")

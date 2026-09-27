@@ -89,8 +89,14 @@ def _analysis_estimand(
 def _matched_author_controls(arms):
     """Shared treatment controls belong to the external matched-Study contract."""
     reference = arms['open_cake']
+    per_arm = {'submission_contract', 'qualification', 'qualification_anchor'}
     for name,environment in arms.items():
-        if any(environment.get(field) != reference.get(field) for field in ('provider','scaffold')):
+        provider = _object(environment.get('provider'), f'arms.{name}.provider')
+        reference_provider = _object(reference.get('provider'), 'arms.open_cake.provider')
+        if (environment.get('scaffold') != reference.get('scaffold')
+            or {key: value for key, value in provider.items() if key not in per_arm}
+            != {key: value for key, value in reference_provider.items()
+                if key not in per_arm}):
             raise ValueError('matched Authoring Environments differ in provider or scaffold')
 
 
@@ -109,6 +115,8 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
     single_environment = comparison is None
     matched_run_arms(arms, claim_scope)
     open_cake = _object(arms.get("open_cake"), "study.arms.open_cake")
+    python_clean_start = (open_cake.get('reference_access') == 'clean_start'
+                          and open_cake.get('input_format') == 'python_source_v1')
     comparison_arm_document = (
         _object(arms[comparison], f"study.arms.{comparison}") if comparison is not None else {}
     )
@@ -125,6 +133,9 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
         "environment_kind", "reference_access", "provider", "scaffold", "compiler_revision",
         "lowering_route", "schedule_skeleton", "tool_surface", "feedback",
     }
+    if python_clean_start:
+        open_cake_fields.remove('schedule_skeleton')
+        open_cake_fields.update({'python_starter', 'input_format'})
     if has_empirical_policy:
         open_cake_fields.add("candidate_selection")
     comparison_fields = {
@@ -132,20 +143,27 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
         "candidate_skeleton", "toolchain_sha256", "tool_surface", "feedback",
     }
     if single_environment:
+        if python_clean_start:
+            raise ValueError('Python clean-start with a private fixed baseline requires an independent Run')
         comparison_fields = set()
         open_cake_fields.update({"input_format", "toolchain_sha256"})
-        if open_cake.get("input_format") != "schedule_or_python_v1":
+        if open_cake.get("input_format") not in {"schedule_or_python_v1", "python_source_v1"}:
             raise ValueError("single-environment optimization requires the Python-enabled authoring contract")
     if policy is not None:
         open_cake_fields.update({"input_format", "toolchain_sha256"})
         comparison_fields -= {"launch_contract", "candidate_skeleton"}
         comparison_fields.add("baseline")
-        if (open_cake.get("input_format") != "schedule_or_python_v1"
+        from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+        paired_python = (open_cake.get('input_format') == 'python_source_v1'
+                         and open_cake.get('reference_access') == 'known_kernel_reproduction'
+                         and open_cake.get('provider', {}).get('submission_contract')
+                         == PYTHON_CANDIDATE_BUNDLE_V1)
+        if (open_cake.get("input_format") != "schedule_or_python_v1" and not paired_python
             or comparison_arm_document.get("baseline") != {"binding": "open_cake_lowering"}
             or open_cake.get("toolchain_sha256") != comparison_arm_document.get("toolchain_sha256")):
             raise differs(
                 "same-backend native input, baseline or common toolchain binding",
-                expected={"input_format": "schedule_or_python_v1",
+                expected={"input_format": ["schedule_or_python_v1", "python_source_v1"],
                           "baseline": {"binding": "open_cake_lowering"},
                           "toolchain_sha256": open_cake.get("toolchain_sha256")},
                 observed={"input_format": open_cake.get("input_format"),
@@ -180,7 +198,8 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
             observed=route,
         )
     for owner, field, keys in (
-        ("open_cake", "schedule_skeleton", {"path", "canonical_sha256"}),
+        ("open_cake", "python_starter" if python_clean_start else "schedule_skeleton",
+         {"path"} if python_clean_start else {"path", "canonical_sha256"}),
         ("open_cake", "scaffold", {"path", "sha256"}),
         *(
             (("direct_cuda", "launch_contract", {"path", "sha256"}),
@@ -190,13 +209,20 @@ def _matched_study_shape(document: Mapping[str, object]) -> tuple[str, ...]:
     ):
         reference = _object(arms[owner].get(field), f"study.arms.{owner}.{field}")
         if set(reference) != keys:
-            noun = {"schedule_skeleton": "Schedule skeleton reference", "scaffold": "scaffold reference",
+            noun = {"schedule_skeleton": "Schedule skeleton reference",
+                    "python_starter": "Python clean-start reference", "scaffold": "scaffold reference",
                     "launch_contract": "direct launch contract reference",
                     "candidate_skeleton": "direct candidate skeleton reference"}[field]
             raise differs(f"Study Contract {noun}", expected=sorted(keys), observed=sorted(reference))
     _matched_author_controls(arms)
-    expected_open_cake_tools = (["submit_schedule_or_python"] if policy is not None or single_environment
-                                else ["submit_schedule"])
+    from .provider_documents import PYTHON_CANDIDATE_BUNDLE_V1
+    provider_document = _object(open_cake.get('provider'), 'study.arms.open_cake.provider')
+    expected_open_cake_tools = (["submit_python_bundle"] if (single_environment or policy is not None)
+                                 and provider_document.get('submission_contract') == PYTHON_CANDIDATE_BUNDLE_V1
+                                 else ["submit_python_source"] if python_clean_start or single_environment
+                                 and open_cake.get("input_format") == "python_source_v1"
+                                 else ["submit_schedule_or_python"] if policy is not None or single_environment
+                                 else ["submit_schedule"])
     expected_comparison_tools = (None if comparison is None
                                  else [policy.submit_tool] if policy is not None else ["submit_cuda"])
     if (open_cake.get("tool_surface") != expected_open_cake_tools

@@ -1,10 +1,18 @@
 """The bounded MACA capability checks used by the shared Triton emitter."""
-
+from types import MappingProxyType
 from ..diagnostics import Finding
 from ..ir import AccessIndexKind, BufferMode, DType, ElementwiseOp, LoadMovement, MemorySpace, OperationKind, Schedule, TileLoop
 from ..ir.instruction_contracts import COMPENSATED_FP8_MMA
 from ..target import Target
 from .common import refusal
+
+
+# Emission spelling only; instruction kind and dtype belong to the registry.
+DIRECTED_FMA_FUNCTIONS = MappingProxyType({
+    "maca.fma.rz.f32": "fma_rz",
+    "maca.fma.rd.f32": "fma_rd",
+    "maca.fma.ru.f32": "fma_ru",
+})
 
 
 _BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})

@@ -1,7 +1,8 @@
 # Open Cake 技术报告：中文阅读入口
 
-本页是秦海岩（Haiyan Qin）维护的 open-cake-ir 技术报告中文阅读入口。
-[报告题名、范围与引用方式](../README.md)由统一入口说明。
+本页是中文阅读导览。[PDF 技术报告](../open-cake-ir-technical-report.pdf)由
+[TeX 源码](../open-cake-ir-technical-report.tex)编译；[报告索引与引用方式](../README.md)
+集中说明版本和配套专题。
 
 原生 CUDA/PTX 的执行分工与使用，见[原生后端指南](NATIVE_CUDA.md)。
 
@@ -17,7 +18,7 @@
 |---|---|
 | 查看结果和外部差距 | [硬件结果](../RESULTS.md) · [FlashInfer 逐任务综述](../results/nvidia/FLASHINFER_STATUS.md) · [MetaX C550](../metax-c550.md) |
 | 选择硬件或实验方法 | [按主题查指南](../catalog.md) · [Lab 任务流程](../wiki/experiments.md) |
-| 查完整章节或引用报告 | [技术报告首页](../README.md) · [完整中英文目录](../catalog.md) |
+| 阅读或引用技术报告 | [PDF 正文](../open-cake-ir-technical-report.pdf) · [TeX 源码](../open-cake-ir-technical-report.tex) · [引用方式](../README.md#引用--citation) |
 | 找代码与维护流程 | [源码导航](../../README.md#源码与文档结构) · [开发分支](../DEVELOPMENT_BRANCHES.md) |
 
 ## 先用四句话理解

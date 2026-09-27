@@ -4,6 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from hashlib import sha256
 from pathlib import Path
 from types import MappingProxyType, SimpleNamespace
@@ -15,6 +16,7 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     CANDIDATE_SET_ENVELOPE_V1,
     CODEX_DISABLED_FEATURES,
     CodexInvocationBuilder,
+    CodexProviderAdapter,
     CodexRunProvider,
     ProviderQualificationReceipt,
     ProviderTurn,
@@ -23,6 +25,8 @@ from open_cake_ir.lab.providers import (  # noqa: E402
     required_live_provider_qualification_scope,
 )
 from open_cake_ir.lab.faults import RunProtocolFault  # noqa: E402
+from open_cake_ir.lab.author_home import provision_codex_home, system_skills_identity  # noqa: E402
+from open_cake_ir.lab.process import SupervisedProcessTimeout  # noqa: E402
 from open_cake_ir.lab.task_package import (  # noqa: E402
     TaskPackage,
     materialize_task_package,
@@ -31,6 +35,87 @@ from open_cake_ir.lab.task_package import (  # noqa: E402
 
 
 class ProviderContractTests(unittest.TestCase):
+    def test_python_source_file_projects_exact_source_without_an_authored_json_envelope(self) -> None:
+        from open_cake_ir.lab.provider_documents import (
+            PYTHON_SOURCE_FILE_V1, _project_candidate_submission,
+        )
+        from open_cake_ir.serialization import canonical_json_bytes
+        source = b'from open_cake_ir.compiler import frontend as cake\n# author bytes\n'
+        projected = _project_candidate_submission(source, submission_contract=PYTHON_SOURCE_FILE_V1,
+            arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=1)
+        self.assertEqual(projected, (canonical_json_bytes({'python_source': source.decode()}),))
+        for payload, kind, maximum in ((b'\xff', 'open_cake', 1), (source, 'direct_cuda', 1),
+                                       (source, 'open_cake', 2)):
+            with self.subTest(kind=kind, maximum=maximum, payload=payload), self.assertRaises(ValueError):
+                _project_candidate_submission(payload, submission_contract=PYTHON_SOURCE_FILE_V1,
+                    arm='open_cake', environment_kind=kind, maximum_candidates_per_turn=maximum)
+
+    def test_codex_normalizes_a_single_raw_python_candidate_file(self) -> None:
+        from open_cake_ir.lab.provider_documents import PYTHON_SOURCE_FILE_V1
+        from open_cake_ir.serialization import canonical_json_bytes
+        with tempfile.TemporaryDirectory() as directory:
+            candidate = Path(directory)/'candidate.py'
+            source = b'from open_cake_ir.compiler import frontend as cake\n# author bytes\n'
+            candidate.write_bytes(source)
+            turn = normalize_codex_turn(self._events(candidate, duplicate=False),
+                candidate_path=candidate, expected_change='add',
+                expected_terminal_message='{"candidate_written":true}',
+                submission_contract=PYTHON_SOURCE_FILE_V1, arm='open_cake',
+                environment_kind='open_cake', maximum_candidates_per_turn=1)
+        self.assertEqual(turn.raw_submission, source)
+        self.assertEqual(turn.candidates, (canonical_json_bytes({'python_source': source.decode()}),))
+
+    def test_python_bundle_projects_ordered_schedules_and_transform_without_json_authoring(self) -> None:
+        from open_cake_ir.lab.provider_documents import (
+            PYTHON_CANDIDATE_BUNDLE_V1, _project_candidate_submission,
+        )
+        from open_cake_ir.serialization import canonical_json_bytes
+        import_line = 'from open_cake_ir.compiler import frontend as cake\n\n'
+        first = '@cake.schedule(name="first", target="sm_100a", backend="triton", entry_point="first")\ndef first(lm):\n    ...\n'
+        second = '@cake.schedule(name="second", target="sm_100a", backend="triton", entry_point="second")\ndef second(lm):\n    ...\n'
+        action = 'cake.transform(parent="prior", transformation="specialize_triton_warps", parameters={"num_warps": 8})\n'
+        raw = (import_line + first + '\n' + action + '\n' + second).encode()
+        projected = _project_candidate_submission(raw, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+            arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
+        self.assertEqual(projected, (
+            canonical_json_bytes({'python_source': import_line + first.rstrip()}),
+            canonical_json_bytes({'action': 'transform', 'parent': 'prior',
+                                  'transformation': 'specialize_triton_warps',
+                                  'parameters': {'num_warps': 8}}),
+            canonical_json_bytes({'python_source':
+                'from open_cake_ir.compiler import frontend as cake\n' +
+                '\n' * (raw.decode().split('\n').index(second.split('\n')[0]) - 1) + second.rstrip()}),
+        ))
+        self.assertEqual(json.loads(projected[2])['python_source'].split('\n').index(second.split('\n')[0]),
+                         raw.decode().split('\n').index(second.split('\n')[0]))
+        for invalid in (raw, (import_line + 'print("host effect")\n' + first).encode()):
+            maximum = 2 if invalid is raw else 3
+            with self.assertRaises(ValueError):
+                _project_candidate_submission(invalid, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=maximum)
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory)/'executed'
+            hostile = (import_line +
+                f'cake.transform(parent="prior", transformation="unsafe", '
+                f'parameters={{"x": open({str(marker)!r}, "w").write("bad")}})\n').encode()
+            with self.assertRaisesRegex(ValueError, 'static literals'):
+                _project_candidate_submission(hostile, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
+            self.assertFalse(marker.exists())
+        for parameters in ('{"tile": 32, "tile": 64}',
+                           '{"nested": {"tile": 32, "tile": 64}}'):
+            duplicate = (import_line + f'cake.transform(parent="prior", transformation="specialize", '
+                         f'parameters={parameters})\n').encode()
+            with self.subTest(parameters=parameters), self.assertRaisesRegex(ValueError, 'unique strings'):
+                _project_candidate_submission(duplicate, submission_contract=PYTHON_CANDIDATE_BUNDLE_V1,
+                    arm='open_cake', environment_kind='open_cake', maximum_candidates_per_turn=3)
+        unicode_comment = (import_line + '# separator \u2028 marker\n' + first).encode()
+        projected_comment, = _project_candidate_submission(unicode_comment,
+            submission_contract=PYTHON_CANDIDATE_BUNDLE_V1, arm='open_cake',
+            environment_kind='open_cake', maximum_candidates_per_turn=3)
+        self.assertEqual(projected_comment,
+                         canonical_json_bytes({'python_source': import_line + '\n' + first.rstrip()}))
+
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -103,6 +188,45 @@ class ProviderContractTests(unittest.TestCase):
         return b"".join(
             json.dumps(event, separators=(",", ":")).encode() + b"\n" for event in events
         )
+
+    def test_isolated_home_is_bound_to_the_actual_cli_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            source = root/'source-auth.json'
+            source.write_bytes(b'fixture credential')
+            source.chmod(0o600)
+            home = provision_codex_home(source, root/'author-home')
+            builder = CodexInvocationBuilder(
+                executable=self.executable, provider_revision='fixture',
+                model='gpt-5.6-sol', reasoning_effort='max', service_tier='default',
+                workspace=root, output_schema=ROOT/'contracts/providers/codex-turn-output-schema-v1.json',
+                removed_environment=('OPENAI_API_KEY', 'ANTHROPIC_API_KEY'),
+                author_home_policy='isolated_auth_only_v1', codex_home=home,
+                qualified_system_skills_sha256=system_skills_identity(()))
+            invocation = builder.build('fixture prompt', thread_id=None)
+            self.assertEqual(builder.configuration['author_home_policy'], 'isolated_auth_only_v1')
+            self.assertEqual(invocation.codex_home, home)
+            with patch('open_cake_ir.lab.providers.run_supervised',
+                       side_effect=SupervisedProcessTimeout(b'', b'')) as supervised:
+                with self.assertRaises(RunProtocolFault):
+                    CodexProviderAdapter(timeout_seconds=5).execute(
+                        invocation, candidate_path=root/'candidate-set.json',
+                        expected_change='add', expected_terminal_message='{}')
+            self.assertEqual(supervised.call_args.kwargs['environment']['CODEX_HOME'], str(home))
+            builder.remember_system_skills()
+            wrong = CodexInvocationBuilder(
+                executable=self.executable, provider_revision='fixture',
+                model='gpt-5.6-sol', reasoning_effort='max', service_tier='default',
+                workspace=root, output_schema=ROOT/'contracts/providers/codex-turn-output-schema-v1.json',
+                removed_environment=('OPENAI_API_KEY', 'ANTHROPIC_API_KEY'),
+                author_home_policy='isolated_auth_only_v1', codex_home=home,
+                qualified_system_skills_sha256='d'*64)
+            with self.assertRaisesRegex(ValueError, 'qualified CLI state'):
+                wrong.remember_system_skills()
+            (home/'skills').mkdir()
+            (home/'skills'/'injected').mkdir()
+            with self.assertRaisesRegex(ValueError, 'user skills'):
+                builder.build('second prompt', thread_id='01234567-89ab-cdef-0123-456789abcdef')
 
     def test_initial_and_resume_share_the_complete_authoring_environment(self) -> None:
         builder = CodexInvocationBuilder(

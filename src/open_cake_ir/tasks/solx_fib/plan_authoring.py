@@ -47,8 +47,7 @@ class PlanAuthor:
                 spec = self.document['tensors'][field]
                 declarations.append(f'{field}: cake.Tensor({tuple(spec["shape"])!r}, "{spec["dtype"]}", mode="{mode}")')
         source = ('from open_cake_ir.compiler import frontend as cake\n\n'
-                  f'@cake.schedule(name="{name}", target="{self.workload.target}", backend="triton", entry_point="cake_{name}",\n'
-                  f'               metadata={{"workload_contract_sha256": "{self.workload.canonical_sha256}"}})\n'
+                  f'@cake.schedule(name="{name}", target="{self.workload.target}", backend="triton", entry_point="cake_{name}")\n'
                   f'def candidate(lm, {", ".join(declarations)}):\n'
                   '    compute = lm.role(execution_groups=[0, 1, 2, 3])\n')
         for axis,(coord,buffer,dimension,tile) in enumerate(axes):
