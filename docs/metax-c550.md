@@ -348,6 +348,11 @@ README缺链接失败均保留：前者由上述已有环境复核，后者修�
 平台集成原型d2cc61a3通过2533合同/26skips/9090subtests，focused26/118及Corpus；
 合入了主线既有expectations变化，没有在本任务中生成期望来使Gate通过。
 
+同步主线后的既有FP8配方交接也已核验：b5da553f重新封存的lowered source、launch
+manifest、mcfatbin和native ELF与已验收的66ca6c83产物逐字节相同。旧37case与
+性能证据绑定同一产物，未做新设备重测；此结果不证明整个Compiler的等价性。
+外部边界记录为`metax-fp8-sync-handoff-b5da553f/handoff.json`。
+
 共享Compiler独立评审仍待授权/完成，之后才能main合入与MetaX平台集成。
 [F-2026-09-27-004](../findings/2026-09-27-004-metax-directed-fma-lowering.json)保留proposed，
 不把任务分支的正确产物称为已发布能力或性能优化。

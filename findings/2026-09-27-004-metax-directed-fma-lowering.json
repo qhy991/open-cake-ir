@@ -34,6 +34,13 @@
     "generated_verification": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-directed-fma-sentinel-b5da553f/verification.json",
     "software_gates": "MetaX integrated prototype atd2cc61a3:2533contracts/26skips/9090subtests; focused26/118; Corpus matches inherited reviewed main expectations, no refresh performed in this task. Shared at16b407f5:2504contracts/26skips/8968subtests and five CI checks; five extra CPU oracle checks pass in existing Torch environment.",
     "observation": "Four actual Cake-generated tiled RN/RZ/RD/RU candidates seal and load as native artifacts. Each of two broker audits checks12288positions (12228exact words/60NaN classes), zero mismatches, inputs unchanged, modules closed, four calls, zero fallback/device-phase compilation. Second audit initializes every output differently from its reference, with NaN positions initialized finite. Result-dependent ordinary ADD/FMA remain RN at508/510/506 distinguishing rows for RZ/RD/RU. RN queries14registers/thread, directed modes58; no timing or causal resource claim. Shapes16x64/grid16/block256, no arbitrary-shape/runtime proof.",
-    "remaining_acceptance": "Independent shared Compiler review, main merge, then reviewed platform integration and CI. No implemented_in or closed status until accepted commit exists."
+    "remaining_acceptance": "Independent shared Compiler review, main merge, then reviewed platform integration and CI. No implemented_in or closed status until accepted commit exists.",
+    "preserved_FP8_handoff": {
+      "boundary": "integrated b5da553f versus qualified public66ca6c83 recipe",
+      "evidence": "/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-sync-handoff-b5da553f/handoff.json",
+      "exact_byte_relations": "lowered source, launch manifest, mcfatbin and native image all equal",
+      "device_remeasured": false,
+      "scope": "same-artifact qualification reuse, not new timing or whole-Compiler equivalence"
+    }
   }
 }
