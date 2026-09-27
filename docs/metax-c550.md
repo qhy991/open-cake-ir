@@ -293,7 +293,8 @@ job `maca-0a696d72a07a` 加载8个原生模块，执行8次，各比较1024个�
 
 首轮CPU参考检查因一个FMA区分输入的加法恰好取消到零而停止，尚未申请GPU；
 修正后的新证据目录保留原输入失败日志并复用同一封存二进制。外部证据：
-`metax-rounding-offline-20260927/{result,seal-result,linked-bodies-interpretation}.json`、
+`metax-rounding-offline-20260927/` 的 `result.json`、`seal-result.json`、
+`linked-bodies-interpretation.json` 与 selector措辞修正 `hardware-state-selector.json`，
 `metax-rounding-device-v2-20260927/{oracle-inputs,device-result,verification}.json`。
 下一步是验证同kernel混合算术的状态恢复，再考虑既有FMA原语的显式指令合同；
 如需更改共享IR或源码 admission，应按开发分支流程由相应公共owner验收。
