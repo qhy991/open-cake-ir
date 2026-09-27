@@ -12,7 +12,7 @@ FP32 单次舍入乘加使用 `maca.fma.f32`：三个同形寄存器操作数在
 路径发射 `tl.fma`，不借用 NVIDIA 的 PTX inline assembly。
 矩阵路径复用现有 `mma` 与 `triton.dot.fp16_fp32`、`triton.dot.bf16_fp32`、
 `triton.dot.fp32_ieee` 三条契约；FP16、FP32 已有下述正式任务结果，BF16 尚限于
-单 tile 原生诊断。TF32 和 FP8 矩阵尚未准入；FP8 的范围限于下述存储和解码。原生 MCPTI 成对计时和独立 profiler 已接入；
+单 tile 原生诊断。TF32 和直接 FP8 dot 尚未准入；FP8 另有下述固定 64×64 的 SIMT 补偿路线。原生 MCPTI 成对计时和独立 profiler 已接入；
 测量质量不通过时明确返回 `measurement_quality_failed`，不作为有效性能结果。
 历史的无计时策略仍可回放。没有 CUDA/HIP fallback，没有借用其他设备的校准或性能结论。
 
