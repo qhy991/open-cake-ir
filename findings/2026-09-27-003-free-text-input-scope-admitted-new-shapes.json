@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-003",
+  "date": "2026-09-27",
+  "kind": "protocol",
+  "title": "Free-text empirical input scope admitted selected GEMM shapes it did not name",
+  "backend": "triton",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@f9951e6413dbf78c3aef38b20561cc283433109e",
+  "executor_revision": "sm_103a@f9951e6413dbf78c3aef38b20561cc283433109e",
+  "tasks": [
+    "b300-gemm-mtile-selected-search-20260927-v9"
+  ],
+  "evidence": {
+    "host": "B300-M4",
+    "run": "/home/qinhaiyan/cake-cost-kernel-infra-state-v8/runs/b300-gemm-mtile-selected-search-20260927-v9-14b60734596c",
+    "events": "events.jsonl lines 9-16 record broker correctness, exclusive profiling and the completed terminal",
+    "selection": "candidate/plan.json::input_scope and candidate/prior-model.json::context.input_scope both say M in {256,512,640,896,1024}; candidate/plan.json::search_selection submitted M=704 and M=832",
+    "measurement": "/home/qinhaiyan/cake-cost-b300-gemm-selected-audit-f9951e64-v9/selected_audit.json records six submitted search candidates, four measured and two skipped with valid device stages"
+  },
+  "observation": "The v9 run genuinely measured only four of six submitted GEMM candidates and passed device correctness and timing quality. Its model's free-text input_scope, however, enumerated calibration shapes and omitted both selected-run M extents. The selector checked string equality with a copied scope rather than verifying each submitted Schedule against a declared input domain. The operational count remains evidence; a qualified in-domain model-guided saving does not follow from v9.",
+  "proposed_change": "Replace free-text scope for new calibration plans with canonical structured JSON that names the CPU oracle distributions and global-buffer shape pattern, using null only for the explicitly varying extent. Validate every candidate's family and shape against it before compilation, then require the model and selected run to bind that exact structured scope. Preserve the v9 run and original model unchanged; a new calibration and selected run must use a successor commit.",
+  "decision": "accepted",
+  "implemented_in": "9398003c6bd591bf2acec7668bc2d2bbce535256",
+  "verified_by": {
+    "kind": "original_selected_run_scope_replay",
+    "replay": "/home/qinhaiyan/cake-cost-f003-scope-replay-9398003c/replay.json",
+    "observed": "The successor rejects the original free-text v9 scope; a structured scope admits the unchanged M=704/832 Schedules and a deliberately narrower fixed-M pattern refuses them.",
+    "contracts": "48 relevant findings, documentation and empirical-cost contract tests passed at 9398003c in an isolated worktree.",
+    "limits": "Software scope admission only. New device calibration and an actually selected run under the corrected scope are required before claiming qualified GPU-search savings."
+  }
+}
