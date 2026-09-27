@@ -22,6 +22,16 @@ The context is a comparison boundary, not evidence that any model has been measu
 or qualified. Existing `EmpiricalCostModel` instances and the Lab policy remain as
 they are; the B300 scientific Study does not admit empirical candidate selection.
 
+`tools/calibrate_paired_cost.py check-plan /external/candidate` admits a frozen
+candidate snapshot without a GPU. Its `plan.json` names the clean Compiler and
+Executor references, the committed B300 GEMM Study and Workload, three distinct
+complete Schedule files, a sealed baseline bundle **inside the snapshot**, the
+M-axis bindings for `a` and `c`, acceptance limits, and all nine observations.
+The observation order is three fit candidates, the reversed calibration order,
+then a rotated held-out audit order. The checker derives the paired context from
+the Study and baseline; the plan cannot substitute a free-text timer or a mutable
+baseline path. Admission does not compile, measure, fit, or change Study policy.
+
 | Model context field | Paired owner |
 | --- | --- |
 | `timer` | FlashInfer CUPTI helper plus `fixed_baseline_paired_cupti_v1` |

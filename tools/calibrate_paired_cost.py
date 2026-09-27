@@ -98,8 +98,10 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
     )
     manifest = parse_launch_manifest(json.loads(baseline.artifact_payloads["launch_manifest"]))
     manifest.check_workload(workload, plan["case_id"])
-    if baseline.target != plan["target"]:
-        raise ValueError("paired cost baseline target differs")
+    if (baseline.target != plan["target"] or baseline.target != manifest.target
+            or baseline.entry_point != manifest.kernel_name
+            or baseline.launch_spec_sha256 != manifest.canonical_sha256):
+        raise ValueError("paired cost baseline target or launch seal differs")
     candidates = plan["candidates"]
     if (not isinstance(candidates, list) or len(candidates) != 3
             or any(not isinstance(item, dict) or set(item) != {"id", "schedule"}

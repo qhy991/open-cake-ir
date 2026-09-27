@@ -113,6 +113,21 @@ class PairedCostPlanTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 instrument.check_plan(snapshot)
 
+    def test_baseline_record_cannot_name_another_launch_spec(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            bundle = snapshot / plan["baseline_bundle_path"]
+            document = json.loads(bundle.read_text())
+            identity = document["candidate"]
+            mismatched = LaunchableCandidate(
+                identity["candidate_sha256"], identity["target"], identity["entry_point"],
+                identity["artifact_roles"], "4" * 64,
+            )
+            document["candidate"] = candidate_identity(mismatched)
+            write(bundle, document)
+            with self.assertRaisesRegex(ValueError, "launch seal differs"):
+                instrument.check_plan(snapshot)
+
 
 if __name__ == "__main__":
     unittest.main()

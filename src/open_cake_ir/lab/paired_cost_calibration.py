@@ -1,7 +1,7 @@
-"""Validated paired Evaluation observation for a future empirical cost fitter.
+"""Paired Evaluation receipt projection and pure exact-case cost fitting.
 
-This projection does not fit a model or qualify a Study policy. The common
-Evaluation receipt, rather than a supplier's latency field, owns the measurement.
+The common Evaluation receipt owns measured latency. Fitting alone does not
+establish source or broker custody and qualifies no Study selection policy.
 """
 from __future__ import annotations
 
