@@ -272,9 +272,11 @@ Evaluation、延迟或性能收益；也没有物理独占声明。
 不是实现：MetaX `get_module_map` 将调用映射至 CUDA 命名包装，编译器再链接
 MACA 自己的数学库。包装命名不能作为 NVIDIA 指令执行的证据。
 
-完整 linked LLVM 函数体先读寄存器2049，设置模式，执行 `fadd` 或 `llvm.fma.f32`，
+完整 linked LLVM 函数体用 selector2049 调用 get/sethwreg，保存并设置模式，
+执行 `fadd` 或 `llvm.fma.f32`，
 再恢复原值；本安装观察到 RN=0、RU=1、RD=2、RZ=3。早期只筛选算术行漏掉了
-get/sethwreg，不能据此得出“忽略舍入模式”。这是安装版本的实现观察，不是普适 ISA 说明。
+get/sethwreg，不能据此得出“忽略舍入模式”。这是安装版本的实现观察；2049是调用的selector常量，尚未解码为物理寄存器/位域，
+不是普适 ISA 说明。
 
 封存通过现有 source/artifact sealer 与原生参数检查，使用既有 MACA broker；
 job `maca-0a696d72a07a` 加载8个原生模块，执行8次，各比较1024个完整 FP32 word。

@@ -12,7 +12,8 @@ Follow the imported module map, wrapper, linked library and complete linked LLVM
 function body. Generic libdevice placeholders alone do not determine support, and
 CUDA wrapper names do not determine the physical vendor. Do not reduce a function
 to just its arithmetic lines: this implementation saves, changes and restores a
-hardware rounding register around ordinary add/FMA. Bind any such state observation
+hardware rounding state around ordinary add/FMA. The observed get/sethwreg selector
+is2049; its physical register/bitfield decoding remains unknown. Bind any such state observation
 to the installed release, and retain the full dependencies in the evidence.
 
 ## Numerical acceptance and remaining questions
