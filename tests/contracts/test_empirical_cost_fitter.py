@@ -267,6 +267,8 @@ class FitterBindingTest(unittest.TestCase):
             self.assertEqual(len(commands), 1)
             self.assertIn("device=3", commands[0])
             self.assertIn("CUDA_VISIBLE_DEVICES=0", commands[0])
+            self.assertIn("TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor", commands[0])
+            self.assertTrue(any(value.startswith("USER=") for value in commands[0]))
             self.assertNotIn("device=all", commands[0])
             context = json.loads((stage / "broker-container.json").read_text())
             self.assertEqual(context["physical_gpu"], 3)
@@ -306,6 +308,7 @@ class FitterBindingTest(unittest.TestCase):
             self.assertNotIn("--gpus", commands[0])
             self.assertIn("NVIDIA_VISIBLE_DEVICES=void", commands[0])
             self.assertIn("CUDA_VISIBLE_DEVICES=", commands[0])
+            self.assertIn("TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor", commands[0])
 
     def test_changed_stage_templates_cannot_relabel_original_measurements(self):
         with tempfile.TemporaryDirectory() as directory:

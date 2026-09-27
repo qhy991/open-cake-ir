@@ -17,6 +17,7 @@ import itertools
 import json
 import math
 import os
+import pwd
 import re
 import signal
 import socket
@@ -402,6 +403,14 @@ def _run_named_container(command, name):
     active = False
 
 
+def _container_cache_environment():
+    """Give pinned non-root containers a stable name and stage-local caches."""
+    username = pwd.getpwuid(os.geteuid()).pw_name
+    return ["-e", f"USER={username}", "-e", f"LOGNAME={username}",
+            "-e", "TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor",
+            "-e", "TRITON_CACHE_DIR=/tmp/triton"]
+
+
 def _compile_container():
     """Run the pinned toolchain without exposing any GPU to the local stage."""
     if os.environ.get("CUDA_VISIBLE_DEVICES") or os.environ.get("GPUQ_JOB_ID"):
@@ -426,6 +435,7 @@ def _compile_container():
                "-v", f"{ROOT}:{ROOT}:ro", "-v", f"{run}:{run}", "-v", f"{scratch}:/tmp",
                "-w", str(ROOT), "-e", "NVIDIA_VISIBLE_DEVICES=void",
                "-e", "CUDA_VISIBLE_DEVICES=", "-e", "HOME=/tmp/fibhome"]
+    command.extend(_container_cache_environment())
     for key in ("KERNELINFRA_RUN_ID", "KERNELINFRA_RUN_DIR", "KERNELINFRA_TASK",
                 "KERNELINFRA_CANDIDATE_DIR", "KERNELINFRA_STAGE_ID", "KERNELINFRA_STAGE_KIND",
                 "KERNELINFRA_STAGE_DIR", "KERNELINFRA_RESULT"):
@@ -472,6 +482,7 @@ def _collect_container():
                "-w", str(ROOT), "-e", "CUDA_VISIBLE_DEVICES=0", "-e", "HOME=/tmp/fibhome",
                "-e", "CAKE_BROKER_CONTAINER=1", "-e", f"GPUQ_JOB_ID={context['broker_job_id']}",
                "-e", f"CAKE_PHYSICAL_GPU={physical}"]
+    command.extend(_container_cache_environment())
     for key in ("KERNELINFRA_RUN_ID", "KERNELINFRA_RUN_DIR", "KERNELINFRA_TASK",
                 "KERNELINFRA_CANDIDATE_DIR", "KERNELINFRA_STAGE_ID", "KERNELINFRA_STAGE_KIND",
                 "KERNELINFRA_STAGE_DIR", "KERNELINFRA_RESULT"):
