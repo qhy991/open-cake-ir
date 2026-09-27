@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-001",
+  "date": "2026-09-27",
+  "kind": "bug",
+  "backend": "triton",
+  "target": "xcore1002",
+  "compiler_revision_id": "open-cake-ir@f76a5b7bd4373dd478d2e65a4ad0fcc9e73691e9",
+  "executor_revision": "xcore1002@f76a5b7bd4373dd478d2e65a4ad0fcc9e73691e9",
+  "title": "Native MACA launch requires two scratch pointer slots not visible in Triton 3.6 TTGIR",
+  "decision": "proposed",
+  "implemented_in": null,
+  "verified_by": null,
+  "evidence": {
+    "crash": "open-cake-ir-evidence/metax-fp8-nt-native-crash-20260927/result.json",
+    "extra_buffer_control": "open-cake-ir-evidence/metax-fp8-nt-extra-abi-20260927/c5502/stage.json",
+    "scratch_pointer_control": "open-cake-ir-evidence/metax-fp8-nt-scratch-abi-20260927/interpretation.json"
+  },
+  "observation": "Two broker-held sealed NT FP8 baseline attempts exit 139 at mcModuleLaunchKernel. TTGIR has three public pointers, but native ELF MetaX metadata contains five contiguous global_buffer slots; the installed Triton 3.6 launcher appends global_scratch and profile_scratch. A 24-byte extra-buffer control returns runtime status 1. Holding the same native ELF, tensors and launch shape fixed, a separate broker job maca-2bca8cb21b6c that appends two null scratch pointers returns status 0 and matches all 4096 primary outputs exactly with unchanged inputs. External vLLM activity was present; no timing was measured. This is a single-case ABI diagnostic, not all-case qualification. The retained Triton 3.1 native ELF declares only three global_buffer pointers.",
+  "proposed_change": "Inspect native ELF launcher pointer metadata at compilation/sealing and loader admission, retaining TTGIR as the public tensor ABI check. Refuse missing metadata, scalar/unsupported arguments, name/count disagreements and nonzero or unmodeled scratch requirements. Append only the sealed artifact-derived zero scratch pointers. Preserve old receipts and requalify all 37 Workload cases through the repaired exact Executor.",
+  "promotion_disposition": "Repair pending. The version-bound diagnostic supports a native ABI fix, not a new instruction, precision contract, performance estimate or fallback."
+}

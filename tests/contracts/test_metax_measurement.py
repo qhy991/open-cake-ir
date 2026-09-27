@@ -175,6 +175,15 @@ class RejectedCaptureEvidence(unittest.TestCase):
 
 
 class MacaProfileRepresentation(unittest.TestCase):
+    def test_profile_allows_native_zero_scratch_slots_but_refuses_other_counts(self):
+        from open_cake_ir.evaluation.metax_observations import maca_profile_summary
+        raw = deepcopy(self.raw)
+        raw['manifest']['hidden_null_pointer_parameters'] = 2
+        self.assertEqual(maca_profile_summary(raw)['device_time_us'], 2.048)
+        raw['manifest']['hidden_null_pointer_parameters'] = 1
+        with self.assertRaisesRegex(ValueError, 'unsupported hidden launch parameters'):
+            maca_profile_summary(raw)
+
     def setUp(self):
         from dataclasses import asdict
         from open_cake_ir.evaluation.core import TensorLaunchManifest

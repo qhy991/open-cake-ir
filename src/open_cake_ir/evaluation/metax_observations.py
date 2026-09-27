@@ -55,7 +55,7 @@ def maca_profile_summary(raw: Mapping) -> dict:
         raise ValueError('MACA profile coverage differs')
     manifest = TensorLaunchManifest.from_dict(raw.get('manifest'))
     manifest.check_complete_domain()
-    if manifest.hidden_null_pointer_parameters != 0:
+    if manifest.hidden_null_pointer_parameters not in (0, 2):
         raise ValueError('MACA profile declares unsupported hidden launch parameters')
     target = declared_target(manifest.target)
     admission = raw.get('device_admission')
