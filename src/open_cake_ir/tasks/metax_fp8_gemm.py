@@ -98,19 +98,30 @@ def validate_contract(document: Mapping) -> None:
 
 def starter_source(workload: WorkloadContract, case_id: str) -> str:
     """Use the admitted Cake source as the known-kernel reproduction baseline."""
+    return _bound_source(workload, case_id, "xcore1002_fp8_compensated.py",
+                         "cake_fp8_resident_compensated_64")
+
+
+def streaming_source(workload: WorkloadContract, case_id: str = "primary") -> str:
+    """Return explicit K-streaming authoring without changing the fixed baseline."""
+    return _bound_source(workload, case_id, "xcore1002_fp8_streaming.py",
+                         "cake_fp8_streaming_compensated_64")
+
+
+def _bound_source(workload: WorkloadContract, case_id: str, example: str, entry_point: str) -> str:
     validate_contract(workload.document)
     workload.case(case_id)
     if workload.document["revision"] != "2":
-        raise ValueError("the resident compensated starter requires the NT Workload successor")
+        raise ValueError("the compensated starter requires the NT Workload successor")
     source = (Path(__file__).resolve().parents[3]
-              / "examples/python/xcore1002_fp8_compensated.py")
+              / "examples/python" / example)
     original = source.read_text(encoding="utf-8")
-    marker = "entry_point='cake_fp8_resident_compensated_64')"
+    marker = f"entry_point='{entry_point}')"
     if original.count(marker) != 1:
         raise ValueError("MetaX FP8 starter source entry point differs")
     return original.replace(
         marker,
-        "entry_point='cake_fp8_resident_compensated_64', "
+        f"entry_point='{entry_point}', "
         f"metadata={{'workload_contract_sha256': '{workload.canonical_sha256}'}})",
         1,
     )
