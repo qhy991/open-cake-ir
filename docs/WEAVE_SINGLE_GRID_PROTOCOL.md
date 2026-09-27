@@ -125,3 +125,22 @@ source-dispatch, tile-plan and Cake FFN phase costs, and reproduce or close
 status 18 before broadening the admitted domain. Comparison with the matched
 open baseline waits for the common Candidate and four-device reset/clock
 gates; these CUPTI spans are development evidence, not qualified speedups.
+
+The successor `15fb89e7` bounds each expert's bitonic snapshot sort by the
+next power of two of its populated row count. At the mixed K=4, c=64,
+budget=46920 control, 15 related contracts and the 179-case Corpus Gate pass;
+B300 NVCC reports the same 80 registers, 9,216 B static shared memory and
+zero spills. The ELF shrank from 502,584 B to 383,800 B. One four-GPU trial
+passed the FP64 oracle over 4,194,304 elements, matched all 80 CPU event
+counts and was bitwise equal to the v3 output. The same-lease ABBA development
+comparison `gpuq-c4fd0c759ea8` ran old/new/new/old on one broker allocation
+with the same frozen mixed case, control and L2-flush protocol. Its four
+per-arm CUPTI medians were 10.71/9.99/9.54/10.98 ms; the old/new aggregate
+medians were 10.85/9.76 ms (1.11× old-over-new). Each arm passed its oracle,
+tile-plan and activity checks. The report is retained at
+`/home/qinhaiyan/cake-weave-sort-paired-abba-15fb89e7/report.json` and
+mirrored locally. This is evidence of a development improvement for that
+control, not yet a qualified general or external-baseline gain. The
+successor's four-route K=4/2/1 correctness matrix is prepared under
+`/home/qinhaiyan/cake-weave-sort-15fb89e7-matrix12/` and must pass before
+considering promotion.
