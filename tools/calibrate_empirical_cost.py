@@ -4,7 +4,7 @@
 Plans, candidates and output directories are external artifacts. A plan binds this
 collector's bytes and the released Compiler. The plan owns domains and thresholds;
 the workload oracle below owns the two explicitly supported evaluation contracts.
-Run check-plan as a CPU-only GPU Infra local stage before any broker stage.
+Run the compile action in a CPU-only GPU Infra local stage before any broker stage.
 """
 from __future__ import annotations
 
@@ -267,27 +267,108 @@ def _trace_samples(stage, repetition, plan, rows):
     return samples
 
 
+def _prepare():
+    """Compile and build independent CPU oracles without a device lease."""
+    if os.environ.get("CUDA_VISIBLE_DEVICES") or os.environ.get("GPUQ_JOB_ID"):
+        raise ValueError("local calibration compile must not inherit a GPU allocation")
+    run = _external(os.environ["KERNELINFRA_RUN_DIR"])
+    stage = _external(os.environ["KERNELINFRA_STAGE_DIR"])
+    candidate = _external(os.environ["KERNELINFRA_CANDIDATE_DIR"])
+    result = _external(os.environ["KERNELINFRA_RESULT"])
+    if (stage != run / "stages/compile" or candidate != run / "candidate"
+            or result != stage / "result.json" or os.environ.get("KERNELINFRA_STAGE_KIND") != "compile"
+            or os.environ.get("KERNELINFRA_STAGE_ID") != "compile"):
+        raise ValueError("local calibration compile stage differs")
+    plan, compiler = _check_plan(candidate)
+    import torch
+    torch.set_num_threads(1)
+    _write(stage / "plan.json", plan)
+    (stage / "collector.py").write_bytes(Path(__file__).read_bytes())
+    rows = []
+    for index, case in enumerate(plan["cases"]):
+        directory = stage / f"{index:04d}"
+        directory.mkdir()
+        document = _read(candidate / case["schedule"])
+        assessment = compiler.assess(document)
+        lowering = compiler.lower(assessment)
+        compilation = compile_triton(lowering.source.encode(), lowering.toolchain_requirements)
+        resources = inspect_triton_resources(compilation, plan["cuobjdump"])
+        _write(directory / "schedule.json", json.loads(assessment.schedule_bytes))
+        (directory / "lowered.py").write_bytes(compilation.source)
+        (directory / "kernel.cubin").write_bytes(compilation.artifacts["cubin"])
+        (directory / "kernel.ptx").write_bytes(compilation.artifacts["ptx"])
+        for distribution in (0, 1):
+            inputs, answer, tolerance = _cpu_case(case, document, torch, distribution)
+            torch.save({"inputs": inputs, "answer": answer, "tolerance": tolerance},
+                       directory / f"oracle-{distribution}.pt")
+        row = {**case, "grid": list(lowering.toolchain_requirements["grid"]),
+               "profile": compiler.profile(assessment, compiled_resources=resources).as_dict()}
+        rows.append(row)
+        _write(directory / "launch.json", {"entry_point": compilation.entry_point,
+                                            "threads_per_cta": compilation.threads_per_cta,
+                                            "dynamic_shared_bytes": compilation.dynamic_shared_bytes,
+                                            "grid": row["grid"]})
+    versions = {row["profile"]["compiled_resources"]["compiler_version"] for row in rows}
+    inspectors = {row["profile"]["compiled_resources"]["inspector_version"] for row in rows}
+    if len(versions) != 1 or len(inspectors) != 1:
+        raise ValueError("compilation context changed within local stage")
+    _write(stage / "observations.json", {"schema_version": 1, "rows": rows,
+                                          "compiler_version": versions.pop(),
+                                          "inspector_version": inspectors.pop()})
+    artifacts = {path.relative_to(stage).as_posix(): path.relative_to(stage).as_posix()
+                 for path in sorted(stage.rglob("*")) if path.is_file() and path != result}
+    _write(result, {"schema": "kernelinfra.stage-result.v1", "status": "passed",
+                    "validity": "valid", "summary": "CPU calibration preparation passed",
+                    "workloads": [], "artifacts": artifacts,
+                    "metrics": {"case_count": len(rows), "scope": "compilation and CPU oracle only"}})
+
+
+def _prepared(run, plan):
+    """Read the completed local stage; the fitter audits retained artifact bytes."""
+    stage = run / "stages/compile"
+    receipt = _read(stage / "receipt.json")
+    if receipt["execution"] != "local" or receipt["exit_code"] != 0 or not receipt["judge_result_valid"]:
+        raise ValueError("CPU calibration compile did not pass")
+    if _read(stage / "plan.json") != plan or (stage / "collector.py").read_bytes() != Path(__file__).read_bytes():
+        raise ValueError("CPU calibration compile binding differs")
+    observations = _read(stage / "observations.json")
+    if len(observations["rows"]) != len(plan["cases"]):
+        raise ValueError("CPU calibration pool differs")
+    resources = {}
+    for row in observations["rows"]:
+        resource = CompiledResources.from_dict(row["profile"]["compiled_resources"])
+        if resource.source_sha256 in resources:
+            raise ValueError("CPU calibration pool repeats a compiled source")
+        resources[resource.source_sha256] = resource
+    return stage, observations, resources
+
+
 def _collect():
     import importlib.metadata
 
+    run = _external(os.environ["KERNELINFRA_RUN_DIR"])
     stage = _external(os.environ["KERNELINFRA_STAGE_DIR"])
-    if _external(os.environ["KERNELINFRA_RESULT"]) != stage / "result.json":
+    kind = os.environ["KERNELINFRA_STAGE_KIND"]
+    stage_id = "correctness" if kind == "correctness" else "collection" if kind == "profile" else None
+    if (stage_id is None or stage != run / "stages" / stage_id
+            or os.environ.get("KERNELINFRA_STAGE_ID") != stage_id
+            or _external(os.environ["KERNELINFRA_RESULT"]) != stage / "result.json"):
         raise ValueError("result must belong to the current stage")
     candidate = Path(os.environ["KERNELINFRA_CANDIDATE_DIR"]).resolve()
+    if candidate != run / "candidate":
+        raise ValueError("calibration candidate snapshot differs")
     plan = _read(candidate / "plan.json")
     if plan.get("state") != "frozen":raise ValueError("collection requires a frozen plan")
     if sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
         raise ValueError("collector differs from frozen plan")
     (stage / "collector.py").write_bytes(Path(__file__).read_bytes())
     _write(stage / "plan.json", plan)
+    compile_stage, prepared, resources_by_source = _prepared(run, plan)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
         connection.connect("/tmp/agent-gpu-broker.sock")
         peer = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
     if os.getppid() != peer[0] or os.geteuid() != peer[1] or peer[1] != plan["broker_uid"]:
         raise RuntimeError("collection requires the direct broker execution principal")
-    kind = os.environ["KERNELINFRA_STAGE_KIND"]
-    if kind not in {"correctness", "profile"}:
-        raise ValueError("collection requires a correctness/profile stage")
     _write(stage / "execution-context.json", {"broker_peer": peer, "uid": os.geteuid(), "gid": os.getegid(), "run_id": os.environ["KERNELINFRA_RUN_ID"], "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")})
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     target, binary_version_expected = _target_contract(compiler, plan)
@@ -309,44 +390,38 @@ def _collect():
     stream = driver.CUstream(torch.cuda.current_stream().cuda_stream)
     rows, launches = [], []
     for index, case in enumerate(plan["cases"]):
-        directory = stage / f"{index:04d}"
-        directory.mkdir()
-        schedule_path = (candidate / case["schedule"]).resolve()
-        if candidate not in schedule_path.parents:
-            raise ValueError("Schedule must belong to the candidate snapshot")
-        document = _read(schedule_path)
-        assessment = compiler.assess(document)
-        if assessment.target != plan["target"]:
-            raise ValueError("candidate target differs from calibration plan")
-        if assessment.compiler_revision_id != plan["compiler_revision_id"]:
-            raise ValueError(f"Compiler Revision differs: expected {plan['compiler_revision_id']!r}, observed {assessment.compiler_revision_id!r}")
-        lowering = compiler.lower(assessment)
-        signature = _expected_signature(case["family"])
-        if lowering.toolchain_requirements["signature"] != signature or list(lowering.toolchain_requirements["signature"]) != list(signature):
-            raise ValueError("evaluation contract requires its exact four-pointer ABI")
-        compilation = compile_triton(lowering.source.encode(), lowering.toolchain_requirements)
-        resources = inspect_triton_resources(compilation, plan["cuobjdump"])
-        _write(directory / "schedule.json", json.loads(assessment.schedule_bytes))
-        (directory / "lowered.py").write_bytes(compilation.source)
-        (directory / "kernel.cubin").write_bytes(compilation.artifacts["cubin"])
-        (directory / "kernel.ptx").write_bytes(compilation.artifacts["ptx"])
-        cpu, expected, tolerance = _cpu_case(case, document, torch, 0)
+        directory = compile_stage / f"{index:04d}"
+        prepared_row = prepared["rows"][index]
+        if any(prepared_row[key] != value for key, value in case.items()):
+            raise ValueError("compiled case order differs from frozen plan")
+        launch = _read(directory / "launch.json")
+        resource = CompiledResources.from_dict(prepared_row["profile"]["compiled_resources"])
+        if (resources_by_source.get(resource.source_sha256) != resource
+                or launch != {"entry_point": resource.entry_point,
+                              "threads_per_cta": resource.threads_per_cta,
+                              "dynamic_shared_bytes": resource.dynamic_shared_bytes,
+                              "grid": prepared_row["grid"]}):
+            raise ValueError("compiled launch differs from retained resource observation")
+        cubin = (directory / "kernel.cubin").read_bytes()
+        oracle = [torch.load(directory / f"oracle-{distribution}.pt", map_location="cpu", weights_only=True)
+                  for distribution in (0, 1)]
+        cpu, expected, tolerance = oracle[0]["inputs"], oracle[0]["answer"], oracle[0]["tolerance"]
         inputs = [item.cuda() for item in cpu]
         output = torch.empty_like(expected, device="cuda")
-        (module,) = _driver_call(driver, "cuModuleLoadData", compilation.artifacts["cubin"], outputs=1)
-        (function,) = _driver_call(driver, "cuModuleGetFunction", module, compilation.entry_point.encode(), outputs=1)
+        (module,) = _driver_call(driver, "cuModuleLoadData", cubin, outputs=1)
+        (function,) = _driver_call(driver, "cuModuleGetFunction", module, resource.entry_point.encode(), outputs=1)
         (binary_version,) = _driver_call(driver, "cuFuncGetAttribute", driver.CUfunction_attribute.CU_FUNC_ATTRIBUTE_BINARY_VERSION, function, outputs=1)
         if int(binary_version) != binary_version_expected:raise ValueError("loaded binary target differs")
-        if compilation.dynamic_shared_bytes >= _DYNAMIC_SHARED_OPT_IN_THRESHOLD:
-            _driver_call(driver, "cuFuncSetAttribute", function, driver.CUfunction_attribute.CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, compilation.dynamic_shared_bytes, outputs=0)
+        if resource.dynamic_shared_bytes >= _DYNAMIC_SHARED_OPT_IN_THRESHOLD:
+            _driver_call(driver, "cuFuncSetAttribute", function, driver.CUfunction_attribute.CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, resource.dynamic_shared_bytes, outputs=0)
         values = [ctypes.c_void_p(tensor.data_ptr()) for tensor in (*inputs, output)] + [ctypes.c_void_p(0), ctypes.c_void_p(0)]
         parameters = (ctypes.c_void_p * len(values))(*[ctypes.cast(ctypes.pointer(value), ctypes.c_void_p) for value in values])
-        grid = list(lowering.toolchain_requirements["grid"])
-        def invoke(function=function, parameters=parameters, values=values, compilation=compilation, grid=grid):
-            _driver_call(driver, "cuLaunchKernel", function, *grid, compilation.threads_per_cta, 1, 1, compilation.dynamic_shared_bytes, stream, parameters, 0, outputs=0)
+        grid = launch["grid"]
+        def invoke(function=function, parameters=parameters, values=values, resource=resource, grid=grid):
+            _driver_call(driver, "cuLaunchKernel", function, *grid, resource.threads_per_cta, 1, 1, resource.dynamic_shared_bytes, stream, parameters, 0, outputs=0)
         deviations = []
-        for distribution in (0, 1):
-            original, answer, _ = _cpu_case(case, document, torch, distribution)
+        for distribution, prepared_oracle in enumerate(oracle):
+            original, answer = prepared_oracle["inputs"], prepared_oracle["answer"]
             for tensor, source in zip(inputs, original, strict=True):tensor.copy_(source)
             invoke(); torch.cuda.synchronize()
             deviation = (output.cpu() - answer).abs().max().item()
@@ -355,14 +430,11 @@ def _collect():
             deviations.append(deviation)
         for tensor, original in zip(inputs, cpu, strict=True):tensor.copy_(original)
         invoke(); torch.cuda.synchronize()
-        row = {**case, "grid": grid, "profile": compiler.profile(assessment, compiled_resources=resources).as_dict(), "correct": True, "inputs_unchanged": True, "max_deviations": deviations, "samples_us": []}
+        row = {**prepared_row, "correct": True, "inputs_unchanged": True, "max_deviations": deviations, "samples_us": []}
         rows.append(row)
         launches.append((invoke, module, cpu, inputs, output, expected, tolerance))
-        print(json.dumps({"prepared": case["id"], "count": index + 1}), flush=True)
-    versions = {row["profile"]["compiled_resources"]["compiler_version"] for row in rows}
-    inspectors = {row["profile"]["compiled_resources"]["inspector_version"] for row in rows}
-    if len(versions) != 1 or len(inspectors) != 1:raise ValueError("compilation context changed within collection")
-    runtime.update(compiler_version=versions.pop(), inspector_version=inspectors.pop())
+        print(json.dumps({"loaded": case["id"], "count": index + 1}), flush=True)
+    runtime.update(compiler_version=prepared["compiler_version"], inspector_version=prepared["inspector_version"])
     if kind == "profile":
         for invoke, *_ in launches:
             for _ in range(plan["sampling"]["warmup"]):invoke()
@@ -398,9 +470,6 @@ def _collect():
         _driver_call(driver, "cuModuleUnload", module, outputs=0)
     _write(stage / "observations.json", {"schema_version": 1, "runtime": runtime, "quality_passed": quality, "rows": rows})
     artifacts = {"observations": "observations.json", "plan": "plan.json", "collector": "collector.py", "execution_context": "execution-context.json"}
-    for index in range(len(rows)):
-        for role, name in (("schedule", "schedule.json"), ("source", "lowered.py"), ("cubin", "kernel.cubin"), ("ptx", "kernel.ptx")):
-            artifacts[f"{index:04d}-{role}"] = f"{index:04d}/{name}"
     for path in sorted(stage.glob("*trace-*.json")):artifacts[path.stem] = path.name
     for path in sorted(stage.glob("launch-order-*.json")):artifacts[path.stem] = path.name
     _write(os.environ["KERNELINFRA_RESULT"], {"schema": "kernelinfra.stage-result.v1", "status": "passed" if quality else "failed", "validity": "valid" if quality else "unknown", "summary": "all cases passed" if quality else "quality gate failed; do not fit", "workloads": [{"id": row["id"], "correct": row["correct"]} for row in rows] if kind == "correctness" else [], "artifacts": artifacts, "metrics": {"quality_passed": quality, "case_count": len(rows)}})
@@ -412,7 +481,7 @@ def _fit(run, output):
     run_result = _read(run / "result.json")
     if run_result["outcome"] != "completed" or run_result["validity"] != "valid":raise ValueError("whole collection did not pass")
     outcomes = {row["id"]: row for row in run_result["stages"]}
-    if any(outcomes[name]["status"] != "passed" or outcomes[name]["validity"] != "valid" for name in ("correctness", "collection")):
+    if any(outcomes[name]["status"] != "passed" or outcomes[name]["validity"] != "valid" for name in ("compile", "correctness", "collection")):
         raise ValueError("required stage did not pass")
     stage = run / "stages/collection"
     plan, observed = _read(stage / "plan.json"), _read(stage / "observations.json")
@@ -420,7 +489,7 @@ def _fit(run, output):
         raise ValueError("fitting must use the frozen collection instrument")
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     _target_contract(compiler, plan)
-    reference = compiler.assess_file(stage / "0000/schedule.json")
+    reference = compiler.assess_file(run / "stages/compile/0000/schedule.json")
     if reference.target != plan["target"]:
         raise ValueError("retained target differs from calibration plan")
     if reference.compiler_revision_id != plan["compiler_revision_id"]:
@@ -440,9 +509,12 @@ def _fit(run, output):
     for repetition in range(plan["sampling"]["repetitions"]):
         for row, values in zip(rows, _trace_samples(stage, repetition, plan, rows), strict=True):
             if row["samples_us"][repetition] != values:raise ValueError("retained durations differ from trace")
-    for name in ("correctness", "collection"):
+    for name in ("compile", "correctness", "collection"):
         receipt = _read(run / f"stages/{name}/receipt.json")
-        if receipt["execution"] != "broker" or receipt["exit_code"] != 0 or not receipt["judge_result_valid"] or not receipt["broker_job_id"]:raise ValueError("stage receipt differs")
+        if (receipt["execution"] != ("local" if name == "compile" else "broker")
+                or receipt["exit_code"] != 0 or not receipt["judge_result_valid"]
+                or (name != "compile" and not receipt["broker_job_id"])):
+            raise ValueError("stage receipt differs")
     if _read(run / "stages/correctness/observations.json")["runtime"] != observed["runtime"]:raise ValueError("runtime changed between stages")
     _bind_artifacts(run, plan, rows, compiler)
     specifications = {spec["id"]: spec for spec in plan["curves"]}
@@ -498,7 +570,12 @@ def _bind_artifacts(run, plan, rows, compiler):
     candidate = (run / "candidate").resolve()
     if _read(candidate / "plan.json") != plan:
         raise ValueError("stage plan differs from the candidate snapshot")
-    observations = {}
+    compile_stage = run / "stages/compile"
+    if (_read(compile_stage / "plan.json") != plan
+            or (compile_stage / "collector.py").read_bytes() != Path(__file__).read_bytes()):
+        raise ValueError("local compile binding differs")
+    observations = load_compiled_resources(compile_stage / "observations.json")
+    compiled_rows = _read(compile_stage / "observations.json")["rows"]
     phase_rows = {}
     for phase in ("correctness", "collection"):
         directory = run / "stages" / phase
@@ -506,14 +583,11 @@ def _bind_artifacts(run, plan, rows, compiler):
             raise ValueError("stage plans differ")
         if (directory / "collector.py").read_bytes() != Path(__file__).read_bytes():
             raise ValueError("stage collector differs from the frozen fitter")
-        # Validates retained source/CUBIN against their existing identities, including
-        # missing files, source/binary drift and symlink/escape refusal.
-        observations[phase] = load_compiled_resources(directory / "observations.json")
         phase_document = _read(directory / "observations.json")
         phase_rows[phase] = phase_document["rows"]
         if phase_document["quality_passed"] is not True or any(row["correct"] is not True or row["inputs_unchanged"] is not True for row in phase_rows[phase]):
             raise ValueError("stage correctness or input preservation differs")
-        if len(phase_rows[phase]) != len(rows):
+        if len(phase_rows[phase]) != len(rows) or len(compiled_rows) != len(rows):
             raise ValueError("stage case count differs")
     for index, row in enumerate(rows):
         path = (candidate / row["schedule"]).resolve()
@@ -526,25 +600,33 @@ def _bind_artifacts(run, plan, rows, compiler):
             raise ValueError(f"candidate Compiler Revision differs: expected {plan['compiler_revision_id']!r}, observed {assessment.compiler_revision_id!r}")
         lowering = compiler.lower(assessment)
         expected = json.loads(assessment.schedule_bytes)
-        bound = []
+        compiled_directory = compile_stage / f"{index:04d}"
+        if json.dumps(_read(compiled_directory / "schedule.json"), sort_keys=True) != json.dumps(expected, sort_keys=True):
+            raise ValueError("local compiled Schedule differs from canonical candidate snapshot")
+        resource = observations.get(lowering.source_sha256)
+        if resource is None or resource != CompiledResources.from_dict(compiled_rows[index]["profile"]["compiled_resources"]):
+            raise ValueError("local compiled observation differs from canonical candidate lowering")
+        requirements = lowering.toolchain_requirements
+        if any(compiled_rows[index][key] != value for key, value in plan["cases"][index].items()):
+            raise ValueError("local compiled case differs from frozen plan")
+        if ((resource.target, resource.entry_point, resource.threads_per_cta) !=
+                (assessment.target, requirements["kernel_entry_point"], requirements["compile_options"]["num_warps"] * target.warp_size)
+                or compiled_rows[index]["grid"] != list(requirements["grid"])):
+            raise ValueError("local compiled launch differs from canonical lowering")
+        if _read(compiled_directory / "launch.json") != {
+                "entry_point": resource.entry_point,
+                "threads_per_cta": resource.threads_per_cta,
+                "dynamic_shared_bytes": resource.dynamic_shared_bytes,
+                "grid": compiled_rows[index]["grid"]}:
+            raise ValueError("local compiled launch metadata differs")
         for phase in ("correctness", "collection"):
-            directory = run / "stages" / phase / f"{index:04d}"
-            if json.dumps(_read(directory / "schedule.json"), sort_keys=True) != json.dumps(expected, sort_keys=True):
-                raise ValueError("stage Schedule differs from canonical candidate snapshot")
             recorded = phase_rows[phase][index]
             if any(recorded[key] != row[key] for key in plan["cases"][index]):
                 raise ValueError("stage case ownership differs")
-            resource = observations[phase].get(lowering.source_sha256)
-            if resource is None or resource != CompiledResources.from_dict(recorded["profile"]["compiled_resources"]):
+            if resource != CompiledResources.from_dict(recorded["profile"]["compiled_resources"]):
                 raise ValueError("compiled observation differs from canonical candidate lowering")
-            requirements = lowering.toolchain_requirements
-            if ((resource.target, resource.entry_point, resource.threads_per_cta) !=
-                    (assessment.target, requirements["kernel_entry_point"], requirements["compile_options"]["num_warps"] * target.warp_size)
-                    or json.dumps(recorded["grid"]) != json.dumps(list(requirements["grid"]))):
+            if recorded["grid"] != compiled_rows[index]["grid"]:
                 raise ValueError("recorded launch differs from canonical lowering")
-            bound.append(resource)
-        if bound[0] != bound[1]:
-            raise ValueError("correctness and collection compiled artifacts differ")
         row["template"] = expected
 
 
@@ -553,6 +635,7 @@ def main():
     sub = parser.add_subparsers(dest="action", required=True)
     check = sub.add_parser("check-plan", help="validate a frozen candidate pool without a GPU")
     check.add_argument("candidate", type=Path)
+    sub.add_parser("compile", help="CPU-only preparation in a GPU Infra local stage")
     sub.add_parser("collect")
     fit = sub.add_parser("fit")
     fit.add_argument("run", type=Path)
@@ -564,7 +647,10 @@ def main():
         return 0
     if args.action == "fit":return _fit(args.run, args.output)
     try:
-        _collect()
+        if args.action == "compile":
+            _prepare()
+        else:
+            _collect()
         return 0
     except Exception as error:
         traceback.print_exc()

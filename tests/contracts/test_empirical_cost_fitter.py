@@ -57,14 +57,26 @@ class FitterBindingTest(unittest.TestCase):
                 duration = 10 + variant + extent / 16
                 row = {**case, "grid": list(lowering.toolchain_requirements["grid"]), "profile": {"compiled_resources": resource.as_dict()}, "correct": True, "inputs_unchanged": True, "quality_passed": True, "samples_us": [[duration] * 2 for _ in range(2)]}
                 rows.append(row)
-                for phase in ("correctness", "collection"):
-                    path = run / "stages" / phase / f"{len(rows)-1:04d}"
-                    write(path / "schedule.json", json.loads(assessment.schedule_bytes))
-                    (path / "lowered.py").write_bytes(lowering.source.encode())
-                    (path / "kernel.cubin").write_bytes(cubin)
+                path = run / "stages/compile" / f"{len(rows)-1:04d}"
+                write(path / "schedule.json", json.loads(assessment.schedule_bytes))
+                (path / "lowered.py").write_bytes(lowering.source.encode())
+                (path / "kernel.cubin").write_bytes(cubin)
+                write(path / "launch.json", {"entry_point": resource.entry_point,
+                                              "threads_per_cta": resource.threads_per_cta,
+                                              "dynamic_shared_bytes": resource.dynamic_shared_bytes,
+                                              "grid": row["grid"]})
         plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "target": target, "device_name": self.compiler._revision.targets[target].device_names[0], "multiprocessor_count": 1, "broker_uid": 1000, "cuobjdump": "/usr/bin/true", "expected_runtime": {"compiler_version": "synthetic"}, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"warmup": 1, "rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "maximum_candidates_per_turn": 3, "envelope_allowance": .05}}
         write(run / "candidate/plan.json", plan)
-        stages = []
+        compile_stage = run / "stages/compile"
+        (compile_stage / "collector.py").write_bytes(collector)
+        write(compile_stage / "plan.json", plan)
+        write(compile_stage / "observations.json", {"schema_version": 1, "rows": [
+            {key: value for key, value in row.items() if key in {*case, "grid", "profile"}}
+            for row, case in zip(rows, cases, strict=True)
+        ], "compiler_version": "synthetic", "inspector_version": "synthetic"})
+        write(compile_stage / "receipt.json", {"execution": "local", "exit_code": 0,
+                                                "judge_result_valid": True})
+        stages = [{"id": "compile", "status": "passed", "validity": "valid"}]
         for phase in ("correctness", "collection"):
             path = run / "stages" / phase
             (path / "collector.py").write_bytes(collector)
@@ -161,7 +173,7 @@ class FitterBindingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run = self.fixture(root)
-            for path in (run / "stages/collection").glob("*/schedule.json"):
+            for path in (run / "stages/compile").glob("*/schedule.json"):
                 value = json.loads(path.read_text())
                 value["residency"]["registers_per_thread"] = 128
                 write(path, value)
@@ -174,24 +186,24 @@ class FitterBindingTest(unittest.TestCase):
             with self.subTest(filename=filename, action=action), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 run = self.fixture(root)
-                path = run / "stages/collection/0000" / filename
+                path = run / "stages/compile/0000" / filename
                 if action == "delete":path.unlink()
                 else:path.write_bytes(path.read_bytes() + b"changed")
                 with self.assertRaises((ValueError, OSError)):instrument._fit(run, root / "output")
                 self.assertFalse((root / "output").exists())
 
-    def test_different_correctness_binary_with_updated_identity_still_refuses(self):
+    def test_changed_compiled_binary_with_updated_identity_still_refuses(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run = self.fixture(root)
-            path = run / "stages/correctness/0000/kernel.cubin"
-            changed = path.read_bytes() + b"different-correctness-binary"
+            path = run / "stages/compile/0000/kernel.cubin"
+            changed = path.read_bytes() + b"different-compiled-binary"
             path.write_bytes(changed)
-            observation = run / "stages/correctness/observations.json"
+            observation = run / "stages/compile/observations.json"
             value = json.loads(observation.read_text())
             value["rows"][0]["profile"]["compiled_resources"]["cubin_sha256"] = sha256(changed).hexdigest()
             write(observation, value)
-            with self.assertRaisesRegex(ValueError, "compiled artifacts differ"):
+            with self.assertRaisesRegex(ValueError, "compiled observation differs"):
                 instrument._fit(run, root / "output")
             self.assertFalse((root / "output").exists())
 
