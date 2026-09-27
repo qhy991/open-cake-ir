@@ -110,20 +110,29 @@ flag is an actual-work overlap observation; an empty flag is inconclusive
 about latency. The experiment keeps the same source/plan seal, FP64 oracle,
 CPU tile-event planner and four-GPU broker boundary. `1aff5d01` passes 15
 related contracts, the 179-case Corpus Gate and real B300 NVCC (95 registers,
-9,216 B static shared memory, zero spills). The first device result and any
-performance claim are pending. Before promotion, replay all frozen routes and
-K settings, verify every status and return, and compare against the
-equal-reset persistent control under the Target's qualified timing contract.
+9,216 B static shared memory, zero spills). Isolated four-GPU broker job
+`gpuq-3439e7bcfa6c` completed the first mixed K=4, c=64, budget=46920
+lookahead case. Its post-lease audit found zero FP64-oracle failures over
+4,194,304 output elements, exact agreement for all 80 rank/event tile-count
+slots and zero bit differences from v3. All 80 rank/event overlap records were
+retained. Rank 0 at event 14 recorded a positive flag: its completed Cake
+stage-task count increased while its communication CTAs dispatched the next
+source event. This is direct evidence of useful-work overlap in **one** frozen
+complete-FFN case, not a general liveness result or qualified latency gain.
+The output and overlap reports are retained at
+`/home/qinhaiyan/cake-weave-lookahead-1aff5d01/` and mirrored locally.
+Before promotion, replay all frozen routes and K settings, verify every
+status and return, and compare against the equal-reset persistent control
+under the Target's qualified timing contract.
 
 ## Required next transition
 
-This first step is **sequential across events within each rank**. It removes
-repeated cooperative launches and allows CTA-owned resources to persist, but
-does not yet let communication for event `e+1` overlap Cake FFN work for event
-`e` on the same rank. The full temporal design needs a bounded producer and
-consumer state machine within this grid: communication CTAs may start the
-next source event once the previous tile snapshot is gathered, while compute
-CTAs finish already published stage tasks. Tile storage and task counters are
+The original one-grid step was **sequential across events within each rank**.
+The bounded lookahead successor overlaps next-event source dispatch with
+current FFN, but waits before planning and gathering the next event. The full
+temporal design still needs a bounded producer and consumer state machine
+within this grid so communication CTAs can plan and publish future tile work
+while compute CTAs finish earlier stages. Tile storage and task counters are
 indexed by event; admission must show that every waited-on producer CTA is
 resident and can make progress. The cross-CTA generic-store to async-TMA
 handoff needs its own reviewed proxy-ordering rule and counterexamples before
