@@ -50,7 +50,7 @@
 ### `sm_103a`
 
 - 主机类型： `cuda`
-- 解释器： `/mnt/b300-shared/home/qinhaiyan/open-cake-round3-20260906-JdwgrZ/venv/bin/python`（3.12.13）
+- 解释器： `/home/qinhaiyan/cake-cost-lab-venv-20260928/bin/python`（3.10.12）
 - 采集文件： [`runtime/hosts/sm_103a.json`](../../runtime/hosts/sm_103a.json)
 
 ### `xcore1002`
