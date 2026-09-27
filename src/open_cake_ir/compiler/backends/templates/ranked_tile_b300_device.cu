@@ -418,12 +418,18 @@ struct BinParams {
 __device__ bool owns_source_event(const BinParams* params,int source_rank) {
   return params->rank==source_rank;
 }
+__device__ __forceinline__ int system_arrive(int* pointer) {
+  int old;
+  asm volatile("atom.acq_rel.sys.global.add.s32 %0, [%1], %2;"
+               : "=r"(old) : "l"(pointer), "r"(1) : "memory");
+  return old;
+}
 __device__ void producer_barrier(const BinParams* params,int event,int phase,
                                  int participants) {
   __syncthreads();
   if (threadIdx.x==0) {
     Bin* local=params->bins[params->rank];
-    int old=atomicAdd(&local->producer_arrivals[event][phase],1);
+    int old=system_arrive(&local->producer_arrivals[event][phase]);
     if (old==participants-1)
       system_publish(&local->producer_ready[event][phase]);
     else
