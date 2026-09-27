@@ -1665,6 +1665,25 @@ AOT 为 32 寄存器、768 字节 static shared、0 spill。
 该测试以全局 A/B 输入和八个 CTA 验证形状分解，尚未证明原始
 CAKE 那样的同 CTA 准备值发布、五槽同步、状态递推或完整性能。
 
+\paragraph{真实 Q/K/G 的单 CTA 准备切片。}
+冻结 H64 的两个耦合分别用 forward key、forward query 乘 backward
+key 的转置；P 再乘行 beta、取负并保留严格下三角，B 保留下三角含对角。
+CPU 初次重建未显式拒绝非有限比较值，且丢掉了 P 掩码处的负零；
+原报告保留，修正版才用于设备输入。上三角在掩码前可能因指数因子
+相乘溢出，数值检查针对掩码后的有效元素及正负零位。
+\code{gpuq-f1b643fb5eef} 验证四 warp 单 CTA 用真实冻结因子
+从 shared 计算两项耦合：AOT 36 寄存器、24,576 字节 shared、
+0 spill。进一步的 \code{gpuq-c123e19bd8ef} 在同一 CTA 中从
+BF16 Q/K/G/beta 和 FP32 门控参数开始，完成归一化、32-token
+前缀、BF16 因子与两项 PTX warp MMA；AOT 48 寄存器、
+41,088 字节 shared、0 spill。两项均在 B300 完成并释放；
+首、中、末三个冻结位置的 P/B 各 1,024 项对独立 CPU 公式
+及留存 Cake 准备快照均 0 超差、无非有限值，掩码零位逐 bit
+正确。后者对留存 P/B 的最大绝对差分别为
+\(6.10\times10^{-5}\) 和 \(2.44\times10^{-4}\)。
+这些是单 chunk 正确性结果；其余五项准备值、跨 chunk 槽复用、
+状态递推及完整延迟仍待实现和测量。
+
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
 路径做五轮交替、每臂每轮 25 次冷 L2 CUPTI 计时：准备
