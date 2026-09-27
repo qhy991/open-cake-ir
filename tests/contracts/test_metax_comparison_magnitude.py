@@ -5,7 +5,7 @@ import unittest
 
 from open_cake_ir.compiler import Compiler, frontend
 from open_cake_ir.compiler.backends.metax import comparison_magnitude_input
-from open_cake_ir.compiler.ir import OperationKind
+from open_cake_ir.compiler.ir import OperationKind, Schedule
 from open_cake_ir.tasks.metax_fp8_gemm import bucketed_source
 from open_cake_ir.tasks.workloads import load_workload
 
@@ -45,8 +45,9 @@ class MetaxComparisonMagnitude(unittest.TestCase):
     def test_qualified_recipe_recognizes_all_compare_only_magnitudes(self):
         workload = load_workload(ROOT / 'contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v2.json')
         assessment, emitted = self.lower(bucketed_source(workload))
-        selected = [op for op in assessment.schedule.operations if op.kind is OperationKind.SELECT]
-        self.assertEqual(sum(comparison_magnitude_input(assessment.schedule, op) is not None for op in selected), 32)
+        schedule = Schedule.from_dict(frontend.parse(bucketed_source(workload)).document)
+        selected = [op for op in schedule.operations if op.kind is OperationKind.SELECT]
+        self.assertEqual(sum(comparison_magnitude_input(schedule, op) is not None for op in selected), 32)
         self.assertEqual(emitted.count(' = tl.abs('), 32)
 
     def test_stored_zero_and_arithmetic_consumers_keep_the_original_select(self):
@@ -68,7 +69,7 @@ class MetaxComparisonMagnitude(unittest.TestCase):
         cases = [SOURCE.replace("values, 0.0, op='ge'", "values, 1.0, op='ge'"),
                  SOURCE.replace('values, -1.0', 'values, -2.0'),
                  SOURCE.replace("'fp32'", "'bf16'"),
-                 SOURCE.replace("target='xcore1002'", "target='sm_100a'")]
+                 SOURCE.replace("target='xcore1002'", "target='sm_103a'")]
         for source in cases:
             with self.subTest(source=source):
                 _, emitted = self.lower(source)
