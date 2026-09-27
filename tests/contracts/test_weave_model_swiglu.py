@@ -25,13 +25,16 @@ class WeaveModelSwiGLU(unittest.TestCase):
         lowered = self.compiler.lower(assessment)
         requirements = lowered.toolchain_requirements
         self.assertEqual(requirements['target'], 'sm_103a')
-        self.assertEqual(requirements['grid'], [128, 1, 1])
-        self.assertEqual(requirements['block'], [32, 1, 1])
+        self.assertEqual(requirements['grid'], [32, 1, 1])
+        self.assertEqual(requirements['block'], [128, 1, 1])
         self.assertEqual([(row['dtype'], row['shape'])
                           for row in requirements['arguments']],
                          [('fp32', [128, 1536]), ('bf16', [128, 768])])
         self.assertIn('for (int cake_feature=cake_lane; cake_feature<768;',
                       lowered.source)
+        self.assertIn('const int cake_warp_row = int(threadIdx.x) / 32;',
+                      lowered.source)
+        self.assertIn('blockIdx.x * 4 + cake_warp_row', lowered.source)
         self.assertIn('expf(', lowered.source)
         self.assertEqual(lowered.source.count('__float2bfloat16_rn('), 1)
         self.assertTrue({'load_up', 'load_gate', 'round_bf16', 'store'}
@@ -42,6 +45,9 @@ class WeaveModelSwiGLU(unittest.TestCase):
             ('two rows per CTA',
              lambda document: document['program_map']['axes'][0].update(tile=2),
              'NATIVE_MODEL_ACTIVATION_MAP'),
+            ('one warp for four rows',
+             lambda document: document['roles'][0].update(execution_groups=[0]),
+             'NATIVE_MODEL_ACTIVATION_ROLE'),
             ('noncoalesced store',
              lambda document: next(row for row in document['operations']
                                    if row['id'] == 'store')['parameters'].update(

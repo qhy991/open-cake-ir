@@ -453,7 +453,10 @@
           {
             "name": "compute",
             "execution_groups": [
-              0
+              0,
+              1,
+              2,
+              3
             ]
           }
         ],
@@ -486,6 +489,7 @@
             "space": "register",
             "dtype": "fp32",
             "shape": [
+              4,
               768
             ],
             "mode": "scratch"
@@ -495,6 +499,7 @@
             "space": "register",
             "dtype": "fp32",
             "shape": [
+              4,
               768
             ],
             "mode": "scratch"
@@ -504,6 +509,7 @@
             "space": "register",
             "dtype": "fp32",
             "shape": [
+              4,
               768
             ],
             "mode": "scratch"
@@ -513,6 +519,7 @@
             "space": "register",
             "dtype": "fp32",
             "shape": [
+              4,
               768
             ],
             "mode": "scratch"
@@ -522,6 +529,7 @@
             "space": "register",
             "dtype": "fp32",
             "shape": [
+              4,
               768
             ],
             "mode": "scratch"
@@ -531,6 +539,7 @@
             "space": "register",
             "dtype": "fp32",
             "shape": [
+              4,
               768
             ],
             "mode": "scratch"
@@ -540,6 +549,7 @@
             "space": "register",
             "dtype": "fp32",
             "shape": [
+              4,
               768
             ],
             "mode": "scratch"
@@ -549,6 +559,7 @@
             "space": "register",
             "dtype": "bf16",
             "shape": [
+              4,
               768
             ],
             "mode": "scratch"
@@ -719,7 +730,7 @@
             "buffer": "up_gate",
             "indices": [
               {
-                "source": "program",
+                "source": "program_tile",
                 "name": "token"
               },
               {
@@ -735,7 +746,7 @@
             "buffer": "up_gate",
             "indices": [
               {
-                "source": "program",
+                "source": "program_tile",
                 "name": "token"
               },
               {
@@ -751,7 +762,7 @@
             "buffer": "activated",
             "indices": [
               {
-                "source": "program",
+                "source": "program_tile",
                 "name": "token"
               },
               {
@@ -774,7 +785,7 @@
               "axis": 0,
               "buffer": "up_gate",
               "dimension": 0,
-              "tile": 1
+              "tile": 4
             }
           ]
         }

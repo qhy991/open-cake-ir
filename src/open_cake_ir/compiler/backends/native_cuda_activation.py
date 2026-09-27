@@ -182,17 +182,17 @@ def preflight_model(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
           and not schedule.tile_loops and schedule.grid is None and schedule.residency is None,
           'NATIVE_MODEL_ACTIVATION_RESOURCES', 'allocations',
           'warp-striped activation has no staged resources or persistent grid')
-    check(len(schedule.roles) == 1 and schedule.roles[0].execution_groups == (0,)
+    check(len(schedule.roles) == 1 and schedule.roles[0].execution_groups == (0, 1, 2, 3)
           and schedule.roles[0].registers_per_thread is None,
           'NATIVE_MODEL_ACTIVATION_ROLE', 'roles',
-          'one execution group owns every activation operation')
+          'four execution groups own one row each of the activation tile')
     mapping = schedule.program_map
     check(mapping is not None and len(mapping.axes) == 1
           and not mapping.persistent and not mapping.cooperative
           and mapping.axes[0].axis == mapping.axes[0].dimension == 0
-          and mapping.axes[0].tile == 1,
+          and mapping.axes[0].tile == 4,
           'NATIVE_MODEL_ACTIVATION_MAP', 'program_map',
-          'one program instance owns one complete packed token row')
+          'one program instance owns four complete packed token rows')
     ops = schedule.operations
     if tuple(op.kind for op in ops) != _MODEL_BODY or any(len(op.writes) != 1 for op in ops):
         check(False, 'NATIVE_MODEL_ACTIVATION_BODY', 'operations',
@@ -244,13 +244,13 @@ def preflight_model(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
           'packed [128,1536] FP32 input produces [128,768] BF16 output')
     check(all(buffer.space is MemorySpace.REGISTER
               and buffer.mode is BufferMode.SCRATCH
-              and buffer.dtype is DType.FP32 and buffer.shape == (768,)
+          and buffer.dtype is DType.FP32 and buffer.shape == (4, 768)
               for buffer in (up, gate, negative, exp_value, denom, silu_value, result))
           and rounded.space is MemorySpace.REGISTER
           and rounded.mode is BufferMode.SCRATCH
-          and rounded.dtype is DType.BF16 and rounded.shape == (768,),
+          and rounded.dtype is DType.BF16 and rounded.shape == (4, 768),
           'NATIVE_MODEL_ACTIVATION_REGISTERS', 'buffers',
-          'each lane owns 24 FP32 values before one explicit BF16 cast')
+          'each warp owns one row before the explicit BF16 cast')
     for buffer in schedule.buffers:
         check(buffer.allocation is None and buffer.byte_offset == 0
               and buffer.stages == 1 and buffer.swizzle is None
@@ -296,7 +296,7 @@ def preflight_model(schedule: Schedule, target: Target) -> tuple[Finding, ...]:
                 or len(access.indices) != 2 or mapping is None):
             return False
         row, feature = access.indices
-        return (row.source is AccessIndexKind.PROGRAM
+        return (row.source is AccessIndexKind.PROGRAM_TILE
                 and len(mapping.axes) == 1 and row.name == mapping.axes[0].name
                 and feature.source is AccessIndexKind.DIMENSION
                 and feature.dimension == 1 and feature.offset == offset
@@ -370,7 +370,8 @@ class ModelEmitter(_Emitter):
             self.line(f'// CAKE_OP: {op.op_id}')
             if op.kind is OperationKind.LOAD:
                 source = self.b(op.reads[0])
-                address, _ = self.address(op, source, ['cake_feature'])
+                address, _ = self.address(op, source,
+                                          ['cake_warp_row', 'cake_feature'])
                 self.line(f'{self.names[op.writes[0]]} = {address};')
             elif op.kind is OperationKind.ELEMENTWISE:
                 dst = self.names[op.writes[0]]
@@ -389,7 +390,8 @@ class ModelEmitter(_Emitter):
                           f'__float2bfloat16_rn({self.names[op.reads[0]]});')
             else:
                 output = self.b(op.writes[0])
-                address, _ = self.address(op, output, ['cake_feature'])
+                address, _ = self.address(op, output,
+                                          ['cake_warp_row', 'cake_feature'])
                 self.line(f'{address} = {self.names[op.reads[0]]};')
 
     def emit(self) -> Emission:
@@ -403,8 +405,9 @@ class ModelEmitter(_Emitter):
         params = [f'{"float" if buffer.dtype is DType.FP32 else "__nv_bfloat16"}* '
                   f'{self.names[buffer.name]}' for buffer in self.globals]
         self.begin(f'extern "C" __global__ void {self.entry}_kernel('+', '.join(params)+')')
-        self.line('const int cake_lane = int(threadIdx.x);')
-        self.begin('if (blockIdx.x < 128 && cake_lane < 32)')
+        self.line('const int cake_warp_row = int(threadIdx.x) / 32;')
+        self.line('const int cake_lane = int(threadIdx.x) % 32;')
+        self.begin('if (blockIdx.x < 32 && cake_warp_row < 4)')
         self.begin('for (int cake_feature=cake_lane; cake_feature<768; cake_feature+=32)')
         self.emit_model_graph()
         self.end()
@@ -413,4 +416,4 @@ class ModelEmitter(_Emitter):
         self.line('// CAKE_KERNEL_END')
         self.host()
         return Emission('\n'.join(self.lines) + '\n', self.entry, {'shared_bytes': 0},
-                        self.metadata('one model-width SwiGLU row per CTA; explicit BF16 round'))
+                        self.metadata('four model-width SwiGLU rows per CTA; explicit BF16 round'))
