@@ -260,6 +260,20 @@ Reports are retained at
 `/home/qinhaiyan/cake-weave-dual-role-acqrel-c8550363-sweep6/` and mirrored
 locally. This adds spatial and steal correctness coverage, not a timing rule.
 
+Job `gpuq-734fbadaded6` profiled those six sealed controls with two warmups
+and three L2-flushed CUPTI samples each. The post-lease audit checked the
+FP64 oracle and v3 bitwise output again, plus four reset kernels, 16 layer
+kernels, 92 layer memsets and complete phase records per sample. Mixed K=4
+development medians were 132.41/131.65 ms for c=1 at budgets 0/5888;
+24.55/14.48/10.42 ms for c=74 at budgets 0/5888/46920; and 10.72 ms for
+c=95 at budget 46920. The c=74, budget=5888 arm exhausted its permit on
+every rank. The same-lease c=64, budget=46920 ABBA above had a roughly
+10.07 ms producer/consumer median. The report is retained at
+`/home/qinhaiyan/cake-weave-dual-role-acqrel-c8550363-profile6/report.json`.
+These are development observations on one route: they guide barrier and
+partition investigation, but do not qualify a c selection or external
+baseline speedup.
+
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
 four-device timing reset and matched open baseline. This task branch remains
