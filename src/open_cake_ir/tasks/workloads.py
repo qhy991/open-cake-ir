@@ -206,6 +206,13 @@ def create_task(task_name: str, *, backend: str = "metal-m1-pro", rows: int = 12
     of which case is selected for authoring; all five have the same tensor ABI. GEMM
     owns a third extent because its output column count is unrolled by the Schedule.
     """
+    if task_name == metax_fp8_gemm.TASK:
+        if (backend != "triton-metax" or type(rows) is not int or rows != 64
+                or type(columns) is not int or columns != 64
+                or depth is not None and (type(depth) is not int or depth != 64)):
+            raise ValueError("MetaX FP8 GEMM requires triton-metax and fixed M=N=K=64")
+        document = metax_fp8_gemm.workload_document()
+        return document, metax_fp8_gemm.starter_source(WorkloadContract(document), case_id)
     if task_name in aka_v3_math.LAUNCHABLE_TASKS:
         name = aka_v3_math.LAUNCHABLE_TASKS[task_name]
         if any(type(value) is not int or value <= 0 for value in (rows, columns)):

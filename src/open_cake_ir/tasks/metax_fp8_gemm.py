@@ -6,10 +6,12 @@ import json
 import math
 import struct
 from collections.abc import Mapping
+from pathlib import Path
 
 from open_cake_ir.evaluation.workload import WorkloadContract
 
 OPERATOR = "metax_fp8_e4m3_gemm_fp32"
+TASK = "metax_fp8_gemm"
 WORKLOAD_ID = "metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1"
 SIZE = 64
 _FINITE_CODES = tuple(code for code in range(256) if code not in (0x7F, 0xFF))
@@ -85,6 +87,15 @@ def validate_contract(document: Mapping) -> None:
     workload = WorkloadContract(document)
     for case_id in workload.case_ids:
         workload.tensor_abi(case_id)
+
+
+def starter_source(workload: WorkloadContract, case_id: str) -> str:
+    """Use the admitted Cake source as the known-kernel reproduction baseline."""
+    validate_contract(workload.document)
+    workload.case(case_id)
+    source = (Path(__file__).resolve().parents[3]
+              / "examples/python/xcore1002_fp8_compensated.py")
+    return source.read_text(encoding="utf-8")
 
 
 def _bytes_for_case(case: Mapping) -> tuple[bytes, bytes]:
