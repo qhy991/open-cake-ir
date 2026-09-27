@@ -83,7 +83,7 @@ class FlashInferGemmTests(unittest.TestCase):
                                  assessment.findings)
                 lowered = compiler.lower(assessment)
                 self.assertEqual(lowered.toolchain_requirements['grid'],
-                                 (60, 128 // block_n, 1))
+                                 [60, 128 // block_n, 1])
                 self.assertEqual(expected_ctas, 60 * (128 // block_n))
                 self.assertIn('rounded = acc.to(tl.float16)', lowered.source)
         with self.assertRaises(ValueError):
