@@ -34,8 +34,10 @@ from .solx_fib import gemm as solx_fib_gemm
 from .solx_fib import workload as solx_fib_math
 from .solx_fib.authoring import starter_source as solx_fib_starter_source
 from .tinygemm import reproduction as tinygemm_reproduction
+from . import metax_fp8_gemm
 
 _TASKS = {
+    metax_fp8_gemm.OPERATOR: (metax_fp8_gemm.validate_contract, WorkloadContract),
     tinygemm_reproduction.OPERATOR: (tinygemm_reproduction.validate_contract, WorkloadContract),
     add_rmsnorm.TASK: (add_rmsnorm.validate_contract, WorkloadContract),
     "flash_kmeans_assign": (_validate_flash_contract, FlashWorkloadContract),
@@ -106,6 +108,8 @@ def load_workload(path) -> WorkloadContract:
 def _tensor_math(workload: WorkloadContract):
     """Task-owned routing for the common tensor Evaluation input/oracle interface."""
     operator = workload.document["operator"]
+    if operator == metax_fp8_gemm.OPERATOR:
+        return metax_fp8_gemm
     if operator == tinygemm_reproduction.OPERATOR:
         return tinygemm_reproduction
     if operator == add_rmsnorm.TASK:

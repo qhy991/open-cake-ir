@@ -1,0 +1,451 @@
+{
+  "cases": [
+    {
+      "case_id": "primary",
+      "mode": "primary",
+      "seed": 20260926,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "zeros",
+      "mode": "zeros",
+      "seed": 20260927,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "identity",
+      "mode": "identity",
+      "seed": 20260928,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "alternating",
+      "mode": "alternating",
+      "seed": 20260929,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "mixed_magnitude",
+      "mode": "mixed_magnitude",
+      "seed": 20260930,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_00",
+      "mode": "full_finite",
+      "seed": 20261100,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_01",
+      "mode": "full_finite",
+      "seed": 20261101,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_02",
+      "mode": "full_finite",
+      "seed": 20261102,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_03",
+      "mode": "full_finite",
+      "seed": 20261103,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_04",
+      "mode": "full_finite",
+      "seed": 20261104,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_05",
+      "mode": "full_finite",
+      "seed": 20261105,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_06",
+      "mode": "full_finite",
+      "seed": 20261106,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_07",
+      "mode": "full_finite",
+      "seed": 20261107,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_08",
+      "mode": "full_finite",
+      "seed": 20261108,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_09",
+      "mode": "full_finite",
+      "seed": 20261109,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_10",
+      "mode": "full_finite",
+      "seed": 20261110,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_11",
+      "mode": "full_finite",
+      "seed": 20261111,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_12",
+      "mode": "full_finite",
+      "seed": 20261112,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_13",
+      "mode": "full_finite",
+      "seed": 20261113,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_14",
+      "mode": "full_finite",
+      "seed": 20261114,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_full_finite_15",
+      "mode": "full_finite",
+      "seed": 20261115,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_00",
+      "mode": "bounded",
+      "seed": 20261000,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_01",
+      "mode": "bounded",
+      "seed": 20261001,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_02",
+      "mode": "bounded",
+      "seed": 20261002,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_03",
+      "mode": "bounded",
+      "seed": 20261003,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_04",
+      "mode": "bounded",
+      "seed": 20261004,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_05",
+      "mode": "bounded",
+      "seed": 20261005,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_06",
+      "mode": "bounded",
+      "seed": 20261006,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_07",
+      "mode": "bounded",
+      "seed": 20261007,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_08",
+      "mode": "bounded",
+      "seed": 20261008,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_09",
+      "mode": "bounded",
+      "seed": 20261009,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_10",
+      "mode": "bounded",
+      "seed": 20261010,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_11",
+      "mode": "bounded",
+      "seed": 20261011,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_12",
+      "mode": "bounded",
+      "seed": 20261012,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_13",
+      "mode": "bounded",
+      "seed": 20261013,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_14",
+      "mode": "bounded",
+      "seed": 20261014,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    },
+    {
+      "case_id": "heldout_bounded_15",
+      "mode": "bounded",
+      "seed": 20261015,
+      "shape": {
+        "K": 64,
+        "M": 64,
+        "N": 64
+      }
+    }
+  ],
+  "operator": "metax_fp8_e4m3_gemm_fp32",
+  "oracle": {
+    "callable": "open_cake_ir.tasks.metax_fp8_gemm.reference_tensors",
+    "implementation": "standalone_E4M3FN_byte_decode; exact_dyadic_binary64_products; math.fsum_K; one_FP32_RNE_round",
+    "kind": "independent_cpu_high_precision_fp8_gemm"
+  },
+  "provenance": [
+    {
+      "kind": "metax_fp8_precision_investigation",
+      "path": "findings/2026-09-26-002-metax-fp64-reduction-capacity.json",
+      "scope": "fixed_shape_semantics_only; old_device_and_timing_receipts_do_not_qualify_this_successor"
+    }
+  ],
+  "revision": "1",
+  "schema_version": 1,
+  "semantics": {
+    "candidate_abi": {
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "outputs": [
+        "out"
+      ]
+    },
+    "definition": "out[m,n] = round_fp32(sum_k(decode_e4m3fn(a[m,k]) * decode_e4m3fn(b[k,n])))",
+    "exclusions": [
+      "fixed_M64_N64_K64_only",
+      "not_native_FP8_MMA_evidence",
+      "no_framework_or_serving_claim"
+    ],
+    "input_effects": "unchanged",
+    "materialization": "task_owned_xorshift32_finite_E4M3FN_bytes; no candidate or host RNG",
+    "output_storage": "fresh_contiguous_nonaliasing",
+    "target": "xcore1002"
+  },
+  "state": "frozen",
+  "tensors": {
+    "a": {
+      "dtype": "fp8_e4m3",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "shape": [
+        "M",
+        "K"
+      ]
+    },
+    "b": {
+      "dtype": "fp8_e4m3",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "shape": [
+        "K",
+        "N"
+      ]
+    },
+    "out": {
+      "dtype": "fp32",
+      "finite_only": true,
+      "layout": "contiguous_row_major",
+      "shape": [
+        "M",
+        "N"
+      ]
+    }
+  },
+  "validation": {
+    "all_cases_required": true,
+    "atol": 0.001,
+    "comparison": "elementwise_atol_rtol",
+    "equal_nan": false,
+    "primary_case": "primary",
+    "qualification": "all_37_cases_all_4096_outputs; C550_device_and_timing_pending",
+    "rtol": 0.0001,
+    "tolerance_rationale": "Preserves the preceding five-case precision bound while adding 32 finite heldout distributions that can reject ordinary FP32 summation."
+  },
+  "workload_id": "metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1"
+}
