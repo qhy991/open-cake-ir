@@ -1,0 +1,68 @@
+"""FIB 021 row-group Cake mapping and its exact B300 scope."""
+from __future__ import annotations
+
+import unittest
+from pathlib import Path
+
+from open_cake_ir.compiler import Compiler, Program
+from open_cake_ir.compiler.frontend import parse
+from open_cake_ir.evaluation.workload import WorkloadContract
+from open_cake_ir.tasks.solx_fib.b300_rmsnorm021 import row_group_source
+from open_cake_ir.tasks.solx_fib.workload import SPECS, workload_document
+
+ROOT = Path(__file__).resolve().parents[2]
+TASK = "fib_rmsnorm_h128"
+
+
+class Fib021RowGroupTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+
+    def test_all_official_batches_lower_each_bounded_row_group(self) -> None:
+        for rows in SPECS[TASK]["batches"]:
+            workload = WorkloadContract(workload_document(
+                TASK, rows=rows, columns=128, backend="triton-b300"))
+            for tile in (4, 8, 16):
+                with self.subTest(rows=rows, tile=tile):
+                    schedule = parse(row_group_source(
+                        workload, rows_per_cta=tile)).document
+                    self.assertEqual(schedule["outputs"], ["out"])
+                    self.assertEqual(schedule["program_map"]["axes"][0]["tile"], tile)
+                    self.assertEqual(schedule["program_map"]["axes"][1]["tile"], 128)
+                    self.assertEqual(
+                        [op["id"] for op in schedule["operations"]
+                         if op["kind"] == "load"], ["load_x", "load_weight"])
+                    reduction = next(op for op in schedule["operations"]
+                                     if op["id"] == "sum_square")
+                    self.assertEqual(reduction["parameters"]["axis"], 1)
+                    assessment = self.compiler.assess(schedule)
+                    self.assertFalse(
+                        [f for f in assessment.findings if f.blocks_lowering],
+                        assessment.findings)
+                    lowered = self.compiler.lower_program(
+                        Program.from_schedule(schedule))
+                    lowered.validate_binding()
+                    leaf = lowered.lowerings[0]
+                    self.assertEqual(leaf.toolchain_requirements["grid"],
+                                     [(rows + tile - 1) // tile, 1, 1])
+                    self.assertIn("axis=1", leaf.source)
+                    self.assertIn("mask=", leaf.source)
+
+    def test_other_target_task_and_row_tile_are_refused(self) -> None:
+        workload = WorkloadContract(workload_document(
+            TASK, rows=24, columns=128, backend="triton-b300"))
+        with self.assertRaisesRegex(ValueError, "must be 4, 8 or 16"):
+            row_group_source(workload, rows_per_cta=2)
+        b200 = WorkloadContract(workload_document(
+            TASK, rows=24, columns=128, backend="triton-b200"))
+        with self.assertRaisesRegex(ValueError, "exact B300 task"):
+            row_group_source(b200)
+        other = WorkloadContract(workload_document(
+            "fib_rmsnorm_h512", rows=7, columns=512, backend="triton-b300"))
+        with self.assertRaisesRegex(ValueError, "exact B300 task"):
+            row_group_source(other)
+
+
+if __name__ == "__main__":
+    unittest.main()
