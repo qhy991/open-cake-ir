@@ -1649,7 +1649,21 @@ BF16 输入的 CPU FP32 矩阵乘法均 0 超差，最大绝对误差
 \(2.38\times10^{-7}\)，输入未改写。该作业是共享正确性验证，
 记录了并发计算进程，
 \emph{没有}性能数据。它只证明单个 M16N8K16 寄存器片段的
-映射，shared 装载、多原子累加、准备值发布和完整 KDA 仍待验证。
+映射。第二项 shared 装载 witness 以 \code{ldmatrix.x4} 取 A、
+转置 \code{ldmatrix.x2} 取 B，再执行同一 warp MMA；精确 B300
+AOT 为 32 寄存器、768 字节 static shared、0 spill。
+\code{gpuq-0a04a2c0db18} 完成释放，独立 host 对同三组各 128 个
+结果也全部 0 超差，最大绝对误差与寄存器版本相同，输入未改写。
+首份 host 派生报告误用旧输入标签；修正版只重读原设备快照，
+保留首份记录。第三项 witness 把完整
+\(32\times32\times128\) BF16 耦合拆成八个单 warp CTA，
+每个 CTA 沿 K 累加八个 MMA。精确 B300 AOT 为 32 寄存器、
+6,144 字节 static shared、0 spill；
+\code{gpuq-024a00102199} 完成释放。随机、行编码、交替符号及
+最后 K16 单独非零四组各 1,024 个 FP32 结果对独立 CPU 乘法
+均 0 超差，最大绝对误差 \(9.54\times10^{-7}\)，输入未改写。
+该测试以全局 A/B 输入和八个 CTA 验证形状分解，尚未证明原始
+CAKE 那样的同 CTA 准备值发布、五槽同步、状态递推或完整性能。
 
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
