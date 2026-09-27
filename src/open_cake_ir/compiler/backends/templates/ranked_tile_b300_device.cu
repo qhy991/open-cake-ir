@@ -508,14 +508,16 @@ __device__ void publish_source_completion(const BinParams* params,int wave,
 __device__ __forceinline__ void sort_expert_snapshot(
     Bin* local,int expert,int lane,int count,uint32_t* order,
     int chunk_tokens) {
-  for (int index=lane;index<MAX_ROWS;index+=int(blockDim.x))
+  int sorting_rows=1;
+  while (sorting_rows<count) sorting_rows<<=1;
+  for (int index=lane;index<sorting_rows;index+=int(blockDim.x))
     order[index]=index<count
         ? route_order(local->keys[expert*MAX_ROWS+index],chunk_tokens)
         : 0xffffffffu;
   __syncthreads();
-  for (int width=2;width<=MAX_ROWS;width<<=1) {
+  for (int width=2;width<=sorting_rows;width<<=1) {
     for (int span=width>>1;span>0;span>>=1) {
-      for (int index=lane;index<MAX_ROWS;index+=int(blockDim.x)) {
+      for (int index=lane;index<sorting_rows;index+=int(blockDim.x)) {
         int peer=index^span;
         if (peer>index) {
           uint32_t left=order[index],right=order[peer];
