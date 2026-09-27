@@ -126,6 +126,7 @@ def _validate_search_selection(candidate, plan):
     submitted = selection["submitted_case_ids"]
     selected = selection["selected_case_ids"]
     if (not isinstance(submitted, list) or not isinstance(selected, list)
+            or any(not isinstance(name, str) or not name for name in submitted + selected)
             or len(set(submitted)) != len(submitted)
             or len(set(selected)) != len(selected)):
         raise ValueError("empirical search candidate ids differ")
@@ -146,6 +147,7 @@ def _validate_search_selection(candidate, plan):
             or any(context["runtime"].get(key) != value for key, value in plan["expected_runtime"].items())):
         raise ValueError("empirical model differs from the frozen assay")
     if (frozen.get("schema_version") != 1
+            or frozen.get("kind") != "frozen_prior_model_predictions_for_prospective_audit"
             or frozen.get("prior_model_id") != model.model_id
             or frozen.get("prior_model_compiler_revision_id") != model.compiler_revision_id
             or frozen.get("target") != model.target
@@ -176,14 +178,19 @@ def _validate_search_selection(candidate, plan):
         raise ValueError("empirical search requires complete three-candidate workloads")
     decisions = []
     for group in groups.values():
+        cases = [by_id[row["candidate_sha256"]] for row in group]
+        if len({case["extent"] for case in cases}) != 1 or len({case["curve_id"] for case in cases}) != 3:
+            raise ValueError("empirical search group mixes extents or repeats a curve")
         ordered, decision = _empirical_filter(group)
         if not decision["order_applied"]:
             raise ValueError("empirical search must have complete comparable coverage")
-        decisions.append({"candidate_set": [row["candidate_sha256"] for row in group],
-                          "selected_top2": [row["candidate_sha256"] for row in ordered[:2]]})
+        decisions.append({"extent": cases[0]["extent"],
+                          "candidate_set": [row["candidate_sha256"] for row in group],
+                          "selected_top2": [row["candidate_sha256"] for row in ordered[:2]],
+                          "complete_coverage": True})
     if ([name for decision in decisions for name in decision["selected_top2"]] != selected
-            or [(row["candidate_set"], row["selected_top2"]) for row in frozen["decisions"]]
-            != [(row["candidate_set"], row["selected_top2"]) for row in decisions]):
+            or frozen.get("audit_extents") != [row["extent"] for row in decisions]
+            or frozen.get("decisions") != decisions):
         raise ValueError("empirical GPU cut differs from frozen predictions")
 
 

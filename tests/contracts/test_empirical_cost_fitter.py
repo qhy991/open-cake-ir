@@ -131,14 +131,19 @@ class FitterBindingTest(unittest.TestCase):
                                 "covered": estimate["covered"]})
         ordered = sorted(predictions, key=lambda row: row["predicted_us"])
         selected = [row["case_id"] for row in ordered[:2]]
-        frozen = {"schema_version": 1, "prior_model_id": model.model_id,
+        frozen = {"schema_version": 1,
+                  "kind": "frozen_prior_model_predictions_for_prospective_audit",
+                  "prior_model_id": model.model_id,
                   "prior_model_compiler_revision_id": model.compiler_revision_id,
                   "target": model.target, "assay_context": model_document["context"],
                   "acceptance": plan["model_acceptance"],
                   "maximum_candidates_per_turn": 3, "searches_per_turn": 2,
+                  "audit_extents": [submitted[0]["extent"]],
                   "predictions": predictions,
-                  "decisions": [{"candidate_set": [case["id"] for case in submitted],
-                                 "selected_top2": selected}]}
+                  "decisions": [{"extent": submitted[0]["extent"],
+                                 "candidate_set": [case["id"] for case in submitted],
+                                 "selected_top2": selected,
+                                 "complete_coverage": True}]}
         write(candidate / "prior-model.json", model_document)
         write(candidate / "prior-predictions.json", frozen)
         plan["search_selection"] = {"kind": "external_empirical_top_k_v1",
@@ -247,6 +252,20 @@ class FitterBindingTest(unittest.TestCase):
             plan["search_selection"]["selected_case_ids"] = selected[::-1]
             write(candidate / "plan.json", plan)
             with self.assertRaisesRegex(ValueError, "GPU cut differs"):
+                instrument._check_plan(candidate)
+            write(candidate / "plan.json", admitted)
+            model_path = candidate / "prior-model.json"
+            incomplete = copy.deepcopy(model_document)
+            incomplete["curves"].pop()
+            write(model_path, incomplete)
+            with self.assertRaisesRegex(ValueError, "prediction differs from model replay"):
+                instrument._check_plan(candidate)
+            write(model_path, model_document)
+            frozen_path = candidate / "prior-predictions.json"
+            frozen = json.loads(frozen_path.read_text())
+            frozen["predictions"][0]["predicted_us"] += 1
+            write(frozen_path, frozen)
+            with self.assertRaisesRegex(ValueError, "prediction differs from model replay"):
                 instrument._check_plan(candidate)
 
     def test_selected_run_audits_only_the_two_measured_candidates(self):
