@@ -203,6 +203,10 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 第一层**寄存器片段设备 witness**已完成：按照 [NVIDIA PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/) 的 warp `mma.sync.m16n8k16` 片段映射，32 个 lane 分持 BF16 A 的 4 个 `.b32`、B 的 2 个 `.b32` 及 FP32 C 的 4 个元素。仓库外固定源码精确 `sm_103a` AOT 为 **21 寄存器、0 spill**；broker-shared `gpuq-5c59b9026da0` 在 GPU4 完成、释放。独立 host 在释放后以 BF16 输入的 FP32 矩阵乘法检查随机有符号、行编码与交替符号三组各 128 个结果，全部零超差，最大绝对误差分别为 `5.96e-8`、0、`2.38e-7`，A/B 均未改写。作业记录其它计算 PID `2094101`，因此**没有计时结论**。Finding event 214 保留源码与完整报告。这仅证明寄存器片段的数值映射；共享 `ldmatrix`、32×32×128 多 atom 累加、KDA 准备值发布和 carried-state 融合仍需各自验证。
 
+第二层**shared→warp MMA 设备 witness**复用同一三组 BF16 输入：A 从 shared 经 `ldmatrix.m8n8.x4` 装载，B 经转置形式的 `ldmatrix.m8n8.x2.trans` 装载，再由同一 `mma.sync.m16n8k16` 消费。静态 shared 768 字节，精确 B300 AOT **32 寄存器、0 spill**。broker-shared `gpuq-0a04a2c0db18` 在 GPU7 完成释放，设备期间未观测到其它计算 PID；独立 host 对三组各 128 个结果均零超差，最大绝对误差与第一层相同，A/B 未改写。首份 host 派生报告把输入生成器的旧 `scope` 字段写到报告中；它的设备 `scope` 核对与全部数值判断正确。保留首份报告，`host_report_v2` 只从同一设备快照读取正确的设备 scope，没有重跑 GPU。Finding event 215 指向修正报告。该 witness 资格化单个 shared 片段和 warp MMA 的组合，不资格化 64 个 atom 的 K128 累加、KDA 准备值共享、同步重用或任何性能。
+
+第三层将**完整 32×32×128 耦合矩阵**分给 `grid=(4,2)` 的八个单 warp CTA，每 CTA 持有一个 16×8 FP32 输出 tile、从 6,144 字节 static shared 读取 A/B、沿 K 方向执行八个 `ldmatrix`+warp MMA，合计 64 个 atom。这个独立 kernel 的精确 B300 AOT 为 **32 寄存器、0 stack/spill**。broker-shared `gpuq-024a00102199` 在 GPU5 完成释放，四种输入（随机有符号、单位行编码、交替符号、只在最后 K16 非零）各 **1,024 个**输出对 BF16 操作数的 CPU FP32 矩阵乘法均零超差，最大绝对误差分别为 `4.77e-7`、0、`9.54e-7`、0；A/B 未改写，设备期间未观测到其它计算 PID。Finding event 216 保留源码和报告。它使原始 CAKE 的 64 atom **形状分解在本卡有了数值证据**，但当前拆成八个独立 CTA、输入预先在全局内存，尚无两项真实 KDA coupling、同 CTA 五槽生产/消费、同步或带状态的完整 kernel，更没有性能证据。不能把 64 atom 正确性当作融合 lowering 已实现。
+
 下一种大幅下降所需的 lowering 不是单纯添加 `setmaxnreg` 或五槽常数，而是先在 Cake Schedule 中给**同 CTA 准备→MMA→状态递推→epilogue**的每条存储边指定生产者、消费者、槽数、release/acquire 和读完后的复用条件；共享 IR/Verifier 维护值和别名语义，NVIDIA backend 负责 TMA/TMEM/PTX 发射，Target 检查真实 1,024-thread/约 219 KiB 路线资源，Lab 才选择何时采用。先以真实固定 H64 的完整输出、最终原位状态和同机计时比较，再看 packed/tail 与高保留反例。没有完整候选前，原始 CAKE 的代码只能作为**已知实现的设计证据**，不能把它的隐含机制直接当成新 Compiler pass。
 
 ### 2.22 完整候选的 Program 与 Evaluation 别名边界
