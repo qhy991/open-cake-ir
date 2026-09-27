@@ -48,6 +48,32 @@ FP8 输入不变。实际计数为 37 次模块加载、37 次 kernel 调用和 
 没有逐 bit GPU 输出审计、性能、其他形状、原生 FP8 MMA 或框架资格。
 测量与 profiler 入口的软件准入已同步；它们的设备资格仍需各自收据。
 
+## 显式 K1 流式 FP8 lowering
+
+[流式例子](../examples/python/xcore1002_fp8_streaming.py)沿用
+`maca.simt.fp8e4m3_compensated_fp32`，但在 Schedule 中显式声明 K64 的 K1 循环及
+`A[2,1]`／`B[64,1]` 加载。FP32 total/correction 在 loop entry 初始化，逐步更新，
+并在唯一 final store 前合并。Resident 发射不变，默认 task starter 仍是固定 resident
+基线；task 的 `streaming_source(workload)` 提供绑定同一 NT v2 Workload 的候选。
+循环内 result 消费、K2、八个 groups 和 full-unroll 均由
+`MACA_FP8_COMPENSATED_STREAM_UNQUALIFIED` 拒绝，不借用其他规则。
+
+生成源码 `c3be4379` 在隔离编译器中封存，再由 broker job `maca-519d3c9e28b2`
+通过全部 37 组正确性（151552 个元素，最大绝对误差 0，输入不变）。配对 search
+`maca-2b27dcbc8648` 和 fresh confirmation `maca-308b9247cf16` 均通过质量门与
+10/10 反向 pair 胜出：每臂 250 个样本的中位数为 **26.880／155.904 µs**
+（生成流式／固定 resident），即 primary case 的 **5.80×**。A/A
+`maca-d8e8da978404` 为等中位数、10 个 tie。60 个原始 cohort 已重算并核对。
+仪器 profile `maca-ce08d23d4527` 通过正确性，报告 20 registers/thread 与 0 动态
+shared bytes；带宽、指令计数和 achieved occupancy 未采集。
+
+这与 authored-source 的 22.784 µs／6.84×／26 registers 结果分开保留。
+范围只包括固定 NT64 primary 的 MCPTI 冷缓存机制对照；分配仍为 `local_serialized`，
+外部活动未排除。没有其他形状、原生 FP8 dot、GPU bitwise 审计或服务性能外推。
+收据与复核为 checkout 外的
+`open-cake-ir-evidence/metax-cake-streaming-c3be4379-v2/device-verification.json`，
+详见 [F-2026-09-27-002](../findings/2026-09-27-002-metax-fp8-streaming-lowering.json)。
+
 ## 编译与执行
 
 编译通过现有 bubblewrap 路径运行，不挂载 GPU，也不暴露作者工作目录。

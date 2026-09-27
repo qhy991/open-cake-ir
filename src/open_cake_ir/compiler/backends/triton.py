@@ -18,7 +18,9 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from .triton_selection import top_k_selection_structure
-from .metax import emit_compensated_fp8_mma
+from .metax import (emit_compensated_fp8_mma, streaming_compensated_loop,
+                    emit_streaming_compensated_state, emit_streaming_compensated_step,
+                    emit_streaming_compensated_finalize)
 from .common import PythonNamespace, emitted_python_name_findings, python_name_findings, safe_python_identifier, TORCH_DTYPES, refusal, vocabulary_findings, Emission, EmitError, require as _require
 from ..ir import (
     ElementwiseOp,
@@ -1455,6 +1457,10 @@ class _TritonEmitter:
                 )
                 self.line()
             elif operation.kind is OperationKind.MMA and self.schedule.mma_accumulates_over(operation, loop):
+                if streaming_compensated_loop(self.schedule, operation) is not None:
+                    emit_streaming_compensated_state(self.line, pad=pad)
+                    self.line()
+                    continue
                 # A contraction summed across the loop needs its accumulator before the
                 # loop, for the same reason a fold does: the first iteration adds to it.
                 accumulator = self.schedule.buffer(operation.writes[0])
@@ -1534,6 +1540,8 @@ class _TritonEmitter:
             self._emit_operation(operation, pad + "    ", inside=True)
         for op_id in loop.body:
             operation = self.schedule.operation(op_id)
+            if operation is not None and streaming_compensated_loop(self.schedule, operation) is not None:
+                emit_streaming_compensated_finalize(self.line, output=operation.writes[0], pad=pad)
             if operation is not None and operation.kind is OperationKind.ONLINE_SOFTMAX:
                 self._emit_online_softmax_finalize(operation, pad)
             if (
@@ -1815,8 +1823,11 @@ class _TritonEmitter:
                      "the compensated FP8 SIMT body requires a MACA code object")
             _require(len(operation.reads) == 2 and len(tiles) == 2,
                      "the compensated FP8 SIMT body takes two staged operands")
-            emit_compensated_fp8_mma(self.line, left=tiles[0], right=tiles[1],
-                                     output=operation.writes[0], pad=pad)
+            if streaming_compensated_loop(self.schedule, operation) is not None:
+                emit_streaming_compensated_step(self.line, left=tiles[0], right=tiles[1], pad=pad)
+            else:
+                emit_compensated_fp8_mma(self.line, left=tiles[0], right=tiles[1],
+                                         output=operation.writes[0], pad=pad)
             return
         if contract == "triton.dot.fp8e4m3_block_scale_fp32":
             _require(
