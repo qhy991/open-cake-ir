@@ -1385,9 +1385,15 @@ def _verify_operation_shape(
             out.add("TMEM_LOAD_CONTRACT", path,
                     "tmem load moves one FP32 or BF16 tensor tile into an identical register tile",
                     FindingCategory.DATA_CONSISTENCY)
-        if atom is None or atom.op != "tcgen05.Ld32x32b" or atom.repetition not in (1,2,4,8,16,32,64,128):
+        conventional = (atom is not None and atom.op == "tcgen05.Ld32x32b"
+                        and atom.repetition in (1,2,4,8,16,32,64,128))
+        m64_bf16 = (atom is not None and atom.op == "tcgen05.Ld16x256b"
+                    and atom.repetition == 8 and source is not None
+                    and source.dtype is DType.BF16 and source.shape == (64, 128))
+        if not (conventional or m64_bf16):
             out.add("TMEM_LOAD_ATOM", f"{path}.parameters.source_atom",
-                    "tmem load requires an explicit 32x32b power-of-two repetition in [1,128]",
+                    "tmem load requires a 32x32b power-of-two repetition in [1,128] "
+                    "or the BF16 64x128 Ld16x256b x8 atom",
                     FindingCategory.HARDWARE_CONFORMANCE)
         if (source is not None and source.space is MemorySpace.TENSOR
                 and source.dtype is DType.BF16 and len(source.shape) == 2
@@ -1456,27 +1462,36 @@ def _verify_operation_shape(
     if operation.kind is OperationKind.TMEM_STORE:
         source = buffers.get(operation.reads[0]) if len(operation.reads) == 1 else None
         destination = buffers.get(operation.writes[0]) if len(operation.writes) == 1 else None
+        atom = operation.parameters.destination_atom
+        m64_atom = atom.op == "tcgen05.St16x256b"
+        tiled_shape = (source is not None and len(source.shape) == 2
+                       and (source.shape == (64, 16 * atom.repetition)
+                            and atom.repetition in (2, 8) if m64_atom
+                            else source.shape[0] == 128 and source.shape[1] % 16 == 0))
         if (
             source is None or destination is None
             or source.space is not MemorySpace.REGISTER
             or destination.space is not MemorySpace.TENSOR
             or source.dtype is not DType.BF16 or destination.dtype is not DType.BF16
             or source.shape != destination.shape
-            or len(source.shape) != 2 or source.shape[0] != 128
-            or source.shape[1] % 16
+            or not tiled_shape
             or destination.mode is not BufferMode.SCRATCH
         ):
             out.add(
                 "TMEM_STORE_CONTRACT", path,
-                "tmem_store moves one 128-row BF16 register tile into an identical "
-                "scratch tensor tile with a whole number of paired-column x8 atoms",
+                "tmem_store moves one BF16 register tile into identical TMEM scratch: "
+                "128 rows with St32x32b x8 or exactly 64x32/64x128 "
+                "with St16x256b x2/x8",
                 category,
             )
-        atom = operation.parameters.destination_atom
-        if atom.op != "tcgen05.St32x32b" or atom.repetition != 8:
+        if (atom.op, atom.repetition) not in {
+            ("tcgen05.St32x32b", 8), ("tcgen05.St16x256b", 2),
+            ("tcgen05.St16x256b", 8),
+        }:
             out.add(
                 "TMEM_STORE_ATOM", f"{path}.parameters.destination_atom",
-                "the admitted TMEM store atom is tcgen05.St32x32b with repetition 8",
+                "the admitted TMEM store atoms are St32x32b x8 and "
+                "St16x256b x2/x8",
                 FindingCategory.HARDWARE_CONFORMANCE,
             )
 

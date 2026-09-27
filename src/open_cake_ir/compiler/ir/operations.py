@@ -214,6 +214,12 @@ class CopyAtom:
     The retained artifact writes `tcgen05.Ld32x32bOp(tcgen05.Repetition.x64)`. The op
     and its repetition determine how many accumulator elements each thread moves per
     step, so they belong to the schedule rather than to the backend.
+
+    `Ld16x256b` / `St16x256b` x8 is the separate BF16 64x128 TMEM movement
+    commitment: four physical warps own 16 rows each and each lane carries 32
+    packed 32-bit words. `St16x256b` x2 moves a BF16 64x32 tile with 8 packed
+    words per lane. These atoms do not imply that an M64 MMA or a carried
+    KDA loop is legal; those contracts have their own verifier and backend gates.
     """
 
     op: str

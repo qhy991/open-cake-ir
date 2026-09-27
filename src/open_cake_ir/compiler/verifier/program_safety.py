@@ -153,7 +153,7 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
     carried_pairs, _ = analyze_carried_tmem(schedule)
 
     # A TMEM store completes asynchronously. Every physical warp that writes its
-    # 128-lane tile must finish and arrive before a consumer may read the tensor tile.
+    # declared tile must finish and arrive before a consumer may read the TMEM tile.
     role_by_name = {role.name: role for role in schedule.roles}
     for index, operation in enumerate(schedule.operations):
         if operation.kind is not OperationKind.TMEM_STORE:
@@ -165,7 +165,8 @@ def verify(schedule: Schedule, target: Target, out: _Collector) -> None:
         ):
             out.add(
                 "TMEM_STORE_ROLE_WIDTH", f"{path}.role",
-                "tcgen05.St32x32b requires four 32-lane execution groups",
+                "the admitted tcgen05.St32x32b/St16x256b tile requires four "
+                "32-lane execution groups",
                 category,
             )
         barrier = barriers.get(operation.signals[0]) if len(operation.signals) == 1 else None

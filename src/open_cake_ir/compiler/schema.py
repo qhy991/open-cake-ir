@@ -127,7 +127,12 @@ _PARAMETERS = {
             {"movement": _enum(LoadMovement)},
             {
                 "reuse": _enum(LoadReuse),
-                "source_atom": _object({"op": {"const": "tcgen05.Ld32x32b"}, "repetition": {"enum": [1,2,4,8,16,32,64,128]}}),
+                "source_atom": {"oneOf": [
+                    _object({"op": {"const": "tcgen05.Ld32x32b"},
+                             "repetition": {"enum": [1,2,4,8,16,32,64,128]}}),
+                    _object({"op": {"const": "tcgen05.Ld16x256b"},
+                             "repetition": {"const": 8}}),
+                ]},
                 "descriptor_box": {
                     "type": "array",
                     "minItems": 1,
@@ -289,10 +294,12 @@ _PARAMETERS = {
         ]
     },
     OperationKind.STORE: _object({"coalesced": {"type": "boolean"}}),
-    OperationKind.TMEM_STORE: _object({"destination_atom": _object({
-        "op": {"const": "tcgen05.St32x32b"},
-        "repetition": {"const": 8},
-    })}),
+    OperationKind.TMEM_STORE: _object({"destination_atom": {"oneOf": [
+        _object({"op": {"const": "tcgen05.St32x32b"},
+                 "repetition": {"const": 8}}),
+        _object({"op": {"const": "tcgen05.St16x256b"},
+                 "repetition": {"enum": [2, 8]}}),
+    ]}}),
     OperationKind.TRANSPOSE: _object({}),
 }
 
