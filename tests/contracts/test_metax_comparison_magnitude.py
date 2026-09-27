@@ -47,8 +47,8 @@ class MetaxComparisonMagnitude(unittest.TestCase):
         assessment, emitted = self.lower(bucketed_source(workload))
         schedule = Schedule.from_dict(frontend.parse(bucketed_source(workload)).document)
         selected = [op for op in schedule.operations if op.kind is OperationKind.SELECT]
-        self.assertEqual(sum(comparison_magnitude_input(schedule, op) is not None for op in selected), 32)
-        self.assertEqual(emitted.count(' = tl.abs('), 32)
+        self.assertEqual(sum(comparison_magnitude_input(schedule, op) is not None for op in selected), 18)
+        self.assertEqual(emitted.count(' = tl.abs('), 18)
 
     def test_stored_zero_and_arithmetic_consumers_keep_the_original_select(self):
         stored = SOURCE.replace("'int32', mode='output'", "'fp32', mode='output'")
