@@ -1625,6 +1625,14 @@ class _TritonEmitter:
 
     def _emit_select(self, operation, pad):
         p = operation.parameters
+        if self.target.code_object is CodeObject.MCFATBIN:
+            from .metax import comparison_magnitude_input
+            source = comparison_magnitude_input(self.schedule, operation)
+            if source is not None:
+                dtype = self.schedule.buffer(operation.writes[0]).dtype
+                self.line(f"{pad}# CAKE_OP:{operation.op_id}")
+                self.line(f"{pad}{operation.writes[0]} = tl.abs({source}).to({_TL_DTYPE[dtype]})", declares=(operation.writes[0],))
+                return
         false_value = ('float("-inf")' if p.false_value == "negative_infinity" else repr(p.false_value)) if p.false_value is not None else operation.reads[2]
         dtype = self.schedule.buffer(operation.writes[0]).dtype
         if p.false_value is not None and dtype is DType.INT32:
