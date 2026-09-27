@@ -97,3 +97,37 @@ A/A and a correct separate instrumented profile. The authored-source 6.84x resul
 is not this generated-source score. Broader shapes, cache/load policies, consumers
 and control options require their own evidence; do not widen the guard from this
 one domain or infer a native FP8 matrix instruction.
+
+
+## Generated-source representation screens (2026-09-27)
+
+For the fixed NT v2 Workload at producer `c3be4379`, three native-source screens
+used the generated streaming artifact as baseline. Each passed all 37 cases
+(maximum absolute error 0, inputs unchanged), then replayed 20 raw MCPTI cohorts
+(250 samples per arm). All timing quality gates passed; candidate and baseline
+medians were 26.880 us in every screen.
+
+| Isolated source change | TTGIR comparison / transpose counts | Correctness job | Paired job | Pair outcomes candidate / baseline / tied |
+| --- | --- | --- | --- | --- |
+| Omit K masks, retain row/store masks | 1 / 1 | `maca-6ba023cc1ba5` | `maca-81477c35c119` | 0 / 3 / 7 |
+| Orient RHS load as a row, remove explicit transpose | 2 / 0 | `maca-ecc8db411a95` | `maca-0f95fa090fd4` | 1 / 0 / 9 |
+| Combine both changes | 1 / 0 | `maca-79413adc4282` | `maca-3d3f0fe2dad9` | 1 / 0 / 9 |
+
+**No promotion.** Fewer comparison or transpose operations did not yield a
+material timing benefit in these screens. Keep the generated lowering unchanged;
+these counts do not explain the authored/generated latency gap. The joint screen
+also does not establish causal interaction. No fresh confirmation or instrumented
+profile was run for these non-survivors. Allocation was `local_serialized`;
+external GPU activity was not excluded.
+
+Retained evidence is outside the source checkout at
+`/Users/haiyan-infiniai/open-cake-ir-evidence/`, under
+`metax-streaming-{kmask,rhsrow,combined}-paired-20260927/verification.json` and
+its adjacent `device-run/timing-samples.json`. The K-mask seal report's original
+baseline locator was stale; its appended `seal-interpretation.json` records the
+actual generated-stream baseline used by pair validation. Do not reinterpret the
+original report as a resident-baseline measurement.
+
+When investigating the remaining gap, isolate another source difference and
+replay the sealed device result; static IR simplification alone is insufficient
+reason to add a MetaX lowering rule.
