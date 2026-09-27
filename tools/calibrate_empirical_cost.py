@@ -4,6 +4,7 @@
 Plans, candidates and output directories are external artifacts. A plan binds this
 collector's bytes and the released Compiler. The plan owns domains and thresholds;
 the workload oracle below owns the two explicitly supported evaluation contracts.
+Run check-plan as a CPU-only GPU Infra local stage before any broker stage.
 """
 from __future__ import annotations
 
@@ -273,7 +274,10 @@ def _collect():
     if _external(os.environ["KERNELINFRA_RESULT"]) != stage / "result.json":
         raise ValueError("result must belong to the current stage")
     candidate = Path(os.environ["KERNELINFRA_CANDIDATE_DIR"]).resolve()
-    plan, compiler = _check_plan(candidate)
+    plan = _read(candidate / "plan.json")
+    if plan.get("state") != "frozen":raise ValueError("collection requires a frozen plan")
+    if sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
+        raise ValueError("collector differs from frozen plan")
     (stage / "collector.py").write_bytes(Path(__file__).read_bytes())
     _write(stage / "plan.json", plan)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
@@ -285,6 +289,7 @@ def _collect():
     if kind not in {"correctness", "profile"}:
         raise ValueError("collection requires a correctness/profile stage")
     _write(stage / "execution-context.json", {"broker_peer": peer, "uid": os.geteuid(), "gid": os.getegid(), "run_id": os.environ["KERNELINFRA_RUN_ID"], "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")})
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     target, binary_version_expected = _target_contract(compiler, plan)
     import torch
     from cuda.bindings import driver
