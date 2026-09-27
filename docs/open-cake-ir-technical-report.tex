@@ -1673,6 +1673,22 @@ PID 拒绝，整作业计时不予接纳；前四轮保留快照均通过 oracle
 此前配对 \code{gpuq-92adb0eb2600} 因外来计算 PID 在首轮前拒绝，
 没有计时样本；正式 Program ABI 与六形状仍未验收。
 
+\Needspace{8\baselineskip}
+\paragraph{不冲零的 FP32x2 状态算术。}
+原始 CAKE CUDA 的成对 FP32 指令带 \code{ftz}；它会冲掉次正规
+输入/结果，故实验映射使用独立 RN 乘、加且不带 \code{ftz} 的
+\code{mul/add.f32x2}\footnote{NVIDIA PTX ISA:
+\url{https://docs.nvidia.com/cuda/parallel-thread-execution/}}。
+精确 B300 witness 对随机、符号零和次正规数的 16,384 个结果位
+与标量指令逐 bit 一致。固定 H64 源级候选的全部输出与最终状态
+也与原 native 抓取逐 bit 相同。后端任务提交 \code{5e0ebd68}
+只在有界行拥有状态链上发射成对指令；固定提交的 Corpus Gate
+179/179、合同 16/16、完整适用 CPU 套件 2,700 passed，AOT
+242 寄存器、0 spill。静态 SASS 含各 64 条 \code{FMUL2/FADD2}。
+源级配对 \code{gpuq-9e1a33ea220a} 和 Cake-emitted 设备作业
+\code{gpuq-ac3126c0ee62} 均在首个 kernel 前被外来计算 PID
+隔离门禁拒绝，故尚无配对延迟或 Cake 生成版设备数值资格。
+
 \Needspace{12\baselineskip}
 \paragraph{M64 拆分的原子验证。}
 CPU-only M64 探针用第二 CTA 轴与 \code{program\_tile} 切分
