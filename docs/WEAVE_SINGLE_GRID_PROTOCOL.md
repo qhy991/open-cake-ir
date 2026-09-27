@@ -62,8 +62,19 @@ counts. Owner tile totals were [80, 64, 64, 64]; actual stolen task counts
 were [147, 116, 121, 123]. The report is retained at
 `/home/qinhaiyan/cake-weave-single-grid-f7ae17fe-r2/report.json` and mirrored
 under the local `cake-weave-single-grid-f7ae17fe-r2` evidence directory.
-This one case proves cooperative launch admission and correctness for that
-control, but not the other routes or K/c/steal settings.
+The subsequent broker job `gpuq-f10e54a7c490` ran all four frozen routes at
+K=4/2/1 with individually sealed plans and at most four GPUs. Its post-lease
+audit found zero FP64-oracle failures over 50,331,648 output elements, exact
+agreement for all 960 rank/event tile counts, and zero bit differences from
+the corresponding v3 outputs. Job `gpuq-6cc09f030482` then held the mixed
+route at K=4 and ran five sealed spatial/steal controls: c=1 with budgets
+0/5888, and c=74 with budgets 0/5888/46920. All five passed the same checks
+over 20,971,520 output elements and 400 event counts. With c=74, budget 5888
+was exhausted on every rank; budget 46920 permitted actual stolen counts
+[10877, 8882, 8914, 8931]. The reports are retained under
+`/home/qinhaiyan/cake-weave-single-grid-f7ae17fe-{matrix1,sweep1}/report.json`
+and mirrored under the corresponding local evidence directories. These are
+development correctness results; they do not establish a timing improvement.
 The local integration now carries `RankedTileLaunchManifest` and a
 byte-bearing `RankedTileCandidate` for pointer ABI v4: they refuse a wrong
 Workload case, source, rank plan or library bytes before CUDA state creation.
@@ -84,9 +95,9 @@ CTA per SM; the host's `cudaOccupancyMaxActiveBlocksPerMultiprocessor` check
 remains authoritative before launch. The source-only four-CTA estimate must
 not be used as an occupancy result.
 
-The next validation should audit K=1/2/4 and the other frozen routes against
-the external FP64 oracle and CPU event-tile planner, then vary c and the
-steal budget with the same sealed candidate discipline. CUPTI intervals remain
-development evidence until the four-device reset/clock and common Candidate
-gates are qualified. Promotion disposition: **no merge or Lab rule** from
-this single-case result.
+The next validation should measure the single-grid path with the Target's
+CUPTI/L2-reset protocol, distinguish source dispatch, tile planning, Cake FFN
+and return/combine costs, and compare against the matched open baseline only
+after the common Candidate and four-device reset/clock gates are qualified.
+CUPTI intervals remain development evidence until then. Promotion
+disposition: **no merge or Lab rule** from correctness alone.
