@@ -176,7 +176,8 @@ cudaError_t ranked_tile_reset(RankedTileRankState& s) {
   // CAKE_EFFECT: state.reset
   cudaError_t error;
 #define CAKE_CLEAR(pointer, bytes, value) \
-  do { error=cudaMemset((pointer),(value),(bytes)); if (error!=cudaSuccess) return error; } while (0)
+  do { error=cudaMemsetAsync((pointer),(value),(bytes),s.compute); \
+       if (error!=cudaSuccess) return error; } while (0)
   CAKE_CLEAR(s.bin,sizeof(Bin),0);
   CAKE_CLEAR(&s.bin->keys,sizeof(Bin::keys),0xff);
   CAKE_CLEAR(&s.bin->payload_key,sizeof(Bin::payload_key),0xff);
@@ -398,6 +399,13 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
   for (int rank=0;rank<R;++rank) {
     CAKE_RUN(cudaSetDevice(rank));
     CAKE_RUN(ranked_tile_reset(state->ranks[rank]));
+  }
+  // The rank streams are nonblocking: a default-stream memset cannot order
+  // their launches, and a source rank may write into a peer's Bin. Complete
+  // every peer reset before launching any cooperative grid.
+  for (int rank=0;rank<R;++rank) {
+    CAKE_RUN(cudaSetDevice(rank));
+    CAKE_RUN(cudaStreamSynchronize(state->ranks[rank].compute));
   }
   for (int wave=0;wave<chunks;++wave) {
     for (int source=0;source<=R;++source) {
