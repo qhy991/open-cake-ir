@@ -40,8 +40,12 @@ FlagTree `0.5.1+metax3.1`／Triton API `3.1.0` 捕获仍由旧源码提交
 bitcode。检查器验证声明的 family、成员边界和 MXC ELF 类型，loader 仅提交
 原生 ELF，避免模块加载回退到 bitcode 编译。
 
-当前 vendor launcher 只传非 constexpr 参数。封存 manifest 读取实际 TTGIR
-signature 并验证 tensor 参数数量，隐藏指针数为 0。
+Triton 3.1 的原捕获 launcher 只传非 constexpr 参数。C550-2 Triton 3.6
+在公开参数后追加 global/profile scratch 两个指针；TTGIR 只包含公开参数，
+原生 ELF 的 MetaX note 才包含全部 launcher 槽位。封存与 loader 必须分别检查
+公开 tensor ABI 和原生参数计数，并拒绝非零或未建模的 scratch 要求。
+原三指针封存 FP8 基线在 launch 崩溃，对照追加两个零指针后 primary 输出通过；
+完整设备资格仍待修复后重验，见 [F-2026-09-27-001](../findings/2026-09-27-001-metax-native-scratch-abi.json)。
 
 ### FP32 FMA 指令 lowering
 
