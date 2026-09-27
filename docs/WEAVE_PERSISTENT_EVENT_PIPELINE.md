@@ -76,6 +76,21 @@ This establishes the sequential persistent lifecycle for those twelve
 frozen configurations. The c=95 Finding, boundary/tail guards outside those
 cases, same-rank cross-event overlap and qualified timing remain open.
 
+For a matched launch-structure comparison, the per-event path received the
+same reset correction at `cbb68331`; its 15 related contracts, 179-case Corpus
+Gate and exact B300 NVCC build passed. Broker job `gpuq-a336552fe1d2` then
+ran old/new/new/old under one four-GPU lease on the mixed K=4, c=64,
+budget=46920 case. Every arm passed the FP64 oracle, CPU tile plan, v3 bitwise
+output and CUPTI reset/activity checks. The per-event source emitted 92 layer
+kernels per sample; the persistent source emitted 16. Their four CUPTI
+development medians were 9.97/10.09/10.06/9.82 ms, yielding old/new
+aggregate medians of 9.89/10.08 ms. Fewer kernel launches alone showed no
+gain under this assay; the result is not qualified latency. The retained
+report is `/home/qinhaiyan/cake-weave-persistent-vs-event-reset-abba-r3/report.json`.
+Promotion disposition: **no merge or Lab schedule rule** from the sequential
+persistent scaffold. Same-rank cross-event communication/FFN overlap is the
+next performance mechanism to implement and validate.
+
 ## Required next transition
 
 This first step is **sequential across events within each rank**. It removes
