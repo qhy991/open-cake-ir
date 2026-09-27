@@ -71,6 +71,130 @@ def _candidate_set_regrets(audit, maximum_candidates_per_turn):
     return regrets
 
 
+def _expected_signature(family):
+    if family == "fma":
+        return {"a": "*fp32", "b": "*fp32", "c": "*fp32", "y": "*fp32"}
+    if family == "gemm_bias":
+        return {"a": "*bf16", "b": "*bf16", "bias": "*fp32", "c": "*fp32"}
+    raise ValueError(f"calibration family {family!r} is unsupported")
+
+
+def _positive_number(value, label, *, allow_zero=False):
+    if type(value) not in (int, float) or not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
+        raise ValueError(f"{label} must be finite and {'nonnegative' if allow_zero else 'positive'}")
+
+
+def _check_plan(candidate):
+    """Reject an invalid frozen calibration before a broker device lease."""
+    candidate = _external(candidate)
+    plan = _read(candidate / "plan.json")
+    if plan.get("state") != "frozen":
+        raise ValueError("calibration plan must be frozen")
+    if sha256(Path(__file__).read_bytes()).hexdigest() != plan.get("collector_sha256"):
+        raise ValueError("calibration plan collector differs")
+    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+    target, _ = _target_contract(compiler, plan)
+    if compiler.commit is None or plan.get("compiler_revision_id") != compiler._revision.revision_id:
+        raise ValueError("calibration plan requires this clean Compiler commit")
+    if plan.get("device_name") not in target.device_names:
+        raise ValueError("calibration device name differs from Target")
+    for key in ("broker_uid", "multiprocessor_count"):
+        if type(plan.get(key)) is not int or plan[key] < 0 or (key == "multiprocessor_count" and plan[key] == 0):
+            raise ValueError(f"calibration {key} differs")
+    if not isinstance(plan.get("cuobjdump"), str) or not Path(plan["cuobjdump"]).is_absolute():
+        raise ValueError("calibration requires an absolute cuobjdump path")
+    if not isinstance(plan.get("expected_runtime"), dict) or not plan["expected_runtime"]:
+        raise ValueError("calibration requires frozen runtime facts")
+    for key in ("model_id", "input_scope"):
+        if not isinstance(plan.get(key), str) or not plan[key].strip():
+            raise ValueError(f"calibration {key} differs")
+    sampling = plan.get("sampling")
+    if not isinstance(sampling, dict):
+        raise ValueError("calibration sampling differs")
+    for key in ("warmup", "rounds", "repetitions", "l2_flush_bytes"):
+        if type(sampling.get(key)) is not int or sampling[key] < (0 if key == "warmup" else 1):
+            raise ValueError(f"calibration sampling.{key} differs")
+    acceptance = plan.get("acceptance")
+    limits = plan.get("model_acceptance")
+    if not isinstance(acceptance, dict) or not isinstance(limits, dict):
+        raise ValueError("calibration acceptance limits differ")
+    for key in ("maximum_cohort_cv", "maximum_repeat_median_ratio"):
+        _positive_number(acceptance.get(key), f"acceptance.{key}")
+    for key in ("maximum_mape", "maximum_relative_error", "maximum_top2_regret_ratio", "envelope_allowance"):
+        _positive_number(limits.get(key), f"model_acceptance.{key}", allow_zero=key == "envelope_allowance")
+    if limits["maximum_top2_regret_ratio"] < 1 or limits["envelope_allowance"] >= 1:
+        raise ValueError("calibration model acceptance bounds differ")
+    if limits.get("maximum_candidates_per_turn") != 3:
+        raise ValueError("calibration requires the Lab's three-candidate set")
+    curves = plan.get("curves")
+    cases = plan.get("cases")
+    if not isinstance(curves, list) or not curves or not isinstance(cases, list) or not cases:
+        raise ValueError("calibration curves and cases are required")
+    curve_by_id = {curve.get("id"): curve for curve in curves if isinstance(curve, dict)}
+    if len(curve_by_id) != len(curves) or any(not isinstance(name, str) or not name for name in curve_by_id):
+        raise ValueError("calibration curve ids differ")
+    seen_cases = set()
+    splits = {name: {"fit": set(), "calibration": set(), "audit": set()} for name in curve_by_id}
+    audit_groups = {}
+    templates = {}
+    for case in cases:
+        if not isinstance(case, dict) or set(case) != {"id", "curve_id", "extent", "split", "schedule", "family", "workload_id"}:
+            raise ValueError("calibration case fields differ")
+        if not isinstance(case["id"], str) or not case["id"] or case["id"] in seen_cases:
+            raise ValueError("calibration case ids differ")
+        seen_cases.add(case["id"])
+        curve = curve_by_id.get(case["curve_id"])
+        if curve is None or case["split"] not in splits[case["curve_id"]]:
+            raise ValueError("calibration case curve or split differs")
+        if type(case["extent"]) is not int or case["extent"] <= 0:
+            raise ValueError("calibration case extent differs")
+        if not isinstance(case["workload_id"], str) or not case["workload_id"]:
+            raise ValueError("calibration workload id differs")
+        if type(curve.get("extent_multiple")) is not int or curve["extent_multiple"] <= 0 or case["extent"] % curve["extent_multiple"]:
+            raise ValueError("calibration curve extent alignment differs")
+        path = (candidate / case["schedule"]).resolve()
+        if candidate not in path.parents or not path.is_file():
+            raise ValueError("calibration Schedule must belong to candidate snapshot")
+        assessment = compiler.assess_file(path)
+        if assessment.target != plan["target"] or not assessment.lowering_eligible:
+            raise ValueError("calibration Schedule target or admission differs")
+        lowering = compiler.lower(assessment)
+        signature = _expected_signature(case["family"])
+        if lowering.toolchain_requirements.get("signature") != signature:
+            raise ValueError("calibration Schedule ABI differs")
+        document = json.loads(assessment.schedule_bytes)
+        buffers = {row["name"]: row for row in document["buffers"]}
+        bindings = curve.get("varying_dimensions")
+        if not isinstance(bindings, list) or not bindings:
+            raise ValueError("calibration varying dimensions differ")
+        seen_bindings = set()
+        for binding in bindings:
+            if (not isinstance(binding, dict) or set(binding) != {"buffer", "dimension"}
+                    or binding["buffer"] not in buffers or type(binding["dimension"]) is not int
+                    or not 0 <= binding["dimension"] < len(buffers[binding["buffer"]]["shape"])
+                    or buffers[binding["buffer"]]["shape"][binding["dimension"]] != case["extent"]):
+                raise ValueError("calibration varying dimension extent differs")
+            position = (binding["buffer"], binding["dimension"])
+            if position in seen_bindings:
+                raise ValueError("calibration varying dimension is duplicated")
+            seen_bindings.add(position)
+        document["schedule_id"] = "calibration-template"
+        for name, dimension in seen_bindings:
+            buffers[name]["shape"][dimension] = None
+        prior = templates.setdefault(case["curve_id"], document)
+        if document != prior:
+            raise ValueError("calibration curve template drifts outside its varying dimensions")
+        splits[case["curve_id"]][case["split"]].add(case["extent"])
+        if case["split"] == "audit":
+            audit_groups.setdefault(case["workload_id"], set()).add(case["curve_id"])
+    for curve_id, cohorts in splits.items():
+        if not all(cohorts.values()) or any(cohorts[a] & cohorts[b] for a, b in (("fit", "calibration"), ("fit", "audit"), ("calibration", "audit"))):
+            raise ValueError(f"calibration split extents differ for {curve_id}")
+    if not any(len(group) >= 3 for group in audit_groups.values()):
+        raise ValueError("calibration audit has no three-candidate decision")
+    return plan, compiler
+
+
 def _external(path):
     path = Path(path).resolve()
     if path == ROOT or ROOT in path.parents:
@@ -149,10 +273,7 @@ def _collect():
     if _external(os.environ["KERNELINFRA_RESULT"]) != stage / "result.json":
         raise ValueError("result must belong to the current stage")
     candidate = Path(os.environ["KERNELINFRA_CANDIDATE_DIR"]).resolve()
-    plan = _read(candidate / "plan.json")
-    if plan.get("state") != "frozen":raise ValueError("collection requires a frozen plan")
-    if sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
-        raise ValueError("collector differs from frozen plan")
+    plan, compiler = _check_plan(candidate)
     (stage / "collector.py").write_bytes(Path(__file__).read_bytes())
     _write(stage / "plan.json", plan)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
@@ -164,7 +285,6 @@ def _collect():
     if kind not in {"correctness", "profile"}:
         raise ValueError("collection requires a correctness/profile stage")
     _write(stage / "execution-context.json", {"broker_peer": peer, "uid": os.geteuid(), "gid": os.getegid(), "run_id": os.environ["KERNELINFRA_RUN_ID"], "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")})
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     target, binary_version_expected = _target_contract(compiler, plan)
     import torch
     from cuda.bindings import driver
@@ -196,7 +316,7 @@ def _collect():
         if assessment.compiler_revision_id != plan["compiler_revision_id"]:
             raise ValueError(f"Compiler Revision differs: expected {plan['compiler_revision_id']!r}, observed {assessment.compiler_revision_id!r}")
         lowering = compiler.lower(assessment)
-        signature = {"a": "*fp32", "b": "*fp32", "c": "*fp32", "y": "*fp32"} if case["family"] == "fma" else {"a": "*bf16", "b": "*bf16", "bias": "*fp32", "c": "*fp32"}
+        signature = _expected_signature(case["family"])
         if lowering.toolchain_requirements["signature"] != signature or list(lowering.toolchain_requirements["signature"]) != list(signature):
             raise ValueError("evaluation contract requires its exact four-pointer ABI")
         compilation = compile_triton(lowering.source.encode(), lowering.toolchain_requirements)
@@ -426,11 +546,17 @@ def _bind_artifacts(run, plan, rows, compiler):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
+    check = sub.add_parser("check-plan", help="validate a frozen candidate pool without a GPU")
+    check.add_argument("candidate", type=Path)
     sub.add_parser("collect")
     fit = sub.add_parser("fit")
     fit.add_argument("run", type=Path)
     fit.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.action == "check-plan":
+        plan, _ = _check_plan(args.candidate)
+        print(json.dumps({"target": plan["target"], "case_count": len(plan["cases"]), "curve_count": len(plan["curves"])}))
+        return 0
     if args.action == "fit":return _fit(args.run, args.output)
     try:
         _collect()

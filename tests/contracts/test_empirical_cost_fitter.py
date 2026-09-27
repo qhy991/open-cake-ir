@@ -62,7 +62,7 @@ class FitterBindingTest(unittest.TestCase):
                     write(path / "schedule.json", json.loads(assessment.schedule_bytes))
                     (path / "lowered.py").write_bytes(lowering.source.encode())
                     (path / "kernel.cubin").write_bytes(cubin)
-        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "target": target, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "maximum_candidates_per_turn": 3, "envelope_allowance": .05}}
+        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "target": target, "device_name": self.compiler._revision.targets[target].device_names[0], "multiprocessor_count": 1, "broker_uid": 1000, "cuobjdump": "/usr/bin/true", "expected_runtime": {"compiler_version": "synthetic"}, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"warmup": 1, "rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "maximum_candidates_per_turn": 3, "envelope_allowance": .05}}
         write(run / "candidate/plan.json", plan)
         stages = []
         for phase in ("correctness", "collection"):
@@ -111,6 +111,29 @@ class FitterBindingTest(unittest.TestCase):
             target, binary_version = instrument._target_contract(self.compiler, json.loads((run / "candidate/plan.json").read_text()))
             self.assertEqual(target.compute_capability, (10, 3))
             self.assertEqual(binary_version, 103)
+
+    def test_b300_plan_is_checked_before_device_collection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = self.fixture(root, target="sm_103a")
+            plan, _ = instrument._check_plan(run / "candidate")
+            self.assertEqual(plan["target"], "sm_103a")
+            self.assertEqual(len(plan["cases"]), 12)
+            for mutation, message in ((lambda p: p.update(device_name="NVIDIA B200"), "device name"),
+                                      (lambda p: p["cases"][0].update(family="gemm_bias"), "ABI"),
+                                      (lambda p: p["cases"][0].update(extent=7), "extent alignment")):
+                changed = json.loads((run / "candidate/plan.json").read_text())
+                mutation(changed)
+                write(run / "candidate/plan.json", changed)
+                with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                    instrument._check_plan(run / "candidate")
+                write(run / "candidate/plan.json", plan)
+            schedule = run / "candidate" / plan["cases"][1]["schedule"]
+            drifted = json.loads(schedule.read_text())
+            drifted["residency"]["registers_per_thread"] += 1
+            write(schedule, drifted)
+            with self.assertRaisesRegex(ValueError, "curve template drifts"):
+                instrument._check_plan(run / "candidate")
 
     def test_three_member_subsets_expose_regret_hidden_by_full_pool(self):
         audit = [
