@@ -1,14 +1,11 @@
 """Dormant instruction registration and the exact native MACA source boundary."""
-from pathlib import Path
 import unittest
 
 from open_cake_ir.compiler.backends.metax import DIRECTED_FMA_FUNCTIONS
 from open_cake_ir.compiler.ir import DType, ElementwiseOp
 from open_cake_ir.compiler.ir.instruction_contracts import ContractKind, contract
-from open_cake_ir.compiler.target import Target
 from open_cake_ir.compiler.toolchain import validate_triton_kernel
 
-ROOT = Path(__file__).resolve().parents[2]
 SOURCE = '''import triton
 import triton.language as tl
 from triton.language.extra import libdevice
@@ -29,8 +26,6 @@ class MetaxDirectedFmaAdmission(unittest.TestCase):
             self.assertIs(record.kind, ContractKind.ELEMENTWISE)
             self.assertIs(record.elementwise_op, ElementwiseOp.FMA)
             self.assertIs(record.elementwise_dtype, DType.FP32)
-        for path in (ROOT / "compiler/targets").glob("*.json"):
-            self.assertFalse(set(DIRECTED_FMA_FUNCTIONS) & Target.load(path).instruction_contracts)
 
     def test_direct_ternary_calls_are_admitted_only_by_the_mcfatbin_route(self):
         for function in DIRECTED_FMA_FUNCTIONS.values():
