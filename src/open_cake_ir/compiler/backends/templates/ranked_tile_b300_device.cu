@@ -15,6 +15,7 @@
 #include <cooperative_groups.h>
 @CAKE_HELPERS@
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -115,6 +116,8 @@ __device__ void expand_event_tasks(const BinParams* params,int* tasks,
 __device__ void gather_event_rows(const BinParams* params,int event,int block,
                                   int grid_blocks);
 __device__ void publish_event_snapshot(const BinParams* params,int event);
+__device__ void record_phase(const BinParams* params,int event,int point,
+                             int block);
 
 @UPGATE_STAGE@
 @ACTIVATION_STAGE@
@@ -139,39 +142,49 @@ __global__ void tile_schedule_probe(
   cg::grid_group grid = cg::this_grid();
   const int source_rank=selected_wave%(kSourceRanks+1);
   const int source_wave=selected_wave/(kSourceRanks+1);
+  record_phase(source_params,selected_wave,0,block);
   if (block==0 && threadIdx.x==0 && source_rank<kSourceRanks)
     wait_prior_snapshot(source_params,selected_wave,source_rank);
   grid.sync();
+  record_phase(source_params,selected_wave,1,block);
   if (source_rank<kSourceRanks && block<communication_ctas) {
     dispatch_source_chunk(source_params,block,communication_ctas,
                           source_wave,chunk_tokens,source_rank);
     __threadfence_system();
   }
   grid.sync();
+  record_phase(source_params,selected_wave,2,block);
   if (source_rank<kSourceRanks && block==0 && threadIdx.x==0)
     publish_source_completion(source_params,source_wave,source_rank);
   grid.sync();
+  record_phase(source_params,selected_wave,3,block);
   if (block==0 && threadIdx.x==0)
     wait_source_completion(source_params,source_wave,source_rank);
   grid.sync();
+  record_phase(source_params,selected_wave,4,block);
   if (block<kExperts)
     derive_expert_snapshot(source_params,block,source_wave,source_rank,
                            chunks,chunk_tokens);
   grid.sync();
+  record_phase(source_params,selected_wave,5,block);
   if (block==0 && threadIdx.x<kExperts)
     assign_expert_tiles(source_params,selected_wave,chunk_tokens,
                         int(threadIdx.x));
   grid.sync();
+  record_phase(source_params,selected_wave,6,block);
   if (block==0 && threadIdx.x<kStages)
     expand_event_tasks(source_params,task_counts,
                        selected_wave,int(threadIdx.x));
   grid.sync();
+  record_phase(source_params,selected_wave,7,block);
   gather_event_rows(source_params,selected_wave,block,int(gridDim.x));
   __threadfence_system();
   grid.sync();
+  record_phase(source_params,selected_wave,8,block);
   if (block==0 && threadIdx.x==0)
     publish_event_snapshot(source_params,selected_wave);
   grid.sync();
+  record_phase(source_params,selected_wave,9,block);
   // Gather wrote tile rows through the generic proxy in this same kernel.
   // The Cake up/gate TMA reads them through the async proxy.
   asm volatile("fence.proxy.async.global;" ::: "memory");
@@ -299,6 +312,7 @@ __global__ void tile_schedule_probe(
       __syncthreads();
     }
     grid.sync();  // Only the next source wave waits for the whole grid.
+    record_phase(source_params,selected_wave,10,block);
     logical_offset+=tile_count;
   }
   if (tensor_owned) {
@@ -324,6 +338,7 @@ int check(cudaError_t status, const char* operation) {
 constexpr int R=4,T=512,K=8,E=128,H=2048;
 static_assert(R==kSourceRanks,"source-event count follows the EP world size");
 constexpr int LOCAL_E=E/R,MAX_ROWS=R*T,ROUTES=R*T*K,LOCAL_ROUTES=T*K;
+constexpr int kPhasePoints=11;
 constexpr int PAYLOAD_CAP=(R-1)*T;
 constexpr size_t HIDDEN_BYTES=size_t(R)*T*H*sizeof(uint16_t);
 constexpr size_t IDS_BYTES=size_t(ROUTES)*sizeof(int);
@@ -362,6 +377,7 @@ struct Bin {
   __nv_bfloat16 payload[size_t(PAYLOAD_CAP)*H];
   int error;
   RouteMismatch route_mismatch;
+  unsigned long long phase_cycles[kEvents][kPhasePoints];
 };
 struct BinParams {
   Bin* bins[R];
@@ -372,6 +388,13 @@ struct BinParams {
   __nv_bfloat16* tile_rows;
   int rank;
 };
+__device__ void record_phase(const BinParams* params,int event,int point,
+                             int block) {
+  if (block!=0 || threadIdx.x!=0) return;
+  unsigned long long cycles;
+  asm volatile("mov.u64 %0, %%clock64;" : "=l"(cycles));
+  params->bins[params->rank]->phase_cycles[event][point]=cycles;
+}
 struct ReturnParams {
   float* contributions[R];
   int* ready[R];

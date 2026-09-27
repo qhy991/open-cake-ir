@@ -488,6 +488,20 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
                         cudaMemcpyDeviceToHost));
     for (int slot=0;slot<LOCAL_ROUTES;++slot)
       if (flags[slot]!=1) return 1200+slot;
+    const char* phase_trace=std::getenv("CAKE_WEAVE_PHASE_TRACE");
+    if (phase_trace && phase_trace[0]=='1') {
+      unsigned long long phases[kEvents][kPhasePoints];
+      CAKE_RUN(cudaMemcpy(phases,s.bin->phase_cycles,sizeof(phases),
+                          cudaMemcpyDeviceToHost));
+      for (int event=0;event<chunks*(R+1);++event) {
+        std::fprintf(stderr,"CAKE_PHASE launch=%d rank=%d event=%d cycles=",
+                     state->completed_launches,rank,event);
+        for (int point=0;point<kPhasePoints-1;++point)
+          std::fprintf(stderr,"%s%llu",point==0 ? "" : ",",
+                       phases[event][point+1]-phases[event][point]);
+        std::fprintf(stderr,"\n");
+      }
+    }
   }
 #undef CAKE_RUN
   ++state->completed_launches;
