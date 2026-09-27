@@ -173,7 +173,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 原始 CAKE CUDA 已有更深的 shared 槽、角色流水和片上准备值；本后继仍把准备值预先物化、每 head 一个 CTA、256 次状态依赖串行，并且只在块末舍入 BF16 状态。原始 CAKE 适配的 H64/T8192 完整 kernel 在另一作业约 **456.578 µs**，不能与本组件的 1.953 ms 做同范围加速比；数值上仍有明显追赶空间。现有 native CUDA 的单槽 P 在向量化后暴露跨块混值，双槽合同把地址与相位显式留给 Schedule 和检查；现有 Triton lowering 缺 TMEM carried state、两条 B TMA 流水和这条 P/solve 发射，不是 Triton 语言原则上无法表达双槽。下一步先在真实上游 Q/K/G、原位 state、逐 token BF16 舍入与高保留输入上建立完整 Workload 候选，再与适配 CAKE 同机同范围配对；单凭本组件不能声称追上或超过 CAKE。
 
-### 2.20 从合成准备值到真实 KDA：已通过的数值边与待设备化的 ABI
+### 2.20 从合成准备值到真实 KDA：固定 H64 的设备直连和完整配对
 
 双槽组件以前只吃按 Shape 人工生成的 P/B/prefix/V/beta，因此即使全输出通过合成 oracle，也不能判断它与真实 Q/K/G 准备是否耦合正确。现有两 BF16 MMA Cake 准备 Schedule `a6dc8c6d` 已在独立 broker 作业 `gpuq-ff08a5f50d21` 上生成完整 H64/T8192 的七项值：`p`、`b`、`base_key_mn`、`base_query_mn`、`final_key_mma`、`beta_gate`、`prefix_end`，全部元素经独立准备公式检查为 0 超差。它们与 native 双槽消费者的对应边分别是 `p`、`output_b`、`b_base`、`query_b`、`b_correction`、`beta_gate`、`prefix`。冻结 Workload 的 V 可按连续 `[256,32,64,128]` 视图供给，初始 BF16 状态可按 `[64,128,128]` 视图供给；两者没有数值转换。
 
@@ -181,9 +181,13 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 
 准备 kernel 本身已经输出 `[chunk,head,token]`，因此额外的 CPU 转置不是算法需求。后继 `4dc1561e` 只改变 Cake Schedule 的 `beta_gate` 具体全局视图和 `load_beta` AccessMap：`chunk*2048 + head*32 + token` 直接读取准备输出。共享 IR/verifier 和 native preflight 离线均接受，聚焦合同 5/5、Corpus Gate 179/179；将旧 `[chunk,token,head]` 形状误接到新 AccessMap 会被 `ACCESS_PROGRAM_EXTENT_MISMATCH` 与 `ACCESS_TILE_MISMATCH` 拒绝。它不增加 layout algebra 或 backend 指令，属于把生产者的真实存储承诺传给消费者。恢复 SSH 后的精确 `sm_103a` AOT 为 **57,472 字节 dynamic shared、243 寄存器、0 stack/spill**；此前双槽版为 255 寄存器，静态差异尚无设备性能归因。七项准备输出与 native 参数形状的 CPU-only 对接检查通过。
 
-第一次远端完整适用 CPU 套件保留 **2,689 passed、16 skipped、1 项 Apple MLX 实机测试 deselected、2 failed、3 errors**：失败全在历史回放夹具用 `git clone --shared` 再克隆固定 checkout 时。独立 CPU 重现捕获 Git `ignoring alternate object stores, nesting too deep`，旧提交对象在上游 checkout 中存在；这是我们连续共享克隆造成的对象库环境错误，不是新增 beta AccessMap 的断言。另一浅层 checkout 已建，但需先从远端既有 `5974e33e` 检出取得 bundle 的父提交；准备传输时 VPN 路由再次从 utun13 回落到 en0，未完成浅层套件。没有修改测试、期望或历史对象。**设备直连和原位状态别名仍未执行，也没有 `4dc1561e` broker 作业**。完整设备直连 worker 已在仓库外：同一 GPU 上运行两 MMA 准备，七个张量指针直接传给 native 消费者，`initial_state` 与 `final_state` 指向同一 BF16 存储，并在租约释放后检查冻结 Workload 的全部输出、状态及输入保持性。只有适用门禁与这项设备验证都通过，才进入完整两 kernel 与适配 CAKE 的同机冷 L2 CUPTI 配对。
+第一次远端完整适用 CPU 套件保留 **2,689 passed、16 skipped、1 项 Apple MLX 实机测试 deselected、2 failed、3 errors**：失败全在历史回放夹具用 `git clone --shared` 再克隆固定 checkout 时。独立 CPU 重现捕获 Git `ignoring alternate object stores, nesting too deep`，旧提交对象在上游 checkout 中存在；这是连续共享克隆造成的对象库环境错误，不是 beta AccessMap 的断言。后继从较浅的完整源建立**另一干净固定检出**，先在临时克隆中确认两个旧提交均能检出，再以 `umask 0022`、仓库外日志重跑同一适用套件，得到 **2,694 passed、16 skipped、1 项 Apple MLX 实机测试 deselected**，退出码 0；Corpus Gate 179/179。失败与合格结果各自保留，没有改写测试、期望或历史对象，Finding event 185–186 指向两次检出。
 
-原始 CAKE CUDA 把准备和状态递推放在一个 kernel 与更深的角色流水中；目前两阶段 Cake 路线即使数值直连成功，还会承受准备值约 480 MB 的写回/重读和两次 kernel 活动。Triton 已能生成准备值；这里缺的是现有 Cake/native 消费者对其具体存储方向和别名的表达与资格，而不是说 CUDA 或 Triton 语言无法读取 beta。下一步同范围计时很可能暴露物化边界的成本，然后才决定哪些准备值需要片上融合，并给出相应 Schedule、资源和同步合同。
+`gpuq-94c0353bcca5` 在 broker-shared GPU3 上让两 MMA Cake 准备与 native `4dc1561e` 消费在**同一 CUDA stream**直接传递七个设备张量；beta 保持准备输出 `[chunk,head,token]`，没有 CPU 转置，`initial_state` 和 `final_state` 为**相同设备指针**。作业完成、GPU3 租约释放后，独立 host 与冻结 `h64_fixed8192` Workload oracle 比较全部 **67,108,864 输出及 1,048,576 最终状态：0 超差、无非有限值**，最大绝对误差分别 **0.00048828125 / 0.00390625**；原位 BF16 状态中 1,048,344 个位模式发生更新，其余公开输入及两个 mask 保持不变。这是固定 H64 的完整数值和原位别名证明，仍不覆盖六形状、packed/tail 或高保留反例。Finding event 187 保留设备抓取与 host 检查。
+
+`gpuq-6992cec5fb2a` 在**同一独占 GPU2**将适配原始 CAKE M64 的单 kernel 与上述 Cake 准备+native 消费的两 kernel 路线交替五轮、每轮每臂 25 个严格 CUPTI 冷 L2/no-graph 样本，使用两臂各自的 512 槽初始 BF16 状态池。租约释放后的 host 检查对两臂共十份**全部输出和原位最终状态**快照均报 0 超差/无非有限值；不可变 Q/K/V/G/beta/A_log/dt_bias、offset/order 与 mask 未改写，后检查无其它计算 PID。五轮参考中位数为 **456.100/456.420/456.036/456.035/456.227 µs**，两 kernel 候选为 **2374.065/2374.672/2374.482/2373.553/2374.096 µs**；候选/参考轮比值的中位数 **5.20476×**，最大轮内 CV **0.1231%**。这是真实固定 H64 的同范围**自定义诊断**，不是六形状或正式 Program Evaluation；此前跨作业的准备 389.507 µs 与消费者 1953.451 µs不能当作本次同作业分段归因。Finding event 188 保留 raw 与全量复核。
+
+原始 CAKE CUDA 把准备和状态递推放在一个 kernel 与更深的角色流水中；目前两阶段 Cake 路线承受准备值约 480 MB 的写回/重读和两次 kernel 活动。Triton 能生成准备值，native 已能直接消费；本机结果证明**正确性接通不等于性能追平**。5.20× 的完整差距要求缩短消费者 256 次状态依赖串行路径，并在同 CTA 片上衔接准备、MMA、状态更新与 epilogue；只改 beta 地址、再加 B ring 或把两项跨作业组件时间简单相加都不足以解释收益。下一轮 lowering 须给每条融合边明确生产者、消费者、槽与同步合同，并以同一完整 Workload 重新测量。
 
 ### 2.21 原始 CAKE CUDA 的机制对照：下一轮 lowering 应承诺什么
 
@@ -249,7 +253,7 @@ Finding `F-2026-09-24-003` 的 event 40 给出算子级反例：同一高保留�
 | `fbd64306` / `gpuq-df9355066ce1`、`gpuq-d51bfab6a37f` | 精确域内 16B P 暂存 AOT/数值 oracle；诊断中位数 1,950.861 µs；等待后 P 回显首块 128 个元素被下一块值覆盖，位结果跨轮不稳；No promotion | P 的发布/复用正确性、正式性能收益及完整 KDA |
 | `5974e33e` / `gpuq-f94f83ce1d44`、`gpuq-683ba77be918`、`gpuq-71bd8643bebd` | 双槽 P 实际 Cake 发射五次消费者回显全部逐 bit 正确；适用 CPU 2,692 passed、Corpus Gate 179/179，AOT 255 寄存器/0 spill；对齐与未对齐完整合成输出/状态通过 oracle；同机配对组件中位数 1,953.451 µs、相对 `db979435` 为 1.27018×，十份快照通过且首末轮逐 bit 稳定 | 真实准备值、逐 token BF16、原位 alias、高保留、六形状与完整 CAKE 同范围胜出 |
 | `5974e33e` + 准备 `a6dc8c6d` / `gpuq-dc7242edf640` | CPU 转置 beta 后真实 H64 准备值喂入双槽消费者；冻结 Workload 的完整输出/状态 0 超差，九项不可变输入未改写 | 设备内 beta 直连、原位状态 alias、两 kernel 完整计时及六形状 |
-| `4dc1561e` / CPU-only | 直接读取准备 beta 的新 Schedule：聚焦合同 5/5、Corpus Gate 179/179，旧形状误接有专属拒绝；B300 AOT 243 寄存器、0 spill，七条准备/消费设备 ABI 形状吻合 | 完整 CPU 门禁因共享对象库嵌套过深而失败；新浅层检出待跑，设备数值/alias 与完整计时仍未验收 |
+| `4dc1561e` / `gpuq-94c0353bcca5`、`gpuq-6992cec5fb2a` | 准备 beta 直读；适用 CPU **2,694 passed**、Corpus Gate 179/179，B300 AOT 243 寄存器/0 spill；固定 H64 真实准备值在设备内直连、原位 state 与冻结 Workload 全输出/状态 0 超差；同机完整配对候选 **2374 µs** 对 CAKE **456 µs**，候选慢 **5.20476×** | packed/tail、H96 和其余形状、高保留、正式 Program/Executor 别名资格、性能胜出；先前深层共享克隆失败另有保留记录 |
 
 表中带 `gpuq-` 的数值作业使用 exact `sm_103a` 与 broker 分配；设备输出在作业终结、租约释放后由独立 host oracle 比对，输入保持性也经检查。只有 CPU-only AOT 的行不含设备结论。`d579e917` 的 full applicable CPU contracts 为 2,607 passed、5 skipped，另有 1 项本机 Apple MLX 实机测试因缺 `device_info` 接口而未作为 NVIDIA 门禁；Corpus Gate 为 179/179。GPU 程序正确仅覆盖本表对应的合成 Schedule，**不是** Workload Contract 的全形状验收。
 
