@@ -40,3 +40,16 @@ In the MetaX platform worktree, use these as current repository context and chec
 For each reused fact or hypothesis, retain the source title and URL, product scope (C500 family vs exact C550), SDK/driver/Triton version, document release/date, section/page, access/license status, and confidence class (`vendor_doc`, `device_probe`, `measured_receipt`, `vendor_QA`, or `sample_hypothesis`). Store a concise paraphrase and the question it can answer; do not copy full manuals or credentials.
 
 Resolve disagreements in this order: report them; inspect the exact versioned vendor source and captured C550 host; run only the authorized read-only/device probe or qualified measurement needed to distinguish them; update the canonical Target/host or the relevant finding only through its owning workflow. A documentation statement alone never qualifies correctness, timing quality, profiler attribution or a performance ceiling.
+
+## Numerical algorithm resources
+
+[Ogita, Rump and Oishi, Accurate Sum and Dot Product](https://epubs.siam.org/doi/10.1137/030601818),
+SIAM J. Sci. Comput.26(6),1955–1988, DOI10.1137/030601818. Publisher abstract
+reviewed2026-09-27; full article access is gated, and the author-hosted PDF fetch
+was unavailable. The accessible abstract motivates same-working-precision add/sub/mul
+and branchless accurate-summation hypotheses. It supplies no MetaX instruction,
+compiler reassociation or performance guarantee; formula/theorem details require
+full-text access. Use as `sample_hypothesis` numerical background, then qualify
+real Cake-generated artifacts under the Workload oracle and exact MACA runtime.
+The fixed nine-partial TwoSum screen was flat; read the platform result before
+repeating it or inferring speed from a numerical algorithm's source shape.

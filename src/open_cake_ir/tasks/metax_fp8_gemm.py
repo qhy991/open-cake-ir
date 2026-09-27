@@ -111,7 +111,8 @@ def streaming_source(workload: WorkloadContract, case_id: str = "primary") -> st
 def bucketed_source(workload: WorkloadContract, case_id: str = "primary") -> str:
     """Project finite NT64 magnitude-bucket dots through existing Cake primitives.
 
-    This task specialization uses FP16 dot partials and FP32 compensation.
+    This task specialization uses nine FP16 dot partials and ordinary FP32 merges.
+    Its qualification covers the frozen cases and tolerance, not bitwise sums.
     The frozen Workload owns its finite input domain and numerical acceptance.
     """
     return _bound_source(workload, case_id, "xcore1002_fp8_bucketed.py",

@@ -199,6 +199,39 @@ MCPTI边界；local_serialized不排除外部活动，且不是GPU bitwise或ser
 外部复核：`open-cake-ir-evidence/metax-bucket3-public-sealed-ef3ef161/verification.json`，
 相邻 `handoff-identity.json` 和 `metax-bucket3-*-20260927/` 保留原始收据。
 
+## 九个分桶部分结果的 FP32 合并
+
+公开配方在 `66ca6c83` 保留三桶、9 个 FP16 dot、M16/N16/K64、group4 和
+原合并次序，改用 8 次普通 FP32 add。只更新任务配方，不增加 instruction、dtype
+或 Target 能力。旧 `ef3ef161` 补偿版本及其 sealed artifacts 继续作为固定对照。
+
+CPU 对37case的精确 dyadic 部分结果模型未找到超容差项；它不代替硬件 dot。
+设备全 case job `maca-0bc7c1d20a43` 通过37个原始用例，输入不变、零超容差输出，
+最大绝对误差 **0.0625**，高于旧配方的0.0078125。原 `atol=0.001,rtol=0.0001`
+未改变；这里只验收冻结用例及容差，不建立任意有限 FP8 输入的精度或 bitwise 保证。
+
+| 检查 | Job | 候选／补偿基线中位数 | 候选胜／基线胜／平 | 判定 |
+| --- | --- | --- | --- | --- |
+| Search | `maca-698fb0882494` | 7.680／8.192 µs | 10／0／0 | 1.0667×，质量门通过 |
+| Fresh confirmation | `maca-b28e39087d2b` | 7.680／8.448 µs | 10／0／0 | 1.1000×，质量门通过 |
+| 补偿基线 A/A | `maca-73cf09ee463b` | 8.448／8.448 µs | 2／2／6 | 1.0000×，close-null |
+
+每臂250样本；60原始 cohort 经 native MCPTI activity 检查和 paired_summary 重算。
+独立 profile `maca-bd287ab8203f` 的原始输出通过，报告114 registers/thread、1024动态
+shared bytes、0静态shared和function-local bytes。旧配方126registers/thread；资源与
+算术同时变化，不作寄存器因果或 achieved occupancy 结论。profile 时间仅用于归因。
+
+同轮无分支 TwoSum 假设 `maca-92d096feda0d` 通过37case，最大绝对误差0.0078125；
+配对 `maca-e7e061d59af4` 为8.448／8.448µs，2／1wins、7ties，质量门通过但close-null。
+**No promotion**，没有为该非幸存者继续确认或profile。无分支源码不等于更快指令序列。
+
+公开投影交接与CPU验收记录见外部证据根
+`metax-partial-plain-public-sealed-66ca6c83/verification.json`；
+`metax-partial-plain-{request,paired,confirm,aa,profile}-20260927/` 与
+`metax-twosum-*-20260927/` 保留原始产物、输出与收据。
+资格只覆盖 C550-2 Triton3.6、固定 NT64 原用例与primary MCPTI dispatch边界；
+local_serialized不排除外部活动，未测带宽、ISA计数、其他shape或框架/serving性能。
+
 ## 编译与执行
 
 编译通过现有 bubblewrap 路径运行，不挂载 GPU，也不暴露作者工作目录。

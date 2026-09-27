@@ -410,3 +410,26 @@ Evidence under `/Users/haiyan-infiniai/open-cake-ir-evidence/`:
 corresponding all-case receipts and sealed source/precision-precondition roots.
 Allocation local_serialized, external activity not excluded; no other-shape,
 raw-payload or framework/serving claim.
+
+## Partial-sum merge cost on the frozen nine-dot recipe
+
+Read the [platform record](../../../docs/metax-c550.md#九个分桶部分结果的-fp32-合并)
+before reusing the ordinary-add successor. At public producer66ca6c83 the nine
+FP16 dot partials and their order remain; only eight FP32 merges replace Neumaier.
+All37 fixed cases pass unchanged tolerance, but max absolute error increases from
+0.0078125 to0.0625. This is a frozen-case tolerance qualification, not a finite-domain
+arithmetic guarantee. Keep the old compensated sealed artifact as the reference.
+
+Search and fresh confirmation repeat7.680us versus8.192/8.448us,1.0667/1.1x,
+10/10pair wins and quality gates; baseline A/A repeats8.448us on both arms.
+Sixty raw cohorts replay. A separate correct profile reports114registers/thread,
+1KiB dynamic shared,0function-local bytes. Resource changes do not prove causality.
+Promotion belongs to the task recipe, not a generic Compiler removal of compensation.
+Public-artifact handoff binds measured bytes once; it is not fresh remeasurement.
+
+A branchless TwoSum composition passes37cases but pairs at8.448us on both arms:
+**No promotion**. The source pattern's absence of branches does not select a faster
+C550 implementation. CPU dyadic partial models are screening evidence, while native
+matrix arithmetic and complete output acceptance remain device questions.
+Evidence under externalroot `metax-partial-plain-*-20260927` and
+`metax-partial-plain-public-sealed-66ca6c83`; keep raw controls and negative results.
