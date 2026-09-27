@@ -29,9 +29,10 @@ class FitterBindingTest(unittest.TestCase):
     def setUpClass(cls):
         cls.compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
 
-    def fixture(self, root):
+    def fixture(self, root, target="sm_100a"):
         run = root / "run"
         base = json.loads((ROOT / "corpus/schedules/fma-b8-smoke.json").read_text())
+        base["target"] = target
         cases, curves, rows = [], [], []
         collector = Path(instrument.__file__).read_bytes()
         assessment = self.compiler.assess(base)
@@ -52,7 +53,7 @@ class FitterBindingTest(unittest.TestCase):
                 lowering = self.compiler.lower(assessment)
                 # This synthetic ELF-marked blob tests identity checks, not execution.
                 cubin = b"\x7fELF-SYNTHETIC-NOT-EXECUTABLE-" + case["id"].encode()
-                resource = CompiledResources(lowering.source_sha256, sha256(cubin).hexdigest(), "sm_100a", lowering.toolchain_requirements["kernel_entry_point"], 128, 16, 0, 0, 0, 0, "synthetic", "synthetic")
+                resource = CompiledResources(lowering.source_sha256, sha256(cubin).hexdigest(), target, lowering.toolchain_requirements["kernel_entry_point"], 128, 16, 0, 0, 0, 0, "synthetic", "synthetic")
                 duration = 10 + variant + extent / 16
                 row = {**case, "grid": list(lowering.toolchain_requirements["grid"]), "profile": {"compiled_resources": resource.as_dict()}, "correct": True, "inputs_unchanged": True, "quality_passed": True, "samples_us": [[duration] * 2 for _ in range(2)]}
                 rows.append(row)
@@ -61,7 +62,7 @@ class FitterBindingTest(unittest.TestCase):
                     write(path / "schedule.json", json.loads(assessment.schedule_bytes))
                     (path / "lowered.py").write_bytes(lowering.source.encode())
                     (path / "kernel.cubin").write_bytes(cubin)
-        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision,  "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "envelope_allowance": .05}}
+        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "target": target, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "envelope_allowance": .05}}
         write(run / "candidate/plan.json", plan)
         stages = []
         for phase in ("correctness", "collection"):
@@ -99,6 +100,17 @@ class FitterBindingTest(unittest.TestCase):
             model = json.loads((root / "output/model.json").read_text())
             self.assertEqual(len(model["curves"]), 3)
             self.assertEqual(model["reported_evidence"]["validation"]["max_top2_regret_ratio"], 1)
+
+    def test_b300_fitter_binds_its_own_target(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            run = self.fixture(root, target="sm_103a")
+            self.assertEqual(instrument._fit(run, root / "output"), 0)
+            model = json.loads((root / "output/model.json").read_text())
+            self.assertEqual(model["target"], "sm_103a")
+            target, binary_version = instrument._target_contract(self.compiler, json.loads((run / "candidate/plan.json").read_text()))
+            self.assertEqual(target.compute_capability, (10, 3))
+            self.assertEqual(binary_version, 103)
 
     def test_changed_stage_templates_cannot_relabel_original_measurements(self):
         with tempfile.TemporaryDirectory() as directory:

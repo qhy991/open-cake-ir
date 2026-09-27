@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect a frozen FMA/GEMM calibration through GPU Infra, or fit/audit it on CPU.
+"""Collect a frozen NVIDIA FMA/GEMM calibration through GPU Infra, or fit/audit it on CPU.
 
 Plans, candidates and output directories are external artifacts. A plan binds this
 collector's bytes and the released Compiler. The plan owns domains and thresholds;
@@ -34,6 +34,15 @@ def _read(path):
 
 def _write(path, value):
     Path(path).write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
+
+
+def _target_contract(compiler, plan):
+    """Take the device and binary version from the declared CUDA Target."""
+    target_id = plan.get("target")
+    target = compiler._revision.targets.get(target_id)
+    if target is None or target.compute_capability is None or target_id not in {"sm_100a", "sm_103a"}:
+        raise ValueError("calibration requires a declared B200 or B300 CUDA Target")
+    return target, target.compute_capability[0] * 10 + target.compute_capability[1]
 
 
 def _external(path):
@@ -130,11 +139,15 @@ def _collect():
         raise ValueError("collection requires a correctness/profile stage")
     _write(stage / "execution-context.json", {"broker_peer": peer, "uid": os.geteuid(), "gid": os.getegid(), "run_id": os.environ["KERNELINFRA_RUN_ID"], "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")})
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+    target, binary_version_expected = _target_contract(compiler, plan)
     import torch
     from cuda.bindings import driver
     torch.set_num_threads(1)
-    if torch.cuda.device_count() != 1 or torch.cuda.get_device_name(0) != plan["device_name"] or list(torch.cuda.get_device_capability(0)) != [10, 0]:
-        raise RuntimeError("target must be one broker-visible B200 sm_100a")
+    if (torch.cuda.device_count() != 1
+            or torch.cuda.get_device_name(0) != plan["device_name"]
+            or plan["device_name"] not in target.device_names
+            or tuple(torch.cuda.get_device_capability(0)) != target.compute_capability):
+        raise RuntimeError(f"target must be one broker-visible {plan['target']} device")
     properties = torch.cuda.get_device_properties(0)
     if properties.multi_processor_count != plan["multiprocessor_count"]:
         raise RuntimeError("multiprocessor count differs")
@@ -152,6 +165,8 @@ def _collect():
             raise ValueError("Schedule must belong to the candidate snapshot")
         document = _read(schedule_path)
         assessment = compiler.assess(document)
+        if assessment.target != plan["target"]:
+            raise ValueError("candidate target differs from calibration plan")
         if assessment.compiler_revision_id != plan["compiler_revision_id"]:
             raise ValueError(f"Compiler Revision differs: expected {plan['compiler_revision_id']!r}, observed {assessment.compiler_revision_id!r}")
         lowering = compiler.lower(assessment)
@@ -170,7 +185,7 @@ def _collect():
         (module,) = _driver_call(driver, "cuModuleLoadData", compilation.artifacts["cubin"], outputs=1)
         (function,) = _driver_call(driver, "cuModuleGetFunction", module, compilation.entry_point.encode(), outputs=1)
         (binary_version,) = _driver_call(driver, "cuFuncGetAttribute", driver.CUfunction_attribute.CU_FUNC_ATTRIBUTE_BINARY_VERSION, function, outputs=1)
-        if int(binary_version) != 100:raise ValueError("loaded binary target differs")
+        if int(binary_version) != binary_version_expected:raise ValueError("loaded binary target differs")
         if compilation.dynamic_shared_bytes >= _DYNAMIC_SHARED_OPT_IN_THRESHOLD:
             _driver_call(driver, "cuFuncSetAttribute", function, driver.CUfunction_attribute.CU_FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES, compilation.dynamic_shared_bytes, outputs=0)
         values = [ctypes.c_void_p(tensor.data_ptr()) for tensor in (*inputs, output)] + [ctypes.c_void_p(0), ctypes.c_void_p(0)]
@@ -253,7 +268,10 @@ def _fit(run, output):
     if plan.get("state") != "frozen" or sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
         raise ValueError("fitting must use the frozen collection instrument")
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+    _target_contract(compiler, plan)
     reference = compiler.assess_file(stage / "0000/schedule.json")
+    if reference.target != plan["target"]:
+        raise ValueError("retained target differs from calibration plan")
     if reference.compiler_revision_id != plan["compiler_revision_id"]:
         raise ValueError(f"fitting Compiler Revision differs: expected {plan['compiler_revision_id']!r}, observed {reference.compiler_revision_id!r}")
     if not observed["quality_passed"]:raise ValueError("quality failed before fitting")
@@ -283,7 +301,7 @@ def _fit(run, output):
         buffers = {buffer["name"]: buffer for buffer in row["template"]["buffers"]}
         if type(row["extent"]) is not int or any(buffers[binding["buffer"]]["shape"][binding["dimension"]] != row["extent"] for binding in specifications[row["curve_id"]]["varying_dimensions"]):
             raise ValueError("measured extent differs from the declared Schedule dimensions")
-    document = {"schema_version": 3, "model_id": plan["model_id"], "compiler_revision_id": plan["compiler_revision_id"], "target": "sm_100a", "context": {"timer": "PyTorch Kineto CUPTI GPU kernel activity", "cache_protocol": f"{plan['sampling']['l2_flush_bytes']}-byte zeroing before each sample on same stream", "runtime": observed["runtime"], "input_scope": plan["input_scope"]}, "reported_evidence": {"run_id": run_result["run_id"], "scope": "fresh-measurement holdout; conditional empirical prediction, not candidate acceptance"}, "curves": []}
+    document = {"schema_version": 3, "model_id": plan["model_id"], "compiler_revision_id": plan["compiler_revision_id"], "target": plan["target"], "context": {"timer": "PyTorch Kineto CUPTI GPU kernel activity", "cache_protocol": f"{plan['sampling']['l2_flush_bytes']}-byte zeroing before each sample on same stream", "runtime": observed["runtime"], "input_scope": plan["input_scope"]}, "reported_evidence": {"run_id": run_result["run_id"], "scope": "fresh-measurement holdout; conditional empirical prediction, not candidate acceptance"}, "curves": []}
     for spec in plan["curves"]:
         group = [row for row in rows if row["curve_id"] == spec["id"]]
         splits = {split: {row["extent"] for row in group if row["split"] == split} for split in ("fit", "calibration", "audit")}
@@ -292,7 +310,7 @@ def _fit(run, output):
         document["curves"].append({"template": fit[0]["template"], "varying_dimensions": spec["varying_dimensions"], "extent_multiple": spec["extent_multiple"], "points": [{"extent": row["extent"], "kernel_us": row["kernel_us"]} for row in fit], "relative_error_envelope": 0.0})
     model = EmpiricalCostModel(document)
     def predict(row):
-        value = model.estimate(row["template"], compiler_revision_id=plan["compiler_revision_id"], target="sm_100a", compiled_compiler_version=observed["runtime"]["compiler_version"])
+        value = model.estimate(row["template"], compiler_revision_id=plan["compiler_revision_id"], target=plan["target"], compiled_compiler_version=observed["runtime"]["compiler_version"])
         if not value["covered"]:raise ValueError(value["reason"])
         return value
     # Every fitted observation must describe the same template as its curve too.
@@ -327,6 +345,7 @@ def _fit(run, output):
 
 def _bind_artifacts(run, plan, rows, compiler):
     """Replay canonical candidates and reuse the existing compiled-report owner."""
+    target, _ = _target_contract(compiler, plan)
     candidate = (run / "candidate").resolve()
     if _read(candidate / "plan.json") != plan:
         raise ValueError("stage plan differs from the candidate snapshot")
@@ -352,6 +371,8 @@ def _bind_artifacts(run, plan, rows, compiler):
         if candidate not in path.parents:
             raise ValueError("Schedule escapes candidate snapshot")
         assessment = compiler.assess_file(path)
+        if assessment.target != plan["target"]:
+            raise ValueError("candidate target differs from calibration plan")
         if assessment.compiler_revision_id != plan["compiler_revision_id"]:
             raise ValueError(f"candidate Compiler Revision differs: expected {plan['compiler_revision_id']!r}, observed {assessment.compiler_revision_id!r}")
         lowering = compiler.lower(assessment)
@@ -369,7 +390,7 @@ def _bind_artifacts(run, plan, rows, compiler):
                 raise ValueError("compiled observation differs from canonical candidate lowering")
             requirements = lowering.toolchain_requirements
             if ((resource.target, resource.entry_point, resource.threads_per_cta) !=
-                    (assessment.target, requirements["kernel_entry_point"], requirements["compile_options"]["num_warps"] * 32)
+                    (assessment.target, requirements["kernel_entry_point"], requirements["compile_options"]["num_warps"] * target.warp_size)
                     or json.dumps(recorded["grid"]) != json.dumps(list(requirements["grid"]))):
                 raise ValueError("recorded launch differs from canonical lowering")
             bound.append(resource)
