@@ -350,3 +350,30 @@ Evidence:
 and adjacent `device-run/timing-samples.json`, with sealed source/manifests and
 all-case receipts in corresponding roots. Allocation remains local_serialized,
 external GPU activity not excluded. Current four-group N16 source is unchanged.
+
+
+## Three magnitude buckets, nine dot partials
+
+The fixed finite NT64 task recipe now uses `[0,.5)`, `[.5,16)`, `[16,512)`, nine
+FP16 dot partials and eight FP32 Neumaier merges, retaining M16/N16/K64 and group4.
+CPU enumeration of254finite encodings gives quanta2^-9/2^-4/2 and integer maxima
+240/240/224. K64 absolute partial bound3686400 fits22bits; that representation
+argument does not by itself qualify the installed matrix accumulator.
+
+Prototype at frozen Compiler02561cff passes all37cases with unchanged inputs,
+zero tolerance failures and candidate-only max error0.0078125. Paired aggregate
+error0.015625 includes the old baseline. Quality-passed search and fresh confirmation
+both repeat8.448/9.472us (1.1212x),10/10 pair wins; A/A is close-null at9.728/9.472us.
+Sixty raw cohorts replay. Correct separate profile reports126registers/thread and
+1024dynamic shared bytes; missing counters and local-serialized/external-activity
+boundaries remain. Do not infer causal register/occupancy or other-shape benefit.
+
+Public projection ef3ef161 builds identical lowered-source, launch, mcfatbin and
+native-image bytes to the measured prototype at its handoff boundary. This binds
+existing device evidence once, not a separate remeasurement or routine digest rule.
+Task/magnitude contracts and unchanged Corpus pass. Promotion belongs to the
+existing-primitive task recipe; no instruction/type/Target expansion is needed.
+Read the [platform record](../../../docs/metax-c550.md#三桶九-dot-配方) and
+`/Users/haiyan-infiniai/open-cake-ir-evidence/metax-bucket3-public-sealed-ef3ef161/verification.json`.
+Keep old four-bucket sealed receipts as the fixed comparison rather than overwriting
+them with the new projection.

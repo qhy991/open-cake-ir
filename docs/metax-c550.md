@@ -168,6 +168,37 @@ Corpus。Compiler 和 Target 未修改，选择归属任务配方。
 `open-cake-ir-evidence/metax-bucket-n16-public-sealed-02561cff/verification.json`，
 相邻 `handoff-identity.json` 记录交接，原始测量为 `metax-bucket-n16-*-20260927/`。
 
+## 三桶九 dot 配方
+
+任务 `bucketed_source()` 在 `ef3ef161` 将幅值区间改为 `[0,0.5)`、`[0.5,16)`、
+`[16,512)`，用 9 个既有 FP16 dot 部分结果和 8 步 FP32 Neumaier 合并。
+M16/N16/K64、四个 execution groups、grid[4,4,1]、全局 ABI、冻结 Workload、
+oracle 和容差不变。旧四桶 N16 封存产物继续作为固定对照，Compiler／Target 未改。
+
+CPU 穷举254有限 E4M3FN 编码得到三个共同量子 `2^-9`、`2^-4`、`2`，整数幅值
+上界240/240/224，每个 K64 部分点积的绝对整数上界3686400（22bits）。这是数值
+可表示性依据，硬件累计准确性仍由设备 oracle 检查。
+
+冻结 Compiler `02561cff` 的原型 job `maca-777e401a5fa3` 通过全部37case，
+输入不变、零超容差输出，候选自身最大绝对误差 **0.0078125**。配对结果的聚合
+误差0.015625包含旧基线，不能代替候选自身结果。Search `maca-5b8302c723ce`
+与 fresh confirmation `maca-8e7417b2a71f` 均通过质量门、10/10pair胜出，每臂250
+样本，中位数 **8.448／9.472µs（1.1212×）**。A/A `maca-ec3fc07bb7bf` 为
+9.728／9.472µs（0.9737×、close-null，0/9wins、1tie）。60 原始 cohort 已回放。
+
+单独 profile `maca-7db81d7fc19b` 的仪器输出正确：126 registers/thread、1024动态
+shared bytes、0静态 shared和function-local bytes。四桶对照报告180registers/thread；
+这些同时变化的资源量不构成单独的因果归因。带宽、ISA计数和achieved occupancy
+未采集，profile单次时间不参与成绩。
+
+公开投影 `ef3ef161` 独立构建后，在交接边界一次核验 lowered source、launch
+manifest、mcfatbin和native ELF 与上述已测原型逐字节相同；证据绑定同一产物，
+没有另一次设备重测声明。该代码提交通过11项合同检查／10subtests和未更新
+expectations的Corpus。资格仅覆盖当前C550-2 Triton3.6、固定有限NT64用例及primary
+MCPTI边界；local_serialized不排除外部活动，且不是GPU bitwise或serving结论。
+外部复核：`open-cake-ir-evidence/metax-bucket3-public-sealed-ef3ef161/verification.json`，
+相邻 `handoff-identity.json` 和 `metax-bucket3-*-20260927/` 保留原始收据。
+
 ## 编译与执行
 
 编译通过现有 bubblewrap 路径运行，不挂载 GPU，也不暴露作者工作目录。
