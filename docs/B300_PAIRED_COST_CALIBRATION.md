@@ -9,6 +9,10 @@ when its Schedule, Target and nominal case shape match.
 `lab.selection._paired_empirical_context` defines the context for a future model
 derived from that paired assay. It keeps the existing single-candidate context
 untouched and additionally binds the exact paired policy and fixed baseline record.
+`lab.paired_cost_calibration.observed_paired_cost` replays a common Evaluation
+receipt against that policy, baseline and the worker's exclusive broker counters
+before projecting the candidate and baseline medians. It accepts only correct,
+stable paired CUPTI observations and does not fit or publish a model.
 The context is a comparison boundary, not evidence that any model has been measured
 or qualified. Existing `EmpiricalCostModel` instances and the Lab policy remain as
 they are; the B300 scientific Study does not admit empirical candidate selection.

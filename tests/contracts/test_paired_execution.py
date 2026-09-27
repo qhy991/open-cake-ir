@@ -32,6 +32,7 @@ from open_cake_ir.lab.contracts import CampaignLock, StudyContract
 from open_cake_ir.lab.archive import _validate_receipt_authority, _archive_evaluation_receipt
 from open_cake_ir.lab.pairing import bind_baseline
 from open_cake_ir.lab.runtime import CommandBrokerSubmitter
+from open_cake_ir.lab.paired_cost_calibration import observed_paired_cost
 from tests.contracts.test_native_triton_pairing import DraftCompilerFixture
 
 
@@ -231,6 +232,34 @@ class PairedExecutionTests(unittest.TestCase):
         changed['launch_manifests']['candidate']['workload_sha256'] = 'f' * 64
         with self.assertRaisesRegex(ValueError, 'participant seal'):
             self.receipt(payloads={**receipt.artifact_payloads, 'timing_samples': encoded(changed)})
+
+    def test_cost_observation_replays_the_common_pair_and_broker_work(self):
+        receipt = self.execute()
+        # This fixture enters the paired producer directly, before the outer
+        # evaluator writes its broker admission fields.
+        worker_result = {**self.result, 'admitted': True, 'mode': 'exclusive'}
+        observed = observed_paired_cost(
+            receipt, candidate=self.candidate, baseline=self.baseline,
+            evaluation_protocol=self.protocol, worker_result=worker_result,
+        )
+        self.assertEqual(observed['candidate_us'], 1000)
+        self.assertEqual(observed['baseline_us'], 1000)
+        self.assertEqual(observed['sample_count'], 250)
+        self.assertEqual(observed['baseline_record_sha256'], self.baseline.canonical_sha256)
+        foreign, _ = sealed(self.workload, 'other_baseline')
+        with self.assertRaisesRegex(ValueError, 'fixed baseline differs'):
+            observed_paired_cost(receipt, candidate=self.candidate, baseline=foreign,
+                                 evaluation_protocol=self.protocol, worker_result=worker_result)
+        protocol = copy.deepcopy(self.protocol)
+        protocol['paired_timing']['pair_order'] = protocol['paired_timing']['pair_order'][::-1]
+        with self.assertRaisesRegex(ValueError, 'Campaign evaluation policy'):
+            observed_paired_cost(receipt, candidate=self.candidate, baseline=self.baseline,
+                                 evaluation_protocol=protocol, worker_result=worker_result)
+        changed = copy.deepcopy(worker_result)
+        changed['counters']['timing_samples'] -= 1
+        with self.assertRaisesRegex(ValueError, 'work counters differ'):
+            observed_paired_cost(receipt, candidate=self.candidate, baseline=self.baseline,
+                                 evaluation_protocol=self.protocol, worker_result=changed)
 
     def receipt(self, *, payloads=None, timing=None):
         values = self.result['receipt']
