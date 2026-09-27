@@ -4,19 +4,25 @@
 Plans, candidates and output directories are external artifacts. A plan binds this
 collector's bytes and the released Compiler. The plan owns domains and thresholds;
 the workload oracle below owns the two explicitly supported evaluation contracts.
-Run the compile action in a CPU-only GPU Infra local stage before any broker stage.
+Run the compile action in a CPU-only GPU Infra local stage, followed by
+broker-owned collect-container correctness and profile stages. Fitting audits
+the retained device observations after the broker releases the GPU.
 """
 from __future__ import annotations
 
 import argparse
+import atexit
 import ctypes
 import itertools
 import json
 import math
 import os
+import re
+import signal
 import socket
 import statistics
 import struct
+import subprocess
 import sys
 import traceback
 from hashlib import sha256
@@ -104,6 +110,8 @@ def _check_plan(candidate):
             raise ValueError(f"calibration {key} differs")
     if not isinstance(plan.get("cuobjdump"), str) or not Path(plan["cuobjdump"]).is_absolute():
         raise ValueError("calibration requires an absolute cuobjdump path")
+    if not isinstance(plan.get("container_image_id"), str) or re.fullmatch(r"sha256:[0-9a-f]{64}", plan["container_image_id"]) is None:
+        raise ValueError("calibration requires an exact container image id")
     if not isinstance(plan.get("expected_runtime"), dict) or not plan["expected_runtime"]:
         raise ValueError("calibration requires frozen runtime facts")
     for key in ("model_id", "input_scope"):
@@ -343,6 +351,79 @@ def _prepared(run, plan):
     return stage, observations, resources
 
 
+def _broker_parent(plan):
+    """Admit only a direct child of the owning broker on the host."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.connect("/tmp/agent-gpu-broker.sock")
+        peer = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
+    if os.getppid() != peer[0] or os.geteuid() != peer[1] or peer[1] != plan["broker_uid"]:
+        raise RuntimeError("collection requires the direct broker execution principal")
+    return peer
+
+
+def _collect_container():
+    """Map exactly one broker-assigned GPU into a pinned container image."""
+    run = _external(os.environ["KERNELINFRA_RUN_DIR"])
+    stage = _external(os.environ["KERNELINFRA_STAGE_DIR"])
+    kind = os.environ.get("KERNELINFRA_STAGE_KIND")
+    stage_id = "correctness" if kind == "correctness" else "collection" if kind == "profile" else None
+    if (stage_id is None or stage != run / "stages" / stage_id
+            or os.environ.get("KERNELINFRA_STAGE_ID") != stage_id
+            or _external(os.environ["KERNELINFRA_CANDIDATE_DIR"]) != run / "candidate"
+            or _external(os.environ["KERNELINFRA_RESULT"]) != stage / "result.json"):
+        raise ValueError("container calibration stage binding differs")
+    plan = _read(run / "candidate/plan.json")
+    if (plan.get("state") != "frozen"
+            or sha256(Path(__file__).read_bytes()).hexdigest() != plan.get("collector_sha256")
+            or not isinstance(plan.get("container_image_id"), str)
+            or re.fullmatch(r"sha256:[0-9a-f]{64}", plan["container_image_id"]) is None):
+        raise ValueError("container calibration frozen source or image differs")
+    peer = _broker_parent(plan)
+    physical = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if re.fullmatch(r"[0-7]", physical) is None or not os.environ.get("GPUQ_JOB_ID"):
+        raise ValueError("container calibration requires one broker-assigned GPU")
+    context = {"broker_peer": list(peer), "broker_job_id": os.environ["GPUQ_JOB_ID"],
+               "physical_gpu": int(physical), "run_id": os.environ["KERNELINFRA_RUN_ID"],
+               "stage_id": stage_id}
+    _write(stage / "broker-container.json", context)
+    scratch = stage / "scratch"
+    scratch.mkdir()
+    name = f"cake-cost-{os.getpid()}-{stage_id}"
+    active = True
+
+    def cleanup():
+        if active:
+            subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=15, check=False)
+
+    atexit.register(cleanup)
+
+    def stop(signum, _frame):
+        cleanup()
+        raise SystemExit(128 + signum)
+
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, stop)
+    command = ["docker", "run", "--rm", "--network", "none", "--cap-drop", "ALL",
+               "--security-opt", "no-new-privileges", "--pids-limit", "256",
+               "--name", name, "--label", f"cake-cost.run_id={context['run_id']}",
+               "--label", f"cake-cost.stage_id={stage_id}",
+               "--gpus", f"device={physical}", "--user", f"{os.geteuid()}:{os.getegid()}",
+               "-v", f"{ROOT}:{ROOT}:ro", "-v", f"{run}:{run}", "-v", f"{scratch}:/tmp",
+               "-w", str(ROOT), "-e", "CUDA_VISIBLE_DEVICES=0", "-e", "HOME=/tmp/fibhome",
+               "-e", "CAKE_BROKER_CONTAINER=1", "-e", f"GPUQ_JOB_ID={context['broker_job_id']}",
+               "-e", f"CAKE_PHYSICAL_GPU={physical}"]
+    for key in ("KERNELINFRA_RUN_ID", "KERNELINFRA_RUN_DIR", "KERNELINFRA_TASK",
+                "KERNELINFRA_CANDIDATE_DIR", "KERNELINFRA_STAGE_ID", "KERNELINFRA_STAGE_KIND",
+                "KERNELINFRA_STAGE_DIR", "KERNELINFRA_RESULT"):
+        command.extend(["-e", f"{key}={os.environ[key]}"])
+    command.extend([plan["container_image_id"], "python3", str(ROOT / "tools/calibrate_empirical_cost.py"), "collect"])
+    result = subprocess.run(command, check=False)
+    if result.returncode:
+        raise RuntimeError(f"container calibration exited {result.returncode}")
+    active = False
+
+
 def _collect():
     import importlib.metadata
 
@@ -364,12 +445,28 @@ def _collect():
     (stage / "collector.py").write_bytes(Path(__file__).read_bytes())
     _write(stage / "plan.json", plan)
     compile_stage, prepared, resources_by_source = _prepared(run, plan)
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.connect("/tmp/agent-gpu-broker.sock")
-        peer = struct.unpack("3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
-    if os.getppid() != peer[0] or os.geteuid() != peer[1] or peer[1] != plan["broker_uid"]:
-        raise RuntimeError("collection requires the direct broker execution principal")
-    _write(stage / "execution-context.json", {"broker_peer": peer, "uid": os.geteuid(), "gid": os.getegid(), "run_id": os.environ["KERNELINFRA_RUN_ID"], "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")})
+    if os.environ.get("CAKE_BROKER_CONTAINER") == "1":
+        context = _read(stage / "broker-container.json")
+        if (context.get("broker_job_id") != os.environ.get("GPUQ_JOB_ID")
+                or context.get("run_id") != os.environ.get("KERNELINFRA_RUN_ID")
+                or context.get("stage_id") != stage_id
+                or str(context.get("physical_gpu")) != os.environ.get("CAKE_PHYSICAL_GPU")
+                or os.environ.get("CUDA_VISIBLE_DEVICES") != "0"
+                or os.geteuid() != plan["broker_uid"]):
+            raise ValueError("container broker assignment differs")
+        peer = context["broker_peer"]
+        physical_gpu = context["physical_gpu"]
+    else:
+        peer = _broker_parent(plan)
+        visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+        if re.fullmatch(r"[0-7]", visible) is None or not os.environ.get("GPUQ_JOB_ID"):
+            raise ValueError("direct calibration requires one broker-assigned GPU")
+        physical_gpu = int(visible)
+    _write(stage / "execution-context.json", {"broker_peer": peer,
+        "broker_job_id": os.environ["GPUQ_JOB_ID"], "physical_gpu": physical_gpu,
+        "uid": os.geteuid(), "gid": os.getegid(),
+        "run_id": os.environ["KERNELINFRA_RUN_ID"],
+        "visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES")})
     compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
     target, binary_version_expected = _target_contract(compiler, plan)
     import torch
@@ -465,6 +562,8 @@ def _collect():
     _write(stage / "observations.json", {"schema_version": 1, "runtime": runtime,
                                           "device_checks_passed": quality, "rows": rows})
     artifacts = {"observations": "observations.json", "plan": "plan.json", "collector": "collector.py", "execution_context": "execution-context.json"}
+    if os.environ.get("CAKE_BROKER_CONTAINER") == "1":
+        artifacts["broker_container"] = "broker-container.json"
     for path in sorted(stage.glob("*trace-*.json")):artifacts[path.stem] = path.name
     for path in sorted(stage.glob("launch-order-*.json")):artifacts[path.stem] = path.name
     _write(os.environ["KERNELINFRA_RESULT"], {"schema": "kernelinfra.stage-result.v1", "status": "passed" if quality else "failed", "validity": "valid" if quality else "unknown", "summary": "device checks and trace capture passed; timing audit follows off device" if quality else "device checks failed; do not fit", "workloads": [{"id": row["id"], "correct": row["correct"]} for row in rows] if kind == "correctness" else [], "artifacts": artifacts, "metrics": {"device_checks_passed": quality, "case_count": len(rows)}})
@@ -513,6 +612,18 @@ def _fit(run, output):
                 or receipt["exit_code"] != 0 or not receipt["judge_result_valid"]
                 or (name != "compile" and not receipt["broker_job_id"])):
             raise ValueError("stage receipt differs")
+        if name != "compile":
+            context = _read(run / f"stages/{name}/execution-context.json")
+            if (context.get("broker_job_id") != receipt["broker_job_id"]
+                    or context.get("run_id") != run_result["run_id"]
+                    or context.get("physical_gpu") not in receipt["gpu_ids"]
+                    or context.get("uid") != plan["broker_uid"]):
+                raise ValueError("broker assignment differs from retained stage receipt")
+            container_context = run / f"stages/{name}/broker-container.json"
+            if container_context.exists():
+                admitted = _read(container_context)
+                if any(admitted[key] != context[key] for key in ("broker_job_id", "physical_gpu", "run_id")) or admitted["stage_id"] != name:
+                    raise ValueError("container broker assignment differs from device stage")
     if _read(run / "stages/correctness/observations.json")["runtime"] != observed["runtime"]:raise ValueError("runtime changed between stages")
     _bind_artifacts(run, plan, rows, compiler)
     specifications = {spec["id"]: spec for spec in plan["curves"]}
@@ -635,6 +746,7 @@ def main():
     check.add_argument("candidate", type=Path)
     sub.add_parser("compile", help="CPU-only preparation in a GPU Infra local stage")
     sub.add_parser("collect")
+    sub.add_parser("collect-container", help="broker-owned GPU stage with exact container mapping")
     fit = sub.add_parser("fit")
     fit.add_argument("run", type=Path)
     fit.add_argument("--output", type=Path, required=True)
@@ -647,6 +759,8 @@ def main():
     try:
         if args.action == "compile":
             _prepare()
+        elif args.action == "collect-container":
+            _collect_container()
         else:
             _collect()
         return 0

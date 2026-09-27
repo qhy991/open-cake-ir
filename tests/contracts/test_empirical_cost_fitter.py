@@ -72,7 +72,7 @@ class FitterBindingTest(unittest.TestCase):
                                               "threads_per_cta": resource.threads_per_cta,
                                               "dynamic_shared_bytes": resource.dynamic_shared_bytes,
                                               "grid": row["grid"]})
-        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "target": target, "device_name": self.compiler._revision.targets[target].device_names[0], "multiprocessor_count": 1, "broker_uid": 1000, "cuobjdump": "/usr/bin/true", "expected_runtime": {"compiler_version": "synthetic"}, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"warmup": 1, "rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "maximum_candidates_per_turn": 3, "envelope_allowance": .05}}
+        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "target": target, "device_name": self.compiler._revision.targets[target].device_names[0], "multiprocessor_count": 1, "broker_uid": 1000, "cuobjdump": "/usr/bin/true", "container_image_id": "sha256:" + "0" * 64, "expected_runtime": {"compiler_version": "synthetic"}, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"warmup": 1, "rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "maximum_candidates_per_turn": 3, "envelope_allowance": .05}}
         write(run / "candidate/plan.json", plan)
         compile_stage = run / "stages/compile"
         (compile_stage / "collector.py").write_bytes(collector)
@@ -90,7 +90,10 @@ class FitterBindingTest(unittest.TestCase):
             (path / "collector.py").write_bytes(collector)
             write(path / "plan.json", plan)
             write(path / "observations.json", {"schema_version": 1, "runtime": {"compiler_version": "synthetic"}, "device_checks_passed": True, "rows": rows})
-            write(path / "receipt.json", {"execution": "broker", "exit_code": 0, "judge_result_valid": True, "broker_job_id": "synthetic-not-an-actual-job"})
+            write(path / "receipt.json", {"execution": "broker", "exit_code": 0, "judge_result_valid": True, "broker_job_id": "synthetic-not-an-actual-job", "gpu_ids": [0]})
+            write(path / "execution-context.json", {"broker_job_id": "synthetic-not-an-actual-job",
+                                                         "physical_gpu": 0, "run_id": "SYNTHETIC-NOT-A-GPU-RUN",
+                                                         "uid": 1000})
             stages.append({"id": phase, "status": "passed", "validity": "valid"})
         write(run / "result.json", {"outcome": "completed", "validity": "valid", "run_id": "SYNTHETIC-NOT-A-GPU-RUN", "stages": stages})
         for repetition in range(2):
@@ -224,6 +227,48 @@ class FitterBindingTest(unittest.TestCase):
         regrets = instrument._candidate_set_regrets(audit, 3)
         self.assertEqual(regrets[0]["provider_order"], ["a", "b", "c"])
         self.assertEqual(regrets[0]["top2_regret_ratio"], 10)
+
+    def test_broker_receipt_must_match_device_stage_assignment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = self.fixture(root)
+            context = run / "stages/collection/execution-context.json"
+            value = json.loads(context.read_text())
+            value["physical_gpu"] = 7
+            write(context, value)
+            with self.assertRaisesRegex(ValueError, "broker assignment differs"):
+                instrument._fit(run, root / "output")
+
+    def test_container_stage_maps_only_the_broker_assigned_gpu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run = self.fixture(root, target="sm_103a")
+            stage = run / "stages/collection"
+            environment = {"KERNELINFRA_RUN_DIR": str(run),
+                           "KERNELINFRA_STAGE_DIR": str(stage),
+                           "KERNELINFRA_CANDIDATE_DIR": str(run / "candidate"),
+                           "KERNELINFRA_RESULT": str(stage / "result.json"),
+                           "KERNELINFRA_TASK": str(run / "task.json"),
+                           "KERNELINFRA_STAGE_KIND": "profile",
+                           "KERNELINFRA_STAGE_ID": "collection",
+                           "KERNELINFRA_RUN_ID": "synthetic-run",
+                           "GPUQ_JOB_ID": "synthetic-broker-job",
+                           "CUDA_VISIBLE_DEVICES": "3"}
+            commands = []
+            def fake_run(command, **_kwargs):
+                commands.append(command)
+                return types.SimpleNamespace(returncode=0)
+            with patch.dict(os.environ, environment), \
+                    patch.object(instrument, "_broker_parent", return_value=(123, 1000, 1000)), \
+                    patch.object(instrument.subprocess, "run", side_effect=fake_run):
+                instrument._collect_container()
+            self.assertEqual(len(commands), 1)
+            self.assertIn("device=3", commands[0])
+            self.assertIn("CUDA_VISIBLE_DEVICES=0", commands[0])
+            self.assertNotIn("device=all", commands[0])
+            context = json.loads((stage / "broker-container.json").read_text())
+            self.assertEqual(context["physical_gpu"], 3)
+            self.assertEqual(context["broker_job_id"], "synthetic-broker-job")
 
     def test_changed_stage_templates_cannot_relabel_original_measurements(self):
         with tempfile.TemporaryDirectory() as directory:
