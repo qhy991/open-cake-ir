@@ -1,6 +1,6 @@
 # 文档总目录 / Documentation catalog
 
-[项目首页](../README.md) · [技术报告与引用](README.md) · [中文入门](zh-CN/README.md) · [English start](en/README.md)
+[项目首页](../README.md) · [技术报告 PDF](open-cake-ir-technical-report.pdf) · [报告索引与引用](README.md) · [中文入门](zh-CN/README.md) · [English start](en/README.md)
 
 本页按主题收纳详细文档与历史材料。首次访问先读项目 README 或技术报告首页；查找具体接口、实验方法和原始报告时使用本目录。
 This catalog groups detailed references and dated material. Use the repository README or report entry for a short reading route.

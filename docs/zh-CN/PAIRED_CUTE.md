@@ -2,7 +2,8 @@
 
 [English](../en/PAIRED_CUTE.md)
 
-使用 `contracts/studies/matched-search-cute-b300-gemm-optimization-template.json`。
+新实验使用 `contracts/studies/matched-search-cute-b300-gemm-optimization-python-template.json`。
+Cake 臂交回完整的 `candidate-set.py`；原 JSON 模板保留用于冻结实验回放。
 它沿用现有 matched_search 和 Ralph 流程。两组分别是 `open_cake` 和
 `native_cute_dsl`，从同一个 GEMM+bias kernel 开始，都用 `cutlass_cute_dsl`
 编译到精确的 `sm_103a`。Study 保存稳定规则；实际 Compiler、Executor、provider、
@@ -23,7 +24,7 @@ Compiler 的主 Schedule 不伪造 Workload 哈希，Lab 在使用时绑定真�
 PYTHONPATH=src python -m open_cake_ir.cli compiler assess --revision compiler/revision.json examples/python/b300_cute_gemm_bias.py
 ```
 
-Cake 组提交 JSON Schedule，或含 `python_source` 的对象。受限 Python 前端只解析，
+Cake 组在 `candidate-set.py` 中提交完整的 Python Schedule 或 Program。受限 Python 前端只解析，
 不运行用户的主机代码，并保留报错位置。后端固定为 `cutlass_cute_dsl`。
 首版支持一个 warp、BM=16、BN 为 8 的倍数、BK 为 16 的倍数、K>BK，以及单级 K 循环。
 M/N/K 尾部有掩码，无效输入在集体 MMA 前补零。它显式使用寄存器和 BF16 warp MMA。
@@ -31,7 +32,7 @@ M/N/K 尾部有掩码，无效输入在集体 MMA 前补零。它显式使用寄
 
 原生组修改 TASK 中的 `candidate-baseline.cute.json`。候选只有四个字段：
 `kernel_source`、`grid`、`block`、`dynamic_shared_memory_bytes`。
-附带的 `candidate.schema.json` 说明格式。两组都写现有 `candidate-set.json` 信封，
+附带的 `candidate.schema.json` 说明格式。原生组继续写 `candidate-set.json` 信封，
 保留分配的 arm。生成源码中的来源注释只说明初始基线，可以在原生组优化其 kernel。
 
 CuTe 源码只允许固定的 cutlass、cute、warp 导入和一个 `@cute.kernel`。
@@ -50,10 +51,14 @@ nvidia-cutlass-dsl-libs-base、nvidia-cutlass-dsl-libs-cu13 三个包。
 Linux bubblewrap 编译环境不挂载作者工作区，不暴露 NVIDIA 设备，拒绝驱动初始化。
 缺少依赖会报告环境失败，不会切换架构或绕过隔离。
 
-`tools/qualify_codex_provider.py` 配合
-`contracts/providers/codex-cute-optimization-output-schema-v1.json`，通过两轮零 GPU
-任务检查两组的实际 provider 信封。它不验证 kernel 正确性。随后将 qualification
-receipt、anchor、运行配置和已封存基线作为外部执行绑定交给
+`tools/qualify_codex_provider.py` 分别配合
+`contracts/providers/run-turn-output-schema-v1.json`，Cake 臂指定
+`--environment-kind open_cake --submission-contract python_candidate_bundle_v1`，
+原生臂指定 `--environment-kind native_cute_dsl`。两份双轮 receipt 与 anchor
+分别写入版本 3 的外部执行绑定。两次资格验证都指定
+`--author-home-policy isolated_auth_only_v1 --auth-source /external/private/auth.json`；
+运行配置的 `provider.auth_source` 绑定同一私有凭据，每个 Run 建立新作者 home。
+它们不验证 kernel 正确性。随后将运行配置和已封存基线交给
 `lab preflight --execution-bindings`。所有新 lock、证据和报告放在源码目录外。
 
 两组共用 `open_cake_ir.lab.cute_build` 的 `CuTeToolchainBuilder` 和

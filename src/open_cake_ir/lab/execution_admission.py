@@ -18,9 +18,32 @@ from .providers import (
 from .provider_policy import provider_configuration
 
 
+def campaign_provider_bindings(lock, project_root):
+    """Revalidate each arm's frozen CLI qualification before Campaign side effects."""
+    from .admission import validate_provider_binding
+    from .provider_policy import execution_configuration
+    from .provider_documents import required_live_provider_qualification_scope
+    arms = lock.document['resolved_inputs']['arm_environments']
+    result = {}
+    for name, arm in arms.items():
+        provider = _object(arm['provider'], f'arm_environments.{name}.provider')
+        configuration = execution_configuration(provider)
+        qualification = validate_provider_binding(
+            provider=provider, project_root=project_root,
+            expected_provider_configuration=configuration,
+            admitted_scopes={'zero_gpu_contract_fixture_only',
+                             required_live_provider_qualification_scope(lock.claim_scope)},
+            require_native_pair=native_backend(comparison_arm(arms)) is not None,
+            evaluation_protocol=lock.document['evaluation_protocol'])
+        result[name] = (provider, qualification)
+    return result
+
+
 def campaign_provider_binding(lock,project_root):
     """Retain matched-Campaign policy at its external input boundary."""
     arms = lock.document['resolved_inputs']['arm_environments']
+    if any(arm['provider'] != arms['open_cake']['provider'] for arm in arms.values()):
+        raise ValueError('mixed provider transports require per-Run runtime factory')
     evaluation_protocol = lock.document['evaluation_protocol']
     first_arm = _object(arms["open_cake"], "arm_environments.open_cake")
     provider_document = _object(

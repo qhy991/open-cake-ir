@@ -132,7 +132,8 @@ class QsaFeedbackTest(unittest.TestCase):
         feedback = qsa_compiler_feedback(self.compiler.assess(document))
 
         self.assertTrue(feedback["actionable"])
-        self.assertEqual(feedback["routed_to"], "candidate")
+        self.assertTrue(feedback["accepted"])
+        self.assertEqual(feedback["routed_to"], "backend_lowering")
         finding = next(
             item
             for item in feedback["findings"]

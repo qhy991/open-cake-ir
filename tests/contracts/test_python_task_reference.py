@@ -19,10 +19,11 @@ class PythonTaskReferenceTests(unittest.TestCase):
         self.source = (ROOT / "examples/python/metal_rmsnorm.py").read_text()
         self.document = frontend.parse(self.source).document
 
-    def test_only_workload_metadata_changes_in_bound_python(self):
+    def test_workload_binding_does_not_put_a_hash_in_authored_python(self):
         prepared = {**self.document, "metadata": {"workload_contract_sha256": "a" * 64}}
         bound = bind_python_reference(self.source, prepared, filename="starter.py")
-        self.assertEqual(frontend.parse(bound.decode()).document, prepared)
+        self.assertEqual(bound.decode(), self.source)
+        self.assertEqual(frontend.parse(bound.decode()).document["metadata"], {})
         self.assertIn(b"@cake.schedule", bound)
         self.assertIn(b"lm.reduce", bound)
         self.assertIn("```python", _document_sections({"schedule-starter.py": bound}, access="known_kernel_reproduction"))
@@ -81,6 +82,7 @@ class PythonTaskReferenceTests(unittest.TestCase):
         document = frontend.parse(source).document
         prepared = {**document, "metadata": {"workload_contract_sha256": workload.canonical_sha256}}
         bound = bind_python_reference(source, prepared, filename="candidate.py")
+        self.assertNotIn("workload_contract_sha256", bound.decode())
         observed = []
         class Builder:
             def build(self, request):
@@ -93,8 +95,15 @@ class PythonTaskReferenceTests(unittest.TestCase):
             authority_document={"input_format": "schedule_or_python_v1", "lowering_route": prepared["lowering"]},
             workload=workload, case_id="odd")
         result = environment.build(CandidateSubmission.seal(environment.media_type,
-            json.dumps({"python_source": bound.decode()}).encode()))
+            json.dumps({"python_source": source}).encode()))
         self.assertEqual(result.disposition, "launchable")
+        wrong = source.replace('entry_point="cake_rmsnorm"',
+            'entry_point="cake_rmsnorm", metadata={"workload_contract_sha256": "' + "0" * 64 + '"}')
+        self.assertNotEqual(wrong, source)
+        rejected_pin = environment.build(CandidateSubmission.seal(environment.media_type,
+            json.dumps({"python_source": wrong}).encode()))
+        self.assertEqual(rejected_pin.disposition, "rejected")
+        self.assertIn("Workload binding", rejected_pin.feedback["error"])
         # A richer envelope is refused for what it actually is. Reporting it as a
         # lowering route the actor never changed cost a live Campaign three Turns.
         rejected = environment.build(CandidateSubmission.seal(environment.media_type,
@@ -150,8 +159,7 @@ class PythonTaskReferenceTests(unittest.TestCase):
             self.assertIn("schedule-skeleton.json", json_starter_docs)
             self.assertEqual(json_starter_docs["python-frontend.md"], docs["python-frontend.md"])
             self.assertEqual(json_starter_docs["python-example.py"], docs["python-example.py"])
-            self.assertEqual(frontend.parse(docs["schedule-starter.py"].decode()).document["metadata"],
-                             {"workload_contract_sha256": "a" * 64})
+            self.assertEqual(frontend.parse(docs["schedule-starter.py"].decode()).document["metadata"], {})
 
 
 if __name__ == "__main__":

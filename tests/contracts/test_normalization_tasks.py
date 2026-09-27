@@ -238,7 +238,7 @@ class NormalizationTaskTests(unittest.TestCase):
                     with self.subTest(task=name, width=width, backend=backend):
                         workload, source = self.task(name, columns=width, backend=backend)
                         schedule = frontend.parse(source).document
-                        self.assertEqual(schedule["metadata"]["workload_contract_sha256"], workload.canonical_sha256)
+                        self.assertEqual(schedule["metadata"], {})
                         buffers = [b for b in schedule["buffers"] if b["space"] == "global"]
                         for case_id in workload.case_ids:
                             self.assertEqual([(b["name"], tuple(b["shape"]), b["dtype"], b["mode"]) for b in buffers],

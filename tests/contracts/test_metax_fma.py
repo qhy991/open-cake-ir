@@ -37,6 +37,29 @@ class MetaxFmaLowering(unittest.TestCase):
         kernel = project_triton_kernel(lowering.source.encode(), lowering.toolchain_requirements)
         self.assertIn(b'tl.fma(a_tile, b_tile, c_tile)', kernel)
 
+    def test_directed_contracts_keep_rounding_visible_through_source_admission(self):
+        for mode in ('rz', 'rd', 'ru'):
+            document = fma_document()
+            instruction = next(op for op in document['operations'] if op['id'] == 'fma')['parameters']['instruction']
+            instruction['contract'] = f'maca.fma.{mode}.f32'
+            assessment = self.compiler.assess(document)
+            self.assertTrue(assessment.lowering_eligible, assessment.findings)
+            lowered = self.compiler.lower(assessment)
+            projected = project_triton_kernel(lowered.source.encode(), lowered.toolchain_requirements)
+            self.assertIn(f'libdevice.fma_{mode}(a_tile, b_tile, c_tile)'.encode(), projected)
+            self.assertNotIn(b'tl.fma(a_tile, b_tile, c_tile)', projected)
+
+    def test_directed_contract_typing_refuses_fp16_operands(self):
+        document = fma_document()
+        for buffer in document['buffers']:
+            if buffer['dtype'] == 'fp32':
+                buffer['dtype'] = 'fp16'
+        instruction = next(op for op in document['operations'] if op['id'] == 'fma')['parameters']['instruction']
+        instruction['contract'] = 'maca.fma.rz.f32'
+        assessment = self.compiler.assess(document)
+        self.assertFalse(assessment.accepted)
+        self.assertIn('ELEMENTWISE_INSTRUCTION_DTYPE_DIFFERS', [f.code for f in assessment.findings])
+
     def test_vendor_instruction_names_do_not_cross_routes(self):
         document = fma_document()
         op = next(op for op in document['operations'] if op['id'] == 'fma')

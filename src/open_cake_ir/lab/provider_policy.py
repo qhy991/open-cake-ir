@@ -4,7 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping
 
-from .provider_documents import CANDIDATE_SET_ENVELOPE_V1, CODEX_DISABLED_FEATURES
+from .provider_documents import (CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                 PYTHON_CANDIDATE_BUNDLE_V1, CODEX_DISABLED_FEATURES)
+from .author_home import ISOLATED_AUTH_ONLY_V1
 from ._documents import _canonical_json_bytes
 from .claude import CLAUDE_EVENT_CONTRACTS, CLAUDE_AUTHORING_TOOLS, terminal_schema, response_model_aliases
 
@@ -36,6 +38,10 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
     if provider_harness(provider) == 'responses':
         from .message_provider import configuration
         return configuration(provider)
+    submission_contract = provider.get('submission_contract', CANDIDATE_SET_ENVELOPE_V1)
+    if submission_contract not in {CANDIDATE_SET_ENVELOPE_V1, PYTHON_SOURCE_FILE_V1,
+                                   PYTHON_CANDIDATE_BUNDLE_V1}:
+        raise ValueError('Study Contract provider submission contract differs')
     for name in ("model", "reasoning_effort"):
         value = provider.get(name)
         if not isinstance(value, str) or not value or value != value.strip() or "\x00" in value:
@@ -46,7 +52,9 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
         raise ValueError("Study Contract provider configuration workspace/environment differs")
     harness = provider_harness(provider)
     if harness == "claude-code":
-        fields = _CLAUDE | ({"response_model_aliases"} if "response_model_aliases" in provider else set())
+        fields = (_CLAUDE
+                  | ({"response_model_aliases"} if "response_model_aliases" in provider else set())
+                  | ({"submission_contract"} if "submission_contract" in provider else set()))
         aliases = provider.get("response_model_aliases", ())
         response_model_aliases(provider["model"], aliases)
         if "response_model_aliases" in provider and (not isinstance(aliases, list) or not aliases):
@@ -58,10 +66,22 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
                 or _canonical_json_bytes(provider.get("terminal_schema")) != _canonical_json_bytes(terminal_schema())
                 or provider["reasoning_effort"] not in {"low", "medium", "high", "xhigh", "max"}):
             raise ValueError("Study Contract Claude provider configuration or authoring scope differs")
-        return {**{name: provider[name] for name in fields}, "submission_contract": CANDIDATE_SET_ENVELOPE_V1}
+        return {**{name: provider[name] for name in fields if name != 'submission_contract'},
+                "submission_contract": submission_contract}
+    optional_contract = ({'submission_contract'} if 'submission_contract' in provider else set()) | (
+        {'author_home_policy'} if 'author_home_policy' in provider else set())
+    authority_fields = _AUTHORITY | ({'system_skills_sha256'} if 'system_skills_sha256' in provider else set())
+    system_skills = provider.get('system_skills_sha256')
+    if system_skills is not None and (
+        not isinstance(system_skills, str) or len(system_skills) != 64
+        or any(char not in '0123456789abcdef' for char in system_skills)):
+        raise ValueError('Study Contract system skills identity differs')
+    if ('author_home_policy' in provider
+        and provider['author_home_policy'] != ISOLATED_AUTH_ONLY_V1):
+        raise ValueError('Study Contract author home policy differs')
     if harness != "codex" or frozenset(provider) not in {
-        frozenset(_AUTHORITY | _CODEX | {"web_search"}),
-        frozenset(_AUTHORITY | _CODEX | {"event_contract"}),
+        frozenset(authority_fields | _CODEX | {"web_search"} | optional_contract),
+        frozenset(authority_fields | _CODEX | {"event_contract"} | optional_contract),
     }:
         raise ValueError("Study Contract provider configuration fields differ")
     defaults = provider.get("event_contract") == "tool_rich_candidate_v1"
@@ -83,7 +103,9 @@ def execution_configuration(provider: Mapping[str, object]) -> dict:
         raise ValueError("Study Contract provider output_schema reference differs")
     configuration = {name: provider[name] for name in _CODEX - {"output_schema"}}
     configuration["output_schema_sha256"] = schema["sha256"]
-    configuration["submission_contract"] = CANDIDATE_SET_ENVELOPE_V1
+    configuration["submission_contract"] = submission_contract
+    if 'author_home_policy' in provider:
+        configuration['author_home_policy'] = provider['author_home_policy']
     for field in ("web_search", "event_contract"):
         if field in provider:
             configuration[field] = provider[field]

@@ -54,3 +54,19 @@ The original finite-only scope remains unchanged in its old receipts. Current Ca
 still refuses the proposed names and native source. Shared contract/source work
 must precede platform admission; require real Cake-generated successor evidence,
 not this standalone native result, before closing the capacity finding.
+
+## Actual Cake prototype and output-write control
+
+The [generated prototype record](../../../docs/metax-c550.md#实际-cake-定向-fma-原型)
+uses sourceb5da553f, existing lm.fma, explicit RZ/RD/RU names and same-shaped FP32
+register operands. Real TaskOpenCakeEnvironment output seals and loads native code;
+two jobs match12228exact words and60NaN classes each. The second uses an initializer
+that differs at every reference position and is finite for NaN references, so an
+unwritten output cannot pass the numerical oracle. Retain complete raw words.
+
+The tested ordinary ADD/FMA depend on the directed result, with508/510/506rows
+that distinguish restored RN from leaked mode. Do not turn this observation into
+hidden-state, NaN-payload, exception-flag or arbitrary-runtime guarantees. Normal
+FMA reports14registers/thread versus58for directed calls; no latency or causal
+performance inference follows. Shared registration/source review and platform
+integration are still pending; the capacity finding remains proposed.

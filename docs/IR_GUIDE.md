@@ -4,6 +4,34 @@
 
 本文面向需要阅读、编写或扩展 IR 的开发者。先说明一份 Schedule 如何描述计算，再说明这些概念在代码中的负责位置。精确字段以 [typed IR](../src/open_cake_ir/compiler/ir/__init__.py)、生成的 [JSON Schema](../src/open_cake_ir/compiler/schema.py) 和 [Authoring Contract](../compiler/AUTHORING_CONTRACT.md) 为依据；术语定义见 [Glossary](GLOSSARY.md)。本文是它们的阅读说明，不承担发布状态或实验成绩的记录职责。
 
+## 阅读前：IR、Schedule IR 与 Cake IR
+
+**IR（中间表示）是类别名，Schedule IR 是其中一种表示。** 计算图 IR 可以表达算子之间的计算关系，
+低层 IR 可以接近目标指令；这里的例子只帮助比较抽象层级，不表示本仓库各实现一套这样的 IR。
+本仓库的 `compiler/ir/` 是定义类型的代码包；其中的 canonical `Schedule` 描述**单个 GPU kernel
+怎样执行**。另一个 `Program` 类型绑定多个完整 Schedule 的公共张量与 stage 顺序，不与
+Schedule 争夺单 kernel 调度的所有权。`Assessment` 是检查结果，`Lowering` 是生成源码的结果，
+它们都不是另一种作者需要填写的 IR。
+
+![IR 是总称，Schedule IR 是其中一种；右侧列出当前 Schedule 的执行职责](figures/ir-schedule-relationship-v1.png)
+
+*图：左侧是一般 IR 的分类示意，不是本项目实现清单；右侧对应本仓库的
+`ProgramMap`、`Role`、`Buffer`、`AccessMap`、`Operation`、`Barrier`、`Pipeline`、`Target`
+与 lowering route。字段的精确定义见下文，图不替代 schema。*
+
+CAKE [原始论文](https://arxiv.org/html/2608.12629v1)称 agent 编写的表示为 **Cake IR**：
+它以带类型、显式硬件决策的 machine schedule 为核心，声明角色、存储、访存与同步，
+由 lowering 推导机械细节，不引入独立的 layout algebra。本仓库沿用这一设计方向，
+并在工程实现里明确区分 `Program` 组合层、单 kernel 的 `Schedule`、精确 `Target`、
+Verifier、后端源码生成与下游工具链。论文主要陈述 NVIDIA 到 CUDA/PTX 的路径；本仓库的
+Schedule 可选择 Triton、原生 CUDA、CuTe DSL 或 Metal 后端，各路径能力不等价。
+具体层级见[系统架构](ARCHITECTURE.md#cake-irdsl-与-triton-的层级)。
+
+**Schedule IR 的作用**是保留影响正确性与性能的执行选择，让 Compiler 在编译前对已建模
+的规则定位诊断，并从通过后端准入的计划生成可检查源码。它不是“把所有 GPU kernel 写成
+同一种机器指令”的承诺。IR 能描述某个操作，并不保证所选后端能兑现；后端不支持时，
+assessment 应给出相应拒绝。即使源码生成成功，工具链编译、设备正确性与性能仍分别验证。
+
 ## 1. 整理的目标与约束
 
 IR 的代码由 `open_cake_ir.compiler.ir` 包统一提供。拆分只改变实现文件的职责分配：已有导入路径、类型与字段、枚举值、参数默认值、JSON 格式、拒绝规则和生成的 kernel 源码保持一致。每个类型、词汇和解析规则只有一个定义。
@@ -31,6 +59,9 @@ flowchart TD
 ```
 
 [Python frontend](../src/open_cake_ir/compiler/frontend.py) 是编辑入口，最终也产生同一份 Schedule 文档。它支持受限的 Python AST，不能据此推断任意 Python 控制流都可编译。JSON 和 Python 最终经过同一 Compiler；源码位置是用于展示诊断的附加信息。
+多阶段作者可使用 [Program Python 前端](../src/open_cake_ir/compiler/program_frontend.py)
+静态组合这些完整 Schedule；张量绑定与阶段顺序仍由同一个 typed `Program` 检查，
+不需要手写 Program JSON。
 
 顶层对象由以下部分组成。列表字段即使没有条目也需要保留，标为可选的字段除外。
 
@@ -179,26 +210,51 @@ Schedule 提供 `tile_loop`、`loop_parent`、`loop_depth` 等派生查询。`mm
 
 ## 8. 从读取计划到生成代码
 
-以下代码从仓库根目录、带有 `src` 的 Python 路径执行。开发 worktree 使用 draft 描述；已发布运行使用与源码闭包一致的 release lock。
+### FMA：同一公式，两种不同的信息
+
+在固定示例 `fma-b8-smoke` 中，输入 `a`、`b`、`c` 与输出 `y` 都是 FP32 的 `[8,128]`。
+数学关系是 `y[i,j] = fma(a[i,j], b[i,j], c[i,j])`；现有 Schedule 的
+`ptx.fma.rn.f32` 指令合同明确要求一次融合舍入，不能改成先乘后加的两次舍入。
+Workload/oracle 负责结果是否符合任务约定，Schedule 则给这次计算指定执行计划。
+
+![fma-b8-smoke 中的 8 行输入与 Schedule IR 的五项执行决定](figures/fma-schedule-example-v1.png)
+
+*图：高亮的 `batch=4` 只是八行中的一行；右侧五项均来自
+[完整 Schedule](../corpus/schedules/fma-b8-smoke.json)。矩阵只画出每行前几列以便阅读，
+实际一行有 128 列。*
+
+`program_map` 将输入第 0 维按 `tile=1` 分成八份工作：`batch=4` 的程序负责索引为 4 的那一行。
+`compute` 角色声明四个 `execution_groups`。三个 `load` 通过各自的 `AccessMap` 读取
+`[batch, 0:128]`，生成形状为 `[128]` 的逻辑 register Buffer；`fma` 消费三个 tile，
+`store_y` 将结果写回相同坐标。全局 Buffer `a,b,c,y` 的 shape 仍是 `[8,128]`。
+本例的 `tile_loops`、`pipelines` 和 `barriers` 为空；它们是其他 Schedule 可使用的能力，
+不是这个 FMA 所必需的步骤。逻辑 register tile 的 128 个元素**不表示每线程占用
+128 个物理寄存器**；实际分配要看 Triton 编译产物。
+
+`target=sm_100a` 与 `lowering.backend=triton` 指定了此计划的目标和源码生成路线。
+`Compiler.assess` 检查结构、语义、目标和后端条件；只有具备 lowering 资格时，
+`Compiler.lower` 才生成 Triton 源码。以下代码从仓库根目录、带有 `src` 的 Python 路径
+读取并检查同一示例，不执行 GPU kernel。开发 worktree 使用 draft 描述；已发布运行
+使用与源码闭包一致的 release lock。
 
 ```python
 from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import read_schedule
 from open_cake_ir.compiler.ir import Schedule
 
-schedule = Schedule.load("corpus/schedules/fma-b8-smoke.json")
+authored = read_schedule("examples/python/fma.py")
+schedule = Schedule.from_dict(authored.document)
 assert schedule.buffer("a").shape == (8, 128)
 print([(op.op_id, op.kind.value) for op in schedule.operations])
 
-compiler = Compiler.load(".", "compiler/revision.json")
-authored = read_schedule("examples/python/fma.py")
+compiler = Compiler.load()
 assessment = compiler.assess(authored.document)
 assert assessment.accepted and assessment.lowering_eligible, assessment.findings
 lowering = compiler.lower(assessment)
 assert "fma.rn.f32" in lowering.source
 ```
 
-这个例子使用仓库中的 [FMA Python](../examples/python/fma.py) 和 [FMA JSON](../corpus/schedules/fma-b8-smoke.json)，不复制另一份完整计划。三个 load 产生寄存器 tile，FMA 读三个 tile 并生成结果，store 按 `y` 的 AccessMap 写回；角色、地址与数据流相互独立又必须一致。
+这个例子只读取 [FMA Python](../examples/python/fma.py)；[JSON 版本](../corpus/schedules/fma-b8-smoke.json) 留作 Corpus 回归和查看规范序列化，不是编写算子的必需输入。三个 load 产生寄存器 tile，FMA 读三个 tile 并生成结果，store 按 `y` 的 AccessMap 写回；角色、地址与数据流相互独立又必须一致。
 
 各检查层的边界如下：
 

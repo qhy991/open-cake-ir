@@ -12,10 +12,15 @@ Each destination is inferred from a signal the loop already produces, not from a
 * **verifier** -- every gate passed and the toolchain refused Compiler-produced source. Something was true of
   this Schedule that the pre-compile gates do not model, which is a missing rule rather
   than a bad candidate.
-* **ir_vocabulary** -- the Schedule is well-formed and this backend cannot lower it. Some
-  of that is knowable before emission and arrives as a finding with a code; the rest is
-  discovered while emitting and arrives as a refusal to determine the source. The author
-  declared everything the IR can express and it was not enough either way.
+* **backend_lowering** -- Cake IR admits the Schedule, but the selected backend has
+  no implementation for its declared instruction, dtype, access or exact target.
+  This is a Compiler evolution candidate, not a reason to corrupt the Schedule.
+* **backend_triage** -- Cake IR admits the Schedule but a lowering-only Finding has
+  no reviewed owner yet, or several owners are mixed. Preserve it for a maintenance
+  agent instead of blaming the author by default.
+* **ir_vocabulary** -- reserved for a future typed Compiler Finding that explicitly
+  establishes a missing Cake IR expression. No current lowering refusal proves this;
+  generic emitter errors do not prove it either.
 * **cost_model** -- the order was wrong. This one is not inferred from a rejection, because
   it needs two measurements to compare: the Lab raises it when a Turn searches more than
   one launchable candidate and the fastest is not the one the ranking put first, by more
@@ -34,23 +39,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+from open_cake_ir.compiler.diagnostics import (AUTHOR_FIXABLE_LOWERING_CODES,
+                                               BACKEND_LOWERING_GAP_CODES)
+
 CANDIDATE = "candidate"
 VERIFIER = "verifier"
 IR_VOCABULARY = "ir_vocabulary"
+BACKEND_LOWERING = "backend_lowering"
+BACKEND_TRIAGE = "backend_triage"
 COST_MODEL = "cost_model"
 
-DESTINATIONS = (CANDIDATE, VERIFIER, IR_VOCABULARY, COST_MODEL)
+DESTINATIONS = (CANDIDATE, VERIFIER, IR_VOCABULARY, BACKEND_LOWERING,
+                BACKEND_TRIAGE, COST_MODEL)
 
-# The Compiler says this when a backend emits and the Schedule leaves a decision open.
-# It is the one rejection that is about the vocabulary rather than about the Schedule.
+# Every backend EmitError currently receives this phrase, including implementation
+# defects. Its cause is not typed, so it needs owner triage rather than an IR claim.
 _UNDER_DETERMINED = "does not determine its source"
-
-# Findings that say the same thing early enough to carry a code. Matching a code beats
-# matching a message: a message is prose the Compiler is free to reword.
-_VOCABULARY_CODES = frozenset(
-    {"BACKEND_OPERATION_UNEMITTABLE", "BACKEND_DTYPE_UNEMITTABLE"}
-)
-
 
 @dataclass(frozen=True)
 class Route:
@@ -93,35 +97,39 @@ def route_rejection(feedback: Mapping[str, object], *, arm: str = "open_cake") -
     error = feedback.get("error")
     if feedback.get("code") == "LOWERING_UNDETERMINED" or (isinstance(error, str) and _UNDER_DETERMINED in error):
         return Route(
-            IR_VOCABULARY,
-            "lowering refused because the Schedule leaves a decision the vocabulary "
-            "cannot express",
+            BACKEND_TRIAGE,
+            "emission refused after admission; the generic EmitError does not prove "
+            "whether Cake IR, backend lowering, or a missing preflight rule owns it",
         )
 
     findings = feedback.get("findings")
     if isinstance(findings, list):
-        blocking = [
-            item.get("code")
-            for item in findings
-            if isinstance(item, Mapping)
-            and (item.get("blocks_acceptance") or item.get("blocks_lowering"))
-        ]
-        vocabulary = sorted(
-            str(code) for code in blocking if code in _VOCABULARY_CODES
-        )
-        if vocabulary:
-            # Checked before the candidate route: these findings block a Schedule that
-            # is not wrong, so telling its author to fix it would be telling them to
-            # work around a gap in the compiler.
+        blocking = [item for item in findings if isinstance(item, Mapping)
+                    and (item.get('blocks_acceptance') or item.get('blocks_lowering'))]
+        candidate_codes = sorted(str(item.get('code')) for item in blocking
+                                 if item.get('blocks_acceptance'))
+        if candidate_codes:
+            return Route(CANDIDATE, f"a gate refused it: {', '.join(candidate_codes)}")
+        author_codes = sorted(str(item.get('code')) for item in blocking
+                              if item.get('code') in AUTHOR_FIXABLE_LOWERING_CODES)
+        if author_codes and len(author_codes) == len(blocking):
+            return Route(CANDIDATE,
+                         f"the selected backend requires an author declaration change: {', '.join(author_codes)}")
+        backend_codes = sorted(str(item.get('code')) for item in blocking
+                               if item.get('blocks_lowering')
+                               and item.get('code') in BACKEND_LOWERING_GAP_CODES)
+        if backend_codes and len(backend_codes) == len(blocking):
             return Route(
-                IR_VOCABULARY,
-                f"the Schedule is well-formed and no backend body exists for it: "
-                f"{', '.join(vocabulary)}",
+                BACKEND_LOWERING,
+                f"Cake IR accepts this Schedule, but the selected backend cannot lower: "
+                f"{', '.join(backend_codes)}",
             )
         if blocking:
             return Route(
-                CANDIDATE,
-                f"a gate refused it: {', '.join(sorted(str(code) for code in blocking))}",
+                BACKEND_TRIAGE,
+                "Cake IR accepted this Schedule; a maintenance agent must assign "
+                "the lowering-only Finding owner before changing it: "
+                + ', '.join(sorted(str(item.get('code')) for item in blocking)),
             )
 
     return Route(
