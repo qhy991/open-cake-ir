@@ -9,9 +9,6 @@ from pathlib import Path
 import subprocess
 import time
 
-import numpy as np
-
-
 R, T, K, E, H = 4, 512, 8, 128, 2048
 LABEL = 'cake-weave-pointer-abi-b300'
 NVCC = '/usr/local/cuda-13.1/bin/nvcc'
@@ -41,6 +38,7 @@ def contract(root: Path) -> dict:
 
 def prepare(root: Path, bin_root: Path, bridge: Path,
             oracle_root: Path) -> None:
+    import numpy as np
     if os.environ.get('GPUQ_JOB_ID'):
         raise RuntimeError('pointer ABI preparation must be outside the lease')
     manifest = contract(root)
@@ -179,6 +177,7 @@ def validate_stolen(stolen: list[int], budget: int | list[int],
 
 
 def _copy_weights(cuda,rank:int,path:Path,extent:int,pointer:ctypes.c_void_p) -> None:
+    import numpy as np
     with path.open('rb') as file:
         file.seek(rank*extent)
         data = file.read(extent)
@@ -190,6 +189,7 @@ def _copy_weights(cuda,rank:int,path:Path,extent:int,pointer:ctypes.c_void_p) ->
 
 
 def run(root: Path) -> None:
+    import numpy as np
     manifest=contract(root)
     case=read(root / 'case.json')
     if (read(root / 'build_report.json')['source_commit']
@@ -319,6 +319,7 @@ def run(root: Path) -> None:
 
 
 def verify(root: Path) -> None:
+    import numpy as np
     if os.environ.get('GPUQ_JOB_ID'):
         raise RuntimeError('pointer ABI oracle requires released GPU lease')
     if (root / 'report.json').exists():
