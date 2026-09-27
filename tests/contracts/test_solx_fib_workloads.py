@@ -12,7 +12,8 @@ from open_cake_ir.compiler import Compiler
 from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib.authoring import (
-    masked_whole_026_source, sliced_026_source, starter_source,
+    masked_whole_026_source, paired_rows_026_source, sliced_026_source,
+    starter_source,
 )
 from open_cake_ir.tasks.solx_fib.workload import (
     ATOL, CASES, RTOL, SEED_ELEMENT_CAP, SPECS, TASKS,
@@ -321,6 +322,29 @@ class StarterTests(unittest.TestCase):
             self.assertIn("mean_square = square_sum / 7168.0", lowered)
         with self.assertRaises(ValueError):
             sliced_026_source(_tiny("fib_fused_add_rmsnorm_h7168", rows=64))
+
+    def test_026_paired_rows_share_weight_with_one_masked_output_writer(self):
+        for rows in (1, 539, 11949):
+            workload = _tiny("fib_rmsnorm_h7168", rows=rows)
+            for groups in (16, 32):
+                source = paired_rows_026_source(workload, execution_groups=groups)
+                schedule = parse(source).document
+                self.assertEqual(sum(op["kind"] == "store" for op in schedule["operations"]), 1)
+                self.assertEqual(schedule["roles"][0]["execution_groups"], list(range(groups)))
+                assessment = self.compiler.assess(schedule)
+                self.assertEqual(assessment.findings, ())
+                lowering = self.compiler.lower(assessment)
+                self.assertIn(f"_kernel[({(rows + 1) // 2}, 1, 1)]", lowering.source)
+                self.assertIn("BLOCK_ROW=2", lowering.source)
+                self.assertIn("tl.sum(squares.to(tl.float32), axis=1)", lowering.source)
+                self.assertIn("normalized = x32 * inverse[:, None]", lowering.source)
+                self.assertIn("weighted = normalized * weight32[None, :]", lowering.source)
+                self.assertIn("row_offsets[:, None] < D_OUT_0", lowering.source)
+        with self.assertRaises(ValueError):
+            paired_rows_026_source(_tiny("fib_fused_add_rmsnorm_h7168", rows=539))
+        with self.assertRaises(ValueError):
+            paired_rows_026_source(_tiny("fib_rmsnorm_h7168", rows=539),
+                                   execution_groups=8)
 
     def test_the_starter_keeps_the_bf16_abi_and_widens_only_in_between(self):
         for task in launchable_tasks():

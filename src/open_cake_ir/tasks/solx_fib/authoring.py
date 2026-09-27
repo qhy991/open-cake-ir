@@ -164,3 +164,41 @@ def masked_whole_026_source(workload: WorkloadContract, case_id: str = "primary"
             '    row = lm.program(x, axis=0, dimension=0, tile=1)\n'
             f'    column = lm.program(x, axis=1, dimension=1, tile={tile})\n'
             '    with compute:\n        ' + '\n        '.join(body) + '\n')
+
+
+def paired_rows_026_source(workload: WorkloadContract, case_id: str = "primary", *,
+                           execution_groups: int = 16) -> str:
+    """Assign two output rows to each CTA and share the weight tile between them.
+
+    A masked second row handles odd batch extents. The reduction remains per row,
+    and one store owns the output tensor. This is a bounded work-assignment probe,
+    not a claim that the wider per-CTA live state improves device performance.
+    """
+    width, epsilon, declarations = _rmsnorm026_arguments(workload, case_id)
+    if type(execution_groups) is not int or execution_groups not in (16, 32):
+        raise ValueError("RMSNorm 026 paired-row candidate admits 16 or 32 groups")
+    tile = 1 << (width - 1).bit_length()
+    body = [
+        'stored_x = lm.load(x[row, column], id="load_x")',
+        'x32 = lm.cast(stored_x, to="fp32", id="widen_x")',
+        'squares = lm.square(x32, id="square")',
+        'square_sum = lm.reduce(squares, op="sum", axis=1, scope="cta", '
+        'across_loop=False, id="sum_square")',
+        f'mean_square = square_sum / {float(width)!r}',
+        f'inverse = lm.rsqrt(mean_square + {epsilon!r}, id="inverse")',
+        'stored_weight = lm.load(weight[column], id="load_weight")',
+        'weight32 = lm.cast(stored_weight, to="fp32", id="widen_weight")',
+        'normalized = x32 * lm.broadcast(inverse, axis=0)',
+        'weighted = normalized * lm.broadcast(weight32, axis=1)',
+        'narrowed = lm.cast(weighted, to="bf16", id="narrow_out")',
+        'lm.store(out[row, column], narrowed, coalesced=False, id="store_out")',
+    ]
+    return ('from open_cake_ir.compiler import frontend as cake\n\n'
+            f'@cake.schedule(name="{workload.workload_id}-paired-rows-w{execution_groups}", '
+            f'target="{workload.target}", backend="triton", '
+            f'entry_point="cake_fib026_paired_rows_w{execution_groups}")\n'
+            f'def candidate(lm, {", ".join(declarations)}):\n'
+            f'    compute = lm.role(execution_groups={list(range(execution_groups))!r})\n'
+            '    row = lm.program(x, axis=0, dimension=0, tile=2)\n'
+            f'    column = lm.program(x, axis=1, dimension=1, tile={tile})\n'
+            '    with compute:\n        ' + '\n        '.join(body) + '\n')
