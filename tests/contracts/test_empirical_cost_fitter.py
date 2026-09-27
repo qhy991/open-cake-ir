@@ -115,6 +115,82 @@ class FitterBindingTest(unittest.TestCase):
             write(path / f"launch-order-{repetition}.json", [rows[index]["id"] for index in order])
         return run
 
+    def bind_selection(self, run, model_document):
+        model = instrument.EmpiricalCostModel(model_document)
+        candidate = run / "candidate"
+        plan = json.loads((candidate / "plan.json").read_text())
+        submitted = [case for case in plan["cases"] if case["split"] == "audit"]
+        predictions = []
+        for case in submitted:
+            schedule = json.loads((candidate / case["schedule"]).read_text())
+            estimate = model.estimate(schedule, compiler_revision_id=plan["compiler_revision_id"],
+                                      target=plan["target"], compiled_compiler_version="synthetic")
+            predictions.append({"case_id": case["id"], "extent": case["extent"],
+                                "predicted_us": estimate["predicted_kernel_us"],
+                                "empirical_range_us": estimate["empirical_range_us"],
+                                "covered": estimate["covered"]})
+        ordered = sorted(predictions, key=lambda row: row["predicted_us"])
+        selected = [row["case_id"] for row in ordered[:2]]
+        frozen = {"schema_version": 1, "prior_model_id": model.model_id,
+                  "prior_model_compiler_revision_id": model.compiler_revision_id,
+                  "target": model.target, "assay_context": model_document["context"],
+                  "acceptance": plan["model_acceptance"],
+                  "maximum_candidates_per_turn": 3, "searches_per_turn": 2,
+                  "predictions": predictions,
+                  "decisions": [{"candidate_set": [case["id"] for case in submitted],
+                                 "selected_top2": selected}]}
+        write(candidate / "prior-model.json", model_document)
+        write(candidate / "prior-predictions.json", frozen)
+        plan["search_selection"] = {"kind": "external_empirical_top_k_v1",
+                                    "model_path": "prior-model.json",
+                                    "predictions_path": "prior-predictions.json",
+                                    "submitted_case_ids": [case["id"] for case in submitted],
+                                    "selected_case_ids": selected,
+                                    "searches_per_workload": 2}
+        write(candidate / "plan.json", plan)
+        return plan, selected
+
+    def retain_only_selected_device_observations(self, run, plan, selected):
+        profile_stage = run / "stages/collection"
+        original_rows = json.loads((profile_stage / "observations.json").read_text())["rows"]
+        samples = instrument._trace_samples(profile_stage, 0, plan, original_rows)
+        durations = {row["id"]: sample[0] for row, sample in zip(original_rows, samples, strict=True)}
+        by_id = {row["id"]: row for row in original_rows}
+        selected_rows = [by_id[name] for name in selected]
+        write(run / "stages/compile/plan.json", plan)
+        for phase in ("correctness", "collection"):
+            stage = run / "stages" / phase
+            observed = json.loads((stage / "observations.json").read_text())
+            observed["rows"] = selected_rows
+            write(stage / "observations.json", observed)
+            write(stage / "plan.json", plan)
+            write(stage / "result.json", {"status": "passed", "validity": "valid",
+                                           "metrics": {"case_count": len(selected)}})
+        for repetition in range(plan["sampling"]["repetitions"]):
+            order = []
+            for round_index in range(plan["sampling"]["rounds"]):
+                indices = [(round_index + repetition * 7 + offset) % len(selected_rows)
+                           for offset in range(len(selected_rows))]
+                order.extend(indices[::-1] if repetition else indices)
+            events = []
+            for position, index in enumerate(order):
+                row = selected_rows[index]
+                common = {"device": 0, "context": 1, "stream": 7}
+                events.extend([
+                    {"cat": "kernel", "name": "FillFunctor<unsigned char>",
+                     "ts": position * 100, "dur": 1, "args": common},
+                    {"cat": "kernel", "name": row["profile"]["compiled_resources"]["entry_point"],
+                     "ts": position * 100 + 2, "dur": durations[row["id"]],
+                     "args": {**common, "grid": row["grid"],
+                              "block": [row["profile"]["compiled_resources"]["threads_per_cta"], 1, 1],
+                              "correlation": position + 1}},
+                    {"cat": "cuda_driver", "name": "cuLaunchKernel",
+                     "args": {"correlation": position + 1}},
+                ])
+            write(profile_stage / f"cupti-trace-{repetition}.json", {"traceEvents": events})
+            write(profile_stage / f"launch-order-{repetition}.json",
+                  [selected_rows[index]["id"] for index in order])
+
     def test_positive_complete_fitter_contract(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
             root = Path(directory)
@@ -157,6 +233,38 @@ class FitterBindingTest(unittest.TestCase):
             write(schedule, drifted)
             with self.assertRaisesRegex(ValueError, "curve template drifts"):
                 instrument._check_plan(run / "candidate")
+
+    def test_model_cut_freezes_two_of_three_before_gpu(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            run = self.fixture(root, target="sm_103a")
+            self.assertEqual(instrument._fit(run, root / "fit"), 0)
+            model_document = json.loads((root / "fit/model.json").read_text())
+            plan, selected = self.bind_selection(run, model_document)
+            candidate = run / "candidate"
+            admitted, _ = instrument._check_plan(candidate)
+            self.assertEqual([admitted["cases"][i]["id"] for i in instrument._device_case_indices(admitted)], selected)
+            plan["search_selection"]["selected_case_ids"] = selected[::-1]
+            write(candidate / "plan.json", plan)
+            with self.assertRaisesRegex(ValueError, "GPU cut differs"):
+                instrument._check_plan(candidate)
+
+    def test_selected_run_audits_only_the_two_measured_candidates(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            run = self.fixture(root, target="sm_103a")
+            self.assertEqual(instrument._fit(run, root / "fit"), 0)
+            model_document = json.loads((root / "fit/model.json").read_text())
+            plan, selected = self.bind_selection(run, model_document)
+            self.retain_only_selected_device_observations(run, plan, selected)
+            self.assertEqual(instrument._audit_selected(run, root / "selected-audit"), 0)
+            report = json.loads((root / "selected-audit/selected_audit.json").read_text())
+            self.assertEqual(report["submitted_search_candidates"], 3)
+            self.assertEqual(report["gpu_search_candidates_measured"], 2)
+            self.assertEqual(report["gpu_search_candidates_avoided"], 1)
+            self.assertEqual([row["case_id"] for row in report["observations"]], selected)
+            with self.assertRaisesRegex(ValueError, "selection kind"):
+                instrument._fit(run, root / "wrong-fit")
 
     def test_local_compile_stage_prepares_without_a_gpu(self):
         with tempfile.TemporaryDirectory() as directory:

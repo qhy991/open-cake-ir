@@ -36,6 +36,7 @@ from open_cake_ir.compiler import Compiler, EmpiricalCostModel
 from open_cake_ir.compiler.toolchain import compile_triton, inspect_triton_resources
 from open_cake_ir.compiler.performance.compiled_resources import CompiledResources, load_compiled_resources
 from open_cake_ir.evaluation.cuda_driver import _DYNAMIC_SHARED_OPT_IN_THRESHOLD, _driver_call
+from open_cake_ir.lab.selection import _empirical_filter
 
 
 def _read(path):
@@ -91,6 +92,99 @@ def _expected_signature(family):
 def _positive_number(value, label, *, allow_zero=False):
     if type(value) not in (int, float) or not math.isfinite(value) or value < 0 or (value == 0 and not allow_zero):
         raise ValueError(f"{label} must be finite and {'nonnegative' if allow_zero else 'positive'}")
+
+
+def _candidate_file(candidate, relative, label):
+    if not isinstance(relative, str) or not relative:
+        raise ValueError(f"{label} path differs")
+    path = (candidate / relative).resolve()
+    if candidate not in path.parents or not path.is_file():
+        raise ValueError(f"{label} must belong to the candidate snapshot")
+    return path
+
+
+def _device_case_indices(plan):
+    selection = plan.get("search_selection")
+    if selection is None:
+        return list(range(len(plan["cases"])))
+    by_id = {case["id"]: index for index, case in enumerate(plan["cases"])}
+    return [by_id[name] for name in selection["selected_case_ids"]]
+
+
+def _validate_search_selection(candidate, plan):
+    """Freeze a complete empirical cut before any GPU stage."""
+    selection = plan.get("search_selection")
+    if selection is None:
+        return
+    required = {"kind", "model_path", "predictions_path", "submitted_case_ids",
+                "selected_case_ids", "searches_per_workload"}
+    if (not isinstance(selection, dict) or set(selection) != required
+            or selection["kind"] != "external_empirical_top_k_v1"
+            or type(selection["searches_per_workload"]) is not int
+            or selection["searches_per_workload"] != 2):
+        raise ValueError("empirical search selection fields differ")
+    submitted = selection["submitted_case_ids"]
+    selected = selection["selected_case_ids"]
+    if (not isinstance(submitted, list) or not isinstance(selected, list)
+            or len(set(submitted)) != len(submitted)
+            or len(set(selected)) != len(selected)):
+        raise ValueError("empirical search candidate ids differ")
+    by_id = {case["id"]: case for case in plan["cases"]}
+    if any(name not in by_id or by_id[name]["split"] != "audit" for name in submitted):
+        raise ValueError("empirical submitted set must name audit Schedules")
+    if not set(selected) <= set(submitted):
+        raise ValueError("empirical selection names an unsubmitted candidate")
+    model_document = _read(_candidate_file(candidate, selection["model_path"], "empirical model"))
+    frozen = _read(_candidate_file(candidate, selection["predictions_path"], "frozen predictions"))
+    model = EmpiricalCostModel(model_document)
+    context = model_document["context"]
+    if (model.compiler_revision_id != plan["compiler_revision_id"]
+            or model.target != plan["target"]
+            or context["timer"] != "PyTorch Kineto CUPTI GPU kernel activity"
+            or context["cache_protocol"] != f"{plan['sampling']['l2_flush_bytes']}-byte zeroing before each sample on same stream"
+            or context["input_scope"] != plan["input_scope"]
+            or any(context["runtime"].get(key) != value for key, value in plan["expected_runtime"].items())):
+        raise ValueError("empirical model differs from the frozen assay")
+    if (frozen.get("schema_version") != 1
+            or frozen.get("prior_model_id") != model.model_id
+            or frozen.get("prior_model_compiler_revision_id") != model.compiler_revision_id
+            or frozen.get("target") != model.target
+            or frozen.get("assay_context") != context
+            or frozen.get("acceptance") != plan["model_acceptance"]
+            or frozen.get("maximum_candidates_per_turn") != 3
+            or frozen.get("searches_per_turn") != 2):
+        raise ValueError("frozen empirical predictions differ from model or assay")
+    frozen_rows = {row["case_id"]: row for row in frozen["predictions"]}
+    if len(frozen_rows) != len(submitted) or set(frozen_rows) != set(submitted):
+        raise ValueError("frozen empirical prediction domain differs")
+    groups = {}
+    for name in submitted:
+        case = by_id[name]
+        schedule = _read(_candidate_file(candidate, case["schedule"], "submitted Schedule"))
+        estimate = model.estimate(schedule, compiler_revision_id=plan["compiler_revision_id"],
+                                  target=plan["target"],
+                                  compiled_compiler_version=context["runtime"]["compiler_version"])
+        recorded = frozen_rows[name]
+        if (estimate["covered"] is not True or recorded.get("covered") is not True
+                or recorded.get("extent") != case["extent"]
+                or recorded.get("predicted_us") != estimate["predicted_kernel_us"]
+                or recorded.get("empirical_range_us") != estimate["empirical_range_us"]):
+            raise ValueError("frozen empirical prediction differs from model replay")
+        groups.setdefault(case["workload_id"], []).append(
+            {"candidate_sha256": name, "disposition": "launchable", "empirical_cost": estimate})
+    if not groups or any(len(group) != 3 for group in groups.values()):
+        raise ValueError("empirical search requires complete three-candidate workloads")
+    decisions = []
+    for group in groups.values():
+        ordered, decision = _empirical_filter(group)
+        if not decision["order_applied"]:
+            raise ValueError("empirical search must have complete comparable coverage")
+        decisions.append({"candidate_set": [row["candidate_sha256"] for row in group],
+                          "selected_top2": [row["candidate_sha256"] for row in ordered[:2]]})
+    if ([name for decision in decisions for name in decision["selected_top2"]] != selected
+            or [(row["candidate_set"], row["selected_top2"]) for row in frozen["decisions"]]
+            != [(row["candidate_set"], row["selected_top2"]) for row in decisions]):
+        raise ValueError("empirical GPU cut differs from frozen predictions")
 
 
 def _check_plan(candidate):
@@ -203,6 +297,7 @@ def _check_plan(candidate):
             raise ValueError(f"calibration split extents differ for {curve_id}")
     if not any(len(group) >= 3 for group in audit_groups.values()):
         raise ValueError("calibration audit has no three-candidate decision")
+    _validate_search_selection(candidate, plan)
     return plan, compiler
 
 
@@ -555,7 +650,8 @@ def _collect():
         raise ValueError("runtime differs from the frozen collection boundary")
     stream = driver.CUstream(torch.cuda.current_stream().cuda_stream)
     rows, launches = [], []
-    for index, case in enumerate(plan["cases"]):
+    for index in _device_case_indices(plan):
+        case = plan["cases"][index]
         directory = compile_stage / f"{index:04d}"
         prepared_row = prepared["rows"][index]
         if any(prepared_row[key] != value for key, value in case.items()):
@@ -638,9 +734,8 @@ def _collect():
     _write(os.environ["KERNELINFRA_RESULT"], {"schema": "kernelinfra.stage-result.v1", "status": "passed" if quality else "failed", "validity": "valid" if quality else "unknown", "summary": "device checks and trace capture passed; timing audit follows off device" if quality else "device checks failed; do not fit", "workloads": [{"id": row["id"], "correct": row["correct"]} for row in rows] if kind == "correctness" else [], "artifacts": artifacts, "metrics": {"device_checks_passed": quality, "case_count": len(rows)}})
 
 
-def _fit(run, output):
-    output = _external(output)
-    if output.exists():raise ValueError("fitting output must be a new external directory")
+def _verified_rows(run, *, selection_required):
+    """Replay device custody, trace quality and source bindings after lease release."""
     run_result = _read(run / "result.json")
     if run_result["outcome"] != "completed" or run_result["validity"] != "valid":raise ValueError("whole collection did not pass")
     outcomes = {row["id"]: row for row in run_result["stages"]}
@@ -648,9 +743,13 @@ def _fit(run, output):
         raise ValueError("required stage did not pass")
     stage = run / "stages/collection"
     plan, observed = _read(stage / "plan.json"), _read(stage / "observations.json")
+    if ("search_selection" in plan) != selection_required:
+        raise ValueError("run selection kind differs from requested post-device audit")
     if plan.get("state") != "frozen" or sha256(Path(__file__).read_bytes()).hexdigest() != plan["collector_sha256"]:
         raise ValueError("fitting must use the frozen collection instrument")
-    compiler = Compiler.load(ROOT, ROOT / "compiler/revision.json")
+    candidate_plan, compiler = _check_plan(run / "candidate")
+    if candidate_plan != plan:
+        raise ValueError("stage plan differs from candidate snapshot")
     _target_contract(compiler, plan)
     reference = compiler.assess_file(run / "stages/compile/0000/schedule.json")
     if reference.target != plan["target"]:
@@ -659,7 +758,9 @@ def _fit(run, output):
         raise ValueError(f"fitting Compiler Revision differs: expected {plan['compiler_revision_id']!r}, observed {reference.compiler_revision_id!r}")
     if not observed["device_checks_passed"]:raise ValueError("device checks failed before fitting")
     rows = observed["rows"]
-    for row, case in zip(rows, plan["cases"], strict=True):
+    indices = _device_case_indices(plan)
+    for row, index in zip(rows, indices, strict=True):
+        case = plan["cases"][index]
         if (any(row[key] != value for key, value in case.items())
                 or not row["correct"] or not row["inputs_unchanged"]
                 or row["samples_us"] != []):
@@ -669,12 +770,18 @@ def _fit(run, output):
             row["samples_us"].append(samples)
     for row in rows:
         medians = []
+        cohort_cvs = []
         if len(row["samples_us"]) != plan["sampling"]["repetitions"]:raise ValueError("repetition count differs")
         for values in row["samples_us"]:
-            if len(values) != plan["sampling"]["rounds"] or statistics.pstdev(values) / statistics.mean(values) > plan["acceptance"]["maximum_cohort_cv"]:raise ValueError("sample quality differs")
+            cv = statistics.pstdev(values) / statistics.mean(values)
+            if len(values) != plan["sampling"]["rounds"] or cv > plan["acceptance"]["maximum_cohort_cv"]:raise ValueError("sample quality differs")
+            cohort_cvs.append(cv)
             medians.append(statistics.median(values))
-        if max(medians) / min(medians) > plan["acceptance"]["maximum_repeat_median_ratio"]:raise ValueError("repetition drift differs")
+        repeat_ratio = max(medians) / min(medians)
+        if repeat_ratio > plan["acceptance"]["maximum_repeat_median_ratio"]:raise ValueError("repetition drift differs")
         row["kernel_us"] = statistics.median(medians)
+        row["cohort_cvs"] = cohort_cvs
+        row["repeat_median_ratio"] = repeat_ratio
     for name in ("compile", "correctness", "collection"):
         receipt = _read(run / f"stages/{name}/receipt.json")
         if (receipt["execution"] != ("local" if name == "compile" else "broker")
@@ -694,7 +801,14 @@ def _fit(run, output):
                 if any(admitted[key] != context[key] for key in ("broker_job_id", "physical_gpu", "run_id")) or admitted["stage_id"] != name:
                     raise ValueError("container broker assignment differs from device stage")
     if _read(run / "stages/correctness/observations.json")["runtime"] != observed["runtime"]:raise ValueError("runtime changed between stages")
-    _bind_artifacts(run, plan, rows, compiler)
+    _bind_artifacts(run, plan, rows, compiler, indices=indices)
+    return plan, observed, rows, run_result
+
+
+def _fit(run, output):
+    output = _external(output)
+    if output.exists():raise ValueError("fitting output must be a new external directory")
+    plan, observed, rows, run_result = _verified_rows(run, selection_required=False)
     specifications = {spec["id"]: spec for spec in plan["curves"]}
     if len(specifications) != len(plan["curves"]) or set(specifications) != {row["curve_id"] for row in rows}:
         raise ValueError("curve ownership differs")
@@ -742,8 +856,56 @@ def _fit(run, output):
     return 0 if passed else 1
 
 
-def _bind_artifacts(run, plan, rows, compiler):
+def _audit_selected(run, output):
+    """Audit an actual GPU cut without pretending skipped candidates were measured."""
+    output = _external(output)
+    if output.exists():
+        raise ValueError("selected-search audit output must be a new external directory")
+    plan, observed, rows, run_result = _verified_rows(run, selection_required=True)
+    selection = plan["search_selection"]
+    selected = selection["selected_case_ids"]
+    submitted = selection["submitted_case_ids"]
+    if [row["id"] for row in rows] != selected:
+        raise ValueError("device observations differ from frozen selected order")
+    for phase in ("correctness", "collection"):
+        result = _read(run / "stages" / phase / "result.json")
+        if result["metrics"]["case_count"] != len(selected):
+            raise ValueError("device stage measured a different candidate count")
+    frozen = _read(_candidate_file(run / "candidate", selection["predictions_path"], "frozen predictions"))
+    model = _read(_candidate_file(run / "candidate", selection["model_path"], "empirical model"))
+    predicted = {row["case_id"]: row for row in frozen["predictions"]}
+    report_rows = [{"case_id": row["id"], "workload_id": row["workload_id"],
+                    "observed_us": row["kernel_us"],
+                    "frozen_predicted_us": predicted[row["id"]]["predicted_us"],
+                    "max_cohort_cv": max(row["cohort_cvs"]),
+                    "repeat_median_ratio": row["repeat_median_ratio"]}
+                   for row in rows]
+    avoided = len(submitted) - len(selected)
+    if avoided <= 0:
+        raise ValueError("selected search made no GPU candidate cut")
+    document = {"schema_version": 1, "kind": "selected_empirical_gpu_search_audit",
+                "run_id": run_result["run_id"], "model_id": model["model_id"],
+                "compiler_revision_id": plan["compiler_revision_id"], "target": plan["target"],
+                "submitted_case_ids": submitted, "selected_case_ids": selected,
+                "submitted_search_candidates": len(submitted),
+                "gpu_search_candidates_measured": len(rows),
+                "gpu_search_candidates_avoided": avoided,
+                "correctness_passed": True, "measurement_quality_passed": True,
+                "observations": report_rows,
+                "limits": "Skipped candidates have no timing in this Run; this receipt establishes the operational cut, not regret or general target coverage."}
+    output.mkdir(exist_ok=False)
+    _write(output / "selected_audit.json", document)
+    print(json.dumps({"run_id": run_result["run_id"], "submitted": len(submitted),
+                      "measured": len(rows), "avoided": avoided}, indent=2))
+    return 0
+
+
+def _bind_artifacts(run, plan, rows, compiler, *, indices=None):
     """Replay canonical candidates and reuse the existing compiled-report owner."""
+    if indices is None:
+        indices = list(range(len(plan["cases"])))
+    if len(indices) != len(rows):
+        raise ValueError("measured case count differs from selected set")
     target, _ = _target_contract(compiler, plan)
     candidate = (run / "candidate").resolve()
     if _read(candidate / "plan.json") != plan:
@@ -765,9 +927,9 @@ def _bind_artifacts(run, plan, rows, compiler):
         phase_rows[phase] = phase_document["rows"]
         if phase_document["device_checks_passed"] is not True or any(row["correct"] is not True or row["inputs_unchanged"] is not True for row in phase_rows[phase]):
             raise ValueError("stage correctness or input preservation differs")
-        if len(phase_rows[phase]) != len(rows) or len(compiled_rows) != len(rows):
+        if len(phase_rows[phase]) != len(rows) or len(compiled_rows) != len(plan["cases"]):
             raise ValueError("stage case count differs")
-    for index, row in enumerate(rows):
+    for position, (index, row) in enumerate(zip(indices, rows, strict=True)):
         path = (candidate / row["schedule"]).resolve()
         if candidate not in path.parents:
             raise ValueError("Schedule escapes candidate snapshot")
@@ -798,7 +960,7 @@ def _bind_artifacts(run, plan, rows, compiler):
                 "grid": compiled_rows[index]["grid"]}:
             raise ValueError("local compiled launch metadata differs")
         for phase in ("correctness", "collection"):
-            recorded = phase_rows[phase][index]
+            recorded = phase_rows[phase][position]
             if any(recorded[key] != row[key] for key in plan["cases"][index]):
                 raise ValueError("stage case ownership differs")
             if resource != CompiledResources.from_dict(recorded["profile"]["compiled_resources"]):
@@ -820,12 +982,16 @@ def main():
     fit = sub.add_parser("fit")
     fit.add_argument("run", type=Path)
     fit.add_argument("--output", type=Path, required=True)
+    selected = sub.add_parser("audit-selected")
+    selected.add_argument("run", type=Path)
+    selected.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.action == "check-plan":
         plan, _ = _check_plan(args.candidate)
         print(json.dumps({"target": plan["target"], "case_count": len(plan["cases"]), "curve_count": len(plan["curves"])}))
         return 0
     if args.action == "fit":return _fit(args.run, args.output)
+    if args.action == "audit-selected":return _audit_selected(args.run, args.output)
     try:
         if args.action == "compile":
             _prepare()
