@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import itertools
 import json
 import math
 import os
@@ -43,6 +44,31 @@ def _target_contract(compiler, plan):
     if target is None or target.compute_capability is None or target_id not in {"sm_100a", "sm_103a"}:
         raise ValueError("calibration requires a declared B200 or B300 CUDA Target")
     return target, target.compute_capability[0] * 10 + target.compute_capability[1]
+
+
+def _candidate_set_regrets(audit, maximum_candidates_per_turn):
+    """Audit every possible Lab three-to-two cut and provider tie order."""
+    if type(maximum_candidates_per_turn) is not int or maximum_candidates_per_turn != 3:
+        raise ValueError("cost audit requires the Lab's maximum_candidates_per_turn=3")
+    regrets = []
+    for workload_id in sorted({row["workload_id"] for row in audit}):
+        group = sorted((row for row in audit if row["workload_id"] == workload_id), key=lambda row: row["id"])
+        for candidate_set in itertools.combinations(group, maximum_candidates_per_turn):
+            best_observed = min(row["observed_us"] for row in candidate_set)
+            worst = None
+            for provider_order in itertools.permutations(candidate_set):
+                # Python's stable sort is the Lab rule: equal predictions retain
+                # provider order, which can change which member falls below a cut.
+                survivors = sorted(provider_order, key=lambda row: row["predicted_us"])[:2]
+                regret = min(row["observed_us"] for row in survivors) / best_observed
+                if worst is None or regret > worst["top2_regret_ratio"]:
+                    worst = {"workload_id": workload_id,
+                             "candidate_set": [row["id"] for row in candidate_set],
+                             "provider_order": [row["id"] for row in provider_order],
+                             "survivors": [row["id"] for row in survivors],
+                             "top2_regret_ratio": regret}
+            regrets.append(worst)
+    return regrets
 
 
 def _external(path):
@@ -325,15 +351,13 @@ def _fit(run, output):
         if row["split"] == "audit":
             value = predict(row)
             audit.append({"id": row["id"], "workload_id": row["workload_id"], "observed_us": row["kernel_us"], "predicted_us": value["predicted_kernel_us"], "range_us": value["empirical_range_us"], "relative_error": abs(value["predicted_kernel_us"] / row["kernel_us"] - 1)})
-    regrets = []
-    for workload_id in sorted({row["workload_id"] for row in audit}):
-        group = sorted([row for row in audit if row["workload_id"] == workload_id], key=lambda row: row["predicted_us"])
-        tie = group[1]["predicted_us"] == group[2]["predicted_us"]
-        regrets.append({"workload_id": workload_id, "abstained": tie, "survivors": [row["id"] for row in (group if tie else group[:2])], "top2_regret_ratio": None if tie else min(row["observed_us"] for row in group[:2]) / min(row["observed_us"] for row in group)})
-    decisive = [row["top2_regret_ratio"] for row in regrets if not row["abstained"]]
-    metrics = {"audit_case_count": len(audit), "mean_relative_error": statistics.mean(row["relative_error"] for row in audit), "max_relative_error": max(row["relative_error"] for row in audit), "max_top2_regret_ratio": max(decisive) if decisive else None}
     limits = plan["model_acceptance"]
-    passed = bool(decisive) and metrics["mean_relative_error"] <= limits["maximum_mape"] and metrics["max_relative_error"] <= limits["maximum_relative_error"] and metrics["max_top2_regret_ratio"] <= limits["maximum_top2_regret_ratio"]
+    regrets = _candidate_set_regrets(audit, limits["maximum_candidates_per_turn"])
+    metrics = {"audit_case_count": len(audit), "candidate_set_count": len(regrets),
+               "mean_relative_error": statistics.mean(row["relative_error"] for row in audit),
+               "max_relative_error": max(row["relative_error"] for row in audit),
+               "max_top2_regret_ratio": max((row["top2_regret_ratio"] for row in regrets), default=None)}
+    passed = bool(regrets) and metrics["mean_relative_error"] <= limits["maximum_mape"] and metrics["max_relative_error"] <= limits["maximum_relative_error"] and metrics["max_top2_regret_ratio"] <= limits["maximum_top2_regret_ratio"]
     output.mkdir(exist_ok=False)
     _write(output / "audit.json", {"passed": passed, "metrics": metrics, "audit": audit, "regrets": regrets, "run_id": run_result["run_id"]})
     if passed:

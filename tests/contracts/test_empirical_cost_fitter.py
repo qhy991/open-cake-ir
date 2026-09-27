@@ -62,7 +62,7 @@ class FitterBindingTest(unittest.TestCase):
                     write(path / "schedule.json", json.loads(assessment.schedule_bytes))
                     (path / "lowered.py").write_bytes(lowering.source.encode())
                     (path / "kernel.cubin").write_bytes(cubin)
-        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "target": target, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "envelope_allowance": .05}}
+        plan = {"state": "frozen", "collector_sha256": sha256(collector).hexdigest(), "compiler_revision_id": revision, "target": target, "model_id": "synthetic-boundary-test", "input_scope": "SYNTHETIC CPU CONTRACT TEST ONLY; no measured performance", "cases": cases, "curves": curves, "sampling": {"rounds": 2, "repetitions": 2, "l2_flush_bytes": 268435456}, "acceptance": {"maximum_cohort_cv": .05, "maximum_repeat_median_ratio": 1.05}, "model_acceptance": {"maximum_mape": .1, "maximum_relative_error": .2, "maximum_top2_regret_ratio": 1.05, "maximum_candidates_per_turn": 3, "envelope_allowance": .05}}
         write(run / "candidate/plan.json", plan)
         stages = []
         for phase in ("correctness", "collection"):
@@ -111,6 +111,28 @@ class FitterBindingTest(unittest.TestCase):
             target, binary_version = instrument._target_contract(self.compiler, json.loads((run / "candidate/plan.json").read_text()))
             self.assertEqual(target.compute_capability, (10, 3))
             self.assertEqual(binary_version, 103)
+
+    def test_three_member_subsets_expose_regret_hidden_by_full_pool(self):
+        audit = [
+            {"id": "a", "workload_id": "w", "predicted_us": 1, "observed_us": 1},
+            {"id": "b", "workload_id": "w", "predicted_us": 2, "observed_us": 20},
+            {"id": "c", "workload_id": "w", "predicted_us": 3, "observed_us": 100},
+            {"id": "d", "workload_id": "w", "predicted_us": 4, "observed_us": 2},
+        ]
+        regrets = instrument._candidate_set_regrets(audit, 3)
+        self.assertEqual(len(regrets), 4)
+        self.assertEqual(max(row["top2_regret_ratio"] for row in regrets), 10)
+        self.assertIn(["b", "c", "d"], [row["candidate_set"] for row in regrets])
+
+    def test_prediction_ties_follow_provider_order_at_cut(self):
+        audit = [
+            {"id": "a", "workload_id": "w", "predicted_us": 1, "observed_us": 100},
+            {"id": "b", "workload_id": "w", "predicted_us": 1, "observed_us": 10},
+            {"id": "c", "workload_id": "w", "predicted_us": 1, "observed_us": 1},
+        ]
+        regrets = instrument._candidate_set_regrets(audit, 3)
+        self.assertEqual(regrets[0]["provider_order"], ["a", "b", "c"])
+        self.assertEqual(regrets[0]["top2_regret_ratio"], 10)
 
     def test_changed_stage_templates_cannot_relabel_original_measurements(self):
         with tempfile.TemporaryDirectory() as directory:
