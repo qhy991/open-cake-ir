@@ -1,13 +1,65 @@
 """The bounded MACA capability checks used by the shared Triton emitter."""
 
 from ..diagnostics import Finding
-from ..ir import AccessIndexKind, BufferMode, DType, LoadMovement, MemorySpace, OperationKind, Schedule, TileLoop
+from ..ir import AccessIndexKind, BufferMode, DType, ElementwiseOp, LoadMovement, MemorySpace, OperationKind, Schedule, TileLoop
 from ..ir.instruction_contracts import COMPENSATED_FP8_MMA
 from ..target import Target
 from .common import refusal
 
 
 _BUFFER_DTYPES = frozenset({DType.FP32, DType.FP16, DType.BF16, DType.INT32, DType.FP8_E4M3})
+
+
+def comparison_magnitude_input(schedule: Schedule, operation) -> str | None:
+    """Recognize a magnitude whose sign/payload cannot escape numeric comparisons.
+
+    select(x >= 0, x, x * -1) preserves negative zero; abs does not. Only
+    comparison readers make that difference unobservable. Keep the original
+    producers: their other readers and effects still belong to the Schedule.
+    This bounded spelling does not rewrite carried state or physical storage.
+    """
+    if (operation.kind is not OperationKind.SELECT or len(operation.reads) != 3
+            or len(operation.writes) != 1 or operation.parameters.false_value is not None
+            or schedule.tile_loops or schedule.pipelines):
+        return None
+    predicate, value, negative = operation.reads
+    result = operation.writes[0]
+    buffers = [schedule.buffer(name) for name in (value, negative, result, predicate)]
+    if any(buffer is None or buffer.space is not MemorySpace.REGISTER
+           or buffer.allocation is not None or buffer.stages != 1 for buffer in buffers):
+        return None
+    source, negated, selected, condition = buffers
+    if (source.dtype not in (DType.FP16, DType.FP32) or source.is_scalar
+            or negated.dtype is not source.dtype or selected.dtype is not source.dtype
+            or condition.dtype is not DType.INT32
+            or any(buffer.shape != source.shape for buffer in buffers)
+            or selected.mode is not BufferMode.SCRATCH or result in schedule.outputs
+            or any(buffer.scale_of is not None or buffer.valid_extent is not None
+                   for buffer in schedule.buffers)):
+        return None
+
+    def producer(name):
+        writers = [op for op in schedule.operations if name in op.writes]
+        return writers[0] if len(writers) == 1 else None
+
+    sign, negation = producer(predicate), producer(negative)
+    if (producer(result) is not operation or producer(value) is None
+            or sign is None or sign.kind is not OperationKind.COMPARE
+            or sign.reads != (value,) or sign.parameters.op != "ge"
+            or sign.parameters.scalar != 0
+            or negation is None or negation.kind is not OperationKind.ELEMENTWISE
+            or negation.reads != (value,) or negation.parameters.op is not ElementwiseOp.MUL
+            or negation.parameters.scalar != -1 or negation.parameters.broadcast_axis is not None
+            or negation.parameters.instruction is not None
+            or sign.role != operation.role or negation.role != operation.role):
+        return None
+    if any(index.name == result and index.source in (AccessIndexKind.BUFFER, AccessIndexKind.SCALAR_BUFFER)
+           for access in schedule.access_maps for index in access.indices):
+        return None
+    readers = [op for op in schedule.operations if result in op.reads]
+    if not readers or any(op.kind is not OperationKind.COMPARE for op in readers):
+        return None
+    return value
 
 
 def emit_compensated_fp8_mma(line, *, left: str, right: str, output: str, pad: str) -> None:

@@ -277,3 +277,23 @@ Evidence:
 and the corresponding sealed root's `semantic-preconditions.json` and
 `eligibility-proposal.json`. Allocation is `local_serialized`; external activity
 is not excluded.
+
+
+The proposal is closed by `2f44686e`, verified at `90739901`. The guarded MACA
+emitter now recognizes the typed comparison-only projection and preserves ordinary
+SELECT for legal stored/arithmetic/nonmatching patterns. Fixed-commit full contracts
+pass (2467 tests, 26 skips, 8917 subtests), Corpus expectations remain unchanged,
+and all five CI checks pass. Device special-value audit `maca-8688065fd452` checks
+all FP16 encodings and 512 FP32 boundary/random words at eleven thresholds, in both
+comparison operand orders, plus stored-zero controls (44 sealed launches). Worker
+mask checks pass; raw per-element masks were not retained. No raw NaN payload or
+floating exception-flag equivalence is asserted.
+
+Real Compiler-generated source passes all 37 frozen cases and independently repeats
+10.496/11.520 us (1.0976x) in search and fresh confirmation, with quality-passed
+10/10 wins, close-null A/A and a correct separate profile. Profile reports 178
+registers/thread and 4096 dynamic shared bytes; missing counters and local-serialized
+allocation limits remain. Read the [closed Finding](../../../findings/2026-09-27-003-metax-comparison-magnitude-emission.json)
+and `/Users/haiyan-infiniai/open-cake-ir-evidence/metax-magnitude-generated-confirm-90739901/verification.json`
+for generated-source and special-value evidence. Keep the earlier native-source
+qualification separate.
