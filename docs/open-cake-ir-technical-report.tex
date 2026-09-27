@@ -1633,6 +1633,24 @@ Cake 准备加 native 消费约 \(2{,}374\,\mu\mathrm{s}\)，候选/参考
 未证明 bank、同步或占用率合格。现有消费者单独约 1,974\,$\mu$s，
 所以删除准备物化还必须配合缩短 256 次状态依赖的关键路径。
 
+\paragraph{融合准备的 warp MMA 首层验证。}
+原始 CAKE M128 准备角色从 shared 用
+\code{ldmatrix.x4} 取 BF16 片段，并以
+\code{mma.sync} 的 M16N8K16 形状形成两项耦合乘法；完整 PTX
+指令拼写与片段映射见配套 lowering 文档。按每项
+\(32\times32\times128\) 分块，
+分别需要 2 个 M16、4 个 N8、8 个 K16，共 64 个 warp MMA 原子；
+这个计数是形状分解，不是实测动态指令数。当前 native 消费者只发射
+有界的 \code{tcgen05} 状态收缩，尚无把片上准备接入 carried-state
+循环的 \code{ldmatrix}、warp 片段与槽生命周期映射。独立
+\code{sm\_103a} 寄存器片段 witness AOT 为 21 寄存器、0 spill，
+\code{gpuq-5c59b9026da0} 设备完成并释放；三组各 128 个结果对
+BF16 输入的 CPU FP32 矩阵乘法均 0 超差，最大绝对误差
+\(2.38\times10^{-7}\)，输入未改写。该作业是共享正确性验证，
+记录了并发计算进程，
+\emph{没有}性能数据。它只证明单个 M16N8K16 寄存器片段的
+映射，shared 装载、多原子累加、准备值发布和完整 KDA 仍待验证。
+
 \paragraph{同卡阶段定位与 P 角色迁移。}
 继任独占作业 \code{gpuq-f324d5a4677f} 对固定 H64 两 kernel
 路径做五轮交替、每臂每轮 25 次冷 L2 CUPTI 计时：准备
