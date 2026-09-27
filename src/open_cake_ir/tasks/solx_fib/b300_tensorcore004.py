@@ -30,8 +30,10 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
             or args[1].shape != (128, 2048)
             or args[2].shape != (rows, 128)):
         raise ValueError("tensor-core mapping requires an official M>=16, N=128, K=2048")
-    if (block_m, block_n, num_stages) != (16, 32, 2) or block_k not in (64, 256):
-        raise ValueError("only the bounded 16x32 K64/K256, two-stage mappings are admitted")
+    if ((block_m, block_n) != (16, 32)
+            or (block_k, num_stages) not in
+            ((64, 2), (256, 2), (512, 2), (1024, 1))):
+        raise ValueError("tensor-core tile/stage choice is outside the bounded study")
     declarations = [
         f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
         + (', mode="output")' if arg.mode == "output" else ')')
@@ -39,7 +41,7 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
     ]
     return (
         'from open_cake_ir.compiler import frontend as cake\n\n'
-        f'@cake.schedule(name="{workload.workload_id}-tensorcore-16x32x{block_k}", '
+        f'@cake.schedule(name="{workload.workload_id}-tensorcore-16x32x{block_k}-s{num_stages}", '
         f'target="{workload.target}", backend="triton", '
         'entry_point="cake_fib004_tensorcore")\n'
         f'def candidate(lm, {", ".join(declarations)}):\n'
@@ -47,7 +49,7 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
         '    row = lm.program(a, axis=0, dimension=0, tile=16)\n'
         '    column = lm.program(b, axis=1, dimension=0, tile=32)\n'
         f'    for k in lm.range(a, name="k_loop", dimension=1, tile={block_k}, '
-        'num_stages=2, disallow_acc_multi_buffer=True):\n'
+        f'num_stages={num_stages}, disallow_acc_multi_buffer=True):\n'
         '        with compute:\n'
         '            a_tile = lm.load(a[row, k], id="load_a")\n'
         '            b_tile = lm.load(b[column, k], id="load_b")\n'

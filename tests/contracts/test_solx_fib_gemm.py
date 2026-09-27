@@ -44,25 +44,29 @@ class FlashInferGemmTests(unittest.TestCase):
             tensorcore_source(WorkloadContract(gemm.workload_document(
                 'fib_gemm_n128_k2048', rows=8)))
 
-    def test_004_tensorcore_k256_reduces_loop_count_without_changing_outputs(self):
+    def test_004_tensorcore_larger_k_tiles_preserve_the_fp16_output_contract(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
-        for rows in (16, 128, 952):
-            with self.subTest(rows=rows):
+        for rows, block_k, num_stages in ((16, 256, 2), (128, 256, 2),
+                                           (952, 512, 2), (952, 1024, 1)):
+            with self.subTest(rows=rows, block_k=block_k):
                 workload = WorkloadContract(gemm.workload_document(
                     'fib_gemm_n128_k2048', rows=rows))
-                schedule = parse(tensorcore_source(workload, block_k=256)).document
+                schedule = parse(tensorcore_source(
+                    workload, block_k=block_k, num_stages=num_stages)).document
                 self.assertEqual(schedule['outputs'], ['out'])
                 dot = next(op for op in schedule['operations'] if op['kind'] == 'mma')
-                self.assertEqual(dot['parameters']['tile_shape'], [16, 32, 256])
+                self.assertEqual(dot['parameters']['tile_shape'], [16, 32, block_k])
                 assessment = compiler.assess(schedule)
                 self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
                                  assessment.findings)
                 lowered = compiler.lower(assessment)
                 self.assertIn('N_K_LOOP=2048', lowered.source)
-                self.assertIn('BLOCK_K_LOOP=256', lowered.source)
+                self.assertIn(f'BLOCK_K_LOOP={block_k}', lowered.source)
                 self.assertIn('rounded = acc.to(tl.float16)', lowered.source)
         with self.assertRaises(ValueError):
             tensorcore_source(workload, block_k=128)
+        with self.assertRaises(ValueError):
+            tensorcore_source(workload, block_k=1024, num_stages=2)
 
     def test_004_scalar_warp_rewrite_keeps_small_m_outputs_independent(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
