@@ -1642,6 +1642,20 @@ P copy-role 原型 2,351.215\,$\mu$s；五轮均小幅领先，成对轮比值
 barrier/phase 合同，当前 \emph{No promotion}；消费者串行状态与
 MMA 关键路径仍是主要追赶对象。
 
+\paragraph{BF16 逆因子与 K32 MMA 试验。}
+对精确冻结 H64 输入，五轮 BF16 操作数 doubling 先生成 32×32
+逆因子，再以矩阵乘法求每块 U；CPU-only 的全部输出和最终状态
+对外部逐 token oracle 零超差。B300 的独立 K32 TMEM-A/shared-B
+MMA witness 三组各 4,096 个结果零超差；从真实 P 生成的
+16,777,216 个转置逆因子元素与 CPU doubling 比较零超差。
+源级 native 消费者把 BF16 RHS 写入 TMEM，以两条 K16 MMA
+代替逐行求解；AOT 为 241 寄存器、0 spill。三 kernel
+准备→逆因子→消费者作业 \code{gpuq-982a93410f49} 的全部
+67,108,864 个输出与 1,048,576 个原位最终状态对冻结 oracle
+零超差，最大绝对误差为 0.000732/0.003906。它仍是固定 H64
+源级候选；与原始 CAKE、现有两 kernel 基线的同卡配对已提交，
+延迟结果待作业终态和完整快照核对，尚无 Compiler promotion。
+
 \Needspace{12\baselineskip}
 \paragraph{M64 拆分的原子验证。}
 CPU-only M64 探针用第二 CTA 轴与 \code{program\_tile} 切分
