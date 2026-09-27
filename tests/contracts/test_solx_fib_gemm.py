@@ -10,6 +10,7 @@ from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
 from open_cake_ir.tasks.solx_fib.b300_gemv004 import column_tiled_source, scalar_warp_program
+from open_cake_ir.tasks.solx_fib.b300_tensorcore004 import tensorcore_source
 from open_cake_ir.tasks.tiles.workload import _round
 from open_cake_ir.tasks.workloads import create_task, reference_outputs, load_workload
 from open_cake_ir.tasks.efficiency import task_work
@@ -18,6 +19,31 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FlashInferGemmTests(unittest.TestCase):
+    def test_004_tensorcore_route_covers_each_official_m_at_least_16(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        rows_values = [rows for rows in gemm.SPECS['fib_gemm_n128_k2048']['batches']
+                       if rows >= 16]
+        self.assertEqual(len(rows_values), 19)
+        for rows in rows_values:
+            with self.subTest(rows=rows):
+                workload = WorkloadContract(gemm.workload_document(
+                    'fib_gemm_n128_k2048', rows=rows))
+                schedule = parse(tensorcore_source(workload)).document
+                mma = [op for op in schedule['operations'] if op['kind'] == 'mma']
+                self.assertEqual(len(mma), 1)
+                self.assertEqual(mma[0]['parameters']['instruction']['contract'],
+                                 'triton.dot.fp16_fp32')
+                assessment = compiler.assess(schedule)
+                self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                                 assessment.findings)
+                lowered = compiler.lower(assessment)
+                self.assertEqual(lowered.target, 'sm_103a')
+                self.assertIn('tl.dot(', lowered.source)
+                self.assertIn('rounded = acc.to(tl.float16)', lowered.source)
+        with self.assertRaises(ValueError):
+            tensorcore_source(WorkloadContract(gemm.workload_document(
+                'fib_gemm_n128_k2048', rows=8)))
+
     def test_004_scalar_warp_rewrite_keeps_small_m_outputs_independent(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         for rows in (1, 2, 8):
