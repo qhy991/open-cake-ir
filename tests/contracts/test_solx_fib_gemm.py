@@ -18,26 +18,27 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FlashInferGemmTests(unittest.TestCase):
-    def test_004_scalar_warp_rewrite_keeps_128_outputs_independent(self):
+    def test_004_scalar_warp_rewrite_keeps_small_m_outputs_independent(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
-        workload = WorkloadContract(gemm.workload_document('fib_gemm_n128_k2048', rows=1))
-        starter = parse(gemm.starter_source(workload)).document
-        for warps in (4, 8, 16):
-            program = scalar_warp_program(compiler, workload, num_warps=warps)
-            self.assertEqual(len(program.stages), 1)
-            self.assertEqual(set(program.inputs), {'a', 'b'})
-            self.assertEqual(program.outputs, ('out',))
-            schedule = json.loads(program.stages[0].schedule_bytes)
-            self.assertEqual(schedule['operations'], starter['operations'])
-            self.assertEqual(schedule['access_maps'], starter['access_maps'])
-            self.assertEqual(schedule['roles'][0]['execution_groups'], list(range(warps)))
-            lowered = compiler.lower_program(program)
-            lowered.validate_binding()
-            self.assertIn('_kernel[(1, 128, 1)]', lowered.lowerings[0].source)
-            self.assertIn(f'num_warps={warps}', lowered.lowerings[0].source)
+        for rows in (1, 2, 8):
+            workload = WorkloadContract(gemm.workload_document('fib_gemm_n128_k2048', rows=rows))
+            starter = parse(gemm.starter_source(workload)).document
+            for warps in (4, 8, 16):
+                program = scalar_warp_program(compiler, workload, num_warps=warps)
+                self.assertEqual(len(program.stages), 1)
+                self.assertEqual(set(program.inputs), {'a', 'b'})
+                self.assertEqual(program.outputs, ('out',))
+                schedule = json.loads(program.stages[0].schedule_bytes)
+                self.assertEqual(schedule['operations'], starter['operations'])
+                self.assertEqual(schedule['access_maps'], starter['access_maps'])
+                self.assertEqual(schedule['roles'][0]['execution_groups'], list(range(warps)))
+                lowered = compiler.lower_program(program)
+                lowered.validate_binding()
+                self.assertIn(f'_kernel[({rows}, 128, 1)]', lowered.lowerings[0].source)
+                self.assertIn(f'num_warps={warps}', lowered.lowerings[0].source)
         with self.assertRaises(ValueError):
             scalar_warp_program(compiler, WorkloadContract(gemm.workload_document(
-                'fib_gemm_n128_k2048', rows=2)), num_warps=4)
+                'fib_gemm_n128_k2048', rows=16)), num_warps=4)
 
     def test_004_column_tiles_reuse_a_and_reduce_each_b_row(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')

@@ -8,15 +8,26 @@ from open_cake_ir.evaluation.workload import WorkloadContract
 from .gemm import TASKS, starter_source, validate_contract
 
 
-def _m1_arguments(workload: WorkloadContract, case_id: str):
+_SMALL_M = frozenset((1, 2, 4, 5, 6, 8))
+
+
+def _small_m_arguments(workload: WorkloadContract, case_id: str):
     validate_contract(workload.document)
     if (workload.target != "sm_103a"
             or workload.document["operator"] != TASKS["fib_gemm_n128_k2048"][0]):
         raise ValueError("B300 GEMV mapping requires FIB 004 on exact B300")
     args = workload.tensor_abi(case_id)
-    if (args[0].shape != (1, 2048) or args[1].shape != (128, 2048)
-            or args[2].shape != (1, 128)):
-        raise ValueError("B300 GEMV mapping requires official M=1, N=128, K=2048")
+    rows = args[0].shape[0]
+    if (rows not in _SMALL_M or args[0].shape != (rows, 2048)
+            or args[1].shape != (128, 2048) or args[2].shape != (rows, 128)):
+        raise ValueError("B300 GEMV mapping requires an official small M, N=128, K=2048")
+    return args
+
+
+def _m1_arguments(workload: WorkloadContract, case_id: str):
+    args = _small_m_arguments(workload, case_id)
+    if args[0].shape[0] != 1:
+        raise ValueError("column-tiled GEMV requires official M=1")
     return args
 
 
@@ -63,11 +74,11 @@ def scalar_warp_program(compiler, workload: WorkloadContract,
                         case_id: str = "primary", *, num_warps: int) -> Program:
     """Keep one output per CTA and specialize the starter's execution width.
 
-    This retains 128 independent CTAs at M=1, the starter operation graph and
-    every access map. The qualified Compiler pass owns the warp-count legality;
+    This retains M*128 independent CTAs, the starter operation graph and every
+    access map. The qualified Compiler pass owns the warp-count legality;
     on-device comparison owns the performance decision.
     """
-    _m1_arguments(workload, case_id)
+    _small_m_arguments(workload, case_id)
     starter = parse(starter_source(workload, case_id), filename="fib004_starter.py").document
     program = Program.from_schedule(starter)
     result = compiler.rewrite_program(program, "specialize_triton_warps", {
