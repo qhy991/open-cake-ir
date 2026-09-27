@@ -13,7 +13,8 @@ _TENSOR_CORE_M = frozenset((16, 17, 25, 32, 34, 63, 64, 93, 128, 172,
 
 def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
                       block_m: int = 16, block_n: int = 32,
-                      block_k: int = 64, num_stages: int = 2) -> str:
+                      block_k: int = 64, num_stages: int = 2,
+                      num_warps: int = 4) -> str:
     """Tile the full FP16 contraction through the exact B300 Triton dot contract.
 
     The Workload fixes N=128, K=2048 and the final FP16 rounding. The Compiler
@@ -30,13 +31,15 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
             or args[1].shape != (128, 2048)
             or args[2].shape != (rows, 128)):
         raise ValueError("tensor-core mapping requires an official M>=16, N=128, K=2048")
-    if (block_m, block_n, block_k, num_stages) not in (
-            (16, 32, 64, 2), (16, 32, 256, 2),
-            (16, 32, 512, 2), (16, 32, 1024, 1),
-            (16, 16, 512, 2), (16, 64, 512, 2),
-            (32, 64, 256, 2), (64, 64, 256, 2),
-            (64, 128, 256, 2)):
+    if (block_m, block_n, block_k, num_stages, num_warps) not in (
+            (16, 32, 64, 2, 4), (16, 32, 256, 2, 4),
+            (16, 32, 512, 2, 4), (16, 32, 1024, 1, 4),
+            (16, 16, 512, 2, 4), (16, 64, 512, 2, 4),
+            (32, 64, 256, 2, 4), (64, 64, 256, 2, 4),
+            (64, 128, 256, 2, 4), (64, 64, 256, 2, 8),
+            (64, 128, 256, 2, 8)):
         raise ValueError("tensor-core tile/stage choice is outside the bounded study")
+    warp_suffix = f"-w{num_warps}" if num_warps != 4 else ""
     declarations = [
         f'{arg.name}: cake.Tensor({arg.shape!r}, "{arg.dtype}"'
         + (', mode="output")' if arg.mode == "output" else ')')
@@ -44,11 +47,11 @@ def tensorcore_source(workload: WorkloadContract, case_id: str = "primary", *,
     ]
     return (
         'from open_cake_ir.compiler import frontend as cake\n\n'
-        f'@cake.schedule(name="{workload.workload_id}-tensorcore-{block_m}x{block_n}x{block_k}-s{num_stages}", '
+        f'@cake.schedule(name="{workload.workload_id}-tensorcore-{block_m}x{block_n}x{block_k}-s{num_stages}{warp_suffix}", '
         f'target="{workload.target}", backend="triton", '
         'entry_point="cake_fib004_tensorcore")\n'
         f'def candidate(lm, {", ".join(declarations)}):\n'
-        '    compute = lm.role(execution_groups=[0, 1, 2, 3])\n'
+        f'    compute = lm.role(execution_groups={list(range(num_warps))!r})\n'
         f'    row = lm.program(a, axis=0, dimension=0, tile={block_m})\n'
         f'    column = lm.program(b, axis=1, dimension=0, tile={block_n})\n'
         f'    for k in lm.range(a, name="k_loop", dimension=1, tile={block_k}, '

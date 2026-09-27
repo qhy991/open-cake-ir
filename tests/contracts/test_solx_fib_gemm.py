@@ -133,6 +133,28 @@ class FlashInferGemmTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tensorcore_source(workload, block_m=64, block_n=128, block_k=512)
 
+    def test_004_eight_warp_large_tiles_are_a_separate_bounded_route(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        workload = WorkloadContract(gemm.workload_document(
+            'fib_gemm_n128_k2048', rows=8828))
+        for block_n, expected_grid in ((64, [138, 2, 1]),
+                                       (128, [138, 1, 1])):
+            with self.subTest(block_n=block_n):
+                schedule = parse(tensorcore_source(
+                    workload, block_m=64, block_n=block_n,
+                    block_k=256, num_warps=8)).document
+                self.assertEqual(schedule['roles'][0]['execution_groups'],
+                                 list(range(8)))
+                assessment = compiler.assess(schedule)
+                self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                                 assessment.findings)
+                lowered = compiler.lower(assessment)
+                self.assertEqual(lowered.toolchain_requirements['grid'], expected_grid)
+                self.assertEqual(lowered.toolchain_requirements['compile_options']['num_warps'], 8)
+        with self.assertRaises(ValueError):
+            tensorcore_source(workload, block_m=64, block_n=128,
+                              block_k=256, num_warps=16)
+
     def test_004_scalar_warp_rewrite_keeps_small_m_outputs_independent(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         for rows in (1, 2, 8):
