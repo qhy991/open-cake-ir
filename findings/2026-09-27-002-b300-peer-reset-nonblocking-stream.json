@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "F-2026-09-27-002",
+  "kind": "protocol",
+  "date": "2026-09-27",
+  "title": "B300 ranked-tile peer reset was unordered with nonblocking rank streams",
+  "backend": "native_cuda ranked_tile_b300_pointer_v4",
+  "target": "sm_103a",
+  "compiler_revision_id": "open-cake-ir@57bc00ecf7d2bf0c4c8249de26349ee5aadd6380",
+  "executor_revision": "sm_103a@57bc00ecf7d2bf0c4c8249de26349ee5aadd6380",
+  "evidence": {
+    "code": "src/open_cake_ir/compiler/backends/templates/ranked_tile_b300_host.cu::ranked_tile_reset and cake_ranked_tile_b300_launch",
+    "failed_repetition": "/home/qinhaiyan/cake-weave-phase-routes-57bc00ec/hot8_full_tiles/k2/worker.log",
+    "failed_broker_job": "gpuq-18e11319d003",
+    "replay_report": "/home/qinhaiyan/cake-weave-peer-reset-3e1ecb94-hot8-k2/report.json",
+    "replay_broker_job": "gpuq-8fea3de7b6ba",
+    "cuda_memset_contract": "https://docs.nvidia.com/cuda/cuda-runtime-api/api-sync-behavior.html",
+    "cuda_nonblocking_stream_contract": "https://docs.nvidia.com/cuda/cuda-runtime-api/stream-sync-behavior.html"
+  },
+  "observation": "The old rank reset issued cudaMemset to device memory through the default stream and returned without a host completion guarantee. The rank worker stream was created with cudaStreamNonBlocking, so it did not inherit the default stream's ordering. After enqueueing all rank resets, the host could launch a source rank that wrote into another rank's Bin before that peer reset completed. This ordering gap exists regardless of whether it was the sole cause of the retained timeout. In the frozen hot8 K=2 run, the first complete-layer launch returned and the second stayed live until the broker's 12-minute run timeout; no second output was accepted. The successor's explicit peer-reset boundary completed two warmups and three CUPTI samples on the same frozen case with 0/4,194,304 FP64-oracle failures, zero output bit differences from v3, exact CPU tile-event counts and 200 retained phase records. That bounded replay does not prove arbitrary cross-rank liveness or resolve F-2026-09-27-001's intermittent c=95 mismatch.",
+  "proposed_change": "Keep each rank's reset operations in its compute stream and wait for all four streams to complete before any rank launches a P2P-writing cooperative grid. Preserve the frozen Workload, oracle, exact target admission and broker lease. Validate every route and K control on the successor before promoting the persistent path; investigate any remaining liveness or c=95 failure separately.",
+  "decision": "accepted",
+  "implemented_in": "3e1ecb9442737714773743f1533b5f6c5e0886b8",
+  "verified_by": {
+    "cpu": "15 related contracts and 179/179 Corpus Gate cases at 3e1ecb94",
+    "compile": "/home/qinhaiyan/cake-weave-peer-reset-3e1ecb94/build-c64-b46920/build_report.json",
+    "device": "/home/qinhaiyan/cake-weave-peer-reset-3e1ecb94-hot8-k2/report.json",
+    "scope": "The stream-ordering defect is removed and the cited hot8 K=2 repetition passed. Broader persistent-grid liveness and timing qualification remain outside this finding's closure."
+  }
+}
