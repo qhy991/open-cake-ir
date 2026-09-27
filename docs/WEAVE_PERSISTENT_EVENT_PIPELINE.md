@@ -162,6 +162,21 @@ handoff needs its own reviewed proxy-ordering rule and counterexamples before
 removing the current grid barrier. No dependent planner kernel in another
 stream may be required for progress.
 
+A concrete successor can split the resident grid by CTA role. The first `c`
+communication CTAs advance a producer loop across events: dispatch, wait for
+the source publication, snapshot and sort experts, assign tiles and gather
+rows, then release-publish each event's tile-ready flag. They need a bounded
+barrier **among those `c` CTAs** at each producer phase; a whole-grid barrier
+would again wait for the current FFN. The remaining `96-c` CTAs acquire
+tile-ready events and claim complete Cake stage work units from the existing
+per-tile queues. After all events are produced, communication CTAs can borrow
+remaining work under the same steal budget. All CTAs join only at final
+completion before TMEM release and return/combine. The producer for event
+`e` may wait for the `e-1` snapshot or the same event's source; it must never
+wait for an unscheduled CTA or for consumer completion at event `e`. This
+wait graph, per-event capacity and cross-CTA proxy handoff need explicit
+Compiler admission/analysis and B300 counterexamples before launch.
+
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
 four-device timing reset and matched open baseline. This task branch remains
