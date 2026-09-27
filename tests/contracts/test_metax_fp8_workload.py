@@ -10,10 +10,24 @@ from open_cake_ir.compiler import frontend
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONTRACT = ROOT / "contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1.json"
+CONTRACT = ROOT / "contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v2.json"
 
 
 class MetaxFP8Workload(unittest.TestCase):
+    def test_nt_successor_preserves_v1_and_checks_rhs_orientation(self):
+        old = load_workload(CONTRACT.with_name(CONTRACT.name.replace("v2.json", "v1.json")))
+        self.assertEqual(old.document, metax_fp8_gemm.workload_document("1"))
+        with self.assertRaisesRegex(ValueError, "NT Workload successor"):
+            metax_fp8_gemm.starter_source(old, "primary")
+        workload = load_workload(CONTRACT)
+        self.assertEqual(workload.document["tensors"]["b"]["shape"], ["N", "K"])
+        a, b = metax_fp8_gemm._bytes_for_case(workload.case("identity"))
+        nt = metax_fp8_gemm.reference_bytes(a, b, rhs_transposed=True)
+        expected = [metax_fp8_gemm.decode_e4m3fn(b[n * 64 + m])
+                    for m in range(64) for n in range(64)]
+        self.assertEqual(nt, expected)
+        self.assertNotEqual(nt, metax_fp8_gemm.reference_bytes(a, b))
+
     def test_launcher_uses_exact_target_and_known_cake_source(self):
         from tools.launch_task import TASKS, _default_shape
 
@@ -75,14 +89,14 @@ class MetaxFP8Workload(unittest.TestCase):
                         [metax_fp8_gemm.decode_e4m3fn(code) for code in b])
             self.assertEqual(output, expected)
 
-        a, b = metax_fp8_gemm._bytes_for_case(workload.case("heldout_full_finite_05"))
-        exact = metax_fp8_gemm.reference_bytes(a, b)[2 * 64 + 31]
+        a, b = metax_fp8_gemm._bytes_for_case(workload.case("heldout_full_finite_03"))
+        exact = metax_fp8_gemm.reference_bytes(a, b, rhs_transposed=True)[62 * 64 + 39]
         left = [metax_fp8_gemm.decode_e4m3fn(code) for code in a]
         right = [metax_fp8_gemm.decode_e4m3fn(code) for code in b]
         fp32 = lambda value: struct.unpack("<f", struct.pack("<f", value))[0]
         ordinary_sum = 0.0
         for k in range(64):
-            ordinary_sum = fp32(ordinary_sum + fp32(left[2 * 64 + k] * right[k * 64 + 31]))
+            ordinary_sum = fp32(ordinary_sum + fp32(left[62 * 64 + k] * right[39 * 64 + k]))
         self.assertGreater(abs(ordinary_sum - exact), 0.001 + 0.0001 * abs(exact))
 
     def test_invalid_input_is_rejected_before_reference(self):

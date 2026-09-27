@@ -26,6 +26,8 @@ The [tile Workload guide](../TILE_WORKLOADS.md) explains shapes, tolerances, the
 
 The [contract](../../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1.json) fixes `M=N=K=64`, E4M3FN inputs, FP32 output, and elementwise tolerance. Task-owned byte generation covers five basic and 32 additional finite-input cases. The [independent CPU oracle](../../../src/open_cake_ir/tasks/metax_fp8_gemm.py) decodes each input, sums at high precision, and rounds once to FP32. The existing [compensated Schedule](../../../examples/python/xcore1002_fp8_compensated.py) matches the input/output ABI; this contract alone does not establish device correctness on the new cases or a performance benefit.
 
+The [v2 successor](../../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v2.json) declares RHS storage `[N,K]` and computes `A @ B.T`, matching the resident instruction. The v1 `A @ B` contract remains intact, but this resident example is not its semantic baseline. Equal square ABI shapes do not prove orientation; v2 checks the complete transposed asymmetric RHS in its identity case.
+
 ## Flash-KMeans
 
 BF16 points and centroids produce the nearest-centroid index under the FP32 distance/accumulation contract. The independent reference and tie-aware rule own acceptance; do not impose another tie policy afterward.

@@ -1,7 +1,7 @@
 # Fixed FP8 GEMM lowering probes
 
 Read this when changing K selection, residency or unrolling in the fixed
-`maca.simt.fp8e4m3_compensated_fp32` route. The [Workload](../../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1.json)
+`maca.simt.fp8e4m3_compensated_fp32` route. The [Workload](../../../contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v2.json)
 owns the result and all 37 required input cases. These compiler observations
 are not new instruction contracts.
 
@@ -55,3 +55,7 @@ correctness or performance. The retained result is
 Admit the exact Executor host and sealed artifact, prepare complete Workload
 inputs/reference, then acquire the shared MACA broker. Promote only after
 all-case device correctness and the declared timing and confirmation gates.
+
+## RHS orientation correction
+
+The v1 Workload defined `A @ B` while the resident instruction and its original frozen oracle compute `A @ B.T`. Square ABI checks missed this semantic mismatch. At `fe47e4cc`, the original frozen identity case has zero word differences against `A @ B.T` and 4,006 against `A @ B`; the new v1 identity input has 3,998 tolerance failures against the resident result. The pending sealed v1 request must not qualify this resident route. Its first broker attempt executed zero kernels. Keep the v1 contract and all historical observations intact. Use the explicit NT v2 successor, reseal the baseline under that Workload, and separately adapt streaming RHS addresses before its device check. The observation is retained at `open-cake-ir-evidence/metax-fp8-rhs-orientation-20260927/result.json`.

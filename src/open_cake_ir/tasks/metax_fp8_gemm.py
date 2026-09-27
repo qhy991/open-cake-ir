@@ -12,7 +12,8 @@ from open_cake_ir.evaluation.workload import WorkloadContract
 
 OPERATOR = "metax_fp8_e4m3_gemm_fp32"
 TASK = "metax_fp8_gemm"
-WORKLOAD_ID = "metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v1"
+_WORKLOAD_PREFIX = "metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n64-k64-v"
+WORKLOAD_ID = _WORKLOAD_PREFIX + "2"
 SIZE = 64
 _FINITE_CODES = tuple(code for code in range(256) if code not in (0x7F, 0xFF))
 
@@ -32,7 +33,9 @@ def decode_e4m3fn(code: int) -> float:
 _BOUNDED_CODES = tuple(code for code in _FINITE_CODES if abs(decode_e4m3fn(code)) <= 2)
 
 
-def workload_document() -> dict:
+def workload_document(revision: str = "2") -> dict:
+    if revision not in {"1", "2"}:
+        raise ValueError("unsupported MetaX FP8 GEMM Workload revision")
     cases = [
         {"case_id": mode, "shape": {"M": SIZE, "N": SIZE, "K": SIZE},
          "seed": 20260926 + index, "mode": mode}
@@ -46,22 +49,26 @@ def workload_document() -> dict:
         for domain in ("full_finite", "bounded") for index in range(16)
     ]
     return {
-        "schema_version": 1, "workload_id": WORKLOAD_ID, "revision": "1",
+        "schema_version": 1, "workload_id": _WORKLOAD_PREFIX + revision, "revision": revision,
         "state": "frozen", "operator": OPERATOR,
         "provenance": [
             {"kind": "metax_fp8_precision_investigation",
              "path": "findings/2026-09-26-002-metax-fp64-reduction-capacity.json",
              "scope": "fixed_shape_semantics_only; old_device_and_timing_receipts_do_not_qualify_this_successor"},
-        ],
+        ] + ([{"kind": "semantic_successor", "workload_id": _WORKLOAD_PREFIX + "1",
+                "scope": "RHS_storage_N_K_and_A_times_B_transpose_match_the_resident_instruction; original_v1_AB_contract_and_receipts_remain_immutable"}]
+             if revision == "2" else []),
         "cases": cases,
         "tensors": {
             "a": {"shape": ["M", "K"], "dtype": "fp8_e4m3", "layout": "contiguous_row_major", "finite_only": True},
-            "b": {"shape": ["K", "N"], "dtype": "fp8_e4m3", "layout": "contiguous_row_major", "finite_only": True},
+            "b": {"shape": ["N", "K"] if revision == "2" else ["K", "N"], "dtype": "fp8_e4m3", "layout": "contiguous_row_major", "finite_only": True},
             "out": {"shape": ["M", "N"], "dtype": "fp32", "layout": "contiguous_row_major", "finite_only": True},
         },
         "semantics": {
             "target": "xcore1002", "candidate_abi": {"inputs": ["a", "b"], "outputs": ["out"]},
-            "definition": "out[m,n] = round_fp32(sum_k(decode_e4m3fn(a[m,k]) * decode_e4m3fn(b[k,n])))",
+            "definition": ("out[m,n] = round_fp32(sum_k(decode_e4m3fn(a[m,k]) * decode_e4m3fn(b[n,k])))"
+                           if revision == "2" else
+                           "out[m,n] = round_fp32(sum_k(decode_e4m3fn(a[m,k]) * decode_e4m3fn(b[k,n])))"),
             "input_effects": "unchanged", "output_storage": "fresh_contiguous_nonaliasing",
             "materialization": "task_owned_xorshift32_finite_E4M3FN_bytes; no candidate or host RNG",
             "exclusions": ["fixed_M64_N64_K64_only", "not_native_FP8_MMA_evidence", "no_framework_or_serving_claim"],
@@ -82,7 +89,7 @@ def workload_document() -> dict:
 
 
 def validate_contract(document: Mapping) -> None:
-    if json.dumps(document, sort_keys=True, allow_nan=False) != json.dumps(workload_document(), sort_keys=True):
+    if json.dumps(document, sort_keys=True, allow_nan=False) != json.dumps(workload_document(document.get("revision")), sort_keys=True):
         raise ValueError("MetaX FP8 GEMM frozen contract differs")
     workload = WorkloadContract(document)
     for case_id in workload.case_ids:
@@ -93,6 +100,8 @@ def starter_source(workload: WorkloadContract, case_id: str) -> str:
     """Use the admitted Cake source as the known-kernel reproduction baseline."""
     validate_contract(workload.document)
     workload.case(case_id)
+    if workload.document["revision"] != "2":
+        raise ValueError("the resident compensated starter requires the NT Workload successor")
     source = (Path(__file__).resolve().parents[3]
               / "examples/python/xcore1002_fp8_compensated.py")
     original = source.read_text(encoding="utf-8")
@@ -136,7 +145,7 @@ def _bytes_for_case(case: Mapping) -> tuple[bytes, bytes]:
     return bytes(a), bytes(b)
 
 
-def reference_bytes(a: bytes, b: bytes) -> list[float]:
+def reference_bytes(a: bytes, b: bytes, *, rhs_transposed: bool = False) -> list[float]:
     """Return the complete FP32 oracle; useful without optional torch installed."""
     if len(a) != SIZE * SIZE or len(b) != SIZE * SIZE:
         raise ValueError("FP8 GEMM input shape differs")
@@ -144,7 +153,8 @@ def reference_bytes(a: bytes, b: bytes) -> list[float]:
     right = [decode_e4m3fn(code) for code in b]
     return [
         struct.unpack("<f", struct.pack("<f", math.fsum(
-            left[m * SIZE + k] * right[k * SIZE + n] for k in range(SIZE))))[0]
+            left[m * SIZE + k] * right[n * SIZE + k if rhs_transposed else k * SIZE + n]
+            for k in range(SIZE))))[0]
         for m in range(SIZE) for n in range(SIZE)
     ]
 
@@ -174,4 +184,5 @@ def reference_tensors(workload: WorkloadContract, case_id: str, inputs: Mapping)
             raise ValueError(f"FP8 GEMM input {name} shape/dtype/device differs")
     a = bytes(inputs["a"].view(torch.uint8).reshape(-1).tolist())
     b = bytes(inputs["b"].view(torch.uint8).reshape(-1).tolist())
-    return {"out": torch.tensor(reference_bytes(a, b), dtype=torch.float32).reshape(SIZE, SIZE)}
+    values = reference_bytes(a, b, rhs_transposed=workload.document["revision"] == "2")
+    return {"out": torch.tensor(values, dtype=torch.float32).reshape(SIZE, SIZE)}
