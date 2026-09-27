@@ -41,7 +41,10 @@ class Fib023PaddedMappingTest(unittest.TestCase):
                                  [rows, 1, 1])
                 source = lowered.lowerings[0].source
                 self.assertIn("BLOCK_COLUMN=2048", source)
-                self.assertIn("column_offsets < 1536", source)
+                self.assertIn("N_COLUMN=1536", source)
+                self.assertIn("mask=column_offsets < N_COLUMN", source)
+                self.assertIn("mask=column_offsets < D_WEIGHT_0", source)
+                self.assertIn("mask=column_offsets < D_OUT_1", source)
                 self.assertIn("square_sum / 1536.0", source)
 
     def test_unpadded_full_slice_is_refused_by_the_arange_rule(self) -> None:
