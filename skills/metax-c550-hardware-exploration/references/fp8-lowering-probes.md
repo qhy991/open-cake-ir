@@ -78,3 +78,22 @@ The collected worker artifacts are at
 `open-cake-ir-evidence/metax-native-abi-request-875724d4/device-run/`; the case and
 counter audit is `device-verification.json` in its parent. This is registered
 Workload native correctness, not a GPU bitwise audit, timing or full-backend claim.
+
+## Generated streaming route
+
+The existing compensated contract now has a narrow explicit K1 loop form using
+A[2,1]/B[64,1] and result[2,64] for the same fixed NT64 domain. Use the task-owned
+`streaming_source(workload)` projection; keep the resident starter as the fixed
+baseline. Loop entry owns both FP32 total and correction, and only the final
+live-out store consumes their corrected result. Other consumers, K2, eight groups
+or full unroll remain refused by the streaming guard. No new DType or hidden
+memory access is introduced.
+
+Read the current [platform result](../../../docs/metax-c550.md) and
+[F-2026-09-27-002](../../../findings/2026-09-27-002-metax-fp8-streaming-lowering.json)
+for generated-source qualification at `c3be4379`: all 37 cases pass; quality-passed
+search and fresh confirmation repeat 26.880/155.904 us (5.80x on primary), with null
+A/A and a correct separate instrumented profile. The authored-source 6.84x result
+is not this generated-source score. Broader shapes, cache/load policies, consumers
+and control options require their own evidence; do not widen the guard from this
+one domain or infer a native FP8 matrix instruction.

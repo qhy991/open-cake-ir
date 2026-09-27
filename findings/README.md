@@ -34,7 +34,7 @@ path. A finding closes only when `implemented_in` names the Revision that change
 
 ## Index
 
-- F-2026-09-27-002 — sealed NT K-streaming FP8 compensation passes all 37 cases and repeats 22.784/155.904 us against resident source with quality-passed reversed pairs, null A/A and bounded profiles. Public K1 Schedule is legal but outside resident admission; explicit loop-state lowering and generated-source requalification remain proposed.
+- F-2026-09-27-002 — sealed NT K-streaming FP8 compensation passes all 37 cases and repeats 22.784/155.904 us against resident source with quality-passed reversed pairs, null A/A and bounded profiles. Public K1 Schedule is legal but outside resident admission; explicit loop-state lowering and generated-source requalification remain proposed. Closed by explicit loop-owned Cake lowering: generated-source all-case replay plus 26.880/155.904 us confirmation (5.80x), null A/A and instrumented resources; authored-source 6.84x evidence remains separate.
 
 - F-2026-09-27-001 — C550-2 Triton 3.6 native ELF declares two launcher scratch pointers absent from the public TTGIR signature; the three-pointer manifest crashes at launch, while a same-artifact five-pointer primary-case control passes. Native metadata inspection and all-case Executor replay are required; no performance claim. Closed by artifact-derived pointer sealing/loader checks at 875724d4 and broker job maca-1a6e9f748221: all 37 NT v2 cases pass with unchanged inputs and no timing.
 
