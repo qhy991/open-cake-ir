@@ -30,7 +30,7 @@ def contract(root: Path) -> dict:
             or lowering.get('source_commit') != manifest['source_commit']
             or lowering.get('entry_point') != ENTRY
             or lowering.get('logical_tile_capacity') != 255
-            or lowering.get('stage_task_capacity') != 22440
+            or lowering.get('stage_task_capacity') != 19890
             or not (root / 'ranked_tile.cu').is_file()):
         raise ValueError('ranked-tile library source or Compiler binding differs')
     return manifest

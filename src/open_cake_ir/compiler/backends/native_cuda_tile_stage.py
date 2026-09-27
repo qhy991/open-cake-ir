@@ -210,7 +210,7 @@ def emit_model_activation_stage(schedule, target, *, function_name: str) -> Tile
     emitter.line('const float* tile_input = up_gate + logical_tile * 128 * 1536;')
     emitter.line('__nv_bfloat16* tile_output = activated + logical_tile * 128 * 768;')
     emitter.line('const int cake_warp_row = int(threadIdx.x) / 32;')
-    emitter.begin('if (cake_warp_row < 4)')
+    emitter.begin('if (cake_warp_row < 6 && row_tile * 6 + cake_warp_row < 128)')
     emitter.line('const int cake_lane = int(threadIdx.x) % 32;')
     emitter.begin('for (int cake_feature=cake_lane; cake_feature<768; cake_feature+=32)')
     emitter.emit_model_graph()
@@ -257,9 +257,9 @@ def compose_model_ranked_tile_stages(
     if (analysis.items_per_rank != 512 or analysis.routes_per_item != 8
             or analysis.feature_width != 2048
             or analysis.stage_work_units
-            != (('up_gate', 24), ('activation', 32), ('down', 32))
+            != (('up_gate', 24), ('activation', 22), ('down', 32))
             or analysis.logical_tile_slots_per_rank != 255
-            or analysis.stage_task_slots_per_rank != 22440
+            or analysis.stage_task_slots_per_rank != 19890
             or analysis.required_execution_groups != 6):
         raise EmitError('ranked tile safe capacity or Cake stage work units differ')
     from .native_cuda_model_combine import preflight as combine_preflight

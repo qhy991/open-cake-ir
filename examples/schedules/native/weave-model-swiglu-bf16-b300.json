@@ -9,7 +9,9 @@
         0,
         1,
         2,
-        3
+        3,
+        4,
+        5
       ]
     }
   ],
@@ -42,7 +44,7 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        4,
+        6,
         768
       ],
       "mode": "scratch"
@@ -52,7 +54,7 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        4,
+        6,
         768
       ],
       "mode": "scratch"
@@ -62,7 +64,7 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        4,
+        6,
         768
       ],
       "mode": "scratch"
@@ -72,7 +74,7 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        4,
+        6,
         768
       ],
       "mode": "scratch"
@@ -82,7 +84,7 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        4,
+        6,
         768
       ],
       "mode": "scratch"
@@ -92,7 +94,7 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        4,
+        6,
         768
       ],
       "mode": "scratch"
@@ -102,7 +104,7 @@
       "space": "register",
       "dtype": "fp32",
       "shape": [
-        4,
+        6,
         768
       ],
       "mode": "scratch"
@@ -112,7 +114,7 @@
       "space": "register",
       "dtype": "bf16",
       "shape": [
-        4,
+        6,
         768
       ],
       "mode": "scratch"
@@ -338,7 +340,7 @@
         "axis": 0,
         "buffer": "up_gate",
         "dimension": 0,
-        "tile": 4
+        "tile": 6
       }
     ]
   }

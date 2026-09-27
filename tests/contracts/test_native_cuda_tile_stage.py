@@ -81,8 +81,8 @@ class NativeCudaTileStageTest(unittest.TestCase):
         self.assertIn('expf(', result.source)
         self.assertIn('__float2bfloat16_rn', result.source)
         self.assertIn('fence.proxy.async.global', result.source)
-        self.assertIn('row_tile * 4 + cake_warp_row', result.source)
-        self.assertIn('if (cake_warp_row < 4)', result.source)
+        self.assertIn('row_tile * 6 + cake_warp_row', result.source)
+        self.assertIn('row_tile * 6 + cake_warp_row < 128', result.source)
         self.assertEqual(result.dynamic_shared_bytes, 0)
         self.assertNotIn('tcgen05', result.source)
 
@@ -92,9 +92,9 @@ class NativeCudaTileStageTest(unittest.TestCase):
         result = compose_model_ranked_tile_stages(
             effects, self.program, combine, self.target)
         self.assertEqual(result.stage_work_units,
-                         (('up_gate',24),('activation',32),('down',32)))
+                         (('up_gate',24),('activation',22),('down',32)))
         self.assertEqual((result.safe_logical_tile_slots_per_rank,
-                          result.safe_stage_task_slots_per_rank),(255,22440))
+                          result.safe_stage_task_slots_per_rank),(255,19890))
         self.assertEqual((result.declared_shared_bytes,
                           result.emitted_shared_bytes),(49152,49200))
         self.assertEqual((result.tensor_bytes,result.required_execution_groups,
@@ -227,7 +227,7 @@ class NativeCudaTileStageTest(unittest.TestCase):
                     self.assertIn('publish_wave_ready<<<', source)
                     composition=lowering['ranked_tile_stage_composition']
                     self.assertEqual(composition['safe_logical_tile_slots_per_rank'],255)
-                    self.assertEqual(composition['safe_stage_task_slots_per_rank'],22440)
+                    self.assertEqual(composition['safe_stage_task_slots_per_rank'],19890)
                     self.assertEqual(composition['emitted_shared_bytes'],49200)
                     self.assertIs(composition['complete_ranked_tile_lowering'],False)
                 if generation == 'cake_ep4_capacity_stages':
@@ -271,7 +271,7 @@ class NativeCudaTileStageTest(unittest.TestCase):
             self.assertNotIn('int main(',source)
             self.assertNotIn('fopen(',source)
             self.assertEqual(report['logical_tile_capacity'],255)
-            self.assertEqual(report['stage_task_capacity'],22440)
+            self.assertEqual(report['stage_task_capacity'],19890)
             from experiments.weave.native_b300.model_ranked_tile_pointer_run import contract
             self.assertEqual(contract(root)['source_commit'],commit)
             self.assertEqual(report['toolchain_requirements']['rank_local_controls'],
@@ -290,7 +290,7 @@ class NativeCudaTileStageTest(unittest.TestCase):
         req=lowered.toolchain_requirements
         self.assertEqual((req['world_size'],req['logical_tile_capacity'],
                           req['stage_task_capacity'],req['source_events']),
-                         (4,255,22440,20))
+                         (4,255,19890,20))
         self.assertEqual(req['supported_chunks'],[1,2,4])
         self.assertEqual(req['source_chunk_tokens_by_chunks'],
                          {'1':512,'2':256,'4':128})

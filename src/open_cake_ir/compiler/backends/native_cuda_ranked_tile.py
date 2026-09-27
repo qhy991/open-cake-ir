@@ -119,7 +119,7 @@ def emit_source_event_device(composition: RankedTileStageComposition,
     if (not isinstance(composition, RankedTileStageComposition)
             or len(composition.stages) != 3
             or composition.safe_logical_tile_slots_per_rank != 255
-            or composition.safe_stage_task_slots_per_rank != 22440
+            or composition.safe_stage_task_slots_per_rank != 19890
             or composition.emitted_shared_bytes != 49200
             or composition.target_id != 'sm_103a'
             or composition.compute_capability != (10, 3)
