@@ -46,8 +46,11 @@ def _input_scope(plan):
     if (not isinstance(scope, dict)
             or plan["input_scope"] != json.dumps(scope, sort_keys=True, separators=(",", ":"))
             or set(scope) != {"schema_version", "oracle", "distributions", "families"}
-            or scope["schema_version"] != 1
+            or type(scope["schema_version"]) is not int or scope["schema_version"] != 1
             or scope["oracle"] != "independent_cpu_case_v1"
+            or type(scope["distributions"]) is not list
+            or len(scope["distributions"]) != 2
+            or any(type(value) is not int for value in scope["distributions"])
             or scope["distributions"] != [0, 1]
             or not isinstance(scope["families"], list) or not scope["families"]):
         raise ValueError("calibration input_scope must be canonical structured JSON")
@@ -95,6 +98,21 @@ def _device_case_indices(plan):
         return list(range(len(plan["cases"])))
     by_id = {case["id"]: index for index, case in enumerate(plan["cases"])}
     return [by_id[name] for name in selection["selected_case_ids"]]
+
+
+def _range_separated_cut(ordered, survivor_count):
+    """Admit a cut only when one survivor's descriptive upper bound clears every skip.
+
+    The ranges are empirical error envelopes, not confidence guarantees. Overlap is
+    a reason to spend GPU time on the full set instead of acting on a point estimate.
+    """
+    selected = ordered[:survivor_count]
+    skipped = ordered[survivor_count:]
+    return bool(selected and skipped) and min(
+        row["empirical_cost"]["empirical_range_us"][1] for row in selected
+    ) < min(
+        row["empirical_cost"]["empirical_range_us"][0] for row in skipped
+    )
 
 def _validate_search_selection(candidate, plan):
     """Freeze a complete empirical cut before any GPU stage."""
@@ -169,6 +187,8 @@ def _validate_search_selection(candidate, plan):
         ordered, decision = _empirical_filter(group)
         if not decision["order_applied"]:
             raise ValueError("empirical search must have complete comparable coverage")
+        if not _range_separated_cut(ordered, selection["searches_per_workload"]):
+            raise ValueError("empirical GPU cut lacks separation between descriptive ranges")
         decisions.append({"extent": cases[0]["extent"],
                           "candidate_set": [row["candidate_sha256"] for row in group],
                           "selected_top2": [row["candidate_sha256"] for row in ordered[:2]],

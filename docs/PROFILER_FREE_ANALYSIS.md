@@ -199,6 +199,9 @@ JSON 中的 `empirical_cost` 给出 `predicted_kernel_us`、`empirical_range_us`
 模型与预测文件都要在提交前放进同一个不可变候选快照。`check-plan` 重算每个候选的
 预测并检查：模型的 Compiler 提交、Target、timer、缓存协议、**完整**运行时和结构化
 `input_scope` 与计划相同；每组三个候选全部被覆盖；冻结的预测和选中顺序与模型一致。
+此外，至少一个入选候选的经验范围上界须严格低于所有跳过候选的范围下界；
+范围重叠时拒绝缩减，改用全量测量。这个保守条件只用于此独立工程 Run，
+经验范围不是概率保证，也不改变 Lab 的 Study 排序政策。
 不完整或不匹配就拒绝该选择 Run。CPU local 阶段仍编译全组并生成独立 oracle，
 broker 正确性与独占 profiler 阶段只加载选中的两个候选；GPU Infra 拥有设备租约。
 

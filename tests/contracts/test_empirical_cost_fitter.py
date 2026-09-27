@@ -289,6 +289,34 @@ class FitterBindingTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "model differs from the frozen assay"):
                 instrument._check_plan(candidate)
 
+    def test_overlapping_empirical_ranges_refuse_the_gpu_cut(self):
+        with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(directory)
+            run = self.fixture(root, target="sm_103a")
+            self.assertEqual(instrument._fit(run, root / "fit"), 0)
+            model_document = json.loads((root / "fit/model.json").read_text())
+            # Point order is unchanged, but the first two intervals can no longer
+            # separate either survivor from the candidate that would be skipped.
+            for curve in model_document["curves"][:2]:
+                curve["relative_error_envelope"] = 0.5
+            self.bind_selection(run, model_document)
+            with self.assertRaisesRegex(ValueError, "lacks separation between descriptive ranges"):
+                instrument._check_plan(run / "candidate")
+
+    def test_structured_input_scope_rejects_boolean_schema_and_distribution(self):
+        scope = {"schema_version": True, "oracle": "independent_cpu_case_v1",
+                 "distributions": [0, 1],
+                 "families": [{"family": "fma", "buffers": {
+                     name: [None, 128] for name in ("a", "b", "c", "y")}}]}
+        plan = {"input_scope": json.dumps(scope, sort_keys=True, separators=(",", ":"))}
+        with self.assertRaisesRegex(ValueError, "canonical structured JSON"):
+            instrument._input_scope(plan)
+        scope["schema_version"] = 1
+        scope["distributions"] = [False, True]
+        plan["input_scope"] = json.dumps(scope, sort_keys=True, separators=(",", ":"))
+        with self.assertRaisesRegex(ValueError, "canonical structured JSON"):
+            instrument._input_scope(plan)
+
     def test_selected_run_audits_only_the_two_measured_candidates(self):
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(io.StringIO()):
             root = Path(directory)
