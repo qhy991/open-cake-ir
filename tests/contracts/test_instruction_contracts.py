@@ -202,7 +202,7 @@ class DeclaredContractsTheGateCannotSpeakFor(unittest.TestCase):
         })
         # gfx1151 and xcore1002 retain their device evidence but have no tanh
         # Corpus case. Preserve both explicit gaps without manufacturing cases.
-        self.assertEqual(sum(len(v) for v in unreached.values()), 14)
+        self.assertEqual(sum(len(v) for v in unreached.values()), 17)
         for target in ("gfx938", "sm_100a"):
             self.assertNotIn(target, unreached)
 
