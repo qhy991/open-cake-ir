@@ -331,6 +331,39 @@ report is retained at
 locally. One passing c=95 trial does not close F-2026-09-27-001's
 intermittent route-location mismatch.
 
+The next kernel/lowering hypothesis at `55e1cf2a` fused the separate
+producer handoffs after tile assignment and task-count expansion. CTA 0
+retained an internal `__syncthreads()` before expanding tasks, while all
+communication CTAs joined one device-scope barrier before gathering. This
+reduced the producer's per-event barrier count from six to five without
+changing the ranked effects or the Workload. Its fixed-commit checks passed
+22 related contracts and the 179-case Corpus Gate; B300 NVCC used 84
+registers, 9,216 B static shared memory and no spills. Job
+`gpuq-53b1b04354f3` passed the frozen mixed K=4 case with 0/4,194,304
+oracle failures, 80 exact event slots, v3 bitwise agreement and positive
+overlap on all ranks. Job `gpuq-70c45c0647c8` passed the four-route ×
+K=4/2/1 matrix with 0/50,331,648 oracle failures, 960 exact event slots,
+v3 bitwise agreement and positive overlap in all 12 controls. Evidence is
+retained under `/home/qinhaiyan/cake-weave-fused-handoff-55e1cf2a/` and
+`/home/qinhaiyan/cake-weave-fused-handoff-55e1cf2a-matrix12/` and mirrored
+locally.
+
+Two same-lease ABBA jobs compared `00a2fc14` with `55e1cf2a` on mixed
+K=4, c=64, budget=46920. `gpuq-d7c86efc2e11` measured old/new development
+CUPTI medians of 9.395/8.880 ms (1.058x old/new); `gpuq-6bae3e44fdb4`
+measured 9.181/9.337 ms (0.983x). Both passed the oracle, tile plan and
+v3 bitwise checks. The tile-assignment and task-expansion phase intervals
+fell from roughly 3.8k+5.2k to 2.0k+2.0k cycles per event, but that small
+local saving did not produce repeatable complete-layer improvement. Raw
+CUPTI and phase records are retained at
+`/home/qinhaiyan/cake-weave-fused-vs-device-abba-55e1cf2a/` and
+`/home/qinhaiyan/cake-weave-fused-vs-device-abba-55e1cf2a-rep2/` and
+mirrored locally. Promotion disposition: **no promotion**; successor
+`58aed769` reverted this fusion. The active code again has the `00a2fc14`
+producer-barrier structure, while its source identity is the new commit.
+The next optimization target is the source-dispatch/completion path, whose
+per-event wait is around 350k cycles in these traces.
+
 Before promotion, check further c/steal controls including the open c=95
 mismatch Finding, retain profiler evidence, and qualify the target's
 four-device timing reset and matched open baseline. This task branch remains
