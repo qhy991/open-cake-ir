@@ -10,7 +10,8 @@ from open_cake_ir.compiler.frontend import parse
 from open_cake_ir.evaluation.workload import WorkloadContract
 from open_cake_ir.tasks.solx_fib import gemm
 from open_cake_ir.tasks.solx_fib.b300_gemv004 import column_tiled_source, scalar_warp_program
-from open_cake_ir.tasks.solx_fib.b300_native004 import native_m8828_source
+from open_cake_ir.tasks.solx_fib.b300_native004 import (
+    native_m8828_k256_source, native_m8828_source)
 from open_cake_ir.tasks.solx_fib.b300_tensorcore004 import (
     n32_k512_development_lead_source, tensorcore_source)
 from open_cake_ir.tasks.tiles.workload import _round
@@ -21,6 +22,35 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class FlashInferGemmTests(unittest.TestCase):
+    def test_004_native_k256_successor_has_one_complete_typed_program(self):
+        compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
+        workload = WorkloadContract(gemm.workload_document(
+            'fib_gemm_n128_k2048', rows=8828))
+        schedule = parse(native_m8828_k256_source(workload)).document
+        self.assertEqual(schedule['outputs'], ['out'])
+        self.assertEqual(schedule['tile_loops'][0]['tile'], 256)
+        mma = next(op for op in schedule['operations'] if op['kind'] == 'mma')
+        self.assertEqual(mma['parameters']['tile_shape'], [128, 64, 256])
+        tma_boxes = [op['parameters']['descriptor_box']
+                     for op in schedule['operations']
+                     if op['kind'] == 'load' and
+                     op['parameters'].get('movement') == 'tma']
+        self.assertEqual(tma_boxes, [[128, 256], [64, 256]])
+        assessment = compiler.assess(schedule)
+        self.assertFalse([f for f in assessment.findings if f.blocks_lowering],
+                         assessment.findings)
+        lowered = compiler.lower_program(Program.from_schedule(schedule))
+        lowered.validate_binding()
+        leaf = lowered.lowerings[0]
+        self.assertEqual(leaf.toolchain_requirements['grid'], [69, 2, 1])
+        self.assertLessEqual(
+            leaf.toolchain_requirements['dynamic_shared_bytes'], 232448)
+        self.assertEqual(leaf.toolchain_requirements['argument_order'],
+                         ['a', 'b', 'out'])
+        with self.assertRaisesRegex(ValueError, 'bounded to official M8828'):
+            native_m8828_k256_source(WorkloadContract(gemm.workload_document(
+                'fib_gemm_n128_k2048', rows=952)))
+
     def test_004_native_seed_is_one_complete_exact_m8828_program(self):
         compiler = Compiler.load(ROOT, ROOT / 'compiler/revision.json')
         workload = WorkloadContract(gemm.workload_document(
