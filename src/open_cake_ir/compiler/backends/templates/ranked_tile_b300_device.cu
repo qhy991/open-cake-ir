@@ -151,7 +151,8 @@ __global__ void tile_schedule_probe(
       wait_prior_snapshot(source_params,selected_event,source_rank);
     grid.sync();
     record_phase(source_params,selected_event,1,block);
-    if (source_rank<kSourceRanks && block<communication_ctas) {
+    if (selected_event==first_event && source_rank<kSourceRanks &&
+        block<communication_ctas) {
       dispatch_source_chunk(source_params,block,communication_ctas,
                             source_wave,chunk_tokens,source_rank);
       __threadfence_system();
@@ -192,6 +193,37 @@ __global__ void tile_schedule_probe(
     // Gather wrote tile rows through the generic proxy in this same kernel.
     // The Cake up/gate TMA reads them through the async proxy.
     asm volatile("fence.proxy.async.global;" ::: "memory");
+    // Source dispatch for the next event touches only peer bins. The current
+    // event's tile rows are already gathered, so computation CTAs may work on
+    // them while this rank's communication CTAs dispatch the next source.
+    const int next_event=selected_event+1;
+    const int next_source=next_event%(kSourceRanks+1);
+    if (next_event<chunks*(kSourceRanks+1) &&
+        next_source<kSourceRanks &&
+        source_params->rank==next_source && block<communication_ctas) {
+      if (threadIdx.x==0)
+        wait_prior_snapshot(source_params,next_event,next_source);
+      __syncthreads();
+      int completed_before=0;
+      if (block==0 && threadIdx.x==0)
+        for (int stage=0;stage<kStages;++stage)
+          completed_before+=atomicAdd(
+              &processed[stage*kEvents+selected_event],0);
+      __syncthreads();
+      dispatch_source_chunk(source_params,block,communication_ctas,
+                            next_event/(kSourceRanks+1),chunk_tokens,
+                            next_source);
+      __threadfence_system();
+      __syncthreads();
+      if (block==0 && threadIdx.x==0) {
+        int completed_after=0;
+        for (int stage=0;stage<kStages;++stage)
+          completed_after+=atomicAdd(
+              &processed[stage*kEvents+selected_event],0);
+        if (completed_after>completed_before)
+          atomicExch(&overlap[2+selected_event],1);
+      }
+    }
     for (int wave=selected_event; wave<=selected_event; ++wave) {
       // CAKE_EFFECT: tile.acquire
       // CAKE_EFFECT: task.acquire
@@ -204,7 +236,6 @@ __global__ void tile_schedule_probe(
                             task_counts[2*kEvents+wave];
       if (threadIdx.x==0 && block<communication_ctas)
         atomicAdd(&dispatched[wave],1);
-      grid.sync();  // Source wave becomes visible before any tile claim.
       while (true) {
         if (threadIdx.x==0) {
           const bool comm=block<communication_ctas;

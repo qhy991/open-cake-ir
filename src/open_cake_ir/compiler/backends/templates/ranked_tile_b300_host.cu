@@ -74,7 +74,7 @@ cudaError_t ranked_tile_allocate(RankedTileRankState& s) {
   CAKE_ALLOC(s.stolen,kStages*kEvents*sizeof(int));
   CAKE_ALLOC(s.permits,sizeof(int));
   CAKE_ALLOC(s.tasks,kStages*kEvents*sizeof(int));
-  CAKE_ALLOC(s.overlap,2*sizeof(int));
+  CAKE_ALLOC(s.overlap,(kEvents+2)*sizeof(int));
   CAKE_ALLOC(s.up_maps_a,kLogicalTiles*sizeof(CUtensorMap));
   CAKE_ALLOC(s.up_map_b,kExperts*sizeof(CUtensorMap));
   CAKE_ALLOC(s.down_maps_a,kLogicalTiles*sizeof(CUtensorMap));
@@ -200,7 +200,7 @@ cudaError_t ranked_tile_reset(RankedTileRankState& s) {
   CAKE_CLEAR(s.dispatched,kEvents*sizeof(int),0);
   CAKE_CLEAR(s.stolen,kStages*kEvents*sizeof(int),0);
   CAKE_CLEAR(s.permits,sizeof(int),0);
-  CAKE_CLEAR(s.overlap,2*sizeof(int),0);
+  CAKE_CLEAR(s.overlap,(kEvents+2)*sizeof(int),0);
 #undef CAKE_CLEAR
   return cudaSuccess;
 }
@@ -494,7 +494,10 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
     const char* phase_trace=std::getenv("CAKE_WEAVE_PHASE_TRACE");
     if (phase_trace && phase_trace[0]=='1') {
       unsigned long long phases[kEvents][kPhasePoints];
+      int event_overlap[kEvents+2];
       CAKE_RUN(cudaMemcpy(phases,s.bin->phase_cycles,sizeof(phases),
+                          cudaMemcpyDeviceToHost));
+      CAKE_RUN(cudaMemcpy(event_overlap,s.overlap,sizeof(event_overlap),
                           cudaMemcpyDeviceToHost));
       for (int event=0;event<chunks*(R+1);++event) {
         std::fprintf(stderr,"CAKE_PHASE launch=%d rank=%d event=%d cycles=",
@@ -503,6 +506,9 @@ extern "C" int @ENTRY@_launch(void* opaque,const int* communication_ctas,
           std::fprintf(stderr,"%s%llu",point==0 ? "" : ",",
                        phases[event][point+1]-phases[event][point]);
         std::fprintf(stderr,"\n");
+        std::fprintf(stderr,
+            "CAKE_EVENT_OVERLAP launch=%d rank=%d event=%d progressed=%d\n",
+            state->completed_launches,rank,event,event_overlap[2+event]);
       }
     }
   }
