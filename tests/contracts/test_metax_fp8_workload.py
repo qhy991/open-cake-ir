@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 from open_cake_ir.tasks import metax_fp8_gemm
-from open_cake_ir.tasks.workloads import load_workload
+from open_cake_ir.tasks.workloads import create_task, load_workload
 from open_cake_ir.compiler import frontend
 
 
@@ -14,6 +14,24 @@ CONTRACT = ROOT / "contracts/workloads/metax-fp8-e4m3-gemm-fp32-xcore1002-m64-n6
 
 
 class MetaxFP8Workload(unittest.TestCase):
+    def test_launcher_uses_exact_target_and_known_cake_source(self):
+        from tools.launch_task import TASKS, _default_shape
+
+        self.assertIn(metax_fp8_gemm.TASK, TASKS)
+        self.assertEqual(_default_shape(metax_fp8_gemm.TASK, None, None), (64, 64))
+        document, source = create_task(metax_fp8_gemm.TASK, backend="triton-metax",
+                                       rows=64, columns=64, case_id="primary")
+        self.assertEqual(document, load_workload(CONTRACT).document)
+        self.assertEqual(source, (ROOT / "examples/python/xcore1002_fp8_compensated.py").read_text())
+        for backend, rows, columns, depth in (("triton-b300", 64, 64, None),
+                                               ("triton-metax", 32, 64, None),
+                                               ("triton-metax", 64, 64, 32),
+                                               ("triton-metax", 64, 64, 64.0)):
+            with self.subTest(backend=backend, rows=rows, columns=columns, depth=depth):
+                with self.assertRaisesRegex(ValueError, "fixed M=N=K=64"):
+                    create_task(metax_fp8_gemm.TASK, backend=backend, rows=rows,
+                                columns=columns, depth=depth)
+
     def test_frozen_contract_and_exact_candidate_abi(self):
         workload = load_workload(CONTRACT)
         self.assertEqual(workload.workload_id, metax_fp8_gemm.WORKLOAD_ID)
