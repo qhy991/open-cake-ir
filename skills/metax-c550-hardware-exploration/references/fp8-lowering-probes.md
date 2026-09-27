@@ -242,3 +242,38 @@ Evidence under `/Users/haiyan-infiniai/open-cake-ir-evidence/`:
 `metax-fp8-bucket-{endmask,interleaved}-paired-20260927/verification.json`,
 adjacent `device-run/timing-samples.json`, and the corresponding sealed roots'
 finite-domain / operation-graph equivalence and compiled-code comparisons.
+
+
+## Comparison-only magnitude spelling
+
+The qualified bucketed recipe has 32 instances of
+`select(compare(x, 0, ge), x, mul(x, -1))` whose results are read only by numerical
+comparisons. A native-source probe replaces only those selects with `tl.abs`,
+retaining all masks, dot order, compensation and launch. Read
+[F-2026-09-27-003](../../../findings/2026-09-27-003-metax-comparison-magnitude-emission.json)
+before implementing or widening a Compiler spelling.
+
+All 37 cases pass with unchanged inputs, zero tolerance failures and maximum
+absolute error 0.015625. Search is 10.240/11.520 us (1.125x); fresh confirmation
+is 10.496/11.520 us (1.0976x), both quality-passed with 10/10 pair wins.
+Baseline A/A is close-null at 11.776/11.520 us (0.9783x), with 0/9 wins and one
+tie. All 60 raw cohorts replay. Separate correct profile reports 178
+registers/thread and 4096 dynamic shared bytes; occupancy, bandwidth and ISA
+counters remain uncollected. This is authored-source qualification, not an
+implemented Compiler rule or generated-source score.
+
+CPU comparison-projection checks include all FP16 encodings and FP32 special-value
+boundaries. The ordinary select preserves stored negative zero (`80000000`),
+while `abs` clears it (`00000000`): never fold a stored or arithmetic-consumed
+magnitude from this observation. Require typed, unique producers and all semantic
+references to establish comparison-only use; keep ordinary SELECT emission for
+legal counterexamples. CPU equivalence does not replace a device special-value
+audit or successor qualification. The proposal has no new dtype or instruction
+contract, and remains open until its fixed-commit software and generated-source
+device gates pass.
+
+Evidence:
+`/Users/haiyan-infiniai/open-cake-ir-evidence/metax-fp8-compare-abs-confirm-20260927/verification.json`
+and the corresponding sealed root's `semantic-preconditions.json` and
+`eligibility-proposal.json`. Allocation is `local_serialized`; external activity
+is not excluded.
