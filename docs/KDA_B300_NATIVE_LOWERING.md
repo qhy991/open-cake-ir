@@ -251,6 +251,16 @@ broker-shared `gpuq-dd76e0c72685` 完成释放后，**Cake 真正发射的 kerne
 
 为分清额外逆因子 kernel 与求解替换的贡献，六臂分段作业 `gpuq-77c47b84298d` 保留了前四轮完整 CUPTI 样本，但第五轮 `variant_consumer` 之前检测到外来计算 PID 而**整作业失败**。broker 释放后，一个明确标记 `timing_admissible=false` 的 CPU 派生视图逐份复核前四轮 16 个有状态输出/最终状态快照，均通过冻结 oracle；这些数值只作诊断，不是获接纳的五轮实验。前四轮轮中位数的中位数显示额外逆因子阶段约 **65.184 µs**，逆因子消费者相对基线消费者少约 **35.328 µs**，两者的差额约 **29.856 µs**，方向与独立有效三臂配对的完整候选慢约 33.6 µs 一致。由此可判定这个物化逆因子阶段在当前映射下抵消了求解收益；即便在算术上删除所见全部逆因子阶段，消费者仍远高于原始 CAKE 的完整 456 µs，这只是方向性推论，**没有**被测为融合后的延迟。继续向 256 次状态依赖与片上准备/消费联合流水推进，而不通过重跑受外来 PID 干扰的同一分段作业制造可接受样本。
 
+### 2.27 成对 FP32 PTX：保留 RN 与次正规语义的有界状态算术
+
+另一个与原始 CAKE CUDA 的具体差别位于每个 value 行的 128 列状态更新。适配参考 M128 在状态缩放、残差和校正中使用 `mul/sub/add.rn.ftz.f32x2` 等成对 FP32 PTX，当前 Cake native 发射则对 `scale_state` 与 `combine_state` 分别逐列调用 `__fmul_rn`、`__fadd_rn`。NVIDIA [PTX ISA](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html)规定 `.f32x2` 的每个 64-bit 操作数独立装入两个 FP32 lane，`.rn` 为就近偶数舍入；带 `.ftz` 会把次正规输入与结果冲成带符号零。因而不能只因参考 CUDA 更快就复制 `.ftz`：Cake IR 的两个 FP32 elementwise 运算承诺了独立的 RN 乘法与加法，未声明次正规冲零或融合 FMA。实验映射选择**不带 `.ftz`** 的 `mul.rn.f32x2` 再 `add.rn.f32x2`，保留每一步舍入及两个相邻列互不依赖的数学结构；它也不把 MUL+ADD 偷换成一次 FMA。
+
+独立精确 B300 witness `gpuq-edb81ceb749d` 先编译 `sm_103a` 为 24 寄存器、0 spill，再比较随机有限位、符号零、最小/最大次正规、正常值和大幅值的 **16,384 个 FP32 结果位**：成对 PTX 与同核标量 `__fmul_rn` 后 `__fadd_rn` 逐 bit 相同，输入未改写，broker 完成并释放。该 witness 检验了此卡和这些位模式，不能无限外推到所有 FP32 编码。仓库外固定 `4dc1561e` 源级 attempt1 仅将 `scale_state` 与 `combine_state` 的 128 列循环改为每次处理两个相邻列；其余准备、TMEM、barrier、输出和原位状态路径保留。CPU-only exact B300 AOT 为 **242 寄存器、0 stack/spill**，broker-shared `gpuq-1ee9e054ad9b` 完成释放后，冻结 H64 的 67,108,864 个输出与 1,048,576 个最终状态对外部 oracle 均零超差，最大绝对误差 0.000488/0.003906。与早先原 native 同一冻结输入的抓取相比，**全部输出和状态逐 bit 相同**。同一 SM103a 产物的静态 SASS 显示原版 192 条 `FMUL`、192 条 `FADD`，原型保留各 64 条标量并发射各 64 条 `FMUL2`、`FADD2`。这是对 PTX 真正落到成对机器指令的静态验证，不能当作运行收益。
+
+这仍是**未获 Compiler 准入**的源级候选。独占三臂 `gpuq-9e1a33ea220a` 虽获 GPU2，却在第一轮原始参考调用前因另一用户计算 PID 被未改动的隔离门禁拒绝；broker 标为 failed exit1、任务进程终止、GPU2 归还，**没有 CUPTI 延迟样本**。该失败与其它两次外来 PID 拒绝分别保留，不能靠丢弃或改门禁获得一个看似合格的配对。若后续在真实隔离的设备窗口得到显著完整净收益，才考虑把下述实验 backend 路线推进维护分支；其 FP32、偶数列宽、逐行独占连续列及无 `.ftz` 前提和错 dtype、奇尾、广播或非独占写者的标量控制不可省略。当前 disposition 是 **No promotion pending performance**。现有 Triton 与 CUDA 语言均能表达成对 PTX，当前未解问题是 native row-owned lowering 是否产生经完整 Workload 验证的净收益。
+
+实验任务分支 `task/nvidia-kda-f32x2-state` 的固定提交 `5e0ebd68` 已把这一映射写入 native emitter，但**未合入平台**。它不靠 `scale_state` 等名字决定：准入要求精确 B300 H64 carried 角色路线、一个 FP32 `[128,128]` 行拥有矩阵与 FP32 `[128]` 列向量按 `broadcast_axis=1` 相乘、产物仅由同角色 FP32 `[128,128]` ADD 使用、其结果仅由 BF16 CAST 读取后发布到 carried TMEM；两个相邻列各自 RN 舍入，发射不带 `.ftz` 的 `FMUL2` 和 `FADD2`。条件不满足仍保留原逐列标量 lowering，而不是拒绝本来合法的 Schedule；定向测试覆盖错误 broadcast、非 ADD 读者、共享中间值与非 carried 路线。固定检出定向合同 16/16、Corpus Gate 179/179、完整适用 CPU 套件 **2,700 passed、16 skipped、1 Apple MLX 实机 deselected**；精确 `sm_103a` Cake-emitted AOT 为 **242 寄存器、0 stack/spill**，静态 SASS 也确实发出各 64 条 `FMUL2/FADD2`。broker-shared `gpuq-ac3126c0ee62` 虽获 GPU7，却在首个 kernel 前因另一计算 PID 被原门禁拒绝，broker failed exit1，后观察 GPU7 idle、任务进程已退出；**没有 Cake-emitted 设备数值证据**。当前运行的公共 Target 文档仍未声明 `forward_substitute`，这条完整 KDA Schedule 的资格依赖实验测试 Target；因此不能把源级 bit/完整 oracle 和 Cake AOT 合并成正式 Program/Target 资格。Cake 生成版的设备正确性、同卡配对、六形状、高保留输入及 Target/ABI 审查均仍是明确门禁。
+
 ## 3. 对照：谁拥有哪个拒绝
 
 | 合同/硬件选择 | 共享 IR/Verifier 的职责 | native CUDA 的职责 | 最小反例与证据 |
