@@ -321,3 +321,32 @@ and magnitude contracts and unchanged Corpus pass. Read the
 `/Users/haiyan-infiniai/open-cake-ir-evidence/metax-bucket-n16-public-sealed-02561cff/verification.json`.
 Allocation remains local_serialized with external activity not excluded; other
 shapes and framework/serving performance remain outside this qualification.
+
+
+## Execution-group screens on fixed M16/N16
+
+Producer `02561cff` screens only the execution-group count against its qualified
+N16/group4 artifact. Tile, grid[4,4,1], bucket predicates, 16 FP16 dots and FP32
+Neumaier arithmetic/order remain fixed. Both candidates compile, seal with two
+zero scratch pointers, and pass all 37 cases (unchanged inputs, zero tolerance
+failures, maximum absolute error0.015625).
+
+| Groups / block threads | Correctness / paired jobs | Candidate / group4 median us | Pair wins candidate / baseline / ties | Launch-reported registers / dynamic shared bytes |
+| --- | --- | --- | --- | --- |
+| 2 / 128 | `maca-88cf06bd74dc` / `maca-c7a4ae48f4f5` | 9.984 / 9.472 | 0 / 10 / 0 | 180 / 1024 |
+| 8 / 512 | `maca-a0b7275a7c99` / `maca-a714662b8617` | 13.056 / 9.472 | 0 / 10 / 0 | 178 / 1024 |
+
+Both quality gates pass with250 samples per arm; each screen's20 raw cohorts
+replay through native MCPTI activity validation and paired_summary. Speedups are
+0.9487x and0.7255x, respectively, both classified second-arm-faster. **No promotion**:
+retain group4/block256. No fresh confirmation or instrumented profile was run for
+these non-survivors. Register/shared values are native launch queries, not achieved
+occupancy or a causal performance explanation. Reducing or increasing group count
+is not a portable tuning rule; fewer registers/thread did not select the faster
+candidate here. Do not turn successful compilation into another shape's admission.
+
+Evidence:
+`/Users/haiyan-infiniai/open-cake-ir-evidence/metax-bucket-g{2,8}-paired-20260927/verification.json`
+and adjacent `device-run/timing-samples.json`, with sealed source/manifests and
+all-case receipts in corresponding roots. Allocation remains local_serialized,
+external GPU activity not excluded. Current four-group N16 source is unchanged.
