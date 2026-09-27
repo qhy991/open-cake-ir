@@ -73,6 +73,13 @@ class PairedCostPlanTest(unittest.TestCase):
             relative = f"schedules/{name}.json"
             write(snapshot / relative, schedule)
             candidates.append({"id": name, "schedule": relative})
+        toolchain_config = {"python": self.executor.document["host_environment"]["python"]["invocation_path"],
+                            "bubblewrap": "/SYNTHETIC/no-bubblewrap",
+                            "runtime_roots": ["/SYNTHETIC/no-runtime"],
+                            "build_environment": {},
+                            "triton_version": self.executor.document["host_environment"]["packages"]["triton"],
+                            "timeout_seconds": 600}
+        write(snapshot / "toolchain.json", toolchain_config)
         plan = {"schema_version": 1, "state": "frozen",
                 "plan_id": "synthetic-paired-plan", "model_id": "synthetic-paired-model",
                 "compiler_revision": {"path": "compiler/revision.json",
@@ -90,6 +97,7 @@ class PairedCostPlanTest(unittest.TestCase):
                                        "python": self.executor.document["host_environment"]["python"]["invocation_path"],
                                        "triton_version": self.executor.document["host_environment"]["packages"]["triton"],
                                        "fixture": "synthetic; no executable compiler"},
+                "toolchain_config_path": "toolchain.json",
                 "acceptance": {"maximum_baseline_drift_ratio": 1.05,
                                "maximum_mape": .1, "maximum_relative_error": .2,
                                "maximum_top2_regret_ratio": 1.05,
@@ -201,6 +209,29 @@ class PairedCostPlanTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "must not inherit a GPU"):
                     instrument.prepare_compile(snapshot, stage, self.FakeIsolatedCompiler(plan["toolchain_identity"]))
             self.assertEqual(list(stage.iterdir()), [])
+
+    def test_gpu_infra_local_entry_retains_compiled_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot, plan = self.fixture(directory)
+            stage = Path(directory).resolve() / "compile"
+            stage.mkdir()
+            (stage / "stdout.log").write_text("synthetic GPU Infra stage stream")
+            isolated = self.FakeIsolatedCompiler(plan["toolchain_identity"])
+            environment = {"KERNELINFRA_CANDIDATE_DIR": str(snapshot),
+                           "KERNELINFRA_STAGE_DIR": str(stage),
+                           "KERNELINFRA_RESULT": str(stage / "result.json"),
+                           "KERNELINFRA_STAGE_KIND": "compile",
+                           "KERNELINFRA_STAGE_ID": "compile",
+                           "CUDA_VISIBLE_DEVICES": "", "GPUQ_JOB_ID": ""}
+            with patch.dict(os.environ, environment), \
+                    patch.object(ExecutorRevision, "admit_host", return_value=object()), \
+                    patch.object(instrument, "IsolatedTritonCompiler", return_value=isolated):
+                self.assertEqual(instrument.collect_compile(), 0)
+            result = json.loads((stage / "result.json").read_text())
+            self.assertEqual((result["status"], result["validity"]), ("passed", "valid"))
+            self.assertEqual(result["metrics"]["candidate_count"], 3)
+            self.assertIn("tile-64/candidate.json", result["artifacts"])
+            self.assertEqual(isolated.calls, 3)
 
 
 if __name__ == "__main__":

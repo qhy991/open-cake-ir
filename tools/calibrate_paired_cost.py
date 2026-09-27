@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Admit a frozen B300 GEMM paired-cost plan before any GPU allocation.
+"""Admit and CPU-compile a frozen B300 GEMM paired-cost candidate pool.
 
-This first stage only validates the external candidate snapshot. Device collection
-and fitting will use this same plan; check-plan alone produces no cost model.
+GPU Infra may call collect-compile only as a local stage. Broker-owned device
+collection and fitting will use the same plan; neither action here measures a GPU.
 """
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ from open_cake_ir.lab.bindings import load_baseline_bundle, load_compiler_refere
 from open_cake_ir.lab.environments import CandidateSubmission  # noqa: E402
 from open_cake_ir.lab.executor import ExecutorRevision, _external_file  # noqa: E402
 from open_cake_ir.lab.selection import _paired_empirical_context  # noqa: E402
+from open_cake_ir.lab.triton_build import IsolatedTritonCompiler  # noqa: E402
 from open_cake_ir.serialization import canonical_json_bytes  # noqa: E402
 from open_cake_ir.tasks.environments import TaskOpenCakeEnvironment  # noqa: E402
 from open_cake_ir.tasks.launch import parse_launch_manifest  # noqa: E402
@@ -58,7 +59,8 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
     fields = {"schema_version", "state", "plan_id", "model_id", "compiler_revision",
               "executor_revision", "study_path", "workload", "case_id", "target",
               "baseline_bundle_path", "candidates", "observations",
-              "varying_dimensions", "acceptance", "toolchain_identity"}
+              "varying_dimensions", "acceptance", "toolchain_identity",
+              "toolchain_config_path"}
     if (not isinstance(plan, dict) or set(plan) != fields
             or type(plan["schema_version"]) is not int or plan["schema_version"] != 1
             or plan["state"] != "frozen"
@@ -75,6 +77,16 @@ def check_plan(snapshot: str | Path) -> dict[str, object]:
             or toolchain.get("python") != executor.document["host_environment"]["python"]["invocation_path"]
             or toolchain.get("triton_version") != executor.document["host_environment"]["packages"]["triton"]):
         raise ValueError("paired cost toolchain differs from Executor")
+    if not isinstance(plan["toolchain_config_path"], str):
+        raise ValueError("paired cost toolchain configuration path differs")
+    toolchain_config = _read(_external_file(snapshot, plan["toolchain_config_path"], "paired cost toolchain config"))
+    expected_config = {"python", "bubblewrap", "runtime_roots", "build_environment",
+                       "triton_version", "timeout_seconds"}
+    if (not isinstance(toolchain_config, dict)
+            or not expected_config <= set(toolchain_config) <= expected_config | {"pointer_alignment"}
+            or toolchain_config["python"] != toolchain["python"]
+            or toolchain_config["triton_version"] != toolchain["triton_version"]):
+        raise ValueError("paired cost toolchain configuration differs from frozen identity")
     if (plan["target"] != "sm_103a" or plan["case_id"] != "primary"
             or not isinstance(plan["study_path"], str)):
         raise ValueError("paired cost currently admits the B300 primary case")
@@ -179,9 +191,11 @@ def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) 
         raise ValueError("paired cost compile must not inherit a GPU allocation")
     checked = check_plan(snapshot)
     snapshot, stage = _external(snapshot), _external(stage)
-    if not stage.is_dir() or any(stage.iterdir()):
-        raise ValueError("paired cost compile stage must be a new empty directory")
+    if not stage.is_dir() or (stage / "compile-index.json").exists():
+        raise ValueError("paired cost compile stage already has candidate output")
     plan = _read(_external_file(snapshot, "plan.json", "paired cost plan"))
+    if any((stage / spec["id"]).exists() for spec in plan["candidates"]):
+        raise ValueError("paired cost compile stage already has candidate output")
     if canonical_json_bytes(isolated_compiler.identity) != canonical_json_bytes(plan["toolchain_identity"]):
         raise ValueError("paired cost isolated toolchain differs from frozen plan")
     executor = ExecutorRevision.load_reference(ROOT, plan["executor_revision"], "paired_cost.executor_revision")
@@ -233,11 +247,49 @@ def prepare_compile(snapshot: str | Path, stage: str | Path, isolated_compiler) 
     return index
 
 
+def collect_compile() -> int:
+    """GPU Infra local-stage entry; never asks for or inherits a GPU lease."""
+    stage = _external(os.environ["KERNELINFRA_STAGE_DIR"])
+    result_path = Path(os.environ["KERNELINFRA_RESULT"])
+    if result_path.is_symlink():
+        raise ValueError("paired cost stage result cannot be a symlink")
+    result = result_path.resolve(strict=False)
+    if (os.environ.get("KERNELINFRA_STAGE_KIND") != "compile"
+            or os.environ.get("KERNELINFRA_STAGE_ID") != "compile"
+            or result != stage / "result.json"):
+        raise ValueError("paired cost GPU Infra local-stage binding differs")
+    snapshot = _external(os.environ["KERNELINFRA_CANDIDATE_DIR"])
+    try:
+        plan = _read(_external_file(snapshot, "plan.json", "paired cost plan"))
+        config = _read(_external_file(snapshot, plan["toolchain_config_path"], "paired cost toolchain config"))
+        isolated = IsolatedTritonCompiler(**config)
+        index = prepare_compile(snapshot, stage, isolated)
+        artifacts = {path.relative_to(stage).as_posix(): path.relative_to(stage).as_posix()
+                     for path in sorted(stage.rglob("*")) if path.is_file() and path != result}
+        _write_new(result, {"schema": "kernelinfra.stage-result.v1", "status": "passed",
+                            "validity": "valid", "summary": "paired cost CPU compilation passed",
+                            "workloads": [], "artifacts": artifacts,
+                            "metrics": {"candidate_count": len(index["candidates"])}})
+        return 0
+    except Exception as error:
+        if not result.exists():
+            _write_new(result, {"schema": "kernelinfra.stage-result.v1", "status": "failed",
+                                "validity": "unknown", "summary": f"{type(error).__name__}: {error}",
+                                "workloads": [], "artifacts": {}, "metrics": {}})
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("check-plan",))
-    parser.add_argument("snapshot", type=Path)
+    parser.add_argument("action", choices=("check-plan", "collect-compile"))
+    parser.add_argument("snapshot", type=Path, nargs="?")
     args = parser.parse_args()
+    if args.action == "collect-compile":
+        if args.snapshot is not None:
+            parser.error("collect-compile reads the GPU Infra candidate snapshot from its environment")
+        return collect_compile()
+    if args.snapshot is None:
+        parser.error("check-plan requires an external candidate snapshot")
     print(json.dumps(check_plan(args.snapshot), indent=2, sort_keys=True))
     return 0
 

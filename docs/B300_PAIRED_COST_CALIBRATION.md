@@ -26,13 +26,23 @@ they are; the B300 scientific Study does not admit empirical candidate selection
 candidate snapshot without a GPU. Its `plan.json` names the clean Compiler and
 Executor references, the committed B300 GEMM Study and Workload, three distinct
 complete Schedule files, a sealed baseline bundle **inside the snapshot**, the
-M-axis bindings for `a` and `c`, acceptance limits, and all nine observations.
+M-axis bindings for `a` and `c`, an exact isolated Triton toolchain identity and
+its in-snapshot configuration, acceptance limits, and all nine observations.
 Each Schedule must replace the Corpus starter's placeholder Workload identity with
 the frozen Workload's canonical identity before admission.
 The observation order is three fit candidates, the reversed calibration order,
 then a rotated held-out audit order. The checker derives the paired context from
 the Study and baseline; the plan cannot substitute a free-text timer or a mutable
 baseline path. Admission does not compile, measure, fit, or change Study policy.
+
+GPU Infra's CPU-only local `compile` stage invokes
+`tools/calibrate_paired_cost.py collect-compile` with its normal candidate, stage
+and result environment. The tool admits the exact Executor host and isolated
+Triton compiler, builds all three candidates through the common Open Cake
+Authoring Environment, and seals Schedule and artifact bundles plus one compile
+index in the stage. It refuses a visible GPU allocation and a toolchain that
+differs from the frozen identity. This stage does not claim numerical correctness
+or candidate performance.
 
 | Model context field | Paired owner |
 | --- | --- |
