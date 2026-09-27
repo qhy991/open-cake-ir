@@ -179,3 +179,38 @@ JSON 中的 `empirical_cost` 给出 `predicted_kernel_us`、`empirical_range_us`
 声明全局 Buffer 的形状模式。只有明确变化的维度写 `null`；计划中的每个 Schedule
 都要匹配该模式。模型曲线仍负责目标 Schedule 模板、尺寸对齐与测量区间；范围外的
 新 tile、目标或尺寸返回未覆盖，不能从另一条曲线继承估算。
+
+### 独立 Run 的 GPU 前选择
+
+校准工具还提供一个独立工程 Run 的选择模式，不改变 Lab Study 的策略。在外部
+`candidate/plan.json` 中声明 `search_selection`：
+
+```json
+{
+  "kind": "external_empirical_top_k_v1",
+  "model_path": "prior-model.json",
+  "predictions_path": "prior-predictions.json",
+  "submitted_case_ids": ["candidate-a", "candidate-b", "candidate-c"],
+  "selected_case_ids": ["candidate-a", "candidate-b"],
+  "searches_per_workload": 2
+}
+```
+
+模型与预测文件都要在提交前放进同一个不可变候选快照。`check-plan` 重算每个候选的
+预测并检查：模型的 Compiler 提交、Target、timer、缓存协议、**完整**运行时和结构化
+`input_scope` 与计划相同；每组三个候选全部被覆盖；冻结的预测和选中顺序与模型一致。
+不完整或不匹配就拒绝该选择 Run。CPU local 阶段仍编译全组并生成独立 oracle，
+broker 正确性与独占 profiler 阶段只加载选中的两个候选；GPU Infra 拥有设备租约。
+
+```bash
+python3 tools/calibrate_empirical_cost.py check-plan /external/candidate
+# GPU Infra 按冻结 task.json 执行 compile-container 与两个 collect-container 阶段。
+python3 tools/calibrate_empirical_cost.py audit-selected /external/run \
+  --output /external/new-selected-audit
+```
+
+`audit-selected` 在设备释放后重放原始 trace、编译产物和 broker receipt，报告提交数、
+设备实测数与跳过数。它**不**估计被跳过候选的实际耗时或性能损失；要检查选择质量，
+需在另一个预先冻结的全量审计 Run 测量它们。经验范围也不是置信保证。当前这条
+Kineto/CUPTI 加显式清零的独立路径与 Lab 的配对 FlashInfer CUPTI assay 不同，
+其模型不能直接绑定到 Lab 的 B300 GEMM Study。
